@@ -15,7 +15,7 @@ export interface BeatEndPayload {
 }
 
 export type ServerMessage =
-  | { type: "hello"; sessionId: string; lastSeq: number }
+  | { type: "hello"; sessionId: string; lastSeq: number; cast?: { id: string; name: string }[] }
   | { type: "beat_start"; beatId: string }
   | { type: "events"; events: SequencedEvent[] }
   | BeatEndPayload & { type: "beat_end" }

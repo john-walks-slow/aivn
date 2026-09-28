@@ -1,0 +1,319 @@
+/* Stage-AI 首版视觉：plain / clean / 浅色 / 实用 —— 白底、黑白灰层级、系统字体栈、无花哨动画。 */
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #fafaf8;
+  --panel: #ffffff;
+  --ink: #1a1a1a;
+  --ink-soft: #5c5c5c;
+  --ink-faint: #9a9a9a;
+  --line: #e6e4df;
+  --accent: #2b5fb8;
+  --accent-soft: #eef3fb;
+  --radius: 6px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    "PingFang SC",
+    "Noto Sans CJK SC",
+    "Microsoft YaHei",
+    sans-serif;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+/* ── 顶栏 ─────────────────────────────── */
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 2px 10px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.topbar-title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.topbar-scene {
+  color: var(--ink-soft);
+  font-size: 13px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-state {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.topbar-state.state-stopped {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.topbar-state.state-error {
+  color: #b3372f;
+}
+
+/* ── 台词流 ───────────────────────────── */
+
+.stage-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 4px 28px;
+  scrollbar-width: thin;
+}
+
+.line {
+  margin: 0 0 14px;
+}
+
+.line-scene {
+  margin: 26px 0 18px;
+  text-align: center;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+}
+
+.line-scene span {
+  display: inline-block;
+  padding: 4px 18px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.line-narrate {
+  color: var(--ink-soft);
+  text-align: center;
+  padding: 0 24px;
+}
+
+.line-thought {
+  color: var(--ink-faint);
+  font-style: italic;
+  text-align: center;
+  padding: 0 24px;
+}
+
+.line-say {
+  border-left: 3px solid var(--line);
+  padding-left: 12px;
+}
+
+.say-name {
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.say-mood {
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.say-text {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+}
+
+.stage-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--ink-faint);
+  animation: blink 1s step-start infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ── 停止点面板 ────────────────────────── */
+
+.stop-panel {
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+  padding: 12px 0 16px;
+  background: var(--bg);
+}
+
+.stop-hint {
+  color: var(--ink-faint);
+  font-size: 13px;
+  text-align: center;
+  padding: 8px 0;
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+button {
+  font: inherit;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: border-color 0.12s, background-color 0.12s;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+button.ghost {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 9px 8px;
+}
+
+.choice {
+  text-align: left;
+}
+
+.choice:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.free-box {
+  display: flex;
+  gap: 8px;
+}
+
+.free-box input {
+  flex: 1;
+}
+
+.continue-box {
+  text-align: center;
+}
+
+.continue-box .primary {
+  min-width: 160px;
+}
+
+/* ── 导演备注（OOC） ───────────────────── */
+
+.ooc-toggle {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  border: none;
+  background: transparent;
+  padding: 2px 0 10px;
+}
+
+.ooc-toggle:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.ooc-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px;
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+.ooc-box input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+}
+
+.ooc-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* ── 输入与遮罩 ────────────────────────── */
+
+input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  outline: none;
+}
+
+input:focus {
+  border-color: var(--accent);
+}
+
+.overlay {
+  text-align: center;
+  color: var(--ink-faint);
+  padding: 32px 0;
+  font-size: 13px;
+}
+
+.error-banner {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid #e8c8c4;
+  background: #fbf1ef;
+  color: #b3372f;
+  border-radius: var(--radius);
+  font-size: 13.5px;
+}

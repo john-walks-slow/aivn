@@ -6,7 +6,9 @@ dist/
 *.local
 coverage/
 .DS_Store
-plays/
+# 剧目运行时会话（play.json 进 git，运行时数据不进）
+plays/*/session.json
+plays/*/lineage.jsonl
 media-cache/
 .mnemon/
 .worktrees/
