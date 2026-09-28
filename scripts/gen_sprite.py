@@ -123,28 +123,65 @@ def call_image_generation(
     raise RuntimeError("No image data returned from generation API after retries.")
 
 
+def detect_sheet_grid(img: Image.Image, max_rows: int = 4, max_cols: int = 6) -> Tuple[int, int]:
+    """
+    Automatically detects the grid layout (rows, cols) of an expression sheet
+    by analyzing background gutter density along horizontal and vertical projections.
+    """
+    import numpy as np
+    arr = np.array(img.convert("L"), dtype=np.float32)
+    h, w = arr.shape
+    bg_val = float(np.median([arr[0, 0], arr[0, w - 1], arr[h - 1, 0], arr[h - 1, w - 1]]))
+    fg = np.abs(arr - bg_val) > 25.0
+
+    col_density = fg.sum(axis=0) / h
+    row_density = fg.sum(axis=1) / w
+
+    best_c = 1
+    min_c_score = 999.0
+    for c in range(2, max_cols + 1):
+        dividers = [int(w * i / c) for i in range(1, c)]
+        gutter_scores = [np.min(col_density[max(0, d - 15) : min(w, d + 15)]) for d in dividers]
+        avg_score = float(np.mean(gutter_scores))
+        if avg_score < 0.1 and avg_score <= min_c_score:
+            min_c_score = avg_score
+            best_c = c
+
+    best_r = 1
+    min_r_score = 999.0
+    for r in range(2, max_rows + 1):
+        dividers = [int(h * i / r) for i in range(1, r)]
+        gutter_scores = [np.min(row_density[max(0, d - 15) : min(h, d + 15)]) for d in dividers]
+        avg_score = float(np.mean(gutter_scores))
+        if avg_score < 0.1 and avg_score <= min_r_score:
+            min_r_score = avg_score
+            best_r = r
+
+    return (best_r if best_r > 1 else 2), (best_c if best_c > 1 else 4)
+
+
 def run_sheet_mode(
     char_name: str,
     char_desc: str,
     out_dir: Path,
     target_canvas: Optional[str] = "1080x1920",
-    rows: int = 2,
-    cols: int = 3,
+    rows: Optional[int] = None,
+    cols: Optional[int] = None,
 ) -> List[str]:
     """
-    Paradigm A: Generate 2x3 multi-expression sheet in one prompt, slice into individual sprites,
-    and process transparency.
+    Paradigm A: Generate multi-expression sheet with auto-adaptive or custom grid,
+    slice into individual sprites, and process transparency.
     """
     print(f"\n[Paradigm A: Sheet Mode] Generating expression sheet for '{char_name}'...")
-    expr_keys = ["normal", "smile", "shy", "angry", "sad", "surprised"]
+    expr_keys = ["normal", "smile", "shy", "angry", "sad", "surprised", "thinking", "winking", "custom1", "custom2"]
     
+    req_rows = rows or 2
+    req_cols = cols or 4
     sheet_prompt = f"""
 Masterpiece anime official visual novel character art, character expression sheet.
-6 expressions of the SAME character arranged in a clean {rows}x{cols} grid ({rows} rows, {cols} columns).
-Row 1: normal calm expression, cheerful smiling expression, blushing shy expression.
-Row 2: angry pouting expression, sad crying expression, shocked surprised expression.
+Multiple expressions of the SAME character arranged in a clean {req_rows}x{req_cols} grid ({req_rows} rows, {req_cols} columns).
 Character appearance: {char_desc}.
-Pure solid white background, clean white borders between cells, front view bust portrait, consistent character design and colors, highest quality anime illustration.
+Pure solid white background, clean white margins between cells, front view bust portrait, consistent character design and colors, highest quality anime illustration.
 """.strip()
 
     sheet_raw = call_image_generation(sheet_prompt)
@@ -154,17 +191,30 @@ Pure solid white background, clean white borders between cells, front view bust 
 
     sheet_img = Image.open(sheet_path).convert("RGB")
     sw, sh = sheet_img.size
-    cell_w = sw // cols
-    cell_h = sh // rows
+
+    # Auto-detect grid or use specified
+    if rows is None or cols is None:
+        det_r, det_c = detect_sheet_grid(sheet_img)
+        act_rows = rows or det_r
+        act_cols = cols or det_c
+        print(f"[Auto Grid Detection] Detected layout: {act_rows} rows x {act_cols} cols")
+    else:
+        act_rows = rows
+        act_cols = cols
+        print(f"[Grid Configuration] Using explicit layout: {act_rows} rows x {act_cols} cols")
+
+    cell_w = sw // act_cols
+    cell_h = sh // act_rows
 
     generated_files = []
     idx = 0
-    for r in range(rows):
-        for c in range(cols):
+    for r in range(act_rows):
+        for c in range(act_cols):
             if idx >= len(expr_keys):
                 break
             expr_name = expr_keys[idx]
-            box = (c * cell_w, r * cell_h, (c + 1) * cell_w, (r + 1) * cell_h)
+            # Inset by 4px to avoid separator lines
+            box = (c * cell_w + 4, r * cell_h + 4, (c + 1) * cell_w - 4, (r + 1) * cell_h - 4)
             cell_img = sheet_img.crop(box)
             
             # Save raw cropped cell
@@ -175,12 +225,13 @@ Pure solid white background, clean white borders between cells, front view bust 
             trans_img = process_image_transparency(
                 cell_img,
                 bg_color_mode="auto",
-                tolerance=35.0,
-                feather=22.0,
+                tolerance=30.0,
+                feather=16.0,
                 despill=0.9,
                 trim=True,
-                padding=25,
+                padding=20,
                 target_canvas=target_canvas,
+                sprite_type="bust",
             )
             out_png = out_dir / f"{expr_name}.png"
             trans_img.save(out_png, format="PNG")
@@ -188,34 +239,7 @@ Pure solid white background, clean white borders between cells, front view bust 
             generated_files.append(str(out_png))
             idx += 1
 
-    # Also generate the 7th classic expression "thinking" using Paradigm B reference iteration
-    print("\nGenerating 7th classic expression 'thinking' (closed-eyes contemplative) via reference...")
-    base_cell = Image.open(out_dir / "normal_raw.jpg")
-    thinking_prompt = f"""
-Visual novel character sprite modification of {char_name}.
-Keep the EXACT same character face, hairstyle, hair ribbons, clothing and front view bust pose.
-Change expression to: {STANDARD_EXPRESSIONS['thinking']}.
-Pure solid white background, high quality anime art style.
-""".strip()
-
-    thinking_raw = call_image_generation(thinking_prompt, reference_image=base_cell)
-    thinking_raw_path = out_dir / "thinking_raw.jpg"
-    thinking_raw_path.write_bytes(thinking_raw)
-    thinking_img = Image.open(thinking_raw_path)
-    thinking_trans = process_image_transparency(
-        thinking_img,
-        bg_color_mode="auto",
-        tolerance=35.0,
-        feather=22.0,
-        despill=0.9,
-        trim=True,
-        padding=25,
-        target_canvas=target_canvas,
-    )
-    thinking_png = out_dir / "thinking.png"
-    thinking_trans.save(thinking_png, format="PNG")
-    print(f"  -> Generated {thinking_png.name} ({thinking_trans.size[0]}x{thinking_trans.size[1]} RGBA)")
-    generated_files.append(str(thinking_png))
+    return generated_files
 
     return generated_files
 
@@ -348,6 +372,18 @@ def main():
         default="1080x1920",
         help="Standard canvas size 'WIDTHxHEIGHT' (default: 1080x1920)",
     )
+    parser.add_argument(
+        "--rows",
+        type=int,
+        default=None,
+        help="Number of rows in expression sheet (default: auto-detect)",
+    )
+    parser.add_argument(
+        "--cols",
+        type=int,
+        default=None,
+        help="Number of columns in expression sheet (default: auto-detect)",
+    )
 
     args = parser.parse_args()
 
@@ -370,6 +406,8 @@ def main():
             char_desc,
             out_dir,
             target_canvas=args.target_canvas,
+            rows=args.rows,
+            cols=args.cols,
         )
     else:
         gen_files = run_iterative_mode(
