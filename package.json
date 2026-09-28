@@ -1,0 +1,15 @@
+{
+  "name": "stage-ai",
+  "private": true,
+  "version": "0.0.1",
+  "description": "AI galgame engine: LLM playwriter streams an incremental script, the stage renders it like streaming video",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  }
+}

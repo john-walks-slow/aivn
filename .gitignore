@@ -1,8 +1,12 @@
 node_modules/
 dist/
+*.tsbuildinfo
 .env
+.env.*
 *.local
+coverage/
+.DS_Store
 plays/
 media-cache/
-.DS_Store
 .mnemon/
+.worktrees/
