@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+*.local
+plays/
+media-cache/
+.DS_Store
