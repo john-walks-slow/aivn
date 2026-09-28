@@ -91,25 +91,21 @@ def process_image_transparency(
     # 4. Connected Components Floodfill from Outer Borders
     mask_img = Image.fromarray(is_candidate, mode="L").copy()
     
-    # Top border
+    # Top border (primary background entry)
     for x in range(w):
         if mask_img.getpixel((x, 0)) == 255:
             ImageDraw.floodfill(mask_img, (x, 0), 128)
             
-    # Left and Right borders
+    # Left and Right borders (outer background entry)
     for y in range(h):
         if mask_img.getpixel((0, y)) == 255:
             ImageDraw.floodfill(mask_img, (0, y), 128)
         if mask_img.getpixel((w - 1, y)) == 255:
             ImageDraw.floodfill(mask_img, (w - 1, y), 128)
 
-    # Bottom border corners moving inwards until non-candidate
-    for x in range(min(w // 4, 100)):
-        if mask_img.getpixel((x, h - 1)) == 255:
-            ImageDraw.floodfill(mask_img, (x, h - 1), 128)
-        rx = w - 1 - x
-        if mask_img.getpixel((rx, h - 1)) == 255:
-            ImageDraw.floodfill(mask_img, (rx, h - 1), 128)
+    # Note: We intentionally DO NOT seed floodfill from the bottom edge (y = h - 1).
+    # Galgame character bust sprites anchor at the bottom, where white clothing / shirts
+    # touch the lower frame. Seeding from the bottom risks leaking into the torso.
 
     is_connected_bg = np.array(mask_img) == 128
 
