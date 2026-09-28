@@ -247,47 +247,27 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </div>
         <div class="controls-panel">
-          <h3>角色：小春 (Koharu) · 7 种经典表情切换</h3>
-          <p style="font-size:13px; color:var(--text-muted); margin-bottom:16px;">
-            规格：1080x1920 (9:16 标准半身/全身立绘) · 锚点 [0.5, 1.0] · RGBA 32位透明通道 · 边缘去杂色去白边处理
+          <h3>角色与立绘选择</h3>
+          <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">
+            规格：1080x1920 (9:16 标准立绘) · 锚点 [0.5, 1.0] · RGBA 32位透明通道 · 边缘去白边与服装下渗保护
           </p>
-          <div class="expr-grid">
-            <button class="expr-btn active" onclick="setExpr('normal', '平静 / 自然', 'normal.png')">
-              <strong>😐 普通 / 平静</strong>
-              <span>normal.png</span>
-            </button>
-            <button class="expr-btn" onclick="setExpr('smile', '灿烂微笑', 'smile.png')">
-              <strong>😊 微笑 / 欢快</strong>
-              <span>smile.png</span>
-            </button>
-            <button class="expr-btn" onclick="setExpr('shy', '害羞脸红', 'shy.png')">
-              <strong>😳 害羞 / 脸红</strong>
-              <span>shy.png</span>
-            </button>
-            <button class="expr-btn" onclick="setExpr('angry', '傲娇生气', 'angry.png')">
-              <strong>😠 傲娇 / 生气</strong>
-              <span>angry.png</span>
-            </button>
-            <button class="expr-btn" onclick="setExpr('sad', '悲伤眼泪', 'sad.png')">
-              <strong>😢 悲伤 / 泪目</strong>
-              <span>sad.png</span>
-            </button>
-            <button class="expr-btn" onclick="setExpr('surprised', '吃惊瞪大眼', 'surprised.png')">
-              <strong>😲 吃惊 / 惊讶</strong>
-              <span>surprised.png</span>
-            </button>
-            <button class="expr-btn" onclick="setExpr('thinking', '闭眼沉思', 'thinking.png')">
-              <strong>😌 闭眼 / 沉思</strong>
-              <span>thinking.png</span>
-            </button>
+
+          <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+            <button class="tab-btn active" id="btn-char-koharu" onclick="selectChar('koharu')" style="font-size:12px; padding:6px 12px;">小春 (8经典表情)</button>
+            <button class="tab-btn" id="btn-char-nadeshiko" onclick="selectChar('nadeshiko')" style="font-size:12px; padding:6px 12px;">🌸 枕社：鹿岛抚子 (常服+私服)</button>
+            <button class="tab-btn" id="btn-char-nanami" onclick="selectChar('nanami')" style="font-size:12px; padding:6px 12px;">⭐ 枕社：桐原七海 (常服+私服)</button>
+          </div>
+
+          <div id="expr-grid-container" class="expr-grid">
+            <!-- Dynamic buttons -->
           </div>
 
           <div style="background:#111422; border:1px solid #23283e; border-radius:10px; padding:16px;">
-            <h4 style="font-size:14px; color:#fff; margin-bottom:8px;">当前表情详细信息与生图范式</h4>
-            <div id="expr-info" style="font-size:13px; color:#94a3b8;">
+            <h4 style="font-size:14px; color:#fff; margin-bottom:8px;">当前立绘详细信息</h4>
+            <div id="expr-info" style="font-size:13px; color:#94a3b8; line-height:1.6;">
               <p><strong>文件：</strong> assets/sprites/koharu/normal.png</p>
-              <p><strong>范式：</strong> Sheet 切片自动抠图 (Paradigm A) / 垫图参考迭代 (Paradigm B)</p>
-              <p><strong>特征锁死：</strong> 粉色长发、白双丝带、祖母绿眼眸、水手服校服、锚点对齐无跳跃</p>
+              <p><strong>定位：</strong> 平静 / 自然</p>
+              <p><strong>引擎规格：</strong> RGBA 32-bit (1080x1920) 底部居中锚点</p>
             </div>
           </div>
         </div>
@@ -358,6 +338,64 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   </main>
 
   <script>
+    const CHARACTERS = {
+      koharu: {
+        name: "小春 (Koharu)",
+        path: "/assets/sprites/koharu/",
+        items: [
+          { key: "normal", label: "😐 普通 / 平静", file: "normal.png" },
+          { key: "smile", label: "😊 微笑 / 欢快", file: "smile.png" },
+          { key: "shy", label: "😳 害羞 / 脸红", file: "shy.png" },
+          { key: "angry", label: "😠 傲娇 / 生气", file: "angry.png" },
+          { key: "sad", label: "😢 悲伤 / 泪目", file: "sad.png" },
+          { key: "surprised", label: "😲 吃惊 / 惊讶", file: "surprised.png" },
+          { key: "thinking", label: "😌 闭眼 / 沉思", file: "thinking.png" },
+          { key: "winking", label: "😉 眨眼 / 俏皮", file: "winking.png" },
+        ]
+      },
+      nadeshiko: {
+        name: "鹿岛抚子 (Nadeshiko)",
+        path: "/assets/sprites/pillow_chars/nadeshiko/",
+        items: [
+          { key: "uniform", label: "🏫 学园常服 (海军水手制服)", file: "uniform.png" },
+          { key: "casual", label: "🍂 休日私服 (米白粗针织毛衣+吊坠)", file: "casual.png" },
+        ]
+      },
+      nanami: {
+        name: "桐原七海 (Nanami)",
+        path: "/assets/sprites/pillow_chars/nanami/",
+        items: [
+          { key: "uniform", label: "🏫 学园常服 (学院风西装背心+红领结)", file: "uniform.png" },
+          { key: "casual", label: "✨ 春季私服 (天蓝露肩针织+精致锁骨)", file: "casual.png" },
+        ]
+      }
+    };
+
+    let currentChar = 'koharu';
+
+    function selectChar(charKey) {
+      currentChar = charKey;
+      document.querySelectorAll('#btn-char-koharu, #btn-char-nadeshiko, #btn-char-nanami').forEach(b => b.classList.remove('active'));
+      const activeBtn = document.getElementById('btn-char-' + charKey);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      const charData = CHARACTERS[charKey];
+      const container = document.getElementById('expr-grid-container');
+      container.innerHTML = '';
+
+      charData.items.forEach((item, idx) => {
+        const btn = document.createElement('button');
+        btn.className = 'expr-btn' + (idx === 0 ? ' active' : '');
+        btn.onclick = () => setSprite(item.file, item.label);
+        btn.innerHTML = `<strong>${item.label}</strong><span>${item.file}</span>`;
+        container.appendChild(btn);
+      });
+
+      if (charData.items.length > 0) {
+        setSprite(charData.items[0].file, charData.items[0].label);
+      }
+    }
+
     function switchTab(name) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -370,19 +408,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       vp.className = 'stage-viewport ' + cls;
     }
 
-    function setExpr(key, label, filename) {
-      document.querySelectorAll('.expr-btn').forEach(b => b.classList.remove('active'));
-      event.currentTarget.classList.add('active');
+    function setSprite(filename, label) {
+      const charData = CHARACTERS[currentChar];
+      document.querySelectorAll('.expr-btn').forEach(b => {
+        if (b.innerText.includes(filename)) b.classList.add('active');
+        else b.classList.remove('active');
+      });
       const img = document.getElementById('main-sprite');
       img.style.opacity = '0.3';
-      img.src = '/assets/sprites/koharu/' + filename;
+      img.src = charData.path + filename;
       img.onload = () => { img.style.opacity = '1.0'; };
       document.getElementById('expr-info').innerHTML = `
-        <p><strong>文件：</strong> assets/sprites/koharu/${filename}</p>
-        <p><strong>表情定位：</strong> ${label}</p>
-        <p><strong>透明通道状态：</strong> RGBA 32-bit (已消除杂色边缘与白边)</p>
+        <p><strong>角色：</strong> ${charData.name}</p>
+        <p><strong>文件：</strong> ${charData.path}${filename}</p>
+        <p><strong>款式定位：</strong> ${label}</p>
+        <p><strong>通道规范：</strong> RGBA 32-bit (1080x1920) 底部居中对齐</p>
       `;
     }
+
+    // Init with Koharu
+    selectChar('koharu');
 
     // Load Scene Presets
     fetch('/assets/scene_presets.json')
@@ -413,6 +458,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       .then(r => r.json())
       .then(data => {
         const container = document.getElementById('audio-container');
+
+        // Add Google Flow2API Lyria track first
+        const lyriaCard = document.createElement('div');
+        lyriaCard.className = 'audio-card';
+        lyriaCard.style.border = '1px solid #7c3aed';
+        lyriaCard.innerHTML = `
+          <div class="audio-header">
+            <div class="audio-title">✨ Google Flow2API (Lyria 3.5) · 樱之诗风日常 BGM</div>
+            <div class="audio-meta">模型: flow-music (Lyria) | 44.1kHz Stereo 128kbps MP3</div>
+          </div>
+          <div style="font-size:13px; color:var(--text-muted); margin-bottom:8px;">
+            <strong>风格特征：</strong> 枕社清透日常调、木吉他与立式钢琴、温柔微风般的弦乐衬底<br>
+            <strong>调用链路：</strong> POST http://127.0.0.1:38000/v1/chat/completions (model: flow-music)
+          </div>
+          <audio controls style="width:100%; margin-top:10px;" src="/assets/audio/tracks/flow_lyria_sakura_breeze.mp3"></audio>
+          <div class="code-box"><strong>Flow2API Prompt:</strong> gentle aesthetic visual novel soundtrack, Makura Pillow soft style like Sakura no Uta, melodic acoustic piano, warm nylon guitar, emotional strings, nostalgic peaceful afternoon breeze</div>
+        `;
+        container.appendChild(lyriaCard);
+
         data.categories.forEach(cat => {
           const card = document.createElement('div');
           card.className = 'audio-card';
