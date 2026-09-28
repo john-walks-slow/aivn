@@ -9,14 +9,33 @@ interface StageTheaterProps {
   live: boolean;
   names: Readonly<Record<string, string>>;
   index: AssetIndex;
+  /** 服务端 TTS 能力（false 时隐藏语音开关）。 */
+  voiceAvailable: boolean;
+  voiceOn: boolean;
+  unlocked: boolean;
+  onToggleVoice: () => void;
+  onUnlock: () => void;
   onBack: () => void;
   onLog: () => void;
 }
 
 const POS_CLASS: Record<string, string> = { left: "pos-left", center: "pos-center", right: "pos-right" };
 
-/** 舞台：背景/立绘/CG 视觉层 + 打字机对话框 + 二段式点击 + 自动模式 + sfx/bgm。 */
-export function StageTheater({ visual, playback, live, names, index, onBack, onLog }: StageTheaterProps) {
+/** 舞台：背景/立绘/CG 视觉层 + 打字机对话框 + 二段式点击 + 自动模式 + sfx/bgm + 语音。 */
+export function StageTheater({
+  visual,
+  playback,
+  live,
+  names,
+  index,
+  voiceAvailable,
+  voiceOn,
+  unlocked,
+  onToggleVoice,
+  onUnlock,
+  onBack,
+  onLog,
+}: StageTheaterProps) {
   const bgmRef = useRef<HTMLAudioElement | null>(null);
   const { current, shownLength, exhausted, advance } = playback;
   const shown = current ? current.text.slice(0, shownLength) : "";
@@ -67,6 +86,18 @@ export function StageTheater({ visual, playback, live, names, index, onBack, onL
         </button>
         <span className="theater-scene">{visual.bg ?? "…"}</span>
         <span className="theater-actions">
+          {voiceAvailable && (
+            <button
+              className={`ghost-btn ${voiceOn ? "active" : ""}`}
+              title={voiceOn ? "语音开（点击静音）" : "语音关（点击开启）"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleVoice();
+              }}
+            >
+              {voiceOn ? "🔊 语音" : "🔇 静音"}
+            </button>
+          )}
           <button
             className={`ghost-btn ${playback.auto ? "active" : ""}`}
             onClick={(e) => {
@@ -142,6 +173,14 @@ export function StageTheater({ visual, playback, live, names, index, onBack, onL
       </div>
 
       <audio ref={bgmRef} loop />
+
+      {/* AudioContext 解锁遮罩（移动端铁律：手势 resume 后语音才可播；静音用户不要求手势） */}
+      {voiceAvailable && voiceOn && !unlocked && (
+        <div className="voice-unlock" onClick={onUnlock} role="button">
+          <span className="voice-unlock-icon">🔊</span>
+          <span>点击开启语音，进入剧场</span>
+        </div>
+      )}
     </div>
   );
 }

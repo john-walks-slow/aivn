@@ -5,8 +5,10 @@ export interface CharacterCard {
   id: string;
   name: string;
   persona: string;
-  /** 音色描述（P3 语音管线用）。 */
+  /** 台词风格描述（playwriter 提示词用：口癖/句长/语速）。 */
   voice?: string;
+  /** TTS 音色 id（fish-audio reference_id，P3 语音管线用；预置库见 VOICE_PRESETS）。 */
+  voiceId?: string;
   /** 立绘差分映射：expression id → assets/sprites/<char>/ 文件名（P2 演出层用）。 */
   sprites?: Record<string, string>;
 }

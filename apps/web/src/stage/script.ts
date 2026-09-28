@@ -7,6 +7,8 @@ export interface ScriptLine {
   actorId?: string;
   mood?: string;
   text: string;
+  /** say/narrate/thought 行起始事件的 seq（audio_ready 语音关联键）。 */
+  seq?: number;
 }
 
 /** 舞台演出提示：视觉指令即时应用，行提示走打字机队列（本地节奏重整）。 */
@@ -33,7 +35,7 @@ export class ScriptBuilder {
     this.scene = "";
   }
 
-  apply(event: StageEvent): void {
+  apply(event: StageEvent, seq?: number): void {
     const key = (): string => `l${(lineSeq += 1)}`;
     switch (event.kind) {
       case "scene": {
@@ -42,6 +44,7 @@ export class ScriptBuilder {
         this.lines.push({
           key: key(),
           type: "scene",
+          seq,
           text: [event.bg, event.bgm].filter(Boolean).join(" · "),
         });
         this.cues.push({ key: key(), kind: "scene", bg: event.bg, bgm: event.bgm, transition: event.transition });
@@ -64,6 +67,7 @@ export class ScriptBuilder {
           type: "say",
           actorId: event.id,
           mood: event.mood,
+          seq,
           text: "",
         };
         this.lines.push(line);
@@ -72,7 +76,7 @@ export class ScriptBuilder {
         return;
       }
       case "narrate_start": {
-        const line: ScriptLine = { key: key(), type: "narrate", text: "" };
+        const line: ScriptLine = { key: key(), type: "narrate", seq, text: "" };
         this.lines.push(line);
         this.cues.push({ key: key(), kind: "line", lineKey: line.key });
         this.openKey = line.key;
@@ -83,6 +87,7 @@ export class ScriptBuilder {
           key: key(),
           type: "thought",
           actorId: event.id,
+          seq,
           text: "",
         };
         this.lines.push(line);

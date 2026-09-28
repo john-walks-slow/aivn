@@ -8,18 +8,19 @@ AI galgame 引擎：LLM 剧作家（playwriter）流式输出 Stage DSL（XML �
 
 ## 地图
 
-- `packages/core` —— 语言与契约层（P0 已落地）：DSL v1 冻结规范（`src/dsl/spec.ts`）、流式解析器（`src/dsl/parser.ts`）、StageEvent/SequencedEvent IR（`src/dsl/events.ts`）、WS 协议类型（`src/ws/protocol.ts`，hello 带 cast 角色名映射）、谱系数据模型（`src/lineage/model.ts`：行级事件日志唯一真相源、四原语、快照随分支走、export/load 持久化）、剧目配置契约 PlayConfig/CharacterCard（`src/play/config.ts`，server/web 共享，web 不得 import server 包）
-- `apps/server` —— playwriter 编排器 + 剧目之家（P1/P2 已落地）：beat 生命周期与玩家动作路由（`src/orchestrator.ts`，runtimeState 随 session 持久化、重启续演）、cpa 网关 provider（`src/provider.ts`）、三区装配提示词（`src/prompt.ts`，素材清单注入）、多剧目 WS hub（`src/transport.ts`：`/ws?play=` 路由、resume 重放、早到消息缓冲）、剧目/会话存储与就绪门（`src/store.ts`）、PlayHouse 多剧目 runtime（`src/playhouse.ts`：懒加载恢复/startFresh 清会话）、REST + 素材静态服务（`src/http.ts`：白名单防穿越）；测试用 fake StreamFn 注入真实 agent loop（`test/orchestrator.test.ts`）
-- `apps/web` —— 舞台演出层（P2 已落地）：React 19 + vite；hash 路由（`src/router.tsx`）+ REST 客户端（`src/api.ts`）；`src/views/`（剧目库/Title 就绪门/舞台双视图/素材管理）；`src/stage/`（ScriptBuilder 带 cues 轨道、usePlayback 打字机+二段式点击+自动模式、StageTheater 舞台视觉层、useStageSocket、P1 文字视图复用为 log）
-- `plays/demo` —— 样例剧目《黄昏教室》（koharu，素材取自 `feat/galgame-assets` 分支：8 差分立绘/8 背景/3 BGM/2 CG）；`play.json` + `assets/` 进 git，session.json/lineage.jsonl 运行时不进
+- `packages/core` —— 语言与契约层（P0 已落地）：DSL v1 冻结规范（`src/dsl/spec.ts`）、流式解析器（`src/dsl/parser.ts`）、StageEvent/SequencedEvent IR（`src/dsl/events.ts`）、WS 协议类型（`src/ws/protocol.ts`，hello 带 cast 与 voice 能力位、audio_ready/tts_control 语音消息）、谱系数据模型（`src/lineage/model.ts`：行级事件日志唯一真相源、四原语、快照随分支走、export/load 持久化）、剧目配置契约 PlayConfig/CharacterCard（`src/play/config.ts`：voiceId 为 TTS 音色、voice 为台词风格描述，server/web 共享，web 不得 import server 包）、语音分句器（`src/speech/chunker.ts`：PhraseChunker 强终止/次级阈值/700ms 空闲冲刷 + normalizeForTts；`src/speech/voices.ts` 预置音色库，server 校验与 web 下拉共享）
+- `apps/server` —— playwriter 编排器 + 剧目之家（P1/P2/P3 已落地）：beat 生命周期与玩家动作路由（`src/orchestrator.ts`，runtimeState 随 session 持久化、重启续演、feedVoice say 三段钩子）、cpa 网关 provider（`src/provider.ts`）、三区装配提示词（`src/prompt.ts`，素材清单注入）、多剧目 WS hub（`src/transport.ts`：`/ws?play=` 路由、resume 重放、早到消息缓冲、tts_control 路由）、剧目/会话存储与就绪门（`src/store.ts`，media-cache/tts 目录）、PlayHouse 多剧目 runtime（`src/playhouse.ts`：懒加载恢复/startFresh 清会话/ttsPreview 试听）、REST + 静态服务（`src/http.ts`：素材白名单防穿越 + `/plays/:id/media/tts/*.mp3`）、fish-audio 客户端（`src/tts.ts`：undici 代理 + 多 key 轮询 + sha1 内容寻址缓存）、语音预取管线（`src/voice.ts`：分句→并发队列→audio_ready，enabled/paused 门控）；测试用 fake StreamFn/synth 注入（`test/orchestrator.test.ts`、`test/voice.test.ts`）
+- `apps/web` —— 舞台演出层（P2/P3 已落地）：React 19 + vite；hash 路由（`src/router.tsx`）+ REST 客户端（`src/api.ts`，ttsPreview）；`src/views/`（剧目库/Title 就绪门/舞台双视图/素材管理含音色下拉与试听）；`src/stage/`（ScriptBuilder 带 cues 轨道与行 seq、usePlayback 打字机+二段式点击+自动模式+语音钩子、StageTheater 舞台视觉层+语音开关+解锁遮罩、useStageSocket 含 audio_ready 转发、VoiceDirector 语音导演 `src/stage/audio.ts`：单一共享 AudioContext、gapless 链式调度、快进淡出、背压滞回；P1 文字视图复用为 log）
+- `plays/demo` —— 样例剧目《黄昏教室》（koharu 配萝莉萌妹 voiceId，素材取自 `feat/galgame-assets` 分支：8 差分立绘/8 背景/3 BGM/2 CG）；`play.json` + `assets/` 进 git，session.json/lineage.jsonl/media-cache 运行时不进
 
 ## 开发与调试
 
 - 启动：`pnpm --filter @stage-ai/server start`（需根目录 `.env`：cpa 网关 STAGE_BASE_URL/STAGE_API_KEY/STAGE_MODEL_ID 等）+ `pnpm --filter @stage-ai/web dev`（:5180，/ws 代理 :8787）
 - Node ≥ 22.19（pi-agent-core engines 要求），pnpm workspace
-- `pnpm test` —— vitest（core 45 + server 14，测试范围按改动模块控制）
+- `pnpm test` —— vitest（core 62 + server 20，测试范围按改动模块控制）
 - `pnpm typecheck` / `pnpm build`（改 core 后须 rebuild，web/server 走 workspace symlink 的 dist 类型）
 - 解析器改动必须保持撕裂等价性测试（chunk=1/2/3/5/7）与消息边界自动闭合用例全绿——这是 P0 冻结契约的回归线
+- 语音本地联调：`.env` 的 STAGE_TTS_*（默认读 `~/.config/fish-audio/keys.json`，走 7890 代理）；无 key 时 hello.voice=false、客户端自动隐藏语音开关
 
 ## 规范
 
@@ -27,4 +28,6 @@ AI galgame 引擎：LLM 剧作家（playwriter）流式输出 Stage DSL（XML �
 - **谱系事件日志 append-only**：一切结构操作（分岔/编辑/重写）以追加事件表达，物化时重放；日志永不改写
 - **四原语正交**（OOC/编辑/分岔/重写）：不隐式联动，组合权在用户；新增交互先对照计划 D10
 - **beat 边界解析归编排器**（P1）：core 的 `recordRewrite` 只记粒度标注，`granularity="beat"` 时 nodeId 传节拍首行
+- **文字先行铁律**（P3 语音）：音频未就绪/失败绝不阻塞演出；TTS 失败只告警跳过该句；audio_ready 是瞬态消息不进事件缓冲重放
+- **audio_ready 行关联**：seq = 所属 say 行 say_start 事件的序号（客户端 ScriptLine.seq 对应），改协议先对齐 core/ws/protocol.ts
 - 剧目运行时数据不进 git（`plays/*/session.json`、`plays/*/lineage.jsonl`、`media-cache/`）；`play.json` 剧目定义进 git

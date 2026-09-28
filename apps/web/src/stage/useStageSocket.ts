@@ -16,18 +16,29 @@ export interface StageSocket {
   names: Readonly<Record<string, string>>;
   stop: StopPayload | null;
   isActEnd: boolean;
+  /** 服务端 TTS 能力（hello.voice；false 时隐藏语音开关）。 */
+  voiceAvailable: boolean;
   sendChoice: (index: number) => void;
   sendFree: (text: string) => void;
   sendContinue: () => void;
   sendOoc: (text: string) => void;
+  sendTtsControl: (state: { enabled?: boolean; paused?: boolean }) => void;
 }
 
-export function useStageSocket(playId: string, mode: StartMode): StageSocket {
+/** 语音/重置事件外发钩子（StageScreen 绑定 VoiceDirector）。 */
+export interface StageSocketHandlers {
+  onAudio?: (ready: { seq: number; phrase: number; url: string }) => void;
+  onBeatStart?: () => void;
+  onReset?: () => void;
+}
+
+export function useStageSocket(playId: string, mode: StartMode, handlers?: StageSocketHandlers): StageSocket {
   const [state, setState] = useState<BeatState>("connecting");
   const [error, setError] = useState<string | null>(null);
   const [stop, setStop] = useState<StopPayload | null>(null);
   const [isActEnd, setActEnd] = useState(false);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [voiceAvailable, setVoiceAvailable] = useState(false);
   const [tick, setTick] = useState(0); // lines/cues/scene 由 builder 持有，tick 触发重渲染
   const builderRef = useRef(new ScriptBuilder());
   const lastSeqRef = useRef(0);
@@ -35,6 +46,8 @@ export function useStageSocket(playId: string, mode: StartMode): StageSocket {
   const retryRef = useRef(0);
   /** start 模式：等待新档 hello，期间丢弃旧会话的 beat_end 重放。 */
   const expectFreshRef = useRef(mode === "start");
+  const handlersRef = useRef<StageSocketHandlers>({});
+  handlersRef.current = handlers ?? {};
 
   useEffect(() => {
     let closed = false;
@@ -59,12 +72,14 @@ export function useStageSocket(playId: string, mode: StartMode): StageSocket {
         switch (msg.type) {
           case "hello":
             setNames(Object.fromEntries((msg.cast ?? []).map(({ id, name }) => [id, name])));
+            setVoiceAvailable(msg.voice ?? false);
             setState((prev) => (prev === "connecting" ? "streaming" : prev));
             if (expectFreshRef.current && msg.lastSeq === 0) {
               // 新档 hello：清旧脚本，从头接收
               expectFreshRef.current = false;
               builderRef.current.reset();
               lastSeqRef.current = 0;
+              handlersRef.current.onReset?.();
               setTick((t) => t + 1);
             }
             return;
@@ -73,16 +88,20 @@ export function useStageSocket(playId: string, mode: StartMode): StageSocket {
             setActEnd(false);
             setError(null);
             setState("streaming");
+            handlersRef.current.onBeatStart?.();
             return;
           case "events": {
             for (const { seq, event } of msg.events) {
               if (seq <= lastSeqRef.current) continue;
               lastSeqRef.current = seq;
-              builderRef.current.apply(event);
+              builderRef.current.apply(event, seq);
             }
             setTick((t) => t + 1);
             return;
           }
+          case "audio_ready":
+            handlersRef.current.onAudio?.({ seq: msg.seq, phrase: msg.phrase, url: msg.url });
+            return;
           case "beat_end":
             if (expectFreshRef.current) return; // 旧会话的 stoppedReplay，新档即将开始
             setStop(msg.stop ?? null);
@@ -133,9 +152,11 @@ export function useStageSocket(playId: string, mode: StartMode): StageSocket {
     names,
     stop,
     isActEnd,
+    voiceAvailable,
     sendChoice: (index) => send({ type: "player_choice", optionIndex: index }),
     sendFree: (text) => send({ type: "player_free", text }),
     sendContinue: () => send({ type: "continue" }),
     sendOoc: (text) => send({ type: "ooc", text }),
+    sendTtsControl: (ttsState) => send({ type: "tts_control", ...ttsState }),
   };
 }

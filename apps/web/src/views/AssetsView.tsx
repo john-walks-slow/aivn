@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CharacterCard, PlayConfig } from "@stage-ai/core";
+import { VOICE_PRESETS } from "@stage-ai/core";
 import { api, type PlayDetail } from "../api.js";
 import { navigate } from "../router.jsx";
 
@@ -111,6 +112,7 @@ export function AssetsView({ playId }: { playId: string }) {
           {draft.characters.map((char, i) => (
             <CharacterEditor
               key={char.id}
+              playId={playId}
               char={char}
               files={assets[`sprites/${char.id}`] ?? []}
               onChange={(fn) => patch((p) => fn(p.characters[i]!))}
@@ -219,17 +221,20 @@ interface SpriteRow {
 }
 
 function CharacterEditor({
+  playId,
   char,
   files,
   onChange,
   onRemove,
 }: {
+  playId: string;
   char: CharacterCard;
   files: string[];
   onChange: (fn: (char: CharacterCard) => void) => void;
   onRemove: () => void;
 }) {
   const nextId = useRef(0);
+  const [previewing, setPreviewing] = useState(false);
   // 行状态挂载时从角色卡初始化；编辑期以本地行为准，blur/离散操作时提交回角色卡
   const [rows, setRows] = useState<SpriteRow[]>(() =>
     Object.entries(char.sprites ?? {}).map(([expression, file]) => ({
@@ -238,6 +243,19 @@ function CharacterEditor({
       file,
     })),
   );
+
+  /** 音色试听：服务端合成固定样本 → 播放（预置二次元音色库）。 */
+  const previewVoice = (): void => {
+    if (!char.voiceId || previewing) return;
+    setPreviewing(true);
+    api
+      .ttsPreview(playId, char.voiceId)
+      .then(({ url }) => {
+        void new Audio(url).play().catch(() => {});
+      })
+      .catch((e: Error) => window.alert(`试听失败：${e.message}`))
+      .finally(() => setPreviewing(false));
+  };
 
   const commit = (source: SpriteRow[]): void => {
     onChange((c) => {
@@ -277,6 +295,25 @@ function CharacterEditor({
         value={char.persona}
         onChange={(e) => onChange((c) => (c.persona = e.target.value))}
       />
+      <div className="voice-row">
+        <select
+          value={char.voiceId ?? ""}
+          onChange={(e) => onChange((c) => (c.voiceId = e.target.value || undefined))}
+        >
+          <option value="">音色：未设置（不配音）</option>
+          {VOICE_PRESETS.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name}（{v.tone}）
+            </option>
+          ))}
+          {char.voiceId && !VOICE_PRESETS.some((v) => v.id === char.voiceId) && (
+            <option value={char.voiceId}>自定义 {char.voiceId.slice(0, 8)}…</option>
+          )}
+        </select>
+        <button className="ghost-btn" disabled={!char.voiceId || previewing} onClick={previewVoice}>
+          {previewing ? "合成中…" : "试听"}
+        </button>
+      </div>
       <p className="muted small">立绘差分映射（expression → 文件）——差分文件需先上传到 sprites/{char.id}/</p>
       {rows.map((row) => (
         <div key={row.id} className="row small">

@@ -15,10 +15,19 @@ export interface BeatEndPayload {
 }
 
 export type ServerMessage =
-  | { type: "hello"; sessionId: string; lastSeq: number; cast?: { id: string; name: string }[] }
+  | {
+      type: "hello";
+      sessionId: string;
+      lastSeq: number;
+      cast?: { id: string; name: string }[];
+      /** 服务端 TTS 能力（配置了 fish-audio keys 才为 true；false 时客户端隐藏语音开关）。 */
+      voice?: boolean;
+    }
   | { type: "beat_start"; beatId: string }
   | { type: "events"; events: SequencedEvent[] }
   | BeatEndPayload & { type: "beat_end" }
+  /** 语音预取就绪（D5）：seq = 所属 say 行 say_start 事件的序号，客户端据此关联行。 */
+  | { type: "audio_ready"; seq: number; phrase: number; url: string }
   | { type: "lineage"; leafId: string; turn: number }
   | { type: "error"; message: string; recoverable: boolean };
 
@@ -29,6 +38,8 @@ export type ClientMessage =
   | { type: "player_free"; text: string }
   | { type: "continue" }
   | { type: "ooc"; text: string }
+  /** 语音控制（D5 背压）：enabled=总开关（关=停合成）；paused=暂停预取（快进态/缓冲积压）。 */
+  | { type: "tts_control"; enabled?: boolean; paused?: boolean }
   | { type: "fork"; nodeId: string }
   | { type: "edit"; nodeId: string; newText: string }
   /** 重写（句/段 ±instruction）。粒度契约：granularity 仅标注意图；beat 边界解析归编排器——

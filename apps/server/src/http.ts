@@ -84,6 +84,17 @@ export async function handleHttp(
   const method = req.method ?? "GET";
 
   try {
+    // —— TTS 音频静态服务：/plays/:id/media/tts/<hash>.mp3（语音管线预取缓存） ——
+    if (parts[0] === "plays" && parts[1] && parts[2] === "media" && parts[3] === "tts" && method === "GET") {
+      const [, playId, , , file] = parts;
+      if (!/^[\w-]+$/.test(playId) || !/^[\w-]+\.mp3$/.test(file ?? "")) return fail(res, 404, "未找到");
+      const path = library.store(playId).mediaPath(file!);
+      if (!existsSync(path)) return fail(res, 404, "未找到");
+      res.writeHead(200, { "content-type": "audio/mpeg", "cache-control": "public, max-age=86400" });
+      res.end(await readFile(path));
+      return;
+    }
+
     // —— 素材静态服务：/plays/:id/assets/<kind>/<...> ——
     if (parts[0] === "plays" && parts[1] && parts[2] === "assets" && method === "GET") {
       const [, playId, , ...segments] = parts;
@@ -162,6 +173,12 @@ export async function handleHttp(
         return json(res, 200, { ok: true });
       }
       return fail(res, 405, "不支持的方法");
+    }
+    if (sub === "tts-preview" && parts.length === 4) {
+      if (method !== "POST") return fail(res, 405, "不支持的方法");
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as { voiceId?: string };
+      if (!body.voiceId) return fail(res, 400, "缺少 voiceId");
+      return json(res, 200, { url: await playhouse.ttsPreview(playId, body.voiceId) });
     }
     if (sub === "export" && parts.length === 4) {
       if (method !== "GET") return fail(res, 405, "不支持的方法");

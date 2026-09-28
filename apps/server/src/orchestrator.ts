@@ -14,6 +14,7 @@ import {
 import type { ServerMessage } from "@stage-ai/core";
 import { buildSystemPrompt, renderStateSection, type AssetManifest } from "./prompt.js";
 import type { PlayConfig } from "@stage-ai/core";
+import { VoicePipeline, type TtsSynthFn } from "./voice.js";
 
 /** 生成批次收束工具（D3：交互停止点之后或一幕写完时调用）。 */
 const beatDoneParams = Type.Object({}, { additionalProperties: false });
@@ -64,6 +65,8 @@ export interface OrchestratorOptions {
   persist: () => void;
   /** 服务器重启恢复：上次会话的运行态（事件缓冲/节拍号/停止点）。 */
   restored?: OrchestratorRuntimeState;
+  /** 语音管线合成函数（无则本剧目无声：hello.voice=false）。 */
+  tts?: { synth: TtsSynthFn; concurrency?: number };
 }
 
 /** 编排器运行态（随 session.json 持久化，重启后恢复重放与续演）。 */
@@ -101,6 +104,8 @@ export class PlaywrightOrchestrator {
   private openLine: OpenLine | null = null;
   private autostarted = false;
   private disposed = false;
+  /** 语音预取管线（D5）：say 行 → 分句 → TTS 预取 → audio_ready。 */
+  private readonly voice: VoicePipeline | null;
   /** 本拍内 pi agent 的流错误（message_end.errorMessage）；每拍重置。 */
   private beatError: string | null = null;
   /** 本拍内产出的舞台事件数（空拍检测）。 */
@@ -122,6 +127,14 @@ export class PlaywrightOrchestrator {
       },
     });
     this.unsubscribeAgent = this.agent.subscribe((event) => void this.onAgentEvent(event));
+    this.voice = opts.tts
+      ? new VoicePipeline({
+          synth: opts.tts.synth,
+          voiceOf: (charId) => opts.play.characters.find((c) => c.id === charId)?.voiceId,
+          emit: (ready) => this.send({ type: "audio_ready", ...ready }),
+          concurrency: opts.tts.concurrency,
+        })
+      : null;
     if (opts.restored) {
       // 恢复会话：回填事件缓冲与节拍状态，autostart 视为已完成（续演不重开开场）
       this.events.push(...opts.restored.events);
@@ -137,11 +150,18 @@ export class PlaywrightOrchestrator {
     return { events: this.events, beatNo: this.beatNo, lastStop: this.lastStop };
   }
 
-  /** 丢弃：断订阅、中断当前流、屏蔽后续广播（多剧目/重开时回收）。 */
+  /** 丢弃：断订阅、中断当前流、停语音管线（多剧目/重开时回收）。 */
   dispose(): void {
     this.disposed = true;
     this.unsubscribeAgent();
     this.agent.abort();
+    this.voice?.dispose();
+  }
+
+  /** 语音控制（客户端 tts_control）：enabled=总开关，paused=背压暂停预取。 */
+  setTtsState(state: { enabled?: boolean; paused?: boolean }): void {
+    if (state.enabled !== undefined) this.voice?.setEnabled(state.enabled);
+    if (state.paused !== undefined) this.voice?.setPaused(state.paused);
   }
 
   private send(msg: ServerMessage): void {
@@ -331,6 +351,25 @@ export class PlaywrightOrchestrator {
     this.events.push(sequenced);
     this.send({ type: "events", events: [sequenced] });
     this.accumulateLineage(event);
+    this.feedVoice(event, this.seq);
+  }
+
+  /** 语音管线喂入（D5）：say 三段事件 → 分句预取。narrate/thought 不配音。 */
+  private feedVoice(event: StageEvent, seq: number): void {
+    if (!this.voice) return;
+    switch (event.kind) {
+      case "say_start":
+        this.voice.lineStart(seq, event.id);
+        return;
+      case "say_text":
+        this.voice.feedText(event.delta);
+        return;
+      case "say_end":
+        this.voice.lineEnd();
+        return;
+      default:
+        return;
+    }
   }
 
   /** StageEvent 流 → 行级谱系事件聚合（say 三段 → 一行）。 */

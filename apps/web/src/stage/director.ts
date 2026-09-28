@@ -29,6 +29,15 @@ export interface Playback {
   advance: () => void;
 }
 
+export interface PlaybackHooks {
+  /** 台词行开始播放（consumeNext 消费 line cue 时；narrate/scene 行 line 为 null 或非 say）。 */
+  onLineStart?: (line: ScriptLine | null) => void;
+  /** 打字中点击瞬显全文（二段式点击第一段：语音同步淡出）。 */
+  onFastForward?: () => void;
+  /** 自动模式 hold：true = 当前行语音仍在播，自动推进暂缓。 */
+  hold?: boolean;
+}
+
 /**
  * 演出导演：消费 cues 队列——视觉提示即时应用、台词行打字机播放（本地节奏重整）。
  * resume 模式首次到达快进到当前末端（续演所见即上次位置）。
@@ -36,7 +45,7 @@ export interface Playback {
 export function usePlayback(
   cues: readonly Cue[],
   lines: readonly ScriptLine[],
-  opts: { live: boolean; resume: boolean; revision: number },
+  opts: { live: boolean; resume: boolean; revision: number } & PlaybackHooks,
 ): Playback {
   const [visual, setVisual] = useState<VisualState>(EMPTY_VISUAL);
   const [currentKey, setCurrentKey] = useState<string | null>(null);
@@ -48,6 +57,8 @@ export function usePlayback(
   const fastForwardedRef = useRef(!opts.resume);
   const linesRef = useRef(lines);
   linesRef.current = lines;
+  const hooksRef = useRef<PlaybackHooks>({});
+  hooksRef.current = { onLineStart: opts.onLineStart, onFastForward: opts.onFastForward };
 
   const current = currentKey ? (linesRef.current.find((l) => l.key === currentKey) ?? null) : null;
 
@@ -95,6 +106,8 @@ export function usePlayback(
       if (cue.kind === "line") {
         setCurrentKey(cue.lineKey);
         setShownLength(0);
+        const line = linesRef.current.find((l) => l.key === cue.lineKey) ?? null;
+        hooksRef.current.onLineStart?.(line);
         return;
       }
       if (cue.kind === "sfx") {
@@ -114,6 +127,7 @@ export function usePlayback(
   const advance = useCallback((): void => {
     if (!canAdvance) {
       setShownLength(current?.text.length ?? 0);
+      hooksRef.current.onFastForward?.();
       return;
     }
     consumeNext();
@@ -127,9 +141,11 @@ export function usePlayback(
   }, [current, shownLength]);
 
   // 自动模式：行播完且还有后续 → 延迟推进；尚未开演时自动起播。
+  // 语音 hold：当前行语音仍在播则暂缓（D5 文字先行、语音收尾再走）。
   // 依赖 opts.revision：cues 是原地变更的稳定引用，新事件批次到达时须重新评估。
   useEffect(() => {
     if (!auto) return;
+    if (opts.hold) return;
     if (!current) {
       if (cursorRef.current >= cues.length) return;
       const timer = setTimeout(() => consumeNext(), 400);
@@ -141,7 +157,7 @@ export function usePlayback(
     const delay = Math.min(900 + current.text.length * 55, 3200);
     const timer = setTimeout(() => consumeNext(), delay);
     return () => clearTimeout(timer);
-  }, [auto, current, lineComplete, cues, consumeNext, opts.revision]);
+  }, [auto, current, lineComplete, cues, consumeNext, opts.revision, opts.hold]);
 
   // cues 到达/重置检测：builder reset（fresh start）→ 播放归零
   useEffect(() => {

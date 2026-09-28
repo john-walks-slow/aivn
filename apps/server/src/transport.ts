@@ -83,6 +83,7 @@ function sendHello(ws: WebSocket, playId: string, runtime: PlayRuntime): void {
     sessionId: playId,
     lastSeq: runtime.orchestrator.lastSeq,
     cast: runtime.cast,
+    voice: runtime.voice,
   } satisfies ServerMessage;
   ws.send(JSON.stringify(hello));
   // 重连时处于 stopped 态：重发 beat_end 恢复前端交互面板（演出进行中则等增量事件）
@@ -113,6 +114,9 @@ async function routeMessage(
       return;
     case "ooc":
       await orchestrator.playerAction({ kind: "ooc", text: msg.text });
+      return;
+    case "tts_control":
+      orchestrator.setTtsState({ enabled: msg.enabled, paused: msg.paused });
       return;
     default:
       sender({ type: "error", message: `P2 暂不支持的操作: ${(msg as { type: string }).type}`, recoverable: true });

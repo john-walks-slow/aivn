@@ -64,6 +64,14 @@ export const api = {
     request<{ ok: boolean }>(`/api/plays/${id}/assets?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}`, {
       method: "DELETE",
     }),
+
+  /** 音色试听：服务端合成固定样本，返回 media-cache URL。 */
+  ttsPreview: (id: string, voiceId: string) =>
+    request<{ url: string }>(`/api/plays/${id}/tts-preview`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ voiceId }),
+    }),
 };
 
 /** 素材 URL（静态服务）。name 为文件名或 stem（无扩展名时按目录清单补全）。 */
