@@ -2,7 +2,7 @@ import type { ServerMessage } from "@stage-ai/core";
 import { LineageTree, type EngineStateSnapshot } from "@stage-ai/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
 import { PlaywrightOrchestrator, type OrchestratorRuntimeState } from "./orchestrator.js";
-import type { PlayConfig } from "./play.js";
+import type { PlayConfig } from "@stage-ai/core";
 import type { ServerConfig } from "./config.js";
 import { createCpaProvider } from "./provider.js";
 import type { Model, SimpleStreamOptions, TranscriptContext, Api } from "@earendil-works/pi-ai";
@@ -44,7 +44,7 @@ export class PlayHouse {
     if (session) tree.load(session.store);
     const engine: EngineStateSnapshot = session?.engine ?? { ...play.initialState };
     const scene = session?.scene ?? play.initialScene;
-    const runtime = this.createRuntime(store, play, tree, engine, scene, session?.runtime);
+    const runtime = await this.createRuntime(store, play, tree, engine, scene, session?.runtime);
     this.runtimes.set(playId, runtime);
     return runtime;
   }
@@ -56,7 +56,7 @@ export class PlayHouse {
     const store = this.library.store(playId);
     const play = await store.loadPlay();
     await store.resetSession();
-    const runtime = this.createRuntime(
+    const runtime = await this.createRuntime(
       store,
       play,
       new LineageTree(),
@@ -67,6 +67,16 @@ export class PlayHouse {
     return runtime;
   }
 
+  /** 删除剧目：停 runtime + 整目录移除（play.json/素材/会话，不可恢复）。 */
+  async deletePlay(playId: string): Promise<void> {
+    const runtime = this.runtimes.get(playId);
+    if (runtime) {
+      runtime.orchestrator.dispose();
+      this.runtimes.delete(playId);
+    }
+    await this.library.remove(playId);
+  }
+
   /** 广播到剧目客户端组。 */
   broadcast(playId: string, msg: ServerMessage): void {
     const runtime = this.runtimes.get(playId);
@@ -74,14 +84,14 @@ export class PlayHouse {
     for (const send of runtime.clients) send(msg);
   }
 
-  private createRuntime(
+  private async createRuntime(
     store: PlayStore,
     play: PlayConfig,
     tree: LineageTree,
     engine: EngineStateSnapshot,
     scene: string,
     restored?: OrchestratorRuntimeState,
-  ): PlayRuntime {
+  ): Promise<PlayRuntime> {
     const clients = new Set<(msg: ServerMessage) => void>();
     const { provider, model } = this;
     const orchestrator = new PlaywrightOrchestrator({
@@ -90,6 +100,7 @@ export class PlayHouse {
       model,
       getApiKey: () => this.config.apiKey,
       play,
+      assets: await store.listAssets(),
       tree,
       engine,
       scene,

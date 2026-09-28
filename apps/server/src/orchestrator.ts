@@ -12,8 +12,8 @@ import {
   type StopPayload,
 } from "@stage-ai/core";
 import type { ServerMessage } from "@stage-ai/core";
-import { buildSystemPrompt, renderStateSection } from "./prompt.js";
-import type { PlayConfig } from "./play.js";
+import { buildSystemPrompt, renderStateSection, type AssetManifest } from "./prompt.js";
+import type { PlayConfig } from "@stage-ai/core";
 
 /** 生成批次收束工具（D3：交互停止点之后或一幕写完时调用）。 */
 const beatDoneParams = Type.Object({}, { additionalProperties: false });
@@ -51,6 +51,8 @@ export interface OrchestratorOptions {
   /** LLM 网关 API key（pi Agent 的 getApiKey 通道）。 */
   getApiKey: () => string | undefined;
   play: PlayConfig;
+  /** 素材清单（A 区注入：可用 bg/bgm/sfx/立绘差分 id）。 */
+  assets?: AssetManifest;
   tree: LineageTree;
   engine: EngineStateSnapshot;
   scene: string;
@@ -99,6 +101,10 @@ export class PlaywrightOrchestrator {
   private openLine: OpenLine | null = null;
   private autostarted = false;
   private disposed = false;
+  /** 本拍内 pi agent 的流错误（message_end.errorMessage）；每拍重置。 */
+  private beatError: string | null = null;
+  /** 本拍内产出的舞台事件数（空拍检测）。 */
+  private beatEvents = 0;
   private readonly unsubscribeAgent: () => void;
 
   constructor(opts: OrchestratorOptions) {
@@ -108,7 +114,7 @@ export class PlaywrightOrchestrator {
       streamFn: opts.streamFn,
       getApiKey: opts.getApiKey,
       initialState: {
-        systemPrompt: buildSystemPrompt(opts.play),
+        systemPrompt: buildSystemPrompt(opts.play, opts.assets),
         model: opts.model,
         thinkingLevel: "off",
         tools: [createBeatDoneTool()],
@@ -221,6 +227,10 @@ export class PlaywrightOrchestrator {
       sections.push(
         `【导演注】\n${action.text}\n（以上为导演指示：据此调整接下来的演出，不要在剧本中复述或回应这段指示本身）`,
       );
+      // OOC 越过了待回应的 free/choice 停止点：明示玩家未回应，防止模型替玩家编造台词
+      if (this.lastStop && this.lastStop.stopType !== "pause") {
+        sections.push("【玩家表态】\n（玩家本轮未作回应，请继续演出，并在合适时机再给出回应机会）");
+      }
     }
     if (action.kind === "choice") sections.push(`【玩家表态】\n（选择了：${action.text}）`);
     else if (action.kind === "free") sections.push(`【玩家表态】\n${action.text}`);
@@ -242,6 +252,8 @@ export class PlaywrightOrchestrator {
   private async beginBeat(userText: string): Promise<void> {
     this.busy = true;
     this.beatNo += 1;
+    this.beatError = null;
+    this.beatEvents = 0;
     this.opts.engine.turn = this.beatNo;
     const beatId = `beat-${this.beatNo}`;
     this.send({ type: "beat_start", beatId });
@@ -250,12 +262,11 @@ export class PlaywrightOrchestrator {
       await this.agent.prompt(userText);
       await this.agent.waitForIdle();
     } catch (error) {
-      this.send({
-        type: "error",
-        message: `演出生成失败: ${error instanceof Error ? error.message : String(error)}`,
-        recoverable: true,
-      });
-      this.finishBeat();
+      // prompt 抛错（网络/中断）：记入 beatError，由 finishBeat 的空拍护栏统一收束
+      this.beatError = error instanceof Error ? error.message : String(error);
+    } finally {
+      // prompt 异常路径可能不发 agent_end：兜底收束（正常路径 busy 已被 finishBeat 清零）
+      if (this.busy) this.finishBeat();
     }
   }
 
@@ -263,6 +274,8 @@ export class PlaywrightOrchestrator {
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
       this.parser.feed(event.assistantMessageEvent.delta);
     } else if (event.type === "message_end" && event.message.role === "assistant") {
+      // pi agent 的 provider 失败不抛异常，而是 assistant message 带 errorMessage 正常收束——捕获之
+      if (event.message.errorMessage) this.beatError = event.message.errorMessage;
       this.parser.endMessage();
     } else if (event.type === "agent_end") {
       this.finishBeat();
@@ -279,6 +292,18 @@ export class PlaywrightOrchestrator {
     if (stop?.stopType === "choice" && (stop.options?.length ?? 0) === 0) {
       stop = { stopType: "free", placeholder: "（本轮选项生成失败，请自由回应）" };
     }
+    // 空拍护栏：生成失败/零产出不得静默伪装成正常收束——显式 error + pause 停止点给玩家重试入口
+    if (this.beatEvents === 0 && !stop) {
+      this.send({
+        type: "error",
+        message: `本节拍生成失败：${this.beatError ?? "模型未产出任何剧本内容"}`,
+        recoverable: true,
+      });
+      stop = { stopType: "pause" };
+    } else if (this.beatError) {
+      this.send({ type: "error", message: `本节拍生成中断：${this.beatError}`, recoverable: true });
+    }
+    this.beatError = null;
     this.lastStop = stop;
     this.appendLineage("beat_end", { payload: { reason: stop ? "stop" : "act_end" } });
     // 谱系快照随 beat 收束保存（分岔/续演恢复用）
@@ -301,6 +326,7 @@ export class PlaywrightOrchestrator {
 
   private onStageEvent(event: StageEvent): void {
     this.seq += 1;
+    this.beatEvents += 1;
     const sequenced: SequencedEvent = { seq: this.seq, event };
     this.events.push(sequenced);
     this.send({ type: "events", events: [sequenced] });

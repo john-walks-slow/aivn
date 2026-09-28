@@ -3,7 +3,7 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage, type Message } from "@earendil-works/pi-ai";
 import { LineageTree, type ServerMessage } from "@stage-ai/core";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
-import type { PlayConfig } from "../src/play.js";
+import type { PlayConfig } from "@stage-ai/core";
 
 interface FakeResponse {
   /** 剧本 DSL 原文（流式输出的 assistant 文本）。 */
@@ -231,6 +231,51 @@ describe("PlaywrightOrchestrator 闭环", () => {
       expect(beatEnd.reason).toBe("stop");
       expect(beatEnd.stop?.stopType).toBe("free");
     }
+  });
+
+  it("空拍护栏：零产出 → 显式 error + pause 停止点，不静默伪装 act_end（P0）", async () => {
+    const { orchestrator, messages } = setup([{ text: "", beatDone: true }]);
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+
+    const error = messages.find((m) => m.type === "error");
+    expect(error?.type).toBe("error");
+    if (error?.type === "error") expect(error.message).toContain("生成失败");
+    const beatEnd = messages.at(-1)!;
+    expect(beatEnd.type).toBe("beat_end");
+    if (beatEnd.type === "beat_end") {
+      expect(beatEnd.reason).toBe("stop");
+      expect(beatEnd.stop?.stopType).toBe("pause");
+    }
+  });
+
+  it("空拍护栏：provider 抛错（网关 429/断网）→ error 携带原因 + pause 可重试", async () => {
+    const messages: ServerMessage[] = [];
+    const orchestrator = new PlaywrightOrchestrator({
+      streamFn: () => {
+        throw new Error("insufficient balance");
+      },
+      model: {} as never,
+      getApiKey: () => "test-key",
+      play: PLAY,
+      tree: new LineageTree(),
+      engine: { ...PLAY.initialState },
+      scene: PLAY.initialScene,
+      onServerMessage: (msg) => messages.push(msg),
+      persist: () => {},
+    });
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+
+    const error = messages.find((m) => m.type === "error");
+    expect(error?.type).toBe("error");
+    if (error?.type === "error") expect(error.message).toContain("insufficient balance");
+    const beatEnd = messages.at(-1)!;
+    expect(beatEnd.type).toBe("beat_end");
+    if (beatEnd.type === "beat_end") {
+      expect(beatEnd.reason).toBe("stop");
+      expect(beatEnd.stop?.stopType).toBe("pause");
+    }
+    // 玩家可经 pause 继续重试（下一拍照常开演）
+    expect(orchestrator.isBusy).toBe(false);
   });
 
   it("运行态恢复：不重开开场、重放完整、stoppedReplay 可续演（服务器重启续演）", async () => {

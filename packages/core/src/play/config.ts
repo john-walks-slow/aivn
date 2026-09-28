@@ -1,6 +1,6 @@
-import type { EngineStateSnapshot } from "@stage-ai/core";
+import type { EngineStateSnapshot } from "../lineage/model.js";
 
-/** 剧目配置（plays/<id>/play.json）。 */
+/** 剧目配置（plays/<id>/play.json）——server 与 web 共享的跨端契约。 */
 export interface CharacterCard {
   id: string;
   name: string;
@@ -24,13 +24,14 @@ export interface PlayConfig {
 
 export function parsePlayConfig(raw: unknown): PlayConfig {
   const data = raw as Partial<PlayConfig>;
-  if (!data.id || !data.title || !data.premise || !Array.isArray(data.characters)) {
-    throw new Error("play.json 缺少必填字段（id/title/premise/characters）");
+  if (!data.id || !data.title || !Array.isArray(data.characters)) {
+    throw new Error("play.json 缺少必填字段（id/title/characters）");
   }
   return {
     id: data.id,
     title: data.title,
-    premise: data.premise,
+    // premise 允许为空（新建脚手架）：由就绪门（D13）负责提示补全，不在此处校验
+    premise: data.premise ?? "",
     characters: data.characters,
     opening: data.opening ?? "（游戏开始，请演出第一幕的开幕）",
     initialState: data.initialState ?? { turn: 0, affinity: {}, flags: {} },

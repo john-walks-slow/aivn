@@ -2,7 +2,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import type { PlayLibrary } from "./store.js";
-import { parsePlayConfig } from "./play.js";
+import type { PlayHouse } from "./playhouse.js";
+import { parsePlayConfig } from "@stage-ai/core";
 
 const BODY_LIMIT = 64 * 1024 * 1024;
 
@@ -70,12 +71,13 @@ function extOf(name: string): string {
 
 /**
  * REST API + 素材静态服务（P2）。
- * 剧目库 / 就绪门 / 素材上传管理 / 剧目包导入导出 / play.json 编辑。
+ * 剧目库 / 就绪门 / 素材上传管理 / 剧目包导入导出 / play.json 编辑 / 剧目删除。
  */
 export async function handleHttp(
   req: IncomingMessage,
   res: ServerResponse,
   library: PlayLibrary,
+  playhouse: PlayHouse,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
   const parts = url.pathname.split("/").filter(Boolean);
@@ -125,6 +127,10 @@ export async function handleHttp(
       if (method === "GET") {
         const play = await store.loadPlay();
         return json(res, 200, { play, readiness: await store.readiness() });
+      }
+      if (method === "DELETE") {
+        await playhouse.deletePlay(playId);
+        return json(res, 200, { ok: true });
       }
       return fail(res, 405, "不支持的方法");
     }

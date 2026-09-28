@@ -1,6 +1,6 @@
 import type { StageEvent } from "@stage-ai/core";
 
-/** 前端剧本行模型：StageEvent 流 → 渲染行。 */
+/** 前端剧本行模型：StageEvent 流 → 渲染行（log 视图与舞台台词共用）。 */
 export interface ScriptLine {
   key: string;
   type: "say" | "narrate" | "thought" | "scene" | "sfx" | "cg";
@@ -9,57 +9,84 @@ export interface ScriptLine {
   text: string;
 }
 
+/** 舞台演出提示：视觉指令即时应用，行提示走打字机队列（本地节奏重整）。 */
+export type Cue =
+  | { key: string; kind: "scene"; bg?: string; bgm?: string; transition?: string }
+  | { key: string; kind: "actor"; id: string; pos?: string; expression?: string; action?: string }
+  | { key: string; kind: "sfx"; src: string; volume?: number }
+  | { key: string; kind: "cg"; id: string; caption?: string }
+  | { key: string; kind: "line"; lineKey: string };
+
 let lineSeq = 0;
 
 export class ScriptBuilder {
   readonly lines: ScriptLine[] = [];
+  readonly cues: Cue[] = [];
   private openKey: string | null = null;
   scene = "";
 
+  /** 清空（「开始游戏」fresh start 重建脚本）。 */
+  reset(): void {
+    this.lines.length = 0;
+    this.cues.length = 0;
+    this.openKey = null;
+    this.scene = "";
+  }
+
   apply(event: StageEvent): void {
+    const key = (): string => `l${(lineSeq += 1)}`;
     switch (event.kind) {
       case "scene": {
         this.openKey = null;
         this.scene = event.bg ?? this.scene;
         this.lines.push({
-          key: `l${(lineSeq += 1)}`,
+          key: key(),
           type: "scene",
           text: [event.bg, event.bgm].filter(Boolean).join(" · "),
         });
+        this.cues.push({ key: key(), kind: "scene", bg: event.bg, bgm: event.bgm, transition: event.transition });
         return;
       }
       case "sfx":
-      case "cg":
-        return; // P1 不渲染（P2 演出层）
-      case "actor":
-      case "preload_asset":
+        this.cues.push({ key: key(), kind: "sfx", src: event.src, volume: event.volume });
         return;
+      case "cg":
+        this.cues.push({ key: key(), kind: "cg", id: event.id, caption: event.caption });
+        return;
+      case "actor":
+        this.cues.push({ key: key(), kind: "actor", id: event.id, pos: event.pos, expression: event.expression, action: event.action });
+        return;
+      case "preload_asset":
+        return; // P5 生图管线
       case "say_start": {
         const line: ScriptLine = {
-          key: `l${(lineSeq += 1)}`,
+          key: key(),
           type: "say",
           actorId: event.id,
           mood: event.mood,
           text: "",
         };
         this.lines.push(line);
+        this.cues.push({ key: key(), kind: "line", lineKey: line.key });
         this.openKey = line.key;
         return;
       }
       case "narrate_start": {
-        const line: ScriptLine = { key: `l${(lineSeq += 1)}`, type: "narrate", text: "" };
+        const line: ScriptLine = { key: key(), type: "narrate", text: "" };
         this.lines.push(line);
+        this.cues.push({ key: key(), kind: "line", lineKey: line.key });
         this.openKey = line.key;
         return;
       }
       case "thought_start": {
         const line: ScriptLine = {
-          key: `l${(lineSeq += 1)}`,
+          key: key(),
           type: "thought",
           actorId: event.id,
           text: "",
         };
         this.lines.push(line);
+        this.cues.push({ key: key(), kind: "line", lineKey: line.key });
         this.openKey = line.key;
         return;
       }

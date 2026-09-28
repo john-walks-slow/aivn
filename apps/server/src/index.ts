@@ -15,7 +15,7 @@ export async function main(): Promise<void> {
   const playhouse = new PlayHouse(library, config);
 
   const server = createServer((req, res) => {
-    void handleHttp(req, res, library);
+    void handleHttp(req, res, library, playhouse);
   });
   const wss = new WebSocketServer({ noServer: true });
   attachTransport(wss, playhouse);

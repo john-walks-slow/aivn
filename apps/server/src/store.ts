@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { unzipSync, zipSync } from "fflate";
 import {
   LineageTree,
@@ -8,7 +8,7 @@ import {
   type LineageEvent,
   type LineageStore,
 } from "@stage-ai/core";
-import { parsePlayConfig, type PlayConfig } from "./play.js";
+import { parsePlayConfig, type PlayConfig } from "@stage-ai/core";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
 
 /** 就绪门细项（D13）：开演前置检查。 */
@@ -183,19 +183,23 @@ export class PlayLibrary {
     const summaries: PlaySummary[] = [];
     for (const entry of await readdir(this.root, { withFileTypes: true })) {
       if (!entry.isDirectory() || !existsSync(join(this.root, entry.name, "play.json"))) continue;
-      const store = this.store(entry.name);
-      const play = await store.loadPlay();
-      summaries.push({
-        id: play.id,
-        title: play.title,
-        premise: play.premise,
-        readiness: await store.readiness(),
-      });
+      try {
+        const store = this.store(entry.name);
+        const play = await store.loadPlay();
+        summaries.push({
+          id: play.id,
+          title: play.title,
+          premise: play.premise,
+          readiness: await store.readiness(),
+        });
+      } catch {
+        // 单剧目损坏/校验不过不拖垮整个列表，跳过
+      }
     }
     return summaries;
   }
 
-  /** 剧目包导入（zip：根层须含 play.json）。返回剧目 id。 */
+  /** 剧目包导入（zip：根层须含 play.json）。返回剧目 id。防 Zip Slip：先全量校验再落盘，杜绝部分导入残留。 */
   async importZip(data: Buffer): Promise<string> {
     const files = unzipSync(new Uint8Array(data));
     const prefix = Object.keys(files).find((name) => name.endsWith("play.json"));
@@ -203,16 +207,25 @@ export class PlayLibrary {
     const baseDir = prefix.slice(0, prefix.indexOf("play.json"));
     const playRaw = JSON.parse(new TextDecoder().decode(files[prefix]!));
     const play = parsePlayConfig(playRaw);
+    if (!/^[\w-]+$/.test(play.id)) throw new Error(`非法剧目 id: ${play.id}`);
     const target = join(this.root, play.id);
     if (existsSync(target)) throw new Error(`剧目已存在: ${play.id}`);
-    await mkdir(target, { recursive: true });
+    const targetAbs = resolve(target);
+    const entries: { rel: string; content: Uint8Array }[] = [];
     for (const [name, content] of Object.entries(files)) {
       if (!name.startsWith(baseDir)) continue;
       const rel = name.slice(baseDir.length);
       if (rel === "" || rel.endsWith("/")) continue;
-      const dest = join(target, rel);
-      await mkdir(join(dest, ".."), { recursive: true });
-      await writeFile(dest, content);
+      const dest = resolve(target, rel);
+      if (dest !== targetAbs && !dest.startsWith(targetAbs + sep)) {
+        throw new Error(`剧目包含非法路径: ${name}`);
+      }
+      entries.push({ rel, content });
+    }
+    await mkdir(target, { recursive: true });
+    for (const { rel, content } of entries) {
+      await mkdir(join(target, rel, ".."), { recursive: true });
+      await writeFile(join(target, rel), content);
     }
     return play.id;
   }
@@ -235,7 +248,7 @@ export class PlayLibrary {
     return zipSync(files, { level: 6 });
   }
 
-  /** 新建空剧目（剧目库「新建」脚手架）。 */
+  /** 新建空剧目（剧目库「新建」脚手架）。premise 留空——就绪门会把它列为缺项。 */
   async createEmpty(playId: string, title: string): Promise<void> {
     const dir = join(this.root, playId);
     if (existsSync(join(dir, "play.json"))) throw new Error(`剧目已存在: ${playId}`);
@@ -247,7 +260,7 @@ export class PlayLibrary {
         {
           id: playId,
           title,
-          premise: "（空剧目：请在素材与配置中补全 premise 与角色卡）",
+          premise: "",
           characters: [],
           opening: "（游戏开始，请演出第一幕的开幕）",
           initialState: { turn: 0, affinity: {}, flags: {} },
@@ -257,5 +270,11 @@ export class PlayLibrary {
         2,
       ),
     );
+  }
+
+  /** 删除剧目（整目录：play.json/素材/会话，不可恢复；调用方先停 runtime）。 */
+  async remove(playId: string): Promise<void> {
+    if (!/^[\w-]+$/.test(playId)) throw new Error(`非法剧目 id: ${playId}`);
+    await rm(join(this.root, playId), { recursive: true, force: true });
   }
 }

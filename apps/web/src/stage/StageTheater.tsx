@@ -1,0 +1,147 @@
+import { useEffect, useRef } from "react";
+import type { ScriptLine } from "./script.js";
+import type { Playback, VisualState } from "./director.js";
+import type { AssetIndex } from "./assets.js";
+
+interface StageTheaterProps {
+  visual: VisualState;
+  playback: Playback;
+  live: boolean;
+  names: Readonly<Record<string, string>>;
+  index: AssetIndex;
+  onBack: () => void;
+  onLog: () => void;
+}
+
+const POS_CLASS: Record<string, string> = { left: "pos-left", center: "pos-center", right: "pos-right" };
+
+/** 舞台：背景/立绘/CG 视觉层 + 打字机对话框 + 二段式点击 + 自动模式 + sfx/bgm。 */
+export function StageTheater({ visual, playback, live, names, index, onBack, onLog }: StageTheaterProps) {
+  const bgmRef = useRef<HTMLAudioElement | null>(null);
+  const { current, shownLength, exhausted, advance } = playback;
+  const shown = current ? current.text.slice(0, shownLength) : "";
+  const lineDone = current !== null && shownLength >= current.text.length;
+
+  // sfx：key 变化即播放
+  useEffect(() => {
+    const cue = playback.sfx;
+    if (!cue) return;
+    const url = index.sfx(cue.src);
+    if (url) {
+      const audio = new Audio(url);
+      audio.volume = cue.volume ?? 0.7;
+      void audio.play().catch(() => {});
+    }
+  }, [playback.sfx, index]);
+
+  // bgm：场景切换换曲（循环，轻音量）
+  const bgmUrl = index.bgm(visual.bgm);
+  useEffect(() => {
+    const audio = bgmRef.current;
+    if (!audio) return;
+    if (!bgmUrl) {
+      audio.pause();
+      return;
+    }
+    if (audio.src !== new URL(bgmUrl, location.href).href) {
+      audio.src = bgmUrl;
+      audio.volume = 0.28;
+      void audio.play().catch(() => {});
+    }
+  }, [bgmUrl]);
+
+  const bgUrl = index.bg(visual.bg);
+  const cgUrl = index.cg(visual.cg?.id ?? null);
+
+  return (
+    <div className="theater" onClick={advance}>
+      <header className="theater-bar">
+        <button
+          className="ghost-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            onBack();
+          }}
+        >
+          ← 标题
+        </button>
+        <span className="theater-scene">{visual.bg ?? "…"}</span>
+        <span className="theater-actions">
+          <button
+            className={`ghost-btn ${playback.auto ? "active" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              playback.setAuto(!playback.auto);
+            }}
+          >
+            自动 {playback.auto ? "开" : "关"}
+          </button>
+          <button
+            className="ghost-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onLog();
+            }}
+          >
+            剧本
+          </button>
+        </span>
+      </header>
+
+      <div className="theater-stage">
+        {bgUrl ? (
+          <img key={bgUrl} className="theater-bg" src={bgUrl} alt="" />
+        ) : (
+          <div className={`theater-bg theater-bg-fallback ${visual.transition === "cut" ? "cut" : ""}`} />
+        )}
+
+        {Object.entries(visual.sprites).map(([id, slot]) => {
+          const url = index.sprite(id, slot.expression);
+          if (!url) return null;
+          return (
+            <img
+              key={id}
+              className={`theater-sprite ${POS_CLASS[slot.pos] ?? "pos-center"}`}
+              src={url}
+              alt={names[id] ?? id}
+            />
+          );
+        })}
+
+        {cgUrl && (
+          <div className="theater-cg">
+            <img src={cgUrl} alt={visual.cg?.id ?? ""} />
+            {visual.cg?.caption && <p className="theater-cg-caption">{visual.cg.caption}</p>}
+          </div>
+        )}
+      </div>
+
+      <div className="theater-dialog" role="text">
+        {current && (current.type === "say" || current.type === "thought") && (
+          <div className="dialog-name">
+            {names[current.actorId ?? ""] ?? current.actorId ?? "？"}
+            {current.mood && <span className="dialog-mood">（{current.mood}）</span>}
+          </div>
+        )}
+        <p className={`dialog-text ${current?.type === "thought" ? "thought" : ""}`}>
+          {shown ||
+            (current ? "" : live && exhausted ? "剧作家正在落笔…" : "（点击开始演出）")}
+          {current && !lineDone && <span className="dialog-caret" aria-hidden />}
+        </p>
+        <div className="dialog-hint">
+          {exhausted && live ? (
+            <span className="dialog-loading" aria-label="生成中">
+              ●●●
+            </span>
+          ) : (
+            lineDone && <span className="dialog-next" aria-hidden>
+              ▼
+            </span>
+          )}
+        </div>
+      </div>
+
+      <audio ref={bgmRef} loop />
+    </div>
+  );
+}
