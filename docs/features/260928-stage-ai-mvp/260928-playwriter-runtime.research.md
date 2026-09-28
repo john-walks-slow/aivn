@@ -1,5 +1,14 @@
 # Pi Agent (pi-mono / earendil-works) 深度调研报告：架构解构、嵌入能力与 Galgame 剧本家运行时可行性分析
 
+> **⚠️ 勘误（260928 crosscheck 实证核查，以 0.87.1 tarball `.d.ts` 为准）**：
+> 1. `shouldStopAfterTurn` 配置**不存在**于 0.87.1（§6.3 方案 2 失实）；现等价物为 `finishTurn`/`prepareNextTurn` 钩子。
+> 2. 工具 Schema 实际依赖为 `typebox` 1.3.x（rebrand 后包名），**非** `@sinclair/typebox` + ajv。
+> 3. 最新版本为 **0.87.1**（本文多处写 0.84.x 系当时快照）。
+> 4. `terminate: true` 的批次语义：仅当**同批所有**工具结果都置 true 才生效（§3.3 未提及此陷阱）。
+> 5. 利好补充：pi-agent-core 0.87.1 已内置 `harness/session`（JSONL 树 + `branch()` + compaction），§3.5 所述设计如今可直接复用模块。
+> 核心结论（高度可行、Mode A 直引核心包）不受影响。
+
+
 - **目标文件**: `docs/features/260928-stage-ai-mvp/260928-playwriter-runtime.research.md`
 - **调研对象**: Mario Zechner / badlogic `pi-mono`（现 `earendil-works/pi`）
 - **业务场景**: Stage-AI Galgame 引擎「剧本家（Playwright）」Agent 运行时（长上下文、三层记忆管理、工具调用、暂停等待玩家输入、本机 OpenAI 兼容网关、ARM64 Node.js 宿主环境）

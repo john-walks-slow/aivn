@@ -5,3 +5,4 @@ dist/
 plays/
 media-cache/
 .DS_Store
+.mnemon/

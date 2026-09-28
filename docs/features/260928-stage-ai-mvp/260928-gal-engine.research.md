@@ -1,5 +1,8 @@
 # AI Galgame 引擎生态调研与 Web 渲染层选型评估报告
 
+> **⚠️ 勘误（260928 crosscheck 实测）**：§2.5 与 §6.2 路径二所称"官方发布 `@webgal/base`、`@webgal/parser` npm 包"**不存在**（npm 实测仅有第三方 `webgal-parser`）。WebGAL 备选路径实际需从源码 vendor 整个引擎（MIT 可行），成本显著高于本文估计。首选结论（自研渲染层）不受影响。
+
+
 **文档标识**：`260928-gal-engine.research`  
 **调研日期**：2026-09-28  
 **作者**：Deep Researcher (Stage-AI)  
