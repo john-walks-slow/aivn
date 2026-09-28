@@ -13,11 +13,21 @@ export interface CharacterCard {
   sprites?: Record<string, string>;
 }
 
+/** 主角（玩家）角色卡：输入润色的口吻依据（工坊/素材配置页设置）。 */
+export interface ProtagonistCard {
+  name: string;
+  persona: string;
+}
+
 export interface PlayConfig {
   id: string;
   title: string;
   premise: string;
   characters: CharacterCard[];
+  /** 主角（玩家）角色卡：无则输入润色走通用模式。 */
+  protagonist?: ProtagonistCard;
+  /** 语音语言（ISO 639-1，如 "ja"）：与剧本语言不同时 say 文本先译成该语言再送 TTS；缺省跟随剧本语言。 */
+  voiceLanguage?: string;
   /** 开局 user 消息中的起始指令。 */
   opening: string;
   initialState: EngineStateSnapshot;
@@ -29,12 +39,18 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
   if (!data.id || !data.title || !Array.isArray(data.characters)) {
     throw new Error("play.json 缺少必填字段（id/title/characters）");
   }
+  const protagonist =
+    data.protagonist && (data.protagonist.name.trim() !== "" || data.protagonist.persona.trim() !== "")
+      ? { name: data.protagonist.name.trim(), persona: data.protagonist.persona.trim() }
+      : undefined;
   return {
     id: data.id,
     title: data.title,
     // premise 允许为空（新建脚手架）：由就绪门（D13）负责提示补全，不在此处校验
     premise: data.premise ?? "",
     characters: data.characters,
+    ...(protagonist ? { protagonist } : {}),
+    ...(data.voiceLanguage?.trim() ? { voiceLanguage: data.voiceLanguage.trim() } : {}),
     opening: data.opening ?? "（游戏开始，请演出第一幕的开幕）",
     initialState: data.initialState ?? { turn: 0, affinity: {}, flags: {} },
     initialScene: data.initialScene ?? "未定",

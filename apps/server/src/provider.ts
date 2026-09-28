@@ -24,6 +24,9 @@ export function createCpaProvider(config: ServerConfig): {
     name: `${config.modelId} (cpa)`,
     provider: CPA_PROVIDER_ID,
     baseUrl: config.baseUrl,
+    // 捐赠元数据的输出上限与网关路由无关（deepseek-flash 捐 384k，超 glm 网关 [1,131072] 上限）：
+    // streamSimple 在调用方不传 maxTokens 时会以 model.maxTokens 填充发出，虚值即 400 空拍。钳为 STAGE_MAX_TOKENS。
+    maxTokens: config.maxTokens,
   };
 
   const provider = createProvider({

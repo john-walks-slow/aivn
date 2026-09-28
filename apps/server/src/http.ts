@@ -149,6 +149,7 @@ export async function handleHttp(
       if (method !== "PUT") return fail(res, 405, "不支持的方法");
       const play = parsePlayConfig(JSON.parse((await readBody(req)).toString("utf8")));
       await store.savePlay(play);
+      await playhouse.reload(playId); // 保存即生效：音色/主角卡/语音语言/素材清单重建
       return json(res, 200, { ok: true });
     }
     if (sub === "readiness" && parts.length === 4) {
@@ -163,6 +164,7 @@ export async function handleHttp(
         if (!kindPath || !safeSeg(name) || !MIME[extOf(name)])
           return fail(res, 400, "非法素材路径或格式");
         await store.writeAsset(kindPath, name, await readBody(req));
+        await playhouse.reload(playId); // 素材清单即时生效
         return json(res, 200, { ok: true });
       }
       if (method === "DELETE") {
@@ -170,6 +172,7 @@ export async function handleHttp(
         const name = url.searchParams.get("name") ?? "";
         if (!kindPath || !safeSeg(name)) return fail(res, 400, "非法素材路径");
         await store.deleteAsset(kindPath, name);
+        await playhouse.reload(playId); // 素材清单即时生效
         return json(res, 200, { ok: true });
       }
       return fail(res, 405, "不支持的方法");
@@ -179,6 +182,14 @@ export async function handleHttp(
       const body = JSON.parse((await readBody(req)).toString("utf8")) as { voiceId?: string };
       if (!body.voiceId) return fail(res, 400, "缺少 voiceId");
       return json(res, 200, { url: await playhouse.ttsPreview(playId, body.voiceId) });
+    }
+    if (sub === "polish" && parts.length === 4) {
+      if (method !== "POST") return fail(res, 405, "不支持的方法");
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as { text?: string };
+      const text = body.text?.trim();
+      if (!text) return fail(res, 400, "缺少待润色文本");
+      if (text.length > 2000) return fail(res, 400, "文本过长（上限 2000 字）");
+      return json(res, 200, { text: await playhouse.polish(playId, text) });
     }
     if (sub === "export" && parts.length === 4) {
       if (method !== "GET") return fail(res, 405, "不支持的方法");

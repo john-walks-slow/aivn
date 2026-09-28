@@ -135,6 +135,7 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
             onFree={stage.sendFree}
             onContinue={stage.sendContinue}
             onOoc={stage.sendOoc}
+            onPolish={(text) => api.polish(playId, text).then(({ text: polished }) => polished)}
           />
         ) : (
           <footer className="stop-panel">

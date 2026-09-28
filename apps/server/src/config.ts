@@ -10,6 +10,8 @@ export interface ServerConfig {
   modelBase: string; // pi-ai 内置基础模型（继承 api/cost/contextWindow 等元数据）
   baseUrl: string;
   apiKey: string;
+  /** 单请求输出上限（max_tokens）：钳住捐赠元数据的虚高 maxTokens——streamSimple 不传时以 model.maxTokens 填充发出，超网关限制即 400。 */
+  maxTokens: number;
   /** 语音管线（D5）：fish-audio keys / 代理 / 并发。 */
   tts: {
     enabled: boolean;
@@ -20,12 +22,12 @@ export interface ServerConfig {
   };
 }
 
-/** 正整数环境变量解析（N3）：非法值回退默认并告警——NaN/0 会让预取泵静默失效。 */
-function parsePositiveInt(raw: string | undefined, fallback: number): number {
+/** 正整数环境变量解析（N3）：非法值回退默认并告警——NaN/0 会让下游静默失效。 */
+function parsePositiveInt(name: string, raw: string | undefined, fallback: number): number {
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1) {
     if (raw !== undefined && raw !== "") {
-      console.warn(`[stage-ai] STAGE_TTS_CONCURRENCY 非法（${raw}），回退默认 ${fallback}`);
+      console.warn(`[stage-ai] ${name} 非法（${raw}），回退默认 ${fallback}`);
     }
     return fallback;
   }
@@ -40,12 +42,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, repoRoot = proc
     modelBase: env.STAGE_MODEL_BASE ?? "deepseek/deepseek-flash",
     baseUrl: env.STAGE_BASE_URL ?? "http://127.0.0.1:9999/v1",
     apiKey: env.STAGE_API_KEY ?? "sk-1234",
+    maxTokens: parsePositiveInt("STAGE_MAX_TOKENS", env.STAGE_MAX_TOKENS, 32768),
     tts: {
       enabled: env.STAGE_TTS_ENABLED !== "false",
       keysPath: resolve(repoRoot, env.STAGE_TTS_KEYS ?? join(homedir(), ".config/fish-audio/keys.json")),
       proxy: env.STAGE_TTS_PROXY ?? "http://127.0.0.1:7890",
       baseUrl: env.STAGE_TTS_BASE_URL ?? "https://api.fish.audio",
-      concurrency: parsePositiveInt(env.STAGE_TTS_CONCURRENCY, 2),
+      concurrency: parsePositiveInt("STAGE_TTS_CONCURRENCY", env.STAGE_TTS_CONCURRENCY, 2),
     },
   };
 }

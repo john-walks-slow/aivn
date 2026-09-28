@@ -1,12 +1,12 @@
 import type { WebSocket, WebSocketServer } from "ws";
 import type { ClientMessage, ServerMessage } from "@stage-ai/core";
-import type { PlayHouse, PlayRuntime } from "./playhouse.js";
+import { helloPayload, type PlayHouse, type PlayRuntime } from "./playhouse.js";
 
 /**
  * WS 会话层（多剧目）：/ws?play=<id> 连接路由到剧目 runtime。
  * start = 重开新档；resume 增量重放；其余玩家动作。
- * 消息监听器同步注册、早到消息缓冲到 runtime 就绪——
- * get() 的异步间隙不能吞客户端 resume；客户端注册先于 autostart，开局事件不丢。
+ * 客户端集合挂在 PlayHouse（与 runtime 生命周期解耦）；每次派发现查 runtime——
+ * startFresh/配置保存 reload 重建后，活连接自动路由到新实例，不断线。
  */
 export function attachTransport(wss: WebSocketServer, playhouse: PlayHouse): void {
   wss.on("connection", (ws, req) => {
@@ -24,7 +24,8 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string): void
   const sender = (msg: ServerMessage): void => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   };
-  let runtime: PlayRuntime | null = null;
+  let established = false;
+  let registered: Set<(msg: ServerMessage) => void> | null = null;
   const pending: ClientMessage[] = [];
 
   const dispatchSafe = (msg: ClientMessage): void => {
@@ -42,35 +43,34 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string): void
       sender({ type: "error", message: "无法解析的消息", recoverable: true });
       return;
     }
-    if (runtime) dispatchSafe(msg);
+    if (established) dispatchSafe(msg);
     else pending.push(msg);
   });
 
   const drop = (): void => {
-    runtime?.clients.delete(sender);
+    registered?.delete(sender);
   };
   ws.on("close", drop);
   ws.on("error", drop);
 
   void (async () => {
-    runtime = await playhouse.get(playId);
-    runtime.clients.add(sender);
+    const runtime = await playhouse.get(playId);
+    registered = playhouse.clientsFor(playId);
+    registered.add(sender);
     sendHello(ws, playId, runtime);
     runtime.orchestrator.autostart();
+    established = true;
     for (const msg of pending.splice(0)) dispatchSafe(msg);
   })();
 
   async function dispatch(msg: ClientMessage): Promise<void> {
-    const current = runtime;
-    if (!current) return;
+    // 每次现查：runtime 重建（startFresh / 配置保存 reload）后自动路由到新实例
+    const current = await playhouse.get(playId);
     if (msg.type === "start") {
       const fresh = await playhouse.startFresh(playId);
       if (fresh === current) return;
-      current.clients.delete(sender);
-      runtime = fresh;
-      runtime.clients.add(sender);
-      sendHello(ws, playId, runtime);
-      runtime.orchestrator.autostart();
+      sendHello(ws, playId, fresh);
+      fresh.orchestrator.autostart();
       return;
     }
     await routeMessage(current, sender, msg);
@@ -78,14 +78,7 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string): void
 }
 
 function sendHello(ws: WebSocket, playId: string, runtime: PlayRuntime): void {
-  const hello = {
-    type: "hello",
-    sessionId: playId,
-    lastSeq: runtime.orchestrator.lastSeq,
-    cast: runtime.cast,
-    voice: runtime.voice,
-  } satisfies ServerMessage;
-  ws.send(JSON.stringify(hello));
+  ws.send(JSON.stringify(helloPayload(playId, runtime)));
   // 重连时处于 stopped 态：重发 beat_end 恢复前端交互面板（演出进行中则等增量事件）
   const replay = runtime.orchestrator.stoppedReplay;
   if (replay) ws.send(JSON.stringify(replay satisfies ServerMessage));

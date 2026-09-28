@@ -107,6 +107,41 @@ export function AssetsView({ playId }: { playId: string }) {
               onChange={(e) => patch((p) => (p.opening = e.target.value))}
             />
           </label>
+          <label className="field">
+            <span>语音语言（say 台词翻译后再送 TTS）</span>
+            <select
+              value={draft.voiceLanguage ?? ""}
+              onChange={(e) => patch((p) => (p.voiceLanguage = e.target.value || undefined))}
+            >
+              <option value="">跟随剧本语言（不翻译）</option>
+              <option value="zh">中文（zh）</option>
+              <option value="ja">日本語（ja）</option>
+              <option value="en">English（en）</option>
+              <option value="ko">한국어（ko）</option>
+            </select>
+          </label>
+
+          <h3>主角卡（玩家）</h3>
+          <div className="char-card">
+            <div className="row">
+              <input
+                placeholder="主角名（如：你 / 转学生）"
+                value={draft.protagonist?.name ?? ""}
+                onChange={(e) =>
+                  patch((p) => (p.protagonist = { name: e.target.value, persona: p.protagonist?.persona ?? "" }))
+                }
+              />
+            </div>
+            <textarea
+              rows={2}
+              placeholder="persona（性格与说话风格——输入润色的口吻依据）"
+              value={draft.protagonist?.persona ?? ""}
+              onChange={(e) =>
+                patch((p) => (p.protagonist = { name: p.protagonist?.name ?? "", persona: e.target.value }))
+              }
+            />
+            <p className="muted small">留空则「✨ 润色」走通用模式（只修顺语句，不改口吻）。</p>
+          </div>
 
           <h3>角色卡</h3>
           {draft.characters.map((char, i) => (

@@ -72,6 +72,14 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ voiceId }),
     }),
+
+  /** 玩家输入润色：LLM 按主角角色卡口吻改写（服务端），返回润色后文本。 */
+  polish: (id: string, text: string) =>
+    request<{ text: string }>(`/api/plays/${id}/polish`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    }),
 };
 
 /** 素材 URL（静态服务）。name 为文件名或 stem（无扩展名时按目录清单补全）。 */

@@ -6,17 +6,31 @@ import type { PlayConfig } from "@stage-ai/core";
 import type { ServerConfig } from "./config.js";
 import { createCpaProvider } from "./provider.js";
 import { createTts } from "./tts.js";
-import type { Model, SimpleStreamOptions, TranscriptContext, Api } from "@earendil-works/pi-ai";
+import { Translator } from "./translate.js";
+import { completeText } from "./llm.js";
+import type { StreamFn } from "@earendil-works/pi-agent-core";
+import type { Model } from "@earendil-works/pi-ai";
 
 export interface PlayRuntime {
   orchestrator: PlaywrightOrchestrator;
   store: PlayStore;
   /** hello 广播的角色名映射。 */
   cast: { id: string; name: string }[];
-  /** 该剧目的 WS 客户端发送器集合（transport 注册/注销）。 */
-  clients: Set<(msg: ServerMessage) => void>;
   /** 服务端 TTS 能力（配置了可用 key 才开；客户端据此显示语音开关）。 */
   voice: boolean;
+  /** 语音合成闭包（含语音语言翻译）：ttsPreview 复用同路径。 */
+  synth?: (text: string, voiceId: string) => Promise<{ url: string }>;
+}
+
+/** hello 载荷（transport 连接建立与 reload 续接共用）。 */
+export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessage {
+  return {
+    type: "hello",
+    sessionId: playId,
+    lastSeq: runtime.orchestrator.lastSeq,
+    cast: runtime.cast,
+    voice: runtime.voice,
+  };
 }
 
 /** 音色试听固定样本文案（素材管理页「试听」按钮）。 */
@@ -28,9 +42,13 @@ const TTS_SAMPLE_TEXT = "你好呀！这就是我的声音，以后请多多指�
  */
 export class PlayHouse {
   private readonly runtimes = new Map<string, PlayRuntime>();
+  /** 每剧目 WS 客户端发送器集合：与 runtime 生命周期解耦——配置保存重建 runtime 不断连接。 */
+  private readonly clientsByPlay = new Map<string, Set<(msg: ServerMessage) => void>>();
   private readonly provider: ReturnType<typeof createCpaProvider>["provider"];
   private readonly model: ReturnType<typeof createCpaProvider>["model"];
   private readonly tts: ReturnType<typeof createTts>;
+  /** 演出编排与润色/翻译旁路共用的流式调用入口。 */
+  private readonly streamFn: StreamFn;
 
   constructor(
     private readonly library: PlayLibrary,
@@ -38,13 +56,23 @@ export class PlayHouse {
   ) {
     ({ provider: this.provider, model: this.model } = createCpaProvider(config));
     this.tts = createTts(config);
+    // StreamFn 契约是 SimpleStreamOptions（reasoning 字段）——须接 streamSimple 做换算；
+    // 错接完整版 stream 会丢弃 reasoning，thinking 档位全部失效
+    this.streamFn = (m, context, options) =>
+      this.provider.streamSimple(m as Model<"openai-completions">, context, options);
   }
 
   /** 取或懒加载剧目 runtime（恢复既有会话）。 */
   async get(playId: string): Promise<PlayRuntime> {
     const existing = this.runtimes.get(playId);
     if (existing) return existing;
+    const runtime = await this.buildRuntime(playId);
+    this.runtimes.set(playId, runtime);
+    return runtime;
+  }
 
+  /** 从磁盘构建剧目 runtime（play.json + 会话恢复）。 */
+  private async buildRuntime(playId: string): Promise<PlayRuntime> {
     const store = this.library.store(playId);
     const play = await store.loadPlay();
     const session = await store.loadSession();
@@ -52,25 +80,41 @@ export class PlayHouse {
     if (session) tree.load(session.store);
     const engine: EngineStateSnapshot = session?.engine ?? { ...play.initialState };
     const scene = session?.scene ?? play.initialScene;
-    const runtime = await this.createRuntime(store, play, tree, engine, scene, session?.runtime);
-    this.runtimes.set(playId, runtime);
-    return runtime;
+    return this.createRuntime(store, play, tree, engine, scene, session?.runtime);
+  }
+
+  /** 剧目 WS 客户端集合（transport 连接注册，懒建）。 */
+  clientsFor(playId: string): Set<(msg: ServerMessage) => void> {
+    let clients = this.clientsByPlay.get(playId);
+    if (!clients) {
+      clients = new Set();
+      this.clientsByPlay.set(playId, clients);
+    }
+    return clients;
+  }
+
+  /** 剧目配置/素材保存后重建 runtime：play.json 即时生效（音色/主角卡/语音语言/素材清单），活连接续接。 */
+  async reload(playId: string): Promise<void> {
+    const old = this.runtimes.get(playId);
+    if (!old) return;
+    const fresh = await this.buildRuntime(playId);
+    old.orchestrator.dispose();
+    this.runtimes.set(playId, fresh);
+    // 续接广播：hello 刷新 cast/voice；停止点重放恢复被中断连接的交互面板
+    const clients = this.clientsByPlay.get(playId);
+    if (!clients?.size) return;
+    const hello = helloPayload(playId, fresh);
+    for (const send of clients) send(hello);
+    const replay = fresh.orchestrator.stoppedReplay;
+    if (replay) for (const send of clients) send(replay);
   }
 
   /** 「开始游戏」：清会话，重建 runtime（autostart 交由 transport 在客户端注册后触发）。 */
   async startFresh(playId: string): Promise<PlayRuntime> {
     const old = this.runtimes.get(playId);
     if (old) old.orchestrator.dispose();
-    const store = this.library.store(playId);
-    const play = await store.loadPlay();
-    await store.resetSession();
-    const runtime = await this.createRuntime(
-      store,
-      play,
-      new LineageTree(),
-      { ...play.initialState },
-      play.initialScene,
-    );
+    await this.library.store(playId).resetSession();
+    const runtime = await this.buildRuntime(playId);
     this.runtimes.set(playId, runtime);
     return runtime;
   }
@@ -82,23 +126,41 @@ export class PlayHouse {
       runtime.orchestrator.dispose();
       this.runtimes.delete(playId);
     }
+    this.clientsByPlay.delete(playId);
     await this.library.remove(playId);
   }
 
   /** 广播到剧目客户端组。 */
   broadcast(playId: string, msg: ServerMessage): void {
-    const runtime = this.runtimes.get(playId);
-    if (!runtime) return;
-    for (const send of runtime.clients) send(msg);
+    const clients = this.clientsByPlay.get(playId);
+    if (clients) for (const send of clients) send(msg);
   }
 
-  /** 音色试听（素材管理页）：合成固定样本，返回 media-cache URL。 */
+  /** 音色试听（素材管理页）：经 runtime.synth（含语音语言翻译）合成固定样本。 */
   async ttsPreview(playId: string, voiceId: string): Promise<string> {
     if (!this.tts) throw new Error("服务端未启用语音（缺少 fish-audio key）");
     if (!isVoiceId(voiceId)) throw new Error("非法音色 id");
+    const runtime = await this.get(playId);
+    if (!runtime.synth) throw new Error("服务端未启用语音（缺少 fish-audio key）");
+    const { url } = await runtime.synth(TTS_SAMPLE_TEXT, voiceId);
+    return url;
+  }
+
+  /** 玩家输入润色（P4）：按主角角色卡口吻改写，保意不加戏。 */
+  async polish(playId: string, text: string): Promise<string> {
     const store = this.library.store(playId);
-    const { file } = await this.tts.synthesize(TTS_SAMPLE_TEXT, voiceId, store.mediaDir());
-    return `/plays/${playId}/media/tts/${file}`;
+    const play = await store.loadPlay();
+    const protagonist = play.protagonist;
+    const system = [
+      "你是视觉小说的玩家输入润色器，把玩家的原始输入改写成主角会说出的台词。",
+      "- 保留原意与全部关键信息，不添加新的动作、剧情或决定",
+      "- 保持原文语言与大致长度，口语自然",
+      "- 只输出润色后的台词本身，不加引号或任何解释",
+      protagonist && (protagonist.name || protagonist.persona)
+        ? `\n主角设定：${protagonist.name || "（未命名）"}\n${protagonist.persona}`
+        : "\n（未设置主角卡：保留玩家原声，只修顺语句）",
+    ].join("\n");
+    return completeText({ streamFn: this.streamFn, model: this.model, getApiKey: () => this.config.apiKey }, system, text);
   }
 
   private async createRuntime(
@@ -109,19 +171,32 @@ export class PlayHouse {
     scene: string,
     restored?: OrchestratorRuntimeState,
   ): Promise<PlayRuntime> {
-    const clients = new Set<(msg: ServerMessage) => void>();
-    const { provider, model } = this;
+    const { model } = this;
     const tts = this.tts;
+    // 语音语言翻译（D5）：say 短语 → voiceLanguage 后再入 TTS；失败回退原文，不阻塞演出
+    const translator =
+      tts && play.voiceLanguage
+        ? new Translator({ streamFn: this.streamFn, model, getApiKey: () => this.config.apiKey }, play.voiceLanguage)
+        : null;
     // synth 绑定剧目 media-cache 目录与 URL 前缀（hash 缓存去重，重演不烧配额）
     const synth = tts
       ? async (text: string, voiceId: string) => {
-          const { file } = await tts.synthesize(text, voiceId, store.mediaDir());
+          let spoken = text;
+          if (translator) {
+            try {
+              spoken = await translator.translate(text);
+            } catch (error) {
+              console.warn(
+                `[stage-ai] 台词翻译失败（回退原文）: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
+          }
+          const { file } = await tts.synthesize(spoken, voiceId, store.mediaDir());
           return { url: `/plays/${play.id}/media/tts/${file}` };
         }
       : undefined;
     const orchestrator = new PlaywrightOrchestrator({
-      streamFn: (m: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) =>
-        provider.stream(m as Model<"openai-completions">, context, options),
+      streamFn: this.streamFn,
       model,
       getApiKey: () => this.config.apiKey,
       play,
@@ -131,7 +206,7 @@ export class PlayHouse {
       scene,
       tts: synth ? { synth, concurrency: this.config.tts.concurrency } : undefined,
       onServerMessage: (msg) => {
-        for (const send of clients) send(msg);
+        for (const send of this.clientsFor(play.id)) send(msg);
       },
       onLineageEvent: (event) => void store.appendEvent(event),
       persist: () => void store.saveSession(tree, engine, orchestrator.currentScene, orchestrator.runtimeState),
@@ -141,8 +216,8 @@ export class PlayHouse {
       orchestrator,
       store,
       cast: play.characters.map(({ id, name }) => ({ id, name })),
-      clients,
       voice: !!synth,
+      synth,
     };
   }
 }
