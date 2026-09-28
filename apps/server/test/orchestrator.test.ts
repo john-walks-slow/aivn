@@ -232,6 +232,39 @@ describe("PlaywrightOrchestrator 闭环", () => {
       expect(beatEnd.stop?.stopType).toBe("free");
     }
   });
+
+  it("运行态恢复：不重开开场、重放完整、stoppedReplay 可续演（服务器重启续演）", async () => {
+    const first = setup([{ text: BEAT_1, beatDone: true }]);
+    await first.orchestrator.playerAction({ kind: "free", text: "开局" });
+    const total = first.orchestrator.lastSeq;
+
+    // 用 runtimeState 重建编排器（模拟 server 重启后 PlayHouse 恢复）
+    const restored = new PlaywrightOrchestrator({
+      streamFn: createFakeStreamFn([{ text: BEAT_2, beatDone: true }]),
+      model: {} as never,
+      getApiKey: () => "test-key",
+      play: PLAY,
+      tree: first.tree,
+      engine: { ...PLAY.initialState },
+      scene: PLAY.initialScene,
+      onServerMessage: () => {},
+      persist: () => {},
+      restored: first.orchestrator.runtimeState,
+    });
+
+    // 恢复后不触发开场重演：lastSeq/事件缓冲完整
+    expect(restored.lastSeq).toBe(total);
+    expect(restored.eventsAfter(0)).toHaveLength(total);
+    // stopped 态可恢复前端交互面板
+    const replay = restored.stoppedReplay;
+    expect(replay?.type).toBe("beat_end");
+    expect(replay?.stop?.stopType).toBe("choice");
+    // 续演走第二拍而非 opening（beat_start 仅直播；事件缓冲见第二拍舞台事件）
+    await restored.playerAction({ kind: "continue" });
+    const seqAfter = restored.eventsAfter(total);
+    expect(seqAfter.length).toBeGreaterThan(0);
+    expect(seqAfter.some((e) => e.event.kind === "say_start")).toBe(true);
+  });
 });
 
 /** 聚合连续同类 text delta 后的事件类型序列（撕裂只影响切分粒度）。 */

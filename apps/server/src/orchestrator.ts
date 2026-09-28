@@ -60,6 +60,15 @@ export interface OrchestratorOptions {
   onLineageEvent?: (event: LineageEvent) => void;
   /** 会话落盘钩子（beat 收束时调用）。 */
   persist: () => void;
+  /** 服务器重启恢复：上次会话的运行态（事件缓冲/节拍号/停止点）。 */
+  restored?: OrchestratorRuntimeState;
+}
+
+/** 编排器运行态（随 session.json 持久化，重启后恢复重放与续演）。 */
+export interface OrchestratorRuntimeState {
+  events: SequencedEvent[];
+  beatNo: number;
+  lastStop: StopPayload | null;
 }
 
 interface OpenLine {
@@ -89,6 +98,8 @@ export class PlaywrightOrchestrator {
   private lastStop: StopPayload | null = null;
   private openLine: OpenLine | null = null;
   private autostarted = false;
+  private disposed = false;
+  private readonly unsubscribeAgent: () => void;
 
   constructor(opts: OrchestratorOptions) {
     this.opts = opts;
@@ -104,7 +115,31 @@ export class PlaywrightOrchestrator {
         messages: [],
       },
     });
-    this.agent.subscribe((event) => void this.onAgentEvent(event));
+    this.unsubscribeAgent = this.agent.subscribe((event) => void this.onAgentEvent(event));
+    if (opts.restored) {
+      // 恢复会话：回填事件缓冲与节拍状态，autostart 视为已完成（续演不重开开场）
+      this.events.push(...opts.restored.events);
+      this.seq = this.events.at(-1)?.seq ?? 0;
+      this.beatNo = opts.restored.beatNo;
+      this.lastStop = opts.restored.lastStop;
+      this.autostarted = true;
+    }
+  }
+
+  /** 运行态快照（session.json 持久化，重启后恢复重放与续演）。 */
+  get runtimeState(): OrchestratorRuntimeState {
+    return { events: this.events, beatNo: this.beatNo, lastStop: this.lastStop };
+  }
+
+  /** 丢弃：断订阅、中断当前流、屏蔽后续广播（多剧目/重开时回收）。 */
+  dispose(): void {
+    this.disposed = true;
+    this.unsubscribeAgent();
+    this.agent.abort();
+  }
+
+  private send(msg: ServerMessage): void {
+    if (!this.disposed) this.opts.onServerMessage(msg);
   }
 
   get started(): boolean {
@@ -144,14 +179,14 @@ export class PlaywrightOrchestrator {
   /** 玩家操作 → 下一节拍。busy 中拒绝。开局时玩家表态并入开场指令。 */
   async playerAction(action: PlayerAction): Promise<void> {
     if (this.busy) {
-      this.opts.onServerMessage({ type: "error", message: "演出进行中，请等待当前节拍结束", recoverable: true });
+      this.send({ type: "error", message: "演出进行中，请等待当前节拍结束", recoverable: true });
       return;
     }
     let resolved: ResolvedAction;
     if (action.kind === "choice") {
       const option = this.lastStop?.options?.[action.optionIndex];
       if (!option) {
-        this.opts.onServerMessage({ type: "error", message: `无效的选项索引: ${action.optionIndex}`, recoverable: true });
+        this.send({ type: "error", message: `无效的选项索引: ${action.optionIndex}`, recoverable: true });
         return;
       }
       resolved = { kind: "choice", text: option.text };
@@ -209,13 +244,13 @@ export class PlaywrightOrchestrator {
     this.beatNo += 1;
     this.opts.engine.turn = this.beatNo;
     const beatId = `beat-${this.beatNo}`;
-    this.opts.onServerMessage({ type: "beat_start", beatId });
-    this.opts.onServerMessage({ type: "lineage", leafId: this.opts.tree.leafId ?? "", turn: this.opts.tree.leafId ? (this.opts.tree.get(this.opts.tree.leafId)?.turn ?? 0) : 0 });
+    this.send({ type: "beat_start", beatId });
+    this.send({ type: "lineage", leafId: this.opts.tree.leafId ?? "", turn: this.opts.tree.leafId ? (this.opts.tree.get(this.opts.tree.leafId)?.turn ?? 0) : 0 });
     try {
       await this.agent.prompt(userText);
       await this.agent.waitForIdle();
     } catch (error) {
-      this.opts.onServerMessage({
+      this.send({
         type: "error",
         message: `演出生成失败: ${error instanceof Error ? error.message : String(error)}`,
         recoverable: true,
@@ -249,7 +284,7 @@ export class PlaywrightOrchestrator {
     // 谱系快照随 beat 收束保存（分岔/续演恢复用）
     const memory: MemorySnapshot = { state: { scene: this.opts.scene }, arcs: [] };
     this.opts.tree.saveSnapshot(this.opts.engine, memory);
-    this.opts.onServerMessage({
+    this.send({
       type: "beat_end",
       beatId: `beat-${this.beatNo}`,
       reason: stop ? "stop" : "act_end",
@@ -268,7 +303,7 @@ export class PlaywrightOrchestrator {
     this.seq += 1;
     const sequenced: SequencedEvent = { seq: this.seq, event };
     this.events.push(sequenced);
-    this.opts.onServerMessage({ type: "events", events: [sequenced] });
+    this.send({ type: "events", events: [sequenced] });
     this.accumulateLineage(event);
   }
 

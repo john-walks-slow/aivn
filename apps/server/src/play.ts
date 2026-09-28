@@ -7,6 +7,8 @@ export interface CharacterCard {
   persona: string;
   /** 音色描述（P3 语音管线用）。 */
   voice?: string;
+  /** 立绘差分映射：expression id → assets/sprites/<char>/ 文件名（P2 演出层用）。 */
+  sprites?: Record<string, string>;
 }
 
 export interface PlayConfig {

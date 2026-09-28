@@ -1,9 +1,10 @@
 import { resolve } from "node:path";
 
-/** 服务端配置：环境变量驱动（cpa 网关 + 模型 + 剧目路径）。 */
+/** 服务端配置：环境变量驱动（cpa 网关 + 模型 + 剧目库根目录）。 */
 export interface ServerConfig {
   port: number;
-  playDir: string;
+  /** 剧目库根目录（多剧目，每子目录一剧目）。 */
+  playsRoot: string;
   modelId: string;
   modelBase: string; // pi-ai 内置基础模型（继承 api/cost/contextWindow 等元数据）
   baseUrl: string;
@@ -13,7 +14,7 @@ export interface ServerConfig {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, repoRoot = process.cwd()): ServerConfig {
   return {
     port: Number(env.STAGE_PORT ?? "8787"),
-    playDir: resolve(repoRoot, env.STAGE_PLAY_DIR ?? "plays/demo"),
+    playsRoot: resolve(repoRoot, env.STAGE_PLAYS_ROOT ?? "plays"),
     modelId: env.STAGE_MODEL_ID ?? "ms/deepseek-ai/DeepSeek-V4.1-Flash",
     modelBase: env.STAGE_MODEL_BASE ?? "deepseek/deepseek-flash",
     baseUrl: env.STAGE_BASE_URL ?? "http://127.0.0.1:9999/v1",

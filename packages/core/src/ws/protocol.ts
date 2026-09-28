@@ -24,6 +24,7 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: "resume"; lastSeq: number }
+  | { type: "start" }
   | { type: "player_choice"; optionIndex: number }
   | { type: "player_free"; text: string }
   | { type: "continue" }
