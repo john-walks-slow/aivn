@@ -24,12 +24,16 @@ from PIL import Image, ImageDraw
 
 
 def parse_color(color_str: str) -> np.ndarray:
-    """Parses color string ('white', 'green', '#RRGGBB', 'auto') into RGB numpy array."""
+    """Parses color string ('white', 'green', 'blue', 'magenta', '#RRGGBB', 'auto') into RGB numpy array."""
     color_str = color_str.lower().strip()
     if color_str == "white":
         return np.array([255.0, 255.0, 255.0], dtype=np.float32)
-    elif color_str == "green":
+    elif color_str in ("green", "chromakey"):
         return np.array([0.0, 255.0, 0.0], dtype=np.float32)
+    elif color_str == "blue":
+        return np.array([0.0, 0.0, 255.0], dtype=np.float32)
+    elif color_str == "magenta":
+        return np.array([255.0, 0.0, 255.0], dtype=np.float32)
     elif color_str.startswith("#"):
         hex_c = color_str.lstrip("#")
         if len(hex_c) == 6:
@@ -65,9 +69,13 @@ def process_image_transparency(
     trim: bool = False,
     padding: int = 20,
     target_canvas: str = None,
+    sprite_type: str = "bust",  # "bust" (半身/胸像), "full" (全身立绘), or "auto"
+    seed_borders: str = None,   # explicit overrides: "all", "top,left,right", etc.
 ) -> Image.Image:
     """
     Core matting pipeline converting an RGB image into a transparent RGBA image.
+    Supports both White Backgrounds and Chroma Key (Green / Blue / Magenta).
+    Configurable floodfill seeds for Bust (半身) vs Full-Body (全身) sprites.
     """
     img_rgb = img.convert("RGB")
     arr = np.array(img_rgb, dtype=np.float32)
@@ -88,24 +96,38 @@ def process_image_transparency(
     tol_high = tol_low + max(2.0, feather)
     is_candidate = (color_dist < tol_high).astype(np.uint8) * 255
 
-    # 4. Connected Components Floodfill from Outer Borders
+    # 4. Resolve border seed strategy
+    # For full body ("full"), background surrounds all 4 sides including under feet.
+    # For bust/half-body ("bust"), bottom is anchored by the torso/shirt and must not seed.
+    if seed_borders is not None:
+        borders = [b.strip().lower() for b in seed_borders.split(",")]
+    elif sprite_type == "full":
+        borders = ["top", "left", "right", "bottom"]
+    else:
+        borders = ["top", "left", "right"]
+
+    # 5. Connected Components Floodfill from Selected Borders
     mask_img = Image.fromarray(is_candidate, mode="L").copy()
     
-    # Top border (primary background entry)
-    for x in range(w):
-        if mask_img.getpixel((x, 0)) == 255:
-            ImageDraw.floodfill(mask_img, (x, 0), 128)
+    if "top" in borders:
+        for x in range(w):
+            if mask_img.getpixel((x, 0)) == 255:
+                ImageDraw.floodfill(mask_img, (x, 0), 128)
             
-    # Left and Right borders (outer background entry)
-    for y in range(h):
-        if mask_img.getpixel((0, y)) == 255:
-            ImageDraw.floodfill(mask_img, (0, y), 128)
-        if mask_img.getpixel((w - 1, y)) == 255:
-            ImageDraw.floodfill(mask_img, (w - 1, y), 128)
+    if "left" in borders:
+        for y in range(h):
+            if mask_img.getpixel((0, y)) == 255:
+                ImageDraw.floodfill(mask_img, (0, y), 128)
 
-    # Note: We intentionally DO NOT seed floodfill from the bottom edge (y = h - 1).
-    # Galgame character bust sprites anchor at the bottom, where white clothing / shirts
-    # touch the lower frame. Seeding from the bottom risks leaking into the torso.
+    if "right" in borders:
+        for y in range(h):
+            if mask_img.getpixel((w - 1, y)) == 255:
+                ImageDraw.floodfill(mask_img, (w - 1, y), 128)
+
+    if "bottom" in borders:
+        for x in range(w):
+            if mask_img.getpixel((x, h - 1)) == 255:
+                ImageDraw.floodfill(mask_img, (x, h - 1), 128)
 
     is_connected_bg = np.array(mask_img) == 128
 
@@ -207,6 +229,16 @@ def main():
         "--target-canvas",
         help="Target Galgame canvas specification 'WIDTHxHEIGHT' (e.g. '1080x1920') for bottom-centered alignment",
     )
+    parser.add_argument(
+        "--sprite-type",
+        choices=["bust", "half", "full"],
+        default="bust",
+        help="Sprite layout: 'bust'/'half' protects bottom clothes; 'full' cleans background all around feet (default: bust)",
+    )
+    parser.add_argument(
+        "--seed-borders",
+        help="Explicit comma-separated seed borders: 'all', 'top,left,right', 'top,left,right,bottom', etc.",
+    )
 
     args = parser.parse_args()
 
@@ -242,6 +274,8 @@ def main():
                     trim=args.trim,
                     padding=args.padding,
                     target_canvas=args.target_canvas,
+                    sprite_type=args.sprite_type,
+                    seed_borders=args.seed_borders,
                 )
 
                 if args.output:
