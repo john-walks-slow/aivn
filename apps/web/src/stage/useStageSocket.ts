@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ClientMessage, ServerMessage, StopPayload } from "@stage-ai/core";
+import type { ClientMessage, GeneratedAsset, ServerMessage, StopPayload } from "@stage-ai/core";
 
 /** 工坊通道下行消息（D9）：与演出事件共用连接、按 type 分流。 */
 export type WorkshopInbound = Extract<ServerMessage, { type: `workshop_${string}` }>;
@@ -39,6 +39,12 @@ export interface StageSocketHandlers {
   onOocAck?: () => void;
   /** 工坊通道下行消息（D9）。 */
   onWorkshop?: (msg: WorkshopInbound) => void;
+  /** hello 带回来的既有生成资产全集（重连即恢复可见）。 */
+  onAssets?: (assets: GeneratedAsset[]) => void;
+  /** 生图就绪（D6）：预解码后就地淡入。 */
+  onAssetReady?: (asset: GeneratedAsset) => void;
+  /** 生图失败：保持降级视觉 + 提示，不弹永久骨架。 */
+  onAssetFailed?: (id: string, message: string) => void;
 }
 
 export function useStageSocket(playId: string, mode: StartMode, handlers?: StageSocketHandlers): StageSocket {
@@ -82,6 +88,7 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
           case "hello":
             setNames(Object.fromEntries((msg.cast ?? []).map(({ id, name }) => [id, name])));
             setVoiceAvailable(msg.voice ?? false);
+            if (msg.assets) handlersRef.current.onAssets?.(msg.assets);
             setState((prev) => (prev === "connecting" ? "streaming" : prev));
             if (expectFreshRef.current && msg.lastSeq === 0) {
               // 新档 hello：清旧脚本，从头接收
@@ -108,6 +115,12 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
             setTick((t) => t + 1);
             return;
           }
+          case "asset_ready":
+            handlersRef.current.onAssetReady?.(msg.asset);
+            return;
+          case "asset_failed":
+            handlersRef.current.onAssetFailed?.(msg.id, msg.message);
+            return;
           case "audio_ready":
             handlersRef.current.onAudio?.({ seq: msg.seq, phrase: msg.phrase, url: msg.url });
             return;

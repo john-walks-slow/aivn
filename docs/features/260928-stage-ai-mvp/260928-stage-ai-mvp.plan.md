@@ -2,7 +2,7 @@
 
 > **状态**：v4——按用户反馈重塑交互模型：**分岔/编辑/OOC/重写四个正交原语全部主界面化**（原地 vs 先分岔，句/段重写 ±instruction，组合自由）、**路线树完全替代存读档**（书签=命名节点）、工坊抽屉纯化（meta-chat 多会话 + 文件浏览编辑，抽屉↔全屏）、移除防抢戏标记（通用纠正机制替代）、**上下文装配重设计**（三区 append-only + 纪元压缩，KV 前缀缓存正确）。v3：剧目生命周期（剧目库/Title Screen/就绪门/剧目包/工坊共创）。v2：expert 交叉核查修订（见 [crosscheck 报告](./260928-stage-ai-mvp.crosscheck.md)）。
 > **日期**：2026-09-28
-> **实施进度**：P0–P3 已交付（真机验证中）；**P4 进行中**——已落地：三层记忆（`always/` 每轮注入 + `index/` 标题注入·详情按需读 + `archive/` 检索；四工具 `update_state`/`write_memory`/`read_memory_detail`/`search_archive`，切片带 entryId 做防剧透过滤）、常驻原地 OOC（busy 时 `agent.steer` 入队、当前拍收敛后注入导演注并续写下一拍）、输入润色（主角卡口吻，可撤销）、主角角色卡、语音语言翻译、**纪元压缩→arcs**（P4b：对话体到窗口 60% 时把早期轮次压成 `index/arcs/` 前情提要卡、重建 Agent、被裁原文降级进 archive 仍可检索；触发判定与切尾点同尺标定）、**工坊**（P4c：独立工坊 agent + 五工具、meta-chat 多线程、剧目文件浏览编辑、抽屉↔全屏、Title 直达全屏；写盘可见可撤销、改动在节拍边界生效）。**P4 全部交付**，待用户实机验证。
+> **实施进度**：P0–P3 已交付（真机验证中）；**P4–P5 已落地**——三层记忆（`always/` 每轮注入 + `index/` 标题注入·详情按需读 + `archive/` 检索；四工具 `update_state`/`write_memory`/`read_memory_detail`/`search_archive`，切片带 entryId 做防剧透过滤）、常驻原地 OOC（busy 时 `agent.steer` 入队、当前拍收敛后注入导演注并续写下一拍）、输入润色（主角卡口吻，可撤销）、主角角色卡、语音语言翻译、**纪元压缩→arcs**（P4b：对话体到窗口 60% 时把早期轮次压成 `index/arcs/` 前情提要卡、重建 Agent、被裁原文降级进 archive 仍可检索；触发判定与切尾点同尺标定）、**工坊**（P4c：独立工坊 agent + 五工具、meta-chat 多线程、剧目文件浏览编辑、抽屉↔全屏、Title 直达全屏；写盘可见可撤销、改动在节拍边界生效）。**P4 全部交付**，待用户实机验证；**P5 生图已落地**（`preload_asset` 后台预发射、sha1(type+prompt) 内容寻址缓存 + manifest 随 hello 下发、并发闸门、在途骨架占位→到货 crossfade 淡入、失败抛错降级为氛围背景 + 可点掉告警条；立绘差分不做生图）。
 > **关联调研**：
 > - [260928-gal-engine.research.md](./260928-gal-engine.research.md)（渲染层选型）
 > - [260928-playwriter-runtime.research.md](./260928-playwriter-runtime.research.md)（pi agent 运行时）
@@ -511,7 +511,7 @@ plays/<play-id>/
 | **P2 演出层与剧目外壳** | 有画面有门面 | 舞台渲染（背景/立绘/站位/差分/转场/打字机/二段式点击/自动模式）+ 剧目库/Title Screen/就绪门 + 剧目包导入 + 剧本 log 只读视图 + 素材管理页 | 导入素材后完整视觉演出；空剧目就绪门正确灰置/补齐点亮；剧目包导入即开演 |
 | **P3 语音** | 有声音 | PhraseChunker + fish-tts 预取 + Web Audio gapless + 音色映射 + AudioContext 解锁遮罩 | 句间 gap < 300ms 无爆音；快进淡出正确 |
 | **P4 记忆与工坊** ✅ | 长会话 + agentic 创建 + 基础 OOC | 三层记忆全量（index 工具/archive 搜索/**纪元压缩→arcs**）+ update_state 校验 + **工坊**（工坊 agent：meta-chat 多会话 + 文件浏览编辑，抽屉↔全屏）+ **主界面常驻原地 OOC**（steer）+ **输入润色**（主角卡口吻，可撤销）+ **主角角色卡**（工坊/素材配置页设置）+ **语音语言翻译**（voiceLanguage 与剧本语言解耦，润色与翻译为 P4 早交付增量） | 模拟 30+ 轮会话装配正确且稳态轮次**零重装配**（append-only）；空剧目经工坊对话共创至就绪并开演；OOC 下一轮生效 |
-| **P5 生图** | 视觉补充 | preload_asset 管线 + 渐进过渡 + media-cache | CG 从预发射到淡入全流程；未就绪时文字不被卡 |
+| **P5 生图** ✅ | 视觉补充 | preload_asset 管线 + 渐进过渡 + media-cache | CG 从预发射到淡入全流程；未就绪时文字不被卡 |
 | **P6 分岔与打磨** | 路线树完全体 | **分岔/编辑/OOC/重写四原语（原地编辑 / 分岔重演 / 分岔后 OOC 立即重生成 / 句段级重写 ±instruction）/ 路线树视图 + 书签（完全替代存读档，谱系快照一致性）** + 剧本 log 视图可编辑 + 设置页 + 移动端适配（100dvh/软键盘/安全区）+ **过夜 soak**（脚本化玩家 + 廉价模型 6–8h/数百节拍，自动审计记忆装配/剧透穿透/分岔重建/RSS 水位） | 分岔/跳转/重写后记忆/状态/剧本三者同刻（旧分支不剧透）；手机浏览器全流程可用；soak 无失忆无泄漏无内存缓涨 |
 | **P7 分发** | exe release | **GitHub Actions（windows-latest）主路径**打包 Electron（win x64）+ 首启向导（网关/TTS 配置 UI）；本机仅 portable zip 冒烟 | 干净 Windows 机器双击可用（README 注明 SmartScreen 警告） |
 

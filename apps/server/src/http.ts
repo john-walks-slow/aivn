@@ -95,6 +95,17 @@ export async function handleHttp(
       return;
     }
 
+    // —— 生图产物静态服务：/plays/:id/media/img/<hash>.jpg（D6 预发射缓存） ——
+    if (parts[0] === "plays" && parts[1] && parts[2] === "media" && parts[3] === "img" && method === "GET") {
+      const [, playId, , , file] = parts;
+      if (!/^[\w-]+$/.test(playId) || !/^[\w]+\.jpg$/.test(file ?? "")) return fail(res, 404, "未找到");
+      const path = library.store(playId).imagePath(file!);
+      if (!existsSync(path)) return fail(res, 404, "未找到");
+      res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "public, max-age=86400" });
+      res.end(await readFile(path));
+      return;
+    }
+
     // —— 素材静态服务：/plays/:id/assets/<kind>/<...> ——
     if (parts[0] === "plays" && parts[1] && parts[2] === "assets" && method === "GET") {
       const [, playId, , ...segments] = parts;

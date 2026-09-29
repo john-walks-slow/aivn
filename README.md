@@ -50,6 +50,26 @@ pnpm --filter @stage-ai/web dev
 
 压缩失败（网关报错、返回空文本、磁盘写不进去）只打警告并跳过，本节拍照常演出——长会话压缩是省钱的优化，不是演出的前提。
 
+### 生图（可选，关掉则只用导入素材）
+
+缺背景或插图时，剧作家可以自己画：`<preload_asset>` 提前几拍把生图请求打出去，图回来之前舞台上先上骨架占位，台词照常演，图到货后淡入替换。已经在 `assets/` 里的素材不会被覆盖。
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `STAGE_IMAGE_ENABLED` | `true` | 生图总开关（`false` = 只用导入素材，不发起任何生图） |
+| `STAGE_IMAGE_MODEL` | `gpt-image-2` | cpa 网关的出图模型。换模型要同时看网关支持什么 |
+| `STAGE_IMAGE_SIZE` | `1536x1024` | 出图尺寸 `宽x高`。**换 `seedream-5.0-lite` 必须 ≥3686400 像素**（如 `2560x1440`），否则 400 |
+| `STAGE_IMAGE_CONCURRENCY` | `2` | 并发出图上限。每张图 15–30s，并发太小会拖穿预发射窗口 |
+| `STAGE_IMAGE_TIMEOUT_MS` | `150000` | 单图超时。超时按失败处理，舞台保持降级视觉 |
+
+行为要点：
+
+- 产物落 `plays/<id>/media-cache/img/`，**不进 git**；同一张描述只生成一次（跨剧目不共享，按剧目各自缓存）
+- 已生成的图清单在剧目目录 `media-cache/img/manifest.json`，重连即恢复可见
+- 生图失败（网关报错、超时、队列满、生图未启用）不会打断演出：舞台保持氛围背景，屏幕顶部给一条可点掉的提示
+- 骨架占位最多 45 秒：图迟迟不来（或重连后拿不到通知）会自动退回氛围底色，不会一直闪
+- 立绘差分不做生图（一致性不足以出表情套图），仍以导入素材为主
+
 ### 语音（可选，不配则无声演出）
 
 | 变量 | 默认 | 说明 |
@@ -155,7 +175,7 @@ plays/<id>/
 ├── play.json          # 剧目定义（进 git）
 ├── assets/            # 素材（进 git）：backgrounds/ cg/ sfx/ bgm/ sprites/<charId>/
 ├── memory/            # 剧目记忆（见上：always/ 与 index/locations,lore 进 git）
-├── media-cache/       # TTS 等生成缓存（不进 git）
+├── media-cache/       # TTS / 生图等生成缓存（不进 git）
 ├── workshop/          # 工坊 meta-chat 线程（不进 git）
 ├── session.json       # 运行时会话（不进 git）
 └── lineage.jsonl      # 行级谱系事件日志（不进 git）

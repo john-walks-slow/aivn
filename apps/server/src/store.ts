@@ -145,6 +145,16 @@ export class PlayStore {
     return join(this.dir, "media-cache", "tts", file);
   }
 
+  /** 生图缓存目录（media-cache/img，运行时不进 git；内容寻址，同 prompt 只生成一次）。 */
+  imageDir(): string {
+    return join(this.dir, "media-cache", "img");
+  }
+
+  /** 生图产物绝对路径（静态服务；file 只由内容哈希产生，白名单式安全）。 */
+  imagePath(file: string): string {
+    return join(this.dir, "media-cache", "img", file);
+  }
+
   /** 素材写入（上传）。kind ∈ sprites/<charId> | backgrounds | cg | sfx | bgm。 */
   async writeAsset(kindPath: string, name: string, data: Buffer): Promise<void> {
     const target = join(this.dir, "assets", kindPath, name);

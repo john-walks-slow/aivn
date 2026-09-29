@@ -9,9 +9,24 @@ export interface VisualState {
   transition: string | null;
   cg: { id: string; caption?: string } | null;
   sprites: Record<string, { pos: string; expression: string | null }>;
+  /** 预发射中（尚未到达）的生图 id（D6）：被 bg/cg 引用时先上骨架占位，不卡台词。 */
+  pending: Record<string, { type: "bg" | "cg"; at: number }>;
 }
 
-const EMPTY_VISUAL: VisualState = { bg: null, bgm: null, transition: null, cg: null, sprites: {} };
+/**
+ * 骨架占位上限（D6 铁律：骨架禁止永久停留）。到货/失败都会立刻摘掉占位，
+ * 但重连重放历史 preload、或瞬态通知恰好丢在断线窗口里时没人来摘——超时兜底。
+ */
+const PENDING_TTL_MS = 45_000;
+
+const EMPTY_VISUAL: VisualState = {
+  bg: null,
+  bgm: null,
+  transition: null,
+  cg: null,
+  sprites: {},
+  pending: {},
+};
 const CHAR_MS = 35;
 
 export interface Playback {
@@ -27,6 +42,8 @@ export interface Playback {
   sfx: { key: string; src: string; volume?: number } | null;
   /** 舞台点击：打字中 → 瞬显全文；已完 → 消费下一条。 */
   advance: () => void;
+  /** 生图到达/失败：摘掉占位，视觉层交给真实资产（或降级）。 */
+  settleAssets: (ids: string[]) => void;
 }
 
 export interface PlaybackHooks {
@@ -75,6 +92,10 @@ export function usePlayback(
           };
         case "cg":
           return { ...prev, cg: { id: cue.id, caption: cue.caption } };
+        case "preload": {
+          if (cue.type === "sprite") return prev;
+          return { ...prev, pending: { ...prev.pending, [cue.id]: { type: cue.type, at: Date.now() } } };
+        }
         case "actor": {
           if (cue.action === "exit" || cue.action === "leave") {
             const sprites = { ...prev.sprites };
@@ -183,5 +204,33 @@ export function usePlayback(
     }
   }, [opts.revision, cues, applyVisual]);
 
-  return { visual, current, shownLength, exhausted, auto, setAuto, advance, sfx };
+  // 骨架超时兜底：定期摘掉到点还没到货的占位，落到氛围底色而不是一直闪
+  useEffect(() => {
+    if (Object.keys(visual.pending).length === 0) return;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setVisual((prev) => {
+        const stale = Object.entries(prev.pending)
+          .filter(([, v]) => now - v.at >= PENDING_TTL_MS)
+          .map(([id]) => id);
+        if (stale.length === 0) return prev;
+        const pending = { ...prev.pending };
+        for (const id of stale) delete pending[id];
+        return { ...prev, pending };
+      });
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [visual.pending]);
+
+  const settleAssets = useCallback((ids: string[]): void => {
+    if (ids.length === 0) return;
+    setVisual((prev) => {
+      if (Object.keys(prev.pending).length === 0) return prev;
+      const pending = { ...prev.pending };
+      for (const id of ids) delete pending[id];
+      return { ...prev, pending };
+    });
+  }, []);
+
+  return { visual, current, shownLength, exhausted, auto, setAuto, advance, sfx, settleAssets };
 }

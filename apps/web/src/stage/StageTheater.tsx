@@ -81,6 +81,10 @@ export function StageTheater({
 
   const bgUrl = index.bg(visual.bg);
   const cgUrl = index.cg(visual.cg?.id ?? null);
+  // D6：引用的资产正在生成 → 骨架占位（台词照常演出），到货后 crossfade 替换
+  const bgPending = !bgUrl && !!visual.bg && visual.pending[visual.bg]?.type === "bg";
+  const cgId = visual.cg?.id ?? null;
+  const cgPending = !cgUrl && !!cgId && visual.pending[cgId]?.type === "cg";
 
   const submitDirectorNote = (): void => {
     const text = directorDraft.trim();
@@ -180,9 +184,13 @@ export function StageTheater({
 
       <div className="theater-stage">
         {bgUrl ? (
-          <img key={bgUrl} className="theater-bg" src={bgUrl} alt="" />
+          <img key={bgUrl} className="theater-bg theater-bg-in" src={bgUrl} alt="" />
         ) : (
-          <div className={`theater-bg theater-bg-fallback ${visual.transition === "cut" ? "cut" : ""}`} />
+          <div
+            className={`theater-bg theater-bg-fallback ${bgPending ? "theater-bg-pending" : ""} ${
+              visual.transition === "cut" ? "cut" : ""
+            }`}
+          />
         )}
 
         {Object.entries(visual.sprites).map(([id, slot]) => {
@@ -200,7 +208,12 @@ export function StageTheater({
 
         {cgUrl && (
           <div className="theater-cg">
-            <img src={cgUrl} alt={visual.cg?.id ?? ""} />
+            <img className="theater-cg-in" src={cgUrl} alt={visual.cg?.id ?? ""} />
+            {visual.cg?.caption && <p className="theater-cg-caption">{visual.cg.caption}</p>}
+          </div>
+        )}
+        {cgPending && (
+          <div className="theater-cg theater-cg-pending" aria-label="插图生成中">
             {visual.cg?.caption && <p className="theater-cg-caption">{visual.cg.caption}</p>}
           </div>
         )}

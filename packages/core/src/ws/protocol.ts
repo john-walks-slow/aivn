@@ -30,6 +30,16 @@ export interface WorkshopChatMessage {
   at: number;
 }
 
+/** 生成资产（D6 生图管线）：剧作家 preload_asset 预发射、后台生成后落 media-cache。 */
+export interface GeneratedAsset {
+  /** 剧作家给的资源 id，与 `<cg id>` / `<scene bg>` 同一命名空间。 */
+  id: string;
+  /** 站内 URL：/plays/<playId>/media/img/<file>。 */
+  url: string;
+  /** bg | cg（sprite 不做生图，见计划 D6）。 */
+  type: "bg" | "cg";
+}
+
 export type ServerMessage =
   | {
       type: "hello";
@@ -38,12 +48,18 @@ export type ServerMessage =
       cast?: { id: string; name: string }[];
       /** 服务端 TTS 能力（配置了 fish-audio keys 才为 true；false 时客户端隐藏语音开关）。 */
       voice?: boolean;
+      /** 本剧目已生成的资产全集（manifest 快照）：重连即恢复可见，不必等下一次预发射。 */
+      assets?: GeneratedAsset[];
     }
   | { type: "beat_start"; beatId: string }
   | { type: "events"; events: SequencedEvent[] }
   | BeatEndPayload & { type: "beat_end" }
   /** 语音预取就绪（D5）：seq = 所属 say 行 say_start 事件的序号，客户端据此关联行。 */
   | { type: "audio_ready"; seq: number; phrase: number; url: string }
+  /** 生成就绪（D6）：客户端预解码后就地 crossfade 淡入，台词早已先行。瞬态消息不进事件缓冲。 */
+  | { type: "asset_ready"; asset: GeneratedAsset }
+  /** 生图失败（非慢）：客户端保持降级视觉（既有素材/氛围色），不弹占位。 */
+  | { type: "asset_failed"; id: string; message: string }
   | { type: "lineage"; leafId: string; turn: number }
   /** 原地 OOC 已入队（D9）：当前拍收敛后注入【导演注】并立即续写下一拍。 */
   | { type: "ooc_ack" }

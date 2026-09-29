@@ -6,6 +6,8 @@ import type { PlayConfig } from "@stage-ai/core";
 import type { ServerConfig } from "./config.js";
 import { createCpaProvider } from "./provider.js";
 import { createTts } from "./tts.js";
+import { createImageGen } from "./imagegen.js";
+import { ImageAssets } from "./imageAssets.js";
 import { Translator } from "./translate.js";
 import { PlayMemory } from "./memory.js";
 import { WorkshopSession } from "./workshopSession.js";
@@ -24,6 +26,8 @@ export interface PlayRuntime {
   voice: boolean;
   /** 语音合成闭包（含语音语言翻译）：ttsPreview 复用同路径。 */
   synth?: (text: string, voiceId: string) => Promise<{ url: string }>;
+  /** 生图资产层（D6）：预发射/manifest；未启用生图则为 undefined。 */
+  images?: ImageAssets;
 }
 
 /** hello 载荷（transport 连接建立与 reload 续接共用）。 */
@@ -34,6 +38,7 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
     lastSeq: runtime.orchestrator.lastSeq,
     cast: runtime.cast,
     voice: runtime.voice,
+    assets: runtime.images?.snapshot(),
   };
 }
 
@@ -51,6 +56,7 @@ export class PlayHouse {
   private readonly provider: ReturnType<typeof createCpaProvider>["provider"];
   private readonly model: ReturnType<typeof createCpaProvider>["model"];
   private readonly tts: ReturnType<typeof createTts>;
+  private readonly imageGen: ReturnType<typeof createImageGen>;
   /** 演出编排与润色/翻译旁路共用的流式调用入口。 */
   private readonly streamFn: StreamFn;
 
@@ -60,6 +66,7 @@ export class PlayHouse {
   ) {
     ({ provider: this.provider, model: this.model } = createCpaProvider(config));
     this.tts = createTts(config);
+    this.imageGen = createImageGen(config);
     // StreamFn 契约是 SimpleStreamOptions（reasoning 字段）——须接 streamSimple 做换算；
     // 错接完整版 stream 会丢弃 reasoning，thinking 档位全部失效
     this.streamFn = (m, context, options) =>
@@ -113,6 +120,35 @@ export class PlayHouse {
     for (const send of clients) send(hello);
     const replay = fresh.orchestrator.stoppedReplay;
     if (replay) for (const send of clients) send(replay);
+  }
+
+  /**
+   * 生图预发射（D6）：后台发起，就绪后广播 asset_ready；失败广播 asset_failed 由客户端降级。
+   * 编排器不 await——预发射绝不能卡住播放。
+   */
+  private async preloadAsset(
+    playId: string,
+    type: "bg" | "cg",
+    prompt: string,
+    id: string,
+  ): Promise<void> {
+    const runtime = this.runtimes.get(playId);
+    const sender = (msg: ServerMessage) => {
+      for (const send of this.clientsFor(playId)) send(msg);
+    };
+    // 生图未启用：显式说一声，让客户端摘掉骨架占位（静默返回会让占位永久停留）
+    if (!runtime?.images) {
+      sender({ type: "asset_failed", id, message: "生图未启用" });
+      return;
+    }
+    try {
+      const asset = await runtime.images.preload(type, prompt, id);
+      sender({ type: "asset_ready", asset });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[stage-ai] 生图失败 ${id}: ${message}`);
+      sender({ type: "asset_failed", id, message });
+    }
   }
 
   /** 「开始游戏」：清会话，重建 runtime（autostart 交由 transport 在客户端注册后触发）。 */
@@ -253,6 +289,7 @@ export class PlayHouse {
       engine,
       scene,
       tts: synth ? { synth, concurrency: this.config.tts.concurrency } : undefined,
+      onPreloadAsset: (type, prompt, id) => void this.preloadAsset(play.id, type, prompt, id),
       compaction: {
         contextWindow: this.config.contextWindow,
         triggerRatio: this.config.compactRatio,
@@ -267,6 +304,11 @@ export class PlayHouse {
         store.saveSession(tree, engine, orchestrator.currentScene, orchestrator.runtimeState),
       restored,
     });
+    // 生图资产层（D6）：manifest 载入既有资产，预发射复用不重生成
+    const images = this.imageGen
+      ? new ImageAssets(play.id, store, this.imageGen, this.config.image.concurrency)
+      : undefined;
+    if (images) await images.load();
     // 工坊（D9）：独立实例，与演出互不干扰；写盘后按需重建 runtime（保存即生效）
     const workshop = new WorkshopSession({
       store,
@@ -283,6 +325,7 @@ export class PlayHouse {
       cast: play.characters.map(({ id, name }) => ({ id, name })),
       voice: !!synth,
       synth,
+      images,
     };
   }
 }

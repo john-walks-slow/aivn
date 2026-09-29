@@ -18,6 +18,18 @@ export interface ServerConfig {
   compactRatio: number;
   /** 纪元压缩保留的最近上下文（token 估算）：切尾点之后的原文留在对话体。 */
   keepRecentTokens: number;
+  /** 生图管线（D6）：经 cpa 网关出图，预发射 + 媒体缓存。 */
+  image: {
+    enabled: boolean;
+    /** cpa 网关出图模型：gpt-image-2（images/generations）| gemini-3.1-flash-image（流式出图）。 */
+    model: string;
+    /** 出图尺寸（WxH）。换 seedream-5.0-lite 需 ≥3686400 像素（如 2560x1440），否则 400。 */
+    size: string;
+    /** 并发出图上限（每图 15–30s，串行会把预发射窗口拖穿）。 */
+    concurrency: number;
+    /** 单图超时（毫秒）：超时按失败降级，占位骨架不留死。 */
+    timeoutMs: number;
+  };
   /** 语音管线（D5）：fish-audio keys / 代理 / 并发。 */
   tts: {
     enabled: boolean;
@@ -71,6 +83,17 @@ export function loadConfig(
       env.STAGE_KEEP_RECENT_TOKENS,
       20000,
     ),
+    image: {
+      enabled: env.STAGE_IMAGE_ENABLED !== "false",
+      model: env.STAGE_IMAGE_MODEL ?? "gpt-image-2",
+      size: env.STAGE_IMAGE_SIZE ?? "1536x1024",
+      concurrency: parsePositiveInt(
+        "STAGE_IMAGE_CONCURRENCY",
+        env.STAGE_IMAGE_CONCURRENCY,
+        2,
+      ),
+      timeoutMs: parsePositiveInt("STAGE_IMAGE_TIMEOUT_MS", env.STAGE_IMAGE_TIMEOUT_MS, 150_000),
+    },
     tts: {
       enabled: env.STAGE_TTS_ENABLED !== "false",
       keysPath: resolve(

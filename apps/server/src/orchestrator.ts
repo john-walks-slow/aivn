@@ -233,6 +233,8 @@ export interface OrchestratorOptions {
   restored?: OrchestratorRuntimeState;
   /** 语音管线合成函数（无则本剧目无声：hello.voice=false）。 */
   tts?: { synth: TtsSynthFn; concurrency?: number };
+  /** 生图预发射钩子（D6）：解析到 preload_asset 即后台发起，不占播放；无则只记谱系。 */
+  onPreloadAsset?: (type: "bg" | "cg", prompt: string, id: string) => void;
   /** 纪元压缩阈值（窗口占比）与保留预算；不传则只增不减到模型自己报错。 */
   compaction?: {
     contextWindow: number;
@@ -866,6 +868,16 @@ export class PlaywrightOrchestrator {
             attrs: { type: event.type, prompt: event.prompt, id: event.id },
           },
         });
+        // 立绘差分不做生图（一致性不足，见 D6）：只记谱系，不发起
+        if (event.type === "bg" || event.type === "cg") {
+          // 已有同名导入素材就不烧配额（提示词也要求别重复生成，这里兜底）。
+          // 素材清单的键是目录名（backgrounds/cg），与 DSL 的 type（bg/cg）不同名。
+          const kind = event.type === "bg" ? "backgrounds" : "cg";
+          const owned = (this.opts.assets?.[kind] ?? []).some(
+            (file) => file.replace(/\.\w+$/, "") === event.id,
+          );
+          if (!owned) this.opts.onPreloadAsset?.(event.type, event.prompt, event.id);
+        }
         return;
       case "cg":
         this.appendLineage("cg", {

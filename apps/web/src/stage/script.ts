@@ -17,6 +17,8 @@ export type Cue =
   | { key: string; kind: "actor"; id: string; pos?: string; expression?: string; action?: string }
   | { key: string; kind: "sfx"; src: string; volume?: number }
   | { key: string; kind: "cg"; id: string; caption?: string }
+  /** 生图预发射（D6）：只记「id 正在生成」，用于未就绪时的骨架占位。 */
+  | { key: string; kind: "preload"; id: string; type: "bg" | "cg" | "sprite" }
   | { key: string; kind: "line"; lineKey: string };
 
 let lineSeq = 0;
@@ -60,7 +62,8 @@ export class ScriptBuilder {
         this.cues.push({ key: key(), kind: "actor", id: event.id, pos: event.pos, expression: event.expression, action: event.action });
         return;
       case "preload_asset":
-        return; // P5 生图管线
+        this.cues.push({ key: key(), kind: "preload", id: event.id, type: event.type });
+        return;
       case "say_start": {
         const line: ScriptLine = {
           key: key(),

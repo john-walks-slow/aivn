@@ -33,10 +33,12 @@ export function buildSystemPrompt(
   const bg = stems("backgrounds");
   const bgm = stems("bgm");
   const sfx = stems("sfx");
+  const cg = stems("cg");
   const assetSection = [
-    bg.length > 0 ? `\n# 可用背景 bg\n\n${bg.join(" | ")}——scene 的 bg 只能取这些 id。\n` : "",
+    bg.length > 0 ? `\n# 可用背景 bg\n\n${bg.join(" | ")}——scene 的 bg 优先取这些 id。\n` : "",
     bgm.length > 0 ? `\n# 可用音乐 bgm\n\n${bgm.join(" | ")}\n` : "",
     sfx.length > 0 ? `\n# 可用音效 sfx\n\n${sfx.join(" | ")}\n` : "",
+    cg.length > 0 ? `\n# 已有插图 cg\n\n${cg.join(" | ")}\n` : "",
   ].join("");
 
   const premise = memory?.premise.trim() || play.premise;
@@ -70,7 +72,19 @@ ${assetSection}${craftSection}${indexSection}
 <actor id="角色id" pos="left|center|right" expression="表情id" action="enter|leave|shake"/>
 <sfx src="音效id" volume="0.5"/>
 <cg id="cgid" caption="插图说明"/>
-<preload_asset type="bg|cg|sprite" prompt="生图描述" id="资源id"/>
+<preload_asset type="bg|cg" prompt="英文生图描述" id="资源id"/>
+
+# 缺素材时自己画（生图，约 15-30 秒，先发射后使用）
+
+可用清单里没有、但剧情需要的背景或插图，用 preload_asset 预发射，然后在它出场的位置照常引用同一个 id：
+<preload_asset type="bg" prompt="abandoned classroom at dusk, warm sunset light through dusty windows, anime visual novel background, no text" id="bg_classroom_dusk"/>
+<scene bg="bg_classroom_dusk" .../>   ← 3–5 句台词之后才引用
+
+规则：
+- **提前 3–5 句发射**：图要 15–30 秒才到，引用太早只会看到骨架占位；
+- **id 自取**：用简短英文下划线 id（如 bg_rooftop_dusk、cg_rooftop_01），引用时一字不差；
+- **prompt 写英文**，写清主体/环境/光线/视角/画风，末尾加 "anime visual novel background, no text"；
+- **不要凭空造 id**：清单里已有的背景和插图直接引用，别重复生成。
 
 ## 台词（三类，正文为原生文本，不要转义）
 

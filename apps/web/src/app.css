@@ -683,6 +683,44 @@ select:focus {
   font-size: 13.5px;
 }
 
+/* D6 生图：骨架占位（等在途资产，不卡台词）与到货 crossfade */
+.theater-bg-in {
+  animation: bg-fade 0.6s ease;
+}
+
+.theater-bg-pending,
+.theater-cg-pending {
+  background:
+    linear-gradient(100deg, rgba(255, 255, 255, 0) 28%, rgba(255, 255, 255, 0.07) 50%, rgba(255, 255, 255, 0) 72%),
+    linear-gradient(160deg, #1d2330, #2a3243 60%, #232a37);
+  background-size: 220% 100%, 100% 100%;
+  animation: asset-shimmer 1.6s linear infinite;
+}
+
+.theater-cg-in {
+  animation: bg-fade 0.5s ease;
+}
+
+@keyframes asset-shimmer {
+  from {
+    background-position: 140% 0, 0 0;
+  }
+  to {
+    background-position: -40% 0, 0 0;
+  }
+}
+
+.warn-banner {
+  margin: 10px 16px 0;
+  padding: 8px 12px;
+  border: 1px solid #e6d5ae;
+  background: #fbf6ea;
+  color: #8a6520;
+  border-radius: var(--radius);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
 /* ── 素材与配置页 ─────────────────────── */
 
 .assets-screen {

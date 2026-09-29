@@ -1,4 +1,5 @@
 import type { PlayConfig } from "@stage-ai/core";
+import type { GeneratedImage } from "./generatedAssets.js";
 
 /** 素材名 → URL 解析（stem 无扩展名时按目录清单补全；缺素材返回 null 走降级）。 */
 export interface AssetIndex {
@@ -22,6 +23,7 @@ export function buildAssetIndex(
   playId: string,
   play: PlayConfig,
   assets: Record<string, string[]>,
+  generated: Record<string, GeneratedImage> = {},
 ): AssetIndex {
   const bg = stemMap(assets.backgrounds);
   const cg = stemMap(assets.cg);
@@ -30,7 +32,10 @@ export function buildAssetIndex(
   const url = (dir: string, file: string): string => `/plays/${playId}/assets/${dir}/${file}`;
   const byStem = (map: Map<string, string>, dir: string) => (stem: string | null) => {
     const file = stem ? map.get(stem) : undefined;
-    return file ? url(dir, file) : null;
+    if (file) return url(dir, file);
+    // 静态素材优先（用户导入的是最终资产），缺了才用站内生成的同名 id（D6）
+    const gen = stem ? generated[stem] : undefined;
+    return gen?.ready ? gen.url : null;
   };
 
   return {

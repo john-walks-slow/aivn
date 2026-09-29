@@ -5,6 +5,7 @@ import { useStageSocket, type StartMode, type WorkshopInbound } from "../stage/u
 import { usePlayback } from "../stage/director.js";
 import { VoiceDirector } from "../stage/audio.js";
 import { buildAssetIndex, type AssetIndex } from "../stage/assets.js";
+import { useGeneratedAssets } from "../stage/generatedAssets.js";
 import { StageTheater } from "../stage/StageTheater.js";
 import { StageView } from "../stage/StageView.js";
 import { StopPanel } from "../stage/StopPanel.js";
@@ -22,6 +23,10 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
   const [view, setView] = useState<"stage" | "log">("stage");
   const [oocQueued, setOocQueued] = useState(false);
   const [workshop, setWorkshop] = useState<WorkshopMode | null>(null);
+  const [imageWarn, setImageWarn] = useState<string | null>(null);
+  const generated = useGeneratedAssets();
+  // 生图回调要在 socket 建连时就能摸到 playback，但 playback 声明在后面
+  const playbackRef = useRef<ReturnType<typeof usePlayback> | null>(null);
   // 工坊下行消息的订阅表：面板挂载时登记，卸载时注销（与舞台状态机解耦）
   const workshopHandlers = useRef(new Set<(msg: WorkshopInbound) => void>());
   const subscribeWorkshop = useCallback((handler: (msg: WorkshopInbound) => void) => {
@@ -39,6 +44,16 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
     },
     onReset: () => director.reset(),
     onOocAck: () => setOocQueued(true),
+    // D6 生图：到货即登记（预解码后淡入），失败只提示——舞台视觉不因图卡住
+    onAssets: (list) => generated.add(list),
+    onAssetReady: (asset) => {
+      generated.add([asset]);
+      playbackRef.current?.settleAssets([asset.id]);
+    },
+    onAssetFailed: (id, message) => {
+      playbackRef.current?.settleAssets([id]);
+      setImageWarn(`生图失败：${message}`);
+    },
     onWorkshop: (msg) => {
       for (const handler of workshopHandlers.current) handler(msg);
     },
@@ -67,8 +82,8 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
   }, [stage.voiceAvailable, stage.state, voiceOn]);
 
   const index: AssetIndex | null = useMemo(
-    () => (detail ? buildAssetIndex(playId, detail.play, assets) : null),
-    [detail, assets, playId],
+    () => (detail ? buildAssetIndex(playId, detail.play, assets, generated.images) : null),
+    [detail, assets, playId, generated.images],
   );
 
   const playback = usePlayback(stage.cues, stage.lines, {
@@ -80,6 +95,7 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
     onLineStart: (line) => director.lineStarted(line?.seq, line?.type === "say"),
     onFastForward: () => director.fastForward(),
   });
+  playbackRef.current = playback;
   const busy = stage.state === "streaming" || stage.state === "connecting";
   // D4：先演完再交互——打字机未消费完前不露出停止点（防剧透/防提前发送）
   const lineDone = playback.current === null || playback.shownLength >= playback.current.text.length;
@@ -101,6 +117,11 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
       {stage.error && (
         <div className="error-banner" role="alert">
           {stage.error}
+        </div>
+      )}
+      {imageWarn && (
+        <div className="warn-banner" role="status" onClick={() => setImageWarn(null)}>
+          {imageWarn}
         </div>
       )}
 
