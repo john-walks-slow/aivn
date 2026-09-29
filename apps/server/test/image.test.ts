@@ -46,7 +46,7 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
     const again = await assets.preload("bg", "rooftop at sunset", "bg_rooftop");
     expect(again.url).toBe(first.url);
     expect(calls).toHaveLength(1);
-    await new Promise((r) => setTimeout(r, 10));
+    await assets.flush();
 
     // 新实例 load：manifest 读回，缓存命中
     const revived = new ImageAssets("img", store, gen, 2);
@@ -142,7 +142,7 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
     const { gen } = fakeGen();
     const assets = new ImageAssets("img", store, gen, 2);
     const asset = await assets.preload("bg", "shrine steps", "bg_shrine");
-    await new Promise((r) => setTimeout(r, 10));
+    await assets.flush();
     const { rm } = await import("node:fs/promises");
     await rm(store.imagePath(asset.url.split("/").pop()!));
 
