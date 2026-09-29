@@ -406,6 +406,8 @@ export class PlayHouse {
       getApiKey: () => this.config.apiKey,
       emit: (msg) => this.broadcast(play.id, msg),
       onFilesChanged: () => void this.reloadAfterWorkshopWrite(play.id),
+      saves: this.library.saves(play.id),
+      saveStore: (saveId) => this.library.saveStore(play.id, saveId),
     });
     return {
       orchestrator,

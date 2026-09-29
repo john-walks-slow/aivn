@@ -42,6 +42,16 @@ describe("PlaySaves 周目档管理", () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it("has() 区分「有这棵周目」与「没有」，非法 id 一律 false", async () => {
+    const a = await saves.create();
+    expect(await saves.has(a.id)).toBe(true);
+    expect(await saves.has("s-nope")).toBe(false);
+    expect(await saves.has("../etc")).toBe(false);
+    expect(await saves.has("")).toBe(false);
+    await saves.remove(a.id);
+    expect(await saves.has(a.id)).toBe(false);
+  });
+
   it("新建周目：默认名按序递增，重名自动加后缀，id 互不相同", async () => {
     const a = await saves.create();
     const b = await saves.create();
