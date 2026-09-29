@@ -5,6 +5,8 @@ export interface OneShotOptions {
   streamFn: StreamFn;
   model: Model<Api>;
   getApiKey: () => string | undefined;
+  /** 中断信号：编排器回收时立即掐断在飞的旁路请求（摘要/润色/翻译）。 */
+  signal?: AbortSignal;
 }
 
 /** 单发输出上限：润色/翻译均为短文本。 */
@@ -16,14 +18,29 @@ const MAX_TOKENS = 2048;
  * - reasoning 走 low（glm 网关拒绝对无工具调用关闭思考，且该模型始终思考，low 仅是标签）；
  * - maxTokens 自限，绕开模型目录元数据与网关上限的错配。
  */
-export async function completeText(opts: OneShotOptions, system: string, user: string): Promise<string> {
+export async function completeText(
+  opts: OneShotOptions,
+  system: string,
+  user: string,
+): Promise<string> {
   const stream = await opts.streamFn(
     opts.model,
     normalizeContext({
       systemPrompt: system,
-      messages: [{ role: "user", content: [{ type: "text", text: user }], timestamp: Date.now() }],
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: user }],
+          timestamp: Date.now(),
+        },
+      ],
     }),
-    { reasoning: "low", apiKey: opts.getApiKey(), maxTokens: MAX_TOKENS },
+    {
+      reasoning: "low",
+      apiKey: opts.getApiKey(),
+      maxTokens: MAX_TOKENS,
+      signal: opts.signal,
+    },
   );
   let text = "";
   let error: string | null = null;

@@ -79,7 +79,9 @@ export class PlayHouse {
     const session = await store.loadSession();
     const tree = new LineageTree();
     if (session) tree.load(session.store);
-    const engine: EngineStateSnapshot = session?.engine ?? { ...play.initialState };
+    const engine: EngineStateSnapshot = session?.engine ?? {
+      ...play.initialState,
+    };
     const scene = session?.scene ?? play.initialScene;
     return this.createRuntime(store, play, tree, engine, scene, session?.runtime);
   }
@@ -161,7 +163,15 @@ export class PlayHouse {
         ? `\n主角设定：${protagonist.name || "（未命名）"}\n${protagonist.persona}`
         : "\n（未设置主角卡：保留玩家原声，只修顺语句）",
     ].join("\n");
-    return completeText({ streamFn: this.streamFn, model: this.model, getApiKey: () => this.config.apiKey }, system, text);
+    return completeText(
+      {
+        streamFn: this.streamFn,
+        model: this.model,
+        getApiKey: () => this.config.apiKey,
+      },
+      system,
+      text,
+    );
   }
 
   private async createRuntime(
@@ -179,7 +189,14 @@ export class PlayHouse {
     // 语音语言翻译（D5）：say 短语 → voiceLanguage 后再入 TTS；失败回退原文，不阻塞演出
     const translator =
       tts && play.voiceLanguage
-        ? new Translator({ streamFn: this.streamFn, model, getApiKey: () => this.config.apiKey }, play.voiceLanguage)
+        ? new Translator(
+            {
+              streamFn: this.streamFn,
+              model,
+              getApiKey: () => this.config.apiKey,
+            },
+            play.voiceLanguage,
+          )
         : null;
     // synth 绑定剧目 media-cache 目录与 URL 前缀（hash 缓存去重，重演不烧配额）
     const synth = tts
@@ -209,11 +226,17 @@ export class PlayHouse {
       engine,
       scene,
       tts: synth ? { synth, concurrency: this.config.tts.concurrency } : undefined,
+      compaction: {
+        contextWindow: this.config.contextWindow,
+        triggerRatio: this.config.compactRatio,
+        keepRecentTokens: this.config.keepRecentTokens,
+      },
       onServerMessage: (msg) => {
         for (const send of this.clientsFor(play.id)) send(msg);
       },
       onLineageEvent: (event) => void store.appendEvent(event),
-      persist: () => void store.saveSession(tree, engine, orchestrator.currentScene, orchestrator.runtimeState),
+      persist: () =>
+        void store.saveSession(tree, engine, orchestrator.currentScene, orchestrator.runtimeState),
       restored,
     });
     return {

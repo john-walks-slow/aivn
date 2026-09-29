@@ -1,92 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { createAssistantMessageEventStream, type AssistantMessage, type Message } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { LineageTree, type ServerMessage } from "@stage-ai/core";
 import { PlaywrightOrchestrator, createMemoryTools } from "../src/orchestrator.js";
-import { PlayMemory, type IndexCard } from "../src/memory.js";
-import type { PlayConfig } from "@stage-ai/core";
-
-interface FakeResponse {
-  /** 剧本 DSL 原文（流式输出的 assistant 文本）。 */
-  text: string;
-  /** 是否附带 beat_done 工具调用。 */
-  beatDone?: boolean;
-  /** 额外工具调用（与 beat_done 同批：如 write_memory）。 */
-  toolCalls?: { name: string; args: Record<string, unknown> }[];
-}
-
-const PLAY: PlayConfig = {
-  id: "test",
-  title: "测试剧目",
-  premise: "测试 premise",
-  characters: [{ id: "mio", name: "澪", persona: "测试角色" }],
-  opening: "（游戏开始）",
-  initialState: { turn: 0, affinity: { mio: 10 }, flags: {} },
-  initialScene: "走廊",
-};
-
-const CARD: IndexCard = {
-  layer: "lore",
-  name: "旧约定",
-  summary: "两人初中时的约定。",
-  detail: "# 旧约定\n初中时澪和主角约好一起参加文化祭。\n",
-  file: "旧约定",
-};
-
-/** 假 LLM 流：按调用序号回放脚本，完整模拟 text 流 + tool_call + done。 */
-function createFakeStreamFn(responses: FakeResponse[]): StreamFn {
-  let call = 0;
-  return () => {
-    const response = responses[Math.min(call, responses.length - 1)]!;
-    call += 1;
-    const stream = createAssistantMessageEventStream();
-    const partial = { role: "assistant", content: [] } as AssistantMessage;
-
-    queueMicrotask(() => {
-      stream.push({ type: "start", partial });
-      stream.push({ type: "text_start", contentIndex: 0, partial });
-      for (const delta of response.text.match(/[\s\S]{1,7}/g) ?? []) {
-        stream.push({ type: "text_delta", contentIndex: 0, delta, partial });
-      }
-      stream.push({ type: "text_end", contentIndex: 0, content: response.text, partial });
-
-      const content: Message[] = [];
-      const finalMessage: AssistantMessage = {
-        role: "assistant",
-        content: [{ type: "text", text: response.text }],
-        api: "openai-completions",
-        provider: "fake",
-        model: "fake-test",
-        usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-        stopReason: "stop",
-        timestamp: Date.now(),
-      };
-      if (response.beatDone) {
-        finalMessage.content.push({ type: "toolCall", id: "call-1", name: "beat_done", arguments: {} });
-        finalMessage.stopReason = "toolUse";
-        void content;
-      }
-      let callNo = 2;
-      for (const tool of response.toolCalls ?? []) {
-        finalMessage.content.push({ type: "toolCall", id: `call-${callNo++}`, name: tool.name, arguments: tool.args });
-        finalMessage.stopReason = "toolUse";
-      }
-      stream.push({ type: "done", message: finalMessage });
-      stream.end(finalMessage);
-    });
-    return stream;
-  };
-}
-
-const BEAT_1 = [
-  '<scene bg="corridor_dusk" bgm="melancholy" transition="fade"/>',
-  '<actor id="mio" pos="center" expression="pout" action="enter"/>',
-  "<narrate>放学后的走廊空无一人。</narrate>",
-  '<say id="mio" mood="annoyed">……太慢了！</say>',
-  '<stop type="choice"><option value="a">道歉</option><option>装傻</option></stop>',
-].join("\n");
-
-const BEAT_2 = ['<say id="mio" mood="soft">……算了。</say>', "<narrate>风停了。</narrate>"].join("\n");
+import { PlayMemory } from "../src/memory.js";
+import { BEAT_1, BEAT_2, CARD, PLAY, createFakeStreamFn, type FakeResponse } from "./helpers.js";
 
 function setup(
   responses: FakeResponse[],
@@ -234,7 +152,10 @@ describe("PlaywrightOrchestrator 闭环", () => {
     );
     await orchestrator.playerAction({ kind: "free", text: "开局" });
     // 停在 choice 停止点（空闲态）：OOC 直接开新拍，并声明玩家未回应
-    await orchestrator.playerAction({ kind: "ooc", text: "下一拍让澪提到天文社" });
+    await orchestrator.playerAction({
+      kind: "ooc",
+      text: "下一拍让澪提到天文社",
+    });
 
     expect(tree.materialize().some((e) => e.kind === "ooc")).toBe(true);
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(2);
@@ -259,7 +180,10 @@ describe("PlaywrightOrchestrator 闭环", () => {
 
   it("choice 零选项 → 护栏降级 free stop（D3）", async () => {
     const { orchestrator, messages } = setup([
-      { text: '<narrate>她看了看表。</narrate><stop type="choice"></stop>', beatDone: true },
+      {
+        text: '<narrate>她看了看表。</narrate><stop type="choice"></stop>',
+        beatDone: true,
+      },
     ]);
     await orchestrator.playerAction({ kind: "free", text: "开局" });
 
@@ -362,7 +286,10 @@ function mergedKinds(events: { seq: number; event: { kind: string } }[]): string
   return kinds;
 }
 
-function fullText(events: { event: { kind: string } & Record<string, unknown> }[], kind: string): string {
+function fullText(
+  events: { event: { kind: string } & Record<string, unknown> }[],
+  kind: string,
+): string {
   return events
     .filter((e) => e.event.kind === kind)
     .map((e) => String(e.event.delta ?? ""))
@@ -370,21 +297,37 @@ function fullText(events: { event: { kind: string } & Record<string, unknown> }[
 }
 
 describe("记忆工具组（createMemoryTools，D7）", () => {
-  function makeTools(engine: { turn: number; affinity: Record<string, number>; flags: Record<string, string | number | boolean> }) {
+  function makeTools(
+    engine: {
+      turn: number;
+      affinity: Record<string, number>;
+      flags: Record<string, string | number | boolean>;
+    },
+    arcIds: readonly string[] = [],
+  ) {
     const stateFiles: Record<string, string> = {};
     // 切片挂在当前分支叶子上：search_archive 以 pathSet() 过滤，脱离分支即不可见
     const tree = new LineageTree();
-    const e1 = tree.append("scene", { payload: { attrs: { bg: "corridor_dusk" } } });
+    const e1 = tree.append("scene", {
+      payload: { attrs: { bg: "corridor_dusk" } },
+    });
     const memory = new PlayMemory({
       cards: [CARD],
       slices: [{ entryId: e1.id, turn: 1, at: 0, summary: "澪在走廊提到了旧约定" }],
     });
-    const tools = createMemoryTools({ engine, characterIds: new Set(["mio"]), memory, tree, stateFiles });
+    const tools = createMemoryTools({
+      engine,
+      characterIds: new Set(["mio"]),
+      memory,
+      tree,
+      stateFiles,
+      arcIds: () => arcIds,
+    });
     return { tools, stateFiles, memory };
   }
 
   function textOf(result: { content: { type: string; text?: string }[] }): string {
-    return result.content.map((c) => (c.type === "text" ? c.text ?? "" : "")).join("\n");
+    return result.content.map((c) => (c.type === "text" ? (c.text ?? "") : "")).join("\n");
   }
 
   it("update_state：合法增量生效；非法增量/未知角色被拒；值域夹紧", async () => {
@@ -396,7 +339,10 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
     expect(engine.affinity.mio).toBe(13);
     expect(textOf(ok)).toContain("mio +3（10→13）");
 
-    const mixed = await update.execute("t2", { affinity: { mio: -99, ghost: 1 }, flags: { met: true } });
+    const mixed = await update.execute("t2", {
+      affinity: { mio: -99, ghost: 1 },
+      flags: { met: true },
+    });
     expect(engine.affinity.mio).toBe(13); // -99 被拒，不生效
     expect(textOf(mixed)).toContain("被拒绝");
     expect(textOf(mixed)).toContain("ghost");
@@ -415,7 +361,10 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
     const write = tools.find((t) => t.name === "write_memory")!;
     const read = tools.find((t) => t.name === "read_memory_detail")!;
 
-    await write.execute("t1", { file: "threads", content: "伏笔：旧约定未兑现" });
+    await write.execute("t1", {
+      file: "threads",
+      content: "伏笔：旧约定未兑现",
+    });
     expect(stateFiles.threads).toBe("伏笔：旧约定未兑现");
 
     const hit = await read.execute("t2", { name: "旧约定" });
@@ -460,7 +409,9 @@ describe("长会话装配与原地 OOC（P4）", () => {
     }
     // 轮尾 C 区：最新 user 消息含【状态】与【玩家表态】
     const lastUser = contexts
-      .at(-1)!.messages.filter((m) => m.role === "user").at(-1)!;
+      .at(-1)!
+      .messages.filter((m) => m.role === "user")
+      .at(-1)!;
     const rendered = JSON.stringify(lastUser);
     expect(rendered).toContain("【状态】");
     expect(rendered).toContain("【玩家表态】");
@@ -489,17 +440,40 @@ describe("长会话装配与原地 OOC（P4）", () => {
         for (const delta of text.match(/[\s\S]{1,7}/g) ?? []) {
           stream.push({ type: "text_delta", contentIndex: 0, delta, partial });
         }
-        stream.push({ type: "text_end", contentIndex: 0, content: text, partial });
+        stream.push({
+          type: "text_end",
+          contentIndex: 0,
+          content: text,
+          partial,
+        });
         const finalMessage: AssistantMessage = {
           role: "assistant",
           content: [
             { type: "text", text },
-            { type: "toolCall", id: `call-${turn}`, name: "beat_done", arguments: {} },
+            {
+              type: "toolCall",
+              id: `call-${turn}`,
+              name: "beat_done",
+              arguments: {},
+            },
           ],
           api: "openai-completions",
           provider: "fake",
           model: "fake-test",
-          usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+          usage: {
+            input: 1,
+            output: 1,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 2,
+            cost: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              total: 0,
+            },
+          },
           stopReason: "toolUse",
           timestamp: Date.now(),
         };
@@ -549,7 +523,12 @@ describe("长会话装配与原地 OOC（P4）", () => {
     const first = setup([
       {
         text: BEAT_1,
-        toolCalls: [{ name: "write_memory", args: { file: "scene", content: "黄昏，教室只剩两人" } }],
+        toolCalls: [
+          {
+            name: "write_memory",
+            args: { file: "scene", content: "黄昏，教室只剩两人" },
+          },
+        ],
       },
       { text: "", beatDone: true },
     ]);
@@ -583,8 +562,14 @@ describe("长会话装配与原地 OOC（P4）", () => {
     // 真实高频路径：模型先 read_memory_detail / search_archive 拿资料，再续写剧本
     const { orchestrator, messages } = setup(
       [
-        { text: "", toolCalls: [{ name: "read_memory_detail", args: { name: "旧约定" } }] },
-        { text: "", toolCalls: [{ name: "search_archive", args: { query: "旧约定" } }] },
+        {
+          text: "",
+          toolCalls: [{ name: "read_memory_detail", args: { name: "旧约定" } }],
+        },
+        {
+          text: "",
+          toolCalls: [{ name: "search_archive", args: { query: "旧约定" } }],
+        },
         { text: BEAT_1, beatDone: true },
       ],
       { memory: new PlayMemory({ cards: [CARD] }) },
@@ -603,7 +588,10 @@ describe("长会话装配与原地 OOC（P4）", () => {
   it("只调记忆工具就结束（零剧本产出）→ 空拍护栏显式报错并给 pause 重试", async () => {
     const { orchestrator, messages } = setup(
       [
-        { text: "", toolCalls: [{ name: "read_memory_detail", args: { name: "旧约定" } }] },
+        {
+          text: "",
+          toolCalls: [{ name: "read_memory_detail", args: { name: "旧约定" } }],
+        },
         { text: "", beatDone: true },
       ],
       { memory: new PlayMemory({ cards: [CARD] }) },
@@ -621,7 +609,12 @@ describe("长会话装配与原地 OOC（P4）", () => {
       {
         text: BEAT_1,
         beatDone: true,
-        toolCalls: [{ name: "write_memory", args: { file: "threads", content: "伏笔：旧约定" } }],
+        toolCalls: [
+          {
+            name: "write_memory",
+            args: { file: "threads", content: "伏笔：旧约定" },
+          },
+        ],
       },
     ]);
     await orchestrator.playerAction({ kind: "free", text: "我到了" });

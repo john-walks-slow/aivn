@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import MiniSearch from "minisearch";
@@ -18,20 +18,26 @@ export class PlayMemory {
   readonly cards: IndexCard[];
   /** archive 切片文件（空 = 不落盘，纯内存检索——测试/无归档剧目）。 */
   private readonly archiveFile: string | null;
+  /** arcs 纪元摘要目录（空 = 不落盘，纯内存）。 */
+  private readonly arcsDir: string | null;
   private slices: ArchiveSlice[];
   private index: MiniSearch<{ id: string } & ArchiveSlice> | null = null;
 
-  constructor(opts: {
-    craft?: string;
-    premise?: string;
-    cards?: IndexCard[];
-    archiveFile?: string | null;
-    slices?: ArchiveSlice[];
-  } = {}) {
+  constructor(
+    opts: {
+      craft?: string;
+      premise?: string;
+      cards?: IndexCard[];
+      archiveFile?: string | null;
+      arcsDir?: string | null;
+      slices?: ArchiveSlice[];
+    } = {},
+  ) {
     this.craft = opts.craft ?? "";
     this.premise = opts.premise ?? "";
     this.cards = opts.cards ?? [];
     this.archiveFile = opts.archiveFile ?? null;
+    this.arcsDir = opts.arcsDir ?? null;
     this.slices = opts.slices ?? [];
   }
 
@@ -42,18 +48,49 @@ export class PlayMemory {
       loadCards(store),
       loadArchive(store.memoryDir("archive", "events.jsonl")),
     ]);
-    return new PlayMemory({ craft, premise, cards, archiveFile: store.memoryDir("archive", "events.jsonl"), slices });
+    return new PlayMemory({
+      craft,
+      premise,
+      cards,
+      archiveFile: store.memoryDir("archive", "events.jsonl"),
+      arcsDir: store.memoryDir("index", "arcs"),
+      slices,
+    });
   }
 
-  /** A 区注入上下文（标题+摘要；详情由 playwriter 按需 read_memory_detail）。 */
+  /** A 区注入上下文（标题+摘要；详情由 playwriter 按需 read_memory_detail）。arcs 为谱系级，只注入当前分支已走过的纪元。 */
   get indexContext(): { layer: string; name: string; summary: string }[] {
-    return this.cards.map(({ layer, name, summary }) => ({ layer, name, summary }));
+    return this.cards.map(({ layer, name, summary }) => ({
+      layer,
+      name,
+      summary,
+    }));
   }
 
-  /** 按标题或文件名读 index 卡详情（read_memory_detail 工具后端）。 */
-  readCard(name: string): string | null {
+  /** 当前分支可见的 A 区 index 卡（arcs 按 ids 过滤——分岔回旧分支不得看到后世的章节摘要）。 */
+  visibleCards(arcIds: readonly string[] = []): IndexCard[] {
+    const allowed = new Set(arcIds);
+    return this.cards.filter((c) => c.layer !== "arcs" || allowed.has(c.file));
+  }
+
+  /** 同上，但只给标题+摘要（A 区注入用）。 */
+  visibleContext(
+    arcIds: readonly string[] = [],
+  ): { layer: string; name: string; summary: string }[] {
+    return this.visibleCards(arcIds).map(({ layer, name, summary }) => ({
+      layer,
+      name,
+      summary,
+    }));
+  }
+
+  /** 按标题或文件名读 index 卡详情（read_memory_detail 工具后端）。arcs 按当前分支过滤。 */
+  readCard(name: string, arcIds: readonly string[] = []): string | null {
     const key = name.replace(/\.md$/, "");
-    const card = this.cards.find((c) => c.name === key || c.file === key);
+    const allowed = new Set(arcIds);
+    const card = this.cards.find(
+      (c) => (c.name === key || c.file === key) && (c.layer !== "arcs" || allowed.has(c.file)),
+    );
     return card ? card.detail : null;
   }
 
@@ -91,6 +128,30 @@ export class PlayMemory {
     await mkdir(dirname(this.archiveFile), { recursive: true });
     await appendFile(this.archiveFile, `${JSON.stringify(slice)}\n`, "utf8");
   }
+
+  /**
+   * 纪元摘要落盘（纪元压缩产物）：写入 index/arcs/<id>.md 并即时进 cards——下一个纪元的
+   * A 区立即带得上这条摘要（纪元内冻结）。arcId 由编排器给定（谱系级快照引用同一 id）。
+   */
+  async appendArc(arc: {
+    id: string;
+    title: string;
+    summary: string;
+    detail: string;
+  }): Promise<void> {
+    if (this.cards.some((c) => c.file === arc.id)) return;
+    const detail = [`# ${arc.title}`, "", arc.summary, "", arc.detail, ""].join("\n");
+    this.cards.push({
+      layer: "arcs",
+      name: arc.title,
+      summary: arc.summary,
+      detail,
+      file: arc.id,
+    });
+    if (!this.arcsDir) return;
+    await mkdir(this.arcsDir, { recursive: true });
+    await writeFile(join(this.arcsDir, `${arc.id}.md`), detail, "utf8");
+  }
 }
 
 /** index 卡：首行 `# 标题`，次行一句话摘要，其余为详情（read_memory_detail 返回全文）。 */
@@ -126,7 +187,8 @@ async function loadCards(store: PlayStore): Promise<IndexCard[]> {
   for (const layer of layers) {
     const dir = store.memoryDir("index", layer);
     if (!existsSync(dir)) continue;
-    for (const entry of await readdir(dir)) {
+    // 排序：readdir 顺序由文件系统决定，A 区行序漂移会让整个前缀缓存失效
+    for (const entry of (await readdir(dir)).sort()) {
       if (!entry.endsWith(".md")) continue;
       const detail = await readText(join(dir, entry));
       const lines = detail.split("\n").map((l) => l.trim());
@@ -134,7 +196,13 @@ async function loadCards(store: PlayStore): Promise<IndexCard[]> {
       const name = title ?? entry.replace(/\.md$/, "");
       const titleIdx = lines.findIndex((l) => /^#\s+/.test(l));
       const summary = lines.slice(titleIdx + 1).find((l) => l !== "") ?? "";
-      cards.push({ layer, name, summary, detail, file: entry.replace(/\.md$/, "") });
+      cards.push({
+        layer,
+        name,
+        summary,
+        detail,
+        file: entry.replace(/\.md$/, ""),
+      });
     }
   }
   return cards;

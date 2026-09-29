@@ -2,7 +2,7 @@
 
 > **状态**：v4——按用户反馈重塑交互模型：**分岔/编辑/OOC/重写四个正交原语全部主界面化**（原地 vs 先分岔，句/段重写 ±instruction，组合自由）、**路线树完全替代存读档**（书签=命名节点）、工坊抽屉纯化（meta-chat 多会话 + 文件浏览编辑，抽屉↔全屏）、移除防抢戏标记（通用纠正机制替代）、**上下文装配重设计**（三区 append-only + 纪元压缩，KV 前缀缓存正确）。v3：剧目生命周期（剧目库/Title Screen/就绪门/剧目包/工坊共创）。v2：expert 交叉核查修订（见 [crosscheck 报告](./260928-stage-ai-mvp.crosscheck.md)）。
 > **日期**：2026-09-28
-> **实施进度**：P0–P3 已交付（真机验证中）；**P4 进行中**——已落地：三层记忆（`always/` 每轮注入 + `index/` 标题注入·详情按需读 + `archive/` 检索；四工具 `update_state`/`write_memory`/`read_memory_detail`/`search_archive`，切片带 entryId 做防剧透过滤）、常驻原地 OOC（busy 时 `agent.steer` 入队、当前拍收敛后注入导演注并续写下一拍）、输入润色（主角卡口吻，可撤销）、主角角色卡、语音语言翻译；待办：**纪元压缩→arcs**（P4b，60% 窗口触发）、**工坊抽屉**（P4c）。
+> **实施进度**：P0–P3 已交付（真机验证中）；**P4 进行中**——已落地：三层记忆（`always/` 每轮注入 + `index/` 标题注入·详情按需读 + `archive/` 检索；四工具 `update_state`/`write_memory`/`read_memory_detail`/`search_archive`，切片带 entryId 做防剧透过滤）、常驻原地 OOC（busy 时 `agent.steer` 入队、当前拍收敛后注入导演注并续写下一拍）、输入润色（主角卡口吻，可撤销）、主角角色卡、语音语言翻译、**纪元压缩→arcs**（P4b：对话体到窗口 60% 时把早期轮次压成 `index/arcs/` 前情提要卡、重建 Agent、被裁原文降级进 archive 仍可检索；触发判定与切尾点同尺标定）；待办：**工坊抽屉**（P4c）。
 > **关联调研**：
 > - [260928-gal-engine.research.md](./260928-gal-engine.research.md)（渲染层选型）
 > - [260928-playwriter-runtime.research.md](./260928-playwriter-runtime.research.md)（pi agent 运行时）
@@ -328,7 +328,7 @@ memory/
 
 - **废除 9 槽位与 FIFO 滑窗**：Active State 从 system 挪进每轮 user 消息——旧轮的状态块留在对话体里（是状态演变轨迹，缓存命中价约 1/10，且让模型可回看）；Recent History 不再滑窗截断，对话体只增不减直到纪元边界。
 - **稳态零装配**：每轮**不用** transformContext（pi 原生消息列表直发，天然 append-only，根除"每轮重序列化导致前缀字节漂移"的隐患）；transformContext 只在**纪元边界**使用。
-- **纪元边界事件**（一次性从事件日志重建上下文，此后回归 append-only）：① 对话体到预算（窗口 ~60%）触发 **compaction**（pi 原生）——被裁轮次由廉价模型压缩进 arcs 摘要、原文降级进 archive（检索层仍可命中）；② 分岔 / 原地编辑（D10）；③ 工坊热改 premise/craft。
+- **纪元边界事件**（一次性从事件日志重建上下文，此后回归 append-only）：① 对话体到预算（窗口 ~60%，`STAGE_COMPACT_RATIO`）触发 **compaction**（P4b 已交付：复用 pi 的 `estimateContextTokens`/`shouldCompact` 做计量，摘要自生成——不用 pi 的 `compact()`，它绑死 pi session 的 `Entry[]`）——被裁轮次压进一张 arcs 卡、原文降级进 archive（检索层仍可命中），随后**重建 Agent 实例**（A 区变了不能只改 messages）；② 分岔 / 原地编辑（D10）；③ 工坊热改 premise/craft。
 - **缓存账**（12 轮窗口量级估算，旧 9 槽位设计 vs 本设计）：每轮 prefill ~7–8K tok → ~1–2K tok；前缀命中率 <30% → >80%。审计指标：`usage.prompt_cache_hit_tokens` 占比纳入 soak 报告。
 - **供应商现实**：DeepSeek 自动前缀缓存（命中输入约 1/10 价，磁盘缓存 TTL 长）最适合本场景；Claude 显式 cache_control / Gemini 隐式缓存 / OpenAI ≥1024 tok 自动缓存同属前缀稳定语义；但 Claude/Gemini 缓存 TTL 为分钟级——慢节奏人工游玩天然 miss（供应商属性，设计无法补救），收益以 DeepSeek 后端与快节奏/自动模式为主。
 **记忆的谱系归属**（分岔/分支一致性的根基，P0 数据模型冻结项）：

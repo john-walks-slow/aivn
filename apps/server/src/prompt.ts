@@ -10,7 +10,12 @@ export type AssetManifest = Record<string, string[]>;
  * 每轮变化的状态走 user 消息【状态】区（B 区 append-only），见 orchestrator。
  * 记忆层（D7）：craft/premise/index 标题列表在 runtime 构建时读入——纪元内冻结，工坊热改走 reload。
  */
-export function buildSystemPrompt(play: PlayConfig, assets: AssetManifest = {}, memory?: PlayMemory): string {
+export function buildSystemPrompt(
+  play: PlayConfig,
+  assets: AssetManifest = {},
+  memory?: PlayMemory,
+  arcIds: readonly string[] = [],
+): string {
   const characters = play.characters
     .map((c) => {
       // 差分列表优先取角色卡 sprites 键名（前端按它解析立绘）；未配置映射时回退磁盘文件 stem
@@ -38,12 +43,10 @@ export function buildSystemPrompt(play: PlayConfig, assets: AssetManifest = {}, 
   const craftSection = memory?.craft.trim()
     ? `\n# 剧艺守则（craft）\n\n${memory.craft.trim()}\n`
     : "";
-  const cards = memory?.cards ?? [];
+  const cards = memory?.visibleContext(arcIds) ?? [];
   const indexSection =
     cards.length > 0
-      ? `\n# 记忆索引（按需查详情）\n\n${cards
-          .map((c) => `- [${c.layer}] ${c.name}：${c.summary}`)
-          .join("\n")}\n\n需要某条完整内容时调用 read_memory_detail 工具（传名称）。历史往事用 search_archive 检索。\n`
+      ? `\n# 记忆索引（按需查详情）\n\n${cards.map((c) => `- [${c.layer}] ${c.name}：${c.summary}`).join("\n")}\n\n需要某条完整内容时调用 read_memory_detail 工具（传名称）。历史往事用 search_archive 检索。\n`
       : "";
 
   return `你是一部视觉小说的剧作家（playwriter），实时为一部正在"直播"的游戏写剧本。

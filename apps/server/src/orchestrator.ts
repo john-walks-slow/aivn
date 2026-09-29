@@ -1,4 +1,10 @@
-import type { AgentTool, AgentToolResult, Agent, StreamFn } from "@earendil-works/pi-agent-core";
+import type {
+  AgentTool,
+  AgentToolResult,
+  Agent,
+  AgentMessage,
+  StreamFn,
+} from "@earendil-works/pi-agent-core";
 import { Agent as PiAgent } from "@earendil-works/pi-agent-core";
 import { type Api, type Model, type Static, type TSchema, Type } from "@earendil-works/pi-ai";
 import {
@@ -13,6 +19,17 @@ import {
 } from "@stage-ai/core";
 import type { ServerMessage } from "@stage-ai/core";
 import { buildSystemPrompt, renderStateSection, type AssetManifest } from "./prompt.js";
+import {
+  EPOCH_SUMMARY_SYSTEM,
+  measureContext,
+  pickCutIndex,
+  renderSeed,
+  renderTranscript,
+  splitSummary,
+  withSeed,
+  type EpochSummary,
+} from "./compaction.js";
+import { completeText } from "./llm.js";
 import type { PlayConfig } from "@stage-ai/core";
 import type { PlayMemory } from "./memory.js";
 import { VoicePipeline, type TtsSynthFn } from "./voice.js";
@@ -24,7 +41,8 @@ export function createBeatDoneTool(): AgentTool<TSchema> {
   return {
     name: "beat_done",
     label: "结束本节拍",
-    description: "本节拍演出内容已写完（交互停止点之后，或一幕自然写完）时调用，不与其他工具同批调用",
+    description:
+      "本节拍演出内容已写完（交互停止点之后，或一幕自然写完）时调用，不与其他工具同批调用",
     parameters: beatDoneParams,
     execute: async () => ({
       content: [{ type: "text", text: "ok" }],
@@ -45,6 +63,8 @@ export interface MemoryToolDeps {
   memory: PlayMemory;
   tree: LineageTree;
   stateFiles: Record<string, string>;
+  /** 当前分支已走过的纪元（谱系级：分岔回旧分支不得读到后世的章节摘要）。 */
+  arcIds: () => readonly string[];
 }
 
 function textResult(text: string): AgentToolResult {
@@ -69,10 +89,16 @@ const writeMemoryParams = Type.Object(
   { additionalProperties: false },
 );
 
-const readMemoryDetailParams = Type.Object({ name: Type.String() }, { additionalProperties: false });
+const readMemoryDetailParams = Type.Object(
+  { name: Type.String() },
+  { additionalProperties: false },
+);
 
 const searchArchiveParams = Type.Object(
-  { query: Type.String({ maxLength: 200 }), limit: Type.Optional(Type.Number()) },
+  {
+    query: Type.String({ maxLength: 200 }),
+    limit: Type.Optional(Type.Number()),
+  },
   { additionalProperties: false },
 );
 
@@ -139,9 +165,13 @@ export function createMemoryTools(deps: MemoryToolDeps): AgentTool<TSchema>[] {
     parameters: readMemoryDetailParams,
     execute: async (_toolCallId, params: Static<typeof readMemoryDetailParams>) => {
       const { name } = params;
-      const detail = deps.memory.readCard(name);
+      const arcIds = deps.arcIds();
+      const detail = deps.memory.readCard(name, arcIds);
       if (detail) return textResult(detail);
-      const available = deps.memory.indexContext.map((c) => c.name).join("、");
+      const available = deps.memory
+        .visibleContext(arcIds)
+        .map((c) => c.name)
+        .join("、");
       return textResult(`未找到「${name}」。可用条目：${available || "（无）"}。`);
     },
   };
@@ -154,11 +184,13 @@ export function createMemoryTools(deps: MemoryToolDeps): AgentTool<TSchema>[] {
     parameters: searchArchiveParams,
     execute: async (_toolCallId, params: Static<typeof searchArchiveParams>) => {
       const { query, limit } = params;
-      const hits = deps.memory.searchArchive(query, deps.tree.pathSet(), Math.max(1, Math.min(10, limit ?? 5)));
-      if (hits.length === 0) return textResult("（无命中：当前分支历史中未检索到相关内容）");
-      return textResult(
-        hits.map((h) => `【第 ${h.turn} 拍】\n${h.summary}`).join("\n\n"),
+      const hits = deps.memory.searchArchive(
+        query,
+        deps.tree.pathSet(),
+        Math.max(1, Math.min(10, limit ?? 5)),
       );
+      if (hits.length === 0) return textResult("（无命中：当前分支历史中未检索到相关内容）");
+      return textResult(hits.map((h) => `【第 ${h.turn} 拍】\n${h.summary}`).join("\n\n"));
     },
   };
 
@@ -201,6 +233,12 @@ export interface OrchestratorOptions {
   restored?: OrchestratorRuntimeState;
   /** 语音管线合成函数（无则本剧目无声：hello.voice=false）。 */
   tts?: { synth: TtsSynthFn; concurrency?: number };
+  /** 纪元压缩阈值（窗口占比）与保留预算；不传则只增不减到模型自己报错。 */
+  compaction?: {
+    contextWindow: number;
+    triggerRatio: number;
+    keepRecentTokens: number;
+  };
 }
 
 /** 编排器运行态（随 session.json 持久化，重启后恢复重放与续演）。 */
@@ -225,7 +263,7 @@ interface OpenLine {
  * （【状态】+【导演注】?+【玩家表态】，Active State 进 user 消息保证 KV 前缀稳定）。
  */
 export class PlaywrightOrchestrator {
-  private readonly agent: Agent;
+  private agent: Agent;
   private readonly parser: StageDslParser;
   private readonly opts: OrchestratorOptions;
   private readonly events: SequencedEvent[] = [];
@@ -238,6 +276,10 @@ export class PlaywrightOrchestrator {
   private openLine: OpenLine | null = null;
   private autostarted = false;
   private disposed = false;
+  /** 一拍正在开（纪元压缩等前置步骤未完）：对外等同 busy，防止并发 beginBeat 与 steer 错投。 */
+  private beatPending = false;
+  /** 旁路补全（纪元摘要）的中断源：dispose 时一并掐断在飞请求。 */
+  private readonly signalController = new AbortController();
   /** 语音预取管线（D5）：say 行 → 分句 → TTS 预取 → audio_ready。 */
   private readonly voice: VoicePipeline | null;
   /** 本拍内 pi agent 的流错误（message_end.errorMessage）；每拍重置。 */
@@ -250,44 +292,20 @@ export class PlaywrightOrchestrator {
   private beatClosed = false;
   /** always/state 活跃状态文件内容（谱系级，随快照走；write_memory 工具维护）。 */
   private stateFiles: Record<string, string> = {};
-  private readonly unsubscribeAgent: () => void;
+  /** 当前分支已走过的纪元摘要 id（谱系级，随快照走；纪元压缩时追加）。 */
+  private arcIds: string[] = [];
+  private unsubscribeAgent: (() => void) | null = null;
 
   constructor(opts: OrchestratorOptions) {
     this.opts = opts;
     this.parser = new StageDslParser((event) => this.onStageEvent(event));
     if (opts.restored) {
-      // 恢复会话：活跃状态文件从路径最近快照回填（谱系级记忆）
-      this.stateFiles = opts.tree.latestSnapshotOnPath(opts.tree.leafId)?.memory.state ?? {};
+      // 恢复会话：活跃状态文件与纪元摘要从路径最近快照回填（谱系级记忆）
+      const snapshot = opts.tree.latestSnapshotOnPath(opts.tree.leafId);
+      this.stateFiles = snapshot?.memory.state ?? {};
+      this.arcIds = [...(snapshot?.memory.arcs ?? [])];
     }
-    this.agent = new PiAgent({
-      streamFn: opts.streamFn,
-      getApiKey: opts.getApiKey,
-      initialState: {
-        systemPrompt: buildSystemPrompt(opts.play, opts.assets, opts.memory),
-        model: opts.model,
-        thinkingLevel: "off",
-        tools: [
-          createBeatDoneTool(),
-          ...createMemoryTools({
-            engine: opts.engine,
-            characterIds: new Set(opts.play.characters.map((c) => c.id)),
-            memory: opts.memory,
-            tree: opts.tree,
-            stateFiles: this.stateFiles,
-          }),
-        ],
-        messages: [],
-      },
-    });
-    this.unsubscribeAgent = this.agent.subscribe((event) => void this.onAgentEvent(event));
-    // 批次收束兜底：pi 仅在「批内全部工具结果都 terminate」时收束 turn，模型若把 beat_done
-    // 与记忆工具同批调用，terminate 会被吞掉导致本拍继续空转——此时按 beat_done 显式收束 run。
-    this.agent.finishTurn = async (turn) => {
-      const calls = turn.message.content.filter((c) => c.type === "toolCall");
-      if (!calls.some((c) => c.name === "beat_done")) return undefined;
-      this.beatClosed = true;
-      return calls.length > 1 ? { action: "end" as const } : undefined;
-    };
+    this.agent = this.buildAgent([]);
     this.voice = opts.tts
       ? new VoicePipeline({
           synth: opts.tts.synth,
@@ -306,16 +324,62 @@ export class PlaywrightOrchestrator {
     }
   }
 
-  /** 运行态快照（session.json 持久化，重启后恢复重放与续演）。 */
-  get runtimeState(): OrchestratorRuntimeState {
-    return { events: this.events, beatNo: this.beatNo, lastStop: this.lastStop };
+  /**
+   * 构建并接管一个 pi Agent 实例（纪元压缩会重建——A 区变了不能只换 messages）。
+   * 退订旧实例、重订新实例、装上批次收束兜底，都收在这里。
+   */
+  private buildAgent(messages: AgentMessage[]): Agent {
+    const opts = this.opts;
+    this.unsubscribeAgent?.();
+    const agent = new PiAgent({
+      streamFn: opts.streamFn,
+      getApiKey: opts.getApiKey,
+      initialState: {
+        systemPrompt: buildSystemPrompt(opts.play, opts.assets, opts.memory, this.arcIds),
+        model: opts.model,
+        thinkingLevel: "off",
+        tools: [
+          createBeatDoneTool(),
+          ...createMemoryTools({
+            engine: opts.engine,
+            characterIds: new Set(opts.play.characters.map((c) => c.id)),
+            memory: opts.memory,
+            tree: opts.tree,
+            stateFiles: this.stateFiles,
+            arcIds: () => this.arcIds,
+          }),
+        ],
+        messages,
+      },
+    });
+    // 批次收束兜底：pi 仅在「批内全部工具结果都 terminate」时收束 turn，模型若把 beat_done
+    // 与记忆工具同批调用，terminate 会被吞掉导致本拍继续空转——此时按 beat_done 显式收束 run。
+    agent.finishTurn = async (turn) => {
+      const calls = turn.message.content.filter((c) => c.type === "toolCall");
+      if (!calls.some((c) => c.name === "beat_done")) return undefined;
+      this.beatClosed = true;
+      return calls.length > 1 ? { action: "end" as const } : undefined;
+    };
+    this.unsubscribeAgent = agent.subscribe((event) => void this.onAgentEvent(event));
+    this.agent = agent;
+    return agent;
   }
 
-  /** 丢弃：断订阅、中断当前流、停语音管线（多剧目/重开时回收）。 */
+  /** 运行态快照（session.json 持久化，重启后恢复重放与续演）。 */
+  get runtimeState(): OrchestratorRuntimeState {
+    return {
+      events: this.events,
+      beatNo: this.beatNo,
+      lastStop: this.lastStop,
+    };
+  }
+
+  /** 丢弃：断订阅、中断当前流与旁路补全、停语音管线（多剧目/重开时回收）。 */
   dispose(): void {
     this.disposed = true;
-    this.unsubscribeAgent();
+    this.unsubscribeAgent?.();
     this.agent.abort();
+    this.signalController.abort();
     this.voice?.dispose();
   }
 
@@ -337,6 +401,11 @@ export class PlaywrightOrchestrator {
     return this.busy;
   }
 
+  /** 对外可接收新输入的空闲判据：一拍开窗中（busy）或正在开拍（纪元压缩等前置）。 */
+  private get engaged(): boolean {
+    return this.busy || this.beatPending;
+  }
+
   get lastSeq(): number {
     return this.seq;
   }
@@ -346,7 +415,12 @@ export class PlaywrightOrchestrator {
   }
 
   /** 重连恢复：stopped 态重发 beat_end 载荷；演出进行中/未开局返回 null。 */
-  get stoppedReplay(): { type: "beat_end"; beatId: string; reason: "stop" | "act_end"; stop?: StopPayload } | null {
+  get stoppedReplay(): {
+    type: "beat_end";
+    beatId: string;
+    reason: "stop" | "act_end";
+    stop?: StopPayload;
+  } | null {
     if (this.busy || !this.autostarted || this.beatNo === 0) return null;
     return {
       type: "beat_end",
@@ -358,29 +432,43 @@ export class PlaywrightOrchestrator {
 
   /** 首个客户端连接后开局。 */
   autostart(): void {
-    if (this.autostarted || this.busy) return;
+    if (this.autostarted || this.engaged) return;
     this.autostarted = true;
     void this.beginBeat(this.opts.play.opening);
   }
 
   /** 玩家操作 → 下一节拍。busy 中拒绝。开局时玩家表态并入开场指令。 */
   async playerAction(action: PlayerAction): Promise<void> {
+    // engaged 覆盖纪元压缩窗口：压缩期间 busy 仍为 false，但 Agent 随时可能被重建，
+    // steer 进旧实例会丢消息、并发 beginBeat 会打架——一律按「演出进行中」挡回
     if (action.kind === "ooc" && this.busy) {
       // 原地 OOC（D9）：steer 入队——当前拍收敛后注入【导演注】，agent 立即续写下一拍；不打断进行中的演出
-      this.agent.steer({ role: "user", content: this.renderUserTurn(action), timestamp: Date.now() });
+      this.agent.steer({
+        role: "user",
+        content: this.renderUserTurn(action),
+        timestamp: Date.now(),
+      });
       this.appendLineage("ooc", { payload: { input: action.text } });
       this.send({ type: "ooc_ack" });
       return;
     }
-    if (this.busy) {
-      this.send({ type: "error", message: "演出进行中，请等待当前节拍结束", recoverable: true });
+    if (this.engaged) {
+      this.send({
+        type: "error",
+        message: "演出进行中，请等待当前节拍结束",
+        recoverable: true,
+      });
       return;
     }
     let resolved: ResolvedAction;
     if (action.kind === "choice") {
       const option = this.lastStop?.options?.[action.optionIndex];
       if (!option) {
-        this.send({ type: "error", message: `无效的选项索引: ${action.optionIndex}`, recoverable: true });
+        this.send({
+          type: "error",
+          message: `无效的选项索引: ${action.optionIndex}`,
+          recoverable: true,
+        });
         return;
       }
       resolved = { kind: "choice", text: option.text };
@@ -446,8 +534,12 @@ export class PlaywrightOrchestrator {
   }
 
   private async beginBeat(userText: string): Promise<void> {
-    this.startBeatWindow();
+    this.beatPending = true;
     try {
+      // 纪元边界：拍与拍之间是唯一允许突变 A 区/对话体的时刻（空前缀缓存豁免）
+      await this.maybeCompactEpoch();
+      if (this.disposed) return;
+      this.startBeatWindow();
       await this.agent.prompt(userText);
       await this.agent.waitForIdle();
     } catch (error) {
@@ -456,6 +548,76 @@ export class PlaywrightOrchestrator {
     } finally {
       // prompt 异常路径可能不发 agent_end：兜底收束（正常路径 busy 已被 finishBeat 清零）
       if (this.busy) this.finishBeat();
+      this.beatPending = false;
+    }
+  }
+
+  /**
+   * 纪元压缩：对话体涨到窗口预算（默认 60%）时，把早期轮次压成一张 arcs 摘要卡并重建 Agent。
+   * - 摘要失败/无可压段：只告警不动对话体——压缩是优化不是正确性前提，不做降级；
+   * - 切掉的原文早已逐拍落进 archive，检索层（search_archive）照常命中。
+   */
+  private async maybeCompactEpoch(): Promise<void> {
+    const compaction = this.opts.compaction;
+    if (!compaction || this.disposed) return;
+    const messages = this.agent.state.messages;
+    const budget = Math.floor(compaction.contextWindow * compaction.triggerRatio);
+    // 触发判定与切尾点同尺：scale 由 provider 实测 usage 标定（中文下 chars/4 严重低估）
+    const { tokens: used, scale } = measureContext(messages);
+    if (used <= budget) return;
+    const cut = pickCutIndex(messages, compaction.keepRecentTokens, scale);
+    if (cut === 0) return;
+    const head = messages.slice(1, cut);
+    const tail = messages.slice(cut);
+    const summary = await this.summarizeEpoch(head);
+    if (!summary) return;
+    const { oneLiner, body } = summary;
+    // 摘要请求在飞：期间可能已 reload/startFresh/dispose——此时重建 Agent 等于僵尸复活
+    if (this.disposed) return;
+    const epochNo = this.arcIds.length + 1;
+    // arcId 带谱系叶：分岔后两条支路各自压缩不会互相覆盖同名卡
+    const arcId = `epoch-${this.opts.tree.leafId ?? "root"}-${epochNo}`;
+    try {
+      await this.opts.memory.appendArc({
+        id: arcId,
+        title: `纪元 ${epochNo}｜截至第 ${this.beatNo} 拍`,
+        summary: oneLiner,
+        detail: body,
+      });
+    } catch (error) {
+      console.warn(
+        `[stage-ai] 纪元压缩跳过（摘要落盘失败）: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+    if (this.disposed) return;
+    this.arcIds = [...this.arcIds, arcId];
+    this.buildAgent(withSeed(tail, renderSeed(epochNo, this.beatNo, body)));
+    console.log(
+      `[stage-ai] 纪元 ${epochNo} 压缩完成：${used} tok → 保留 ${tail.length}/${messages.length} 条消息，arc=${arcId}`,
+    );
+    this.opts.persist();
+  }
+
+  /** 生成纪元摘要；失败只告警并返回 null（压缩是优化不是正确性前提，不阻断本拍开拍）。 */
+  private async summarizeEpoch(head: readonly AgentMessage[]): Promise<EpochSummary | null> {
+    try {
+      const summary = await completeText(
+        {
+          streamFn: this.opts.streamFn,
+          model: this.opts.model,
+          getApiKey: this.opts.getApiKey,
+          signal: this.signalController.signal,
+        },
+        EPOCH_SUMMARY_SYSTEM,
+        renderTranscript(head),
+      );
+      return splitSummary(summary);
+    } catch (error) {
+      console.warn(
+        `[stage-ai] 纪元压缩跳过（摘要生成失败）: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
     }
   }
 
@@ -469,10 +631,16 @@ export class PlaywrightOrchestrator {
     this.beatClosed = false;
     this.opts.engine.turn = this.beatNo;
     this.send({ type: "beat_start", beatId: `beat-${this.beatNo}` });
-    this.send({ type: "lineage", leafId: this.opts.tree.leafId ?? "", turn: this.opts.tree.leafId ? (this.opts.tree.get(this.opts.tree.leafId)?.turn ?? 0) : 0 });
+    this.send({
+      type: "lineage",
+      leafId: this.opts.tree.leafId ?? "",
+      turn: this.opts.tree.leafId ? (this.opts.tree.get(this.opts.tree.leafId)?.turn ?? 0) : 0,
+    });
   }
 
-  private async onAgentEvent(event: Parameters<Parameters<Agent["subscribe"]>[0]>[0]): Promise<void> {
+  private async onAgentEvent(
+    event: Parameters<Parameters<Agent["subscribe"]>[0]>[0],
+  ): Promise<void> {
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
       this.parser.feed(event.assistantMessageEvent.delta);
     } else if (event.type === "message_end" && event.message.role === "assistant") {
@@ -499,7 +667,10 @@ export class PlaywrightOrchestrator {
     this.pendingStop = null;
     // D3 护栏：choice 无选项 = 交互死路，降级 free stop（parser 侧已有 warning 供回喂）
     if (stop?.stopType === "choice" && (stop.options?.length ?? 0) === 0) {
-      stop = { stopType: "free", placeholder: "（本轮选项生成失败，请自由回应）" };
+      stop = {
+        stopType: "free",
+        placeholder: "（本轮选项生成失败，请自由回应）",
+      };
     }
     // 空拍护栏：生成失败/零产出不得静默伪装成正常收束——显式 error + pause 停止点给玩家重试入口
     if (this.beatEvents === 0 && !stop) {
@@ -510,17 +681,30 @@ export class PlaywrightOrchestrator {
       });
       stop = { stopType: "pause" };
     } else if (this.beatError) {
-      this.send({ type: "error", message: `本节拍生成中断：${this.beatError}`, recoverable: true });
+      this.send({
+        type: "error",
+        message: `本节拍生成中断：${this.beatError}`,
+        recoverable: true,
+      });
     }
     this.beatError = null;
     this.lastStop = stop;
-    this.appendLineage("beat_end", { payload: { reason: stop ? "stop" : "act_end" } });
+    this.appendLineage("beat_end", {
+      payload: { reason: stop ? "stop" : "act_end" },
+    });
     // 谱系快照随 beat 收束保存（分岔/续演恢复用）：活跃状态文件 + arcs 引用（谱系级记忆）
     const engine = this.opts.engine;
-    const memory: MemorySnapshot = { state: { ...this.stateFiles }, arcs: [] };
+    const memory: MemorySnapshot = {
+      state: { ...this.stateFiles },
+      arcs: [...this.arcIds],
+    };
     // 克隆后再存：快照按节点留档，存引用会被后续拍的原地修改污染（分岔恢复必须拿到当拍真值）
     this.opts.tree.saveSnapshot(
-      { ...engine, affinity: { ...engine.affinity }, flags: { ...engine.flags } },
+      {
+        ...engine,
+        affinity: { ...engine.affinity },
+        flags: { ...engine.flags },
+      },
       memory,
     );
     // archive 逐节拍切片（D7 第三层）：本拍台词全文，entryId = 谱系叶（防剧透过滤键）
@@ -532,7 +716,9 @@ export class PlaywrightOrchestrator {
         summary: this.beatLines.join("\n").slice(0, 800),
       })
       .catch((error: unknown) =>
-        console.warn(`[stage-ai] archive 切片写入失败: ${error instanceof Error ? error.message : String(error)}`),
+        console.warn(
+          `[stage-ai] archive 切片写入失败: ${error instanceof Error ? error.message : String(error)}`,
+        ),
       );
     this.send({
       type: "beat_end",
@@ -543,7 +729,10 @@ export class PlaywrightOrchestrator {
     this.opts.persist();
   }
 
-  private appendLineage(kind: LineageEvent["kind"], opts: { text?: string; payload?: LineageEvent["payload"] }): LineageEvent {
+  private appendLineage(
+    kind: LineageEvent["kind"],
+    opts: { text?: string; payload?: LineageEvent["payload"] },
+  ): LineageEvent {
     const event = this.opts.tree.append(kind, opts);
     this.opts.onLineageEvent?.(event);
     return event;
@@ -581,13 +770,23 @@ export class PlaywrightOrchestrator {
   private accumulateLineage(event: StageEvent): void {
     switch (event.kind) {
       case "say_start":
-        this.openLine = { kind: "say", id: event.id, text: "", attrs: { id: event.id, ...(event.mood ? { mood: event.mood } : {}) } };
+        this.openLine = {
+          kind: "say",
+          id: event.id,
+          text: "",
+          attrs: { id: event.id, ...(event.mood ? { mood: event.mood } : {}) },
+        };
         return;
       case "narrate_start":
         this.openLine = { kind: "narrate", text: "", attrs: {} };
         return;
       case "thought_start":
-        this.openLine = { kind: "thought", id: event.id, text: "", attrs: { id: event.id } };
+        this.openLine = {
+          kind: "thought",
+          id: event.id,
+          text: "",
+          attrs: { id: event.id },
+        };
         return;
       case "say_text":
       case "narrate_text":
@@ -600,26 +799,49 @@ export class PlaywrightOrchestrator {
         const line = this.openLine;
         this.openLine = null;
         if (line) {
-          this.appendLineage(line.kind, { text: line.text, payload: { attrs: line.attrs } });
+          this.appendLineage(line.kind, {
+            text: line.text,
+            payload: { attrs: line.attrs },
+          });
           this.beatLines.push(line.text.slice(0, 200));
         }
         return;
       }
       case "scene":
         if (event.bg) this.opts.scene = event.bg;
-        this.appendLineage("scene", { payload: { attrs: { bg: event.bg ?? "", ...pick(event, ["bgm", "ambient", "transition"]) } } });
+        this.appendLineage("scene", {
+          payload: {
+            attrs: {
+              bg: event.bg ?? "",
+              ...pick(event, ["bgm", "ambient", "transition"]),
+            },
+          },
+        });
         return;
       case "actor":
-        this.appendLineage("actor", { payload: { attrs: { id: event.id, ...pick(event, ["pos", "expression", "action"]) } } });
+        this.appendLineage("actor", {
+          payload: {
+            attrs: {
+              id: event.id,
+              ...pick(event, ["pos", "expression", "action"]),
+            },
+          },
+        });
         return;
       case "sfx":
         this.appendLineage("sfx", { payload: { attrs: { src: event.src } } });
         return;
       case "preload_asset":
-        this.appendLineage("preload", { payload: { attrs: { type: event.type, prompt: event.prompt, id: event.id } } });
+        this.appendLineage("preload", {
+          payload: {
+            attrs: { type: event.type, prompt: event.prompt, id: event.id },
+          },
+        });
         return;
       case "cg":
-        this.appendLineage("cg", { payload: { attrs: { id: event.id, ...pick(event, ["caption"]) } } });
+        this.appendLineage("cg", {
+          payload: { attrs: { id: event.id, ...pick(event, ["caption"]) } },
+        });
         return;
       case "stop":
         this.pendingStop = {
@@ -628,7 +850,10 @@ export class PlaywrightOrchestrator {
           placeholder: event.placeholder,
         };
         this.appendLineage("stop", {
-          payload: { attrs: { type: event.stopType }, ...(event.options ? { options: event.options } : {}) },
+          payload: {
+            attrs: { type: event.stopType },
+            ...(event.options ? { options: event.options } : {}),
+          },
         });
         return;
     }
