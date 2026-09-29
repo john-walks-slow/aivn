@@ -25,9 +25,10 @@ export function toNodeView(event: LineageEvent): LineageNodeView {
     createdAt: event.createdAt,
     onPath: false,
     children: 0,
-    editTargetId: event.editTargetId,
-    granularity: event.payload?.granularity,
-    instruction: event.payload?.instruction,
+    // edit 是挂在目标旁边的旁注，不在树上，单个事件里查不到改写——由 describe() 补
+    editedText: null,
+    editCount: 0,
+    editedAt: undefined,
     seq: typeof event.payload?.seq === "number" ? event.payload.seq : undefined,
     ...stop,
   };
@@ -49,20 +50,6 @@ function readStop(payload: LineageEvent["payload"]): Pick<LineageNodeView, "stop
 }
 
 /**
- * edit 事件覆盖目标行文本（与 materialize 同一套规则）：改过的台词在
- * 客户端重放与 LLM 上下文重建里都必须是新文本——所见即所忆。
- */
-function editOverrides(chain: readonly LineageNodeView[]): Map<string, string> {
-  const overrides = new Map<string, string>();
-  for (const node of chain) {
-    if (node.kind === "edit" && node.editTargetId) {
-      overrides.set(node.editTargetId, node.text);
-    }
-  }
-  return overrides;
-}
-
-/**
  * 谱系链 → 客户端 IR 事件（preload 不重放——生成不因回放重来）。
  *
  * seq 沿用每个节点当初的 seq，而不是从 1 重新编号：分岔/编辑重生成之后
@@ -71,7 +58,6 @@ function editOverrides(chain: readonly LineageNodeView[]): Map<string, string> {
  * 老档没有 seq 才退回顺序编号。
  */
 export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEvent[] {
-  const overrides = editOverrides(chain);
   const out: SequencedEvent[] = [];
   let seq = 0;
   const push = (base: number | undefined, ...events: StageEvent[]): void => {
@@ -96,7 +82,8 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
   for (const node of chain) {
     const attrs = node.attrs;
     const base = node.seq;
-    const delta = (): string => overrides.get(node.id) ?? node.text;
+    // 改写已在物化阶段填回 text（edit 是挂在目标旁边的旁注，不在链上）
+    const delta = (): string => node.text;
     switch (node.kind) {
       case "scene":
         push(base, {

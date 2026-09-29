@@ -932,30 +932,7 @@ button.primary:hover:not(:disabled) {
   flex: 1;
 }
 
-/* ── 常驻导演注（OOC，舞台顶栏浮层） ──── */
-
-.director-box {
-  position: absolute;
-  top: 52px;
-  right: 14px;
-  z-index: 30;
-  width: min(420px, calc(100% - 28px));
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-}
-
-.director-box input {
-  border: none;
-  outline: none;
-  background: transparent;
-  font: inherit;
-}
+/* ── 导演面板（长在对话框底部，见 .director-panel） ──── */
 
 .director-hint {
   font-size: 12.5px;
@@ -2011,6 +1988,12 @@ select:focus {
   opacity: 0.5;
 }
 
+/* 分岔出来的线：走向的旁支，不该和主干长得一模一样 */
+.route-edge.fork {
+  stroke: var(--accent-soft);
+  stroke-dasharray: 2 3;
+}
+
 .route-dot {
   fill: var(--accent);
 }
@@ -2164,6 +2147,15 @@ select:focus {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* 分岔徽标：挂在拍号旁边，说明「这一拍是从第 N 拍分出来重演的」 */
+.route-node-fork {
+  padding: 0 5px;
+  border: 1px solid var(--accent-soft);
+  border-radius: 999px;
+  color: var(--accent);
+  cursor: help;
 }
 
 /* 画布上的浮层：导航与镜头不占树的版面，空白处都能点回去 */
@@ -2962,17 +2954,7 @@ select:focus {
   width: 14px;
   height: 14px;
 }
-/* 语音已排进队列的小圆点：OOC 不打断当前演出，状态只能靠这个提示 */
-.dir-dot {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-/* 导演栏：贴在对话框底部，六个小图标 */
+/* 导演栏：贴在对话框底部，三个小图标（插一句 / 改台词 / 重来这一幕） */
 .dialog-foot {
   display: flex;
   align-items: center;
@@ -3030,6 +3012,106 @@ select:focus {
   border: none;
   outline: none;
   background: transparent;
+  font: inherit;
+}
+/* 输入行 + OOC 快捷前缀按钮 */
+.director-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ooc-shortcut {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ooc-shortcut:hover,
+.ooc-shortcut.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 待注入队列：右上角独立面板，空则不渲染。排队中的话能改也能撤 */
+.prompt-queue {
+  position: fixed;
+  z-index: 40;
+  top: calc(var(--gui-h, 52px) + 8px);
+  right: 12px;
+  width: min(78vw, 280px);
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+}
+.prompt-queue-title {
+  margin: 0 0 6px;
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+.prompt-queue ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.prompt-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-left: 2px solid var(--accent);
+  border-radius: 4px;
+  background: var(--dialog, rgba(0, 0, 0, 0.12));
+}
+.prompt-queue-row.sent {
+  border-left-color: var(--line);
+  opacity: 0.5;
+}
+.prompt-queue-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.prompt-queue-meta {
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.prompt-queue-tool {
+  flex: 0 0 auto;
+  display: flex;
+  padding: 2px;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.prompt-queue-tool .ico {
+  width: 13px;
+  height: 13px;
+}
+.prompt-queue-tool:hover {
+  color: var(--accent);
+}
+.prompt-queue-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
   font: inherit;
 }
 /* 舞台上不占固定位置的提示走 toast；非演出页面（剧目库/素材/工坊）仍是页面内的一条横幅 */
@@ -3223,17 +3305,12 @@ select:focus {
   background: var(--accent-soft);
   outline: 1px solid var(--accent);
 }
-/* 玩家的选择与输入、导演注：跟剧作家的台词一眼分得开 */
+/* 玩家发来的话（选择 / 自由输入 / 插一句）：跟剧作家的台词一眼分得开 */
 .bl-player .bl-text b,
-.bl-ooc .bl-text b {
-  color: var(--ink-faint);
-}
-.bl-player .bl-text,
-.bl-ooc .bl-text {
+/* 玩家发来的话（选择/自由输入/插一句）：斜体 + 左侧竖线，跟台词区分开 */
+.bl-input .bl-text {
   color: var(--ink-faint);
   font-style: italic;
-}
-.bl-ooc .bl-text {
   padding-left: 12px;
   border-left: 2px solid var(--line);
 }

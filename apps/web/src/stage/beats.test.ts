@@ -23,9 +23,9 @@ function view(specs: NodeSpec[], leafId: string): LineageView {
     createdAt: 1_700_000_000_000 + index,
     onPath,
     children: 0,
-    editTargetId: undefined,
-    granularity: undefined,
-    instruction: undefined,
+    editedText: null,
+    editCount: 0,
+    editedAt: undefined,
     seq,
   }));
   return { nodes, leafId, pathIds: nodes.filter((n) => n.onPath).map((n) => n.id) };
@@ -140,7 +140,7 @@ describe("buildBeats 一拍一卡", () => {
           ["a", "say", 1, "第一拍"],
           ["b", "beat_end"],
           ["c", "say", 4, "第二拍", false],
-          ["r", "rewrite", undefined, "重演"],
+          ["r", "fork", undefined, "重演"],
           ["d", "say", 9, "第二拍·重演"],
           ["e", "beat_end"],
         ],
@@ -175,14 +175,14 @@ describe("buildBeats 一拍一卡", () => {
     expect(cards.map((card) => card.stopType)).toEqual(["choice", "free"]);
   });
 
-  it("preload/edit 不进卡，rewrite 断开后续", () => {
+  it("preload/edit 不进卡，fork 断开后续", () => {
     const cards = buildBeats(
       view(
         [
           ["a", "say", 1, "开场"],
           ["p", "preload", 2],
           ["b", "beat_end"],
-          ["r", "rewrite", undefined, "重写", false],
+          ["r", "fork", undefined, "分岔", false],
           ["c", "say", 9, "重演"],
           ["d", "beat_end"],
         ],

@@ -12,6 +12,8 @@ export interface FakeResponse {
   beatDone?: boolean;
   /** 额外工具调用（与 beat_done 同批：如 write_memory）。 */
   toolCalls?: { name: string; args: Record<string, unknown> }[];
+  /** 闸门：正文照发，但 done 押后到 gate 兑现——用来把某一拍卡在「演出中」。 */
+  gate?: Promise<unknown>;
 }
 export const PLAY: PlayConfig = {
   id: "test",
@@ -73,50 +75,58 @@ export function createFakeStreamFn(responses: FakeResponse[]): StreamFn {
         partial,
       });
 
-      const finalMessage: AssistantMessage = {
-        role: "assistant",
-        content: [
-          ...(response.thinking
-            ? ([{ type: "thinking", thinking: response.thinking }] as AssistantMessage["content"])
-            : []),
-          { type: "text", text: response.text },
-        ],
-        api: "openai-completions",
-        provider: "fake",
-        model: "fake-test",
-        // usage 全零：假流不知道真实上下文大小，交回 pi 的字符启发式（纪元压缩按它判定阈值）
-        usage: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 0,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-        },
-        stopReason: "stop",
-        timestamp: Date.now(),
-      };
-      if (response.beatDone) {
-        finalMessage.content.push({
-          type: "toolCall",
-          id: "call-1",
-          name: "beat_done",
-          arguments: {},
-        });
-        finalMessage.stopReason = "toolUse";
+      if (response.gate) {
+        void response.gate.then(() => finish());
+      } else {
+        finish();
       }
-      let callNo = 2;
-      for (const tool of response.toolCalls ?? []) {
-        finalMessage.content.push({
-          type: "toolCall",
-          id: `call-${callNo++}`,
-          name: tool.name,
-          arguments: tool.args,
-        });
-        finalMessage.stopReason = "toolUse";
+
+      function finish(): void {
+        const finalMessage: AssistantMessage = {
+          role: "assistant",
+          content: [
+            ...(response.thinking
+              ? ([{ type: "thinking", thinking: response.thinking }] as AssistantMessage["content"])
+              : []),
+            { type: "text", text: response.text },
+          ],
+          api: "openai-completions",
+          provider: "fake",
+          model: "fake-test",
+          // usage 全零：假流不知道真实上下文大小，交回 pi 的字符启发式（纪元压缩按它判定阈值）
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "stop",
+          timestamp: Date.now(),
+        };
+        if (response.beatDone) {
+          finalMessage.content.push({
+            type: "toolCall",
+            id: "call-1",
+            name: "beat_done",
+            arguments: {},
+          });
+          finalMessage.stopReason = "toolUse";
+        }
+        let callNo = 2;
+        for (const tool of response.toolCalls ?? []) {
+          finalMessage.content.push({
+            type: "toolCall",
+            id: `call-${callNo++}`,
+            name: tool.name,
+            arguments: tool.args,
+          });
+          finalMessage.stopReason = "toolUse";
+        }
+        stream.push({ type: "done", message: finalMessage });
+        stream.end(finalMessage);
       }
-      stream.push({ type: "done", message: finalMessage });
-      stream.end(finalMessage);
     });
     return stream;
   };

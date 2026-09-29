@@ -17,10 +17,11 @@ import {
   type SequencedEvent,
   type StageEvent,
   type StopPayload,
+  type PromptQueueItem,
 } from "@stage-ai/core";
 import type { ServerMessage } from "@stage-ai/core";
 import { buildSystemPrompt, renderStateSection, type AssetManifest, type AssetNotes, type GeneratedNote } from "./prompt.js";
-import { lineageToBeats, lineageToEvents, stopFromEvent } from "./rebuild.js";
+import { lineageToBeats, lineageToEvents, stopFromEvent, type RebuiltBeat } from "./rebuild.js";
 import {
   EPOCH_SUMMARY_SYSTEM,
   measureContext,
@@ -207,14 +208,13 @@ export type PlayerAction =
   | { kind: "choice"; optionIndex: number }
   | { kind: "free"; text: string }
   | { kind: "continue" }
-  | { kind: "ooc"; text: string };
+  | { kind: "prompt"; text: string };
 
-/** 选项索引已解析为文本的玩家操作。 */
+/** 选项索引已解析为文本的玩家操作（continue 不是玩家说的话，不在其列）。 */
 export type ResolvedAction =
   | { kind: "choice"; text: string }
   | { kind: "free"; text: string }
-  | { kind: "continue" }
-  | { kind: "ooc"; text: string };
+  | { kind: "prompt"; text: string };
 
 export interface OrchestratorOptions {
   streamFn: StreamFn;
@@ -305,7 +305,7 @@ export class PlaywrightOrchestrator {
   private openLine: OpenLine | null = null;
   private autostarted = false;
   private disposed = false;
-  /** 一拍正在开（纪元压缩等前置步骤未完）：对外等同 busy，防止并发 beginBeat 与 steer 错投。 */
+  /** 一拍正在开（纪元压缩等前置步骤未完）：对外等同 busy，防止并发 beginBeat。 */
   private beatPending = false;
   /** 等待「编排器空闲」的挂起者（工坊写盘要在拍边界重建 runtime，不打断进行中的演出）。 */
   private idleWaiters: (() => void)[] = [];
@@ -327,6 +327,11 @@ export class PlaywrightOrchestrator {
   private stateFiles: Record<string, string> = {};
   /** 当前分支已走过的纪元摘要 id（谱系级，随快照走；纪元压缩时追加）。 */
   private arcIds: string[] = [];
+  /** 待注入的插一句（演出中收到，等这一拍收束再兑现）。不落盘：重启后队列不复活。 */
+  private pending: PromptQueueItem[] = [];
+  private pendingSeq = 0;
+  /** 链尾悬空的用户输入（分岔落在一次表态上时截下来的）：并进下一轮，不造空 assistant 轮次。 */
+  private trailingInputs: string[] = [];
   private unsubscribeAgent: (() => void) | null = null;
   /** 事件缓冲代号（P6）：分岔/跳转/编辑/重写后整段重放并自增，客户端据此丢弃旧 seq 认知。 */
   private epoch = 0;
@@ -553,17 +558,25 @@ export class PlaywrightOrchestrator {
     void this.beginBeat(this.opts.play.opening);
   }
 
-  /** 玩家操作 → 下一节拍。busy 中拒绝。开局时玩家表态并入开场指令。 */
+  /** 玩家操作 → 下一节拍。插一句在演出中排进待注入队列，其余动作必须 idle。 */
   async playerAction(action: PlayerAction): Promise<void> {
-    // engaged 覆盖纪元压缩窗口：压缩期间 busy 仍为 false，但 Agent 随时可能被重建，
-    // steer 进旧实例会丢消息、并发 beginBeat 会打架——一律按「演出进行中」挡回
-    if (action.kind === "ooc" && this.busy) {
-      // 原地 OOC（D9）：steer 入队——当前拍收敛后注入【导演注】，agent 立即续写下一拍；不打断进行中的演出
-      const steerText = this.renderUserTurn(action);
-      this.agent.steer({ role: "user", content: steerText, timestamp: Date.now() });
-      this.historyRecorder.addUser(this.beatNo + 1, steerText, this.opts.tree.leafId);
-      this.appendLineage("ooc", { payload: { input: action.text } });
-      this.send({ type: "ooc_ack" });
+    // 插一句是唯一支持演出中投递的输入：它在拍边界统一兑现，不打断进行中的这一拍。
+    // engaged 覆盖纪元压缩窗口（压缩期间 busy 仍为 false，但 Agent 随时可能被重建，
+    // 并发 beginBeat 会打架），此时也只排队——不投进即将被替换的实例。
+    if (action.kind === "prompt") {
+      const text = action.text.trim();
+      if (!text) return;
+      const item: PromptQueueItem = {
+        id: `pq-${this.pendingSeq += 1}`,
+        text,
+        beatNo: this.beatNo,
+        status: "pending",
+      };
+      this.pending.push(item);
+      this.broadcastPromptQueue();
+      if (this.engaged) return;
+      this.beatPending = true; // 先占位：deliverPrompts 前的空档不放行 whenIdle
+      await this.deliverPrompts([item]);
       return;
     }
     if (this.engaged) {
@@ -574,8 +587,11 @@ export class PlaywrightOrchestrator {
       });
       return;
     }
-    let resolved: ResolvedAction;
-    if (action.kind === "choice") {
+    // 「继续」不是玩家说的话：它不占【用户输入】段，也不落谱系节点（没有可分岔的锚点）
+    let resolved: ResolvedAction | null = null;
+    if (action.kind === "continue") {
+      resolved = null;
+    } else if (action.kind === "choice") {
       const option = this.lastStop?.options?.[action.optionIndex];
       if (!option) {
         this.send({
@@ -585,23 +601,84 @@ export class PlaywrightOrchestrator {
         });
         return;
       }
-      resolved = { kind: "choice", text: option.text };
+      resolved = { kind: "choice", text: `（选择了：${option.text}）` };
     } else {
       resolved = action;
     }
     if (!this.autostarted) {
       this.autostarted = true;
-      const userText =
-        action.kind === "continue"
-          ? this.opts.play.opening
-          : `${this.opts.play.opening}\n\n${this.renderUserTurn(resolved)}`;
-      if (action.kind !== "continue") this.recordPlayerLine(resolved);
-      await this.beginBeat(userText);
+      // 开场这一句同样落谱系：否则它只活在对话体里，玩家在拍内分岔就再也找不回来
+      if (resolved) this.appendLineage("prompt", { payload: { input: resolved.text } });
+      const inputs = resolved ? [resolved.text] : [];
+      await this.beginBeat(`${this.opts.play.opening}\n\n${this.renderPromptTurn(inputs)}`);
       return;
     }
-    const userText = this.renderUserTurn(resolved);
-    this.recordPlayerLine(resolved);
-    await this.beginBeat(userText);
+    if (!resolved) {
+      await this.beginBeat(this.renderPromptTurn([]));
+      return;
+    }
+    await this.deliverPrompts([{ id: "", text: resolved.text, beatNo: this.beatNo, status: "pending" }]);
+  }
+
+  /**
+   * 兑现一批插一句：落谱系 → 开拍。
+   *
+   * 谱系节点在**注入时**才落（排队期间玩家还能改还能撤），且挂在开拍之前——
+   * 它是这一拍的第一条输入节点，锚点分岔从这里起就等于「从这句话重演」。
+   * 已落笔的旧批次在这里出列：它在面板上显示过「已落笔」，新一轮开拍就不该再占位。
+   * 收束后的排队兑现由 beginBeat 的 onBeatSettled 统一接管，本方法不重复。
+   */
+  private async deliverPrompts(items: readonly PromptQueueItem[]): Promise<void> {
+    this.pending = this.pending.filter((item) => item.status === "pending");
+    for (const item of items) this.appendLineage("prompt", { payload: { input: item.text } });
+    for (const item of items) {
+      item.status = "sent";
+      item.sentBeatNo = this.beatNo + 1;
+    }
+    this.broadcastPromptQueue();
+    await this.beginBeat(this.renderPromptTurn(items.map((item) => item.text)));
+  }
+
+  /** 拍收束后的收尾：先兑现排队输入（保持 engaged），没有才放行 whenIdle。 */
+  private onBeatSettled(): void {
+    this.send({ type: "beat_settled" });
+    // 只取还没落笔的：已注入的那批不能再来一遍，否则同一句话会进两次谱系
+    const items = this.pending.filter((item) => item.status === "pending");
+    if (items.length === 0) {
+      // 队列空了就把已落笔的那批也带走：面板写的是「接下来要说的话」，
+      // 没有下一句时它就该消失，不能把上一拍的回执永远挂在右上角。
+      if (this.pending.length > 0) {
+        this.pending = [];
+        this.broadcastPromptQueue();
+      }
+      this.flushIdleWaiters();
+      return;
+    }
+    this.beatPending = true; // 先占位再放行：engaged 不能在「这一拍完了但下一拍没开」的缝里掉下去
+    void this.deliverPrompts(items);
+  }
+
+  /** 改一条还没落笔的排队输入。找不到就是客户端状态过期——回错，不静默吞。 */
+  editPending(id: string, text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed) throw new Error("不能为空");
+    const item = this.pending.find((entry) => entry.id === id && entry.status === "pending");
+    if (!item) throw new Error("这一条已经不在队列里了");
+    item.text = trimmed;
+    this.broadcastPromptQueue();
+  }
+
+  /** 撤掉一条还没落笔的排队输入。 */
+  deletePending(id: string): void {
+    if (!this.pending.some((entry) => entry.id === id && entry.status === "pending")) {
+      throw new Error("这一条已经不在队列里了");
+    }
+    this.pending = this.pending.filter((entry) => entry.id !== id);
+    this.broadcastPromptQueue();
+  }
+
+  private broadcastPromptQueue(): void {
+    this.send({ type: "prompt_queue", items: this.pending });
   }
 
   /** 重连重放：seq 之后的缓冲事件。 */
@@ -609,8 +686,7 @@ export class PlaywrightOrchestrator {
     return this.events.filter((e) => e.seq > lastSeq);
   }
 
-  // —— P6 四动词：跳转 / 分岔 / 编辑 / 导演注，彼此正交，可自由组合 ——
-  //     跳转 = 移挂载点不生成；分岔 = 退到目标之前重写并重新生成（重生成是分岔的副产品，不单列）——
+  // —— 谱系四原语：跳转 / 分岔 / 编辑 / 插一句，彼此正交，可自由组合 ——
 
   /** 路线树视图（全量节点含废弃分支）；前端「路线」视图与 REST 共用。 */
   lineageView(): LineageView {
@@ -623,52 +699,51 @@ export class PlaywrightOrchestrator {
    */
   async jumpTo(nodeId: string): Promise<void> {
     this.guardIdle();
-    this.opts.tree.jumpTo(nodeId);
-    this.syncContext("已跳到这里");
-  }
-
-  /** 原地编辑：当前分支该行文本替换，后续生成以新文本为上下文。 */
-  async editLine(nodeId: string, newText: string): Promise<void> {
-    this.guardIdle();
-    const text = newText.trim();
-    if (!text) throw new Error("台词不能为空");
-    this.opts.tree.editInPlace(nodeId, text);
-    this.flushLineageLog();
-    this.syncContext("台词已修改");
+    this.rebaseAt(nodeId, "已跳到这里", { mark: false });
   }
 
   /**
-   * 分岔：退到目标之前重写这一段（目标行留废弃分支）并立即重新生成。
-   * 与跳转的分野——分岔追加 rewrite 事件、动内容；跳转只移挂载点、不生成。
+   * 分岔：从任意节点开新分支。
+   *
+   * `resume: true` = 分岔后立刻续演（用户说的「重来」）：目标节点之后的内容整段截断，
+   * 挂载点后紧接一个 fork 标记事件，续演内容挂它之下。中间不设停止点——等价于玩家在
+   * 上一拍末尾按了「继续」，零点击。
    */
-  async branch(nodeId: string, granularity: "line" | "beat", instruction?: string): Promise<void> {
+  async forkTo(nodeId: string, opts?: { resume?: boolean }): Promise<void> {
     this.guardIdle();
-    const chain = this.opts.tree.ancestorChain(nodeId); // 校验节点存在
-    const anchor = granularity === "beat" ? this.resolveBeatAnchor(chain, nodeId) : null;
-    const targetId = anchor?.anchorId ?? nodeId;
-    const recap = anchor?.recap ?? null;
-    this.opts.tree.recordRewrite(targetId, granularity, instruction);
-    this.flushLineageLog();
-    this.syncContext(granularity === "beat" ? "已重写整幕" : "已重写此句");
-    await this.beginBeat(this.renderRewriteTurn(instruction, recap, granularity));
+    if (!opts?.resume) {
+      this.rebaseAt(nodeId, "已从此处开新分支");
+      return;
+    }
+    // rebaseAt 同步完成（含 recordFork），beginBeat 同步置 beatPending：
+    // 整个 fork+续演是一步，中间没有让 engaged 掉下去的空档。
+    this.rebaseAt(nodeId, "这一幕重来", { resume: true });
+    await this.beginBeat(this.renderPromptTurn([]));
   }
 
-  /** 跳转后 OOC 立即开拍：先跳到该节点，再注入导演注重演（与原地 steer 正交）。 */
-  async oocAt(nodeId: string, text: string): Promise<void> {
+  /**
+   * 原地编辑：当前分支该行文本替换。
+   *
+   * 纯原地——不重放、不分岔、不回滚引擎状态、不动停止点：改一句台词就是改这一句，
+   * 剧情接着原样往下演。后续生成以新文本为上下文（对话体原地换掉那一行）。
+   * 引擎状态不回滚：改台词不等于撤销已经算出的好感度/旗标，那才叫分岔。
+   */
+  editLine(nodeId: string, newText: string): void {
     this.guardIdle();
-    const note = text.trim();
-    if (!note) throw new Error("导演注不能为空");
-    this.opts.tree.jumpTo(nodeId);
-    // 导演注必须落进事件日志：它决定这一支为什么长这样，刷新重连或从工坊读树都得看得见。
-    this.appendLineage("ooc", { payload: { input: note } });
+    const text = newText.trim();
+    if (!text) throw new Error("台词不能为空");
+    const target = this.opts.tree.get(nodeId);
+    this.opts.tree.recordEdit(nodeId, text);
     this.flushLineageLog();
-    this.syncContext("已跳到这里并注入导演注");
-    await this.beginBeat(
-      [
-        `【状态】\n${renderStateSection(this.opts.engine, this.opts.scene, this.stateFiles)}`,
-        this.renderDirectorNote(note, true),
-      ].join("\n\n"),
-    );
+    this.buildAgent(this.renderBeats(this.rebuildBeats(this.opts.tree.materialize()).beats));
+    // seq 是这一行在舞台缓冲里的身份：客户端靠它就地换字，不必整段重放
+    const seq = target?.payload?.seq;
+    this.send({
+      type: "line_edited",
+      nodeId,
+      text,
+      ...(typeof seq === "number" ? { seq } : {}),
+    });
   }
 
   private guardIdle(): void {
@@ -677,20 +752,29 @@ export class PlaywrightOrchestrator {
 
   /**
    * 上下文重建（P6 transformContext 的执行点）：调用方已把挂载点摆好，这里只管按
-   * 当前叶尖重放出「引擎状态 + 记忆快照 + 客户端事件缓冲 + LLM 对话轮次」，
+   * 目标节点重放出「引擎状态 + 记忆快照 + 客户端事件缓冲 + LLM 对话轮次」，
    * 一次突变完成即回到 append-only 稳态。
    *
-   * 动词只负责「树该长什么样」（jumpTo / editInPlace / recordRewrite），
-   * 世界线落到哪一步的重建是同一件事，所以收在这里，不再各自传 nodeId。
+   * 动词只负责「树该长什么样」（jumpTo / recordEdit / recordFork），世界线重建是同一件事，
+   * 所以收在这里，不再各自传 nodeId。
    *
    * 保持同刻铁律：旧分支的活跃状态、剧情线引用与 archive 检索范围一并回退，
    * 兄弟/废弃分支的往事不可召回（防剧透）。
+   *
+   * `resume: true` 时不停在这个停止点：挂载点落在拍中的节点也照样续演——
+   * 拍首锚点由客户端算出（见计划 §7.2），服务端不需要知道「拍边界」这件事。
    */
-  private syncContext(note: string): void {
+  private rebaseAt(nodeId: string, note: string, opts?: { resume?: boolean; mark?: boolean }): void {
     this.guardIdle();
     const tree = this.opts.tree;
-    const chain = tree.chainEvents(tree.leafId);
-    this.restoreBranchState(tree.leafId);
+    const chain = tree.materialize(nodeId);
+    const { beats, trailingInputs } = this.rebuildBeats(chain);
+    this.restoreBranchState(nodeId);
+    // 分岔必落标记：分岔不留痕等于没发生过。跳转反过来——它只挪世界线，不宣称这条线岔过。
+    if (opts?.mark === false) tree.jumpTo(nodeId);
+    else tree.recordFork(nodeId);
+    // 链尾悬空的表态（分岔落在一次输入上）并进下一轮，不造空 assistant 轮次
+    this.trailingInputs = trailingInputs;
     // 历史跟着分支回退：不在新路径上的拍（兄弟与废弃分支）、以及被拍中截断砍掉后半的那一拍，
     // 都已经不属于这一场了（铁律：分岔/跳转随分支走，防剧透同一原则）
     this.historyRecorder.rebaseTo(tree.pathSet(), this.beatNo);
@@ -699,8 +783,8 @@ export class PlaywrightOrchestrator {
     this.seq = this.events.at(-1)?.seq ?? 0;
     this.openLine = null;
     this.pendingStop = null;
-    this.restoreStopPoint(chain);
-    this.buildAgent(this.rebuildMessages(chain));
+    this.restoreStopPoint(chain, opts?.resume === true);
+    this.buildAgent(this.renderBeats(beats));
     this.epoch += 1;
     this.send({
       type: "rebase",
@@ -753,10 +837,12 @@ export class PlaywrightOrchestrator {
    * 停止点恢复：停在 stop/beat_end 边界 → 还原该停止点（choice 选项原样回到面板）；
    * 停在拍中（写一半被打断）→ 给一个 pause 停止点，玩家按「继续」重开一拍。
    * 注意 pause 只在这一条路径上出现，幕末（beat_end）永远走 null → 黑场 +「下一幕」。
+   *
+   * `resume`（分岔后立刻续演）时一律清空：分岔的语义就是「不等玩家选，接着演」。
    */
-  private restoreStopPoint(chain: readonly LineageEvent[]): void {
+  private restoreStopPoint(chain: readonly LineageEvent[], resume = false): void {
     const last = chain.at(-1);
-    if (!last) {
+    if (resume || !last) {
       this.lastStop = null;
       return;
     }
@@ -775,16 +861,23 @@ export class PlaywrightOrchestrator {
     this.lastStop = { stopType: "pause" };
   }
 
-  /** 谱系链 → LLM 对话轮次（历史拍的玩家原话与已演出脚本，状态不进历史轮次）。 */
-  private rebuildMessages(chain: readonly LineageEvent[]): AgentMessage[] {
+  /** 谱系链 → 对话轮次素材（链尾悬空的输入单列，不凑空轮次）。 */
+  private rebuildBeats(chain: readonly LineageEvent[]): {
+    beats: RebuiltBeat[];
+    trailingInputs: string[];
+  } {
     const names: Record<string, string> = {};
     for (const character of this.opts.play.characters) names[character.id] = character.name;
-    const beats = lineageToBeats(chain, names, this.opts.play.opening);
+    return lineageToBeats(chain, names, this.opts.play.opening);
+  }
+
+  /** 对话轮次 → LLM 消息（历史拍的玩家原话与已演出脚本，状态不进历史轮次）。 */
+  private renderBeats(beats: readonly RebuiltBeat[]): AgentMessage[] {
     const now = Date.now();
     const messages: AgentMessage[] = [];
     beats.forEach((beat, index) => {
       const at = now + index;
-      messages.push({ role: "user", content: beat.user ?? "", timestamp: at });
+      messages.push({ role: "user", content: beat.user, timestamp: at });
       messages.push({
         role: "assistant",
         content: [{ type: "text", text: beat.assistant }],
@@ -806,54 +899,6 @@ export class PlaywrightOrchestrator {
     return messages;
   }
 
-  /**
-   * 整幕重写的截断锚点 = 最后一个 `beat_end` 之后的**第一个事件**（本幕起点）。
-   *
-   * `recordRewrite` 把挂载点退到 `anchor.parentId`，所以锚点必须落在幕首事件本身：
-   * 本幕若以玩家表态开场，锚点落在它身上才能把旧表态一并切出主链（否则历史里
-   * 留下孤立表态，重建出 `{user, assistant:""}` 空轮次，且重写轮回灌时双重表态）。
-   * 旧表态原话由 recap 带出，在重写轮的 user 消息里回灌。
-   */
-  private resolveBeatAnchor(
-    chain: readonly string[],
-    fallbackId: string,
-  ): { anchorId: string; recap: string | null } {
-    let start = 0;
-    for (let i = chain.length - 1; i >= 0; i -= 1) {
-      if (this.opts.tree.get(chain[i]!)?.kind === "beat_end") {
-        start = i + 1;
-        break;
-      }
-    }
-    const anchorId = chain[start] ?? fallbackId;
-    const first = this.opts.tree.get(anchorId);
-    const recap =
-      first && (first.kind === "player" || first.kind === "ooc")
-        ? first.payload?.input ?? null
-        : null;
-    return { anchorId, recap };
-  }
-
-  /** 重写轮次的 user 消息：状态 + （回灌玩家原话）+ 导演注或中性重演指令。 */
-  private renderRewriteTurn(
-    instruction: string | undefined,
-    recap: string | null,
-    granularity: "line" | "beat",
-  ): string {
-    const sections = [
-      `【状态】\n${renderStateSection(this.opts.engine, this.opts.scene, this.stateFiles)}`,
-    ];
-    if (recap) sections.push(`【玩家表态】\n${recap}`);
-    sections.push(
-      instruction
-        ? this.renderDirectorNote(instruction, false)
-        : `【重写】\n（${
-            granularity === "beat" ? "请重新演绎这一幕" : "请重新演绎这句话"
-          }；不要复述或回应这条重写指令本身）`,
-    );
-    return sections.join("\n\n");
-  }
-
   private snapshotEngine(): EngineStateSnapshot {
     const engine = this.opts.engine;
     return {
@@ -867,43 +912,39 @@ export class PlaywrightOrchestrator {
     return { state: { ...this.stateFiles }, arcs: [...this.arcIds] };
   }
 
-  private renderUserTurn(action: ResolvedAction): string {
+  /**
+   * 一轮 user 消息 = 【状态】+ N 条【用户输入】。
+   *
+   * 「插一句」是唯一的输入通道：选项、自由输入、插一句都是同一段原文，区别只在
+   * 玩家是答了引擎的问题还是自己开了口——因此这里不再有「玩家表态 / 导演注」的身份
+   * 分流，也不再有「重写 / 重新演绎」这类要引擎替玩家开口的话。
+   *
+   * 链尾悬空的用户输入（分岔落在一次表态上）排在本轮最前面：模型照旧看得见上一次
+   * 说了什么，但不必造一条空 assistant 轮次。
+   */
+  private renderPromptTurn(texts: readonly string[]): string {
+    const inputs = [...this.trailingInputs, ...texts];
+    this.trailingInputs = [];
     const sections = [
       `【状态】\n${renderStateSection(this.opts.engine, this.opts.scene, this.stateFiles)}`,
     ];
-    if (action.kind === "ooc") {
-      // 空闲态发送 = 越过待回应停止点；busy 中 steer 发送则不算（该拍自己的停止点还没到）
-      sections.push(this.renderDirectorNote(action.text, !this.busy));
-    }
-    if (action.kind === "choice") sections.push(`【玩家表态】\n（选择了：${action.text}）`);
-    else if (action.kind === "free") sections.push(`【玩家表态】\n${action.text}`);
-    else if (action.kind === "continue") sections.push("【玩家表态】\n（继续）");
-    return sections.join("\n\n");
-  }
-
-  /** 【导演注】块（OOC 与重写 instruction 共用通道）；越过待回应停止点时明示玩家未回应。 */
-  private renderDirectorNote(text: string, acrossStop: boolean): string {
-    const sections = [
-      `【导演注】\n${text}\n（以上为导演指示：据此调整接下来的演出，不要在剧本中复述或回应这段指示本身）`,
-    ];
-    // 空闲态发送 = 越过了待回应的 free/choice 停止点：明示玩家未回应，防止模型替玩家编造台词。
-    // 演出中（steer）发送时玩家早已回应过上一个停止点，不加此声明。
-    // pause 是编排器自己造的（拍中截断/空拍重试），玩家并未被问过什么，不算越过停止点。
-    if (acrossStop && this.lastStop && this.lastStop.stopType !== "pause") {
-      sections.push("【玩家表态】\n（玩家本轮未作回应，请继续演出，并在合适时机再给出回应机会）");
+    for (const text of inputs) sections.push(`【用户输入】\n${text}`);
+    if (inputs.length > 0) {
+      sections.push(
+        "（以上是用户发来的内容。若以「OOC」开头，那是给导演的指示：据此调整接下来的" +
+          "演出方向，不要复述或回应这段指示本身。否则是其中某个角色（可能就是主角，" +
+          "也可能是别人）的行动、话语或心理：照字面意思演成该角色的言行，涉及主角的" +
+          "决定性动作时给出停止点。两种都不要在剧本中复述这段文字本身。）",
+      );
+      // 引擎上次是不是在等玩家回答——与发消息的人是谁无关，选项答非所问也算
+      if (!this.busy && this.lastStop && this.lastStop.stopType !== "pause") {
+        sections.push(
+          "（用户是在未作回应的情况下直接发来上面这段的。若其中已包含某个角色的行动或" +
+            "话语就直接演；否则继续演出，并在合适时机再给出回应机会。）",
+        );
+      }
     }
     return sections.join("\n\n");
-  }
-
-  private recordPlayerLine(action: ResolvedAction): void {
-    if (action.kind === "continue") {
-      this.appendLineage("player", { payload: { input: "（继续）" } });
-    } else {
-      this.appendLineage("player", { payload: { input: action.text } });
-    }
-    if (action.kind === "ooc") {
-      this.appendLineage("ooc", { payload: { input: action.text } });
-    }
   }
 
   private async beginBeat(userText: string): Promise<void> {
@@ -924,10 +965,7 @@ export class PlaywrightOrchestrator {
       // prompt 异常路径可能不发 agent_end：兜底收束（正常路径 busy 已被 finishBeat 清零）
       if (this.busy) this.finishBeat();
       this.beatPending = false;
-      if (!this.busy) {
-        this.send({ type: "beat_settled" });
-        this.flushIdleWaiters();
-      }
+      if (!this.busy) this.onBeatSettled();
     }
   }
 
@@ -1000,7 +1038,7 @@ export class PlaywrightOrchestrator {
     }
   }
 
-  /** 拍窗口记账（beginBeat 与 steer 续写拍共用）。 */
+  /** 拍窗口记账（开拍与 turn_start 续窗共用）。 */
   private startBeatWindow(): void {
     this.busy = true;
     this.beatNo += 1;
@@ -1031,7 +1069,7 @@ export class PlaywrightOrchestrator {
       }
       this.parser.endMessage();
     } else if (event.type === "turn_start") {
-      // steer 续写拍（D9 原地 OOC）：上一拍已收束，导演注入后 agent 自动续写，由新 turn 开窗
+      // 一个 run 里可能拆成多个 turn（工具批次收束后继续）：每个新 turn 重开拍窗
       if (!this.busy || this.beatClosed) this.startBeatWindow();
     } else if (event.type === "turn_end") {
       // 只在真实边界（beat_done）收束：同一拍内的记忆工具轮次（turn_end）必须继续流动

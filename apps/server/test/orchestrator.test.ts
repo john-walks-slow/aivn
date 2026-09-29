@@ -43,6 +43,13 @@ function lastBeatEnd(messages: readonly { type: string }[]): { type: string } {
   return messages.filter((m) => m.type === "beat_end").at(-1)!;
 }
 
+type CapturedContext = { messages: { role: string; content?: { type: string; text?: string }[] }[] };
+/** 最后一条 user 消息的正文（JSON.stringify 会把换行转义掉，比对正文才看得清）。 */
+function lastUserText(contexts: CapturedContext[]): string {
+  const message = contexts.at(-1)!.messages.filter((m) => m.role === "user").at(-1)!;
+  return (message.content ?? []).map((c) => (c.type === "text" ? (c.text ?? "") : "")).join("\n");
+}
+
 describe("PlaywrightOrchestrator 闭环", () => {
   it("开局 → 流式事件 → stop 交互 → beat_end(stop)", async () => {
     const { orchestrator, messages } = setup([{ text: BEAT_1, beatDone: true }]);
@@ -103,17 +110,17 @@ describe("PlaywrightOrchestrator 闭环", () => {
     expect(events.every((e) => e.seq > 0)).toBe(true);
     expect(orchestrator.lastSeq).toBeGreaterThan(seqAfterBeat1);
 
-    // 谱系：完整行级序列（玩家行 + 台词行 + stop + beat_end × 2）
+    // 谱系：完整行级序列（输入行 + 台词行 + stop + beat_end × 2）
     const script = tree.materialize();
     expect(script.map((e) => e.kind)).toEqual([
-      "player",
+      "prompt",
       "scene",
       "actor",
       "narrate",
       "say",
       "stop",
       "beat_end",
-      "player",
+      "prompt",
       "say",
       "narrate",
       "beat_end",
@@ -146,7 +153,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(beatStartsBefore);
   });
 
-  it("OOC 走【导演注】区且谱系记录 ooc 行；越过停止点时明示玩家未回应", async () => {
+  it("插一句走【用户输入】区且谱系记录 prompt 行；越过停止点时明示玩家未作回应", async () => {
     const contexts: { messages: { role: string }[] }[] = [];
     const { orchestrator, messages, tree } = setup(
       [
@@ -156,20 +163,17 @@ describe("PlaywrightOrchestrator 闭环", () => {
       { contexts },
     );
     await orchestrator.playerAction({ kind: "free", text: "开局" });
-    // 停在 choice 停止点（空闲态）：OOC 直接开新拍，并声明玩家未回应
+    // 停在 choice 停止点（空闲态）：插一句直接开新拍，并声明玩家未作回应
     await orchestrator.playerAction({
-      kind: "ooc",
+      kind: "prompt",
       text: "下一拍让澪提到天文社",
     });
 
-    expect(tree.materialize().some((e) => e.kind === "ooc")).toBe(true);
+    expect(tree.materialize().findLast((e) => e.kind === "prompt")?.payload?.input)
+      .toBe("下一拍让澪提到天文社");
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(2);
-    const oocUser = contexts[1]!.messages
-      .filter((m) => m.role === "user")
-      .map((m) => JSON.stringify(m))
-      .find((s) => s.includes("导演注"));
-    expect(oocUser).toContain("下一拍让澪提到天文社");
-    expect(oocUser).toContain("玩家本轮未作回应");
+    expect(lastUserText(contexts)).toContain("【用户输入】\n下一拍让澪提到天文社");
+    expect(lastUserText(contexts)).toContain("未作回应");
   });
 
   it("resume：seq 过滤重放", async () => {
@@ -421,13 +425,13 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
   });
 });
 
-describe("长会话装配与原地 OOC（P4）", () => {
+describe("长会话装配", () => {
   it("30 轮稳态装配：A 区逐字节冻结、B 区纯追加（零重装配）、状态块在轮尾", async () => {
     const contexts: { messages: { role: string }[] }[] = [];
     const { orchestrator, messages } = setup([{ text: BEAT_2, beatDone: true }], { contexts });
 
     for (let i = 0; i < 30; i += 1) {
-      await orchestrator.playerAction({ kind: "continue" });
+      await orchestrator.playerAction({ kind: "free", text: `我第 ${i + 1} 次开口` });
     }
 
     expect(contexts).toHaveLength(30);
@@ -441,21 +445,16 @@ describe("长会话装配与原地 OOC（P4）", () => {
     for (let i = 1; i < serialized.length; i += 1) {
       expect(serialized[i]!.slice(0, serialized[i - 1]!.length)).toEqual(serialized[i - 1]!);
     }
-    // 轮尾 C 区：最新 user 消息含【状态】与【玩家表态】
-    const lastUser = contexts
-      .at(-1)!
-      .messages.filter((m) => m.role === "user")
-      .at(-1)!;
-    const rendered = JSON.stringify(lastUser);
-    expect(rendered).toContain("【状态】");
-    expect(rendered).toContain("【玩家表态】");
+    // 轮尾 C 区：最新 user 消息含【状态】与【用户输入】
+    expect(lastUserText(contexts)).toContain("【状态】");
+    expect(lastUserText(contexts)).toContain("【用户输入】\n我第 30 次开口");
     // 30 拍全部正常收束（无空拍护栏触发）
     expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(30);
     expect(messages.filter((m) => m.type === "error")).toEqual([]);
   });
 
-  it("原地 OOC（演出中 steer）：当前拍收敛 → 注入导演注 → 立即续写下一拍", async () => {
-    // 第一拍流挂起直到 OOC 到达：模拟「玩家在演出进行中发导演注」的真实时序
+  it("演出中插一句：当前拍收敛 → 队列兑现 → 立即续写下一拍", async () => {
+    // 第一拍流挂起直到插一句到达：模拟「玩家在演出进行中插话」的真实时序
     let releaseFirst = (): void => {};
     const gate = new Promise<void>((resolve) => (releaseFirst = resolve));
     const contexts: { messages: { role: string }[] }[] = [];
@@ -535,21 +534,27 @@ describe("长会话装配与原地 OOC（P4）", () => {
 
     const first = orchestrator.playerAction({ kind: "free", text: "我到了" });
     while (call === 0) await new Promise((resolve) => setTimeout(resolve, 0)); // 等第一拍开流
-    await orchestrator.playerAction({ kind: "ooc", text: "节奏加快一点" }); // busy → steer 入队
-    expect(messages.some((m) => m.type === "ooc_ack")).toBe(true);
+    await orchestrator.playerAction({ kind: "prompt", text: "节奏加快一点" }); // busy → 进队列
+    const queued = messages.filter((m) => m.type === "prompt_queue").at(-1);
+    expect(queued?.type === "prompt_queue" && queued.items[0]).toMatchObject({
+      text: "节奏加快一点",
+      status: "pending",
+    });
+    expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1); // 还没兑现
+
     releaseFirst();
-    await first; // 拍 1 收敛 → 导演注注入 → 拍 2 续写（同一 run）
+    await first; // 拍 1 收敛
+    await orchestrator.whenIdle(); // 队列在收束后异步兑现，等它开完拍
 
     expect(messages.filter((m) => m.type === "error")).toEqual([]);
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(2);
     expect(call).toBe(2);
-    const steerUser = contexts[1]!.messages
-      .filter((m) => m.role === "user")
-      .map((m) => JSON.stringify(m))
-      .find((s) => s.includes("导演注"));
-    expect(steerUser).toContain("节奏加快一点");
-    // 演出中注入：本拍自己的停止点尚未到，不需要「未作回应」声明
-    expect(steerUser).not.toContain("玩家本轮未作回应");
+    expect(lastUserText(contexts)).toContain("【用户输入】\n节奏加快一点");
+    // 插话时拍一还在演，等到它落幕才呈现出一个选择点：玩家没点选项就说了别的，按未作回应处理
+    expect(lastUserText(contexts)).toContain("未作回应");
+    // 兑现完就把队列清空：面板标题写的是「接下来要说的话」，没有下一句就不该还挂着
+    const settledQueue = messages.filter((m) => m.type === "prompt_queue").at(-1);
+    expect(settledQueue?.type === "prompt_queue" && settledQueue.items).toEqual([]);
   });
 
   it("write_memory 落谱系快照 → 恢复后注入【状态】（服务器重启续演）", async () => {

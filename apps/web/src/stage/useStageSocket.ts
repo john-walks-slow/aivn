@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ClientMessage, GeneratedAsset, ServerMessage, StopPayload } from "@stage-ai/core";
+import type {
+  ClientMessage,
+  GeneratedAsset,
+  PromptQueueItem,
+  ServerMessage,
+  StopPayload,
+} from "@stage-ai/core";
 
 /** 工坊通道下行消息（D9）：与演出事件共用连接、按 type 分流。 */
 export type WorkshopInbound = Extract<ServerMessage, { type: `workshop_${string}` }>;
@@ -28,16 +34,20 @@ export interface StageSocket {
   voiceAvailable: boolean;
   /** 当前周目档名（舞台顶部显示；换档经 hello 续接）。 */
   saveName: string | null;
+  /** 插一句的待注入队列（右上角面板）：空闲时立刻落笔，演出中先排队等这一拍收束。 */
+  queue: readonly PromptQueueItem[];
   sendChoice: (index: number) => void;
   sendFree: (text: string) => void;
   sendContinue: () => void;
-  sendOoc: (text: string) => void;
+  sendPrompt: (text: string) => void;
+  /** 排队面板：改一句 / 撤一句（都已注入的不认，服务端回 error）。 */
+  sendPromptEdit: (id: string, text: string) => void;
+  sendPromptDelete: (id: string) => void;
   sendTtsControl: (state: { enabled?: boolean; paused?: boolean }) => void;
-  // —— 导演操作（P6）：跳转 / 分岔 / 编辑 / 导演注 OOC ——
+  // Director ops: jump moves the world line, fork opens a branch
   sendJump: (nodeId: string) => void;
+  sendFork: (nodeId: string, opts?: { resume?: boolean }) => void;
   sendEdit: (nodeId: string, newText: string) => void;
-  sendBranch: (nodeId: string, granularity: "line" | "beat", instruction?: string) => void;
-  sendOocAt: (nodeId: string, text: string) => void;
   /** 工坊通道发送（面板自带消息构造）。 */
   send: (msg: ClientMessage) => void;
 }
@@ -47,8 +57,6 @@ export interface StageSocketHandlers {
   onAudio?: (ready: { seq: number; phrase: number; url: string }) => void;
   onBeatStart?: () => void;
   onReset?: () => void;
-  /** 原地 OOC 已入队（D9）：当前拍收敛后注入导演注、立即续写下一拍。 */
-  onOocAck?: () => void;
   /** 工坊通道下行消息（D9）。 */
   onWorkshop?: (msg: WorkshopInbound) => void;
   /** hello 带回来的既有生成资产全集（重连即恢复可见）。 */
@@ -59,6 +67,8 @@ export interface StageSocketHandlers {
   onAssetReady?: (asset: GeneratedAsset) => void;
   /** 生图失败：保持降级视觉 + 提示，不弹永久骨架。 */
   onAssetFailed?: (id: string, message: string) => void;
+  /** 一行台词被原地改写：谱系视图跟着换新文本（缓冲由 socket 自己就地替换）。 */
+  onLineEdited?: (nodeId: string, text: string) => void;
 }
 
 export function useStageSocket(playId: string, handlers?: StageSocketHandlers): StageSocket {
@@ -74,6 +84,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const [epoch, setEpoch] = useState(0);
   const [saveName, setSaveName] = useState<string | null>(null);
+  const [queue, setQueue] = useState<readonly PromptQueueItem[]>([]);
   /** 本地缓冲所属代号：与服务端不一致说明缓冲已被结构性操作整段替换。 */
   const epochRef = useRef(0);
   const [tick, setTick] = useState(0); // lines/cues/scene 由 builder 持有，tick 触发重渲染
@@ -172,8 +183,14 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
             setActEnd(msg.reason === "act_end");
             setState("stopped");
             return;
-          case "ooc_ack":
-            handlersRef.current.onOocAck?.();
+          case "prompt_queue":
+            setQueue(msg.items);
+            return;
+          case "line_edited":
+            // 原地改写就地替换那一行：谱系重拉要等下一次操作，这里先把画面改对
+            if (msg.seq !== undefined) builderRef.current.replaceText(msg.seq, msg.text);
+            setTick((t) => t + 1);
+            handlersRef.current.onLineEdited?.(msg.nodeId, msg.text);
             return;
           case "rebase": {
             // 上下文重建：整段替换本地缓冲与播放游标（新分支从头重放）
@@ -236,23 +253,24 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
     }
   }, []);
 
-  // 稳定引用：五动词出口挂在导演视图上，引用抖动会让整棵子树反复重渲染
+  // 稳定引用：四原语出口挂在导演视图上，引用抖动会让整棵子树反复重渲染
   const sendChoice = useCallback((index: number) => send({ type: "player_choice", optionIndex: index }), [send]);
   const sendFree = useCallback((text: string) => send({ type: "player_free", text }), [send]);
   const sendContinue = useCallback(() => send({ type: "continue" }), [send]);
-  const sendOoc = useCallback((text: string) => send({ type: "ooc", text }), [send]);
+  const sendPrompt = useCallback((text: string) => send({ type: "prompt", text }), [send]);
+  const sendPromptEdit = useCallback(
+    (id: string, text: string) => send({ type: "prompt_edit", id, text }),
+    [send],
+  );
+  const sendPromptDelete = useCallback((id: string) => send({ type: "prompt_delete", id }), [send]);
   const sendJump = useCallback((nodeId: string) => send({ type: "jump", nodeId }), [send]);
+  const sendFork = useCallback(
+    (nodeId: string, opts?: { resume?: boolean }) =>
+      send({ type: "fork", nodeId, ...(opts?.resume ? { resume: true } : {}) }),
+    [send],
+  );
   const sendEdit = useCallback(
     (nodeId: string, newText: string) => send({ type: "edit", nodeId, newText }),
-    [send],
-  );
-  const sendBranch = useCallback(
-    (nodeId: string, granularity: "line" | "beat", instruction?: string) =>
-      send({ type: "rewrite", nodeId, granularity, ...(instruction ? { instruction } : {}) }),
-    [send],
-  );
-  const sendOocAt = useCallback(
-    (nodeId: string, text: string) => send({ type: "ooc_at", nodeId, text }),
     [send],
   );
 
@@ -274,15 +292,17 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
     epoch,
     voiceAvailable,
     saveName,
+    queue,
     sendChoice,
     sendFree,
     sendContinue,
-    sendOoc,
+    sendPrompt,
+    sendPromptEdit,
+    sendPromptDelete,
     sendTtsControl: (ttsState) => send({ type: "tts_control", ...ttsState }),
     sendJump,
+    sendFork,
     sendEdit,
-    sendBranch,
-    sendOocAt,
     send,
   };
 }

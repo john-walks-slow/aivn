@@ -9,16 +9,20 @@ import type { ScriptLine } from "./script.js";
 
 /**
  * 路线视图只留树上才有的世界线写操作。
- * OOC / 编辑搬到了对话框底部的导演栏（锚点由当前行 seq 反查），剧本视图已删——
+ * 插一句 / 改台词 / 重来这一幕都在对话框底部的导演栏（锚点由当前行 seq 反查），剧本视图已删——
  * 逐行铺开的那份视图不值得再维护一份渲染。
  * 跳转（jump）与分岔（branch）是其中两个正交动词：前者把世界线挂到已有节点、
  * 不生成内容；后者退到该段之前重写并重新生成。
  */
 export interface LineageOps {
-  /** 跳转：世界线挂到该节点，不生成内容。 */
+  /** Jump: move the world line onto that node; generates nothing. */
   jump: (nodeId: string) => void;
-  /** 分岔：退到该段之前重写并重新生成。 */
-  branch: (nodeId: string, granularity: "line" | "beat", instruction?: string) => void;
+  /**
+   * Fork: open a new branch from that node. `resume: true` = continue playing right after
+   * the fork (the director bar's "redo this beat" takes this path); the tree's fork button
+   * takes the bare fork - it only moves the world line and leaves the next move to the player.
+   */
+  fork: (nodeId: string, opts?: { resume?: boolean }) => void;
 }
 
 /** 谱系拉取：打开视图与每次操作后刷新（树不随节拍广播，避免每拍搬运全量节点）。 */

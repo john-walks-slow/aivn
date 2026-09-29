@@ -177,7 +177,7 @@ export function RouteCanvas({ cards, ops, busy, onBack, names, index }: CanvasPr
               <path
                 key={edge.id}
                 d={edge.d}
-                className={`route-edge${edge.live ? " live" : ""}${edge.dead ? " dead" : ""}`}
+                className={`route-edge${edge.live ? " live" : ""}${edge.dead ? " dead" : ""}${edge.fork ? " fork" : ""}`}
               />
             ))}
             {placed.map((p) =>
@@ -295,8 +295,8 @@ function Node({
             type="button"
             className="route-node-tool"
             disabled={busy}
-            title={hint || "从这一段分岔：另开一条线重写，它之后的剧情留作旧分支"}
-            onClick={() => ops.branch(card.id, "beat")}
+            title={hint || "从这一幕分岔：另开一条线，它之后的剧情留作旧分支"}
+            onClick={() => ops.fork(card.id)}
           >
             <Icon name="fork" />
             分岔

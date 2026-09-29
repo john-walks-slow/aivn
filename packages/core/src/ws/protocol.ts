@@ -19,6 +19,18 @@ export interface BeatEndPayload {
   stop?: StopPayload;
 }
 
+/** 待注入队列里的一句（右上角排队面板的行）。 */
+export interface PromptQueueItem {
+  id: string;
+  text: string;
+  /** 入队时的拍号：面板上写「排进第 7 拍」。 */
+  beatNo: number;
+  /** pending = 还没落笔，可改可删；sent = 已并入某一拍，等下一拍开始后淡出。 */
+  status: "pending" | "sent";
+  /** sent 时的落笔拍号。 */
+  sentBeatNo?: number;
+}
+
 /** 工坊线程（D9 meta-chat 多会话）在协议层的投影。 */
 export interface WorkshopThreadInfo {
   id: string;
@@ -107,8 +119,10 @@ export type ServerMessage =
       /** 本次操作的人类可读说明（前端提示条）。 */
       note?: string;
     }
-  /** 原地 OOC 已入队（D9）：当前拍收敛后注入【导演注】并立即续写下一拍。 */
-  | { type: "ooc_ack" }
+  /** 一行台词/旁白被原地改写：客户端按 seq 就地替换该行文字，不重放全量事件。 */
+  | { type: "line_edited"; nodeId: string; text: string; seq?: number }
+  /** 待注入队列的全量快照（右上角排队面板）：落笔的会留在面板里等这一拍收束。 */
+  | { type: "prompt_queue"; items: PromptQueueItem[] }
   // —— 工坊（D9）：与演出并行的一条独立 agent 通道，消息都带 threadId 以便前端分流 ——
   | { type: "workshop_threads"; threads: WorkshopThreadInfo[]; activeId: string | null }
   | { type: "workshop_history"; threadId: string; messages: WorkshopChatMessage[] }
@@ -136,20 +150,20 @@ export type ClientMessage =
   | { type: "player_choice"; optionIndex: number }
   | { type: "player_free"; text: string }
   | { type: "continue" }
-  | { type: "ooc"; text: string }
+  /** 插一句：唯一输入通道。空闲时开新拍；演出中排进待注入队列（可改可删，当拍收束后自动兑现）。 */
+  | { type: "prompt"; text: string }
+  /** 改队列里还没落笔的一句。 */
+  | { type: "prompt_edit"; id: string; text: string }
+  /** 撤掉队列里还没落笔的一句。 */
+  | { type: "prompt_delete"; id: string }
   /** 语音控制（D5 背压）：enabled=总开关（关=停合成）；paused=暂停预取（快进态/缓冲积压）。 */
   | { type: "tts_control"; enabled?: boolean; paused?: boolean }
-  /** 跳转：世界线挂到 nodeId，不生成内容。 @deprecated 旧名「fork」误导（fork 实指分岔），改用 jump。 */
-  | { type: "fork"; nodeId: string }
+  /** 分岔：世界线挂到 nodeId 并落一条 fork 标记，其后内容整段转兄弟分支。
+   *  resume=true = 「重来这一幕」：分岔后立刻续演，中间不设停止点。 */
+  | { type: "fork"; nodeId: string; resume?: boolean }
   | { type: "edit"; nodeId: string; newText: string }
-  /** 重写（句/段 ±instruction）。粒度契约：granularity 仅标注意图；beat 边界解析归编排器——
-   *  granularity="beat" 时编排器须先解析节拍边界并把 nodeId 传节拍首行（见 LineageTree.recordRewrite）。 */
-  /** 分岔：从 nodeId 之前退开重写这一段（目标行留废弃分支），随即重新生成。 */
-  | { type: "rewrite"; nodeId: string; granularity: "line" | "beat"; instruction?: string }
   /** 跳转：世界线挂到 nodeId，不生成内容。活节点上往前走，废弃节点上回到那条线。 */
   | { type: "jump"; nodeId: string }
-  /** 跳转后立即 OOC：先跳到 nodeId 再注入导演注开拍（与原地 steer 正交）。 */
-  | { type: "ooc_at"; nodeId: string; text: string }
   // —— 工坊（D9）：线程管理 + 对话 + 文件编辑；与演出共用一条连接，服务端按 type 分流 ——
   /** 打开面板：回线程列表与当前现场。 */
   | { type: "workshop_open" }

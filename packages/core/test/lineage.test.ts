@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LineageTree, type LineageEvent } from "../src/index.js";
 
-/** 物化后取有台词的行（player 等无文本节点不进剧本）。 */
+/** 物化后取有台词的行（prompt/fork 等无文本节点不进剧本）。 */
 function spoken(tree: LineageTree, fromLeaf?: string): (string | undefined)[] {
   return tree
     .materialize(fromLeaf)
@@ -11,7 +11,7 @@ function spoken(tree: LineageTree, fromLeaf?: string): (string | undefined)[] {
 
 function buildPlay(tree: LineageTree): { say1: LineageEvent; say2: LineageEvent } {
   const say1 = tree.append("say", { text: "……太慢了！不是约好立刻集合的吗？" });
-  tree.append("player", { payload: { input: "抱歉，路上耽搁了。" } });
+  tree.append("prompt", { payload: { input: "抱歉，路上耽搁了。" } });
   const say2 = tree.append("say", { text: "算了，上来吧。" });
   return { say1, say2 };
 }
@@ -35,7 +35,7 @@ describe("行级事件与分支树", () => {
     tree.jumpTo(say1.id);
     const newLine = tree.append("say", { text: "新分支第二句" });
 
-    // 分岔到 say1 = say1 保留在新分支，其后的旧行（player/旧句）不在链上
+    // 分岔到 say1 = say1 保留在新分支，其后的旧行（输入/旧句）不在链上
     const script = tree.materialize();
     expect(script.map((e) => e.text)).toEqual(["……太慢了！不是约好立刻集合的吗？", "新分支第二句"]);
     expect(newLine.parentId).toBe(say1.id);
@@ -54,49 +54,83 @@ describe("行级事件与分支树", () => {
     expect(tree.ancestorChain(fresh.id)).toHaveLength(2);
   });
 
-  it("原地编辑：日志 append-only，物化覆盖目标行", () => {
+  it("recordFork：挂载点移到目标并落一个 fork 标记，其后内容整段转兄弟分支", () => {
+    const tree = new LineageTree();
+    const { say1, say2 } = buildPlay(tree);
+
+    const fork = tree.recordFork(say1.id);
+
+    expect(fork.kind).toBe("fork");
+    expect(fork.parentId).toBe(say1.id);
+    expect(tree.leafId).toBe(fork.id);
+    // 锚点本身留在链上（上一拍的选择因此保留、不重新问），它之后的内容不在了
+    expect(tree.ancestorChain(fork.id)).toContain(say1.id);
+    expect(tree.ancestorChain(fork.id)).not.toContain(say2.id);
+    // fork 是结构标记，物化剧本不占行
+    expect(tree.materialize().some((e) => e.kind === "fork")).toBe(false);
+    expect(spoken(tree)).toEqual(["……太慢了！不是约好立刻集合的吗？"]);
+
+    // 重演的内容挂在 fork 之下，成为 say1 的兄弟分支
+    const regen = tree.append("say", { text: "新的一遍。" });
+    expect(regen.parentId).toBe(fork.id);
+    expect(tree.describe().nodes.find((n) => n.id === say1.id)?.children).toBe(2);
+  });
+});
+
+describe("原地编辑（旁注，不入树）", () => {
+  it("改写旁挂在目标行上：挂载点不动、树里没有 edit 节点", () => {
     const tree = new LineageTree();
     const { say1 } = buildPlay(tree);
-    tree.editInPlace(say1.id, "……太慢了！不是说了立刻集合吗？");
+    tree.append("narrate", { text: "夜风穿过走廊。" });
+    const leafBefore = tree.leafId;
 
-    const script = tree.materialize();
-    expect(script[0]).toMatchObject({ id: say1.id, text: "……太慢了！不是说了立刻集合吗？" });
-    expect(script.some((e) => e.kind === "edit")).toBe(false);
+    const edit = tree.recordEdit(say1.id, "……太慢了！不是说了立刻集合吗？");
+
+    // 纯原地：剧情接着往下演，不产生隐藏分支
+    expect(tree.leafId).toBe(leafBefore);
+    expect(tree.ancestorChain(leafBefore)).not.toContain(edit.id);
+    expect(tree.describe().nodes.some((n) => n.kind === "edit")).toBe(false);
+    const say1View = tree.describe().nodes.find((n) => n.id === say1.id)!;
+    expect(say1View.children).toBe(1);
+    expect(say1View.editedText).toBe("……太慢了！不是说了立刻集合吗？");
+    expect(say1View.editCount).toBe(1);
+    expect(say1View.editedAt).toBeTypeOf("number");
+    // 物化生效，其后剧情原样不动
+    expect(spoken(tree)).toEqual(["……太慢了！不是说了立刻集合吗？", "算了，上来吧。", "夜风穿过走廊。"]);
   });
 
-  it("原地编辑不跨分支：分岔回编辑前的节点看到原文", () => {
+  it("同句反复改：物化取最后一条", () => {
     const tree = new LineageTree();
     const { say1 } = buildPlay(tree);
-    tree.editInPlace(say1.id, "改写后的第一句");
-    // 当前分支：编辑生效
-    expect(tree.materialize()[0]!.text).toBe("改写后的第一句");
-    // 分岔回 say1（edit 事件挂在 say1 之后的原链上，不在此链）：原文
-    tree.jumpTo(say1.id);
-    expect(tree.materialize()[0]!.text).toBe("……太慢了！不是约好立刻集合的吗？");
+    tree.recordEdit(say1.id, "第一版");
+    tree.recordEdit(say1.id, "第二版");
+
+    expect(tree.materialize()[0]!.text).toBe("第二版");
+    expect(tree.describe().nodes.find((n) => n.id === say1.id)?.editCount).toBe(2);
   });
 
   it("非台词行不可编辑", () => {
     const tree = new LineageTree();
     const scene = tree.append("scene", { payload: { attrs: { bg: "hall" } } });
-    expect(() => tree.editInPlace(scene.id, "x")).toThrow(/只有台词行可编辑/);
+    expect(() => tree.recordEdit(scene.id, "x")).toThrow(/只有台词行可编辑/);
   });
 
-  it("重写标注：回退到目标之前（父节点），目标行留在废弃分支", () => {
+  it("编辑旁注不跨分支：不在当前链上的行拿不到改写", () => {
     const tree = new LineageTree();
-    const { say1, say2 } = buildPlay(tree);
-    // 重写 say2：挂载点回到 say2 的父节点（player），say2 作废
-    const rewrite = tree.recordRewrite(say2.id, "line", "更傲娇一点");
-    expect(rewrite.parentId).not.toBe(say2.id);
-    expect(tree.ancestorChain(rewrite.id)).not.toContain(say2.id);
-    expect(rewrite.payload).toMatchObject({ granularity: "line", instruction: "更傲娇一点" });
-    const regen = tree.append("say", { text: "哼，居然才来。" });
-    expect(regen.parentId).toBe(rewrite.id);
-    // rewrite 是结构标注，物化剧本不占行
-    expect(tree.materialize().some((e) => e.kind === "rewrite")).toBe(false);
+    const before = tree.append("narrate", { text: "夜。" });
+    const { say1 } = buildPlay(tree);
+    tree.recordEdit(say1.id, "改过的第一句");
+
+    // 当前分支：改写生效
+    expect(tree.materialize()[1]!.text).toBe("改过的第一句");
+
+    // 分岔到 say1 之前：say1 不在链上，原文原样
+    tree.recordFork(before.id);
+    expect(spoken(tree)).toEqual(["夜。"]);
   });
 });
 
-describe("谱系快照与编辑", () => {
+describe("谱系快照", () => {
   it("快照随分支走：路径上最近快照可恢复，旧分支看不到未来", () => {
     const tree = new LineageTree();
     const { say1, say2 } = buildPlay(tree);
@@ -108,7 +142,7 @@ describe("谱系快照与编辑", () => {
 
     tree.append("say", { text: "第三章剧情（未来）" });
     // 从 say2 之后分岔：快照在链上，可恢复
-    tree.jumpTo(say2.id);
+    tree.recordFork(say2.id);
     tree.append("say", { text: "从快照点重走的分支" });
     const restored = tree.latestSnapshotOnPath();
     expect(restored?.id).toBe(snap1.id);
@@ -124,21 +158,6 @@ describe("谱系快照与编辑", () => {
     tree.append("say", { text: "x" });
     expect(tree.latestSnapshotOnPath()).toBeNull();
   });
-
-  it("编辑旧行 = 从该行分岔重写：其后剧情转废弃分支", () => {
-    const tree = new LineageTree();
-    const { say1 } = buildPlay(tree);
-    const tail = tree.append("narrate", { text: "夜风穿过走廊。" });
-
-    const edit = tree.editInPlace(say1.id, "改过的第一句");
-
-    expect(edit.parentId).toBe(say1.id);
-    // 改写当拍立刻生效，世界线停在被改的那行
-    expect(spoken(tree)).toEqual(["改过的第一句"]);
-    // 其后剧情原样留在树上作废弃分支，历史一条不删
-    expect(tree.describe().nodes.find((n) => n.id === tail.id)?.onPath).toBe(false);
-    expect(spoken(tree, tail.id)).toContain("夜风穿过走廊。");
-  });
 });
 
 describe("持久化往返", () => {
@@ -146,7 +165,7 @@ describe("持久化往返", () => {
     const tree = new LineageTree();
     const { say1 } = buildPlay(tree);
     tree.append("say", { text: "废弃分支" });
-    tree.jumpTo(say1.id);
+    tree.recordFork(say1.id);
     tree.append("say", { text: "新分支" });
 
     const rebuilt = new LineageTree();
@@ -156,6 +175,27 @@ describe("持久化往返", () => {
     expect(rebuilt.leafId).toBe(tree.leafId);
     // 废弃分支也在树上（export 含全部分支）
     expect(rebuilt.export().events).toHaveLength(tree.export().events.length);
+  });
+
+  it("编辑旁注与 fork 标记跨进程无损", () => {
+    const tree = new LineageTree();
+    const { say1 } = buildPlay(tree);
+    tree.recordFork(say1.id);
+    tree.recordEdit(say1.id, "改过的第一句");
+    tree.recordEdit(say1.id, "又改一次");
+    tree.append("say", { text: "重演的第一句" });
+
+    const rebuilt = new LineageTree();
+    rebuilt.load(tree.export());
+
+    expect(rebuilt.leafId).toBe(tree.leafId);
+    expect(rebuilt.materialize().map((e) => e.text)).toEqual(tree.materialize().map((e) => e.text));
+    const view = rebuilt.describe().nodes.find((n) => n.id === say1.id)!;
+    expect(view.editedText).toBe("又改一次");
+    expect(view.editCount).toBe(2);
+    // 树事件里没有混进 edit，但 edit 仍随日志落盘
+    expect(rebuilt.export().events.some((e) => e.kind === "edit")).toBe(true);
+    expect(rebuilt.describe().nodes.some((n) => n.kind === "edit")).toBe(false);
   });
 
   it("裸分岔状态：导出重载 leaf 不指旧分支末端", () => {

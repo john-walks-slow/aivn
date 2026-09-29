@@ -71,7 +71,7 @@ function buildTree(shape) {
       add("stop", "", { stopType: "pause" });
     }
     add("beat_end", "", { reason: stop ?? "pause" });
-    if (marker) add("rewrite", "", { granularity: "beat", instruction: marker });
+    if (marker) add("fork", "");
     return tree.leafId;
   };
 
@@ -83,22 +83,22 @@ function buildTree(shape) {
     beat({ bg: "bg_school_gate_sakura", stop: "pause", lines: ["她抱起一叠作业，脚步在走廊里敲出节拍。", "你要帮她，还是假装没看见？"] });
 
     // 分岔 1：在 A 之后岔出去 → B→C 整条成为浅层废弃分支
-    tree.jumpTo(afterA);
-    beat({ bg: "bg_rooftop_breeze", stop: "free", lines: ["你追上天台。风把她的裙摆吹得鼓起来。", "她没回头：跟上来干什么？"] });
+    tree.recordFork(afterA);
+    beat({ bg: "bg_rooftop_breeze", stop: "free", lines: ["你追上天台。风把她的裙摆吹起来。", "她没回头：跟上来干什么？"] });
 
-    // 分岔 2：主线上再分岔一次（带重写标注）
-    tree.jumpTo(afterB);
-    beat({ bg: "bg_library_sunlight", stop: "choice", lines: ["她在楼梯转角停下，鞋尖点了点地面。"], marker: "让小春先软下来一点" });
+    // 分岔 2：主线上再分岔一次
+    tree.recordFork(afterB);
+    beat({ bg: "bg_library_sunlight", stop: "choice", lines: ["她在楼梯转角停下，鞋尖点了点地面。"] });
     beat({ bg: "bg_rooftop_breeze", stop: "pause", lines: ["你们一起上了天台。", "——所以，你今天到底想说什么？"] });
 
     // 分岔 3：整棵树换个起点，之前的全部成为深层废弃分支
-    tree.jumpTo(afterA);
+    tree.recordFork(afterA);
     beat({ bg: "bg_heroine_bedroom", stop: "pause", lines: ["放学铃。你在校门口回头，她正跑着追上来。", "「明天——也一起走吗？」"] });
   } else {
     beat({ bg: "bg_classroom_sunset", stop: "choice", lines: ["呼——好险好险！抱歉抱歉，被教导主任抓去搬旧体操服了。", "你、你不许笑！"] });
     const afterA = tree.leafId;
     ["道歉线", "嘴硬线", "沉默线"].forEach((name, i) => {
-      tree.jumpTo(afterA);
+      tree.recordFork(afterA);
       beat({
         bg: ["bg_school_gate_sakura", "bg_library_sunlight", "bg_rooftop_breeze"][i],
         stop: "pause",

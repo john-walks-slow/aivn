@@ -1,9 +1,15 @@
 import type { LineageNodeView, LineageView, StopType } from "@stage-ai/core";
 import type { ScriptLine } from "./script.js";
 
+/** 分岔来源：这张卡是被重演的那一拍顶出来的，父卡 id + 它当时的拍号。 */
+export interface ForkOrigin {
+  nodeId: string;
+  turn: number;
+}
+
 /** 一拍一卡：拍不是存储实体，是行级事件日志上的区间，渲染期聚合出来。 */
 export interface BeatCard {
-  /** 代表事件 id = 该拍首个事件 id（分岔/重生成锚点用它）。 */
+  /** 代表事件 id = 该拍首个事件 id（分岔/重来锚点用它）。 */
   id: string;
   turn: number;
   nodes: LineageNodeView[];
@@ -14,40 +20,45 @@ export interface BeatCard {
   at: number;
   sceneBg: string | null;
   stopType: StopType | null;
-  /** 本拍首个剧本事件的 seq：回看/定位到该拍首行。全无 seq（老档/纯导演注拍）时为 null。 */
+  /** 本拍首个剧本事件的 seq：回看/定位到该拍首行。全无 seq（老档/纯插一句拍）时为 null。 */
   startSeq: number | null;
   onPath: boolean;
   isLeaf: boolean;
   isAbandoned: boolean;
   depth: number;
   parentId: string | null;
+  /** 承接哪一个 fork 标记长出来的；不是分岔重演出来的拍为 null。 */
+  forkedFrom: ForkOrigin | null;
 }
 
 /**
- * 切拍规则：换场景不切；分岔口、重写之后、beat_end 之后各开新拍。
+ * 切拍规则：换场景不切；分岔口、fork 标记之后、beat_end 之后各开新拍。
  * 定位用每个剧本事件自带的 seq（编排器写入 payload.seq，与客户端 ScriptLine.seq 同尺），
  * 所以分岔/废弃分支的卡片也能各自对到自己的那一行。
  */
 export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): BeatCard[] {
   const ordered = [...view.nodes].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  const byId = new Map(ordered.map((node) => [node.id, node]));
   const cards: BeatCard[] = [];
   const cardOfNode = new Map<string, BeatCard>();
   let current: BeatCard | null = null;
   let closed = true;
-  // 链上前一个进卡的事件（preload/edit 也在链上，比对分岔口时不能拿它们当邻居）
+  // 链上前一个进卡的事件（preload/fork 也在链上，比对分岔口时不能拿它们当邻居）
   let prevInChain: string | null = null;
+  // 最近的 fork 标记：下一个开出来的卡就是被重演的那一拍顶出来的
+  let pendingFork: LineageNodeView | null = null;
 
   for (const node of ordered) {
-    // edit/rewrite 是操作标记不是剧情：edit 挂回被编辑行、重写即世界线断裂，都不进卡
+    // fork 是世界线断裂标记不是剧情：挂回被分岔的那张卡，新拍是它的兄弟，不是无根的新枝
     if (node.kind === "preload") {
       prevInChain = node.id;
       continue;
     }
-    if (node.kind === "edit") continue;
-    if (node.kind === "rewrite") {
-      // 重写记在被重写的那张卡上：重演出来的新拍是它的兄弟，不是无根的新枝
+    if (node.kind === "fork") {
       if (current) cardOfNode.set(node.id, current);
+      prevInChain = node.id;
       closed = true;
+      pendingFork = node;
       continue;
     }
 
@@ -55,7 +66,10 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
     const atFork = prevInChain !== null && node.parentId !== prevInChain;
     if (!current || closed || atFork) {
       const parent = atFork ? cardOfNode.get(node.parentId ?? "") ?? null : current;
-      current = newCard(node, parent);
+      // fork 标记的父就是被分岔的那个节点（拍首），从那儿继承拍号做徽标文案
+      const anchor = pendingFork?.parentId ? byId.get(pendingFork.parentId) ?? null : null;
+      current = newCard(node, parent, pendingFork && anchor ? { nodeId: anchor.id, turn: anchor.turn } : null);
+      pendingFork = null;
       cards.push(current);
       closed = false;
     }
@@ -150,7 +164,7 @@ const EDITABLE = new Set<LineageNodeView["kind"]>(["say", "narrate", "thought"])
 /**
  * 舞台上正在显示的那一行落在哪一拍——导演原语的锚点。
  * 舞台缓冲里只有当前分支的行，所以只在 onPath 的卡里找；纯布景拍没有 seq，定位不到就是 null。
- * 回看游标可能停在玩家的表态/导演注上（它们没有 seq），同样定位不到——原语按钮就该是灰的。
+ * 回看游标可能停在玩家发来的那句话上（它没有 seq），同样定位不到——原语按钮就该是灰的。
  */
 export function beatAtLine(
   cards: readonly BeatCard[],
@@ -177,7 +191,7 @@ export function editableNodeAtLine(
   );
 }
 
-function newCard(first: LineageNodeView, parent: BeatCard | null): BeatCard {
+function newCard(first: LineageNodeView, parent: BeatCard | null, forkedFrom: ForkOrigin | null): BeatCard {
   return {
     id: first.id,
     turn: first.turn,
@@ -193,6 +207,7 @@ function newCard(first: LineageNodeView, parent: BeatCard | null): BeatCard {
     isAbandoned: false,
     depth: parent ? parent.depth + 1 : 0,
     parentId: parent ? parent.id : null,
+    forkedFrom,
   };
 }
 

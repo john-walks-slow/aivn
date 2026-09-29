@@ -51,6 +51,14 @@ export class ScriptBuilder {
     this.scene = "";
   }
 
+  /** 原地改写：只换那一行的文字，缓冲不动、不重放（seq 就是行的身份）。 */
+  replaceText(seq: number, text: string): boolean {
+    const line = this.lines.find((l) => l.seq === seq);
+    if (!line) return false;
+    line.text = text;
+    return true;
+  }
+
   apply(event: StageEvent, seq?: number): void {
     const key = (): string => `l${(lineSeq += 1)}`;
     switch (event.kind) {

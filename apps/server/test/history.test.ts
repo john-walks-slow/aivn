@@ -84,15 +84,14 @@ describe("编排器历史累积", () => {
       "assistant",
       "toolCall",
     ]);
-    // 注入的 user 原文入史，且落在它真正开启的那一拍（首拍是开场词，二拍起才是 B 区拼出来的文本）
-    expect(beats[0]!.entries[0]).toEqual({
-      beat: 1,
-      seq: 1,
-      role: "user",
-      text: PLAY.opening,
-    });
+    // 注入的 user 原文入史，且落在它真正开启的那拍：首拍 = 开场词 + 状态区，其后每拍同形
+    expect(beats[0]!.entries[0]).toMatchObject({ beat: 1, seq: 1, role: "user" });
+    expect(beats[0]!.entries[0]!.text.startsWith(PLAY.opening)).toBe(true);
+    expect(beats[0]!.entries[0]!.text).toContain("【状态】");
+    // 「继续」不是一句话，不占【用户输入】段
+    expect(beats[0]!.entries[0]!.text).not.toContain("【用户输入】");
     expect(beats[1]!.entries[0]!.text).toContain("【状态】");
-    expect(beats[1]!.entries[0]!.text).toContain("（继续）");
+    expect(beats[1]!.entries[0]!.text).not.toContain("【用户输入】");
     // 原始 DSL 不解析不裁剪
     expect(beats[0]!.entries[2]).toMatchObject({ role: "assistant", text: BEAT_2 });
     expect(beats[1]!.entries.map((e) => e.seq)).toEqual([1, 2, 3]);

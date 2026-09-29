@@ -1,18 +1,18 @@
 import type { LineageNodeView, LineageView } from "@stage-ai/core";
 import type { ScriptLine } from "./script.js";
 
-/** 会话记录里的一条：角色台词、玩家表态、或导演注。 */
-export type TranscriptKind = "line" | "player" | "ooc";
+/** 会话记录里的一条：角色台词，或玩家发来的一句话。 */
+export type TranscriptKind = "line" | "input";
 
 export interface TranscriptEntry {
-  /** 台词行取 ScriptLine.key（语音关联与回看游标都对它）；表态/导演注取谱系节点 id。 */
+  /** 台词行取 ScriptLine.key（语音关联与回看游标都对它）；玩家输入取谱系节点 id。 */
   key: string;
   kind: TranscriptKind;
-  /** 显示形态：player 借 say 的对话框样式，ooc 借 narrate 的旁白样式。 */
+  /** 显示形态：line 用自己的说话方式，input 借对话框样式。 */
   type: "say" | "narrate" | "thought";
   actorId: string | null;
   text: string;
-  /** 台词行的起始事件序号（语音关联键）；表态/导演注没有 seq。 */
+  /** 台词行的起始事件序号（语音关联键）；玩家输入没有 seq。 */
   seq: number | null;
   /** 谱系节点 id：分岔/编辑的锚点。找得到就是它，找不到为 null（此时原语按钮置灰）。 */
   nodeId: string | null;
@@ -21,16 +21,13 @@ export interface TranscriptEntry {
 /** 只有这三类算「会话里说过的话」；其余（场景/音效/CG/立绘/停止点/幕末/生图预发射）都是布景。 */
 const SPOKEN: ReadonlySet<LineageNodeView["kind"]> = new Set(["say", "narrate", "thought"]);
 
-/** 玩家点「继续/下一幕」也会落一条 player 节点，但它不是发言，别混进记录里。 */
-const CONTINUE_MARK = "（继续）";
-
 /**
- * 会话记录 = 这一支世界线上，剧作家说过的话 + 玩家说过的话 + 导演说过的话。
+ * 会话记录 = 这一支世界线上，剧作家说过的话 + 玩家说过的话。
  *
  * 为什么从谱系走而不是从事件缓冲走：缓冲里只有剧本事件（`lineageToEvents` 明确丢掉
- * player/ooc），所以「玩家的选择、自由输入、导演注」在回看与回顾里全都查无此人；
+ * prompt），所以玩家的选择、自由输入、插一句在回看与回顾里全都查无此人；
  * 反过来缓冲里躺着 scene 行，滑回去会看见一条「背景 · 校门口」，那是布景不是台词。
- * 谱系是行级事件日志的唯一真相源，剧作家的原句、玩家的表态、导演注都在同一条链上按演出顺序排着。
+ * 谱系是行级事件日志的唯一真相源，剧作家的原句与玩家的输入都在同一条链上按演出顺序排着。
  */
 export function buildTranscript(
   view: LineageView | null,
@@ -76,17 +73,14 @@ function fromView(view: LineageView, lines: readonly ScriptLine[]): TranscriptEn
       });
       continue;
     }
-    if (node.kind !== "player" && node.kind !== "ooc") continue;
+    if (node.kind !== "prompt") continue;
     const text = node.text;
-    if (!text || text === CONTINUE_MARK) continue;
-    // 一条 OOC 同时记了 player 与 ooc 两个节点（同一段输入），玩家那份是重复。
-    const next = path[i + 1] === undefined ? undefined : nodeById.get(path[i + 1]!);
-    if (node.kind === "player" && next?.kind === "ooc" && next.text === text) continue;
+    if (!text) continue;
     out.push({
       key: node.id,
-      kind: node.kind,
-      type: node.kind === "player" ? "say" : "narrate",
-      actorId: node.kind === "player" ? "player" : null,
+      kind: "input",
+      type: "say",
+      actorId: "player",
       text,
       seq: null,
       nodeId: node.id,
@@ -109,7 +103,7 @@ function withFreshTail(entries: TranscriptEntry[], lines: readonly ScriptLine[])
   return entries;
 }
 
-/** 台词三件套才有「改写这一句」；表态与导演注是玩家的输入，改写它们没有意义。 */
+/** 台词三件套才有「改写这一句」；玩家发来的话不是剧作家的原句，改它没有意义。 */
 export function editableNodeId(entry: TranscriptEntry): string | null {
   return entry.kind === "line" && entry.nodeId ? entry.nodeId : null;
 }

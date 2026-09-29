@@ -13,6 +13,7 @@ import { beatAtLine, buildBeats, editableNodeAtLine } from "../stage/beats.js";
 import { buildTranscript, type TranscriptEntry } from "../stage/transcript.js";
 import { ToastStack, useToasts } from "../stage/toast.js";
 import { StopPanel } from "../stage/StopPanel.js";
+import { PromptQueuePanel } from "../stage/PromptQueuePanel.js";
 import { useVisualViewport } from "../stage/viewport.js";
 import { WorkshopPanel, type WorkshopMode } from "../workshop/WorkshopPanel.js";
 
@@ -32,7 +33,6 @@ export function StageScreen({ playId }: { playId: string }) {
   const [rebase, setRebase] = useState({ token: 0, resume: true });
   /** 谱系代次：每拍、结构操作后自增，把最新的树拉回来。 */
   const [lineageNonce, setLineageNonce] = useState(0);
-  const [oocQueued, setOocQueued] = useState(false);
   const [workshop, setWorkshop] = useState<WorkshopMode | null>(null);
   /** 操作条常驻：舞台上有几个能点的键，藏起来等于让玩家猜。H 手动收起做沉浸模式，仅此一种隐藏途径。 */
   const [chrome, setChrome] = useState(true);
@@ -59,11 +59,11 @@ export function StageScreen({ playId }: { playId: string }) {
     onAudio: (ready) => director.handleAudio(ready),
     onBeatStart: () => {
       director.beatStarted();
-      setOocQueued(false); // 新拍已吃到导演注
       setLineageNonce((n) => n + 1); // 上一拍的玩家表态进谱系了，选肢的「已选过」要跟上
     },
     onReset: () => director.reset(),
-    onOocAck: () => setOocQueued(true),
+    // 原地改写：缓冲已就地换字，谱系刷新把剧本/路线的标签换成新文本
+    onLineEdited: () => setLineageNonce((n) => n + 1),
     // P6 上下文重建：新分支整段到达——播放层复位，谱系视图跟着换
     onRebase: ({ note, busy: streaming }) => {
       director.reset();
@@ -92,19 +92,14 @@ export function StageScreen({ playId }: { playId: string }) {
   director.onControl = (state) => stage.sendTtsControl(state);
 
   // 导演出口（P6）：senders 在 useStageSocket 内 useCallback 稳定，仅重连后换引用
-  const { sendJump: jump, sendEdit: edit, sendBranch: sendBranch } = stage;
-  /** 舞台的「分岔」永远是拍级：粒度由编排器按拍首行解析归它。 */
-  const branch = useCallback(
-    (nodeId: string, instruction?: string) => sendBranch(nodeId, "beat", instruction),
-    [sendBranch],
-  );
-  const ops: LineageOps = useMemo(() => ({ jump, branch }), [jump, branch]);
+  const { sendFork: fork, sendJump: jump, sendEdit: edit } = stage;
+  const ops: LineageOps = useMemo(() => ({ jump, fork }), [jump, fork]);
 
 
-  // 走过的岔路口：玩家在这条线之外已经说过的选项，卡片上打「✓ 已选过」提醒存在多条命运
+  // 走过的岔路口：玩家在这条线之外已经说过的选择，卡片上打「✓ 已选过」提醒存在多条命运
   const seenChoices = useMemo(
     () =>
-      new Set((lineage.view?.nodes ?? []).filter((n) => n.kind === "player" && n.text).map((n) => n.text)),
+      new Set((lineage.view?.nodes ?? []).filter((n) => n.kind === "prompt" && n.text).map((n) => n.text)),
     [lineage.view],
   );
 
@@ -211,7 +206,7 @@ export function StageScreen({ playId }: { playId: string }) {
     };
   }, [cards, lineage.view, playback.view]);
 
-  /** 回顾里每条自己落在哪一拍：玩家表态与导演注没有拍，工具栏上的分岔就置灰。 */
+  /** 回顾里每条自己落在哪一拍：玩家发来的话没有拍，工具栏上的重来就置灰。 */
   const beatFor = useCallback(
     (entry: TranscriptEntry): string | null =>
       lineage.view ? (beatAtLine(cards, entry)?.id ?? null) : null,
@@ -255,13 +250,11 @@ export function StageScreen({ playId }: { playId: string }) {
             index={index}
             voiceAvailable={stage.voiceAvailable}
             busy={busy}
-            oocQueued={oocQueued}
             chrome={chrome}
             targets={targets}
             onView={setView}
-            onOoc={stage.sendOoc}
-            onJump={jump}
-            onRewrite={branch}
+            onPrompt={stage.sendPrompt}
+            onFork={fork}
             onEdit={edit}
             onReplay={replay}
             hasVoice={hasVoice}
@@ -304,8 +297,7 @@ export function StageScreen({ playId }: { playId: string }) {
           }}
           onReplay={replay}
           onEdit={edit}
-          onJump={jump}
-          onRewrite={branch}
+          onFork={fork}
           onClose={() => setView("stage")}
         />
       ) : (
@@ -338,6 +330,15 @@ export function StageScreen({ playId }: { playId: string }) {
 
       {/* 提示一律走浮层 toast，不占舞台顶部的固定一条 */}
       <ToastStack toasts={toast.toasts} onDismiss={toast.dismiss} />
+
+      {/* 待注入队列：右上角独立面板，空则不占地方。排队中的话能改也能撤 */}
+      {view === "stage" && !workshop && (
+        <PromptQueuePanel
+          items={stage.queue}
+          onEdit={(id, text) => stage.sendPromptEdit(id, text)}
+          onDelete={(id) => stage.sendPromptDelete(id)}
+        />
+      )}
 
       {view === "stage" && workshop && (
         <WorkshopPanel

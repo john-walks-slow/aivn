@@ -2,12 +2,13 @@
  * 谱系数据模型 —— 行级事件日志是唯一真相源（计划 D7/D10）。
  *
  * - 事件 append-only：行级演出事件按序持久化（JSONL），parentId 构成分支树；
- * - 原地编辑 = 追加 edit 事件（editTargetId + 新文本），物化时覆盖目标行——日志永不改写；
- * - **跳转 vs 分岔**（两个正交动词，边界在本文件里定死）：
+ * - 原地编辑 = 追加 edit 事件覆盖目标行文本（edit 是挂在目标旁边的旁注，不入树），日志永不改写；
+ * - **跳转 vs 分岔**（两个正交原语，边界在本文件里定死）：
  *   跳转 `jumpTo` 只移挂载点、不追加事件，不生成任何内容；活节点上是往前走，
- *   已废弃的节点上是回到那条岔掉的线。分岔 `recordRewrite` 把挂载点退到目标**之前**
- *   并追加一条 rewrite 事件，于是目标节点分叉出两条路，**必然伴随重新生成**。
- *   前者改「现在在哪」，后者改「接下来是什么」，所以只有分岔需要导演意图与重演。
+ *   已废弃的节点上是回到那条岔掉的线。分岔 `recordFork` 把挂载点移到目标**并追加一条
+ *   fork 标记事件**，于是目标之后原有的内容整段转为兄弟分支。分岔本身不重新生成——
+ *   「重演」只是分岔之后接的一拍（`fork { resume: true }`）。
+ *   前者改「现在在哪」，后者改「接下来是什么」。
  * - 谱系快照随分支走：恢复 = 当前路径上最近的快照。
  */
 
@@ -24,24 +25,19 @@ export type LineageEventKind =
   | "preload"
   | "cg"
   | "stop"
-  | "player"
-  | "ooc"
+  | "prompt"
   | "beat_end"
   | "edit"
-  | "rewrite";
+  | "fork";
 
 /** 行级事件的载荷（编排器按 kind 填充）。 */
 export interface LineagePayload {
   /** 演出指令属性（scene bg/bgm、actor pos/expression 等）。 */
   attrs?: Record<string, string>;
-  /** 玩家表态 / OOC 指令原文。 */
+  /** 玩家输入原文（选项选择 / 自由输入 / 插一句，含 OOC 意图）。 */
   input?: string;
   /** 选项选择记录。 */
   choice?: { index: number; text: string; value?: string };
-  /** 重写的 instruction（可选）。 */
-  instruction?: string;
-  /** 重写粒度。 */
-  granularity?: "line" | "beat";
   [key: string]: unknown;
 }
 
@@ -94,14 +90,14 @@ export interface LineageNodeView {
   onPath: boolean;
   /** 子节点数：>1 即分叉点（多个历史版本从这里长出）。 */
   children: number;
-  /** edit 事件专有：被改写的台词行 id。 */
-  editTargetId: string | undefined;
-  /** rewrite 事件专有：重写粒度标注（line/beat）。 */
-  granularity: string | undefined;
-  /** rewrite 事件专有：玩家写下的导演意图。 */
-  instruction: string | undefined;
+  /** 被原地改过的行：最新改写文本（未改过则 null）。 */
+  editedText: string | null;
+  /** 改写次数（同句反复改就是多次）。 */
+  editCount: number;
+  /** 最近一次改写时刻。 */
+  editedAt: number | undefined;
   /** 剧本事件的 seq（say_start/narrate_start/scene/… 的序号）：与客户端 ScriptLine.seq 同尺，
-   *  路线树据此把谱系卡片精确对到剧本行上。player/ooc/edit/rewrite 无 seq。 */
+   *  路线树据此把谱系卡片精确对到剧本行上。prompt/fork/edit 无 seq。 */
   seq: number | undefined;
   /** stop 事件专有：停止点类型/选项/占位文案。attrs 里那个 stopType 只是给旧客户端兜底的，
    *  客户端只读回看要按原样重建停止点，选项必须留在投影里。 */
@@ -147,6 +143,8 @@ function seedNextId(ids: string[]): void {
  */
 export class LineageTree {
   private readonly events = new Map<string, LineageEvent>();
+  /** 目标行 id → 该行历次改写（旁注，不进树也不动挂载点：纯原地）。 */
+  private readonly edits = new Map<string, LineageEvent[]>();
   private leaf: string | null = null;
   /** nodeId → 最近快照（一个节点保留一份，后存覆盖）。 */
   private readonly snapshotsByNode = new Map<string, LineageSnapshot>();
@@ -173,7 +171,7 @@ export class LineageTree {
    * 这只是移动游标，不追加任何事件——「跳转」与「分岔」的分野就在这里。
    * 目标节点在不在当前路径上都能跳：活的跳上去是往前走，跳到已废弃的节点上
    * 是回到那条岔掉的线（该节点之后的原剧情转为废弃分支，历史一条不删）。
-   * 想真的开出新内容，是分岔（`recordRewrite`）的事，不是这里。
+   * 想真的开出新内容，是分岔（`recordFork`）的事，不是这里。
    */
   jumpTo(nodeId: string): LineageEvent {
     const node = this.requireNode(nodeId);
@@ -182,61 +180,57 @@ export class LineageTree {
   }
 
   /**
-   * 原地编辑：追加 edit 事件覆盖目标行文本。
+   * 分岔：挂载点移到目标节点，并落一个 fork 标记事件。
    *
-   * edit 挂在**被编辑行自己**之下（而非叶尖），于是「改这一句」= 从该行分岔重写：
-   * 新世界线停在这行、改写当拍生效，其后的剧情整段转为废弃分支（历史一条不删）。
+   * 目标节点之后原有的内容整段转为兄弟分支（拍中分岔即截断）。fork 事件自身不产内容，
+   * 它的存在只为让「这条线是从哪儿岔出来的」在日志里可查——分岔不留痕等于没发生。
    */
-  editInPlace(nodeId: string, newText: string): LineageEvent {
+  recordFork(nodeId: string): LineageEvent {
+    this.jumpTo(nodeId);
+    return this.append("fork");
+  }
+
+  /**
+   * 原地编辑：追加一条旁注覆盖目标行文本。
+   *
+   * edit **不挂到树上、不动挂载点**——改这一句只改这一句，剧情接着往下演，不产生隐藏分支。
+   * 物化时按目标行取最后一条改写；目标不在当前分支上时改写不生效。
+   */
+  recordEdit(nodeId: string, newText: string): LineageEvent {
     const target = this.requireNode(nodeId);
     if (!EDITABLE_KINDS.has(target.kind)) {
       throw new Error(`只有台词行可编辑，${nodeId} 是 ${target.kind}`);
     }
-    return this.attach({
+    const event: LineageEvent = {
       id: nextId(),
-      parentId: target.id,
+      parentId: null,
       kind: "edit",
-      turn: this.nextTurn(),
+      turn: target.turn,
       text: newText,
       editTargetId: target.id,
       createdAt: Date.now(),
-    });
+    };
+    const list = this.edits.get(target.id);
+    if (list) list.push(event);
+    else this.edits.set(target.id, [event]);
+    return event;
   }
 
-  /**
-   * 分岔：回退到目标**之前**（挂载点移到其父节点，目标行留在废弃分支），并追加 rewrite 事件。
-   *
-   * 这是「分岔」与「跳转」在数据模型上的分界：跳转不追加事件、分岔追加一条 rewrite，
-   * 于是目标节点在树上分叉出度数 ≥2 的两条路。分岔必然伴随重新生成内容。
-   *
-   * 粒度契约：granularity 仅记录意图与 UI 标注；**beat 边界解析归编排器**——
-   * "beat" 分岔时编排器须先解析节拍边界（beat_end/stop 之后的第一个事件）并把 nodeId 传节拍首行。
-   * core 不事后推算节拍（beat 生命周期由编排器拥有）。
-   */
-  recordRewrite(nodeId: string, granularity: "line" | "beat", instruction?: string): LineageEvent {
-    const target = this.requireNode(nodeId);
-    this.leaf = target.parentId;
-    return this.append("rewrite", { payload: { granularity, instruction } });
-  }
-
-  /** 物化分支剧本（root→leaf 重放；edit 覆盖目标行文本，edit/rewrite 自身不占行）。 */
+  /** 物化分支剧本（root→leaf 重放；edit 覆盖目标行文本，fork 自身不占行）。 */
   materialize(fromLeaf: string | null = this.leaf): LineageEvent[] {
-    const chain = this.ancestorChain(fromLeaf);
-    const textOverride = new Map<string, string>();
     const script: LineageEvent[] = [];
-    for (const id of chain) {
+    for (const id of this.ancestorChain(fromLeaf)) {
       const event = this.events.get(id)!;
-      if (event.kind === "edit") {
-        if (event.editTargetId) textOverride.set(event.editTargetId, event.text ?? "");
+      if (event.kind === "fork") continue;
+      const history = this.edits.get(id);
+      if (history?.length) {
+        const latest = history[history.length - 1]!;
+        script.push({ ...event, text: latest.text });
         continue;
       }
-      if (event.kind === "rewrite") continue;
       script.push(event);
     }
-    if (textOverride.size === 0) return script;
-    return script.map((event) =>
-      textOverride.has(event.id) ? { ...event, text: textOverride.get(event.id) } : event,
-    );
+    return script;
   }
 
   /** 祖先链（root → node，含自身）。 */
@@ -322,6 +316,12 @@ export class LineageTree {
         const view = toNodeView(event);
         view.onPath = onPath.has(event.id);
         view.children = childCount.get(event.id) ?? 0;
+        // edit 是挂在目标旁边的旁注，不在树上，所以要单独把这几条挂回投影里
+        const history = this.edits.get(event.id) ?? [];
+        const latest = history[history.length - 1];
+        view.editedText = latest?.text ?? null;
+        view.editCount = history.length;
+        view.editedAt = latest?.createdAt;
         return view;
       });
     return {
@@ -338,7 +338,9 @@ export class LineageTree {
   /** 完整会话状态导出（事件真相源 + leaf 运行态 + 快照/书签存档事实），跨进程持久化用。 */
   export(): LineageStore {
     return {
-      events: [...this.events.values()],
+      // 编辑旁注与树事件同流落盘（append-only 单日志），但排在末尾：读回时两者分流，
+      // 顺序不影响任何语义。
+      events: [...this.events.values(), ...[...this.edits.values()].flat()],
       leafId: this.leaf,
       snapshots: [...this.snapshotsByNode.values()],
     };
@@ -346,8 +348,18 @@ export class LineageTree {
 
   /** 从持久化会话状态重建（leaf 显式恢复，不用事件尾推断——裸分岔状态不丢）。 */
   load(store: LineageStore): void {
-    for (const event of store.events) this.attach(event);
-    this.leaf = store.leafId ?? store.events.at(-1)?.id ?? null;
+    for (const event of store.events) {
+      // edit 是旁注：落进目标行的改写历史，不进树也不动挂载点。
+      if (event.kind === "edit" && event.editTargetId) {
+        const list = this.edits.get(event.editTargetId);
+        if (list) list.push(event);
+        else this.edits.set(event.editTargetId, [event]);
+        continue;
+      }
+      this.attach(event);
+    }
+    // attach 已把 leaf 推到最后一个树事件；只在无 leafId 时拿它兜底。
+    this.leaf = store.leafId ?? this.leaf;
     for (const snapshot of store.snapshots) this.snapshotsByNode.set(snapshot.nodeId, snapshot);
     seedNextId([
       ...store.events.map((e) => e.id),

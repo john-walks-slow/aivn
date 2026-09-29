@@ -121,27 +121,29 @@ async function routeMessage(
     case "continue":
       await orchestrator.playerAction({ kind: "continue" });
       return;
-    case "ooc":
-      await orchestrator.playerAction({ kind: "ooc", text: msg.text });
+    case "prompt":
+      await orchestrator.playerAction({ kind: "prompt", text: msg.text });
+      return;
+    case "prompt_edit":
+      orchestrator.editPending(msg.id, msg.text);
+      return;
+    case "prompt_delete":
+      orchestrator.deletePending(msg.id);
       return;
     case "tts_control":
       orchestrator.setTtsState({ enabled: msg.enabled, paused: msg.paused });
       return;
-    // —— 导演操作（P6）：跳转/分岔/编辑彼此正交 ——
-    //     跳转把世界线挂到已有节点（不生成），分岔退到该段之前重写并重新生成；
-    //     「fork」是跳转的旧名（fork 在这套模型里实指分岔，起名反了），留着兼容旧客户端。
+    // —— 导演操作：跳转 / 分岔 / 编辑，彼此正交 ——
+    //     jumpTo 只移挂载点、不生成任何内容；分岔落一条 fork 标记，其后内容整段转兄弟分支。
+    //     resume=true 一次往返完成「重来这一幕」：分岔后立刻续演，中间不设停止点
     case "jump":
-    case "fork":
       await orchestrator.jumpTo(msg.nodeId);
       return;
+    case "fork":
+      await orchestrator.forkTo(msg.nodeId, { resume: msg.resume });
+      return;
     case "edit":
-      await orchestrator.editLine(msg.nodeId, msg.newText);
-      return;
-    case "rewrite":
-      await orchestrator.branch(msg.nodeId, msg.granularity, msg.instruction);
-      return;
-    case "ooc_at":
-      await orchestrator.oocAt(msg.nodeId, msg.text);
+      orchestrator.editLine(msg.nodeId, msg.newText);
       return;
     // —— 工坊（D9）：与演出同一连接、不同通道；工坊对话不阻塞演出 ——
     case "workshop_open":

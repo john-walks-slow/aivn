@@ -17,20 +17,16 @@ interface StageTheaterProps {
   index: AssetIndex;
   /** 服务端 TTS 能力（false 时隐藏语音相关的一切）。 */
   voiceAvailable: boolean;
-  /** 原地 OOC 已入队（下一拍生效，beat_start 自动清除）。 */
-  oocQueued: boolean;
-  /** 结构性操作会腰斩正在演的这一幕，busy 时 ↺/🌿 置灰（OOC 仍可用，走 steer 注入）。 */
+  /** 结构性操作会腰斩正在演的这一幕，busy 时 ✎/↺ 置灰（插一句仍可用，它排进待注入队列）。 */
   busy: boolean;
   /** 操作条可见性（H 键手动收起做沉浸模式，仅此一种隐藏途径）。 */
   chrome: boolean;
-  /** 由当前显示行 seq 反查出的锚点：编辑绑行，跳转/分岔绑整幕。 */
+  /** 由当前显示行 seq 反查出的锚点：编辑绑行，重来绑整幕。 */
   targets: DirectorTargets;
-  /** 导演原语：OOC / 编辑 / 分岔 / 跳转，彼此正交。 */
-  onOoc: (text: string) => void;
+  /** 插一句：唯一的输入通道。空闲时立刻开新拍，演出中排进待注入队列。 */
+  onPrompt: (text: string) => void;
   onEdit: (nodeId: string, text: string) => void;
-  onRewrite: (beatId: string, instruction?: string) => void;
-  /** 跳转：世界线挂到该拍，不生成内容。 */
-  onJump: (nodeId: string) => void;
+  onFork: (nodeId: string, opts?: { resume?: boolean }) => void;
   onReplay: (seq: number) => void;
   hasVoice: (seq: number | null) => boolean;
   onUnlock: () => void;
@@ -60,6 +56,9 @@ const POS_CLASS: Record<string, string> = { left: "pos-left", center: "pos-cente
 function isTyping(t: EventTarget | null): boolean {
   return t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
 }
+
+/** 插一句的快捷前缀：以它开头 = 明确指示，剧作家遵从但不跳出戏外回应。正文里也要认得这个。 */
+const OOC_PREFIX = "OOC：";
 
 /**
  * 立绘：表情差分之间交叉淡入。
@@ -95,7 +94,7 @@ function Sprite({ url, pos, name }: { url: string | null; pos: string; name: str
   );
 }
 
-/** 舞台：背景/立绘/CG 视觉层 + 打字机对话框 + 二段式点击 + 自动模式 + sfx/bgm + 语音 + 常驻导演注。 */
+/** 舞台：背景/立绘/CG 视觉层 + 打字机对话框 + 二段式点击 + 自动模式 + sfx/bgm + 语音 + 导演栏。 */
 export function StageTheater({
   visual,
   playback,
@@ -103,14 +102,12 @@ export function StageTheater({
   names,
   index,
   voiceAvailable,
-  oocQueued,
   busy,
   chrome,
   targets,
-  onOoc,
+  onPrompt,
   onEdit,
-  onRewrite,
-  onJump,
+  onFork,
   onReplay,
   hasVoice,
   onUnlock,
@@ -137,8 +134,8 @@ export function StageTheater({
       created.sfx.dispose();
     };
   }, []);
-  /** 导演原语的面板：四原语的全部输入都在对话框里收，不跳视图。 */
-  const [action, setAction] = useState<"ooc" | "edit" | "rewrite" | null>(null);
+  /** 导演栏的面板：三个动作的全部输入都在对话框里收，不跳视图。 */
+  const [action, setAction] = useState<"prompt" | "edit" | "restart" | null>(null);
   const [draft, setDraft] = useState("");
   const { view, viewLength, current, shownLength, exhausted, advance, scrub, scrubbed, follow } =
     playback;
@@ -273,12 +270,21 @@ export function StageTheater({
 
   const submitAction = (): void => {
     const text = draft.trim();
-    if (!text) return;
-    if (action === "ooc") onOoc(text);
-    else if (action === "edit" && targets.lineNodeId) onEdit(targets.lineNodeId, text);
-    else if (action === "rewrite" && targets.beatId) onRewrite(targets.beatId, text || undefined);
     setDraft("");
     setAction(null);
+    if (action === "prompt") {
+      if (text) onPrompt(text);
+      return;
+    }
+    if (action === "edit") {
+      if (text && targets.lineNodeId) onEdit(targets.lineNodeId, text);
+      return;
+    }
+    if (action === "restart" && targets.beatId) {
+      onFork(targets.beatId, { resume: true });
+      // 填了就当「插一句」紧跟着落进重演的那一拍里；留空就是纯粹重演。
+      if (text) onPrompt(text);
+    }
   };
 
   return (
@@ -356,21 +362,20 @@ export function StageTheater({
           <div className="director-bar">
             <button
               type="button"
-              className={`dir-btn ${action === "ooc" ? "on" : ""}`}
-              title={oocQueued ? "已入队，接下来生成的内容会带上" : "导演注（OOC）：随时告诉剧作家接下来该怎么写"}
+              className={`dir-btn ${action === "prompt" ? "on" : ""}`}
+              title="插一句：可以是角色的行动或台词，也可以是给这场戏的指示"
               onClick={(e) => {
                 e.stopPropagation();
-                setAction(action === "ooc" ? null : "ooc");
+                setAction(action === "prompt" ? null : "prompt");
                 setDraft("");
               }}
             >
-              <Icon name="ooc" />
-              {oocQueued && <span className="dir-dot" aria-hidden />}
+              <Icon name="chat" />
             </button>
             <button
               type="button"
               className={`dir-btn ${action === "edit" ? "on" : ""}`}
-              title={targets.lineNodeId ? "编辑当前这句台词" : "这里是表态或导演注，没有台词可改"}
+              title={targets.lineNodeId ? "编辑当前这句台词" : "这里没有台词可改"}
               disabled={!targets.lineNodeId}
               onClick={(e) => {
                 e.stopPropagation();
@@ -382,28 +387,16 @@ export function StageTheater({
             </button>
             <button
               type="button"
-              className={`dir-btn ${action === "rewrite" ? "on" : ""}`}
-              title={busy ? "剧作家正在写，暂时不能分岔" : "从这一幕分岔出去"}
+              className={`dir-btn ${action === "restart" ? "on" : ""}`}
+              title={busy ? "剧作家正在写，暂时不能重来" : "这一幕重新来一次（会分岔）"}
               disabled={busy || !targets.beatId}
               onClick={(e) => {
                 e.stopPropagation();
-                setAction(action === "rewrite" ? null : "rewrite");
+                setAction(action === "restart" ? null : "restart");
                 setDraft("");
               }}
             >
               <Icon name="rewrite" />
-            </button>
-            <button
-              type="button"
-              className="dir-btn"
-              title={busy ? "剧作家正在写，暂时不能跳" : "跳到这一拍之前"}
-              disabled={busy || !targets.beatId}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (targets.beatId) onJump(targets.beatId);
-              }}
-            >
-              <Icon name="locate" />
             </button>
             {voiceAvailable && hasVoice(view?.seq ?? null) && (
               <button
@@ -440,30 +433,57 @@ export function StageTheater({
             onTouchEnd={(e) => e.stopPropagation()}
           >
             <div className="director-hint">
-              {action === "ooc" && "导演注会加进接下来新生成的内容，不打断正在写的"}
+              {action === "prompt" && "可以是某个角色的行动或台词，也可以是给这场戏的指示"}
               {action === "edit" && "就地改这一句，改完接着演，不重演"}
-              {action === "rewrite" && "退到这一幕之前重写并重新生成（留空则按原设定重来）"}
+              {action === "restart" && "留空 = 只重来这一幕；填了 = 连意图一起给"}
             </div>
-            <input
-              value={draft}
-              placeholder={
-                action === "edit"
-                  ? "改写这句台词…"
-                  : action === "rewrite"
-                    ? "想换什么方向？（可留空）"
-                    : "想让剧作家接下来怎么写…"
-              }
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submitAction()}
-              autoFocus
-            />
+            <div className="director-input">
+              {action === "prompt" && (
+                <button
+                  type="button"
+                  className={`ooc-shortcut ${draft.startsWith(OOC_PREFIX) ? "on" : ""}`}
+                  title="以 OOC 开头 = 明确指示剧作家调整方向（遵从但不跳出戏外回应）"
+                  onClick={() =>
+                    setDraft((prev) =>
+                      prev.startsWith(OOC_PREFIX) ? prev.slice(OOC_PREFIX.length) : OOC_PREFIX + prev,
+                    )
+                  }
+                >
+                  OOC：
+                </button>
+              )}
+              <input
+                value={draft}
+                placeholder={
+                  action === "edit"
+                    ? "改写这句台词…"
+                    : action === "restart"
+                      ? "想换什么方向？（可留空）"
+                      : "想让这场戏接下来怎么走…"
+                }
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  submitAction();
+                }}
+                autoFocus
+              />
+            </div>
             <div className="director-actions">
               <button
                 type="button"
                 onClick={submitAction}
-                disabled={action === "rewrite" ? false : draft.trim() === ""}
+                disabled={
+                  action === "restart" ? !targets.beatId : action === "edit" ? draft.trim() === "" : false
+                }
               >
-                {action === "edit" ? "改写" : action === "rewrite" ? "分岔" : "发送"}
+                {action === "edit"
+                  ? "改写"
+                  : action === "restart"
+                    ? draft.trim()
+                      ? "重来这一幕 · 带着这句"
+                      : "重来这一幕"
+                    : "插一句"}
               </button>
               <button type="button" className="ghost-btn" onClick={() => setAction(null)}>
                 收起
@@ -500,8 +520,7 @@ export function BacklogView({
   onSeek,
   onReplay,
   onEdit,
-  onRewrite,
-  onJump,
+  onFork,
   onClose,
 }: {
   playId: string;
@@ -511,15 +530,12 @@ export function BacklogView({
   busy: boolean;
   voiceAvailable: boolean;
   hasVoice: (seq: number | null) => boolean;
-  /** 这一条落在哪一拍（跳转/分岔的锚点）；表态与导演注没有拍，返 null。 */
+  /** 这一条落在哪一拍（重来的锚点）；玩家自己发来的话没有拍，返 null。 */
   beatFor: (entry: TranscriptEntry) => string | null;
   onSeek: (key: string) => void;
   onReplay: (seq: number) => void;
   onEdit: (nodeId: string, text: string) => void;
-  /** 分岔：重写出新剧情（onRewrite 是分岔的既有入口，别名另起只会多一套叫法）。 */
-  onRewrite: (beatId: string, instruction?: string) => void;
-  /** 跳转：世界线挂到该拍，不生成内容。 */
-  onJump: (nodeId: string) => void;
+  onFork: (nodeId: string, opts?: { resume?: boolean }) => void;
   onClose: () => void;
 }) {
   /** 改写就地改：点开编辑框在回顾里完成，不跳视图。 */
@@ -655,20 +671,11 @@ export function BacklogView({
                     <button
                       type="button"
                       className="bl-tool"
-                      title={busy ? "剧作家正在写，暂时不能分岔" : "从这一幕分岔出去"}
+                      title={busy ? "剧作家正在写，暂时不能重来" : "这一幕重新来一次（会分岔）"}
                       disabled={busy || !beat}
-                      onClick={() => beat && onRewrite(beat)}
+                      onClick={() => beat && onFork(beat, { resume: true })}
                     >
                       <Icon name="rewrite" />
-                    </button>
-                    <button
-                      type="button"
-                      className="bl-tool"
-                      title={busy ? "剧作家正在写，暂时不能分岔" : "从这里重写出一段新剧情"}
-                      disabled={busy || !beat}
-                      onClick={() => beat && onRewrite(beat)}
-                    >
-                      <Icon name="fork" />
                     </button>
                   </div>
                 )}

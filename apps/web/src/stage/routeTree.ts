@@ -24,6 +24,8 @@ export interface PlacedEdge {
   d: string;
   live: boolean;
   dead: boolean;
+  /** 从旧版那一拍斜插出来的分岔线。 */
+  fork: boolean;
 }
 
 export interface RouteLayout {
@@ -109,6 +111,8 @@ export function layoutRoute(cards: readonly BeatCard[], dir: RouteDir = "horizon
       d: edgePath(parent, entry, dir),
       live: parent.card.onPath && entry.card.onPath,
       dead: !parent.card.onPath && !entry.card.onPath,
+      // 通向分岔拍首的那条线就是分岔线——它从旧版那一拍旁边斜插出来，画法要跟普通连线分开
+      fork: entry.card.forkedFrom !== null,
     });
   }
 
