@@ -81,6 +81,8 @@ function carryOverFrom(runtime: PlayRuntime, note: string): CarryOver | undefine
  */
 export class PlayHouse {
   private readonly runtimes = new Map<string, PlayRuntime>();
+  /** 在飞的首装（见 get）：并发调用共享同一个 promise，装配完成即摘除。 */
+  private readonly building = new Map<string, Promise<PlayRuntime>>();
   /** 已加载的剧目 runtime 数（健康检查用；不触发懒加载）。 */
   get livePlayCount(): number {
     return this.runtimes.size;
@@ -121,8 +123,18 @@ export class PlayHouse {
   async get(playId: string): Promise<PlayRuntime> {
     const existing = this.runtimes.get(playId);
     if (existing) return existing;
+    // 装配横跨多个 await：并发的第二个调用者若也走到这里，会另建一棵树、另建一份档，
+    // 两个 runtime 从此各演各的（网络层演的戏，REST 那棵树上什么都看不到）。共享同一次装配。
+    const building = this.building.get(playId);
+    if (building) return building;
+    const started = this.buildFresh(playId).finally(() => this.building.delete(playId));
+    this.building.set(playId, started);
+    return started;
+  }
+
+  /** 首次装配：读活动档，没有就现建一棵空树（直连 /ws 而没先建档时也有档可挂）。 */
+  private async buildFresh(playId: string): Promise<PlayRuntime> {
     const saves = this.library.saves(playId);
-    // 直连 /ws 而没先建档：兜底建一棵空树，runtime 永远有存档可挂
     const saveId = (await saves.readActive()) ?? (await saves.create()).id;
     const runtime = await this.buildRuntime(playId, saveId);
     this.runtimes.set(playId, runtime);
