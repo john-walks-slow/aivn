@@ -89,7 +89,7 @@ export function VoiceLibrary({
       <header className="voice-library-bar">
         <input
           className="voice-library-search"
-          placeholder="搜索音色名 / 描述 / 标签（如 narration、female、书记）"
+          placeholder="搜索音色名 / 描述 / 标签"
           value={query}
           autoFocus
           onChange={(e) => setQuery(e.target.value)}
