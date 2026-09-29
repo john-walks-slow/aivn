@@ -122,6 +122,14 @@ export function VoiceLibrary({
             {loading ? "抓取中…" : "重新抓取"}
           </button>
         </div>
+        <button
+          className="voice-library-close"
+          aria-label="关闭音色库"
+          title="关闭"
+          onClick={onClose}
+        >
+          ×
+        </button>
       </header>
 
       {error ? (
