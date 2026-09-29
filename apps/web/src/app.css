@@ -31,8 +31,9 @@
   --dialog-ink: #1a1a1a;
   --dialog-ink-soft: #5c5c5c; /* 旁白 */
   --dialog-ink-thought: #6b6b8a; /* 内心独白 */
-  --nameplate-bg: #2b5fb8;
-  --nameplate-ink: #ffffff;
+  --nameplate-bg: #ffffff;
+  --nameplate-ink: #1f2430;
+  --nameplate-line: #2b5fb8;
   --sprite-dim: 0.55; /* 非发言人立绘压暗强度 */
   --choice-bg: #ffffff;
   --choice-line: #e6e4df;
@@ -470,17 +471,21 @@ button.link-btn {
   backdrop-filter: blur(14px) saturate(1.1);
 }
 
-/* 说话人：只留名字，不给底色——对话框的玻璃面已经够分层次了 */
+/* 说话人：白底 + 描边的小牌，骑在对话框上沿——去掉底就看不清了 */
 .dialog-name {
   position: absolute;
-  top: -11px;
-  left: 20px;
+  top: -15px;
+  left: 18px;
   max-width: 60%;
-  color: var(--dialog-ink);
+  padding: 2px 12px;
+  border: 1px solid var(--nameplate-line);
+  border-radius: var(--radius);
+  background: var(--nameplate-bg);
+  color: var(--nameplate-ink);
   font-weight: 700;
   font-size: 14.5px;
-  line-height: 1.4;
-  text-shadow: 0 1px 0 rgb(255 255 255 / 0.7);
+  line-height: 1.5;
+  box-shadow: var(--shadow);
 }
 
 .dialog-text {
