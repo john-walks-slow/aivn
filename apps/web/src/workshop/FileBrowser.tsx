@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { notifyThemeChanged } from "../theme.js";
 import type { PlayFile } from "../api.js";
 import { api } from "../api.js";
 
@@ -53,6 +54,7 @@ export function FileBrowser({
         setSaved(draft);
         onSaved(open);
         reload();
+        if (open === "theme.css") notifyThemeChanged();
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setBusy(false));

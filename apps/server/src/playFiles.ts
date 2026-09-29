@@ -35,9 +35,9 @@ function normalizePath(rel: string): string | null {
   return segments.join("/");
 }
 
-/** 可写面：根层 play.json + memory/** 文本文件。 */
+/** 可写面：根层 play.json + theme.css + memory/** 文本文件。 */
 function isEditable(rel: string): boolean {
-  if (rel === "play.json") return true;
+  if (rel === "play.json" || rel === "theme.css") return true;
   if (!rel.startsWith("memory/")) return false;
   return EDITABLE_EXT.has(extOf(rel));
 }
@@ -122,7 +122,7 @@ export class PlayFiles {
     return normalizePath(rel)!;
   }
 
-  /** 删除（仅 memory/**；play.json 是剧目定义，删掉=剧目损坏，任何入口都不许删）。 */
+  /** 删除（仅 memory/** 与 theme.css；play.json 是剧目定义，删掉=剧目损坏，任何入口都不许删）。 */
   async remove(rel: string): Promise<void> {
     const abs = this.pathOf(rel, "write");
     if (abs === join(this.root, "play.json")) throw new Error("play.json 不可删除");

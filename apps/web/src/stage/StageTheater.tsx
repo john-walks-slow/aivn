@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { ScriptLine } from "./script.js";
 import type { Playback, VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
@@ -23,6 +24,8 @@ interface StageTheaterProps {
   onLog: () => void;
   onRoute: () => void;
   onWorkshop: () => void;
+  /** 舞台层浮层：停止点的选肢卡片与入戏输入（P6.5 悬浮于舞台中央，不占底部条）。 */
+  overlay?: ReactNode;
 }
 
 const POS_CLASS: Record<string, string> = { left: "pos-left", center: "pos-center", right: "pos-right" };
@@ -45,6 +48,7 @@ export function StageTheater({
   onLog,
   onRoute,
   onWorkshop,
+  overlay,
 }: StageTheaterProps) {
   const bgmRef = useRef<HTMLAudioElement | null>(null);
   const [directorOpen, setDirectorOpen] = useState(false);
@@ -267,6 +271,8 @@ export function StageTheater({
             {visual.cg?.caption && <p className="theater-cg-caption">{visual.cg.caption}</p>}
           </div>
         )}
+
+        {overlay}
       </div>
 
       <div className="theater-dialog" role="text">
@@ -276,7 +282,7 @@ export function StageTheater({
             {view.mood && <span className="dialog-mood">（{view.mood}）</span>}
           </div>
         )}
-        <p className={`dialog-text ${view?.type === "thought" ? "thought" : ""} ${scrubbed ? "rewinding" : ""}`}>
+        <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
           {shown ||
             (view ? "" : live && exhausted ? "剧作家正在落笔…" : "（点击开始演出）")}
           {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}

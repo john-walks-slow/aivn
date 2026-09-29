@@ -27,7 +27,51 @@ const EMPTY_VISUAL: VisualState = {
   sprites: {},
   pending: {},
 };
-const CHAR_MS = 35;
+/**
+ * 打字机节奏（剧目 theme.css 可覆盖这三个变量）。
+ * 短停：逗号类；长停：句末与破折号——让句子有换气感，而不是匀速喷字。
+ */
+const LONG_PAUSES = new Set(["。", "！", "？", "…", "—", "」", "』"]);
+const SHORT_PAUSES = new Set(["，", "、", "；", "：", "）", ".", ",", "!", "?", ";"]);
+
+/**
+ * 下一个字要等多久：上一个字是标点就多停一拍，否则按基础速度。
+ * 主题变量每 250ms 读一次就够——theme.css 换皮后节奏跟着变，但不值得每个字都问一次样式引擎。
+ */
+interface Tempo {
+  char: number;
+  short: number;
+  long: number;
+}
+let tempoCache: { at: number; value: Tempo } | null = null;
+
+function tempo(): Tempo {
+  const now = Date.now();
+  if (tempoCache && now - tempoCache.at < 250) return tempoCache.value;
+  const css = getComputedStyle(document.documentElement);
+  const read = (name: string, fallback: number): number => {
+    const value = Number.parseInt(css.getPropertyValue(name), 10);
+    return Number.isFinite(value) && value >= 0 ? value : fallback;
+  };
+  tempoCache = {
+    at: now,
+    value: {
+      char: read("--type-ms", 35),
+      short: read("--pause-short-ms", 120),
+      long: read("--pause-long-ms", 240),
+    },
+  };
+  return tempoCache.value;
+}
+
+function charDelay(text: string, shownLength: number): number {
+  const last = text[shownLength - 1];
+  if (!last) return tempo().char;
+  const t = tempo();
+  if (LONG_PAUSES.has(last)) return t.char + t.long;
+  if (SHORT_PAUSES.has(last)) return t.char + t.short;
+  return t.char;
+}
 
 export interface Playback {
   visual: VisualState;
@@ -189,10 +233,11 @@ export function usePlayback(
     consumeNext();
   }, [canAdvance, current, consumeNext]);
 
-  // 打字机：本地节奏逐字推进（目标行文本随流式增长，追赶即等待）
+  // 打字机：本地节奏逐字推进（目标行文本随流式增长，追赶即等待）。
+  // 标点决定下一个字的等待时长——逗号类短停、句号类长停，读起来才有呼吸（galgame 惯例）。
   useEffect(() => {
     if (!current || shownLength >= current.text.length) return;
-    const timer = setTimeout(() => setShownLength((n) => n + 1), CHAR_MS);
+    const timer = setTimeout(() => setShownLength((n) => n + 1), charDelay(current.text, shownLength));
     return () => clearTimeout(timer);
   }, [current, shownLength]);
 

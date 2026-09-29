@@ -5,6 +5,8 @@ interface StopPanelProps {
   stop: StopPayload | null;
   isActEnd: boolean;
   disabled: boolean;
+  /** 玩家在这条线路之外选过/说过同款选项的文案（用于「✓ 已选过」留痕）。 */
+  seenChoices?: ReadonlySet<string>;
   onChoice: (index: number) => void;
   onFree: (text: string) => void;
   onContinue: () => void;
@@ -13,11 +15,22 @@ interface StopPanelProps {
 }
 
 /**
- * 停止点面板（玩家输入区）：
- * choice → 选项按钮；free → 文本输入（可 LLM 润色，撤销保原稿）；pause/幕完 → 继续按钮。
- * 导演注（OOC）常驻舞台顶栏（StageTheater），不在此面板。
+ * 停止点（玩家主权的三种形态，P6.5）：
+ * - choice：舞台中央悬浮的选肢卡片，数字键 1..9 直选，选过的打勾留痕；
+ * - free：对话框形态的入戏输入（可 LLM 润色，撤销保原稿）；
+ * - pause/幕完：推进胶囊。
+ * 导演注（OOC）是常驻顶栏，不在此。
  */
-export function StopPanel({ stop, isActEnd, disabled, onChoice, onFree, onContinue, onPolish }: StopPanelProps) {
+export function StopPanel({
+  stop,
+  isActEnd,
+  disabled,
+  seenChoices,
+  onChoice,
+  onFree,
+  onContinue,
+  onPolish,
+}: StopPanelProps) {
   const [draft, setDraft] = useState("");
   /** 自由输入是从选项/继续里点开的（DSL 没给 free 停止点也能自己说）。 */
   const [freeOpen, setFreeOpen] = useState(false);
@@ -33,6 +46,25 @@ export function StopPanel({ stop, isActEnd, disabled, onChoice, onFree, onContin
     setOriginal(null);
     setPolishError(null);
   }, [stop, isActEnd]);
+
+  const options = stop?.stopType === "choice" ? (stop.options ?? []) : [];
+  const choosing = options.length > 0 && !freeOpen;
+
+  // 数字键/字母键直选（1..9）；输入框里打字不算。
+  useEffect(() => {
+    if (!choosing || disabled) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
+      const n = Number(e.key);
+      if (!Number.isInteger(n) || n < 1 || n > options.length) return;
+      e.preventDefault();
+      onChoice(n - 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [choosing, disabled, options.length, onChoice]);
 
   const submitFree = (): void => {
     const text = draft.trim();
@@ -67,10 +99,10 @@ export function StopPanel({ stop, isActEnd, disabled, onChoice, onFree, onContin
   };
 
   return (
-    <footer className="stop-panel">
-      {stop?.stopType === "choice" && !freeOpen && (
-        <div className="choices">
-          {stop.options?.map((option, index) => (
+    <>
+      {choosing && (
+        <div className="choice-overlay" role="group" aria-label="选项">
+          {options.map((option, index) => (
             <button
               type="button"
               key={`${index}-${option.text}`}
@@ -78,7 +110,11 @@ export function StopPanel({ stop, isActEnd, disabled, onChoice, onFree, onContin
               disabled={disabled}
               onClick={() => onChoice(index)}
             >
-              {option.text}
+              <span className="choice-key" aria-hidden>
+                {index + 1}
+              </span>
+              <span className="choice-text">{option.text}</span>
+              {seenChoices?.has(option.text) && <span className="choice-seen">✓ 已选过</span>}
             </button>
           ))}
           <button
@@ -88,59 +124,56 @@ export function StopPanel({ stop, isActEnd, disabled, onChoice, onFree, onContin
             onClick={() => setFreeOpen(true)}
             title="不说选项，自己写一句"
           >
-            ✍ 自由发挥…
+            <span className="choice-key" aria-hidden>
+              ✍
+            </span>
+            <span className="choice-text">自由发挥…</span>
           </button>
         </div>
       )}
 
       {(stop?.stopType === "free" || freeOpen) && (
-        <div className="free-box">
-          <input
-            value={draft}
-            placeholder={stop?.stopType === "free" ? (stop.placeholder ?? "你的回应…") : "以主角口吻自己写一句…"}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submitFree()}
-            disabled={disabled}
-            autoFocus
-          />
-          <button
-            type="button"
-            className="ghost-btn"
-            title="LLM 按主角口吻润色（可撤销）"
-            onClick={polish}
-            disabled={disabled || polishing || (original ?? draft).trim() === ""}
-          >
-            {polishing ? "润色中…" : "✨ 润色"}
-          </button>
-          {original !== null && (
-            <button type="button" className="link-btn" onClick={undoPolish} disabled={polishing}>
-              撤销
+        <footer className="stop-panel">
+          <div className="free-box">
+            <input
+              value={draft}
+              placeholder={stop?.stopType === "free" ? (stop.placeholder ?? "你的回应…") : "以主角口吻自己写一句…"}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submitFree()}
+              disabled={disabled}
+              autoFocus
+            />
+            <button
+              type="button"
+              className="ghost-btn"
+              title="LLM 按主角口吻润色（可撤销）"
+              onClick={polish}
+              disabled={disabled || polishing || draft.trim() === ""}
+            >
+              {polishing ? "润色中…" : "✨ 润色"}
             </button>
-          )}
-          <button type="button" onClick={submitFree} disabled={disabled || draft.trim() === ""}>
-            说
-          </button>
-          {stop?.stopType !== "free" && (
-            <button type="button" className="link-btn" onClick={() => setFreeOpen(false)} disabled={disabled}>
-              返回选项
+            {original !== null && (
+              <button type="button" className="link-btn" onClick={undoPolish} disabled={polishing}>
+                撤销
+              </button>
+            )}
+            <button type="button" onClick={submitFree} disabled={disabled || draft.trim() === ""}>
+              说
             </button>
-          )}
-          {polishError && <span className="muted small">润色失败：{polishError}</span>}
-        </div>
+            {polishError && <span className="muted small">润色失败：{polishError}</span>}
+          </div>
+        </footer>
       )}
 
-      {(stop?.stopType === "pause" || (isActEnd && !stop)) && (
-        <div className="continue-box">
-          <button type="button" onClick={onContinue} disabled={disabled} className="primary">
-            {isActEnd && !stop ? "下一幕" : "继续"}
-          </button>
-          {!freeOpen && (
-            <button type="button" className="ghost-btn" onClick={() => setFreeOpen(true)} disabled={disabled}>
-              ✍ 自由发挥…
+      {(stop?.stopType === "pause" || (isActEnd && !stop)) && !freeOpen && (
+        <footer className="stop-panel">
+          <div className="continue-box">
+            <button type="button" onClick={onContinue} disabled={disabled} className="primary">
+              {isActEnd && !stop ? "下一幕" : "继续"}
             </button>
-          )}
-        </div>
+          </div>
+        </footer>
       )}
-    </footer>
+    </>
   );
 }

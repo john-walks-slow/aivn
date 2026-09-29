@@ -320,7 +320,8 @@ export class LineageTree {
         parentId: event.parentId,
         kind: event.kind,
         turn: event.turn,
-        text: event.text ?? "",
+        // 玩家表态/OOC 只落在 payload.input，回落到它，否则路线树里是一排空节点。
+        text: event.text ?? event.payload?.input ?? "",
         attrs: event.payload?.attrs ?? {},
         createdAt: event.createdAt,
         onPath: onPath.has(event.id),

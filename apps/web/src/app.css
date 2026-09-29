@@ -1,10 +1,19 @@
-/* Stage-AI 首版视觉：plain / clean / 浅色 / 实用 —— 白底、黑白灰层级、系统字体栈、无花哨动画。 */
+/* Stage-AI 视觉：plain / clean / 浅色 / 实用 —— 白底、黑白灰层级、系统字体栈、无花哨动画。
+ *
+ * 主题可定制：剧目根目录放 theme.css 即可整体换皮（工坊可写，前端 <link> 直挂），
+ * 那边只需覆盖下面这些令牌，不用理解任何组件。令牌分三层：
+ *   ① 基础  —— 页面底色/面板/文字/线/强调色，全站通用
+ *   ② 演出层 —— 舞台、对话框、名字牌、立绘压暗、选项卡片
+ *   ③ 运动层 —— 时长与缓动（打字速度、淡入、悬停反馈）
+ * 换肤时优先只动 ① 与颜色类；动 ②③ 会连手感一起换掉。
+ */
 
 * {
   box-sizing: border-box;
 }
 
 :root {
+  /* ① 基础 */
   --bg: #fafaf8;
   --panel: #ffffff;
   --ink: #1a1a1a;
@@ -14,6 +23,38 @@
   --accent: #2b5fb8;
   --accent-soft: #eef3fb;
   --radius: 6px;
+
+  /* ② 演出层 */
+  --stage-bg: #0d0d10; /* 舞台衬底（图片未到/加载中露出的底） */
+  --dialog-bg: rgb(255 255 255 / 0.93);
+  --dialog-ink-faint: #9a9a9a;
+  --dialog-line: #e6e4df;
+  --dialog-ink: #1a1a1a;
+  --dialog-ink-soft: #5c5c5c; /* 旁白 */
+  --dialog-ink-thought: #6b6b8a; /* 内心独白 */
+  --nameplate-bg: #2b5fb8;
+  --nameplate-ink: #ffffff;
+  --sprite-dim: 0.55; /* 非发言人立绘压暗强度 */
+  --choice-bg: #ffffff;
+  --choice-line: #e6e4df;
+  --choice-ink: #1a1a1a;
+  --choice-active-bg: #eef3fb;
+  --choice-scrim: linear-gradient(180deg, transparent 30%, rgba(8, 8, 12, 0.34));
+  --shadow: 0 8px 24px rgba(20, 20, 30, 0.12);
+
+  /* ③ 运动层 */
+  --type-ms: 35; /* 每字毫秒 */
+  --pause-short-ms: 120; /* 逗号类额外停顿 */
+  --pause-long-ms: 240; /* 句号类额外停顿 */
+  --fade-ms: 180; /* 立绘差分 / 背景切换 */
+  --hover-ms: 120;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --type-ms: 0;
+    --fade-ms: 0;
+  }
 }
 
 html,
@@ -299,7 +340,7 @@ button.link-btn {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: linear-gradient(180deg, #f2efe9, #e8e4dc);
+  background: var(--stage-bg);
 }
 
 .theater-bg {
@@ -308,7 +349,7 @@ button.link-btn {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  animation: bg-fade 0.6s ease;
+  animation: bg-fade var(--fade-ms) ease;
 }
 
 .theater-bg-fallback {
@@ -350,8 +391,8 @@ button.link-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #111;
-  animation: bg-fade 0.5s ease;
+  background: var(--stage-bg);
+  animation: bg-fade var(--fade-ms) ease;
 }
 
 .theater-cg img {
@@ -373,26 +414,42 @@ button.link-btn {
 }
 
 .theater-dialog {
+  position: relative;
   flex-shrink: 0;
-  background: var(--panel);
-  border-top: 1px solid var(--line);
-  padding: 12px 20px 10px;
+  background: var(--dialog-bg);
+  border-top: 1px solid var(--dialog-line);
+  padding: 14px 20px 10px;
   min-height: 108px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   cursor: pointer;
+  backdrop-filter: blur(14px) saturate(1.1);
 }
 
+/* 名牌：坐在对话框上沿外侧，像贴在玻璃上的一张角色卡 */
 .dialog-name {
+  position: absolute;
+  top: -15px;
+  left: 18px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 60%;
+  padding: 2px 12px;
+  border-radius: var(--radius);
+  background: var(--nameplate-bg);
+  color: var(--nameplate-ink);
   font-weight: 700;
+  font-size: 14.5px;
+  line-height: 1.5;
+  box-shadow: var(--shadow);
 }
 
 .dialog-mood {
   font-weight: 400;
-  color: var(--ink-faint);
-  font-size: 13px;
-  margin-left: 4px;
+  color: var(--dialog-ink-faint);
+  font-size: 12px;
 }
 
 .dialog-text {
@@ -401,10 +458,16 @@ button.link-btn {
   line-height: 1.8;
   white-space: pre-wrap;
   min-height: 3.6em;
+  color: var(--dialog-ink);
+}
+
+.dialog-text.narrate {
+  color: var(--dialog-ink-soft);
+  padding-left: 2px;
 }
 
 .dialog-text.thought {
-  color: var(--ink-soft);
+  color: var(--dialog-ink-thought);
   font-style: italic;
 }
 
@@ -553,13 +616,90 @@ button.link-btn {
   }
 }
 
-/* ── 停止点面板 ────────────────────────── */
+/* ── 停止点（浮在舞台上，不占底部条） ────────────── */
 
+/* 停止点面板：入戏输入 / 继续按钮，贴着舞台底缘。 */
 .stop-panel {
-  flex-shrink: 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
   border-top: 1px solid var(--line);
   padding: 12px 24px 16px;
   background: var(--bg);
+}
+
+.continue-box {
+  display: flex;
+  justify-content: center;
+}
+
+/* 选肢：舞台中央悬浮卡片堆（脸的位置留空），点击区宽、序号可按。 */
+.choice-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 8% 0 4%;
+  background: var(--choice-scrim);
+  animation: choice-in 0.22s ease-out;
+}
+
+.choice-text {
+  flex: 1;
+}
+
+@keyframes choice-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* 选肢卡片：舞台中央悬浮（不再是底部表单），数字键直选，已选项留痕。 */
+.choice {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: min(560px, 88vw);
+  min-height: 52px;
+  margin: 0 auto;
+  text-align: left;
+  background: var(--choice-bg);
+  border-color: var(--choice-line);
+  color: var(--choice-ink);
+  box-shadow: var(--shadow);
+  transition:
+    transform var(--hover-ms) ease,
+    background-color var(--hover-ms) ease,
+    border-color var(--hover-ms) ease;
+}
+
+.choice-key {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--ink-faint);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 1.5;
+}
+
+.choice-seen {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.choice:hover:not(:disabled) {
+  background: var(--choice-active-bg);
+  transform: translateX(4px);
 }
 
 .choices {
@@ -596,14 +736,6 @@ button.primary {
 
 button.primary:hover:not(:disabled) {
   filter: brightness(1.08);
-}
-
-.choice {
-  text-align: left;
-}
-
-.choice:hover:not(:disabled) {
-  background: var(--accent-soft);
 }
 
 .choice.ghost {
@@ -844,7 +976,7 @@ select:focus {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  background: color-mix(in srgb, var(--bg) 96%, transparent);
   backdrop-filter: blur(3px);
   cursor: pointer;
   font-size: 15px;

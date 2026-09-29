@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { PlayLibrary } from "./store.js";
 import type { PlayHouse } from "./playhouse.js";
 import type { SettingsFile } from "./configApi.js";
@@ -215,6 +216,14 @@ export async function handleHttp(
     if (sub === "readiness" && parts.length === 4) {
       if (method === "GET") return json(res, 200, await store.readiness());
       return fail(res, 405, "不支持的方法");
+    }
+    // —— 剧目主题层：<link> 直挂，文件不存在就 404（浏览器静默忽略，走默认主题）——
+    if (sub === "theme.css" && method === "GET") {
+      const path = join(store.dir, "theme.css");
+      if (!existsSync(path)) return fail(res, 404, "未找到");
+      res.writeHead(200, { "content-type": "text/css; charset=utf-8", "cache-control": "no-cache" });
+      res.end(await readFile(path));
+      return;
     }
     // —— 工坊文件浏览/编辑（D9）：白名单在 PlayFiles，越界路径直接 400 ——
     if (sub === "files" && parts.length === 4) {

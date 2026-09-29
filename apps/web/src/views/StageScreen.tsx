@@ -49,6 +49,7 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
     onBeatStart: () => {
       director.beatStarted();
       setOocQueued(false); // 新拍已吃到导演注
+      setLineageNonce((n) => n + 1); // 上一拍的玩家表态进谱系了，选肢的「已选过」要跟上
     },
     onReset: () => director.reset(),
     onOocAck: () => setOocQueued(true),
@@ -92,6 +93,13 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
   const ops: LineageOps = useMemo(
     () => ({ jump, fork, edit: editLine, rewrite, oocAt, bookmark, unbookmark }),
     [jump, fork, editLine, rewrite, oocAt, bookmark, unbookmark],
+  );
+
+  // 走过的岔路口：玩家在这条线之外已经说过的选项，卡片上打「✓ 已选过」提醒存在多条命运
+  const seenChoices = useMemo(
+    () =>
+      new Set((lineage.view?.nodes ?? []).filter((n) => n.kind === "player" && n.text).map((n) => n.text)),
+    [lineage.view],
   );
 
   useEffect(() => {
@@ -186,6 +194,20 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
             onLog={() => setView("log")}
             onRoute={() => setView("route")}
             onWorkshop={() => setWorkshop("drawer")}
+            overlay={
+              panelReady ? (
+                <StopPanel
+                  stop={stage.stop}
+                  isActEnd={stage.isActEnd}
+                  disabled={busy}
+                  seenChoices={seenChoices}
+                  onChoice={stage.sendChoice}
+                  onFree={stage.sendFree}
+                  onContinue={stage.sendContinue}
+                  onPolish={(text) => api.polish(playId, text).then(({ text: polished }) => polished)}
+                />
+              ) : null
+            }
           />
         ) : (
           <div className="overlay">正在连接舞台…</div>
@@ -223,22 +245,6 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
         />
       )}
 
-      {view === "stage" &&
-        (panelReady ? (
-          <StopPanel
-            stop={stage.stop}
-            isActEnd={stage.isActEnd}
-            disabled={busy}
-            onChoice={stage.sendChoice}
-            onFree={stage.sendFree}
-            onContinue={stage.sendContinue}
-            onPolish={(text) => api.polish(playId, text).then(({ text: polished }) => polished)}
-          />
-        ) : (
-          <footer className="stop-panel">
-            <div className="stop-hint">演出进行中…</div>
-          </footer>
-        ))}
     </div>
   );
 }
