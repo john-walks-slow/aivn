@@ -27,7 +27,6 @@
   /* ② 演出层 */
   --stage-bg: #0d0d10; /* 舞台衬底（图片未到/加载中露出的底） */
   --dialog-bg: rgb(255 255 255 / 0.93);
-  --dialog-ink-faint: #9a9a9a;
   --dialog-line: #e6e4df;
   --dialog-ink: #1a1a1a;
   --dialog-ink-soft: #5c5c5c; /* 旁白 */
@@ -312,6 +311,7 @@ button.link-btn {
 }
 
 .theater-bar {
+  transition: opacity var(--fade-ms) ease;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -371,6 +371,12 @@ button.link-btn {
   bottom: 0;
   height: 88%;
   transform: translateX(-50%);
+  transition: opacity var(--fade-ms) ease;
+}
+
+/* 表情差分：旧像留在下层淡出，新像从透明叠上来 */
+.theater-sprite.sprite-out {
+  opacity: 0;
 }
 
 .pos-left {
@@ -444,12 +450,6 @@ button.link-btn {
   font-size: 14.5px;
   line-height: 1.5;
   box-shadow: var(--shadow);
-}
-
-.dialog-mood {
-  font-weight: 400;
-  color: var(--dialog-ink-faint);
-  font-size: 12px;
 }
 
 .dialog-text {
@@ -1615,4 +1615,79 @@ select:focus {
 /* 软键盘顶起的高度差（stage/viewport.ts 写入）；无支持时 var 未定义即 0 */
 .stage-screen {
   height: calc(100dvh - var(--kb, 0px));
+}
+
+/* ── 沉浸：操作条淡出 + 回顾抽屉 ────────────── */
+
+.theater-bar.chrome-hidden {
+  opacity: 0;
+  pointer-events: none;
+  height: 0;
+  padding: 0;
+  overflow: hidden;
+  border-bottom: none;
+}
+
+.backlog {
+  position: absolute;
+  z-index: 40;
+  top: 8px;
+  left: 8px;
+  bottom: 8px;
+  width: min(360px, 82vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.backlog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.backlog-empty {
+  margin: 0;
+  padding: 18px 14px;
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
+.backlog-list {
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.backlog-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.backlog-list button:hover {
+  background: var(--accent-soft);
+}
+
+.backlog-list b {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--accent);
+  font-size: 12.5px;
 }

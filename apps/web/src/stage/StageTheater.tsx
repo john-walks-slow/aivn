@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { actorName } from "./script.js";
 import type { ScriptLine } from "./script.js";
 import type { Playback, VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
@@ -30,6 +31,40 @@ interface StageTheaterProps {
 
 const POS_CLASS: Record<string, string> = { left: "pos-left", center: "pos-center", right: "pos-right" };
 
+/**
+ * 立绘：表情差分之间交叉淡入。
+ * 新图先在内存里解码好再叠上去，切换只是一层 opacity 过渡——不会出现白闪或半张脸。
+ */
+function Sprite({ url, pos, name }: { url: string | null; pos: string; name: string }): ReactNode {
+  const [current, setCurrent] = useState<string | null>(url);
+  const [outgoing, setOutgoing] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!url || url === current) return;
+    const img = new Image();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    img.onload = () => {
+      setOutgoing(current);
+      setCurrent(url);
+      timer = setTimeout(() => setOutgoing(null), 260);
+    };
+    img.src = url;
+    return () => {
+      img.onload = null;
+      if (timer) clearTimeout(timer);
+    };
+  }, [url, current]);
+
+  if (!current) return null;
+  const cls = `theater-sprite ${POS_CLASS[pos] ?? "pos-center"}`;
+  return (
+    <>
+      {outgoing && <img className={`${cls} sprite-out`} src={outgoing} alt="" aria-hidden />}
+      <img className={cls} src={current} alt={name} />
+    </>
+  );
+}
+
 /** 舞台：背景/立绘/CG 视觉层 + 打字机对话框 + 二段式点击 + 自动模式 + sfx/bgm + 语音 + 常驻导演注。 */
 export function StageTheater({
   visual,
@@ -53,9 +88,24 @@ export function StageTheater({
   const bgmRef = useRef<HTMLAudioElement | null>(null);
   const [directorOpen, setDirectorOpen] = useState(false);
   const [directorDraft, setDirectorDraft] = useState("");
-  const { view, viewLength, current, shownLength, exhausted, advance, scrub, scrubbed } = playback;
+  const { view, viewLength, current, shownLength, exhausted, advance, scrub, scrubbed, history, seek } =
+    playback;
   const shown = view ? view.text.slice(0, viewLength) : "";
   const lineDone = current !== null && shownLength >= current.text.length;
+  const [chrome, setChrome] = useState(true); // 舞台操作条显隐（沉浸模式）
+  const [idleChrome, setIdleChrome] = useState(false); // 久未操作后自动淡出操作条
+  const [backlogOpen, setBacklogOpen] = useState(false);
+  const chromeVisible = chrome && !idleChrome;
+  // 任何一次舞台交互都算「有人在看」：操作条回来，并重置自动淡出计时。
+  const poke = useCallback((): void => {
+    setChrome(true);
+    setIdleChrome(false);
+  }, []);
+  /** H / 下滑：看得见就收起来，已经收着（手动或自动）就拿回来。 */
+  const toggleChrome = useCallback((): void => {
+    setChrome(!chromeVisible);
+    setIdleChrome(false);
+  }, [chromeVisible]);
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→/空格 往回追。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
@@ -84,16 +134,50 @@ export function StageTheater({
       } else if (e.key === "Escape" && scrubbed) {
         scrub(1);
         e.preventDefault();
+      } else if (e.key === "Escape" && backlogOpen) {
+        setBacklogOpen(false);
+        e.preventDefault();
+      } else if (e.key === "h" || e.key === "H") {
+        toggleChrome();
+        e.preventDefault();
+      } else if (e.key === "l" || e.key === "L") {
+        setBacklogOpen((v) => !v);
+        e.preventDefault();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [scrub, scrubbed]);
+  }, [scrub, scrubbed, backlogOpen, toggleChrome]);
 
   /** 舞台点击：回看中 → 往回追一句；否则两段式推进。 */
   const onStageClick = (): void => {
+    poke();
     if (scrubbed) scrub(1);
     else advance();
+  };
+
+  // 自动淡出：4 秒没动静就把操作条收起来，画面自己说话；任何交互立刻回来。
+  useEffect(() => {
+    const timer = setTimeout(() => setIdleChrome(true), 4000);
+    return () => clearTimeout(timer);
+  }, [idleChrome, view?.key, shownLength]);
+
+  // 触屏手势：上滑看回顾、下滑收操作条；横向滑动交给系统（不拦）。
+  const touchRef = useRef<{ y: number; at: number } | null>(null);
+  const onTouchStart = (e: React.TouchEvent): void => {
+    const t = e.touches[0];
+    if (t) touchRef.current = { y: t.clientY, at: Date.now() };
+  };
+  const onTouchEnd = (e: React.TouchEvent): void => {
+    const start = touchRef.current;
+    touchRef.current = null;
+    if (!start) return;
+    const end = e.changedTouches[0];
+    if (!end) return;
+    const dy = start.y - end.clientY;
+    if (Math.abs(dy) < 60 || Date.now() - start.at > 600) return;
+    if (dy > 0) setBacklogOpen(true);
+    else toggleChrome();
   };
 
   // sfx：key 变化即播放
@@ -140,8 +224,14 @@ export function StageTheater({
   };
 
   return (
-    <div className="theater" ref={theaterRef} onClick={onStageClick}>
-      <header className="theater-bar">
+    <div
+      className="theater"
+      ref={theaterRef}
+      onClick={onStageClick}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      <header className={`theater-bar ${chrome && !idleChrome ? "" : "chrome-hidden"}`} onPointerEnter={poke}>
         <button
           className="ghost-btn"
           onClick={(e) => {
@@ -173,6 +263,16 @@ export function StageTheater({
             }}
           >
             自动 {playback.auto ? "开" : "关"}
+          </button>
+          <button
+            className="ghost-btn"
+            title="回顾：翻看已经说过的台词（L / 上滑）"
+            onClick={(e) => {
+              e.stopPropagation();
+              setBacklogOpen(true);
+            }}
+          >
+            回顾
           </button>
           <button
             className={`ghost-btn ${oocQueued ? "active" : ""}`}
@@ -236,6 +336,37 @@ export function StageTheater({
         </div>
       )}
 
+      {backlogOpen && (
+        <aside className="backlog" onClick={(e) => e.stopPropagation()}>
+          <div className="backlog-head">
+            <span>回顾</span>
+            <button type="button" className="ghost-btn small-btn" onClick={() => setBacklogOpen(false)}>
+              收起
+            </button>
+          </div>
+          {history.length === 0 ? (
+            <p className="backlog-empty">还没有说出口的话。</p>
+          ) : (
+            <ol className="backlog-list">
+              {history.map((item) => (
+                <li key={item.key}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      seek(item.key);
+                      setBacklogOpen(false);
+                    }}
+                  >
+                    {item.actorId && <b>{actorName(names, item.actorId)}</b>}
+                    <span>{item.text}</span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+        </aside>
+      )}
+
       <div className="theater-stage">
         {bgUrl ? (
           <img key={bgUrl} className="theater-bg theater-bg-in" src={bgUrl} alt="" />
@@ -247,18 +378,14 @@ export function StageTheater({
           />
         )}
 
-        {Object.entries(visual.sprites).map(([id, slot]) => {
-          const url = index.sprite(id, slot.expression);
-          if (!url) return null;
-          return (
-            <img
-              key={id}
-              className={`theater-sprite ${POS_CLASS[slot.pos] ?? "pos-center"}`}
-              src={url}
-              alt={names[id] ?? id}
-            />
-          );
-        })}
+        {Object.entries(visual.sprites).map(([id, slot]) => (
+          <Sprite
+            key={id}
+            url={index.sprite(id, slot.expression)}
+            pos={slot.pos ?? "center"}
+            name={actorName(names, id)}
+          />
+        ))}
 
         {cgUrl && (
           <div className="theater-cg">
@@ -277,10 +404,7 @@ export function StageTheater({
 
       <div className="theater-dialog" role="text">
         {view && (view.type === "say" || view.type === "thought") && (
-          <div className="dialog-name">
-            {names[view.actorId ?? ""] ?? view.actorId ?? "？"}
-            {view.mood && <span className="dialog-mood">（{view.mood}）</span>}
-          </div>
+          <div className="dialog-name">{actorName(names, view.actorId) || "？"}</div>
         )}
         <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
           {shown ||

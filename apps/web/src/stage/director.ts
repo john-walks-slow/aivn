@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Cue, ScriptLine } from "./script.js";
 
 /** 舞台视觉状态（视觉 cues 即时应用后的累积结果）。 */
@@ -94,6 +94,10 @@ export interface Playback {
   scrub: (delta: number) => void;
   /** 是否正停在历史行上（不等于播放头）。 */
   scrubbed: boolean;
+  /** 已播过的台词行（回顾抽屉用）：播放头之前，含 speaker 与语音关联序号。 */
+  history: { key: string; actorId: string | null; text: string; seq: number | null }[];
+  /** 跳到某条历史行（回顾抽屉点选）。 */
+  seek: (key: string) => void;
   /** 生图到达/失败：摘掉占位，视觉层交给真实资产（或降级）。 */
   settleAssets: (ids: string[]) => void;
 }
@@ -328,6 +332,25 @@ export function usePlayback(
     });
   }, []);
 
+  /** 回顾抽屉：播放头之前的台词行，倒序给（最近的排最前）。 */
+  const history = useMemo(
+    () =>
+      lines
+        .slice(0, Math.max(headIndex, 0))
+        .filter((l): l is ScriptLine & { actorId: string | null } => l.type !== "scene" && l.text !== "")
+        .map((l) => ({ key: l.key, actorId: l.actorId ?? null, text: l.text, seq: l.seq ?? null }))
+        .reverse(),
+    [lines, headIndex],
+  );
+
+  /** 跳到指定历史行（抽屉点选）——与 scrub 同一个游标，Esc 或再点回到播放头。 */
+  const seek = useCallback(
+    (key: string): void => {
+      setScrubIndex(linesRef.current.findIndex((l) => l.key === key));
+    },
+    [],
+  );
+
   return {
     visual,
     current,
@@ -340,6 +363,8 @@ export function usePlayback(
     advance,
     scrub,
     scrubbed,
+    history,
+    seek,
     sfx,
     settleAssets,
   };

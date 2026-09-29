@@ -115,3 +115,9 @@ export class ScriptBuilder {
     }
   }
 }
+
+/** 角色显示名：配置里没有就用内置别名（玩家的红线不出现在树上）。 */
+export function actorName(names: Readonly<Record<string, string>>, id: string | null | undefined): string {
+  if (!id) return "";
+  return names[id] ?? (id === "player" ? "你" : id);
+}
