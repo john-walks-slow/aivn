@@ -20,3 +20,6 @@ plays/*/workshop/
 plays/mock-*/
 .mnemon/
 .worktrees/
+
+# 本地验收截图
+.shots/

@@ -1727,7 +1727,6 @@ select:focus {
   position: absolute;
   display: flex;
   flex-direction: column;
-  gap: 4px;
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--line);
@@ -1768,39 +1767,10 @@ select:focus {
   background: var(--accent-soft);
 }
 
-.route-node-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--ink-faint);
-}
-
-.route-node-no {
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.route-node-label {
-  padding: 0 5px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-}
-
-.route-node-stop {
-  margin-left: auto;
-}
-
-.route-node-here {
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--dialog-ink, #fff);
-}
-
+/* 节点只有一段话：说话人并进正文，拍号/支线/进行中这类状态说明一律不进节点。 */
 .route-node-text {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   font-size: 13.5px;
@@ -1808,30 +1778,92 @@ select:focus {
   color: var(--ink);
 }
 
-.route-node-foot {
-  display: flex;
-  gap: 8px;
-  margin-top: auto;
-  font-size: 11px;
+.route-node.has-mark .route-node-text {
+  padding-right: 14px;
+}
+
+.route-node-who {
   color: var(--ink-faint);
 }
 
-.route-node-fork {
-  margin-left: auto;
+.route-node-mark {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  font-size: 11px;
+  color: var(--accent);
 }
 
-.route-tools {
+/* 画布上的浮层：导航与镜头不占树的版面，空白处都能点回去 */
+.route-overlay {
+  position: absolute;
+  inset: 0;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-top: 1px solid var(--line);
-  background: var(--panel);
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8px;
+  pointer-events: none;
+}
+
+.route-overlay-top,
+.route-overlay-bottom {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.route-overlay-bottom {
+  justify-content: flex-end;
+  align-items: flex-end;
+}
+
+.route-overlay > * {
+  pointer-events: auto;
 }
 
 .route-hint {
-  margin-left: auto;
+  flex: 1 1 auto;
   font-size: 11.5px;
+  text-align: right;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+}
+
+.route-zoom {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.route-zoom button {
+  border-radius: 0;
+}
+
+.route-zoom button + button {
+  border-top: 1px solid var(--line);
+}
+
+/* 空态/加载态：画布不在，退回键浮在空白上 */
+.route-blank {
+  position: relative;
+  display: grid;
+  flex: 1 1 auto;
+  place-items: center;
+}
+
+.route-float {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-shadow: var(--shadow);
 }
 
 .route-empty {
@@ -1853,10 +1885,6 @@ select:focus {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.route-inspector-no {
-  font-weight: 700;
 }
 
 .route-inspector-text {

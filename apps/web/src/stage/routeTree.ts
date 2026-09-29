@@ -1,10 +1,10 @@
 import type { BeatCard } from "./beats.js";
 
 /** 节点盒子：固定尺寸才能算整齐的树，卡面内容超出就截断。 */
-export const NODE_W = 224;
-export const NODE_H = 104;
-const GAP_X = 78;
-const GAP_Y = 20;
+export const NODE_W = 208;
+export const NODE_H = 92;
+/** 流向、兄弟两个方向上相邻盒子之间的空隙。 */
+export const GAP = 64;
 
 /** 树有两个流向：宽屏从左往右读时间，窄屏从上往下。哪个长用哪个。 */
 export type RouteDir = "horizontal" | "vertical";
@@ -13,10 +13,6 @@ export interface PlacedCard {
   card: BeatCard;
   x: number;
   y: number;
-  /** 分岔口上的兄弟标签：主线 / 支线 A。普通节点为 null。 */
-  label: string | null;
-  /** 直接子节点数（>1 = 分岔口，节点上挂 ⑂ 徽标）。 */
-  branchCount: number;
   /** 树深度（流向位置用它）。 */
   level: number;
 }
@@ -37,8 +33,8 @@ export interface RouteLayout {
 }
 
 /**
- * 树布局：流向坐标 = 树深度，横向坐标 = 兄弟序。
- * 叶子按 DFS 顺序各占一格，父节点居中于子节点——连线长度一致，一眼看清主干。
+ * 树布局：流向坐标 = 树深度，兄弟坐标 = 叶子各占一格、父居中于子。
+ * 两条轴各配自己的步长——纵向树里兄弟是左右排的，拿盒子高度当横向步长，节点必叠。
  */
 export function layoutRoute(cards: readonly BeatCard[], dir: RouteDir = "horizontal"): RouteLayout {
   const byId = new Map(cards.map((card) => [card.id, card]));
@@ -54,38 +50,39 @@ export function layoutRoute(cards: readonly BeatCard[], dir: RouteDir = "horizon
   roots.sort(byOrder);
   for (const [, list] of childrenOf) list.sort(byOrder);
 
+  const along = dir === "horizontal" ? NODE_W + GAP : NODE_H + GAP;
+  const cross = dir === "horizontal" ? NODE_H + GAP : NODE_W + GAP;
+  const put = (entry: PlacedCard, level: number, crossPos: number): void => {
+    if (dir === "horizontal") {
+      entry.x = level * along;
+      entry.y = crossPos;
+    } else {
+      entry.y = level * along;
+      entry.x = crossPos;
+    }
+  };
+  const crossOf = (entry: PlacedCard): number => (dir === "horizontal" ? entry.y : entry.x);
+
   const placed: PlacedCard[] = [];
   const placedById = new Map<string, PlacedCard>();
   const seen = new Set<string>();
   let slot = 0;
 
-  const setSpot = (entry: PlacedCard, level: number, cross: number): void => {
-    if (dir === "horizontal") {
-      entry.x = level * (NODE_W + GAP_X);
-      entry.y = cross;
-    } else {
-      entry.y = level * (NODE_H + GAP_Y);
-      entry.x = cross;
-    }
-  };
-
   const place = (card: BeatCard, level: number): PlacedCard => {
-    const entry: PlacedCard = { card, x: 0, y: 0, label: null, branchCount: 0, level };
+    const entry: PlacedCard = { card, x: 0, y: 0, level };
     placed.push(entry);
     placedById.set(card.id, entry);
     const kids = (childrenOf.get(card.id) ?? []).filter((kid) => !seen.has(kid.id));
-    entry.branchCount = kids.length;
     if (kids.length === 0) {
-      setSpot(entry, level, slot * (NODE_H + GAP_Y));
+      put(entry, level, slot * cross);
       slot += 1;
     } else {
       // 已访问过的孩子不重复排版：万一谱系成环，也不能把界面挂死
       for (const kid of kids) seen.add(kid.id);
       const childEntries = kids.map((kid) => place(kid, level + 1));
-      const first = childEntries[0]!;
-      const last = childEntries[childEntries.length - 1]!;
-      // 兄弟位是叶子排出来的槽；父节点居中于它的孩子
-      setSpot(entry, level, dir === "horizontal" ? (first.y + last.y) / 2 : (first.x + last.x) / 2);
+      const first = crossOf(childEntries[0]!);
+      const last = crossOf(childEntries[childEntries.length - 1]!);
+      put(entry, level, (first + last) / 2);
     }
     return entry;
   };
@@ -101,8 +98,6 @@ export function layoutRoute(cards: readonly BeatCard[], dir: RouteDir = "horizon
     seen.add(card.id);
     place(card, 0);
   }
-
-  labelSiblings(placedById, childrenOf);
 
   const edges: PlacedEdge[] = [];
   for (const entry of placed) {
@@ -136,27 +131,4 @@ function edgePath(parent: PlacedCard, child: PlacedCard, dir: RouteDir): string 
   const y2 = child.y;
   const dy = Math.max((y2 - y1) / 2, 12);
   return `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
-}
-
-/**
- * 分岔口的兄弟分支起名：世界线那支叫主线，其余按序叫支线 A/B/C。
- * 嵌套在支线里的分岔不重开字母——用父标签做前缀（A-1/A-2），免得树上出现两个「支线 A」。
- */
-function labelSiblings(placedById: Map<string, PlacedCard>, childrenOf: Map<string, BeatCard[]>): void {
-  const LETTERS = "ABCDEFGH";
-  for (const [parentId, kids] of childrenOf) {
-    if (kids.length < 2) continue;
-    const live = kids.filter((kid) => kid.onPath);
-    const parentLabel = placedById.get(parentId)?.label ?? "";
-    const prefix = parentLabel.startsWith("支线 ") ? parentLabel.slice(3) : "";
-    let letter = 0;
-    for (const kid of kids) {
-      const entry = placedById.get(kid.id);
-      if (!entry) continue;
-      letter += 1;
-      if (live.length === 1 && kid.onPath) entry.label = "主线";
-      else if (prefix) entry.label = `${prefix}-${letter}`;
-      else entry.label = `支线 ${LETTERS[letter - 1] ?? "?"}`;
-    }
-  }
 }

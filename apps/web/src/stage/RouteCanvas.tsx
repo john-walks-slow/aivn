@@ -3,29 +3,32 @@ import { Icon } from "../ui/Icon.js";
 import type { BeatCard } from "./beats.js";
 import { layoutRoute, NODE_H, NODE_W, type PlacedCard, type RouteDir } from "./routeTree.js";
 
-/** 停止点在节点角上的标记：选肢 / 自由表态，一眼看出这一拍是玩家拍板还是模型自己演完。 */
+/** 停止点在角上的标记：选肢 / 自由表态，一眼看出这一拍是玩家拍板还是模型自己演完。 */
 const STOP_MARK: Record<string, string> = { choice: "❖", free: "✎" };
 
 interface CanvasProps {
   cards: readonly BeatCard[];
   activeId: string | null;
   onSelect: (card: BeatCard) => void;
+  onBack: () => void;
   names: Readonly<Record<string, string>>;
 }
 
 /** 再小也认得出字：低于这个倍数就宁可让玩家横向拖。 */
 const MIN_ZOOM = 0.55;
 
-/** 镜头：位移 + 缩放。滚轮缩放、拖拽平移、「适应」把整棵树收进视野。 */
+/** 镜头：位移 + 缩放。滚轮缩放、拖拽平移、「看全树」把整棵树收进视野。 */
 interface Camera {
   x: number;
   y: number;
   k: number;
 }
 
-export function RouteCanvas({ cards, activeId, onSelect, names }: CanvasProps) {
+export function RouteCanvas({ cards, activeId, onSelect, onBack, names }: CanvasProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ px: number; py: number; cam: Camera } | null>(null);
+  /** 玩家自己动过镜头（拖/缩/看全树）吗——动过就不再自动取景抢镜头。 */
+  const manual = useRef(false);
   const [camera, setCamera] = useState<Camera>({ x: 24, y: 24, k: 1 });
   const [dir, setDir] = useState<RouteDir>("horizontal");
   const layout = layoutRoute(cards, dir);
@@ -44,13 +47,15 @@ export function RouteCanvas({ cards, activeId, onSelect, names }: CanvasProps) {
     };
   }, []);
 
-  // 默认镜头：整棵树塞得下就全览，塞不下就贴着根读到看得清为止——从根读起是树的读法
-  const fit = useCallback(() => {
+  // 打开路线时的取景：贴着根开始读。基本塞得下就整棵塞下（差个边角就露半张卡片很难看），
+  // 塞不下就只按摊开方向收，宁可超屏让人拖，也不把字缩到看不清。
+  const frameFromRoot = useCallback(() => {
     const box = frameRef.current?.getBoundingClientRect();
     if (!box || width === 0 || height === 0) return;
     const along = dir === "horizontal" ? box.height : box.width;
     const extent = dir === "horizontal" ? height : width;
-    const k = Math.min(1, Math.max(MIN_ZOOM, (along - 48) / extent, 0.9));
+    const whole = Math.min((box.width - 48) / width, (box.height - 48) / height);
+    const k = Math.min(1, Math.max(MIN_ZOOM, whole >= 0.85 ? whole : (along - 48) / extent));
     setCamera(
       dir === "horizontal"
         ? { k, x: 24, y: Math.max(24, (box.height - height * k) / 2) }
@@ -58,23 +63,36 @@ export function RouteCanvas({ cards, activeId, onSelect, names }: CanvasProps) {
     );
   }, [width, height, dir]);
 
-  // 树长出来时自动取景；之后玩家自己拖过就别再抢镜头
-  const fitted = useRef(false);
+  // 「看全树」：两条轴一起收，整棵树收进视野——只在这里允许缩到看不清的倍数
+  const fitAll = useCallback(() => {
+    const box = frameRef.current?.getBoundingClientRect();
+    if (!box || width === 0 || height === 0) return;
+    manual.current = true;
+    const k = Math.min(
+      1,
+      Math.max(MIN_ZOOM, Math.min((box.width - 48) / width, (box.height - 48) / height)),
+    );
+    setCamera({ k, x: (box.width - width * k) / 2, y: (box.height - height * k) / 2 });
+  }, [width, height]);
+
+  // 取景跟着视口走：开合检视栏、转屏、缩窗口都重新取景；
+  // 玩家一旦自己拖过/缩过（manual），之后就不再抢镜头。
   useLayoutEffect(() => {
-    if (placed.length === 0) return;
-    if (fitted.current) return;
-    fitted.current = true;
-    fit();
-  }, [placed.length, fit]);
-  useEffect(() => {
-    if (placed.length > 0) fit();
-  }, [dir, fit, placed.length]);
+    const el = frameRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (!manual.current) frameFromRoot();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [frameFromRoot]);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     const box = frameRef.current?.getBoundingClientRect();
     if (!box) return;
     const scale = Math.min(1.6, Math.max(MIN_ZOOM, e.deltaY > 0 ? 0.92 : 1.08));
+    manual.current = true;
     setCamera((cur) => {
       const k = Math.min(1.6, Math.max(MIN_ZOOM, cur.k * scale));
       const ratio = k / cur.k;
@@ -95,6 +113,7 @@ export function RouteCanvas({ cards, activeId, onSelect, names }: CanvasProps) {
   const onPointerMove = (e: React.PointerEvent): void => {
     const drag = dragRef.current;
     if (!drag) return;
+    manual.current = true;
     setCamera({ ...drag.cam, x: drag.cam.x + (e.clientX - drag.px), y: drag.cam.y + (e.clientY - drag.py) });
   };
   const endDrag = (): void => {
@@ -104,8 +123,9 @@ export function RouteCanvas({ cards, activeId, onSelect, names }: CanvasProps) {
   const zoomBy = (factor: number): void => {
     const box = frameRef.current?.getBoundingClientRect();
     if (!box) return;
+    manual.current = true;
     setCamera((cur) => {
-      const k = Math.min(1.6, Math.max(0.35, cur.k * factor));
+      const k = Math.min(1.6, Math.max(MIN_ZOOM, cur.k * factor));
       const ratio = k / cur.k;
       const cx = box.width / 2;
       const cy = box.height / 2;
@@ -113,23 +133,29 @@ export function RouteCanvas({ cards, activeId, onSelect, names }: CanvasProps) {
     });
   };
 
-  /** 跳到某一拍并把它摆到视野中央（「定位当前」按钮与选中时用）。 */
-  const focusCard = useCallback((card: BeatCard) => {
-    const target = placed.find((p) => p.card.id === card.id);
-    const box = frameRef.current?.getBoundingClientRect();
-    if (!target || !box) return;
-    setCamera((cur) => ({
-      k: cur.k,
-      x: box.width / 2 - (target.x + NODE_W / 2) * cur.k,
-      y: box.height / 2 - (target.y + NODE_H / 2) * cur.k,
-    }));
-  }, [placed]);
+  /** 把某一拍送到视野中央（「跳到最新」用）。点节点不挪镜头——点得到就说明已经看得见。 */
+  const focusCard = useCallback(
+    (card: BeatCard) => {
+      const target = placed.find((p) => p.card.id === card.id);
+      const box = frameRef.current?.getBoundingClientRect();
+      if (!target || !box) return;
+      setCamera((cur) => ({
+        k: cur.k,
+        x: box.width / 2 - (target.x + NODE_W / 2) * cur.k,
+        y: box.height / 2 - (target.y + NODE_H / 2) * cur.k,
+      }));
+    },
+    [placed],
+  );
 
-  useEffect(() => {
-    if (!activeId) return;
-    const card = cards.find((c) => c.id === activeId);
-    if (card?.isLeaf) focusCard(card);
-  }, [activeId, cards, focusCard]);
+  /** 世界线的叶尖就是现在演到哪儿，一键送过去。 */
+  const jumpToLatest = useCallback(() => {
+    const leaf = cards.find((c) => c.isLeaf);
+    if (!leaf) return;
+    manual.current = true; // 玩家点名要去那儿，之后的视口变化别再把镜头拽回根
+    onSelect(leaf);
+    focusCard(leaf);
+  }, [cards, onSelect, focusCard]);
 
   return (
     <div className="route-frame">
@@ -176,37 +202,39 @@ export function RouteCanvas({ cards, activeId, onSelect, names }: CanvasProps) {
             />
           ))}
         </div>
-      </div>
-      <div className="route-tools">
-        <button className="ghost-btn icon-btn" onClick={() => zoomBy(1.15)} title="放大">
-          <Icon name="zoomIn" />
-        </button>
-        <button className="ghost-btn icon-btn" onClick={() => zoomBy(1 / 1.15)} title="缩小">
-          <Icon name="zoomOut" />
-        </button>
-        <button className="ghost-btn" onClick={fit} title="回到起点（塞不下时保持可读的最小缩放）">
-          <span className="btn-icon">
-            <Icon name="origin" /> 回到起点
-          </span>
-        </button>
-        <button
-          className="ghost-btn"
-          onClick={() => {
-            const leaf = cards.find((c) => c.isLeaf);
-            if (leaf) {
-              onSelect(leaf);
-              focusCard(leaf);
-            }
-          }}
-          disabled={!cards.some((c) => c.isLeaf)}
-        >
-          <span className="btn-icon">
-            <Icon name="locate" /> 定位当前
-          </span>
-        </button>
-        <span className="muted route-hint">
-          {dir === "horizontal" ? "从左到右是时间" : "从上到下是时间"} · 拖拽平移 · 滚轮缩放
-        </span>
+
+        {/* 画布占满整页：导航与镜头浮在它上面，不跟树抢版面 */}
+        <div className="route-overlay">
+          <div className="route-overlay-top">
+            <button className="ghost-btn icon-btn route-float" onClick={onBack} title="回舞台">
+              <Icon name="back" />
+            </button>
+            <span className="muted route-hint">
+              {dir === "horizontal" ? "从左到右是时间" : "从上到下是时间"} · 分岔点往下扇开 · 点节点回看那一拍
+            </span>
+          </div>
+          <div className="route-overlay-bottom">
+            <div className="route-zoom" title="拖拽平移 · 滚轮缩放">
+              <button className="ghost-btn icon-btn" onClick={() => zoomBy(1.15)} title="放大">
+                <Icon name="zoomIn" />
+              </button>
+              <button className="ghost-btn icon-btn" onClick={() => zoomBy(1 / 1.15)} title="缩小">
+                <Icon name="zoomOut" />
+              </button>
+              <button className="ghost-btn icon-btn" onClick={fitAll} title="看全树">
+                <Icon name="expand" />
+              </button>
+              <button
+                className="ghost-btn icon-btn"
+                onClick={jumpToLatest}
+                disabled={!cards.some((c) => c.isLeaf)}
+                title="跳到最新"
+              >
+                <Icon name="locate" />
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -230,10 +258,12 @@ function Node({
     card.onPath ? "live" : "",
     card.isLeaf ? "here" : "",
     active ? "active" : "",
+    card.stopType ? "has-mark" : "",
   ]
     .filter(Boolean)
     .join(" ");
   const who = card.speakers.map((id) => names[id] ?? id).join("、");
+  const text = card.preview || "（无台词）";
 
   return (
     <button
@@ -243,19 +273,13 @@ function Node({
         e.stopPropagation();
         onSelect();
       }}
-      title={`第 ${card.turn} 拍${placed.label ? ` · ${placed.label}` : ""}`}
+      title={text}
     >
-      <span className="route-node-head">
-        <span className="route-node-no">第 {card.turn} 拍</span>
-        {placed.label && <span className="route-node-label">{placed.label}</span>}
-        {card.stopType && <span className="route-node-stop">{STOP_MARK[card.stopType]}</span>}
-        {card.isLeaf && <span className="route-node-here">进行中</span>}
+      <span className="route-node-text">
+        {who && <span className="route-node-who">{who}：</span>}
+        {text}
       </span>
-      <span className="route-node-text">{card.preview || "（无台词）"}</span>
-      <span className="route-node-foot">
-        {who && <span className="route-node-who">{who}</span>}
-        {placed.branchCount > 1 && <span className="route-node-fork">⑂ {placed.branchCount} 条分支</span>}
-      </span>
+      {card.stopType && <span className="route-node-mark">{STOP_MARK[card.stopType]}</span>}
     </button>
   );
 }

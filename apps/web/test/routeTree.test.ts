@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BeatCard } from "../src/stage/beats.js";
-import { layoutRoute, NODE_H, NODE_W } from "../src/stage/routeTree.js";
+import { GAP, layoutRoute, NODE_H, NODE_W } from "../src/stage/routeTree.js";
 
 function card(id: string, parentId: string | null, turn: number, onPath = true): BeatCard {
   return {
@@ -53,19 +53,11 @@ describe("横向路线树布局", () => {
     const { placed, edges, width, height } = layoutRoute(cards);
     const byId = new Map(placed.map((p) => [p.card.id, p]));
     expect(byId.get("a")!.x).toBe(0);
-    expect(byId.get("b")!.x).toBe(byId.get("a")!.x + NODE_W + 78);
+    expect(byId.get("b")!.x).toBe(byId.get("a")!.x + NODE_W + GAP);
     expect(edges).toHaveLength(2);
     expect(edges.every((e) => e.d.startsWith("M "))).toBe(true);
     expect(width).toBeGreaterThan(NODE_W);
     expect(height).toBeGreaterThan(NODE_H);
-  });
-
-  it("分岔口：世界线那支标主线，其余按序标支线", () => {
-    const cards = [card("root", null, 0), card("live", "root", 1), card("alt", "root", 1, false), card("alt2", "root", 1, false)];
-    const labels = new Map(layoutRoute(cards).placed.map((p) => [p.card.id, p.label]));
-    expect(labels.get("live")).toBe("主线");
-    expect(labels.get("alt")).toBe("支线 A");
-    expect(labels.get("alt2")).toBe("支线 B");
   });
 
   it("父节点缺失（孤儿）不丢节点", () => {
@@ -90,7 +82,7 @@ describe("纵向路线树（窄屏）", () => {
     expect(byId.get("b")!.y).toBeGreaterThan(byId.get("a")!.y);
     // 兄弟在同一深度上左右分开
     expect(byId.get("b")!.y).toBe(byId.get("c")!.y);
-    expect(byId.get("b")!.x).not.toBe(byId.get("c")!.x);
+    expect(byId.get("c")!.x).toBe(byId.get("b")!.x + NODE_W + GAP);
     expect(width).toBeGreaterThan(NODE_W);
     expect(height).toBeGreaterThan(NODE_H);
     const edge = edges.find((e) => e.id === "a->b")!;
@@ -102,5 +94,26 @@ describe("纵向路线树（窄屏）", () => {
         `^M ${from.x + NODE_W / 2} ${from.y + NODE_H} C \\S+ \\S+, \\S+ \\S+, ${to.x + NODE_W / 2} ${to.y}$`,
       ),
     );
+  });
+
+  it("横向间距按节点宽度算，节点谁也不叠", () => {
+    // 回归：兄弟间距曾错用节点高度当横向步长，窄屏上整棵树糊成一坨
+    const cards = [
+      card("a", null, 0),
+      card("b", "a", 1),
+      card("c", "a", 1, false),
+      card("d", "a", 1, false),
+      card("e", "b", 2),
+      card("f", "b", 2, false),
+    ];
+    const { placed } = layoutRoute(cards, "vertical");
+    for (let i = 0; i < placed.length; i += 1) {
+      for (let j = i + 1; j < placed.length; j += 1) {
+        const a = placed[i]!;
+        const b = placed[j]!;
+        const overlap = Math.abs(a.y - b.y) < NODE_H - 1 && Math.abs(a.x - b.x) < NODE_W - 1;
+        expect(overlap, `${a.card.id} 与 ${b.card.id} 叠了`).toBe(false);
+      }
+    }
   });
 });

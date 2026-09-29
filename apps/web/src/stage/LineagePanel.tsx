@@ -75,9 +75,9 @@ export function BranchScript(props: PanelProps) {
 }
 
 /**
- * 路线：横向时间轴的树。x = 时间（树深度），y = 兄弟序，节点间是真连线。
- * 点节点 = 只读回看（客户端本地，不动世界线）；分岔 / 重生成才是世界线写操作。
- * 导演操作放在底部检视栏，不占树上的位置——树要始终是一棵树。
+ * 路线：一棵从左往右读时间的树。x = 时间（树深度），兄弟往下扇开，点节点只读回看。
+ * 画布占满整页，导航与镜头浮在它上面——树要始终是一棵树，不该被两条横条挤成一条缝。
+ * 导演操作放在底部检视栏，不占树上的位置。
  */
 export function RouteTree(
   props: PanelProps & { lines: readonly ScriptLine[]; onRewind: (lineKey: string) => void },
@@ -90,23 +90,17 @@ export function RouteTree(
 
   return (
     <div className="route-screen">
-      <header className="screen-bar">
-        <button className="ghost-btn" onClick={props.onBack}>
-          <span className="btn-icon">
-            <Icon name="back" /> 舞台
-          </span>
-        </button>
-        <span className="muted">路线</span>
-        <span className="muted">从左到右是时间；分岔点往下扇开。点节点回看那一拍</span>
-        <button className="ghost-btn" onClick={props.onReload}>
-          刷新
-        </button>
-      </header>
       {props.error && <div className="error-banner">{props.error}</div>}
       {!props.view ? (
-        <div className="overlay">读取路线…</div>
+        <div className="route-blank">
+          <BackFloat onBack={props.onBack} />
+          <div className="overlay">读取路线…</div>
+        </div>
       ) : cards.length === 0 ? (
-        <p className="muted route-empty">还没有历史——演出几拍后这里会长出路线树。</p>
+        <div className="route-blank">
+          <BackFloat onBack={props.onBack} />
+          <p className="muted route-empty">还没有历史——演出几拍后这里会长出路线树。</p>
+        </div>
       ) : (
         <>
           <RouteCanvas
@@ -114,11 +108,11 @@ export function RouteTree(
             names={names}
             activeId={active}
             onSelect={(next) => setActive((cur) => (cur === next.id ? null : next.id))}
+            onBack={props.onBack}
           />
           {card && (
             <div className="route-inspector">
               <div className="route-inspector-head">
-                <span className="route-inspector-no">第 {card.turn} 拍</span>
                 {card.sceneBg && <span className="muted">◈ {card.sceneBg}</span>}
                 <span className="muted route-inspector-text">{card.preview || "（无台词）"}</span>
                 <button className="ghost-btn" onClick={() => setActive(null)}>
@@ -129,7 +123,6 @@ export function RouteTree(
                 card={card}
                 busy={busy}
                 ops={ops}
-                canRewind={card.onPath}
                 lineKey={lineOf.get(card.id)}
                 onRewind={onRewind}
               />
@@ -138,6 +131,15 @@ export function RouteTree(
         </>
       )}
     </div>
+  );
+}
+
+/** 空态/加载态下画布不在，退回键就浮在空态上，路线页永远回得去。 */
+function BackFloat({ onBack }: { onBack: () => void }) {
+  return (
+    <button className="ghost-btn icon-btn route-float" onClick={onBack} title="回舞台">
+      <Icon name="back" />
+    </button>
   );
 }
 
@@ -150,18 +152,20 @@ function rewindTargets(cards: BeatCard[], lines: readonly ScriptLine[]): Map<str
   return map;
 }
 
+/**
+ * 检视栏里的五动词。分岔只有一件事——从这一拍岔出去，不按死活分两种说法：
+ * 「接回世界线」那套概念留着只会让人以为废弃分支是另一种东西。
+ */
 function BeatActions({
   card,
   busy,
   ops,
-  canRewind,
   lineKey,
   onRewind,
 }: {
   card: BeatCard;
   busy: boolean;
   ops: LineageOps;
-  canRewind: boolean;
   lineKey?: string;
   onRewind: (lineKey: string) => void;
 }) {
@@ -177,8 +181,7 @@ function BeatActions({
       )}
       <button className="ghost-btn" disabled={busy} onClick={() => ops.fork(card.id)}>
         <span className="btn-icon">
-          <Icon name="fork" />
-          {canRewind ? "从这里岔出去" : "岔回去（接回世界线）"}
+          <Icon name="fork" /> 从这里岔出去
         </span>
       </button>
       <button
