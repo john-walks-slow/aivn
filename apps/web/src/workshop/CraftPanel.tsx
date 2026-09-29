@@ -42,7 +42,7 @@ export function CraftPanel({ playId }: { playId: string }) {
     <div className="workshop-tab-pane craft-pane">
       <header className="craft-bar">
         <p className="muted small">
-          剧作家每一拍都按这份写。自由写，不用挑选项——工坊对话里也能让它改同一份。
+          剧作家每次生成都按这份写。自由写，不用挑选项——工坊对话里也能让它改同一份。
         </p>
         <div className="craft-bar-actions">
           {isDefault && <span className="badge">默认口径</span>}
@@ -75,9 +75,9 @@ export function CraftPanel({ playId }: { playId: string }) {
 
       <footer className="craft-foot muted small">
         {state === "saved" ? (
-          <span className="craft-saved">已保存——下一拍起生效（剧作家正在写的话，会等这一拍拍完）。</span>
+          <span className="craft-saved">已保存——接下来生成的内容按新口径写（剧作家正在写的话，会等这一次写完）。</span>
         ) : (
-          <span>保存后重建剧作家，下一拍按新口径写。</span>
+          <span>保存后重建剧作家，接下来生成的内容按新口径写。</span>
         )}
       </footer>
     </div>

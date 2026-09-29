@@ -123,7 +123,7 @@ export function SavesView({ playId }: { playId: string }) {
             </div>
 
             <p className="muted small">
-              {save.beats} 拍 · {stamp(save.updatedAt)} 更新
+              {save.beats} 段内容 · {stamp(save.updatedAt)} 更新
             </p>
             {save.preview && <p className="save-preview">{save.preview}</p>}
 

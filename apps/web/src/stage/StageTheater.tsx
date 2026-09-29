@@ -16,8 +16,6 @@ interface StageTheaterProps {
   index: AssetIndex;
   /** 服务端 TTS 能力（false 时隐藏语音相关的一切）。 */
   voiceAvailable: boolean;
-  voiceOn: boolean;
-  unlocked: boolean;
   /** 原地 OOC 已入队（下一拍生效，beat_start 自动清除）。 */
   oocQueued: boolean;
   /** 结构性操作会腰斩正在演的这一幕，busy 时 ↺/🌿 置灰（OOC 仍可用，走 steer 注入）。 */
@@ -96,8 +94,6 @@ export function StageTheater({
   names,
   index,
   voiceAvailable,
-  voiceOn,
-  unlocked,
   oocQueued,
   busy,
   chrome,
@@ -178,6 +174,7 @@ export function StageTheater({
    * 「继续」不再单列按钮，翻下一句和继续演是同一个动作。
    */
   const onStageClick = (): void => {
+    onUnlock();
     poke();
     if (scrubbed) scrub(1);
     else if (canContinue) onContinue();
@@ -188,6 +185,7 @@ export function StageTheater({
   // 没有下滑：它跟浏览器下拉刷新撞车，两边都按不准。横向本来也该给系统，但方向键语义更常用，这里接管。
   const touchRef = useRef<{ x: number; y: number; at: number } | null>(null);
   const onTouchStart = (e: React.TouchEvent): void => {
+    onUnlock();
     const t = e.touches[0];
     if (t) touchRef.current = { x: t.clientX, y: t.clientY, at: Date.now() };
   };
@@ -299,7 +297,7 @@ export function StageTheater({
         )}
         <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
           {shown ||
-            (view ? "" : live && exhausted ? "剧作家正在落笔…" : "（点一下开始）")}
+            (view ? "" : live && exhausted ? "剧作家正在落笔…" : "（点击开始）")}
           {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
         </p>
         {/* 导演栏：四个原语 + 重听/自动，全在对话界面内就地完成，不跳视图 */}
@@ -318,7 +316,7 @@ export function StageTheater({
                     ▼
                   </span>
                 )}
-                {canContinue && <span className="muted">点一下继续</span>}
+                {canContinue && <span className="muted">点击舞台继续</span>}
               </>
             )}
           </div>
@@ -326,7 +324,7 @@ export function StageTheater({
             <button
               type="button"
               className={`dir-btn ${action === "ooc" ? "on" : ""}`}
-              title={oocQueued ? "导演注已入队（下一拍起效）" : "导演注（OOC）：随时告诉剧作家接下来该怎么写"}
+              title={oocQueued ? "已入队，接下来生成的内容会带上" : "导演注（OOC）：随时告诉剧作家接下来该怎么写"}
               onClick={(e) => {
                 e.stopPropagation();
                 setAction(action === "ooc" ? null : "ooc");
@@ -409,7 +407,7 @@ export function StageTheater({
             onTouchEnd={(e) => e.stopPropagation()}
           >
             <div className="director-hint">
-              {action === "ooc" && "导演注：下一拍起效，不打断当前这一拍"}
+              {action === "ooc" && "导演注会加进接下来新生成的内容，不打断正在写的"}
               {action === "edit" && "就地改这一句，改完接着演，不重演"}
               {action === "rewrite" && "重写这一幕（留空则按原设定重来）"}
             </div>
@@ -446,16 +444,6 @@ export function StageTheater({
       {overlay}
 
       <audio ref={bgmRef} loop />
-
-      {/* AudioContext 解锁遮罩（移动端铁律：手势 resume 后语音才可播；静音用户不要求手势） */}
-      {voiceAvailable && voiceOn && !unlocked && (
-        <div className="voice-unlock" onClick={onUnlock} role="button">
-          <span className="voice-unlock-icon">
-            <Icon name="volume" size={34} />
-          </span>
-          <span>点一下开启语音</span>
-        </div>
-      )}
     </div>
   );
 }
@@ -539,7 +527,7 @@ export function BacklogView({
               type="button"
               className="ghost-btn small-btn"
               onClick={reloadHistory}
-              title="重新拉取（读盘落后一拍）"
+              title="重新拉取（内容还没写进存档）"
             >
               <Icon name="refresh" size={14} />
               刷新
@@ -694,13 +682,13 @@ function HistoryView({ playId, nonce }: { playId: string; nonce: number }) {
       {beats === null ? (
         <div className="overlay">读取历史…</div>
       ) : beats.length === 0 ? (
-        <p className="backlog-empty">还没有留存的历史——下一拍拍完就写进来了。</p>
+        <p className="backlog-empty">还没有留存的历史——生成完就写进来了。</p>
       ) : (
         <>
           {beats.map((beat) => (
             <section key={beat.turn} className="hx-beat">
               <header className="hx-beat-head">
-                <span>第 {beat.turn} 拍</span>
+                <span>第 {beat.turn} 次生成</span>
                 <span className="muted">{beat.entries.length} 条</span>
               </header>
               {beat.entries.map((entry) => {

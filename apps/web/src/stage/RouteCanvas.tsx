@@ -243,7 +243,7 @@ function Node({
         e.stopPropagation();
         onSelect();
       }}
-      title={`第 ${card.turn} 拍${placed.label ? ` · ${placed.label}` : ""}`}
+      title={`第 ${card.turn} 次生成${placed.label ? ` · ${placed.label}` : ""}`}
     >
       <span className="route-node-head">
         <span className="route-node-no">第 {card.turn} 拍</span>

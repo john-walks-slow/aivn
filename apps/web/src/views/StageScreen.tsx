@@ -256,8 +256,6 @@ export function StageScreen({ playId }: { playId: string }) {
             names={stage.names}
             index={index}
             voiceAvailable={stage.voiceAvailable}
-            voiceOn={voiceOn}
-            unlocked={director.unlocked}
             busy={busy}
             oocQueued={oocQueued}
             chrome={chrome}

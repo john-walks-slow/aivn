@@ -1136,35 +1136,6 @@ select:focus {
 
 /* ── 语音（P3）───────────────────────── */
 
-/* AudioContext 解锁遮罩：覆盖视口，手势点击 resume */
-.voice-unlock {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: color-mix(in srgb, var(--bg) 96%, transparent);
-  backdrop-filter: blur(3px);
-  cursor: pointer;
-  font-size: 15px;
-  color: var(--ink-soft);
-  user-select: none;
-}
-
-.voice-unlock-icon {
-  font-size: 34px;
-  filter: drop-shadow(0 2px 8px rgb(0 0 0 / 0.25));
-  animation: voice-unlock-pulse 2s ease-in-out infinite;
-}
-
-@keyframes voice-unlock-pulse {
-  0%, 100% { transform: scale(1); opacity: 0.85; }
-  50% { transform: scale(1.12); opacity: 1; }
-}
-
 /* 试听按钮行 */
 .voice-row {
   display: flex;

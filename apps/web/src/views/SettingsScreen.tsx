@@ -146,7 +146,7 @@ export function SettingsScreen() {
             <div className="settings-grid">
               <NumField
                 label="输出上限"
-                hint="超过网关限制即 400 空拍"
+                hint="超过网关限制会返回 400，内容为空"
                 value={draft.model.maxTokens}
                 onChange={(v) => setDraft({ ...draft, model: { ...draft.model, maxTokens: v } })}
               />

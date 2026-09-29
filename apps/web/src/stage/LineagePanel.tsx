@@ -85,7 +85,7 @@ export function RouteTree(
       {!props.view ? (
         <div className="overlay">读取路线…</div>
       ) : cards.length === 0 ? (
-        <p className="muted route-empty">还没有历史——走过几拍之后，这里会长出路线树。</p>
+        <p className="muted route-empty">还没有历史——玩过一阵之后，这里会长出路线树。</p>
       ) : (
         <>
           <RouteCanvas
@@ -163,7 +163,7 @@ function BeatActions({
         onClick={() => ops.rewrite(card.id, "beat", note.trim() || undefined)}
       >
         <Icon name="rewrite" />
-        重生成这一拍
+        重新生成本段
       </button>
       <span className="lineage-inline-input">
         <input
@@ -172,7 +172,7 @@ function BeatActions({
           onChange={(e) => setNote(e.target.value)}
         />
       </span>
-      <p className="beat-tile-warn">重生成 = 从拍首分岔重演，这一拍之后的剧情会作废（历史全部保留）。</p>
+      <p className="beat-tile-warn">重新生成 = 从这一段的起点另开一条线重写，这一段之后的剧情会作废（历史全部保留）。</p>
     </div>
   );
 }
