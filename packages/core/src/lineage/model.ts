@@ -3,7 +3,11 @@
  *
  * - 事件 append-only：行级演出事件按序持久化（JSONL），parentId 构成分支树；
  * - 原地编辑 = 追加 edit 事件（editTargetId + 新文本），物化时覆盖目标行——日志永不改写；
- * - 分岔/重写由树结构表达：forkAt 把挂载点移到目标节点，后续事件成为新分支；
+ * - **跳转 vs 分岔**（两个正交动词，边界在本文件里定死）：
+ *   跳转 `jumpTo` 只移挂载点、不追加事件，不生成任何内容；活节点上是往前走，
+ *   已废弃的节点上是回到那条岔掉的线。分岔 `recordRewrite` 把挂载点退到目标**之前**
+ *   并追加一条 rewrite 事件，于是目标节点分叉出两条路，**必然伴随重新生成**。
+ *   前者改「现在在哪」，后者改「接下来是什么」，所以只有分岔需要导演意图与重演。
  * - 谱系快照随分支走：恢复 = 当前路径上最近的快照。
  */
 
@@ -163,8 +167,15 @@ export class LineageTree {
     });
   }
 
-  /** 从任意节点开新分支：挂载点移到该节点，后续 append 成为新分支。 */
-  forkAt(nodeId: string): LineageEvent {
+  /**
+   * 跳转：把挂载点移到该节点，后续 append 成为新世界线。
+   *
+   * 这只是移动游标，不追加任何事件——「跳转」与「分岔」的分野就在这里。
+   * 目标节点在不在当前路径上都能跳：活的跳上去是往前走，跳到已废弃的节点上
+   * 是回到那条岔掉的线（该节点之后的原剧情转为废弃分支，历史一条不删）。
+   * 想真的开出新内容，是分岔（`recordRewrite`）的事，不是这里。
+   */
+  jumpTo(nodeId: string): LineageEvent {
     const node = this.requireNode(nodeId);
     this.leaf = node.id;
     return node;
@@ -193,10 +204,13 @@ export class LineageTree {
   }
 
   /**
-   * 重写标注（分岔 + 重生成）：回退到目标**之前**（挂载点移到其父节点，目标行留在废弃分支）。
+   * 分岔：回退到目标**之前**（挂载点移到其父节点，目标行留在废弃分支），并追加 rewrite 事件。
+   *
+   * 这是「分岔」与「跳转」在数据模型上的分界：跳转不追加事件、分岔追加一条 rewrite，
+   * 于是目标节点在树上分叉出度数 ≥2 的两条路。分岔必然伴随重新生成内容。
    *
    * 粒度契约：granularity 仅记录意图与 UI 标注；**beat 边界解析归编排器**——
-   * "beat" 重写时编排器须先解析节拍边界（beat_end/stop 之后的第一个事件）并把 nodeId 传节拍首行。
+   * "beat" 分岔时编排器须先解析节拍边界（beat_end/stop 之后的第一个事件）并把 nodeId 传节拍首行。
    * core 不事后推算节拍（beat 生命周期由编排器拥有）。
    */
   recordRewrite(nodeId: string, granularity: "line" | "beat", instruction?: string): LineageEvent {

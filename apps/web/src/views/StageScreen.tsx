@@ -90,13 +90,13 @@ export function StageScreen({ playId }: { playId: string }) {
   director.onControl = (state) => stage.sendTtsControl(state);
 
   // 导演出口（P6）：senders 在 useStageSocket 内 useCallback 稳定，仅重连后换引用
-  const { sendFork: fork, sendEdit: edit, sendRewrite: sendRewrite } = stage;
-  /** 舞台的「重生成」永远是拍级：粒度由编排器按拍首行解析归它。 */
-  const rewrite = useCallback(
-    (nodeId: string, instruction?: string) => sendRewrite(nodeId, "beat", instruction),
-    [sendRewrite],
+  const { sendJump: jump, sendEdit: edit, sendBranch: sendBranch } = stage;
+  /** 舞台的「分岔」永远是拍级：粒度由编排器按拍首行解析归它。 */
+  const branch = useCallback(
+    (nodeId: string, instruction?: string) => sendBranch(nodeId, "beat", instruction),
+    [sendBranch],
   );
-  const ops: LineageOps = useMemo(() => ({ fork, rewrite }), [fork, rewrite]);
+  const ops: LineageOps = useMemo(() => ({ jump, branch }), [jump, branch]);
 
 
   // 走过的岔路口：玩家在这条线之外已经说过的选项，卡片上打「✓ 已选过」提醒存在多条命运
@@ -208,7 +208,7 @@ export function StageScreen({ playId }: { playId: string }) {
     };
   }, [cards, lineage.view, playback.view]);
 
-  /** 回顾里每条自己落在哪一拍：玩家表态与导演注没有拍，工具栏上的分岔/重生成就置灰。 */
+  /** 回顾里每条自己落在哪一拍：玩家表态与导演注没有拍，工具栏上的分岔就置灰。 */
   const beatFor = useCallback(
     (entry: TranscriptEntry): string | null =>
       lineage.view ? (beatAtLine(cards, entry)?.id ?? null) : null,
@@ -257,8 +257,8 @@ export function StageScreen({ playId }: { playId: string }) {
             targets={targets}
             onView={setView}
             onOoc={stage.sendOoc}
-            onRewrite={rewrite}
-            onFork={fork}
+            onJump={jump}
+            onRewrite={branch}
             onEdit={edit}
             onReplay={replay}
             hasVoice={hasVoice}
@@ -300,8 +300,8 @@ export function StageScreen({ playId }: { playId: string }) {
           }}
           onReplay={replay}
           onEdit={edit}
-          onRewrite={rewrite}
-          onFork={fork}
+          onJump={jump}
+          onRewrite={branch}
           onClose={() => setView("stage")}
         />
       ) : (

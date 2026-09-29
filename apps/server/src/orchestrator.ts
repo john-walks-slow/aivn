@@ -609,7 +609,8 @@ export class PlaywrightOrchestrator {
     return this.events.filter((e) => e.seq > lastSeq);
   }
 
-  // —— P6 五动词：跳转 / 分岔 / 重生成 / 编辑 / 导演注，彼此正交，可自由组合 ——
+  // —— P6 四动词：跳转 / 分岔 / 编辑 / 导演注，彼此正交，可自由组合 ——
+  //     跳转 = 移挂载点不生成；分岔 = 退到目标之前重写并重新生成（重生成是分岔的副产品，不单列）——
 
   /** 路线树视图（全量节点含废弃分支）；前端「路线」视图与 REST 共用。 */
   lineageView(): LineageView {
@@ -617,25 +618,30 @@ export class PlaywrightOrchestrator {
   }
 
   /**
-   * 跳：世界线挂到目标节点并重建上下文。活的、废弃的都走这一条——废弃节点也跳得进去，
+   * 跳转：世界线挂到目标节点并重建上下文。活的、废弃的都走这一条——废弃节点也跳得进去，
    * 只是跳过去意味着当前剧情作废（历史全部保留）。不重新生成，玩家落到哪就从哪继续。
    */
-  async forkTo(nodeId: string): Promise<void> {
-    this.rebaseAt(nodeId, "已跳到这里");
+  async jumpTo(nodeId: string): Promise<void> {
+    this.guardIdle();
+    this.opts.tree.jumpTo(nodeId);
+    this.syncContext("已跳到这里");
   }
 
-  /** 原地编辑：当前分支该行文本替换（不开新分支），后续生成以新文本为上下文。 */
+  /** 原地编辑：当前分支该行文本替换，后续生成以新文本为上下文。 */
   async editLine(nodeId: string, newText: string): Promise<void> {
     this.guardIdle();
     const text = newText.trim();
     if (!text) throw new Error("台词不能为空");
     this.opts.tree.editInPlace(nodeId, text);
     this.flushLineageLog();
-    this.rebaseAt(nodeId, "台词已修改", { keepLeaf: true });
+    this.syncContext("台词已修改");
   }
 
-  /** 句/段级重写：隐式分岔（旧版留在路线树）+ 立即重新生成（±导演注）。 */
-  async rewrite(nodeId: string, granularity: "line" | "beat", instruction?: string): Promise<void> {
+  /**
+   * 分岔：退到目标之前重写这一段（目标行留废弃分支）并立即重新生成。
+   * 与跳转的分野——分岔追加 rewrite 事件、动内容；跳转只移挂载点、不生成。
+   */
+  async branch(nodeId: string, granularity: "line" | "beat", instruction?: string): Promise<void> {
     this.guardIdle();
     const chain = this.opts.tree.ancestorChain(nodeId); // 校验节点存在
     const anchor = granularity === "beat" ? this.resolveBeatAnchor(chain, nodeId) : null;
@@ -643,18 +649,20 @@ export class PlaywrightOrchestrator {
     const recap = anchor?.recap ?? null;
     this.opts.tree.recordRewrite(targetId, granularity, instruction);
     this.flushLineageLog();
-    this.rebaseAt(this.opts.tree.leafId!, granularity === "beat" ? "已重写整幕" : "已重写此句", {
-      keepLeaf: true,
-    });
+    this.syncContext(granularity === "beat" ? "已重写整幕" : "已重写此句");
     await this.beginBeat(this.renderRewriteTurn(instruction, recap, granularity));
   }
 
-  /** 分岔后 OOC 立即重生成：先分岔到此，再注入导演注开拍（与原地 steer 正交）。 */
+  /** 跳转后 OOC 立即开拍：先跳到该节点，再注入导演注重演（与原地 steer 正交）。 */
   async oocAt(nodeId: string, text: string): Promise<void> {
     this.guardIdle();
     const note = text.trim();
     if (!note) throw new Error("导演注不能为空");
-    this.rebaseAt(nodeId, "已分岔并注入导演注");
+    this.opts.tree.jumpTo(nodeId);
+    // 导演注必须落进事件日志：它决定这一支为什么长这样，刷新重连或从工坊读树都得看得见。
+    this.appendLineage("ooc", { payload: { input: note } });
+    this.flushLineageLog();
+    this.syncContext("已跳到这里并注入导演注");
     await this.beginBeat(
       [
         `【状态】\n${renderStateSection(this.opts.engine, this.opts.scene, this.stateFiles)}`,
@@ -668,17 +676,19 @@ export class PlaywrightOrchestrator {
   }
 
   /**
-   * 上下文重建（P6 transformContext 的执行点）：挂载点移到目标节点后，
-   * 从谱系事件日志重放出「引擎状态 + 记忆快照 + 客户端事件缓冲 + LLM 对话轮次」，
+   * 上下文重建（P6 transformContext 的执行点）：调用方已把挂载点摆好，这里只管按
+   * 当前叶尖重放出「引擎状态 + 记忆快照 + 客户端事件缓冲 + LLM 对话轮次」，
    * 一次突变完成即回到 append-only 稳态。
+   *
+   * 动词只负责「树该长什么样」（jumpTo / editInPlace / recordRewrite），
+   * 世界线落到哪一步的重建是同一件事，所以收在这里，不再各自传 nodeId。
    *
    * 保持同刻铁律：旧分支的活跃状态、剧情线引用与 archive 检索范围一并回退，
    * 兄弟/废弃分支的往事不可召回（防剧透）。
    */
-  private rebaseAt(nodeId: string, note: string, opts?: { keepLeaf?: boolean }): void {
+  private syncContext(note: string): void {
     this.guardIdle();
     const tree = this.opts.tree;
-    if (!opts?.keepLeaf) tree.forkAt(nodeId);
     const chain = tree.chainEvents(tree.leafId);
     this.restoreBranchState(tree.leafId);
     // 历史跟着分支回退：不在新路径上的拍（兄弟与废弃分支）、以及被拍中截断砍掉后半的那一拍，

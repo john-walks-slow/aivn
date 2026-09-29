@@ -118,13 +118,16 @@ export type ClientMessage =
   | { type: "ooc"; text: string }
   /** 语音控制（D5 背压）：enabled=总开关（关=停合成）；paused=暂停预取（快进态/缓冲积压）。 */
   | { type: "tts_control"; enabled?: boolean; paused?: boolean }
+  /** 跳转：世界线挂到 nodeId，不生成内容。 @deprecated 旧名「fork」误导（fork 实指分岔），改用 jump。 */
   | { type: "fork"; nodeId: string }
   | { type: "edit"; nodeId: string; newText: string }
   /** 重写（句/段 ±instruction）。粒度契约：granularity 仅标注意图；beat 边界解析归编排器——
    *  granularity="beat" 时编排器须先解析节拍边界并把 nodeId 传节拍首行（见 LineageTree.recordRewrite）。 */
+  /** 分岔：从 nodeId 之前退开重写这一段（目标行留废弃分支），随即重新生成。 */
   | { type: "rewrite"; nodeId: string; granularity: "line" | "beat"; instruction?: string }
+  /** 跳转：世界线挂到 nodeId，不生成内容。活节点上往前走，废弃节点上回到那条线。 */
   | { type: "jump"; nodeId: string }
-  /** 分岔后立即 OOC：先分岔再注入导演注并重新生成（与原地 steer 正交）。 */
+  /** 跳转后立即 OOC：先跳到 nodeId 再注入导演注开拍（与原地 steer 正交）。 */
   | { type: "ooc_at"; nodeId: string; text: string }
   // —— 工坊（D9）：线程管理 + 对话 + 文件编辑；与演出共用一条连接，服务端按 type 分流 ——
   /** 打开面板：回线程列表与当前现场。 */

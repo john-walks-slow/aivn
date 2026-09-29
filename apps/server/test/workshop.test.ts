@@ -119,7 +119,7 @@ describe("工坊工具", () => {
     tree.append("scene", { payload: { attrs: { bg: "corridor" } } });
     tree.append("say", { text: "澪：早上好。", payload: { attrs: { who: "mio" } } });
     const branch = tree.append("player", { payload: { input: "我点头" } });
-    tree.forkAt(branch.id);
+    tree.jumpTo(branch.id);
     tree.append("say", { text: "澪：你不说话呀。", payload: { attrs: { who: "mio" } } });
     const save = new PlayStore(store.dir, saveId);
     await save.saveSession(tree, { turn: 2, affinity: {}, flags: {} }, "走廊");

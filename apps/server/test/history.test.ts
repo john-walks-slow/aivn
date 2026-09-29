@@ -150,7 +150,7 @@ describe("编排器历史累积", () => {
       view.pathIds.findIndex((id) => kinds.get(id) === "beat_end") + 1,
     );
     expect(afterFirstBeat.map((id) => kinds.get(id))).toContain("say");
-    await orchestrator.forkTo(afterFirstBeat[0]!);
+    await orchestrator.jumpTo(afterFirstBeat[0]!);
 
     expect(orchestrator.history.map((b) => b.turn)).toEqual([1]);
   });
@@ -160,7 +160,7 @@ describe("编排器历史累积", () => {
     await orchestrator.playerAction({ kind: "continue" });
     // 从幕首分岔：第 1 拍只演了一半，也一并作废
     const say = orchestrator.lineageView().nodes.find((n) => n.kind === "say")!;
-    await orchestrator.forkTo(say.id!);
+    await orchestrator.jumpTo(say.id!);
     expect(orchestrator.history).toEqual([]);
 
     await orchestrator.playerAction({ kind: "continue" });

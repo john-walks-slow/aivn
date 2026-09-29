@@ -22,13 +22,14 @@ interface StageTheaterProps {
   busy: boolean;
   /** 操作条可见性（H 键手动收起做沉浸模式，仅此一种隐藏途径）。 */
   chrome: boolean;
-  /** 由当前显示行 seq 反查出的锚点：编辑绑行，重生成/分岔绑整幕。 */
+  /** 由当前显示行 seq 反查出的锚点：编辑绑行，跳转/分岔绑整幕。 */
   targets: DirectorTargets;
-  /** 四个导演原语：OOC / 编辑 / 重生成 / 分岔。 */
+  /** 导演原语：OOC / 编辑 / 分岔 / 跳转，彼此正交。 */
   onOoc: (text: string) => void;
   onEdit: (nodeId: string, text: string) => void;
   onRewrite: (beatId: string, instruction?: string) => void;
-  onFork: (nodeId: string) => void;
+  /** 跳转：世界线挂到该拍，不生成内容。 */
+  onJump: (nodeId: string) => void;
   onReplay: (seq: number) => void;
   hasVoice: (seq: number | null) => boolean;
   onUnlock: () => void;
@@ -101,7 +102,7 @@ export function StageTheater({
   onOoc,
   onEdit,
   onRewrite,
-  onFork,
+  onJump,
   onReplay,
   hasVoice,
   onUnlock,
@@ -350,7 +351,7 @@ export function StageTheater({
             <button
               type="button"
               className={`dir-btn ${action === "rewrite" ? "on" : ""}`}
-              title={busy ? "剧作家正在写，暂时不能重生成" : "重生成这一幕"}
+              title={busy ? "剧作家正在写，暂时不能分岔" : "从这一幕分岔出去"}
               disabled={busy || !targets.beatId}
               onClick={(e) => {
                 e.stopPropagation();
@@ -363,14 +364,14 @@ export function StageTheater({
             <button
               type="button"
               className="dir-btn"
-              title={busy ? "剧作家正在写，暂时不能分岔" : "从这里分岔出一条新线"}
+              title={busy ? "剧作家正在写，暂时不能跳" : "跳到这一拍之前"}
               disabled={busy || !targets.beatId}
               onClick={(e) => {
                 e.stopPropagation();
-                if (targets.beatId) onFork(targets.beatId);
+                if (targets.beatId) onJump(targets.beatId);
               }}
             >
-              <Icon name="fork" />
+              <Icon name="locate" />
             </button>
             {voiceAvailable && hasVoice(view?.seq ?? null) && (
               <button
@@ -409,7 +410,7 @@ export function StageTheater({
             <div className="director-hint">
               {action === "ooc" && "导演注会加进接下来新生成的内容，不打断正在写的"}
               {action === "edit" && "就地改这一句，改完接着演，不重演"}
-              {action === "rewrite" && "重写这一幕（留空则按原设定重来）"}
+              {action === "rewrite" && "退到这一幕之前重写并重新生成（留空则按原设定重来）"}
             </div>
             <input
               value={draft}
@@ -430,7 +431,7 @@ export function StageTheater({
                 onClick={submitAction}
                 disabled={action === "rewrite" ? false : draft.trim() === ""}
               >
-                {action === "edit" ? "改写" : action === "rewrite" ? "重生成" : "发送"}
+                {action === "edit" ? "改写" : action === "rewrite" ? "分岔" : "发送"}
               </button>
               <button type="button" className="ghost-btn" onClick={() => setAction(null)}>
                 收起
@@ -451,7 +452,7 @@ export function StageTheater({
 /**
  * 回顾：整屏重读这一场说过的所有话——剧作家的台词、玩家的选择与输入、导演注。
  *
- * 点一行不再直接跳回那一刻：翻到过去是为了在这儿做点什么（重听、改写、重生成、分岔），
+ * 点一行不再直接跳回那一刻：翻到过去是为了在这儿做点什么（重听、改写、分岔、跳转），
  * 所以每条下面挂一排图标工具栏，跳回舞台只是其中一个。点正文本身不做任何事，避免误触。
  *
  * 标题条右端是「剧作家原始历史」开关：拉 session 快照，看这一场是怎么被写出来的
@@ -470,7 +471,7 @@ export function BacklogView({
   onReplay,
   onEdit,
   onRewrite,
-  onFork,
+  onJump,
   onClose,
 }: {
   playId: string;
@@ -480,13 +481,15 @@ export function BacklogView({
   busy: boolean;
   voiceAvailable: boolean;
   hasVoice: (seq: number | null) => boolean;
-  /** 这一条落在哪一拍（分岔/重生成的锚点）；表态与导演注没有拍，返 null。 */
+  /** 这一条落在哪一拍（跳转/分岔的锚点）；表态与导演注没有拍，返 null。 */
   beatFor: (entry: TranscriptEntry) => string | null;
   onSeek: (key: string) => void;
   onReplay: (seq: number) => void;
   onEdit: (nodeId: string, text: string) => void;
+  /** 分岔：重写出新剧情（onRewrite 是分岔的既有入口，别名另起只会多一套叫法）。 */
   onRewrite: (beatId: string, instruction?: string) => void;
-  onFork: (nodeId: string) => void;
+  /** 跳转：世界线挂到该拍，不生成内容。 */
+  onJump: (nodeId: string) => void;
   onClose: () => void;
 }) {
   /** 改写就地改：点开编辑框在回顾里完成，不跳视图。 */
@@ -622,7 +625,7 @@ export function BacklogView({
                     <button
                       type="button"
                       className="bl-tool"
-                      title={busy ? "剧作家正在写，暂时不能重生成" : "从这一幕重生成"}
+                      title={busy ? "剧作家正在写，暂时不能分岔" : "从这一幕分岔出去"}
                       disabled={busy || !beat}
                       onClick={() => beat && onRewrite(beat)}
                     >
@@ -631,9 +634,9 @@ export function BacklogView({
                     <button
                       type="button"
                       className="bl-tool"
-                      title={busy ? "剧作家正在写，暂时不能分岔" : "从这里分岔出一条新线"}
+                      title={busy ? "剧作家正在写，暂时不能分岔" : "从这里重写出一段新剧情"}
                       disabled={busy || !beat}
-                      onClick={() => beat && onFork(beat)}
+                      onClick={() => beat && onRewrite(beat)}
                     >
                       <Icon name="fork" />
                     </button>

@@ -59,7 +59,7 @@ describe("PlayMemory", () => {
     const e1 = tree.append("scene", { payload: { attrs: { bg: "a" } } });
     const e2 = tree.append("say", { text: "分支A第一拍" });
     const e3 = tree.append("say", { text: "分支A第二拍" });
-    tree.forkAt(e1.id);
+    tree.jumpTo(e1.id);
     const e4 = tree.append("say", { text: "分支B第一拍" });
     const e5 = tree.append("say", { text: "分支B第二拍" });
 

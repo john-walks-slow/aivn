@@ -11,11 +11,14 @@ import type { ScriptLine } from "./script.js";
  * 路线视图只留树上才有的世界线写操作。
  * OOC / 编辑搬到了对话框底部的导演栏（锚点由当前行 seq 反查），剧本视图已删——
  * 逐行铺开的那份视图不值得再维护一份渲染。
- * 跳（fork）是其中之一：世界线落到目标节点。
+ * 跳转（jump）与分岔（branch）是其中两个正交动词：前者把世界线挂到已有节点、
+ * 不生成内容；后者退到该段之前重写并重新生成。
  */
 export interface LineageOps {
-  fork: (nodeId: string) => void;
-  rewrite: (nodeId: string, granularity: "line" | "beat", instruction?: string) => void;
+  /** 跳转：世界线挂到该节点，不生成内容。 */
+  jump: (nodeId: string) => void;
+  /** 分岔：退到该段之前重写并重新生成。 */
+  branch: (nodeId: string, granularity: "line" | "beat", instruction?: string) => void;
 }
 
 /** 谱系拉取：打开视图与每次操作后刷新（树不随节拍广播，避免每拍搬运全量节点）。 */
@@ -112,24 +115,26 @@ function BackFloat({ onBack }: { onBack: () => void }) {
 
 
 /**
- * 检视栏里只有一个跳。跳 = 把世界线挂到这张卡上——活节点上是往前走一步，废弃节点上是
- * 回到那条走岔了的线（当前剧情随之作废）。两者是同一个操作，同一个出口，不按死活分说法。
+ * 检视栏两个动词，一个出口。
+ * 跳转 = 把世界线挂到这张卡上，不生成内容：活节点上是往前走一步，废弃节点上是回到
+ * 那条走岔了的线（当前剧情随之作废）。同一个操作、同一个出口，不按死活分说法。
+ * 分岔 = 退到这张卡之前重写并重新生成，这张卡之后的原剧情留作废弃分支。
  */
 function BeatActions({ card, busy, ops }: { card: BeatCard; busy: boolean; ops: LineageOps }) {
   const [note, setNote] = useState("");
   return (
     <div className="lineage-actions">
-      <button className="ghost-btn" disabled={busy} onClick={() => ops.fork(card.id)}>
-        <Icon name="fork" />
+      <button className="ghost-btn" disabled={busy} onClick={() => ops.jump(card.id)}>
+        <Icon name="locate" />
         跳到这里
       </button>
       <button
         className="ghost-btn"
         disabled={busy}
-        onClick={() => ops.rewrite(card.id, "beat", note.trim() || undefined)}
+        onClick={() => ops.branch(card.id, "beat", note.trim() || undefined)}
       >
-        <Icon name="rewrite" />
-        重新生成本段
+        <Icon name="fork" />
+        从这一段分岔
       </button>
       <span className="lineage-inline-input">
         <input
@@ -138,7 +143,7 @@ function BeatActions({ card, busy, ops }: { card: BeatCard; busy: boolean; ops: 
           onChange={(e) => setNote(e.target.value)}
         />
       </span>
-      <p className="beat-tile-warn">重新生成 = 从这一段的起点另开一条线重写，这一段之后的剧情会作废（历史全部保留）。</p>
+      <p className="beat-tile-warn">分岔 = 从这一段的起点另开一条线重写，这一段之后的剧情会作废（历史全部保留）。</p>
     </div>
   );
 }

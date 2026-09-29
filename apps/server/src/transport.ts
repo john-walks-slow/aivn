@@ -127,16 +127,18 @@ async function routeMessage(
     case "tts_control":
       orchestrator.setTtsState({ enabled: msg.enabled, paused: msg.paused });
       return;
-    // —— 导演操作（P6）：分岔/编辑/重写/分岔后 OOC 彼此正交；
-    //     「跳转」是纯客户端只读回看，不进协议、不动世界线 ——
+    // —— 导演操作（P6）：跳转/分岔/编辑彼此正交 ——
+    //     跳转把世界线挂到已有节点（不生成），分岔退到该段之前重写并重新生成；
+    //     「fork」是跳转的旧名（fork 在这套模型里实指分岔，起名反了），留着兼容旧客户端。
+    case "jump":
     case "fork":
-      await orchestrator.forkTo(msg.nodeId);
+      await orchestrator.jumpTo(msg.nodeId);
       return;
     case "edit":
       await orchestrator.editLine(msg.nodeId, msg.newText);
       return;
     case "rewrite":
-      await orchestrator.rewrite(msg.nodeId, msg.granularity, msg.instruction);
+      await orchestrator.branch(msg.nodeId, msg.granularity, msg.instruction);
       return;
     case "ooc_at":
       await orchestrator.oocAt(msg.nodeId, msg.text);

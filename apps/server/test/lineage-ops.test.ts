@@ -100,12 +100,12 @@ describe("P6 导演操作 · 编排器", () => {
     expect(orchestrator.currentEpoch).toBe(1);
   });
 
-  it("分岔：旧分支留树内，当前分支事件缓冲只到分岔点（兄弟分支不可见）", async () => {
+  it("跳转：旧分支留树内，当前分支事件缓冲只到目标点（兄弟分支不可见）", async () => {
     const { orchestrator, messages, tree } = await playedTwoBeats();
     const sayId = firstNodeOf(tree, "say");
     const eventsBefore = orchestrator.runtimeState.events.length;
 
-    await orchestrator.forkTo(sayId);
+    await orchestrator.jumpTo(sayId);
 
     expect(tree.leafId).toBe(sayId); // 挂载点移到分岔点
     expect(tree.isAncestor(firstNodeOf(tree, "player"), sayId)).toBe(true);
@@ -133,12 +133,12 @@ describe("P6 导演操作 · 编排器", () => {
     const originalLeaf = s.tree.leafId!;
 
     // 退回去改走另一条：原来那条从此不在世界线上
-    await s.orchestrator.forkTo(sayId);
+    await s.orchestrator.jumpTo(sayId);
     await s.orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
     const logBefore = s.tree.export().events.length;
     expect(s.tree.pathSet().has(originalLeaf)).toBe(false);
 
-    await s.orchestrator.forkTo(originalLeaf);
+    await s.orchestrator.jumpTo(originalLeaf);
 
     // 世界线真的落到那条废弃的线上了
     expect(s.tree.leafId).toBe(originalLeaf);
@@ -149,11 +149,11 @@ describe("P6 导演操作 · 编排器", () => {
     expect(s.orchestrator.runtimeState.events.at(-1)?.event.kind).toBe("narrate_end");
   });
 
-  it("分岔落在拍中 → 停止点降为 pause（这一拍被截断，只能按「继续」重开）", async () => {
+  it("跳转落在拍中 → 停止点降为 pause（这一拍被截断，只能按「继续」重开）", async () => {
     const { orchestrator, messages, tree } = await playedTwoBeats();
     const sayId = firstNodeOf(tree, "say"); // 拍中的台词节点
 
-    await orchestrator.forkTo(sayId);
+    await orchestrator.jumpTo(sayId);
 
     expect(orchestrator.runtimeState.lastStop).toEqual({ stopType: "pause" });
     const rebase = messages.find((m) => m.type === "rebase");
@@ -163,23 +163,23 @@ describe("P6 导演操作 · 编排器", () => {
     expect(rebase.stop?.stopType).toBe("pause");
   });
 
-  it("停止点跨分岔后还原成原来那个：choice 不退化成 pause", async () => {
+  it("停止点跨跳转后还原成原来那个：choice 不退化成 pause", async () => {
     const { orchestrator, tree } = await playedTwoBeats(); // 拍一有 choice 停止点
     const choiceNode = tree.chainEvents(tree.leafId!).findLast((e) => e.kind === "stop");
     expect(choiceNode?.payload?.stopType).toBe("choice");
 
-    await orchestrator.forkTo(choiceNode!.id); // 就分岔在停止点上
+    await orchestrator.jumpTo(choiceNode!.id); // 就分岔在停止点上
 
     const stop = orchestrator.runtimeState.lastStop;
     expect(stop?.stopType).toBe("choice");
     expect(stop?.options?.[0]?.text).toBeTruthy();
   });
 
-  it("句级重写：隐式分岔 + 立即重生成，新分支带 rewrite 标注", async () => {
+  it("句级分岔：退到该句之前重写，新分支带 rewrite 标注并立即重生成", async () => {
     const { orchestrator, tree, contexts } = await playedTwoBeats();
     const sayId = firstNodeOf(tree, "say");
 
-    await orchestrator.rewrite(sayId, "line", "让她更小声一点");
+    await orchestrator.branch(sayId, "line", "让她更小声一点");
 
     const view = orchestrator.lineageView();
     const rewrites = view.nodes.filter((n) => n.kind === "rewrite");
@@ -190,11 +190,11 @@ describe("P6 导演操作 · 编排器", () => {
     expect(lastUserText(contexts)).toContain("让她更小声一点");
   });
 
-  it("幕级重写：锚点落到本幕首个内容行，玩家输入折成前情", async () => {
+  it("幕级分岔：锚点落到本幕首个内容行，导演意图折成前情", async () => {
     const { orchestrator, tree, contexts } = await playedTwoBeats();
     const say2 = tree.materialize().filter((e) => e.kind === "say").at(-1)!;
 
-    await orchestrator.rewrite(say2.id, "beat");
+    await orchestrator.branch(say2.id, "beat");
 
     const view = orchestrator.lineageView();
     const rewrite = view.nodes.find((n) => n.kind === "rewrite");
@@ -207,7 +207,7 @@ describe("P6 导演操作 · 编排器", () => {
     expect(lastUser).not.toContain("我到了"); // 开场那次的输入已成历史轮次
   });
 
-  it("分岔后 OOC：先挂载到目标节点再注入导演注开拍", async () => {
+  it("跳转后 OOC：先挂载到目标节点再注入导演注开拍，导演注落进事件日志", async () => {
     const { orchestrator, tree, contexts } = await playedTwoBeats();
     const sayId = firstNodeOf(tree, "say");
     const bufferedBefore = orchestrator.runtimeState.events.length;
@@ -216,8 +216,14 @@ describe("P6 导演操作 · 编排器", () => {
 
     expect(orchestrator.runtimeState.events.length).toBeLessThan(bufferedBefore + 100);
     expect(lastUserText(contexts)).toContain("让澪先开口道歉");
-    // 分岔后立即开拍：叶子上多出本拍新行
+    // 跳转后立即开拍：叶子上多出本拍新行
     expect(orchestrator.lineageView().pathIds.at(-1)).not.toBe(sayId);
+    // 导演注必须进事件日志——它决定这一支为什么长这样，刷新/从工坊读树都靠它
+    expect(
+      tree.export().events.some(
+        (e) => e.kind === "ooc" && e.payload?.input === "让澪先开口道歉",
+      ),
+    ).toBe(true);
   });
 
   it("演出进行中拒绝结构操作（不打断当前节拍）", async () => {
@@ -225,7 +231,7 @@ describe("P6 导演操作 · 编排器", () => {
     const sayId = firstNodeOf(tree, "say");
     const busy = orchestrator.playerAction({ kind: "free", text: "抢跑" });
     await expect(orchestrator.editLine(sayId, "x")).rejects.toThrow(/演出进行中/);
-    await expect(orchestrator.forkTo(sayId)).rejects.toThrow(/演出进行中/);
+    await expect(orchestrator.jumpTo(sayId)).rejects.toThrow(/演出进行中/);
     await busy;
   });
 });

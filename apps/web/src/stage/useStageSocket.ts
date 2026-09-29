@@ -31,10 +31,10 @@ export interface StageSocket {
   sendContinue: () => void;
   sendOoc: (text: string) => void;
   sendTtsControl: (state: { enabled?: boolean; paused?: boolean }) => void;
-  // —— 导演操作（P6）：回看（客户端本地）/ 分岔 / 编辑 / 重写 / 导演注 OOC ——
-  sendFork: (nodeId: string) => void;
+  // —— 导演操作（P6）：跳转 / 分岔 / 编辑 / 导演注 OOC ——
+  sendJump: (nodeId: string) => void;
   sendEdit: (nodeId: string, newText: string) => void;
-  sendRewrite: (nodeId: string, granularity: "line" | "beat", instruction?: string) => void;
+  sendBranch: (nodeId: string, granularity: "line" | "beat", instruction?: string) => void;
   sendOocAt: (nodeId: string, text: string) => void;
   /** 工坊通道发送（面板自带消息构造）。 */
   send: (msg: ClientMessage) => void;
@@ -232,12 +232,12 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
   const sendFree = useCallback((text: string) => send({ type: "player_free", text }), [send]);
   const sendContinue = useCallback(() => send({ type: "continue" }), [send]);
   const sendOoc = useCallback((text: string) => send({ type: "ooc", text }), [send]);
-  const sendFork = useCallback((nodeId: string) => send({ type: "fork", nodeId }), [send]);
+  const sendJump = useCallback((nodeId: string) => send({ type: "jump", nodeId }), [send]);
   const sendEdit = useCallback(
     (nodeId: string, newText: string) => send({ type: "edit", nodeId, newText }),
     [send],
   );
-  const sendRewrite = useCallback(
+  const sendBranch = useCallback(
     (nodeId: string, granularity: "line" | "beat", instruction?: string) =>
       send({ type: "rewrite", nodeId, granularity, ...(instruction ? { instruction } : {}) }),
     [send],
@@ -269,9 +269,9 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
     sendContinue,
     sendOoc,
     sendTtsControl: (ttsState) => send({ type: "tts_control", ...ttsState }),
-    sendFork,
+    sendJump,
     sendEdit,
-    sendRewrite,
+    sendBranch,
     sendOocAt,
     send,
   };

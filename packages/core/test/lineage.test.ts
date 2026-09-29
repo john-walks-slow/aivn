@@ -32,7 +32,7 @@ describe("行级事件与分支树", () => {
     const { say1 } = buildPlay(tree);
     tree.append("say", { text: "旧分支第三句" });
 
-    tree.forkAt(say1.id);
+    tree.jumpTo(say1.id);
     const newLine = tree.append("say", { text: "新分支第二句" });
 
     // 分岔到 say1 = say1 保留在新分支，其后的旧行（player/旧句）不在链上
@@ -45,7 +45,7 @@ describe("行级事件与分支树", () => {
     const tree = new LineageTree();
     const { say1, say2 } = buildPlay(tree);
     const abandoned = tree.append("say", { text: "废弃分支" });
-    tree.forkAt(say1.id);
+    tree.jumpTo(say1.id);
     const fresh = tree.append("say", { text: "新分支" });
 
     expect(tree.isAncestor(say1.id, fresh.id)).toBe(true);
@@ -71,7 +71,7 @@ describe("行级事件与分支树", () => {
     // 当前分支：编辑生效
     expect(tree.materialize()[0]!.text).toBe("改写后的第一句");
     // 分岔回 say1（edit 事件挂在 say1 之后的原链上，不在此链）：原文
-    tree.forkAt(say1.id);
+    tree.jumpTo(say1.id);
     expect(tree.materialize()[0]!.text).toBe("……太慢了！不是约好立刻集合的吗？");
   });
 
@@ -108,14 +108,14 @@ describe("谱系快照与编辑", () => {
 
     tree.append("say", { text: "第三章剧情（未来）" });
     // 从 say2 之后分岔：快照在链上，可恢复
-    tree.forkAt(say2.id);
+    tree.jumpTo(say2.id);
     tree.append("say", { text: "从快照点重走的分支" });
     const restored = tree.latestSnapshotOnPath();
     expect(restored?.id).toBe(snap1.id);
     expect(restored?.engine.affinity).toEqual({ mio: 10 });
 
     // 回到 say1（快照之前）：路径上无快照，冷启动
-    tree.forkAt(say1.id);
+    tree.jumpTo(say1.id);
     expect(tree.latestSnapshotOnPath()).toBeNull();
   });
 
@@ -146,7 +146,7 @@ describe("持久化往返", () => {
     const tree = new LineageTree();
     const { say1 } = buildPlay(tree);
     tree.append("say", { text: "废弃分支" });
-    tree.forkAt(say1.id);
+    tree.jumpTo(say1.id);
     tree.append("say", { text: "新分支" });
 
     const rebuilt = new LineageTree();
@@ -162,7 +162,7 @@ describe("持久化往返", () => {
     const tree = new LineageTree();
     const { say1 } = buildPlay(tree);
     tree.append("say", { text: "旧分支末句" });
-    tree.forkAt(say1.id); // 分岔后尚未重生成
+    tree.jumpTo(say1.id); // 分岔后尚未重生成
 
     const rebuilt = new LineageTree();
     rebuilt.load(tree.export());
@@ -227,7 +227,7 @@ describe("路径集合（检索防剧透）", () => {
     const tree = new LineageTree();
     const { say1, say2 } = buildPlay(tree);
     const abandoned = tree.append("say", { text: "废弃分支" });
-    tree.forkAt(say1.id);
+    tree.jumpTo(say1.id);
     tree.append("say", { text: "新分支" });
 
     const path = tree.pathSet();
