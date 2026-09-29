@@ -92,11 +92,6 @@ export function StageScreen({ playId }: { playId: string }) {
     [fork, editLine, rewrite, oocAt],
   );
 
-  // 跳转 = 只读回看：只移动舞台游标，不发任何 WS、不动物理分支
-  const rewind = useCallback((lineKey: string) => {
-    playbackRef.current?.seek(lineKey);
-    setView("stage");
-  }, []);
 
   // 走过的岔路口：玩家在这条线之外已经说过的选项，卡片上打「✓ 已选过」提醒存在多条命运
   const seenChoices = useMemo(
@@ -222,8 +217,7 @@ export function StageScreen({ playId }: { playId: string }) {
           onReload={lineage.reload}
           onBack={() => setView("stage")}
           ops={ops}
-          lines={stage.lines}
-          onRewind={rewind}
+          index={index}
         />
       ) : (
         <BranchScript

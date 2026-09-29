@@ -7,6 +7,9 @@
  * - 谱系快照随分支走：恢复 = 当前路径上最近的快照。
  */
 
+import type { OptionAttrs, StopType } from "../dsl/spec.js";
+import { toNodeView } from "./replay.js";
+
 export type LineageEventKind =
   | "scene"
   | "actor"
@@ -96,6 +99,11 @@ export interface LineageNodeView {
   /** 剧本事件的 seq（say_start/narrate_start/scene/… 的序号）：与客户端 ScriptLine.seq 同尺，
    *  路线树据此把谱系卡片精确对到剧本行上。player/ooc/edit/rewrite 无 seq。 */
   seq: number | undefined;
+  /** stop 事件专有：停止点类型/选项/占位文案。attrs 里那个 stopType 只是给旧客户端兜底的，
+   *  客户端只读回看要按原样重建停止点，选项必须留在投影里。 */
+  stopType?: StopType;
+  stopOptions?: OptionAttrs[];
+  stopPlaceholder?: string;
 }
 
 export interface LineageView {
@@ -296,22 +304,12 @@ export class LineageTree {
       // 同一次工具批次的多个事件共用 createdAt，只按它排会随机抖动，路线树的分岔口
       // 因此忽左忽右；id 兜成第二稳定键，视图每次渲染的节点顺序完全一致。
       .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
-      .map((event) => ({
-        id: event.id,
-        parentId: event.parentId,
-        kind: event.kind,
-        turn: event.turn,
-        // 玩家表态/OOC 只落在 payload.input，回落到它，否则路线树里是一排空节点。
-        text: event.text ?? event.payload?.input ?? "",
-        attrs: event.payload?.attrs ?? {},
-        createdAt: event.createdAt,
-        onPath: onPath.has(event.id),
-        children: childCount.get(event.id) ?? 0,
-        editTargetId: event.editTargetId,
-        granularity: event.payload?.granularity,
-        instruction: event.payload?.instruction,
-        seq: typeof event.payload?.seq === "number" ? event.payload.seq : undefined,
-      }));
+      .map((event) => {
+        const view = toNodeView(event);
+        view.onPath = onPath.has(event.id);
+        view.children = childCount.get(event.id) ?? 0;
+        return view;
+      });
     return {
       nodes,
       leafId: this.leaf,

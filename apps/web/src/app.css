@@ -1727,6 +1727,7 @@ select:focus {
   position: absolute;
   display: flex;
   flex-direction: column;
+  gap: 4px;
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--line);
@@ -1736,6 +1737,40 @@ select:focus {
   font: inherit;
   text-align: left;
   cursor: pointer;
+  overflow: hidden;
+}
+
+/* 场景图铺满当氛围：低透明度、放大裁切，正文压在它上面仍然读得清。
+   玩家扫树时先认出「哪个窗景」再读字，这比纯文字卡快得多。
+   压一层半透明底是必需的——高饱和的黄昏和樱花照直接透上来，正文就糊了。 */
+.route-node-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.3;
+  filter: saturate(0.7);
+  pointer-events: none;
+}
+
+/* 图与字之间的纱：让文字有个稳定的底，不管哪张图多亮。 */
+.route-node::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    color-mix(in srgb, var(--panel) 92%, transparent) 0%,
+    color-mix(in srgb, var(--panel) 80%, transparent) 60%,
+    color-mix(in srgb, var(--panel) 88%, transparent) 100%
+  );
+  pointer-events: none;
+}
+
+.route-node.dead .route-node-bg {
+  opacity: 0.1;
+  filter: grayscale(0.7);
 }
 
 .route-node:hover {
@@ -1767,8 +1802,14 @@ select:focus {
   background: var(--accent-soft);
 }
 
-/* 节点只有一段话：说话人并进正文，拍号/支线/进行中这类状态说明一律不进节点。 */
+.route-node.active .route-node-bg {
+  opacity: 0.3;
+}
+
+/* 节点正文就是这一拍的摘要：拍号、支线、进行中这类状态说明一律不进节点。 */
 .route-node-text {
+  position: relative;
+  z-index: 1;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;

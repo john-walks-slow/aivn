@@ -603,11 +603,12 @@ export class PlaywrightOrchestrator {
     return this.opts.tree.describe();
   }
 
-  /** 跳转：挂载点移到目标节点并重建上下文（只读回放，不重新生成）。 */
-
-  /** 分岔：从任意节点开新分支（不生成，玩家可在此继续行动或重演）。 */
+  /**
+   * 跳：世界线挂到目标节点并重建上下文。活的、废弃的都走这一条——废弃节点也跳得进去，
+   * 只是跳过去意味着当前剧情作废（历史全部保留）。不重新生成，玩家落到哪就从哪继续。
+   */
   async forkTo(nodeId: string): Promise<void> {
-    this.rebaseAt(nodeId, "已从此处开新分支");
+    this.rebaseAt(nodeId, "已跳到这里");
   }
 
   /** 原地编辑：当前分支该行文本替换（不开新分支），后续生成以新文本为上下文。 */

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LineageNodeView, LineageView } from "@stage-ai/core";
-import { buildBeats, firstLineOf } from "./beats.js";
-import type { ScriptLine } from "./script.js";
+import { buildBeats } from "./beats.js";
 
 type NodeSpec = [
   id: string,
@@ -31,10 +30,6 @@ function view(specs: NodeSpec[], leafId: string): LineageView {
   return { nodes, leafId, pathIds: nodes.filter((n) => n.onPath).map((n) => n.id) };
 }
 
-function line(key: string, seq: number, text: string): ScriptLine {
-  return { key, seq, text } as ScriptLine;
-}
-
 describe("buildBeats 一拍一卡", () => {
   it("beat_end 收束、换场景不切拍", () => {
     const cards = buildBeats(
@@ -49,7 +44,6 @@ describe("buildBeats 一拍一卡", () => {
         ],
         "f",
       ),
-      [],
     );
     expect(cards.map((card) => card.id)).toEqual(["a", "e"]);
     expect(cards[0]!.startSeq).toBe(1);
@@ -72,7 +66,6 @@ describe("buildBeats 一拍一卡", () => {
         ],
         "g",
       ),
-      [],
     );
     expect(cards.map((card) => card.id)).toEqual(["a", "d", "f"]);
     expect(cards[1]!.parentId).toBe("a");
@@ -96,19 +89,18 @@ describe("buildBeats 一拍一卡", () => {
         ],
         "g",
       ),
-      [line("l1", 1, "开场"), line("l2", 4, "原第二拍"), line("l3", 9, "新第二拍")],
     );
     expect(cards.map((card) => [card.id, card.startSeq])).toEqual([
       ["a", 1],
       ["c", 4],
       ["f", 9],
     ]);
-    // 活动路径上的卡片摘要取该拍首行原文
+    // 摘要取本拍第一句台词（分出去的尾巴不影响下一拍）
     expect(cards[0]!.preview).toBe("开场");
     expect(cards[2]!.preview).toBe("新第二拍");
   });
 
-  it("废弃分支的行已不在缓冲里 → 没有可回看目标", () => {
+  it("废弃分支照样有摘要：读谱系，不依赖舞台缓冲", () => {
     const cards = buildBeats(
       view(
         [
@@ -119,11 +111,10 @@ describe("buildBeats 一拍一卡", () => {
         ],
         "b",
       ),
-      [line("l1", 1, "开场")],
     );
-    expect(cards[0]!.isAbandoned).toBe(false);
-    expect(firstLineOf(cards[0]!, [line("l1", 1, "开场")])?.key).toBe("l1");
-    expect(firstLineOf(cards[1]!, [line("l1", 1, "开场")])).toBeNull();
+    expect(cards[0]!.preview).toBe("开场");
+    expect(cards[1]!.isAbandoned).toBe(true);
+    expect(cards[1]!.preview).toBe("旧版本");
   });
 
   it("重演出来的新拍挂在被重写的那一拍下（兄弟，不是无根新枝）", () => {
@@ -139,7 +130,6 @@ describe("buildBeats 一拍一卡", () => {
         ],
         "e",
       ),
-      [],
     );
     expect(cards.map((card) => [card.id, card.parentId])).toEqual([
       ["a", null],
@@ -163,7 +153,6 @@ describe("buildBeats 一拍一卡", () => {
         ],
         "d",
       ),
-      [],
     );
     expect(cards.map((card) => card.stopType)).toEqual(["choice", "free"]);
   });
@@ -181,7 +170,6 @@ describe("buildBeats 一拍一卡", () => {
         ],
         "d",
       ),
-      [],
     );
     expect(cards.map((card) => card.id)).toEqual(["a", "c"]);
   });

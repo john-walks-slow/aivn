@@ -1,11 +1,9 @@
-import type {
-  LineageEvent,
-  OptionAttrs,
-  SequencedEvent,
-  StageEvent,
-  StopPayload,
-  StopType,
+import {
+  lineageToEvents as coreLineageToEvents,
+  stopFromNode,
+  toNodeView,
 } from "@stage-ai/core";
+import type { LineageEvent, SequencedEvent, StopPayload } from "@stage-ai/core";
 
 /**
  * 上下文重建（P6 transformContext 的纯函数层）：谱系事件日志是唯一真相源，
@@ -14,8 +12,22 @@ import type {
  */
 
 /**
- * edit 事件覆盖目标行文本（与 materialize 同一套规则）：改过的台词在
- * 客户端重放与 LLM 上下文重建里都必须是新文本——所见即所忆。
+ * 谱系事件链 → 客户端 IR 事件。
+ *
+ * 物化本身在 core（客户端只读回看同一份函数），这里只做投影适配：服务端手里是
+ * LineageEvent，core 的物化吃的是路线树投影，规则只有一份。
+ */
+export function lineageToEvents(chain: readonly LineageEvent[]): SequencedEvent[] {
+  return coreLineageToEvents(chain.map(toNodeView));
+}
+
+export function stopFromEvent(event: LineageEvent): StopPayload | null {
+  return stopFromNode(toNodeView(event));
+}
+
+/**
+ * edit 事件覆盖目标行文本：改过的台词在 LLM 上下文里必须是新文本——所见即所忆。
+ * （客户端重放走 core 的同一条规则，这里只管对话轮次这一侧。）
  */
 function editOverrides(chain: readonly LineageEvent[]): Map<string, string> {
   const overrides = new Map<string, string>();
@@ -25,105 +37,6 @@ function editOverrides(chain: readonly LineageEvent[]): Map<string, string> {
     }
   }
   return overrides;
-}
-
-/**
- * 谱系链 → 客户端 IR 事件（preload 不重放——生成不因回放重来）。
- *
- * seq 沿用每个节点当初的 payload.seq，而不是从 1 重新编号：分岔/编辑重生成之后
- * 路线树还指着老的剧本行，重放若改尺子那些锚点就全漂了。一行台词现场至少占 3 个
- * seq（start + ≥1 段文本 + end），重放正好塞得下，不会与下一行的 seq 相撞；
- * 老档没有 payload.seq 才退回顺序编号。
- */
-export function lineageToEvents(chain: readonly LineageEvent[]): SequencedEvent[] {
-  const overrides = editOverrides(chain);
-  const out: SequencedEvent[] = [];
-  let seq = 0;
-  const push = (base: number | undefined, ...events: StageEvent[]): void => {
-    const from = base !== undefined && base > seq ? base : seq + 1;
-    events.forEach((event, i) => out.push({ seq: from + i, event }));
-    seq = from + events.length - 1;
-  };
-  /**
-   * 台词现场 = 开始 + 文本 + 结束。空台词在现场只占 2 个 seq（解析器不发空 delta），
-   * 这里必须同规格，否则重放会往后挤一位、把下一行的锚点带偏。
-   */
-  const pushLine = (base: number | undefined, start: StageEvent, mid: StageEvent, end: StageEvent, text: string): void => {
-    if (text) push(base, start, mid, end);
-    else push(base, start, end);
-  };
-  for (const event of chain) {
-    const attrs = event.payload?.attrs ?? {};
-    const base = typeof event.payload?.seq === "number" ? event.payload.seq : undefined;
-    const delta = () => textOf(event, overrides);
-    switch (event.kind) {
-      case "scene":
-        push(base, { kind: "scene", ...pickDefined(attrs, ["bg", "bgm", "ambient", "transition"]) });
-        break;
-      case "actor":
-        push(base, { kind: "actor", id: attrs.id ?? "", ...pickDefined(attrs, ["pos", "expression", "action"]) });
-        break;
-      case "cg":
-        push(base, { kind: "cg", id: attrs.id ?? "", ...pickDefined(attrs, ["caption"]) });
-        break;
-      case "sfx":
-        push(base, { kind: "sfx", src: attrs.src ?? "" });
-        break;
-      case "stop": {
-        const stop = stopFromEvent(event);
-        if (stop) push(base, stopEvent(stop));
-        break;
-      }
-      case "say":
-        pushLine(base, { kind: "say_start", id: attrs.id ?? "", ...(attrs.mood ? { mood: attrs.mood } : {}) }, { kind: "say_text", delta: delta() }, { kind: "say_end" }, delta());
-        break;
-      case "narrate":
-        pushLine(base, { kind: "narrate_start" }, { kind: "narrate_text", delta: delta() }, { kind: "narrate_end" }, delta());
-        break;
-      case "thought":
-        pushLine(base, { kind: "thought_start", id: attrs.id ?? "" }, { kind: "thought_text", delta: delta() }, { kind: "thought_end" }, delta());
-        break;
-      default:
-        // preload 只触发生图、不影响重放画面（背景由 scene 携带）；player/ooc/beat_end 是元信息
-        break;
-    }
-  }
-  return out;
-}
-
-function textOf(event: LineageEvent, overrides: ReadonlyMap<string, string>): string {
-  return overrides.get(event.id) ?? event.text ?? "";
-}
-
-/** 谱系里只会出现 DSL 认识的两种停止点——编排器自造的 pause 不落谱系。 */
-type DslStop = Omit<StopPayload, "stopType"> & { stopType: StopType };
-
-/**
- * 谱系 stop 事件 → 停止点载荷。
- * 老档里的 `pause` 归一为 null：它当年是模型写的幕间「什么都不做就继续」，
- * 那种幕间现在由 `beat_end(act_end)` 承担（黑场 +「下一幕」），不是停止点。
- */
-export function stopFromEvent(event: LineageEvent): DslStop | null {
-  const payload = (event.payload ?? {}) as {
-    stopType?: StopType;
-    options?: OptionAttrs[];
-    placeholder?: string;
-  };
-  if (payload.stopType !== "choice" && payload.stopType !== "free") return null;
-  return {
-    stopType: payload.stopType,
-    ...(payload.options ? { options: payload.options } : {}),
-    ...(payload.placeholder ? { placeholder: payload.placeholder } : {}),
-  };
-}
-
-function stopEvent(stop: DslStop): StageEvent {
-  return {
-    kind: "stop",
-    stopType: stop.stopType,
-    ...(stop.options ? { options: stop.options } : {}),
-    ...(stop.placeholder ? { placeholder: stop.placeholder } : {}),
-  };
 }
 
 /** 一拍的重建素材：玩家输入（可空 = 开场）与已演出脚本。 */
@@ -221,14 +134,3 @@ function stopLine(stop: StopPayload): string {
   return "（等待玩家自由回应）";
 }
 
-function pickDefined(
-  attrs: Record<string, string>,
-  keys: readonly string[],
-): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const key of keys) {
-    const value = attrs[key];
-    if (value !== undefined && value !== "") out[key] = value;
-  }
-  return out;
-}

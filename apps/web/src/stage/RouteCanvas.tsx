@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "../ui/Icon.js";
+import type { AssetIndex } from "./assets.js";
 import type { BeatCard } from "./beats.js";
 import { layoutRoute, NODE_H, NODE_W, type PlacedCard, type RouteDir } from "./routeTree.js";
 
@@ -12,6 +13,8 @@ interface CanvasProps {
   onSelect: (card: BeatCard) => void;
   onBack: () => void;
   names: Readonly<Record<string, string>>;
+  /** 素材索引：卡片的背景氛围从这儿取，取不到就是纯文字卡。 */
+  index: AssetIndex | null;
 }
 
 /** 再小也认得出字：低于这个倍数就宁可让玩家横向拖。 */
@@ -24,7 +27,7 @@ interface Camera {
   k: number;
 }
 
-export function RouteCanvas({ cards, activeId, onSelect, onBack, names }: CanvasProps) {
+export function RouteCanvas({ cards, activeId, onSelect, onBack, names, index }: CanvasProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ px: number; py: number; cam: Camera } | null>(null);
   /** 玩家自己动过镜头（拖/缩/看全树）吗——动过就不再自动取景抢镜头。 */
@@ -197,6 +200,7 @@ export function RouteCanvas({ cards, activeId, onSelect, onBack, names }: Canvas
               key={p.card.id}
               placed={p}
               names={names}
+              index={index}
               active={p.card.id === activeId}
               onSelect={() => onSelect(p.card)}
             />
@@ -210,7 +214,7 @@ export function RouteCanvas({ cards, activeId, onSelect, onBack, names }: Canvas
               <Icon name="back" />
             </button>
             <span className="muted route-hint">
-              {dir === "horizontal" ? "从左到右是时间" : "从上到下是时间"} · 分岔点往下扇开 · 点节点回看那一拍
+              {dir === "horizontal" ? "从左到右是时间" : "从上到下是时间"} · 分岔点往下扇开 · 点节点看详情，检视栏里「跳到这里」把世界线落到它身上
             </span>
           </div>
           <div className="route-overlay-bottom">
@@ -243,11 +247,13 @@ export function RouteCanvas({ cards, activeId, onSelect, onBack, names }: Canvas
 function Node({
   placed,
   names,
+  index,
   active,
   onSelect,
 }: {
   placed: PlacedCard;
   names: Readonly<Record<string, string>>;
+  index: AssetIndex | null;
   active: boolean;
   onSelect: () => void;
 }) {
@@ -264,6 +270,7 @@ function Node({
     .join(" ");
   const who = card.speakers.map((id) => names[id] ?? id).join("、");
   const text = card.preview || "（无台词）";
+  const bg = index?.bg(card.sceneBg) ?? null;
 
   return (
     <button
@@ -275,6 +282,7 @@ function Node({
       }}
       title={text}
     >
+      {bg && <img className="route-node-bg" src={bg} alt="" aria-hidden />}
       <span className="route-node-text">
         {who && <span className="route-node-who">{who}：</span>}
         {text}

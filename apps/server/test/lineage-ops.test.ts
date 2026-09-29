@@ -114,11 +114,39 @@ describe("P6 导演操作 · 编排器", () => {
     expect(buffered.every((e) => e.event.kind !== "beat_end")).toBe(true);
     const rebase = messages.filter((m) => m.type === "rebase");
     expect(rebase).toHaveLength(1);
-    expect(rebase[0]?.type === "rebase" && rebase[0].note).toContain("新分支");
+    expect(rebase[0]?.type === "rebase" && rebase[0].note).toBe("已跳到这里");
     // 旧分支的行仍在树上（可回跳），但不在当前路径
     const view = orchestrator.lineageView();
     expect(view.nodes.filter((n) => n.kind === "say").length).toBeGreaterThanOrEqual(2);
     expect(view.pathIds.at(-1)).toBe(sayId);
+  });
+
+  it("跳到废弃分支：世界线真的落到那条线，当前剧情作废但历史一条不少", async () => {
+    const s = setup([
+      { text: BEAT_1, beatDone: true },
+      { text: BEAT_2, beatDone: true },
+      { text: BEAT_2, beatDone: true },
+    ]);
+    await s.orchestrator.playerAction({ kind: "free", text: "我到了" });
+    await s.orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    const sayId = firstNodeOf(s.tree, "say");
+    const originalLeaf = s.tree.leafId!;
+
+    // 退回去改走另一条：原来那条从此不在世界线上
+    await s.orchestrator.forkTo(sayId);
+    await s.orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    const logBefore = s.tree.export().events.length;
+    expect(s.tree.pathSet().has(originalLeaf)).toBe(false);
+
+    await s.orchestrator.forkTo(originalLeaf);
+
+    // 世界线真的落到那条废弃的线上了
+    expect(s.tree.leafId).toBe(originalLeaf);
+    expect(s.tree.pathSet().has(originalLeaf)).toBe(true);
+    // 事件真相源 append-only：跳来跳去一条都不该少
+    expect(s.tree.export().events.length).toBe(logBefore);
+    // 缓冲同步收敛到新世界线，不夹带兄弟分支的往事
+    expect(s.orchestrator.runtimeState.events.at(-1)?.event.kind).toBe("narrate_end");
   });
 
   it("分岔落在拍中 → 停止点降为 pause（这一拍被截断，只能按「继续」重开）", async () => {

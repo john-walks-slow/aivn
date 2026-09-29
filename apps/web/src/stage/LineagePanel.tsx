@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../ui/Icon.js";
 import type { LineageNodeView, LineageView } from "@stage-ai/core";
 import { api } from "../api.js";
-import { beatAnchors, buildBeats, type BeatCard } from "./beats.js";
+import type { AssetIndex } from "./assets.js";
+import { buildBeats, type BeatCard } from "./beats.js";
 import { RouteCanvas } from "./RouteCanvas.js";
-import type { ScriptLine } from "./script.js";
 
-/** 导演视角的世界线写操作（跳转是纯客户端只读回看，不在这里——它不动物理分支）。 */
+/** 导演视角的世界线写操作。跳（fork）就是其中之一：世界线落到目标节点。 */
 export interface LineageOps {
   fork: (nodeId: string) => void;
   edit: (nodeId: string, newText: string) => void;
@@ -75,16 +75,13 @@ export function BranchScript(props: PanelProps) {
 }
 
 /**
- * 路线：一棵从左往右读时间的树。x = 时间（树深度），兄弟往下扇开，点节点只读回看。
+ * 路线：一棵从左往右读时间的树。x = 时间（树深度），兄弟往下扇开。点节点看详情，检视栏里「跳到这里」把世界线落到它身上。
  * 画布占满整页，导航与镜头浮在它上面——树要始终是一棵树，不该被两条横条挤成一条缝。
  * 导演操作放在底部检视栏，不占树上的位置。
  */
-export function RouteTree(
-  props: PanelProps & { lines: readonly ScriptLine[]; onRewind: (lineKey: string) => void },
-) {
-  const { view, lines, names, busy, ops, onRewind } = props;
-  const cards = useMemo(() => (view ? buildBeats(view, lines) : []), [view, lines]);
-  const lineOf = useMemo(() => rewindTargets(cards, lines), [cards, lines]);
+export function RouteTree(props: PanelProps & { index: AssetIndex | null }) {
+  const { view, names, busy, ops } = props;
+  const cards = useMemo(() => (view ? buildBeats(view) : []), [view]);
   const [active, setActive] = useState<string | null>(null);
   const card = cards.find((c) => c.id === active) ?? null;
 
@@ -106,6 +103,7 @@ export function RouteTree(
           <RouteCanvas
             cards={cards}
             names={names}
+            index={props.index}
             activeId={active}
             onSelect={(next) => setActive((cur) => (cur === next.id ? null : next.id))}
             onBack={props.onBack}
@@ -119,13 +117,7 @@ export function RouteTree(
                   收起
                 </button>
               </div>
-              <BeatActions
-                card={card}
-                busy={busy}
-                ops={ops}
-                lineKey={lineOf.get(card.id)}
-                onRewind={onRewind}
-              />
+              <BeatActions card={card} busy={busy} ops={ops} />
             </div>
           )}
         </>
@@ -143,45 +135,18 @@ function BackFloat({ onBack }: { onBack: () => void }) {
   );
 }
 
-/** 活动路径的卡片 → 舞台行 key（拍首行），废弃分支的行已不在缓冲里，没有可回看的目标。 */
-function rewindTargets(cards: BeatCard[], lines: readonly ScriptLine[]): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const [card, line] of beatAnchors(cards, lines)) {
-    if (line) map.set(card.id, line.key);
-  }
-  return map;
-}
 
 /**
- * 检视栏里的五动词。分岔只有一件事——从这一拍岔出去，不按死活分两种说法：
- * 「接回世界线」那套概念留着只会让人以为废弃分支是另一种东西。
+ * 检视栏里只有一个跳。跳 = 把世界线挂到这张卡上——活节点上是往前走一步，废弃节点上是
+ * 回到那条走岔了的线（当前剧情随之作废）。两者是同一个操作，同一个出口，不按死活分说法。
  */
-function BeatActions({
-  card,
-  busy,
-  ops,
-  lineKey,
-  onRewind,
-}: {
-  card: BeatCard;
-  busy: boolean;
-  ops: LineageOps;
-  lineKey?: string;
-  onRewind: (lineKey: string) => void;
-}) {
+function BeatActions({ card, busy, ops }: { card: BeatCard; busy: boolean; ops: LineageOps }) {
   const [note, setNote] = useState("");
   return (
     <div className="lineage-actions">
-      {lineKey && (
-        <button className="ghost-btn" onClick={() => onRewind(lineKey)}>
-          <span className="btn-icon">
-            <Icon name="undo" /> 跳到这里回看
-          </span>
-        </button>
-      )}
       <button className="ghost-btn" disabled={busy} onClick={() => ops.fork(card.id)}>
         <span className="btn-icon">
-          <Icon name="fork" /> 从这里岔出去
+          <Icon name="fork" /> 跳到这里
         </span>
       </button>
       <button
@@ -204,9 +169,6 @@ function BeatActions({
     </div>
   );
 }
-
-// —— 行渲染 ——
-
 interface Row {
   id: string;
   kind: LineageNodeView["kind"];
