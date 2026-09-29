@@ -156,6 +156,27 @@ export async function handleHttp(
       if (method === "GET") return json(res, 200, await store.readiness());
       return fail(res, 405, "不支持的方法");
     }
+    // —— 工坊文件浏览/编辑（D9）：白名单在 PlayFiles，越界路径直接 400 ——
+    if (sub === "files" && parts.length === 4) {
+      const runtime = await playhouse.get(playId);
+      if (method === "GET") {
+        const path = url.searchParams.get("path");
+        if (!path) return json(res, 200, await runtime.workshop.files.list());
+        return json(res, 200, { path, content: await runtime.workshop.files.read(path) });
+      }
+      if (method === "PUT") {
+        const body = JSON.parse((await readBody(req)).toString("utf8")) as { path?: string; content?: string };
+        if (!body.path) return fail(res, 400, "缺少 path");
+        await runtime.workshop.writeFile(body.path, body.content ?? "");
+        return json(res, 200, { ok: true });
+      }
+      if (method === "DELETE") {
+        const path = url.searchParams.get("path") ?? "";
+        await runtime.workshop.removeFile(path);
+        return json(res, 200, { ok: true });
+      }
+      return fail(res, 405, "不支持的方法");
+    }
     if (sub === "assets" && parts.length === 4) {
       if (method === "GET") return json(res, 200, await store.listAssets());
       if (method === "POST") {

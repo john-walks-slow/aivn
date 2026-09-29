@@ -16,11 +16,12 @@ export function attachTransport(wss: WebSocketServer, playhouse: PlayHouse): voi
       ws.close(1008, "缺少 ?play=<剧目id>");
       return;
     }
-    onConnection(ws, playhouse, playId);
+    // 工坊面板单独连接（?workshop=1）时不触发 autostart——逛工坊不该把演出开起来
+    onConnection(ws, playhouse, playId, url.searchParams.get("workshop") !== "1");
   });
 }
 
-function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string): void {
+function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, autostart: boolean): void {
   const sender = (msg: ServerMessage): void => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   };
@@ -58,7 +59,7 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string): void
     registered = playhouse.clientsFor(playId);
     registered.add(sender);
     sendHello(ws, playId, runtime);
-    runtime.orchestrator.autostart();
+    if (autostart) runtime.orchestrator.autostart();
     established = true;
     for (const msg of pending.splice(0)) dispatchSafe(msg);
   })();
@@ -111,7 +112,23 @@ async function routeMessage(
     case "tts_control":
       orchestrator.setTtsState({ enabled: msg.enabled, paused: msg.paused });
       return;
+    // —— 工坊（D9）：与演出同一连接、不同通道；工坊对话不阻塞演出 ——
+    case "workshop_open":
+      await runtime.workshop.snapshot();
+      return;
+    case "workshop_activate":
+      await runtime.workshop.activate(msg.threadId);
+      return;
+    case "workshop_chat":
+      await runtime.workshop.chat(msg.text, msg.threadId);
+      return;
+    case "workshop_archive":
+      await runtime.workshop.setArchived(msg.threadId, msg.archived);
+      return;
+    case "workshop_delete":
+      await runtime.workshop.remove(msg.threadId);
+      return;
     default:
-      sender({ type: "error", message: `P2 暂不支持的操作: ${(msg as { type: string }).type}`, recoverable: true });
+      sender({ type: "error", message: `暂不支持的操作: ${(msg as { type: string }).type}`, recoverable: true });
   }
 }

@@ -16,6 +16,14 @@ export interface PlaySummary {
   readiness: Readiness;
 }
 
+/** 剧目文件（工坊文件浏览器 / 工坊 agent 白名单面）。 */
+export interface PlayFile {
+  path: string;
+  dir: string[];
+  size: number;
+  writable: boolean;
+}
+
 export interface PlayDetail {
   play: PlayConfig;
   readiness: Readiness;
@@ -72,6 +80,21 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ voiceId }),
     }),
+
+  listFiles: (id: string) => request<PlayFile[]>(`/api/plays/${id}/files`),
+
+  readFile: (id: string, path: string) =>
+    request<{ path: string; content: string }>(`/api/plays/${id}/files?path=${encodeURIComponent(path)}`),
+
+  saveFile: (id: string, path: string, content: string) =>
+    request<{ ok: boolean }>(`/api/plays/${id}/files`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path, content }),
+    }),
+
+  deleteFile: (id: string, path: string) =>
+    request<{ ok: boolean }>(`/api/plays/${id}/files?path=${encodeURIComponent(path)}`, { method: "DELETE" }),
 
   /** 玩家输入润色：LLM 按主角角色卡口吻改写（服务端），返回润色后文本。 */
   polish: (id: string, text: string) =>

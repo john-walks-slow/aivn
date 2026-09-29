@@ -14,6 +14,22 @@ export interface BeatEndPayload {
   stop?: StopPayload;
 }
 
+/** 工坊线程（D9 meta-chat 多会话）在协议层的投影。 */
+export interface WorkshopThreadInfo {
+  id: string;
+  title: string;
+  updatedAt: number;
+  archived: boolean;
+  summary: string | null;
+}
+
+/** 工坊对话消息（面板回放用）。 */
+export interface WorkshopChatMessage {
+  role: "user" | "assistant";
+  text: string;
+  at: number;
+}
+
 export type ServerMessage =
   | {
       type: "hello";
@@ -31,6 +47,17 @@ export type ServerMessage =
   | { type: "lineage"; leafId: string; turn: number }
   /** 原地 OOC 已入队（D9）：当前拍收敛后注入【导演注】并立即续写下一拍。 */
   | { type: "ooc_ack" }
+  // —— 工坊（D9）：与演出并行的一条独立 agent 通道，消息都带 threadId 以便前端分流 ——
+  | { type: "workshop_threads"; threads: WorkshopThreadInfo[]; activeId: string | null }
+  | { type: "workshop_history"; threadId: string; messages: WorkshopChatMessage[] }
+  /** 工坊流式增量。 */
+  | { type: "workshop_chunk"; threadId: string; delta: string }
+  /** 工坊 agent 正在调用某工具（前端显示活动指示）。 */
+  | { type: "workshop_tool"; threadId: string; name: string }
+  /** 工坊 agent 写了剧目文件：before 为 null 表示新建，可据此一键撤销。 */
+  | { type: "workshop_write"; threadId: string; path: string; before: string | null }
+  | { type: "workshop_done"; threadId: string; text: string }
+  | { type: "workshop_error"; threadId: string | null; message: string }
   | { type: "error"; message: string; recoverable: boolean };
 
 export type ClientMessage =
@@ -48,6 +75,15 @@ export type ClientMessage =
    *  granularity="beat" 时编排器须先解析节拍边界并把 nodeId 传节拍首行（见 LineageTree.recordRewrite）。 */
   | { type: "rewrite"; nodeId: string; granularity: "line" | "beat"; instruction?: string }
   | { type: "jump"; nodeId: string }
-  | { type: "bookmark"; nodeId: string; name: string };
+  | { type: "bookmark"; nodeId: string; name: string }
+  // —— 工坊（D9）：线程管理 + 对话 + 文件编辑；与演出共用一条连接，服务端按 type 分流 ——
+  /** 打开面板：回线程列表与当前现场。 */
+  | { type: "workshop_open" }
+  /** 切到指定线程（回放其消息体）。 */
+  | { type: "workshop_activate"; threadId: string }
+  /** 发一条工坊消息；不带 threadId 则新建线程。 */
+  | { type: "workshop_chat"; threadId?: string; text: string }
+  | { type: "workshop_archive"; threadId: string; archived: boolean }
+  | { type: "workshop_delete"; threadId: string };
 
 export type { StageEvent, SequencedEvent };

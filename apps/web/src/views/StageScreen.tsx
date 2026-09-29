@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PlayDetail } from "../api.js";
 import { navigate, replace } from "../router.jsx";
-import { useStageSocket, type StartMode } from "../stage/useStageSocket.js";
+import { useStageSocket, type StartMode, type WorkshopInbound } from "../stage/useStageSocket.js";
 import { usePlayback } from "../stage/director.js";
 import { VoiceDirector } from "../stage/audio.js";
 import { buildAssetIndex, type AssetIndex } from "../stage/assets.js";
 import { StageTheater } from "../stage/StageTheater.js";
 import { StageView } from "../stage/StageView.js";
 import { StopPanel } from "../stage/StopPanel.js";
+import { WorkshopPanel, type WorkshopMode } from "../workshop/WorkshopPanel.js";
 
 /** 演出屏：舞台（视觉层+打字机+语音）/ 剧本 log 双视图 + 停止点面板。 */
 export function StageScreen({ playId, mode }: { playId: string; mode: StartMode }) {
@@ -20,6 +21,15 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
   const [assets, setAssets] = useState<Record<string, string[]>>({});
   const [view, setView] = useState<"stage" | "log">("stage");
   const [oocQueued, setOocQueued] = useState(false);
+  const [workshop, setWorkshop] = useState<WorkshopMode | null>(null);
+  // 工坊下行消息的订阅表：面板挂载时登记，卸载时注销（与舞台状态机解耦）
+  const workshopHandlers = useRef(new Set<(msg: WorkshopInbound) => void>());
+  const subscribeWorkshop = useCallback((handler: (msg: WorkshopInbound) => void) => {
+    workshopHandlers.current.add(handler);
+    return () => {
+      workshopHandlers.current.delete(handler);
+    };
+  }, []);
 
   const stage = useStageSocket(playId, mode, {
     onAudio: (ready) => director.handleAudio(ready),
@@ -29,6 +39,9 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
     },
     onReset: () => director.reset(),
     onOocAck: () => setOocQueued(true),
+    onWorkshop: (msg) => {
+      for (const handler of workshopHandlers.current) handler(msg);
+    },
   });
 
   // 渲染期回调绑定（N6：置于 stage 声明后，闭包引用才不踩未初始化的 TDZ）
@@ -108,6 +121,7 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
             onUnlock={unlockVoice}
             onBack={() => navigate(`/play/${playId}`)}
             onLog={() => setView("log")}
+            onWorkshop={() => setWorkshop("drawer")}
           />
         ) : (
           <div className="overlay">正在连接舞台…</div>
@@ -130,6 +144,17 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
             revision={stage.revision}
           />
         </>
+      )}
+
+      {view === "stage" && workshop && (
+        <WorkshopPanel
+          playId={playId}
+          mode={workshop}
+          onModeChange={setWorkshop}
+          onClose={() => setWorkshop(null)}
+          subscribe={subscribeWorkshop}
+          send={stage.send}
+        />
       )}
 
       {view === "stage" &&

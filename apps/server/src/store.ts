@@ -31,7 +31,8 @@ export interface PlaySummary {
 
 /** 剧目目录持久化：play.json + lineage.jsonl（append-only）+ session.json（快照/leaf/engine）。 */
 export class PlayStore {
-  private readonly dir: string;
+  /** 剧目目录绝对路径（工坊文件层等外部模块需要根）。 */
+  readonly dir: string;
   private jsonlReady = false;
 
   constructor(playDir: string) {

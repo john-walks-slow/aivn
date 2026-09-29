@@ -69,6 +69,7 @@ export function TitleView({ playId }: { playId: string }) {
             {readiness?.hasSession && (
               <button onClick={() => navigate(`/play/${playId}/stage?mode=continue`)}>继续</button>
             )}
+            <button onClick={() => navigate(`/play/${playId}/workshop`)}>工坊</button>
             <button onClick={() => navigate(`/play/${playId}/assets`)}>素材与配置</button>
             <a className="btn-as-label" href={`/api/plays/${playId}/export`}>
               导出剧目包
@@ -81,10 +82,14 @@ export function TitleView({ playId }: { playId: string }) {
           {!readiness?.ready && missing.length > 0 && (
             <p className="title-gate">
               就绪门未过（缺：{missing.join("、")}）——请到
+              <button className="link-btn" onClick={() => navigate(`/play/${playId}/workshop`)}>
+                工坊
+              </button>
+              与 AI 共创补齐，或到
               <button className="link-btn" onClick={() => navigate(`/play/${playId}/assets`)}>
                 素材与配置
               </button>
-              补齐。
+              手动补齐。
             </p>
           )}
         </div>

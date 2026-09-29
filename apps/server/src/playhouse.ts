@@ -8,12 +8,15 @@ import { createCpaProvider } from "./provider.js";
 import { createTts } from "./tts.js";
 import { Translator } from "./translate.js";
 import { PlayMemory } from "./memory.js";
+import { WorkshopSession } from "./workshopSession.js";
 import { completeText } from "./llm.js";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
 
 export interface PlayRuntime {
   orchestrator: PlaywrightOrchestrator;
+  /** 工坊（D9）：与演出并行的一条独立 agent 通道，管剧目文件的创建与维护。 */
+  workshop: WorkshopSession;
   store: PlayStore;
   /** hello 广播的角色名映射。 */
   cast: { id: string; name: string }[];
@@ -133,6 +136,30 @@ export class PlayHouse {
     await this.library.remove(playId);
   }
 
+  /**
+   * 工坊写盘后重建 runtime（保存即生效，P4 铁律）。
+   * 与 reload 的区别：工坊会话本身**不能**被重建（不然正在进行的对话与线程现场会被打断），
+   * 所以只换编排器、复用同一个 workshop 实例（其 files/threads 直读磁盘，无需刷新）。
+   */
+  private async reloadAfterWorkshopWrite(playId: string): Promise<void> {
+    const old = this.runtimes.get(playId);
+    if (!old) return;
+    // 等节拍边界：演出进行中重建会让这一拍凭空消失
+    await old.orchestrator.whenIdle();
+    // 等待期间可能已 reload/startFresh/删除——只在原实例还在位时才替换
+    if (this.runtimes.get(playId) !== old) return;
+    const fresh = await this.buildRuntime(playId);
+    const runtime = { ...fresh, workshop: old.workshop };
+    old.orchestrator.dispose();
+    this.runtimes.set(playId, runtime);
+    const clients = this.clientsByPlay.get(playId);
+    if (!clients?.size) return;
+    for (const send of clients) send(helloPayload(playId, runtime));
+    // 重建后交互面板要恢复：停在停止点上时客户端得重新拿到那一拍的选项
+    const replay = runtime.orchestrator.stoppedReplay;
+    if (replay) for (const send of clients) send(replay);
+  }
+
   /** 广播到剧目客户端组。 */
   broadcast(playId: string, msg: ServerMessage): void {
     const clients = this.clientsByPlay.get(playId);
@@ -235,12 +262,23 @@ export class PlayHouse {
         for (const send of this.clientsFor(play.id)) send(msg);
       },
       onLineageEvent: (event) => void store.appendEvent(event),
-      persist: () =>
-        void store.saveSession(tree, engine, orchestrator.currentScene, orchestrator.runtimeState),
+      // 透传落盘 Promise：whenIdle 要等它落地，重建 runtime 才敢 loadSession
+      persist: (): Promise<void> =>
+        store.saveSession(tree, engine, orchestrator.currentScene, orchestrator.runtimeState),
       restored,
+    });
+    // 工坊（D9）：独立实例，与演出互不干扰；写盘后按需重建 runtime（保存即生效）
+    const workshop = new WorkshopSession({
+      store,
+      streamFn: this.streamFn,
+      model,
+      getApiKey: () => this.config.apiKey,
+      emit: (msg) => this.broadcast(play.id, msg),
+      onFilesChanged: () => void this.reloadAfterWorkshopWrite(play.id),
     });
     return {
       orchestrator,
+      workshop,
       store,
       cast: play.characters.map(({ id, name }) => ({ id, name })),
       voice: !!synth,

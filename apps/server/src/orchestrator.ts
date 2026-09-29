@@ -227,8 +227,8 @@ export interface OrchestratorOptions {
   onServerMessage: (msg: ServerMessage) => void;
   /** 行级谱系事件落盘钩子（每次 append 后调用）。 */
   onLineageEvent?: (event: LineageEvent) => void;
-  /** 会话落盘钩子（beat 收束时调用）。 */
-  persist: () => void;
+  /** 会话落盘钩子（beat 收束时调用）；返回 Promise 时 whenIdle 会等它落地。 */
+  persist: () => void | Promise<void>;
   /** 服务器重启恢复：上次会话的运行态（事件缓冲/节拍号/停止点）。 */
   restored?: OrchestratorRuntimeState;
   /** 语音管线合成函数（无则本剧目无声：hello.voice=false）。 */
@@ -278,6 +278,10 @@ export class PlaywrightOrchestrator {
   private disposed = false;
   /** 一拍正在开（纪元压缩等前置步骤未完）：对外等同 busy，防止并发 beginBeat 与 steer 错投。 */
   private beatPending = false;
+  /** 等待「编排器空闲」的挂起者（工坊写盘要在拍边界重建 runtime，不打断进行中的演出）。 */
+  private idleWaiters: (() => void)[] = [];
+  /** 最近一次会话落盘任务：重建 runtime 前必须等它落地，否则可能读到写了一半的 session.json。 */
+  private pendingPersist: Promise<void> | null = null;
   /** 旁路补全（纪元摘要）的中断源：dispose 时一并掐断在飞请求。 */
   private readonly signalController = new AbortController();
   /** 语音预取管线（D5）：say 行 → 分句 → TTS 预取 → audio_ready。 */
@@ -381,6 +385,30 @@ export class PlaywrightOrchestrator {
     this.agent.abort();
     this.signalController.abort();
     this.voice?.dispose();
+    this.flushIdleWaiters(); // 挂起的重建请求不得悬着
+  }
+
+  /** 空闲时立刻兑现，否则等到下一个拍边界（工坊热改 premise 不能腰斩进行中的演出）。 */
+  whenIdle(): Promise<void> {
+    if (this.disposed) return Promise.resolve();
+    if (!this.engaged) return this.pendingPersist ?? Promise.resolve();
+    return new Promise((resolve) => this.idleWaiters.push(resolve));
+  }
+
+  /** 记下落盘任务（finishBeat/压缩后调用），whenIdle 据此等到磁盘落地。 */
+  private persist(): void {
+    this.pendingPersist = Promise.resolve(this.opts.persist()).catch((error: unknown) => {
+      console.warn(`[stage-ai] 会话落盘失败: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
+
+  private flushIdleWaiters(): void {
+    const waiters = this.idleWaiters.splice(0);
+    if (waiters.length === 0) return;
+    // 等落盘落地再唤醒：重建 runtime 会 loadSession，读到写了一半的文件＝丢进度
+    void (this.pendingPersist ?? Promise.resolve()).then(() => {
+      for (const resolve of waiters) resolve();
+    });
   }
 
   /** 语音控制（客户端 tts_control）：enabled=总开关，paused=背压暂停预取。 */
@@ -549,6 +577,7 @@ export class PlaywrightOrchestrator {
       // prompt 异常路径可能不发 agent_end：兜底收束（正常路径 busy 已被 finishBeat 清零）
       if (this.busy) this.finishBeat();
       this.beatPending = false;
+      if (!this.busy) this.flushIdleWaiters();
     }
   }
 
@@ -596,7 +625,7 @@ export class PlaywrightOrchestrator {
     console.log(
       `[stage-ai] 纪元 ${epochNo} 压缩完成：${used} tok → 保留 ${tail.length}/${messages.length} 条消息，arc=${arcId}`,
     );
-    this.opts.persist();
+    this.persist();
   }
 
   /** 生成纪元摘要；失败只告警并返回 null（压缩是优化不是正确性前提，不阻断本拍开拍）。 */
@@ -726,7 +755,7 @@ export class PlaywrightOrchestrator {
       reason: stop ? "stop" : "act_end",
       stop: stop ?? undefined,
     });
-    this.opts.persist();
+    this.persist();
   }
 
   private appendLineage(

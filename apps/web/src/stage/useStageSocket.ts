@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClientMessage, ServerMessage, StopPayload } from "@stage-ai/core";
+
+/** 工坊通道下行消息（D9）：与演出事件共用连接、按 type 分流。 */
+export type WorkshopInbound = Extract<ServerMessage, { type: `workshop_${string}` }>;
 import { ScriptBuilder, type ScriptLine, type Cue } from "./script.js";
 
 export type BeatState = "connecting" | "streaming" | "stopped" | "error";
@@ -23,6 +26,8 @@ export interface StageSocket {
   sendContinue: () => void;
   sendOoc: (text: string) => void;
   sendTtsControl: (state: { enabled?: boolean; paused?: boolean }) => void;
+  /** 工坊通道发送（面板自带消息构造）。 */
+  send: (msg: ClientMessage) => void;
 }
 
 /** 语音/重置事件外发钩子（StageScreen 绑定 VoiceDirector）。 */
@@ -32,6 +37,8 @@ export interface StageSocketHandlers {
   onReset?: () => void;
   /** 原地 OOC 已入队（D9）：当前拍收敛后注入导演注、立即续写下一拍。 */
   onOocAck?: () => void;
+  /** 工坊通道下行消息（D9）。 */
+  onWorkshop?: (msg: WorkshopInbound) => void;
 }
 
 export function useStageSocket(playId: string, mode: StartMode, handlers?: StageSocketHandlers): StageSocket {
@@ -116,6 +123,10 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
           case "error":
             setError(msg.message);
             return;
+          default:
+            // 工坊通道（workshop_*）：与演出状态机无关，整包外发
+            if (msg.type.startsWith("workshop_")) handlersRef.current.onWorkshop?.(msg as WorkshopInbound);
+            return;
         }
       };
       ws.onclose = () => {
@@ -163,5 +174,6 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
     sendContinue: () => send({ type: "continue" }),
     sendOoc: (text) => send({ type: "ooc", text }),
     sendTtsControl: (ttsState) => send({ type: "tts_control", ...ttsState }),
+    send,
   };
 }

@@ -13,5 +13,7 @@ media-cache/
 # 剧目记忆运行时层（D7：always/index 手工层进 git，纪元产物与切片不进）
 plays/*/memory/index/arcs/
 plays/*/memory/archive/
+# 工坊 meta-chat 线程（运行时会话，不进 git）
+plays/*/workshop/
 .mnemon/
 .worktrees/

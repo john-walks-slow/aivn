@@ -21,6 +21,7 @@ interface StageTheaterProps {
   onUnlock: () => void;
   onBack: () => void;
   onLog: () => void;
+  onWorkshop: () => void;
 }
 
 const POS_CLASS: Record<string, string> = { left: "pos-left", center: "pos-center", right: "pos-right" };
@@ -41,6 +42,7 @@ export function StageTheater({
   onUnlock,
   onBack,
   onLog,
+  onWorkshop,
 }: StageTheaterProps) {
   const bgmRef = useRef<HTMLAudioElement | null>(null);
   const [directorOpen, setDirectorOpen] = useState(false);
@@ -141,6 +143,16 @@ export function StageTheater({
             }}
           >
             剧本
+          </button>
+          <button
+            className="ghost-btn"
+            title="工坊：和 AI 一起改设定、角色与文件"
+            onClick={(e) => {
+              e.stopPropagation();
+              onWorkshop();
+            }}
+          >
+            🛠 工坊
           </button>
         </span>
       </header>
