@@ -318,5 +318,7 @@ describe("WorkshopAssets：工坊素材落盘", () => {
     const play = JSON.parse(await readFile(files.absoluteOf("play.json"), "utf8"));
     const sprites = play.characters.find((c: { id: string }) => c.id === "mio").sprites;
     expect(Object.keys(sprites).sort()).toEqual(["angry", "neutral", "sad", "shy", "smile", "surprised", "thinking"]);
-  });
+    // 7 次出图各自要走一遍抠底（768x1365，实测单次 ~850ms），默认 5s 只够跑一半，
+    // 流水线上任何一点扰动都会翻成假红。这条测的是去重语义，不是性能，给足预算。
+  }, 30_000);
 });

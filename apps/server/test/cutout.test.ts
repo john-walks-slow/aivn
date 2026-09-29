@@ -86,6 +86,13 @@ async function interiorHoles(data: Buffer): Promise<number> {
   return holes;
 }
 
+/**
+ * 旋钮用例的夹具是刻意干净的 PNG（见 `knobsScene`），而 `keySmooth` 是给 JPEG 环纹用的
+ * 掩膜降噪前置：高斯会把夹具里那条 1px 的「颈」糊掉，`weak` 的效应直接测不出来。
+ * 这几条只问色键三参数各自的语义，统一把降噪前置关掉。
+ */
+const NO_SMOOTH = { keySmooth: 0 } as const;
+
 describe("cutout", () => {
   it("把纯色底抠成透明并落到 9:16 画布", async () => {
     const { data } = await synth();
@@ -184,8 +191,8 @@ describe("cutout", () => {
   it("weak 是严厉度的旋钮：贴着底色但差了几格的口袋，够大才连着颈被带走", async () => {
     const data = await knobsScene();
     // 口袋 A 离底色 4 格：weak=2 漫延进不去，weak=8 进得去（同一张图、只改这一个参数）
-    const tight = await interiorHoles((await cutout(data, { weak: 2, minHole: 0 })).data);
-    const loose = await interiorHoles((await cutout(data, { weak: 8, minHole: 0 })).data);
+    const tight = await interiorHoles((await cutout(data, { weak: 2, minHole: 0, ...NO_SMOOTH })).data);
+    const loose = await interiorHoles((await cutout(data, { weak: 8, minHole: 0, ...NO_SMOOTH })).data);
     expect(loose - tight).toBeGreaterThan(10_000);
   });
 
@@ -193,23 +200,23 @@ describe("cutout", () => {
     const data = await knobsScene();
     // 口袋 B 离底色 4 格且封闭，与外部底色没有任何通路。strong 是全局判据：
     // 1 ⇒ 它连种子都不算，没人去动它；8 ⇒ 它被点着、漫延成一整块，再由 minHole=0 判成洞
-    const unseeded = await interiorHoles((await cutout(data, { strong: 1, minHole: 0 })).data);
-    const seeded = await interiorHoles((await cutout(data, { strong: 8, minHole: 0 })).data);
+    const unseeded = await interiorHoles((await cutout(data, { strong: 1, minHole: 0, ...NO_SMOOTH })).data);
+    const seeded = await interiorHoles((await cutout(data, { strong: 8, minHole: 0, ...NO_SMOOTH })).data);
     expect(seeded - unseeded).toBeGreaterThan(10_000);
   });
 
   it("minHole 是第三个旋钮：抠到哪算背景，色差阈值说了不算", async () => {
     const data = await knobsScene();
     // 口袋 C 就是底色、1600px、贴不到画面边 ⇒ 算不算洞只看 minHole
-    const holed = await interiorHoles((await cutout(data, { minHole: 200 })).data);
-    const filled = await interiorHoles((await cutout(data, { minHole: 8000 })).data);
+    const holed = await interiorHoles((await cutout(data, { minHole: 200, ...NO_SMOOTH })).data);
+    const filled = await interiorHoles((await cutout(data, { minHole: 8000, ...NO_SMOOTH })).data);
     expect(holed - filled).toBeGreaterThan(50_000);
   });
 
   it("弱阈值不得低于强阈值：否则滞后退化成单阈值，参数直接说谎", async () => {
     const data = await knobsScene();
-    const clamped = await cutout(data, { strong: 4, weak: 1 });
-    expect(clamped.data.equals((await cutout(data, { strong: 4, weak: 4 })).data)).toBe(true);
+    const clamped = await cutout(data, { strong: 4, weak: 1, ...NO_SMOOTH });
+    expect(clamped.data.equals((await cutout(data, { strong: 4, weak: 4, ...NO_SMOOTH })).data)).toBe(true);
   });
 
   it("图里没有角色时抛错", async () => {
@@ -264,5 +271,53 @@ describe("人物高度：不同格子制式下必须一致", () => {
     const tall = await cutout(await standing(384, 1376));
     expect(tall.figureHeight).toBe(1920);
     expect(cramped.figureHeight).toBeLessThan(tall.figureHeight * 0.8);
+  });
+
+  it("边缘带里的深色描线不许被反解穿成孔", async () => {
+    // 反解带放宽到 8px 之后，带内像素全靠闭式解 a=(B−I)/(B−F)。但抗锯齿渐变带里
+    // 常常混着前景自己的深色线条（银发描线、衣褶），观测值会越过 F——覆盖率不可能
+    // 超过 100%，那不是覆盖率是实打实的内容，硬解会把它解成 0 直接穿孔。
+    // 判据：越过 F 的通道当噪声丢掉（还剩别的通道就继续解），三路都越界才认输。
+    const width = 200;
+    const height = 300;
+    const raw = Buffer.alloc(width * height * 3).fill(255);
+    for (let y = 20; y < 280; y++) {
+      for (let x = 40; x < 160; x++) {
+        const o = (y * width + x) * 3;
+        // 前景深色主体，右缘一条 1px 的近黑描线，再往右是 8px 的白色渐变带
+        raw[o] = 60;
+        raw[o + 1] = 70;
+        raw[o + 2] = 120;
+        if (x >= 156) {
+          const a = (x - 155) / 9;
+          raw[o] = Math.round(60 + 195 * a);
+          raw[o + 1] = Math.round(70 + 185 * a);
+          raw[o + 2] = Math.round(120 + 135 * a);
+        }
+        // 描线：比前景还深，覆盖率算出来是负数
+        if (x === 155) {
+          raw[o] = 20;
+          raw[o + 1] = 25;
+          raw[o + 2] = 40;
+        }
+      }
+    }
+    const image = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
+    const result = await cutout(image);
+    const { data: out, info } = await sharp(result.data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const box = { x0: 40, y0: 20, x1: 159, y1: 279 };
+    const scale = Math.min(1080 / (box.x1 - box.x0 + 1), 1920 / (box.y1 - box.y0 + 1));
+    const left = Math.round((1080 - Math.round((box.x1 - box.x0 + 1) * scale)) / 2);
+    const top = 1920 - Math.round((box.y1 - box.y0 + 1) * scale);
+    const alphaAtSource = (sx: number, sy: number): number => {
+      const px = Math.round(left + (sx - box.x0) * scale);
+      const py = Math.round(top + (sy - box.y0) * scale);
+      return out[(py * info.width + px) * info.channels + 3] ?? 0;
+    };
+    // 描线两侧的主体必须还是实心，不能因为它越界就把整条边吃掉
+    expect(alphaAtSource(150, 150)).toBe(255);
+    expect(alphaAtSource(130, 150)).toBe(255);
+    // 描线自己也不该是全透明
+    expect(alphaAtSource(155, 150)).toBeGreaterThan(128);
   });
 });

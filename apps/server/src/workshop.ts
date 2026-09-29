@@ -60,6 +60,10 @@ const generateAssetParams = Type.Object(
           weak: Type.Optional(Type.Integer({ minimum: 0, maximum: 64 })),
           /** 背景洞面积下限 0–10000：小于它的封闭背景块会填回人物（护眼白）。调小=抠得更狠。默认 200。 */
           minHole: Type.Optional(Type.Integer({ minimum: 0, maximum: 10000 })),
+          /** 掩膜降噪 0–8：色键跑在一张高斯模糊副本上（alpha 仍从原图解），专治 JPEG 环纹把轮廓咬出缺口。调大抗缺口、代价是边缘略毛。默认 0.8。 */
+          keySmooth: Type.Optional(Type.Number({ minimum: 0, maximum: 8 })),
+          /** 反解带宽 1–32：源图抗锯齿过渡带有多宽就得设多宽；不够宽会把渐变像素钉成实心，深色底上是一圈白块。默认 4。 */
+          edgeBand: Type.Optional(Type.Integer({ minimum: 1, maximum: 32 })),
         },
         { additionalProperties: false },
       ),
