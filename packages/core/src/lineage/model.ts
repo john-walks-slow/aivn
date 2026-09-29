@@ -81,6 +81,33 @@ export interface Bookmark {
   createdAt: number;
 }
 
+/** 路线树视图（前端渲染用）：事件全集投影 + 路径标记，替代存读档的「历史即存档」。 */
+export interface LineageNodeView {
+  id: string;
+  parentId: string | null;
+  kind: LineageEventKind;
+  turn: number;
+  text: string;
+  attrs: Record<string, string>;
+  createdAt: number;
+  /** 在当前分支路径上（主链路 = true，废弃分支 = false）。 */
+  onPath: boolean;
+  /** 子节点数：>1 即分叉点（多个历史版本从这里长出）。 */
+  children: number;
+  /** edit 事件专有：被改写的台词行 id。 */
+  editTargetId: string | undefined;
+  /** rewrite 事件专有：重写粒度标注（line/beat）。 */
+  granularity: string | undefined;
+}
+
+export interface LineageView {
+  nodes: LineageNodeView[];
+  leafId: string | null;
+  /** 当前分支的节点 id 链（root → leaf，序即演出顺序）：剧本视图直接照此渲染。 */
+  pathIds: string[];
+  bookmarks: Bookmark[];
+}
+
 const EDITABLE_KINDS: ReadonlySet<string> = new Set(["say", "narrate", "thought"]);
 
 /** 持久化结构：事件日志（真相源）+ 会话运行态（leafId）+ 用户存档事实（快照/书签）。 */
@@ -203,6 +230,11 @@ export class LineageTree {
     return chain.reverse();
   }
 
+  /** 祖先链上的事件对象（root → node，含自身）；上下文重建的输入形态。 */
+  chainEvents(nodeId: string | null): LineageEvent[] {
+    return this.ancestorChain(nodeId).map((id) => this.events.get(id)!);
+  }
+
   isAncestor(candidateId: string, nodeId: string): boolean {
     return candidateId !== nodeId && this.ancestorChain(nodeId).includes(candidateId);
   }
@@ -214,6 +246,21 @@ export class LineageTree {
       id: nextId(),
       nodeId: this.leaf,
       turn: this.events.get(this.leaf)?.turn ?? 0,
+      engine,
+      memory,
+      createdAt: Date.now(),
+    };
+    this.snapshotsByNode.set(snapshot.nodeId, snapshot);
+    return snapshot;
+  }
+
+  /** 在指定节点挂快照（书签：标记历史位置，不动挂载点）。 */
+  saveSnapshotAt(nodeId: string, engine: EngineStateSnapshot, memory: MemorySnapshot): LineageSnapshot {
+    const node = this.requireNode(nodeId);
+    const snapshot: LineageSnapshot = {
+      id: nextId(),
+      nodeId: node.id,
+      turn: node.turn,
       engine,
       memory,
       createdAt: Date.now(),
@@ -251,6 +298,42 @@ export class LineageTree {
 
   listBookmarks(): Bookmark[] {
     return [...this.bookmarks.values()].sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  /** 摘除书签（只是标记，误删可再标；不动物理分支）。 */
+  removeBookmark(bookmarkId: string): boolean {
+    return this.bookmarks.delete(bookmarkId);
+  }
+
+  /** 路线树视图：全量节点（含废弃分支）+ 路径标记 + 书签（按 id 升序，父先于子）。 */
+  describe(): LineageView {
+    const onPath = this.pathSet();
+    const childCount = new Map<string, number>();
+    for (const event of this.events.values()) {
+      if (event.parentId === null) continue;
+      childCount.set(event.parentId, (childCount.get(event.parentId) ?? 0) + 1);
+    }
+    const nodes = [...this.events.values()]
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((event) => ({
+        id: event.id,
+        parentId: event.parentId,
+        kind: event.kind,
+        turn: event.turn,
+        text: event.text ?? "",
+        attrs: event.payload?.attrs ?? {},
+        createdAt: event.createdAt,
+        onPath: onPath.has(event.id),
+        children: childCount.get(event.id) ?? 0,
+        editTargetId: event.editTargetId,
+        granularity: event.payload?.granularity,
+      }));
+    return {
+      nodes,
+      leafId: this.leaf,
+      pathIds: this.ancestorChain(this.leaf),
+      bookmarks: this.listBookmarks(),
+    };
   }
 
   get(id: string): LineageEvent | undefined {

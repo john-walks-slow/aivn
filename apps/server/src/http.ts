@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import type { PlayLibrary } from "./store.js";
 import type { PlayHouse } from "./playhouse.js";
+import type { SettingsFile } from "./configApi.js";
 import { parsePlayConfig } from "@stage-ai/core";
 
 const BODY_LIMIT = 64 * 1024 * 1024;
@@ -78,6 +79,7 @@ export async function handleHttp(
   res: ServerResponse,
   library: PlayLibrary,
   playhouse: PlayHouse,
+  settings?: SettingsFile,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
   const parts = url.pathname.split("/").filter(Boolean);
@@ -120,6 +122,46 @@ export async function handleHttp(
       return;
     }
 
+    // —— 健康与资源指标（P6）：给过夜 soak 采样服务端真实 RSS，而不是客户端自己 ——
+    if (parts[0] === "api" && parts[1] === "health" && parts.length === 2) {
+      const mem = process.memoryUsage();
+      return json(res, 200, {
+        ok: true,
+        uptimeSec: Math.round(process.uptime()),
+        rssMb: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
+        heapUsedMb: Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10,
+        externalMb: Math.round((mem.external / 1024 / 1024) * 10) / 10,
+        plays: playhouse.livePlayCount,
+      });
+    }
+
+    // —— 设置面板（P6）：.env 与 TTS keys 全部 GUI 可改，不要求用户碰配置文件 ——
+    if (parts[0] === "api" && parts[1] === "config" && parts.length === 2) {
+      if (!settings) return fail(res, 404, "设置面板未启用");
+      if (method === "GET") return json(res, 200, settings.read());
+      if (method === "PUT") {
+        const patch = JSON.parse((await readBody(req)).toString("utf8"));
+        return json(res, 200, { changed: settings.write(patch) });
+      }
+      return fail(res, 405, "不支持的方法");
+    }
+    if (parts[0] === "api" && parts[1] === "config" && parts[2] === "tts-keys" && parts.length === 3) {
+      if (!settings) return fail(res, 404, "设置面板未启用");
+      if (method === "GET") {
+        const keys = settings.readTtsKeys();
+        return json(res, 200, { count: keys.length, keys: keys.map((k) => `${k.slice(0, 6)}••••`) });
+      }
+      if (method === "PUT") {
+        const body = JSON.parse((await readBody(req)).toString("utf8")) as { keys?: unknown };
+        if (!Array.isArray(body.keys) || body.keys.some((k) => typeof k !== "string" || !k.trim())) {
+          return fail(res, 400, "TTS keys 必须是字符串数组");
+        }
+        settings.writeTtsKeys(body.keys as string[]);
+        return json(res, 200, { count: (body.keys as string[]).length });
+      }
+      return fail(res, 405, "不支持的方法");
+    }
+
     // —— REST API ——
     if (parts[0] !== "api" || parts[1] !== "plays") return fail(res, 404, "未找到");
 
@@ -156,6 +198,13 @@ export async function handleHttp(
       }
       return fail(res, 405, "不支持的方法");
     }
+    if (sub === "lineage" && parts.length === 4) {
+      // 路线树（P6）：全量节点（含废弃分支）+ 书签；打开视图/操作后/手动刷新时取
+      if (method !== "GET") return fail(res, 405, "不支持的方法");
+      const runtime = await playhouse.get(playId);
+      return json(res, 200, runtime.orchestrator.lineageView());
+    }
+
     if (sub === "play" && parts.length === 4) {
       if (method !== "PUT") return fail(res, 405, "不支持的方法");
       const play = parsePlayConfig(JSON.parse((await readBody(req)).toString("utf8")));

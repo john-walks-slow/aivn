@@ -39,6 +39,7 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
     cast: runtime.cast,
     voice: runtime.voice,
     assets: runtime.images?.snapshot(),
+    epoch: runtime.orchestrator.currentEpoch,
   };
 }
 
@@ -51,6 +52,10 @@ const TTS_SAMPLE_TEXT = "你好呀！这就是我的声音，以后请多多指�
  */
 export class PlayHouse {
   private readonly runtimes = new Map<string, PlayRuntime>();
+  /** 已加载的剧目 runtime 数（健康检查用；不触发懒加载）。 */
+  get livePlayCount(): number {
+    return this.runtimes.size;
+  }
   /** 每剧目 WS 客户端发送器集合：与 runtime 生命周期解耦——配置保存重建 runtime 不断连接。 */
   private readonly clientsByPlay = new Map<string, Set<(msg: ServerMessage) => void>>();
   private readonly provider: ReturnType<typeof createCpaProvider>["provider"];

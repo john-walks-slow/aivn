@@ -62,7 +62,15 @@ export interface PlaybackHooks {
 export function usePlayback(
   cues: readonly Cue[],
   lines: readonly ScriptLine[],
-  opts: { live: boolean; resume: boolean; revision: number } & PlaybackHooks,
+  opts: {
+    live: boolean;
+    resume: boolean;
+    revision: number;
+    /** 缓冲代号：变化即整段重放，播放层必须强制归零。 */
+    resetToken?: number;
+    /** 换代后是否快进到新分支末尾（false = 停住继续流式演出）。 */
+    resumeAfterReset?: boolean;
+  } & PlaybackHooks,
 ): Playback {
   const [visual, setVisual] = useState<VisualState>(EMPTY_VISUAL);
   const [currentKey, setCurrentKey] = useState<string | null>(null);
@@ -179,6 +187,20 @@ export function usePlayback(
     const timer = setTimeout(() => consumeNext(), delay);
     return () => clearTimeout(timer);
   }, [auto, current, lineComplete, cues, consumeNext, opts.revision, opts.hold]);
+
+  // 缓冲替换检测（P6）：resetToken 变化 = 事件缓冲已被结构性操作整段重放
+  // （cues 长度未必变短，length 比较看不出分岔/重写——必须靠代号）
+  const resetTokenRef = useRef(opts.resetToken ?? 0);
+  useEffect(() => {
+    const token = opts.resetToken ?? 0;
+    if (token === resetTokenRef.current) return;
+    resetTokenRef.current = token;
+    cursorRef.current = 0;
+    setCurrentKey(null);
+    setShownLength(0);
+    setVisual(EMPTY_VISUAL);
+    fastForwardedRef.current = !opts.resumeAfterReset; // true 则紧接着快进到新分支末尾
+  }, [opts.resetToken, opts.resumeAfterReset]);
 
   // cues 到达/重置检测：builder reset（fresh start）→ 播放归零
   useEffect(() => {

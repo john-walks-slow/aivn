@@ -48,6 +48,9 @@ export function LibraryView() {
       <header className="screen-bar">
         <h1>Stage-AI</h1>
         <span className="muted">剧目库</span>
+        <button className="ghost-btn" onClick={() => navigate("/settings")}>
+          设置
+        </button>
       </header>
 
       {error && (

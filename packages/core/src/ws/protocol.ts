@@ -50,6 +50,11 @@ export type ServerMessage =
       voice?: boolean;
       /** 本剧目已生成的资产全集（manifest 快照）：重连即恢复可见，不必等下一次预发射。 */
       assets?: GeneratedAsset[];
+      /**
+       * 事件缓冲代号（P6）：每次结构性操作（分岔/跳转/编辑/重写）重放缓冲并自增。
+       * 客户端重连时发现与本地不一致 → 清空本地缓冲、lastSeq 归零后全量重放。
+       */
+      epoch?: number;
     }
   | { type: "beat_start"; beatId: string }
   | { type: "events"; events: SequencedEvent[] }
@@ -61,6 +66,21 @@ export type ServerMessage =
   /** 生图失败（非慢）：客户端保持降级视觉（既有素材/氛围色），不弹占位。 */
   | { type: "asset_failed"; id: string; message: string }
   | { type: "lineage"; leafId: string; turn: number }
+  /**
+   * 上下文重建完成（P6 四原语共用出口）：挂载点已移到新分支，events 是该分支的完整重放。
+   * 客户端收到即清空本地脚本/播放游标，按 events 重建（epoch 自增用于丢弃过期的 seq 认知）。
+   */
+  | {
+      type: "rebase";
+      epoch: number;
+      leafId: string | null;
+      events: SequencedEvent[];
+      /** 重建后的停止点（无 = 幕完/拍中，客户端按 continue 处理）。 */
+      stop?: StopPayload;
+      reason?: "stop" | "act_end";
+      /** 本次操作的人类可读说明（前端提示条）。 */
+      note?: string;
+    }
   /** 原地 OOC 已入队（D9）：当前拍收敛后注入【导演注】并立即续写下一拍。 */
   | { type: "ooc_ack" }
   // —— 工坊（D9）：与演出并行的一条独立 agent 通道，消息都带 threadId 以便前端分流 ——
@@ -92,6 +112,9 @@ export type ClientMessage =
   | { type: "rewrite"; nodeId: string; granularity: "line" | "beat"; instruction?: string }
   | { type: "jump"; nodeId: string }
   | { type: "bookmark"; nodeId: string; name: string }
+  | { type: "unbookmark"; bookmarkId: string }
+  /** 分岔后立即 OOC：先分岔再注入导演注并重新生成（与原地 steer 正交）。 */
+  | { type: "ooc_at"; nodeId: string; text: string }
   // —— 工坊（D9）：线程管理 + 对话 + 文件编辑；与演出共用一条连接，服务端按 type 分流 ——
   /** 打开面板：回线程列表与当前现场。 */
   | { type: "workshop_open" }

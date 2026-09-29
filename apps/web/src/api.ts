@@ -1,4 +1,4 @@
-import type { PlayConfig } from "@stage-ai/core";
+import type { LineageView, PlayConfig } from "@stage-ai/core";
 
 /** 就绪门（D13）：开演前置检查。 */
 export interface Readiness {
@@ -29,6 +29,30 @@ export interface PlayDetail {
   readiness: Readiness;
 }
 
+/** 设置面板数据（P6）：敏感值只回掩码，原样回传视为「不改」。 */
+export interface Settings {
+  port: number;
+  playsRoot: string;
+  model: {
+    modelId: string;
+    modelBase: string;
+    baseUrl: string;
+    apiKey: string;
+    apiKeySet: boolean;
+    maxTokens: number;
+    contextWindow: number;
+    compactRatio: number;
+    keepRecentTokens: number;
+  };
+  image: { enabled: boolean; model: string; size: string; concurrency: number; timeoutMs: number };
+  tts: { enabled: boolean; keysPath: string; proxy: string; baseUrl: string; concurrency: number; keyCount: number };
+}
+
+export interface TtsKeys {
+  count: number;
+  keys: string[];
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
@@ -40,6 +64,9 @@ export const api = {
   listPlays: () => request<PlaySummary[]>("/api/plays"),
 
   playDetail: (id: string) => request<PlayDetail>(`/api/plays/${id}`),
+
+  /** 路线树（P6）：全量节点 + 书签；打开导演视图时取，操作后刷新。 */
+  lineage: (id: string) => request<LineageView>(`/api/plays/${id}/lineage`),
 
   createPlay: (id: string, title: string) =>
     request<{ id: string }>("/api/plays/create", {
@@ -102,6 +129,24 @@ export const api = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text }),
+    }),
+
+  settings: () => request<Settings>("/api/config"),
+
+  saveSettings: (patch: unknown) =>
+    request<{ changed: string[] }>("/api/config", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+
+  ttsKeys: () => request<TtsKeys>("/api/config/tts-keys"),
+
+  saveTtsKeys: (keys: string[]) =>
+    request<{ count: number }>("/api/config/tts-keys", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ keys }),
     }),
 };
 

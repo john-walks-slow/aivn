@@ -21,6 +21,7 @@ interface StageTheaterProps {
   onUnlock: () => void;
   onBack: () => void;
   onLog: () => void;
+  onRoute: () => void;
   onWorkshop: () => void;
 }
 
@@ -42,6 +43,7 @@ export function StageTheater({
   onUnlock,
   onBack,
   onLog,
+  onRoute,
   onWorkshop,
 }: StageTheaterProps) {
   const bgmRef = useRef<HTMLAudioElement | null>(null);
@@ -147,6 +149,15 @@ export function StageTheater({
             }}
           >
             剧本
+          </button>
+          <button
+            className="ghost-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRoute();
+            }}
+          >
+            路线
           </button>
           <button
             className="ghost-btn"

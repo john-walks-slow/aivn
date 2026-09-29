@@ -5,6 +5,7 @@ import { loadConfig } from "./config.js";
 import { PlayLibrary } from "./store.js";
 import { PlayHouse } from "./playhouse.js";
 import { handleHttp } from "./http.js";
+import { settingsFileFor } from "./configApi.js";
 import { attachTransport } from "./transport.js";
 
 export async function main(): Promise<void> {
@@ -13,9 +14,10 @@ export async function main(): Promise<void> {
 
   const library = new PlayLibrary(config.playsRoot);
   const playhouse = new PlayHouse(library, config);
+  const settings = settingsFileFor(config, repoRoot);
 
   const server = createServer((req, res) => {
-    void handleHttp(req, res, library, playhouse);
+    void handleHttp(req, res, library, playhouse, settings);
   });
   const wss = new WebSocketServer({ noServer: true });
   attachTransport(wss, playhouse);

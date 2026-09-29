@@ -10,8 +10,10 @@ import { type Api, type Model, type Static, type TSchema, Type } from "@earendil
 import {
   LineageTree,
   StageDslParser,
+  type Bookmark,
   type EngineStateSnapshot,
   type LineageEvent,
+  type LineageView,
   type MemorySnapshot,
   type SequencedEvent,
   type StageEvent,
@@ -19,6 +21,7 @@ import {
 } from "@stage-ai/core";
 import type { ServerMessage } from "@stage-ai/core";
 import { buildSystemPrompt, renderStateSection, type AssetManifest } from "./prompt.js";
+import { lineageToBeats, lineageToEvents, stopFromEvent } from "./rebuild.js";
 import {
   EPOCH_SUMMARY_SYSTEM,
   measureContext,
@@ -248,6 +251,8 @@ export interface OrchestratorRuntimeState {
   events: SequencedEvent[];
   beatNo: number;
   lastStop: StopPayload | null;
+  /** 事件缓冲代号（P6）：结构性操作会自增，客户端据此识别「缓冲已整段重放」。 */
+  epoch: number;
 }
 
 interface OpenLine {
@@ -301,6 +306,10 @@ export class PlaywrightOrchestrator {
   /** 当前分支已走过的纪元摘要 id（谱系级，随快照走；纪元压缩时追加）。 */
   private arcIds: string[] = [];
   private unsubscribeAgent: (() => void) | null = null;
+  /** 事件缓冲代号（P6）：分岔/跳转/编辑/重写后整段重放并自增，客户端据此丢弃旧 seq 认知。 */
+  private epoch = 0;
+  /** 已写入 JSONL 的谱系事件数：直接改动树的操作（编辑/重写/书签）在此增量补推。 */
+  private loggedEvents = 0;
 
   constructor(opts: OrchestratorOptions) {
     this.opts = opts;
@@ -310,6 +319,8 @@ export class PlaywrightOrchestrator {
       const snapshot = opts.tree.latestSnapshotOnPath(opts.tree.leafId);
       this.stateFiles = snapshot?.memory.state ?? {};
       this.arcIds = [...(snapshot?.memory.arcs ?? [])];
+      // 已有事件早已落过 JSONL，不重复补推
+      this.loggedEvents = opts.tree.export().events.length;
     }
     this.agent = this.buildAgent([]);
     this.voice = opts.tts
@@ -326,6 +337,7 @@ export class PlaywrightOrchestrator {
       this.seq = this.events.at(-1)?.seq ?? 0;
       this.beatNo = opts.restored.beatNo;
       this.lastStop = opts.restored.lastStop;
+      this.epoch = opts.restored.epoch ?? 0;
       this.autostarted = true;
     }
   }
@@ -377,7 +389,18 @@ export class PlaywrightOrchestrator {
       events: this.events,
       beatNo: this.beatNo,
       lastStop: this.lastStop,
+      epoch: this.epoch,
     };
+  }
+
+  /** 当前缓冲代号（hello/rebase 携带，客户端识别结构性操作）。 */
+  get currentEpoch(): number {
+    return this.epoch;
+  }
+
+  /** 引擎状态（只读视图）：状态检查与同刻性断言用。 */
+  get engineState(): NonNullable<PlayConfig["initialState"]> {
+    return this.opts.engine;
   }
 
   /** 丢弃：断订阅、中断当前流与旁路补全、停语音管线（多剧目/重开时回收）。 */
@@ -523,6 +546,277 @@ export class PlaywrightOrchestrator {
   /** 重连重放：seq 之后的缓冲事件。 */
   eventsAfter(lastSeq: number): SequencedEvent[] {
     return this.events.filter((e) => e.seq > lastSeq);
+  }
+
+  // —— P6 四原语：跳转 / 分岔 / 编辑 / 重写，彼此正交，可自由组合 ——
+
+  /** 路线树视图（全量节点含废弃分支 + 书签）；前端「路线树」视图与 REST 共用。 */
+  lineageView(): LineageView {
+    return this.opts.tree.describe();
+  }
+
+  /** 跳转：挂载点移到目标节点并重建上下文（只读回放，不重新生成）。 */
+  async jumpTo(nodeId: string): Promise<void> {
+    this.rebaseAt(nodeId, "已跳转到此节点");
+  }
+
+  /** 分岔：从任意节点开新分支（不生成，玩家可在此继续行动或重演）。 */
+  async forkTo(nodeId: string): Promise<void> {
+    this.rebaseAt(nodeId, "已从此处开新分支");
+  }
+
+  /** 原地编辑：当前分支该行文本替换（不开新分支），后续生成以新文本为上下文。 */
+  async editLine(nodeId: string, newText: string): Promise<void> {
+    this.guardIdle();
+    const text = newText.trim();
+    if (!text) throw new Error("台词不能为空");
+    this.opts.tree.editInPlace(nodeId, text);
+    this.flushLineageLog();
+    this.rebaseAt(nodeId, "台词已修改", { keepLeaf: true });
+  }
+
+  /** 句/段级重写：隐式分岔（旧版留在路线树）+ 立即重新生成（±导演注）。 */
+  async rewrite(nodeId: string, granularity: "line" | "beat", instruction?: string): Promise<void> {
+    this.guardIdle();
+    const chain = this.opts.tree.ancestorChain(nodeId); // 校验节点存在
+    const anchor = granularity === "beat" ? this.resolveBeatAnchor(chain, nodeId) : null;
+    const targetId = anchor?.anchorId ?? nodeId;
+    const recap = anchor?.recap ?? null;
+    this.opts.tree.recordRewrite(targetId, granularity, instruction);
+    this.flushLineageLog();
+    this.rebaseAt(this.opts.tree.leafId!, granularity === "beat" ? "已重写整幕" : "已重写此句", {
+      keepLeaf: true,
+    });
+    await this.beginBeat(this.renderRewriteTurn(instruction, recap, granularity));
+  }
+
+  /** 分岔后 OOC 立即重生成：先分岔到此，再注入导演注开拍（与原地 steer 正交）。 */
+  async oocAt(nodeId: string, text: string): Promise<void> {
+    this.guardIdle();
+    const note = text.trim();
+    if (!note) throw new Error("导演注不能为空");
+    this.rebaseAt(nodeId, "已分岔并注入导演注");
+    await this.beginBeat(
+      [
+        `【状态】\n${renderStateSection(this.opts.engine, this.opts.scene, this.stateFiles)}`,
+        this.renderDirectorNote(note, true),
+      ].join("\n\n"),
+    );
+  }
+
+  /**
+   * 书签 = 传统存档：命名节点标记 + 在该节点挂状态快照。
+   *
+   * 纯标记：不移动挂载点、不重放缓冲（书签与跳转正交——D10；否则标个档会被拽回旧位置）。
+   */
+  addBookmark(nodeId: string, name: string): Bookmark {
+    const label = name.trim();
+    if (!label) throw new Error("书签名不能为空");
+    this.guardIdle();
+    const bookmark = this.opts.tree.addBookmark(nodeId, label);
+    const state = this.stateAt(nodeId);
+    this.opts.tree.saveSnapshotAt(
+      nodeId,
+      { ...state.engine, affinity: { ...state.engine.affinity }, flags: { ...state.engine.flags } },
+      { state: { ...state.stateFiles }, arcs: [...state.arcIds] },
+    );
+    this.flushLineageLog();
+    this.persist();
+    return bookmark;
+  }
+
+  /** 删除书签（不动物理分支——书签只是标记，误删可再标）。 */
+  removeBookmark(bookmarkId: string): void {
+    this.guardIdle();
+    this.opts.tree.removeBookmark(bookmarkId);
+    this.persist();
+  }
+
+  private guardIdle(): void {
+    if (this.engaged) throw new Error("演出进行中，请等待当前节拍结束");
+  }
+
+  /**
+   * 上下文重建（P6 transformContext 的执行点）：挂载点移到目标节点后，
+   * 从谱系事件日志重放出「引擎状态 + 记忆快照 + 客户端事件缓冲 + LLM 对话轮次」，
+   * 一次突变完成即回到 append-only 稳态。
+   *
+   * 保持同刻铁律：旧分支的活跃状态、剧情线引用与 archive 检索范围一并回退，
+   * 兄弟/废弃分支的往事不可召回（防剧透）。
+   */
+  private rebaseAt(nodeId: string, note: string, opts?: { keepLeaf?: boolean }): void {
+    this.guardIdle();
+    const tree = this.opts.tree;
+    if (!opts?.keepLeaf) tree.forkAt(nodeId);
+    const chain = tree.chainEvents(tree.leafId);
+    this.restoreBranchState(tree.leafId);
+    this.events.length = 0;
+    this.events.push(...lineageToEvents(chain));
+    this.seq = this.events.at(-1)?.seq ?? 0;
+    this.openLine = null;
+    this.pendingStop = null;
+    this.restoreStopPoint(chain);
+    this.buildAgent(this.rebuildMessages(chain));
+    this.epoch += 1;
+    this.send({
+      type: "rebase",
+      epoch: this.epoch,
+      leafId: tree.leafId,
+      events: [...this.events],
+      ...(this.lastStop ? { stop: this.lastStop } : {}),
+      reason: this.lastStop ? "stop" : "act_end",
+      note,
+    });
+    this.persist();
+  }
+
+  /** 某节点路径上的分支状态：引擎/场景/活跃状态文件/剧情线引用（纯计算，不改现场）。 */
+  private stateAt(nodeId: string | null): {
+    engine: NonNullable<PlayConfig["initialState"]>;
+    scene: string;
+    stateFiles: Record<string, string>;
+    arcIds: string[];
+  } {
+    const chain = this.opts.tree.chainEvents(nodeId);
+    const snapshot = this.opts.tree.latestSnapshotOnPath(nodeId);
+    const base = snapshot?.engine ?? this.opts.play.initialState;
+    let scene = this.opts.play.initialScene;
+    for (const event of chain) {
+      if (event.kind === "scene") scene = event.payload?.attrs?.bg || scene;
+    }
+    return {
+      engine: { turn: base.turn, affinity: { ...base.affinity }, flags: { ...base.flags } },
+      scene,
+      stateFiles: { ...(snapshot?.memory.state ?? {}) },
+      arcIds: [...(snapshot?.memory.arcs ?? [])],
+    };
+  }
+
+  /** 分支状态回退：把 nodeId 路径上的状态整体装回现场（跳转/分岔/编辑/重写共用）。 */
+  private restoreBranchState(nodeId: string | null): void {
+    const state = this.stateAt(nodeId);
+    const engine = this.opts.engine;
+    engine.turn = state.engine.turn;
+    engine.affinity = { ...state.engine.affinity };
+    engine.flags = { ...state.engine.flags };
+    this.stateFiles = { ...state.stateFiles };
+    this.arcIds = [...state.arcIds];
+    this.beatNo = engine.turn;
+    this.opts.scene = state.scene;
+  }
+
+  /**
+   * 停止点恢复：停在 stop/beat_end 边界 → 还原该停止点（choice 选项原样回到面板）；
+   * 停在拍中 → 给一个 pause 停止点，玩家按「继续」即可重演剩余内容。
+   */
+  private restoreStopPoint(chain: readonly LineageEvent[]): void {
+    const last = chain.at(-1);
+    if (!last) {
+      this.lastStop = null;
+      return;
+    }
+    if (last.kind === "stop") {
+      this.lastStop = stopFromEvent(last);
+      return;
+    }
+    if (last.kind === "beat_end") {
+      const stop = chain.findLast((event) => event.kind === "stop");
+      this.lastStop = stop ? stopFromEvent(stop) : null;
+      return;
+    }
+    this.lastStop = { stopType: "pause" };
+  }
+
+  /** 谱系链 → LLM 对话轮次（历史拍的玩家原话与已演出脚本，状态不进历史轮次）。 */
+  private rebuildMessages(chain: readonly LineageEvent[]): AgentMessage[] {
+    const names: Record<string, string> = {};
+    for (const character of this.opts.play.characters) names[character.id] = character.name;
+    const beats = lineageToBeats(chain, names, this.opts.play.opening);
+    const now = Date.now();
+    const messages: AgentMessage[] = [];
+    beats.forEach((beat, index) => {
+      const at = now + index;
+      messages.push({ role: "user", content: beat.user ?? "", timestamp: at });
+      messages.push({
+        role: "assistant",
+        content: [{ type: "text", text: beat.assistant }],
+        api: this.opts.model.api,
+        provider: this.opts.model.provider,
+        model: this.opts.model.id,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop",
+        timestamp: at,
+      });
+    });
+    return messages;
+  }
+
+  /**
+   * 整幕重写的截断锚点 = 最后一个 `beat_end` 之后的**第一个事件**（本幕起点）。
+   *
+   * `recordRewrite` 把挂载点退到 `anchor.parentId`，所以锚点必须落在幕首事件本身：
+   * 本幕若以玩家表态开场，锚点落在它身上才能把旧表态一并切出主链（否则历史里
+   * 留下孤立表态，重建出 `{user, assistant:""}` 空轮次，且重写轮回灌时双重表态）。
+   * 旧表态原话由 recap 带出，在重写轮的 user 消息里回灌。
+   */
+  private resolveBeatAnchor(
+    chain: readonly string[],
+    fallbackId: string,
+  ): { anchorId: string; recap: string | null } {
+    let start = 0;
+    for (let i = chain.length - 1; i >= 0; i -= 1) {
+      if (this.opts.tree.get(chain[i]!)?.kind === "beat_end") {
+        start = i + 1;
+        break;
+      }
+    }
+    const anchorId = chain[start] ?? fallbackId;
+    const first = this.opts.tree.get(anchorId);
+    const recap =
+      first && (first.kind === "player" || first.kind === "ooc")
+        ? first.payload?.input ?? null
+        : null;
+    return { anchorId, recap };
+  }
+
+  /** 重写轮次的 user 消息：状态 + （回灌玩家原话）+ 导演注或中性重演指令。 */
+  private renderRewriteTurn(
+    instruction: string | undefined,
+    recap: string | null,
+    granularity: "line" | "beat",
+  ): string {
+    const sections = [
+      `【状态】\n${renderStateSection(this.opts.engine, this.opts.scene, this.stateFiles)}`,
+    ];
+    if (recap) sections.push(`【玩家表态】\n${recap}`);
+    sections.push(
+      instruction
+        ? this.renderDirectorNote(instruction, false)
+        : `【重写】\n（${
+            granularity === "beat" ? "请重新演绎这一幕" : "请重新演绎这句话"
+          }；不要复述或回应这条重写指令本身）`,
+    );
+    return sections.join("\n\n");
+  }
+
+  private snapshotEngine(): EngineStateSnapshot {
+    const engine = this.opts.engine;
+    return {
+      ...engine,
+      affinity: { ...engine.affinity },
+      flags: { ...engine.flags },
+    };
+  }
+
+  private snapshotMemory(): MemorySnapshot {
+    return { state: { ...this.stateFiles }, arcs: [...this.arcIds] };
   }
 
   private renderUserTurn(action: ResolvedAction): string {
@@ -766,7 +1060,15 @@ export class PlaywrightOrchestrator {
   ): LineageEvent {
     const event = this.opts.tree.append(kind, opts);
     this.opts.onLineageEvent?.(event);
+    this.loggedEvents += 1;
     return event;
+  }
+
+  /** 直接改动谱系树的操作（编辑/重写/书签）不经过 append：事后按游标补推 JSONL。 */
+  private flushLineageLog(): void {
+    const all = this.opts.tree.export().events;
+    for (let i = this.loggedEvents; i < all.length; i += 1) this.opts.onLineageEvent?.(all[i]!);
+    this.loggedEvents = all.length;
   }
 
   private onStageEvent(event: StageEvent): void {
