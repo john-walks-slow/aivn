@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LineageNodeView, LineageView } from "@stage-ai/core";
 import { api } from "../api.js";
 import { beatAnchors, buildBeats, type BeatCard } from "./beats.js";
+import { RouteCanvas } from "./RouteCanvas.js";
 import type { ScriptLine } from "./script.js";
 
 /** 导演视角的世界线写操作（跳转是纯客户端只读回看，不在这里——它不动物理分支）。 */
@@ -73,8 +74,9 @@ export function BranchScript(props: PanelProps) {
 }
 
 /**
- * 路线树：一拍一张卡。单击 = 只读回看（客户端本地，不动世界线）；
- * 分岔 / 重生成才是世界线写操作。废弃分支半透明占位，历史一条不删。
+ * 路线：横向时间轴的树。x = 时间（树深度），y = 兄弟序，节点间是真连线。
+ * 点节点 = 只读回看（客户端本地，不动世界线）；分岔 / 重生成才是世界线写操作。
+ * 导演操作放在底部检视栏，不占树上的位置——树要始终是一棵树。
  */
 export function RouteTree(
   props: PanelProps & { lines: readonly ScriptLine[]; onRewind: (lineKey: string) => void },
@@ -83,24 +85,56 @@ export function RouteTree(
   const cards = useMemo(() => (view ? buildBeats(view, lines) : []), [view, lines]);
   const lineOf = useMemo(() => rewindTargets(cards, lines), [cards, lines]);
   const [active, setActive] = useState<string | null>(null);
+  const card = cards.find((c) => c.id === active) ?? null;
 
   return (
-    <PanelShell {...props} title="路线" hint="点卡片回看那一拍；分岔与重生成才改写世界线">
-      {cards.length === 0 && <p className="muted">还没有历史——演出几拍后这里会长出路线树。</p>}
-      {cards.map((card) => (
-        <BeatTile
-          key={card.id}
-          card={card}
-          names={names}
-          busy={busy}
-          lineKey={lineOf.get(card.id)}
-          active={active === card.id}
-          onRewind={onRewind}
-          onSelect={() => setActive((cur) => (cur === card.id ? null : card.id))}
-          ops={ops}
-        />
-      ))}
-    </PanelShell>
+    <div className="route-screen">
+      <header className="screen-bar">
+        <button className="ghost-btn" onClick={props.onBack}>
+          ← 舞台
+        </button>
+        <span className="muted">路线</span>
+        <span className="muted">从左到右是时间；分岔点往下扇开。点节点回看那一拍</span>
+        <button className="ghost-btn" onClick={props.onReload}>
+          刷新
+        </button>
+      </header>
+      {props.error && <div className="error-banner">{props.error}</div>}
+      {!props.view ? (
+        <div className="overlay">读取路线…</div>
+      ) : cards.length === 0 ? (
+        <p className="muted route-empty">还没有历史——演出几拍后这里会长出路线树。</p>
+      ) : (
+        <>
+          <RouteCanvas
+            cards={cards}
+            names={names}
+            activeId={active}
+            onSelect={(next) => setActive((cur) => (cur === next.id ? null : next.id))}
+          />
+          {card && (
+            <div className="route-inspector">
+              <div className="route-inspector-head">
+                <span className="route-inspector-no">第 {card.turn} 拍</span>
+                {card.sceneBg && <span className="muted">◈ {card.sceneBg}</span>}
+                <span className="muted route-inspector-text">{card.preview || "（无台词）"}</span>
+                <button className="ghost-btn" onClick={() => setActive(null)}>
+                  收起
+                </button>
+              </div>
+              <BeatActions
+                card={card}
+                busy={busy}
+                ops={ops}
+                canRewind={card.onPath}
+                lineKey={lineOf.get(card.id)}
+                onRewind={onRewind}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -113,69 +147,29 @@ function rewindTargets(cards: BeatCard[], lines: readonly ScriptLine[]): Map<str
   return map;
 }
 
-function BeatTile(props: {
-  card: BeatCard;
-  names: Readonly<Record<string, string>>;
-  busy: boolean;
-  lineKey?: string;
-  active: boolean;
-  onSelect: () => void;
-  onRewind: (lineKey: string) => void;
-  ops: LineageOps;
-}) {
-  const { card, names, busy, lineKey, active, ops } = props;
-  const cls = `beat-tile${card.isAbandoned ? " abandoned" : ""}${card.isLeaf ? " current" : ""}${
-    active ? " active" : ""
-  }`;
-  const who = card.speakers.map((id) => names[id] ?? id).join("、");
-
-  return (
-    <div className={cls} style={{ marginLeft: `${Math.min(card.depth, 4) * 18}px` }}>
-      <button
-        className="beat-tile-main"
-        title={
-          lineKey
-            ? "回看这一拍"
-            : card.isAbandoned
-              ? "这一拍已不在当前世界线上——展开后可以岔回去"
-              : "这一拍还没有台词"
-        }
-        onClick={() => {
-          if (lineKey) props.onRewind(lineKey);
-          props.onSelect();
-        }}
-      >
-        <span className="beat-tile-head">
-          <span className="beat-tile-no">第 {card.turn} 拍</span>
-          {card.sceneBg && <span className="beat-tile-scene">◈ {card.sceneBg}</span>}
-          {card.isLeaf && <span className="beat-tile-here">进行中</span>}
-        </span>
-        <span className="beat-tile-text">{card.preview || "（无台词）"}</span>
-        {who && <span className="beat-tile-who">{who}</span>}
-      </button>
-      {/* 废弃分支不是墓碑：岔出去就能把它接回世界线，否则玩家永远进不去看过的那个世界 */}
-      {active && (
-        <BeatActions card={card} busy={busy} ops={ops} canRewind={card.onPath} />
-      )}
-    </div>
-  );
-}
-
 function BeatActions({
   card,
   busy,
   ops,
   canRewind,
+  lineKey,
+  onRewind,
 }: {
   card: BeatCard;
   busy: boolean;
   ops: LineageOps;
   canRewind: boolean;
+  lineKey?: string;
+  onRewind: (lineKey: string) => void;
 }) {
   const [note, setNote] = useState("");
   return (
     <div className="lineage-actions">
-      {canRewind && <span className="beat-tile-here-hint">回看里可以逐句往回追</span>}
+      {lineKey && (
+        <button className="ghost-btn" onClick={() => onRewind(lineKey)}>
+          ⟲ 跳到这里回看
+        </button>
+      )}
       <button className="ghost-btn" disabled={busy} onClick={() => ops.fork(card.id)}>
         {canRewind ? "🌿 从这里岔出去" : "🌿 岔回去（接回世界线）"}
       </button>

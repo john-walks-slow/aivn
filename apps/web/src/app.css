@@ -1463,88 +1463,214 @@ select:focus {
   resize: vertical;
 }
 
-/* ── 路线树：一拍一张卡，废弃分支半透明占位 ── */
+/* ── 路线：横向时间轴的树（x = 时间，y = 兄弟序） ── */
 
-.beat-tile {
-  margin-bottom: 8px;
+/* 路线图占满舞台页——它是地图，不该挤在侧栏里 */
+.route-screen {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+}
+
+.route-frame {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.route-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0 / 22px 22px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.route-viewport:active {
+  cursor: grabbing;
+}
+
+.route-scene {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.route-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.route-edge {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+.route-edge.live {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.route-edge.dead {
+  stroke-dasharray: 4 4;
+  opacity: 0.5;
+}
+
+.route-dot {
+  fill: var(--accent);
+}
+
+.route-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
-  overflow: hidden;
-}
-
-.beat-tile-main {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  width: 100%;
-  padding: 9px 12px;
-  border: 0;
-  background: none;
+  box-shadow: var(--shadow);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-.beat-tile-main:disabled {
-  cursor: default;
+.route-node:hover {
+  border-color: var(--accent-soft);
 }
 
-.beat-tile-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11.5px;
-  color: var(--ink-faint);
-}
-
-.beat-tile-no {
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.beat-tile-here {
-  margin-left: auto;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--dialog-ink, #fff);
-  font-size: 11px;
-}
-
-.beat-tile-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--ink);
-}
-
-.beat-tile-who {
-  font-size: 11.5px;
-  color: var(--ink-faint);
-}
-
-.beat-tile.current {
+.route-node.live {
   border-left-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
-.beat-tile.active {
-  background: var(--accent-soft);
+.route-node.here {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow);
 }
 
-.beat-tile.abandoned {
-  opacity: 0.45;
+.route-node.dead {
+  opacity: 0.5;
   border-style: dashed;
   border-left-style: solid;
 }
 
-.beat-tile.abandoned .beat-tile-main:hover {
+.route-node.dead:hover,
+.route-node.active {
   opacity: 1;
+}
+
+.route-node.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.route-node-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.route-node-no {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.route-node-label {
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.route-node-stop {
+  margin-left: auto;
+}
+
+.route-node-here {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--dialog-ink, #fff);
+}
+
+.route-node-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.route-node-foot {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.route-node-fork {
+  margin-left: auto;
+}
+
+.route-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.route-hint {
+  margin-left: auto;
+  font-size: 11.5px;
+}
+
+.route-empty {
+  padding: 24px;
+}
+
+.route-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.route-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.route-inspector-no {
+  font-weight: 700;
+}
+
+.route-inspector-text {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .beat-tile-warn {
