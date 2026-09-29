@@ -87,3 +87,48 @@ describe("cutout", () => {
     await expect(cutout(blank)).rejects.toThrow(/抠底失败/);
   });
 });
+
+/** 纯色底 + 一个站立人形。fillW/fillH 是人物占格的比例：模型在矮格子里会把人撑得又宽又矮。 */
+async function standing(w: number, h: number, fillW = 0.36, fillH = 0.9): Promise<Buffer> {
+  const raw = Buffer.alloc(w * h * 3);
+  const bw = Math.round(w * fillW);
+  const top = Math.round(h * (1 - fillH) / 2);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const o = (y * w + x) * 3;
+      const inBody = x > (w - bw) / 2 && x < (w + bw) / 2 && y > top && y < top + Math.round(h * fillH);
+      raw[o] = inBody ? 50 : 245;
+      raw[o + 1] = inBody ? 60 : 245;
+      raw[o + 2] = inBody ? 120 : 245;
+    }
+  }
+  return sharp(raw, { raw: { width: w, height: h, channels: 3 } }).jpeg().toBuffer();
+}
+
+describe("人物高度：不同格子制式下必须一致", () => {
+  it("2x1 切出的格子和 2x2 切出的格子，人物都落到满高 1920", async () => {
+    // 同一张 768x1376 原片，切 2x1 得 384x1376，切 2x2 得 384x688。
+    // 这是同一个角色分两批出差分的情况——人物高度必须一样，否则舞台上忽高忽矮。
+    const tall = await cutout(await standing(384, 1376));
+    const short = await cutout(await standing(384, 688));
+    expect(tall.figureHeight).toBe(1920);
+    expect(short.figureHeight).toBe(1920);
+    expect(tall.figureHeight).toBe(short.figureHeight);
+  });
+
+  it("模型把人画得比格子小也一样落到满高（缩放看的是外框，不是格子）", async () => {
+    const small = await cutout(await standing(384, 688));
+    const smaller = await cutout(await standing(160, 300));
+    expect(small.figureHeight).toBe(smaller.figureHeight);
+    expect(smaller.figureHeight).toBe(1920);
+  });
+
+  it("格制式选错导致外框太胖时，人物会矮下来——这正是砍掉 2x3 的理由", async () => {
+    // 2x3 的单格是 384x458，模型在这种矮格子里只能把人物撑满整格，长宽比超过画布的 0.5625，
+    // 缩放变成宽度先卡，人物矮一大截。断言这个数会掉下来，把砍掉 2x3 的结论钉在测试里。
+    const cramped = await cutout(await standing(384, 458, 0.95, 0.98));
+    const tall = await cutout(await standing(384, 1376));
+    expect(tall.figureHeight).toBe(1920);
+    expect(cramped.figureHeight).toBeLessThan(tall.figureHeight * 0.8);
+  });
+});

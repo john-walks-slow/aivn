@@ -28,6 +28,11 @@ export interface CutoutResult {
   height: number;
   /** 前景像素占比。过低说明底色判错（整张被判成背景），过高说明底没抠干净。 */
   coverage: number;
+  /**
+   * 人物落在画布上的实际高度。**同一个角色不管出自哪一批差分，这个值都必须一样**——
+   * 不一样就说明那批的面板格子太矮，模型只能把人物画矮了。低于画布高就说明格制式选错了。
+   */
+  figureHeight: number;
 }
 
 export interface CutoutOptions {
@@ -74,8 +79,18 @@ export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise
     .extract(box)
     .png()
     .toBuffer();
+  // 缩放：等比塞进画布，哪个维度先卡住就由哪个决定人物大小。
+  // 因此「人物最终多高」取决于外框的长宽比——外框越胖，人物越矮。
+  // 单格制式（2 列 × ≤2 行）保证外框比 ≤ 0.558 < 画布的 0.5625，高度永远先卡，
+  // 人物恒为满高；一旦用 2x3 这种矮格，外框比 0.838 就会反过来由宽度卡，高度掉到 1287。
+  const scale = Math.min(canvasWidth / box.width, canvasHeight / box.height);
   const scaled = await sharp(figure)
-    .resize({ width: canvasWidth, height: canvasHeight, fit: "inside", background: "#00000000" })
+    .resize({
+      width: Math.max(1, Math.round(box.width * scale)),
+      height: Math.max(1, Math.round(box.height * scale)),
+      fit: "fill",
+      background: "#00000000",
+    })
     .png()
     .toBuffer();
   const meta = await sharp(scaled).metadata();
@@ -92,7 +107,13 @@ export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise
     .png()
     .toBuffer();
 
-  return { data: canvas, width: canvasWidth, height: canvasHeight, coverage };
+  return {
+    data: canvas,
+    width: canvasWidth,
+    height: canvasHeight,
+    coverage,
+    figureHeight: Math.round(box.height * scale),
+  };
 }
 
 /**

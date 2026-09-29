@@ -4,7 +4,7 @@ import { parsePlayConfig } from "@stage-ai/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout } from "./cutout.js";
 import type { Limiter } from "./limiter.js";
-import { SHEET_MAX, sheetPrompt, sliceSheet } from "./spriteSheet.js";
+import { planSheet, sheetPrompt, sliceSheet } from "./spriteSheet.js";
 import type { PlayFiles } from "./playFiles.js";
 import type { PlayStore } from "./store.js";
 import type { WorkshopWrite } from "./workshop.js";
@@ -138,19 +138,20 @@ export class WorkshopAssets {
    * 需要垫图的是「已经有一套表情、再单独加一个差分」那条路（runSingle）。
    */
   private async runSheet(spec: AssetSpec, prompt: string, style?: string): Promise<GeneratedPlayAsset[]> {
-    const expressions = spec.expressions!;
+    // 提示词和切格共用同一份 plan，网格不可能再对不上。
+    const plan = planSheet(spec.expressions!);
     const { data } = await this.deps.limiter.run(
       () =>
         this.deps.backend.generate({
-          prompt: sheetPrompt({ character: prompt, expressions, style }),
+          prompt: sheetPrompt({ character: prompt, plan, style }),
           aspectRatio: spec.aspect,
         }),
       "normal",
     );
     this.assertCanvas(spec, data);
-    const cells = await sliceSheet(data, expressions.length);
+    const cells = await sliceSheet(data, plan);
     const out: GeneratedPlayAsset[] = [];
-    for (const [i, expression] of expressions.entries()) {
+    for (const [i, expression] of plan.expressions.entries()) {
       const cell = cells[i]!;
       const bytes = (await cutout(cell.data)).data;
       const written = await this.persist({ ...spec, stem: expression, expression }, bytes, ".png");
@@ -222,24 +223,24 @@ export class WorkshopAssets {
     if (!ids.includes(characterId)) {
       throw new Error(`play.json 里没有角色「${characterId}」。可选：${ids.join(" / ")}`);
     }
-    const expressions = target.expressions?.map((e) => e.trim()).filter((e) => e.length > 0) ?? [];
-    if (expressions.length > 0) {
-      if (expressions.length > SHEET_MAX) {
-        throw new Error(`一张表情面板最多 ${SHEET_MAX} 个差分，给了 ${expressions.length} 个：拆成多次调用`);
-      }
-      for (const expression of expressions) {
+    const requested = target.expressions?.map((e) => e.trim()).filter((e) => e.length > 0) ?? [];
+    if (requested.length > 0) {
+      for (const expression of requested) {
         if (!STEM.test(expression)) {
           throw new Error(`差分名「${expression}」非法：只允许小写字母开头的 a-z/数字/下划线，最长 40 字符`);
         }
       }
+      // 在入队前就定好制式：补位的 neutral 也要进在飞去重的 key，否则
+      // 「要 3 个」和「要 3 个 + neutral」会被当成两次不同的生成，各出一张图。
+      const plan = planSheet(requested);
       return {
         kind: "sprite",
         kindPath: `sprites/${characterId}`,
-        stem: expressions.join("+"),
+        stem: plan.expressions.join("+"),
         aspect: "9:16",
         characterId,
-        expression: expressions[0]!,
-        expressions,
+        expression: plan.expressions[0]!,
+        expressions: plan.expressions,
       };
     }
     const expression = target.expression?.trim() ?? "";

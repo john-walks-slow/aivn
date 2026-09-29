@@ -325,8 +325,8 @@ describe("WorkshopAssets：工坊素材落盘", () => {
 
   it("sheet：一次调用出一整套差分，每张独立抠底并补写立绘映射", async () => {
     const store = await makeStore();
-    // 面板图：2x3 格，每格一个深色小人 + 纯底
-    const sheet = await buildSheetStub(2, 3);
+    // 面板图：2x2 格，每格一个深色小人 + 纯底
+    const sheet = await buildSheetStub(2, 2);
     const backend: ImageBackend = { generate: async () => ({ data: sheet, mimeType: "image/png" }) };
     const calls: ImageRequest[] = [];
     const recording: ImageBackend = {
@@ -342,10 +342,12 @@ describe("WorkshopAssets：工坊素材落盘", () => {
       "少女",
       "厚涂写实",
     );
+    // 要 3 个差分 → 走 2x2 标准制式，第 4 格自动补位（这里 neutral 已被点名，补 calm）
     expect(res.map((r) => r.path)).toEqual([
       "assets/sprites/mio/neutral.png",
       "assets/sprites/mio/smile.png",
       "assets/sprites/mio/shy.png",
+      "assets/sprites/mio/calm.png",
     ]);
     // 一张面板图出三张差分，不是三次调用
     expect(calls).toHaveLength(1);
@@ -363,19 +365,20 @@ describe("WorkshopAssets：工坊素材落盘", () => {
       neutral: "neutral.png",
       smile: "smile.png",
       shy: "shy.png",
+      calm: "calm.png",
     });
   });
 
-  it("sheet：差分超过 6 个直接报错，别让模型烧一张必然切错的图", async () => {
+  it("sheet：差分超过 4 个直接报错，别让模型烧一张必然切错的图", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
     await expect(
       assets.generate(
-        { kind: "sprite", characterId: "mio", expressions: ["a", "b", "c", "d", "e", "f", "g"] },
+        { kind: "sprite", characterId: "mio", expressions: ["a", "b", "c", "d", "e"] },
         "少女",
       ),
-    ).rejects.toThrow(/最多 6 个差分/);
+    ).rejects.toThrow(/一次最多 4 个差分/);
     expect(calls).toHaveLength(0);
   });
 
