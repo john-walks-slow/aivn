@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** hash 路由：#/ 、#/play/:id、#/play/:id/stage、#/play/:id/assets（查询串支持 ?mode=）。 */
+/** hash 路由：#/ 、#/play/:id、#/play/:id/saves、#/play/:id/stage、#/play/:id/assets。 */
 export interface Route {
   path: string;
   segments: string[];

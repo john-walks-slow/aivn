@@ -6,10 +6,11 @@ export type WorkshopInbound = Extract<ServerMessage, { type: `workshop_${string}
 import { ScriptBuilder, type ScriptLine, type Cue } from "./script.js";
 
 export type BeatState = "connecting" | "streaming" | "stopped" | "error";
-export type StartMode = "start" | "continue";
 
 export interface StageSocket {
   state: BeatState;
+  /** 编排器已空闲：beat_end 之后还要等它收尾，此前任何操作都会被服务端挡回。 */
+  settled: boolean;
   error: string | null;
   /** lines/cues 版本号：每次事件批次自增（两者是稳定引用，原地变更）。 */
   revision: number;
@@ -23,19 +24,18 @@ export interface StageSocket {
   epoch: number;
   /** 服务端 TTS 能力（hello.voice；false 时隐藏语音开关）。 */
   voiceAvailable: boolean;
+  /** 当前周目档名（舞台顶部显示；换档经 hello 续接）。 */
+  saveName: string | null;
   sendChoice: (index: number) => void;
   sendFree: (text: string) => void;
   sendContinue: () => void;
   sendOoc: (text: string) => void;
   sendTtsControl: (state: { enabled?: boolean; paused?: boolean }) => void;
-  // —— 四原语（P6）：跳转 / 分岔 / 编辑 / 重写 / 分岔后 OOC / 书签 ——
-  sendFork: (nodeId: string) => void;
+  // —— 导演操作（P6）：跳转 / 分岔 / 编辑 / 导演注 OOC ——
   sendJump: (nodeId: string) => void;
   sendEdit: (nodeId: string, newText: string) => void;
-  sendRewrite: (nodeId: string, granularity: "line" | "beat", instruction?: string) => void;
+  sendBranch: (nodeId: string, granularity: "line" | "beat", instruction?: string) => void;
   sendOocAt: (nodeId: string, text: string) => void;
-  sendBookmark: (nodeId: string, name: string) => void;
-  sendUnbookmark: (bookmarkId: string) => void;
   /** 工坊通道发送（面板自带消息构造）。 */
   send: (msg: ClientMessage) => void;
 }
@@ -59,23 +59,28 @@ export interface StageSocketHandlers {
   onAssetFailed?: (id: string, message: string) => void;
 }
 
-export function useStageSocket(playId: string, mode: StartMode, handlers?: StageSocketHandlers): StageSocket {
+export function useStageSocket(playId: string, handlers?: StageSocketHandlers): StageSocket {
   const [state, setState] = useState<BeatState>("connecting");
+  const stateRef = useRef<BeatState>("connecting");
+  stateRef.current = state;
   const [error, setError] = useState<string | null>(null);
   const [stop, setStop] = useState<StopPayload | null>(null);
   const [isActEnd, setActEnd] = useState(false);
   const [names, setNames] = useState<Record<string, string>>({});
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const [epoch, setEpoch] = useState(0);
+  const [saveName, setSaveName] = useState<string | null>(null);
   /** 本地缓冲所属代号：与服务端不一致说明缓冲已被结构性操作整段替换。 */
   const epochRef = useRef(0);
   const [tick, setTick] = useState(0); // lines/cues/scene 由 builder 持有，tick 触发重渲染
+  // 拍已收束 ≠ 可操作：模型那一轮收尾期间服务端仍 engaged，beat_settled 之后按钮才解禁
+  const [settled, setSettled] = useState(false);
   const builderRef = useRef(new ScriptBuilder());
   const lastSeqRef = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
-  /** start 模式：等待新档 hello，期间丢弃旧会话的 beat_end 重放。 */
-  const expectFreshRef = useRef(mode === "start");
+  /** 当前挂着的存档（周目）：换档 = 换了一棵树，本地缓冲整段作废。 */
+  const saveIdRef = useRef<string | null>(null);
   const handlersRef = useRef<StageSocketHandlers>({});
   handlersRef.current = handlers ?? {};
 
@@ -90,10 +95,6 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
 
       ws.onopen = () => {
         retryRef.current = 0;
-        if (expectFreshRef.current) {
-          ws.send(JSON.stringify({ type: "start" } satisfies ClientMessage));
-          return;
-        }
         // 总是 resume：lastSeq=0（页面刷新/内存丢失）= 全量重放；网络闪断 = 增量补发
         ws.send(JSON.stringify({ type: "resume", lastSeq: lastSeqRef.current } satisfies ClientMessage));
       };
@@ -104,29 +105,36 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
             setNames(Object.fromEntries((msg.cast ?? []).map(({ id, name }) => [id, name])));
             setVoiceAvailable(msg.voice ?? false);
             if (msg.assets) handlersRef.current.onAssets?.(msg.assets);
-            setState((prev) => (prev === "connecting" ? "streaming" : prev));
-            // 代号不一致 = 缓冲已被替换：本地 seq 全部作废，全量重放
-            if (msg.epoch !== undefined && msg.epoch !== epochRef.current) {
-              epochRef.current = msg.epoch;
-              setEpoch(msg.epoch);
-              if (lastSeqRef.current > 0) {
-                lastSeqRef.current = 0;
-                builderRef.current.reset();
-                handlersRef.current.onReset?.();
-                setTick((t) => t + 1);
-                ws.send(JSON.stringify({ type: "resume", lastSeq: 0 } satisfies ClientMessage));
-              }
+            // 换了周目 = 换了一棵树：本地缓冲与新树无关，作废重放
+            const switched = msg.saveId !== undefined && msg.saveId !== saveIdRef.current;
+            if (msg.saveId !== undefined) {
+              saveIdRef.current = msg.saveId;
+              setSaveName(msg.saveName ?? msg.saveId);
             }
-            if (expectFreshRef.current && msg.lastSeq === 0) {
-              // 新档 hello：清旧脚本，从头接收
-              expectFreshRef.current = false;
-              builderRef.current.reset();
+            // 代号不一致 = 缓冲已被结构性操作整段替换：本地 seq 全部作废，全量重放
+            const restamped =
+              msg.epoch !== undefined && msg.epoch !== epochRef.current && !switched;
+            if (restamped) epochRef.current = msg.epoch!;
+            if ((restamped || switched) && lastSeqRef.current > 0) {
+              if (restamped) setEpoch(msg.epoch!);
               lastSeqRef.current = 0;
+              builderRef.current.reset();
               handlersRef.current.onReset?.();
               setTick((t) => t + 1);
+              ws.send(JSON.stringify({ type: "resume", lastSeq: 0 } satisfies ClientMessage));
+            }
+            // hello 自报空闲（刷新进来的空闲现场）：直接落 stopped，不必等 beat_settled。
+            // 注意不能先无条件把 connecting 提升为 streaming——stateRef 在渲染期赋值，
+            // 同一次同步回调里读到的仍是旧值，那个判断永远不会成立，页面会卡死在 streaming。
+            if (msg.idle) {
+              setSettled(true);
+              setState("stopped");
+            } else {
+              setState((prev) => (prev === "connecting" ? "streaming" : prev));
             }
             return;
           case "beat_start":
+            setSettled(false);
             setStop(null);
             setActEnd(false);
             setError(null);
@@ -151,8 +159,10 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
           case "audio_ready":
             handlersRef.current.onAudio?.({ seq: msg.seq, phrase: msg.phrase, url: msg.url });
             return;
+          case "beat_settled":
+            setSettled(true);
+            return;
           case "beat_end":
-            if (expectFreshRef.current) return; // 旧会话的 stoppedReplay，新档即将开始
             setStop(msg.stop ?? null);
             setActEnd(msg.reason === "act_end");
             setState("stopped");
@@ -172,6 +182,9 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
             }
             setStop(msg.stop ?? null);
             setActEnd(msg.reason === "act_end");
+            // 重放即一条静止的现状：没有新事件在流，操作条应当立刻可用
+            setState("stopped");
+            setSettled(true);
             setError(null);
             setTick((t) => t + 1);
             handlersRef.current.onRebase?.({
@@ -217,18 +230,17 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
     }
   }, []);
 
-  // 稳定引用：四原语出口挂在导演视图上，引用抖动会让整棵子树反复重渲染
+  // 稳定引用：五动词出口挂在导演视图上，引用抖动会让整棵子树反复重渲染
   const sendChoice = useCallback((index: number) => send({ type: "player_choice", optionIndex: index }), [send]);
   const sendFree = useCallback((text: string) => send({ type: "player_free", text }), [send]);
   const sendContinue = useCallback(() => send({ type: "continue" }), [send]);
   const sendOoc = useCallback((text: string) => send({ type: "ooc", text }), [send]);
-  const sendFork = useCallback((nodeId: string) => send({ type: "fork", nodeId }), [send]);
   const sendJump = useCallback((nodeId: string) => send({ type: "jump", nodeId }), [send]);
   const sendEdit = useCallback(
     (nodeId: string, newText: string) => send({ type: "edit", nodeId, newText }),
     [send],
   );
-  const sendRewrite = useCallback(
+  const sendBranch = useCallback(
     (nodeId: string, granularity: "line" | "beat", instruction?: string) =>
       send({ type: "rewrite", nodeId, granularity, ...(instruction ? { instruction } : {}) }),
     [send],
@@ -237,19 +249,12 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
     (nodeId: string, text: string) => send({ type: "ooc_at", nodeId, text }),
     [send],
   );
-  const sendBookmark = useCallback(
-    (nodeId: string, name: string) => send({ type: "bookmark", nodeId, name }),
-    [send],
-  );
-  const sendUnbookmark = useCallback(
-    (bookmarkId: string) => send({ type: "unbookmark", bookmarkId }),
-    [send],
-  );
 
   void tick;
 
   return {
     state,
+    settled,
     error,
     /** lines/cues 为原地变更的稳定引用，下游 effect 以 revision 驱动。 */
     revision: tick,
@@ -261,18 +266,16 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
     isActEnd,
     epoch,
     voiceAvailable,
+    saveName,
     sendChoice,
     sendFree,
     sendContinue,
     sendOoc,
     sendTtsControl: (ttsState) => send({ type: "tts_control", ...ttsState }),
-    sendFork,
     sendJump,
     sendEdit,
-    sendRewrite,
+    sendBranch,
     sendOocAt,
-    sendBookmark,
-    sendUnbookmark,
     send,
   };
 }

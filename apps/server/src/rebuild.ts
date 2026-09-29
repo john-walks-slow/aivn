@@ -1,11 +1,9 @@
-import type {
-  LineageEvent,
-  OptionAttrs,
-  SequencedEvent,
-  StageEvent,
-  StopPayload,
-  StopType,
+import {
+  lineageToEvents as coreLineageToEvents,
+  stopFromNode,
+  toNodeView,
 } from "@stage-ai/core";
+import type { LineageEvent, SequencedEvent, StopPayload } from "@stage-ai/core";
 
 /**
  * 上下文重建（P6 transformContext 的纯函数层）：谱系事件日志是唯一真相源，
@@ -14,8 +12,22 @@ import type {
  */
 
 /**
- * edit 事件覆盖目标行文本（与 materialize 同一套规则）：改过的台词在
- * 客户端重放与 LLM 上下文重建里都必须是新文本——所见即所忆。
+ * 谱系事件链 → 客户端 IR 事件。
+ *
+ * 物化本身在 core（客户端只读回看同一份函数），这里只做投影适配：服务端手里是
+ * LineageEvent，core 的物化吃的是路线树投影，规则只有一份。
+ */
+export function lineageToEvents(chain: readonly LineageEvent[]): SequencedEvent[] {
+  return coreLineageToEvents(chain.map(toNodeView));
+}
+
+export function stopFromEvent(event: LineageEvent): StopPayload | null {
+  return stopFromNode(toNodeView(event));
+}
+
+/**
+ * edit 事件覆盖目标行文本：改过的台词在 LLM 上下文里必须是新文本——所见即所忆。
+ * （客户端重放走 core 的同一条规则，这里只管对话轮次这一侧。）
  */
 function editOverrides(chain: readonly LineageEvent[]): Map<string, string> {
   const overrides = new Map<string, string>();
@@ -25,81 +37,6 @@ function editOverrides(chain: readonly LineageEvent[]): Map<string, string> {
     }
   }
   return overrides;
-}
-
-/** 谱系链 → 客户端 IR 事件（重新编号 1..N；preload 不重放——生成不因回放重来）。 */
-export function lineageToEvents(chain: readonly LineageEvent[]): SequencedEvent[] {
-  const overrides = editOverrides(chain);
-  const out: SequencedEvent[] = [];
-  const push = (event: StageEvent): void => {
-    out.push({ seq: out.length + 1, event });
-  };
-  for (const event of chain) {
-    const attrs = event.payload?.attrs ?? {};
-    switch (event.kind) {
-      case "scene":
-        push({ kind: "scene", ...pickDefined(attrs, ["bg", "bgm", "ambient", "transition"]) });
-        break;
-      case "actor":
-        push({ kind: "actor", id: attrs.id ?? "", ...pickDefined(attrs, ["pos", "expression", "action"]) });
-        break;
-      case "cg":
-        push({ kind: "cg", id: attrs.id ?? "", ...pickDefined(attrs, ["caption"]) });
-        break;
-      case "sfx":
-        push({ kind: "sfx", src: attrs.src ?? "" });
-        break;
-      case "stop":
-        push(stopEvent(stopFromEvent(event)));
-        break;
-      case "say":
-        push({ kind: "say_start", id: attrs.id ?? "", ...(attrs.mood ? { mood: attrs.mood } : {}) });
-        push({ kind: "say_text", delta: textOf(event, overrides) });
-        push({ kind: "say_end" });
-        break;
-      case "narrate":
-        push({ kind: "narrate_start" });
-        push({ kind: "narrate_text", delta: textOf(event, overrides) });
-        push({ kind: "narrate_end" });
-        break;
-      case "thought":
-        push({ kind: "thought_start", id: attrs.id ?? "" });
-        push({ kind: "thought_text", delta: textOf(event, overrides) });
-        push({ kind: "thought_end" });
-        break;
-      default:
-        // preload 只触发生图、不影响重放画面（背景由 scene 携带）；player/ooc/beat_end 是元信息
-        break;
-    }
-  }
-  return out;
-}
-
-function textOf(event: LineageEvent, overrides: ReadonlyMap<string, string>): string {
-  return overrides.get(event.id) ?? event.text ?? "";
-}
-
-/** 谱系 stop 事件 → 停止点载荷。 */
-export function stopFromEvent(event: LineageEvent): StopPayload {
-  const payload = (event.payload ?? {}) as {
-    stopType?: StopType;
-    options?: OptionAttrs[];
-    placeholder?: string;
-  };
-  return {
-    stopType: payload.stopType ?? "pause",
-    ...(payload.options ? { options: payload.options } : {}),
-    ...(payload.placeholder ? { placeholder: payload.placeholder } : {}),
-  };
-}
-
-function stopEvent(stop: StopPayload): StageEvent {
-  return {
-    kind: "stop",
-    stopType: stop.stopType,
-    ...(stop.options ? { options: stop.options } : {}),
-    ...(stop.placeholder ? { placeholder: stop.placeholder } : {}),
-  };
 }
 
 /** 一拍的重建素材：玩家输入（可空 = 开场）与已演出脚本。 */
@@ -173,9 +110,11 @@ export function lineageToBeats(
       case "sfx":
         script.push(`（音效：${attrs.src ?? ""}）`);
         break;
-      case "stop":
-        script.push(stopLine(stopFromEvent(event)));
+      case "stop": {
+        const stop = stopFromEvent(event);
+        if (stop) script.push(stopLine(stop));
         break;
+      }
       case "beat_end":
         flush();
         break;
@@ -192,18 +131,6 @@ function stopLine(stop: StopPayload): string {
     const labels = (stop.options ?? []).map((option) => option.text).join(" / ");
     return `（等待玩家选择：${labels || "（无选项）"}）`;
   }
-  if (stop.stopType === "free") return "（等待玩家自由回应）";
-  return "（等待玩家继续）";
+  return "（等待玩家自由回应）";
 }
 
-function pickDefined(
-  attrs: Record<string, string>,
-  keys: readonly string[],
-): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const key of keys) {
-    const value = attrs[key];
-    if (value !== undefined && value !== "") out[key] = value;
-  }
-  return out;
-}

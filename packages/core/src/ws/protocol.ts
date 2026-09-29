@@ -2,6 +2,11 @@ import type { SequencedEvent, StageEvent } from "../dsl/events.js";
 
 /** 停止点载荷（编排器随 beat_end 下发，前端渲染选项/输入框）。 */
 export interface StopPayload {
+  /**
+   * choice/free 来自剧本（模型写的 `<stop>`）；pause 只由编排器自己造——
+   * 拍中分岔被截断、或空拍报错时给玩家一个重试入口，模型写不出来，
+   * 幕末（act_end）也不会走到这里，幕末只有黑场 + 「下一幕」。
+   */
   stopType: "choice" | "free" | "pause";
   options?: { text: string; value?: string }[];
   placeholder?: string;
@@ -66,10 +71,19 @@ export type ServerMessage =
        * 客户端重连时发现与本地不一致 → 清空本地缓冲、lastSeq 归零后全量重放。
        */
       epoch?: number;
+      /** 连上这一刻编排器就是空闲的（没有在跑的拍）。重连/刷新后客户端据此直接放开操作条，
+       *  不用等一场本来不会到来的 beat_settled。 */
+      idle?: boolean;
+      /** 当前挂着的存档（周目）id：换档后客户端据此认出新现场。 */
+      saveId?: string;
+      /** 当前存档的档名（舞台顶部显示；改名经 announce 续接）。 */
+      saveName?: string;
     }
   | { type: "beat_start"; beatId: string }
   | { type: "events"; events: SequencedEvent[] }
   | BeatEndPayload & { type: "beat_end" }
+  /** 编排器真正空闲（模型那一轮收尾完毕）：此前 beat_end 已到但导演/玩家操作仍可能被拒。 */
+  | { type: "beat_settled" }
   /** 语音预取就绪（D5）：seq = 所属 say 行 say_start 事件的序号，客户端据此关联行。 */
   | { type: "audio_ready"; seq: number; phrase: number; url: string }
   /** 生成就绪（D6）：客户端预解码后就地 crossfade 淡入，台词早已先行。瞬态消息不进事件缓冲。 */
@@ -78,7 +92,7 @@ export type ServerMessage =
   | { type: "asset_failed"; id: string; message: string }
   | { type: "lineage"; leafId: string; turn: number }
   /**
-   * 上下文重建完成（P6 四原语共用出口）：挂载点已移到新分支，events 是该分支的完整重放。
+   * 上下文重建完成（P6 五动词共用出口）：挂载点已移到新分支，events 是该分支的完整重放。
    * 客户端收到即清空本地脚本/播放游标，按 events 重建（epoch 自增用于丢弃过期的 seq 认知）。
    */
   | {
@@ -111,22 +125,22 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: "resume"; lastSeq: number }
-  | { type: "start" }
   | { type: "player_choice"; optionIndex: number }
   | { type: "player_free"; text: string }
   | { type: "continue" }
   | { type: "ooc"; text: string }
   /** 语音控制（D5 背压）：enabled=总开关（关=停合成）；paused=暂停预取（快进态/缓冲积压）。 */
   | { type: "tts_control"; enabled?: boolean; paused?: boolean }
+  /** 跳转：世界线挂到 nodeId，不生成内容。 @deprecated 旧名「fork」误导（fork 实指分岔），改用 jump。 */
   | { type: "fork"; nodeId: string }
   | { type: "edit"; nodeId: string; newText: string }
   /** 重写（句/段 ±instruction）。粒度契约：granularity 仅标注意图；beat 边界解析归编排器——
    *  granularity="beat" 时编排器须先解析节拍边界并把 nodeId 传节拍首行（见 LineageTree.recordRewrite）。 */
+  /** 分岔：从 nodeId 之前退开重写这一段（目标行留废弃分支），随即重新生成。 */
   | { type: "rewrite"; nodeId: string; granularity: "line" | "beat"; instruction?: string }
+  /** 跳转：世界线挂到 nodeId，不生成内容。活节点上往前走，废弃节点上回到那条线。 */
   | { type: "jump"; nodeId: string }
-  | { type: "bookmark"; nodeId: string; name: string }
-  | { type: "unbookmark"; bookmarkId: string }
-  /** 分岔后立即 OOC：先分岔再注入导演注并重新生成（与原地 steer 正交）。 */
+  /** 跳转后立即 OOC：先跳到 nodeId 再注入导演注开拍（与原地 steer 正交）。 */
   | { type: "ooc_at"; nodeId: string; text: string }
   // —— 工坊（D9）：线程管理 + 对话 + 文件编辑；与演出共用一条连接，服务端按 type 分流 ——
   /** 打开面板：回线程列表与当前现场。 */

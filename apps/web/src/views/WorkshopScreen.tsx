@@ -1,4 +1,5 @@
 import { navigate } from "../router.jsx";
+import { Icon } from "../ui/Icon.js";
 import { WorkshopPanel } from "../workshop/WorkshopPanel.js";
 import { useWorkshopSocket } from "../workshop/useWorkshopSocket.js";
 
@@ -10,7 +11,9 @@ export function WorkshopScreen({ playId }: { playId: string }) {
     <div className="screen workshop-screen">
       <header className="screen-bar">
         <button className="ghost-btn" onClick={() => navigate(`/play/${playId}`)}>
-          ← 标题
+          <span className="btn-icon">
+            <Icon name="back" /> 标题
+          </span>
         </button>
         <span className="muted small">{socket.connected ? "工坊已连接" : "连接中…"}</span>
       </header>

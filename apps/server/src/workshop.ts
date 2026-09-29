@@ -2,8 +2,16 @@ import { readFile as readFileBytes } from "node:fs/promises";
 import type { AgentEvent, AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import { type Api, type Model, type Static, Type } from "@earendil-works/pi-ai";
-import { parsePlayConfig, type WorkshopAssetView } from "@stage-ai/core";
+import {
+  LineageTree,
+  parsePlayConfig,
+  type LineageEvent,
+  type LineageEventKind,
+  type LineageSnapshot,
+  type WorkshopAssetView,
+} from "@stage-ai/core";
 import type { PlayFiles } from "./playFiles.js";
+import { assertSaveId, type PlaySaves } from "./saves.js";
 import { readSkill, skillsPrompt } from "./skills.js";
 import type { PlayStore, Readiness } from "./store.js";
 import type { AssetKind, GeneratedPlayAsset, WorkshopAssets } from "./workshopAssets.js";
@@ -11,6 +19,7 @@ import type { AssetKind, GeneratedPlayAsset, WorkshopAssets } from "./workshopAs
 /**
  * 工坊 agent（D9）：与 playwriter 并列的**独立 pi 实例**，只管搭台（剧目文件的创建与维护），
  * 不参与演出。工具限于剧目文件白名单 + 就绪检查——它拿不到会话日志、lineage 与 TTS 缓存。
+ * 例外：`list_saves` / `read_lineage` 只读故事树（周目级），不提供任何改写入口。
  */
 
 /** 工坊 agent 的一次写盘（前端在对话流里内联展示 + 可撤销）。 */
@@ -30,10 +39,26 @@ export interface WorkshopToolDeps {
   assets?: WorkshopAssets;
   /** 素材落盘回调：推给前端在对话流里内联展示。 */
   onAsset: (asset: GeneratedPlayAsset) => void;
+  /** 周目（存档）枚举——读故事树前先让 agent 知道有哪几棵。 */
+  saves: PlaySaves;
+  /** 按 saveId 取存档级操作面（会话面），供 read_lineage 读树。 */
+  saveStore: (saveId: string) => PlayStore;
 }
 
 const emptyParams = Type.Object({}, { additionalProperties: false });
 const readFileParams = Type.Object({ path: Type.String({ maxLength: 300 }) }, { additionalProperties: false });
+const saveIdParams = Type.Object({ saveId: Type.String({ maxLength: 64 }) }, { additionalProperties: false });
+const readLineageParams = Type.Object(
+  {
+    saveId: Type.String({ maxLength: 64 }),
+    /** 从第几条开始（0 起）。节点按 turn 升序，分页游标。 */
+    offset: Type.Optional(Type.Number()),
+    limit: Type.Optional(Type.Number()),
+    /** 只要当前分支路径上的节点（默认）还是全量节点含废弃分支。 */
+    allBranches: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
 const writeFileParams = Type.Object(
   { path: Type.String({ maxLength: 300 }), content: Type.String({ maxLength: 200_000 }) },
   { additionalProperties: false },
@@ -120,7 +145,7 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
     name: "write_file",
     label: "写剧目文件",
     description:
-      "写入剧目文件（可写范围：play.json、memory/** 的 .md/.json/.txt）。play.json 结构校验不过则不落盘。",
+      "写入剧目文件（可写范围：play.json、memory/** 的 .md/.json/.txt、assets/manifest.json）。play.json 结构校验不过则不落盘。",
     parameters: writeFileParams,
     execute: async (_id, params: Static<typeof writeFileParams>) => {
       const { path, content } = params;
@@ -265,7 +290,57 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
     },
   };
 
-  return [listFiles, readFile, writeFile, deleteFile, readiness, generateAsset, inspectAsset, readSkillTool];
+  const listSaves: AgentTool<typeof emptyParams> = {
+    name: "list_saves",
+    label: "列出周目",
+    description:
+      "列出这部剧目的全部周目（存档）及其 id、名称、拍数、最后一句。要读故事树时先用它拿 saveId。",
+    parameters: emptyParams,
+    execute: async () => {
+      const list = await deps.saves.list();
+      if (list.length === 0) return textResult("（还没有任何周目）");
+      return textResult(
+        list
+          .map((s) => `${s.id}\t${s.name}${s.current ? "（当前活动档）" : ""}\t${s.beats} 拍\t最后：${s.preview || "（无）"}`)
+          .join("\n"),
+      );
+    },
+  };
+
+  const readLineage: AgentTool<typeof readLineageParams> = {
+    name: "read_lineage",
+    label: "读故事树",
+    description:
+      "只读某个周目的故事树（行级事件日志），按顺序返回节点 id、类型、台词。想改剧情结构（分岔/编辑/重写）请告诉用户去舞台的「路线」视图操作，你没有写权限。",
+    parameters: readLineageParams,
+    execute: async (_id, params: Static<typeof readLineageParams>) => {
+      try {
+        // 先验 id 再验存在：非法 id 与不存在的周目是两种错，模型要能分清
+        const saveId = assertSaveId(params.saveId);
+        if (!(await deps.saves.has(saveId))) {
+          return textResult(`周目 ${saveId} 不存在，先用 list_saves 看有哪些周目。`);
+        }
+        const session = await deps.saveStore(saveId).loadSession();
+        if (!session) return textResult(`周目 ${saveId} 还没有演出版本（session.json 不存在或读不出）。`);
+        return textResult(renderLineage(saveId, session.store, params));
+      } catch (error) {
+        return textResult(`读取失败：${reason(error)}`);
+      }
+    },
+  };
+
+  return [
+    listFiles,
+    readFile,
+    writeFile,
+    deleteFile,
+    readiness,
+    generateAsset,
+    inspectAsset,
+    readSkillTool,
+    listSaves,
+    readLineage,
+  ];
 }
 
 /** 文件头嗅探（扩展名可能与实际字节不符，垫图塞错类型会被网关拒）。 */
@@ -275,6 +350,67 @@ function sniffImageMime(bytes: Buffer): string | null {
   if (bytes.length > 12 && bytes.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
   if (bytes.length > 6 && bytes.subarray(0, 6).toString("latin1").startsWith("GIF8")) return "image/gif";
   return null;
+}
+
+/** 行级事件的中文标签（给 agent 读的，别丢英文 kind 原样给它猜）。 */
+const LINEAGE_KIND_LABEL: Record<string, string> = {
+  scene: "场景",
+  actor: "角色登场",
+  say: "台词",
+  narrate: "旁白",
+  thought: "心理",
+  sfx: "音效",
+  preload: "预载素材",
+  cg: "CG",
+  stop: "停止点",
+  player: "玩家表态",
+  ooc: "导演注",
+  beat_end: "幕末",
+  edit: "改写行",
+  rewrite: "重写请求",
+};
+
+function kindLabel(kind: LineageEventKind): string {
+  return LINEAGE_KIND_LABEL[kind] ?? kind;
+}
+
+/** 一行事件的紧凑文本：id、类型、台词截断。 */
+function renderEventLine(
+  ev: { id: string; kind: LineageEventKind; text?: string; onPath: boolean; seq?: number; editTargetId?: string | undefined },
+  textLimit = 60,
+): string {
+  const path = ev.onPath ? "" : "（废弃分支）";
+  const seq = ev.seq === undefined ? "" : ` seq=${ev.seq}`;
+  const target = ev.editTargetId ? ` 改写 ${ev.editTargetId}` : "";
+  const text = (ev.text ?? "").replace(/\s+/g, " ").trim();
+  const body = text ? (text.length > textLimit ? `${text.slice(0, textLimit)}…` : text) : "";
+  return `${ev.id}\t${kindLabel(ev.kind)}${path}${seq}\t${body}${target}`;
+}
+
+/** 故事树只读渲染：分页 + 当前分支/全量两态。 */
+function renderLineage(
+  saveId: string,
+  store: { events: LineageEvent[]; leafId: string | null; snapshots: LineageSnapshot[] },
+  params: Static<typeof readLineageParams>,
+): string {
+  // 走 LineageTree.describe() 而不是自己算路径：onPath 标记只有它算得对
+  const tmp = new LineageTree();
+  tmp.load(store);
+  const view = tmp.describe();
+
+  const all = params.allBranches === true;
+  const nodes = all ? view.nodes : view.nodes.filter((n) => n.onPath);
+  const offset = Math.max(0, params.offset ?? 0);
+  const limit = Math.min(200, Math.max(1, params.limit ?? 60));
+  const page = nodes.slice(offset, offset + limit);
+
+  const head = [
+    `周目 ${saveId}：共 ${nodes.length} 个节点（${all ? "全量含废弃分支" : "当前分支路径"}）`,
+    `叶节点：${view.leafId ?? "（空树）"}　快照：${store.snapshots.length} 个`,
+    `序号 ${offset}–${offset + page.length - 1}${nodes.length > offset + page.length ? "（还有更多，用 offset 继续翻）" : ""}`,
+  ];
+  const body = page.map((n) => renderEventLine(n));
+  return [...head, ...(body.length > 0 ? body : ["（无节点）"])].join("\n");
 }
 
 export function renderReadiness(r: Readiness): string {
@@ -299,9 +435,11 @@ export async function buildWorkshopPrompt(
 
 # 职责边界
 
-- 你产出的东西：世界观前提（premise）、角色卡（人设 + 立绘差分映射 + 音色）、地点/设定记忆卡、图像素材。
+- 你产出的东西：世界观前提（premise）、创作口径（craft.md）、角色卡（人设 + 立绘差分映射 + 音色）、地点/设定记忆卡、图像素材。
 - 你不做的事：不写台词、不排戏、不替玩家表态。演出由另一套系统负责，与你的对话无关。
 - 改文件必须真的调用 write_file 工具；出图必须真的调用 generate_asset。只在对话里说"我建议改成…"不算完成。
+- 故事树（story tree / lineage）你**只能读**。分岔、编辑台词、重写这些结构操作要走舞台的「路线」视图——
+  那是玩家的四个动词，不该由你在背后动。需要调整剧情结构时，把节点 id 和你的建议告诉用户去操作。
 
 # 对话风格
 
@@ -333,10 +471,27 @@ ${skills}
 # 剧目写作要点
 
 - premise：3~6 句，交代世界、主角处境、核心张力；不要写成大纲列表。
+- 创作口径（memory/always/craft.md）：剧作家每一拍怎么写台词都听这一份——节奏多密、情绪怎么落地、
+  有什么禁忌。用户说「节奏太快」「别让角色太主动」这类创作口味要求，就改这里（只改风格条目，
+  不要往里写 DSL 格式或工具用法，那些由引擎保证）。
 - 角色卡：id 用英文小写（如 mio），name 是中文名，persona 写具体的人（年龄/关系/说话方式/在意的点）；
   voiceId 从预置音色库挑；sprites 是「表情名 → 立绘文件名」的映射。
 - 记忆卡（memory/index/locations| lore/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。
 - 记忆卡是给演出用的：写具体可用的设定（地点长什么样、约定是什么），不写"待补充"。
+- 素材描述表（assets/manifest.json）：\`{"文件名去扩展名": "画面里有什么"}\`。剧作家只看得懂 id 认不出画面，
+  背景/插图/立绘差分配一句具体描述（色调、时间、氛围），差分名与画面不符时在描述里点明。
+
+# 读故事树（list_saves / read_lineage）
+
+演出的每一行都落在周目（存档）的故事树里一棵。用户在工坊里问「演到哪了」「小春那场戏后来怎么了」
+「这个角色出现过几次」这类问题，读树比读文件准得多。
+
+- list_saves 拿 saveId（标「当前活动档」的是玩家正在看的那个，通常先读它）。
+- read_lineage 默认只返回**当前分支路径**上的节点；用户问「有没有走过的另一条线」才加 allBranches=true。
+- 节点很多时按 offset 翻页（默认 60 条一页），别指望一次读完。
+- 节点 id 是操作故事树的凭据，回复用户时带上 id，他才能去「路线」视图里定位。
+- 树是行级事件日志：say 是台词、narrate 旁白、thought 心理、player 玩家表态、stop 停止点、beat_end 幕末。
+  统计「某角色说了几句」就是数 say 节点。
 
 # 当前状态
 

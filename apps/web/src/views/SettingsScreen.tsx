@@ -5,6 +5,7 @@
  * 改完需要重启服务端才生效，面板显式说明，不假装热生效。
  */
 import { useCallback, useEffect, useState } from "react";
+import { Icon } from "../ui/Icon.js";
 import { api, type Settings, type TtsKeys } from "../api.js";
 import { navigate } from "../router.jsx";
 
@@ -81,7 +82,9 @@ export function SettingsScreen() {
     <div className="screen">
       <header className="screen-bar">
         <button className="ghost-btn" onClick={() => navigate("/")}>
-          ← 剧目库
+          <span className="btn-icon">
+            <Icon name="back" /> 剧目库
+          </span>
         </button>
         <h2>设置</h2>
         <span className="muted">改动写回服务端 .env，重启服务端后生效</span>
@@ -131,7 +134,7 @@ export function SettingsScreen() {
               hint={
                 settings.model.apiKeySet
                   ? "留空或保持掩码即不改；输入新值即替换"
-                  : "尚未配置——不填则演出会 401"
+                  : "尚未配置——不填则播放会 401"
               }
             >
               <input
@@ -145,7 +148,7 @@ export function SettingsScreen() {
             <div className="settings-grid">
               <NumField
                 label="输出上限"
-                hint="超过网关限制即 400 空拍"
+                hint="超过网关限制会返回 400，内容为空"
                 value={draft.model.maxTokens}
                 onChange={(v) => setDraft({ ...draft, model: { ...draft.model, maxTokens: v } })}
               />
@@ -294,7 +297,7 @@ export function SettingsScreen() {
           </Group>
 
           <Group title="语音">
-            <Field label="启用语音" hint="关掉不合成也不占配额；文字永远先行，语音不阻塞演出">
+            <Field label="启用语音" hint="关掉不合成也不占配额；文字永远先行，语音不阻塞剧情">
               <input
                 type="checkbox"
                 checked={draft.tts.enabled}

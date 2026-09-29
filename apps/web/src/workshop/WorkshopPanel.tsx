@@ -2,13 +2,25 @@ import { useEffect, useRef, useState } from "react";
 import type { ClientMessage, WorkshopAssetView } from "@stage-ai/core";
 import { api } from "../api.js";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
+import { Icon, type IconName } from "../ui/Icon.js";
 import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
+import { AssetsPanel } from "./AssetsPanel.js";
+import { CraftPanel } from "./CraftPanel.js";
 import { FileBrowser } from "./FileBrowser.js";
 import { WorkshopMarkdown } from "./WorkshopMarkdown.js";
 import { useWorkshop } from "./useWorkshop.js";
 
 /** 抽屉/全屏两种形态：抽屉从右侧滑入压在舞台上，全屏独占页面。 */
 export type WorkshopMode = "drawer" | "full";
+
+const TABS: { id: WorkshopTab; label: string; icon: IconName }[] = [
+  { id: "chat", label: "对话", icon: "chat" },
+  { id: "assets", label: "素材", icon: "assets" },
+  { id: "files", label: "文件", icon: "files" },
+  { id: "craft", label: "创作口径", icon: "craft" },
+];
+
+type WorkshopTab = "chat" | "assets" | "files" | "craft";
 
 /**
  * 工坊面板（D9）：meta-chat 多会话 + 剧目文件浏览编辑。
@@ -33,7 +45,7 @@ export function WorkshopPanel({
 }) {
   const workshop = useWorkshop(send);
   const { state } = workshop;
-  const [tab, setTab] = useState<"chat" | "files">("chat");
+  const [tab, setTab] = useState<WorkshopTab>("chat");
   const [input, setInput] = useState("");
   const [showThreads, setShowThreads] = useState(false);
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
@@ -67,28 +79,40 @@ export function WorkshopPanel({
   return (
     <aside className={`workshop workshop-${mode}`} aria-label="工坊">
       <header className="workshop-bar">
-        <button className="ghost-btn" onClick={() => setShowThreads((v) => !v)} title="线程列表">
-          ☰
+        <button className="ghost-btn icon-btn" onClick={() => setShowThreads((v) => !v)} title="线程列表">
+          <Icon name="menu" />
         </button>
         <span className="workshop-title">{activeThread?.title ?? "新线程"}</span>
         <div className="workshop-bar-actions">
-          <button className="ghost-btn small-btn" onClick={() => setTab(tab === "chat" ? "files" : "chat")}>
-            {tab === "chat" ? "📁 文件" : "💬 对话"}
-          </button>
           {onModeChange && (
             <button
-              className="ghost-btn small-btn"
+              className="ghost-btn small-btn icon-btn icon-btn-sm"
               onClick={() => onModeChange(mode === "drawer" ? "full" : "drawer")}
               title={mode === "drawer" ? "全屏" : "收成抽屉"}
             >
-              {mode === "drawer" ? "⤢" : "⤡"}
+              <Icon name={mode === "drawer" ? "expand" : "collapse"} size={14} />
             </button>
           )}
-          <button className="ghost-btn small-btn" onClick={onClose} title="关闭">
-            ✕
+          <button className="ghost-btn small-btn icon-btn icon-btn-sm" onClick={onClose} title="关闭">
+            <Icon name="close" size={14} />
           </button>
         </div>
       </header>
+
+      <nav className="workshop-tabs" role="tablist">
+        {TABS.map((item) => (
+          <button
+            key={item.id}
+            role="tab"
+            aria-selected={tab === item.id}
+            className={`workshop-tab${tab === item.id ? " active" : ""}`}
+            onClick={() => setTab(item.id)}
+          >
+            <Icon name={item.icon} size={14} />
+            {item.label}
+          </button>
+        ))}
+      </nav>
 
       {showThreads && (
         <div className="workshop-threads">
@@ -100,7 +124,9 @@ export function WorkshopPanel({
               setInput("");
             }}
           >
-            ＋ 新线程
+            <span className="btn-icon">
+              <Icon name="plus" size={13} /> 新线程
+            </span>
           </button>
           {state.threads.map((thread) => (
             <div key={thread.id} className={`thread-row${thread.id === state.activeId ? " active" : ""}`}>
@@ -115,20 +141,20 @@ export function WorkshopPanel({
                 {thread.title}
               </button>
               <button
-                className="ghost-btn tiny-btn"
+                className="ghost-btn tiny-btn icon-btn icon-btn-xs"
                 onClick={() => workshop.setArchived(thread.id, !thread.archived)}
                 title={thread.archived ? "取消归档" : "归档"}
               >
-                {thread.archived ? "↩" : "📥"}
+                <Icon name={thread.archived ? "reply" : "download"} size={13} />
               </button>
               <button
-                className="ghost-btn tiny-btn danger-btn"
+                className="ghost-btn tiny-btn danger-btn icon-btn icon-btn-xs"
                 onClick={() => {
                   if (window.confirm(`删除线程「${thread.title}」？`)) workshop.remove(thread.id);
                 }}
                 title="删除"
               >
-                ✕
+                <Icon name="close" size={13} />
               </button>
             </div>
           ))}
@@ -142,13 +168,15 @@ export function WorkshopPanel({
         </div>
       )}
 
-      {tab === "files" ? (
-        <FileBrowser
-          playId={playId}
-          revision={state.writes.length}
-          onSaved={() => undefined}
-        />
-      ) : (
+      {tab === "files" && (
+        <FileBrowser playId={playId} revision={state.writes.length} onSaved={() => undefined} />
+      )}
+
+      {tab === "assets" && <AssetsPanel playId={playId} />}
+
+      {tab === "craft" && <CraftPanel playId={playId} />}
+
+      {tab === "chat" && (
         <>
           <div className="workshop-chat" ref={scrollRef}>
             {state.messages.length === 0 && !state.streaming && (
@@ -232,7 +260,9 @@ export function WorkshopPanel({
         <div className="workshop-writes">
           {state.writes.map((write) => (
             <div key={write.at} className="write-row">
-              <span className="file-path">📝 {write.path}</span>
+              <span className="file-path">
+                <Icon name="craft" size={13} /> {write.path}
+              </span>
               <button
                 className="ghost-btn tiny-btn"
                 onClick={() => {

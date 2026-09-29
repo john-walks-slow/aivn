@@ -1,12 +1,17 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { PlayLibrary } from "./store.js";
 import type { PlayHouse } from "./playhouse.js";
 import type { SettingsFile } from "./configApi.js";
 import { parsePlayConfig } from "@stage-ai/core";
+import { DEFAULT_CRAFT } from "./prompt.js";
 
 const BODY_LIMIT = 64 * 1024 * 1024;
+
+/** 创作口径落盘路径（工坊 agent 与设置页改的是同一份）。 */
+const CRAFT_PATH = "memory/always/craft.md";
 
 const MIME: Record<string, string> = {
   png: "image/png",
@@ -198,11 +203,50 @@ export async function handleHttp(
       }
       return fail(res, 405, "不支持的方法");
     }
+    // —— 剧作家 session 历史（只读快照）：读活动档落盘的 session.json，不建 runtime、不改任何状态 ——
+    if (sub === "history" && parts.length === 4) {
+      if (method !== "GET") return fail(res, 405, "不支持的方法");
+      // 走 active.json 指针那棵树：历史随周目隔离，跟同源的 lineage 一个道理
+      const activeId = await library.saves(playId).readActive();
+      const beats = activeId ? await library.saveStore(playId, activeId).loadHistory() : [];
+      return json(res, 200, { beats });
+    }
     if (sub === "lineage" && parts.length === 4) {
-      // 路线树（P6）：全量节点（含废弃分支）+ 书签；打开视图/操作后/手动刷新时取
+      // 路线树（P6）：全量节点（含废弃分支）；打开路线视图/结构操作后/手动刷新时取
       if (method !== "GET") return fail(res, 405, "不支持的方法");
       const runtime = await playhouse.get(playId);
       return json(res, 200, runtime.orchestrator.lineageView());
+    }
+
+    // —— 存档（周目）：一剧目并存 N 棵独立的谱系树，「开始新周目」只新建不覆盖 ——
+    if (sub === "saves" && parts.length === 4) {
+      if (method === "GET") return json(res, 200, await library.saves(playId).list());
+      if (method === "POST") {
+        const raw = await readBody(req);
+        const body = raw.length ? (JSON.parse(raw.toString("utf8")) as { name?: string }) : {};
+        return json(res, 200, await playhouse.createSave(playId, body.name));
+      }
+      return fail(res, 405, "不支持的方法");
+    }
+    if (sub === "saves" && parts.length === 5) {
+      const saveId = parts[4] ?? "";
+      if (method === "PATCH") {
+        const body = JSON.parse((await readBody(req)).toString("utf8")) as { name?: string };
+        if (!body.name?.trim()) return fail(res, 400, "档名不能为空");
+        return json(res, 200, await playhouse.renameSave(playId, saveId, body.name));
+      }
+      if (method === "DELETE") {
+        await playhouse.deleteSave(playId, saveId);
+        return json(res, 200, { ok: true });
+      }
+    }
+
+    if (sub === "active" && parts.length === 4 && method === "PUT") {
+      // 切档：只改指针 + 重建 runtime；演出进行中等当前一拍演完
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as { saveId?: string };
+      if (!body.saveId) return fail(res, 400, "缺少 saveId");
+      await playhouse.switchSave(playId, body.saveId);
+      return json(res, 200, { ok: true });
     }
 
     if (sub === "play" && parts.length === 4) {
@@ -215,6 +259,14 @@ export async function handleHttp(
     if (sub === "readiness" && parts.length === 4) {
       if (method === "GET") return json(res, 200, await store.readiness());
       return fail(res, 405, "不支持的方法");
+    }
+    // —— 剧目主题层：<link> 直挂，文件不存在就 404（浏览器静默忽略，走默认主题）——
+    if (sub === "theme.css" && method === "GET") {
+      const path = join(store.dir, "theme.css");
+      if (!existsSync(path)) return fail(res, 404, "未找到");
+      res.writeHead(200, { "content-type": "text/css; charset=utf-8", "cache-control": "no-cache" });
+      res.end(await readFile(path));
+      return;
     }
     // —— 工坊文件浏览/编辑（D9）：白名单在 PlayFiles，越界路径直接 400 ——
     if (sub === "files" && parts.length === 4) {
@@ -233,6 +285,22 @@ export async function handleHttp(
       if (method === "DELETE") {
         const path = url.searchParams.get("path") ?? "";
         await runtime.workshop.removeFile(path);
+        return json(res, 200, { ok: true });
+      }
+      return fail(res, 405, "不支持的方法");
+    }
+    // —— 创作口径（craft.md）：一等公民读写口，缺文件回退默认正文 ——
+    if (sub === "craft" && parts.length === 4) {
+      const runtime = await playhouse.get(playId);
+      if (method === "GET") {
+        const onDisk = await runtime.workshop.files.read(CRAFT_PATH).catch(() => "");
+        const content = onDisk.trim() ? onDisk : DEFAULT_CRAFT;
+        return json(res, 200, { content, isDefault: !onDisk.trim() });
+      }
+      if (method === "PUT") {
+        const body = JSON.parse((await readBody(req)).toString("utf8")) as { content?: string };
+        if (typeof body.content !== "string") return fail(res, 400, "缺少 content");
+        await runtime.workshop.writeFile(CRAFT_PATH, body.content);
         return json(res, 200, { ok: true });
       }
       return fail(res, 405, "不支持的方法");

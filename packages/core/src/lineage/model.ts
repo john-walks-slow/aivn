@@ -3,9 +3,16 @@
  *
  * - 事件 append-only：行级演出事件按序持久化（JSONL），parentId 构成分支树；
  * - 原地编辑 = 追加 edit 事件（editTargetId + 新文本），物化时覆盖目标行——日志永不改写；
- * - 分岔/重写由树结构表达：forkAt 把挂载点移到目标节点，后续事件成为新分支；
+ * - **跳转 vs 分岔**（两个正交动词，边界在本文件里定死）：
+ *   跳转 `jumpTo` 只移挂载点、不追加事件，不生成任何内容；活节点上是往前走，
+ *   已废弃的节点上是回到那条岔掉的线。分岔 `recordRewrite` 把挂载点退到目标**之前**
+ *   并追加一条 rewrite 事件，于是目标节点分叉出两条路，**必然伴随重新生成**。
+ *   前者改「现在在哪」，后者改「接下来是什么」，所以只有分岔需要导演意图与重演。
  * - 谱系快照随分支走：恢复 = 当前路径上最近的快照。
  */
+
+import type { OptionAttrs, StopType } from "../dsl/spec.js";
+import { toNodeView } from "./replay.js";
 
 export type LineageEventKind =
   | "scene"
@@ -74,13 +81,6 @@ export interface LineageSnapshot {
   createdAt: number;
 }
 
-export interface Bookmark {
-  id: string;
-  nodeId: string;
-  name: string;
-  createdAt: number;
-}
-
 /** 路线树视图（前端渲染用）：事件全集投影 + 路径标记，替代存读档的「历史即存档」。 */
 export interface LineageNodeView {
   id: string;
@@ -98,6 +98,16 @@ export interface LineageNodeView {
   editTargetId: string | undefined;
   /** rewrite 事件专有：重写粒度标注（line/beat）。 */
   granularity: string | undefined;
+  /** rewrite 事件专有：玩家写下的导演意图。 */
+  instruction: string | undefined;
+  /** 剧本事件的 seq（say_start/narrate_start/scene/… 的序号）：与客户端 ScriptLine.seq 同尺，
+   *  路线树据此把谱系卡片精确对到剧本行上。player/ooc/edit/rewrite 无 seq。 */
+  seq: number | undefined;
+  /** stop 事件专有：停止点类型/选项/占位文案。attrs 里那个 stopType 只是给旧客户端兜底的，
+   *  客户端只读回看要按原样重建停止点，选项必须留在投影里。 */
+  stopType?: StopType;
+  stopOptions?: OptionAttrs[];
+  stopPlaceholder?: string;
 }
 
 export interface LineageView {
@@ -105,17 +115,15 @@ export interface LineageView {
   leafId: string | null;
   /** 当前分支的节点 id 链（root → leaf，序即演出顺序）：剧本视图直接照此渲染。 */
   pathIds: string[];
-  bookmarks: Bookmark[];
 }
 
 const EDITABLE_KINDS: ReadonlySet<string> = new Set(["say", "narrate", "thought"]);
 
-/** 持久化结构：事件日志（真相源）+ 会话运行态（leafId）+ 用户存档事实（快照/书签）。 */
+/** 持久化结构：事件日志（真相源）+ 会话运行态（leafId）+ 分岔事实快照。 */
 export interface LineageStore {
   events: LineageEvent[];
   leafId: string | null;
   snapshots: LineageSnapshot[];
-  bookmarks: Bookmark[];
 }
 
 let nextIdCounter = 0;
@@ -142,7 +150,6 @@ export class LineageTree {
   private leaf: string | null = null;
   /** nodeId → 最近快照（一个节点保留一份，后存覆盖）。 */
   private readonly snapshotsByNode = new Map<string, LineageSnapshot>();
-  private readonly bookmarks = new Map<string, Bookmark>();
 
   get leafId(): string | null {
     return this.leaf;
@@ -160,14 +167,26 @@ export class LineageTree {
     });
   }
 
-  /** 从任意节点开新分支：挂载点移到该节点，后续 append 成为新分支。 */
-  forkAt(nodeId: string): LineageEvent {
+  /**
+   * 跳转：把挂载点移到该节点，后续 append 成为新世界线。
+   *
+   * 这只是移动游标，不追加任何事件——「跳转」与「分岔」的分野就在这里。
+   * 目标节点在不在当前路径上都能跳：活的跳上去是往前走，跳到已废弃的节点上
+   * 是回到那条岔掉的线（该节点之后的原剧情转为废弃分支，历史一条不删）。
+   * 想真的开出新内容，是分岔（`recordRewrite`）的事，不是这里。
+   */
+  jumpTo(nodeId: string): LineageEvent {
     const node = this.requireNode(nodeId);
     this.leaf = node.id;
     return node;
   }
 
-  /** 原地编辑：追加 edit 事件覆盖目标行文本（当前分支，不产生新分支）。 */
+  /**
+   * 原地编辑：追加 edit 事件覆盖目标行文本。
+   *
+   * edit 挂在**被编辑行自己**之下（而非叶尖），于是「改这一句」= 从该行分岔重写：
+   * 新世界线停在这行、改写当拍生效，其后的剧情整段转为废弃分支（历史一条不删）。
+   */
   editInPlace(nodeId: string, newText: string): LineageEvent {
     const target = this.requireNode(nodeId);
     if (!EDITABLE_KINDS.has(target.kind)) {
@@ -175,7 +194,7 @@ export class LineageTree {
     }
     return this.attach({
       id: nextId(),
-      parentId: this.leaf,
+      parentId: target.id,
       kind: "edit",
       turn: this.nextTurn(),
       text: newText,
@@ -185,10 +204,13 @@ export class LineageTree {
   }
 
   /**
-   * 重写标注（分岔 + 重生成）：回退到目标**之前**（挂载点移到其父节点，目标行留在废弃分支）。
+   * 分岔：回退到目标**之前**（挂载点移到其父节点，目标行留在废弃分支），并追加 rewrite 事件。
+   *
+   * 这是「分岔」与「跳转」在数据模型上的分界：跳转不追加事件、分岔追加一条 rewrite，
+   * 于是目标节点在树上分叉出度数 ≥2 的两条路。分岔必然伴随重新生成内容。
    *
    * 粒度契约：granularity 仅记录意图与 UI 标注；**beat 边界解析归编排器**——
-   * "beat" 重写时编排器须先解析节拍边界（beat_end/stop 之后的第一个事件）并把 nodeId 传节拍首行。
+   * "beat" 分岔时编排器须先解析节拍边界（beat_end/stop 之后的第一个事件）并把 nodeId 传节拍首行。
    * core 不事后推算节拍（beat 生命周期由编排器拥有）。
    */
   recordRewrite(nodeId: string, granularity: "line" | "beat", instruction?: string): LineageEvent {
@@ -239,7 +261,7 @@ export class LineageTree {
     return candidateId !== nodeId && this.ancestorChain(nodeId).includes(candidateId);
   }
 
-  /** 保存谱系快照（分岔/书签时）。 */
+  /** 保存谱系快照（分岔/重写时）。 */
   saveSnapshot(engine: EngineStateSnapshot, memory: MemorySnapshot): LineageSnapshot {
     if (this.leaf === null) throw new Error("空树不能保存快照");
     const snapshot: LineageSnapshot = {
@@ -284,28 +306,7 @@ export class LineageTree {
     return new Set(this.ancestorChain(nodeId));
   }
 
-  /**
-   * 书签：命名节点标记（= 传统存档）。注意书签本身不自动快照——
-   * "谱系快照随书签保存"由编排器组合 addBookmark + saveSnapshot 完成；
-   * 无快照的书签在续演时走冷启动装配。
-   */
-  addBookmark(nodeId: string, name: string): Bookmark {
-    this.requireNode(nodeId);
-    const bookmark: Bookmark = { id: nextId(), nodeId, name, createdAt: Date.now() };
-    this.bookmarks.set(bookmark.id, bookmark);
-    return bookmark;
-  }
-
-  listBookmarks(): Bookmark[] {
-    return [...this.bookmarks.values()].sort((a, b) => a.createdAt - b.createdAt);
-  }
-
-  /** 摘除书签（只是标记，误删可再标；不动物理分支）。 */
-  removeBookmark(bookmarkId: string): boolean {
-    return this.bookmarks.delete(bookmarkId);
-  }
-
-  /** 路线树视图：全量节点（含废弃分支）+ 路径标记 + 书签（按 id 升序，父先于子）。 */
+  /** 路线树视图：全量节点（含废弃分支）+ 路径标记（父先于子）。 */
   describe(): LineageView {
     const onPath = this.pathSet();
     const childCount = new Map<string, number>();
@@ -314,25 +315,19 @@ export class LineageTree {
       childCount.set(event.parentId, (childCount.get(event.parentId) ?? 0) + 1);
     }
     const nodes = [...this.events.values()]
-      .sort((a, b) => a.createdAt - b.createdAt)
-      .map((event) => ({
-        id: event.id,
-        parentId: event.parentId,
-        kind: event.kind,
-        turn: event.turn,
-        text: event.text ?? "",
-        attrs: event.payload?.attrs ?? {},
-        createdAt: event.createdAt,
-        onPath: onPath.has(event.id),
-        children: childCount.get(event.id) ?? 0,
-        editTargetId: event.editTargetId,
-        granularity: event.payload?.granularity,
-      }));
+      // 同一次工具批次的多个事件共用 createdAt，只按它排会随机抖动，路线树的分岔口
+      // 因此忽左忽右；id 兜成第二稳定键，视图每次渲染的节点顺序完全一致。
+      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+      .map((event) => {
+        const view = toNodeView(event);
+        view.onPath = onPath.has(event.id);
+        view.children = childCount.get(event.id) ?? 0;
+        return view;
+      });
     return {
       nodes,
       leafId: this.leaf,
       pathIds: this.ancestorChain(this.leaf),
-      bookmarks: this.listBookmarks(),
     };
   }
 
@@ -346,7 +341,6 @@ export class LineageTree {
       events: [...this.events.values()],
       leafId: this.leaf,
       snapshots: [...this.snapshotsByNode.values()],
-      bookmarks: [...this.bookmarks.values()],
     };
   }
 
@@ -355,11 +349,9 @@ export class LineageTree {
     for (const event of store.events) this.attach(event);
     this.leaf = store.leafId ?? store.events.at(-1)?.id ?? null;
     for (const snapshot of store.snapshots) this.snapshotsByNode.set(snapshot.nodeId, snapshot);
-    for (const bookmark of store.bookmarks) this.bookmarks.set(bookmark.id, bookmark);
     seedNextId([
       ...store.events.map((e) => e.id),
       ...store.snapshots.map((s) => s.id),
-      ...store.bookmarks.map((b) => b.id),
     ]);
   }
 

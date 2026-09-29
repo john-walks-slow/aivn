@@ -6,49 +6,100 @@ import type { PlayMemory } from "./memory.js";
 export type AssetManifest = Record<string, string[]>;
 
 /**
+ * 创作口径默认正文——落盘为 plays/<id>/memory/always/craft.md。
+ * 这里只放**风格类**规则（节奏/表达/禁项）；引擎契约（DSL 标签序、工具语义、【状态】区）
+ * 留在 buildSystemPrompt 的内置段里，用户改不坏。工坊 agent 与工坊「创作口径」tab 改的都是这一份。
+ */
+export const DEFAULT_CRAFT = `# 创作口径
+
+> 这份文件是剧作家的创作口径：台词怎么写、节奏多密、情绪怎么落地。
+> 你可以在工坊里直接改，工坊 agent 也能改，改动从下一拍生效。
+> 格式自由——删条目、换措辞、加自己的规则都可以。
+
+1. 一拍 3~8 行台词为宜：一小段有起伏的演出，然后停在停止点等玩家。
+2. 展示而非陈述：情绪走动作、语气与台词本身，不用旁白直接解释心理。
+3. 玩家表态简短时也保持剧情推进：让角色主动给出反应与新信息，不要原地等待。
+4. 好感度变化、重要伏笔等通过演出自然体现，后续【状态】区会反映。
+5. 观众看到的只有你的台词和舞台，没有「生成完毕」「等待指令」这类引擎状态语——别在剧本里对观众解释系统。
+`;
+
+/** 素材描述：stem（无扩展名的文件名）→ 一句说明。来源 plays/<id>/assets/manifest.json。 */
+export type AssetNotes = Record<string, string>;
+
+/** 已生成图条目：playwriter 自己 preload 出来的资产，prompt 即它当初的意图描述。 */
+export interface GeneratedNote {
+  id: string;
+  type: "bg" | "cg";
+  prompt: string;
+}
+
+export interface PromptContext {
+  play: PlayConfig;
+  assets?: AssetManifest;
+  /** 素材描述表（stem → 说明），拼在各清单的 id 后面。 */
+  notes?: AssetNotes;
+  /** 已生成图清单：让剧作家记得自己造过哪些 id，别换个名字重画一遍。 */
+  generated?: GeneratedNote[];
+  memory?: PlayMemory;
+  arcIds?: readonly string[];
+}
+
+/**
  * Playwriter 系统提示词 = 三区装配的 A 区（固定前部，KV cache 前缀稳定）。
  * 每轮变化的状态走 user 消息【状态】区（B 区 append-only），见 orchestrator。
  * 记忆层（D7）：craft/premise/index 标题列表在 runtime 构建时读入——纪元内冻结，工坊热改走 reload。
  */
-export function buildSystemPrompt(
-  play: PlayConfig,
-  assets: AssetManifest = {},
-  memory?: PlayMemory,
-  arcIds: readonly string[] = [],
-): string {
+export function buildSystemPrompt(ctx: PromptContext): string {
+  const { play, memory, generated = [] } = ctx;
+  const notes = ctx.notes ?? {};
+  /** 清单项渲染：有描述就带一句，让剧作家按画面选而不是猜文件名。 */
+  const label = (stem: string): string => {
+    const note = notes[stem]?.trim();
+    return note ? `${stem}（${note}）` : stem;
+  };
   const characters = play.characters
     .map((c) => {
       // 差分列表优先取角色卡 sprites 键名（前端按它解析立绘）；未配置映射时回退磁盘文件 stem
       const expressions =
         c.sprites && Object.keys(c.sprites).length > 0
           ? Object.keys(c.sprites)
-          : (assets[`sprites/${c.id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
+          : (ctx.assets?.[`sprites/${c.id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
       return `### ${c.name}（id: ${c.id}）\n${c.persona}${c.voice ? `\n音色：${c.voice}` : ""}${
-        expressions.length > 0 ? `\n立绘差分 expression：${expressions.join(" | ")}` : ""
+        expressions.length > 0
+          ? `\n立绘差分 expression：${expressions.map(label).join(" | ")}`
+          : ""
       }`;
     })
     .join("\n\n");
 
-  const stems = (key: string): string[] => (assets[key] ?? []).map((f) => f.replace(/\.\w+$/, ""));
-  const bg = stems("backgrounds");
-  const bgm = stems("bgm");
-  const sfx = stems("sfx");
-  const cg = stems("cg");
-  const assetSection =
-    (bg.length > 0 ? `\n# 可用背景 bg\n\n${bg.join(" | ")}——scene 的 bg 优先取这些 id。\n` : "") +
-    (bgm.length > 0 ? `\n# 可用音乐 bgm\n\n${bgm.join(" | ")}\n` : "") +
-    (sfx.length > 0 ? `\n# 可用音效 sfx\n\n${sfx.join(" | ")}\n` : "") +
-    (cg.length > 0 ? `\n# 已有插图 cg\n\n${cg.join(" | ")}\n` : "") +
-    // 清单全空时上面四段拼成空串，这段就没人看得见——而此时正是最该让剧作家自己画图的时候
-    (bg.length === 0 && cg.length === 0
+  const stems = (key: string): string[] => (ctx.assets?.[key] ?? []).map((f) => f.replace(/\.\w+$/, ""));
+  const section = (heading: string, kind: string, tail = ""): string => {
+    const list = stems(kind);
+    return list.length > 0 ? `\n# ${heading}\n\n${list.map(label).join(" | ")}${tail}\n` : "";
+  };
+  const generatedSection =
+    generated.length > 0
+      ? `\n# 已生成的图（早已存在，直接引用 id，不要再 preload_asset）\n\n${generated
+          .map((g) => `${g.id}（${g.type}）—— ${g.prompt}`)
+          .join("\n")}\n`
+      : "";
+  const assetSection = [
+    section("可用背景 bg", "backgrounds", "——scene 的 bg 优先取这些 id。"),
+    section("可用音乐 bgm", "bgm"),
+    section("可用音效 sfx", "sfx"),
+    section("已有插图 cg", "cg"),
+    generatedSection,
+    // 清单全空时上面几段拼成空串，这段就没人看得见——而此时正是最该让剧作家自己画图的时候
+    stems("backgrounds").length === 0 && stems("cg").length === 0
       ? `\n# 没有任何背景与插图\n\n剧目还没有一张图。每写到一个新场景，先用 preload_asset 预发射一张背景再引用它的 id。\n`
-      : "");
+      : "",
+  ].join("");
 
   const premise = memory?.premise.trim() || play.premise;
-  const craftSection = memory?.craft.trim()
-    ? `\n# 剧艺守则（craft）\n\n${memory.craft.trim()}\n`
-    : "";
-  const cards = memory?.visibleContext(arcIds) ?? [];
+  // 创作口径：外置到 memory/always/craft.md（工坊与用户共编），缺失/空则回退默认。
+  // 原样注入——文件自带「# 创作口径」标题，不再套一层壳。
+  const craftSection = `\n${(memory?.craft.trim() || DEFAULT_CRAFT).trim()}\n`;
+  const cards = memory?.visibleContext(ctx.arcIds ?? []) ?? [];
   const indexSection =
     cards.length > 0
       ? `\n# 记忆索引（按需查详情）\n\n${cards.map((c) => `- [${c.layer}] ${c.name}：${c.summary}`).join("\n")}\n\n需要某条完整内容时调用 read_memory_detail 工具（传名称）。历史往事用 search_archive 检索。\n`
@@ -87,7 +138,8 @@ ${assetSection}${craftSection}${indexSection}
 - **提前 3–5 句发射**：图要 15–30 秒才到，引用太早只会看到骨架占位；
 - **id 自取**：用简短英文下划线 id（如 bg_rooftop_dusk、cg_rooftop_01），引用时一字不差；
 - **prompt 写英文**，写清主体/环境/光线/视角/画风，末尾加 "anime visual novel background, no text"；
-- **不要凭空造 id**：清单里已有的背景和插图直接引用，别重复生成。
+- **不要凭空造 id**：可用清单与「已生成的图」里已有的背景和插图直接引用，别重复生成。
+- **按描述选素材**：清单里带括号说明的是画面内容（差分的名字未必与画面相符），先看说明再挑 id。
 - **立绘差分不做生图**：某角色没有可用差分时，**别写 actor 指令引用不存在的 expression**（那个角色会整个不上台），改用旁白/台词交代，或只用有差分的角色。
 
 ## 台词（三类，正文为原生文本，不要转义）
@@ -98,28 +150,28 @@ ${assetSection}${craftSection}${indexSection}
 
 ## 停止点（玩家交互）
 
+只有两种，在「主角必须表态/行动」的瞬间给出：
 <stop type="choice">
 <option value="选项值">选项文本</option>
 <option>另一个选项</option>
 </stop>
 <stop type="free" placeholder="输入框提示语"></stop>
-<stop type="pause"></stop>
 
 ## 结束节拍
 
 本节拍内容写完——交互停止点之后，或一幕自然写完——立即调用 beat_done 工具（不要与其他工具同批调用）。stop 标签之后不要再输出任何内容。
 
-# 演出准则
+一幕写完时，同样只是调用 beat_done，**一个字都不要多写**：不要写幕末交代、不要总结本幕、
+不要出现「第一幕完」「本幕到此结束」「如需开启下一幕请…」这类幕间说明。幕间过渡由引擎负责
+（黑场 + 下一幕按钮），你在剧本里写任何幕间台词都会变成玩家读到的多余旁白。
+
+# 演出契约（引擎规则，不可改）
 
 1. 指令先于台词：先铺场景/立绘，再写这一拍的台词。
 2. 角色情绪/表情变化时，用 actor 指令同步切换 expression 差分——say 的 mood 只是文字标注，不驱动立绘。
-3. 一拍 3~8 行台词为宜：一小段有起伏的演出，然后停在停止点等玩家。
-4. 展示而非陈述：情绪走动作、语气与台词本身，不用旁白直接解释心理。
-5. 每轮 user 消息顶部有【状态】区（好感度/场景/进度），信任它作为最新世界状态。
-6. 【玩家表态】是主角在戏内说的话/做的选择；【导演注】是导演指示，遵守但不要复述或跳出戏外回应。
-7. 玩家表态简短时也保持剧情推进：让角色主动给出反应与新信息，不要原地等待。
-8. 玩家表态标注「本轮未作回应」时：不要替玩家编造台词或行动，让角色自然接戏并在合适时机再给回应机会。
-9. 好感度变化、重要伏笔等通过演出自然体现，后续【状态】区会反映。`;
+3. 每轮 user 消息顶部有【状态】区（好感度/场景/进度），信任它作为最新世界状态。
+4. 【玩家表态】是主角在戏内说的话/做的选择；【导演注】是导演指示，遵守但不要复述或跳出戏外回应。
+5. 玩家表态标注「本轮未作回应」时：不要替玩家编造台词或行动，让角色自然接戏并在合适时机再给回应机会。`;
 }
 
 /** user 消息【状态】区（B 区，每轮变化但 append-only）。stateFiles = always/state 谱系级内容（D7）。 */

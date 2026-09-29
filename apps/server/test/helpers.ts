@@ -6,6 +6,8 @@ import type { IndexCard } from "../src/memory.js";
 export interface FakeResponse {
   /** 剧本 DSL 原文（流式输出的 assistant 文本）。 */
   text: string;
+  /** 剧作家的思考文本（assistant 消息里的 thinking 块）。 */
+  thinking?: string;
   /** 是否附带 beat_done 工具调用。 */
   beatDone?: boolean;
   /** 额外工具调用（与 beat_done 同批：如 write_memory）。 */
@@ -53,20 +55,32 @@ export function createFakeStreamFn(responses: FakeResponse[]): StreamFn {
 
     queueMicrotask(() => {
       stream.push({ type: "start", partial });
-      stream.push({ type: "text_start", contentIndex: 0, partial });
+      if (response.thinking) {
+        // 思考块在 content 数组里排在正文之前，事件序与之一致（先 thinking_* 后 text_*）
+        stream.push({ type: "thinking_start", contentIndex: 0, partial });
+        stream.push({ type: "thinking_delta", contentIndex: 0, delta: response.thinking, partial });
+        stream.push({ type: "thinking_end", contentIndex: 0, content: response.thinking, partial });
+      }
+      const textIndex = response.thinking ? 1 : 0;
+      stream.push({ type: "text_start", contentIndex: textIndex, partial });
       for (const delta of response.text.match(/[\s\S]{1,7}/g) ?? []) {
-        stream.push({ type: "text_delta", contentIndex: 0, delta, partial });
+        stream.push({ type: "text_delta", contentIndex: textIndex, delta, partial });
       }
       stream.push({
         type: "text_end",
-        contentIndex: 0,
+        contentIndex: textIndex,
         content: response.text,
         partial,
       });
 
       const finalMessage: AssistantMessage = {
         role: "assistant",
-        content: [{ type: "text", text: response.text }],
+        content: [
+          ...(response.thinking
+            ? ([{ type: "thinking", thinking: response.thinking }] as AssistantMessage["content"])
+            : []),
+          { type: "text", text: response.text },
+        ],
         api: "openai-completions",
         provider: "fake",
         model: "fake-test",

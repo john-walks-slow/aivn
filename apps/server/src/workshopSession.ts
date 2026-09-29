@@ -4,6 +4,7 @@ import type { ServerMessage, WorkshopAssetView, WorkshopChatMessage, WorkshopThr
 import type { ImageBackend } from "./imageBackend.js";
 import type { Limiter } from "./limiter.js";
 import { PlayFiles } from "./playFiles.js";
+import type { PlaySaves } from "./saves.js";
 import type { PlayStore } from "./store.js";
 import {
   buildWorkshopPrompt,
@@ -35,6 +36,10 @@ export interface WorkshopSessionOptions {
   imageBackend?: ImageBackend;
   /** 与 D6 预发射共用的生图并发闸门（挂 PlayHouse，reload 不换实例）。 */
   limiter: Limiter;
+  /** 周目（存档）管理面：read_lineage 前先列周目。 */
+  saves: PlaySaves;
+  /** 按 saveId 取存档级操作面（读故事树只走磁盘 session.json，不建 runtime）。 */
+  saveStore: (saveId: string) => PlayStore;
 }
 
 export class WorkshopSession {
@@ -69,6 +74,8 @@ export class WorkshopSession {
       onWrite: (write) => this.broadcastWrite(write),
       assets: this.assets,
       onAsset: (asset) => this.broadcastAsset(asset),
+      saves: opts.saves,
+      saveStore: opts.saveStore,
     });
   }
 

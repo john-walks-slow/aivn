@@ -14,13 +14,29 @@ import type { PlayStore } from "./store.js";
 const EDITABLE_EXT = new Set([".md", ".json", ".txt"]);
 /** 只读可见目录（浏览器能看，工坊 agent 不写）。 */
 const READONLY_PREFIXES = ["assets/"];
+/** 素材描述表（stem → 画面说明，注入剧作家提示词）——assets/ 里唯一可写的文本文件。 */
+const ASSET_MANIFEST = "assets/manifest.json";
 /** 允许下钻的顶层目录（其余目录整棵跳过，不进 readdir）。 */
 const DIR_ROOTS = ["memory", "assets"];
 /** 二进制可写面：仅图像素材（工坊生图落盘）。 */
 const BINARY_WRITE_PREFIXES = ["assets/backgrounds/", "assets/cg/", "assets/sprites/"];
-const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 /** 单图上限 16MB：2K 图 1–3MB，留足余量又挡得住写歪的产物。 */
 const MAX_BINARY_BYTES = 16 * 1024 * 1024;
+
+/** 预览方式：binary 文件不进编辑器，前端按 kind 决定渲染预览还是播放。 */
+export type PlayFileKind = "text" | "image" | "audio" | "binary";
+
+/** 图像扩展名：预览判定与二进制可写判定共用同一份。 */
+const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+const AUDIO_EXT = new Set([".mp3", ".ogg", ".wav", ".m4a", ".flac", ".aac"]);
+
+function kindOf(rel: string): PlayFileKind {
+  const ext = extOf(rel);
+  if (EDITABLE_EXT.has(ext) || ext === ".css") return "text";
+  if (IMAGE_EXT.has(ext)) return "image";
+  if (AUDIO_EXT.has(ext)) return "audio";
+  return "binary";
+}
 
 export interface PlayFile {
   path: string;
@@ -29,6 +45,8 @@ export interface PlayFile {
   size: number;
   /** 工坊 agent 可写（false = 只读展示）。 */
   writable: boolean;
+  /** 预览方式：text 进编辑器，其余走静态 URL 预览/播放。 */
+  kind: PlayFileKind;
 }
 
 /** 相对路径校验：禁止绝对路径、`..`、空段与反斜杠。 */
@@ -40,9 +58,9 @@ function normalizePath(rel: string): string | null {
   return segments.join("/");
 }
 
-/** 可写面：根层 play.json + memory/** 文本文件。 */
+/** 可写面：根层 play.json + theme.css + 素材描述表 + memory/** 文本文件。 */
 function isEditable(rel: string): boolean {
-  if (rel === "play.json") return true;
+  if (rel === "play.json" || rel === "theme.css" || rel === ASSET_MANIFEST) return true;
   if (!rel.startsWith("memory/")) return false;
   return EDITABLE_EXT.has(extOf(rel));
 }
@@ -106,6 +124,7 @@ export class PlayFiles {
           dir: child.split("/").slice(0, -1),
           size: info.size,
           writable: isEditable(child),
+          kind: kindOf(child),
         });
       }
     };
@@ -116,6 +135,8 @@ export class PlayFiles {
   async read(rel: string): Promise<string> {
     const abs = this.pathOf(rel, "read");
     if (!existsSync(abs)) throw new Error(`文件不存在: ${rel}`);
+    // 二进制按 utf8 读只会灌一屏乱码进编辑器——明确拒绝，前端改走静态 URL 预览
+    if (kindOf(rel) !== "text") throw new Error(`不是文本文件，用预览查看: ${rel}`);
     return readFile(abs, "utf8");
   }
 
@@ -161,7 +182,7 @@ export class PlayFiles {
     return abs;
   }
 
-  /** 删除（仅 memory/**；play.json 是剧目定义，删掉=剧目损坏，任何入口都不许删）。 */
+  /** 删除（仅 memory/** 与 theme.css；play.json 是剧目定义，删掉=剧目损坏，任何入口都不许删）。 */
   async remove(rel: string): Promise<void> {
     const abs = this.pathOf(rel, "write");
     if (abs === join(this.root, "play.json")) throw new Error("play.json 不可删除");

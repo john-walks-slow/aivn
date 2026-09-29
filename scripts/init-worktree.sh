@@ -1,19 +1,34 @@
 #!/usr/bin/env bash
-# worktree 初始化：依赖安装 + 环境就绪。端口不写死——dev-worktree.sh 现取。
+# 在 worktree 里准备开发环境：装依赖、构建 core（web/server 走 workspace symlink 的 dist 类型）、
+# 把主仓库的 .env 链过来（凭据只留一份，不写进 worktree 的 git）。
+# 端口不写死——dev-worktree.sh 每次现取。
 set -euo pipefail
-cd "$(dirname "$0")/.."
 
-pnpm install
+WT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# worktree 里 .git 是文件，common-dir 才是主仓库的 .git——它的父目录就是主仓库根
+MAIN_ROOT="$(cd "$WT_ROOT" && git rev-parse --path-format=absolute --git-common-dir | xargs dirname)"
+cd "$WT_ROOT"
 
-# .env 不进 git：worktree 从主仓复制一份（含网关/TTS 凭据），端口由 dev-worktree.sh 动态注入
-if [[ ! -f .env ]]; then
-  if [[ -f ../.env ]]; then
-    cp ../.env .env
-    echo "已从主仓复制 .env"
+echo "worktree: $WT_ROOT"
+echo "main:     $MAIN_ROOT"
+
+if [ ! -d node_modules ]; then
+  echo "→ pnpm install"
+  pnpm install
+fi
+
+# pnpm 的 node_modules 是共享 store + 每包软链，构建产物（dist）不共享 → 每个 worktree 自己建一次
+echo "→ build core"
+pnpm --filter @stage-ai/core build
+
+# .env：凭据只留主仓库一份，worktree 用软链，避免第二份密钥副本
+if [ ! -e .env ]; then
+  if [ -f "$MAIN_ROOT/.env" ]; then
+    ln -s "$MAIN_ROOT/.env" .env
+    echo "→ .env → $MAIN_ROOT/.env"
   else
-    echo "警告：主仓没有 .env，生图/TTS/网关需自行配置" >&2
+    echo "!! 主仓库没有 .env，dev-worktree.sh 会起不来（缺 cpa 网关/STAGE_API_KEY；生图/TTS 需自行配置）"
   fi
 fi
 
-pnpm --filter @stage-ai/core build
-echo "worktree 就绪。启动：scripts/dev-worktree.sh"
+echo "✓ 就绪：./scripts/dev-worktree.sh 启动本 worktree 的 server + web"

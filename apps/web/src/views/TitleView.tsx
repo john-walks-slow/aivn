@@ -1,16 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, readinessAdvice, readinessMissing, type PlayDetail } from "../api.js";
+import { Icon } from "../ui/Icon.js";
+import { api, readinessAdvice, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
 
-/** Title Screen：开始游戏（就绪门）/ 继续 / 素材与配置 / 导出剧目包。 */
+/** Title Screen：开始新周目（就绪门）/ 继续 / 周目 / 工坊 / 素材与配置 / 导出剧目包。 */
 export function TitleView({ playId }: { playId: string }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
+  const [saves, setSaves] = useState<SaveInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
 
   const reload = useCallback((): void => {
     api
       .playDetail(playId)
       .then(setDetail)
+      .catch((e: Error) => setError(e.message));
+    api
+      .listSaves(playId)
+      .then(setSaves)
       .catch((e: Error) => setError(e.message));
   }, [playId]);
   useEffect(reload, [reload]);
@@ -18,10 +25,23 @@ export function TitleView({ playId }: { playId: string }) {
   const readiness = detail?.readiness;
   const missing = readiness ? readinessMissing(readiness) : [];
   const advice = readiness ? readinessAdvice(readiness) : [];
+  const current = saves.find((s) => s.current) ?? null;
+
+  /** 开始新周目：建一棵空树再进舞台，旧档不动。 */
+  const startNew = (): void => {
+    setStarting(true);
+    api
+      .createSave(playId)
+      .then(() => navigate(`/play/${playId}/stage`))
+      .catch((e: Error) => {
+        setStarting(false);
+        setError(e.message);
+      });
+  };
 
   const removePlay = (): void => {
     const title = detail?.play.title ?? playId;
-    if (!window.confirm(`删除剧目「${title}」？剧本、素材与会话将一并删除，不可恢复。`)) return;
+    if (!window.confirm(`删除剧目「${title}」？剧本、素材与全部存档将一并删除，不可恢复。`)) return;
     api
       .deletePlay(playId)
       .then(() => navigate("/"))
@@ -32,7 +52,9 @@ export function TitleView({ playId }: { playId: string }) {
     <div className="screen title-screen">
       <header className="screen-bar">
         <button className="ghost-btn" onClick={() => navigate("/")}>
-          ← 剧目库
+          <span className="btn-icon">
+            <Icon name="back" /> 剧目库
+          </span>
         </button>
       </header>
 
@@ -53,20 +75,21 @@ export function TitleView({ playId }: { playId: string }) {
           <div className="title-menu">
             <button
               className="primary"
-              disabled={!readiness?.ready}
+              disabled={!readiness?.ready || starting}
               title={readiness?.ready ? "" : `缺：${missing.join("、")}`}
-              onClick={() => navigate(`/play/${playId}/stage?mode=start`)}
+              onClick={startNew}
             >
-              开始游戏
+              开始新周目
             </button>
-            {readiness?.ready && !readiness.hasSession && (
-              <span className="muted small">尚无进度（开始即新档）</span>
+            {current && (
+              <button onClick={() => navigate(`/play/${playId}/stage`)}>
+                继续（{current.name}）
+              </button>
             )}
-            {readiness?.hasSession && (
-              <button onClick={() => navigate(`/play/${playId}/stage?mode=continue`)}>继续</button>
-            )}
+            <button onClick={() => navigate(`/play/${playId}/saves`)}>
+              周目{saves.length > 0 ? `（${saves.length}）` : ""}
+            </button>
             <button onClick={() => navigate(`/play/${playId}/workshop`)}>工坊</button>
-            <button onClick={() => navigate(`/play/${playId}/assets`)}>素材与配置</button>
             <a className="btn-as-label" href={`/api/plays/${playId}/export`}>
               导出剧目包
             </a>
@@ -74,6 +97,12 @@ export function TitleView({ playId }: { playId: string }) {
               删除剧目
             </button>
           </div>
+
+          {saves.length > 0 && (
+            <p className="muted small">
+              已有 {saves.length} 个周目，每个周目一棵独立故事树，互不覆盖。
+            </p>
+          )}
 
           {!readiness?.ready && missing.length > 0 && (
             <p className="title-gate">

@@ -5,12 +5,11 @@ import type {
   AgentMessage,
   StreamFn,
 } from "@earendil-works/pi-agent-core";
-import { Agent as PiAgent } from "@earendil-works/pi-agent-core";
+import { Agent as PiAgent, estimateTokens } from "@earendil-works/pi-agent-core";
 import { type Api, type Model, type Static, type TSchema, Type } from "@earendil-works/pi-ai";
 import {
   LineageTree,
   StageDslParser,
-  type Bookmark,
   type EngineStateSnapshot,
   type LineageEvent,
   type LineageView,
@@ -20,7 +19,7 @@ import {
   type StopPayload,
 } from "@stage-ai/core";
 import type { ServerMessage } from "@stage-ai/core";
-import { buildSystemPrompt, renderStateSection, type AssetManifest } from "./prompt.js";
+import { buildSystemPrompt, renderStateSection, type AssetManifest, type AssetNotes, type GeneratedNote } from "./prompt.js";
 import { lineageToBeats, lineageToEvents, stopFromEvent } from "./rebuild.js";
 import {
   EPOCH_SUMMARY_SYSTEM,
@@ -33,6 +32,7 @@ import {
   type EpochSummary,
 } from "./compaction.js";
 import { completeText } from "./llm.js";
+import { HistoryRecorder, type HistoryBeat } from "./history.js";
 import type { PlayConfig } from "@stage-ai/core";
 import type { PlayMemory } from "./memory.js";
 import { VoicePipeline, type TtsSynthFn } from "./voice.js";
@@ -58,6 +58,9 @@ export function createBeatDoneTool(): AgentTool<TSchema> {
 /** 好感度单次增量上限与值域（引擎校验，模型只可提议）。 */
 const AFFINITY_DELTA_CAP = 5;
 const AFFINITY_MAX = 100;
+
+/** 重建接力保留预算（token）：接住最近几拍就够，更早的细节走 archive 检索。 */
+const CARRY_OVER_TOKENS = 8000;
 
 /** 记忆工具依赖（D7）：engine 拥有状态真值，stateFiles 随谱系快照走。 */
 export interface MemoryToolDeps {
@@ -221,6 +224,10 @@ export interface OrchestratorOptions {
   play: PlayConfig;
   /** 素材清单（A 区注入：可用 bg/bgm/sfx/立绘差分 id）。 */
   assets?: AssetManifest;
+  /** 素材描述（stem → 一句画面说明，来自 assets/manifest.json；挂在清单 id 后面）。 */
+  assetNotes?: AssetNotes;
+  /** 已生成图清单（playwriter 自己 preload 出来的资产；避免换个 id 重画）。 */
+  generatedAssets?: GeneratedNote[];
   /** 剧目记忆（D7 三层：always/index 注入 A 区，archive 供检索）。 */
   memory: PlayMemory;
   tree: LineageTree;
@@ -234,6 +241,8 @@ export interface OrchestratorOptions {
   persist: () => void | Promise<void>;
   /** 服务器重启恢复：上次会话的运行态（事件缓冲/节拍号/停止点）。 */
   restored?: OrchestratorRuntimeState;
+  /** 服务器重启恢复：已落盘的剧作家历史（不回灌的话，下一次落盘就把重启前的历史清成空白）。 */
+  restoredHistory?: HistoryBeat[];
   /** 语音管线合成函数（无则本剧目无声：hello.voice=false）。 */
   tts?: { synth: TtsSynthFn; concurrency?: number };
   /** 生图预发射钩子（D6）：解析到 preload_asset 即后台发起，不占播放；无则只记谱系。 */
@@ -244,6 +253,17 @@ export interface OrchestratorOptions {
     triggerRatio: number;
     keepRecentTokens: number;
   };
+  /** 重建接力：A 区变了（工坊改了创作口径/设定）时携带的对话尾，见 carryOver。 */
+  seed?: CarryOver;
+}
+
+/**
+ * 重建接力包：工坊/素材改动触发 runtime 重建时，把旧对话体的最近一段带过去。
+ * A 区（systemPrompt）是只读的，换 A 区只能重建 Agent——不接力就是每改一次设定失忆一次。
+ */
+export interface CarryOver {
+  messages: AgentMessage[];
+  note: string;
 }
 
 /** 编排器运行态（随 session.json 持久化，重启后恢复重放与续演）。 */
@@ -260,6 +280,8 @@ interface OpenLine {
   id?: string;
   text: string;
   attrs: Record<string, string>;
+  /** 该行首事件（say_start 等）的 seq：客户端 ScriptLine.seq 同尺，谱系↔剧本行的锚。 */
+  seq: number;
 }
 
 /**
@@ -308,11 +330,14 @@ export class PlaywrightOrchestrator {
   private unsubscribeAgent: (() => void) | null = null;
   /** 事件缓冲代号（P6）：分岔/跳转/编辑/重写后整段重放并自增，客户端据此丢弃旧 seq 认知。 */
   private epoch = 0;
-  /** 已写入 JSONL 的谱系事件数：直接改动树的操作（编辑/重写/书签）在此增量补推。 */
+  /** 已写入 JSONL 的谱系事件数：直接改动树的操作（编辑/重写）在此增量补推。 */
   private loggedEvents = 0;
+  /** 剧作家历史累积器（思考/原始 DSL/工具调用；随 session.json 落盘，只读对外）。 */
+  private readonly historyRecorder: HistoryRecorder;
 
   constructor(opts: OrchestratorOptions) {
     this.opts = opts;
+    this.historyRecorder = new HistoryRecorder(opts.restoredHistory);
     this.parser = new StageDslParser((event) => this.onStageEvent(event));
     if (opts.restored) {
       // 恢复会话：活跃状态文件与纪元摘要从路径最近快照回填（谱系级记忆）
@@ -322,7 +347,7 @@ export class PlaywrightOrchestrator {
       // 已有事件早已落过 JSONL，不重复补推
       this.loggedEvents = opts.tree.export().events.length;
     }
-    this.agent = this.buildAgent([]);
+    this.agent = this.buildAgent(opts.seed ? withSeed(opts.seed.messages, opts.seed.note) : []);
     this.voice = opts.tts
       ? new VoicePipeline({
           synth: opts.tts.synth,
@@ -353,7 +378,14 @@ export class PlaywrightOrchestrator {
       streamFn: opts.streamFn,
       getApiKey: opts.getApiKey,
       initialState: {
-        systemPrompt: buildSystemPrompt(opts.play, opts.assets, opts.memory, this.arcIds),
+        systemPrompt: buildSystemPrompt({
+          play: opts.play,
+          assets: opts.assets,
+          notes: opts.assetNotes,
+          generated: opts.generatedAssets,
+          memory: opts.memory,
+          arcIds: this.arcIds,
+        }),
         model: opts.model,
         thinkingLevel: "off",
         tools: [
@@ -396,6 +428,37 @@ export class PlaywrightOrchestrator {
   /** 当前缓冲代号（hello/rebase 携带，客户端识别结构性操作）。 */
   get currentEpoch(): number {
     return this.epoch;
+  }
+
+  /**
+   * 剧作家 session 历史（只读）：按拍分组，条目为注入的 user 原文 / 思考 / 原始 DSL / 工具调用。
+   * 与 `agent.state.messages` 不同源——对话体会被纪元压缩砍掉重建，这里是边跑边攒的独立账本。
+   * 随 session 落盘，REST `/api/plays/:id/history` 读它。
+   */
+  get history(): HistoryBeat[] {
+    return this.historyRecorder.snapshot();
+  }
+
+  /**
+   * 重建接力：把对话体的最近一段切出来交给新实例。
+   * A 区（systemPrompt）是只读的，工坊改了创作口径/设定就只能重建 Agent——不接力就等于每改一次失忆一次。
+   * 切点与纪元压缩同原则：落点必是 user 消息，工具调用对不被劈开；预算取压缩保留预算的一小截，
+   * 够接住最近几拍即可，更早的细节本就逐拍落进 archive，search_archive 检索得回来。
+   */
+  carryOver(note: string): CarryOver | null {
+    const messages = this.agent.state.messages;
+    if (messages.length < 2) return null;
+    const { scale } = measureContext(messages);
+    let tokens = 0;
+    let cut = messages.length;
+    while (cut > 1 && tokens < CARRY_OVER_TOKENS) {
+      cut -= 1;
+      tokens += estimateTokens(messages[cut]!) * scale;
+    }
+    while (cut < messages.length && messages[cut]?.role !== "user") cut += 1;
+    // 落在末尾：没有可接力的完整轮次（空拍 / 只有 system）
+    if (cut >= messages.length) return null;
+    return { messages: messages.slice(cut), note };
   }
 
   /** 引擎状态（只读视图）：状态检查与同刻性断言用。 */
@@ -496,11 +559,9 @@ export class PlaywrightOrchestrator {
     // steer 进旧实例会丢消息、并发 beginBeat 会打架——一律按「演出进行中」挡回
     if (action.kind === "ooc" && this.busy) {
       // 原地 OOC（D9）：steer 入队——当前拍收敛后注入【导演注】，agent 立即续写下一拍；不打断进行中的演出
-      this.agent.steer({
-        role: "user",
-        content: this.renderUserTurn(action),
-        timestamp: Date.now(),
-      });
+      const steerText = this.renderUserTurn(action);
+      this.agent.steer({ role: "user", content: steerText, timestamp: Date.now() });
+      this.historyRecorder.addUser(this.beatNo + 1, steerText, this.opts.tree.leafId);
       this.appendLineage("ooc", { payload: { input: action.text } });
       this.send({ type: "ooc_ack" });
       return;
@@ -548,35 +609,39 @@ export class PlaywrightOrchestrator {
     return this.events.filter((e) => e.seq > lastSeq);
   }
 
-  // —— P6 四原语：跳转 / 分岔 / 编辑 / 重写，彼此正交，可自由组合 ——
+  // —— P6 四动词：跳转 / 分岔 / 编辑 / 导演注，彼此正交，可自由组合 ——
+  //     跳转 = 移挂载点不生成；分岔 = 退到目标之前重写并重新生成（重生成是分岔的副产品，不单列）——
 
-  /** 路线树视图（全量节点含废弃分支 + 书签）；前端「路线树」视图与 REST 共用。 */
+  /** 路线树视图（全量节点含废弃分支）；前端「路线」视图与 REST 共用。 */
   lineageView(): LineageView {
     return this.opts.tree.describe();
   }
 
-  /** 跳转：挂载点移到目标节点并重建上下文（只读回放，不重新生成）。 */
+  /**
+   * 跳转：世界线挂到目标节点并重建上下文。活的、废弃的都走这一条——废弃节点也跳得进去，
+   * 只是跳过去意味着当前剧情作废（历史全部保留）。不重新生成，玩家落到哪就从哪继续。
+   */
   async jumpTo(nodeId: string): Promise<void> {
-    this.rebaseAt(nodeId, "已跳转到此节点");
+    this.guardIdle();
+    this.opts.tree.jumpTo(nodeId);
+    this.syncContext("已跳到这里");
   }
 
-  /** 分岔：从任意节点开新分支（不生成，玩家可在此继续行动或重演）。 */
-  async forkTo(nodeId: string): Promise<void> {
-    this.rebaseAt(nodeId, "已从此处开新分支");
-  }
-
-  /** 原地编辑：当前分支该行文本替换（不开新分支），后续生成以新文本为上下文。 */
+  /** 原地编辑：当前分支该行文本替换，后续生成以新文本为上下文。 */
   async editLine(nodeId: string, newText: string): Promise<void> {
     this.guardIdle();
     const text = newText.trim();
     if (!text) throw new Error("台词不能为空");
     this.opts.tree.editInPlace(nodeId, text);
     this.flushLineageLog();
-    this.rebaseAt(nodeId, "台词已修改", { keepLeaf: true });
+    this.syncContext("台词已修改");
   }
 
-  /** 句/段级重写：隐式分岔（旧版留在路线树）+ 立即重新生成（±导演注）。 */
-  async rewrite(nodeId: string, granularity: "line" | "beat", instruction?: string): Promise<void> {
+  /**
+   * 分岔：退到目标之前重写这一段（目标行留废弃分支）并立即重新生成。
+   * 与跳转的分野——分岔追加 rewrite 事件、动内容；跳转只移挂载点、不生成。
+   */
+  async branch(nodeId: string, granularity: "line" | "beat", instruction?: string): Promise<void> {
     this.guardIdle();
     const chain = this.opts.tree.ancestorChain(nodeId); // 校验节点存在
     const anchor = granularity === "beat" ? this.resolveBeatAnchor(chain, nodeId) : null;
@@ -584,18 +649,20 @@ export class PlaywrightOrchestrator {
     const recap = anchor?.recap ?? null;
     this.opts.tree.recordRewrite(targetId, granularity, instruction);
     this.flushLineageLog();
-    this.rebaseAt(this.opts.tree.leafId!, granularity === "beat" ? "已重写整幕" : "已重写此句", {
-      keepLeaf: true,
-    });
+    this.syncContext(granularity === "beat" ? "已重写整幕" : "已重写此句");
     await this.beginBeat(this.renderRewriteTurn(instruction, recap, granularity));
   }
 
-  /** 分岔后 OOC 立即重生成：先分岔到此，再注入导演注开拍（与原地 steer 正交）。 */
+  /** 跳转后 OOC 立即开拍：先跳到该节点，再注入导演注重演（与原地 steer 正交）。 */
   async oocAt(nodeId: string, text: string): Promise<void> {
     this.guardIdle();
     const note = text.trim();
     if (!note) throw new Error("导演注不能为空");
-    this.rebaseAt(nodeId, "已分岔并注入导演注");
+    this.opts.tree.jumpTo(nodeId);
+    // 导演注必须落进事件日志：它决定这一支为什么长这样，刷新重连或从工坊读树都得看得见。
+    this.appendLineage("ooc", { payload: { input: note } });
+    this.flushLineageLog();
+    this.syncContext("已跳到这里并注入导演注");
     await this.beginBeat(
       [
         `【状态】\n${renderStateSection(this.opts.engine, this.opts.scene, this.stateFiles)}`,
@@ -604,52 +671,29 @@ export class PlaywrightOrchestrator {
     );
   }
 
-  /**
-   * 书签 = 传统存档：命名节点标记 + 在该节点挂状态快照。
-   *
-   * 纯标记：不移动挂载点、不重放缓冲（书签与跳转正交——D10；否则标个档会被拽回旧位置）。
-   */
-  addBookmark(nodeId: string, name: string): Bookmark {
-    const label = name.trim();
-    if (!label) throw new Error("书签名不能为空");
-    this.guardIdle();
-    const bookmark = this.opts.tree.addBookmark(nodeId, label);
-    const state = this.stateAt(nodeId);
-    this.opts.tree.saveSnapshotAt(
-      nodeId,
-      { ...state.engine, affinity: { ...state.engine.affinity }, flags: { ...state.engine.flags } },
-      { state: { ...state.stateFiles }, arcs: [...state.arcIds] },
-    );
-    this.flushLineageLog();
-    this.persist();
-    return bookmark;
-  }
-
-  /** 删除书签（不动物理分支——书签只是标记，误删可再标）。 */
-  removeBookmark(bookmarkId: string): void {
-    this.guardIdle();
-    this.opts.tree.removeBookmark(bookmarkId);
-    this.persist();
-  }
-
   private guardIdle(): void {
     if (this.engaged) throw new Error("演出进行中，请等待当前节拍结束");
   }
 
   /**
-   * 上下文重建（P6 transformContext 的执行点）：挂载点移到目标节点后，
-   * 从谱系事件日志重放出「引擎状态 + 记忆快照 + 客户端事件缓冲 + LLM 对话轮次」，
+   * 上下文重建（P6 transformContext 的执行点）：调用方已把挂载点摆好，这里只管按
+   * 当前叶尖重放出「引擎状态 + 记忆快照 + 客户端事件缓冲 + LLM 对话轮次」，
    * 一次突变完成即回到 append-only 稳态。
+   *
+   * 动词只负责「树该长什么样」（jumpTo / editInPlace / recordRewrite），
+   * 世界线落到哪一步的重建是同一件事，所以收在这里，不再各自传 nodeId。
    *
    * 保持同刻铁律：旧分支的活跃状态、剧情线引用与 archive 检索范围一并回退，
    * 兄弟/废弃分支的往事不可召回（防剧透）。
    */
-  private rebaseAt(nodeId: string, note: string, opts?: { keepLeaf?: boolean }): void {
+  private syncContext(note: string): void {
     this.guardIdle();
     const tree = this.opts.tree;
-    if (!opts?.keepLeaf) tree.forkAt(nodeId);
     const chain = tree.chainEvents(tree.leafId);
     this.restoreBranchState(tree.leafId);
+    // 历史跟着分支回退：不在新路径上的拍（兄弟与废弃分支）、以及被拍中截断砍掉后半的那一拍，
+    // 都已经不属于这一场了（铁律：分岔/跳转随分支走，防剧透同一原则）
+    this.historyRecorder.rebaseTo(tree.pathSet(), this.beatNo);
     this.events.length = 0;
     this.events.push(...lineageToEvents(chain));
     this.seq = this.events.at(-1)?.seq ?? 0;
@@ -707,7 +751,8 @@ export class PlaywrightOrchestrator {
 
   /**
    * 停止点恢复：停在 stop/beat_end 边界 → 还原该停止点（choice 选项原样回到面板）；
-   * 停在拍中 → 给一个 pause 停止点，玩家按「继续」即可重演剩余内容。
+   * 停在拍中（写一半被打断）→ 给一个 pause 停止点，玩家按「继续」重开一拍。
+   * 注意 pause 只在这一条路径上出现，幕末（beat_end）永远走 null → 黑场 +「下一幕」。
    */
   private restoreStopPoint(chain: readonly LineageEvent[]): void {
     const last = chain.at(-1);
@@ -720,7 +765,10 @@ export class PlaywrightOrchestrator {
       return;
     }
     if (last.kind === "beat_end") {
-      const stop = chain.findLast((event) => event.kind === "stop");
+      // 只在本拍内找停止点：全链 findLast 会把上一拍的 stop 复活到幕末的档里，
+      // 玩家看到的就不是黑场 +「下一幕」，而是隔了一拍就作废的旧选项
+      const prevBoundary = chain.slice(0, -1).findLastIndex((event) => event.kind === "beat_end");
+      const stop = chain.slice(prevBoundary + 1).findLast((event) => event.kind === "stop");
       this.lastStop = stop ? stopFromEvent(stop) : null;
       return;
     }
@@ -840,6 +888,7 @@ export class PlaywrightOrchestrator {
     ];
     // 空闲态发送 = 越过了待回应的 free/choice 停止点：明示玩家未回应，防止模型替玩家编造台词。
     // 演出中（steer）发送时玩家早已回应过上一个停止点，不加此声明。
+    // pause 是编排器自己造的（拍中截断/空拍重试），玩家并未被问过什么，不算越过停止点。
     if (acrossStop && this.lastStop && this.lastStop.stopType !== "pause") {
       sections.push("【玩家表态】\n（玩家本轮未作回应，请继续演出，并在合适时机再给出回应机会）");
     }
@@ -863,6 +912,8 @@ export class PlaywrightOrchestrator {
       // 纪元边界：拍与拍之间是唯一允许突变 A 区/对话体的时刻（空前缀缓存豁免）
       await this.maybeCompactEpoch();
       if (this.disposed) return;
+      // B 区注入原文入史：状态区/导演注/玩家表态是拼出来的文本，谱系里只留得下玩家的那一句
+      this.historyRecorder.addUser(this.beatNo + 1, userText, this.opts.tree.leafId);
       this.startBeatWindow();
       await this.agent.prompt(userText);
       await this.agent.waitForIdle();
@@ -873,7 +924,10 @@ export class PlaywrightOrchestrator {
       // prompt 异常路径可能不发 agent_end：兜底收束（正常路径 busy 已被 finishBeat 清零）
       if (this.busy) this.finishBeat();
       this.beatPending = false;
-      if (!this.busy) this.flushIdleWaiters();
+      if (!this.busy) {
+        this.send({ type: "beat_settled" });
+        this.flushIdleWaiters();
+      }
     }
   }
 
@@ -897,7 +951,7 @@ export class PlaywrightOrchestrator {
     const summary = await this.summarizeEpoch(head);
     if (!summary) return;
     const { oneLiner, body } = summary;
-    // 摘要请求在飞：期间可能已 reload/startFresh/dispose——此时重建 Agent 等于僵尸复活
+    // 摘要请求在飞：期间可能已 reload/切档重建/dispose——此时重建 Agent 等于僵尸复活
     if (this.disposed) return;
     const epochNo = this.arcIds.length + 1;
     // arcId 带谱系叶：分岔后两条支路各自压缩不会互相覆盖同名卡
@@ -971,6 +1025,10 @@ export class PlaywrightOrchestrator {
     } else if (event.type === "message_end" && event.message.role === "assistant") {
       // pi agent 的 provider 失败不抛异常，而是 assistant message 带 errorMessage 正常收束——捕获之
       if (event.message.errorMessage) this.beatError = event.message.errorMessage;
+      // 完整 assistant 消息：思考块与 toolCall 只在这里出现（流式增量拿不全），入史趁早
+      if (this.busy) {
+        this.historyRecorder.addAssistantMessage(this.beatNo, event.message, this.opts.tree.leafId);
+      }
       this.parser.endMessage();
     } else if (event.type === "turn_start") {
       // steer 续写拍（D9 原地 OOC）：上一拍已收束，导演注入后 agent 自动续写，由新 turn 开窗
@@ -998,6 +1056,7 @@ export class PlaywrightOrchestrator {
       };
     }
     // 空拍护栏：生成失败/零产出不得静默伪装成正常收束——显式 error + pause 停止点给玩家重试入口
+    // （这一拍没有自然收尾，给不了「下一幕」，只能让玩家按「继续」重开一拍）
     if (this.beatEvents === 0 && !stop) {
       this.send({
         type: "error",
@@ -1015,7 +1074,8 @@ export class PlaywrightOrchestrator {
     this.beatError = null;
     this.lastStop = stop;
     this.appendLineage("beat_end", {
-      payload: { reason: stop ? "stop" : "act_end" },
+      // seq 锚点：前端按它把行级事件切成一拍一张卡，且能精确跳到拍首行
+      payload: { reason: stop ? "stop" : "act_end", seq: this.seq },
     });
     // 谱系快照随 beat 收束保存（分岔/续演恢复用）：活跃状态文件 + arcs 引用（谱系级记忆）
     const engine = this.opts.engine;
@@ -1064,7 +1124,7 @@ export class PlaywrightOrchestrator {
     return event;
   }
 
-  /** 直接改动谱系树的操作（编辑/重写/书签）不经过 append：事后按游标补推 JSONL。 */
+  /** 直接改动谱系树的操作（编辑/重写）不经过 append：事后按游标补推 JSONL。 */
   private flushLineageLog(): void {
     const all = this.opts.tree.export().events;
     for (let i = this.loggedEvents; i < all.length; i += 1) this.opts.onLineageEvent?.(all[i]!);
@@ -1077,7 +1137,7 @@ export class PlaywrightOrchestrator {
     const sequenced: SequencedEvent = { seq: this.seq, event };
     this.events.push(sequenced);
     this.send({ type: "events", events: [sequenced] });
-    this.accumulateLineage(event);
+    this.accumulateLineage(event, this.seq);
     this.feedVoice(event, this.seq);
   }
 
@@ -1100,7 +1160,7 @@ export class PlaywrightOrchestrator {
   }
 
   /** StageEvent 流 → 行级谱系事件聚合（say 三段 → 一行）。 */
-  private accumulateLineage(event: StageEvent): void {
+  private accumulateLineage(event: StageEvent, seq: number): void {
     switch (event.kind) {
       case "say_start":
         this.openLine = {
@@ -1108,10 +1168,11 @@ export class PlaywrightOrchestrator {
           id: event.id,
           text: "",
           attrs: { id: event.id, ...(event.mood ? { mood: event.mood } : {}) },
+          seq,
         };
         return;
       case "narrate_start":
-        this.openLine = { kind: "narrate", text: "", attrs: {} };
+        this.openLine = { kind: "narrate", text: "", attrs: {}, seq };
         return;
       case "thought_start":
         this.openLine = {
@@ -1119,6 +1180,7 @@ export class PlaywrightOrchestrator {
           id: event.id,
           text: "",
           attrs: { id: event.id },
+          seq,
         };
         return;
       case "say_text":
@@ -1134,7 +1196,7 @@ export class PlaywrightOrchestrator {
         if (line) {
           this.appendLineage(line.kind, {
             text: line.text,
-            payload: { attrs: line.attrs },
+            payload: { attrs: line.attrs, seq: line.seq },
           });
           this.beatLines.push(line.text.slice(0, 200));
         }
@@ -1144,6 +1206,7 @@ export class PlaywrightOrchestrator {
         if (event.bg) this.opts.scene = event.bg;
         this.appendLineage("scene", {
           payload: {
+            seq,
             attrs: {
               bg: event.bg ?? "",
               ...pick(event, ["bgm", "ambient", "transition"]),
@@ -1154,6 +1217,7 @@ export class PlaywrightOrchestrator {
       case "actor":
         this.appendLineage("actor", {
           payload: {
+            seq,
             attrs: {
               id: event.id,
               ...pick(event, ["pos", "expression", "action"]),
@@ -1162,11 +1226,12 @@ export class PlaywrightOrchestrator {
         });
         return;
       case "sfx":
-        this.appendLineage("sfx", { payload: { attrs: { src: event.src } } });
+        this.appendLineage("sfx", { payload: { seq, attrs: { src: event.src } } });
         return;
       case "preload_asset":
         this.appendLineage("preload", {
           payload: {
+            seq,
             attrs: { type: event.type, prompt: event.prompt, id: event.id },
           },
         });
@@ -1183,7 +1248,7 @@ export class PlaywrightOrchestrator {
         return;
       case "cg":
         this.appendLineage("cg", {
-          payload: { attrs: { id: event.id, ...pick(event, ["caption"]) } },
+          payload: { seq, attrs: { id: event.id, ...pick(event, ["caption"]) } },
         });
         return;
       case "stop":
@@ -1194,8 +1259,12 @@ export class PlaywrightOrchestrator {
         };
         this.appendLineage("stop", {
           payload: {
-            attrs: { type: event.stopType },
+            seq,
+            stopType: event.stopType,
             ...(event.options ? { options: event.options } : {}),
+            ...(event.placeholder ? { placeholder: event.placeholder } : {}),
+            // attrs 是客户端唯一能看到的那份，字段名与服务端 payload 顶层保持一致
+            attrs: { stopType: event.stopType },
           },
         });
         return;

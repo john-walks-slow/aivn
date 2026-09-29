@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Icon } from "../ui/Icon.js";
 import { api, readinessAdvice, readinessMissing, type PlaySummary } from "../api.js";
 import { navigate } from "../router.jsx";
 
@@ -88,7 +89,9 @@ export function LibraryView() {
             </div>
           ) : (
             <div className="new-actions">
-              <button onClick={() => setCreating(true)}>＋ 新建剧目</button>
+              <button onClick={() => setCreating(true)}><span className="btn-icon">
+                <Icon name="plus" /> 新建剧目
+              </span></button>
               <label className="btn-as-label">
                 导入剧目包
                 <input

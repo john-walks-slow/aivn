@@ -7,13 +7,21 @@ dist/
 coverage/
 .DS_Store
 # 剧目运行时会话（play.json 进 git，运行时数据不进）
-plays/*/session.json
-plays/*/lineage.jsonl
+# 存档即一棵独立故事树：每棵一棵 saves/<saveId>/，外加 active.json 指针
+plays/*/saves/
+plays/*/active.json
 media-cache/
 # 剧目记忆运行时层（D7：always/index 手工层进 git，纪元产物与切片不进）
 plays/*/memory/index/arcs/
 plays/*/memory/archive/
 # 工坊 meta-chat 线程（运行时会话，不进 git）
 plays/*/workshop/
+# mock 剧目是 scripts/mockLineage.mjs 的产物，play.json 逐字抄自 plays/demo，不必进 git
+plays/mock-*/
 .mnemon/
 .worktrees/
+
+# 本地验收截图
+.shots/
+# playwright-cli 会话产物
+.playwright-cli/

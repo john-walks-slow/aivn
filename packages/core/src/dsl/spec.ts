@@ -19,8 +19,15 @@ export type DslTag = (typeof DSL_TAGS)[number];
 /** 自闭合指令标签（无正文）。 */
 export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "sfx", "preload_asset", "cg"]);
 
-/** stop 的交互类型（v1 冻结）。 */
-export const STOP_TYPES = ["choice", "free", "pause"] as const;
+/**
+ * stop 的交互类型（v1.1 冻结）——这是**模型能写的**白名单。
+ * 只有两种玩家主权点：选肢（choice）/ 自由表态（free）。
+ * 旧版的第三种 pause（幕间「什么都不做就继续」）已从 DSL 删除：模型爱用它收尾，
+ * 收出来的是「第一幕圆满落幕…」这类旁白加一个不知何时出现的「继续」按钮。
+ * 幕末走 beat_end 无 stop，客户端呈现为黑场 + 「下一幕」。
+ * 编排器自己造的 pause 重试入口不在这个白名单里（见 ws/protocol.ts 的 StopPayload）。
+ */
+export const STOP_TYPES = ["choice", "free"] as const;
 export type StopType = (typeof STOP_TYPES)[number];
 
 /** stop 内唯一的子标签。 */
