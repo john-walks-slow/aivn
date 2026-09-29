@@ -11,7 +11,7 @@
 | `apps/server/src/voiceCatalog.ts`（新） | 抓热门前 1000 → 过滤 `state:"trained"` + 合法 id → 按收藏降序；12 小时磁盘缓存（`media-cache/voices.json`，tmp+rename 原子写）；`resolve(id)` 解析目录外音色；fetcher 可注入便于测试 |
 | `apps/server/src/http.ts` | 新增 `GET /api/voices` 与 `GET /api/voices/:id`（32 位 hex 校验） |
 | `apps/web/src/voice/useVoiceCatalog.ts`（新） | 目录状态 hook：懒加载、强制刷新、目录外 voiceId 按 id 解析出名字 |
-| `apps/web/src/voice/VoiceLibrary.tsx`（新） | 全屏面板：左语言轨（带条数）+ 顶部搜索 + 卡片网格（封面/语言/标签/收藏），每条可试听与选用，60 条一页 |
+| `apps/web/src/voice/VoiceLibrary.tsx`（新） | 全屏面板：顶部搜索 + 语言下拉（带条数）+ 卡片网格（封面/语言/标签/收藏），每条可试听与选用，60 条一页 |
 | `apps/web/src/views/AssetsView.tsx` | 音色下拉 → 「音色：<名字>」按钮 + 清除 + 试听；语音语言下拉 4 → 34 语种 |
 | `apps/server/src/imageAssets.ts` | 加 `whenSaved()`，替掉测试里猜时序的 `setTimeout` |
 

@@ -10,10 +10,13 @@ const COVER_BASE = "https://public-platform.r2.fish.audio/";
 const PAGE_SIZE = 60;
 
 /**
- * 全屏音色库面板：左语言轨 + 顶部搜索 + 右侧卡片网格。
+ * 全屏音色库面板：顶部搜索 + 语言下拉 + 卡片网格。
  *
  * 目录来自服务端缓存的 Fish 公共库（热门前 1000），搜索与语言筛选都在本地内存做。
  * 选中小语种音色不需要任何服务端改动——voiceId 原样存进角色卡即可。
+ *
+ * 语言筛选用下拉而不是侧边栏：侧栏在窄屏上会把卡片网格挤到放不下，且手机上要横向
+ * 滚动才能看全部语种。
  */
 export function VoiceLibrary({
   playId,
@@ -81,19 +84,33 @@ export function VoiceLibrary({
           autoFocus
           onChange={(e) => setQuery(e.target.value)}
         />
-        <span className="muted small">
+        <select
+          className="voice-library-lang"
+          value={language}
+          onChange={(e) => setLanguage(e.target.value)}
+        >
+          <option value="">全部语言（{entries.length}）</option>
+          {languages.map(({ code, count }) => (
+            <option key={code} value={code}>
+              {languageLabel(code)}（{count}）
+            </option>
+          ))}
+        </select>
+        <span className="muted small voice-library-count">
           {catalog
-            ? `${matched.length} / ${entries.length} 条${catalog.stale ? "（离线快照）" : ""}`
+            ? `匹配 ${matched.length} / ${entries.length}${catalog.stale ? "（离线快照）" : ""}`
             : loading
               ? "加载中…"
               : ""}
         </span>
-        <button className="ghost-btn" disabled={loading} onClick={refresh}>
-          {loading ? "抓取中…" : "重新抓取"}
-        </button>
-        <button className="ghost-btn" onClick={onClose}>
-          关闭
-        </button>
+        <div className="voice-library-bar-actions">
+          <button className="ghost-btn" disabled={loading} onClick={refresh}>
+            {loading ? "抓取中…" : "重新抓取"}
+          </button>
+          <button className="ghost-btn" onClick={onClose}>
+            关闭
+          </button>
+        </div>
       </header>
 
       {error ? (
@@ -101,71 +118,51 @@ export function VoiceLibrary({
           音色库加载失败：{error}
         </div>
       ) : (
-        <div className="voice-library-body">
-          <nav className="voice-library-langs">
-            <button
-              className={language === "" ? "active" : ""}
-              onClick={() => setLanguage("")}
-            >
-              全部 <span className="muted small">{entries.length}</span>
+        <div className="voice-library-grid">
+          {visible.map((entry) => (
+            <article key={entry.id} className="voice-card">
+              <div className="voice-card-cover">
+                {entry.cover && (
+                  <img
+                    src={COVER_BASE + entry.cover}
+                    alt=""
+                    loading="lazy"
+                    onError={(e) => {
+                      e.currentTarget.style.visibility = "hidden";
+                    }}
+                  />
+                )}
+              </div>
+              <div className="voice-card-body">
+                <strong>{entry.title}</strong>
+                <p className="muted small voice-card-desc">{entry.description}</p>
+                <p className="muted small">
+                  {entry.languages.map(languageLabel).join(" · ")}
+                  {entry.likes > 0 && ` · ♥ ${entry.likes}`}
+                </p>
+              </div>
+              <div className="voice-card-actions">
+                <button
+                  className="ghost-btn small-btn"
+                  disabled={previewingId !== ""}
+                  onClick={() => preview(entry)}
+                >
+                  {previewingId === entry.id ? "合成中…" : "试听"}
+                </button>
+                <button className="primary small-btn" onClick={() => onPick(entry)}>
+                  选用
+                </button>
+              </div>
+            </article>
+          ))}
+          {visible.length === 0 && !loading && (
+            <p className="muted">没有匹配的音色，换个关键词或语言试试。</p>
+          )}
+          {matched.length > visible.length && (
+            <button className="ghost-btn" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
+              显示更多（还有 {matched.length - visible.length} 条）
             </button>
-            {languages.map(({ code, count }) => (
-              <button
-                key={code}
-                className={language === code ? "active" : ""}
-                onClick={() => setLanguage(code)}
-              >
-                {languageLabel(code)} <span className="muted small">{count}</span>
-              </button>
-            ))}
-          </nav>
-
-          <div className="voice-library-grid">
-            {visible.map((entry) => (
-              <article key={entry.id} className="voice-card">
-                <div className="voice-card-cover">
-                  {entry.cover && (
-                    <img
-                      src={COVER_BASE + entry.cover}
-                      alt=""
-                      loading="lazy"
-                      onError={(e) => {
-                        e.currentTarget.style.visibility = "hidden";
-                      }}
-                    />
-                  )}
-                </div>
-                <div className="voice-card-body">
-                  <strong>{entry.title}</strong>
-                  <p className="muted small voice-card-desc">{entry.description}</p>
-                  <p className="muted small">
-                    {entry.languages.map(languageLabel).join(" · ")}
-                    {entry.likes > 0 && ` · ♥ ${entry.likes}`}
-                  </p>
-                </div>
-                <div className="voice-card-actions">
-                  <button
-                    className="ghost-btn small-btn"
-                    disabled={previewingId !== ""}
-                    onClick={() => preview(entry)}
-                  >
-                    {previewingId === entry.id ? "合成中…" : "试听"}
-                  </button>
-                  <button className="primary small-btn" onClick={() => onPick(entry)}>
-                    选用
-                  </button>
-                </div>
-              </article>
-            ))}
-            {visible.length === 0 && !loading && (
-              <p className="muted">没有匹配的音色，换个关键词或语言试试。</p>
-            )}
-            {matched.length > visible.length && (
-              <button className="ghost-btn" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
-                显示更多（还有 {matched.length - visible.length} 条）
-              </button>
-            )}
-          </div>
+          )}
         </div>
       )}
     </div>
