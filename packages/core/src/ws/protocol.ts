@@ -28,9 +28,10 @@ export interface WorkshopThreadInfo {
   summary: string | null;
 }
 
-/** 工坊生成的一张剧目素材（对话流内联展示）。 */
+/** 工坊生成或导入的一张剧目素材（对话流内联展示）。 */
 export interface WorkshopAssetView {
-  kind: "background" | "cg" | "sprite";
+  /** background/cg/sprite = 图片气泡；bgm/sfx = 音频播放器（资源库导入的音素材）。 */
+  kind: "background" | "cg" | "sprite" | "bgm" | "sfx";
   /** 剧目内相对路径（assets/backgrounds/rooftop.jpg），素材页与文件树里同一个东西。 */
   path: string;
   /** 站内 URL：/plays/<playId>/assets/backgrounds/rooftop.jpg。 */
@@ -118,7 +119,14 @@ export type ServerMessage =
   /** 工坊 agent 写了剧目文件：before 为 null 表示新建，可据此一键撤销。 */
   | { type: "workshop_write"; threadId: string; path: string; before: string | null }
   /** 工坊出一张素材到货：对话流立刻可见（瞬态），最终随本轮末条消息一起落进历史。 */
-  | { type: "workshop_asset"; threadId: string; kind: "background" | "cg" | "sprite"; path: string; url: string; replaced: boolean }
+  | {
+      type: "workshop_asset";
+      threadId: string;
+      kind: WorkshopAssetView["kind"];
+      path: string;
+      url: string;
+      replaced: boolean;
+    }
   | { type: "workshop_done"; threadId: string; text: string; images?: WorkshopAssetView[] }
   | { type: "workshop_error"; threadId: string | null; message: string; images?: WorkshopAssetView[] }
   | { type: "error"; message: string; recoverable: boolean };

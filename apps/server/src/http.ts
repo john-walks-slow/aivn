@@ -2,10 +2,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { PlayLibrary } from "./store.js";
+import { withPlayConfigLock, type PlayLibrary } from "./store.js";
+import type { AssetLibrary } from "./library.js";
+import { importFromLibrary } from "./assetImport.js";
 import type { PlayHouse } from "./playhouse.js";
 import type { SettingsFile } from "./configApi.js";
-import { parsePlayConfig } from "@stage-ai/core";
+import { parsePlayConfig, libraryEntryMatches, ASSET_KINDS as ASSET_KINDS_LIST, type AssetKind } from "@stage-ai/core";
 import { DEFAULT_CRAFT } from "./prompt.js";
 
 const BODY_LIMIT = 64 * 1024 * 1024;
@@ -77,7 +79,7 @@ function extOf(name: string): string {
 
 /**
  * REST API + 素材静态服务（P2）。
- * 剧目库 / 就绪门 / 素材上传管理 / 剧目包导入导出 / play.json 编辑 / 剧目删除。
+ * 剧目库 / 就绪门 / 素材上传管理 / 剧目包导入导出 / play.json 编辑 / 剧目删除 / 资源库浏览与导入。
  */
 export async function handleHttp(
   req: IncomingMessage,
@@ -85,6 +87,7 @@ export async function handleHttp(
   library: PlayLibrary,
   playhouse: PlayHouse,
   settings?: SettingsFile,
+  assets?: AssetLibrary,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
   const parts = url.pathname.split("/").filter(Boolean);
@@ -125,6 +128,40 @@ export async function handleHttp(
       res.writeHead(200, { "content-type": mime, "cache-control": "no-cache" });
       res.end(await readFile(file));
       return;
+    }
+
+    // —— 资源库素材静态服务：/library/<kind>/<id>/<file>（只读，用户目录里的原始文件） ——
+    if (parts[0] === "library" && method === "GET") {
+      if (parts.length !== 4) return fail(res, 404, "未找到");
+      const [, kind, id, file] = parts;
+      if (!assets || !kind || !id || !file || !safeSeg(file)) return fail(res, 404, "未找到");
+      const mime = MIME[extOf(file)];
+      if (!mime) return fail(res, 404, "未找到");
+      let path: string;
+      try {
+        path = await assets.filePath(kind, id, file);
+      } catch {
+        return fail(res, 404, "未找到");
+      }
+      res.writeHead(200, { "content-type": mime, "cache-control": "public, max-age=600" });
+      res.end(await readFile(path));
+      return;
+    }
+
+    // —— 资源库清单（素材页「从资源库导入」与工坊浏览都走它）：kind 过滤 + 关键词搜索 ——
+    if (parts[0] === "api" && parts[1] === "library" && parts.length === 2) {
+      if (method !== "GET") return fail(res, 405, "不支持的方法");
+      if (!assets) return json(res, 200, { entries: [], total: 0, counts: {} });
+      const kind = url.searchParams.get("kind") ?? "";
+      const q = url.searchParams.get("q") ?? "";
+      const all = await assets.list();
+      // 分类计数走全量：前端切了类别或搜了词之后，别的 tab 还得显示自己有多少条
+      const counts: Record<string, number> = {};
+      for (const e of all) counts[e.kind] = (counts[e.kind] ?? 0) + 1;
+      const entries = all.filter(
+        (e) => (kind === "" || e.kind === kind) && libraryEntryMatches(e, q),
+      );
+      return json(res, 200, { entries, total: all.length, counts });
     }
 
     // —— 健康与资源指标（P6）：给过夜 soak 采样服务端真实 RSS，而不是客户端自己 ——
@@ -252,7 +289,8 @@ export async function handleHttp(
     if (sub === "play" && parts.length === 4) {
       if (method !== "PUT") return fail(res, 405, "不支持的方法");
       const play = parsePlayConfig(JSON.parse((await readBody(req)).toString("utf8")));
-      await store.savePlay(play);
+      // 手动保存也是全量读改写，和导入/出图抢的是同一份 play.json
+      await withPlayConfigLock(store.dir, () => store.savePlay(play));
       await playhouse.reload(playId); // 保存即生效：音色/主角卡/语音语言/素材清单重建
       return json(res, 200, { ok: true });
     }
@@ -325,6 +363,34 @@ export async function handleHttp(
         return json(res, 200, { ok: true });
       }
       return fail(res, 405, "不支持的方法");
+    }
+    if (sub === "assets" && parts[4] === "import" && parts.length === 5) {
+      // 从资源库导入（复制进本剧目 + 写素材表/角色卡），同素材上传一样：保存即生效
+      if (method !== "POST") return fail(res, 405, "不支持的方法");
+      if (!assets) return fail(res, 404, "资源库未启用");
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as {
+        kind?: string;
+        entryId?: string;
+        expressions?: string[];
+      };
+      if (!body.entryId) return fail(res, 400, "缺少 entryId");
+      if (!body.kind || !(ASSET_KINDS_LIST as readonly string[]).includes(body.kind)) {
+        return fail(res, 400, `未知素材类别: ${body.kind ?? ""}`);
+      }
+      const result = await importFromLibrary(assets, store, {
+        kind: body.kind as AssetKind,
+        entryId: body.entryId,
+        ...(Array.isArray(body.expressions) && body.expressions.length > 0
+          ? { expressions: body.expressions }
+          : {}),
+      });
+      await playhouse.reload(playId);
+      return json(res, 200, result);
+    }
+    if (sub === "assets" && parts[4] === "meta" && parts.length === 5) {
+      // 素材元数据表（stem → 描述/标签/情绪…）：素材页显示副标题用，剧作家提示词也吃这一份
+      if (method !== "GET") return fail(res, 405, "不支持的方法");
+      return json(res, 200, await store.assetMeta());
     }
     if (sub === "tts-preview" && parts.length === 4) {
       if (method !== "POST") return fail(res, 405, "不支持的方法");

@@ -1,4 +1,4 @@
-import type { EngineStateSnapshot } from "@stage-ai/core";
+import { describeAsset, type AssetMeta, type EngineStateSnapshot } from "@stage-ai/core";
 import type { PlayConfig } from "@stage-ai/core";
 import type { PlayMemory } from "./memory.js";
 
@@ -23,8 +23,27 @@ export const DEFAULT_CRAFT = `# 创作口径
 5. 观众看到的只有你的台词和舞台，没有「生成完毕」「等待指令」这类引擎状态语——别在剧本里对观众解释系统。
 `;
 
-/** 素材描述：stem（无扩展名的文件名）→ 一句说明。来源 plays/<id>/assets/manifest.json。 */
-export type AssetNotes = Record<string, string>;
+/**
+ * 配乐与音效的编排规则（清单里真有音频素材时才注入）。
+ * 引擎行为是：bgm/ambient 缺省保持当前、`none` 停；换曲与停乐一律自动交叉淡入淡出。
+ * 这些必须写死给模型看——「换场景顺手重写一遍 bgm」是它最常犯的毛病。
+ */
+const AUDIO_RULES = `
+# 配乐与音效（怎么用）
+
+- **缺省 = 保持当前**：<scene> 不写 bgm/ambient 就继续放现在这首。换场景通常不换乐，
+  只有情绪或地点真的变了才换 id；每拍都重写一遍 bgm 是最常见的毛病。
+- 想停：<scene bgm="none"/>，ambient 同理（静默场面、回忆结束、进入字幕）。
+- 音量自己给：<scene bgm_volume="0.4"/>、<scene ambient_volume="0.3"/>、<sfx src="…" volume="0.6"/>。
+  台词是主角，音乐与音效都该让位——拿不准就往下调。
+- 换曲与停乐会自动交叉淡入淡出，不用自己写淡出。
+- ambient 是持续的环境底噪（雨、风、人声、车流），比 bgm 轻，一场戏给一次就够。
+- sfx 放在动作发生的那一行之前：开门、转身、翻书、东西落地，一个动作一条，别连着堆。
+- 按描述和情绪选：清单里带情绪、适用场景、时长的条目，挑与这一拍情绪对得上的那条。
+`;
+
+/** 素材元数据：stem（无扩展名的文件名）→ 元数据。来源 plays/<id>/assets/manifest.json。 */
+export type AssetNotes = Record<string, AssetMeta>;
 
 /** 已生成图条目：playwriter 自己 preload 出来的资产，prompt 即它当初的意图描述。 */
 export interface GeneratedNote {
@@ -52,10 +71,16 @@ export interface PromptContext {
 export function buildSystemPrompt(ctx: PromptContext): string {
   const { play, memory, generated = [] } = ctx;
   const notes = ctx.notes ?? {};
-  /** 清单项渲染：有描述就带一句，让剧作家按画面选而不是猜文件名。 */
-  const label = (stem: string): string => {
-    const note = notes[stem]?.trim();
-    return note ? `${stem}（${note}）` : stem;
+  /**
+   * 素材元数据查找：立绘差分优先按「角色id/差分名」找（多角色剧目里光写 smile 会撞车），
+   * 找不到再回落到裸差分名——手写的旧 manifest 就是裸名。
+   */
+  const metaOf = (id: string, charId?: string): AssetMeta =>
+    (charId ? notes[`${charId}/${id}`] : undefined) ?? notes[id] ?? {};
+  /** 清单项渲染：把描述、标签、情绪、时长都摆出来，让剧作家按画面/情境选而不是猜文件名。 */
+  const label = (name: string, charId?: string): string => {
+    const detail = describeAsset(metaOf(name, charId));
+    return detail ? `${name}（${detail}）` : name;
   };
   const characters = play.characters
     .map((c) => {
@@ -66,7 +91,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
           : (ctx.assets?.[`sprites/${c.id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
       return `### ${c.name}（id: ${c.id}）\n${c.persona}${c.voice ? `\n音色：${c.voice}` : ""}${
         expressions.length > 0
-          ? `\n立绘差分 expression：${expressions.map(label).join(" | ")}`
+          ? `\n立绘差分 expression：${expressions.map((e) => label(e, c.id)).join(" | ")}`
           : ""
       }`;
     })
@@ -75,7 +100,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const stems = (key: string): string[] => (ctx.assets?.[key] ?? []).map((f) => f.replace(/\.\w+$/, ""));
   const section = (heading: string, kind: string, tail = ""): string => {
     const list = stems(kind);
-    return list.length > 0 ? `\n# ${heading}\n\n${list.map(label).join(" | ")}${tail}\n` : "";
+    return list.length > 0 ? `\n# ${heading}\n\n${list.map((id) => `- ${label(id)}`).join("\n")}${tail}\n` : "";
   };
   const generatedSection =
     generated.length > 0
@@ -83,10 +108,14 @@ export function buildSystemPrompt(ctx: PromptContext): string {
           .map((g) => `${g.id}（${g.type}）—— ${g.prompt}`)
           .join("\n")}\n`
       : "";
+  // 配乐/音效的编排规则：清单给了元数据之后，怎么用还是得讲清楚——
+  // 「缺省保持」这条尤其重要，模型换景时顺手重写 bgm 是最常见的失误。
+  const audioRule = stems("bgm").length > 0 || stems("sfx").length > 0 ? AUDIO_RULES : "";
   const assetSection = [
-    section("可用背景 bg", "backgrounds", "——scene 的 bg 优先取这些 id。"),
+    section("可用背景 bg", "backgrounds", "\nscene 的 bg 优先取这些 id。"),
     section("可用音乐 bgm", "bgm"),
     section("可用音效 sfx", "sfx"),
+    audioRule,
     section("已有插图 cg", "cg"),
     generatedSection,
     // 清单全空时上面几段拼成空串，这段就没人看得见——而此时正是最该让剧作家自己画图的时候
@@ -122,7 +151,7 @@ ${assetSection}${craftSection}${indexSection}
 
 ## 场景与立绘指令（必须出现在对应台词之前）
 
-<scene bg="背景id" bgm="音乐id" ambient="环境音id" transition="fade"/>
+<scene bg="背景id" bgm="音乐id" bgm_volume="0.4" ambient="环境音id" ambient_volume="0.3" transition="fade"/>
 <actor id="角色id" pos="left|center|right" expression="表情id" action="enter|leave|shake"/>
 <sfx src="音效id" volume="0.5"/>
 <cg id="cgid" caption="插图说明"/>

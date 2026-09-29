@@ -6,6 +6,7 @@ import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
 import type { Limiter } from "./limiter.js";
 import type { PlayFiles } from "./playFiles.js";
 import type { PlayStore } from "./store.js";
+import { withPlayConfigLock } from "./store.js";
 import type { WorkshopWrite } from "./workshop.js";
 
 /**
@@ -259,14 +260,13 @@ export class WorkshopAssets {
   /**
    * 立绘映射补写：文件在盘上但 play.json 没映射，playwriter 与编排器都取不到，等于没生成。
    *
-   * 排队锁不可省：一次对话里模型可以并发调两次 generate_asset，两个 read-modify-write
-   * 各自读到旧 play.json，后写的会把先写的差分映射整个冲掉（用户看到的现象是「刚出的表情
-   * 在角色卡里消失了」）。
+   * 排队锁不可省：一次对话里模型可以并发调两次 generate_asset，也会和立绘包导入撞上，
+   * 三个 read-modify-write 各自读到旧 play.json，后写的会把先写的差分映射整个冲掉
+   * （用户看到的现象是「刚出的表情在角色卡里消失了」）。锁按剧目目录发（`store.dir`），
+   * 与资源库导入共用同一条——两条路径改的是同一份 play.json。
    */
-  private playJsonWrites: Promise<unknown> = Promise.resolve();
-
   private mapSprite(spec: AssetSpec, file: string): Promise<void> {
-    const task = this.playJsonWrites.then(async () => {
+    return withPlayConfigLock(this.deps.store.dir, async () => {
       const raw = await this.deps.files.read("play.json");
       const config = parsePlayConfig(JSON.parse(raw));
       const character = config.characters.find((c) => c.id === spec.characterId);
@@ -280,9 +280,6 @@ export class WorkshopAssets {
       await this.deps.files.write("play.json", content);
       this.deps.onWrite({ path: "play.json", before: raw, after: content });
     });
-    // 队列本身不该把失败传染给后续的排队者，但调用方要看见自己这次写失败
-    this.playJsonWrites = task.catch(() => {});
-    return task;
   }
 
   /** 同一 stem 下已有的图像（任一扩展名）：用于覆盖判定与清旧。 */

@@ -8,7 +8,7 @@ import {
   type LineageEvent,
   type LineageStore,
 } from "@stage-ai/core";
-import { parsePlayConfig, type PlayConfig } from "@stage-ai/core";
+import { parsePlayConfig, parsePlayAssetManifest, type AssetMeta, type PlayConfig } from "@stage-ai/core";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
 import { parseHistory, type HistoryBeat } from "./history.js";
 import { hasAnySave, readSaveMeta, saveDirOf, writeSaveMeta, assertSaveId, PlaySaves, type SaveMeta } from "./saves.js";
@@ -33,6 +33,30 @@ export interface PlaySummary {
   title: string;
   premise: string;
   readiness: Readiness;
+}
+
+/**
+ * 剧目配置文件的读改写互斥队列，按剧目目录绝对路径索引。
+ *
+ * `PlayLibrary.store()` 每次调用都 new 一个 PlayStore，拿对象身份当锁的 key 等于没锁
+ * （每个 HTTP 请求各持一份，队列直接穿透）。目录路径才是同一剧目的真正身份。
+ * 挂在 store.ts 而不是某个业务模块：play.json 与 assets/manifest.json 的写入方散在
+ * http / workshop / workshopAssets / assetImport 四处，锁得由最底层的存储面来发。
+ */
+const configWrites = new Map<string, Promise<unknown>>();
+
+/** 排队执行剧目配置的读改写；上一个写失败不传染给排队者，但调用方看得见自己这次失败。 */
+export function withPlayConfigLock<T>(playDir: string, task: () => Promise<T>): Promise<T> {
+  // 归一化：`plays/p1` 与 `plays/p1/` 必须共用一把锁，否则一个尾斜杠就能把队列劈成两条
+  const key = resolve(playDir);
+  const next = (configWrites.get(key) ?? Promise.resolve()).then(task);
+  const tail = next.catch(() => {});
+  configWrites.set(key, tail);
+  // 收尾时只有自己还在队尾才删 key——后面排着别人的话留给它们删，免得锁提前失效
+  void tail.finally(() => {
+    if (configWrites.get(key) === tail) configWrites.delete(key);
+  });
+  return next;
 }
 
 /** 剧目目录持久化：play.json / 素材 / 剧目级记忆；谱系与引擎状态按存档隔离在 saves/<saveId>/。 */
@@ -231,16 +255,14 @@ export class PlayStore {
     await rm(join(this.dir, "assets", kindPath, name), { force: true });
   }
 
-  /** 素材描述表：assets/manifest.json 的 stem → 画面说明。没有或损坏即空表，不报错。 */
-  async assetNotes(): Promise<Record<string, string>> {
+  /**
+   * 素材元数据表：assets/manifest.json 的 stem → 元数据。没有或损坏即空表，不报错。
+   * 值可以是字符串（只有一句描述，旧格式）或对象——归一化在 core 的 parsePlayAssetManifest。
+   */
+  async assetMeta(): Promise<Record<string, AssetMeta>> {
     try {
       const parsed: unknown = JSON.parse(await readFile(join(this.dir, "assets", "manifest.json"), "utf8"));
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-      const out: Record<string, string> = {};
-      for (const [stem, note] of Object.entries(parsed as Record<string, unknown>)) {
-        if (typeof note === "string" && note.trim()) out[stem] = note.trim();
-      }
-      return out;
+      return parsePlayAssetManifest(parsed);
     } catch {
       return {};
     }

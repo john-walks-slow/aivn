@@ -11,9 +11,23 @@ export interface ScriptLine {
   seq?: number;
 }
 
-/** 舞台演出提示：视觉指令即时应用，行提示走打字机队列（本地节奏重整）。 */
+/**
+ * 舞台演出提示：视觉指令即时应用，行提示走打字机队列（本地节奏重整）。
+ *
+ * scene 的音频属性一律**可选**：缺省 = 保持当前（换景不换乐是对的），
+ * 显式写 `bgm="none"` / `ambient="none"` 才是停止——见 core 的 SceneAttrs。
+ */
 export type Cue =
-  | { key: string; kind: "scene"; bg?: string; bgm?: string; transition?: string }
+  | {
+      key: string;
+      kind: "scene";
+      bg?: string;
+      bgm?: string;
+      ambient?: string;
+      bgmVolume?: number;
+      ambientVolume?: number;
+      transition?: string;
+    }
   | { key: string; kind: "actor"; id: string; pos?: string; expression?: string; action?: string }
   | { key: string; kind: "sfx"; src: string; volume?: number }
   | { key: string; kind: "cg"; id: string; caption?: string }
@@ -47,9 +61,18 @@ export class ScriptBuilder {
           key: key(),
           type: "scene",
           seq,
-          text: [event.bg, event.bgm].filter(Boolean).join(" · "),
+          text: [event.bg, event.bgm, event.ambient].filter(Boolean).join(" · "),
         });
-        this.cues.push({ key: key(), kind: "scene", bg: event.bg, bgm: event.bgm, transition: event.transition });
+        this.cues.push({
+          key: key(),
+          kind: "scene",
+          bg: event.bg,
+          bgm: event.bgm,
+          ambient: event.ambient,
+          bgmVolume: event.bgm_volume,
+          ambientVolume: event.ambient_volume,
+          transition: event.transition,
+        });
         return;
       }
       case "sfx":

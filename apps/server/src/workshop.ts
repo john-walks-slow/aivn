@@ -11,10 +11,13 @@ import {
   type WorkshopAssetView,
 } from "@stage-ai/core";
 import type { PlayFiles } from "./playFiles.js";
+import type { AssetLibrary } from "./library.js";
+import { importFromLibrary, type ImportResult } from "./assetImport.js";
 import { assertSaveId, type PlaySaves } from "./saves.js";
 import { readSkill, skillsPrompt } from "./skills.js";
 import type { PlayStore, Readiness } from "./store.js";
-import type { AssetKind, GeneratedPlayAsset, WorkshopAssets } from "./workshopAssets.js";
+import type { AssetKind, WorkshopAssets } from "./workshopAssets.js";
+import { describeAsset, isAssetKind, libraryEntryMatches, type LibraryEntry } from "@stage-ai/core";
 
 /**
  * 工坊 agent（D9）：与 playwriter 并列的**独立 pi 实例**，只管搭台（剧目文件的创建与维护），
@@ -31,18 +34,21 @@ export interface WorkshopWrite {
 }
 
 export interface WorkshopToolDeps {
+  playId: string;
   files: PlayFiles;
   store: PlayStore;
   /** 写盘回调：推给前端（可见/可撤销），不阻塞 agent。 */
   onWrite: (write: WorkshopWrite) => void;
   /** 素材生成层（生图未启用时为 undefined，工具直接回不可用）。 */
   assets?: WorkshopAssets;
-  /** 素材落盘回调：推给前端在对话流里内联展示。 */
-  onAsset: (asset: GeneratedPlayAsset) => void;
+  /** 素材落盘回调：推给前端在对话流里内联展示（replaced = 覆盖了已有素材）。 */
+  onAsset: (asset: WorkshopAssetView, replaced?: boolean) => void;
   /** 周目（存档）枚举——读故事树前先让 agent 知道有哪几棵。 */
   saves: PlaySaves;
   /** 按 saveId 取存档级操作面（会话面），供 read_lineage 读树。 */
   saveStore: (saveId: string) => PlayStore;
+  /** 应用级素材资源库（只读浏览 + 导入）。未配置时不注册这两个工具。 */
+  assetLibrary?: AssetLibrary;
 }
 
 const emptyParams = Type.Object({}, { additionalProperties: false });
@@ -98,6 +104,34 @@ const generateAssetParams = Type.Object(
   { additionalProperties: false },
 );
 const inspectAssetParams = Type.Object({ path: Type.String({ maxLength: 300 }) }, { additionalProperties: false });
+const readSkillParams = Type.Object({ name: Type.String({ maxLength: 64 }) }, { additionalProperties: false });
+
+/** 资源库类别：与剧目素材目录同名，模型看到 backgrounds 就知道落 assets/backgrounds。 */
+const libraryKind = Type.Union([
+  Type.Literal("backgrounds"),
+  Type.Literal("cg"),
+  Type.Literal("sprites"),
+  Type.Literal("bgm"),
+  Type.Literal("sfx"),
+]);
+const listLibraryParams = Type.Object(
+  {
+    kind: Type.Optional(libraryKind),
+    /** 关键词：匹配 id / 标题 / 描述 / 标签 / 情绪 / 适用场景。 */
+    query: Type.Optional(Type.String({ maxLength: 100 })),
+  },
+  { additionalProperties: false },
+);
+const importAssetParams = Type.Object(
+  {
+    kind: libraryKind,
+    /** 资源库条目 id（list_library 给的那一列），导入后它就是剧本里的引用名。 */
+    entryId: Type.String({ maxLength: 64 }),
+    /** 立绘包只导这几条差分（缺省全导）。 */
+    expressions: Type.Optional(Type.Array(Type.String({ maxLength: 32 }), { maxItems: 40 })),
+  },
+  { additionalProperties: false },
+);
 
 function textResult(text: string): { content: { type: "text"; text: string }[]; details: undefined } {
   return { content: [{ type: "text" as const, text }], details: undefined };
@@ -111,7 +145,6 @@ function reason(error: unknown): string {
  * 工坊工具组：list_files / read_file / write_file / delete_file / get_readiness。
  * write_file 对 play.json 走 parsePlayConfig 校验——模型手写 JSON 出错时不落盘、把错误回给模型重试。
  */
-const readSkillParams = Type.Object({ name: Type.String({ maxLength: 64 }) }, { additionalProperties: false });
 
 export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
   const listFiles: AgentTool<typeof emptyParams> = {
@@ -229,7 +262,9 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
           params.style,
           params.cutout,
         );
-        for (const asset of assets) deps.onAsset(asset);
+        for (const asset of assets) {
+          deps.onAsset({ kind: asset.kind, path: asset.path, url: asset.url }, asset.replaced);
+        }
         // 回执里带 url：agent 要把图贴给用户看，就靠这行 markdown。
         const lines = assets.map((asset) =>
           `${asset.replaced ? "已生成并覆盖原有素材" : "已生成"}：${asset.path}\n![${asset.path}](${asset.url})`,
@@ -329,6 +364,84 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
     },
   };
 
+  // —— 资源库：先有资源再出图。库里有的背景/立绘/BGM 优先导入，别重复花钱出一张。——
+  const libraryTools: AgentTool<any>[] = [];
+  if (deps.assetLibrary) {
+    const listLibrary: AgentTool<typeof listLibraryParams> = {
+      name: "list_library",
+      label: "浏览素材资源库",
+      description:
+        "浏览应用级素材资源库（跨剧目复用的本地素材目录，用户在本地维护）。" +
+        "可给 kind 过滤类别（backgrounds/cg/sprites/bgm/sfx），可给 query 按关键词搜描述与标签。" +
+        "每行是：id | 类别 | 标题 | 描述（立绘包还会列出可用差分名）。" +
+        "找现成素材一律先来这里，库里有的就别再 generate_asset 出一张。",
+      parameters: listLibraryParams,
+      execute: async (_id, params: Static<typeof listLibraryParams>) => {
+        const all = await deps.assetLibrary!.list();
+        const query = params.query ?? "";
+        const matched = all.filter(
+          (e) => (!params.kind || e.kind === params.kind) && libraryEntryMatches(e, query),
+        );
+        if (matched.length === 0) {
+          return textResult(
+            all.length === 0
+              ? "资源库是空的（没有可用素材）。需要什么素材，出图或让用户在素材页上传。"
+              : `没有匹配「${query}」${params.kind ? `且类别为 ${params.kind} ` : ""}的素材（共 ${all.length} 条，换个词或去掉过滤再试）。`,
+          );
+        }
+        const shown = matched.slice(0, LIST_LIMIT);
+        const lines = shown.map((e) => {
+          const detail = describeAsset(e.meta);
+          const expressions =
+            e.kind === "sprites"
+              ? ` | 差分：${Object.keys(e.meta.expressions ?? {}).join(", ") || e.files.map((f) => f.name).join(", ")}`
+              : "";
+          const warning = e.warnings?.length ? ` | ⚠ ${e.warnings.join("；")}` : "";
+          return `${e.id} | ${e.kind} | ${e.title} | ${detail}${expressions}${warning}`;
+        });
+        if (matched.length > shown.length) {
+          lines.push(`（共 ${matched.length} 条，这里只列了前 ${shown.length} 条；用 query 缩小范围）`);
+        }
+        return textResult(lines.join("\n"));
+      },
+    };
+
+    const importAsset: AgentTool<typeof importAssetParams> = {
+      name: "import_asset",
+      label: "从资源库导入素材",
+      description:
+        "把资源库里的一个素材复制进本剧目（kind + entryId 来自 list_library），并把元数据写进剧目的素材描述表，" +
+        "让剧作家看得懂它是什么、能按情绪选曲。立绘包会自动写进 play.json 的角色卡与差分映射。" +
+        "回执里带引用写法，可以直接转述给用户。",
+      parameters: importAssetParams,
+      execute: async (_id, params: Static<typeof importAssetParams>) => {
+        if (!isAssetKind(params.kind)) return textResult(`未知素材类别: ${params.kind}`);
+        try {
+          const result = await importFromLibrary(deps.assetLibrary!, deps.store, {
+            kind: params.kind,
+            entryId: params.entryId,
+            ...(params.expressions && params.expressions.length > 0
+              ? { expressions: params.expressions }
+              : {}),
+          });
+          for (const path of result.files) {
+            deps.onAsset({
+              kind: viewKind(params.kind),
+              path,
+              url: `/plays/${deps.playId}/assets/${path.replace(/^assets\//, "")}`,
+            });
+          }
+          // 素材表与角色卡的改动要进撤销条——导入改了剧目配置，用户得能反悔
+          for (const write of result.writes) deps.onWrite(write);
+          return textResult(renderImportResult(params.kind, result));
+        } catch (error) {
+          return textResult(`导入失败：${reason(error)}`);
+        }
+      },
+    };
+    libraryTools.push(listLibrary, importAsset);
+  }
+
   return [
     listFiles,
     readFile,
@@ -340,11 +453,50 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
     readSkillTool,
     listSaves,
     readLineage,
+    ...libraryTools,
   ];
 }
 
-/** 文件头嗅探（扩展名可能与实际字节不符，垫图塞错类型会被网关拒）。 */
-function sniffImageMime(bytes: Buffer): string | null {
+/** 资源库罗列的截断：一次把整个库灌进上下文没有意义，够 agent 判断「有没有」就行。 */
+const LIST_LIMIT = 40;
+
+/** 资源库类别 → 素材气泡的类别（目录名是复数，气泡里按「背景/音效」这种人话分类）。 */
+function viewKind(kind: string): WorkshopAssetView["kind"] {
+  switch (kind) {
+    case "backgrounds":
+      return "background";
+    case "cg":
+      return "cg";
+    case "sprites":
+      return "sprite";
+    default:
+      return kind === "sfx" ? "sfx" : "bgm";
+  }
+}
+
+/** 导入回执：落盘位置 + 剧本引用写法，agent 直接照着转述给用户。 */
+function renderImportResult(kind: string, result: ImportResult): string {
+  const usage: Record<string, string> = {
+    backgrounds: `<scene bg="${result.id}" />`,
+    cg: `<cg id="${result.id}" />`,
+    bgm: `<scene bgm="${result.id}" />`,
+    sfx: `<sfx src="${result.id}" />`,
+    sprites: `<actor id="${result.characters[0] ?? result.id}" expression="<差分名>" />`,
+  };
+  const head =
+    kind === "sprites"
+      ? `已导入立绘包 ${result.id}（${result.files.length} 个差分）→ ${result.files[0]?.replace(/\/[^/]+$/, "")}/`
+      : `已导入 ${result.id} → ${result.files[0]}`;
+  return [
+    head,
+    kind === "sprites"
+      ? `play.json 已写入角色卡 ${result.characters.join("、")} 与差分映射${result.characters.length > 0 ? "，剧作家可以直接 <actor id=\"…\"> 上台" : ""}`
+      : "素材描述已写进 assets/manifest.json，剧作家在剧本里能按描述选它。",
+    `剧本里这样引用：${usage[kind] ?? result.id}`,
+  ].join("\n");
+}
+
+/** 文件头嗅探（扩展名可能与实际字节不符，垫图塞错类型会被网关拒）。 */function sniffImageMime(bytes: Buffer): string | null {
   if (bytes.length > 8 && bytes.subarray(1, 4).toString("latin1") === "PNG") return "image/png";
   if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
   if (bytes.length > 12 && bytes.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
@@ -429,6 +581,7 @@ export async function buildWorkshopPrompt(
   files: string,
   readiness: Readiness,
   canGenerate: boolean,
+  canBrowseLibrary: boolean,
 ): Promise<string> {
   const skills = await skillsPrompt();
   return `你是这部剧目（《${title}》）的**搭台者**——负责剧目设定、角色卡与视觉素材的创建与维护。你不写剧本、不参与演出。
@@ -453,7 +606,7 @@ export async function buildWorkshopPrompt(
 
 1. **先问清再动手**：一轮里问 3~5 个问题就把骨架定下来——故事类型与基调、时代与地点、主角是谁、主角想要什么/被什么困住、核心角色 1~2 位、画风与文风。**每个问题都带上你的具体默认提案**（用户点一下"就按你说的来"就能继续），别让人从零填空。
 2. **给完整提案再落盘**：把理解成的 premise（3~6 句）、角色卡、还缺哪些视觉素材一次性摆给用户看，等一句"可以/就这样"再 write_file。
-3. **列图单、拿到批准才出图**：告诉用户"接下来要出这几张图：背景 A（黄昏教室）、立绘 koharu/neutral、…，各是什么画面、为什么要"。**用户没点头之前，一张都不要 generate_asset。** 出图要钱也要时间。
+3. **列图单、拿到批准才出图**：先查资源库（\`list_library\`），再告诉用户"接下来要出这几张图：背景 A（黄昏教室）、立绘 koharu/neutral、…，各是什么画面、为什么要"。**用户没点头之前，一张都不要 generate_asset。** 出图要钱也要时间。
 4. **落盘后同步记忆**：画风与文风写进 memory/always/craft.md（不是只在对话里说一句），premise 写进 memory/always/premise.md。
 
 # 出图要点
@@ -467,7 +620,7 @@ ${canGenerate ? imageGuide : "- 生图当前不可用：把该出的图列成清
 - 覆盖已有素材会替掉用户导入的图，覆盖前先说清楚。
 
 ${skills}
-
+${canBrowseLibrary ? libraryGuide : ""}
 # 剧目写作要点
 
 - premise：3~6 句，交代世界、主角处境、核心张力；不要写成大纲列表。
@@ -502,6 +655,20 @@ ${renderReadiness(readiness)}`;
 }
 
 /** 出图章节（仅在生图可用时拼进 system prompt）：只留"必须知道"的硬规则，展开的画风/构图/差分知识在 skill 里。 */
+/** 资源库章节（仅在库可用时拼进 system prompt）：先找现成的，再谈出图。 */
+const libraryGuide = `# 素材资源库（list_library / import_asset）
+
+服务器上有一份跨剧目复用的本地素材目录（背景 / CG / 立绘 / BGM / 音效），由用户在本地目录里维护，你只读不写。
+
+- **要素材先查库**。用户说"弄张黄昏教室的图""配首忧伤的音乐""来个门响的音效"，先用 \`list_library\`
+  （可以带 kind 或 query 关键词）看有没有现成的，有就 \`import_asset\` 导入。库里有就**不要**再 generate_asset。
+- **库和剧目各存一份**：import_asset 是把文件复制进本剧目的 assets/，删库不影响剧目；但资源库里的
+  素材不会自动出现在别的剧目里，要用就得各导一次。
+- 导入素材的元数据（描述、标签、音乐的情绪/适用场景/时长/是否可循环）会一并写进剧目素材表，
+  剧作家据此选曲选图——所以库里的描述写得准不准，直接影响演出效果。
+- BGM 与音效资源库里没有就别硬凑：告诉用户"库里没有音乐，需要你放几首进 library/bgm/"，
+  别拿不相关的曲子顶上。`;
+
 const imageGuide = `- 调 generate_asset 出图，prompt 用英文，只描述画面本身；画风短语放 style 参数（可选）。
 - 背景 16:9、CG 16:9、立绘 9:16 竖构图全身。画幅不对会直接作废，别为了构图改画幅。
 - 立绘会自动抠底成透明 PNG（引擎靠它叠在场景上），所以提示词里必须有"纯色底、无渐变无投影"。

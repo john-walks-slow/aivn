@@ -99,7 +99,11 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
     const delta = (): string => overrides.get(node.id) ?? node.text;
     switch (node.kind) {
       case "scene":
-        push(base, { kind: "scene", ...pickDefined(attrs, ["bg", "bgm", "ambient", "transition"]) });
+        push(base, {
+          kind: "scene",
+          ...pickDefined(attrs, ["bg", "bgm", "ambient", "transition"]),
+          ...pickVolume(attrs, ["bgm_volume", "ambient_volume"]),
+        });
         break;
       case "actor":
         push(base, {
@@ -112,7 +116,7 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
         push(base, { kind: "cg", id: attrs.id ?? "", ...pickDefined(attrs, ["caption"]) });
         break;
       case "sfx":
-        push(base, { kind: "sfx", src: attrs.src ?? "" });
+        push(base, { kind: "sfx", src: attrs.src ?? "", ...pickVolume(attrs, ["volume"]) });
         break;
       case "stop": {
         const stop = stopFromNode(node);
@@ -196,6 +200,22 @@ function pickDefined(
   for (const key of keys) {
     const value = attrs[key];
     if (value !== undefined && value !== "") out[key] = value;
+  }
+  return out;
+}
+
+/** 音量类属性：谱系里存的是字符串，重放要还原成数字（缺省 = 保持当前音量）。 */
+function pickVolume(
+  attrs: Record<string, string>,
+  keys: readonly string[],
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const key of keys) {
+    const raw = attrs[key];
+    // 空串必须放过：Number("") 是 0（合法有限数），会把音量打到静音
+    if (raw === undefined || raw.trim() === "") continue;
+    const value = Number(raw);
+    if (Number.isFinite(value)) out[key] = value;
   }
   return out;
 }

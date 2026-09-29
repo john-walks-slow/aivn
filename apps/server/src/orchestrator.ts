@@ -1202,18 +1202,19 @@ export class PlaywrightOrchestrator {
         }
         return;
       }
-      case "scene":
+      case "scene": {
         if (event.bg) this.opts.scene = event.bg;
-        this.appendLineage("scene", {
-          payload: {
-            seq,
-            attrs: {
-              bg: event.bg ?? "",
-              ...pick(event, ["bgm", "ambient", "transition"]),
-            },
-          },
-        });
+        const attrs = pick(event, ["bg", "bgm", "ambient", "transition", "bgm_volume", "ambient_volume"]);
+        for (const key of Object.keys(attrs)) if (attrs[key] === "") delete attrs[key];
+        // 音频属性的空串在流式里是「停」（director 的 STOP_AUDIO 认 ""），但谱系里空串会被
+        // 上面这行删掉，重放时读成 undefined = 「保持当前」——刷新一下音乐又响起来。
+        // 所以归一化成 none：显式停止在谱系里必须是实打实的非空值。
+        for (const key of ["bgm", "ambient"] as const) {
+          if (event[key] !== undefined && String(event[key]).trim() === "") attrs[key] = "none";
+        }
+        this.appendLineage("scene", { payload: { seq, attrs } });
         return;
+      }
       case "actor":
         this.appendLineage("actor", {
           payload: {
@@ -1226,7 +1227,9 @@ export class PlaywrightOrchestrator {
         });
         return;
       case "sfx":
-        this.appendLineage("sfx", { payload: { seq, attrs: { src: event.src } } });
+        this.appendLineage("sfx", {
+          payload: { seq, attrs: { src: event.src, ...(event.volume !== undefined ? { volume: String(event.volume) } : {}) } },
+        });
         return;
       case "preload_asset":
         this.appendLineage("preload", {

@@ -7,6 +7,8 @@ export interface ServerConfig {
   port: number;
   /** 剧目库根目录（多剧目，每子目录一剧目）。 */
   playsRoot: string;
+  /** 应用级素材资源库根目录（每子目录一素材条目，用户在本地目录里增删改，服务端只读）。 */
+  libraryRoot: string;
   modelId: string;
   modelBase: string; // pi-ai 内置基础模型（继承 api/cost/contextWindow 等元数据）
   baseUrl: string;
@@ -92,6 +94,7 @@ export function loadConfig(
   const config: ServerConfig = {
     port: Number(env.STAGE_PORT ?? "8787"),
     playsRoot: resolve(repoRoot, env.STAGE_PLAYS_ROOT ?? "plays"),
+    libraryRoot: resolve(repoRoot, env.STAGE_LIBRARY_ROOT ?? "library"),
     modelId: env.STAGE_MODEL_ID ?? "ms/deepseek-ai/DeepSeek-V4.1-Flash",
     modelBase: env.STAGE_MODEL_BASE ?? "deepseek/deepseek-flash",
     baseUrl: env.STAGE_BASE_URL ?? "http://127.0.0.1:9999/v1",

@@ -1,4 +1,15 @@
-import type { LineageView, PlayConfig } from "@stage-ai/core";
+import type { AssetMeta, LibraryEntry, LineageView, PlayConfig } from "@stage-ai/core";
+
+/** 资源库导入回执（服务端 assetImport 的结果原样）。 */
+export interface ImportResult {
+  kind: string;
+  id: string;
+  files: string[];
+  characters: string[];
+  manifestKeys: string[];
+  /** 剧目配置/素材表的改动（进工坊撤销条；REST 直连时前端不用它）。 */
+  writes: { path: string; before: string | null; after: string }[];
+}
 
 /** 就绪门（D13）：开演前置检查。 */
 export interface Readiness {
@@ -191,6 +202,9 @@ export const api = {
 
   listAssets: (id: string) => request<Record<string, string[]>>(`/api/plays/${id}/assets`),
 
+  /** 素材元数据表：stem → 描述/标签/情绪（素材页副标题与剧作家提示词同一份）。 */
+  assetMeta: (id: string) => request<Record<string, AssetMeta>>(`/api/plays/${id}/assets/meta`),
+
   uploadAsset: (id: string, kind: string, name: string, data: Blob) =>
     request<{ ok: boolean }>(`/api/plays/${id}/assets?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}`, {
       method: "POST",
@@ -200,6 +214,20 @@ export const api = {
   deleteAsset: (id: string, kind: string, name: string) =>
     request<{ ok: boolean }>(`/api/plays/${id}/assets?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}`, {
       method: "DELETE",
+    }),
+
+  /** 资源库清单：可按类别过滤 + 关键词搜索（id/标题/描述/标签都参与匹配）。counts 是全量分类计数。 */
+  listLibrary: (kind?: string, q?: string) =>
+    request<{ entries: LibraryEntry[]; total: number; counts: Record<string, number> }>(
+      `/api/library?kind=${encodeURIComponent(kind ?? "")}&q=${encodeURIComponent(q ?? "")}`,
+    ),
+
+  /** 从资源库导入到本剧目（复制文件 + 写素材表/角色卡），保存即生效。 */
+  importLibraryAsset: (id: string, req: { kind: string; entryId: string; expressions?: string[] }) =>
+    request<ImportResult>(`/api/plays/${id}/assets/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(req),
     }),
 
   /** 音色试听：服务端合成固定样本，返回 media-cache URL。 */
@@ -270,4 +298,9 @@ export function assetUrl(playId: string, dir: string, name: string): string {
 /** 剧目文件预览 URL：PlayFile.path 已含 assets/ 前缀，与静态服务路径一致。 */
 export function fileUrl(playId: string, path: string): string {
   return `/plays/${playId}/${path}`;
+}
+
+/** 资源库条目内文件的预览 URL（库在服务端只读直出，不经剧目目录）。 */
+export function libraryFileUrl(kind: string, id: string, file: string): string {
+  return `/library/${kind}/${id}/${encodeURIComponent(file)}`;
 }

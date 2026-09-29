@@ -33,10 +33,22 @@ export type StopType = (typeof STOP_TYPES)[number];
 /** stop 内唯一的子标签。 */
 export const OPTION_TAG = "option";
 
+/**
+ * 场景指令属性。
+ *
+ * 音频属性缺省一律表示**保持当前**——换景不换乐是常事，少写一个属性不该让
+ * 音乐凭空消失；真要停乐写 `bgm="none"`。背景 bg 仍按原语义：缺省保持上一张。
+ */
 export interface SceneAttrs {
   bg?: string;
+  /** 背景音乐 id。缺省 = 保持当前；`none` = 停止。 */
   bgm?: string;
+  /** 环境音 id（雨声/风声/人声，循环播放）。语义同 bgm。 */
   ambient?: string;
+  /** bgm 音量 0–1；缺省 = 保持当前（首次进曲用曲目的建议音量）。 */
+  bgm_volume?: number;
+  /** ambient 音量 0–1。 */
+  ambient_volume?: number;
   transition?: string;
 }
 

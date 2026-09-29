@@ -19,6 +19,8 @@ export default defineConfig({
       },
       "/api": server,
       "/plays": server,
+      // 资源库素材预览：服务端只读静态路由。路径不在 /plays 下——库不是剧目目录
+      "/library": server,
     },
   },
 });

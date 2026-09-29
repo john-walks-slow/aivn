@@ -1,21 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { CharacterCard, PlayConfig } from "@stage-ai/core";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AssetKind, AssetMeta, CharacterCard, PlayConfig } from "@stage-ai/core";
 import { VOICE_PRESETS } from "@stage-ai/core";
 import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { ImageLightbox } from "./ImageLightbox.js";
+import { LibraryBrowser } from "./LibraryBrowser.js";
 
 const KINDS = ["backgrounds", "cg", "sfx", "bgm"] as const;
+
+/** 文件名去掉扩展名：素材表与文件名对不上时，仍能按 stem 找到描述。 */
+const stemOf = (name: string): string => name.replace(/\.\w+$/, "");
 
 /** 素材库与剧目配置：原素材页整体搬进工坊（工坊 = 搭台的唯一去处）。 */
 export function AssetsPanel({ playId }: { playId: string }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [assets, setAssets] = useState<Record<string, string[]>>({});
+  const [assetMeta, setAssetMeta] = useState<Record<string, AssetMeta>>({});
   const [draft, setDraft] = useState<PlayConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [spriteChar, setSpriteChar] = useState("");
   const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null);
+  const [library, setLibrary] = useState(false);
 
   const reload = useCallback((): void => {
     api
@@ -26,6 +32,7 @@ export function AssetsPanel({ playId }: { playId: string }) {
       })
       .catch((e: Error) => setError(e.message));
     api.listAssets(playId).then(setAssets).catch(() => {});
+    api.assetMeta(playId).then(setAssetMeta).catch(() => {});
   }, [playId]);
   useEffect(reload, [reload]);
 
@@ -65,6 +72,19 @@ export function AssetsPanel({ playId }: { playId: string }) {
 
   const readiness = detail?.readiness;
   const spritesDirs = Object.keys(assets).filter((k) => k.startsWith("sprites/"));
+  /** 剧目里已有的条目：立绘按角色目录（目录名即条目 id），其余按 stem。 */
+  const owned = useMemo(() => {
+    const set = new Set<string>();
+    for (const kind of KINDS) for (const name of assets[kind] ?? []) set.add(`${kind}/${stemOf(name)}`);
+    for (const dir of spritesDirs) set.add(`sprites/${dir.slice("sprites/".length)}`);
+    return set;
+  }, [assets, spritesDirs]);
+  const isImported = (kind: AssetKind, id: string): boolean => owned.has(`${kind}/${id}`);
+  /** 素材行的副标题：素材表里的描述（剧作家在提示词里看到的是同一句）。 */
+  const noteFor = (dir: string, name: string): string | null => {
+    const key = dir.startsWith("sprites/") ? `${dir.slice("sprites/".length)}/${stemOf(name)}` : stemOf(name);
+    return assetMeta[key]?.description ?? null;
+  };
 
   return (
     <div className="workshop-tab-pane assets-pane">
@@ -178,7 +198,14 @@ export function AssetsPanel({ playId }: { playId: string }) {
       )}
 
       <section className="panel">
-        <h3>素材</h3>
+        <div className="assets-section-head">
+          <h3>素材</h3>
+          <button className="ghost-btn" onClick={() => setLibrary(true)} title="从应用级资源库挑素材复制进本剧目">
+            <span className="btn-icon">
+              <Icon name="download" size={14} /> 从资源库导入
+            </span>
+          </button>
+        </div>
         <div className="upload-grid">
           {KINDS.map((kind) => (
             <div key={kind} className="upload-cell">
@@ -201,6 +228,7 @@ export function AssetsPanel({ playId }: { playId: string }) {
                     playId={playId}
                     dir={kind}
                     name={name}
+                    note={noteFor(kind, name)}
                     onRemove={() => remove(kind, name)}
                     onZoom={() => setZoom({ url: assetUrl(playId, kind, name), name })}
                   />
@@ -240,6 +268,7 @@ export function AssetsPanel({ playId }: { playId: string }) {
                     dir={dir}
                     name={name}
                     label={`${dir}/${name}`}
+                    note={noteFor(dir, name)}
                     onRemove={() => remove(dir, name)}
                     onZoom={() => setZoom({ url: assetUrl(playId, dir, name), name: `${dir}/${name}` })}
                   />
@@ -251,6 +280,9 @@ export function AssetsPanel({ playId }: { playId: string }) {
       </section>
 
       {zoom && <ImageLightbox url={zoom.url} name={zoom.name} onClose={() => setZoom(null)} />}
+      {library && (
+        <LibraryBrowser playId={playId} imported={isImported} onClose={() => setLibrary(false)} onImported={reload} />
+      )}
     </div>
   );
 }
@@ -261,6 +293,7 @@ function AssetRow({
   dir,
   name,
   label,
+  note,
   onRemove,
   onZoom,
 }: {
@@ -268,6 +301,8 @@ function AssetRow({
   dir: string;
   name: string;
   label?: string;
+  /** 素材表里的描述：与剧作家提示词里看到的是同一句。 */
+  note?: string | null;
   onRemove: () => void;
   onZoom: () => void;
 }) {
@@ -289,8 +324,9 @@ function AssetRow({
           <Icon name="assets" size={16} />
         </span>
       )}
-      <span className="asset-name" title={text}>
+      <span className="asset-name" title={note ? `${text}——${note}` : text}>
         {text}
+        {note && <em className="asset-note">{note}</em>}
       </span>
       <button className="link-btn" onClick={onRemove}>
         删除

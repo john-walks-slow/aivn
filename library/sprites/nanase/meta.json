@@ -1,0 +1,34 @@
+{
+  "title": "七濑（示例角色）",
+  "description": "示例用的少女角色：深棕侧扎长发、灰瞳、藏青开衫配白衬衫校服。一整套差分可直接导入剧目当锚。",
+  "tags": [
+    "少女",
+    "校服",
+    "示例角色",
+    "多表情"
+  ],
+  "source": "本项目生成（flow2api / gemini-3.1-flash-image）+ 项目自带抠底管线（apps/server/src/cutout.ts）",
+  "character": {
+    "name": "七濑",
+    "persona": "安静、观察细致、不太会主动开口的少女；对熟人偶尔露出腼腆的笑。",
+    "voice": "语气轻、语速偏慢，句子短，情绪变化不大但在意时会更小声"
+  },
+  "expressions": {
+    "neutral": {
+      "file": "neutral.png",
+      "description": "无表情的默认站姿，用作其它差分的定妆锚"
+    },
+    "smile": {
+      "file": "smile.png",
+      "description": "腼腆地微笑，双颊微红"
+    },
+    "worried": {
+      "file": "worried.png",
+      "description": "担忧：眉心抬起、眼睛睁大、嘴唇微张"
+    },
+    "surprised": {
+      "file": "surprised.png",
+      "description": "吃惊：眼睛睁圆、眉毛上扬、嘴巴张成小圆形"
+    }
+  }
+}

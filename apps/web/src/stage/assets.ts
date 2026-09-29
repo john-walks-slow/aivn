@@ -7,6 +7,8 @@ export interface AssetIndex {
   cg: (id: string | null) => string | null;
   bgm: (stem: string | null) => string | null;
   sfx: (src: string | null) => string | null;
+  /** 环境底音：sfx 与 bgm 两处都放得下循环音（`rain_loop` 归 sfx，`bgm_rainy_night` 归 bgm），都认。 */
+  ambient: (stem: string | null) => string | null;
   sprite: (charId: string, expression: string | null) => string | null;
 }
 
@@ -43,6 +45,7 @@ export function buildAssetIndex(
     cg: byStem(cg, "cg"),
     bgm: byStem(bgm, "bgm"),
     sfx: byStem(sfx, "sfx"),
+    ambient: (stem) => byStem(sfx, "sfx")(stem) ?? byStem(bgm, "bgm")(stem),
     sprite: (charId, expression) => {
       const character = play.characters.find((c) => c.id === charId);
       const mapped = expression ? character?.sprites?.[expression] : undefined;

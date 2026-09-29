@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { actorName } from "./script.js";
 import type { Playback, VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
+import { LoopChannel, SfxPlayer } from "./loopAudio.js";
 import type { TranscriptEntry } from "./transcript.js";
 import { api } from "../api.js";
 import type { HistoryBeat, HistoryEntry } from "../api.js";
@@ -112,7 +113,22 @@ export function StageTheater({
   onChrome,
   overlay,
 }: StageTheaterProps) {
-  const bgmRef = useRef<HTMLAudioElement | null>(null);
+  /**
+   * 循环音轨：BGM 与环境音各一路，都带交叉淡入淡出。缺省音量分别是 0.28 / 0.16——
+   * 环境音是垫在配乐底下的背景声，压过配乐就变吵了。
+   */
+  const channels = useRef<{ bgm: LoopChannel; ambient: LoopChannel; sfx: SfxPlayer } | null>(null);
+  if (!channels.current) {
+    channels.current = { bgm: new LoopChannel(0.28), ambient: new LoopChannel(0.16), sfx: new SfxPlayer() };
+  }
+  useEffect(() => {
+    const created = channels.current!;
+    return () => {
+      created.bgm.dispose();
+      created.ambient.dispose();
+      created.sfx.dispose();
+    };
+  }, []);
   /** 导演原语的面板：四原语的全部输入都在对话框里收，不跳视图。 */
   const [action, setAction] = useState<"ooc" | "edit" | "rewrite" | null>(null);
   const [draft, setDraft] = useState("");
@@ -204,33 +220,23 @@ export function StageTheater({
     else if (dy < 0) onView("backlog");
   };
 
-  // sfx：key 变化即播放
+  // sfx：key 变化即播放（同帧连发不叠加成噪音，挤掉最老的一小声）
   useEffect(() => {
     const cue = playback.sfx;
     if (!cue) return;
     const url = index.sfx(cue.src);
-    if (url) {
-      const audio = new Audio(url);
-      audio.volume = cue.volume ?? 0.7;
-      void audio.play().catch(() => {});
-    }
+    if (url) channels.current!.sfx.play(url, cue.volume ?? 0.7);
   }, [playback.sfx, index]);
 
-  // bgm：场景切换换曲（循环，轻音量）
+  // bgm / ambient：换曲交叉淡入淡出，null 即停。素材缺失时静默保持静音（不阻塞演出）
   const bgmUrl = index.bgm(visual.bgm);
+  const ambientUrl = index.ambient(visual.ambient);
   useEffect(() => {
-    const audio = bgmRef.current;
-    if (!audio) return;
-    if (!bgmUrl) {
-      audio.pause();
-      return;
-    }
-    if (audio.src !== new URL(bgmUrl, location.href).href) {
-      audio.src = bgmUrl;
-      audio.volume = 0.28;
-      void audio.play().catch(() => {});
-    }
-  }, [bgmUrl]);
+    channels.current!.bgm.set(bgmUrl, visual.bgmVolume);
+  }, [bgmUrl, visual.bgmVolume]);
+  useEffect(() => {
+    channels.current!.ambient.set(ambientUrl, visual.ambientVolume);
+  }, [ambientUrl, visual.ambientVolume]);
 
   const bgUrl = index.bg(visual.bg);
   const cgUrl = index.cg(visual.cg?.id ?? null);
@@ -443,8 +449,6 @@ export function StageTheater({
 
       {/* 停止点浮层与台词条同级（都在舞台之上），入戏输入因此能贴着台词条下沿而不被它盖住 */}
       {overlay}
-
-      <audio ref={bgmRef} loop />
     </div>
   );
 }

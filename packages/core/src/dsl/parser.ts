@@ -221,7 +221,11 @@ export class StageDslParser {
     }
     switch (name) {
       case "scene": {
-        this.emit({ kind: "scene", ...pick(attrs, ["bg", "bgm", "ambient", "transition"]) });
+        this.emit({
+          kind: "scene",
+          ...pick(attrs, ["bg", "bgm", "ambient", "transition"]),
+          ...this.pickVolume(attrs, ["bgm_volume", "ambient_volume"]),
+        });
         return;
       }
       case "actor": {
@@ -307,6 +311,27 @@ export class StageDslParser {
         return;
       }
     }
+  }
+
+  /**
+   * 音量类属性：0–1 的数字。
+   *
+   * 与 sfx 的差别在这里是刻意的——scene 一个标签带好几样东西，bgm_volume 写错就整条丢弃，
+   * 换景会连背景一起丢掉。所以这里只丢坏属性、留好属性，并挂一条 warning 让模型自己改回来。
+   */
+  private pickVolume(attrs: Map<string, string>, keys: string[]): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const key of keys) {
+      const raw = attrs.get(key);
+      if (raw === undefined) continue;
+      const value = Number(raw);
+      if (!Number.isFinite(value)) {
+        this.warn("malformed_tag", `${key} 非数字，忽略该属性: ${raw}`);
+        continue;
+      }
+      out[key] = Math.min(1, Math.max(0, value));
+    }
+    return out;
   }
 
   private emitText(text: string): void {

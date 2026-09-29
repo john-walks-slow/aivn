@@ -108,7 +108,7 @@ describe("PlayLibrary 剧目包导入与删除", () => {
   });
 });
 
-describe("PlayStore.assetNotes：素材描述表", () => {
+describe("PlayStore.assetMeta：素材描述表", () => {
   let root: string;
   let library: PlayLibrary;
 
@@ -118,7 +118,12 @@ describe("PlayStore.assetNotes：素材描述表", () => {
     await library.importZip(
       zipOf({
         "play.json": PLAY_JSON("p1"),
-        "assets/manifest.json": JSON.stringify({ bg_a: "黄昏教室", bg_b: "  ", bad: 42 }),
+        "assets/manifest.json": JSON.stringify({
+          bg_a: "黄昏教室",
+          bg_b: "  ",
+          bad: 42,
+          bg_c: { description: "雨夜天台", tags: ["夜"], mood: ["忧伤"] },
+        }),
       }),
     );
   });
@@ -126,14 +131,17 @@ describe("PlayStore.assetNotes：素材描述表", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it("只收非空字符串项，空白与非字符串丢弃", async () => {
-    expect(await library.store("p1").assetNotes()).toEqual({ bg_a: "黄昏教室" });
+  it("旧格式的纯字符串归一化成元数据，空白与非字符串丢弃", async () => {
+    expect(await library.store("p1").assetMeta()).toEqual({
+      bg_a: { description: "黄昏教室" },
+      bg_c: { description: "雨夜天台", tags: ["夜"], mood: ["忧伤"] },
+    });
   });
 
   it("缺文件或非法 JSON 一律空表，不抛错", async () => {
     await library.createEmpty("blank", "空白");
-    expect(await library.store("blank").assetNotes()).toEqual({});
+    expect(await library.store("blank").assetMeta()).toEqual({});
     await writeFile(join(root, "p1", "assets", "manifest.json"), "{ 坏 json");
-    expect(await library.store("p1").assetNotes()).toEqual({});
+    expect(await library.store("p1").assetMeta()).toEqual({});
   });
 });

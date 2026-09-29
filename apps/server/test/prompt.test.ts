@@ -3,16 +3,32 @@ import { buildSystemPrompt, DEFAULT_CRAFT } from "../src/prompt.js";
 import { PlayMemory } from "../src/memory.js";
 import { PLAY } from "./helpers.js";
 
-describe("buildSystemPrompt：素材描述与已生成图清单", () => {
+describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
   it("描述挂在对应 id 后面，没描述的只留 id", () => {
     const prompt = buildSystemPrompt({
       play: PLAY,
       assets: { backgrounds: ["bg_dusk.jpg", "bg_rain.jpg"], cg: ["cg_1.png"] },
-      notes: { bg_dusk: "放学后的空教室，落日余晖", bg_rain: "" },
+      notes: { bg_dusk: { description: "放学后的空教室，落日余晖" }, bg_rain: { description: "  " } },
     });
-    expect(prompt).toContain("bg_dusk（放学后的空教室，落日余晖） | bg_rain");
-    expect(prompt).toContain("cg_1\n");
+    expect(prompt).toContain("- bg_dusk（放学后的空教室，落日余晖）");
+    expect(prompt).toContain("- bg_rain\n");
+    expect(prompt).toContain("- cg_1\n");
     expect(prompt).not.toContain("bg_rain（");
+  });
+
+  it("音频素材把情绪、适用场景、时长、可循环一起摆出来", () => {
+    const prompt = buildSystemPrompt({
+      play: PLAY,
+      assets: { bgm: ["twilight.mp3"], sfx: ["rain.ogg"] },
+      notes: {
+        twilight: { description: "黄昏钢琴曲", mood: ["忧伤", "温柔"], durationSec: 96, loop: true, volume: 0.3 },
+        rain: { description: "窗外雨声", mood: ["安静"], scene: ["夜戏"] },
+      },
+    });
+    expect(prompt).toContain("黄昏钢琴曲｜情绪：忧伤、温柔｜约 96 秒｜可循环｜建议音量 0.3");
+    expect(prompt).toContain("窗外雨声｜情绪：安静｜适用：夜戏");
+    // 库里有音素材才讲编排规则
+    expect(prompt).toContain("# 配乐与音效（怎么用）");
   });
 
   it("立绘差分也带描述", () => {
@@ -21,7 +37,7 @@ describe("buildSystemPrompt：素材描述与已生成图清单", () => {
         ...PLAY,
         characters: [{ id: "mio", name: "澪", persona: "p", sprites: { pout: "pout.png" } }],
       },
-      notes: { pout: "鼓腮嗔怒" },
+      notes: { "mio/pout": { description: "鼓腮嗔怒" } },
     });
     expect(prompt).toContain("expression：pout（鼓腮嗔怒）");
   });
@@ -38,8 +54,11 @@ describe("buildSystemPrompt：素材描述与已生成图清单", () => {
 
   it("没有描述表时清单退化为纯 id，行为与从前一致", () => {
     const prompt = buildSystemPrompt({ play: PLAY, assets: { backgrounds: ["bg_dusk.jpg"] } });
-    expect(prompt).toContain("bg_dusk——scene 的 bg 优先取这些 id。");
+    expect(prompt).toContain("- bg_dusk\n");
+    expect(prompt).toContain("scene 的 bg 优先取这些 id。");
     expect(prompt).not.toContain("# 已生成的图");
+    // 没有音素材就不灌编排规则，避免教模型用不存在的功能
+    expect(prompt).not.toContain("# 配乐与音效（怎么用）");
   });
 });
 

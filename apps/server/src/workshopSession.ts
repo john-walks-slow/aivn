@@ -4,6 +4,7 @@ import type { ServerMessage, WorkshopAssetView, WorkshopChatMessage, WorkshopThr
 import type { ImageBackend } from "./imageBackend.js";
 import type { Limiter } from "./limiter.js";
 import { PlayFiles } from "./playFiles.js";
+import type { AssetLibrary } from "./library.js";
 import type { PlaySaves } from "./saves.js";
 import type { PlayStore } from "./store.js";
 import {
@@ -40,6 +41,8 @@ export interface WorkshopSessionOptions {
   saves: PlaySaves;
   /** 按 saveId 取存档级操作面（读故事树只走磁盘 session.json，不建 runtime）。 */
   saveStore: (saveId: string) => PlayStore;
+  /** 应用级素材资源库：工坊 agent 可浏览与导入（只读，库本身由用户在本地目录维护）。 */
+  assetLibrary?: AssetLibrary;
 }
 
 export class WorkshopSession {
@@ -69,6 +72,7 @@ export class WorkshopSession {
       });
     }
     this.tools = createWorkshopTools({
+      playId: opts.playId,
       files: this.files,
       store: opts.store,
       onWrite: (write) => this.broadcastWrite(write),
@@ -76,6 +80,7 @@ export class WorkshopSession {
       onAsset: (asset) => this.broadcastAsset(asset),
       saves: opts.saves,
       saveStore: opts.saveStore,
+      assetLibrary: opts.assetLibrary,
     });
   }
 
@@ -206,17 +211,16 @@ export class WorkshopSession {
   }
 
   /** 素材到货：先瞬态播报（对话流立刻可见），同时挂到本轮收束的那条消息上。 */
-  private broadcastAsset(asset: GeneratedPlayAsset): void {
+  private broadcastAsset(asset: WorkshopAssetView, replaced = false): void {
     this.changedDuringTurn = true;
-    const view: WorkshopAssetView = { kind: asset.kind, path: asset.path, url: asset.url };
-    this.pendingAssets.push(view);
+    this.pendingAssets.push(asset);
     this.opts.emit({
       type: "workshop_asset",
       threadId: this.activeId ?? "",
       kind: asset.kind,
       path: asset.path,
       url: asset.url,
-      replaced: asset.replaced,
+      replaced,
     });
   }
 
@@ -241,7 +245,7 @@ export class WorkshopSession {
       this.opts.store.readiness(),
     ]);
     const listing = files.map((f) => `${f.writable ? "可写" : "只读"} ${f.path}（${f.size}B）`).join("\n");
-    return buildWorkshopPrompt(play.title, listing, readiness, !!this.assets);
+    return buildWorkshopPrompt(play.title, listing, readiness, !!this.assets, !!this.opts.assetLibrary);
   }
 }
 

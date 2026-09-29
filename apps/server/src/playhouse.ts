@@ -1,6 +1,7 @@
 import type { ServerMessage } from "@stage-ai/core";
 import { LineageTree, isVoiceId, type EngineStateSnapshot } from "@stage-ai/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
+import type { AssetLibrary } from "./library.js";
 import { PlaywrightOrchestrator, type CarryOver, type OrchestratorRuntimeState } from "./orchestrator.js";
 import type { SaveInfo } from "./saves.js";
 import type { PlayConfig } from "@stage-ai/core";
@@ -101,6 +102,7 @@ export class PlayHouse {
   constructor(
     private readonly library: PlayLibrary,
     private readonly config: ServerConfig,
+    private readonly assetLibrary: AssetLibrary,
   ) {
     ({ provider: this.provider, model: this.model } = createCpaProvider(config));
     this.tts = createTts(config);
@@ -386,7 +388,7 @@ export class PlayHouse {
       getApiKey: () => this.config.apiKey,
       play,
       assets: await store.listAssets(),
-      assetNotes: await store.assetNotes(),
+      assetNotes: await store.assetMeta(),
       generatedAssets: images?.notes(),
       memory,
       tree,
@@ -430,6 +432,7 @@ export class PlayHouse {
       limiter: this.limiterFor(play.id),
       saves: this.library.saves(play.id),
       saveStore: (saveId) => this.library.saveStore(play.id, saveId),
+      assetLibrary: this.assetLibrary,
     });
     return {
       orchestrator,

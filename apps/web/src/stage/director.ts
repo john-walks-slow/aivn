@@ -5,7 +5,13 @@ import type { TranscriptEntry } from "./transcript.js";
 /** 舞台视觉状态（视觉 cues 即时应用后的累积结果）。 */
 export interface VisualState {
   bg: string | null;
+  /** 背景音乐 id（null = 停）。缺省属性 = 保持当前，写 `none` 才停。 */
   bgm: string | null;
+  /** 环境音 id（窗外的雨、教室的钟声…）：与 bgm 两条独立通道，ambient 更轻。 */
+  ambient: string | null;
+  /** 剧本给的音量（bgm_volume / ambient_volume）；缺省 = 用客户端默认值。 */
+  bgmVolume?: number;
+  ambientVolume?: number;
   /** 场景切换方式（fade/cut），供背景层 CSS 过渡。 */
   transition: string | null;
   cg: { id: string; caption?: string } | null;
@@ -23,11 +29,26 @@ const PENDING_TTL_MS = 45_000;
 const EMPTY_VISUAL: VisualState = {
   bg: null,
   bgm: null,
+  ambient: null,
   transition: null,
   cg: null,
   sprites: {},
   pending: {},
 };
+
+/** 停止某条循环音轨的写法：显式 `none` 或空串。缺省（undefined）是「保持」，不是停。 */
+const STOP_AUDIO = new Set(["none", ""]);
+
+/**
+ * 音轨 id 的三态：缺省保持当前、显式 `none` 停止、其余换曲。
+ *
+ * 这条规则是 DSL 语义的一部分（core 的 SceneAttrs 注释同款），所以单独导出便于回归测试：
+ * 「换景把音乐断了」是最常见也最招骂的 bug，规则本身得钉死。
+ */
+export function resolveAudio(current: string | null, cue: string | undefined): string | null {
+  if (cue === undefined) return current;
+  return STOP_AUDIO.has(cue.trim().toLowerCase()) ? null : cue;
+}
 
 /** 记录下标：同一 key 可能出现多次（编辑后重放），播放头取最后一次。 */
 function lastIndexOfKey(entries: readonly TranscriptEntry[], key: string): number {
@@ -201,10 +222,14 @@ export function usePlayback(
     setVisual((prev) => {
       switch (cue.kind) {
         case "scene":
+          // 音频属性缺省 = 保持（换景不换乐）；显式 none/空串才停。见 nextAudio。
           return {
             ...prev,
             bg: cue.bg ?? prev.bg,
-            bgm: cue.bgm ?? null,
+            bgm: resolveAudio(prev.bgm, cue.bgm),
+            ambient: resolveAudio(prev.ambient, cue.ambient),
+            bgmVolume: cue.bgmVolume ?? prev.bgmVolume,
+            ambientVolume: cue.ambientVolume ?? prev.ambientVolume,
             transition: cue.transition ?? "fade",
             cg: cue.bg ? null : prev.cg,
           };

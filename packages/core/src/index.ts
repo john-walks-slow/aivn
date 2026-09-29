@@ -5,5 +5,6 @@ export * from "./ws/protocol.js";
 export * from "./lineage/model.js";
 export * from "./lineage/replay.js";
 export * from "./play/config.js";
+export * from "./play/assets.js";
 export * from "./speech/chunker.js";
 export * from "./speech/voices.js";

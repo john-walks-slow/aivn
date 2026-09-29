@@ -682,3 +682,50 @@ describe("对话尾接力（工坊改设定后重建 runtime）", () => {
     expect(orchestrator.carryOver("【设定已更新】")).toBeNull();
   });
 });
+
+describe("音频属性进谱系（缺省/停止/音量在重放时要还原得出来）", () => {
+  const BEAT_AUDIO = [
+    '<scene bg="corridor" bgm="piano" bgm_volume="0.4" ambient="rain" ambient_volume="0.2"/>',
+    '<sfx src="door" volume="0.35"/>',
+    "<narrate>门在响。</narrate>",
+    '<stop type="choice"><option value="a">开门</option></stop>',
+  ].join("\n");
+
+  /** 谱系里 scene 节点的 attrs（重放读的就是它）。 */
+  function sceneAttrs(tree: LineageTree): Record<string, string>[] {
+    return tree
+      .materialize()
+      .filter((e) => e.kind === "scene")
+      .map((e) => (e.payload?.attrs ?? {}) as Record<string, string>);
+  }
+
+  it("音量与音效音量都要进谱系", async () => {
+    const { orchestrator, tree } = setup([{ text: BEAT_AUDIO, beatDone: true }]);
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+    expect(sceneAttrs(tree)[0]).toMatchObject({
+      bg: "corridor",
+      bgm: "piano",
+      bgm_volume: "0.4",
+      ambient: "rain",
+      ambient_volume: "0.2",
+    });
+    const sfx = tree.materialize().find((e) => e.kind === "sfx");
+    expect((sfx?.payload?.attrs ?? {}) as Record<string, string>).toMatchObject({ src: "door", volume: "0.35" });
+  });
+
+  it("空串的 bgm/ambient 归一化成 none：显式停止在谱系里不能变成 undefined", async () => {
+    const { orchestrator, tree } = setup([
+      { text: '<scene bg="corridor" bgm=""/><narrate>静了。</narrate><stop type="choice"><option value="a">嗯</option></stop>', beatDone: true },
+    ]);
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+    expect(sceneAttrs(tree)[0]).toMatchObject({ bg: "corridor", bgm: "none" });
+  });
+
+  it("没写 bgm 就是没写：谱系里不能凭空多出 none（否则每场换景都停乐）", async () => {
+    const { orchestrator, tree } = setup([
+      { text: '<scene bg="classroom"/><narrate>教室里没人。</narrate><stop type="choice"><option value="a">走</option></stop>', beatDone: true },
+    ]);
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+    expect("bgm" in sceneAttrs(tree)[0]!).toBe(false);
+  });
+});
