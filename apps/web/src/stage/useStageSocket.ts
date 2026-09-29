@@ -105,7 +105,6 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
             setNames(Object.fromEntries((msg.cast ?? []).map(({ id, name }) => [id, name])));
             setVoiceAvailable(msg.voice ?? false);
             if (msg.assets) handlersRef.current.onAssets?.(msg.assets);
-            setState((prev) => (prev === "connecting" ? "streaming" : prev));
             // 换了周目 = 换了一棵树：本地缓冲与新树无关，作废重放
             const switched = msg.saveId !== undefined && msg.saveId !== saveIdRef.current;
             if (msg.saveId !== undefined) {
@@ -124,10 +123,14 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
               setTick((t) => t + 1);
               ws.send(JSON.stringify({ type: "resume", lastSeq: 0 } satisfies ClientMessage));
             }
-            // hello 自报空闲：刷新进来的空闲现场不必等 beat_settled 才解锁操作
+            // hello 自报空闲（刷新进来的空闲现场）：直接落 stopped，不必等 beat_settled。
+            // 注意不能先无条件把 connecting 提升为 streaming——stateRef 在渲染期赋值，
+            // 同一次同步回调里读到的仍是旧值，那个判断永远不会成立，页面会卡死在 streaming。
             if (msg.idle) {
               setSettled(true);
-              if (stateRef.current === "streaming") setState("stopped");
+              setState("stopped");
+            } else {
+              setState((prev) => (prev === "connecting" ? "streaming" : prev));
             }
             return;
           case "beat_start":
