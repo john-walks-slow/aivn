@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Icon } from "../ui/Icon.js";
 import type { StopPayload } from "@stage-ai/core";
+import { Icon } from "../ui/Icon.js";
 
 interface StopPanelProps {
   stop: StopPayload | null;
@@ -32,6 +32,7 @@ const trap = {
  * - pause：只在编排器造出来时出现（拍中分岔被截断 / 空拍报错），给一个「继续」重开一拍；
  * - 幕末（beat_done 无 stop）：黑场上的「下一幕」按钮——这一拍戏已经讲完，
  *   下一幕不在剧本里，所以只有这一个出口，点了才开新拍。
+ * 自由输入是从选项卡点开的，有一个返回键——选了不说的自由，选项还摆在那里。
  * 导演注（OOC）在对话框底部的导演栏里，不在此。
  */
 export function StopPanel({
@@ -62,6 +63,15 @@ export function StopPanel({
 
   const options = stop?.stopType === "choice" ? (stop.options ?? []) : [];
   const choosing = options.length > 0 && !freeOpen;
+  /** 从选项点进来的才给返回键；DSL 发的 free 停止点本来就没得选，返回无处可回。 */
+  const canBackOut = freeOpen && options.length > 0;
+
+  const backToChoices = (): void => {
+    setFreeOpen(false);
+    setDraft("");
+    setOriginal(null);
+    setPolishError(null);
+  };
 
   const submitFree = (): void => {
     const text = draft.trim();
@@ -108,9 +118,11 @@ export function StopPanel({
               onClick={() => onChoice(index)}
             >
               <span className="choice-text">{option.text}</span>
-              {seenChoices?.has(option.text) && <span className="choice-seen">
-                <Icon name="check" size={12} /> 已选过
-              </span>}
+              {seenChoices?.has(option.text) && (
+                <span className="choice-seen">
+                  <Icon name="check" /> 已选过
+                </span>
+              )}
             </button>
           ))}
           <button
@@ -127,6 +139,18 @@ export function StopPanel({
 
       {(stop?.stopType === "free" || freeOpen) && (
         <footer className="stop-panel" {...trap}>
+          {canBackOut && (
+            <button
+              type="button"
+              className="free-back"
+              onClick={backToChoices}
+              disabled={disabled}
+              title="不自己写了，回去选"
+            >
+              <Icon name="prev" />
+              返回选项
+            </button>
+          )}
           <div className="free-box">
             <input
               value={draft}
@@ -143,16 +167,18 @@ export function StopPanel({
               onClick={polish}
               disabled={disabled || polishing || draft.trim() === ""}
             >
-              {polishing ? (
-                "润色中…"
-              ) : (
-                <span className="btn-icon">
-                  <Icon name="sparkles" /> 润色
-                </span>
-              )}
+              <Icon name="sparkles" />
+              {polishing ? "润色中…" : "润色"}
             </button>
             {original !== null && (
-              <button type="button" className="link-btn" onClick={undoPolish} disabled={polishing}>
+              <button
+                type="button"
+                className="link-btn"
+                onClick={undoPolish}
+                disabled={polishing}
+                title="退回润色前的原话"
+              >
+                <Icon name="undo" />
                 撤销
               </button>
             )}

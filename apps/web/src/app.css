@@ -936,95 +936,25 @@ button.primary:hover:not(:disabled) {
   flex: 1;
 }
 
-/* ── 导演栏与视图标签（P6 交互重构） ──── */
+/* ── 常驻导演注（OOC，舞台顶栏浮层） ──── */
 
-/* 顶栏：只切视图，不放动作 */
-.view-tabs {
-  display: flex;
-  gap: 4px;
-  margin-left: auto;
-  padding: 2px;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.view-tab {
-  padding: 5px 12px;
-  border: none;
-  border-radius: calc(var(--radius) - 2px);
-  background: none;
-  color: var(--ink-muted);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.view-tab:hover {
-  background: var(--accent-soft);
-  color: var(--ink);
-}
-
-.view-tab.on {
-  background: var(--accent);
-  color: #fff;
-}
-
-/* 导演栏：贴在对话框底部，六个小图标 */
-.dialog-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.dialog-hint-foot {
-  min-height: 18px;
-}
-
-.director-bar {
-  display: flex;
-  gap: 2px;
-  flex: 0 0 auto;
-}
-
-.dir-btn {
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: var(--radius);
-  background: none;
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.dir-btn:hover:not(:disabled) {
-  background: var(--accent-soft);
-}
-
-.dir-btn.on {
-  background: var(--accent-soft);
-  outline: 1px solid var(--accent);
-}
-
-.dir-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-/* 原语面板长在对话框里，不浮到舞台上面 */
-.director-panel {
+.director-box {
+  position: absolute;
+  top: 52px;
+  right: 14px;
+  z-index: 30;
+  width: min(420px, calc(100% - 28px));
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 0 0;
-  border-top: 1px solid var(--line);
+  gap: 8px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
-.director-panel input {
+.director-box input {
   border: none;
   outline: none;
   background: transparent;
@@ -1610,7 +1540,87 @@ select:focus {
   background: none;
 }
 
-/* ── 谱系视图（路线树，P6）───────────── */
+/* ── 谱系视图（剧本 / 路线树，P6）───────────── */
+
+.lineage-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 4px 32px;
+  scrollbar-width: thin;
+}
+
+.lineage-row {
+  border-bottom: 1px solid var(--line);
+  padding: 2px 0;
+}
+
+.lineage-row.active {
+  background: var(--accent-soft);
+}
+
+.lineage-row.abandoned .lineage-text {
+  color: var(--ink-faint);
+}
+
+.lineage-text {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: pre-wrap;
+}
+
+.lineage-text:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.lineage-fork {
+  color: var(--accent);
+  margin-right: 6px;
+}
+
+.lineage-leaf {
+  color: var(--accent);
+  margin-right: 6px;
+}
+
+.lineage-edited {
+  color: var(--ink-faint);
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+.lineage-row.line-scene .lineage-text {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.lineage-row.line-say .lineage-text {
+  border-left: 3px solid var(--line);
+  margin-left: 4px;
+}
+
+.lineage-row.line-thought .lineage-text {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+.lineage-row.line-player .lineage-text {
+  color: var(--accent);
+}
+
+.lineage-row.line-mark .lineage-text {
+  color: var(--ink-faint);
+  font-size: 13px;
+}
 
 .lineage-actions {
   display: flex;
@@ -1628,6 +1638,22 @@ select:focus {
   border-radius: var(--radius);
   font: inherit;
   font-size: 13px;
+}
+
+.lineage-editor {
+  display: flex;
+  flex: 1 1 100%;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.lineage-editor textarea {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font: inherit;
+  resize: vertical;
 }
 
 /* ── 路线：横向时间轴的树（x = 时间，y = 兄弟序） ── */
@@ -1954,7 +1980,7 @@ select:focus {
 .theater-bar,
 .theater-dialog,
 .settings-body,
-.backlog-screen,
+.lineage-view,
 .library,
 .workshop {
   padding-bottom: calc(10px + env(safe-area-inset-bottom));
@@ -2021,11 +2047,19 @@ select:focus {
   border-bottom: none;
 }
 
-/* 回顾是整屏视图，不再是从侧面拉出来的抽屉——手机上抽屉只有半屏宽，读台词费劲 */
-.backlog-screen {
+.backlog {
+  position: absolute;
+  z-index: 40;
+  top: 8px;
+  left: 8px;
+  bottom: 8px;
+  width: min(360px, 82vw);
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 
 .backlog-head {
@@ -2046,7 +2080,6 @@ select:focus {
 }
 
 .backlog-list {
-  flex: 1 1 auto;
   margin: 0;
   padding: 6px;
   list-style: none;
@@ -2069,11 +2102,6 @@ select:focus {
 
 .backlog-list button:hover {
   background: var(--accent-soft);
-}
-
-.backlog-list button.current {
-  background: var(--accent-soft);
-  outline: 1px solid var(--accent);
 }
 
 .backlog-list b {
@@ -2257,4 +2285,358 @@ select:focus {
 
 .craft-saved {
   color: var(--accent);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   舞台控制（instage-controls）：顶栏 HUD / 导演栏 / 回顾 / toast
+   压在 main 的通用样式之后——同优先级时后者生效。
+   ───────────────────────────────────────────────────────────── */
+
+/* ── 顶栏：游戏 HUD（图标 + 暗底 + 白色英文），浮在三个视图之上 ── */
+
+.gui-bar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  padding: calc(6px + env(safe-area-inset-top)) 10px 6px;
+  pointer-events: none;
+  transition:
+    opacity var(--fade-ms) ease,
+    transform var(--fade-ms) ease;
+}
+.gui-bar-group {
+  pointer-events: auto;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 12px;
+  background: rgb(12 12 16 / 0.72);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(8px);
+}
+.gui-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  color: rgb(255 255 255 / 0.82);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--hover-ms) ease,
+    color var(--hover-ms) ease;
+}
+.gui-btn:hover {
+  background: rgb(255 255 255 / 0.12);
+  color: #fff;
+}
+.gui-btn.on {
+  background: rgb(255 255 255 / 0.2);
+  color: #fff;
+}
+.gui-ico {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+.gui-label {
+  font-weight: 600;
+}
+.gui-sep {
+  width: 1px;
+  margin: 4px 3px;
+  background: rgb(255 255 255 / 0.16);
+}
+/* ── 导演栏（P6 交互重构） ──── */
+
+.free-back {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 auto 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.free-back:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.free-back .ico {
+  width: 14px;
+  height: 14px;
+}
+/* 语音已排进队列的小圆点：OOC 不打断当前演出，状态只能靠这个提示 */
+.dir-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* 导演栏：贴在对话框底部，六个小图标 */
+.dialog-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dialog-hint-foot {
+  min-height: 18px;
+}
+.director-bar {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.dir-btn {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color var(--hover-ms) ease, background-color var(--hover-ms) ease;
+}
+.dir-btn .ico {
+  width: 19px;
+  height: 19px;
+}
+.dir-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.dir-btn.on {
+  background: var(--accent-soft);
+  outline: 1px solid var(--accent);
+}
+.dir-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+/* 原语面板长在对话框里，不浮到舞台上面 */
+.director-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--line);
+}
+.director-panel input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+}
+/* 舞台上不占固定位置的提示走 toast；非演出页面（剧目库/素材/工坊）仍是页面内的一条横幅 */
+.error-banner {
+  margin: 10px 16px 0;
+  padding: 8px 12px;
+  border: 1px solid #e8c8c4;
+  background: #fbf1ef;
+  color: #b3372f;
+  border-radius: var(--radius);
+  font-size: 13.5px;
+}
+/* 提示走浮层：钉在顶部的横幅会在演出时占掉画面一条，还要手动去点掉 */
+.toast-stack {
+  position: fixed;
+  z-index: 60;
+  top: calc(var(--gui-h, 52px) + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(92vw, 420px);
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 7px 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.28);
+  animation: toast-in 0.22s ease;
+  cursor: pointer;
+}
+.toast-warn {
+  border-color: #e0c48c;
+  color: #8a5a12;
+}
+.toast-error {
+  border-color: #e8c8c4;
+  color: #b3372f;
+}
+.toast-ico {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.toast-warn .toast-ico,
+.toast-error .toast-ico {
+  color: currentColor;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+/* ── 路线：横向时间轴的树（x = 时间，y = 兄弟序） ── */
+
+/* 路线图占满舞台页——它是地图，不该挤在侧栏里 */
+.route-screen {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+}
+/* 顶栏已经是这个剧目的常驻 HUD，视图里不再重复一条标题栏 */
+.route-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.route-hint {
+  margin-left: auto;
+  font-size: 11.5px;
+}
+.theater-dialog,
+.settings-body,
+.backlog-screen,
+.library,
+.workshop {
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+}
+/* ── 沉浸：顶栏淡出 ────────────── */
+
+.gui-bar.chrome-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px);
+}
+/* 回顾/路线是整屏视图，滚动区要避开浮在最上面的 HUD */
+.backlog-screen,
+.route-screen {
+  padding-top: var(--gui-h, 52px);
+}
+/* 回顾是整屏视图，不再是从侧面拉出来的抽屉——手机上抽屉只有半屏宽，读台词费劲 */
+.backlog-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* 正文不响应点击：翻到过去是为了在这一条下面做点什么，误触跳走比多点一下更烦 */
+.bl-text {
+  padding: 6px 8px;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--ink);
+  font-size: 14.5px;
+  line-height: 1.7;
+}
+.bl-text.current {
+  background: var(--accent-soft);
+  outline: 1px solid var(--accent);
+}
+/* 玩家的选择与输入、导演注：跟剧作家的台词一眼分得开 */
+.bl-player .bl-text b,
+.bl-ooc .bl-text b {
+  color: var(--ink-faint);
+}
+.bl-player .bl-text,
+.bl-ooc .bl-text {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+.bl-ooc .bl-text {
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
+.bl-tools {
+  display: flex;
+  gap: 4px;
+  padding: 2px 6px 0;
+}
+.bl-tool {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+.bl-tools:hover .bl-tool,
+.bl-tool:hover {
+  opacity: 1;
+}
+.bl-tool:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.bl-tool:disabled {
+  opacity: 0.18;
+  cursor: default;
+}
+.bl-edit {
+  display: flex;
+  gap: 6px;
+  padding: 4px 6px 0;
+}
+.bl-edit input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+}
+
+/* 窄屏只留图标：英文标签会把舞台盖掉一条 */
+@media (max-width: 420px) {
+  .gui-label {
+    display: none;
+  }
+
+  .gui-btn {
+    padding: 8px 12px;
+  }
 }

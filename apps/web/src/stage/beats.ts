@@ -136,9 +136,13 @@ const EDITABLE = new Set<LineageNodeView["kind"]>(["say", "narrate", "thought"])
 /**
  * 舞台上正在显示的那一行落在哪一拍——导演原语的锚点。
  * 舞台缓冲里只有当前分支的行，所以只在 onPath 的卡里找；纯布景拍没有 seq，定位不到就是 null。
+ * 回看游标可能停在玩家的表态/导演注上（它们没有 seq），同样定位不到——原语按钮就该是灰的。
  */
-export function beatAtLine(cards: readonly BeatCard[], line: ScriptLine | null): BeatCard | null {
-  if (!line || line.seq === undefined) return null;
+export function beatAtLine(
+  cards: readonly BeatCard[],
+  line: { seq?: number | null } | null,
+): BeatCard | null {
+  if (!line || line.seq === undefined || line.seq === null) return null;
   const at = line.seq;
   let hit: BeatCard | null = null;
   for (const card of cards) {
@@ -149,8 +153,11 @@ export function beatAtLine(cards: readonly BeatCard[], line: ScriptLine | null):
 }
 
 /** 同一行对应的谱系节点：「改写这一句」要拿它的 id 发给编排器。 */
-export function editableNodeAtLine(view: LineageView, line: ScriptLine | null): LineageNodeView | null {
-  if (!line || line.seq === undefined) return null;
+export function editableNodeAtLine(
+  view: LineageView,
+  line: { seq?: number | null } | null,
+): LineageNodeView | null {
+  if (!line || line.seq === undefined || line.seq === null) return null;
   return (
     view.nodes.find((node) => node.seq === line.seq && node.onPath && EDITABLE.has(node.kind)) ?? null
   );
