@@ -4,9 +4,10 @@ import { helloPayload, type PlayHouse, type PlayRuntime } from "./playhouse.js";
 
 /**
  * WS 会话层（多剧目）：/ws?play=<id> 连接路由到剧目 runtime。
- * start = 重开新档；resume 增量重放；其余玩家动作。
+ * 新周目 = 建一棵空树，连接建立后 autostart 自己开拍，协议里没有「重开」消息；
+ * resume 增量重放；其余玩家动作。
  * 客户端集合挂在 PlayHouse（与 runtime 生命周期解耦）；每次派发现查 runtime——
- * startFresh/配置保存 reload 重建后，活连接自动路由到新实例，不断线。
+ * 切档 switchSave / 配置保存 reload 重建后，活连接自动路由到新实例，不断线。
  */
 export function attachTransport(wss: WebSocketServer, playhouse: PlayHouse): void {
   wss.on("connection", (ws, req) => {

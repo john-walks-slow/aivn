@@ -886,7 +886,7 @@ export class PlaywrightOrchestrator {
     const summary = await this.summarizeEpoch(head);
     if (!summary) return;
     const { oneLiner, body } = summary;
-    // 摘要请求在飞：期间可能已 reload/startFresh/dispose——此时重建 Agent 等于僵尸复活
+    // 摘要请求在飞：期间可能已 reload/切档重建/dispose——此时重建 Agent 等于僵尸复活
     if (this.disposed) return;
     const epochNo = this.arcIds.length + 1;
     // arcId 带谱系叶：分岔后两条支路各自压缩不会互相覆盖同名卡
