@@ -2,6 +2,11 @@ import type { SequencedEvent, StageEvent } from "../dsl/events.js";
 
 /** 停止点载荷（编排器随 beat_end 下发，前端渲染选项/输入框）。 */
 export interface StopPayload {
+  /**
+   * choice/free 来自剧本（模型写的 `<stop>`）；pause 只由编排器自己造——
+   * 拍中分岔被截断、或空拍报错时给玩家一个重试入口，模型写不出来，
+   * 幕末（act_end）也不会走到这里，幕末只有黑场 + 「下一幕」。
+   */
   stopType: "choice" | "free" | "pause";
   options?: { text: string; value?: string }[];
   placeholder?: string;

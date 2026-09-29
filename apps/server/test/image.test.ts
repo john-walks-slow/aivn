@@ -215,7 +215,7 @@ describe("编排器：preload_asset 预发射钩子", () => {
             '<preload_asset type="cg" prompt="confession" id="cg_01"/>\n' +
             '<preload_asset type="sprite" prompt="smile" id="sp_smile"/>\n' +
             '<preload_asset type="bg" prompt="sunset corridor" id="bg_rooftop_sunset"/>\n' +
-            "<stop type=\"pause\"></stop>",
+            '<stop type="free"></stop>',
         },
       ]),
       model: {} as never,

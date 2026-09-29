@@ -69,9 +69,11 @@ export function lineageToEvents(chain: readonly LineageEvent[]): SequencedEvent[
       case "sfx":
         push(base, { kind: "sfx", src: attrs.src ?? "" });
         break;
-      case "stop":
-        push(base, stopEvent(stopFromEvent(event)));
+      case "stop": {
+        const stop = stopFromEvent(event);
+        if (stop) push(base, stopEvent(stop));
         break;
+      }
       case "say":
         pushLine(base, { kind: "say_start", id: attrs.id ?? "", ...(attrs.mood ? { mood: attrs.mood } : {}) }, { kind: "say_text", delta: delta() }, { kind: "say_end" }, delta());
         break;
@@ -93,21 +95,29 @@ function textOf(event: LineageEvent, overrides: ReadonlyMap<string, string>): st
   return overrides.get(event.id) ?? event.text ?? "";
 }
 
-/** 谱系 stop 事件 → 停止点载荷。 */
-export function stopFromEvent(event: LineageEvent): StopPayload {
+/** 谱系里只会出现 DSL 认识的两种停止点——编排器自造的 pause 不落谱系。 */
+type DslStop = Omit<StopPayload, "stopType"> & { stopType: StopType };
+
+/**
+ * 谱系 stop 事件 → 停止点载荷。
+ * 老档里的 `pause` 归一为 null：它当年是模型写的幕间「什么都不做就继续」，
+ * 那种幕间现在由 `beat_end(act_end)` 承担（黑场 +「下一幕」），不是停止点。
+ */
+export function stopFromEvent(event: LineageEvent): DslStop | null {
   const payload = (event.payload ?? {}) as {
     stopType?: StopType;
     options?: OptionAttrs[];
     placeholder?: string;
   };
+  if (payload.stopType !== "choice" && payload.stopType !== "free") return null;
   return {
-    stopType: payload.stopType ?? "pause",
+    stopType: payload.stopType,
     ...(payload.options ? { options: payload.options } : {}),
     ...(payload.placeholder ? { placeholder: payload.placeholder } : {}),
   };
 }
 
-function stopEvent(stop: StopPayload): StageEvent {
+function stopEvent(stop: DslStop): StageEvent {
   return {
     kind: "stop",
     stopType: stop.stopType,
@@ -187,9 +197,11 @@ export function lineageToBeats(
       case "sfx":
         script.push(`（音效：${attrs.src ?? ""}）`);
         break;
-      case "stop":
-        script.push(stopLine(stopFromEvent(event)));
+      case "stop": {
+        const stop = stopFromEvent(event);
+        if (stop) script.push(stopLine(stop));
         break;
+      }
       case "beat_end":
         flush();
         break;
@@ -206,8 +218,7 @@ function stopLine(stop: StopPayload): string {
     const labels = (stop.options ?? []).map((option) => option.text).join(" / ");
     return `（等待玩家选择：${labels || "（无选项）"}）`;
   }
-  if (stop.stopType === "free") return "（等待玩家自由回应）";
-  return "（等待玩家继续）";
+  return "（等待玩家自由回应）";
 }
 
 function pickDefined(

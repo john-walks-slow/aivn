@@ -445,5 +445,5 @@ function stopLabel(attrs: Record<string, string>): string {
   const type = attrs.stopType ?? attrs.type; // 老档存在 type 下
   if (type === "choice") return "◇ 等待玩家选择";
   if (type === "free") return "◇ 等待玩家回应";
-  return "◇ 等待继续";
+  return "◇ 幕末（下一幕）";
 }

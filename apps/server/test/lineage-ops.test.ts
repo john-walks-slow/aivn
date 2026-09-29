@@ -121,6 +121,20 @@ describe("P6 导演操作 · 编排器", () => {
     expect(view.pathIds.at(-1)).toBe(sayId);
   });
 
+  it("分岔落在拍中 → 停止点降为 pause（这一拍被截断，只能按「继续」重开）", async () => {
+    const { orchestrator, messages, tree } = await playedTwoBeats();
+    const sayId = firstNodeOf(tree, "say"); // 拍中的台词节点
+
+    await orchestrator.forkTo(sayId);
+
+    expect(orchestrator.runtimeState.lastStop).toEqual({ stopType: "pause" });
+    const rebase = messages.find((m) => m.type === "rebase");
+    expect(rebase?.type).toBe("rebase");
+    if (rebase?.type !== "rebase") return;
+    expect(rebase.reason).toBe("stop"); // 不是 act_end：不给「下一幕」
+    expect(rebase.stop?.stopType).toBe("pause");
+  });
+
   it("停止点跨分岔后还原成原来那个：choice 不退化成 pause", async () => {
     const { orchestrator, tree } = await playedTwoBeats(); // 拍一有 choice 停止点
     const choiceNode = tree.chainEvents(tree.leafId!).findLast((e) => e.kind === "stop");
@@ -268,7 +282,7 @@ describe("P6 rebuild · 谱系 → IR", () => {
     expect(beats[2]?.assistant).toContain("半拍台词");
   });
 
-  it("stop 事件 → 停止点载荷（缺省 pause）；beat_end 不产出停止点事件", () => {
+  it("stop 事件 → 停止点载荷（choice/free）；beat_end 不产出停止点事件", () => {
     const tree = new LineageTree();
     tree.append("stop", { payload: { stopType: "choice", options: [{ text: "道歉" }] } });
     tree.append("beat_end", { payload: { reason: "act_end" } });
@@ -279,5 +293,13 @@ describe("P6 rebuild · 谱系 → IR", () => {
       options: [{ text: "道歉" }],
     });
     expect(lineageToEvents(chain).map((e) => e.event.kind)).toEqual(["stop"]);
+  });
+
+  it("旧的 pause 停止点不再还原成停止点（幕末走「下一幕」）", () => {
+    const tree = new LineageTree();
+    tree.append("stop", { payload: { stopType: "pause" } });
+    const chain = tree.chainEvents(tree.leafId!);
+    expect(stopFromEvent(chain[0]!)).toBeNull();
+    expect(lineageToEvents(chain).map((e) => e.event.kind)).toEqual([]);
   });
 });

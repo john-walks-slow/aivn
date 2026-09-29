@@ -165,8 +165,8 @@ function setPreview(card: BeatCard, text: string): void {
   card.preview = text.length > 32 ? `${text.slice(0, 32)}…` : text;
 }
 
-/** 停止点类型；老档把类型存在 attrs.type，读不到就按最保守的「等待继续」算。 */
-function stopTypeOf(attrs: LineageNodeView["attrs"]): StopType {
+/** 停止点类型；老档把类型存在 attrs.type 下，读不到或旧版 pause 一律按「无停止点」算（= 幕末）。 */
+function stopTypeOf(attrs: LineageNodeView["attrs"]): StopType | null {
   const value = attrs.stopType ?? attrs.type;
-  return value === "choice" || value === "free" ? value : "pause";
+  return value === "choice" || value === "free" ? value : null;
 }

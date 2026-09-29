@@ -688,7 +688,8 @@ export class PlaywrightOrchestrator {
 
   /**
    * 停止点恢复：停在 stop/beat_end 边界 → 还原该停止点（choice 选项原样回到面板）；
-   * 停在拍中 → 给一个 pause 停止点，玩家按「继续」即可重演剩余内容。
+   * 停在拍中（写一半被打断）→ 给一个 pause 停止点，玩家按「继续」重开一拍。
+   * 注意 pause 只在这一条路径上出现，幕末（beat_end）永远走 null → 黑场 +「下一幕」。
    */
   private restoreStopPoint(chain: readonly LineageEvent[]): void {
     const last = chain.at(-1);
@@ -701,7 +702,10 @@ export class PlaywrightOrchestrator {
       return;
     }
     if (last.kind === "beat_end") {
-      const stop = chain.findLast((event) => event.kind === "stop");
+      // 只在本拍内找停止点：全链 findLast 会把上一拍的 stop 复活到幕末的档里，
+      // 玩家看到的就不是黑场 +「下一幕」，而是隔了一拍就作废的旧选项
+      const prevBoundary = chain.slice(0, -1).findLastIndex((event) => event.kind === "beat_end");
+      const stop = chain.slice(prevBoundary + 1).findLast((event) => event.kind === "stop");
       this.lastStop = stop ? stopFromEvent(stop) : null;
       return;
     }
@@ -821,6 +825,7 @@ export class PlaywrightOrchestrator {
     ];
     // 空闲态发送 = 越过了待回应的 free/choice 停止点：明示玩家未回应，防止模型替玩家编造台词。
     // 演出中（steer）发送时玩家早已回应过上一个停止点，不加此声明。
+    // pause 是编排器自己造的（拍中截断/空拍重试），玩家并未被问过什么，不算越过停止点。
     if (acrossStop && this.lastStop && this.lastStop.stopType !== "pause") {
       sections.push("【玩家表态】\n（玩家本轮未作回应，请继续演出，并在合适时机再给出回应机会）");
     }
@@ -982,6 +987,7 @@ export class PlaywrightOrchestrator {
       };
     }
     // 空拍护栏：生成失败/零产出不得静默伪装成正常收束——显式 error + pause 停止点给玩家重试入口
+    // （这一拍没有自然收尾，给不了「下一幕」，只能让玩家按「继续」重开一拍）
     if (this.beatEvents === 0 && !stop) {
       this.send({
         type: "error",

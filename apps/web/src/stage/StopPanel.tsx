@@ -18,7 +18,9 @@ interface StopPanelProps {
  * 停止点（玩家主权的三种形态，P6.5）：
  * - choice：舞台中央悬浮的选肢卡片，数字键 1..9 直选，选过的打勾留痕；
  * - free：对话框形态的入戏输入（可 LLM 润色，撤销保原稿）；
- * - pause/幕完：推进胶囊。
+ * - pause：只在编排器造出来时出现（拍中分岔被截断 / 空拍报错），给一个「继续」重开一拍；
+ * - 幕末（beat_done 无 stop）：黑场上的「下一幕」按钮——这一拍戏已经讲完，
+ *   下一幕不在剧本里，所以只有这一个出口，点了才开新拍。
  * 导演注（OOC）是常驻顶栏，不在此。
  */
 export function StopPanel({
@@ -32,7 +34,7 @@ export function StopPanel({
   onPolish,
 }: StopPanelProps) {
   const [draft, setDraft] = useState("");
-  /** 自由输入是从选项/继续里点开的（DSL 没给 free 停止点也能自己说）。 */
+  /** 自由输入是从选项里点开的（DSL 没给 free 停止点也能自己说）。 */
   const [freeOpen, setFreeOpen] = useState(false);
   /** 润色前的原始输入（非空 = 当前草稿是润色产物，可撤销）。 */
   const [original, setOriginal] = useState<string | null>(null);
@@ -143,13 +145,23 @@ export function StopPanel({
         </footer>
       )}
 
-      {(stop?.stopType === "pause" || (isActEnd && !stop)) && !freeOpen && (
+      {/* pause 只由编排器造出（拍中截断 / 空拍报错），这里才是「继续」的合法出场。 */}
+      {stop?.stopType === "pause" && !freeOpen && (
         <footer className="stop-panel">
           <div className="continue-box">
             <button type="button" onClick={onContinue} disabled={disabled} className="primary">
-              {isActEnd && !stop ? "下一幕" : "继续"}
+              继续
             </button>
           </div>
+        </footer>
+      )}
+
+      {/* 幕末：黑场 + 下一幕。整个面板盖住舞台，视觉上就是幕与幕之间的黑场。 */}
+      {isActEnd && !stop && !freeOpen && (
+        <footer className="act-curtain">
+          <button type="button" className="act-next" onClick={onContinue} disabled={disabled}>
+            下一幕
+          </button>
         </footer>
       )}
     </>
