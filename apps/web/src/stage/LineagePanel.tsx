@@ -57,6 +57,7 @@ export function BranchScript(props: PanelProps) {
 
   return (
     <PanelShell {...props} title="剧本" hint="点任意一行，就地编辑 / 重写 / 分岔">
+      {rows.length === 0 && <p className="muted">还没有台词——先在舞台上演出几拍。</p>}
       {rows.map((row) => (
         <Row
           key={row.id}
@@ -106,6 +107,7 @@ export function RouteTree(props: PanelProps) {
           ))}
         </div>
       )}
+      {rows.length === 0 && <p className="muted">还没有历史节点——演出几拍后这里会长出路线树。</p>}
       {rows.map((row) => (
         <Row
           key={row.id}

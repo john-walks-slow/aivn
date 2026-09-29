@@ -112,6 +112,14 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
     stage.sendTtsControl({ enabled: voiceOn });
   }, [stage.voiceAvailable, stage.state, voiceOn]);
 
+  // 导演视图开着时定期拉谱系：一拍的事件是流式落库的，不刷新会看到一棵冻住的树
+  const { reload: reloadLineage } = lineage;
+  useEffect(() => {
+    if (view === "stage") return;
+    const timer = setInterval(reloadLineage, 2500);
+    return () => clearInterval(timer);
+  }, [view, reloadLineage]);
+
   const index: AssetIndex | null = useMemo(
     () => (detail ? buildAssetIndex(playId, detail.play, assets, generated.images) : null),
     [detail, assets, playId, generated.images],
