@@ -9,6 +9,7 @@ import { createCpaProvider } from "./provider.js";
 import { createTts } from "./tts.js";
 import { createImageBackend } from "./imagegen.js";
 import type { ImageBackend } from "./imageBackend.js";
+import { createExa, type Exa } from "./exa.js";
 import { ImageAssets } from "./imageAssets.js";
 import { Limiter } from "./limiter.js";
 import { Translator } from "./translate.js";
@@ -89,6 +90,8 @@ export class PlayHouse {
   private readonly model: ReturnType<typeof createCpaProvider>["model"];
   private readonly tts: ReturnType<typeof createTts>;
   private readonly imageBackend: ImageBackend | null;
+  /** 工坊联网检索（无 key 为 null：工坊少一个工具）。与 TTS 一样是进程级客户端，不随 runtime 重建。 */
+  private readonly exa: Exa | null;
   /**
    * 生图并发闸门，按剧目缓存。
    * 必须挂 PlayHouse 而不是 runtime：reload 只换编排器、复用同一个 WorkshopSession，
@@ -105,6 +108,7 @@ export class PlayHouse {
     ({ provider: this.provider, model: this.model } = createCpaProvider(config));
     this.tts = createTts(config);
     this.imageBackend = createImageBackend(config);
+    this.exa = createExa(config);
     // StreamFn 契约是 SimpleStreamOptions（reasoning 字段）——须接 streamSimple 做换算；
     // 错接完整版 stream 会丢弃 reasoning，thinking 档位全部失效
     this.streamFn = (m, context, options) =>
@@ -430,6 +434,7 @@ export class PlayHouse {
       limiter: this.limiterFor(play.id),
       saves: this.library.saves(play.id),
       saveStore: (saveId) => this.library.saveStore(play.id, saveId),
+      exa: this.exa ?? undefined,
     });
     return {
       orchestrator,

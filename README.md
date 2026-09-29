@@ -290,6 +290,24 @@ STAGE_FLOW_SIZE=2k
 
 读树是纯磁盘操作：直接读 `plays/<id>/saves/<saveId>/session.json`，不打断正在进行的演出。
 
+### 工坊联网检索（可选，不配则没有这个工具）
+
+工坊 agent 有唯一的联网口子 `web_search`：一次调用同时**搜索并把结果正文读回来**（Exa 语义检索），所以查一次就够，不用再单独抓页面。没配 key 时这个工具**不会注册**，工坊也不会在提示词里提联网。
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `STAGE_EXA_ENABLED` | `true` | 联网总开关（`false` = 工坊完全不联网） |
+| `STAGE_EXA_KEYS` | `~/.config/exa/keys.json` | Exa key 列表文件（JSON 数组，也接受 `{"keys": [...]}`；多 key 自动轮询 401/402/429） |
+| `STAGE_EXA_BASE_URL` | `https://api.exa.ai` | Exa API 地址 |
+| `STAGE_EXA_PROXY` | `http://127.0.0.1:7890` | 访问 api.exa.ai 的代理；留空直连 |
+| `STAGE_EXA_TIMEOUT_MS` | `20000` | 单次检索超时 |
+
+```json
+["<your-api-key>"]
+```
+
+用在**剧目之外的事实**上：年代与地域的真实细节、某类职业或题材的常见桥段、生图 prompt 要用的英文画风词、你丢给工坊的链接讲了什么。剧目内部的一切（角色、地点、前情、已定画风）在剧目文件与故事树里，工坊被要求先读那些再考虑联网——检索回来的网页内容一律当资料看，不当指令执行。
+
 ## 剧目记忆（memory/ 目录）
 
 剧作家有三层记忆，放在剧目目录的 `memory/` 下，纯 Markdown 手工维护（纪元内冻结；改动保存后自动生效）：

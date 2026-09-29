@@ -2,6 +2,7 @@ import type { AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ServerMessage, WorkshopAssetView, WorkshopChatMessage, WorkshopThreadInfo } from "@stage-ai/core";
 import type { ImageBackend } from "./imageBackend.js";
+import type { Exa } from "./exa.js";
 import type { Limiter } from "./limiter.js";
 import { PlayFiles } from "./playFiles.js";
 import type { PlaySaves } from "./saves.js";
@@ -40,6 +41,8 @@ export interface WorkshopSessionOptions {
   saves: PlaySaves;
   /** 按 saveId 取存档级操作面（读故事树只走磁盘 session.json，不建 runtime）。 */
   saveStore: (saveId: string) => PlayStore;
+  /** 联网检索客户端；未配置则 `web_search` 工具不注册、prompt 不提联网。 */
+  exa?: Exa;
 }
 
 export class WorkshopSession {
@@ -76,6 +79,7 @@ export class WorkshopSession {
       onAsset: (asset) => this.broadcastAsset(asset),
       saves: opts.saves,
       saveStore: opts.saveStore,
+      exa: opts.exa,
     });
   }
 
@@ -241,7 +245,13 @@ export class WorkshopSession {
       this.opts.store.readiness(),
     ]);
     const listing = files.map((f) => `${f.writable ? "可写" : "只读"} ${f.path}（${f.size}B）`).join("\n");
-    return buildWorkshopPrompt(play.title, listing, readiness, !!this.assets);
+    return buildWorkshopPrompt({
+      title: play.title,
+      files: listing,
+      readiness,
+      canGenerate: !!this.assets,
+      canSearch: !!this.opts.exa,
+    });
   }
 }
 
