@@ -2,7 +2,7 @@ import type { SequencedEvent, StageEvent } from "../dsl/events.js";
 
 /** 停止点载荷（编排器随 beat_end 下发，前端渲染选项/输入框）。 */
 export interface StopPayload {
-  stopType: "choice" | "free" | "pause";
+  stopType: "choice" | "free";
   options?: { text: string; value?: string }[];
   placeholder?: string;
 }

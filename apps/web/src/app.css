@@ -309,6 +309,9 @@ button.link-btn {
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* 入戏输入行的高度：台词条要用它给自己让位，否则长台词的下沿会被输入行盖住 */
+  --stop-h: 67px; /* 输入框 45 + 上下 padding 10/12 */
+  --safe-b: env(safe-area-inset-bottom, 0px);
 }
 
 .theater-bar {
@@ -373,12 +376,32 @@ button.link-btn {
   margin-left: auto;
 }
 
+/* 舞台占满工具条以下的全部高度，台词条浮在它上面——台词长短不改变舞台高度，
+   背景与立绘因此不会被对话框挤压变形。 */
 .theater-stage {
   position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;
   background: var(--stage-bg);
+}
+
+/* 台词条是浮层（overlay），不是舞台的 flex 兄弟节点：舞台高度恒定，台词条按内容长高。 */
+.theater-dialog {
+  position: absolute;
+  z-index: 12;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--dialog-bg);
+  border-top: 1px solid var(--dialog-line);
+  padding: 14px 20px 10px;
+  min-height: 108px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  backdrop-filter: blur(14px) saturate(1.1);
 }
 
 .theater-bg {
@@ -455,20 +478,6 @@ button.link-btn {
   font-size: 13.5px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   margin: 0;
-}
-
-.theater-dialog {
-  position: relative;
-  flex-shrink: 0;
-  background: var(--dialog-bg);
-  border-top: 1px solid var(--dialog-line);
-  padding: 14px 20px 10px;
-  min-height: 108px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  cursor: pointer;
-  backdrop-filter: blur(14px) saturate(1.1);
 }
 
 /* 说话人：白底 + 描边的小牌，骑在对话框上沿——去掉底就看不清了 */
@@ -654,21 +663,57 @@ button.link-btn {
 
 /* ── 停止点（浮在舞台上，不占底部条） ────────────── */
 
-/* 停止点面板：入戏输入 / 继续按钮，贴着舞台底缘。 */
+/* 入戏输入行：贴在台词条下沿，像 VN 文本框里的输入栏（层级压在台词条之上）。 */
 .stop-panel {
   position: absolute;
+  z-index: 14;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 20;
-  border-top: 1px solid var(--line);
-  padding: 12px 24px 16px;
-  background: var(--bg);
+  height: calc(var(--stop-h) + var(--safe-b));
+  box-sizing: border-box;
+  padding: 10px 20px calc(12px + var(--safe-b));
+  background: var(--dialog-bg);
+  border-top: 1px solid var(--dialog-line);
+  backdrop-filter: blur(14px) saturate(1.1);
 }
 
-.continue-box {
+/* 输入行开着时，台词条坐在它上沿——否则长台词的下沿会被输入行盖住。
+   安全区已由输入行让过，台词条不必再补一次。 */
+.theater:has(.stop-panel) .theater-dialog {
+  bottom: calc(var(--stop-h) + var(--safe-b));
+  padding-bottom: 10px;
+}
+
+/* 幕末：整块舞台压黑，只留一个「下一幕」出口。层级在台词条之上、工具条之下——
+   幕间画面是纯黑，操作条仍留着（H 也还能按）。 */
+.act-curtain {
+  position: absolute;
+  inset: 0;
+  z-index: 16;
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
+  background: #000;
+  animation: curtain-in var(--fade-ms) ease;
+}
+
+.act-next {
+  min-width: 168px;
+  padding: 13px 30px;
+  font-size: 15.5px;
+  letter-spacing: 0.12em;
+  color: #eee;
+  background: transparent;
+  border: 1px solid #555;
+  border-radius: 999px;
+}
+
+.act-next:hover:not(:disabled) {
+  color: #fff;
+  border-color: #ddd;
+  background: rgb(255 255 255 / 0.08);
 }
 
 /* 选肢：舞台中央悬浮卡片堆（脸的位置留空），点击区宽、序号可按。 */
@@ -776,17 +821,6 @@ button.primary:hover:not(:disabled) {
 
 .free-box input {
   flex: 1;
-}
-
-.continue-box {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-
-.continue-box .primary {
-  min-width: 160px;
 }
 
 /* ── 常驻导演注（OOC，舞台顶栏浮层） ──── */
@@ -1773,15 +1807,19 @@ select:focus {
   }
 }
 
-.stage-screen,
+/* 普通页面给安全区留边；舞台是满幅画面，左右必须贴边，否则背景两侧露出页面底色 */
 .screen {
   padding-left: max(16px, env(safe-area-inset-left));
   padding-right: max(16px, env(safe-area-inset-right));
 }
 
+.stage-screen {
+  padding-left: 0;
+  padding-right: 0;
+}
+
 .theater-bar,
 .theater-dialog,
-.stop-panel,
 .settings-body,
 .lineage-view,
 .library,
@@ -1827,12 +1865,6 @@ select:focus {
   .settings-field textarea,
   .settings-hint {
     grid-column: 1;
-  }
-
-  /* 软键盘弹出时把停止点面板顶到可视区顶端，输完字不遮挡选项 */
-  .stop-panel {
-    max-height: 55dvh;
-    overflow-y: auto;
   }
 
   .library-grid {

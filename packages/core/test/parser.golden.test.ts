@@ -162,7 +162,7 @@ describe("消息边界自动闭合", () => {
 describe("stop 闸门", () => {
   it("stop 闭合后丢弃其后本节拍的一切事件", () => {
     const { events, parser } = collect();
-    parser.feed('<narrate>她笑了笑。</narrate><stop type="pause"></stop><narrate>不应出现</narrate><say id="x">也不应出现</say>');
+    parser.feed('<narrate>她笑了笑。</narrate><stop type="free"></stop><narrate>不应出现</narrate><say id="x">也不应出现</say>');
     parser.endMessage();
     expect(events.map((e) => e.kind)).toEqual(["narrate_start", "narrate_text", "narrate_end", "stop"]);
     expect(parser.gated).toBe(true);
@@ -187,23 +187,26 @@ describe("stop 闸门", () => {
 
   it("stop 前未闭合台词自动闭合（防前端悬空）", () => {
     const { events, parser } = collect();
-    parser.feed('<say id="mio">还没说完的话<stop type="pause"></stop>');
+    parser.feed('<say id="mio">还没说完的话<stop type="free"></stop>');
     parser.endMessage();
     expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end", "stop"]);
   });
 
-  it("三种 stop 类型", () => {
-    const pause = collect();
-    pause.parser.feed('<stop type="pause"></stop>');
-    expect(pause.events[0]).toMatchObject({ kind: "stop", stopType: "pause" });
-
+  it("两种 stop 类型", () => {
     const free = collect();
     free.parser.feed('<stop type="free" placeholder="你的回应？"></stop>');
     expect(free.events[0]).toMatchObject({ kind: "stop", stopType: "free", placeholder: "你的回应？" });
 
     const selfClosing = collect();
-    selfClosing.parser.feed('<stop type="pause"/>');
-    expect(selfClosing.events[0]).toMatchObject({ kind: "stop", stopType: "pause" });
+    selfClosing.parser.feed('<stop type="choice"/>');
+    expect(selfClosing.events[0]).toMatchObject({ kind: "stop", stopType: "choice" });
+  });
+
+  it("pause 已从 stop 类型里移除，幕末由 beat_end/act_end 表达", () => {
+    const legacy = collect();
+    legacy.parser.feed('<stop type="pause"></stop>');
+    expect(legacy.events).toHaveLength(0);
+    expect(legacy.parser.gated).toBe(false);
   });
 
   it("choice 选项带 value 属性", () => {

@@ -19,8 +19,13 @@ export type DslTag = (typeof DSL_TAGS)[number];
 /** 自闭合指令标签（无正文）。 */
 export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "sfx", "preload_asset", "cg"]);
 
-/** stop 的交互类型（v1 冻结）。 */
-export const STOP_TYPES = ["choice", "free", "pause"] as const;
+/**
+ * stop 的交互类型（v1.1 冻结）。
+ * 只有两种玩家主权点：选肢（choice）/ 自由表态（free）。
+ * 旧版的第三种 pause（幕间「什么都不做就继续」）已删除——幕末走 beat_end 无 stop，
+ * 客户端呈现为黑场 + 「下一幕」按钮，不再占用停止点类型位。
+ */
+export const STOP_TYPES = ["choice", "free"] as const;
 export type StopType = (typeof STOP_TYPES)[number];
 
 /** stop 内唯一的子标签。 */

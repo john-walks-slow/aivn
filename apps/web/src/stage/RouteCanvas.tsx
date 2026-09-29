@@ -2,8 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { BeatCard } from "./beats.js";
 import { layoutRoute, NODE_H, NODE_W, type PlacedCard, type RouteDir } from "./routeTree.js";
 
-/** 停止点在节点角上的标记：选/自由/等待，一眼看出这一拍是玩家拍板还是自动过。 */
-const STOP_MARK: Record<string, string> = { choice: "❖", free: "✎", pause: "⏸" };
+/** 停止点在节点角上的标记：选肢 / 自由表态，一眼看出这一拍是玩家拍板还是模型自己演完。 */
+const STOP_MARK: Record<string, string> = { choice: "❖", free: "✎" };
 
 interface CanvasProps {
   cards: readonly BeatCard[];

@@ -24,7 +24,7 @@ AI galgame 引擎：LLM 剧作家（playwriter）流式输出 Stage DSL（XML �
 
 ## 规范
 
-- **DSL v1 已冻结**（9 标签白名单 + stop 三类型）：改标签集 = 改计划文档先行，同步更新 spec.ts 与 golden 用例
+- **DSL v1 已冻结**（9 标签白名单 + stop 两类型 `choice`/`free`）：改标签集 = 改计划文档先行，同步更新 spec.ts 与 golden 用例。`pause` 已删——幕末是 `beat_end(act_end)`，前端黑场 + 「下一幕」按钮
 - **谱系事件日志 append-only**：一切结构操作（分岔/编辑/重写）以追加事件表达，物化时重放；日志永不改写
 - **四原语正交**（OOC/编辑/分岔/重写）：不隐式联动，组合权在用户；新增交互先对照计划 D10
 - **beat 边界解析归编排器**（P1）：core 的 `recordRewrite` 只记粒度标注，`granularity="beat"` 时 nodeId 传节拍首行

@@ -200,7 +200,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
     }
   });
 
-  it("空拍护栏：零产出 → 显式 error + pause 停止点，不静默伪装 act_end（P0）", async () => {
+  it("空拍护栏：零产出 → 显式 error + 无停止点（幕末下一幕即重试入口），不静默伪装成功（P0）", async () => {
     const { orchestrator, messages } = setup([{ text: "", beatDone: true }]);
     await orchestrator.playerAction({ kind: "free", text: "开局" });
 
@@ -210,12 +210,12 @@ describe("PlaywrightOrchestrator 闭环", () => {
     const beatEnd = lastBeatEnd(messages);
     expect(beatEnd.type).toBe("beat_end");
     if (beatEnd.type === "beat_end") {
-      expect(beatEnd.reason).toBe("stop");
-      expect(beatEnd.stop?.stopType).toBe("pause");
+      expect(beatEnd.reason).toBe("act_end");
+      expect(beatEnd.stop).toBeUndefined();
     }
   });
 
-  it("空拍护栏：provider 抛错（网关 429/断网）→ error 携带原因 + pause 可重试", async () => {
+  it("空拍护栏：provider 抛错（网关 429/断网）→ error 携带原因 + 幕末可重试", async () => {
     const messages: ServerMessage[] = [];
     const orchestrator = new PlaywrightOrchestrator({
       streamFn: () => {
@@ -239,10 +239,10 @@ describe("PlaywrightOrchestrator 闭环", () => {
     const beatEnd = lastBeatEnd(messages);
     expect(beatEnd.type).toBe("beat_end");
     if (beatEnd.type === "beat_end") {
-      expect(beatEnd.reason).toBe("stop");
-      expect(beatEnd.stop?.stopType).toBe("pause");
+      expect(beatEnd.reason).toBe("act_end");
+      expect(beatEnd.stop).toBeUndefined();
     }
-    // 玩家可经 pause 继续重试（下一拍照常开演）
+    // 玩家可经幕末的「下一幕」重试（下一拍照常开演）
     expect(orchestrator.isBusy).toBe(false);
   });
 
@@ -278,6 +278,34 @@ describe("PlaywrightOrchestrator 闭环", () => {
     const seqAfter = restored.eventsAfter(total);
     expect(seqAfter.length).toBeGreaterThan(0);
     expect(seqAfter.some((e) => e.event.kind === "say_start")).toBe(true);
+  });
+
+  it("幕末恢复：上一拍的停止点不复活（停在 act_end 就是黑场 + 下一幕）", async () => {
+    const first = setup([{ text: BEAT_1, beatDone: true }, { text: BEAT_2, beatDone: true }]);
+    await first.orchestrator.playerAction({ kind: "free", text: "我到了" });
+    // 第一拍 choice 停止点 → 第二拍 act_end（无 stop）
+    await first.orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    const restored = new PlaywrightOrchestrator({
+      streamFn: createFakeStreamFn([{ text: BEAT_1, beatDone: true }]),
+      model: {} as never,
+      getApiKey: () => "test-key",
+      play: PLAY,
+      memory: new PlayMemory({ cards: [CARD] }),
+      tree: first.tree,
+      engine: { ...PLAY.initialState },
+      scene: PLAY.initialScene,
+      onServerMessage: () => {},
+      persist: () => {},
+      restored: first.orchestrator.runtimeState,
+    });
+
+    const replay = restored.stoppedReplay;
+    expect(replay?.type).toBe("beat_end");
+    if (replay?.type === "beat_end") {
+      expect(replay.reason).toBe("act_end");
+      expect(replay.stop).toBeUndefined();
+    }
   });
 });
 
@@ -590,7 +618,7 @@ describe("长会话装配与原地 OOC（P4）", () => {
     if (beatEnd.type === "beat_end") expect(beatEnd.stop?.stopType).toBe("choice");
   });
 
-  it("只调记忆工具就结束（零剧本产出）→ 空拍护栏显式报错并给 pause 重试", async () => {
+  it("只调记忆工具就结束（零剧本产出）→ 空拍护栏显式报错、幕末可重试", async () => {
     const { orchestrator, messages } = setup(
       [
         {
@@ -606,7 +634,10 @@ describe("长会话装配与原地 OOC（P4）", () => {
 
     expect(messages.filter((m) => m.type === "error")).toHaveLength(1);
     const beatEnd = lastBeatEnd(messages);
-    if (beatEnd.type === "beat_end") expect(beatEnd.stop?.stopType).toBe("pause");
+    if (beatEnd.type === "beat_end") {
+      expect(beatEnd.reason).toBe("act_end");
+      expect(beatEnd.stop).toBeUndefined();
+    }
   });
 
   it("beat_done 与记忆工具同批 → finishTurn 兜底收束（terminate 不被 batch 吞掉）", async () => {

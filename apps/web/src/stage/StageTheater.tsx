@@ -25,7 +25,7 @@ interface StageTheaterProps {
   onLog: () => void;
   onRoute: () => void;
   onWorkshop: () => void;
-  /** 舞台层浮层：停止点的选肢卡片与入戏输入（P6.5 悬浮于舞台中央，不占底部条）。 */
+  /** 舞台层浮层：停止点的选肢卡片、入戏输入、幕末黑场（均在台词条之上层级）。 */
   overlay?: ReactNode;
 }
 
@@ -92,21 +92,17 @@ export function StageTheater({
     playback;
   const shown = view ? view.text.slice(0, viewLength) : "";
   const lineDone = current !== null && shownLength >= current.text.length;
-  const [chrome, setChrome] = useState(true); // 舞台操作条显隐（沉浸模式）
-  const [idleChrome, setIdleChrome] = useState(false); // 久未操作后自动淡出操作条
+  // 操作条常驻：舞台上有几个能点的键，藏起来等于让玩家猜。H 手动收起做沉浸模式，仅此一种隐藏途径。
+  const [chrome, setChrome] = useState(true);
+  const chromeVisible = chrome;
   const [backlogOpen, setBacklogOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const chromeVisible = chrome && !idleChrome;
-  // 任何一次舞台交互都算「有人在看」：操作条回来，并重置自动淡出计时。
   const poke = useCallback((): void => {
     setChrome(true);
-    setIdleChrome(false);
   }, []);
-  /** H / 下滑：看得见就收起来，已经收着（手动或自动）就拿回来。 */
   const toggleChrome = useCallback((): void => {
-    setChrome(!chromeVisible);
-    setIdleChrome(false);
-  }, [chromeVisible]);
+    setChrome(!chrome);
+  }, [chrome]);
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→/空格 往回追。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
@@ -156,15 +152,6 @@ export function StageTheater({
     if (scrubbed) scrub(1);
     else advance();
   };
-
-  // 自动淡出：4 秒没动静就把操作条收起来，画面自己说话；任何交互立刻回来。
-  // 正在读的面板不算「没动静」——淡出会把菜单连同它唯一的入口一起收走。
-  const panelOpen = moreOpen || directorOpen || backlogOpen;
-  useEffect(() => {
-    if (panelOpen) return;
-    const timer = setTimeout(() => setIdleChrome(true), 4000);
-    return () => clearTimeout(timer);
-  }, [idleChrome, panelOpen, view?.key, shownLength]);
 
   // 触屏手势：上滑看回顾、下滑收操作条；横向滑动交给系统（不拦）。
   const touchRef = useRef<{ y: number; at: number } | null>(null);
@@ -235,7 +222,7 @@ export function StageTheater({
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      <header className={`theater-bar ${chrome && !idleChrome ? "" : "chrome-hidden"}`} onPointerEnter={poke}>
+      <header className={`theater-bar ${chromeVisible ? "" : "chrome-hidden"}`} onPointerEnter={poke}>
         <button
           className="bar-btn"
           onClick={(e) => {
@@ -281,7 +268,7 @@ export function StageTheater({
         </span>
       </header>
 
-      {moreOpen && chrome && !idleChrome && (
+      {moreOpen && chromeVisible && (
         <div className="theater-more" onPointerEnter={poke}>
           <button
             className="bar-btn"
@@ -421,8 +408,6 @@ export function StageTheater({
             {visual.cg?.caption && <p className="theater-cg-caption">{visual.cg.caption}</p>}
           </div>
         )}
-
-        {overlay}
       </div>
 
       <div className="theater-dialog" role="text">
@@ -451,6 +436,9 @@ export function StageTheater({
           )}
         </div>
       </div>
+
+      {/* 停止点浮层与台词条同级（都在舞台之上），入戏输入因此能贴着台词条下沿而不被它盖住 */}
+      {overlay}
 
       <audio ref={bgmRef} loop />
 

@@ -268,7 +268,7 @@ describe("P6 rebuild · 谱系 → IR", () => {
     expect(beats[2]?.assistant).toContain("半拍台词");
   });
 
-  it("stop 事件 → 停止点载荷（缺省 pause）；beat_end 不产出停止点事件", () => {
+  it("stop 事件 → 停止点载荷（choice/free）；beat_end 不产出停止点事件", () => {
     const tree = new LineageTree();
     tree.append("stop", { payload: { stopType: "choice", options: [{ text: "道歉" }] } });
     tree.append("beat_end", { payload: { reason: "act_end" } });
@@ -279,5 +279,13 @@ describe("P6 rebuild · 谱系 → IR", () => {
       options: [{ text: "道歉" }],
     });
     expect(lineageToEvents(chain).map((e) => e.event.kind)).toEqual(["stop"]);
+  });
+
+  it("旧的 pause 停止点不再还原成停止点（幕末走「下一幕」）", () => {
+    const tree = new LineageTree();
+    tree.append("stop", { payload: { stopType: "pause" } });
+    const chain = tree.chainEvents(tree.leafId!);
+    expect(stopFromEvent(chain[0]!)).toBeNull();
+    expect(lineageToEvents(chain).map((e) => e.event.kind)).toEqual([]);
   });
 });
