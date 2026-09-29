@@ -2,6 +2,7 @@ import type { AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ServerMessage, WorkshopChatMessage, WorkshopThreadInfo } from "@stage-ai/core";
 import { PlayFiles } from "./playFiles.js";
+import type { PlaySaves } from "./saves.js";
 import type { PlayStore } from "./store.js";
 import {
   buildWorkshopPrompt,
@@ -27,6 +28,10 @@ export interface WorkshopSessionOptions {
   emit: (msg: ServerMessage) => void;
   /** 剧目文件被改动后通知宿主（play.json/memory 改动触发 runtime reload，保存即生效）。 */
   onFilesChanged: () => void;
+  /** 周目（存档）管理面：read_lineage 前先列周目。 */
+  saves: PlaySaves;
+  /** 按 saveId 取存档级操作面（读故事树只走磁盘 session.json，不建 runtime）。 */
+  saveStore: (saveId: string) => PlayStore;
 }
 
 export class WorkshopSession {
@@ -47,6 +52,8 @@ export class WorkshopSession {
       files: this.files,
       store: opts.store,
       onWrite: (write) => this.broadcastWrite(write),
+      saves: opts.saves,
+      saveStore: opts.saveStore,
     });
   }
 

@@ -23,3 +23,5 @@ plays/mock-*/
 
 # 本地验收截图
 .shots/
+# playwright-cli 会话产物
+.playwright-cli/

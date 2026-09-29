@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { ServerMessage } from "@stage-ai/core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { PlayFiles } from "../src/playFiles.js";
+import { PlaySaves } from "../src/saves.js";
 import { PlayStore } from "../src/store.js";
 import { WorkshopThreads } from "../src/workshopThreads.js";
 import { WorkshopSession } from "../src/workshopSession.js";
@@ -94,14 +95,46 @@ describe("PlayFiles：剧目文件白名单", () => {
 });
 
 describe("工坊工具", () => {
-  it("write_file 校验 play.json：坏结构不落盘并把错误回给模型", async () => {
+  /** 造一组带故事树读能力的工具：造一棵周目会话面（saves/<id>/session.json）。 */
+  async function makeToolset(): Promise<{
+    store: PlayStore;
+    tools: ReturnType<typeof createWorkshopTools>;
+    writes: string[];
+  }> {
     const store = await makeStore();
     const writes: string[] = [];
     const tools = createWorkshopTools({
       files: new PlayFiles(store),
       store,
       onWrite: (w) => writes.push(w.path),
+      saves: new PlaySaves(store.dir),
+      saveStore: (saveId) => new PlayStore(store.dir, saveId),
     });
+    return { store, tools, writes };
+  }
+
+  /** 造一棵有台词与分岔的树并落盘成周目。 */
+  async function seedSave(store: PlayStore, saveId: string): Promise<void> {
+    const tree = new LineageTree();
+    tree.append("scene", { payload: { attrs: { bg: "corridor" } } });
+    tree.append("say", { text: "澪：早上好。", payload: { attrs: { who: "mio" } } });
+    const branch = tree.append("player", { payload: { input: "我点头" } });
+    tree.forkAt(branch.id);
+    tree.append("say", { text: "澪：你不说话呀。", payload: { attrs: { who: "mio" } } });
+    const save = new PlayStore(store.dir, saveId);
+    await save.saveSession(tree, { turn: 2, affinity: {}, flags: {} }, "走廊");
+    await writeFile(join(store.dir, "saves", saveId, "meta.json"), JSON.stringify({
+      id: saveId,
+      name: `周目 ${saveId}`,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      beats: 1,
+      preview: "澪：你不说话呀。",
+    }));
+  }
+
+  it("write_file 校验 play.json：坏结构不落盘并把错误回给模型", async () => {
+    const { store, tools, writes } = await makeToolset();
     const writeFileTool = tools.find((t) => t.name === "write_file")!;
 
     const bad = await writeFileTool.execute("c1", { path: "play.json", content: '{"id":"test"}' }, undefined as never);
@@ -119,8 +152,7 @@ describe("工坊工具", () => {
   });
 
   it("read_file / list_files 返回可读文本，越界返回失败提示而非抛错", async () => {
-    const store = await makeStore();
-    const tools = createWorkshopTools({ files: new PlayFiles(store), store, onWrite: () => {} });
+    const { tools } = await makeToolset();
     const readFileTool = tools.find((t) => t.name === "read_file")!;
     expect(JSON.stringify(await readFileTool.execute("c1", { path: "play.json" }, undefined as never))).toContain(
       "测试剧目",
@@ -128,6 +160,90 @@ describe("工坊工具", () => {
     expect(JSON.stringify(await readFileTool.execute("c2", { path: "session.json" }, undefined as never))).toContain(
       "读取失败",
     );
+  });
+
+  it("list_saves 列出周目并标出活动档，没有周目时给空提示", async () => {
+    const { store, tools } = await makeToolset();
+    const listSaves = tools.find((t) => t.name === "list_saves")!;
+
+    expect(JSON.stringify(await listSaves.execute("c1", {}, undefined as never))).toContain("还没有任何周目");
+
+    await seedSave(store, "s1");
+    await writeFile(join(store.dir, "saves", "s1", "meta.json"), JSON.stringify({
+      id: "s1",
+      name: "第一周目",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      beats: 3,
+      preview: "澪：你不说话呀。",
+    }));
+    const text = JSON.stringify(await listSaves.execute("c2", {}, undefined as never));
+    expect(text).toContain("s1");
+    expect(text).toContain("第一周目");
+    expect(text).toContain("3 拍");
+  });
+
+  it("read_lineage 只给当前分支，全量模式才带上废弃分支", async () => {
+    const { store, tools } = await makeToolset();
+    await seedSave(store, "s1");
+    const readLineage = tools.find((t) => t.name === "read_lineage")!;
+
+    const pathOnly = JSON.stringify(await readLineage.execute("c1", { saveId: "s1" }, undefined as never));
+    expect(pathOnly).toContain("澪：早上好。");
+    expect(pathOnly).toContain("澪：你不说话呀。");
+    expect(pathOnly).toContain("当前分支路径");
+    expect(pathOnly).not.toContain("废弃分支）");
+    // 两条 say 都在当前路径上，但 fork 出来的前一版 player 之前的分支不在这条链上
+    expect(pathOnly).not.toContain("废弃分支");
+
+    const all = JSON.stringify(
+      await readLineage.execute("c2", { saveId: "s1", allBranches: true }, undefined as never),
+    );
+    expect(all).toContain("全量含废弃分支");
+    expect(all).toContain("废弃分支");
+  });
+
+  it("read_lineage 事件 kind 译成中文标签，非法 saveId 与空树返回提示而非抛错", async () => {
+    const { store, tools } = await makeToolset();
+    await seedSave(store, "s1");
+    const readLineage = tools.find((t) => t.name === "read_lineage")!;
+
+    const text = JSON.stringify(await readLineage.execute("c1", { saveId: "s1" }, undefined as never));
+    expect(text).toContain("场景");
+    expect(text).toContain("台词");
+    expect(text).toContain("玩家表态");
+
+    expect(JSON.stringify(await readLineage.execute("c2", { saveId: "nope" }, undefined as never))).toContain(
+      "周目 nope 不存在",
+    );
+    expect(JSON.stringify(await readLineage.execute("c3", { saveId: "../etc" }, undefined as never))).toContain(
+      "读取失败",
+    );
+    // 周目存在但没 session.json：说「还没演过」，别让模型以为是空树
+    await mkdir(join(store.dir, "saves", "s2"), { recursive: true });
+    expect(JSON.stringify(await readLineage.execute("c4", { saveId: "s2" }, undefined as never))).toContain(
+      "还没有演出版本",
+    );
+  });
+
+  it("read_lineage 分页：节点多于 limit 时报还有更多，offset 能翻到下一页", async () => {
+    const { store, tools } = await makeToolset();
+    const tree = new LineageTree();
+    for (let i = 0; i < 5; i += 1) tree.append("say", { text: `第 ${i} 句`, payload: { attrs: { who: "mio" } } });
+    const save = new PlayStore(store.dir, "s1");
+    await save.saveSession(tree, { turn: 5, affinity: {}, flags: {} }, "走廊");
+
+    const readLineage = tools.find((t) => t.name === "read_lineage")!;
+    const first = JSON.stringify(await readLineage.execute("c1", { saveId: "s1", limit: 2 }, undefined as never));
+    expect(first).toContain("第 0 句");
+    expect(first).not.toContain("第 3 句");
+    expect(first).toContain("还有更多");
+
+    const second = JSON.stringify(
+      await readLineage.execute("c2", { saveId: "s1", limit: 2, offset: 2 }, undefined as never),
+    );
+    expect(second).toContain("第 2 句");
+    expect(second).toContain("第 3 句");
   });
 
   it("就绪门渲染缺项提示", () => {
@@ -181,16 +297,33 @@ describe("meta-chat 线程存储", () => {
 });
 
 describe("WorkshopSession：一轮对话", () => {
+  /** 造一个 WorkshopSession，存档读接口接同一个剧目目录（测试里树都在 store.dir 下）。 */
+  function makeSession(
+    store: PlayStore,
+    extra: {
+      streamFn: ReturnType<typeof createFakeStreamFn>;
+      emit: (msg: ServerMessage) => void;
+      onFilesChanged?: () => void;
+    },
+  ): WorkshopSession {
+    return new WorkshopSession({
+      store,
+      streamFn: extra.streamFn,
+      model: {} as never,
+      getApiKey: () => "test-key",
+      emit: extra.emit,
+      onFilesChanged: extra.onFilesChanged ?? (() => {}),
+      saves: new PlaySaves(store.dir),
+      saveStore: (saveId) => new PlayStore(store.dir, saveId),
+    });
+  }
+
   it("新建线程 → 落消息 → 广播 chunk/done/threads", async () => {
     const store = await makeStore();
     const emitted: ServerMessage[] = [];
-    const session = new WorkshopSession({
-      store,
+    const session = makeSession(store, {
       streamFn: createFakeStreamFn([{ text: "先写个 premise 吧。" }]),
-      model: {} as never,
-      getApiKey: () => "test-key",
       emit: (msg) => emitted.push(msg),
-      onFilesChanged: () => {},
     });
     await session.chat("我想要一个赛博朋克侦探故事");
     await session.snapshot();
@@ -213,14 +346,10 @@ describe("WorkshopSession：一轮对话", () => {
   it("模型报错/空回复上报 workshop_error，不落一条空回复", async () => {
     const store = await makeStore();
     const emitted: ServerMessage[] = [];
-    const session = new WorkshopSession({
-      store,
+    const session = makeSession(store, {
       // 假流返回空文本：工坊请求失败必须显式报错，不能静默追加一条空气泡
       streamFn: createFakeStreamFn([{ text: "" }]),
-      model: {} as never,
-      getApiKey: () => "test-key",
       emit: (msg) => emitted.push(msg),
-      onFilesChanged: () => {},
     });
     await session.chat("在吗");
     const error = emitted.find((m) => m.type === "workshop_error") as { message: string } | undefined;
@@ -236,11 +365,8 @@ describe("WorkshopSession：一轮对话", () => {
     const store = await makeStore();
     const emitted: ServerMessage[] = [];
     let reloads = 0;
-    const session = new WorkshopSession({
-      store,
+    const session = makeSession(store, {
       streamFn: createFakeStreamFn([{ text: "x" }]),
-      model: {} as never,
-      getApiKey: () => "test-key",
       emit: (msg) => emitted.push(msg),
       onFilesChanged: () => {
         reloads += 1;
@@ -259,8 +385,7 @@ describe("WorkshopSession：一轮对话", () => {
   it("一轮内多次写盘只触发一次 runtime 重建", async () => {
     const store = await makeStore();
     let reloads = 0;
-    const session = new WorkshopSession({
-      store,
+    const session = makeSession(store, {
       streamFn: createFakeStreamFn([
         {
           text: "写好两处设定。",
@@ -271,8 +396,6 @@ describe("WorkshopSession：一轮对话", () => {
         },
         { text: "写好两处设定。" },
       ]),
-      model: {} as never,
-      getApiKey: () => "test-key",
       emit: () => {},
       onFilesChanged: () => {
         reloads += 1;

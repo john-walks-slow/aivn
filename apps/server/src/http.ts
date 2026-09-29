@@ -203,6 +203,14 @@ export async function handleHttp(
       }
       return fail(res, 405, "不支持的方法");
     }
+    // —— 剧作家 session 历史（只读快照）：读活动档落盘的 session.json，不建 runtime、不改任何状态 ——
+    if (sub === "history" && parts.length === 4) {
+      if (method !== "GET") return fail(res, 405, "不支持的方法");
+      // 走 active.json 指针那棵树：历史随周目隔离，跟同源的 lineage 一个道理
+      const activeId = await library.saves(playId).readActive();
+      const beats = activeId ? await library.saveStore(playId, activeId).loadHistory() : [];
+      return json(res, 200, { beats });
+    }
     if (sub === "lineage" && parts.length === 4) {
       // 路线树（P6）：全量节点（含废弃分支）；打开路线视图/结构操作后/手动刷新时取
       if (method !== "GET") return fail(res, 405, "不支持的方法");

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Icon } from "../ui/Icon.js";
 import type { StopPayload } from "@stage-ai/core";
+import { Icon } from "../ui/Icon.js";
 
 interface StopPanelProps {
   stop: StopPayload | null;
@@ -16,13 +16,25 @@ interface StopPanelProps {
 }
 
 /**
+ * 浮层上的触摸要就地吃掉：舞台层监听着滑动手势（左右翻句、上滑看回顾），
+ * 不拦的话在选肢卡片上滑一下就顺手把视图切走了。
+ */
+const trap = {
+  onClick: (e: React.SyntheticEvent) => e.stopPropagation(),
+  onTouchStart: (e: React.TouchEvent) => e.stopPropagation(),
+  onTouchEnd: (e: React.TouchEvent) => e.stopPropagation(),
+} as const;
+
+/**
  * 停止点（玩家主权的三种形态，P6.5）：
  * - choice：舞台中央悬浮的选肢卡片，数字键 1..9 直选，选过的打勾留痕；
  * - free：对话框形态的入戏输入（可 LLM 润色，撤销保原稿）；
- * - pause：只在编排器造出来时出现（拍中分岔被截断 / 空拍报错），给一个「继续」重开一拍；
+ * - pause：只在编排器造出来时出现（拍中分岔被截断 / 空拍报错）——不出按钮，
+ *   玩家点舞台即表态续写开新拍（见 StageTheater.onStageClick）；
  * - 幕末（beat_done 无 stop）：黑场上的「下一幕」按钮——这一拍戏已经讲完，
  *   下一幕不在剧本里，所以只有这一个出口，点了才开新拍。
- * 导演注（OOC）是常驻顶栏，不在此。
+ * 自由输入是从选项卡点开的，有一个返回键——选了不说的自由，选项还摆在那里。
+ * 导演注（OOC）在对话框底部的导演栏里，不在此。
  */
 export function StopPanel({
   stop,
@@ -52,6 +64,15 @@ export function StopPanel({
 
   const options = stop?.stopType === "choice" ? (stop.options ?? []) : [];
   const choosing = options.length > 0 && !freeOpen;
+  /** 从选项点进来的才给返回键；DSL 发的 free 停止点本来就没得选，返回无处可回。 */
+  const canBackOut = freeOpen && options.length > 0;
+
+  const backToChoices = (): void => {
+    setFreeOpen(false);
+    setDraft("");
+    setOriginal(null);
+    setPolishError(null);
+  };
 
   const submitFree = (): void => {
     const text = draft.trim();
@@ -88,7 +109,7 @@ export function StopPanel({
   return (
     <>
       {choosing && (
-        <div className="choice-overlay" role="group" aria-label="选项">
+        <div className="choice-overlay" role="group" aria-label="选项" {...trap}>
           {options.map((option, index) => (
             <button
               type="button"
@@ -98,9 +119,11 @@ export function StopPanel({
               onClick={() => onChoice(index)}
             >
               <span className="choice-text">{option.text}</span>
-              {seenChoices?.has(option.text) && <span className="choice-seen">
-                <Icon name="check" size={12} /> 已选过
-              </span>}
+              {seenChoices?.has(option.text) && (
+                <span className="choice-seen">
+                  <Icon name="check" /> 已选过
+                </span>
+              )}
             </button>
           ))}
           <button
@@ -116,7 +139,19 @@ export function StopPanel({
       )}
 
       {(stop?.stopType === "free" || freeOpen) && (
-        <footer className="stop-panel">
+        <footer className="stop-panel" {...trap}>
+          {canBackOut && (
+            <button
+              type="button"
+              className="free-back"
+              onClick={backToChoices}
+              disabled={disabled}
+              title="不自己写了，回去选"
+            >
+              <Icon name="prev" />
+              返回选项
+            </button>
+          )}
           <div className="free-box">
             <input
               value={draft}
@@ -133,16 +168,18 @@ export function StopPanel({
               onClick={polish}
               disabled={disabled || polishing || draft.trim() === ""}
             >
-              {polishing ? (
-                "润色中…"
-              ) : (
-                <span className="btn-icon">
-                  <Icon name="sparkles" /> 润色
-                </span>
-              )}
+              <Icon name="sparkles" />
+              {polishing ? "润色中…" : "润色"}
             </button>
             {original !== null && (
-              <button type="button" className="link-btn" onClick={undoPolish} disabled={polishing}>
+              <button
+                type="button"
+                className="link-btn"
+                onClick={undoPolish}
+                disabled={polishing}
+                title="退回润色前的原话"
+              >
+                <Icon name="undo" />
                 撤销
               </button>
             )}
@@ -154,18 +191,10 @@ export function StopPanel({
         </footer>
       )}
 
-      {/* pause 只由编排器造出（拍中截断 / 空拍报错），这里才是「继续」的合法出场。 */}
-      {stop?.stopType === "pause" && !freeOpen && (
-        <footer className="stop-panel">
-          <div className="continue-box">
-            <button type="button" onClick={onContinue} disabled={disabled} className="primary">
-              继续
-            </button>
-          </div>
-        </footer>
-      )}
-
-      {/* 幕末：黑场 + 下一幕。整个面板盖住舞台，视觉上就是幕与幕之间的黑场。 */}
+      {/* pause（拍中截断 / 空拍报错）不再单列「继续」按钮：点舞台就是继续，
+          与翻下一句同一个动作，生成中沿用同一套 pending/streaming 反馈。 */}
+      {/* 幕末：黑场 + 下一幕。整个面板盖住舞台，视觉上就是幕与幕之间的黑场。
+          这一出留着自己的按钮：幕末没有台词可点，「下一幕」是全屏黑场里唯一的出口。 */}
       {isActEnd && !stop && !freeOpen && (
         <footer className="act-curtain">
           <button type="button" className="act-next" onClick={onContinue} disabled={disabled}>

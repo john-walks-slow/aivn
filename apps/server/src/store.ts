@@ -10,6 +10,7 @@ import {
 } from "@stage-ai/core";
 import { parsePlayConfig, type PlayConfig } from "@stage-ai/core";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
+import { parseHistory, type HistoryBeat } from "./history.js";
 import { hasAnySave, readSaveMeta, saveDirOf, writeSaveMeta, assertSaveId, PlaySaves, type SaveMeta } from "./saves.js";
 
 /** 周目列表卡的「最后一句」只认这三种带正文的行。 */
@@ -78,6 +79,20 @@ export class PlayStore {
     }
   }
 
+  /**
+   * 剧作家 session 历史（session.json 的 history 键）：思考 / 原始 DSL / 工具调用。
+   * 无存档作用域、文件缺失、JSON 坏了、字段结构不对——一律空表：这是只读视图，不该把调用方拖挂。
+   */
+  async loadHistory(): Promise<HistoryBeat[]> {
+    if (!this.saveId) return [];
+    try {
+      const raw = JSON.parse(await readFile(join(this.sessionDir(), "session.json"), "utf8"));
+      return parseHistory(raw?.history);
+    } catch {
+      return [];
+    }
+  }
+
   /** 行级事件追加（JSONL append-only）。 */
   async appendEvent(event: LineageEvent): Promise<void> {
     const dir = this.sessionDir();
@@ -89,7 +104,7 @@ export class PlayStore {
   }
 
   /**
-   * 会话全量（beat 收束时写；谱系树 + 引擎状态 + 场景 + 编排器运行态）。
+   * 会话全量（beat 收束时写；谱系树 + 引擎状态 + 场景 + 编排器运行态 + 剧作家历史）。
    * 顺带更新档元信息（拍数 / 最后一句），让周目列表不必读会话文件。
    */
   async saveSession(
@@ -97,6 +112,7 @@ export class PlayStore {
     engine: EngineStateSnapshot,
     scene: string,
     runtime?: OrchestratorRuntimeState,
+    history?: HistoryBeat[],
   ): Promise<void> {
     const dir = this.sessionDir();
     await mkdir(dir, { recursive: true });
@@ -107,6 +123,7 @@ export class PlayStore {
       engine,
       scene,
       runtime,
+      history: history ?? [],
       savedAt: Date.now(),
     };
     await writeFile(join(dir, "session.json"), JSON.stringify(payload));

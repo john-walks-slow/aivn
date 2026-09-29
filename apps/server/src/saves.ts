@@ -98,6 +98,11 @@ export class PlaySaves {
     return (await readSaveMeta(this.playDir, saveId))?.name ?? saveId;
   }
 
+  /** 档是否存在（id 过白名单 + 目录在）。区分「没有这棵周目」与「有但还没演过」。 */
+  async has(saveId: string): Promise<boolean> {
+    return (await this.ids()).includes(saveId);
+  }
+
   /** 活动档 id（无指针 = 无档）。 */
   async readActive(): Promise<string | null> {
     try {

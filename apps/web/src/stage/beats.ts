@@ -26,7 +26,7 @@ export interface BeatCard {
  * 定位用每个剧本事件自带的 seq（编排器写入 payload.seq，与客户端 ScriptLine.seq 同尺），
  * 所以分岔/废弃分支的卡片也能各自对到自己的那一行。
  */
-export function buildBeats(view: LineageView): BeatCard[] {
+export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): BeatCard[] {
   const ordered = [...view.nodes].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   const cards: BeatCard[] = [];
   const cardOfNode = new Map<string, BeatCard>();
@@ -76,9 +76,96 @@ export function buildBeats(view: LineageView): BeatCard[] {
   const leafCard = cards.find((card) => card.nodes.some((n) => n.id === view.leafId));
   if (leafCard) leafCard.isLeaf = true;
 
+  // 活动路径上的卡片：摘要取该拍的第一句台词（场景/音效行只是布景，不配当摘要）
+  for (const [card, line] of beatAnchors(cards, lines)) {
+    if (card.onPath && line) setPreview(card, spokenText(line, lines));
+  }
   return cards;
 }
 
+/**
+ * 活动路径卡片 → 舞台上的那一行。废弃分支的行不在缓冲里；本拍没有台词的卡（纯场景切换）
+ * 也不能去认下一拍的行，否则摘要和回看都会指到别人家门口。
+ */
+export function beatAnchors(
+  cards: readonly BeatCard[],
+  lines: readonly ScriptLine[],
+): Map<BeatCard, ScriptLine | null> {
+  const map = new Map<BeatCard, ScriptLine | null>();
+  const startSeqs = cards.map((card) => card.startSeq);
+  cards.forEach((card, i) => {
+    if (!card.onPath) return;
+    const next = startSeqs.slice(i + 1).find((seq) => seq !== null && seq > (card.startSeq ?? 0));
+    map.set(card, firstLineOf(card, lines, next ?? null));
+  });
+  return map;
+}
+
+/** 从锚点行往后找第一句有台词的行；整拍只有布景就退回锚点行自己的文本。 */
+function spokenText(anchor: ScriptLine, lines: readonly ScriptLine[]): string {
+  if (anchor.text && anchor.type !== "scene" && anchor.type !== "sfx" && anchor.type !== "cg") {
+    return anchor.text;
+  }
+  const spoken = lines.find(
+    (l) =>
+      l.seq !== undefined &&
+      l.seq >= (anchor.seq ?? 0) &&
+      l.text &&
+      l.type === "say",
+  );
+  return spoken?.text ?? anchor.text;
+}
+
+/**
+ * 该拍在世界线上的首行；废弃分支的行已不在缓冲里，定位不到就是 null。
+ * `until` 是下一拍的起点：越过它就说明本拍根本没台词。
+ */
+export function firstLineOf(
+  card: BeatCard,
+  lines: readonly ScriptLine[],
+  until: number | null = null,
+): ScriptLine | null {
+  const from = card.startSeq;
+  if (from === null) return null;
+  return (
+    lines.find(
+      (l) => l.seq !== undefined && l.seq >= from && (until === null || l.seq < until),
+    ) ?? null
+  );
+}
+
+/** 原地改写只对台词三件套开放（与 core 的 EDITABLE_KINDS 同尺）。 */
+const EDITABLE = new Set<LineageNodeView["kind"]>(["say", "narrate", "thought"]);
+
+/**
+ * 舞台上正在显示的那一行落在哪一拍——导演原语的锚点。
+ * 舞台缓冲里只有当前分支的行，所以只在 onPath 的卡里找；纯布景拍没有 seq，定位不到就是 null。
+ * 回看游标可能停在玩家的表态/导演注上（它们没有 seq），同样定位不到——原语按钮就该是灰的。
+ */
+export function beatAtLine(
+  cards: readonly BeatCard[],
+  line: { seq?: number | null } | null,
+): BeatCard | null {
+  if (!line || line.seq === undefined || line.seq === null) return null;
+  const at = line.seq;
+  let hit: BeatCard | null = null;
+  for (const card of cards) {
+    if (!card.onPath || card.startSeq === null || card.startSeq > at) continue;
+    if (!hit || card.startSeq > hit.startSeq!) hit = card;
+  }
+  return hit;
+}
+
+/** 同一行对应的谱系节点：「改写这一句」要拿它的 id 发给编排器。 */
+export function editableNodeAtLine(
+  view: LineageView,
+  line: { seq?: number | null } | null,
+): LineageNodeView | null {
+  if (!line || line.seq === undefined || line.seq === null) return null;
+  return (
+    view.nodes.find((node) => node.seq === line.seq && node.onPath && EDITABLE.has(node.kind)) ?? null
+  );
+}
 
 function newCard(first: LineageNodeView, parent: BeatCard | null): BeatCard {
   return {
@@ -101,31 +188,22 @@ function newCard(first: LineageNodeView, parent: BeatCard | null): BeatCard {
 function collect(card: BeatCard): void {
   for (const node of card.nodes) {
     if (node.kind === "scene" && node.attrs.bg) card.sceneBg = node.attrs.bg;
-    if (node.kind === "stop") card.stopType = stopTypeOf(node);
+    if (node.kind === "stop") card.stopType = stopTypeOf(node.attrs);
     if (node.kind === "say" || node.kind === "thought") {
       const who = node.attrs.id ?? "";
       if (who && !card.speakers.includes(who)) card.speakers.push(who);
     }
   }
-  // 摘要取本拍第一句台词（场景/音效行只是布景，不配当摘要）。
-  // edit 节点带的是改写后的新文本，谱系里被改的那一行还留着旧文——照着旧文取，
-  // 卡片上写的就跟舞台说的不一样了，所以 edit 优先。
-  const edit = card.nodes.find((n) => n.kind === "edit");
   const spoken = card.nodes.find((n) => n.kind === "say" || n.kind === "narrate" || n.kind === "thought");
-  setPreview(card, edit?.text || spoken?.text || "");
+  setPreview(card, spoken?.text ?? "");
 }
 
 function setPreview(card: BeatCard, text: string): void {
   card.preview = text.length > 32 ? `${text.slice(0, 32)}…` : text;
 }
 
-/**
- * 停止点类型。stop 事件把类型放在事件体上（StageEvent["stop"]），谱系投影会把它提到
- * node.stopType；老档的投影里没有这个字段，只能退回当年塞进 attrs 的那份。
- */
-function stopTypeOf(node: LineageNodeView): StopType | null {
-  if (node.stopType) return node.stopType;
-  const attrs = node.attrs as { stopType?: StopType; type?: StopType };
+/** 停止点类型；老档把类型存在 attrs.type 下，读不到或旧版 pause 一律按「无停止点」算（= 幕末）。 */
+function stopTypeOf(attrs: LineageNodeView["attrs"]): StopType | null {
   const value = attrs.stopType ?? attrs.type;
   return value === "choice" || value === "free" ? value : null;
 }
