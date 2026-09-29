@@ -15,5 +15,7 @@ plays/*/memory/index/arcs/
 plays/*/memory/archive/
 # 工坊 meta-chat 线程（运行时会话，不进 git）
 plays/*/workshop/
+# mock 剧目是 scripts/mockLineage.mjs 的产物，play.json 逐字抄自 plays/demo，不必进 git
+plays/mock-*/
 .mnemon/
 .worktrees/

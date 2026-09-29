@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { LineageTree } from "../packages/core/dist/lineage/model.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const playId = process.argv[2] ?? "mocktree";
+const playId = process.argv[2] ?? "mock-deep";
 const pattern = process.argv[3] ?? "deep";
 const dir = join(root, "plays", playId);
 
