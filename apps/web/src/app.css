@@ -1689,30 +1689,31 @@ select:focus {
   overflow: hidden;
 }
 
-/* 场景图铺满当氛围：低透明度、放大裁切，正文压在它上面仍然读得清。
-   玩家扫树时先认出「哪个窗景」再读字，这比纯文字卡快得多。
-   压一层半透明底是必需的——高饱和的黄昏和樱花照直接透上来，正文就糊了。 */
+/* 场景图只当右侧的氛围底：横向淡入，左半边留给字。整张铺满再压一层纱的做法
+   会让背景图透到正文下面，读起来发灰。 */
 .route-node-bg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.3;
-  filter: saturate(0.7);
+  opacity: 0.5;
+  filter: saturate(0.65);
+  -webkit-mask-image: linear-gradient(to right, transparent 30%, #000 92%);
+  mask-image: linear-gradient(to right, transparent 30%, #000 92%);
   pointer-events: none;
 }
 
-/* 图与字之间的纱：让文字有个稳定的底，不管哪张图多亮。 */
+/* 图与字之间的纱：左边是实底，越往右越透，图才淡得出来又不糊字。 */
 .route-node::after {
   content: "";
   position: absolute;
   inset: 0;
   background: linear-gradient(
-    105deg,
-    color-mix(in srgb, var(--panel) 92%, transparent) 0%,
-    color-mix(in srgb, var(--panel) 80%, transparent) 60%,
-    color-mix(in srgb, var(--panel) 88%, transparent) 100%
+    to right,
+    var(--panel) 0%,
+    color-mix(in srgb, var(--panel) 78%, transparent) 55%,
+    color-mix(in srgb, var(--panel) 62%, transparent) 100%
   );
   pointer-events: none;
 }
@@ -1779,8 +1780,8 @@ select:focus {
   cursor: default;
 }
 
-/* 左上角的拍号：树是按拍读的，没它不知道这一段在第几拍。按旧样式加粗吃墨。 */
-.route-node-no {
+/* 左上角是这一拍落笔的墙上时刻：日期 + 分钟，扫树时按时间认段。 */
+.route-node-stamp {
   position: relative;
   z-index: 1;
   font-size: 11px;

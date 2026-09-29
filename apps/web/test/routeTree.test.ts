@@ -9,6 +9,7 @@ function card(id: string, parentId: string | null, turn: number, onPath = true):
     nodes: [],
     preview: id,
     speakers: [],
+    at: turn,
     sceneBg: null,
     stopType: null,
     startSeq: turn,

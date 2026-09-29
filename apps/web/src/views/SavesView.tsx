@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "../ui/Icon.js";
+import { stamp } from "../ui/stamp.js";
 import { api, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
-
-function stamp(ms: number): string {
-  const d = new Date(ms);
-  const pad = (n: number): string => String(n).padStart(2, "0");
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 /**
  * 周目页：一剧目并存 N 棵独立故事树。
