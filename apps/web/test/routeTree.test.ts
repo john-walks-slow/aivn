@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BeatCard } from "../src/stage/beats.js";
-import { GAP, layoutRoute, NODE_BLOCK_H, NODE_W } from "../src/stage/routeTree.js";
+import { GAP, layoutRoute, NODE_H, NODE_W } from "../src/stage/routeTree.js";
 
 function card(id: string, parentId: string | null, turn: number, onPath = true): BeatCard {
   return {
@@ -35,14 +35,14 @@ describe("横向路线树布局", () => {
     for (const node of placed) {
       for (const kid of placed.filter((p) => p.card.parentId === node.card.id)) {
         expect(kid.x).toBeGreaterThan(node.x);
-        expect(Math.abs(kid.y - node.y)).toBeLessThanOrEqual(NODE_BLOCK_H);
+        expect(Math.abs(kid.y - node.y)).toBeLessThanOrEqual(NODE_H);
       }
     }
     for (let i = 0; i < placed.length; i += 1) {
       for (let j = i + 1; j < placed.length; j += 1) {
         const a = placed[i]!;
         const b = placed[j]!;
-        const overlap = Math.abs(a.y - b.y) < NODE_BLOCK_H - 1 && Math.abs(a.x - b.x) < NODE_W - 1;
+        const overlap = Math.abs(a.y - b.y) < NODE_H - 1 && Math.abs(a.x - b.x) < NODE_W - 1;
         expect(overlap, `${a.card.id} 与 ${b.card.id} 叠了`).toBe(false);
       }
     }
@@ -57,7 +57,7 @@ describe("横向路线树布局", () => {
     expect(edges).toHaveLength(2);
     expect(edges.every((e) => e.d.startsWith("M "))).toBe(true);
     expect(width).toBeGreaterThan(NODE_W);
-    expect(height).toBeGreaterThan(NODE_BLOCK_H);
+    expect(height).toBeGreaterThan(NODE_H);
   });
 
   it("父节点缺失（孤儿）不丢节点", () => {
@@ -84,14 +84,14 @@ describe("纵向路线树（窄屏）", () => {
     expect(byId.get("b")!.y).toBe(byId.get("c")!.y);
     expect(byId.get("c")!.x).toBe(byId.get("b")!.x + NODE_W + GAP);
     expect(width).toBeGreaterThan(NODE_W);
-    expect(height).toBeGreaterThan(NODE_BLOCK_H);
+    expect(height).toBeGreaterThan(NODE_H);
     const edge = edges.find((e) => e.id === "a->b")!;
     const from = byId.get("a")!;
     const to = byId.get("b")!;
     // 起点父节点下中，终点子节点上中，中间的控制点拉出 S 弯
     expect(edge.d).toMatch(
       new RegExp(
-        `^M ${from.x + NODE_W / 2} ${from.y + NODE_BLOCK_H} C \\S+ \\S+, \\S+ \\S+, ${to.x + NODE_W / 2} ${to.y}$`,
+        `^M ${from.x + NODE_W / 2} ${from.y + NODE_H} C \\S+ \\S+, \\S+ \\S+, ${to.x + NODE_W / 2} ${to.y}$`,
       ),
     );
   });
@@ -111,31 +111,8 @@ describe("纵向路线树（窄屏）", () => {
       for (let j = i + 1; j < placed.length; j += 1) {
         const a = placed[i]!;
         const b = placed[j]!;
-        const overlap = Math.abs(a.y - b.y) < NODE_BLOCK_H - 1 && Math.abs(a.x - b.x) < NODE_W - 1;
+        const overlap = Math.abs(a.y - b.y) < NODE_H - 1 && Math.abs(a.x - b.x) < NODE_W - 1;
         expect(overlap, `${a.card.id} 与 ${b.card.id} 叠了`).toBe(false);
-      }
-    }
-  });
-
-  // 回归：卡面下方的工具条是节点占位的一部分。纵向流向下它正落在下一层的位置上，
-  // 只按卡面高度排版的话工具条会盖住下一张卡的按钮。
-  it("卡下工具条不压到邻居节点（两个方向）", () => {
-    const cards = [
-      card("a", null, 0),
-      card("b", "a", 1),
-      card("c", "a", 1, false),
-      card("d", "b", 2),
-    ];
-    for (const dir of ["horizontal", "vertical"] as const) {
-      const { placed } = layoutRoute(cards, dir);
-      for (let i = 0; i < placed.length; i += 1) {
-        for (let j = i + 1; j < placed.length; j += 1) {
-          const a = placed[i]!;
-          const b = placed[j]!;
-          const hit =
-            Math.abs(a.y - b.y) < NODE_BLOCK_H - 1 && Math.abs(a.x - b.x) < NODE_W - 1;
-          expect(hit, `${dir}：${a.card.id} 的工具条压住了 ${b.card.id}`).toBe(false);
-        }
       }
     }
   });

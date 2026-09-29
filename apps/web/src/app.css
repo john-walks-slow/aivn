@@ -1672,17 +1672,13 @@ select:focus {
   fill: var(--accent);
 }
 
-/* 卡面连工具条一起定位；卡面自己是 relative，背景图与纱才有依托。 */
-.route-node-wrap {
-  position: absolute;
-}
-
+/* 卡片自己就是定位盒子：背景图、纱与两个动词都长在它里面。 */
 .route-node {
-  position: relative;
+  position: absolute;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 8px 10px;
+  padding: 7px 9px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--line);
   border-radius: var(--radius);
@@ -1749,42 +1745,51 @@ select:focus {
   opacity: 1;
 }
 
-/* 卡下方的工具条：常驻但压着存在感，鼠标移到这张卡上才完全显形——
-   树上一眼扫过去是台词，不是按钮；盯住哪张卡，它自己那一条工具条才亮出来。 */
+/* 卡里的动词行：跟舞台导演栏同一套按钮——无边框、悬停浮出浅底、图标承担语义。
+   贴卡右下角，与左下角的角色名同一行。 */
 .route-node-tools {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  height: 28px;
-  padding: 0 2px;
-  opacity: 0.55;
-  transition: opacity 0.12s ease;
-}
-
-.route-node-wrap:hover .route-node-tools,
-.route-node-tools:focus-within {
-  opacity: 1;
-}
-
-.route-node-wrap.dead .route-node-tools {
-  opacity: 0.3;
+  gap: 2px;
+  margin-left: auto;
 }
 
 .route-node-tool {
-  padding: 2px 6px;
-  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
   border-radius: var(--radius);
-  font-size: 12px;
-  white-space: nowrap;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color var(--hover-ms) ease, background-color var(--hover-ms) ease;
 }
 
 .route-node-tool:hover:not(:disabled) {
-  border-color: var(--line);
-  background: var(--panel);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
-/* 节点正文就是这一拍的摘要：拍号、支线、进行中这类状态说明一律不进节点。 */
+.route-node-tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* 左上角的拍号：树是按拍读的，没它不知道这一段在第几拍。按旧样式加粗吃墨。 */
+.route-node-no {
+  position: relative;
+  z-index: 1;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* 节点正文就是这一拍的摘要。 */
 .route-node-text {
   position: relative;
   z-index: 1;
@@ -1797,20 +1802,23 @@ select:focus {
   color: var(--ink);
 }
 
-.route-node.has-mark .route-node-text {
-  padding-right: 14px;
-}
-
-.route-node-who {
+/* 底行：左下角是谁说的，右下角是这一段的两个动词。 */
+.route-node-foot {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  font-size: 11px;
   color: var(--ink-faint);
 }
 
-.route-node-mark {
-  position: absolute;
-  top: 6px;
-  right: 7px;
-  font-size: 11px;
-  color: var(--accent);
+.route-node-who {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* 画布上的浮层：导航与镜头不占树的版面，空白处都能点回去 */
