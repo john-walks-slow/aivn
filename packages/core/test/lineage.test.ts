@@ -207,6 +207,19 @@ describe("持久化往返", () => {
     const fresh = rebuilt.append("say", { text: "新句" });
     expect(Number.parseInt(fresh.id.split("-")[1]!, 36)).toBeGreaterThan(maxCounter);
   });
+
+  it("同刻事件排序稳定：describe() 连读两次顺序一致", () => {
+    const tree = new LineageTree();
+    buildPlay(tree);
+    // 模拟同一次工具批次落下的多个事件：时间戳全同，只有 id 能定序
+    for (const event of tree.export().events) event.createdAt = 1_700_000_000_000;
+    const tree2 = new LineageTree();
+    tree2.load(tree.export());
+
+    const first = tree2.describe().nodes.map((n) => n.id);
+    expect(first).toEqual([...first].sort((a, b) => a.localeCompare(b)));
+    expect(tree2.describe().nodes.map((n) => n.id)).toEqual(first);
+  });
 });
 
 describe("路径集合（检索防剧透）", () => {

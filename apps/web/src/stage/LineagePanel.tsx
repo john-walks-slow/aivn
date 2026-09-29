@@ -255,7 +255,7 @@ function Row(props: {
   );
 }
 
-/** 行内操作条：四原语正交摆在这里，组合权在用户（对照计划 D10）。 */
+/** 行内操作条：五动词正交摆在这里，组合权在用户（对照计划 D10）。 */
 function NodeActions({ row, busy, ops }: { row: Row; busy: boolean; ops: LineageOps }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(row.text);
@@ -308,11 +308,25 @@ function NodeActions({ row, busy, ops }: { row: Row; busy: boolean; ops: Lineage
       </button>
       {editing && (
         <span className="lineage-editor">
-          <textarea value={draft} autoFocus rows={2} onChange={(e) => setDraft(e.target.value)} />
-          <button className="ghost-btn" onClick={submitEdit}>
+          <textarea
+            value={draft}
+            autoFocus
+            rows={2}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                submitEdit();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setEditing(false);
+              }
+            }}
+          />
+          <button className="ghost-btn" onClick={submitEdit} title="Ctrl/⌘+Enter">
             保存
           </button>
-          <button className="ghost-btn" onClick={() => setEditing(false)}>
+          <button className="ghost-btn" onClick={() => setEditing(false)} title="Esc">
             取消
           </button>
         </span>

@@ -72,7 +72,7 @@ export type ServerMessage =
   | { type: "asset_failed"; id: string; message: string }
   | { type: "lineage"; leafId: string; turn: number }
   /**
-   * 上下文重建完成（P6 四原语共用出口）：挂载点已移到新分支，events 是该分支的完整重放。
+   * 上下文重建完成（P6 五动词共用出口）：挂载点已移到新分支，events 是该分支的完整重放。
    * 客户端收到即清空本地脚本/播放游标，按 events 重建（epoch 自增用于丢弃过期的 seq 认知）。
    */
   | {

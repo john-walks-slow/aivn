@@ -293,7 +293,9 @@ export class LineageTree {
       childCount.set(event.parentId, (childCount.get(event.parentId) ?? 0) + 1);
     }
     const nodes = [...this.events.values()]
-      .sort((a, b) => a.createdAt - b.createdAt)
+      // 同一次工具批次的多个事件共用 createdAt，只按它排会随机抖动，路线树的分岔口
+      // 因此忽左忽右；id 兜成第二稳定键，视图每次渲染的节点顺序完全一致。
+      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
       .map((event) => ({
         id: event.id,
         parentId: event.parentId,

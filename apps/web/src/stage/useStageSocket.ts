@@ -232,7 +232,7 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
     }
   }, []);
 
-  // 稳定引用：四原语出口挂在导演视图上，引用抖动会让整棵子树反复重渲染
+  // 稳定引用：五动词出口挂在导演视图上，引用抖动会让整棵子树反复重渲染
   const sendChoice = useCallback((index: number) => send({ type: "player_choice", optionIndex: index }), [send]);
   const sendFree = useCallback((text: string) => send({ type: "player_free", text }), [send]);
   const sendContinue = useCallback(() => send({ type: "continue" }), [send]);

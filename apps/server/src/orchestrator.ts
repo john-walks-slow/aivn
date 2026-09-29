@@ -560,7 +560,7 @@ export class PlaywrightOrchestrator {
     return this.events.filter((e) => e.seq > lastSeq);
   }
 
-  // —— P6 四原语：跳转 / 分岔 / 编辑 / 重写，彼此正交，可自由组合 ——
+  // —— P6 五动词：跳转 / 分岔 / 重生成 / 编辑 / 导演注，彼此正交，可自由组合 ——
 
   /** 路线树视图（全量节点含废弃分支）；前端「路线」视图与 REST 共用。 */
   lineageView(): LineageView {
