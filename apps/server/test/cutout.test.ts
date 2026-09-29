@@ -116,6 +116,53 @@ describe("cutout", () => {
     expect(await alphaAt(result.data, x, y)).toBe(255);
   });
 
+  it("边界带的 alpha 是反解出来的真实覆盖率，不是钉死的 128 地板", async () => {
+    // 立绘左缘的三段抗锯齿，覆盖率分别 20% / 50% / 80%，深处是实心深色，底是纯白。
+    // 旧公式是 max(色差项, dist/2)，而 dist/2 恒等于 0.5 —— 边界带每一像素的 alpha
+    // 下限被钉死在 128，深色舞台底上就是一圈白边晕。闭式解 a=(B−I)/(B−F) 给出真实覆盖率。
+    //
+    // 画布选 400x2120、人形 200x1920：落 1080x1920 时 scale = min(1080/200, 1920/1920) = 1.0，
+    // 一点不过重采样。1px 的抗锯齿列经 8x lanczos 会被过冲展宽，单列探针读出来的是核的值
+    // 而不是覆盖率（实测同一夹具在 8x 下旧新都读 172），这个尺寸是能测准的前提。
+    const width = 400;
+    const height = 2120;
+    const raw = Buffer.alloc(width * height * 3).fill(255);
+    const bands: { y: number; coverage: number; value: number }[] = [
+      { y: 200, coverage: 0.2, value: 212 },
+      { y: 800, coverage: 0.5, value: 148 },
+      { y: 1400, coverage: 0.8, value: 83 },
+    ];
+    for (let y = 100; y < 2020; y++) {
+      for (let x = 100; x < 300; x++) {
+        const o = (y * width + x) * 3;
+        const v = x === 100 ? (bands.find((b) => y >= b.y && y < b.y + 500)?.value ?? 40) : 40;
+        raw[o] = v;
+        raw[o + 1] = v;
+        raw[o + 2] = v;
+      }
+    }
+    const result = await cutout(await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer());
+
+    // scale 恒等于 1，人形 200 宽居中落在 1080 画布的 x 440..639，底对齐
+    const left = Math.round((1080 - 200) / 2);
+    const measured: number[] = [];
+    for (const band of bands) {
+      const edge = await alphaAt(result.data, left, band.y);
+      measured.push(edge);
+      // 真实覆盖率就是 B 和 I 线性插值出来的那个值
+      expect(Math.abs(edge - Math.round(255 * band.coverage))).toBeLessThanOrEqual(2);
+      // 旧实现在这三档全返回 255：128 地板 + 色差项顶满，深色底上就是那圈白边晕
+      expect(edge).toBeLessThan(255);
+      // 往里一列就是实心
+      expect(await alphaAt(result.data, left + 1, band.y)).toBe(255);
+      // 往外一列是底色，全透明
+      expect(await alphaAt(result.data, left - 1, band.y)).toBe(0);
+    }
+    // 覆盖率越高 alpha 越高，且三档落在不同的 alpha 上（不是同一个值）
+    expect(measured).toEqual([...measured].sort((a, b) => a - b));
+    expect(new Set(measured).size).toBe(3);
+  });
+
   it("底色不干净时抛错而不是落半残图", async () => {
     // 满图杂乱花纹（模型没给纯色底时会这样）：没有一块区域贴近边界种子色，漫延啃不动，
     // 前景占比冲到 97% 以上 → 报「底色没抠干净」

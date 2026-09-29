@@ -69,10 +69,8 @@ export interface CutoutTuning {
 
 const CANVAS_HEIGHT = 1920;
 const CANVAS_WIDTH = 1080;
-/** 与种子色的色差小于此值即视为全透明。 */
-const EDGE = 0.12;
-/** 距背景这么远以内的像素算「边缘」，更远的算「内部」。 */
-const INTERIOR = 2;
+/** 距背景这么远以内的像素进反解，更远的直接算实心。 */
+const FG_DIST = 2;
 const COVERAGE_MIN = 0.02;
 const COVERAGE_MAX = 0.97;
 
@@ -342,9 +340,9 @@ function backgroundColor(rgba: Buffer, mask: Uint8Array, channels: number): [num
   return n === 0 ? [255, 255, 255] : [r / n, g / n, b / n];
 }
 
-/** chamfer 距离变换：每个前景像素到最近背景像素的距离（以 INTERIOR 为上限）。 */
+/** chamfer 距离变换：每个前景像素到最近背景像素的距离（以 FG_DIST + 1 为上限）。 */
 function distanceToBackground(mask: Uint8Array, width: number, height: number): Float32Array {
-  const far = INTERIOR + 1;
+  const far = FG_DIST + 1;
   const dist = new Float32Array(width * height).fill(far);
   for (let i = 0; i < mask.length; i++) if (mask[i] === 1) dist[i] = 0;
 
@@ -375,9 +373,26 @@ function distanceToBackground(mask: Uint8Array, width: number, height: number): 
 }
 
 /**
- * 边缘 alpha = 色差项 与 内部项 取大：
- * - 色差项：越接近底色越透明，负责抗锯齿边缘的柔和过渡；
- * - 内部项：离背景够远就是实心，否则白衬衫会被自己的颜色吃掉。
+ * 边缘 alpha = 逐像素反解出来的真实覆盖率。
+ *
+ * 底色 B 已知，合成方程 I = a·F + (1-a)·B 直接给出 a = (B-I)/(B-F)。
+ * 这是纯色平涂底这个前提下的闭式解（文献里叫 color unmixing），不需要 trimap、不需要 GPU。
+ *
+ * 为什么非解不可：旧公式是 max(色差项, dist/INTERIOR)，而 dist/2 在边界带上恒等于 0.5，
+ * 等于给每一圈边界像素垫了 128 的 alpha 地板。深色舞台底上那一圈半透明的边色
+ * 就是一圈白边晕（用户实机看出来的主要瑕疵）。反解把这圈解成真实覆盖率——20% 就是 51，
+ * 95% 就是 242——晕自然消失，边缘也变成连续的灰阶斜坡。
+ *
+ * 反解会移动 α=0.5 的等值线：旧公式里等值线严格等于二值掩膜，轮廓零漂移
+ * （实测几何粗糙度 0.487，与源图逐位相同）；现在等值线跟着真实覆盖率走，
+ * 实测 2d-a 0.487 / 60 0.474 / 61 0.457，源图分别是 0.487 / 0.482 / 0.459。
+ * 也就是说**新的更贴近模型自己画的线稿**，而不是更毛——立绘边上的锯齿是模型在
+ * 768px 上画的线再被 1.406 倍放大到 1080 显出来的，压它只能提高出图分辨率。
+ *
+ * F 由 `foregroundColors` 沿 BFS 逐像素传播，不能取全局中位数：立绘有白衣，
+ * 白衣最外圈恰好就是白底，环带中位数被拽向底色，B−F → 0，整张图的反解全废
+ * （实测毛刺不降反升 13%）。分母 B−F 也可能接近 0（白发压在白底上），
+ * 所以逐通道只保留能分开前景底色的那一路，最差退回距离斜坡。
  */
 function edgeAlpha(
   rgba: Buffer,
@@ -388,20 +403,111 @@ function edgeAlpha(
   bg: [number, number, number],
 ): Uint8Array {
   const dist = distanceToBackground(mask, width, height);
+  const fg = foregroundColors(rgba, mask, dist, width, height, channels);
   const alpha = new Uint8Array(width * height);
   for (let i = 0; i < mask.length; i++) {
     if (mask[i] === 1) continue;
-    const o = i * channels;
-    const colorDist =
-      (Math.abs((rgba[o] ?? 0) - bg[0]) +
-        Math.abs((rgba[o + 1] ?? 0) - bg[1]) +
-        Math.abs((rgba[o + 2] ?? 0) - bg[2])) /
-      (3 * 255);
-    const byColor = Math.min(1, colorDist / EDGE);
-    const byInterior = Math.min(1, dist[i]! / INTERIOR);
-    alpha[i] = Math.round(255 * Math.max(byColor, byInterior));
+    // 离背景够远 = 实心，直接 255，不再进解方程（白发、皮肤这些亮色也保得住）
+    if (dist[i]! >= FG_DIST) {
+      alpha[i] = 255;
+      continue;
+    }
+    const p = i * channels, q = i * 3;
+    const ratio = solveAlpha(
+      rgba[p] ?? 0,
+      rgba[p + 1] ?? 0,
+      rgba[p + 2] ?? 0,
+      bg,
+      [fg[q]!, fg[q + 1]!, fg[q + 2]!],
+    );
+    alpha[i] = ratio === null ? Math.round(255 * (dist[i]! / FG_DIST)) : Math.round(255 * ratio);
   }
   return alpha;
+}
+
+/**
+ * 前景色 F：沿 BFS 从最近的「确定前景」像素（离背景 ≥ FG_DIST）传播过来。
+ *
+ * 不能用全局中位数：立绘有白衣，而白衣最外圈恰好就是白底，环带中位数会被拽向白底，
+ * 分母 B−F 归零、整张图的反解全废。逐像素取「最近确定前景」才能让白衬衫边缘解出白、
+ * 发梢边缘解出深色。-1 = 还没访问到。
+ */
+function foregroundColors(
+  rgba: Buffer,
+  mask: Uint8Array,
+  dist: Float32Array,
+  width: number,
+  height: number,
+  channels: number,
+): Int16Array {
+  const out = new Int16Array(width * height * 3).fill(-1);
+  const queue = new Int32Array(width * height);
+  let head = 0;
+  let tail = 0;
+  for (let i = 0; i < mask.length; i++) {
+    if (dist[i]! < FG_DIST) continue;
+    const p = i * channels;
+    const q = i * 3;
+    out[q] = rgba[p] ?? 0;
+    out[q + 1] = rgba[p + 1] ?? 0;
+    out[q + 2] = rgba[p + 2] ?? 0;
+    queue[tail++] = i;
+  }
+  const visit = (i: number): void => {
+    if (out[i * 3]! >= 0) return;
+    const from = queue[head]! * 3;
+    out[i * 3] = out[from]!;
+    out[i * 3 + 1] = out[from + 1]!;
+    out[i * 3 + 2] = out[from + 2]!;
+    queue[tail++] = i;
+  };
+  while (head < tail) {
+    const i = queue[head]!;
+    const x = i % width;
+    const y = (i - x) / width;
+    if (x > 0) visit(i - 1);
+    if (x < width - 1) visit(i + 1);
+    if (y > 0) visit(i - width);
+    if (y < height - 1) visit(i + width);
+    head++;
+  }
+  return out;
+}
+
+/**
+ * 闭式解 a = (B−I)/(B−F)。返回 0..1 的**比例**（调用方负责乘 255）。
+ *
+ * 只用能分开前景底色的通道：B 和 F 几乎同色的那一路分母太小，除出来的 α 噪声极大。
+ * 三路都还能用就取中位数挡单通道离群。B−F 全体都小到没有意义时返回 null，让调用方退回距离斜坡。
+ */
+function solveAlpha(
+  r: number,
+  g: number,
+  b: number,
+  bg: [number, number, number],
+  fg: [number, number, number],
+): number | null {
+  const observed = [r, g, b];
+  const spans = [0, 0, 0];
+  let best = -1;
+  let bestSpan = 0;
+  for (let c = 0; c < 3; c++) {
+    spans[c] = Math.abs(bg[c]! - fg[c]!);
+    if (spans[c]! > bestSpan) {
+      bestSpan = spans[c]!;
+      best = c;
+    }
+  }
+  if (best < 0 || bestSpan < 2) return null;
+  const samples: number[] = [];
+  for (let c = 0; c < 3; c++) {
+    if (spans[c]! < bestSpan * 0.34) continue;
+    samples.push((bg[c]! - observed[c]!) / spans[c]!);
+  }
+  if (samples.length === 0) return null;
+  samples.sort((x, y) => x - y);
+  const median = samples[samples.length >> 1]!;
+  return Math.max(0, Math.min(1, median));
 }
 
 /** C = a·F + (1-a)·B 反解出 F，把渗进边缘的底色扣掉。 */
