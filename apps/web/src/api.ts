@@ -1,4 +1,4 @@
-import type { LineageView, PlayConfig } from "@stage-ai/core";
+import type { LineageView, PlayConfig, VoiceCatalog, VoiceEntry } from "@stage-ai/core";
 
 /** 就绪门（D13）：开演前置检查。 */
 export interface Readiness {
@@ -99,6 +99,12 @@ export const api = {
     request<{ ok: boolean }>(`/api/plays/${id}/assets?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}`, {
       method: "DELETE",
     }),
+
+  /** Fish 公共音色库目录（服务端抓取并缓存）。`refresh` 强制重抓。 */
+  voiceCatalog: (refresh = false) => request<VoiceCatalog>(`/api/voices${refresh ? "?refresh=1" : ""}`),
+
+  /** 单条音色解析：用于"已填 voiceId 但不在热门目录内"的展示与试听。 */
+  voice: (voiceId: string) => request<VoiceEntry>(`/api/voices/${voiceId}`),
 
   /** 音色试听：服务端合成固定样本，返回 media-cache URL。 */
   ttsPreview: (id: string, voiceId: string) =>

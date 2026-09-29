@@ -158,6 +158,11 @@ export class ImageAssets {
     this.saving = this.saving.then(() => this.save());
   }
 
+  /** 等 manifest 落盘完成——落盘是 fire-and-forget，时序敏感处别用 sleep 猜。 */
+  async whenSaved(): Promise<void> {
+    await this.saving;
+  }
+
   private async save(): Promise<void> {
     if (!this.dirty) return;
     this.dirty = false;

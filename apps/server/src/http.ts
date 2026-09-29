@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { PlayLibrary } from "./store.js";
 import type { PlayHouse } from "./playhouse.js";
 import type { SettingsFile } from "./configApi.js";
+import type { VoiceCatalogService } from "./voiceCatalog.js";
 import { parsePlayConfig } from "@stage-ai/core";
 
 const BODY_LIMIT = 64 * 1024 * 1024;
@@ -80,7 +81,8 @@ export async function handleHttp(
   res: ServerResponse,
   library: PlayLibrary,
   playhouse: PlayHouse,
-  settings?: SettingsFile,
+  settings: SettingsFile | undefined,
+  voices: VoiceCatalogService,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
   const parts = url.pathname.split("/").filter(Boolean);
@@ -134,6 +136,18 @@ export async function handleHttp(
         externalMb: Math.round((mem.external / 1024 / 1024) * 10) / 10,
         plays: playhouse.livePlayCount,
       });
+    }
+
+    // —— Fish 音色库：目录 + 单条解析（角色卡音色选择面板的数据源） ——
+    if (parts[0] === "api" && parts[1] === "voices" && method === "GET") {
+      if (parts.length === 2) {
+        return json(res, 200, await voices.get(url.searchParams.get("refresh") === "1"));
+      }
+      if (parts.length === 3) {
+        const id = parts[2]!;
+        if (!/^[0-9a-f]{32}$/.test(id)) return fail(res, 400, "音色 id 非法");
+        return json(res, 200, await voices.resolve(id));
+      }
     }
 
     // —— 设置面板（P6）：.env 与 TTS keys 全部 GUI 可改，不要求用户碰配置文件 ——
