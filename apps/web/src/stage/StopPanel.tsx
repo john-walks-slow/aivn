@@ -16,13 +16,23 @@ interface StopPanelProps {
 }
 
 /**
+ * 浮层上的触摸要就地吃掉：舞台层监听着滑动手势（左右翻句、上滑看回顾），
+ * 不拦的话在选肢卡片上滑一下就顺手把视图切走了。
+ */
+const trap = {
+  onClick: (e: React.SyntheticEvent) => e.stopPropagation(),
+  onTouchStart: (e: React.TouchEvent) => e.stopPropagation(),
+  onTouchEnd: (e: React.TouchEvent) => e.stopPropagation(),
+} as const;
+
+/**
  * 停止点（玩家主权的三种形态，P6.5）：
  * - choice：舞台中央悬浮的选肢卡片，数字键 1..9 直选，选过的打勾留痕；
  * - free：对话框形态的入戏输入（可 LLM 润色，撤销保原稿）；
  * - pause：只在编排器造出来时出现（拍中分岔被截断 / 空拍报错），给一个「继续」重开一拍；
  * - 幕末（beat_done 无 stop）：黑场上的「下一幕」按钮——这一拍戏已经讲完，
  *   下一幕不在剧本里，所以只有这一个出口，点了才开新拍。
- * 导演注（OOC）是常驻顶栏，不在此。
+ * 导演注（OOC）在对话框底部的导演栏里，不在此。
  */
 export function StopPanel({
   stop,
@@ -88,7 +98,7 @@ export function StopPanel({
   return (
     <>
       {choosing && (
-        <div className="choice-overlay" role="group" aria-label="选项">
+        <div className="choice-overlay" role="group" aria-label="选项" {...trap}>
           {options.map((option, index) => (
             <button
               type="button"
@@ -116,7 +126,7 @@ export function StopPanel({
       )}
 
       {(stop?.stopType === "free" || freeOpen) && (
-        <footer className="stop-panel">
+        <footer className="stop-panel" {...trap}>
           <div className="free-box">
             <input
               value={draft}
@@ -156,7 +166,7 @@ export function StopPanel({
 
       {/* pause 只由编排器造出（拍中截断 / 空拍报错），这里才是「继续」的合法出场。 */}
       {stop?.stopType === "pause" && !freeOpen && (
-        <footer className="stop-panel">
+        <footer className="stop-panel" {...trap}>
           <div className="continue-box">
             <button type="button" onClick={onContinue} disabled={disabled} className="primary">
               继续

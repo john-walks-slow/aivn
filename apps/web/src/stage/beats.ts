@@ -130,6 +130,32 @@ export function firstLineOf(
   );
 }
 
+/** 原地改写只对台词三件套开放（与 core 的 EDITABLE_KINDS 同尺）。 */
+const EDITABLE = new Set<LineageNodeView["kind"]>(["say", "narrate", "thought"]);
+
+/**
+ * 舞台上正在显示的那一行落在哪一拍——导演原语的锚点。
+ * 舞台缓冲里只有当前分支的行，所以只在 onPath 的卡里找；纯布景拍没有 seq，定位不到就是 null。
+ */
+export function beatAtLine(cards: readonly BeatCard[], line: ScriptLine | null): BeatCard | null {
+  if (!line || line.seq === undefined) return null;
+  const at = line.seq;
+  let hit: BeatCard | null = null;
+  for (const card of cards) {
+    if (!card.onPath || card.startSeq === null || card.startSeq > at) continue;
+    if (!hit || card.startSeq > hit.startSeq!) hit = card;
+  }
+  return hit;
+}
+
+/** 同一行对应的谱系节点：「改写这一句」要拿它的 id 发给编排器。 */
+export function editableNodeAtLine(view: LineageView, line: ScriptLine | null): LineageNodeView | null {
+  if (!line || line.seq === undefined) return null;
+  return (
+    view.nodes.find((node) => node.seq === line.seq && node.onPath && EDITABLE.has(node.kind)) ?? null
+  );
+}
+
 function newCard(first: LineageNodeView, parent: BeatCard | null): BeatCard {
   return {
     id: first.id,
