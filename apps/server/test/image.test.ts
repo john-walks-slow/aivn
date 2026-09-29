@@ -56,6 +56,20 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("prompt 落 manifest：重启后仍报得出这张图画的是什么，且不外泄到 WS 快照", async () => {
+    const store = await makeStore();
+    const { gen } = fakeGen();
+    const assets = new ImageAssets("img", store, gen, 2);
+    await assets.load();
+    await assets.preload("bg", "rooftop at sunset", "bg_rooftop");
+    await assets.flush();
+
+    const revived = new ImageAssets("img", store, gen, 2);
+    await revived.load();
+    expect(revived.notes()).toEqual([{ id: "bg_rooftop", type: "bg", prompt: "rooftop at sunset" }]);
+    expect(revived.snapshot()[0]).not.toHaveProperty("prompt");
+  });
+
   it("同描述不同 id 共用一张图（复用键 = type+prompt）", async () => {
     const store = await makeStore();
     const { gen, calls } = fakeGen();

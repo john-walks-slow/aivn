@@ -167,6 +167,21 @@ export class PlayStore {
     await rm(join(this.dir, "assets", kindPath, name), { force: true });
   }
 
+  /** 素材描述表：assets/manifest.json 的 stem → 画面说明。没有或损坏即空表，不报错。 */
+  async assetNotes(): Promise<Record<string, string>> {
+    try {
+      const parsed: unknown = JSON.parse(await readFile(join(this.dir, "assets", "manifest.json"), "utf8"));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      const out: Record<string, string> = {};
+      for (const [stem, note] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof note === "string" && note.trim()) out[stem] = note.trim();
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
   /** play.json 全量保存（素材与配置页编辑）。 */
   async savePlay(play: PlayConfig): Promise<void> {
     await mkdir(this.dir, { recursive: true });

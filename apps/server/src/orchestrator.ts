@@ -19,7 +19,7 @@ import {
   type StopPayload,
 } from "@stage-ai/core";
 import type { ServerMessage } from "@stage-ai/core";
-import { buildSystemPrompt, renderStateSection, type AssetManifest } from "./prompt.js";
+import { buildSystemPrompt, renderStateSection, type AssetManifest, type AssetNotes, type GeneratedNote } from "./prompt.js";
 import { lineageToBeats, lineageToEvents, stopFromEvent } from "./rebuild.js";
 import {
   EPOCH_SUMMARY_SYSTEM,
@@ -220,6 +220,10 @@ export interface OrchestratorOptions {
   play: PlayConfig;
   /** 素材清单（A 区注入：可用 bg/bgm/sfx/立绘差分 id）。 */
   assets?: AssetManifest;
+  /** 素材描述（stem → 一句画面说明，来自 assets/manifest.json；挂在清单 id 后面）。 */
+  assetNotes?: AssetNotes;
+  /** 已生成图清单（playwriter 自己 preload 出来的资产；避免换个 id 重画）。 */
+  generatedAssets?: GeneratedNote[];
   /** 剧目记忆（D7 三层：always/index 注入 A 区，archive 供检索）。 */
   memory: PlayMemory;
   tree: LineageTree;
@@ -354,7 +358,14 @@ export class PlaywrightOrchestrator {
       streamFn: opts.streamFn,
       getApiKey: opts.getApiKey,
       initialState: {
-        systemPrompt: buildSystemPrompt(opts.play, opts.assets, opts.memory, this.arcIds),
+        systemPrompt: buildSystemPrompt({
+          play: opts.play,
+          assets: opts.assets,
+          notes: opts.assetNotes,
+          generated: opts.generatedAssets,
+          memory: opts.memory,
+          arcIds: this.arcIds,
+        }),
         model: opts.model,
         thinkingLevel: "off",
         tools: [

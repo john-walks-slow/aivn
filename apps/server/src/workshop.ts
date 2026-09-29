@@ -76,7 +76,7 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
     name: "write_file",
     label: "写剧目文件",
     description:
-      "写入剧目文件（可写范围：play.json、memory/** 的 .md/.json/.txt）。play.json 结构校验不过则不落盘。",
+      "写入剧目文件（可写范围：play.json、memory/** 的 .md/.json/.txt、assets/manifest.json）。play.json 结构校验不过则不落盘。",
     parameters: writeFileParams,
     execute: async (_id, params: Static<typeof writeFileParams>) => {
       const { path, content } = params;
@@ -170,6 +170,8 @@ export function buildWorkshopPrompt(title: string, files: string, readiness: Rea
   voiceId 从预置音色库挑；sprites 是「表情名 → 立绘文件名」的映射。
 - 记忆卡（memory/index/locations| lore/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。
 - 记忆卡是给演出用的：写具体可用的设定（地点长什么样、约定是什么），不写"待补充"。
+- 素材描述表（assets/manifest.json）：\`{"文件名去扩展名": "画面里有什么"}\`。剧作家只看得懂 id 认不出画面，
+  背景/插图/立绘差分配一句具体描述（色调、时间、氛围），差分名与画面不符时在描述里点明。
 
 # 当前状态
 

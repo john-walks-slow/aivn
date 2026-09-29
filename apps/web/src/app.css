@@ -485,7 +485,6 @@ button.link-btn {
   font-weight: 700;
   font-size: 14.5px;
   line-height: 1.5;
-  box-shadow: var(--shadow);
 }
 
 .dialog-text {

@@ -133,12 +133,10 @@ async function routeMessage(
     case "tts_control":
       orchestrator.setTtsState({ enabled: msg.enabled, paused: msg.paused });
       return;
-    // —— 四原语（P6）：跳转/分岔/编辑/重写/书签/分岔后 OOC，彼此正交 ——
+    // —— 导演操作（P6）：分岔/编辑/重写/分岔后 OOC 彼此正交；
+    //     「跳转」是纯客户端只读回看，不进协议、不动世界线 ——
     case "fork":
       await orchestrator.forkTo(msg.nodeId);
-      return;
-    case "jump":
-      await orchestrator.jumpTo(msg.nodeId);
       return;
     case "edit":
       await orchestrator.editLine(msg.nodeId, msg.newText);
@@ -148,12 +146,6 @@ async function routeMessage(
       return;
     case "ooc_at":
       await orchestrator.oocAt(msg.nodeId, msg.text);
-      return;
-    case "bookmark":
-      orchestrator.addBookmark(msg.nodeId, msg.name);
-      return;
-    case "unbookmark":
-      orchestrator.removeBookmark(msg.bookmarkId);
       return;
     // —— 工坊（D9）：与演出同一连接、不同通道；工坊对话不阻塞演出 ——
     case "workshop_open":
