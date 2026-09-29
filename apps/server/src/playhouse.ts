@@ -7,6 +7,7 @@ import type { ServerConfig } from "./config.js";
 import { createCpaProvider } from "./provider.js";
 import { createTts } from "./tts.js";
 import { Translator } from "./translate.js";
+import { PlayMemory } from "./memory.js";
 import { completeText } from "./llm.js";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
@@ -173,6 +174,8 @@ export class PlayHouse {
   ): Promise<PlayRuntime> {
     const { model } = this;
     const tts = this.tts;
+    // 剧目记忆（D7 三层）：craft/premise/index 随 runtime 重建读入（工坊热改走 reload 即时生效）
+    const memory = await PlayMemory.load(store);
     // 语音语言翻译（D5）：say 短语 → voiceLanguage 后再入 TTS；失败回退原文，不阻塞演出
     const translator =
       tts && play.voiceLanguage
@@ -201,6 +204,7 @@ export class PlayHouse {
       getApiKey: () => this.config.apiKey,
       play,
       assets: await store.listAssets(),
+      memory,
       tree,
       engine,
       scene,

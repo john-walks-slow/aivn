@@ -2,6 +2,7 @@
 
 > **状态**：v4——按用户反馈重塑交互模型：**分岔/编辑/OOC/重写四个正交原语全部主界面化**（原地 vs 先分岔，句/段重写 ±instruction，组合自由）、**路线树完全替代存读档**（书签=命名节点）、工坊抽屉纯化（meta-chat 多会话 + 文件浏览编辑，抽屉↔全屏）、移除防抢戏标记（通用纠正机制替代）、**上下文装配重设计**（三区 append-only + 纪元压缩，KV 前缀缓存正确）。v3：剧目生命周期（剧目库/Title Screen/就绪门/剧目包/工坊共创）。v2：expert 交叉核查修订（见 [crosscheck 报告](./260928-stage-ai-mvp.crosscheck.md)）。
 > **日期**：2026-09-28
+> **实施进度**：P0–P3 已交付（真机验证中）；**P4 进行中**——已落地：三层记忆（`always/` 每轮注入 + `index/` 标题注入·详情按需读 + `archive/` 检索；四工具 `update_state`/`write_memory`/`read_memory_detail`/`search_archive`，切片带 entryId 做防剧透过滤）、常驻原地 OOC（busy 时 `agent.steer` 入队、当前拍收敛后注入导演注并续写下一拍）、输入润色（主角卡口吻，可撤销）、主角角色卡、语音语言翻译；待办：**纪元压缩→arcs**（P4b，60% 窗口触发）、**工坊抽屉**（P4c）。
 > **关联调研**：
 > - [260928-gal-engine.research.md](./260928-gal-engine.research.md)（渲染层选型）
 > - [260928-playwriter-runtime.research.md](./260928-playwriter-runtime.research.md)（pi agent 运行时）

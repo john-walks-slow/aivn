@@ -30,6 +30,8 @@ export interface StageSocketHandlers {
   onAudio?: (ready: { seq: number; phrase: number; url: string }) => void;
   onBeatStart?: () => void;
   onReset?: () => void;
+  /** 原地 OOC 已入队（D9）：当前拍收敛后注入导演注、立即续写下一拍。 */
+  onOocAck?: () => void;
 }
 
 export function useStageSocket(playId: string, mode: StartMode, handlers?: StageSocketHandlers): StageSocket {
@@ -107,6 +109,9 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
             setStop(msg.stop ?? null);
             setActEnd(msg.reason === "act_end");
             setState("stopped");
+            return;
+          case "ooc_ack":
+            handlersRef.current.onOocAck?.();
             return;
           case "error":
             setError(msg.message);

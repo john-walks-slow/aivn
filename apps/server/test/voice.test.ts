@@ -3,6 +3,7 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage, type Message } from "@earendil-works/pi-ai";
 import { LineageTree, type PlayConfig, type ServerMessage } from "@stage-ai/core";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
+import { PlayMemory } from "../src/memory.js";
 import type { TtsSynthFn } from "../src/voice.js";
 
 /** 与 orchestrator.test.ts 同构的假 LLM 流（单拍文本直出）。 */
@@ -66,6 +67,7 @@ function setup({ dsl, synth }: SetupOpts) {
     model: {} as never,
     getApiKey: () => "test-key",
     play: PLAY,
+    memory: new PlayMemory(),
     tree: new LineageTree(),
     engine: { ...PLAY.initialState },
     scene: PLAY.initialScene,
@@ -158,6 +160,7 @@ describe("语音管线（D5）", () => {
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,
+      memory: new PlayMemory(),
       tree: new LineageTree(),
       engine: { ...PLAY.initialState },
       scene: PLAY.initialScene,

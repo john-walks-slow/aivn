@@ -8,7 +8,6 @@ interface StopPanelProps {
   onChoice: (index: number) => void;
   onFree: (text: string) => void;
   onContinue: () => void;
-  onOoc: (text: string) => void;
   /** 输入润色（P4）：传原始文本，返回润色文本；失败抛错由本组件就地提示。 */
   onPolish: (text: string) => Promise<string>;
 }
@@ -16,16 +15,14 @@ interface StopPanelProps {
 /**
  * 停止点面板（玩家输入区）：
  * choice → 选项按钮；free → 文本输入（可 LLM 润色，撤销保原稿）；pause/幕完 → 继续按钮。
- * 导演输入（OOC）在任意 stopped 态可用。
+ * 导演注（OOC）常驻舞台顶栏（StageTheater），不在此面板。
  */
-export function StopPanel({ stop, isActEnd, disabled, onChoice, onFree, onContinue, onOoc, onPolish }: StopPanelProps) {
+export function StopPanel({ stop, isActEnd, disabled, onChoice, onFree, onContinue, onPolish }: StopPanelProps) {
   const [draft, setDraft] = useState("");
   /** 润色前的原始输入（非空 = 当前草稿是润色产物，可撤销）。 */
   const [original, setOriginal] = useState<string | null>(null);
   const [polishing, setPolishing] = useState(false);
   const [polishError, setPolishError] = useState<string | null>(null);
-  const [oocDraft, setOocDraft] = useState("");
-  const [oocOpen, setOocOpen] = useState(false);
 
   const submitFree = (): void => {
     const text = draft.trim();
@@ -59,43 +56,8 @@ export function StopPanel({ stop, isActEnd, disabled, onChoice, onFree, onContin
     setPolishError(null);
   };
 
-  const submitOoc = (): void => {
-    const text = oocDraft.trim();
-    if (text) {
-      onOoc(text);
-      setOocDraft("");
-      setOocOpen(false);
-    }
-  };
-
   return (
     <footer className="stop-panel">
-      {!oocOpen && (
-        <button type="button" className="ooc-toggle" onClick={() => setOocOpen(true)}>
-          导演备注
-        </button>
-      )}
-
-      {oocOpen && (
-        <div className="ooc-box">
-          <input
-            value={oocDraft}
-            placeholder="对剧作家说（不改剧情走向的即时指令）…"
-            onChange={(e) => setOocDraft(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submitOoc()}
-            autoFocus
-          />
-          <div className="ooc-actions">
-            <button type="button" onClick={submitOoc} disabled={disabled || oocDraft.trim() === ""}>
-              发送
-            </button>
-            <button type="button" className="ghost" onClick={() => setOocOpen(false)}>
-              收起
-            </button>
-          </div>
-        </div>
-      )}
-
       {stop?.stopType === "choice" && (
         <div className="choices">
           {stop.options?.map((option, index) => (

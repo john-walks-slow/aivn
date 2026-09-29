@@ -19,11 +19,16 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [assets, setAssets] = useState<Record<string, string[]>>({});
   const [view, setView] = useState<"stage" | "log">("stage");
+  const [oocQueued, setOocQueued] = useState(false);
 
   const stage = useStageSocket(playId, mode, {
     onAudio: (ready) => director.handleAudio(ready),
-    onBeatStart: () => director.beatStarted(),
+    onBeatStart: () => {
+      director.beatStarted();
+      setOocQueued(false); // 新拍已吃到导演注
+    },
     onReset: () => director.reset(),
+    onOocAck: () => setOocQueued(true),
   });
 
   // 渲染期回调绑定（N6：置于 stage 声明后，闭包引用才不踩未初始化的 TDZ）
@@ -97,6 +102,8 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
             voiceAvailable={stage.voiceAvailable}
             voiceOn={voiceOn}
             unlocked={director.unlocked}
+            oocQueued={oocQueued}
+            onOoc={stage.sendOoc}
             onToggleVoice={toggleVoice}
             onUnlock={unlockVoice}
             onBack={() => navigate(`/play/${playId}`)}
@@ -134,7 +141,6 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
             onChoice={stage.sendChoice}
             onFree={stage.sendFree}
             onContinue={stage.sendContinue}
-            onOoc={stage.sendOoc}
             onPolish={(text) => api.polish(playId, text).then(({ text: polished }) => polished)}
           />
         ) : (

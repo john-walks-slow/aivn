@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ScriptLine } from "./script.js";
 import type { Playback, VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
@@ -13,6 +13,10 @@ interface StageTheaterProps {
   voiceAvailable: boolean;
   voiceOn: boolean;
   unlocked: boolean;
+  /** 原地 OOC 已入队（下一拍生效，beat_start 自动清除）。 */
+  oocQueued: boolean;
+  /** 常驻导演注入口（D9）：任意时刻可发（演出中 steer 入队；停止点立即开拍）。 */
+  onOoc: (text: string) => void;
   onToggleVoice: () => void;
   onUnlock: () => void;
   onBack: () => void;
@@ -21,7 +25,7 @@ interface StageTheaterProps {
 
 const POS_CLASS: Record<string, string> = { left: "pos-left", center: "pos-center", right: "pos-right" };
 
-/** 舞台：背景/立绘/CG 视觉层 + 打字机对话框 + 二段式点击 + 自动模式 + sfx/bgm + 语音。 */
+/** 舞台：背景/立绘/CG 视觉层 + 打字机对话框 + 二段式点击 + 自动模式 + sfx/bgm + 语音 + 常驻导演注。 */
 export function StageTheater({
   visual,
   playback,
@@ -31,12 +35,16 @@ export function StageTheater({
   voiceAvailable,
   voiceOn,
   unlocked,
+  oocQueued,
+  onOoc,
   onToggleVoice,
   onUnlock,
   onBack,
   onLog,
 }: StageTheaterProps) {
   const bgmRef = useRef<HTMLAudioElement | null>(null);
+  const [directorOpen, setDirectorOpen] = useState(false);
+  const [directorDraft, setDirectorDraft] = useState("");
   const { current, shownLength, exhausted, advance } = playback;
   const shown = current ? current.text.slice(0, shownLength) : "";
   const lineDone = current !== null && shownLength >= current.text.length;
@@ -71,6 +79,14 @@ export function StageTheater({
 
   const bgUrl = index.bg(visual.bg);
   const cgUrl = index.cg(visual.cg?.id ?? null);
+
+  const submitDirectorNote = (): void => {
+    const text = directorDraft.trim();
+    if (!text) return;
+    onOoc(text);
+    setDirectorDraft("");
+    setDirectorOpen(false);
+  };
 
   return (
     <div className="theater" onClick={advance}>
@@ -108,6 +124,16 @@ export function StageTheater({
             自动 {playback.auto ? "开" : "关"}
           </button>
           <button
+            className={`ghost-btn ${oocQueued ? "active" : ""}`}
+            title={oocQueued ? "导演注已入队，下一拍生效" : "导演注（OOC）：随时调整演出方向"}
+            onClick={(e) => {
+              e.stopPropagation();
+              setDirectorOpen((open) => !open);
+            }}
+          >
+            🎬 导演{oocQueued ? "·已注入" : ""}
+          </button>
+          <button
             className="ghost-btn"
             onClick={(e) => {
               e.stopPropagation();
@@ -118,6 +144,27 @@ export function StageTheater({
           </button>
         </span>
       </header>
+
+      {directorOpen && (
+        <div className="director-box" onClick={(e) => e.stopPropagation()}>
+          {oocQueued && <div className="director-hint">上一条已入队：当前拍收敛后生效</div>}
+          <input
+            value={directorDraft}
+            placeholder="导演注（OOC）：调整演出方向，不打断当前演出…"
+            onChange={(e) => setDirectorDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submitDirectorNote()}
+            autoFocus
+          />
+          <div className="director-actions">
+            <button type="button" onClick={submitDirectorNote} disabled={directorDraft.trim() === ""}>
+              发送
+            </button>
+            <button type="button" className="ghost-btn" onClick={() => setDirectorOpen(false)}>
+              收起
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="theater-stage">
         {bgUrl ? (

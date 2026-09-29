@@ -1,5 +1,6 @@
 import type { EngineStateSnapshot } from "@stage-ai/core";
 import type { PlayConfig } from "@stage-ai/core";
+import type { PlayMemory } from "./memory.js";
 
 /** 素材清单（store.listAssets 原样；keys: backgrounds/cg/sfx/bgm/sprites/<charId>）。 */
 export type AssetManifest = Record<string, string[]>;
@@ -7,8 +8,9 @@ export type AssetManifest = Record<string, string[]>;
 /**
  * Playwriter 系统提示词 = 三区装配的 A 区（固定前部，KV cache 前缀稳定）。
  * 每轮变化的状态走 user 消息【状态】区（B 区 append-only），见 orchestrator。
+ * 记忆层（D7）：craft/premise/index 标题列表在 runtime 构建时读入——纪元内冻结，工坊热改走 reload。
  */
-export function buildSystemPrompt(play: PlayConfig, assets: AssetManifest = {}): string {
+export function buildSystemPrompt(play: PlayConfig, assets: AssetManifest = {}, memory?: PlayMemory): string {
   const characters = play.characters
     .map((c) => {
       // 差分列表优先取角色卡 sprites 键名（前端按它解析立绘）；未配置映射时回退磁盘文件 stem
@@ -32,17 +34,29 @@ export function buildSystemPrompt(play: PlayConfig, assets: AssetManifest = {}):
     sfx.length > 0 ? `\n# 可用音效 sfx\n\n${sfx.join(" | ")}\n` : "",
   ].join("");
 
+  const premise = memory?.premise.trim() || play.premise;
+  const craftSection = memory?.craft.trim()
+    ? `\n# 剧艺守则（craft）\n\n${memory.craft.trim()}\n`
+    : "";
+  const cards = memory?.cards ?? [];
+  const indexSection =
+    cards.length > 0
+      ? `\n# 记忆索引（按需查详情）\n\n${cards
+          .map((c) => `- [${c.layer}] ${c.name}：${c.summary}`)
+          .join("\n")}\n\n需要某条完整内容时调用 read_memory_detail 工具（传名称）。历史往事用 search_archive 检索。\n`
+      : "";
+
   return `你是一部视觉小说的剧作家（playwriter），实时为一部正在"直播"的游戏写剧本。
 玩家既是主角（通过【玩家表态】入戏回应），也是导演（通过【导演注】调整演出方向）。
 
 # 剧目设定
 
-${play.premise}
+${premise}
 
 # 角色表
 
 ${characters}
-${assetSection}
+${assetSection}${craftSection}${indexSection}
 # 剧本格式（Stage DSL，必须严格遵守）
 
 你输出的每一行都是剧本。指令用 XML 标签，台词是标签外的原生文本。
@@ -87,15 +101,23 @@ ${assetSection}
 9. 好感度变化、重要伏笔等通过演出自然体现，后续【状态】区会反映。`;
 }
 
-/** user 消息【状态】区（B 区，每轮变化但 append-only）。 */
-export function renderStateSection(state: EngineStateSnapshot, scene: string): string {
+/** user 消息【状态】区（B 区，每轮变化但 append-only）。stateFiles = always/state 谱系级内容（D7）。 */
+export function renderStateSection(
+  state: EngineStateSnapshot,
+  scene: string,
+  stateFiles: Record<string, string> = {},
+): string {
   const affinity = Object.entries(state.affinity)
     .map(([k, v]) => `${k} ${v}`)
     .join(" | ");
+  const flags = Object.entries(state.flags);
   return [
     `场景：${scene}`,
     affinity ? `好感度：${affinity}` : null,
+    flags.length > 0 ? `旗标：${flags.map(([k, v]) => `${k}=${v}`).join(" | ")}` : null,
     `进度：第 ${state.turn} 节拍`,
+    stateFiles.scene?.trim() ? `场景细节：${stateFiles.scene.trim()}` : null,
+    stateFiles.threads?.trim() ? `活跃剧情线：${stateFiles.threads.trim()}` : null,
   ]
     .filter(Boolean)
     .join("\n");

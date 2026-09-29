@@ -264,6 +264,7 @@ button.link-btn {
 }
 
 .theater {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -599,39 +600,37 @@ button.primary:hover:not(:disabled) {
   min-width: 160px;
 }
 
-/* ── 导演备注（OOC） ───────────────────── */
+/* ── 常驻导演注（OOC，舞台顶栏浮层） ──── */
 
-.ooc-toggle {
-  font-size: 12.5px;
-  color: var(--ink-faint);
-  border: none;
-  background: transparent;
-  padding: 2px 0 10px;
-}
-
-.ooc-toggle:hover:not(:disabled) {
-  color: var(--accent);
-}
-
-.ooc-box {
+.director-box {
+  position: absolute;
+  top: 52px;
+  right: 14px;
+  z-index: 30;
+  width: min(420px, calc(100% - 28px));
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 10px;
-  padding: 10px;
+  padding: 12px;
   background: var(--panel);
-  border: 1px dashed var(--line);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
-.ooc-box input {
+.director-box input {
   border: none;
   outline: none;
   background: transparent;
   font: inherit;
 }
 
-.ooc-actions {
+.director-hint {
+  font-size: 12.5px;
+  color: var(--accent);
+}
+
+.director-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;

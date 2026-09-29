@@ -134,6 +134,11 @@ export class PlayStore {
     return join(this.dir, "media-cache", "tts");
   }
 
+  /** 剧目记忆目录（D7：always/index 剧目级进 git；index/arcs 与 archive 运行时不进）。 */
+  memoryDir(...segments: string[]): string {
+    return join(this.dir, "memory", ...segments);
+  }
+
   /** TTS 音频绝对路径（静态服务；file 已白名单校验）。 */
   mediaPath(file: string): string {
     return join(this.dir, "media-cache", "tts", file);

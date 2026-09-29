@@ -1,6 +1,6 @@
-import type { AgentTool, Agent, StreamFn } from "@earendil-works/pi-agent-core";
+import type { AgentTool, AgentToolResult, Agent, StreamFn } from "@earendil-works/pi-agent-core";
 import { Agent as PiAgent } from "@earendil-works/pi-agent-core";
-import { type Api, type Model, type TSchema, Type } from "@earendil-works/pi-ai";
+import { type Api, type Model, type Static, type TSchema, Type } from "@earendil-works/pi-ai";
 import {
   LineageTree,
   StageDslParser,
@@ -14,6 +14,7 @@ import {
 import type { ServerMessage } from "@stage-ai/core";
 import { buildSystemPrompt, renderStateSection, type AssetManifest } from "./prompt.js";
 import type { PlayConfig } from "@stage-ai/core";
+import type { PlayMemory } from "./memory.js";
 import { VoicePipeline, type TtsSynthFn } from "./voice.js";
 
 /** 生成批次收束工具（D3：交互停止点之后或一幕写完时调用）。 */
@@ -31,6 +32,137 @@ export function createBeatDoneTool(): AgentTool<TSchema> {
       terminate: true,
     }),
   };
+}
+
+/** 好感度单次增量上限与值域（引擎校验，模型只可提议）。 */
+const AFFINITY_DELTA_CAP = 5;
+const AFFINITY_MAX = 100;
+
+/** 记忆工具依赖（D7）：engine 拥有状态真值，stateFiles 随谱系快照走。 */
+export interface MemoryToolDeps {
+  engine: EngineStateSnapshot;
+  characterIds: ReadonlySet<string>;
+  memory: PlayMemory;
+  tree: LineageTree;
+  stateFiles: Record<string, string>;
+}
+
+function textResult(text: string): AgentToolResult {
+  return { content: [{ type: "text", text }], details: undefined };
+}
+
+const updateStateParams = Type.Object(
+  {
+    affinity: Type.Optional(Type.Record(Type.String(), Type.Number())),
+    flags: Type.Optional(
+      Type.Record(Type.String(), Type.Union([Type.String(), Type.Number(), Type.Boolean()])),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+const writeMemoryParams = Type.Object(
+  {
+    file: Type.Union([Type.Literal("scene"), Type.Literal("threads")]),
+    content: Type.String({ maxLength: 2000 }),
+  },
+  { additionalProperties: false },
+);
+
+const readMemoryDetailParams = Type.Object({ name: Type.String() }, { additionalProperties: false });
+
+const searchArchiveParams = Type.Object(
+  { query: Type.String({ maxLength: 200 }), limit: Type.Optional(Type.Number()) },
+  { additionalProperties: false },
+);
+
+/** playwriter 记忆工具组（D7）：update_state（引擎校验）/ write_memory / read_memory_detail / search_archive。 */
+export function createMemoryTools(deps: MemoryToolDeps): AgentTool<TSchema>[] {
+  const updateState: AgentTool<typeof updateStateParams> = {
+    name: "update_state",
+    label: "提议状态更新",
+    description:
+      "提议更新引擎状态（好感度增量/旗标）。好感度传增量（如 koharu: 2 表示 +2，单次 |增量|≤5，值域 0~100）；旗标传目标值。引擎校验后才生效，【状态】区下轮反映。剧情有实质推进时才调用，不要每拍都调。",
+    parameters: updateStateParams,
+    execute: async (_toolCallId, params: Static<typeof updateStateParams>) => {
+      const { affinity, flags } = params;
+      const applied: string[] = [];
+      const rejected: string[] = [];
+      for (const [charId, delta] of Object.entries(affinity ?? {})) {
+        if (!deps.characterIds.has(charId)) {
+          rejected.push(`${charId} 不是本剧角色`);
+          continue;
+        }
+        if (!Number.isInteger(delta) || Math.abs(delta) > AFFINITY_DELTA_CAP) {
+          rejected.push(`${charId} 增量须为整数且 |Δ|≤${AFFINITY_DELTA_CAP}（收到 ${delta}）`);
+          continue;
+        }
+        const current = deps.engine.affinity[charId] ?? 0;
+        const next = Math.max(0, Math.min(AFFINITY_MAX, current + delta));
+        deps.engine.affinity[charId] = next;
+        applied.push(`${charId} ${delta >= 0 ? "+" : ""}${delta}（${current}→${next}）`);
+      }
+      for (const [key, value] of Object.entries(flags ?? {})) {
+        deps.engine.flags[key] = value;
+        applied.push(`旗标 ${key}=${String(value)}`);
+      }
+      if (applied.length === 0 && rejected.length === 0) return textResult("未提供任何更新。");
+      return textResult(
+        [
+          applied.length > 0 ? `已生效：${applied.join("；")}` : null,
+          rejected.length > 0 ? `被拒绝（请修正后重试）：${rejected.join("；")}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+    },
+  };
+
+  const writeMemory: AgentTool<typeof writeMemoryParams> = {
+    name: "write_memory",
+    label: "更新活跃状态文件",
+    description:
+      "维护活跃状态文件：scene（当前场景/在场人物/时间，一两行）或 threads（当前活跃剧情线与悬念，要点列表）。每拍有实质变化时更新，保持简短——全文会在下轮【状态】区注入。",
+    parameters: writeMemoryParams,
+    execute: async (_toolCallId, params: Static<typeof writeMemoryParams>) => {
+      const { file, content } = params;
+      deps.stateFiles[file] = content.trim();
+      return textResult(`已更新 ${file}.md。`);
+    },
+  };
+
+  const readMemoryDetail: AgentTool<typeof readMemoryDetailParams> = {
+    name: "read_memory_detail",
+    label: "读记忆卡详情",
+    description:
+      "读取记忆索引中某条卡的完整内容（系统提示词「记忆索引」列表里的名称）。涉及某地点/设定/旧章节时先查再写，避免与既有设定矛盾。",
+    parameters: readMemoryDetailParams,
+    execute: async (_toolCallId, params: Static<typeof readMemoryDetailParams>) => {
+      const { name } = params;
+      const detail = deps.memory.readCard(name);
+      if (detail) return textResult(detail);
+      const available = deps.memory.indexContext.map((c) => c.name).join("、");
+      return textResult(`未找到「${name}」。可用条目：${available || "（无）"}。`);
+    },
+  };
+
+  const searchArchive: AgentTool<typeof searchArchiveParams> = {
+    name: "search_archive",
+    label: "检索历史往事",
+    description:
+      "全文检索本分支历史演出（过往节拍的剧本切片）。需要回看发生过什么、玩家说过什么时调用；只命中当前分支可见的历史，不会召回其他分支。",
+    parameters: searchArchiveParams,
+    execute: async (_toolCallId, params: Static<typeof searchArchiveParams>) => {
+      const { query, limit } = params;
+      const hits = deps.memory.searchArchive(query, deps.tree.pathSet(), Math.max(1, Math.min(10, limit ?? 5)));
+      if (hits.length === 0) return textResult("（无命中：当前分支历史中未检索到相关内容）");
+      return textResult(
+        hits.map((h) => `【第 ${h.turn} 拍】\n${h.summary}`).join("\n\n"),
+      );
+    },
+  };
+
+  return [updateState, writeMemory, readMemoryDetail, searchArchive];
 }
 
 export type PlayerAction =
@@ -54,6 +186,8 @@ export interface OrchestratorOptions {
   play: PlayConfig;
   /** 素材清单（A 区注入：可用 bg/bgm/sfx/立绘差分 id）。 */
   assets?: AssetManifest;
+  /** 剧目记忆（D7 三层：always/index 注入 A 区，archive 供检索）。 */
+  memory: PlayMemory;
   tree: LineageTree;
   engine: EngineStateSnapshot;
   scene: string;
@@ -110,23 +244,50 @@ export class PlaywrightOrchestrator {
   private beatError: string | null = null;
   /** 本拍内产出的舞台事件数（空拍检测）。 */
   private beatEvents = 0;
+  /** 本拍台词文本（archive 切片摘要来源）。 */
+  private beatLines: string[] = [];
+  /** 本 turn 调用了 beat_done → 拍在此收束（普通工具轮次不算边界，否则记忆查询会撕裂节拍）。 */
+  private beatClosed = false;
+  /** always/state 活跃状态文件内容（谱系级，随快照走；write_memory 工具维护）。 */
+  private stateFiles: Record<string, string> = {};
   private readonly unsubscribeAgent: () => void;
 
   constructor(opts: OrchestratorOptions) {
     this.opts = opts;
     this.parser = new StageDslParser((event) => this.onStageEvent(event));
+    if (opts.restored) {
+      // 恢复会话：活跃状态文件从路径最近快照回填（谱系级记忆）
+      this.stateFiles = opts.tree.latestSnapshotOnPath(opts.tree.leafId)?.memory.state ?? {};
+    }
     this.agent = new PiAgent({
       streamFn: opts.streamFn,
       getApiKey: opts.getApiKey,
       initialState: {
-        systemPrompt: buildSystemPrompt(opts.play, opts.assets),
+        systemPrompt: buildSystemPrompt(opts.play, opts.assets, opts.memory),
         model: opts.model,
         thinkingLevel: "off",
-        tools: [createBeatDoneTool()],
+        tools: [
+          createBeatDoneTool(),
+          ...createMemoryTools({
+            engine: opts.engine,
+            characterIds: new Set(opts.play.characters.map((c) => c.id)),
+            memory: opts.memory,
+            tree: opts.tree,
+            stateFiles: this.stateFiles,
+          }),
+        ],
         messages: [],
       },
     });
     this.unsubscribeAgent = this.agent.subscribe((event) => void this.onAgentEvent(event));
+    // 批次收束兜底：pi 仅在「批内全部工具结果都 terminate」时收束 turn，模型若把 beat_done
+    // 与记忆工具同批调用，terminate 会被吞掉导致本拍继续空转——此时按 beat_done 显式收束 run。
+    this.agent.finishTurn = async (turn) => {
+      const calls = turn.message.content.filter((c) => c.type === "toolCall");
+      if (!calls.some((c) => c.name === "beat_done")) return undefined;
+      this.beatClosed = true;
+      return calls.length > 1 ? { action: "end" as const } : undefined;
+    };
     this.voice = opts.tts
       ? new VoicePipeline({
           synth: opts.tts.synth,
@@ -204,6 +365,13 @@ export class PlaywrightOrchestrator {
 
   /** 玩家操作 → 下一节拍。busy 中拒绝。开局时玩家表态并入开场指令。 */
   async playerAction(action: PlayerAction): Promise<void> {
+    if (action.kind === "ooc" && this.busy) {
+      // 原地 OOC（D9）：steer 入队——当前拍收敛后注入【导演注】，agent 立即续写下一拍；不打断进行中的演出
+      this.agent.steer({ role: "user", content: this.renderUserTurn(action), timestamp: Date.now() });
+      this.appendLineage("ooc", { payload: { input: action.text } });
+      this.send({ type: "ooc_ack" });
+      return;
+    }
     if (this.busy) {
       this.send({ type: "error", message: "演出进行中，请等待当前节拍结束", recoverable: true });
       return;
@@ -241,20 +409,28 @@ export class PlaywrightOrchestrator {
 
   private renderUserTurn(action: ResolvedAction): string {
     const sections = [
-      `【状态】\n${renderStateSection(this.opts.engine, this.opts.scene)}`,
+      `【状态】\n${renderStateSection(this.opts.engine, this.opts.scene, this.stateFiles)}`,
     ];
     if (action.kind === "ooc") {
-      sections.push(
-        `【导演注】\n${action.text}\n（以上为导演指示：据此调整接下来的演出，不要在剧本中复述或回应这段指示本身）`,
-      );
-      // OOC 越过了待回应的 free/choice 停止点：明示玩家未回应，防止模型替玩家编造台词
-      if (this.lastStop && this.lastStop.stopType !== "pause") {
-        sections.push("【玩家表态】\n（玩家本轮未作回应，请继续演出，并在合适时机再给出回应机会）");
-      }
+      // 空闲态发送 = 越过待回应停止点；busy 中 steer 发送则不算（该拍自己的停止点还没到）
+      sections.push(this.renderDirectorNote(action.text, !this.busy));
     }
     if (action.kind === "choice") sections.push(`【玩家表态】\n（选择了：${action.text}）`);
     else if (action.kind === "free") sections.push(`【玩家表态】\n${action.text}`);
     else if (action.kind === "continue") sections.push("【玩家表态】\n（继续）");
+    return sections.join("\n\n");
+  }
+
+  /** 【导演注】块（OOC 与重写 instruction 共用通道）；越过待回应停止点时明示玩家未回应。 */
+  private renderDirectorNote(text: string, acrossStop: boolean): string {
+    const sections = [
+      `【导演注】\n${text}\n（以上为导演指示：据此调整接下来的演出，不要在剧本中复述或回应这段指示本身）`,
+    ];
+    // 空闲态发送 = 越过了待回应的 free/choice 停止点：明示玩家未回应，防止模型替玩家编造台词。
+    // 演出中（steer）发送时玩家早已回应过上一个停止点，不加此声明。
+    if (acrossStop && this.lastStop && this.lastStop.stopType !== "pause") {
+      sections.push("【玩家表态】\n（玩家本轮未作回应，请继续演出，并在合适时机再给出回应机会）");
+    }
     return sections.join("\n\n");
   }
 
@@ -270,14 +446,7 @@ export class PlaywrightOrchestrator {
   }
 
   private async beginBeat(userText: string): Promise<void> {
-    this.busy = true;
-    this.beatNo += 1;
-    this.beatError = null;
-    this.beatEvents = 0;
-    this.opts.engine.turn = this.beatNo;
-    const beatId = `beat-${this.beatNo}`;
-    this.send({ type: "beat_start", beatId });
-    this.send({ type: "lineage", leafId: this.opts.tree.leafId ?? "", turn: this.opts.tree.leafId ? (this.opts.tree.get(this.opts.tree.leafId)?.turn ?? 0) : 0 });
+    this.startBeatWindow();
     try {
       await this.agent.prompt(userText);
       await this.agent.waitForIdle();
@@ -290,6 +459,19 @@ export class PlaywrightOrchestrator {
     }
   }
 
+  /** 拍窗口记账（beginBeat 与 steer 续写拍共用）。 */
+  private startBeatWindow(): void {
+    this.busy = true;
+    this.beatNo += 1;
+    this.beatError = null;
+    this.beatEvents = 0;
+    this.beatLines = [];
+    this.beatClosed = false;
+    this.opts.engine.turn = this.beatNo;
+    this.send({ type: "beat_start", beatId: `beat-${this.beatNo}` });
+    this.send({ type: "lineage", leafId: this.opts.tree.leafId ?? "", turn: this.opts.tree.leafId ? (this.opts.tree.get(this.opts.tree.leafId)?.turn ?? 0) : 0 });
+  }
+
   private async onAgentEvent(event: Parameters<Parameters<Agent["subscribe"]>[0]>[0]): Promise<void> {
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
       this.parser.feed(event.assistantMessageEvent.delta);
@@ -297,7 +479,14 @@ export class PlaywrightOrchestrator {
       // pi agent 的 provider 失败不抛异常，而是 assistant message 带 errorMessage 正常收束——捕获之
       if (event.message.errorMessage) this.beatError = event.message.errorMessage;
       this.parser.endMessage();
+    } else if (event.type === "turn_start") {
+      // steer 续写拍（D9 原地 OOC）：上一拍已收束，导演注入后 agent 自动续写，由新 turn 开窗
+      if (!this.busy || this.beatClosed) this.startBeatWindow();
+    } else if (event.type === "turn_end") {
+      // 只在真实边界（beat_done）收束：同一拍内的记忆工具轮次（turn_end）必须继续流动
+      if (this.beatClosed) this.finishBeat();
     } else if (event.type === "agent_end") {
+      // 正常路径已在 turn_end 收束；此处兜底异常/中止路径（幂等）
       this.finishBeat();
     }
   }
@@ -326,9 +515,25 @@ export class PlaywrightOrchestrator {
     this.beatError = null;
     this.lastStop = stop;
     this.appendLineage("beat_end", { payload: { reason: stop ? "stop" : "act_end" } });
-    // 谱系快照随 beat 收束保存（分岔/续演恢复用）
-    const memory: MemorySnapshot = { state: { scene: this.opts.scene }, arcs: [] };
-    this.opts.tree.saveSnapshot(this.opts.engine, memory);
+    // 谱系快照随 beat 收束保存（分岔/续演恢复用）：活跃状态文件 + arcs 引用（谱系级记忆）
+    const engine = this.opts.engine;
+    const memory: MemorySnapshot = { state: { ...this.stateFiles }, arcs: [] };
+    // 克隆后再存：快照按节点留档，存引用会被后续拍的原地修改污染（分岔恢复必须拿到当拍真值）
+    this.opts.tree.saveSnapshot(
+      { ...engine, affinity: { ...engine.affinity }, flags: { ...engine.flags } },
+      memory,
+    );
+    // archive 逐节拍切片（D7 第三层）：本拍台词全文，entryId = 谱系叶（防剧透过滤键）
+    void this.opts.memory
+      .appendArchive({
+        entryId: this.opts.tree.leafId ?? "",
+        turn: this.beatNo,
+        at: Date.now(),
+        summary: this.beatLines.join("\n").slice(0, 800),
+      })
+      .catch((error: unknown) =>
+        console.warn(`[stage-ai] archive 切片写入失败: ${error instanceof Error ? error.message : String(error)}`),
+      );
     this.send({
       type: "beat_end",
       beatId: `beat-${this.beatNo}`,
@@ -394,7 +599,10 @@ export class PlaywrightOrchestrator {
       case "thought_end": {
         const line = this.openLine;
         this.openLine = null;
-        if (line) this.appendLineage(line.kind, { text: line.text, payload: { attrs: line.attrs } });
+        if (line) {
+          this.appendLineage(line.kind, { text: line.text, payload: { attrs: line.attrs } });
+          this.beatLines.push(line.text.slice(0, 200));
+        }
         return;
       }
       case "scene":

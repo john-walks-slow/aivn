@@ -29,6 +29,8 @@ export type ServerMessage =
   /** 语音预取就绪（D5）：seq = 所属 say 行 say_start 事件的序号，客户端据此关联行。 */
   | { type: "audio_ready"; seq: number; phrase: number; url: string }
   | { type: "lineage"; leafId: string; turn: number }
+  /** 原地 OOC 已入队（D9）：当前拍收敛后注入【导演注】并立即续写下一拍。 */
+  | { type: "ooc_ack" }
   | { type: "error"; message: string; recoverable: boolean };
 
 export type ClientMessage =
