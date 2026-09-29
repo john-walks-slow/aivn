@@ -59,6 +59,8 @@ export type ServerMessage =
   | { type: "beat_start"; beatId: string }
   | { type: "events"; events: SequencedEvent[] }
   | BeatEndPayload & { type: "beat_end" }
+  /** 编排器真正空闲（模型那一轮收尾完毕）：此前 beat_end 已到但导演/玩家操作仍可能被拒。 */
+  | { type: "beat_settled" }
   /** 语音预取就绪（D5）：seq = 所属 say 行 say_start 事件的序号，客户端据此关联行。 */
   | { type: "audio_ready"; seq: number; phrase: number; url: string }
   /** 生成就绪（D6）：客户端预解码后就地 crossfade 淡入，台词早已先行。瞬态消息不进事件缓冲。 */
@@ -111,8 +113,6 @@ export type ClientMessage =
    *  granularity="beat" 时编排器须先解析节拍边界并把 nodeId 传节拍首行（见 LineageTree.recordRewrite）。 */
   | { type: "rewrite"; nodeId: string; granularity: "line" | "beat"; instruction?: string }
   | { type: "jump"; nodeId: string }
-  | { type: "bookmark"; nodeId: string; name: string }
-  | { type: "unbookmark"; bookmarkId: string }
   /** 分岔后立即 OOC：先分岔再注入导演注并重新生成（与原地 steer 正交）。 */
   | { type: "ooc_at"; nodeId: string; text: string }
   // —— 工坊（D9）：线程管理 + 对话 + 文件编辑；与演出共用一条连接，服务端按 type 分流 ——

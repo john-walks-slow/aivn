@@ -38,6 +38,11 @@ function setup(
   return { orchestrator, messages, tree };
 }
 
+/** beat_end 之后还有 beat_settled（编排器真正空闲的信号），断言只认收束本身。 */
+function lastBeatEnd(messages: readonly { type: string }[]): { type: string } {
+  return messages.filter((m) => m.type === "beat_end").at(-1)!;
+}
+
 describe("PlaywrightOrchestrator 闭环", () => {
   it("开局 → 流式事件 → stop 交互 → beat_end(stop)", async () => {
     const { orchestrator, messages } = setup([{ text: BEAT_1, beatDone: true }]);
@@ -64,7 +69,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
     const seqs = events.map((e) => e.seq);
     expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
 
-    const beatEnd = messages.at(-1)!;
+    const beatEnd = lastBeatEnd(messages);
     expect(beatEnd.type).toBe("beat_end");
     if (beatEnd.type === "beat_end") {
       expect(beatEnd.reason).toBe("stop");
@@ -187,7 +192,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
     ]);
     await orchestrator.playerAction({ kind: "free", text: "开局" });
 
-    const beatEnd = messages.at(-1)!;
+    const beatEnd = lastBeatEnd(messages);
     expect(beatEnd.type).toBe("beat_end");
     if (beatEnd.type === "beat_end") {
       expect(beatEnd.reason).toBe("stop");
@@ -202,7 +207,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
     const error = messages.find((m) => m.type === "error");
     expect(error?.type).toBe("error");
     if (error?.type === "error") expect(error.message).toContain("生成失败");
-    const beatEnd = messages.at(-1)!;
+    const beatEnd = lastBeatEnd(messages);
     expect(beatEnd.type).toBe("beat_end");
     if (beatEnd.type === "beat_end") {
       expect(beatEnd.reason).toBe("stop");
@@ -231,7 +236,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
     const error = messages.find((m) => m.type === "error");
     expect(error?.type).toBe("error");
     if (error?.type === "error") expect(error.message).toContain("insufficient balance");
-    const beatEnd = messages.at(-1)!;
+    const beatEnd = lastBeatEnd(messages);
     expect(beatEnd.type).toBe("beat_end");
     if (beatEnd.type === "beat_end") {
       expect(beatEnd.reason).toBe("stop");
@@ -581,7 +586,7 @@ describe("长会话装配与原地 OOC（P4）", () => {
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1);
     expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(1);
     expect(messages.filter((m) => m.type === "error")).toEqual([]);
-    const beatEnd = messages.at(-1)!;
+    const beatEnd = lastBeatEnd(messages);
     if (beatEnd.type === "beat_end") expect(beatEnd.stop?.stopType).toBe("choice");
   });
 
@@ -600,7 +605,7 @@ describe("长会话装配与原地 OOC（P4）", () => {
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
 
     expect(messages.filter((m) => m.type === "error")).toHaveLength(1);
-    const beatEnd = messages.at(-1)!;
+    const beatEnd = lastBeatEnd(messages);
     if (beatEnd.type === "beat_end") expect(beatEnd.stop?.stopType).toBe("pause");
   });
 

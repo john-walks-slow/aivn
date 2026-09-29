@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LineageNodeView, LineageView } from "@stage-ai/core";
 import { api } from "../api.js";
+import { buildBeats, firstLineOf, type BeatCard } from "./beats.js";
+import type { ScriptLine } from "./script.js";
 
-/** 导演视角的四原语出口（与 useStageSocket 的 send 同源，正交可组合）。 */
+/** 导演视角的世界线写操作（跳转是纯客户端只读回看，不在这里——它不动物理分支）。 */
 export interface LineageOps {
-  jump: (nodeId: string) => void;
   fork: (nodeId: string) => void;
   edit: (nodeId: string, newText: string) => void;
   rewrite: (nodeId: string, granularity: "line" | "beat", instruction?: string) => void;
   oocAt: (nodeId: string, text: string) => void;
-  bookmark: (nodeId: string, name: string) => void;
-  unbookmark: (bookmarkId: string) => void;
 }
 
 /** 谱系拉取：打开视图与每次操作后刷新（树不随节拍广播，避免每拍搬运全量节点）。 */
@@ -56,7 +55,7 @@ export function BranchScript(props: PanelProps) {
   }, [rows.length, active]);
 
   return (
-    <PanelShell {...props} title="剧本" hint="点任意一行，就地编辑 / 重写 / 分岔">
+    <PanelShell {...props} title="剧本" hint="点任意一行，就地编辑或从这里重演">
       {rows.length === 0 && <p className="muted">还没有台词——先在舞台上演出几拍。</p>}
       {rows.map((row) => (
         <Row
@@ -73,56 +72,112 @@ export function BranchScript(props: PanelProps) {
   );
 }
 
-/** 路线树视图：全量历史（含废弃分支），可直接跳转到任意节点。 */
-export function RouteTree(props: PanelProps) {
-  const { view, names, busy, ops } = props;
-  const rows = useMemo(() => (view ? treeRows(view, names) : []), [view, names]);
+/**
+ * 路线树：一拍一张卡。单击 = 只读回看（客户端本地，不动世界线）；
+ * 分岔 / 重生成才是世界线写操作。废弃分支半透明占位，历史一条不删。
+ */
+export function RouteTree(
+  props: PanelProps & { lines: readonly ScriptLine[]; onRewind: (lineKey: string) => void },
+) {
+  const { view, lines, names, busy, ops, onRewind } = props;
+  const cards = useMemo(() => (view ? buildBeats(view, lines) : []), [view, lines]);
+  const lineOf = useMemo(() => rewindTargets(cards, lines), [cards, lines]);
   const [active, setActive] = useState<string | null>(null);
-  const bookmarkOf = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const bookmark of view?.bookmarks ?? []) map.set(bookmark.nodeId, bookmark.id);
-    return map;
-  }, [view]);
 
   return (
-    <PanelShell {...props} title="路线" hint="历史全部保留：点任意节点可跳转或分岔重演">
-      {view && view.bookmarks.length > 0 && (
-        <div className="tree-bookmarks">
-          {view.bookmarks.map((bookmark) => (
-            <span key={bookmark.id} className="tree-bookmark">
-              <button className="ghost-btn" disabled={busy} onClick={() => ops.jump(bookmark.nodeId)}>
-                ⭐ {bookmark.name}
-              </button>
-              <button
-                className="ghost-btn"
-                title="删除书签"
-                onClick={() => {
-                  ops.unbookmark(bookmark.id);
-                  props.onReload();
-                }}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-      {rows.length === 0 && <p className="muted">还没有历史节点——演出几拍后这里会长出路线树。</p>}
-      {rows.map((row) => (
-        <Row
-          key={row.id}
-          row={row}
-          active={active === row.id}
+    <PanelShell {...props} title="路线" hint="点卡片回看那一拍；分岔与重生成才改写世界线">
+      {cards.length === 0 && <p className="muted">还没有历史——演出几拍后这里会长出路线树。</p>}
+      {cards.map((card) => (
+        <BeatTile
+          key={card.id}
+          card={card}
+          names={names}
           busy={busy}
-          depth={row.depth}
-          branchPoint={row.branch}
-          current={row.id === view?.leafId}
-          bookmarked={bookmarkOf.has(row.id)}
-          onSelect={() => setActive((cur) => (cur === row.id ? null : row.id))}
-          ops={props.ops}
+          lineKey={lineOf.get(card.id)}
+          active={active === card.id}
+          onRewind={onRewind}
+          onSelect={() => setActive((cur) => (cur === card.id ? null : card.id))}
+          ops={ops}
         />
       ))}
     </PanelShell>
+  );
+}
+
+/** 活动路径的卡片 → 舞台行 key（拍首行），废弃分支的行已不在缓冲里，没有可回看的目标。 */
+function rewindTargets(cards: BeatCard[], lines: readonly ScriptLine[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const card of cards) {
+    if (!card.onPath) continue;
+    const line = firstLineOf(card, lines);
+    if (line) map.set(card.id, line.key);
+  }
+  return map;
+}
+
+function BeatTile(props: {
+  card: BeatCard;
+  names: Readonly<Record<string, string>>;
+  busy: boolean;
+  lineKey?: string;
+  active: boolean;
+  onSelect: () => void;
+  onRewind: (lineKey: string) => void;
+  ops: LineageOps;
+}) {
+  const { card, names, busy, lineKey, active, ops } = props;
+  const cls = `beat-tile${card.isAbandoned ? " abandoned" : ""}${card.isLeaf ? " current" : ""}${
+    active ? " active" : ""
+  }`;
+  const who = card.speakers.map((id) => names[id] ?? id).join("、");
+
+  return (
+    <div className={cls} style={{ marginLeft: `${Math.min(card.depth, 4) * 18}px` }}>
+      <button
+        className="beat-tile-main"
+        disabled={busy || !lineKey}
+        title={lineKey ? "回看这一拍" : "已作废的分支，先分岔才能进去"}
+        onClick={() => {
+          if (lineKey) props.onRewind(lineKey);
+          props.onSelect();
+        }}
+      >
+        <span className="beat-tile-head">
+          <span className="beat-tile-no">第 {card.turn} 拍</span>
+          {card.sceneBg && <span className="beat-tile-scene">◈ {card.sceneBg}</span>}
+          {card.isLeaf && <span className="beat-tile-here">进行中</span>}
+        </span>
+        <span className="beat-tile-text">{card.preview || "（无台词）"}</span>
+        {who && <span className="beat-tile-who">{who}</span>}
+      </button>
+      {active && !card.isAbandoned && <BeatActions card={card} busy={busy} ops={ops} />}
+    </div>
+  );
+}
+
+function BeatActions({ card, busy, ops }: { card: BeatCard; busy: boolean; ops: LineageOps }) {
+  const [note, setNote] = useState("");
+  return (
+    <div className="lineage-actions">
+      <button className="ghost-btn" disabled={busy} onClick={() => ops.fork(card.id)}>
+        🌿 从这里岔出去
+      </button>
+      <button
+        className="ghost-btn"
+        disabled={busy}
+        onClick={() => ops.rewrite(card.id, "beat", note.trim() || undefined)}
+      >
+        ↺ 重生成这一拍
+      </button>
+      <span className="lineage-inline-input">
+        <input
+          value={note}
+          placeholder="导演意图（可空）"
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </span>
+      <p className="beat-tile-warn">重生成 = 从拍首分岔重演，这一拍之后的剧情会作废（历史全部保留）。</p>
+    </div>
   );
 }
 
@@ -167,7 +222,6 @@ function Row(props: {
   active: boolean;
   busy: boolean;
   current?: boolean;
-  bookmarked?: boolean;
   branchPoint?: boolean;
   depth?: number;
   onSelect: () => void;
@@ -181,7 +235,6 @@ function Row(props: {
     >
       <button className="lineage-text" onClick={props.onSelect} disabled={busy}>
         {props.branchPoint && <span className="lineage-fork" title="此处有多个版本">⑂</span>}
-        {props.bookmarked && <span title="已标记">⭐</span>}
         {props.current && <span className="lineage-leaf" title="当前所在">●</span>}
         {row.text}
         {row.edited && <span className="lineage-edited">（已改）</span>}
@@ -196,8 +249,6 @@ function NodeActions({ row, busy, ops }: { row: Row; busy: boolean; ops: Lineage
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(row.text);
   const [note, setNote] = useState("");
-  const [naming, setNaming] = useState(false);
-  const [name, setName] = useState("");
 
   useEffect(() => {
     setDraft(row.text);
@@ -213,18 +264,9 @@ function NodeActions({ row, busy, ops }: { row: Row; busy: boolean; ops: Lineage
   return (
     <div className="lineage-actions">
       {row.editable && !editing && (
-        <>
-          <button className="ghost-btn" disabled={busy} onClick={() => setEditing(true)}>
-            ✎ 改写台词
-          </button>
-          <button
-            className="ghost-btn"
-            disabled={busy}
-            onClick={() => ops.rewrite(row.id, "line", note.trim() || undefined)}
-          >
-            ↺ 重写此句
-          </button>
-        </>
+        <button className="ghost-btn" disabled={busy} onClick={() => setEditing(true)}>
+          ✎ 改写台词
+        </button>
       )}
       <button
         className="ghost-btn"
@@ -236,31 +278,6 @@ function NodeActions({ row, busy, ops }: { row: Row; busy: boolean; ops: Lineage
       <button className="ghost-btn" disabled={busy} onClick={() => ops.fork(row.id)}>
         🌿 从此分岔
       </button>
-      <button className="ghost-btn" disabled={busy} onClick={() => ops.jump(row.id)}>
-        ⤴ 跳转
-      </button>
-      {naming ? (
-        <span className="lineage-inline-input">
-          <input
-            value={name}
-            autoFocus
-            placeholder="书签名"
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && name.trim()) {
-                ops.bookmark(row.id, name.trim());
-                setNaming(false);
-                setName("");
-              }
-              if (e.key === "Escape") setNaming(false);
-            }}
-          />
-        </span>
-      ) : (
-        <button className="ghost-btn" disabled={busy} onClick={() => setNaming(true)}>
-          ⭐ 书签
-        </button>
-      )}
       <span className="lineage-inline-input">
         <input
           value={note}

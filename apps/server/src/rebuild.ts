@@ -27,45 +27,67 @@ function editOverrides(chain: readonly LineageEvent[]): Map<string, string> {
   return overrides;
 }
 
-/** 谱系链 → 客户端 IR 事件（重新编号 1..N；preload 不重放——生成不因回放重来）。 */
+/**
+ * 谱系链 → 客户端 IR 事件（preload 不重放——生成不因回放重来）。
+ *
+ * seq 沿用每个节点当初的 payload.seq，而不是从 1 重新编号：分岔/编辑重生成之后
+ * 路线树还指着老的剧本行，重放若改尺子那些锚点就全漂了。一行台词现场至少占 3 个
+ * seq（start + ≥1 段文本 + end），重放正好塞得下，不会与下一行的 seq 相撞；
+ * 老档没有 payload.seq 才退回顺序编号。
+ */
 export function lineageToEvents(chain: readonly LineageEvent[]): SequencedEvent[] {
   const overrides = editOverrides(chain);
   const out: SequencedEvent[] = [];
-  const push = (event: StageEvent): void => {
-    out.push({ seq: out.length + 1, event });
+  let seq = 0;
+  /** 一行台词/旁白/独白现场至少占 3 个 seq，重放正好塞得下，不会与下一行撞号。 */
+  const push = (base: number | undefined, ...events: StageEvent[]): void => {
+    const from = base !== undefined && base > seq ? base : seq + 1;
+    events.forEach((event, i) => out.push({ seq: from + i, event }));
+    seq = from + events.length - 1;
   };
   for (const event of chain) {
     const attrs = event.payload?.attrs ?? {};
+    const base = typeof event.payload?.seq === "number" ? event.payload.seq : undefined;
+    const delta = () => textOf(event, overrides);
     switch (event.kind) {
       case "scene":
-        push({ kind: "scene", ...pickDefined(attrs, ["bg", "bgm", "ambient", "transition"]) });
+        push(base, { kind: "scene", ...pickDefined(attrs, ["bg", "bgm", "ambient", "transition"]) });
         break;
       case "actor":
-        push({ kind: "actor", id: attrs.id ?? "", ...pickDefined(attrs, ["pos", "expression", "action"]) });
+        push(base, { kind: "actor", id: attrs.id ?? "", ...pickDefined(attrs, ["pos", "expression", "action"]) });
         break;
       case "cg":
-        push({ kind: "cg", id: attrs.id ?? "", ...pickDefined(attrs, ["caption"]) });
+        push(base, { kind: "cg", id: attrs.id ?? "", ...pickDefined(attrs, ["caption"]) });
         break;
       case "sfx":
-        push({ kind: "sfx", src: attrs.src ?? "" });
+        push(base, { kind: "sfx", src: attrs.src ?? "" });
         break;
       case "stop":
-        push(stopEvent(stopFromEvent(event)));
+        push(base, stopEvent(stopFromEvent(event)));
         break;
       case "say":
-        push({ kind: "say_start", id: attrs.id ?? "", ...(attrs.mood ? { mood: attrs.mood } : {}) });
-        push({ kind: "say_text", delta: textOf(event, overrides) });
-        push({ kind: "say_end" });
+        push(
+          base,
+          { kind: "say_start", id: attrs.id ?? "", ...(attrs.mood ? { mood: attrs.mood } : {}) },
+          { kind: "say_text", delta: delta() },
+          { kind: "say_end" },
+        );
         break;
       case "narrate":
-        push({ kind: "narrate_start" });
-        push({ kind: "narrate_text", delta: textOf(event, overrides) });
-        push({ kind: "narrate_end" });
+        push(
+          base,
+          { kind: "narrate_start" },
+          { kind: "narrate_text", delta: delta() },
+          { kind: "narrate_end" },
+        );
         break;
       case "thought":
-        push({ kind: "thought_start", id: attrs.id ?? "" });
-        push({ kind: "thought_text", delta: textOf(event, overrides) });
-        push({ kind: "thought_end" });
+        push(
+          base,
+          { kind: "thought_start", id: attrs.id ?? "" },
+          { kind: "thought_text", delta: delta() },
+          { kind: "thought_end" },
+        );
         break;
       default:
         // preload 只触发生图、不影响重放画面（背景由 scene 携带）；player/ooc/beat_end 是元信息

@@ -1463,19 +1463,95 @@ select:focus {
   resize: vertical;
 }
 
-.tree-bookmarks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-  background: var(--bg);
+/* ── 路线树：一拍一张卡，废弃分支半透明占位 ── */
+
+.beat-tile {
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
   border-radius: var(--radius);
+  background: var(--panel);
+  overflow: hidden;
 }
 
-.tree-bookmark {
-  display: inline-flex;
+.beat-tile-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.beat-tile-main:disabled {
+  cursor: default;
+}
+
+.beat-tile-head {
+  display: flex;
   align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+.beat-tile-no {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.beat-tile-here {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--dialog-ink, #fff);
+  font-size: 11px;
+}
+
+.beat-tile-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.beat-tile-who {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+.beat-tile.current {
+  border-left-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+
+.beat-tile.active {
+  background: var(--accent-soft);
+}
+
+.beat-tile.abandoned {
+  opacity: 0.45;
+  border-style: dashed;
+  border-left-style: solid;
+}
+
+.beat-tile.abandoned .beat-tile-main:hover {
+  opacity: 1;
+}
+
+.beat-tile-warn {
+  flex: 1 1 100%;
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--ink-faint);
 }
 
 /* ── 设置面板（P6）───────────── */

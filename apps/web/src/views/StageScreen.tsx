@@ -80,20 +80,23 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
   director.onNotify = () => setAudioTick((t) => t + 1);
   director.onControl = (state) => stage.sendTtsControl(state);
 
-  // 四原语出口（P6）：senders 在 useStageSocket 内 useCallback 稳定，仅重连后换引用
+  // 导演出口（P6）：senders 在 useStageSocket 内 useCallback 稳定，仅重连后换引用
   const {
-    sendJump: jump,
     sendFork: fork,
     sendEdit: editLine,
     sendRewrite: rewrite,
     sendOocAt: oocAt,
-    sendBookmark: bookmark,
-    sendUnbookmark: unbookmark,
   } = stage;
   const ops: LineageOps = useMemo(
-    () => ({ jump, fork, edit: editLine, rewrite, oocAt, bookmark, unbookmark }),
-    [jump, fork, editLine, rewrite, oocAt, bookmark, unbookmark],
+    () => ({ fork, edit: editLine, rewrite, oocAt }),
+    [fork, editLine, rewrite, oocAt],
   );
+
+  // 跳转 = 只读回看：只移动舞台游标，不发任何 WS、不动物理分支
+  const rewind = useCallback((lineKey: string) => {
+    playbackRef.current?.seek(lineKey);
+    setView("stage");
+  }, []);
 
   // 走过的岔路口：玩家在这条线之外已经说过的选项，卡片上打「✓ 已选过」提醒存在多条命运
   const seenChoices = useMemo(
@@ -146,7 +149,8 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
     onFastForward: () => director.fastForward(),
   });
   playbackRef.current = playback;
-  const busy = stage.state === "streaming" || stage.state === "connecting";
+  // 拍收束后还要等编排器真正空闲（beat_settled），否则玩家点选项会被「演出进行中」挡回
+  const busy = stage.state === "streaming" || stage.state === "connecting" || !stage.settled;
   // D4：先演完再交互——打字机未消费完前不露出停止点（防剧透/防提前发送）
   const lineDone = playback.current === null || playback.shownLength >= playback.current.text.length;
   const panelReady = !busy && playback.exhausted && lineDone;
@@ -221,6 +225,8 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
           onReload={lineage.reload}
           onBack={() => setView("stage")}
           ops={ops}
+          lines={stage.lines}
+          onRewind={rewind}
         />
       ) : (
         <BranchScript

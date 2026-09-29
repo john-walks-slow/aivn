@@ -79,6 +79,9 @@ importers:
       vite:
         specifier: ^7.1.11
         version: 7.3.6(@types/node@26.6.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@26.6.3)(yaml@2.9.0)
 
   packages/core:
     devDependencies:

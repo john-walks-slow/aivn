@@ -74,13 +74,6 @@ export interface LineageSnapshot {
   createdAt: number;
 }
 
-export interface Bookmark {
-  id: string;
-  nodeId: string;
-  name: string;
-  createdAt: number;
-}
-
 /** 路线树视图（前端渲染用）：事件全集投影 + 路径标记，替代存读档的「历史即存档」。 */
 export interface LineageNodeView {
   id: string;
@@ -98,6 +91,9 @@ export interface LineageNodeView {
   editTargetId: string | undefined;
   /** rewrite 事件专有：重写粒度标注（line/beat）。 */
   granularity: string | undefined;
+  /** 剧本事件的 seq（say_start/narrate_start/scene/… 的序号）：与客户端 ScriptLine.seq 同尺，
+   *  路线树据此把谱系卡片精确对到剧本行上。player/ooc/edit/rewrite 无 seq。 */
+  seq: number | undefined;
 }
 
 export interface LineageView {
@@ -105,7 +101,6 @@ export interface LineageView {
   leafId: string | null;
   /** 当前分支的节点 id 链（root → leaf，序即演出顺序）：剧本视图直接照此渲染。 */
   pathIds: string[];
-  bookmarks: Bookmark[];
 }
 
 const EDITABLE_KINDS: ReadonlySet<string> = new Set(["say", "narrate", "thought"]);
@@ -115,7 +110,6 @@ export interface LineageStore {
   events: LineageEvent[];
   leafId: string | null;
   snapshots: LineageSnapshot[];
-  bookmarks: Bookmark[];
 }
 
 let nextIdCounter = 0;
@@ -142,7 +136,6 @@ export class LineageTree {
   private leaf: string | null = null;
   /** nodeId → 最近快照（一个节点保留一份，后存覆盖）。 */
   private readonly snapshotsByNode = new Map<string, LineageSnapshot>();
-  private readonly bookmarks = new Map<string, Bookmark>();
 
   get leafId(): string | null {
     return this.leaf;
@@ -167,7 +160,12 @@ export class LineageTree {
     return node;
   }
 
-  /** 原地编辑：追加 edit 事件覆盖目标行文本（当前分支，不产生新分支）。 */
+  /**
+   * 原地编辑：追加 edit 事件覆盖目标行文本。
+   *
+   * edit 挂在**被编辑行自己**之下（而非叶尖），于是「改这一句」= 从该行分岔重写：
+   * 新世界线停在这行、改写当拍生效，其后的剧情整段转为废弃分支（历史一条不删）。
+   */
   editInPlace(nodeId: string, newText: string): LineageEvent {
     const target = this.requireNode(nodeId);
     if (!EDITABLE_KINDS.has(target.kind)) {
@@ -175,7 +173,7 @@ export class LineageTree {
     }
     return this.attach({
       id: nextId(),
-      parentId: this.leaf,
+      parentId: target.id,
       kind: "edit",
       turn: this.nextTurn(),
       text: newText,
@@ -284,28 +282,7 @@ export class LineageTree {
     return new Set(this.ancestorChain(nodeId));
   }
 
-  /**
-   * 书签：命名节点标记（= 传统存档）。注意书签本身不自动快照——
-   * "谱系快照随书签保存"由编排器组合 addBookmark + saveSnapshot 完成；
-   * 无快照的书签在续演时走冷启动装配。
-   */
-  addBookmark(nodeId: string, name: string): Bookmark {
-    this.requireNode(nodeId);
-    const bookmark: Bookmark = { id: nextId(), nodeId, name, createdAt: Date.now() };
-    this.bookmarks.set(bookmark.id, bookmark);
-    return bookmark;
-  }
-
-  listBookmarks(): Bookmark[] {
-    return [...this.bookmarks.values()].sort((a, b) => a.createdAt - b.createdAt);
-  }
-
-  /** 摘除书签（只是标记，误删可再标；不动物理分支）。 */
-  removeBookmark(bookmarkId: string): boolean {
-    return this.bookmarks.delete(bookmarkId);
-  }
-
-  /** 路线树视图：全量节点（含废弃分支）+ 路径标记 + 书签（按 id 升序，父先于子）。 */
+  /** 路线树视图：全量节点（含废弃分支）+ 路径标记（父先于子）。 */
   describe(): LineageView {
     const onPath = this.pathSet();
     const childCount = new Map<string, number>();
@@ -328,12 +305,12 @@ export class LineageTree {
         children: childCount.get(event.id) ?? 0,
         editTargetId: event.editTargetId,
         granularity: event.payload?.granularity,
+        seq: typeof event.payload?.seq === "number" ? event.payload.seq : undefined,
       }));
     return {
       nodes,
       leafId: this.leaf,
       pathIds: this.ancestorChain(this.leaf),
-      bookmarks: this.listBookmarks(),
     };
   }
 
@@ -347,7 +324,6 @@ export class LineageTree {
       events: [...this.events.values()],
       leafId: this.leaf,
       snapshots: [...this.snapshotsByNode.values()],
-      bookmarks: [...this.bookmarks.values()],
     };
   }
 
@@ -356,11 +332,9 @@ export class LineageTree {
     for (const event of store.events) this.attach(event);
     this.leaf = store.leafId ?? store.events.at(-1)?.id ?? null;
     for (const snapshot of store.snapshots) this.snapshotsByNode.set(snapshot.nodeId, snapshot);
-    for (const bookmark of store.bookmarks) this.bookmarks.set(bookmark.id, bookmark);
     seedNextId([
       ...store.events.map((e) => e.id),
       ...store.snapshots.map((s) => s.id),
-      ...store.bookmarks.map((b) => b.id),
     ]);
   }
 

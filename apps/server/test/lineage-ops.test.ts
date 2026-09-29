@@ -76,7 +76,7 @@ function lastUserText(contexts: { messages: { role: string; content?: unknown }[
     .join("\n");
 }
 
-describe("P6 四原语 · 编排器", () => {
+describe("P6 导演操作 · 编排器", () => {
   it("原地编辑：不开新分支，谱系文本换成新台词并追加 edit 事件", async () => {
     const { orchestrator, tree } = await playedTwoBeats();
     const sayId = firstNodeOf(tree, "say");
@@ -119,21 +119,6 @@ describe("P6 四原语 · 编排器", () => {
     const view = orchestrator.lineageView();
     expect(view.nodes.filter((n) => n.kind === "say").length).toBeGreaterThanOrEqual(2);
     expect(view.pathIds.at(-1)).toBe(sayId);
-  });
-
-  it("跳转：回到开场节点后状态与停止点一并回退（同刻铁律）", async () => {
-    const { orchestrator, tree } = await playedTwoBeats();
-    const playerId = tree.materialize()[0]!.id;
-    const turnAfter = orchestrator.engineState.turn;
-
-    await orchestrator.jumpTo(playerId);
-
-    const state = orchestrator.runtimeState;
-    expect(state.events).toEqual([]); // 玩家行是元信息，不产出 IR 事件
-    // 挂载点停在拍中（玩家行之后还没演完）→ 给一个 pause，玩家按「继续」重演剩余
-    expect(state.lastStop).toEqual({ stopType: "pause" });
-    expect(state.epoch).toBe(1);
-    expect(orchestrator.engineState.turn).toBeLessThan(turnAfter);
   });
 
   it("句级重写：隐式分岔 + 立即重生成，新分支带 rewrite 标注", async () => {
@@ -181,28 +166,6 @@ describe("P6 四原语 · 编排器", () => {
     expect(orchestrator.lineageView().pathIds.at(-1)).not.toBe(sayId);
   });
 
-  it("书签：标记 + 路径快照；删除不动物理分支", async () => {
-    const { orchestrator, tree } = await playedTwoBeats();
-    const sayId = firstNodeOf(tree, "say");
-
-    const leafBefore = tree.leafId;
-    const eventsBefore = orchestrator.runtimeState.events.length;
-
-    const bookmark = orchestrator.addBookmark(sayId, "关键分歧点");
-
-    expect(bookmark.nodeId).toBe(sayId);
-    expect(orchestrator.lineageView().bookmarks).toHaveLength(1);
-    // 书签是纯标记：不拽回旧位置、不重放缓冲（与跳转正交）
-    expect(tree.leafId).toBe(leafBefore);
-    expect(orchestrator.runtimeState.events).toHaveLength(eventsBefore);
-    expect(orchestrator.currentEpoch).toBe(0);
-    // 标记处挂了状态快照：跳回该节点即可续演
-    expect(tree.latestSnapshotOnPath(sayId)).not.toBeNull();
-
-    orchestrator.removeBookmark(bookmark.id);
-    expect(orchestrator.lineageView().bookmarks).toHaveLength(0);
-  });
-
   it("演出进行中拒绝结构操作（不打断当前节拍）", async () => {
     const { orchestrator, tree } = await playedTwoBeats();
     const sayId = firstNodeOf(tree, "say");
@@ -233,6 +196,23 @@ describe("P6 rebuild · 谱系 → IR", () => {
       "narrate_end",
     ]);
     expect(events.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it("重放沿用节点原 seq（路线树锚点跨分岔不漂）", () => {
+    const tree = new LineageTree();
+    // 现场一行台词会占 3+ 个 seq（start + 多段文本 + end），锚点间距稀疏
+    tree.append("say", { text: "第一句", payload: { attrs: { id: "mio" }, seq: 5 } });
+    tree.append("say", { text: "第二句", payload: { attrs: { id: "koharu" }, seq: 20 } });
+
+    expect(lineageToEvents(tree.chainEvents(tree.leafId!)).map((e) => e.seq)).toEqual([5, 6, 7, 20, 21, 22]);
+  });
+
+  it("重放不倒退：老节点无 seq 时按顺序补号", () => {
+    const tree = new LineageTree();
+    tree.append("say", { text: "有锚点", payload: { attrs: { id: "mio" }, seq: 8 } });
+    tree.append("say", { text: "无锚点", payload: { attrs: { id: "mio" } } });
+
+    expect(lineageToEvents(tree.chainEvents(tree.leafId!)).map((e) => e.seq)).toEqual([8, 9, 10, 11, 12, 13]);
   });
 
   it("edit 事件在重放时改写目标行文本", () => {

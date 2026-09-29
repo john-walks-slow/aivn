@@ -10,7 +10,6 @@ import { type Api, type Model, type Static, type TSchema, Type } from "@earendil
 import {
   LineageTree,
   StageDslParser,
-  type Bookmark,
   type EngineStateSnapshot,
   type LineageEvent,
   type LineageView,
@@ -260,6 +259,8 @@ interface OpenLine {
   id?: string;
   text: string;
   attrs: Record<string, string>;
+  /** 该行首事件（say_start 等）的 seq：客户端 ScriptLine.seq 同尺，谱系↔剧本行的锚。 */
+  seq: number;
 }
 
 /**
@@ -556,9 +557,6 @@ export class PlaywrightOrchestrator {
   }
 
   /** 跳转：挂载点移到目标节点并重建上下文（只读回放，不重新生成）。 */
-  async jumpTo(nodeId: string): Promise<void> {
-    this.rebaseAt(nodeId, "已跳转到此节点");
-  }
 
   /** 分岔：从任意节点开新分支（不生成，玩家可在此继续行动或重演）。 */
   async forkTo(nodeId: string): Promise<void> {
@@ -602,34 +600,6 @@ export class PlaywrightOrchestrator {
         this.renderDirectorNote(note, true),
       ].join("\n\n"),
     );
-  }
-
-  /**
-   * 书签 = 传统存档：命名节点标记 + 在该节点挂状态快照。
-   *
-   * 纯标记：不移动挂载点、不重放缓冲（书签与跳转正交——D10；否则标个档会被拽回旧位置）。
-   */
-  addBookmark(nodeId: string, name: string): Bookmark {
-    const label = name.trim();
-    if (!label) throw new Error("书签名不能为空");
-    this.guardIdle();
-    const bookmark = this.opts.tree.addBookmark(nodeId, label);
-    const state = this.stateAt(nodeId);
-    this.opts.tree.saveSnapshotAt(
-      nodeId,
-      { ...state.engine, affinity: { ...state.engine.affinity }, flags: { ...state.engine.flags } },
-      { state: { ...state.stateFiles }, arcs: [...state.arcIds] },
-    );
-    this.flushLineageLog();
-    this.persist();
-    return bookmark;
-  }
-
-  /** 删除书签（不动物理分支——书签只是标记，误删可再标）。 */
-  removeBookmark(bookmarkId: string): void {
-    this.guardIdle();
-    this.opts.tree.removeBookmark(bookmarkId);
-    this.persist();
   }
 
   private guardIdle(): void {
@@ -873,7 +843,10 @@ export class PlaywrightOrchestrator {
       // prompt 异常路径可能不发 agent_end：兜底收束（正常路径 busy 已被 finishBeat 清零）
       if (this.busy) this.finishBeat();
       this.beatPending = false;
-      if (!this.busy) this.flushIdleWaiters();
+      if (!this.busy) {
+        this.send({ type: "beat_settled" });
+        this.flushIdleWaiters();
+      }
     }
   }
 
@@ -1015,7 +988,8 @@ export class PlaywrightOrchestrator {
     this.beatError = null;
     this.lastStop = stop;
     this.appendLineage("beat_end", {
-      payload: { reason: stop ? "stop" : "act_end" },
+      // seq 锚点：前端按它把行级事件切成一拍一张卡，且能精确跳到拍首行
+      payload: { reason: stop ? "stop" : "act_end", seq: this.seq },
     });
     // 谱系快照随 beat 收束保存（分岔/续演恢复用）：活跃状态文件 + arcs 引用（谱系级记忆）
     const engine = this.opts.engine;
@@ -1077,7 +1051,7 @@ export class PlaywrightOrchestrator {
     const sequenced: SequencedEvent = { seq: this.seq, event };
     this.events.push(sequenced);
     this.send({ type: "events", events: [sequenced] });
-    this.accumulateLineage(event);
+    this.accumulateLineage(event, this.seq);
     this.feedVoice(event, this.seq);
   }
 
@@ -1100,7 +1074,7 @@ export class PlaywrightOrchestrator {
   }
 
   /** StageEvent 流 → 行级谱系事件聚合（say 三段 → 一行）。 */
-  private accumulateLineage(event: StageEvent): void {
+  private accumulateLineage(event: StageEvent, seq: number): void {
     switch (event.kind) {
       case "say_start":
         this.openLine = {
@@ -1108,10 +1082,11 @@ export class PlaywrightOrchestrator {
           id: event.id,
           text: "",
           attrs: { id: event.id, ...(event.mood ? { mood: event.mood } : {}) },
+          seq,
         };
         return;
       case "narrate_start":
-        this.openLine = { kind: "narrate", text: "", attrs: {} };
+        this.openLine = { kind: "narrate", text: "", attrs: {}, seq };
         return;
       case "thought_start":
         this.openLine = {
@@ -1119,6 +1094,7 @@ export class PlaywrightOrchestrator {
           id: event.id,
           text: "",
           attrs: { id: event.id },
+          seq,
         };
         return;
       case "say_text":
@@ -1134,7 +1110,7 @@ export class PlaywrightOrchestrator {
         if (line) {
           this.appendLineage(line.kind, {
             text: line.text,
-            payload: { attrs: line.attrs },
+            payload: { attrs: line.attrs, seq: line.seq },
           });
           this.beatLines.push(line.text.slice(0, 200));
         }
@@ -1144,6 +1120,7 @@ export class PlaywrightOrchestrator {
         if (event.bg) this.opts.scene = event.bg;
         this.appendLineage("scene", {
           payload: {
+            seq,
             attrs: {
               bg: event.bg ?? "",
               ...pick(event, ["bgm", "ambient", "transition"]),
@@ -1154,6 +1131,7 @@ export class PlaywrightOrchestrator {
       case "actor":
         this.appendLineage("actor", {
           payload: {
+            seq,
             attrs: {
               id: event.id,
               ...pick(event, ["pos", "expression", "action"]),
@@ -1162,11 +1140,12 @@ export class PlaywrightOrchestrator {
         });
         return;
       case "sfx":
-        this.appendLineage("sfx", { payload: { attrs: { src: event.src } } });
+        this.appendLineage("sfx", { payload: { seq, attrs: { src: event.src } } });
         return;
       case "preload_asset":
         this.appendLineage("preload", {
           payload: {
+            seq,
             attrs: { type: event.type, prompt: event.prompt, id: event.id },
           },
         });
@@ -1183,7 +1162,7 @@ export class PlaywrightOrchestrator {
         return;
       case "cg":
         this.appendLineage("cg", {
-          payload: { attrs: { id: event.id, ...pick(event, ["caption"]) } },
+          payload: { seq, attrs: { id: event.id, ...pick(event, ["caption"]) } },
         });
         return;
       case "stop":
@@ -1194,6 +1173,7 @@ export class PlaywrightOrchestrator {
         };
         this.appendLineage("stop", {
           payload: {
+            seq,
             attrs: { type: event.stopType },
             ...(event.options ? { options: event.options } : {}),
           },

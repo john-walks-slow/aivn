@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { LineageTree, type LineageEvent } from "../src/index.js";
 
+/** 物化后取有台词的行（player 等无文本节点不进剧本）。 */
+function spoken(tree: LineageTree, fromLeaf?: string): (string | undefined)[] {
+  return tree
+    .materialize(fromLeaf)
+    .filter((n) => n.text !== undefined)
+    .map((n) => n.text);
+}
+
 function buildPlay(tree: LineageTree): { say1: LineageEvent; say2: LineageEvent } {
   const say1 = tree.append("say", { text: "……太慢了！不是约好立刻集合的吗？" });
   tree.append("player", { payload: { input: "抱歉，路上耽搁了。" } });
@@ -88,7 +96,7 @@ describe("行级事件与分支树", () => {
   });
 });
 
-describe("谱系快照与书签", () => {
+describe("谱系快照与编辑", () => {
   it("快照随分支走：路径上最近快照可恢复，旧分支看不到未来", () => {
     const tree = new LineageTree();
     const { say1, say2 } = buildPlay(tree);
@@ -117,14 +125,19 @@ describe("谱系快照与书签", () => {
     expect(tree.latestSnapshotOnPath()).toBeNull();
   });
 
-  it("书签挂节点，列表按时间排序", () => {
+  it("编辑旧行 = 从该行分岔重写：其后剧情转废弃分支", () => {
     const tree = new LineageTree();
-    const { say1, say2 } = buildPlay(tree);
-    tree.addBookmark(say1.id, "初遇");
-    tree.addBookmark(say2.id, "和解");
-    const marks = tree.listBookmarks();
-    expect(marks.map((m) => m.name)).toEqual(["初遇", "和解"]);
-    expect(marks[1]!.nodeId).toBe(say2.id);
+    const { say1 } = buildPlay(tree);
+    const tail = tree.append("narrate", { text: "夜风穿过走廊。" });
+
+    const edit = tree.editInPlace(say1.id, "改过的第一句");
+
+    expect(edit.parentId).toBe(say1.id);
+    // 改写当拍立刻生效，世界线停在被改的那行
+    expect(spoken(tree)).toEqual(["改过的第一句"]);
+    // 其后剧情原样留在树上作废弃分支，历史一条不删
+    expect(tree.describe().nodes.find((n) => n.id === tail.id)?.onPath).toBe(false);
+    expect(spoken(tree, tail.id)).toContain("夜风穿过走廊。");
   });
 });
 
@@ -160,14 +173,14 @@ describe("持久化往返", () => {
     expect(regen.parentId).toBe(say1.id);
   });
 
-  it("快照与书签跨进程存活", () => {
+  it("快照与 seq 锚点跨进程存活", () => {
     const tree = new LineageTree();
-    const { say1, say2 } = buildPlay(tree);
+    const say1 = tree.append("say", { text: "……太慢了！", payload: { seq: 11 } });
+    const say2 = tree.append("say", { text: "算了，上来吧。", payload: { seq: 19 } });
     const snap = tree.saveSnapshot(
       { turn: 2, affinity: { mio: 10 }, flags: {} },
       { state: { scene: "走廊" }, arcs: ["arc1"] },
     );
-    tree.addBookmark(say1.id, "初遇");
 
     const rebuilt = new LineageTree();
     rebuilt.load(tree.export());
@@ -176,7 +189,9 @@ describe("持久化往返", () => {
     expect(restored?.id).toBe(snap.id);
     expect(restored?.engine.affinity).toEqual({ mio: 10 });
     expect(restored?.memory.arcs).toEqual(["arc1"]);
-    expect(rebuilt.listBookmarks().map((b) => b.name)).toEqual(["初遇"]);
+    // 剧本事件的 seq 锚点随事件流往返：路线树据此把每张卡对到剧本首行
+    expect(rebuilt.describe().nodes.find((n) => n.id === say1.id)?.seq).toBe(11);
+    expect(rebuilt.describe().nodes.find((n) => n.id === say2.id)?.seq).toBe(19);
   });
 
   it("重启后 id 计数器播种，新 id 不与已有碰撞", () => {

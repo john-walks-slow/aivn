@@ -1,0 +1,145 @@
+import { describe, expect, it } from "vitest";
+import type { LineageNodeView, LineageView } from "@stage-ai/core";
+import { buildBeats, firstLineOf } from "./beats.js";
+import type { ScriptLine } from "./script.js";
+
+type NodeSpec = [
+  id: string,
+  kind: LineageNodeView["kind"],
+  seq?: number,
+  text?: string,
+  onPath?: boolean,
+  attrs?: Record<string, string>,
+];
+
+function view(specs: NodeSpec[], leafId: string): LineageView {
+  const nodes = specs.map(([id, kind, seq, text, onPath = true, attrs = {}], index) => ({
+    id,
+    parentId: index > 0 ? specs[index - 1]![0] : null,
+    turn: 1,
+    kind,
+    text: text ?? "",
+    attrs,
+    createdAt: 1_700_000_000_000 + index,
+    onPath,
+    children: 0,
+    editTargetId: undefined,
+    granularity: undefined,
+    seq,
+  }));
+  return { nodes, leafId, pathIds: nodes.filter((n) => n.onPath).map((n) => n.id) };
+}
+
+function line(key: string, seq: number, text: string): ScriptLine {
+  return { key, seq, text } as ScriptLine;
+}
+
+describe("buildBeats 一拍一卡", () => {
+  it("beat_end 收束、换场景不切拍", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "say", 1, "第一句"],
+          ["b", "scene", 4, undefined, true, { bg: "bg-rooftop" }],
+          ["c", "say", 5, "第二句"],
+          ["d", "beat_end"],
+          ["e", "say", 9, "下一拍"],
+          ["f", "beat_end"],
+        ],
+        "f",
+      ),
+      [],
+    );
+    expect(cards.map((card) => card.id)).toEqual(["a", "e"]);
+    expect(cards[0]!.startSeq).toBe(1);
+    expect(cards[1]!.startSeq).toBe(9);
+    expect(cards[0]!.sceneBg).toBe("bg-rooftop");
+    expect(cards[0]!.nodes).toHaveLength(4);
+  });
+
+  it("挂回祖先即分岔口：新卡 depth+1、废弃分支标记", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "say", 1, "第一句"],
+          ["b", "say", 5, "第二句"],
+          ["c", "beat_end"],
+          ["d", "say", 6, "分出去的版本", false],
+          ["e", "beat_end", undefined, undefined, false],
+          ["f", "say", 12, "原路继续"],
+          ["g", "beat_end"],
+        ],
+        "g",
+      ),
+      [],
+    );
+    expect(cards.map((card) => card.id)).toEqual(["a", "d", "f"]);
+    expect(cards[1]!.parentId).toBe("a");
+    expect(cards[1]!.depth).toBe(1);
+    expect(cards[1]!.isAbandoned).toBe(true);
+    expect(cards[0]!.isAbandoned).toBe(false);
+    expect(cards[2]!.isLeaf).toBe(true);
+  });
+
+  it("分岔卡的后继卡从新行起算，不受前一拍的废弃尾巴影响", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "say", 1, "开场"],
+          ["b", "beat_end"],
+          ["c", "say", 4, "原第二拍"],
+          ["d", "say", 8, "分岔点", false],
+          ["e", "beat_end", undefined, undefined, false],
+          ["f", "say", 9, "新第二拍"],
+          ["g", "beat_end"],
+        ],
+        "g",
+      ),
+      [line("l1", 1, "开场"), line("l2", 4, "原第二拍"), line("l3", 9, "新第二拍")],
+    );
+    expect(cards.map((card) => [card.id, card.startSeq])).toEqual([
+      ["a", 1],
+      ["c", 4],
+      ["f", 9],
+    ]);
+    // 活动路径上的卡片摘要取该拍首行原文
+    expect(cards[0]!.preview).toBe("开场");
+    expect(cards[2]!.preview).toBe("新第二拍");
+  });
+
+  it("废弃分支的行已不在缓冲里 → 没有可回看目标", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "say", 1, "开场"],
+          ["b", "beat_end"],
+          ["c", "say", 4, "旧版本", false],
+          ["d", "beat_end", undefined, undefined, false],
+        ],
+        "b",
+      ),
+      [line("l1", 1, "开场")],
+    );
+    expect(cards[0]!.isAbandoned).toBe(false);
+    expect(firstLineOf(cards[0]!, [line("l1", 1, "开场")])?.key).toBe("l1");
+    expect(firstLineOf(cards[1]!, [line("l1", 1, "开场")])).toBeNull();
+  });
+
+  it("preload/edit 不进卡，rewrite 断开后续", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "say", 1, "开场"],
+          ["p", "preload", 2],
+          ["b", "beat_end"],
+          ["r", "rewrite", undefined, "重写", false],
+          ["c", "say", 9, "重演"],
+          ["d", "beat_end"],
+        ],
+        "d",
+      ),
+      [],
+    );
+    expect(cards.map((card) => card.id)).toEqual(["a", "c"]);
+  });
+});
