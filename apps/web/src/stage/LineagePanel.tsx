@@ -63,13 +63,24 @@ export function RouteTree(
 
   return (
     <div className="route-screen">
-      <div className="route-hint">
-        <span className="muted">路线</span>
-        <span className="muted">从左到右是时间；分岔点往下扇开。点节点回看那一拍</span>
-        <button className="ghost-btn" onClick={props.onReload}>
-          刷新
-        </button>
-      </div>
+      <header className="panel-bar">
+        <span className="panel-title">路线</span>
+        <span className="muted panel-note">从左到右是时间；分岔点往下扇开。点节点回看那一拍</span>
+        <div className="panel-bar-actions">
+          <button type="button" className="ghost-btn small-btn" onClick={props.onReload}>
+            <Icon name="refresh" size={14} />
+            刷新
+          </button>
+          <button
+            type="button"
+            className="ghost-btn small-btn icon-btn icon-btn-sm"
+            onClick={props.onBack}
+            title="关闭路线"
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      </header>
       {props.error && <div className="error-banner">{props.error}</div>}
       {!props.view ? (
         <div className="overlay">读取路线…</div>

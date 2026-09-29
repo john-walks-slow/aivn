@@ -167,6 +167,31 @@ export function StageScreen({ playId }: { playId: string }) {
   const lineDone = playback.current === null || playback.shownLength >= playback.current.text.length;
   const panelReady = !busy && playback.exhausted && lineDone;
 
+  // 「继续」不再单列按钮：等新内容时（pause 停止点）点舞台即开新拍，生成中沿用同一套 pending 反馈。
+  const canContinue = panelReady && stage.stop?.stopType === "pause";
+  const continued = useRef(false);
+  useEffect(() => {
+    if (!canContinue) continued.current = false;
+  }, [canContinue]);
+  const continueBeat = useCallback((): void => {
+    // 一次点击只发一条：连点两下第二条会撞上服务端的 engaged，被回一条无来由的报错。
+    if (continued.current) return;
+    continued.current = true;
+    stage.sendContinue();
+  }, [stage.sendContinue]);
+
+  // 三个浮层都是 z-index 压在顶栏之上的，关掉它们的自然动作是 Esc。
+  useEffect(() => {
+    if (view === "stage" && !workshop) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape") return;
+      if (workshop) setWorkshop(null);
+      else setView("stage");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [view, workshop]);
+
   // 谱系定期拉取：路线视图开着时看得到直播的树；舞台停在停止点上也拉——
   // 此刻这一拍的事件才刚落库，导演栏的锚点要指得准。
   const { reload: reloadLineage } = lineage;
@@ -246,6 +271,8 @@ export function StageScreen({ playId }: { playId: string }) {
             hasVoice={hasVoice}
             onUnlock={unlockVoice}
             onChrome={setChrome}
+            canContinue={canContinue}
+            onContinue={continueBeat}
             overlay={
               panelReady ? (
                 <StopPanel
@@ -266,6 +293,7 @@ export function StageScreen({ playId }: { playId: string }) {
         )
       ) : view === "backlog" ? (
         <BacklogView
+          playId={playId}
           entries={playback.history}
           names={stage.names}
           headKey={playback.current?.key ?? null}
@@ -281,6 +309,7 @@ export function StageScreen({ playId }: { playId: string }) {
           onEdit={edit}
           onRewrite={rewrite}
           onFork={fork}
+          onClose={() => setView("stage")}
         />
       ) : (
         <RouteTree

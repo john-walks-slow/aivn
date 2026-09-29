@@ -386,8 +386,16 @@ export class PlayHouse {
       onLineageEvent: (event) => void store.appendEvent(event),
       // 透传落盘 Promise：whenIdle 要等它落地，重建 runtime 才敢 loadSession
       persist: (): Promise<void> =>
-        store.saveSession(tree, engine, orchestrator.currentScene, orchestrator.runtimeState),
+        store.saveSession(
+          tree,
+          engine,
+          orchestrator.currentScene,
+          orchestrator.runtimeState,
+          orchestrator.history,
+        ),
       restored,
+      // 重启续演：历史从上次落盘回灌，否则第一次落盘就把重启前的记录抹成空白
+      restoredHistory: await store.loadHistory(),
       seed,
     });
     // 工坊（D9）：独立实例，与演出互不干扰；写盘后按需重建 runtime（保存即生效）

@@ -29,7 +29,8 @@ const trap = {
  * 停止点（玩家主权的三种形态，P6.5）：
  * - choice：舞台中央悬浮的选肢卡片，数字键 1..9 直选，选过的打勾留痕；
  * - free：对话框形态的入戏输入（可 LLM 润色，撤销保原稿）；
- * - pause：只在编排器造出来时出现（拍中分岔被截断 / 空拍报错），给一个「继续」重开一拍；
+ * - pause：只在编排器造出来时出现（拍中分岔被截断 / 空拍报错）——不出按钮，
+ *   玩家点舞台即表态续写开新拍（见 StageTheater.onStageClick）；
  * - 幕末（beat_done 无 stop）：黑场上的「下一幕」按钮——这一拍戏已经讲完，
  *   下一幕不在剧本里，所以只有这一个出口，点了才开新拍。
  * 自由输入是从选项卡点开的，有一个返回键——选了不说的自由，选项还摆在那里。
@@ -190,18 +191,10 @@ export function StopPanel({
         </footer>
       )}
 
-      {/* pause 只由编排器造出（拍中截断 / 空拍报错），这里才是「继续」的合法出场。 */}
-      {stop?.stopType === "pause" && !freeOpen && (
-        <footer className="stop-panel" {...trap}>
-          <div className="continue-box">
-            <button type="button" onClick={onContinue} disabled={disabled} className="primary">
-              继续
-            </button>
-          </div>
-        </footer>
-      )}
-
-      {/* 幕末：黑场 + 下一幕。整个面板盖住舞台，视觉上就是幕与幕之间的黑场。 */}
+      {/* pause（拍中截断 / 空拍报错）不再单列「继续」按钮：点舞台就是继续，
+          与翻下一句同一个动作，生成中沿用同一套 pending/streaming 反馈。 */}
+      {/* 幕末：黑场 + 下一幕。整个面板盖住舞台，视觉上就是幕与幕之间的黑场。
+          这一出留着自己的按钮：幕末没有台词可点，「下一幕」是全屏黑场里唯一的出口。 */}
       {isActEnd && !stop && !freeOpen && (
         <footer className="act-curtain">
           <button type="button" className="act-next" onClick={onContinue} disabled={disabled}>
