@@ -75,7 +75,7 @@ export function CraftPanel({ playId }: { playId: string }) {
 
       <footer className="craft-foot muted small">
         {state === "saved" ? (
-          <span className="craft-saved">已保存——下一拍起生效（演出中会等当前这一拍拍完）。</span>
+          <span className="craft-saved">已保存——下一拍起生效（剧作家正在写的话，会等这一拍拍完）。</span>
         ) : (
           <span>保存后重建剧作家，下一拍按新口径写。</span>
         )}

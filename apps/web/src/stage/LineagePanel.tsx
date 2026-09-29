@@ -85,7 +85,7 @@ export function RouteTree(
       {!props.view ? (
         <div className="overlay">读取路线…</div>
       ) : cards.length === 0 ? (
-        <p className="muted route-empty">还没有历史——演出几拍后这里会长出路线树。</p>
+        <p className="muted route-empty">还没有历史——走过几拍之后，这里会长出路线树。</p>
       ) : (
         <>
           <RouteCanvas

@@ -132,7 +132,7 @@ export function SettingsScreen() {
               hint={
                 settings.model.apiKeySet
                   ? "留空或保持掩码即不改；输入新值即替换"
-                  : "尚未配置——不填则演出会 401"
+                  : "尚未配置——不填则播放会 401"
               }
             >
               <input
@@ -213,7 +213,7 @@ export function SettingsScreen() {
           </Group>
 
           <Group title="语音">
-            <Field label="启用语音" hint="关掉不合成也不占配额；文字永远先行，语音不阻塞演出">
+            <Field label="启用语音" hint="关掉不合成也不占配额；文字永远先行，语音不阻塞剧情">
               <input
                 type="checkbox"
                 checked={draft.tts.enabled}

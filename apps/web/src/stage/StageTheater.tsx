@@ -299,7 +299,7 @@ export function StageTheater({
         )}
         <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
           {shown ||
-            (view ? "" : live && exhausted ? "剧作家正在落笔…" : "（点击开始演出）")}
+            (view ? "" : live && exhausted ? "剧作家正在落笔…" : "（点一下开始）")}
           {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
         </p>
         {/* 导演栏：四个原语 + 重听/自动，全在对话界面内就地完成，不跳视图 */}
@@ -326,7 +326,7 @@ export function StageTheater({
             <button
               type="button"
               className={`dir-btn ${action === "ooc" ? "on" : ""}`}
-              title={oocQueued ? "导演注已入队（下一拍起效）" : "导演注（OOC）：随时调整演出方向"}
+              title={oocQueued ? "导演注已入队（下一拍起效）" : "导演注（OOC）：随时告诉剧作家接下来该怎么写"}
               onClick={(e) => {
                 e.stopPropagation();
                 setAction(action === "ooc" ? null : "ooc");
@@ -409,7 +409,7 @@ export function StageTheater({
             onTouchEnd={(e) => e.stopPropagation()}
           >
             <div className="director-hint">
-              {action === "ooc" && "导演注：下一拍起效，不打断当前演出"}
+              {action === "ooc" && "导演注：下一拍起效，不打断当前这一拍"}
               {action === "edit" && "就地改这一句，改完接着演，不重演"}
               {action === "rewrite" && "重写这一幕（留空则按原设定重来）"}
             </div>
@@ -420,7 +420,7 @@ export function StageTheater({
                   ? "改写这句台词…"
                   : action === "rewrite"
                     ? "想换什么方向？（可留空）"
-                    : "调整接下来的演出方向…"
+                    : "想让剧作家接下来怎么写…"
               }
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submitAction()}
@@ -453,7 +453,7 @@ export function StageTheater({
           <span className="voice-unlock-icon">
             <Icon name="volume" size={34} />
           </span>
-          <span>点击开启语音，进入剧场</span>
+          <span>点一下开启语音</span>
         </div>
       )}
     </div>
