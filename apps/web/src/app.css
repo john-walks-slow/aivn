@@ -1589,24 +1589,6 @@ select:focus {
   font-size: 13px;
 }
 
-.lineage-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px 10px;
-  border-top: 1px dashed var(--line);
-}
-
-.lineage-inline-input input {
-  width: 150px;
-  padding: 4px 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  font: inherit;
-  font-size: 13px;
-}
-
 .lineage-editor {
   display: flex;
   flex: 1 1 100%;
@@ -1690,8 +1672,13 @@ select:focus {
   fill: var(--accent);
 }
 
-.route-node {
+/* 卡面连工具条一起定位；卡面自己是 relative，背景图与纱才有依托。 */
+.route-node-wrap {
   position: absolute;
+}
+
+.route-node {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1703,7 +1690,6 @@ select:focus {
   box-shadow: var(--shadow);
   font: inherit;
   text-align: left;
-  cursor: pointer;
   overflow: hidden;
 }
 
@@ -1759,18 +1745,43 @@ select:focus {
   border-left-style: solid;
 }
 
-.route-node.dead:hover,
-.route-node.active {
+.route-node.dead:hover {
   opacity: 1;
 }
 
-.route-node.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+/* 卡下方的工具条：常驻但压着存在感，鼠标移到这张卡上才完全显形——
+   树上一眼扫过去是台词，不是按钮；盯住哪张卡，它自己那一条工具条才亮出来。 */
+.route-node-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  height: 28px;
+  padding: 0 2px;
+  opacity: 0.55;
+  transition: opacity 0.12s ease;
 }
 
-.route-node.active .route-node-bg {
+.route-node-wrap:hover .route-node-tools,
+.route-node-tools:focus-within {
+  opacity: 1;
+}
+
+.route-node-wrap.dead .route-node-tools {
   opacity: 0.3;
+}
+
+.route-node-tool {
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.route-node-tool:hover:not(:disabled) {
+  border-color: var(--line);
+  background: var(--panel);
 }
 
 /* 节点正文就是这一拍的摘要：拍号、支线、进行中这类状态说明一律不进节点。 */
@@ -1876,37 +1887,6 @@ select:focus {
 
 .route-empty {
   padding: 24px;
-}
-
-.route-inspector {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 40%;
-  overflow-y: auto;
-  padding: 8px 12px 10px;
-  border-top: 1px solid var(--line);
-  background: var(--panel);
-}
-
-.route-inspector-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.route-inspector-text {
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.beat-tile-warn {
-  flex: 1 1 100%;
-  margin: 2px 0 0;
-  font-size: 11.5px;
-  color: var(--ink-faint);
 }
 
 /* ── 设置面板（P6）───────────── */

@@ -3,6 +3,11 @@ import type { BeatCard } from "./beats.js";
 /** 节点盒子：固定尺寸才能算整齐的树，卡面内容超出就截断。 */
 export const NODE_W = 208;
 export const NODE_H = 92;
+/** 卡面正下方的工具条（跳转/分岔）：两个动词直接长在每张卡下面，不另开检视栏。 */
+export const NODE_TOOL_H = 28;
+/** 一个节点连工具条一起占多高——两条轴的步长、连线端点、画布边界都得按它算，
+ *  否则纵向流向下工具条正好落在下一张卡的位置上。 */
+export const NODE_BLOCK_H = NODE_H + NODE_TOOL_H;
 /** 流向、兄弟两个方向上相邻盒子之间的空隙。 */
 export const GAP = 64;
 
@@ -50,8 +55,8 @@ export function layoutRoute(cards: readonly BeatCard[], dir: RouteDir = "horizon
   roots.sort(byOrder);
   for (const [, list] of childrenOf) list.sort(byOrder);
 
-  const along = dir === "horizontal" ? NODE_W + GAP : NODE_H + GAP;
-  const cross = dir === "horizontal" ? NODE_H + GAP : NODE_W + GAP;
+  const along = dir === "horizontal" ? NODE_W + GAP : NODE_BLOCK_H + GAP;
+  const cross = dir === "horizontal" ? NODE_BLOCK_H + GAP : NODE_W + GAP;
   const put = (entry: PlacedCard, level: number, crossPos: number): void => {
     if (dir === "horizontal") {
       entry.x = level * along;
@@ -112,7 +117,7 @@ export function layoutRoute(cards: readonly BeatCard[], dir: RouteDir = "horizon
   }
 
   const width = Math.max(...placed.map((p) => p.x + NODE_W), NODE_W);
-  const height = Math.max(...placed.map((p) => p.y + NODE_H), NODE_H);
+  const height = Math.max(...placed.map((p) => p.y + NODE_BLOCK_H), NODE_BLOCK_H);
   return { placed, edges, width, height };
 }
 
@@ -126,7 +131,7 @@ function edgePath(parent: PlacedCard, child: PlacedCard, dir: RouteDir): string 
     return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
   }
   const x1 = parent.x + NODE_W / 2;
-  const y1 = parent.y + NODE_H;
+  const y1 = parent.y + NODE_BLOCK_H;
   const x2 = child.x + NODE_W / 2;
   const y2 = child.y;
   const dy = Math.max((y2 - y1) / 2, 12);

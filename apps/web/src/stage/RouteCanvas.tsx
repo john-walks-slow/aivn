@@ -2,15 +2,17 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Icon } from "../ui/Icon.js";
 import type { AssetIndex } from "./assets.js";
 import type { BeatCard } from "./beats.js";
-import { layoutRoute, NODE_H, NODE_W, type PlacedCard, type RouteDir } from "./routeTree.js";
+import type { LineageOps } from "./LineagePanel.js";
+import { layoutRoute, NODE_BLOCK_H, NODE_H, NODE_W, type PlacedCard, type RouteDir } from "./routeTree.js";
 
 /** 停止点在角上的标记：选肢 / 自由表态，一眼看出这一拍是玩家拍板还是模型自己演完。 */
 const STOP_MARK: Record<string, string> = { choice: "❖", free: "✎" };
 
 interface CanvasProps {
   cards: readonly BeatCard[];
-  activeId: string | null;
-  onSelect: (card: BeatCard) => void;
+  ops: LineageOps;
+  /** 演出进行中：结构性操作会腰斩这一幕，按钮置灰。 */
+  busy: boolean;
   onBack: () => void;
   names: Readonly<Record<string, string>>;
   /** 素材索引：卡片的背景氛围从这儿取，取不到就是纯文字卡。 */
@@ -27,7 +29,7 @@ interface Camera {
   k: number;
 }
 
-export function RouteCanvas({ cards, activeId, onSelect, onBack, names, index }: CanvasProps) {
+export function RouteCanvas({ cards, ops, busy, onBack, names, index }: CanvasProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ px: number; py: number; cam: Camera } | null>(null);
   /** 玩家自己动过镜头（拖/缩/看全树）吗——动过就不再自动取景抢镜头。 */
@@ -37,8 +39,7 @@ export function RouteCanvas({ cards, activeId, onSelect, onBack, names, index }:
   const layout = layoutRoute(cards, dir);
   const { placed, edges, width, height } = layout;
 
-  // 方向看窗口：宽屏横着读时间、竖屏从上往下。刻意不看容器——检视栏一弹出容器就变矮，
-  // 跟着容器判会让树在点开详情的瞬间整个翻过去
+  // 方向看窗口：宽屏横着读时间、竖屏从上往下
   useEffect(() => {
     const sync = (): void => setDir(window.innerWidth >= window.innerHeight ? "horizontal" : "vertical");
     sync();
@@ -78,8 +79,7 @@ export function RouteCanvas({ cards, activeId, onSelect, onBack, names, index }:
     setCamera({ k, x: (box.width - width * k) / 2, y: (box.height - height * k) / 2 });
   }, [width, height]);
 
-  // 取景跟着视口走：开合检视栏、转屏、缩窗口都重新取景；
-  // 玩家一旦自己拖过/缩过（manual），之后就不再抢镜头。
+  // 取景跟着视口走：转屏、缩窗口都重新取景；玩家一旦自己拖过/缩过（manual），之后就不再抢镜头。
   useLayoutEffect(() => {
     const el = frameRef.current;
     if (!el) return;
@@ -136,7 +136,7 @@ export function RouteCanvas({ cards, activeId, onSelect, onBack, names, index }:
     });
   };
 
-  /** 把某一拍送到视野中央（「跳到最新」用）。点节点不挪镜头——点得到就说明已经看得见。 */
+  /** 把某一拍送到视野中央（「跳到最新」用）。 */
   const focusCard = useCallback(
     (card: BeatCard) => {
       const target = placed.find((p) => p.card.id === card.id);
@@ -145,7 +145,7 @@ export function RouteCanvas({ cards, activeId, onSelect, onBack, names, index }:
       setCamera((cur) => ({
         k: cur.k,
         x: box.width / 2 - (target.x + NODE_W / 2) * cur.k,
-        y: box.height / 2 - (target.y + NODE_H / 2) * cur.k,
+        y: box.height / 2 - (target.y + NODE_BLOCK_H / 2) * cur.k,
       }));
     },
     [placed],
@@ -156,9 +156,8 @@ export function RouteCanvas({ cards, activeId, onSelect, onBack, names, index }:
     const leaf = cards.find((c) => c.isLeaf);
     if (!leaf) return;
     manual.current = true; // 玩家点名要去那儿，之后的视口变化别再把镜头拽回根
-    onSelect(leaf);
     focusCard(leaf);
-  }, [cards, onSelect, focusCard]);
+  }, [cards, focusCard]);
 
   return (
     <div className="route-frame">
@@ -201,8 +200,8 @@ export function RouteCanvas({ cards, activeId, onSelect, onBack, names, index }:
               placed={p}
               names={names}
               index={index}
-              active={p.card.id === activeId}
-              onSelect={() => onSelect(p.card)}
+              ops={ops}
+              busy={busy}
             />
           ))}
         </div>
@@ -214,7 +213,7 @@ export function RouteCanvas({ cards, activeId, onSelect, onBack, names, index }:
               <Icon name="back" />
             </button>
             <span className="muted route-hint">
-              {dir === "horizontal" ? "从左到右是时间" : "从上到下是时间"} · 分岔点往下扇开 · 点节点看详情，检视栏里「跳到这里」把世界线落到它身上
+              {dir === "horizontal" ? "从左到右是时间" : "从上到下是时间"} · 分岔点往下扇开 · 每张卡下面就是它的去向
             </span>
           </div>
           <div className="route-overlay-bottom">
@@ -244,18 +243,23 @@ export function RouteCanvas({ cards, activeId, onSelect, onBack, names, index }:
   );
 }
 
+/**
+ * 一张卡 = 卡面（谁说了什么）+ 正下方的工具条（跳转 / 分岔）。
+ * 没有检视栏：想对哪一段动手指，就在那一段自己的卡上动手，不用先去点开它。
+ * 跳转 = 把世界线挂到这张卡上，不生成内容；分岔 = 退到这张卡之前重写并重新生成。
+ */
 function Node({
   placed,
   names,
   index,
-  active,
-  onSelect,
+  ops,
+  busy,
 }: {
   placed: PlacedCard;
   names: Readonly<Record<string, string>>;
   index: AssetIndex | null;
-  active: boolean;
-  onSelect: () => void;
+  ops: LineageOps;
+  busy: boolean;
 }) {
   const { card } = placed;
   const cls = [
@@ -263,7 +267,6 @@ function Node({
     card.isAbandoned ? "dead" : "",
     card.onPath ? "live" : "",
     card.isLeaf ? "here" : "",
-    active ? "active" : "",
     card.stopType ? "has-mark" : "",
   ]
     .filter(Boolean)
@@ -271,23 +274,43 @@ function Node({
   const who = card.speakers.map((id) => names[id] ?? id).join("、");
   const text = card.preview || "（无台词）";
   const bg = index?.bg(card.sceneBg) ?? null;
+  const hint = busy ? "剧作家正在写，暂时不能动这一段" : "";
 
   return (
-    <button
-      className={cls}
-      style={{ left: placed.x, top: placed.y, width: NODE_W, minHeight: NODE_H }}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect();
-      }}
-      title={text}
+    <div
+      className={`route-node-wrap${card.isAbandoned ? " dead" : ""}`}
+      style={{ left: placed.x, top: placed.y, width: NODE_W }}
     >
-      {bg && <img className="route-node-bg" src={bg} alt="" aria-hidden />}
-      <span className="route-node-text">
-        {who && <span className="route-node-who">{who}：</span>}
-        {text}
-      </span>
-      {card.stopType && <span className="route-node-mark">{STOP_MARK[card.stopType]}</span>}
-    </button>
+      <div className={cls} style={{ minHeight: NODE_H }} title={text}>
+        {bg && <img className="route-node-bg" src={bg} alt="" aria-hidden />}
+        <span className="route-node-text">
+          {who && <span className="route-node-who">{who}：</span>}
+          {text}
+        </span>
+        {card.stopType && <span className="route-node-mark">{STOP_MARK[card.stopType]}</span>}
+      </div>
+      <div className="route-node-tools">
+        <button
+          type="button"
+          className="ghost-btn btn-icon route-node-tool"
+          disabled={busy}
+          title={hint || "跳到这里：世界线落到这一段，不生成新内容"}
+          onClick={() => ops.jump(card.id)}
+        >
+          <Icon name="locate" />
+          跳到这里
+        </button>
+        <button
+          type="button"
+          className="ghost-btn btn-icon route-node-tool"
+          disabled={busy}
+          title={hint || "从这一段分岔：另开一条线重写，它之后的剧情留作旧分支"}
+          onClick={() => ops.branch(card.id, "beat")}
+        >
+          <Icon name="fork" />
+          分岔
+        </button>
+      </div>
+    </div>
   );
 }
