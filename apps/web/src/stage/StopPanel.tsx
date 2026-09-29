@@ -50,22 +50,6 @@ export function StopPanel({
   const options = stop?.stopType === "choice" ? (stop.options ?? []) : [];
   const choosing = options.length > 0 && !freeOpen;
 
-  // 数字键/字母键直选（1..9）；输入框里打字不算。
-  useEffect(() => {
-    if (!choosing || disabled) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const el = document.activeElement;
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
-      const n = Number(e.key);
-      if (!Number.isInteger(n) || n < 1 || n > options.length) return;
-      e.preventDefault();
-      onChoice(n - 1);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [choosing, disabled, options.length, onChoice]);
-
   const submitFree = (): void => {
     const text = draft.trim();
     if (text) {
@@ -110,9 +94,6 @@ export function StopPanel({
               disabled={disabled}
               onClick={() => onChoice(index)}
             >
-              <span className="choice-key" aria-hidden>
-                {index + 1}
-              </span>
               <span className="choice-text">{option.text}</span>
               {seenChoices?.has(option.text) && <span className="choice-seen">✓ 已选过</span>}
             </button>
@@ -124,9 +105,6 @@ export function StopPanel({
             onClick={() => setFreeOpen(true)}
             title="不说选项，自己写一句"
           >
-            <span className="choice-key" aria-hidden>
-              ✍
-            </span>
             <span className="choice-text">自由发挥…</span>
           </button>
         </div>

@@ -95,6 +95,7 @@ export function StageTheater({
   const [chrome, setChrome] = useState(true); // 舞台操作条显隐（沉浸模式）
   const [idleChrome, setIdleChrome] = useState(false); // 久未操作后自动淡出操作条
   const [backlogOpen, setBacklogOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const chromeVisible = chrome && !idleChrome;
   // 任何一次舞台交互都算「有人在看」：操作条回来，并重置自动淡出计时。
   const poke = useCallback((): void => {
@@ -233,87 +234,105 @@ export function StageTheater({
     >
       <header className={`theater-bar ${chrome && !idleChrome ? "" : "chrome-hidden"}`} onPointerEnter={poke}>
         <button
-          className="ghost-btn"
+          className="bar-btn"
           onClick={(e) => {
             e.stopPropagation();
             onBack();
           }}
         >
-          ← 标题
+          返回
         </button>
-        <span className="theater-scene">{visual.bg ?? "…"}</span>
         <span className="theater-actions">
           {voiceAvailable && (
             <button
-              className={`ghost-btn ${voiceOn ? "active" : ""}`}
+              className={`bar-btn ${voiceOn ? "on" : ""}`}
               title={voiceOn ? "语音开（点击静音）" : "语音关（点击开启）"}
               onClick={(e) => {
                 e.stopPropagation();
                 onToggleVoice();
               }}
             >
-              {voiceOn ? "🔊 语音" : "🔇 静音"}
+              语音
             </button>
           )}
           <button
-            className={`ghost-btn ${playback.auto ? "active" : ""}`}
+            className={`bar-btn ${playback.auto ? "on" : ""}`}
             onClick={(e) => {
               e.stopPropagation();
               playback.setAuto(!playback.auto);
             }}
           >
-            自动 {playback.auto ? "开" : "关"}
+            自动
           </button>
           <button
-            className="ghost-btn"
-            title="回顾：翻看已经说过的台词（L / 上滑）"
+            className="bar-btn"
+            aria-expanded={moreOpen}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMoreOpen((open) => !open);
+            }}
+          >
+            {moreOpen ? "收起" : "更多"}
+          </button>
+        </span>
+      </header>
+
+      {moreOpen && chrome && !idleChrome && (
+        <div className="theater-more" onPointerEnter={poke}>
+          <button
+            className="bar-btn"
             onClick={(e) => {
               e.stopPropagation();
               setBacklogOpen(true);
+              setMoreOpen(false);
             }}
           >
             回顾
           </button>
           <button
-            className={`ghost-btn ${oocQueued ? "active" : ""}`}
+            className={`bar-btn ${oocQueued ? "on" : ""}`}
             title={oocQueued ? "导演注已入队，下一拍生效" : "导演注（OOC）：随时调整演出方向"}
             onClick={(e) => {
               e.stopPropagation();
               setDirectorOpen((open) => !open);
+              setMoreOpen(false);
             }}
           >
-            🎬 导演{oocQueued ? "·已注入" : ""}
+            导演{oocQueued ? "·已注入" : ""}
           </button>
           <button
-            className="ghost-btn"
+            className="bar-btn"
             onClick={(e) => {
               e.stopPropagation();
               onLog();
+              setMoreOpen(false);
             }}
           >
             剧本
           </button>
           <button
-            className="ghost-btn"
+            className="bar-btn"
             onClick={(e) => {
               e.stopPropagation();
               onRoute();
+              setMoreOpen(false);
             }}
           >
             路线
           </button>
           <button
-            className="ghost-btn"
+            className="bar-btn"
             title="工坊：和 AI 一起改设定、角色与文件"
             onClick={(e) => {
               e.stopPropagation();
               onWorkshop();
+              setMoreOpen(false);
             }}
           >
-            🛠 工坊
+            工坊
           </button>
-        </span>
-      </header>
+        </div>
+      )}
 
       {directorOpen && (
         <div className="director-box" onClick={(e) => e.stopPropagation()}>

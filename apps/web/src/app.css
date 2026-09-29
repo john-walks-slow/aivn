@@ -311,28 +311,65 @@ button.link-btn {
 }
 
 .theater-bar {
+  position: relative;
+  z-index: 20; /* 舞台层的浮层 z-index 会盖到操作条上，这里明确压在它们之上 */
   transition: opacity var(--fade-ms) ease;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 14px;
+  gap: 10px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   flex-shrink: 0;
 }
 
-.theater-scene {
-  flex: 1;
-  color: var(--ink-faint);
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.bar-btn {
+  padding: 4px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+  cursor: pointer;
   white-space: nowrap;
+  transition:
+    background-color var(--hover-ms) ease,
+    color var(--hover-ms) ease,
+    border-color var(--hover-ms) ease;
+}
+
+.bar-btn:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.bar-btn.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.theater-more {
+  position: absolute;
+  z-index: 45;
+  top: 44px;
+  right: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 
 .theater-actions {
   display: flex;
   gap: 4px;
+  margin-left: auto;
 }
 
 .theater-stage {
@@ -433,23 +470,17 @@ button.link-btn {
   backdrop-filter: blur(14px) saturate(1.1);
 }
 
-/* 名牌：坐在对话框上沿外侧，像贴在玻璃上的一张角色卡 */
+/* 说话人：只留名字，不给底色——对话框的玻璃面已经够分层次了 */
 .dialog-name {
   position: absolute;
-  top: -15px;
-  left: 18px;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
+  top: -11px;
+  left: 20px;
   max-width: 60%;
-  padding: 2px 12px;
-  border-radius: var(--radius);
-  background: var(--nameplate-bg);
-  color: var(--nameplate-ink);
+  color: var(--dialog-ink);
   font-weight: 700;
   font-size: 14.5px;
-  line-height: 1.5;
-  box-shadow: var(--shadow);
+  line-height: 1.4;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.7);
 }
 
 .dialog-text {
@@ -678,16 +709,6 @@ button.link-btn {
     transform var(--hover-ms) ease,
     background-color var(--hover-ms) ease,
     border-color var(--hover-ms) ease;
-}
-
-.choice-key {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--ink-faint);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 0 5px;
-  line-height: 1.5;
 }
 
 .choice-seen {
