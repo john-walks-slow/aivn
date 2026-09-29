@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Cue, ScriptLine } from "./script.js";
+import type { TranscriptEntry } from "./transcript.js";
 
 /** 舞台视觉状态（视觉 cues 即时应用后的累积结果）。 */
 export interface VisualState {
@@ -27,6 +28,25 @@ const EMPTY_VISUAL: VisualState = {
   sprites: {},
   pending: {},
 };
+
+/** 记录下标：同一 key 可能出现多次（编辑后重放），播放头取最后一次。 */
+function lastIndexOfKey(entries: readonly TranscriptEntry[], key: string): number {
+  for (let i = entries.length - 1; i >= 0; i -= 1) if (entries[i]!.key === key) return i;
+  return -1;
+}
+
+/** 谱系还没追上时，播放头这行先按台词行自造一条记录顶上，台词不会闪空。 */
+function lineEntry(line: ScriptLine): TranscriptEntry {
+  return {
+    key: line.key,
+    kind: "line",
+    type: line.type === "say" || line.type === "narrate" || line.type === "thought" ? line.type : "narrate",
+    actorId: line.actorId ?? null,
+    text: line.text,
+    seq: line.seq ?? null,
+    nodeId: null,
+  };
+}
 /**
  * 打字机节奏（剧目 theme.css 可覆盖这三个变量）。
  * 短停：逗号类；长停：句末与破折号——让句子有换气感，而不是匀速喷字。
@@ -77,8 +97,8 @@ export interface Playback {
   visual: VisualState;
   /** 打字机目标行（null = 尚无台词）。 */
   current: ScriptLine | null;
-  /** 实际显示的行——回看时是历史行，与 current 不同。 */
-  view: ScriptLine | null;
+  /** 实际显示的会话记录条目——回看时是历史条目，与 current 不同。 */
+  view: TranscriptEntry | null;
   /** 实际显示的字符数（回看时恒为全文）。 */
   viewLength: number;
   shownLength: number;
@@ -92,12 +112,14 @@ export interface Playback {
   advance: () => void;
   /** 回看游标：-1 上滚/↑ 往回翻，+1 下滚/空格 往回追（追到播放头即恢复跟随）。 */
   scrub: (delta: number) => void;
-  /** 是否正停在历史行上（不等于播放头）。 */
+  /** 是否正停在历史条目上（不等于播放头）。 */
   scrubbed: boolean;
-  /** 已播过的台词行（回顾抽屉用）：播放头之前，含 speaker 与语音关联序号。 */
-  history: { key: string; actorId: string | null; text: string; seq: number | null }[];
-  /** 跳到某条历史行（回顾抽屉点选）。 */
+  /** 播放头之前说过的所有话，最新在最上（回顾用）：台词、玩家表态、导演注都在内。 */
+  history: TranscriptEntry[];
+  /** 跳到某条历史条目（回顾点选）。 */
   seek: (key: string) => void;
+  /** 交还播放头：从任意回看位置直接回到最新（回顾的「回到最新」）。 */
+  follow: () => void;
   /** 生图到达/失败：摘掉占位，视觉层交给真实资产（或降级）。 */
   settleAssets: (ids: string[]) => void;
 }
@@ -122,6 +144,8 @@ export function usePlayback(
     live: boolean;
     resume: boolean;
     revision: number;
+    /** 会话记录：剧作家的台词 + 玩家的表态与输入 + 导演注。回看与回顾都只在它上面走。 */
+    transcript: readonly TranscriptEntry[];
     /** 缓冲代号：变化即整段重放，播放层必须强制归零。 */
     resetToken?: number;
     /** 换代后是否快进到新分支末尾（false = 停住继续流式演出）。 */
@@ -140,23 +164,34 @@ export function usePlayback(
   const fastForwardedRef = useRef(!opts.resume);
   const linesRef = useRef(lines);
   linesRef.current = lines;
+  const transcript = opts.transcript;
+  const transcriptRef = useRef(transcript);
+  transcriptRef.current = transcript;
   const hooksRef = useRef<PlaybackHooks>({});
   hooksRef.current = { onLineStart: opts.onLineStart, onFastForward: opts.onFastForward };
 
   const current = currentKey ? (linesRef.current.find((l) => l.key === currentKey) ?? null) : null;
 
-  /** 播放头在脚本行中的下标；已播过的行都可回看。 */
-  const headIndex = currentKey ? lines.findIndex((l) => l.key === currentKey) : -1;
-  const viewIndex = scrubIndex ?? headIndex;
-  const view = viewIndex >= 0 ? (lines[viewIndex] ?? null) : null;
+  /**
+   * 回看游标走会话记录，不走脚本缓冲。
+   * 缓冲里混着 scene/sfx/cg 这些布景行，滑回去会看见「背景 · 校门口」当台词；
+   * 而玩家的选择、自由输入、导演注只在谱系里，缓冲里根本没有——两边都拿会话记录才同时对。
+   */
+  const headIndex = currentKey ? lastIndexOfKey(transcript, currentKey) : -1;
+  const view: TranscriptEntry | null =
+    scrubIndex !== null
+      ? (transcript[scrubIndex] ?? null)
+      : // 谱系按需拉取会落后缓冲一两句，此时播放头还没进记录：直接用缓冲这行顶上，别让台词闪空。
+        (current ? lineEntry(current) : null);
   const scrubbed = scrubIndex !== null;
   const headIndexRef = useRef(headIndex);
   headIndexRef.current = headIndex;
 
-  /** 往回/往前翻一行；翻到播放头即交还跟随。舞台视觉不随回看变动。 */
+  /** 往回/往前翻一条；翻到播放头即交还跟随。舞台视觉不随回看变动。 */
   const scrub = useCallback((delta: number): void => {
     setScrubIndex((prev) => {
-      const head = headIndexRef.current;
+      const list = transcriptRef.current;
+      const head = headIndexRef.current >= 0 ? headIndexRef.current : list.length - 1;
       const next = Math.max(0, Math.min((prev ?? head) + delta, head));
       return next >= head ? null : next;
     });
@@ -332,24 +367,22 @@ export function usePlayback(
     });
   }, []);
 
-  /** 回顾抽屉：播放头之前的台词行，倒序给（最近的排最前）。 */
+  /** 回顾：播放头之前说过的所有话，倒序给（最近的排最前）。 */
   const history = useMemo(
-    () =>
-      lines
-        .slice(0, Math.max(headIndex, 0))
-        .filter((l): l is ScriptLine & { actorId: string | null } => l.type !== "scene" && l.text !== "")
-        .map((l) => ({ key: l.key, actorId: l.actorId ?? null, text: l.text, seq: l.seq ?? null }))
-        .reverse(),
-    [lines, headIndex],
+    () => transcript.slice(0, Math.max(headIndex, 0)).reverse(),
+    [transcript, headIndex],
   );
 
-  /** 跳到指定历史行（抽屉点选）——与 scrub 同一个游标，Esc 或再点回到播放头。 */
-  const seek = useCallback(
-    (key: string): void => {
-      setScrubIndex(linesRef.current.findIndex((l) => l.key === key));
-    },
-    [],
-  );
+  /** 跳到指定历史条目——与 scrub 同一个游标，Esc 或再点回到播放头。 */
+  const seek = useCallback((key: string): void => {
+    const at = lastIndexOfKey(transcriptRef.current, key);
+    if (at < 0) return;
+    setScrubIndex(at >= headIndexRef.current ? null : at);
+  }, []);
+
+  const follow = useCallback((): void => {
+    setScrubIndex(null);
+  }, []);
 
   return {
     visual,
@@ -365,6 +398,7 @@ export function usePlayback(
     scrubbed,
     history,
     seek,
+    follow,
     sfx,
     settleAssets,
   };

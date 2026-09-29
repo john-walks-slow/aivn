@@ -32,6 +32,7 @@ import {
   type EpochSummary,
 } from "./compaction.js";
 import { completeText } from "./llm.js";
+import { HistoryRecorder, type HistoryBeat } from "./history.js";
 import type { PlayConfig } from "@stage-ai/core";
 import type { PlayMemory } from "./memory.js";
 import { VoicePipeline, type TtsSynthFn } from "./voice.js";
@@ -240,6 +241,8 @@ export interface OrchestratorOptions {
   persist: () => void | Promise<void>;
   /** 服务器重启恢复：上次会话的运行态（事件缓冲/节拍号/停止点）。 */
   restored?: OrchestratorRuntimeState;
+  /** 服务器重启恢复：已落盘的剧作家历史（不回灌的话，下一次落盘就把重启前的历史清成空白）。 */
+  restoredHistory?: HistoryBeat[];
   /** 语音管线合成函数（无则本剧目无声：hello.voice=false）。 */
   tts?: { synth: TtsSynthFn; concurrency?: number };
   /** 生图预发射钩子（D6）：解析到 preload_asset 即后台发起，不占播放；无则只记谱系。 */
@@ -329,9 +332,12 @@ export class PlaywrightOrchestrator {
   private epoch = 0;
   /** 已写入 JSONL 的谱系事件数：直接改动树的操作（编辑/重写）在此增量补推。 */
   private loggedEvents = 0;
+  /** 剧作家历史累积器（思考/原始 DSL/工具调用；随 session.json 落盘，只读对外）。 */
+  private readonly historyRecorder: HistoryRecorder;
 
   constructor(opts: OrchestratorOptions) {
     this.opts = opts;
+    this.historyRecorder = new HistoryRecorder(opts.restoredHistory);
     this.parser = new StageDslParser((event) => this.onStageEvent(event));
     if (opts.restored) {
       // 恢复会话：活跃状态文件与纪元摘要从路径最近快照回填（谱系级记忆）
@@ -422,6 +428,15 @@ export class PlaywrightOrchestrator {
   /** 当前缓冲代号（hello/rebase 携带，客户端识别结构性操作）。 */
   get currentEpoch(): number {
     return this.epoch;
+  }
+
+  /**
+   * 剧作家 session 历史（只读）：按拍分组，条目为注入的 user 原文 / 思考 / 原始 DSL / 工具调用。
+   * 与 `agent.state.messages` 不同源——对话体会被纪元压缩砍掉重建，这里是边跑边攒的独立账本。
+   * 随 session 落盘，REST `/api/plays/:id/history` 读它。
+   */
+  get history(): HistoryBeat[] {
+    return this.historyRecorder.snapshot();
   }
 
   /**
@@ -544,11 +559,9 @@ export class PlaywrightOrchestrator {
     // steer 进旧实例会丢消息、并发 beginBeat 会打架——一律按「演出进行中」挡回
     if (action.kind === "ooc" && this.busy) {
       // 原地 OOC（D9）：steer 入队——当前拍收敛后注入【导演注】，agent 立即续写下一拍；不打断进行中的演出
-      this.agent.steer({
-        role: "user",
-        content: this.renderUserTurn(action),
-        timestamp: Date.now(),
-      });
+      const steerText = this.renderUserTurn(action);
+      this.agent.steer({ role: "user", content: steerText, timestamp: Date.now() });
+      this.historyRecorder.addUser(this.beatNo + 1, steerText, this.opts.tree.leafId);
       this.appendLineage("ooc", { payload: { input: action.text } });
       this.send({ type: "ooc_ack" });
       return;
@@ -667,6 +680,9 @@ export class PlaywrightOrchestrator {
     if (!opts?.keepLeaf) tree.forkAt(nodeId);
     const chain = tree.chainEvents(tree.leafId);
     this.restoreBranchState(tree.leafId);
+    // 历史跟着分支回退：不在新路径上的拍（兄弟与废弃分支）、以及被拍中截断砍掉后半的那一拍，
+    // 都已经不属于这一场了（铁律：分岔/跳转随分支走，防剧透同一原则）
+    this.historyRecorder.rebaseTo(tree.pathSet(), this.beatNo);
     this.events.length = 0;
     this.events.push(...lineageToEvents(chain));
     this.seq = this.events.at(-1)?.seq ?? 0;
@@ -885,6 +901,8 @@ export class PlaywrightOrchestrator {
       // 纪元边界：拍与拍之间是唯一允许突变 A 区/对话体的时刻（空前缀缓存豁免）
       await this.maybeCompactEpoch();
       if (this.disposed) return;
+      // B 区注入原文入史：状态区/导演注/玩家表态是拼出来的文本，谱系里只留得下玩家的那一句
+      this.historyRecorder.addUser(this.beatNo + 1, userText, this.opts.tree.leafId);
       this.startBeatWindow();
       await this.agent.prompt(userText);
       await this.agent.waitForIdle();
@@ -996,6 +1014,10 @@ export class PlaywrightOrchestrator {
     } else if (event.type === "message_end" && event.message.role === "assistant") {
       // pi agent 的 provider 失败不抛异常，而是 assistant message 带 errorMessage 正常收束——捕获之
       if (event.message.errorMessage) this.beatError = event.message.errorMessage;
+      // 完整 assistant 消息：思考块与 toolCall 只在这里出现（流式增量拿不全），入史趁早
+      if (this.busy) {
+        this.historyRecorder.addAssistantMessage(this.beatNo, event.message, this.opts.tree.leafId);
+      }
       this.parser.endMessage();
     } else if (event.type === "turn_start") {
       // steer 续写拍（D9 原地 OOC）：上一拍已收束，导演注入后 agent 自动续写，由新 turn 开窗

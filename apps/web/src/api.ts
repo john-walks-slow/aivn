@@ -42,6 +42,30 @@ export interface PlayDetail {
   readiness: Readiness;
 }
 
+/**
+ * 剧作家 session 历史快照（只读）：「模型到底吐了什么」——注入的原文、思考、
+ * 未经解析的原始 DSL、工具调用。与谱系的分工见 `apps/server/src/history.ts`。
+ * 形状与服务端一一对应（web 不得 import server 包，这里是契约的手写副本）。
+ */
+export interface HistoryEntry {
+  /** 拍号（与服务端 `runtime.beatNo` 同尺）。 */
+  beat: number;
+  /** 拍内自增序号（从 1 起）。 */
+  seq: number;
+  role: "user" | "thinking" | "assistant" | "toolCall";
+  /** role ≠ toolCall 时有：原文，不解析不裁剪。 */
+  text?: string;
+  /** role = toolCall 时有：工具名。 */
+  name?: string;
+  /** role = toolCall 时有：参数原样。 */
+  args?: Record<string, unknown>;
+}
+
+export interface HistoryBeat {
+  turn: number;
+  entries: HistoryEntry[];
+}
+
 /** 设置面板数据（P6）：敏感值只回掩码，原样回传视为「不改」。 */
 export interface Settings {
   port: number;
@@ -86,6 +110,13 @@ export const api = {
 
   /** 路线树（P6）：全量节点含废弃分支；打开路线视图时取，操作后刷新。 */
   lineage: (id: string) => request<LineageView>(`/api/plays/${id}/lineage`),
+
+  /**
+   * 剧作家原始历史：活动周目最近若干拍的 session 快照（注入原文 / 思考 / 原始 DSL / 工具调用）。
+   * 只读——不建 runtime、不改任何状态，所以它是「回看这场戏怎么写出来的」的唯一入口。
+   * 读盘落后一拍（拍收束时才落盘），拿不到就回空表，不报错。
+   */
+  history: (id: string) => request<{ beats: HistoryBeat[] }>(`/api/plays/${id}/history`),
 
   /** 存档（周目）列表：按最近更新倒序，current 标记当前活动档。 */
   listSaves: (id: string) => request<SaveInfo[]>(`/api/plays/${id}/saves`),

@@ -15,6 +15,8 @@ const FADE_MS = 100;
 /** 背压阈值：未消费短语超过 PAUSE_AT 暂停预取，回落 RESUME_AT 恢复（滞回）。 */
 const PAUSE_AT = 10;
 const RESUME_AT = 3;
+/** 重听 URL 台账的行数上限（内存护栏）。 */
+const URL_LEDGER_MAX = 500;
 
 interface PhraseAudio {
   url: string;
@@ -46,6 +48,15 @@ export class VoiceDirector {
   private master: GainNode | null = null;
   private readonly lines = new Map<number, LineAudio>();
   private currentSeq: number | null = null;
+  /**
+   * 行 → 短语音频 URL 台账。跨拍保留：解码好的 AudioBuffer 在 beatStarted 就随 lines 一起扔了，
+   * 但文件还躺在服务端的内容寻址缓存里——回顾要能重听旧句，靠的就是这张表重新拉一遍。
+   */
+  private readonly urls = new Map<number, Map<number, string>>();
+  /** 重听链：正在挂起的播放节点（重听不归属任何演出行，单独记以便单独掐断）。 */
+  private replaySources = new Map<AudioBufferSourceNode, GainNode>();
+  /** 每次发起重听自增：迟到的解码结果发现令牌已变就自我淘汰。 */
+  private replayToken = 0;
   /** 已见最大 seq（beatStarted 时冻结为门槛：旧拍迟到音频直接丢弃）。 */
   private maxSeqSeen = 0;
   private floorSeq = 0;
@@ -94,9 +105,74 @@ export class VoiceDirector {
     this.notify();
   }
 
+  /** 这一行有没有可重听的语音（回顾的播放按钮据此显不显示）。 */
+  hasVoice(seq: number | null | undefined): boolean {
+    return seq !== null && seq !== undefined && this.urls.has(seq);
+  }
+
+  /**
+   * 重听一句（回顾/回看里的播放键）：按短语序重新拉流解码，gapless 链式起播。
+   * 一次只留一条重听链——再点别的就掐断上一条，不叠音。
+   */
+  async replay(seq: number): Promise<boolean> {
+    if (!this.enabled) return false;
+    this.unlock();
+    if (!this.ctx || !this.master) return false;
+    const urls = [...(this.urls.get(seq)?.entries() ?? [])]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, url]) => url);
+    if (urls.length === 0) return false;
+
+    this.stopReplay(); // 先掐断上一条重听，再认领当前令牌
+    const token = this.replayToken;
+    const ctx = this.ctx;
+    const buffers: AudioBuffer[] = [];
+    for (const url of urls) {
+      let buffer: AudioBuffer | null = null;
+      try {
+        const res = await fetch(url);
+        if (res.ok) buffer = await ctx.decodeAudioData(await res.arrayBuffer());
+      } catch {
+        // 单个短语拉不到就跳过：文字和后续短语都不该因此卡住
+      }
+      if (token !== this.replayToken || !this.enabled) return false;
+      if (buffer) buffers.push(buffer);
+    }
+    if (buffers.length === 0) return false;
+    let when = ctx.currentTime + 0.05;
+    for (const buffer of buffers) {
+      this.playPhrase(null, buffer, when);
+      when += buffer.duration + PHRASE_PAD;
+    }
+    this.notify();
+    return true;
+  }
+
+  /** 掐断正在播的重听（再点一次播放键、或新的一键把它顶掉）。 */
+  stopReplay(): void {
+    const ctx = this.ctx;
+    if (!ctx) {
+      this.replaySources.clear();
+      return;
+    }
+    const now = ctx.currentTime;
+    for (const [source, gain] of this.replaySources) {
+      try {
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(Math.max(gain.gain.value, 0.0001), now);
+        gain.gain.linearRampToValueAtTime(0.0001, now + FADE_MS / 1000);
+        source.stop(now + FADE_MS / 1000 + 0.02);
+      } catch {
+        // 已停止的节点：忽略
+      }
+    }
+    this.replaySources.clear();
+  }
+
   /** audio_ready 到达：存储 + 预取解码。 */
   handleAudio(ready: { seq: number; phrase: number; url: string }): void {
     if (!this.enabled) return;
+    this.rememberUrl(ready.seq, ready.phrase, ready.url);
     // 旧拍迟到音频（beat 已收束后 TTS 才完成）与已播过的行：直接丢弃
     if (ready.seq <= this.floorSeq) return;
     if (this.currentSeq !== null && ready.seq < this.currentSeq) return;
@@ -144,6 +220,7 @@ export class VoiceDirector {
   /** fresh start / 组件卸载。 */
   reset(): void {
     this.beatStarted();
+    this.urls.clear();
   }
 
   /** 自动模式 hold：当前行语音仍在播。 */
@@ -156,9 +233,25 @@ export class VoiceDirector {
   /** 卸载/重开：停声清态（共享 AudioContext 不 close；StrictMode 重挂载后可复用）。 */
   dispose(): void {
     this.fadeAll();
+    this.stopReplay();
     this.lines.clear();
     this.clearBackpressure();
     this.currentSeq = null;
+  }
+
+  /** URL 台账记账。条数封顶：整场下来也就几百行，超了就丢最旧的（回顾翻不到那么远）。 */
+  private rememberUrl(seq: number, phrase: number, url: string): void {
+    let row = this.urls.get(seq);
+    if (!row) {
+      row = new Map();
+      this.urls.set(seq, row);
+    }
+    row.set(phrase, url);
+    for (const key of this.urls.keys()) {
+      if (this.urls.size <= URL_LEDGER_MAX) break;
+      if (key === seq) continue;
+      this.urls.delete(key);
+    }
   }
 
   private finishCurrent(): void {
@@ -169,6 +262,7 @@ export class VoiceDirector {
 
   private fadeAll(): void {
     for (const line of this.lines.values()) this.fadeLine(line);
+    this.stopReplay();
   }
 
   private fadeLine(line: LineAudio): void {
@@ -232,8 +326,8 @@ export class VoiceDirector {
     }
   }
 
-  /** 单短语播放：attack/release 短斜坡消爆音。 */
-  private playPhrase(line: LineAudio, buffer: AudioBuffer, when: number): void {
+  /** 单短语播放：attack/release 短斜坡消爆音。line 为 null 时是重听链，挂到独立的节点表上。 */
+  private playPhrase(line: LineAudio | null, buffer: AudioBuffer, when: number): void {
     const ctx = this.ctx;
     const master = this.master;
     if (!ctx || !master) return;
@@ -248,9 +342,10 @@ export class VoiceDirector {
     gain.gain.linearRampToValueAtTime(0.0001, when + buffer.duration);
     source.connect(gain).connect(master);
     source.start(when);
-    line.sources.set(source, gain);
+    const bucket = line ? line.sources : this.replaySources;
+    bucket.set(source, gain);
     source.onended = () => {
-      line.sources.delete(source);
+      bucket.delete(source);
       gain.disconnect();
       source.disconnect();
     };
