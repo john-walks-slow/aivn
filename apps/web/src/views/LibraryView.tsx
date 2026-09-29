@@ -1,15 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, type PlaySummary } from "../api.js";
+import { api, readinessAdvice, readinessMissing, type PlaySummary } from "../api.js";
 import { navigate } from "../router.jsx";
-
-/** 就绪门缺项文案。 */
-function missingItems(r: PlaySummary["readiness"]): string[] {
-  const items: string[] = [];
-  if (!r.premise) items.push("premise");
-  if (!r.characterSprites) items.push("角色立绘映射");
-  if (!r.background) items.push("背景图");
-  return items;
-}
 
 /** 应用首页 = 剧目库：剧目卡片 + 新建 + 剧目包导入。 */
 export function LibraryView() {
@@ -61,7 +52,8 @@ export function LibraryView() {
 
       <div className="library-grid">
         {(plays ?? []).map((play) => {
-          const missing = missingItems(play.readiness);
+          const missing = readinessMissing(play.readiness);
+          const advice = readinessAdvice(play.readiness);
           return (
             <button key={play.id} className="card" onClick={() => navigate(`/play/${play.id}`)}>
               <div className="card-head">
@@ -72,7 +64,11 @@ export function LibraryView() {
               </div>
               <p className="card-premise">{play.premise ? `${play.premise.slice(0, 90)}…` : "（premise 待补）"}</p>
               <p className="muted small">
-                {missing.length > 0 ? `缺：${missing.join("、")}` : `id: ${play.id}`}
+                {missing.length > 0
+                  ? `缺：${missing.join("、")}`
+                  : advice.length > 0
+                    ? `无图可演（缺 ${advice.join("、")}）`
+                    : `id: ${play.id}`}
               </p>
             </button>
           );

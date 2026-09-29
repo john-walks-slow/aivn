@@ -1,5 +1,6 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { IMAGE_SIZES, type ImageSize } from "./imageBackend.js";
 
 /** 服务端配置：环境变量驱动（cpa 网关 + 模型 + 剧目库根目录 + fish-audio TTS）。 */
 export interface ServerConfig {
@@ -18,16 +19,27 @@ export interface ServerConfig {
   compactRatio: number;
   /** 纪元压缩保留的最近上下文（token 估算）：切尾点之后的原文留在对话体。 */
   keepRecentTokens: number;
-  /** 生图管线（D6）：经 cpa 网关出图，预发射 + 媒体缓存。 */
+  /** 生图管线（D6）：出图后端 + 预发射 + 媒体缓存。 */
   image: {
     enabled: boolean;
-    /** cpa 网关出图模型：gpt-image-2（images/generations）| gemini-3.1-flash-image（流式出图）。 */
+    /** 后端实现：cpa（默认，本项目自配网关）| flow2api（本机 Flow 逆向网关，支持垫图与画幅）。 */
+    backend: "cpa" | "flow2api";
+    /** cpa 出图模型：gpt-image-2（images/generations）| gemini-3.1-flash-image（流式出图）。 */
     model: string;
-    /** 出图尺寸（WxH）。换 seedream-5.0-lite 需 ≥3686400 像素（如 2560x1440），否则 400。 */
+    /** cpa 出图尺寸（WxH）。换 seedream-5.0-lite 需 ≥3686400 像素（如 2560x1440），否则 400。 */
     size: string;
     /** 并发出图上限（每图 15–30s，串行会把预发射窗口拖穿）。 */
     concurrency: number;
     /** 单图超时（毫秒）：超时按失败降级，占位骨架不留死。 */
+    timeoutMs: number;
+  };
+  /** flow2api 后端（`image.backend=flow2api` 时生效）。 */
+  flow: {
+    baseUrl: string;
+    apiKey: string;
+    /** 别名模型名，传完整名会让 flow2api 忽略 imageConfig。 */
+    model: string;
+    size: ImageSize;
     timeoutMs: number;
   };
   /** 语音管线（D5）：fish-audio keys / 代理 / 并发。 */
@@ -64,6 +76,15 @@ function parseRatio(name: string, raw: string | undefined, fallback: number): nu
   return n;
 }
 
+/** 枚举型环境变量解析：值非法直接抛错，不静默回退——生图参数写错只会静默降级出一张废图。 */
+function parseEnum<T extends string>(name: string, raw: string | undefined, allowed: readonly T[], fallback: T): T {
+  const value = (raw ?? fallback) as T;
+  if (!allowed.includes(value)) {
+    throw new Error(`${name}（${raw}）非法，可用：${allowed.join(" / ")}`);
+  }
+  return value;
+}
+
 export function loadConfig(
   env: NodeJS.ProcessEnv = process.env,
   repoRoot = process.cwd(),
@@ -85,6 +106,7 @@ export function loadConfig(
     ),
     image: {
       enabled: env.STAGE_IMAGE_ENABLED !== "false",
+      backend: parseEnum("STAGE_IMAGE_BACKEND", env.STAGE_IMAGE_BACKEND, ["cpa", "flow2api"] as const, "cpa"),
       model: env.STAGE_IMAGE_MODEL ?? "gpt-image-2",
       size: env.STAGE_IMAGE_SIZE ?? "1536x1024",
       concurrency: parsePositiveInt(
@@ -93,6 +115,13 @@ export function loadConfig(
         2,
       ),
       timeoutMs: parsePositiveInt("STAGE_IMAGE_TIMEOUT_MS", env.STAGE_IMAGE_TIMEOUT_MS, 150_000),
+    },
+    flow: {
+      baseUrl: env.STAGE_FLOW_BASE_URL ?? "http://127.0.0.1:38000",
+      apiKey: env.STAGE_FLOW_API_KEY ?? "",
+      model: env.STAGE_FLOW_MODEL ?? "gemini-3.1-flash-image",
+      size: parseEnum("STAGE_FLOW_SIZE", env.STAGE_FLOW_SIZE, IMAGE_SIZES, "2k"),
+      timeoutMs: parsePositiveInt("STAGE_FLOW_TIMEOUT_MS", env.STAGE_FLOW_TIMEOUT_MS, 180_000),
     },
     tts: {
       enabled: env.STAGE_TTS_ENABLED !== "false",

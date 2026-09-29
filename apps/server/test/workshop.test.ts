@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import sharp from "sharp";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,9 +8,17 @@ import type { ServerMessage } from "@stage-ai/core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { PlayFiles } from "../src/playFiles.js";
 import { PlayStore } from "../src/store.js";
+import { Limiter } from "../src/limiter.js";
+import { WorkshopAssets } from "../src/workshopAssets.js";
+import type { GeneratedPlayAsset } from "../src/workshopAssets.js";
 import { WorkshopThreads } from "../src/workshopThreads.js";
 import { WorkshopSession } from "../src/workshopSession.js";
-import { createWorkshopTools, deriveThreadTitle, renderReadiness } from "../src/workshop.js";
+import {
+  buildWorkshopPrompt,
+  createWorkshopTools,
+  deriveThreadTitle,
+  renderReadiness,
+} from "../src/workshop.js";
 import { createFakeStreamFn, BEAT_1, BEAT_2, PLAY } from "./helpers.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { LineageTree } from "@stage-ai/core";
@@ -77,6 +86,34 @@ describe("PlayFiles：剧目文件白名单", () => {
     await files.write("memory/index/locations/旧校舍.md", "# 旧校舍\n");
     expect(await readFile(join(store.dir, "memory/index/locations/旧校舍.md"), "utf8")).toContain("# 旧校舍");
   });
+
+  it("二进制通道只开图像素材目录，文本工具写不了图片、图像通道也写不了文本", async () => {
+    const store = await makeStore();
+    const files = new PlayFiles(store);
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+    await files.writeBinary("assets/sprites/mio/smile.png", png);
+    expect((await readFile(join(store.dir, "assets/sprites/mio/smile.png"))).equals(png)).toBe(true);
+    // 清旧图：覆盖生图换了扩展名时只留一张
+    await files.removeAsset("assets/sprites/mio/smile.png");
+    expect(existsSync(join(store.dir, "assets/sprites/mio/smile.png"))).toBe(false);
+
+    for (const bad of [
+      "memory/always/premise.md", // 文本面走 write，不走二进制通道
+      "assets/notes.txt", // 素材目录下的非图像
+      "assets/bgm/theme.mp3", // 非图像格式
+      "play.json",
+      "../escape.png",
+    ]) {
+      await expect(files.writeBinary(bad, png)).rejects.toThrow();
+      await expect(files.removeAsset(bad)).rejects.toThrow();
+    }
+  });
+
+  it("二进制通道有体积上限", async () => {
+    const files = new PlayFiles(await makeStore());
+    await expect(files.writeBinary("assets/cg/big.png", Buffer.alloc(17 * 1024 * 1024))).rejects.toThrow(/素材过大/);
+  });
 });
 
 describe("工坊工具", () => {
@@ -116,22 +153,129 @@ describe("工坊工具", () => {
     );
   });
 
-  it("就绪门渲染缺项提示", () => {
-    const text = renderReadiness({
-      ready: false,
+  it("就绪门只卡 premise，立绘与背景只是建议项", () => {
+    const noImages = renderReadiness({
+      ready: true,
       premise: true,
       characterSprites: false,
       background: false,
       hasSession: false,
     });
-    expect(text).toContain("未就绪");
-    expect(text).toContain("角色立绘映射：✗");
-    expect(text).toContain("背景图：✗");
+    expect(noImages).toContain("已就绪，可开演");
+    expect(noImages).toContain("缺（建议补）");
+    expect(noImages).toContain("不是门槛");
+
+    const noPremise = renderReadiness({
+      ready: false,
+      premise: false,
+      characterSprites: true,
+      background: true,
+      hasSession: false,
+    });
+    expect(noPremise).toContain("未就绪（缺 premise）");
   });
 
   it("线程标题取首条消息前 20 字", () => {
     expect(deriveThreadTitle("  我想要一个赛博朋克侦探故事  ")).toBe("我想要一个赛博朋克侦探故事");
     expect(deriveThreadTitle("一".repeat(30))).toBe(`${"一".repeat(20)}…`);
+  });
+
+  it("工坊 prompt：出图要点随能力开关换内容（不可用时给替代路径）", async () => {
+    const readiness = { ready: true, premise: true, characterSprites: false, background: false, hasSession: false };
+    const withGen = await buildWorkshopPrompt("测试剧目", "- play.json", readiness, true);
+    expect(withGen).toContain("prompt 用英文");
+    // 没生图能力时别教它怎么写 prompt，直接给替代路径，免得空转调一个必然失败的函数
+    const withoutGen = await buildWorkshopPrompt("测试剧目", "- play.json", readiness, false);
+    expect(withoutGen).not.toContain("prompt 用英文");
+    expect(withoutGen).toContain("生图当前不可用");
+  });
+
+  it("工坊 prompt：注入技能清单，画风不写死二次元", async () => {
+    const readiness = { ready: true, premise: true, characterSprites: false, background: false, hasSession: false };
+    const prompt = await buildWorkshopPrompt("测试剧目", "- play.json", readiness, true);
+    // 清单在、但只是索引：细节留在 skill 文件里，不是每轮都塞满 system prompt
+    expect(prompt).toContain("<available_skills>");
+    expect(prompt).toContain("<name>style-anchors</name>");
+    expect(prompt).toContain("<name>sprite-differences</name>");
+    // 清单里只有 name/description/路径，skill 正文不占每轮 system prompt
+    expect(prompt).not.toContain("## 常用锚点");
+    expect(prompt).toContain("画风没有默认值");
+  });
+});
+
+describe("工坊工具：generate_asset", () => {
+  const deps = (over: Partial<Parameters<typeof createWorkshopTools>[0]> = {}): Parameters<typeof createWorkshopTools>[0] => ({
+    files: new PlayFiles(store),
+    store,
+    onWrite: () => {},
+    onAsset: () => {},
+    ...over,
+  });
+
+  let store: PlayStore;
+  const setup = async (): Promise<void> => {
+    store = await makeStore();
+  };
+
+  it("出图成功：落盘 + 广播 asset + 结果回给模型", async () => {
+    await setup();
+    const events: GeneratedPlayAsset[] = [];
+    const assets = new WorkshopAssets("test", {
+      store,
+      files: new PlayFiles(store),
+      backend: { generate: async () => ({ data: Buffer.from("x"), mimeType: "image/jpeg" }) },
+      limiter: new Limiter(1),
+      onWrite: () => {},
+    });
+    const tools = createWorkshopTools(deps({ assets, onAsset: (a) => events.push(a) }));
+    const gen = tools.find((t) => t.name === "generate_asset")!;
+
+    const out = JSON.stringify(await gen.execute("c1", { kind: "background", name: "rooftop", prompt: "黄昏天台" }));
+    expect(out).toContain("已生成：assets/backgrounds/rooftop.jpg");
+    expect(events).toHaveLength(1);
+    expect(events[0]!.url).toBe("/plays/test/assets/backgrounds/rooftop.jpg");
+    expect(existsSync(join(store.dir, "assets/backgrounds/rooftop.jpg"))).toBe(true);
+  });
+
+  it("工坊工具：read_skill 读得到技能全文，读不到就回可读的报错", async () => {
+    await setup();
+    const tools = createWorkshopTools(deps());
+    const read = tools.find((t) => t.name === "read_skill")!;
+    const ok = JSON.stringify(await read.execute("c1", { name: "style-anchors" }));
+    expect(ok).toContain("画风锚点");
+    const bad = JSON.stringify(await read.execute("c1", { name: "nope" }));
+    expect(bad).toContain("读取失败");
+    expect(bad).toContain("style-anchors");
+  });
+
+  it("出图失败：把原因回给模型而不是抛出去（让模型如实转告用户）", async () => {
+    await setup();
+    const assets = new WorkshopAssets("test", {
+      store,
+      files: new PlayFiles(store),
+      backend: {
+        generate: async () => {
+          throw new Error("flow2api 出图失败 HTTP 503：auth_unavailable");
+        },
+      },
+      limiter: new Limiter(1),
+      onWrite: () => {},
+    });
+    const gen = createWorkshopTools(deps({ assets })).find((t) => t.name === "generate_asset")!;
+    const out = JSON.stringify(
+      await gen.execute("c1", { kind: "background", name: "rooftop", prompt: "黄昏天台" }),
+    );
+    expect(out).toContain("生图失败");
+    expect(out).toContain("auth_unavailable");
+  });
+
+  it("没配生图后端：直说并给出替代路径，不让模型空转", async () => {
+    await setup();
+    const gen = createWorkshopTools(deps()).find((t) => t.name === "generate_asset")!;
+    const out = JSON.stringify(
+      await gen.execute("c1", { kind: "background", name: "rooftop", prompt: "黄昏天台" }),
+    );
+    expect(out).toContain("生图未启用");
   });
 });
 
@@ -216,6 +360,40 @@ describe("WorkshopSession：一轮对话", () => {
       | { messages: { role: string }[] }
       | undefined;
     expect(history?.messages.map((m) => m.role)).toEqual(["user"]);
+  });
+
+  it("半途失败：已出的图必须落进线程历史，不能只闪一下就被 history 冲掉", async () => {
+    const store = await makeStore();
+    const emitted: ServerMessage[] = [];
+    const png = await sharp({
+      create: { width: 1376, height: 768, channels: 3, background: "#3366aa" },
+    })
+      .png()
+      .toBuffer();
+    const session = new WorkshopSession({
+      store,
+      playId: "test",
+      imageBackend: { generate: async () => ({ data: png, mimeType: "image/png" }) },
+      limiter: new Limiter(1),
+      // 第一轮：先出一张背景图；下一轮回空内容触发错误路径
+      streamFn: createFakeStreamFn([
+        { text: "", toolCalls: [{ name: "generate_asset", args: { kind: "background", name: "rooftop", prompt: "黄昏天台" } }] },
+        { text: "" },
+      ]),
+      model: {} as never,
+      getApiKey: () => "test-key",
+      emit: (msg) => emitted.push(msg),
+      onFilesChanged: () => {},
+    });
+    await session.chat("出个天台");
+
+    const error = emitted.find((m) => m.type === "workshop_error") as { images?: unknown[] } | undefined;
+    expect(error?.images).toHaveLength(1);
+    // 关键：图进了 history，重连/刷新后还在。不这么做的话前端一收到 history 就清空 pendingAssets
+    const history = emitted.filter((m) => m.type === "workshop_history").at(-1) as
+      | { messages: { role: string; images?: unknown[] }[] }
+      | undefined;
+    expect(history?.messages.at(-1)?.images).toHaveLength(1);
   });
 
   it("人手改动（REST）不产生撤销记录，但同样触发 runtime 重建", async () => {

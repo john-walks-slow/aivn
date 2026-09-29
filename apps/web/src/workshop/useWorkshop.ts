@@ -1,5 +1,10 @@
 import { useCallback, useRef, useState } from "react";
-import type { ClientMessage, WorkshopChatMessage, WorkshopThreadInfo } from "@stage-ai/core";
+import type {
+  ClientMessage,
+  WorkshopAssetView,
+  WorkshopChatMessage,
+  WorkshopThreadInfo,
+} from "@stage-ai/core";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
 
 /** 工坊面板的一次写盘记录（可一键撤销）。 */
@@ -20,6 +25,11 @@ export interface WorkshopState {
   activity: string | null;
   /** 本会话内的写盘记录（面板关闭即清空）。 */
   writes: WorkshopWriteRecord[];
+  /**
+   * 本轮已出图但本轮话还没收束的素材：实时出现在流式区旁边，
+   * 收束时随末条消息一起进 messages（不留在半截气泡里）。
+   */
+  pendingAssets: WorkshopAssetView[];
   busy: boolean;
   error: string | null;
 }
@@ -31,6 +41,7 @@ const EMPTY: WorkshopState = {
   streaming: "",
   activity: null,
   writes: [],
+  pendingAssets: [],
   busy: false,
   error: null,
 };
@@ -41,6 +52,7 @@ const TOOL_LABEL: Record<string, string> = {
   write_file: "写入文件",
   delete_file: "删除文件",
   get_readiness: "检查就绪条件",
+  generate_asset: "出图中（几十秒，别急着发下一条）",
 };
 
 /** 工坊状态机：把服务端 workshop_* 下行消息收敛成面板可直接渲染的形态。 */
@@ -58,7 +70,14 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
           activeRef.current = msg.threadId;
           // 服务端历史是权威：整段替换。但**不动 busy**——服务端在开跑前就发一次 history，
           // 那时还没出首字，提前解锁会让用户重发。
-          return { ...prev, activeId: msg.threadId, messages: msg.messages, streaming: "", activity: null };
+          return {
+            ...prev,
+            activeId: msg.threadId,
+            messages: msg.messages,
+            streaming: "",
+            activity: null,
+            pendingAssets: [],
+          };
         case "workshop_chunk":
           return { ...prev, streaming: prev.streaming + msg.delta, busy: true, error: null };
         case "workshop_tool":
@@ -68,16 +87,34 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
             ...prev,
             writes: [...prev.writes, { path: msg.path, before: msg.before, at: Date.now() }],
           };
+        case "workshop_asset":
+          return {
+            ...prev,
+            pendingAssets: [...prev.pendingAssets, { kind: msg.kind, path: msg.path, url: msg.url }],
+            busy: true,
+          };
         case "workshop_done":
           return {
             ...prev,
-            messages: [...prev.messages, { role: "assistant", text: msg.text, at: Date.now() }],
+            messages: [
+              ...prev.messages,
+              { role: "assistant", text: msg.text, at: Date.now(), images: msg.images },
+            ],
             streaming: "",
             activity: null,
+            pendingAssets: [],
             busy: false,
           };
         case "workshop_error":
-          return { ...prev, error: msg.message, busy: false, activity: null, streaming: "" };
+          // 本轮出过的图不能跟着错误一起消失——发出去的是真金白银，且已落盘
+          return {
+            ...prev,
+            error: msg.message,
+            busy: false,
+            activity: null,
+            streaming: "",
+            pendingAssets: msg.images ?? [],
+          };
         default:
           return prev;
       }

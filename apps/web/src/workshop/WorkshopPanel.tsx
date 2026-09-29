@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { ClientMessage } from "@stage-ai/core";
+import type { ClientMessage, WorkshopAssetView } from "@stage-ai/core";
 import { api } from "../api.js";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
+import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
 import { FileBrowser } from "./FileBrowser.js";
 import { useWorkshop } from "./useWorkshop.js";
 
@@ -34,6 +35,7 @@ export function WorkshopPanel({
   const [tab, setTab] = useState<"chat" | "files">("chat");
   const [input, setInput] = useState("");
   const [showThreads, setShowThreads] = useState(false);
+  const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // 面板一挂上就先订阅再报到（StrictMode 下会走两遍，报到幂等）
@@ -47,7 +49,7 @@ export function WorkshopPanel({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [state.messages.length, state.streaming, state.activity]);
+  }, [state.messages.length, state.streaming, state.activity, state.pendingAssets.length]);
 
   const submit = (): void => {
     const text = input.trim();
@@ -55,6 +57,9 @@ export function WorkshopPanel({
     workshop.chat(text);
     setInput("");
   };
+
+  const openImage = (images: WorkshopAssetView[], index: number): void =>
+    setLightbox({ images: images.map((a) => ({ url: a.url, caption: a.path })), index });
 
   const activeThread = state.threads.find((t) => t.id === state.activeId);
 
@@ -156,9 +161,38 @@ export function WorkshopPanel({
             {state.messages.map((msg, i) => (
               <div key={`${msg.at}-${i}`} className={`chat-bubble chat-${msg.role}`}>
                 {msg.text}
+                {msg.images && msg.images.length > 0 && (
+                  <div className="asset-strip">
+                    {msg.images.map((asset, j) => (
+                      <button
+                        key={`${asset.path}-${j}`}
+                        className="asset-thumb"
+                        onClick={() => openImage(msg.images ?? [], j)}
+                        title={asset.path}
+                      >
+                        <img src={asset.url} alt={asset.path} loading="lazy" />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             {state.streaming && <div className="chat-bubble chat-assistant">{state.streaming}</div>}
+            {/* 本轮出图即时可见：本轮话还没收束，图先摆在这儿，收束后并进上面那条消息 */}
+            {state.pendingAssets.length > 0 && (
+              <div className="asset-strip pending">
+                {state.pendingAssets.map((asset, j) => (
+                  <button
+                    key={`${asset.path}-${j}`}
+                    className="asset-thumb"
+                    onClick={() => openImage(state.pendingAssets, j)}
+                    title={asset.path}
+                  >
+                    <img src={asset.url} alt={asset.path} />
+                  </button>
+                ))}
+              </div>
+            )}
             {state.activity && <div className="chat-activity">{state.activity}…</div>}
             {state.busy && !state.streaming && !state.activity && <div className="chat-activity">思考中…</div>}
           </div>
@@ -215,6 +249,15 @@ export function WorkshopPanel({
             </div>
           ))}
         </div>
+      )}
+
+      {lightbox && (
+        <ImageLightbox
+          images={lightbox.images}
+          index={lightbox.index}
+          onIndex={(index) => setLightbox({ ...lightbox, index })}
+          onClose={() => setLightbox(null)}
+        />
       )}
     </aside>
   );

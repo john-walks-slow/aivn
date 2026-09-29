@@ -34,12 +34,15 @@ export function buildSystemPrompt(
   const bgm = stems("bgm");
   const sfx = stems("sfx");
   const cg = stems("cg");
-  const assetSection = [
-    bg.length > 0 ? `\n# 可用背景 bg\n\n${bg.join(" | ")}——scene 的 bg 优先取这些 id。\n` : "",
-    bgm.length > 0 ? `\n# 可用音乐 bgm\n\n${bgm.join(" | ")}\n` : "",
-    sfx.length > 0 ? `\n# 可用音效 sfx\n\n${sfx.join(" | ")}\n` : "",
-    cg.length > 0 ? `\n# 已有插图 cg\n\n${cg.join(" | ")}\n` : "",
-  ].join("");
+  const assetSection =
+    (bg.length > 0 ? `\n# 可用背景 bg\n\n${bg.join(" | ")}——scene 的 bg 优先取这些 id。\n` : "") +
+    (bgm.length > 0 ? `\n# 可用音乐 bgm\n\n${bgm.join(" | ")}\n` : "") +
+    (sfx.length > 0 ? `\n# 可用音效 sfx\n\n${sfx.join(" | ")}\n` : "") +
+    (cg.length > 0 ? `\n# 已有插图 cg\n\n${cg.join(" | ")}\n` : "") +
+    // 清单全空时上面四段拼成空串，这段就没人看得见——而此时正是最该让剧作家自己画图的时候
+    (bg.length === 0 && cg.length === 0
+      ? `\n# 没有任何背景与插图\n\n剧目还没有一张图。每写到一个新场景，先用 preload_asset 预发射一张背景再引用它的 id。\n`
+      : "");
 
   const premise = memory?.premise.trim() || play.premise;
   const craftSection = memory?.craft.trim()
@@ -85,6 +88,7 @@ ${assetSection}${craftSection}${indexSection}
 - **id 自取**：用简短英文下划线 id（如 bg_rooftop_dusk、cg_rooftop_01），引用时一字不差；
 - **prompt 写英文**，写清主体/环境/光线/视角/画风，末尾加 "anime visual novel background, no text"；
 - **不要凭空造 id**：清单里已有的背景和插图直接引用，别重复生成。
+- **立绘差分不做生图**：某角色没有可用差分时，**别写 actor 指令引用不存在的 expression**（那个角色会整个不上台），改用旁白/台词交代，或只用有差分的角色。
 
 ## 台词（三类，正文为原生文本，不要转义）
 

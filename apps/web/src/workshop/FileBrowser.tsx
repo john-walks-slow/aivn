@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PlayFile } from "../api.js";
 import { api } from "../api.js";
+import { ImageLightbox } from "../ui/ImageLightbox.js";
+
+const IMAGE_EXT = /\.(png|jpe?g|webp)$/i;
 
 /** 剧目文件浏览器（D9）：工坊目录树 + 文本编辑。可写面由服务端白名单裁定（PlayFiles）。 */
 export function FileBrowser({
@@ -19,6 +22,9 @@ export function FileBrowser({
   const [saved, setSaved] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [lightbox, setLightbox] = useState<{ images: { url: string; caption: string }[]; index: number } | null>(
+    null,
+  );
 
   const reload = useCallback((): void => {
     api
@@ -32,6 +38,11 @@ export function FileBrowser({
   const select = useCallback(
     (path: string): void => {
       setError(null);
+      // 图不进编辑器：readFile 是 utf8 通道，2MB 的 PNG 读回来就是一屏乱码
+      if (IMAGE_EXT.test(path)) {
+        setOpen(path);
+        return;
+      }
       api
         .readFile(playId, path)
         .then(({ content }) => {
@@ -105,6 +116,11 @@ export function FileBrowser({
   }, [files]);
 
   const dirty = open !== null && draft !== saved;
+  const openIsImage = open !== null && IMAGE_EXT.test(open);
+  const images = useMemo(
+    () => files.filter((f) => IMAGE_EXT.test(f.path)).map((f) => ({ url: assetUrl(playId, f.path), caption: f.path })),
+    [files, playId],
+  );
 
   return (
     <div className="workshop-files">
@@ -144,7 +160,25 @@ export function FileBrowser({
       </div>
 
       <div className="workshop-file-editor">
-        {open ? (
+        {openIsImage ? (
+          <>
+            <header className="file-editor-bar">
+              <span className="file-path">{open}</span>
+              <span className="file-state">图片（只读）</span>
+              <button
+                className="ghost-btn small-btn"
+                onClick={() =>
+                  setLightbox({ images, index: Math.max(0, images.findIndex((i) => i.caption === open)) })
+                }
+              >
+                放大
+              </button>
+            </header>
+            <div className="file-image-preview">
+              <img src={assetUrl(playId, open)} alt={open} />
+            </div>
+          </>
+        ) : open ? (
           <>
             <header className="file-editor-bar">
               <span className="file-path">{open}</span>
@@ -167,10 +201,24 @@ export function FileBrowser({
           <p className="muted small">选一个文件开始编辑。</p>
         )}
       </div>
+
+      {lightbox && (
+        <ImageLightbox
+          images={lightbox.images}
+          index={lightbox.index}
+          onIndex={(index) => setLightbox({ ...lightbox, index })}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   );
 }
 
 function basename(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
+}
+
+/** 剧目内相对路径 → 静态服务地址（与 http.ts 的 /plays/:id/assets 路由一致）。 */
+function assetUrl(playId: string, path: string): string {
+  return `/plays/${playId}/${path.split("/").map(encodeURIComponent).join("/")}`;
 }

@@ -1,6 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+/** 后端地址：worktree/多实例下端口动态分配，默认仍是本地 8787。 */
+const server = process.env.STAGE_SERVER ?? "http://127.0.0.1:8787";
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -9,11 +12,11 @@ export default defineConfig({
     allowedHosts: [".trycloudflare.com", ".example.com"],
     proxy: {
       "/ws": {
-        target: "ws://127.0.0.1:8787",
+        target: server.replace(/^http/, "ws"),
         ws: true,
       },
-      "/api": "http://127.0.0.1:8787",
-      "/plays": "http://127.0.0.1:8787",
+      "/api": server,
+      "/plays": server,
     },
   },
 });

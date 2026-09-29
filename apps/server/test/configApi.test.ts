@@ -24,10 +24,18 @@ function fixture(env: string): { file: SettingsFile; envPath: string; keysPath: 
     keepRecentTokens: 12000,
     image: {
       enabled: true,
+      backend: "cpa",
       model: "gemini-3.1-flash-image",
       size: "1024x1024",
       concurrency: 2,
       timeoutMs: 90000,
+    },
+    flow: {
+      baseUrl: "http://127.0.0.1:38000",
+      apiKey: "flow-secret-9876",
+      model: "gemini-3.1-flash-image",
+      size: "2k",
+      timeoutMs: 180000,
     },
     tts: { enabled: true, keysPath, proxy: "", baseUrl: "https://api.fish.audio", concurrency: 3 },
   } as unknown as ServerConfig;
@@ -106,5 +114,20 @@ describe("设置面板后端", () => {
     expect(mask("abcdefghijklmnop")).toBe("abcd••••mnop");
     expect(mask("short")).toBe("••••");
     expect(mask("")).toBe("");
+  });
+
+  it("flow2api 面：读写同构，凭据同样只回掩码", () => {
+    const { file, envPath } = fixture("STAGE_IMAGE_BACKEND=flow2api\n");
+    const view = file.read();
+    expect(view.image.backend).toBe("flow2api");
+    expect(view.flow.apiKey).toBe("flow••••9876");
+    expect(view.flow.model).toBe("gemini-3.1-flash-image");
+    expect(JSON.stringify(view)).not.toContain("flow-secret-9876");
+
+    // 掩码回传 = 不改；新值才写
+    expect(file.write({ flow: { apiKey: view.flow.apiKey } as never })).toEqual([]);
+    expect(file.write({ flow: { size: "4k" } as never })).toEqual(["STAGE_FLOW_SIZE"]);
+    expect(file.write({ flow: { apiKey: "brand-new-flow-key" } as never })).toEqual(["STAGE_FLOW_API_KEY"]);
+    expect(readFileSync(envPath, "utf8")).toContain("STAGE_FLOW_API_KEY=brand-new-flow-key");
   });
 });
