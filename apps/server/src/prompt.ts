@@ -5,47 +5,79 @@ import type { PlayMemory } from "./memory.js";
 /** 素材清单（store.listAssets 原样；keys: backgrounds/cg/sfx/bgm/sprites/<charId>）。 */
 export type AssetManifest = Record<string, string[]>;
 
+/** 素材描述：stem（无扩展名的文件名）→ 一句说明。来源 plays/<id>/assets/manifest.json。 */
+export type AssetNotes = Record<string, string>;
+
+/** 已生成图条目：playwriter 自己 preload 出来的资产，prompt 即它当初的意图描述。 */
+export interface GeneratedNote {
+  id: string;
+  type: "bg" | "cg";
+  prompt: string;
+}
+
+export interface PromptContext {
+  play: PlayConfig;
+  assets?: AssetManifest;
+  /** 素材描述表（stem → 说明），拼在各清单的 id 后面。 */
+  notes?: AssetNotes;
+  /** 已生成图清单：让剧作家记得自己造过哪些 id，别换个名字重画一遍。 */
+  generated?: GeneratedNote[];
+  memory?: PlayMemory;
+  arcIds?: readonly string[];
+}
+
 /**
  * Playwriter 系统提示词 = 三区装配的 A 区（固定前部，KV cache 前缀稳定）。
  * 每轮变化的状态走 user 消息【状态】区（B 区 append-only），见 orchestrator。
  * 记忆层（D7）：craft/premise/index 标题列表在 runtime 构建时读入——纪元内冻结，工坊热改走 reload。
  */
-export function buildSystemPrompt(
-  play: PlayConfig,
-  assets: AssetManifest = {},
-  memory?: PlayMemory,
-  arcIds: readonly string[] = [],
-): string {
+export function buildSystemPrompt(ctx: PromptContext): string {
+  const { play, memory, generated = [] } = ctx;
+  const notes = ctx.notes ?? {};
+  /** 清单项渲染：有描述就带一句，让剧作家按画面选而不是猜文件名。 */
+  const label = (stem: string): string => {
+    const note = notes[stem]?.trim();
+    return note ? `${stem}（${note}）` : stem;
+  };
   const characters = play.characters
     .map((c) => {
       // 差分列表优先取角色卡 sprites 键名（前端按它解析立绘）；未配置映射时回退磁盘文件 stem
       const expressions =
         c.sprites && Object.keys(c.sprites).length > 0
           ? Object.keys(c.sprites)
-          : (assets[`sprites/${c.id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
+          : (ctx.assets?.[`sprites/${c.id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
       return `### ${c.name}（id: ${c.id}）\n${c.persona}${c.voice ? `\n音色：${c.voice}` : ""}${
-        expressions.length > 0 ? `\n立绘差分 expression：${expressions.join(" | ")}` : ""
+        expressions.length > 0
+          ? `\n立绘差分 expression：${expressions.map(label).join(" | ")}`
+          : ""
       }`;
     })
     .join("\n\n");
 
-  const stems = (key: string): string[] => (assets[key] ?? []).map((f) => f.replace(/\.\w+$/, ""));
-  const bg = stems("backgrounds");
-  const bgm = stems("bgm");
-  const sfx = stems("sfx");
-  const cg = stems("cg");
+  const stems = (key: string): string[] => (ctx.assets?.[key] ?? []).map((f) => f.replace(/\.\w+$/, ""));
+  const section = (heading: string, kind: string, tail = ""): string => {
+    const list = stems(kind);
+    return list.length > 0 ? `\n# ${heading}\n\n${list.map(label).join(" | ")}${tail}\n` : "";
+  };
+  const generatedSection =
+    generated.length > 0
+      ? `\n# 已生成的图（早已存在，直接引用 id，不要再 preload_asset）\n\n${generated
+          .map((g) => `${g.id}（${g.type}）—— ${g.prompt}`)
+          .join("\n")}\n`
+      : "";
   const assetSection = [
-    bg.length > 0 ? `\n# 可用背景 bg\n\n${bg.join(" | ")}——scene 的 bg 优先取这些 id。\n` : "",
-    bgm.length > 0 ? `\n# 可用音乐 bgm\n\n${bgm.join(" | ")}\n` : "",
-    sfx.length > 0 ? `\n# 可用音效 sfx\n\n${sfx.join(" | ")}\n` : "",
-    cg.length > 0 ? `\n# 已有插图 cg\n\n${cg.join(" | ")}\n` : "",
+    section("可用背景 bg", "backgrounds", "——scene 的 bg 优先取这些 id。"),
+    section("可用音乐 bgm", "bgm"),
+    section("可用音效 sfx", "sfx"),
+    section("已有插图 cg", "cg"),
+    generatedSection,
   ].join("");
 
   const premise = memory?.premise.trim() || play.premise;
   const craftSection = memory?.craft.trim()
     ? `\n# 剧艺守则（craft）\n\n${memory.craft.trim()}\n`
     : "";
-  const cards = memory?.visibleContext(arcIds) ?? [];
+  const cards = memory?.visibleContext(ctx.arcIds ?? []) ?? [];
   const indexSection =
     cards.length > 0
       ? `\n# 记忆索引（按需查详情）\n\n${cards.map((c) => `- [${c.layer}] ${c.name}：${c.summary}`).join("\n")}\n\n需要某条完整内容时调用 read_memory_detail 工具（传名称）。历史往事用 search_archive 检索。\n`
@@ -84,7 +116,8 @@ ${assetSection}${craftSection}${indexSection}
 - **提前 3–5 句发射**：图要 15–30 秒才到，引用太早只会看到骨架占位；
 - **id 自取**：用简短英文下划线 id（如 bg_rooftop_dusk、cg_rooftop_01），引用时一字不差；
 - **prompt 写英文**，写清主体/环境/光线/视角/画风，末尾加 "anime visual novel background, no text"；
-- **不要凭空造 id**：清单里已有的背景和插图直接引用，别重复生成。
+- **不要凭空造 id**：可用清单与「已生成的图」里已有的背景和插图直接引用，别重复生成。
+- **按描述选素材**：清单里带括号说明的是画面内容（差分的名字未必与画面相符），先看说明再挑 id。
 
 ## 台词（三类，正文为原生文本，不要转义）
 

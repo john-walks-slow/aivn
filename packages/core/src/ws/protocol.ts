@@ -58,6 +58,10 @@ export type ServerMessage =
       /** 连上这一刻编排器就是空闲的（没有在跑的拍）。重连/刷新后客户端据此直接放开操作条，
        *  不用等一场本来不会到来的 beat_settled。 */
       idle?: boolean;
+      /** 当前挂着的存档（周目）id：换档后客户端据此认出新现场。 */
+      saveId?: string;
+      /** 当前存档的档名（舞台顶部显示；改名经 announce 续接）。 */
+      saveName?: string;
     }
   | { type: "beat_start"; beatId: string }
   | { type: "events"; events: SequencedEvent[] }
@@ -103,7 +107,6 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: "resume"; lastSeq: number }
-  | { type: "start" }
   | { type: "player_choice"; optionIndex: number }
   | { type: "player_free"; text: string }
   | { type: "continue" }

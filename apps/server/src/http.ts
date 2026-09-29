@@ -206,6 +206,37 @@ export async function handleHttp(
       return json(res, 200, runtime.orchestrator.lineageView());
     }
 
+    // —— 存档（周目）：一剧目并存 N 棵独立的谱系树，「开始新周目」只新建不覆盖 ——
+    if (sub === "saves" && parts.length === 4) {
+      if (method === "GET") return json(res, 200, await library.saves(playId).list());
+      if (method === "POST") {
+        const raw = await readBody(req);
+        const body = raw.length ? (JSON.parse(raw.toString("utf8")) as { name?: string }) : {};
+        return json(res, 200, await playhouse.createSave(playId, body.name));
+      }
+      return fail(res, 405, "不支持的方法");
+    }
+    if (sub === "saves" && parts.length === 5) {
+      const saveId = parts[4] ?? "";
+      if (method === "PATCH") {
+        const body = JSON.parse((await readBody(req)).toString("utf8")) as { name?: string };
+        if (!body.name?.trim()) return fail(res, 400, "档名不能为空");
+        return json(res, 200, await playhouse.renameSave(playId, saveId, body.name));
+      }
+      if (method === "DELETE") {
+        await playhouse.deleteSave(playId, saveId);
+        return json(res, 200, { ok: true });
+      }
+    }
+
+    if (sub === "active" && parts.length === 4 && method === "PUT") {
+      // 切档：只改指针 + 重建 runtime；演出进行中等当前一拍演完
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as { saveId?: string };
+      if (!body.saveId) return fail(res, 400, "缺少 saveId");
+      await playhouse.switchSave(playId, body.saveId);
+      return json(res, 200, { ok: true });
+    }
+
     if (sub === "play" && parts.length === 4) {
       if (method !== "PUT") return fail(res, 405, "不支持的方法");
       const play = parsePlayConfig(JSON.parse((await readBody(req)).toString("utf8")));

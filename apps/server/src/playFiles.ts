@@ -14,6 +14,8 @@ import type { PlayStore } from "./store.js";
 const EDITABLE_EXT = new Set([".md", ".json", ".txt"]);
 /** 只读可见目录（浏览器能看，工坊 agent 不写）。 */
 const READONLY_PREFIXES = ["assets/"];
+/** 素材描述表（stem → 画面说明，注入剧作家提示词）——assets/ 里唯一可写的文本文件。 */
+const ASSET_MANIFEST = "assets/manifest.json";
 /** 允许下钻的顶层目录（其余目录整棵跳过，不进 readdir）。 */
 const DIR_ROOTS = ["memory", "assets"];
 
@@ -35,9 +37,9 @@ function normalizePath(rel: string): string | null {
   return segments.join("/");
 }
 
-/** 可写面：根层 play.json + theme.css + memory/** 文本文件。 */
+/** 可写面：根层 play.json + theme.css + 素材描述表 + memory/** 文本文件。 */
 function isEditable(rel: string): boolean {
-  if (rel === "play.json" || rel === "theme.css") return true;
+  if (rel === "play.json" || rel === "theme.css" || rel === ASSET_MANIFEST) return true;
   if (!rel.startsWith("memory/")) return false;
   return EDITABLE_EXT.has(extOf(rel));
 }

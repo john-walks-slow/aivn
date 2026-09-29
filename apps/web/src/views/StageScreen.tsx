@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PlayDetail } from "../api.js";
-import { navigate, replace } from "../router.jsx";
-import { useStageSocket, type StartMode, type WorkshopInbound } from "../stage/useStageSocket.js";
+import { navigate } from "../router.jsx";
+import { useStageSocket, type WorkshopInbound } from "../stage/useStageSocket.js";
 import { usePlayback } from "../stage/director.js";
 import { VoiceDirector } from "../stage/audio.js";
 import { buildAssetIndex, type AssetIndex } from "../stage/assets.js";
@@ -13,7 +13,7 @@ import { useVisualViewport } from "../stage/viewport.js";
 import { WorkshopPanel, type WorkshopMode } from "../workshop/WorkshopPanel.js";
 
 /** 演出屏：舞台（视觉层+打字机+语音）/ 剧本 log 双视图 + 停止点面板。 */
-export function StageScreen({ playId, mode }: { playId: string; mode: StartMode }) {
+export function StageScreen({ playId }: { playId: string }) {
   const directorRef = useRef<VoiceDirector | null>(null);
   if (!directorRef.current) directorRef.current = new VoiceDirector();
   const director = directorRef.current;
@@ -44,7 +44,7 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
     };
   }, []);
 
-  const stage = useStageSocket(playId, mode, {
+  const stage = useStageSocket(playId, {
     onAudio: (ready) => director.handleAudio(ready),
     onBeatStart: () => {
       director.beatStarted();
@@ -106,11 +106,6 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
   );
 
   useEffect(() => {
-    // start 只消费一次：地址栏剥掉 ?mode（replace 不留历史），刷新后走 continue 保护进度
-    if (location.hash.includes("mode=")) {
-      const [path = "/"] = location.hash.slice(1).split("?");
-      replace(path);
-    }
     api.playDetail(playId).then(setDetail).catch(() => {});
     api.listAssets(playId).then(setAssets).catch(() => {});
     return () => director.dispose();
@@ -138,7 +133,7 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
 
   const playback = usePlayback(stage.cues, stage.lines, {
     live: stage.state === "streaming",
-    resume: mode === "continue",
+    resume: true,
     revision: stage.revision,
     // P6：缓冲被结构性操作整段重放 → 播放层强制归零（换代后快进到新分支末尾）
     resetToken: rebase.token,
@@ -198,6 +193,8 @@ export function StageScreen({ playId, mode }: { playId: string; mode: StartMode 
             onLog={() => setView("log")}
             onRoute={() => setView("route")}
             onWorkshop={() => setWorkshop("drawer")}
+            saveName={stage.saveName}
+            onSaves={() => navigate(`/play/${playId}/saves`)}
             overlay={
               panelReady ? (
                 <StopPanel

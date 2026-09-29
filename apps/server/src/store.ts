@@ -10,6 +10,10 @@ import {
 } from "@stage-ai/core";
 import { parsePlayConfig, type PlayConfig } from "@stage-ai/core";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
+import { hasAnySave, readSaveMeta, saveDirOf, writeSaveMeta, assertSaveId, PlaySaves, type SaveMeta } from "./saves.js";
+
+/** 周目列表卡的「最后一句」只认这三种带正文的行。 */
+const PREVIEW_KINDS: ReadonlySet<string> = new Set(["say", "narrate", "thought"]);
 
 /** 就绪门细项（D13）：开演前置检查。 */
 export interface Readiness {
@@ -19,6 +23,7 @@ export interface Readiness {
   characterSprites: boolean;
   /** ≥1 背景图。 */
   background: boolean;
+  /** 本剧目已有存档（「继续」入口的显隐）。 */
   hasSession: boolean;
 }
 
@@ -29,14 +34,23 @@ export interface PlaySummary {
   readiness: Readiness;
 }
 
-/** 剧目目录持久化：play.json + lineage.jsonl（append-only）+ session.json（快照/leaf/engine）。 */
+/** 剧目目录持久化：play.json / 素材 / 剧目级记忆；谱系与引擎状态按存档隔离在 saves/<saveId>/。 */
 export class PlayStore {
   /** 剧目目录绝对路径（工坊文件层等外部模块需要根）。 */
   readonly dir: string;
+  /** 当前存档（null = 剧目级操作面，没有会话作用域）。 */
+  readonly saveId: string | null;
   private jsonlReady = false;
 
-  constructor(playDir: string) {
+  constructor(playDir: string, saveId: string | null = null) {
     this.dir = playDir;
+    this.saveId = saveId;
+  }
+
+  /** 存档目录（无 saveId 时抛错——会话面必须落在某一棵树上）。 */
+  private sessionDir(): string {
+    if (!this.saveId) throw new Error("该 PlayStore 无存档作用域");
+    return saveDirOf(this.dir, this.saveId);
   }
 
   async loadPlay(): Promise<PlayConfig> {
@@ -50,8 +64,9 @@ export class PlayStore {
     scene: string;
     runtime?: OrchestratorRuntimeState;
   } | null> {
+    if (!this.saveId) return null;
     try {
-      const raw = JSON.parse(await readFile(join(this.dir, "session.json"), "utf8"));
+      const raw = JSON.parse(await readFile(join(this.sessionDir(), "session.json"), "utf8"));
       return {
         store: raw.lineage,
         engine: raw.engine,
@@ -65,21 +80,26 @@ export class PlayStore {
 
   /** 行级事件追加（JSONL append-only）。 */
   async appendEvent(event: LineageEvent): Promise<void> {
+    const dir = this.sessionDir();
     if (!this.jsonlReady) {
-      await mkdir(this.dir, { recursive: true });
+      await mkdir(dir, { recursive: true });
       this.jsonlReady = true;
     }
-    await appendFile(join(this.dir, "lineage.jsonl"), JSON.stringify(event) + "\n");
+    await appendFile(join(dir, "lineage.jsonl"), JSON.stringify(event) + "\n");
   }
 
-  /** 会话全量（beat 收束时写；谱系树 + 引擎状态 + 场景 + 编排器运行态）。 */
+  /**
+   * 会话全量（beat 收束时写；谱系树 + 引擎状态 + 场景 + 编排器运行态）。
+   * 顺带更新档元信息（拍数 / 最后一句），让周目列表不必读会话文件。
+   */
   async saveSession(
     tree: LineageTree,
     engine: EngineStateSnapshot,
     scene: string,
     runtime?: OrchestratorRuntimeState,
   ): Promise<void> {
-    await mkdir(this.dir, { recursive: true });
+    const dir = this.sessionDir();
+    await mkdir(dir, { recursive: true });
     this.jsonlReady = true;
     const payload = {
       version: 1,
@@ -89,14 +109,30 @@ export class PlayStore {
       runtime,
       savedAt: Date.now(),
     };
-    await writeFile(join(this.dir, "session.json"), JSON.stringify(payload));
+    await writeFile(join(dir, "session.json"), JSON.stringify(payload));
+    await this.touchMeta(tree);
   }
 
-  /** 清会话（「开始游戏」重开时）。 */
-  async resetSession(): Promise<void> {
-    this.jsonlReady = false;
-    await rm(join(this.dir, "session.json"), { force: true });
-    await rm(join(this.dir, "lineage.jsonl"), { force: true });
+  /** 落盘后回写档元信息：拍数与最后一句沿当前路径算，与列表卡显示同源。 */
+  private async touchMeta(tree: LineageTree): Promise<void> {
+    if (!this.saveId) return;
+    const chain = tree.chainEvents(tree.leafId);
+    let beats = 0;
+    let preview = "";
+    for (const event of chain) {
+      if (event.kind === "beat_end") beats += 1;
+      else if (PREVIEW_KINDS.has(event.kind) && event.text) preview = event.text;
+    }
+    const previous = (await readSaveMeta(this.dir, this.saveId)) ?? null;
+    const meta: SaveMeta = {
+      id: this.saveId,
+      name: previous?.name ?? this.saveId,
+      createdAt: previous?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+      beats,
+      preview: preview.slice(0, 40),
+    };
+    await writeSaveMeta(this.dir, meta);
   }
 
   /** 就绪门检查（D13）：premise + 角色立绘映射 + ≥1 背景。 */
@@ -115,7 +151,7 @@ export class PlayStore {
       }) ?? false;
     const bgDir = join(this.dir, "assets/backgrounds");
     const background = existsSync(bgDir) && (await readdir(bgDir)).some((f) => /\.(png|jpe?g|webp)$/i.test(f));
-    const hasSession = existsSync(join(this.dir, "session.json"));
+    const hasSession = await hasAnySave(this.dir);
     return {
       ready: play.premise.trim() !== "" && characterSprites && background,
       premise: play.premise.trim() !== "",
@@ -167,6 +203,21 @@ export class PlayStore {
     await rm(join(this.dir, "assets", kindPath, name), { force: true });
   }
 
+  /** 素材描述表：assets/manifest.json 的 stem → 画面说明。没有或损坏即空表，不报错。 */
+  async assetNotes(): Promise<Record<string, string>> {
+    try {
+      const parsed: unknown = JSON.parse(await readFile(join(this.dir, "assets", "manifest.json"), "utf8"));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      const out: Record<string, string> = {};
+      for (const [stem, note] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof note === "string" && note.trim()) out[stem] = note.trim();
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
   /** play.json 全量保存（素材与配置页编辑）。 */
   async savePlay(play: PlayConfig): Promise<void> {
     await mkdir(this.dir, { recursive: true });
@@ -199,9 +250,24 @@ export class PlayStore {
 export class PlayLibrary {
   constructor(private readonly root: string) {}
 
-  store(playId: string): PlayStore {
+  private dirOf(playId: string): string {
     if (!/^[\w-]+$/.test(playId)) throw new Error(`非法剧目 id: ${playId}`);
-    return new PlayStore(join(this.root, playId));
+    return join(this.root, playId);
+  }
+
+  /** 剧目级操作面（play.json / 素材 / 记忆 / 工坊文件）：无会话作用域。 */
+  store(playId: string): PlayStore {
+    return new PlayStore(this.dirOf(playId));
+  }
+
+  /** 存档级操作面：会话读写落在 saves/<saveId>/。 */
+  saveStore(playId: string, saveId: string): PlayStore {
+    return new PlayStore(this.dirOf(playId), assertSaveId(saveId));
+  }
+
+  /** 存档（周目）管理面。 */
+  saves(playId: string): PlaySaves {
+    return new PlaySaves(this.dirOf(playId));
   }
 
   async list(): Promise<PlaySummary[]> {
@@ -256,15 +322,16 @@ export class PlayLibrary {
     return play.id;
   }
 
-  /** 剧目包导出（zip：play.json + assets，不含会话/记忆运行时）。 */
+  /** 剧目包导出（zip：play.json + assets + 剧目级记忆，不含存档/媒体缓存等运行时）。 */
   async exportZip(playId: string): Promise<Uint8Array> {
-    const dir = join(this.root, playId);
+    const dir = this.dirOf(playId);
     const files: Record<string, Uint8Array> = {};
     const walk = async (rel: string): Promise<void> => {
       const abs = join(dir, rel);
       for (const entry of await readdir(abs, { withFileTypes: true })) {
-        if (["sessions", "media-cache", "node_modules"].includes(entry.name)) continue;
-        if (entry.name === "session.json" || entry.name === "lineage.jsonl") continue;
+        // 存档（saves/）与活动档指针是玩家进度，不随剧目包走
+        if (["saves", "media-cache", "node_modules"].includes(entry.name)) continue;
+        if (entry.name === "active.json") continue;
         const childRel = rel === "" ? entry.name : `${rel}/${entry.name}`;
         if (entry.isDirectory()) await walk(childRel);
         else files[childRel] = new Uint8Array(await readFile(join(dir, childRel)));
