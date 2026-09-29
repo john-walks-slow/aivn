@@ -39,11 +39,18 @@ export function lineageToEvents(chain: readonly LineageEvent[]): SequencedEvent[
   const overrides = editOverrides(chain);
   const out: SequencedEvent[] = [];
   let seq = 0;
-  /** 一行台词/旁白/独白现场至少占 3 个 seq，重放正好塞得下，不会与下一行撞号。 */
   const push = (base: number | undefined, ...events: StageEvent[]): void => {
     const from = base !== undefined && base > seq ? base : seq + 1;
     events.forEach((event, i) => out.push({ seq: from + i, event }));
     seq = from + events.length - 1;
+  };
+  /**
+   * 台词现场 = 开始 + 文本 + 结束。空台词在现场只占 2 个 seq（解析器不发空 delta），
+   * 这里必须同规格，否则重放会往后挤一位、把下一行的锚点带偏。
+   */
+  const pushLine = (base: number | undefined, start: StageEvent, mid: StageEvent, end: StageEvent, text: string): void => {
+    if (text) push(base, start, mid, end);
+    else push(base, start, end);
   };
   for (const event of chain) {
     const attrs = event.payload?.attrs ?? {};
@@ -66,28 +73,13 @@ export function lineageToEvents(chain: readonly LineageEvent[]): SequencedEvent[
         push(base, stopEvent(stopFromEvent(event)));
         break;
       case "say":
-        push(
-          base,
-          { kind: "say_start", id: attrs.id ?? "", ...(attrs.mood ? { mood: attrs.mood } : {}) },
-          { kind: "say_text", delta: delta() },
-          { kind: "say_end" },
-        );
+        pushLine(base, { kind: "say_start", id: attrs.id ?? "", ...(attrs.mood ? { mood: attrs.mood } : {}) }, { kind: "say_text", delta: delta() }, { kind: "say_end" }, delta());
         break;
       case "narrate":
-        push(
-          base,
-          { kind: "narrate_start" },
-          { kind: "narrate_text", delta: delta() },
-          { kind: "narrate_end" },
-        );
+        pushLine(base, { kind: "narrate_start" }, { kind: "narrate_text", delta: delta() }, { kind: "narrate_end" }, delta());
         break;
       case "thought":
-        push(
-          base,
-          { kind: "thought_start", id: attrs.id ?? "" },
-          { kind: "thought_text", delta: delta() },
-          { kind: "thought_end" },
-        );
+        pushLine(base, { kind: "thought_start", id: attrs.id ?? "" }, { kind: "thought_text", delta: delta() }, { kind: "thought_end" }, delta());
         break;
       default:
         // preload 只触发生图、不影响重放画面（背景由 scene 携带）；player/ooc/beat_end 是元信息

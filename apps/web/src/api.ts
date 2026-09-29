@@ -65,7 +65,7 @@ export const api = {
 
   playDetail: (id: string) => request<PlayDetail>(`/api/plays/${id}`),
 
-  /** 路线树（P6）：全量节点 + 书签；打开导演视图时取，操作后刷新。 */
+  /** 路线树（P6）：全量节点含废弃分支；打开路线视图时取，操作后刷新。 */
   lineage: (id: string) => request<LineageView>(`/api/plays/${id}/lineage`),
 
   createPlay: (id: string, title: string) =>

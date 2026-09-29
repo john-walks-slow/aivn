@@ -30,7 +30,7 @@ export interface StageSocket {
   sendContinue: () => void;
   sendOoc: (text: string) => void;
   sendTtsControl: (state: { enabled?: boolean; paused?: boolean }) => void;
-  // —— 四原语（P6）：跳转 / 分岔 / 编辑 / 重写 / 分岔后 OOC / 书签 ——
+  // —— 导演操作（P6）：回看（客户端本地）/ 分岔 / 编辑 / 重写 / 导演注 OOC ——
   sendFork: (nodeId: string) => void;
   sendEdit: (nodeId: string, newText: string) => void;
   sendRewrite: (nodeId: string, granularity: "line" | "beat", instruction?: string) => void;
@@ -60,6 +60,8 @@ export interface StageSocketHandlers {
 
 export function useStageSocket(playId: string, mode: StartMode, handlers?: StageSocketHandlers): StageSocket {
   const [state, setState] = useState<BeatState>("connecting");
+  const stateRef = useRef<BeatState>("connecting");
+  stateRef.current = state;
   const [error, setError] = useState<string | null>(null);
   const [stop, setStop] = useState<StopPayload | null>(null);
   const [isActEnd, setActEnd] = useState(false);
@@ -117,6 +119,11 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
                 setTick((t) => t + 1);
                 ws.send(JSON.stringify({ type: "resume", lastSeq: 0 } satisfies ClientMessage));
               }
+            }
+            // hello 自报空闲：刷新进来的空闲现场不必等 beat_settled 才解锁操作
+            if (msg.idle) {
+              setSettled(true);
+              if (stateRef.current === "streaming") setState("stopped");
             }
             if (expectFreshRef.current && msg.lastSeq === 0) {
               // 新档 hello：清旧脚本，从头接收
@@ -177,6 +184,9 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
             }
             setStop(msg.stop ?? null);
             setActEnd(msg.reason === "act_end");
+            // 重放即一条静止的现状：没有新事件在流，操作条应当立刻可用
+            setState("stopped");
+            setSettled(true);
             setError(null);
             setTick((t) => t + 1);
             handlersRef.current.onRebase?.({

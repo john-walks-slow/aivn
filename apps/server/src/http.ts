@@ -200,7 +200,7 @@ export async function handleHttp(
       return fail(res, 405, "不支持的方法");
     }
     if (sub === "lineage" && parts.length === 4) {
-      // 路线树（P6）：全量节点（含废弃分支）+ 书签；打开视图/操作后/手动刷新时取
+      // 路线树（P6）：全量节点（含废弃分支）；打开路线视图/结构操作后/手动刷新时取
       if (method !== "GET") return fail(res, 405, "不支持的方法");
       const runtime = await playhouse.get(playId);
       return json(res, 200, runtime.orchestrator.lineageView());

@@ -309,7 +309,7 @@ export class PlaywrightOrchestrator {
   private unsubscribeAgent: (() => void) | null = null;
   /** 事件缓冲代号（P6）：分岔/跳转/编辑/重写后整段重放并自增，客户端据此丢弃旧 seq 认知。 */
   private epoch = 0;
-  /** 已写入 JSONL 的谱系事件数：直接改动树的操作（编辑/重写/书签）在此增量补推。 */
+  /** 已写入 JSONL 的谱系事件数：直接改动树的操作（编辑/重写）在此增量补推。 */
   private loggedEvents = 0;
 
   constructor(opts: OrchestratorOptions) {
@@ -551,7 +551,7 @@ export class PlaywrightOrchestrator {
 
   // —— P6 四原语：跳转 / 分岔 / 编辑 / 重写，彼此正交，可自由组合 ——
 
-  /** 路线树视图（全量节点含废弃分支 + 书签）；前端「路线树」视图与 REST 共用。 */
+  /** 路线树视图（全量节点含废弃分支）；前端「路线」视图与 REST 共用。 */
   lineageView(): LineageView {
     return this.opts.tree.describe();
   }
@@ -1038,7 +1038,7 @@ export class PlaywrightOrchestrator {
     return event;
   }
 
-  /** 直接改动谱系树的操作（编辑/重写/书签）不经过 append：事后按游标补推 JSONL。 */
+  /** 直接改动谱系树的操作（编辑/重写）不经过 append：事后按游标补推 JSONL。 */
   private flushLineageLog(): void {
     const all = this.opts.tree.export().events;
     for (let i = this.loggedEvents; i < all.length; i += 1) this.opts.onLineageEvent?.(all[i]!);
@@ -1174,8 +1174,11 @@ export class PlaywrightOrchestrator {
         this.appendLineage("stop", {
           payload: {
             seq,
-            attrs: { type: event.stopType },
+            stopType: event.stopType,
             ...(event.options ? { options: event.options } : {}),
+            ...(event.placeholder ? { placeholder: event.placeholder } : {}),
+            // attrs 是客户端唯一能看到的那份，字段名与服务端 payload 顶层保持一致
+            attrs: { stopType: event.stopType },
           },
         });
         return;

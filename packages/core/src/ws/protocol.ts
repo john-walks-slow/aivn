@@ -55,6 +55,9 @@ export type ServerMessage =
        * 客户端重连时发现与本地不一致 → 清空本地缓冲、lastSeq 归零后全量重放。
        */
       epoch?: number;
+      /** 连上这一刻编排器就是空闲的（没有在跑的拍）。重连/刷新后客户端据此直接放开操作条，
+       *  不用等一场本来不会到来的 beat_settled。 */
+      idle?: boolean;
     }
   | { type: "beat_start"; beatId: string }
   | { type: "events"; events: SequencedEvent[] }

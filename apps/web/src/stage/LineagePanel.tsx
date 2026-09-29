@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LineageNodeView, LineageView } from "@stage-ai/core";
 import { api } from "../api.js";
-import { buildBeats, firstLineOf, type BeatCard } from "./beats.js";
+import { beatAnchors, buildBeats, type BeatCard } from "./beats.js";
 import type { ScriptLine } from "./script.js";
 
 /** 导演视角的世界线写操作（跳转是纯客户端只读回看，不在这里——它不动物理分支）。 */
@@ -107,9 +107,7 @@ export function RouteTree(
 /** 活动路径的卡片 → 舞台行 key（拍首行），废弃分支的行已不在缓冲里，没有可回看的目标。 */
 function rewindTargets(cards: BeatCard[], lines: readonly ScriptLine[]): Map<string, string> {
   const map = new Map<string, string>();
-  for (const card of cards) {
-    if (!card.onPath) continue;
-    const line = firstLineOf(card, lines);
+  for (const [card, line] of beatAnchors(cards, lines)) {
     if (line) map.set(card.id, line.key);
   }
   return map;
@@ -135,8 +133,13 @@ function BeatTile(props: {
     <div className={cls} style={{ marginLeft: `${Math.min(card.depth, 4) * 18}px` }}>
       <button
         className="beat-tile-main"
-        disabled={busy || !lineKey}
-        title={lineKey ? "回看这一拍" : "已作废的分支，先分岔才能进去"}
+        title={
+          lineKey
+            ? "回看这一拍"
+            : card.isAbandoned
+              ? "这一拍已不在当前世界线上——展开后可以岔回去"
+              : "这一拍还没有台词"
+        }
         onClick={() => {
           if (lineKey) props.onRewind(lineKey);
           props.onSelect();
@@ -150,17 +153,31 @@ function BeatTile(props: {
         <span className="beat-tile-text">{card.preview || "（无台词）"}</span>
         {who && <span className="beat-tile-who">{who}</span>}
       </button>
-      {active && !card.isAbandoned && <BeatActions card={card} busy={busy} ops={ops} />}
+      {/* 废弃分支不是墓碑：岔出去就能把它接回世界线，否则玩家永远进不去看过的那个世界 */}
+      {active && (
+        <BeatActions card={card} busy={busy} ops={ops} canRewind={card.onPath} />
+      )}
     </div>
   );
 }
 
-function BeatActions({ card, busy, ops }: { card: BeatCard; busy: boolean; ops: LineageOps }) {
+function BeatActions({
+  card,
+  busy,
+  ops,
+  canRewind,
+}: {
+  card: BeatCard;
+  busy: boolean;
+  ops: LineageOps;
+  canRewind: boolean;
+}) {
   const [note, setNote] = useState("");
   return (
     <div className="lineage-actions">
+      {canRewind && <span className="beat-tile-here-hint">回看里可以逐句往回追</span>}
       <button className="ghost-btn" disabled={busy} onClick={() => ops.fork(card.id)}>
-        🌿 从这里岔出去
+        {canRewind ? "🌿 从这里岔出去" : "🌿 岔回去（接回世界线）"}
       </button>
       <button
         className="ghost-btn"
@@ -402,7 +419,7 @@ function describeRow(node: LineageNodeView, names: Readonly<Record<string, strin
         ...base(node),
         cls: "line-mark",
         text: `↺ 重写此${node.granularity === "beat" ? "幕" : "句"}${
-          node.attrs.instruction ? `：${node.attrs.instruction}` : ""
+          (node.instruction ?? node.attrs.instruction) ? `：${node.instruction ?? node.attrs.instruction}` : ""
         }`,
       };
     case "beat_end":
@@ -417,7 +434,8 @@ function base(node: LineageNodeView): Row {
 }
 
 function stopLabel(attrs: Record<string, string>): string {
-  if (attrs.stopType === "choice") return "◇ 等待玩家选择";
-  if (attrs.stopType === "free") return "◇ 等待玩家回应";
+  const type = attrs.stopType ?? attrs.type; // 老档存在 type 下
+  if (type === "choice") return "◇ 等待玩家选择";
+  if (type === "free") return "◇ 等待玩家回应";
   return "◇ 等待继续";
 }

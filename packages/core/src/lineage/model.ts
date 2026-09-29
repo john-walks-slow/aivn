@@ -91,6 +91,8 @@ export interface LineageNodeView {
   editTargetId: string | undefined;
   /** rewrite 事件专有：重写粒度标注（line/beat）。 */
   granularity: string | undefined;
+  /** rewrite 事件专有：玩家写下的导演意图。 */
+  instruction: string | undefined;
   /** 剧本事件的 seq（say_start/narrate_start/scene/… 的序号）：与客户端 ScriptLine.seq 同尺，
    *  路线树据此把谱系卡片精确对到剧本行上。player/ooc/edit/rewrite 无 seq。 */
   seq: number | undefined;
@@ -105,7 +107,7 @@ export interface LineageView {
 
 const EDITABLE_KINDS: ReadonlySet<string> = new Set(["say", "narrate", "thought"]);
 
-/** 持久化结构：事件日志（真相源）+ 会话运行态（leafId）+ 用户存档事实（快照/书签）。 */
+/** 持久化结构：事件日志（真相源）+ 会话运行态（leafId）+ 分岔事实快照。 */
 export interface LineageStore {
   events: LineageEvent[];
   leafId: string | null;
@@ -237,7 +239,7 @@ export class LineageTree {
     return candidateId !== nodeId && this.ancestorChain(nodeId).includes(candidateId);
   }
 
-  /** 保存谱系快照（分岔/书签时）。 */
+  /** 保存谱系快照（分岔/重写时）。 */
   saveSnapshot(engine: EngineStateSnapshot, memory: MemorySnapshot): LineageSnapshot {
     if (this.leaf === null) throw new Error("空树不能保存快照");
     const snapshot: LineageSnapshot = {
@@ -305,6 +307,7 @@ export class LineageTree {
         children: childCount.get(event.id) ?? 0,
         editTargetId: event.editTargetId,
         granularity: event.payload?.granularity,
+        instruction: event.payload?.instruction,
         seq: typeof event.payload?.seq === "number" ? event.payload.seq : undefined,
       }));
     return {

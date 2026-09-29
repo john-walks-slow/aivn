@@ -40,6 +40,7 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
     voice: runtime.voice,
     assets: runtime.images?.snapshot(),
     epoch: runtime.orchestrator.currentEpoch,
+    idle: !runtime.orchestrator.isBusy,
   };
 }
 
@@ -283,12 +284,20 @@ export class PlayHouse {
           return { url: `/plays/${play.id}/media/tts/${file}` };
         }
       : undefined;
+    // 生图资产层（D6）：manifest 载入既有资产，预发射复用不重生成。
+    // 必须在编排器之前就绪——已生成图的 id/prompt 要进 A 区，否则剧作家忘掉自己造过什么。
+    const images = this.imageGen
+      ? new ImageAssets(play.id, store, this.imageGen, this.config.image.concurrency)
+      : undefined;
+    if (images) await images.load();
     const orchestrator = new PlaywrightOrchestrator({
       streamFn: this.streamFn,
       model,
       getApiKey: () => this.config.apiKey,
       play,
       assets: await store.listAssets(),
+      assetNotes: await store.assetNotes(),
+      generatedAssets: images?.notes(),
       memory,
       tree,
       engine,
@@ -309,11 +318,6 @@ export class PlayHouse {
         store.saveSession(tree, engine, orchestrator.currentScene, orchestrator.runtimeState),
       restored,
     });
-    // 生图资产层（D6）：manifest 载入既有资产，预发射复用不重生成
-    const images = this.imageGen
-      ? new ImageAssets(play.id, store, this.imageGen, this.config.image.concurrency)
-      : undefined;
-    if (images) await images.load();
     // 工坊（D9）：独立实例，与演出互不干扰；写盘后按需重建 runtime（保存即生效）
     const workshop = new WorkshopSession({
       store,

@@ -121,6 +121,18 @@ describe("P6 导演操作 · 编排器", () => {
     expect(view.pathIds.at(-1)).toBe(sayId);
   });
 
+  it("停止点跨分岔后还原成原来那个：choice 不退化成 pause", async () => {
+    const { orchestrator, tree } = await playedTwoBeats(); // 拍一有 choice 停止点
+    const choiceNode = tree.chainEvents(tree.leafId!).findLast((e) => e.kind === "stop");
+    expect(choiceNode?.payload?.stopType).toBe("choice");
+
+    await orchestrator.forkTo(choiceNode!.id); // 就分岔在停止点上
+
+    const stop = orchestrator.runtimeState.lastStop;
+    expect(stop?.stopType).toBe("choice");
+    expect(stop?.options?.[0]?.text).toBeTruthy();
+  });
+
   it("句级重写：隐式分岔 + 立即重生成，新分支带 rewrite 标注", async () => {
     const { orchestrator, tree, contexts } = await playedTwoBeats();
     const sayId = firstNodeOf(tree, "say");
@@ -205,6 +217,17 @@ describe("P6 rebuild · 谱系 → IR", () => {
     tree.append("say", { text: "第二句", payload: { attrs: { id: "koharu" }, seq: 20 } });
 
     expect(lineageToEvents(tree.chainEvents(tree.leafId!)).map((e) => e.seq)).toEqual([5, 6, 7, 20, 21, 22]);
+  });
+
+  it("空台词只占 2 个 seq：重放不挤掉下一行的锚点", () => {
+    const tree = new LineageTree();
+    tree.append("say", { text: "", payload: { seq: 1, attrs: { id: "mio" } } });
+    tree.append("say", { text: "满的那句", payload: { seq: 3, attrs: { id: "mio" } } });
+    const events = lineageToEvents(tree.chainEvents(tree.leafId!));
+    expect(events.map((e) => e.event.kind)).toEqual([
+      "say_start", "say_end", "say_start", "say_text", "say_end",
+    ]);
+    expect(events.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5]);
   });
 
   it("重放不倒退：老节点无 seq 时按顺序补号", () => {

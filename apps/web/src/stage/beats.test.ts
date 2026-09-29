@@ -25,6 +25,7 @@ function view(specs: NodeSpec[], leafId: string): LineageView {
     children: 0,
     editTargetId: undefined,
     granularity: undefined,
+    instruction: undefined,
     seq,
   }));
   return { nodes, leafId, pathIds: nodes.filter((n) => n.onPath).map((n) => n.id) };
@@ -123,6 +124,48 @@ describe("buildBeats 一拍一卡", () => {
     expect(cards[0]!.isAbandoned).toBe(false);
     expect(firstLineOf(cards[0]!, [line("l1", 1, "开场")])?.key).toBe("l1");
     expect(firstLineOf(cards[1]!, [line("l1", 1, "开场")])).toBeNull();
+  });
+
+  it("重演出来的新拍挂在被重写的那一拍下（兄弟，不是无根新枝）", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "say", 1, "第一拍"],
+          ["b", "beat_end"],
+          ["c", "say", 4, "第二拍", false],
+          ["r", "rewrite", undefined, "重演"],
+          ["d", "say", 9, "第二拍·重演"],
+          ["e", "beat_end"],
+        ],
+        "e",
+      ),
+      [],
+    );
+    expect(cards.map((card) => [card.id, card.parentId])).toEqual([
+      ["a", null],
+      ["c", "a"],
+      ["d", "c"],
+    ]);
+    expect(cards[1]!.isAbandoned).toBe(true); // 旧版那一拍作废，但新拍挂在它下面
+    expect(cards[2]!.onPath).toBe(true);
+  });
+
+  it("停止点类型读 attrs.stopType，老档的 attrs.type 也能认", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "say", 1, "开场"],
+          ["s", "stop", 2, undefined, true, { stopType: "choice" }],
+          ["b", "beat_end"],
+          ["c", "say", 9, "老档"],
+          ["t", "stop", 10, undefined, true, { type: "free" }],
+          ["d", "beat_end"],
+        ],
+        "d",
+      ),
+      [],
+    );
+    expect(cards.map((card) => card.stopType)).toEqual(["choice", "free"]);
   });
 
   it("preload/edit 不进卡，rewrite 断开后续", () => {

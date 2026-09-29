@@ -1,4 +1,4 @@
-import type { LineageNodeView, LineageView } from "@stage-ai/core";
+import type { LineageNodeView, LineageView, StopType } from "@stage-ai/core";
 import type { ScriptLine } from "./script.js";
 
 /** 一拍一卡：拍不是存储实体，是行级事件日志上的区间，渲染期聚合出来。 */
@@ -11,7 +11,7 @@ export interface BeatCard {
   preview: string;
   speakers: string[];
   sceneBg: string | null;
-  stopType: string | null;
+  stopType: StopType | null;
   /** 本拍首个剧本事件的 seq：回看/定位到该拍首行。全无 seq（老档/纯导演注拍）时为 null。 */
   startSeq: number | null;
   onPath: boolean;
@@ -43,6 +43,8 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
     }
     if (node.kind === "edit") continue;
     if (node.kind === "rewrite") {
+      // 重写记在被重写的那张卡上：重演出来的新拍是它的兄弟，不是无根的新枝
+      if (current) cardOfNode.set(node.id, current);
       closed = true;
       continue;
     }
@@ -70,19 +72,62 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
   const leafCard = cards.find((card) => card.nodes.some((n) => n.id === view.leafId));
   if (leafCard) leafCard.isLeaf = true;
 
-  // 活动路径上的卡片：摘要取该拍首行原文（编辑/改写后的真实台词）
-  for (const card of cards) {
-    const line = firstLineOf(card, lines);
-    if (card.onPath && line) setPreview(card, line.text);
+  // 活动路径上的卡片：摘要取该拍的第一句台词（场景/音效行只是布景，不配当摘要）
+  for (const [card, line] of beatAnchors(cards, lines)) {
+    if (card.onPath && line) setPreview(card, spokenText(line, lines));
   }
   return cards;
 }
 
-/** 该拍在世界线上的首行；废弃分支的行已不在缓冲里，定位不到就是 null。 */
-export function firstLineOf(card: BeatCard, lines: readonly ScriptLine[]): ScriptLine | null {
+/**
+ * 活动路径卡片 → 舞台上的那一行。废弃分支的行不在缓冲里；本拍没有台词的卡（纯场景切换）
+ * 也不能去认下一拍的行，否则摘要和回看都会指到别人家门口。
+ */
+export function beatAnchors(
+  cards: readonly BeatCard[],
+  lines: readonly ScriptLine[],
+): Map<BeatCard, ScriptLine | null> {
+  const map = new Map<BeatCard, ScriptLine | null>();
+  const startSeqs = cards.map((card) => card.startSeq);
+  cards.forEach((card, i) => {
+    if (!card.onPath) return;
+    const next = startSeqs.slice(i + 1).find((seq) => seq !== null && seq > (card.startSeq ?? 0));
+    map.set(card, firstLineOf(card, lines, next ?? null));
+  });
+  return map;
+}
+
+/** 从锚点行往后找第一句有台词的行；整拍只有布景就退回锚点行自己的文本。 */
+function spokenText(anchor: ScriptLine, lines: readonly ScriptLine[]): string {
+  if (anchor.text && anchor.type !== "scene" && anchor.type !== "sfx" && anchor.type !== "cg") {
+    return anchor.text;
+  }
+  const spoken = lines.find(
+    (l) =>
+      l.seq !== undefined &&
+      l.seq >= (anchor.seq ?? 0) &&
+      l.text &&
+      l.type === "say",
+  );
+  return spoken?.text ?? anchor.text;
+}
+
+/**
+ * 该拍在世界线上的首行；废弃分支的行已不在缓冲里，定位不到就是 null。
+ * `until` 是下一拍的起点：越过它就说明本拍根本没台词。
+ */
+export function firstLineOf(
+  card: BeatCard,
+  lines: readonly ScriptLine[],
+  until: number | null = null,
+): ScriptLine | null {
   const from = card.startSeq;
   if (from === null) return null;
-  return lines.find((l) => l.seq !== undefined && l.seq >= from) ?? null;
+  return (
+    lines.find(
+      (l) => l.seq !== undefined && l.seq >= from && (until === null || l.seq < until),
+    ) ?? null
+  );
 }
 
 function newCard(first: LineageNodeView, parent: BeatCard | null): BeatCard {
@@ -106,7 +151,7 @@ function newCard(first: LineageNodeView, parent: BeatCard | null): BeatCard {
 function collect(card: BeatCard): void {
   for (const node of card.nodes) {
     if (node.kind === "scene" && node.attrs.bg) card.sceneBg = node.attrs.bg;
-    if (node.kind === "stop") card.stopType = node.attrs.stopType ?? "continue";
+    if (node.kind === "stop") card.stopType = stopTypeOf(node.attrs);
     if (node.kind === "say" || node.kind === "thought") {
       const who = node.attrs.id ?? "";
       if (who && !card.speakers.includes(who)) card.speakers.push(who);
@@ -118,4 +163,10 @@ function collect(card: BeatCard): void {
 
 function setPreview(card: BeatCard, text: string): void {
   card.preview = text.length > 32 ? `${text.slice(0, 32)}…` : text;
+}
+
+/** 停止点类型；老档把类型存在 attrs.type，读不到就按最保守的「等待继续」算。 */
+function stopTypeOf(attrs: LineageNodeView["attrs"]): StopType {
+  const value = attrs.stopType ?? attrs.type;
+  return value === "choice" || value === "free" ? value : "pause";
 }

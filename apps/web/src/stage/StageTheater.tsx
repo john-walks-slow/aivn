@@ -158,10 +158,13 @@ export function StageTheater({
   };
 
   // 自动淡出：4 秒没动静就把操作条收起来，画面自己说话；任何交互立刻回来。
+  // 正在读的面板不算「没动静」——淡出会把菜单连同它唯一的入口一起收走。
+  const panelOpen = moreOpen || directorOpen || backlogOpen;
   useEffect(() => {
+    if (panelOpen) return;
     const timer = setTimeout(() => setIdleChrome(true), 4000);
     return () => clearTimeout(timer);
-  }, [idleChrome, view?.key, shownLength]);
+  }, [idleChrome, panelOpen, view?.key, shownLength]);
 
   // 触屏手势：上滑看回顾、下滑收操作条；横向滑动交给系统（不拦）。
   const touchRef = useRef<{ y: number; at: number } | null>(null);
@@ -270,6 +273,7 @@ export function StageTheater({
             onClick={(e) => {
               e.stopPropagation();
               setMoreOpen((open) => !open);
+              poke();
             }}
           >
             {moreOpen ? "收起" : "更多"}
