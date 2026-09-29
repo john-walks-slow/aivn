@@ -6,9 +6,9 @@ import type { StopPayload } from "../ws/protocol.js";
 /**
  * 谱系 → 客户端事件流（只读物化层）。
  *
- * 谱系事件日志是唯一真相源，任何一条「某节点为止」的链都能重放成客户端 IR 事件流。
- * 服务端分岔/编辑/重写之后用它重建缓冲（世界线写操作），客户端「跳过去看」用它
- * 在本地物化任意节点——包括废弃分支——不发任何 WS、不动物理分支。
+ * 谱系事件日志是唯一真相源，「某节点为止」的那条链能重放成客户端 IR 事件流。
+ * 走向哪条链由世界线（`tree.leafId`）决定：跳转不追加事件、分岔/编辑追加事件后
+ * 叶子随之移动，这里照叶子重放，客户端看到的就永远是当前世界线。
  */
 
 /** 谱系事件 → 路线树投影。客户端与服务端共用这一份，避免两处投影各写一遍走偏。 */
@@ -46,31 +46,6 @@ function readStop(payload: LineageEvent["payload"]): Pick<LineageNodeView, "stop
     ...(raw.options ? { stopOptions: raw.options } : {}),
     ...(raw.placeholder ? { stopPlaceholder: raw.placeholder } : {}),
   };
-}
-
-/**
- * 扁平节点表 → 某节点的祖先链（root → node，序即演出顺序）。
- *
- * 走 parentId 上溯，与 `LineageTree.ancestorChain` 同一条规则；入参可以是整棵路线树的
- * 投影，所以客户端拿 REST 拉来的 LineageView 就能自己拼出任意分支的链。
- */
-export function chainToNodes(
-  nodes: readonly LineageNodeView[],
-  nodeId: string,
-): LineageNodeView[] {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const chain: LineageNodeView[] = [];
-  const seen = new Set<string>();
-  let cursor: string | null = nodeId;
-  while (cursor) {
-    if (seen.has(cursor)) break; // 谱系成环也不把界面挂死
-    seen.add(cursor);
-    const node: LineageNodeView | undefined = byId.get(cursor);
-    if (!node) break;
-    chain.push(node);
-    cursor = node.parentId;
-  }
-  return chain.reverse();
 }
 
 /**
@@ -203,7 +178,8 @@ function readLegacyStopType(attrs: Record<string, string>): StopType | undefined
   return value === "choice" || value === "free" ? value : undefined;
 }
 
-function stopEvent(stop: DslStop): StageEvent {  return {
+function stopEvent(stop: DslStop): StageEvent {
+  return {
     kind: "stop",
     stopType: stop.stopType,
     ...(stop.options ? { options: stop.options } : {}),

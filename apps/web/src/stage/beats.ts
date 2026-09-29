@@ -87,7 +87,7 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
  * 活动路径卡片 → 舞台上的那一行。废弃分支的行不在缓冲里；本拍没有台词的卡（纯场景切换）
  * 也不能去认下一拍的行，否则摘要和回看都会指到别人家门口。
  */
-export function beatAnchors(
+function beatAnchors(
   cards: readonly BeatCard[],
   lines: readonly ScriptLine[],
 ): Map<BeatCard, ScriptLine | null> {
