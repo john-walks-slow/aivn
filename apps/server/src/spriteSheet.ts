@@ -35,8 +35,9 @@ export interface SheetPromptInput {
  */
 export function sheetPrompt(input: SheetPromptInput): string {
   const { character, expressions } = input;
-  const cols = 2;
-  const rows = Math.ceil(expressions.length / cols);
+  // 必须和 sliceSheet 走同一个 gridFor：提示词说的网格跟切格用的网格对不上，
+  // 模型会照提示词画，切的时候就会切出半个表情或者凭空丢掉空格。
+  const { cols, rows } = gridFor(expressions.length);
   const style = input.style ? `${input.style}. ` : "";
   return [
     `A ${cols}x${rows} character expression sheet of the same character, arranged in a neat grid.`,

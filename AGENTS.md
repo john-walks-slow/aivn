@@ -17,7 +17,7 @@ AI galgame 引擎：LLM 剧作家（playwriter）流式输出 Stage DSL（XML �
 
 - 启动：`pnpm --filter @stage-ai/server start`（需根目录 `.env`：cpa 网关 STAGE_BASE_URL/STAGE_API_KEY/STAGE_MODEL_ID 等）+ `pnpm --filter @stage-ai/web dev`（:5180，/ws 代理 :8787）
 - Node ≥ 22.19（pi-agent-core engines 要求），pnpm workspace
-- `pnpm test` —— vitest（core 65 + server 147，测试范围按改动模块控制）
+- `pnpm test` —— vitest（core 65 + server 157，测试范围按改动模块控制）
 - `pnpm typecheck` / `pnpm build`（改 core 后须 rebuild，web/server 走 workspace symlink 的 dist 类型）
 - 解析器改动必须保持撕裂等价性测试（chunk=1/2/3/5/7）与消息边界自动闭合用例全绿——这是 P0 冻结契约的回归线
 - 语音本地联调：`.env` 的 STAGE_TTS_*（默认读 `~/.config/fish-audio/keys.json`，走 7890 代理）；无 key 时 hello.voice=false、客户端自动隐藏语音开关
