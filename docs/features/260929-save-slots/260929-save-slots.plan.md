@@ -1,6 +1,6 @@
 # 多周目存档（存档 = 一棵独立的故事树）
 
-> **状态**：计划已定，待实施
+> **状态**：已实施并完成实机验证（详见 `260929-save-slots.validation.md`、`260929-save-slots.summary.md`）
 > **问题**：「开始游戏」= `startFresh()` → `resetSession()` 把 `session.json` + `lineage.jsonl` 一起 `rm`。
 > 一个剧目只有一档，历史被点掉即不可恢复。
 > **目标**：存档（周目）= 一棵独立的谱系树；一个剧目下并存 N 棵，开始新周目只新建不覆盖。
