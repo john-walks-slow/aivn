@@ -48,37 +48,6 @@ async function realImage(aspect: ImageAspect, mimeType: string): Promise<Buffer>
   return mimeType === "image/png" ? composed : await sharp(composed).jpeg().toBuffer();
 }
 
-/** 表情面板桩：cols x rows 格，每格一个人形，格间留白当分隔。 */
-async function buildSheetStub(cols: number, rows: number): Promise<Buffer> {
-  const width = 768;
-  const height = 1365;
-  const cellW = Math.floor(width / cols);
-  const cellH = Math.floor(height / rows);
-  const cells: sharp.OverlayOptions[] = [];
-  for (let i = 0; i < cols * rows; i++) {
-    const c = i % cols;
-    const r = Math.floor(i / cols);
-    cells.push({
-      input: await sharp({
-        create: {
-          width: Math.round(cellW * 0.5),
-          height: Math.round(cellH * 0.7),
-          channels: 3,
-          background: "#3c4678",
-        },
-      })
-        .png()
-        .toBuffer(),
-      left: c * cellW + Math.round(cellW * 0.25),
-      top: r * cellH + Math.round(cellH * 0.15),
-    });
-  }
-  return sharp({ create: { width, height, channels: 3, background: "#f0f2f5" } })
-    .composite(cells)
-    .png()
-    .toBuffer();
-}
-
 async function makeStore(): Promise<PlayStore> {
   const dir = await mkdtemp(join(tmpdir(), "stage-wassets-"));
   await mkdir(join(dir, "memory", "always"), { recursive: true });
@@ -114,7 +83,7 @@ function stubBackend(mimeType = "image/jpeg"): { backend: ImageBackend; calls: I
   return { backend, calls };
 }
 
-function makeAssets(store: PlayStore, backend: ImageBackend): {
+function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2): {
   assets: WorkshopAssets;
   files: PlayFiles;
   writes: WorkshopWrite[];
@@ -128,7 +97,7 @@ function makeAssets(store: PlayStore, backend: ImageBackend): {
       store,
       files,
       backend,
-      limiter: new Limiter(2),
+      limiter: new Limiter(concurrency),
       onWrite: (w) => writes.push(w),
     }),
   };
@@ -323,90 +292,29 @@ describe("WorkshopAssets：工坊素材落盘", () => {
     expect(a[0]!.url).toBe(b[0]!.url);
   });
 
-  it("sheet：一次调用出一整套差分，每张独立抠底并补写立绘映射", async () => {
-    const store = await makeStore();
-    // 面板图：2x2 格，每格一个深色小人 + 纯底
-    const sheet = await buildSheetStub(2, 2);
-    const backend: ImageBackend = { generate: async () => ({ data: sheet, mimeType: "image/png" }) };
-    const calls: ImageRequest[] = [];
-    const recording: ImageBackend = {
-      generate: async (req) => {
-        calls.push(req);
-        return backend.generate(req);
-      },
-    };
-    const { assets, files } = makeAssets(store, recording);
-
-    const res = await assets.generate(
-      { kind: "sprite", characterId: "mio", expressions: ["neutral", "smile", "shy"] },
-      "少女",
-      "厚涂写实",
-    );
-    // 要 3 个差分 → 走 2x2 标准制式，第 4 格自动补位（这里 neutral 已被点名，补 calm）
-    expect(res.map((r) => r.path)).toEqual([
-      "assets/sprites/mio/neutral.png",
-      "assets/sprites/mio/smile.png",
-      "assets/sprites/mio/shy.png",
-      "assets/sprites/mio/calm.png",
-    ]);
-    // 一张面板图出三张差分，不是三次调用
-    expect(calls).toHaveLength(1);
-    // 风格走参数，不写死 anime；sheet 不垫图（同一张面板里角色天然一致）
-    expect(calls[0]!.prompt).toContain("厚涂写实");
-    expect(calls[0]!.prompt).not.toContain("anime");
-    expect(calls[0]!.references ?? []).toEqual([]);
-    for (const r of res) {
-      expect(existsSync(files.absoluteOf(r.path))).toBe(true);
-      const meta = await sharp(files.absoluteOf(r.path)).metadata();
-      expect(meta.hasAlpha).toBe(true);
-    }
-    const play = JSON.parse(await readFile(files.absoluteOf("play.json"), "utf8"));
-    expect(play.characters.find((c: { id: string }) => c.id === "mio").sprites).toEqual({
-      neutral: "neutral.png",
-      smile: "smile.png",
-      shy: "shy.png",
-      calm: "calm.png",
-    });
-  });
-
-  it("sheet：差分超过 4 个直接报错，别让模型烧一张必然切错的图", async () => {
+  it("并发出 6 个差分：定妆照只出 1 张，6 个差分垫的都是这同一张", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
-    const { assets } = makeAssets(store, backend);
-    await expect(
-      assets.generate(
-        { kind: "sprite", characterId: "mio", expressions: ["a", "b", "c", "d", "e"] },
-        "少女",
-      ),
-    ).rejects.toThrow(/一次最多 4 个差分/);
-    expect(calls).toHaveLength(0);
-  });
+    const { assets, files } = makeAssets(store, backend, 6);
+    const names = ["smile", "shy", "angry", "sad", "surprised", "thinking"];
 
-  it("sheet：格子切出来抠不出角色就整张不落盘", async () => {
-    const store = await makeStore();
-    // 满图杂乱花纹：切格后每格都抠不出前景（尺寸对齐 9:16，别先被画幅回执拦下）
-    const busy = await sharp({
-      create: { width: 768, height: 1365, channels: 3, background: "#f0f2f5" },
-    })
-      .composite([
-        {
-          input: await sharp({
-            create: { width: 768, height: 1365, channels: 3, background: "#8899aa" },
-          })
-            .png()
-            .toBuffer(),
-          left: 0,
-          top: 0,
-          blend: "difference",
-        },
-      ])
-      .png()
-      .toBuffer();
-    const backend: ImageBackend = { generate: async () => ({ data: busy, mimeType: "image/png" }) };
-    const { assets, files } = makeAssets(store, backend);
-    await expect(
-      assets.generate({ kind: "sprite", characterId: "mio", expressions: ["neutral", "smile"] }, "少女"),
-    ).rejects.toThrow(/抠底失败/);
-    expect(existsSync(files.absoluteOf("assets/sprites/mio/neutral.png"))).toBe(false);
+    const results = await Promise.all(
+      names.map((expression) => assets.generate({ kind: "sprite", characterId: "mio", expression }, "少女")),
+    );
+
+    // 6 个差分 + 1 张定妆照 = 7 次出图。inflight 救不了这条（generate() 要先 await resolve
+    // 才查表），不按 kindPath 登记在飞 promise 的话 6 条会各补一张，变成 12 次。
+    expect(calls).toHaveLength(7);
+    expect(calls.filter((c) => c.prompt.includes("neutral-expression"))).toHaveLength(1);
+    // 6 个差分都垫了这唯一一张定妆照；垫图不统一 = 静默换脸
+    expect(calls.filter((c) => (c.references ?? []).length > 0)).toHaveLength(6);
+    // 6 份回执里的自动定妆照是同一条，不是各补一张
+    for (const res of results) {
+      expect(res[0]!.path).toBe("assets/sprites/mio/neutral.png");
+      expect(res[1]!.autoNeutral).toBe(true);
+    }
+    const play = JSON.parse(await readFile(files.absoluteOf("play.json"), "utf8"));
+    const sprites = play.characters.find((c: { id: string }) => c.id === "mio").sprites;
+    expect(Object.keys(sprites).sort()).toEqual(["angry", "neutral", "sad", "shy", "smile", "surprised", "thinking"]);
   });
 });

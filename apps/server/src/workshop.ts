@@ -47,8 +47,6 @@ const generateAssetParams = Type.Object(
     characterId: Type.Optional(Type.String({ maxLength: 40 })),
     /** 立绘差分名，如 neutral / smile。 */
     expression: Type.Optional(Type.String({ maxLength: 40 })),
-    /** 一整套差分（最多 6 个）：一次调用出一张表情面板再切格，比逐张出图便宜一个量级。 */
-    expressions: Type.Optional(Type.Array(Type.String({ maxLength: 40 }), { minItems: 1, maxItems: 4 })),
     /** 画风锚点（可选），如「厚涂写实电影感」「赛璐珞动画」。不给就不预设风格，按角色描述走。 */
     style: Type.Optional(Type.String({ maxLength: 200 })),
     prompt: Type.String({ minLength: 1, maxLength: 4000, description: "英文出图提示词，描述画面本身（不含负面词）" }),
@@ -166,7 +164,8 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
     description:
       "出一张剧目素材并落进 assets/：背景(kind=background) / CG(kind=cg) 给 name，" +
       "立绘(kind=sprite) 给 characterId + expression。立绘会自动抠底成透明 PNG（引擎要靠它叠在场景上）。" +
-      "立绘出整套差分改给 expressions（最多 4 个）：一次调用出一张表情面板再切格，比逐张出图便宜一个量级。差分不够一格时自动补 neutral。",
+      "非 neutral 的立绘会自动拿该角色的 neutral 定妆照做垫图，所以同一个角色的差分是同一个人。" +
+      "一次工具调用只出一张图；要出多个差分就在同一个批次里多次调用本工具，它们是并行的。",
     parameters: generateAssetParams,
     execute: async (_id, params: Static<typeof generateAssetParams>) => {
       if (!deps.assets) {
@@ -179,7 +178,6 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
             name: params.name,
             characterId: params.characterId,
             expression: params.expression,
-            expressions: params.expressions,
           },
           params.prompt,
           params.style,
@@ -287,11 +285,12 @@ ${renderReadiness(readiness)}`;
 const imageGuide = `- 调 generate_asset 出图，prompt 用英文，只描述画面本身；画风短语放 style 参数（可选）。
 - 背景 16:9、CG 16:9、立绘 9:16 竖构图全身。画幅不对会直接作废，别为了构图改画幅。
 - 立绘会自动抠底成透明 PNG（引擎靠它叠在场景上），所以提示词里必须有"纯色底、无渐变无投影"。
-- 立绘要出整套差分就用 expressions（最多 4 个，一次出一张 2x1 或 2x2 面板再切格，比逐张出图便宜一个量级；不够一格自动补 neutral，超过 4 个分两次调）；
-  要补单张就用 expression，系统自动拿该角色的 neutral 定妆照做垫图。
+- 立绘是"一个差分一次 generate_asset"，非 neutral 的会自动拿该角色的 neutral 定妆照做垫图。
+- **一次工具调用只出一张图，但同一批次里的多次调用是并行的**：要出多个差分，就在同一批里调多次
+  generate_asset（一次一张），不要一个一个串行等。闸门放 6 个并发。
 - **同一角色先出 neutral，用户看过认了之后再出其余差分。** 没有 neutral 又有别的差分时系统会直接报错——
   不这么做的话新图和旧差分不是同一个人，演出中会静默换脸。
-- 立绘出图是同步等待用户的操作（一次 100 秒起，出整套约 15 秒），别在没批准时开跑。`;
+- 立绘出图是同步等待用户的操作（一张约 100 秒起），别在没批准时开跑。`;
 
 /** 单轮工坊对话上限：网关挂死不解除会永久锁住面板（running 无法复位）。一轮里可能要连出几张图，7 分钟。 */
 const TURN_TIMEOUT_MS = 420_000;

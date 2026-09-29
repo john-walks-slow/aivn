@@ -109,11 +109,9 @@ export function loadConfig(
       backend: parseEnum("STAGE_IMAGE_BACKEND", env.STAGE_IMAGE_BACKEND, ["cpa", "flow2api"] as const, "cpa"),
       model: env.STAGE_IMAGE_MODEL ?? "gpt-image-2",
       size: env.STAGE_IMAGE_SIZE ?? "1536x1024",
-      concurrency: parsePositiveInt(
-        "STAGE_IMAGE_CONCURRENCY",
-        env.STAGE_IMAGE_CONCURRENCY,
-        2,
-      ),
+      // 6 是按 flow2api 定的：本地网关单价近乎免费，工坊一次要出几个差分，
+      // 串行等 6×100s 用户受不了。改用 cpa 计费后端时按钱包调小。
+      concurrency: parsePositiveInt("STAGE_IMAGE_CONCURRENCY", env.STAGE_IMAGE_CONCURRENCY, 6),
       timeoutMs: parsePositiveInt("STAGE_IMAGE_TIMEOUT_MS", env.STAGE_IMAGE_TIMEOUT_MS, 150_000),
     },
     flow: {

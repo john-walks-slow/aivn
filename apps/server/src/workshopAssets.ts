@@ -4,7 +4,6 @@ import { parsePlayConfig } from "@stage-ai/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout } from "./cutout.js";
 import type { Limiter } from "./limiter.js";
-import { planSheet, sheetPrompt, sliceSheet } from "./spriteSheet.js";
 import type { PlayFiles } from "./playFiles.js";
 import type { PlayStore } from "./store.js";
 import type { WorkshopWrite } from "./workshop.js";
@@ -46,11 +45,6 @@ export interface AssetTarget {
   characterId?: string;
   /** 立绘差分名（neutral / smile / ...）。 */
   expression?: string;
-  /**
-   * 一整套差分（sheet 范式）：一次调用出一张表情面板，切成多格分别落盘。
-   * 给了就走 sheet，忽略 expression。最多 SHEET_MAX 个。
-   */
-  expressions?: string[];
 }
 
 export interface GeneratedPlayAsset {
@@ -73,8 +67,6 @@ interface AssetSpec {
   aspect: ImageAspect;
   characterId?: string;
   expression?: string;
-  /** sheet 模式下的全部差分名（按切格顺序）。 */
-  expressions?: string[];
 }
 
 export interface WorkshopAssetsDeps {
@@ -97,7 +89,7 @@ export class WorkshopAssets {
 
   async generate(target: AssetTarget, prompt: string, style?: string): Promise<GeneratedPlayAsset[]> {
     const spec = await this.resolve(target);
-    const key = `${spec.kindPath}/${spec.expressions?.join("+") ?? spec.stem}`;
+    const key = `${spec.kindPath}/${spec.stem}`;
     const running = this.inflight.get(key);
     if (running) return running;
     const job = this.run(spec, prompt, style).finally(() => {
@@ -107,12 +99,8 @@ export class WorkshopAssets {
     return job;
   }
 
-  private async run(spec: AssetSpec, prompt: string, style?: string): Promise<GeneratedPlayAsset[]> {
-    return spec.expressions ? this.runSheet(spec, prompt, style) : this.runSingle(spec, prompt, style);
-  }
-
   /** 返回的数组可能第一项是自动补的定妆照——那是真金白银出的图，必须一起交给上层广播。 */
-  private async runSingle(spec: AssetSpec, prompt: string, style?: string): Promise<GeneratedPlayAsset[]> {
+  private async run(spec: AssetSpec, prompt: string, style?: string): Promise<GeneratedPlayAsset[]> {
     const auto = spec.kind === "sprite" ? await this.ensureNeutral(spec, prompt) : null;
     const references = await this.referencesFor(spec);
     const { data, mimeType } = await this.deps.limiter.run(
@@ -130,35 +118,6 @@ export class WorkshopAssets {
     const written = await this.persist(spec, bytes, ext);
     if (spec.kind === "sprite") await this.mapSprite(spec, `${spec.stem}${ext}`);
     return auto ? [auto, { ...written, autoNeutral: true }] : [{ ...written, autoNeutral: false }];
-  }
-
-  /**
-   * sheet 模式：一次调用出一张表情面板，切格后逐张抠底落盘。
-   * 走 sheet 时不垫图——同一张面板里角色天然一致，垫图在这里没有信息增量；
-   * 需要垫图的是「已经有一套表情、再单独加一个差分」那条路（runSingle）。
-   */
-  private async runSheet(spec: AssetSpec, prompt: string, style?: string): Promise<GeneratedPlayAsset[]> {
-    // 提示词和切格共用同一份 plan，网格不可能再对不上。
-    const plan = planSheet(spec.expressions!);
-    const { data } = await this.deps.limiter.run(
-      () =>
-        this.deps.backend.generate({
-          prompt: sheetPrompt({ character: prompt, plan, style }),
-          aspectRatio: spec.aspect,
-        }),
-      "normal",
-    );
-    this.assertCanvas(spec, data);
-    const cells = await sliceSheet(data, plan);
-    const out: GeneratedPlayAsset[] = [];
-    for (const [i, expression] of plan.expressions.entries()) {
-      const cell = cells[i]!;
-      const bytes = (await cutout(cell.data)).data;
-      const written = await this.persist({ ...spec, stem: expression, expression }, bytes, ".png");
-      await this.mapSprite({ ...spec, stem: expression, expression }, `${expression}.png`);
-      out.push({ ...written, autoNeutral: false });
-    }
-    return out;
   }
 
   /** 落盘 + 清掉同 stem 的旧扩展名。抠底输出恒为 PNG，扩展名变了旧的 .jpg 必须清掉。 */
@@ -223,28 +182,8 @@ export class WorkshopAssets {
     if (!ids.includes(characterId)) {
       throw new Error(`play.json 里没有角色「${characterId}」。可选：${ids.join(" / ")}`);
     }
-    const requested = target.expressions?.map((e) => e.trim()).filter((e) => e.length > 0) ?? [];
-    if (requested.length > 0) {
-      for (const expression of requested) {
-        if (!STEM.test(expression)) {
-          throw new Error(`差分名「${expression}」非法：只允许小写字母开头的 a-z/数字/下划线，最长 40 字符`);
-        }
-      }
-      // 在入队前就定好制式：补位的 neutral 也要进在飞去重的 key，否则
-      // 「要 3 个」和「要 3 个 + neutral」会被当成两次不同的生成，各出一张图。
-      const plan = planSheet(requested);
-      return {
-        kind: "sprite",
-        kindPath: `sprites/${characterId}`,
-        stem: plan.expressions.join("+"),
-        aspect: "9:16",
-        characterId,
-        expression: plan.expressions[0]!,
-        expressions: plan.expressions,
-      };
-    }
     const expression = target.expression?.trim() ?? "";
-    if (!expression) throw new Error("立绘必须给 expression（差分名，如 neutral / smile），或给 expressions 出一整套");
+    if (!expression) throw new Error("立绘必须给 expression（差分名，如 neutral / smile）");
     if (!STEM.test(expression)) {
       throw new Error(`差分名「${expression}」非法：只允许小写字母开头的 a-z/数字/下划线，最长 40 字符`);
     }
@@ -264,6 +203,10 @@ export class WorkshopAssets {
    * - 没有且该角色一个差分都没有 → 自动先定一张（没有既存差分，不存在不一致）；
    * - 没有但已有其它差分 → 报错让用户先过目新定妆照，否则新图与旧差分不是同一个人，
    *   演出中会静默换脸。
+   *
+   * 一批并发出 6 个差分时，6 条调用会一起看到「没定妆照」并各自来补。多花的 6 倍钱和换脸
+   * 靠 `inflight` 挡住：6 条内层调用的目标都是 `sprites/<id>/neutral` 这同一个 key，
+   * 后到的 5 条直接复用第一条的 promise（见 generate 与 test 里「并发出 6 个差分」那条）。
    */
   private async ensureNeutral(spec: AssetSpec, prompt: string): Promise<GeneratedPlayAsset | null> {
     if (spec.expression === NEUTRAL) return null;
