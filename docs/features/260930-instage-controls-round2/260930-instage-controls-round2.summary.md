@@ -8,7 +8,9 @@
 2. **台词条改成浮起圆角卡片** —— `.theater-dialog` 从贴边通栏变 `left/right: 10px; max-width: 1120px; margin: 0 auto; border-radius: 16px`；`.dialog-text` 的 `min-height` 从 3.6em 提到 **5.4em**（预留 3 行），短台词不再让卡片忽高忽低。`.dialog-name` 随卡片上沿从 `top: -15px` 微调到 `-14px`。
 3. **右下角导演按钮放大** —— `.dir-btn` 34×34 → 46×46，图标 19 → 24；顺带删掉一条误命中 `.bl-tool` 的 `.backlog-list button` 覆盖（它把工具键压回 30×26），`.bl-tool` 本身提到 38×34。`.dir-dot` 重新定位到 `top/right: 6px`。
 4. **回顾里加「原始历史」开关** —— `GET /api/plays/:id/history` 读落盘的 playwriter 会话历史，返回最近 20 拍的 user / thinking / assistant DSL / toolCall 四类条目。走**只读快照**，不加 WS 流式消息。实现与已知限制见 `docs/freeform/260930-playwriter-history-snapshot.md`。
-5. **三个浮层压过顶栏，各自带关闭** —— `.backlog-screen` / `.route-screen` 改成 `position: fixed; inset: 0; z-index: 40`（顶栏 `.gui-bar` 是 30），统一用新的 `.panel-bar` 标题条，右侧「刷新 / 切视图 / ✕」；`Esc` 也能关。工坊原本就是 `z-index: 40` 且自带关闭键，未动。
+   面板标题条上是一组**分段切换**（「回顾 / 原始历史」），两种内容共用**一根**标题条——`HistoryView` 不再自己渲染第二条栏；切到原始历史时标题条右侧多一个「刷新」（读盘落后一拍）。
+5. **三个浮层压过顶栏，各自带关闭** —— `.backlog-screen` / `.route-screen` 改成 `position: fixed; inset: 0; z-index: 40`（顶栏 `.gui-bar` 是 30），统一用新的 `.panel-bar` 标题条，右侧「刷新 / ✕」；`Esc` 也能关。工坊原本就是 `z-index: 40` 且自带关闭键，未动。
+   **一个浮层一根栏**：标题条归外层面板所有，子视图只出内容。
 6. **取消独立的「继续」按钮** —— `StopPanel` 的 pause 分支不再出按钮；等新内容时（`stopType === "pause"`）点舞台即开新拍，生成中沿用同一套 pending 反馈。`canContinue` 的判定与原按钮的出现条件等价（`panelReady && stopType === "pause"`），`StageScreen` 用 `useRef` latch 防连点双发。
 
 ## 验证
@@ -25,6 +27,7 @@
 | 窄屏顶栏 | `.gui-label` 计算值 `display: none` |
 | 回顾 / 路线 | `position: fixed` + `z-index: 40`，顶栏坐标处 `elementFromPoint` 命中的是 `.panel-bar` 而非 `.gui-bar` |
 | 历史开关 | 切过去能读到「第 1 拍 · 注入上下文 + 原始 DSL（未解析）」 |
+| 浮层层数 | 回顾两种视图下 `.panel-bar` 均为 1 根；页面上不存在「看演出 / 回演出」这类内部黑话 |
 | 继续按钮 | 全站 `.continue-box` 节点数 0 |
 
 ## 已知限制

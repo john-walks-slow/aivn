@@ -2556,6 +2556,38 @@ select:focus {
 .panel-note {
   font-size: 12px;
 }
+
+/* 视图切换：一根标题条里切两种内容，不叠第二条栏 */
+.seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.seg .seg-btn {
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.seg .seg-btn.active {
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+}
+.hx-foot {
+  margin: 14px 0 4px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 @media (max-width: 640px) {
   .panel-note {
     display: none;

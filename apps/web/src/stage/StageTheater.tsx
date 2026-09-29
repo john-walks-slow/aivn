@@ -352,7 +352,7 @@ export function StageTheater({
             <button
               type="button"
               className={`dir-btn ${action === "rewrite" ? "on" : ""}`}
-              title={busy ? "演出中不能重生成" : "重生成这一幕"}
+              title={busy ? "剧作家正在写，暂时不能重生成" : "重生成这一幕"}
               disabled={busy || !targets.beatId}
               onClick={(e) => {
                 e.stopPropagation();
@@ -365,7 +365,7 @@ export function StageTheater({
             <button
               type="button"
               className="dir-btn"
-              title={busy ? "演出中不能分岔" : "从这里分岔出一条新线"}
+              title={busy ? "剧作家正在写，暂时不能分岔" : "从这里分岔出一条新线"}
               disabled={busy || !targets.beatId}
               onClick={(e) => {
                 e.stopPropagation();
@@ -505,29 +505,53 @@ export function BacklogView({
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [showHistory, setShowHistory] = useState(false);
+  // 刷新计数住在外层：标题条只有一根，刷新键得从 HistoryView 的外面按。
+  const [historyNonce, setHistoryNonce] = useState(0);
+  const reloadHistory = useCallback(() => setHistoryNonce((n) => n + 1), []);
 
   return (
     <div className="screen stage-screen backlog-screen">
       <header className="panel-bar">
-        <span className="panel-title">回顾</span>
-        <div className="panel-bar-actions">
+        <div className="seg" role="tablist">
           <button
             type="button"
-            className={`ghost-btn small-btn ${showHistory ? "active" : ""}`.trim()}
-            onClick={() => setShowHistory((v) => !v)}
-            aria-pressed={showHistory}
+            role="tab"
+            aria-selected={!showHistory}
+            className={`seg-btn ${showHistory ? "" : "active"}`.trim()}
+            onClick={() => setShowHistory(false)}
+          >
+            回顾
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={showHistory}
+            className={`seg-btn ${showHistory ? "active" : ""}`.trim()}
+            onClick={() => setShowHistory(true)}
             title="剧作家的 session 快照：注入原文、思考、原始 DSL 与工具调用"
           >
-            <Icon name="sparkles" />
-            {showHistory ? "看演出" : "原始历史"}
+            原始历史
           </button>
+        </div>
+        <div className="panel-bar-actions">
+          {showHistory ? (
+            <button
+              type="button"
+              className="ghost-btn small-btn"
+              onClick={reloadHistory}
+              title="重新拉取（读盘落后一拍）"
+            >
+              <Icon name="refresh" size={14} />
+              刷新
+            </button>
+          ) : null}
           <button type="button" className="ghost-btn small-btn icon-btn icon-btn-sm" onClick={onClose} title="关闭">
             <Icon name="close" size={14} />
           </button>
         </div>
       </header>
       {showHistory ? (
-        <HistoryView playId={playId} onBack={() => setShowHistory(false)} />
+        <HistoryView playId={playId} nonce={historyNonce} />
       ) : (
         <div className="panel-body">
           {entries.length === 0 ? (
@@ -610,7 +634,7 @@ export function BacklogView({
                     <button
                       type="button"
                       className="bl-tool"
-                      title={busy ? "演出中不能重生成" : "从这一幕重生成"}
+                      title={busy ? "剧作家正在写，暂时不能重生成" : "从这一幕重生成"}
                       disabled={busy || !beat}
                       onClick={() => beat && onRewrite(beat)}
                     >
@@ -619,7 +643,7 @@ export function BacklogView({
                     <button
                       type="button"
                       className="bl-tool"
-                      title={busy ? "演出中不能分岔" : "从这里分岔出一条新线"}
+                      title={busy ? "剧作家正在写，暂时不能分岔" : "从这里分岔出一条新线"}
                       disabled={busy || !beat}
                       onClick={() => beat && onFork(beat)}
                     >
@@ -648,12 +672,12 @@ const HISTORY_KIND: Record<HistoryEntry["role"], { label: string; cls: string }>
 
 /**
  * 剧作家原始历史：活动周目最近若干拍的 session 快照（REST 只读，不建 runtime、不改状态）。
- * 与回顾互补——回顾是「演出来的」，这里是「写出来的」：注入原文、思考、未经解析的
- * 原始 DSL、工具调用。空表不是错误：还没落盘（读盘落后一拍）或纪元压缩前没有留存。
+ * 与回顾互补——回顾只给解析后的台词与选肢，这里给写出来之前的原文：注入上下文、
+ * 思考、未经解析的原始 DSL、工具调用。空表不是错误：还没落盘（读盘落后一拍）
+ * 或纪元压缩前没有留存。标题条由外层 BacklogView 统一给，这里只出内容。
  */
-function HistoryView({ playId, onBack }: { playId: string; onBack: () => void }) {
+function HistoryView({ playId, nonce }: { playId: string; nonce: number }) {
   const [beats, setBeats] = useState<HistoryBeat[] | null>(null);
-  const [nonce, setNonce] = useState(0);
   useEffect(() => {
     let alive = true;
     api
@@ -667,48 +691,38 @@ function HistoryView({ playId, onBack }: { playId: string; onBack: () => void })
 
   return (
     <div className="panel-body">
-      <div className="panel-bar" style={{ margin: "-8px -12px 10px" }}>
-        <span className="panel-title">剧作家的原始历史</span>
-        <div className="panel-bar-actions">
-          <button type="button" className="ghost-btn small-btn" onClick={() => setNonce((n) => n + 1)} title="重新拉取">
-            <Icon name="refresh" size={14} />
-            刷新
-          </button>
-          <button type="button" className="ghost-btn small-btn" onClick={onBack}>
-            <Icon name="prev" size={14} />
-            回演出
-          </button>
-        </div>
-      </div>
       {beats === null ? (
         <div className="overlay">读取历史…</div>
       ) : beats.length === 0 ? (
         <p className="backlog-empty">还没有留存的历史——下一拍拍完就写进来了。</p>
       ) : (
-        beats.map((beat) => (
-          <section key={beat.turn} className="hx-beat">
-            <header className="hx-beat-head">
-              <span>第 {beat.turn} 拍</span>
-              <span className="muted">{beat.entries.length} 条</span>
-            </header>
-            {beat.entries.map((entry) => {
-              const kind = HISTORY_KIND[entry.role];
-              return (
-                <div key={`${entry.beat}-${entry.seq}`} className={`hx-entry ${kind.cls}`}>
-                  <span className="hx-kind">
-                    {kind.label}
-                    {entry.role === "toolCall" && entry.name ? ` · ${entry.name}` : ""}
-                  </span>
-                  {entry.role === "toolCall" ? (
-                    <pre className="hx-tool">{JSON.stringify(entry.args ?? {}, null, 2)}</pre>
-                  ) : (
-                    <p className="hx-text">{entry.text}</p>
-                  )}
-                </div>
-              );
-            })}
-          </section>
-        ))
+        <>
+          {beats.map((beat) => (
+            <section key={beat.turn} className="hx-beat">
+              <header className="hx-beat-head">
+                <span>第 {beat.turn} 拍</span>
+                <span className="muted">{beat.entries.length} 条</span>
+              </header>
+              {beat.entries.map((entry) => {
+                const kind = HISTORY_KIND[entry.role];
+                return (
+                  <div key={`${entry.beat}-${entry.seq}`} className={`hx-entry ${kind.cls}`}>
+                    <span className="hx-kind">
+                      {kind.label}
+                      {entry.role === "toolCall" && entry.name ? ` · ${entry.name}` : ""}
+                    </span>
+                    {entry.role === "toolCall" ? (
+                      <pre className="hx-tool">{JSON.stringify(entry.args ?? {}, null, 2)}</pre>
+                    ) : (
+                      <p className="hx-text">{entry.text}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </section>
+          ))}
+          <p className="muted hx-foot">只读快照，落盘比当前拍慢一步——要最新的按标题条的「刷新」。</p>
+        </>
       )}
     </div>
   );
