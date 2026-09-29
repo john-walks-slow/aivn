@@ -21,13 +21,21 @@ export function attachTransport(wss: WebSocketServer, playhouse: PlayHouse): voi
   });
 }
 
-function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, autostart: boolean): void {
+/**
+ * 每剧目的舞台连接数：语音合成的存活依据。
+ * 工坊连接不计入——它不消费 audio_ready，把它算成观众会让「最后一个观众离场」永远判不出来。
+ */
+const stageConnections = new Map<string, number>();
+
+function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage: boolean): void {
   const sender = (msg: ServerMessage): void => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   };
   let established = false;
+  let dropped = false;
   let registered: Set<(msg: ServerMessage) => void> | null = null;
   const pending: ClientMessage[] = [];
+  if (stage) stageConnections.set(playId, (stageConnections.get(playId) ?? 0) + 1);
 
   const dispatchSafe = (msg: ClientMessage): void => {
     void dispatch(msg).catch((error: unknown) => {
@@ -49,17 +57,30 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, autos
   });
 
   const drop = (): void => {
+    if (dropped) return;
+    dropped = true;
     registered?.delete(sender);
+    if (!stage) return;
+    const left = (stageConnections.get(playId) ?? 1) - 1;
+    if (left > 0) {
+      stageConnections.set(playId, left);
+      return;
+    }
+    stageConnections.delete(playId);
+    // 最后一个观众离场：没人能消费 audio_ready 了，停合成（重连时客户端会重发 enabled 同步回来）
+    void playhouse.get(playId).then((runtime) => runtime.orchestrator.setTtsState({ enabled: false }));
   };
   ws.on("close", drop);
   ws.on("error", drop);
 
   void (async () => {
     const runtime = await playhouse.get(playId);
+    // runtime 就绪前就断开了：不注册，否则残留 sender 会让「最后一个观众」永远判不出来
+    if (dropped) return;
     registered = playhouse.clientsFor(playId);
     registered.add(sender);
     sendHello(ws, playId, runtime);
-    if (autostart) runtime.orchestrator.autostart();
+    if (stage) runtime.orchestrator.autostart();
     established = true;
     for (const msg of pending.splice(0)) dispatchSafe(msg);
   })();
