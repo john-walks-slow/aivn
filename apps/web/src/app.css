@@ -1746,8 +1746,8 @@ select:focus {
   opacity: 1;
 }
 
-/* 卡里的动词行：跟舞台导演栏同一套按钮——无边框、悬停浮出浅底、图标承担语义。
-   贴卡右下角，与左下角的角色名同一行。 */
+/* 卡里的动词行：跟舞台导演栏同一套按钮——无边框、悬停浮出浅底。
+   动词带字样，不再让图标独自承担语义：二十六个像素的方块里分不出「跳转」和「重生成」。 */
 .route-node-tools {
   display: flex;
   align-items: center;
@@ -1756,16 +1756,17 @@ select:focus {
 }
 
 .route-node-tool {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
+  gap: 4px;
+  padding: 3px 8px;
   border: none;
-  border-radius: var(--radius);
+  border-radius: 999px;
   background: none;
   color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
   cursor: pointer;
   transition: color var(--hover-ms) ease, background-color var(--hover-ms) ease;
 }

@@ -285,10 +285,11 @@ function Node({
             type="button"
             className="route-node-tool"
             disabled={busy}
-            title={hint || "跳到这里：世界线落到这一段，不生成新内容"}
+            title={hint || "回到这里：世界线落到这一段，不生成新内容"}
             onClick={() => ops.jump(card.id)}
           >
-            <Icon name="locate" />
+            <Icon name="return" />
+            回到这里
           </button>
           <button
             type="button"
@@ -298,6 +299,7 @@ function Node({
             onClick={() => ops.branch(card.id, "beat")}
           >
             <Icon name="fork" />
+            分岔
           </button>
         </span>
       </span>

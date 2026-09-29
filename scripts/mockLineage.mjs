@@ -7,6 +7,7 @@ import { mkdir, writeFile, copyFile, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LineageTree } from "../packages/core/dist/lineage/model.js";
+import { lineageToEvents, stopFromNode, toNodeView } from "../packages/core/dist/lineage/replay.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const playId = process.argv[2] ?? "mock-deep";
@@ -131,6 +132,16 @@ for (let i = 0; i < saveCount; i += 1) {
   const now = Date.now() - i * 86_400_000;
   const all = tree.export().events;
   const events = all.map((event, j) => ({ ...event, createdAt: now - (all.length - j) * 40_000 }));
+  // 事件缓冲 = 客户端重放的那串 IR 事件。恢复档靠它在 hello 之后整段重放，
+  // 空缓冲的存档舞台连第一句都开不了场（路线视图只读树，看不出这个洞）。
+  const view = tree.chainEvents(tree.leafId).map(toNodeView);
+  const stopNode = [...view].reverse().find((n) => n.kind === "stop");
+  const runtime = {
+    events: lineageToEvents(view),
+    beatNo: view.filter((n) => n.kind === "beat_end").length,
+    lastStop: stopNode ? stopFromNode(stopNode) : null,
+    epoch: 1,
+  };
   const id = `s${now.toString(36)}`;
   const name = `第 ${i + 1} 周目`;
   const saveDir = join(dir, "saves", id);
@@ -144,7 +155,7 @@ for (let i = 0; i < saveCount; i += 1) {
         lineage: { ...tree.export(), events },
         engine: { flags: {}, sceneDetails: {}, activeThreads: [] },
         scene: "黄昏的教室",
-        runtime: { events: [], beatNo: 0, epoch: 0 },
+        runtime,
         savedAt: now,
       },
       null,

@@ -36,6 +36,8 @@ export function StageScreen({ playId }: { playId: string }) {
   const [workshop, setWorkshop] = useState<WorkshopMode | null>(null);
   /** 操作条常驻：舞台上有几个能点的键，藏起来等于让玩家猜。H 手动收起做沉浸模式，仅此一种隐藏途径。 */
   const [chrome, setChrome] = useState(true);
+  /** 按住 Ctrl 的快进档：舞台层只报键，播放层管节奏。 */
+  const [turbo, setTurbo] = useState(false);
   const toast = useToasts();
   useVisualViewport();
   const generated = useGeneratedAssets();
@@ -151,6 +153,7 @@ export function StageScreen({ playId }: { playId: string }) {
     resumeAfterReset: rebase.resume,
     // D5 文字先行 + 语音收尾：自动模式等当前句语音播完再推进
     hold: director.holdsLine(),
+    turbo,
     onLineStart: (line) => director.lineStarted(line?.seq, line?.type === "say"),
     onFastForward: () => director.fastForward(),
   });
@@ -264,6 +267,7 @@ export function StageScreen({ playId }: { playId: string }) {
             hasVoice={hasVoice}
             onUnlock={unlockVoice}
             onChrome={setChrome}
+            onTurbo={setTurbo}
             canContinue={canContinue}
             onContinue={continueBeat}
             overlay={
