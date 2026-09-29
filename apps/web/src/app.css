@@ -1035,23 +1035,25 @@ select:focus {
 
 .voice-library-search {
   /* 窄屏下先让搜索框独占一行，而不是把下拉和按钮挤成竖排 */
-  flex: 1 1 220px;
+  flex: 1 1 150px;
   min-width: 0;
 }
 
 .voice-library-lang {
-  flex: 0 0 auto;
-  max-width: 200px;
+  flex: 0 1 auto;
+  max-width: 160px;
+}
+
+.voice-library-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 宽屏时贴着右边；窄屏放不下就整组换到第二行 */
+  margin-left: auto;
 }
 
 .voice-library-count {
   white-space: nowrap;
-}
-
-.voice-library-bar-actions {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
 }
 
 .voice-library-grid {
@@ -1064,6 +1066,10 @@ select:focus {
   /* 150px 下限：手机上排得下两列，桌面排得下八九列；auto-fill 遇到放不下就少排一列，
      绝不把卡片压到比下限还窄——侧栏时代就是这么把网格挤爆的。 */
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* 行高必须显式给 min-content。auto 在这里会算崩：网格容器高度是定死的（flex:1 撑的），
+     卡片作为 overflow:hidden 的 flex 列容器，浏览器给它的 max-content 高度只有 7px，
+     整行就跟着塌成 7px，封面/描述/按钮全被裁掉。min-content 才是卡片真正的自然高度。 */
+  grid-auto-rows: min-content;
   gap: 12px;
   align-content: start;
 }

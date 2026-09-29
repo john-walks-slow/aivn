@@ -16,7 +16,7 @@ const PAGE_SIZE = 60;
  * 选中小语种音色不需要任何服务端改动——voiceId 原样存进角色卡即可。
  *
  * 语言筛选用下拉而不是侧边栏：侧栏在窄屏上会把卡片网格挤到放不下，且手机上要横向
- * 滚动才能看全部语种。
+ * 滚动才能看全部语种。默认筛系统语言（中文用户看中文音色），挑过之后以用户的选择为准。
  */
 export function VoiceLibrary({
   playId,
@@ -31,12 +31,22 @@ export function VoiceLibrary({
 }) {
   const { catalog, error, loading, refresh } = voices;
   const [query, setQuery] = useState("");
-  const [language, setLanguage] = useState("");
+  // null = 用户还没挑过，沿用系统语言；挑过之后以用户的选择为准
+  const [picked, setPicked] = useState<string | null>(null);
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [previewingId, setPreviewingId] = useState("");
 
   const entries = catalog?.entries ?? [];
   const languages = useMemo(() => countVoicesByLanguage(entries), [entries]);
+
+  // 目录是异步到的，所以系统语言只能在 entries 齐了之后再算。
+  // 系统语言不在这 1000 条里（冷门语种）就退回不筛。
+  const systemLanguage = useMemo(() => {
+    const code = (navigator.language.split("-")[0] ?? "").toLowerCase();
+    return languages.some((l) => l.code === code) ? code : undefined;
+  }, [languages]);
+
+  const language = picked ?? systemLanguage ?? "";
 
   const matched = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -87,28 +97,29 @@ export function VoiceLibrary({
         <select
           className="voice-library-lang"
           value={language}
-          onChange={(e) => setLanguage(e.target.value)}
+          onChange={(e) => setPicked(e.target.value === "" ? null : e.target.value)}
         >
-          <option value="">全部语言（{entries.length}）</option>
+          {/* 列表里不摆「全部语言」——不选就是全部（系统语言没有对应音色时）。
+              这个占位项只为让空值有对应 option，禁用掉，免得能被重新选回来。 */}
+          <option value="" disabled>
+            语言
+          </option>
           {languages.map(({ code, count }) => (
             <option key={code} value={code}>
               {languageLabel(code)}（{count}）
             </option>
           ))}
         </select>
-        <span className="muted small voice-library-count">
-          {catalog
-            ? `匹配 ${matched.length} / ${entries.length}${catalog.stale ? "（离线快照）" : ""}`
-            : loading
-              ? "加载中…"
-              : ""}
-        </span>
-        <div className="voice-library-bar-actions">
-          <button className="ghost-btn" disabled={loading} onClick={refresh}>
+        <div className="voice-library-meta">
+          <span className="muted small voice-library-count">
+            {catalog
+              ? `匹配 ${matched.length} / ${entries.length}${catalog.stale ? "（离线快照）" : ""}`
+              : loading
+                ? "加载中…"
+                : ""}
+          </span>
+          <button className="ghost-btn small-btn" disabled={loading} onClick={refresh}>
             {loading ? "抓取中…" : "重新抓取"}
-          </button>
-          <button className="ghost-btn" onClick={onClose}>
-            关闭
           </button>
         </div>
       </header>
