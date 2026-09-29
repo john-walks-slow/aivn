@@ -1337,6 +1337,151 @@ select:focus {
   font-style: italic;
 }
 
+/* —— 工坊出图：对话内联缩略图 + 灯箱 —— */
+
+.asset-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* 本轮出图即时可见：图已落盘但本轮话还没说完，挂在流式气泡外而非半截气泡里 */
+.asset-strip.pending {
+  align-self: flex-start;
+  max-width: 88%;
+}
+
+.asset-thumb {
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  cursor: zoom-in;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.asset-thumb img {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+}
+
+.asset-strip.pending .asset-thumb img {
+  width: 112px;
+  height: 112px;
+}
+
+/* 工坊回复里 markdown 图片：立绘是竖图，缩略图条看不全细节，贴出来按原比例限高 */
+.md-body p {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.md-body p:last-child {
+  margin-bottom: 0;
+}
+
+.md-body code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--panel);
+  font-size: 0.9em;
+}
+
+.md-image {
+  display: block;
+  margin: 8px 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  cursor: zoom-in;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.md-image img {
+  display: block;
+  max-width: 240px;
+  max-height: 320px;
+  object-fit: contain;
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 20, 20, 0.78);
+  padding: 24px;
+}
+
+.lightbox-stage {
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.lightbox-stage img {
+  max-width: 100%;
+  max-height: calc(100vh - 120px);
+  object-fit: contain;
+  background: var(--panel);
+}
+
+.lightbox-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #f0f0f0;
+}
+
+.lightbox-caption {
+  color: #d8d8d8;
+  margin: 0;
+  word-break: break-all;
+  text-align: center;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  font-size: 20px;
+  line-height: 1;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.file-image-preview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  overflow: auto;
+}
+
+.file-image-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
 .workshop-input {
   display: flex;
   gap: 8px;

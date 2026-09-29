@@ -89,6 +89,10 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     section("可用音效 sfx", "sfx"),
     section("已有插图 cg", "cg"),
     generatedSection,
+    // 清单全空时上面几段拼成空串，这段就没人看得见——而此时正是最该让剧作家自己画图的时候
+    stems("backgrounds").length === 0 && stems("cg").length === 0
+      ? `\n# 没有任何背景与插图\n\n剧目还没有一张图。每写到一个新场景，先用 preload_asset 预发射一张背景再引用它的 id。\n`
+      : "",
   ].join("");
 
   const premise = memory?.premise.trim() || play.premise;
@@ -136,6 +140,7 @@ ${assetSection}${craftSection}${indexSection}
 - **prompt 写英文**，写清主体/环境/光线/视角/画风，末尾加 "anime visual novel background, no text"；
 - **不要凭空造 id**：可用清单与「已生成的图」里已有的背景和插图直接引用，别重复生成。
 - **按描述选素材**：清单里带括号说明的是画面内容（差分的名字未必与画面相符），先看说明再挑 id。
+- **立绘差分不做生图**：某角色没有可用差分时，**别写 actor 指令引用不存在的 expression**（那个角色会整个不上台），改用旁白/台词交代，或只用有差分的角色。
 
 ## 台词（三类，正文为原生文本，不要转义）
 

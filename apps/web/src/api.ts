@@ -9,6 +9,19 @@ export interface Readiness {
   hasSession: boolean;
 }
 
+/**
+ * 缺项文案分两档，别混：
+ * - 硬门槛只有 premise：没有它剧本无从写起，开不了演。
+ * - 立绘与背景是建议项：没图照样开演（舞台落氛围底色，没有立绘的角色不上台）。
+ */
+export const readinessMissing = (r: Readiness): string[] =>
+  r.premise ? [] : ["premise"];
+
+export const readinessAdvice = (r: Readiness): string[] => [
+  ...(r.characterSprites ? [] : ["角色立绘"]),
+  ...(r.background ? [] : ["背景图"]),
+];
+
 export interface PlaySummary {
   id: string;
   title: string;
@@ -81,7 +94,16 @@ export interface Settings {
     compactRatio: number;
     keepRecentTokens: number;
   };
-  image: { enabled: boolean; model: string; size: string; concurrency: number; timeoutMs: number };
+  image: {
+    enabled: boolean;
+    backend: "cpa" | "flow2api";
+    model: string;
+    size: string;
+    concurrency: number;
+    timeoutMs: number;
+  };
+  /** flow2api 后端配置（backend=flow2api 时才生效）：key 只回掩码。 */
+  flow: { baseUrl: string; apiKey: string; apiKeySet: boolean; model: string; size: string; timeoutMs: number };
   tts: { enabled: boolean; keysPath: string; proxy: string; baseUrl: string; concurrency: number; keyCount: number };
 }
 

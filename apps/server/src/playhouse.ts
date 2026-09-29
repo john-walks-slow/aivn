@@ -7,8 +7,10 @@ import type { PlayConfig } from "@stage-ai/core";
 import type { ServerConfig } from "./config.js";
 import { createCpaProvider } from "./provider.js";
 import { createTts } from "./tts.js";
-import { createImageGen } from "./imagegen.js";
+import { createImageBackend } from "./imagegen.js";
+import type { ImageBackend } from "./imageBackend.js";
 import { ImageAssets } from "./imageAssets.js";
+import { Limiter } from "./limiter.js";
 import { Translator } from "./translate.js";
 import { PlayMemory } from "./memory.js";
 import { WorkshopSession } from "./workshopSession.js";
@@ -86,7 +88,13 @@ export class PlayHouse {
   private readonly provider: ReturnType<typeof createCpaProvider>["provider"];
   private readonly model: ReturnType<typeof createCpaProvider>["model"];
   private readonly tts: ReturnType<typeof createTts>;
-  private readonly imageGen: ReturnType<typeof createImageGen>;
+  private readonly imageBackend: ImageBackend | null;
+  /**
+   * 生图并发闸门，按剧目缓存。
+   * 必须挂 PlayHouse 而不是 runtime：reload 只换编排器、复用同一个 WorkshopSession，
+   * 挂在 runtime 上的闸门会在换 runtime 时把老 workshop 留在旧闸门上，两个闸门各放 2 张 → 超发。
+   */
+  private readonly limiters = new Map<string, Limiter>();
   /** 演出编排与润色/翻译旁路共用的流式调用入口。 */
   private readonly streamFn: StreamFn;
 
@@ -96,7 +104,7 @@ export class PlayHouse {
   ) {
     ({ provider: this.provider, model: this.model } = createCpaProvider(config));
     this.tts = createTts(config);
-    this.imageGen = createImageGen(config);
+    this.imageBackend = createImageBackend(config);
     // StreamFn 契约是 SimpleStreamOptions（reasoning 字段）——须接 streamSimple 做换算；
     // 错接完整版 stream 会丢弃 reasoning，thinking 档位全部失效
     this.streamFn = (m, context, options) =>
@@ -138,6 +146,16 @@ export class PlayHouse {
       this.clientsByPlay.set(playId, clients);
     }
     return clients;
+  }
+
+  /** 剧目级生图闸门（D6 预发射与工坊出图共用，见字段注释）。 */
+  private limiterFor(playId: string): Limiter {
+    let limiter = this.limiters.get(playId);
+    if (!limiter) {
+      limiter = new Limiter(this.config.image.concurrency, undefined, `生图:${playId}`);
+      this.limiters.set(playId, limiter);
+    }
+    return limiter;
   }
 
   /** 剧目配置/素材保存后重建 runtime：play.json 即时生效（音色/主角卡/语音语言/素材清单），活连接续接。 */
@@ -245,6 +263,7 @@ export class PlayHouse {
       this.runtimes.delete(playId);
     }
     this.clientsByPlay.delete(playId);
+    this.limiters.delete(playId);
     await this.library.remove(playId);
   }
 
@@ -357,8 +376,8 @@ export class PlayHouse {
       : undefined;
     // 生图资产层（D6）：manifest 载入既有资产，预发射复用不重生成。
     // 必须在编排器之前就绪——已生成图的 id/prompt 要进 A 区，否则剧作家忘掉自己造过什么。
-    const images = this.imageGen
-      ? new ImageAssets(play.id, store, this.imageGen, this.config.image.concurrency)
+    const images = this.imageBackend
+      ? new ImageAssets(play.id, store, this.imageBackend, this.limiterFor(play.id))
       : undefined;
     if (images) await images.load();
     const orchestrator = new PlaywrightOrchestrator({
@@ -400,12 +419,15 @@ export class PlayHouse {
     });
     // 工坊（D9）：独立实例，与演出互不干扰；写盘后按需重建 runtime（保存即生效）
     const workshop = new WorkshopSession({
+      playId: play.id,
       store,
       streamFn: this.streamFn,
       model,
       getApiKey: () => this.config.apiKey,
       emit: (msg) => this.broadcast(play.id, msg),
       onFilesChanged: () => void this.reloadAfterWorkshopWrite(play.id),
+      imageBackend: this.imageBackend ?? undefined,
+      limiter: this.limiterFor(play.id),
       saves: this.library.saves(play.id),
       saveStore: (saveId) => this.library.saveStore(play.id, saveId),
     });

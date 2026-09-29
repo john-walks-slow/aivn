@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "../ui/Icon.js";
-import { api, type PlayDetail, type SaveInfo } from "../api.js";
+import { api, readinessAdvice, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
 
 /** Title Screen：开始新周目（就绪门）/ 继续 / 周目 / 工坊 / 素材与配置 / 导出剧目包。 */
@@ -23,12 +23,8 @@ export function TitleView({ playId }: { playId: string }) {
   useEffect(reload, [reload]);
 
   const readiness = detail?.readiness;
-  const missing: string[] = [];
-  if (readiness) {
-    if (!readiness.premise) missing.push("premise");
-    if (!readiness.characterSprites) missing.push("角色立绘映射");
-    if (!readiness.background) missing.push("背景图");
-  }
+  const missing = readiness ? readinessMissing(readiness) : [];
+  const advice = readiness ? readinessAdvice(readiness) : [];
   const current = saves.find((s) => s.current) ?? null;
 
   /** 开始新周目：建一棵空树再进舞台，旧档不动。 */
@@ -119,6 +115,16 @@ export function TitleView({ playId }: { playId: string }) {
                 素材与配置
               </button>
               手动补齐。
+            </p>
+          )}
+          {readiness?.ready && advice.length > 0 && (
+            <p className="muted small">
+              还没有 {advice.join("、")}——可以开演（舞台落氛围底色、没有立绘的角色不上台），
+              也可到
+              <button className="link-btn" onClick={() => navigate(`/play/${playId}/workshop`)}>
+                工坊
+              </button>
+              让 AI 先把底图和定妆照生成出来。
             </p>
           )}
         </div>

@@ -3,8 +3,10 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ImageGen } from "../src/imagegen.js";
+import { CpaImageGen } from "../src/imagegen.js";
 import { ImageAssets } from "../src/imageAssets.js";
+import { Limiter } from "../src/limiter.js";
+import type { ImageBackend } from "../src/imageBackend.js";
 import { PlayStore } from "../src/store.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { LineageTree } from "@stage-ai/core";
@@ -18,16 +20,16 @@ async function makeStore(): Promise<PlayStore> {
   return new PlayStore(dir);
 }
 
-/** 记录调用次数的假生图器：同 prompt 只应被生成一次。 */
-function fakeGen(delayMs = 0): { gen: ImageGen; calls: string[] } {
+/** 记录调用次数的假生图后端：同 prompt 只应被生成一次。 */
+function fakeGen(delayMs = 0): { gen: ImageBackend; calls: string[] } {
   const calls: string[] = [];
-  const gen = {
-    generate: async (prompt: string) => {
+  const gen: ImageBackend = {
+    generate: async ({ prompt }) => {
       calls.push(prompt);
       if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
-      return { data: Buffer.from(`img:${prompt}`), ext: "jpg" as const };
+      return { data: Buffer.from(`img:${prompt}`), mimeType: "image/jpeg" };
     },
-  } as unknown as ImageGen;
+  };
   return { gen, calls };
 }
 
@@ -35,7 +37,7 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
   it("命中缓存不重复生成，manifest 落盘后重启可复用", async () => {
     const store = await makeStore();
     const { gen, calls } = fakeGen();
-    const assets = new ImageAssets("img", store, gen, 2);
+    const assets = new ImageAssets("img", store, gen, new Limiter(2));
     await assets.load();
 
     const first = await assets.preload("bg", "rooftop at sunset", "bg_rooftop");
@@ -46,10 +48,11 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
     const again = await assets.preload("bg", "rooftop at sunset", "bg_rooftop");
     expect(again.url).toBe(first.url);
     expect(calls).toHaveLength(1);
+    // manifest 是 fire-and-forget 落盘（preload 不能被磁盘写阻塞），断言复用前显式等它落完
     await assets.flush();
 
     // 新实例 load：manifest 读回，缓存命中
-    const revived = new ImageAssets("img", store, gen, 2);
+    const revived = new ImageAssets("img", store, gen, new Limiter(2));
     await revived.load();
     expect(revived.snapshot()).toEqual([first]);
     expect(await revived.preload("bg", "rooftop at sunset", "bg_rooftop")).toEqual(first);
@@ -59,12 +62,12 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
   it("prompt 落 manifest：重启后仍报得出这张图画的是什么，且不外泄到 WS 快照", async () => {
     const store = await makeStore();
     const { gen } = fakeGen();
-    const assets = new ImageAssets("img", store, gen, 2);
+    const assets = new ImageAssets("img", store, gen, new Limiter(2));
     await assets.load();
     await assets.preload("bg", "rooftop at sunset", "bg_rooftop");
     await assets.flush();
 
-    const revived = new ImageAssets("img", store, gen, 2);
+    const revived = new ImageAssets("img", store, gen, new Limiter(2));
     await revived.load();
     expect(revived.notes()).toEqual([{ id: "bg_rooftop", type: "bg", prompt: "rooftop at sunset" }]);
     expect(revived.snapshot()[0]).not.toHaveProperty("prompt");
@@ -73,7 +76,7 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
   it("同描述不同 id 共用一张图（复用键 = type+prompt）", async () => {
     const store = await makeStore();
     const { gen, calls } = fakeGen();
-    const assets = new ImageAssets("img", store, gen, 2);
+    const assets = new ImageAssets("img", store, gen, new Limiter(2));
     const a = await assets.preload("cg", "confession under stars", "cg_01");
     const b = await assets.preload("cg", "confession under stars", "cg_02");
     expect(b.url).toBe(a.url);
@@ -84,7 +87,7 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
   it("在飞去重：同 id 并发两次只生成一张", async () => {
     const store = await makeStore();
     const { gen, calls } = fakeGen(20);
-    const assets = new ImageAssets("img", store, gen, 2);
+    const assets = new ImageAssets("img", store, gen, new Limiter(2));
     const [a, b] = await Promise.all([
       assets.preload("bg", "rainy station", "bg_station"),
       assets.preload("bg", "rainy station", "bg_station"),
@@ -96,7 +99,7 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
   it("不同 id 同描述并发：只出一次图（按内容指纹去重，不只按 id）", async () => {
     const store = await makeStore();
     const { gen, calls } = fakeGen(30);
-    const assets = new ImageAssets("img", store, gen, 4);
+    const assets = new ImageAssets("img", store, gen, new Limiter(4));
     const [a, b] = await Promise.all([
       assets.preload("cg", "same prompt", "cg_a"),
       assets.preload("cg", "same prompt", "cg_b"),
@@ -109,16 +112,16 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
     const store = await makeStore();
     let live = 0;
     let peak = 0;
-    const gen = {
+    const gen: ImageBackend = {
       generate: async () => {
         live += 1;
         peak = Math.max(peak, live);
         await new Promise((r) => setTimeout(r, 20));
         live -= 1;
-        return { data: Buffer.from("x"), ext: "jpg" as const };
+        return { data: Buffer.from("x"), mimeType: "image/jpeg" };
       },
-    } as unknown as ImageGen;
-    const assets = new ImageAssets("img", store, gen, 2);
+    };
+    const assets = new ImageAssets("img", store, gen, new Limiter(2));
     await Promise.all(
       ["a", "b", "c", "d", "e"].map((id) => assets.preload("bg", `prompt ${id}`, id)),
     );
@@ -127,12 +130,12 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
 
   it("失败向上抛（由调用方降级），不留 manifest 记录", async () => {
     const store = await makeStore();
-    const gen = {
+    const gen: ImageBackend = {
       generate: async () => {
         throw new Error("网关 503");
       },
-    } as unknown as ImageGen;
-    const assets = new ImageAssets("img", store, gen, 2);
+    };
+    const assets = new ImageAssets("img", store, gen, new Limiter(2));
     await expect(assets.preload("bg", "x", "bg_x")).rejects.toThrow("网关 503");
     expect(assets.snapshot()).toEqual([]);
   });
@@ -140,21 +143,21 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
   it("manifest 指向的文件被删后不认账（磁盘是权威）", async () => {
     const store = await makeStore();
     const { gen } = fakeGen();
-    const assets = new ImageAssets("img", store, gen, 2);
+    const assets = new ImageAssets("img", store, gen, new Limiter(2));
     const asset = await assets.preload("bg", "shrine steps", "bg_shrine");
     await assets.flush();
     const { rm } = await import("node:fs/promises");
     await rm(store.imagePath(asset.url.split("/").pop()!));
 
-    const revived = new ImageAssets("img", store, gen, 2);
+    const revived = new ImageAssets("img", store, gen, new Limiter(2));
     await revived.load();
     expect(revived.snapshot()).toEqual([]);
   });
 });
 
-describe("ImageGen：cpa 两种出图协议", () => {
+describe("CpaImageGen：cpa 两种出图协议", () => {
   it("images/generations：base64 直接落，url 走二次下载", async () => {
-    const gen = new ImageGen(
+    const gen = new CpaImageGen(
       { baseUrl: "http://cpa/v1", apiKey: "test-key", model: "gpt-image-2", size: "1536x1024", timeoutMs: 1000 },
       (async (input: string) => {
         if (String(input).endsWith("/images/generations")) {
@@ -166,9 +169,9 @@ describe("ImageGen：cpa 两种出图协议", () => {
         return new Response("remote-bytes", { status: 200 });
       }) as never,
     );
-    expect((await gen.generate("a")).data.toString()).toBe("pix");
+    expect((await gen.generate({ prompt: "a" })).data.toString()).toBe("pix");
 
-    const urlGen = new ImageGen(
+    const urlGen = new CpaImageGen(
       { baseUrl: "http://cpa/v1", apiKey: "test-key", model: "gpt-image-2", size: "1536x1024", timeoutMs: 1000 },
       (async (input: string) => {
         if (String(input).endsWith("/images/generations")) {
@@ -186,19 +189,19 @@ describe("ImageGen：cpa 两种出图协议", () => {
       `data: ${JSON.stringify({ choices: [{ delta: { content: "" } }] })}\n\n` +
       `data: ${JSON.stringify({ choices: [{ delta: { images: [{ image_url: { url: `data:image/jpeg;base64,${b64}` } }] } }] })}\n\n` +
       "data: [DONE]\n\n";
-    const gen = new ImageGen(
+    const gen = new CpaImageGen(
       { baseUrl: "http://cpa/v1", apiKey: "test-key", model: "gemini-3.1-flash-image", size: "1536x1024", timeoutMs: 1000 },
       (async () => new Response(sse, { status: 200 })) as never,
     );
-    expect((await gen.generate("a")).data.toString()).toBe("streamed-pixels");
+    expect((await gen.generate({ prompt: "a" })).data.toString()).toBe("streamed-pixels");
   });
 
   it("网关报错带出状态与响应体片段", async () => {
-    const gen = new ImageGen(
+    const gen = new CpaImageGen(
       { baseUrl: "http://cpa/v1", apiKey: "test-key", model: "gpt-image-2", size: "1536x1024", timeoutMs: 1000 },
       (async () => new Response("auth_unavailable", { status: 503 })) as never,
     );
-    await expect(gen.generate("a")).rejects.toThrow("生图 HTTP 503: auth_unavailable");
+    await expect(gen.generate({ prompt: "a" })).rejects.toThrow("生图 HTTP 503: auth_unavailable");
   });
 });
 

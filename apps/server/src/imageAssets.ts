@@ -5,14 +5,16 @@ import { join } from "node:path";
 import type { GeneratedAsset } from "@stage-ai/core";
 import type { GeneratedNote } from "./prompt.js";
 import type { PlayStore } from "./store.js";
-import type { ImageGen } from "./imagegen.js";
+import type { ImageAspect, ImageBackend } from "./imageBackend.js";
+import { Limiter } from "./limiter.js";
 
 /**
  * 生图资产层（D6）：剧目级 manifest + 内容寻址缓存 + 并发闸门 + 在飞去重。
- * - 复用键 = sha1(type + prompt)：同描述不同 id 共用一张图，分岔/重演不重复烧配额；
+ * - 复用键 = sha1(type + prompt + 画幅)：同描述不同 id 共用一张图，分岔/重演不重复烧配额；
  * - manifest 落 media-cache/img/manifest.json（id → 文件）：重连时 hello 直接带全集，
  *   资产不依赖「下一次预发射」才可见；文件缺失的条目跳过，磁盘是权威；
- * - 并发闸门：每图 15–30s，串行会把 3–5 句的预发射窗口拖穿，超出的请求排队。
+ * - 并发闸门与工坊生图共用同一个 Limiter（挂在 PlayHouse 上，reload 不会换实例），
+ *   但本层走 high 优先级——预发射被工坊的串行对话挤到队尾就失去了意义。
  * 失败一律抛出由调用方降级（既有素材/氛围色），不留永久骨架。
  */
 
@@ -27,12 +29,18 @@ interface ManifestEntry {
 /** 内存条目 = 协议形态 + prompt（prompt 不进 WS，只供提示词复用 id）。 */
 type Asset = GeneratedAsset & { prompt?: string };
 
-/** 排队上限：预发射是「锦上添花」，队列爆掉就直接失败降级，不无限吃内存。 */
-const MAX_QUEUE = 12;
+/** 舞台与 CG 都是横构图；立绘不归本层（铁律①，差分立绘走工坊素材层）。 */
+const ASPECT_BY_TYPE: Record<"bg" | "cg", ImageAspect> = { bg: "16:9", cg: "16:9" };
 
-/** 复用键：同类型同描述 → 同一张文件（不同类型的同描述算两张资产）。 */
-function fileName(type: "bg" | "cg", prompt: string): string {
-  return `${createHash("sha1").update(type).update("\0").update(prompt).digest("hex")}.jpg`;
+/** 复用键：同类型同描述同画幅 → 同一张文件（不同类型的同描述算两张资产）。 */
+function fileName(type: "bg" | "cg", prompt: string, aspectRatio: string): string {
+  return `${createHash("sha1")
+    .update(type)
+    .update("\0")
+    .update(prompt)
+    .update("\0")
+    .update(aspectRatio)
+    .digest("hex")}.jpg`;
 }
 
 /** prompt 是内部注解，不外泄：WS 快照与 asset_ready 一律只带协议三字段。 */
@@ -46,16 +54,14 @@ export class ImageAssets {
   private readonly inflight = new Map<string, Promise<GeneratedAsset>>();
   /** 同一张图（内容指纹）的在飞生成：不同 id 共用同描述时只出一次图。 */
   private readonly generating = new Map<string, Promise<void>>();
-  private running = 0;
-  private readonly queue: (() => void)[] = [];
   private dirty = false;
   private saving: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly playId: string,
     private readonly store: PlayStore,
-    private readonly gen: ImageGen,
-    private readonly concurrency: number,
+    private readonly gen: ImageBackend,
+    private readonly limiter: Limiter,
   ) {}
 
   async load(): Promise<void> {
@@ -105,8 +111,8 @@ export class ImageAssets {
   }
 
   private async run(type: "bg" | "cg", prompt: string, id: string): Promise<GeneratedAsset> {
-    const file = fileName(type, prompt);
-    await this.ensure(file, prompt);
+    const file = fileName(type, prompt, ASPECT_BY_TYPE[type]);
+    await this.ensure(file, prompt, type);
     const asset: Asset = {
       id,
       type,
@@ -124,11 +130,11 @@ export class ImageAssets {
    * 登记 `generating` 必须在任何 await 之前同步完成——否则两个调用都能在对方登记前
    * 读到空表，各自出一遍图（烧配额）。
    */
-  private async ensure(file: string, prompt: string): Promise<void> {
+  private async ensure(file: string, prompt: string, type: "bg" | "cg"): Promise<void> {
     if (existsSync(this.store.imagePath(file))) return;
     let job = this.generating.get(file);
     if (!job) {
-      job = this.generate(file, prompt);
+      job = this.generate(file, prompt, type);
       this.generating.set(file, job);
       void job
         .catch(() => {})
@@ -139,40 +145,26 @@ export class ImageAssets {
     await job;
   }
 
-  private async generate(file: string, prompt: string): Promise<void> {
+  private async generate(file: string, prompt: string, type: "bg" | "cg"): Promise<void> {
     const target = this.store.imagePath(file);
-    await this.acquire();
-    try {
+    await this.limiter.run(async () => {
       // 排队期间可能已被别人生成出来（双重检查：入队前后各查一次磁盘）
       if (existsSync(target)) return;
-      const { data } = await this.gen.generate(prompt);
+      const { data } = await this.gen.generate({ prompt, aspectRatio: ASPECT_BY_TYPE[type] });
       await mkdir(this.store.imageDir(), { recursive: true });
       const tmp = `${target}.${randomUUID().slice(0, 8)}.tmp`;
       await writeFile(tmp, data);
       await rename(tmp, target);
-    } finally {
-      this.release();
-    }
+    }, "high");
   }
 
-  /** 取槽位：有余位且无人排队才直接进（否则会插队超发）。 */
-  private async acquire(): Promise<void> {
-    if (this.running < this.concurrency && this.queue.length === 0) {
-      this.running += 1;
-      return;
-    }
-    if (this.queue.length >= MAX_QUEUE) throw new Error("生图队列已满");
-    await new Promise<void>((resolve) => this.queue.push(resolve));
-  }
-
-  /** 放槽位：有人排队就直接把槽位转给他（running 不动），否则回收。 */
-  private release(): void {
-    const next = this.queue.shift();
-    if (next) next();
-    else this.running -= 1;
-  }
-
-  /** manifest 合并落盘：多图并发完成时串行写，盘上永远是最新全集。 */
+  /**
+   * manifest 合并落盘：多图并发完成时串行写，盘上永远是最新全集。
+   *
+   * 刻意 fire-and-forget——preload 是演出侧的后台预发射，不能被一次磁盘写阻塞。
+   * 代价是 preload 返回时 manifest 还没进盘，此刻进程被杀会丢掉这个条目（图在盘上但没索引）。
+   * 需要确定落盘时（进程退出、断言缓存复用）用 `flush()`。
+   */
   private scheduleSave(): void {
     if (!this.dirty) return;
     this.saving = this.saving.then(() => this.save());

@@ -18,10 +18,15 @@ const READONLY_PREFIXES = ["assets/"];
 const ASSET_MANIFEST = "assets/manifest.json";
 /** 允许下钻的顶层目录（其余目录整棵跳过，不进 readdir）。 */
 const DIR_ROOTS = ["memory", "assets"];
+/** 二进制可写面：仅图像素材（工坊生图落盘）。 */
+const BINARY_WRITE_PREFIXES = ["assets/backgrounds/", "assets/cg/", "assets/sprites/"];
+/** 单图上限 16MB：2K 图 1–3MB，留足余量又挡得住写歪的产物。 */
+const MAX_BINARY_BYTES = 16 * 1024 * 1024;
 
 /** 预览方式：binary 文件不进编辑器，前端按 kind 决定渲染预览还是播放。 */
 export type PlayFileKind = "text" | "image" | "audio" | "binary";
 
+/** 图像扩展名：预览判定与二进制可写判定共用同一份。 */
 const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 const AUDIO_EXT = new Set([".mp3", ".ogg", ".wav", ".m4a", ".flac", ".aac"]);
 
@@ -143,10 +148,57 @@ export class PlayFiles {
     return normalizePath(rel)!;
   }
 
+  /**
+   * 剧目图像素材的二进制写入通道（工坊生图落盘）。
+   *
+   * 独立于 `write`：文本工具写图片路径没有意义，而素材层若绕过本类直接落盘，
+   * 「工坊的读写都在 PlayFiles 白名单内」这条铁律就成了假话，人和 agent 的写权限面也分叉了。
+   * 调用方（WorkshopAssets）只传服务端从枚举拼出的路径，本类仍做一遍全量校验。
+   *
+   * 不产撤销记录：`WorkshopWrite.before` 是 utf8 文本，2MB 二进制会被解成乱码串回传前端。
+   * 图像的「反悔」手段是覆盖重画与素材页删除。
+   */
+  async writeBinary(rel: string, data: Buffer): Promise<string> {
+    const clean = normalizePath(rel);
+    if (!clean || !isBinaryWritable(clean)) {
+      throw new Error(`路径不在工坊二进制可写范围: ${rel}`);
+    }
+    const abs = resolve(this.root, clean);
+    if (abs !== this.root && !abs.startsWith(this.root + sep)) throw new Error(`路径越界: ${rel}`);
+    if (data.length > MAX_BINARY_BYTES) {
+      throw new Error(`素材过大（${data.length}B，上限 ${MAX_BINARY_BYTES}B）: ${rel}`);
+    }
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, data);
+    return clean;
+  }
+
+  /** 绝对路径（二进制通道的调用方需要读回自己刚写的图作垫图）。 */
+  absoluteOf(rel: string): string {
+    const clean = normalizePath(rel);
+    if (!clean) throw new Error(`非法路径: ${rel}`);
+    const abs = resolve(this.root, clean);
+    if (abs !== this.root && !abs.startsWith(this.root + sep)) throw new Error(`路径越界: ${rel}`);
+    return abs;
+  }
+
   /** 删除（仅 memory/** 与 theme.css；play.json 是剧目定义，删掉=剧目损坏，任何入口都不许删）。 */
   async remove(rel: string): Promise<void> {
     const abs = this.pathOf(rel, "write");
     if (abs === join(this.root, "play.json")) throw new Error("play.json 不可删除");
     await rm(abs, { force: true });
   }
+
+  /** 删除图像素材（工坊覆盖生图时清掉换扩展名的旧文件；一个 id 只留一张图）。 */
+  async removeAsset(rel: string): Promise<void> {
+    const clean = normalizePath(rel);
+    if (!clean || !isBinaryWritable(clean)) throw new Error(`路径不在素材范围: ${rel}`);
+    await rm(this.absoluteOf(clean), { force: true });
+  }
+}
+
+/** 二进制可写判定：仅图像素材目录下的图像文件。 */
+function isBinaryWritable(rel: string): boolean {
+  if (!BINARY_WRITE_PREFIXES.some((prefix) => rel.startsWith(prefix))) return false;
+  return IMAGE_EXT.has(extOf(rel));
 }

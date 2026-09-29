@@ -152,7 +152,12 @@ export class PlayStore {
     await writeSaveMeta(this.dir, meta);
   }
 
-  /** 就绪门检查（D13）：premise + 角色立绘映射 + ≥1 背景。 */
+  /**
+   * 就绪门检查：**只卡 premise**——图全可选。
+   * 背景与立绘是建议项：没有图照样开演（舞台落氛围底色、没有立绘的角色不上台），
+   * 演出不等素材，设定能边演边补。`characterSprites` / `background` 仍返回，
+   * 素材页与工坊拿它做补齐建议。
+   */
   async readiness(): Promise<Readiness> {
     let play: PlayConfig | null = null;
     try {
@@ -169,9 +174,15 @@ export class PlayStore {
     const bgDir = join(this.dir, "assets/backgrounds");
     const background = existsSync(bgDir) && (await readdir(bgDir)).some((f) => /\.(png|jpe?g|webp)$/i.test(f));
     const hasSession = await hasAnySave(this.dir);
+    // premise 有两个来源：play.json 与记忆卡。playwriter 取的是 memory.premise || play.premise，
+    // 就绪门只看前者的话，工坊只写记忆卡就会一直红着而剧作家其实已经在用新前提。
+    const memoryPremise = this.memoryDir("always", "premise.md");
+    const premise =
+      play.premise.trim() !== "" ||
+      (existsSync(memoryPremise) && (await readFile(memoryPremise, "utf8")).trim() !== "");
     return {
-      ready: play.premise.trim() !== "" && characterSprites && background,
-      premise: play.premise.trim() !== "",
+      ready: premise,
+      premise,
       characterSprites,
       background,
       hasSession,
@@ -253,7 +264,10 @@ export class PlayStore {
         for (const char of await readdir(kindDir, { withFileTypes: true })) {
           if (!char.isDirectory()) continue;
           const files = await readdir(join(kindDir, char.name));
-          out[`sprites/${char.name}`] = files.filter((f) => /\.(png|jpe?g|webp)$/i.test(f));
+          // 排序：编排器在找不到指定差分时取 files[0] 兜底，readdir 顺序不定会让兜底每次挑到不同的脸
+          out[`sprites/${char.name}`] = files
+            .filter((f) => /\.(png|jpe?g|webp)$/i.test(f))
+            .sort((a, b) => a.localeCompare(b));
         }
       } else {
         out[kind] = (await readdir(kindDir)).filter((f) => /\.(png|jpe?g|webp|mp3|ogg|wav|m4a)$/i.test(f));

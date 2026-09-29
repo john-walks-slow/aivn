@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zipSync } from "fflate";
@@ -69,6 +69,42 @@ describe("PlayLibrary 剧目包导入与删除", () => {
     expect(readiness.ready).toBe(false);
     await library.remove("blank");
     expect(existsSync(join(root, "blank"))).toBe(false);
+  });
+
+  it("就绪门只看 premise：没有图照样 ready（工坊出图是后话）", async () => {
+    await library.createEmpty("pic", "图不多");
+    const store = library.store("pic");
+    await writeFile(join(root, "pic", "play.json"), PLAY_JSON("pic").replace('"premise":"x"', '"premise":"有前提"'));
+    const readiness = await store.readiness();
+    expect(readiness.characterSprites).toBe(false);
+    expect(readiness.background).toBe(false);
+    expect(readiness.premise).toBe(true);
+    expect(readiness.ready).toBe(true);
+  });
+
+  it("play.json 留空但写了 memory/always/premise.md 也算就绪", async () => {
+    await library.createEmpty("mem", "记忆卡");
+    await writeFile(join(root, "mem", "play.json"), PLAY_JSON("mem").replace('"premise":"x"', '"premise":""'));
+    const store = library.store("mem");
+    expect((await store.readiness()).premise).toBe(false);
+
+    await mkdir(join(root, "mem", "memory", "always"), { recursive: true });
+    await writeFile(join(root, "mem", "memory", "always", "premise.md"), "# 前提\n黄昏的走廊。\n");
+    expect((await store.readiness()).premise).toBe(true);
+  });
+
+  it("立绘清单排序稳定（素材页每次打开顺序一致）", async () => {
+    await library.importZip(
+      zipOf({
+        "play.json": PLAY_JSON("sprites"),
+        "assets/sprites/mio/angry.png": new Uint8Array([1]),
+        "assets/sprites/mio/neutral.png": new Uint8Array([1]),
+        "assets/sprites/mio/blush.png": new Uint8Array([1]),
+      }),
+    );
+    const twice = [await library.store("sprites").listAssets(), await library.store("sprites").listAssets()];
+    expect(twice[0]).toEqual(twice[1]);
+    expect(twice[0]!["sprites/mio"]).toEqual(["angry.png", "blush.png", "neutral.png"]);
   });
 });
 

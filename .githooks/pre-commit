@@ -1,0 +1,2 @@
+#!/bin/sh
+node scripts/check-encoding.mjs || exit 1

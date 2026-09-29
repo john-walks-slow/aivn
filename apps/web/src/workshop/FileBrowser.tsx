@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { notifyThemeChanged } from "../theme.js";
-import type { PlayFile } from "../api.js";
-import { api, fileUrl } from "../api.js";
+import { api, fileUrl, type PlayFile } from "../api.js";
 import { Icon, type IconName } from "../ui/Icon.js";
-import { ImageLightbox } from "./ImageLightbox.js";
+import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
 
 /** 二进制文件在树里的图标：一眼分出「能编辑」和「只能看」。 */
 const KIND_ICON: Record<string, IconName> = { text: "files", image: "assets", audio: "chat", binary: "files" };
@@ -25,7 +24,7 @@ export function FileBrowser({
   const [saved, setSaved] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null);
+  const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
 
   const reload = useCallback((): void => {
     api
@@ -40,6 +39,7 @@ export function FileBrowser({
     (path: string, kind: PlayFile["kind"] = "text"): void => {
       setError(null);
       if (kind !== "text") {
+        // 图/音频不进编辑器：readFile 是 utf8 通道，2MB 的 PNG 读回来就是一屏乱码
         setOpen(path);
         setDraft("");
         setSaved("");
@@ -119,6 +119,10 @@ export function FileBrowser({
   }, [files]);
 
   const dirty = open !== null && draft !== saved;
+  const images = useMemo(
+    () => files.filter((f) => f.kind === "image").map((f) => ({ url: fileUrl(playId, f.path), caption: f.path })),
+    [files, playId],
+  );
   const selected = useMemo(() => files.find((f) => f.path === open), [files, open]);
 
   return (
@@ -172,7 +176,9 @@ export function FileBrowser({
               playId={playId}
               path={open}
               kind={selected.kind}
-              onZoom={(url, name) => setZoom({ url, name })}
+              onZoom={(_, name) =>
+                setLightbox({ images, index: Math.max(0, images.findIndex((i) => i.caption === name)) })
+              }
             />
           ) : (
             <>
@@ -199,7 +205,14 @@ export function FileBrowser({
         )}
       </div>
 
-      {zoom && <ImageLightbox url={zoom.url} name={zoom.name} onClose={() => setZoom(null)} />}
+      {lightbox && (
+        <ImageLightbox
+          images={lightbox.images}
+          index={lightbox.index}
+          onIndex={(index) => setLightbox({ ...lightbox, index })}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   );
 }

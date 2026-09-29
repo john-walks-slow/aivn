@@ -3,7 +3,8 @@ import react from "@vitejs/plugin-react";
 
 // 端口走 env（STAGE_WEB_PORT / STAGE_PORT）：worktree 并行开发时每棵工作树一套，别撞主仓正在跑的实例。
 const serverPort = Number(process.env.STAGE_WEB_PORT ?? 5180);
-const apiPort = process.env.STAGE_PORT ?? "8787";
+/** 后端地址：默认按 STAGE_PORT 拼，多实例下也可用 STAGE_SERVER 直接指定整个地址。 */
+const server = process.env.STAGE_SERVER ?? `http://127.0.0.1:${process.env.STAGE_PORT ?? "8787"}`;
 
 export default defineConfig({
   plugins: [react()],
@@ -13,11 +14,11 @@ export default defineConfig({
     allowedHosts: [".trycloudflare.com", ".example.com"],
     proxy: {
       "/ws": {
-        target: `ws://127.0.0.1:${apiPort}`,
+        target: server.replace(/^http/, "ws"),
         ws: true,
       },
-      "/api": `http://127.0.0.1:${apiPort}`,
-      "/plays": `http://127.0.0.1:${apiPort}`,
+      "/api": server,
+      "/plays": server,
     },
   },
 });

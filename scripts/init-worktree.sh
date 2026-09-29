@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 在 worktree 里准备开发环境：装依赖、构建 core（web/server 走 workspace symlink 的 dist 类型）、
-# 建一份给本实例用的 .env（复用主仓库的凭据，不写进 worktree 的 git）。
+# 把主仓库的 .env 链过来（凭据只留一份，不写进 worktree 的 git）。
+# 端口不写死——dev-worktree.sh 每次现取。
 set -euo pipefail
 
 WT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,7 +27,7 @@ if [ ! -e .env ]; then
     ln -s "$MAIN_ROOT/.env" .env
     echo "→ .env → $MAIN_ROOT/.env"
   else
-    echo "!! 主仓库没有 .env，dev-worktree.sh 会起不来（缺 cpa 网关/STAGE_API_KEY）"
+    echo "!! 主仓库没有 .env，dev-worktree.sh 会起不来（缺 cpa 网关/STAGE_API_KEY；生图/TTS 需自行配置）"
   fi
 fi
 
