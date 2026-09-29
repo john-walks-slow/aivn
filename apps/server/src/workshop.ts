@@ -1,3 +1,4 @@
+import { readFile as readFileBytes } from "node:fs/promises";
 import type { AgentEvent, AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import { type Api, type Model, type Static, Type } from "@earendil-works/pi-ai";
@@ -49,10 +50,25 @@ const generateAssetParams = Type.Object(
     expression: Type.Optional(Type.String({ maxLength: 40 })),
     /** 画风锚点（可选），如「厚涂写实电影感」「赛璐珞动画」。不给就不预设风格，按角色描述走。 */
     style: Type.Optional(Type.String({ maxLength: 200 })),
+    /** 立绘抠底微调（可选，只对 kind=sprite 生效）。用 inspect_asset 看图觉得抠得不干净时才填。 */
+    cutout: Type.Optional(
+      Type.Object(
+        {
+          /** 强阈值 0–32：确定是底色的种子。调大=保守少抠。默认 1。 */
+          strong: Type.Optional(Type.Integer({ minimum: 0, maximum: 32 })),
+          /** 弱阈值 0–64：种子沿轮廓的漫延范围。调大=顺着轮廓多啃几像素、毛边更干净。默认 8。 */
+          weak: Type.Optional(Type.Integer({ minimum: 0, maximum: 64 })),
+          /** 背景洞面积下限 0–10000：小于它的封闭背景块会填回人物（护眼白）。调小=抠得更狠。默认 200。 */
+          minHole: Type.Optional(Type.Integer({ minimum: 0, maximum: 10000 })),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     prompt: Type.String({ minLength: 1, maxLength: 4000, description: "英文出图提示词，描述画面本身（不含负面词）" }),
   },
   { additionalProperties: false },
 );
+const inspectAssetParams = Type.Object({ path: Type.String({ maxLength: 300 }) }, { additionalProperties: false });
 
 function textResult(text: string): { content: { type: "text"; text: string }[]; details: undefined } {
   return { content: [{ type: "text" as const, text }], details: undefined };
@@ -165,7 +181,8 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
       "出一张剧目素材并落进 assets/：背景(kind=background) / CG(kind=cg) 给 name，" +
       "立绘(kind=sprite) 给 characterId + expression。立绘会自动抠底成透明 PNG（引擎要靠它叠在场景上）。" +
       "非 neutral 的立绘会自动拿该角色的 neutral 定妆照做垫图，所以同一个角色的差分是同一个人。" +
-      "一次工具调用只出一张图；要出多个差分就在同一个批次里多次调用本工具，它们是并行的。",
+      "一次工具调用只出一张图；要出多个差分就在同一个批次里多次调用本工具，它们是并行的。" +
+      "抠完觉得不干净（白边、剪纸毛刺）时，用 inspect_asset 看图，再带 cutout 参数重出。",
     parameters: generateAssetParams,
     execute: async (_id, params: Static<typeof generateAssetParams>) => {
       if (!deps.assets) {
@@ -181,16 +198,48 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
           },
           params.prompt,
           params.style,
+          params.cutout,
         );
         for (const asset of assets) deps.onAsset(asset);
+        // 回执里带 url：agent 要把图贴给用户看，就靠这行 markdown。
         const lines = assets.map((asset) =>
-          asset.replaced ? `已生成并覆盖原有素材：${asset.path}` : `已生成：${asset.path}`,
+          `${asset.replaced ? "已生成并覆盖原有素材" : "已生成"}：${asset.path}\n![${asset.path}](${asset.url})`,
         );
         const auto = assets.find((asset) => asset.autoNeutral);
         if (auto) lines.push("该角色原本没有任何差分，已先自动出一张 neutral 定妆照。");
-        return textResult(lines.join("\n"));
+        return textResult(lines.join("\n\n"));
       } catch (error) {
         return textResult(`生图失败：${reason(error)}`);
+      }
+    },
+  };
+
+  /**
+   * 看图：立绘抠底的质量只有眼睛能判。返回图片 attachment 让模型自己看，
+   * 它是唯一能看到成图的 agent 侧通道——用户那边的预览是独立的。
+   * 只放 assets/ 下的图像，和 read_file 同一套白名单。
+   */
+  const inspectAsset: AgentTool<typeof inspectAssetParams> = {
+    name: "inspect_asset",
+    label: "看剧目图片",
+    description:
+      "把 assets/ 下的一张图读进来给你自己看（真的看图，不是返回文件路径）。" +
+      "立绘抠底只干净不干净、画风对不对、是不是同一个人——都靠它判断。path 用相对路径，如 assets/sprites/koharu/neutral.png。",
+    parameters: inspectAssetParams,
+    execute: async (_id, params: Static<typeof inspectAssetParams>) => {
+      try {
+        const bytes = await readFileBytes(deps.files.absoluteOf(params.path));
+        const mimeType = sniffImageMime(bytes);
+        if (!mimeType) return textResult(`${params.path} 不是可看的图片（只支持 png/jpeg/webp/gif）`);
+        return {
+          content: [
+            { type: "text" as const, text: `${params.path}（${mimeType}，${bytes.length}B）` },
+            { type: "image" as const, data: bytes.toString("base64"), mimeType },
+          ],
+          details: undefined,
+        };
+      } catch (error) {
+        return textResult(`读图失败：${reason(error)}`);
       }
     },
   };
@@ -212,7 +261,16 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
     },
   };
 
-  return [listFiles, readFile, writeFile, deleteFile, readiness, generateAsset, readSkillTool];
+  return [listFiles, readFile, writeFile, deleteFile, readiness, generateAsset, inspectAsset, readSkillTool];
+}
+
+/** 文件头嗅探（扩展名可能与实际字节不符，垫图塞错类型会被网关拒）。 */
+function sniffImageMime(bytes: Buffer): string | null {
+  if (bytes.length > 8 && bytes.subarray(1, 4).toString("latin1") === "PNG") return "image/png";
+  if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.length > 12 && bytes.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  if (bytes.length > 6 && bytes.subarray(0, 6).toString("latin1").startsWith("GIF8")) return "image/gif";
+  return null;
 }
 
 export function renderReadiness(r: Readiness): string {
@@ -259,6 +317,9 @@ export async function buildWorkshopPrompt(
 # 出图要点
 
 ${canGenerate ? imageGuide : "- 生图当前不可用：把该出的图列成清单告诉用户，让用户在素材页自己上传。"}
+- **把图给用户看**：\`generate_asset\` 的回执里有素材 URL，写成 markdown 图片直接贴进回复
+  （\`![alt](/plays/xxx/assets/sprites/koharu/neutral.png)\`）——用户要**亲眼看到**才谈得上验收，
+  只报一句「已生成」等于让人凭空点头。
 - **画风没有默认值**：用户没说就问，定下来写进 memory/always/craft.md，之后以它为准。别擅自给整部剧目套二次元。
 - 素材 id 用英文小写（下划线也行）：背景与 CG 的 id 会被剧本的 \`<scene bg="..."\` / \`<cg id="..."\` 直接引用，起名要有语义（rooftop、classroom_dusk），别用 bg1、test2。
 - 覆盖已有素材会替掉用户导入的图，覆盖前先说清楚。
@@ -285,11 +346,15 @@ ${renderReadiness(readiness)}`;
 const imageGuide = `- 调 generate_asset 出图，prompt 用英文，只描述画面本身；画风短语放 style 参数（可选）。
 - 背景 16:9、CG 16:9、立绘 9:16 竖构图全身。画幅不对会直接作废，别为了构图改画幅。
 - 立绘会自动抠底成透明 PNG（引擎靠它叠在场景上），所以提示词里必须有"纯色底、无渐变无投影"。
+- **立绘要 2D 平涂**（赛璐珞/动漫插画，干净线条 + 平涂色块，明确写 NOT a 3D render）——
+  3D 渲染图的白衣白得离底色只有几个色阶，实测抠底会连和服一起啃掉。
 - 立绘是"一个差分一次 generate_asset"，非 neutral 的会自动拿该角色的 neutral 定妆照做垫图。
 - **一次工具调用只出一张图，但同一批次里的多次调用是并行的**：要出多个差分，就在同一批里调多次
   generate_asset（一次一张），不要一个一个串行等。闸门放 6 个并发。
 - **同一角色先出 neutral，用户看过认了之后再出其余差分。** 没有 neutral 又有别的差分时系统会直接报错——
   不这么做的话新图和旧差分不是同一个人，演出中会静默换脸。
+- **立绘出完自己先看一遍**：用 inspect_asset 把刚落盘的图读进来。真抠坏了（白边、剪纸毛刺、
+  手脚被啃掉）就带 cutout 参数重出，不要拿一张半残图去见用户。
 - 立绘出图是同步等待用户的操作（一张约 100 秒起），别在没批准时开跑。`;
 
 /** 单轮工坊对话上限：网关挂死不解除会永久锁住面板（running 无法复位）。一轮里可能要连出几张图，7 分钟。 */

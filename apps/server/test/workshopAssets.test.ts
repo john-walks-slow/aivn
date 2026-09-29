@@ -304,6 +304,8 @@ describe("WorkshopAssets：工坊素材落盘", () => {
 
     // 6 个差分 + 1 张定妆照 = 7 次出图。inflight 救不了这条（generate() 要先 await resolve
     // 才查表），不按 kindPath 登记在飞 promise 的话 6 条会各补一张，变成 12 次。
+    // 6 个差分 + 1 张定妆照 = 7 次出图。6 条差分各自要去补定妆照，但它们的补图都打同一个
+    // inflight key（sprites/mio/neutral），inflight 会合并成一次。
     expect(calls).toHaveLength(7);
     expect(calls.filter((c) => c.prompt.includes("neutral-expression"))).toHaveLength(1);
     // 6 个差分都垫了这唯一一张定妆照；垫图不统一 = 静默换脸

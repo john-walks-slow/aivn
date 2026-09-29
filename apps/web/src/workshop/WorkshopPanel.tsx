@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
 import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
 import { FileBrowser } from "./FileBrowser.js";
+import { WorkshopMarkdown } from "./WorkshopMarkdown.js";
 import { useWorkshop } from "./useWorkshop.js";
 
 /** 抽屉/全屏两种形态：抽屉从右侧滑入压在舞台上，全屏独占页面。 */
@@ -160,7 +161,10 @@ export function WorkshopPanel({
             )}
             {state.messages.map((msg, i) => (
               <div key={`${msg.at}-${i}`} className={`chat-bubble chat-${msg.role}`}>
-                {msg.text}
+                <WorkshopMarkdown
+                  text={msg.text}
+                  onOpen={(images, index) => setLightbox({ images, index })}
+                />
                 {msg.images && msg.images.length > 0 && (
                   <div className="asset-strip">
                     {msg.images.map((asset, j) => (
@@ -177,7 +181,14 @@ export function WorkshopPanel({
                 )}
               </div>
             ))}
-            {state.streaming && <div className="chat-bubble chat-assistant">{state.streaming}</div>}
+            {state.streaming && (
+              <div className="chat-bubble chat-assistant">
+                <WorkshopMarkdown
+                  text={state.streaming}
+                  onOpen={(images, index) => setLightbox({ images, index })}
+                />
+              </div>
+            )}
             {/* 本轮出图即时可见：本轮话还没收束，图先摆在这儿，收束后并进上面那条消息 */}
             {state.pendingAssets.length > 0 && (
               <div className="asset-strip pending">

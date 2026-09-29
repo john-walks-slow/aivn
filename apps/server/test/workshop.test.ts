@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -232,9 +232,79 @@ describe("工坊工具：generate_asset", () => {
 
     const out = JSON.stringify(await gen.execute("c1", { kind: "background", name: "rooftop", prompt: "黄昏天台" }));
     expect(out).toContain("已生成：assets/backgrounds/rooftop.jpg");
+    // 回执必须带 markdown 图片：agent 要靠这行把图贴给用户看，用户才谈得上验收
+    expect(out).toContain("![assets/backgrounds/rooftop.jpg](/plays/test/assets/backgrounds/rooftop.jpg)");
     expect(events).toHaveLength(1);
     expect(events[0]!.url).toBe("/plays/test/assets/backgrounds/rooftop.jpg");
     expect(existsSync(join(store.dir, "assets/backgrounds/rooftop.jpg"))).toBe(true);
+  });
+
+  it("inspect_asset：把图以 image attachment 交给模型（抠底质量只有眼睛能判）", async () => {
+    await setup();
+    await mkdir(join(store.dir, "assets", "sprites", "mio"), { recursive: true });
+    const png = await sharp({
+      create: { width: 8, height: 8, channels: 4, background: "#ff00aaff" },
+    })
+      .png()
+      .toBuffer();
+    await writeFile(join(store.dir, "assets", "sprites", "mio", "neutral.png"), png);
+
+    const tools = createWorkshopTools(deps());
+    const inspect = tools.find((t) => t.name === "inspect_asset")!;
+    const result = await inspect.execute("c1", { path: "assets/sprites/mio/neutral.png" });
+    const image = result.content.find((c) => c.type === "image");
+    expect(image).toBeDefined();
+    expect(image!.type === "image" && image!.mimeType).toBe("image/png");
+    const data = image!.type === "image" ? Buffer.from(image!.data, "base64") : Buffer.alloc(0);
+    expect(data.equals(png)).toBe(true);
+
+    const missing = await inspect.execute("c2", { path: "assets/sprites/mio/nope.png" });
+    expect(JSON.stringify(missing)).toContain("读图失败");
+  });
+
+  it("inspect_asset：非图片字节不塞进模型，省得白烧一轮", async () => {
+    await setup();
+    const tools = createWorkshopTools(deps());
+    const inspect = tools.find((t) => t.name === "inspect_asset")!;
+    const out = await inspect.execute("c1", { path: "play.json" });
+    expect(out.content.some((c) => c.type === "image")).toBe(false);
+    expect(JSON.stringify(out)).toContain("不是可看的图片");
+  });
+
+  it("generate_asset：cutout 参数原样传到抠底层（agent 看图后重出用）", async () => {
+    await setup();
+    const tunings: (unknown[] | undefined)[] = [];
+    const assets = new WorkshopAssets("test", {
+      store,
+      files: new PlayFiles(store),
+      backend: {
+        generate: async () => ({
+          data: await sharp({
+            create: { width: 768, height: 1376, channels: 3, background: "#ffffff" },
+          })
+            .png()
+            .toBuffer(),
+          mimeType: "image/png",
+        }),
+      },
+      limiter: new Limiter(1),
+      onWrite: () => {},
+    });
+    const spy = vi.spyOn(assets, "generate");
+    spy.mockImplementation(async (target, prompt, style, tuning) => {
+      tunings.push(tuning);
+      return [{ kind: target.kind as never, path: "assets/sprites/mio/neutral.png", url: "/u", replaced: false }];
+    });
+    const tools = createWorkshopTools(deps({ assets }));
+    const gen = tools.find((t) => t.name === "generate_asset")!;
+    await gen.execute("c1", {
+      kind: "sprite",
+      characterId: "mio",
+      expression: "neutral",
+      prompt: "a girl",
+      cutout: { weak: 12, minHole: 40 },
+    });
+    expect(tunings).toEqual([{ weak: 12, minHole: 40 }]);
   });
 
   it("工坊工具：read_skill 读得到技能全文，读不到就回可读的报错", async () => {

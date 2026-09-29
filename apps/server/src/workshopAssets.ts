@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { parsePlayConfig } from "@stage-ai/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
-import { cutout } from "./cutout.js";
+import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
 import type { Limiter } from "./limiter.js";
 import type { PlayFiles } from "./playFiles.js";
 import type { PlayStore } from "./store.js";
@@ -26,14 +26,23 @@ const STEM = /^[a-z][a-z0-9_]{0,39}$/;
 
 const NEUTRAL = "neutral";
 
-/** 立绘身份锚：正脸站姿，差分都从它派生。竖构图提示词里也点明，配合 9:16 画布。 */
+/**
+ * 立绘身份锚：正脸站姿，差分都从它派生。竖构图提示词里也点明，配合 9:16 画布。
+ *
+ * 后半段不是修饰词是硬约束：`src/cutout.ts` 的全局色键抠底要求 2D 平涂 + 纯白纯色底，
+ * 3D 渲染的白衣离底色只有几格色差，抠底会连人带和服一起啃掉；剪影连成一片就没法分割人物与底色。
+ */
 const NEUTRAL_SUFFIX =
-  "full body, front-facing standing pose, neutral expression, plain solid pure white background, " +
-  "no text, no shadow, no gradient, vertical portrait composition.";
-/** 差分：只改表情，身份特征一律锁死——垫图之外的第二道保险。 */
+  "full body, front-facing standing pose, neutral expression, both arms held slightly away from the body " +
+  "so the silhouette is clearly separated, clear empty white space between the twin tails and between " +
+  "the arms and the body. Japanese anime style 2D character illustration, flat cel shading with clean " +
+  "crisp lineart, NOT a 3D render, no 3D CGI look. Plain solid pure white background, no text, no shadow, " +
+  "no gradient, no vignette, vertical portrait composition.";
+/** 差分：只改表情，身份特征一律锁死——垫图之外的第二道保险。画风要求与定妆照一字不差，否则两个人。 */
 const IDENTITY_SUFFIX =
   "Same character as the reference image: identical hairstyle, hair color, eye color, outfit and body type. " +
-  "Change only the facial expression. Plain solid pure white background, no text, no shadow, no gradient.";
+  "Change only the facial expression. Same 2D flat cel-shaded anime illustration style, NOT a 3D render, " +
+  "same plain solid pure white background, no text, no shadow, no gradient.";
 
 export type AssetKind = "background" | "cg" | "sprite";
 
@@ -87,12 +96,17 @@ export class WorkshopAssets {
     private readonly deps: WorkshopAssetsDeps,
   ) {}
 
-  async generate(target: AssetTarget, prompt: string, style?: string): Promise<GeneratedPlayAsset[]> {
+  async generate(
+    target: AssetTarget,
+    prompt: string,
+    style?: string,
+    cutoutTuning?: Partial<CutoutTuning>,
+  ): Promise<GeneratedPlayAsset[]> {
     const spec = await this.resolve(target);
     const key = `${spec.kindPath}/${spec.stem}`;
     const running = this.inflight.get(key);
     if (running) return running;
-    const job = this.run(spec, prompt, style).finally(() => {
+    const job = this.run(spec, prompt, style, cutoutTuning).finally(() => {
       if (this.inflight.get(key) === job) this.inflight.delete(key);
     });
     this.inflight.set(key, job);
@@ -100,7 +114,12 @@ export class WorkshopAssets {
   }
 
   /** 返回的数组可能第一项是自动补的定妆照——那是真金白银出的图，必须一起交给上层广播。 */
-  private async run(spec: AssetSpec, prompt: string, style?: string): Promise<GeneratedPlayAsset[]> {
+  private async run(
+    spec: AssetSpec,
+    prompt: string,
+    style?: string,
+    cutoutTuning?: Partial<CutoutTuning>,
+  ): Promise<GeneratedPlayAsset[]> {
     const auto = spec.kind === "sprite" ? await this.ensureNeutral(spec, prompt) : null;
     const references = await this.referencesFor(spec);
     const { data, mimeType } = await this.deps.limiter.run(
@@ -113,7 +132,8 @@ export class WorkshopAssets {
       "normal",
     );
     this.assertCanvas(spec, data);
-    const bytes = spec.kind === "sprite" ? (await cutout(data)).data : data;
+    const tuning = resolveTuning(cutoutTuning);
+    const bytes = spec.kind === "sprite" ? (await cutout(data, tuning)).data : data;
     const ext = spec.kind === "sprite" ? ".png" : extOf(mimeType);
     const written = await this.persist(spec, bytes, ext);
     if (spec.kind === "sprite") await this.mapSprite(spec, `${spec.stem}${ext}`);

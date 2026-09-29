@@ -30,6 +30,62 @@ async function alphaAt(data: Buffer, x: number, y: number): Promise<number> {
   return raw[(y * info.width + x) * info.channels + 3] ?? 0;
 }
 
+/**
+ * 抠底三个旋钮的专用夹具：纯白底 + 一块深色人形，人形上摆三个「底色口袋」，
+ * 各自只被一个旋钮决定（走 PNG，JPEG 的色振铃会把摆好的几格色差搅没）：
+ * - A 离底色 4 格、带一条 1px 颈连到外面 → **weak** 够大才被带走（3 邻域漫延不进 4 格外）
+ * - B 离底色 4 格、封闭 → **strong** 够小才被点着（强阈值是全局的，不看连通性）
+ * - C 就是底色、40x40=1600px 封闭 → **minHole** 说它算不算洞（贴不到画面边）
+ * 人形 40..160 × 20..280，三个口袋都深埋在里面。
+ */
+async function knobsScene(): Promise<Buffer> {
+  const width = 200;
+  const height = 300;
+  const paint = (raw: Buffer, x0: number, y0: number, x1: number, y1: number, c: [number, number, number]) => {
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const o = (y * width + x) * 3;
+        raw[o] = c[0];
+        raw[o + 1] = c[1];
+        raw[o + 2] = c[2];
+      }
+    }
+  };
+  const raw = Buffer.alloc(width * height * 3).fill(255);
+  const NEAR: [number, number, number] = [251, 251, 252];
+  paint(raw, 40, 20, 160, 280, [40, 50, 80]);
+  paint(raw, 90, 100, 110, 120, NEAR);
+  paint(raw, 111, 110, 180, 110, [255, 255, 255]);
+  paint(raw, 90, 160, 110, 180, NEAR);
+  paint(raw, 60, 210, 100, 250, [255, 255, 255]);
+  return sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
+}
+
+/** 人物内部被抠穿的像素数（落在不透明外框之内的全透明像素）。量旋钮效应时不依赖坐标换算。 */
+async function interiorHoles(data: Buffer): Promise<number> {
+  const { data: raw, info } = await sharp(data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const alpha = (x: number, y: number): number => raw[(y * info.width + x) * info.channels + 3] ?? 0;
+  let minX = info.width;
+  let maxX = -1;
+  let minY = info.height;
+  let maxY = -1;
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      if (alpha(x, y) > 0) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  let holes = 0;
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) if (alpha(x, y) === 0) holes++;
+  }
+  return holes;
+}
+
 describe("cutout", () => {
   it("把纯色底抠成透明并落到 9:16 画布", async () => {
     const { data } = await synth();
@@ -61,7 +117,7 @@ describe("cutout", () => {
   });
 
   it("底色不干净时抛错而不是落半残图", async () => {
-    // 满图杂乱花纹（模型没给纯色底时会这样）：没有一块区域贴近边界种子色，flood fill 啃不动，
+    // 满图杂乱花纹（模型没给纯色底时会这样）：没有一块区域贴近边界种子色，漫延啃不动，
     // 前景占比冲到 97% 以上 → 报「底色没抠干净」
     const width = 120;
     const height = 160;
@@ -76,6 +132,37 @@ describe("cutout", () => {
     }
     const busy = await sharp(raw, { raw: { width, height, channels: 3 } }).jpeg().toBuffer();
     await expect(cutout(busy)).rejects.toThrow(/底色没抠干净/);
+  });
+
+  it("weak 是严厉度的旋钮：贴着底色但差了几格的口袋，够大才连着颈被带走", async () => {
+    const data = await knobsScene();
+    // 口袋 A 离底色 4 格：weak=2 漫延进不去，weak=8 进得去（同一张图、只改这一个参数）
+    const tight = await interiorHoles((await cutout(data, { weak: 2, minHole: 0 })).data);
+    const loose = await interiorHoles((await cutout(data, { weak: 8, minHole: 0 })).data);
+    expect(loose - tight).toBeGreaterThan(10_000);
+  });
+
+  it("strong 是另一个旋钮：它管「谁是种子」，不看连通性——封闭口袋只由它点得着", async () => {
+    const data = await knobsScene();
+    // 口袋 B 离底色 4 格且封闭，与外部底色没有任何通路。strong 是全局判据：
+    // 1 ⇒ 它连种子都不算，没人去动它；8 ⇒ 它被点着、漫延成一整块，再由 minHole=0 判成洞
+    const unseeded = await interiorHoles((await cutout(data, { strong: 1, minHole: 0 })).data);
+    const seeded = await interiorHoles((await cutout(data, { strong: 8, minHole: 0 })).data);
+    expect(seeded - unseeded).toBeGreaterThan(10_000);
+  });
+
+  it("minHole 是第三个旋钮：抠到哪算背景，色差阈值说了不算", async () => {
+    const data = await knobsScene();
+    // 口袋 C 就是底色、1600px、贴不到画面边 ⇒ 算不算洞只看 minHole
+    const holed = await interiorHoles((await cutout(data, { minHole: 200 })).data);
+    const filled = await interiorHoles((await cutout(data, { minHole: 8000 })).data);
+    expect(holed - filled).toBeGreaterThan(50_000);
+  });
+
+  it("弱阈值不得低于强阈值：否则滞后退化成单阈值，参数直接说谎", async () => {
+    const data = await knobsScene();
+    const clamped = await cutout(data, { strong: 4, weak: 1 });
+    expect(clamped.data.equals((await cutout(data, { strong: 4, weak: 4 })).data)).toBe(true);
   });
 
   it("图里没有角色时抛错", async () => {

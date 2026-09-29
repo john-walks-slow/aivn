@@ -1027,6 +1027,43 @@ select:focus {
   height: 112px;
 }
 
+/* 工坊回复里 markdown 图片：立绘是竖图，缩略图条看不全细节，贴出来按原比例限高 */
+.md-body p {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.md-body p:last-child {
+  margin-bottom: 0;
+}
+
+.md-body code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--panel);
+  font-size: 0.9em;
+}
+
+.md-image {
+  display: block;
+  margin: 8px 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  cursor: zoom-in;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.md-image img {
+  display: block;
+  max-width: 240px;
+  max-height: 320px;
+  object-fit: contain;
+}
+
 .lightbox {
   position: fixed;
   inset: 0;
