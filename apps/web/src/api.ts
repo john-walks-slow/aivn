@@ -24,6 +24,17 @@ export interface PlayFile {
   writable: boolean;
 }
 
+/** 存档（周目）：一剧目并存 N 棵独立的谱系树。 */
+export interface SaveInfo {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  beats: number;
+  preview: string;
+  current: boolean;
+}
+
 export interface PlayDetail {
   play: PlayConfig;
   readiness: Readiness;
@@ -67,6 +78,36 @@ export const api = {
 
   /** 路线树（P6）：全量节点含废弃分支；打开路线视图时取，操作后刷新。 */
   lineage: (id: string) => request<LineageView>(`/api/plays/${id}/lineage`),
+
+  /** 存档（周目）列表：按最近更新倒序，current 标记当前活动档。 */
+  listSaves: (id: string) => request<SaveInfo[]>(`/api/plays/${id}/saves`),
+
+  /** 开始新周目：建一棵空树并切过去，旧档原封不动。 */
+  createSave: (id: string, name?: string) =>
+    request<SaveInfo>(`/api/plays/${id}/saves`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+
+  /** 改名：只改档名标签，不动树。 */
+  renameSave: (id: string, saveId: string, name: string) =>
+    request<SaveInfo>(`/api/plays/${id}/saves/${saveId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+
+  deleteSave: (id: string, saveId: string) =>
+    request<{ ok: boolean }>(`/api/plays/${id}/saves/${saveId}`, { method: "DELETE" }),
+
+  /** 切档：改活动档指针并重建 runtime；演出进行中等当前一拍演完。 */
+  activateSave: (id: string, saveId: string) =>
+    request<{ ok: boolean }>(`/api/plays/${id}/active`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ saveId }),
+    }),
 
   createPlay: (id: string, title: string) =>
     request<{ id: string }>("/api/plays/create", {

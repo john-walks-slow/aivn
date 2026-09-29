@@ -6,7 +6,6 @@ export type WorkshopInbound = Extract<ServerMessage, { type: `workshop_${string}
 import { ScriptBuilder, type ScriptLine, type Cue } from "./script.js";
 
 export type BeatState = "connecting" | "streaming" | "stopped" | "error";
-export type StartMode = "start" | "continue";
 
 export interface StageSocket {
   state: BeatState;
@@ -25,6 +24,8 @@ export interface StageSocket {
   epoch: number;
   /** 服务端 TTS 能力（hello.voice；false 时隐藏语音开关）。 */
   voiceAvailable: boolean;
+  /** 当前周目档名（舞台顶部显示；换档经 hello 续接）。 */
+  saveName: string | null;
   sendChoice: (index: number) => void;
   sendFree: (text: string) => void;
   sendContinue: () => void;
@@ -58,7 +59,7 @@ export interface StageSocketHandlers {
   onAssetFailed?: (id: string, message: string) => void;
 }
 
-export function useStageSocket(playId: string, mode: StartMode, handlers?: StageSocketHandlers): StageSocket {
+export function useStageSocket(playId: string, handlers?: StageSocketHandlers): StageSocket {
   const [state, setState] = useState<BeatState>("connecting");
   const stateRef = useRef<BeatState>("connecting");
   stateRef.current = state;
@@ -68,6 +69,7 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
   const [names, setNames] = useState<Record<string, string>>({});
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const [epoch, setEpoch] = useState(0);
+  const [saveName, setSaveName] = useState<string | null>(null);
   /** 本地缓冲所属代号：与服务端不一致说明缓冲已被结构性操作整段替换。 */
   const epochRef = useRef(0);
   const [tick, setTick] = useState(0); // lines/cues/scene 由 builder 持有，tick 触发重渲染
@@ -77,8 +79,8 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
   const lastSeqRef = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
-  /** start 模式：等待新档 hello，期间丢弃旧会话的 beat_end 重放。 */
-  const expectFreshRef = useRef(mode === "start");
+  /** 当前挂着的存档（周目）：换档 = 换了一棵树，本地缓冲整段作废。 */
+  const saveIdRef = useRef<string | null>(null);
   const handlersRef = useRef<StageSocketHandlers>({});
   handlersRef.current = handlers ?? {};
 
@@ -93,10 +95,6 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
 
       ws.onopen = () => {
         retryRef.current = 0;
-        if (expectFreshRef.current) {
-          ws.send(JSON.stringify({ type: "start" } satisfies ClientMessage));
-          return;
-        }
         // 总是 resume：lastSeq=0（页面刷新/内存丢失）= 全量重放；网络闪断 = 增量补发
         ws.send(JSON.stringify({ type: "resume", lastSeq: lastSeqRef.current } satisfies ClientMessage));
       };
@@ -108,30 +106,28 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
             setVoiceAvailable(msg.voice ?? false);
             if (msg.assets) handlersRef.current.onAssets?.(msg.assets);
             setState((prev) => (prev === "connecting" ? "streaming" : prev));
-            // 代号不一致 = 缓冲已被替换：本地 seq 全部作废，全量重放
-            if (msg.epoch !== undefined && msg.epoch !== epochRef.current) {
-              epochRef.current = msg.epoch;
-              setEpoch(msg.epoch);
-              if (lastSeqRef.current > 0) {
-                lastSeqRef.current = 0;
-                builderRef.current.reset();
-                handlersRef.current.onReset?.();
-                setTick((t) => t + 1);
-                ws.send(JSON.stringify({ type: "resume", lastSeq: 0 } satisfies ClientMessage));
-              }
+            // 换了周目 = 换了一棵树：本地缓冲与新树无关，作废重放
+            const switched = msg.saveId !== undefined && msg.saveId !== saveIdRef.current;
+            if (msg.saveId !== undefined) {
+              saveIdRef.current = msg.saveId;
+              setSaveName(msg.saveName ?? msg.saveId);
+            }
+            // 代号不一致 = 缓冲已被结构性操作整段替换：本地 seq 全部作废，全量重放
+            const restamped =
+              msg.epoch !== undefined && msg.epoch !== epochRef.current && !switched;
+            if (restamped) epochRef.current = msg.epoch!;
+            if ((restamped || switched) && lastSeqRef.current > 0) {
+              if (restamped) setEpoch(msg.epoch!);
+              lastSeqRef.current = 0;
+              builderRef.current.reset();
+              handlersRef.current.onReset?.();
+              setTick((t) => t + 1);
+              ws.send(JSON.stringify({ type: "resume", lastSeq: 0 } satisfies ClientMessage));
             }
             // hello 自报空闲：刷新进来的空闲现场不必等 beat_settled 才解锁操作
             if (msg.idle) {
               setSettled(true);
               if (stateRef.current === "streaming") setState("stopped");
-            }
-            if (expectFreshRef.current && msg.lastSeq === 0) {
-              // 新档 hello：清旧脚本，从头接收
-              expectFreshRef.current = false;
-              builderRef.current.reset();
-              lastSeqRef.current = 0;
-              handlersRef.current.onReset?.();
-              setTick((t) => t + 1);
             }
             return;
           case "beat_start":
@@ -164,7 +160,6 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
             setSettled(true);
             return;
           case "beat_end":
-            if (expectFreshRef.current) return; // 旧会话的 stoppedReplay，新档即将开始
             setStop(msg.stop ?? null);
             setActEnd(msg.reason === "act_end");
             setState("stopped");
@@ -268,6 +263,7 @@ export function useStageSocket(playId: string, mode: StartMode, handlers?: Stage
     isActEnd,
     epoch,
     voiceAvailable,
+    saveName,
     sendChoice,
     sendFree,
     sendContinue,

@@ -86,15 +86,8 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage
   })();
 
   async function dispatch(msg: ClientMessage): Promise<void> {
-    // 每次现查：runtime 重建（startFresh / 配置保存 reload）后自动路由到新实例
+    // 每次现查：runtime 重建（配置保存 reload / 切档 switchSave）后自动路由到新实例
     const current = await playhouse.get(playId);
-    if (msg.type === "start") {
-      const fresh = await playhouse.startFresh(playId);
-      if (fresh === current) return;
-      sendHello(ws, playId, fresh);
-      fresh.orchestrator.autostart();
-      return;
-    }
     await routeMessage(current, sender, msg);
   }
 }

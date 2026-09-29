@@ -2,6 +2,7 @@ import type { ServerMessage } from "@stage-ai/core";
 import { LineageTree, isVoiceId, type EngineStateSnapshot } from "@stage-ai/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
 import { PlaywrightOrchestrator, type OrchestratorRuntimeState } from "./orchestrator.js";
+import type { SaveInfo } from "./saves.js";
 import type { PlayConfig } from "@stage-ai/core";
 import type { ServerConfig } from "./config.js";
 import { createCpaProvider } from "./provider.js";
@@ -20,6 +21,8 @@ export interface PlayRuntime {
   /** 工坊（D9）：与演出并行的一条独立 agent 通道，管剧目文件的创建与维护。 */
   workshop: WorkshopSession;
   store: PlayStore;
+  /** 当前挂着的存档（周目）——id 与档名。改名就地改这里，hello 才不会带旧名。 */
+  save: { id: string; name: string };
   /** hello 广播的角色名映射。 */
   cast: { id: string; name: string }[];
   /** 服务端 TTS 能力（配置了可用 key 才开；客户端据此显示语音开关）。 */
@@ -30,7 +33,7 @@ export interface PlayRuntime {
   images?: ImageAssets;
 }
 
-/** hello 载荷（transport 连接建立与 reload 续接共用）。 */
+/** hello 载荷（transport 连接建立与 runtime 重建续接共用）。 */
 export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessage {
   return {
     type: "hello",
@@ -41,6 +44,8 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
     assets: runtime.images?.snapshot(),
     epoch: runtime.orchestrator.currentEpoch,
     idle: !runtime.orchestrator.isBusy,
+    saveId: runtime.save.id,
+    saveName: runtime.save.name,
   };
 }
 
@@ -79,18 +84,21 @@ export class PlayHouse {
       this.provider.streamSimple(m as Model<"openai-completions">, context, options);
   }
 
-  /** 取或懒加载剧目 runtime（恢复既有会话）。 */
+  /** 取或懒加载剧目 runtime（恢复活动档的既有会话）。 */
   async get(playId: string): Promise<PlayRuntime> {
     const existing = this.runtimes.get(playId);
     if (existing) return existing;
-    const runtime = await this.buildRuntime(playId);
+    const saves = this.library.saves(playId);
+    // 直连 /ws 而没先建档：兜底建一棵空树，runtime 永远有存档可挂
+    const saveId = (await saves.readActive()) ?? (await saves.create()).id;
+    const runtime = await this.buildRuntime(playId, saveId);
     this.runtimes.set(playId, runtime);
     return runtime;
   }
 
-  /** 从磁盘构建剧目 runtime（play.json + 会话恢复）。 */
-  private async buildRuntime(playId: string): Promise<PlayRuntime> {
-    const store = this.library.store(playId);
+  /** 从磁盘构建剧目 runtime（play.json + 指定存档的会话恢复）。 */
+  private async buildRuntime(playId: string, saveId: string): Promise<PlayRuntime> {
+    const store = this.library.saveStore(playId, saveId);
     const play = await store.loadPlay();
     const session = await store.loadSession();
     const tree = new LineageTree();
@@ -99,7 +107,8 @@ export class PlayHouse {
       ...play.initialState,
     };
     const scene = session?.scene ?? play.initialScene;
-    return this.createRuntime(store, play, tree, engine, scene, session?.runtime);
+    const save = { id: saveId, name: await this.library.saves(playId).nameOf(saveId) };
+    return this.createRuntime(store, play, tree, engine, scene, session?.runtime, save);
   }
 
   /** 剧目 WS 客户端集合（transport 连接注册，懒建）。 */
@@ -116,15 +125,22 @@ export class PlayHouse {
   async reload(playId: string): Promise<void> {
     const old = this.runtimes.get(playId);
     if (!old) return;
-    const fresh = await this.buildRuntime(playId);
+    const fresh = await this.buildRuntime(playId, old.store.saveId!);
     old.orchestrator.dispose();
     this.runtimes.set(playId, fresh);
-    // 续接广播：hello 刷新 cast/voice；停止点重放恢复被中断连接的交互面板
+    this.announce(playId, fresh);
+  }
+
+  /**
+   * runtime 重建后向活连接续接：hello 刷新 cast/voice/纪元，停止点重放恢复被中断连接的交互面板。
+   * 纪元变化会让客户端丢掉本地 seq 全量重放——换档后正是要这个。
+   */
+  private announce(playId: string, runtime: PlayRuntime): void {
     const clients = this.clientsByPlay.get(playId);
     if (!clients?.size) return;
-    const hello = helloPayload(playId, fresh);
+    const hello = helloPayload(playId, runtime);
     for (const send of clients) send(hello);
-    const replay = fresh.orchestrator.stoppedReplay;
+    const replay = runtime.orchestrator.stoppedReplay;
     if (replay) for (const send of clients) send(replay);
   }
 
@@ -157,14 +173,49 @@ export class PlayHouse {
     }
   }
 
-  /** 「开始游戏」：清会话，重建 runtime（autostart 交由 transport 在客户端注册后触发）。 */
-  async startFresh(playId: string): Promise<PlayRuntime> {
+  /** 「开始新周目」：建一棵空树并切过去。旧档原封不动——不删任何事件日志。 */
+  async createSave(playId: string, name?: string): Promise<SaveInfo> {
+    const created = await this.library.saves(playId).create(name);
+    await this.switchSave(playId, created.id);
+    return created;
+  }
+
+  /** 改名：就地改档名标签，不动 id、不动树。 */
+  async renameSave(playId: string, saveId: string, name: string): Promise<SaveInfo> {
+    const info = await this.library.saves(playId).rename(saveId, name);
+    const runtime = this.runtimes.get(playId);
+    if (runtime?.save.id === saveId) runtime.save.name = info.name;
+    return info;
+  }
+
+  /** 删档：删的是当前档时切到最近更新的一档（一档不剩则冷建一棵空树）。 */
+  async deleteSave(playId: string, saveId: string): Promise<void> {
+    const saves = this.library.saves(playId);
+    const wasActive = (await saves.readActive()) === saveId;
+    await saves.remove(saveId); // 删的是活动档时，指针已顺延到剩下的第一棵
+    if (wasActive) await this.switchSave(playId, (await saves.readActive()) ?? (await saves.create()).id);
+  }
+
+  /**
+   * 切档：只改活动档指针 + 重建 runtime。
+   * 等节拍边界再切——演出进行中换 runtime 会让这一拍凭空消失（与工坊写盘同一条铁律）。
+   */
+  async switchSave(playId: string, saveId: string): Promise<void> {
+    const saves = this.library.saves(playId);
     const old = this.runtimes.get(playId);
-    if (old) old.orchestrator.dispose();
-    await this.library.store(playId).resetSession();
-    const runtime = await this.buildRuntime(playId);
-    this.runtimes.set(playId, runtime);
-    return runtime;
+    if (!old) {
+      await saves.activate(saveId);
+      return;
+    }
+    if (old.save.id === saveId) return;
+    await old.orchestrator.whenIdle();
+    // 等期间可能已 reload 或被删剧目——只在原实例还在位时才替换
+    if (this.runtimes.get(playId) !== old) return;
+    await saves.activate(saveId);
+    const fresh = await this.buildRuntime(playId, saveId);
+    old.orchestrator.dispose();
+    this.runtimes.set(playId, fresh);
+    this.announce(playId, fresh);
   }
 
   /** 删除剧目：停 runtime + 整目录移除（play.json/素材/会话，不可恢复）。 */
@@ -188,18 +239,13 @@ export class PlayHouse {
     if (!old) return;
     // 等节拍边界：演出进行中重建会让这一拍凭空消失
     await old.orchestrator.whenIdle();
-    // 等待期间可能已 reload/startFresh/删除——只在原实例还在位时才替换
+    // 等待期间可能已 reload/切档/删除——只在原实例还在位时才替换
     if (this.runtimes.get(playId) !== old) return;
-    const fresh = await this.buildRuntime(playId);
+    const fresh = await this.buildRuntime(playId, old.store.saveId!);
     const runtime = { ...fresh, workshop: old.workshop };
     old.orchestrator.dispose();
     this.runtimes.set(playId, runtime);
-    const clients = this.clientsByPlay.get(playId);
-    if (!clients?.size) return;
-    for (const send of clients) send(helloPayload(playId, runtime));
-    // 重建后交互面板要恢复：停在停止点上时客户端得重新拿到那一拍的选项
-    const replay = runtime.orchestrator.stoppedReplay;
-    if (replay) for (const send of clients) send(replay);
+    this.announce(playId, runtime);
   }
 
   /** 广播到剧目客户端组。 */
@@ -249,7 +295,8 @@ export class PlayHouse {
     tree: LineageTree,
     engine: EngineStateSnapshot,
     scene: string,
-    restored?: OrchestratorRuntimeState,
+    restored: OrchestratorRuntimeState | undefined,
+    save: { id: string; name: string },
   ): Promise<PlayRuntime> {
     const { model } = this;
     const tts = this.tts;
@@ -331,6 +378,7 @@ export class PlayHouse {
       orchestrator,
       workshop,
       store,
+      save,
       cast: play.characters.map(({ id, name }) => ({ id, name })),
       voice: !!synth,
       synth,

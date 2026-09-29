@@ -19,10 +19,10 @@ function fakePlayhouse() {
     },
     cast: [],
     voice: true,
+    save: { id: "stest", name: "第 1 周目" },
   };
   const playhouse = {
     get: (): Promise<PlayRuntime> => Promise.resolve(runtime as unknown as PlayRuntime),
-    startFresh: (): Promise<PlayRuntime> => Promise.resolve(runtime as unknown as PlayRuntime),
     clientsFor: (): Set<(msg: unknown) => void> => new Set(),
   };
   return { playhouse: playhouse as unknown as PlayHouse, tts };

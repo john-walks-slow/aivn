@@ -25,6 +25,9 @@ interface StageTheaterProps {
   onLog: () => void;
   onRoute: () => void;
   onWorkshop: () => void;
+  /** 当前周目档名（点它去周目页切换）。 */
+  saveName: string | null;
+  onSaves: () => void;
   /** 舞台层浮层：停止点的选肢卡片、入戏输入、幕末黑场（均在台词条之上层级）。 */
   overlay?: ReactNode;
 }
@@ -83,6 +86,8 @@ export function StageTheater({
   onLog,
   onRoute,
   onWorkshop,
+  saveName,
+  onSaves,
   overlay,
 }: StageTheaterProps) {
   const bgmRef = useRef<HTMLAudioElement | null>(null);
@@ -232,6 +237,18 @@ export function StageTheater({
         >
           返回
         </button>
+        {saveName && (
+          <button
+            className="bar-btn save-chip"
+            title="切换周目（每棵故事树独立保存）"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSaves();
+            }}
+          >
+            {saveName}
+          </button>
+        )}
         <span className="theater-actions">
           {voiceAvailable && (
             <button
