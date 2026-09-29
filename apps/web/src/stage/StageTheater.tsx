@@ -49,9 +49,48 @@ export function StageTheater({
   const bgmRef = useRef<HTMLAudioElement | null>(null);
   const [directorOpen, setDirectorOpen] = useState(false);
   const [directorDraft, setDirectorDraft] = useState("");
-  const { current, shownLength, exhausted, advance } = playback;
-  const shown = current ? current.text.slice(0, shownLength) : "";
+  const { view, viewLength, current, shownLength, exhausted, advance, scrub, scrubbed } = playback;
+  const shown = view ? view.text.slice(0, viewLength) : "";
   const lineDone = current !== null && shownLength >= current.text.length;
+
+  // 回看：滚轮/↑ 往回翻，下滚/↓/←/→/空格 往回追。输入框内不劫持按键。
+  const theaterRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = theaterRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent): void => {
+      if (Math.abs(e.deltaY) < 4) return;
+      scrub(e.deltaY > 0 ? 1 : -1);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [scrub]);
+
+  useEffect(() => {
+    const isTyping = (t: EventTarget | null): boolean =>
+      t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
+      if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+        scrub(-1);
+        e.preventDefault();
+      } else if (e.key === "ArrowDown" || e.key === "ArrowRight" || e.key === " ") {
+        scrub(1);
+        e.preventDefault();
+      } else if (e.key === "Escape" && scrubbed) {
+        scrub(1);
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [scrub, scrubbed]);
+
+  /** 舞台点击：回看中 → 往回追一句；否则两段式推进。 */
+  const onStageClick = (): void => {
+    if (scrubbed) scrub(1);
+    else advance();
+  };
 
   // sfx：key 变化即播放
   useEffect(() => {
@@ -97,7 +136,7 @@ export function StageTheater({
   };
 
   return (
-    <div className="theater" onClick={advance}>
+    <div className="theater" ref={theaterRef} onClick={onStageClick}>
       <header className="theater-bar">
         <button
           className="ghost-btn"
@@ -231,26 +270,31 @@ export function StageTheater({
       </div>
 
       <div className="theater-dialog" role="text">
-        {current && (current.type === "say" || current.type === "thought") && (
+        {view && (view.type === "say" || view.type === "thought") && (
           <div className="dialog-name">
-            {names[current.actorId ?? ""] ?? current.actorId ?? "？"}
-            {current.mood && <span className="dialog-mood">（{current.mood}）</span>}
+            {names[view.actorId ?? ""] ?? view.actorId ?? "？"}
+            {view.mood && <span className="dialog-mood">（{view.mood}）</span>}
           </div>
         )}
-        <p className={`dialog-text ${current?.type === "thought" ? "thought" : ""}`}>
+        <p className={`dialog-text ${view?.type === "thought" ? "thought" : ""} ${scrubbed ? "rewinding" : ""}`}>
           {shown ||
-            (current ? "" : live && exhausted ? "剧作家正在落笔…" : "（点击开始演出）")}
-          {current && !lineDone && <span className="dialog-caret" aria-hidden />}
+            (view ? "" : live && exhausted ? "剧作家正在落笔…" : "（点击开始演出）")}
+          {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
         </p>
         <div className="dialog-hint">
-          {exhausted && live ? (
-            <span className="dialog-loading" aria-label="生成中">
-              ●●●
-            </span>
+          {scrubbed ? (
+            <button type="button" className="dialog-rewind" onClick={() => scrub(1)}>
+              ◀ 回看中 · 点此回到最新
+            </button>
           ) : (
-            lineDone && <span className="dialog-next" aria-hidden>
-              ▼
-            </span>
+            <>
+              {live && <span className="dialog-spinner" aria-label="剧作家正在写" />}
+              {lineDone && !exhausted && (
+                <span className="dialog-next" aria-hidden>
+                  ▼
+                </span>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -33,6 +33,10 @@ export interface Playback {
   visual: VisualState;
   /** 打字机目标行（null = 尚无台词）。 */
   current: ScriptLine | null;
+  /** 实际显示的行——回看时是历史行，与 current 不同。 */
+  view: ScriptLine | null;
+  /** 实际显示的字符数（回看时恒为全文）。 */
+  viewLength: number;
   shownLength: number;
   /** 全部已到 cues 消费完毕（streaming 中 = loading 呼吸点）。 */
   exhausted: boolean;
@@ -42,6 +46,10 @@ export interface Playback {
   sfx: { key: string; src: string; volume?: number } | null;
   /** 舞台点击：打字中 → 瞬显全文；已完 → 消费下一条。 */
   advance: () => void;
+  /** 回看游标：-1 上滚/↑ 往回翻，+1 下滚/空格 往回追（追到播放头即恢复跟随）。 */
+  scrub: (delta: number) => void;
+  /** 是否正停在历史行上（不等于播放头）。 */
+  scrubbed: boolean;
   /** 生图到达/失败：摘掉占位，视觉层交给真实资产（或降级）。 */
   settleAssets: (ids: string[]) => void;
 }
@@ -78,6 +86,8 @@ export function usePlayback(
   const [auto, setAuto] = useState(false);
   /** 最近消费的音效（key 变化触发播放）。 */
   const [sfx, setSfx] = useState<{ key: string; src: string; volume?: number } | null>(null);
+  /** 回看游标（脚本行下标）：null = 跟随播放头。非 null 时只回看台词，舞台视觉不动。 */
+  const [scrubIndex, setScrubIndex] = useState<number | null>(null);
   const cursorRef = useRef(0);
   const fastForwardedRef = useRef(!opts.resume);
   const linesRef = useRef(lines);
@@ -86,6 +96,23 @@ export function usePlayback(
   hooksRef.current = { onLineStart: opts.onLineStart, onFastForward: opts.onFastForward };
 
   const current = currentKey ? (linesRef.current.find((l) => l.key === currentKey) ?? null) : null;
+
+  /** 播放头在脚本行中的下标；已播过的行都可回看。 */
+  const headIndex = currentKey ? lines.findIndex((l) => l.key === currentKey) : -1;
+  const viewIndex = scrubIndex ?? headIndex;
+  const view = viewIndex >= 0 ? (lines[viewIndex] ?? null) : null;
+  const scrubbed = scrubIndex !== null;
+  const headIndexRef = useRef(headIndex);
+  headIndexRef.current = headIndex;
+
+  /** 往回/往前翻一行；翻到播放头即交还跟随。舞台视觉不随回看变动。 */
+  const scrub = useCallback((delta: number): void => {
+    setScrubIndex((prev) => {
+      const head = headIndexRef.current;
+      const next = Math.max(0, Math.min((prev ?? head) + delta, head));
+      return next >= head ? null : next;
+    });
+  }, []);
 
   const applyVisual = useCallback((cue: Cue): void => {
     setVisual((prev) => {
@@ -198,6 +225,7 @@ export function usePlayback(
     cursorRef.current = 0;
     setCurrentKey(null);
     setShownLength(0);
+    setScrubIndex(null);
     setVisual(EMPTY_VISUAL);
     fastForwardedRef.current = !opts.resumeAfterReset; // true 则紧接着快进到新分支末尾
   }, [opts.resetToken, opts.resumeAfterReset]);
@@ -208,6 +236,7 @@ export function usePlayback(
       cursorRef.current = 0;
       setCurrentKey(null);
       setShownLength(0);
+      setScrubIndex(null);
       setVisual(EMPTY_VISUAL);
       return;
     }
@@ -254,5 +283,19 @@ export function usePlayback(
     });
   }, []);
 
-  return { visual, current, shownLength, exhausted, auto, setAuto, advance, sfx, settleAssets };
+  return {
+    visual,
+    current,
+    view,
+    viewLength: scrubbed ? (view?.text.length ?? 0) : shownLength,
+    shownLength,
+    exhausted,
+    auto,
+    setAuto,
+    advance,
+    scrub,
+    scrubbed,
+    sfx,
+    settleAssets,
+  };
 }

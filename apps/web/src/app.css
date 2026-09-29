@@ -419,30 +419,60 @@ button.link-btn {
 }
 
 .dialog-hint {
-  text-align: right;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
   height: 18px;
   font-size: 12px;
   color: var(--ink-faint);
+}
+
+.dialog-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid currentcolor;
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog-spinner {
+    animation-duration: 2.4s;
+  }
 }
 
 .dialog-next {
   animation: bob 1.2s ease-in-out infinite;
 }
 
-.dialog-loading {
-  letter-spacing: 3px;
-  animation: breathe 1.4s ease-in-out infinite;
+.dialog-rewind {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--ink-faint);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dialog-rewind:hover {
+  color: var(--ink);
+}
+
+.dialog-text.rewinding {
+  opacity: 0.78;
 }
 
 @keyframes bob {
   50% {
     transform: translateY(3px);
-  }
-}
-
-@keyframes breathe {
-  50% {
-    opacity: 0.35;
   }
 }
 
@@ -532,13 +562,6 @@ button.link-btn {
   background: var(--bg);
 }
 
-.stop-hint {
-  color: var(--ink-faint);
-  font-size: 13px;
-  text-align: center;
-  padding: 8px 0;
-}
-
 .choices {
   display: flex;
   flex-direction: column;
@@ -583,6 +606,11 @@ button.primary:hover:not(:disabled) {
   background: var(--accent-soft);
 }
 
+.choice.ghost {
+  border-style: dashed;
+  color: var(--ink-soft);
+}
+
 .free-box {
   display: flex;
   gap: 8px;
@@ -593,7 +621,10 @@ button.primary:hover:not(:disabled) {
 }
 
 .continue-box {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 
 .continue-box .primary {
