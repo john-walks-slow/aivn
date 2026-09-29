@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CharacterCard, PlayConfig } from "@stage-ai/core";
 import { VOICE_PRESETS } from "@stage-ai/core";
-import { api, type PlayDetail } from "../api.js";
-import { navigate } from "../router.jsx";
+import { api, assetUrl, type PlayDetail } from "../api.js";
+import { Icon } from "../ui/Icon.js";
+import { ImageLightbox } from "./ImageLightbox.js";
 
 const KINDS = ["backgrounds", "cg", "sfx", "bgm"] as const;
 
-/** 素材与配置页：premise/角色卡编辑 + 素材上传管理 + 就绪门实时反馈。 */
-export function AssetsView({ playId }: { playId: string }) {
+/** 素材库与剧目配置：原素材页整体搬进工坊（工坊 = 搭台的唯一去处）。 */
+export function AssetsPanel({ playId }: { playId: string }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [assets, setAssets] = useState<Record<string, string[]>>({});
   const [draft, setDraft] = useState<PlayConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [spriteChar, setSpriteChar] = useState("");
+  const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null);
 
   const reload = useCallback((): void => {
     api
@@ -65,18 +67,14 @@ export function AssetsView({ playId }: { playId: string }) {
   const spritesDirs = Object.keys(assets).filter((k) => k.startsWith("sprites/"));
 
   return (
-    <div className="screen assets-screen">
-      <header className="screen-bar">
-        <button className="ghost-btn" onClick={() => navigate(`/play/${playId}`)}>
-          ← 标题
-        </button>
-        <h2>素材与配置</h2>
-        {readiness && (
+    <div className="workshop-tab-pane assets-pane">
+      {readiness && (
+        <div className="assets-pane-head">
           <span className={`badge ${readiness.ready ? "ok" : "warn"}`}>
             {readiness.ready ? "就绪门：可开演" : "就绪门：未就绪"}
           </span>
-        )}
-      </header>
+        </div>
+      )}
 
       {error && (
         <div className="error-banner" role="alert">
@@ -140,7 +138,9 @@ export function AssetsView({ playId }: { playId: string }) {
                 patch((p) => (p.protagonist = { name: p.protagonist?.name ?? "", persona: e.target.value }))
               }
             />
-            <p className="muted small">留空则「✨ 润色」走通用模式（只修顺语句，不改口吻）。</p>
+            <p className="muted small">
+              留空则「<Icon name="sparkles" size={12} /> 润色」走通用模式（只修顺语句，不改口吻）。
+            </p>
           </div>
 
           <h3>角色卡</h3>
@@ -163,7 +163,9 @@ export function AssetsView({ playId }: { playId: string }) {
               })
             }
           >
-            ＋ 添加角色
+            <span className="btn-icon">
+              <Icon name="plus" /> 添加角色
+            </span>
           </button>
 
           <p className="row">
@@ -194,12 +196,14 @@ export function AssetsView({ playId }: { playId: string }) {
               </label>
               <ul className="asset-list">
                 {(assets[kind] ?? []).map((name) => (
-                  <li key={name}>
-                    <span>{name}</span>
-                    <button className="link-btn" onClick={() => remove(kind, name)}>
-                      删除
-                    </button>
-                  </li>
+                  <AssetRow
+                    key={name}
+                    playId={playId}
+                    dir={kind}
+                    name={name}
+                    onRemove={() => remove(kind, name)}
+                    onZoom={() => setZoom({ url: assetUrl(playId, kind, name), name })}
+                  />
                 ))}
               </ul>
             </div>
@@ -230,21 +234,68 @@ export function AssetsView({ playId }: { playId: string }) {
             {spritesDirs.map((dir) => (
               <ul key={dir} className="asset-list">
                 {(assets[dir] ?? []).map((name) => (
-                  <li key={name}>
-                    <span>
-                      {dir}/{name}
-                    </span>
-                    <button className="link-btn" onClick={() => remove(dir, name)}>
-                      删除
-                    </button>
-                  </li>
+                  <AssetRow
+                    key={name}
+                    playId={playId}
+                    dir={dir}
+                    name={name}
+                    label={`${dir}/${name}`}
+                    onRemove={() => remove(dir, name)}
+                    onZoom={() => setZoom({ url: assetUrl(playId, dir, name), name: `${dir}/${name}` })}
+                  />
                 ))}
               </ul>
             ))}
           </div>
         </div>
       </section>
+
+      {zoom && <ImageLightbox url={zoom.url} name={zoom.name} onClose={() => setZoom(null)} />}
     </div>
+  );
+}
+
+/** 素材行：图片给缩略图（点开看大图），音频给播放键，其余给占位图标。 */
+function AssetRow({
+  playId,
+  dir,
+  name,
+  label,
+  onRemove,
+  onZoom,
+}: {
+  playId: string;
+  dir: string;
+  name: string;
+  label?: string;
+  onRemove: () => void;
+  onZoom: () => void;
+}) {
+  const url = assetUrl(playId, dir, name);
+  const isImage = /\.(png|jpe?g|webp|gif)$/i.test(name);
+  const isAudio = /\.(mp3|ogg|wav|m4a)$/i.test(name);
+  const text = label ?? name;
+
+  return (
+    <li className="asset-row">
+      {isImage ? (
+        <button className="asset-thumb" onClick={onZoom} title="点击看大图">
+          <img src={url} alt={text} loading="lazy" />
+        </button>
+      ) : isAudio ? (
+        <audio className="asset-audio" src={url} controls preload="none" />
+      ) : (
+        <span className="asset-thumb asset-thumb-blank" title={text}>
+          <Icon name="assets" size={16} />
+        </span>
+      )}
+      <span className="asset-name" title={text}>
+        {text}
+      </span>
+      <button className="link-btn" onClick={onRemove}>
+        删除
+      </button>
+    </li>
   );
 }
 
@@ -375,7 +426,9 @@ function CharacterEditor({
       ))}
       <div className="row small">
         <button className="ghost-btn" onClick={addRow}>
-          ＋ 添加映射
+          <span className="btn-icon">
+            <Icon name="plus" size={13} /> 添加映射
+          </span>
         </button>
       </div>
     </div>

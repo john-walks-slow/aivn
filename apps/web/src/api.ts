@@ -22,6 +22,8 @@ export interface PlayFile {
   dir: string[];
   size: number;
   writable: boolean;
+  /** 预览方式：text 进编辑器，image/audio 走静态 URL，其余为 binary。 */
+  kind: "text" | "image" | "audio" | "binary";
 }
 
 /** 存档（周目）：一剧目并存 N 棵独立的谱系树。 */
@@ -62,6 +64,12 @@ export interface Settings {
 export interface TtsKeys {
   count: number;
   keys: string[];
+}
+
+/** 创作口径正文（memory/always/craft.md）。isDefault = 磁盘上没有文件，当前看的是内置默认。 */
+export interface Craft {
+  content: string;
+  isDefault: boolean;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -164,6 +172,16 @@ export const api = {
   deleteFile: (id: string, path: string) =>
     request<{ ok: boolean }>(`/api/plays/${id}/files?path=${encodeURIComponent(path)}`, { method: "DELETE" }),
 
+  /** 创作口径：剧作家每一拍怎么写都听这一份。缺文件时服务端回退默认正文。 */
+  craft: (id: string) => request<Craft>(`/api/plays/${id}/craft`),
+
+  saveCraft: (id: string, content: string) =>
+    request<{ ok: boolean }>(`/api/plays/${id}/craft`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content }),
+    }),
+
   /** 玩家输入润色：LLM 按主角角色卡口吻改写（服务端），返回润色后文本。 */
   polish: (id: string, text: string) =>
     request<{ text: string }>(`/api/plays/${id}/polish`, {
@@ -194,4 +212,9 @@ export const api = {
 /** 素材 URL（静态服务）。name 为文件名或 stem（无扩展名时按目录清单补全）。 */
 export function assetUrl(playId: string, dir: string, name: string): string {
   return `/plays/${playId}/assets/${dir}/${name}`;
+}
+
+/** 剧目文件预览 URL：PlayFile.path 已含 assets/ 前缀，与静态服务路径一致。 */
+export function fileUrl(playId: string, path: string): string {
+  return `/plays/${playId}/${path}`;
 }

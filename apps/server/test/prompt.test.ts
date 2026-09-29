@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildSystemPrompt } from "../src/prompt.js";
+import { buildSystemPrompt, DEFAULT_CRAFT } from "../src/prompt.js";
+import { PlayMemory } from "../src/memory.js";
 import { PLAY } from "./helpers.js";
 
 describe("buildSystemPrompt：素材描述与已生成图清单", () => {
@@ -39,5 +40,29 @@ describe("buildSystemPrompt：素材描述与已生成图清单", () => {
     const prompt = buildSystemPrompt({ play: PLAY, assets: { backgrounds: ["bg_dusk.jpg"] } });
     expect(prompt).toContain("bg_dusk——scene 的 bg 优先取这些 id。");
     expect(prompt).not.toContain("# 已生成的图");
+  });
+});
+
+describe("buildSystemPrompt：创作口径与演出契约", () => {
+  it("没有 craft.md 时用内置默认口径，并标出可改的边界", () => {
+    const prompt = buildSystemPrompt({ play: PLAY });
+    expect(prompt).toContain(DEFAULT_CRAFT);
+    expect(prompt).toContain("# 创作口径");
+  });
+
+  it("craft.md 覆盖默认口径（用户手写与工坊 agent 改的是同一份）", () => {
+    const prompt = buildSystemPrompt({
+      play: PLAY,
+      memory: new PlayMemory({ craft: "# 创作口径\n\n每拍只写一句。" }),
+    });
+    expect(prompt).toContain("每拍只写一句。");
+    expect(prompt).not.toContain(DEFAULT_CRAFT);
+  });
+
+  it("演出契约单列为引擎规则，与可改的创作口径分开", () => {
+    const prompt = buildSystemPrompt({ play: PLAY });
+    expect(prompt).toContain("# 演出契约（引擎规则，不可改）");
+    // beat_done 独占批次是引擎事实，不属于用户可改口径
+    expect(prompt).toContain("beat_done");
   });
 });

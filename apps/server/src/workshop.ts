@@ -152,7 +152,7 @@ export function buildWorkshopPrompt(title: string, files: string, readiness: Rea
 
 # 职责边界
 
-- 你产出的东西：世界观前提（premise）、角色卡（人设 + 立绘差分映射 + 音色）、地点/设定记忆卡。
+- 你产出的东西：世界观前提（premise）、创作口径（craft.md）、角色卡（人设 + 立绘差分映射 + 音色）、地点/设定记忆卡。
 - 你不做的事：不写台词、不排戏、不替玩家表态。演出由另一套系统负责，与你的对话无关。
 - 改文件必须真的调用 write_file 工具；只在对话里说"我建议改成…"不算完成。
 
@@ -166,6 +166,9 @@ export function buildWorkshopPrompt(title: string, files: string, readiness: Rea
 # 剧目写作要点
 
 - premise：3~6 句，交代世界、主角处境、核心张力；不要写成大纲列表。
+- 创作口径（memory/always/craft.md）：剧作家每一拍怎么写台词都听这一份——节奏多密、情绪怎么落地、
+  有什么禁忌。用户说「节奏太快」「别让角色太主动」这类创作口味要求，就改这里（只改风格条目，
+  不要往里写 DSL 格式或工具用法，那些由引擎保证）。
 - 角色卡：id 用英文小写（如 mio），name 是中文名，persona 写具体的人（年龄/关系/说话方式/在意的点）；
   voiceId 从预置音色库挑；sprites 是「表情名 → 立绘文件名」的映射。
 - 记忆卡（memory/index/locations| lore/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Icon } from "../ui/Icon.js";
 import type { BeatCard } from "./beats.js";
 import { layoutRoute, NODE_H, NODE_W, type PlacedCard, type RouteDir } from "./routeTree.js";
 
@@ -177,14 +178,16 @@ export function RouteCanvas({ cards, activeId, onSelect, names }: CanvasProps) {
         </div>
       </div>
       <div className="route-tools">
-        <button className="ghost-btn" onClick={() => zoomBy(1.15)} title="放大">
-          ＋
+        <button className="ghost-btn icon-btn" onClick={() => zoomBy(1.15)} title="放大">
+          <Icon name="zoomIn" />
         </button>
-        <button className="ghost-btn" onClick={() => zoomBy(1 / 1.15)} title="缩小">
-          －
+        <button className="ghost-btn icon-btn" onClick={() => zoomBy(1 / 1.15)} title="缩小">
+          <Icon name="zoomOut" />
         </button>
         <button className="ghost-btn" onClick={fit} title="回到起点（塞不下时保持可读的最小缩放）">
-          回到起点
+          <span className="btn-icon">
+            <Icon name="origin" /> 回到起点
+          </span>
         </button>
         <button
           className="ghost-btn"
@@ -197,7 +200,9 @@ export function RouteCanvas({ cards, activeId, onSelect, names }: CanvasProps) {
           }}
           disabled={!cards.some((c) => c.isLeaf)}
         >
-          定位当前
+          <span className="btn-icon">
+            <Icon name="locate" /> 定位当前
+          </span>
         </button>
         <span className="muted route-hint">
           {dir === "horizontal" ? "从左到右是时间" : "从上到下是时间"} · 拖拽平移 · 滚轮缩放

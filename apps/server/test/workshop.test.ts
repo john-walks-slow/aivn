@@ -60,9 +60,23 @@ describe("PlayFiles：剧目文件白名单", () => {
       await expect(files.read(bad)).rejects.toThrow();
       await expect(files.write(bad, "x")).rejects.toThrow();
     }
-    // 素材可读不可写
-    expect(await files.read("assets/backgrounds/corridor.png")).toBe("png");
+    // 素材可列不可写；二进制不进编辑器——预览走静态路由，read 直接拒绝
+    await expect(files.read("assets/backgrounds/corridor.png")).rejects.toThrow("用预览查看");
     await expect(files.write("assets/backgrounds/corridor.png", "x")).rejects.toThrow();
+  });
+
+  it("kind 标出预览方式：文本可编辑，图片/音频/其他二进制各自成类", async () => {
+    const store = await makeStore();
+    await mkdir(join(store.dir, "assets", "bgm"), { recursive: true });
+    await writeFile(join(store.dir, "assets", "bgm", "rain.mp3"), "mp3");
+    await writeFile(join(store.dir, "assets", "backgrounds", "notes.bin"), "x");
+    const files = new PlayFiles(store);
+    const kindOf = async (path: string): Promise<string | undefined> =>
+      (await files.list()).find((f) => f.path === path)?.kind;
+    expect(await kindOf("memory/always/premise.md")).toBe("text");
+    expect(await kindOf("assets/backgrounds/corridor.png")).toBe("image");
+    expect(await kindOf("assets/bgm/rain.mp3")).toBe("audio");
+    expect(await kindOf("assets/backgrounds/notes.bin")).toBe("binary");
   });
 
   it("play.json 任何入口都删不掉（剧目定义不可恢复）", async () => {

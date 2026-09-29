@@ -1,7 +1,7 @@
 import type { ServerMessage } from "@stage-ai/core";
 import { LineageTree, isVoiceId, type EngineStateSnapshot } from "@stage-ai/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
-import { PlaywrightOrchestrator, type OrchestratorRuntimeState } from "./orchestrator.js";
+import { PlaywrightOrchestrator, type CarryOver, type OrchestratorRuntimeState } from "./orchestrator.js";
 import type { SaveInfo } from "./saves.js";
 import type { PlayConfig } from "@stage-ai/core";
 import type { ServerConfig } from "./config.js";
@@ -52,6 +52,25 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
 /** 音色试听固定样本文案（素材管理页「试听」按钮）。 */
 const TTS_SAMPLE_TEXT = "你好呀！这就是我的声音，以后请多多指教哦。";
 
+/** 工坊改了剧目文件（创作口径/premise/记忆卡）后的接力说明。 */
+const SETTINGS_UPDATED = [
+  "【设定已更新】（在本轮之前，剧目文件被修改过——创作口径或剧目设定已经换新）",
+  "以上是刚刚之前已经演出的内容，属于既成事实。请按当前 A 区的最新设定继续往后写，",
+  "不要复述、不要重演，也不要质疑新设定。",
+].join("\n");
+
+/** play.json / 素材保存后的接力说明。 */
+const PLAY_RELOADED = [
+  "【剧目资料已更新】（在本轮之前，剧目配置或素材清单被修改过）",
+  "以上是刚刚之前已经演出的内容，属于既成事实。请按当前 A 区的最新设定继续往后写，",
+  "不要复述、不要重演。",
+].join("\n");
+
+/** 从旧编排器取对话尾接力；对话体太短接不住就返回 undefined（新实例从零开始也没丢什么）。 */
+function carryOverFrom(runtime: PlayRuntime, note: string): CarryOver | undefined {
+  return runtime.orchestrator.carryOver(note) ?? undefined;
+}
+
 /**
  * 剧目之家：多剧目 runtime 懒加载与生命周期（P2）。
  * 每剧目一个 orchestrator + 广播组；WS 客户端按 playId 路由。
@@ -97,7 +116,7 @@ export class PlayHouse {
   }
 
   /** 从磁盘构建剧目 runtime（play.json + 指定存档的会话恢复）。 */
-  private async buildRuntime(playId: string, saveId: string): Promise<PlayRuntime> {
+  private async buildRuntime(playId: string, saveId: string, seed?: CarryOver): Promise<PlayRuntime> {
     const store = this.library.saveStore(playId, saveId);
     const play = await store.loadPlay();
     const session = await store.loadSession();
@@ -108,7 +127,7 @@ export class PlayHouse {
     };
     const scene = session?.scene ?? play.initialScene;
     const save = { id: saveId, name: await this.library.saves(playId).nameOf(saveId) };
-    return this.createRuntime(store, play, tree, engine, scene, session?.runtime, save);
+    return this.createRuntime(store, play, tree, engine, scene, session?.runtime, save, seed);
   }
 
   /** 剧目 WS 客户端集合（transport 连接注册，懒建）。 */
@@ -125,7 +144,7 @@ export class PlayHouse {
   async reload(playId: string): Promise<void> {
     const old = this.runtimes.get(playId);
     if (!old) return;
-    const fresh = await this.buildRuntime(playId, old.store.saveId!);
+    const fresh = await this.buildRuntime(playId, old.store.saveId!, carryOverFrom(old, PLAY_RELOADED));
     old.orchestrator.dispose();
     this.runtimes.set(playId, fresh);
     this.announce(playId, fresh);
@@ -241,7 +260,11 @@ export class PlayHouse {
     await old.orchestrator.whenIdle();
     // 等待期间可能已 reload/切档/删除——只在原实例还在位时才替换
     if (this.runtimes.get(playId) !== old) return;
-    const fresh = await this.buildRuntime(playId, old.store.saveId!);
+    const fresh = await this.buildRuntime(
+      playId,
+      old.store.saveId!,
+      carryOverFrom(old, SETTINGS_UPDATED),
+    );
     const runtime = { ...fresh, workshop: old.workshop };
     old.orchestrator.dispose();
     this.runtimes.set(playId, runtime);
@@ -297,6 +320,7 @@ export class PlayHouse {
     scene: string,
     restored: OrchestratorRuntimeState | undefined,
     save: { id: string; name: string },
+    seed?: CarryOver,
   ): Promise<PlayRuntime> {
     const { model } = this;
     const tts = this.tts;
@@ -364,6 +388,7 @@ export class PlayHouse {
       persist: (): Promise<void> =>
         store.saveSession(tree, engine, orchestrator.currentScene, orchestrator.runtimeState),
       restored,
+      seed,
     });
     // 工坊（D9）：独立实例，与演出互不干扰；写盘后按需重建 runtime（保存即生效）
     const workshop = new WorkshopSession({

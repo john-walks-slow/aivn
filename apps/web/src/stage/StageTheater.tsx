@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Icon } from "../ui/Icon.js";
 import type { ReactNode } from "react";
 import { actorName } from "./script.js";
 import type { ScriptLine } from "./script.js";
@@ -337,7 +338,9 @@ export function StageTheater({
               setMoreOpen(false);
             }}
           >
-            工坊
+            <span className="btn-icon">
+              <Icon name="workshop" /> 工坊
+            </span>
           </button>
         </div>
       )}
@@ -439,14 +442,16 @@ export function StageTheater({
         <div className="dialog-hint">
           {scrubbed ? (
             <button type="button" className="dialog-rewind" onClick={() => scrub(1)}>
-              ◀ 回看中 · 点此回到最新
+              <span className="btn-icon">
+                <Icon name="prev" size={13} /> 回看中 · 点此回到最新
+              </span>
             </button>
           ) : (
             <>
               {live && <span className="dialog-spinner" aria-label="剧作家正在写" />}
               {lineDone && !exhausted && (
                 <span className="dialog-next" aria-hidden>
-                  ▼
+                  <Icon name="down" size={16} />
                 </span>
               )}
             </>
@@ -462,7 +467,9 @@ export function StageTheater({
       {/* AudioContext 解锁遮罩（移动端铁律：手势 resume 后语音才可播；静音用户不要求手势） */}
       {voiceAvailable && voiceOn && !unlocked && (
         <div className="voice-unlock" onClick={onUnlock} role="button">
-          <span className="voice-unlock-icon">🔊</span>
+          <span className="voice-unlock-icon">
+            <Icon name="volume" size={22} />
+          </span>
           <span>点击开启语音，进入剧场</span>
         </div>
       )}

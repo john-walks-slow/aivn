@@ -5,6 +5,24 @@ import type { PlayMemory } from "./memory.js";
 /** 素材清单（store.listAssets 原样；keys: backgrounds/cg/sfx/bgm/sprites/<charId>）。 */
 export type AssetManifest = Record<string, string[]>;
 
+/**
+ * 创作口径默认正文——落盘为 plays/<id>/memory/always/craft.md。
+ * 这里只放**风格类**规则（节奏/表达/禁项）；引擎契约（DSL 标签序、工具语义、【状态】区）
+ * 留在 buildSystemPrompt 的内置段里，用户改不坏。工坊 agent 与工坊「创作口径」tab 改的都是这一份。
+ */
+export const DEFAULT_CRAFT = `# 创作口径
+
+> 这份文件是剧作家的创作口径：台词怎么写、节奏多密、情绪怎么落地。
+> 你可以在工坊里直接改，工坊 agent 也能改，改动从下一拍生效。
+> 格式自由——删条目、换措辞、加自己的规则都可以。
+
+1. 一拍 3~8 行台词为宜：一小段有起伏的演出，然后停在停止点等玩家。
+2. 展示而非陈述：情绪走动作、语气与台词本身，不用旁白直接解释心理。
+3. 玩家表态简短时也保持剧情推进：让角色主动给出反应与新信息，不要原地等待。
+4. 好感度变化、重要伏笔等通过演出自然体现，后续【状态】区会反映。
+5. 观众看到的只有你的台词和舞台，没有「生成完毕」「等待指令」这类引擎状态语——别在剧本里对观众解释系统。
+`;
+
 /** 素材描述：stem（无扩展名的文件名）→ 一句说明。来源 plays/<id>/assets/manifest.json。 */
 export type AssetNotes = Record<string, string>;
 
@@ -74,9 +92,9 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   ].join("");
 
   const premise = memory?.premise.trim() || play.premise;
-  const craftSection = memory?.craft.trim()
-    ? `\n# 剧艺守则（craft）\n\n${memory.craft.trim()}\n`
-    : "";
+  // 创作口径：外置到 memory/always/craft.md（工坊与用户共编），缺失/空则回退默认。
+  // 原样注入——文件自带「# 创作口径」标题，不再套一层壳。
+  const craftSection = `\n${(memory?.craft.trim() || DEFAULT_CRAFT).trim()}\n`;
   const cards = memory?.visibleContext(ctx.arcIds ?? []) ?? [];
   const indexSection =
     cards.length > 0
@@ -142,18 +160,13 @@ ${assetSection}${craftSection}${indexSection}
 不要出现「第一幕完」「本幕到此结束」「如需开启下一幕请…」这类幕间说明。幕间过渡由引擎负责
 （黑场 + 下一幕按钮），你在剧本里写任何幕间台词都会变成玩家读到的多余旁白。
 
-# 演出准则
+# 演出契约（引擎规则，不可改）
 
 1. 指令先于台词：先铺场景/立绘，再写这一拍的台词。
 2. 角色情绪/表情变化时，用 actor 指令同步切换 expression 差分——say 的 mood 只是文字标注，不驱动立绘。
-3. 一拍 3~8 行台词为宜：一小段有起伏的演出，然后停在停止点等玩家。
-4. 展示而非陈述：情绪走动作、语气与台词本身，不用旁白直接解释心理。
-5. 每轮 user 消息顶部有【状态】区（好感度/场景/进度），信任它作为最新世界状态。
-6. 【玩家表态】是主角在戏内说的话/做的选择；【导演注】是导演指示，遵守但不要复述或跳出戏外回应。
-7. 玩家表态简短时也保持剧情推进：让角色主动给出反应与新信息，不要原地等待。
-8. 玩家表态标注「本轮未作回应」时：不要替玩家编造台词或行动，让角色自然接戏并在合适时机再给回应机会。
-9. 好感度变化、重要伏笔等通过演出自然体现，后续【状态】区会反映。
-10. 观众看到的只有你的台词和舞台，没有「生成完毕」「等待指令」这类引擎状态语——别在剧本里对观众解释系统。`;
+3. 每轮 user 消息顶部有【状态】区（好感度/场景/进度），信任它作为最新世界状态。
+4. 【玩家表态】是主角在戏内说的话/做的选择；【导演注】是导演指示，遵守但不要复述或跳出戏外回应。
+5. 玩家表态标注「本轮未作回应」时：不要替玩家编造台词或行动，让角色自然接戏并在合适时机再给回应机会。`;
 }
 
 /** user 消息【状态】区（B 区，每轮变化但 append-only）。stateFiles = always/state 谱系级内容（D7）。 */

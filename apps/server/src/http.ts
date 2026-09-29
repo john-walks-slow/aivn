@@ -6,8 +6,12 @@ import type { PlayLibrary } from "./store.js";
 import type { PlayHouse } from "./playhouse.js";
 import type { SettingsFile } from "./configApi.js";
 import { parsePlayConfig } from "@stage-ai/core";
+import { DEFAULT_CRAFT } from "./prompt.js";
 
 const BODY_LIMIT = 64 * 1024 * 1024;
+
+/** 创作口径落盘路径（工坊 agent 与设置页改的是同一份）。 */
+const CRAFT_PATH = "memory/always/craft.md";
 
 const MIME: Record<string, string> = {
   png: "image/png",
@@ -273,6 +277,22 @@ export async function handleHttp(
       if (method === "DELETE") {
         const path = url.searchParams.get("path") ?? "";
         await runtime.workshop.removeFile(path);
+        return json(res, 200, { ok: true });
+      }
+      return fail(res, 405, "不支持的方法");
+    }
+    // —— 创作口径（craft.md）：一等公民读写口，缺文件回退默认正文 ——
+    if (sub === "craft" && parts.length === 4) {
+      const runtime = await playhouse.get(playId);
+      if (method === "GET") {
+        const onDisk = await runtime.workshop.files.read(CRAFT_PATH).catch(() => "");
+        const content = onDisk.trim() ? onDisk : DEFAULT_CRAFT;
+        return json(res, 200, { content, isDefault: !onDisk.trim() });
+      }
+      if (method === "PUT") {
+        const body = JSON.parse((await readBody(req)).toString("utf8")) as { content?: string };
+        if (typeof body.content !== "string") return fail(res, 400, "缺少 content");
+        await runtime.workshop.writeFile(CRAFT_PATH, body.content);
         return json(res, 200, { ok: true });
       }
       return fail(res, 405, "不支持的方法");

@@ -19,6 +19,20 @@ const ASSET_MANIFEST = "assets/manifest.json";
 /** 允许下钻的顶层目录（其余目录整棵跳过，不进 readdir）。 */
 const DIR_ROOTS = ["memory", "assets"];
 
+/** 预览方式：binary 文件不进编辑器，前端按 kind 决定渲染预览还是播放。 */
+export type PlayFileKind = "text" | "image" | "audio" | "binary";
+
+const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+const AUDIO_EXT = new Set([".mp3", ".ogg", ".wav", ".m4a", ".flac", ".aac"]);
+
+function kindOf(rel: string): PlayFileKind {
+  const ext = extOf(rel);
+  if (EDITABLE_EXT.has(ext) || ext === ".css") return "text";
+  if (IMAGE_EXT.has(ext)) return "image";
+  if (AUDIO_EXT.has(ext)) return "audio";
+  return "binary";
+}
+
 export interface PlayFile {
   path: string;
   /** 目录层级（浏览器建树用）：`play.json` 为 []。 */
@@ -26,6 +40,8 @@ export interface PlayFile {
   size: number;
   /** 工坊 agent 可写（false = 只读展示）。 */
   writable: boolean;
+  /** 预览方式：text 进编辑器，其余走静态 URL 预览/播放。 */
+  kind: PlayFileKind;
 }
 
 /** 相对路径校验：禁止绝对路径、`..`、空段与反斜杠。 */
@@ -103,6 +119,7 @@ export class PlayFiles {
           dir: child.split("/").slice(0, -1),
           size: info.size,
           writable: isEditable(child),
+          kind: kindOf(child),
         });
       }
     };
@@ -113,6 +130,8 @@ export class PlayFiles {
   async read(rel: string): Promise<string> {
     const abs = this.pathOf(rel, "read");
     if (!existsSync(abs)) throw new Error(`文件不存在: ${rel}`);
+    // 二进制按 utf8 读只会灌一屏乱码进编辑器——明确拒绝，前端改走静态 URL 预览
+    if (kindOf(rel) !== "text") throw new Error(`不是文本文件，用预览查看: ${rel}`);
     return readFile(abs, "utf8");
   }
 

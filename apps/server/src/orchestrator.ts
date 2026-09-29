@@ -5,7 +5,7 @@ import type {
   AgentMessage,
   StreamFn,
 } from "@earendil-works/pi-agent-core";
-import { Agent as PiAgent } from "@earendil-works/pi-agent-core";
+import { Agent as PiAgent, estimateTokens } from "@earendil-works/pi-agent-core";
 import { type Api, type Model, type Static, type TSchema, Type } from "@earendil-works/pi-ai";
 import {
   LineageTree,
@@ -57,6 +57,9 @@ export function createBeatDoneTool(): AgentTool<TSchema> {
 /** 好感度单次增量上限与值域（引擎校验，模型只可提议）。 */
 const AFFINITY_DELTA_CAP = 5;
 const AFFINITY_MAX = 100;
+
+/** 重建接力保留预算（token）：接住最近几拍就够，更早的细节走 archive 检索。 */
+const CARRY_OVER_TOKENS = 8000;
 
 /** 记忆工具依赖（D7）：engine 拥有状态真值，stateFiles 随谱系快照走。 */
 export interface MemoryToolDeps {
@@ -247,6 +250,17 @@ export interface OrchestratorOptions {
     triggerRatio: number;
     keepRecentTokens: number;
   };
+  /** 重建接力：A 区变了（工坊改了创作口径/设定）时携带的对话尾，见 carryOver。 */
+  seed?: CarryOver;
+}
+
+/**
+ * 重建接力包：工坊/素材改动触发 runtime 重建时，把旧对话体的最近一段带过去。
+ * A 区（systemPrompt）是只读的，换 A 区只能重建 Agent——不接力就是每改一次设定失忆一次。
+ */
+export interface CarryOver {
+  messages: AgentMessage[];
+  note: string;
 }
 
 /** 编排器运行态（随 session.json 持久化，重启后恢复重放与续演）。 */
@@ -327,7 +341,7 @@ export class PlaywrightOrchestrator {
       // 已有事件早已落过 JSONL，不重复补推
       this.loggedEvents = opts.tree.export().events.length;
     }
-    this.agent = this.buildAgent([]);
+    this.agent = this.buildAgent(opts.seed ? withSeed(opts.seed.messages, opts.seed.note) : []);
     this.voice = opts.tts
       ? new VoicePipeline({
           synth: opts.tts.synth,
@@ -408,6 +422,28 @@ export class PlaywrightOrchestrator {
   /** 当前缓冲代号（hello/rebase 携带，客户端识别结构性操作）。 */
   get currentEpoch(): number {
     return this.epoch;
+  }
+
+  /**
+   * 重建接力：把对话体的最近一段切出来交给新实例。
+   * A 区（systemPrompt）是只读的，工坊改了创作口径/设定就只能重建 Agent——不接力就等于每改一次失忆一次。
+   * 切点与纪元压缩同原则：落点必是 user 消息，工具调用对不被劈开；预算取压缩保留预算的一小截，
+   * 够接住最近几拍即可，更早的细节本就逐拍落进 archive，search_archive 检索得回来。
+   */
+  carryOver(note: string): CarryOver | null {
+    const messages = this.agent.state.messages;
+    if (messages.length < 2) return null;
+    const { scale } = measureContext(messages);
+    let tokens = 0;
+    let cut = messages.length;
+    while (cut > 1 && tokens < CARRY_OVER_TOKENS) {
+      cut -= 1;
+      tokens += estimateTokens(messages[cut]!) * scale;
+    }
+    while (cut < messages.length && messages[cut]?.role !== "user") cut += 1;
+    // 落在末尾：没有可接力的完整轮次（空拍 / 只有 system）
+    if (cut >= messages.length) return null;
+    return { messages: messages.slice(cut), note };
   }
 
   /** 引擎状态（只读视图）：状态检查与同刻性断言用。 */

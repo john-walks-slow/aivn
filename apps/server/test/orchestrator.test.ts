@@ -662,3 +662,23 @@ describe("长会话装配与原地 OOC（P4）", () => {
     expect(orchestrator.isBusy).toBe(false);
   });
 });
+
+describe("对话尾接力（工坊改设定后重建 runtime）", () => {
+  it("carryOver 取最近一段对话尾并带上设定已更新的说明", async () => {
+    const { orchestrator } = setup([{ text: BEAT_2, beatDone: true }]);
+    for (let i = 0; i < 6; i += 1) await orchestrator.playerAction({ kind: "continue" });
+
+    const seed = orchestrator.carryOver("【设定已更新】");
+    expect(seed).not.toBeNull();
+    expect(seed!.note).toBe("【设定已更新】");
+    // 接力段非空，且从 user 消息起刀（不劈开 toolCall/toolResult 对）
+    const roles = seed!.messages.map((m) => m.role);
+    expect(roles.length).toBeGreaterThan(0);
+    expect(roles[0]).toBe("user");
+  });
+
+  it("对话太短接不住就返回 null：新实例从零开始也没丢什么", () => {
+    const { orchestrator } = setup([{ text: BEAT_2, beatDone: true }]);
+    expect(orchestrator.carryOver("【设定已更新】")).toBeNull();
+  });
+});

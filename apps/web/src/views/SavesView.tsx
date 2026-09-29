@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Icon } from "../ui/Icon.js";
 import { api, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
 
@@ -76,7 +77,9 @@ export function SavesView({ playId }: { playId: string }) {
     <div className="screen saves-screen">
       <header className="screen-bar">
         <button className="ghost-btn" onClick={() => navigate(`/play/${playId}`)}>
-          ← 返回
+          <span className="btn-icon">
+            <Icon name="back" /> 返回
+          </span>
         </button>
         <h2>周目</h2>
         <button className="primary" disabled={busyId !== null} onClick={startNew}>

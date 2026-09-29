@@ -152,6 +152,33 @@ button.ghost-btn {
   font-size: 13.5px;
 }
 
+/* 图标按钮：与文字按钮同高同节奏，光靠 padding 撑不出正方形 */
+button.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 6px;
+}
+
+button.icon-btn.icon-btn-sm {
+  min-width: 26px;
+  padding: 5px;
+}
+
+button.icon-btn.icon-btn-xs {
+  min-width: 22px;
+  padding: 3px;
+}
+
+/* 图标 + 文字的按钮：图标随文字基线居中，字距留半个身位 */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  vertical-align: -2px;
+}
+
 button.ghost-btn:hover:not(:disabled) {
   color: var(--accent);
 }
@@ -1066,7 +1093,8 @@ select:focus {
 
 .upload-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  /* 缩略图 48px + 文件名 + 删除键至少要 320 才不截断；抽屉宽 460 时自然退化成单列。 */
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 14px;
 }
 
@@ -1088,7 +1116,7 @@ select:focus {
 
 .asset-list li {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   gap: 8px;
   font-size: 13px;
@@ -1199,6 +1227,49 @@ select:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 四个 tab：对话 / 素材 / 文件 / 创作口径 */
+.workshop-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.workshop-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 8px 10px;
+  font-size: 13px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.workshop-tab:hover {
+  color: var(--ink);
+}
+
+.workshop-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* tab 内容区：除对话外都自己管滚动 */
+.workshop-tab-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .workshop-bar-actions {
@@ -1369,7 +1440,9 @@ select:focus {
 }
 
 .file-entry {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
   text-align: left;
   background: none;
@@ -2036,4 +2109,180 @@ select:focus {
   margin-bottom: 2px;
   color: var(--accent);
   font-size: 12.5px;
+}
+
+/* ── 素材行缩略图 ─────────────── */
+
+.asset-row .asset-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-thumb {
+  display: block;
+  width: 48px;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.asset-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.asset-thumb-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.asset-audio {
+  height: 28px;
+  max-width: 180px;
+}
+
+/* ── 图片预览与灯箱 ─────────────── */
+
+.file-preview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: var(--bg);
+}
+
+.file-preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+  display: block;
+}
+
+.file-preview-image img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgb(0 0 0 / 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  cursor: zoom-out;
+}
+
+.image-lightbox-figure {
+  margin: 0;
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: default;
+}
+
+.image-lightbox-figure img {
+  max-width: 100%;
+  max-height: calc(100vh - 96px);
+  object-fit: contain;
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.image-lightbox-figure figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #fff;
+  font-size: 12.5px;
+}
+
+.image-lightbox-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-lightbox-figure .ghost-btn {
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.image-lightbox-figure .ghost-btn:hover {
+  color: var(--accent);
+}
+
+/* ── 创作口径 ─────────────── */
+
+.craft-pane {
+  gap: 0;
+  padding: 12px;
+}
+
+.craft-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.craft-bar p {
+  margin: 0;
+  flex: 1;
+  min-width: 200px;
+}
+
+.craft-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.craft-editor {
+  flex: 1;
+  min-height: 240px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.craft-foot {
+  margin-top: 8px;
+}
+
+.craft-saved {
+  color: var(--accent);
 }

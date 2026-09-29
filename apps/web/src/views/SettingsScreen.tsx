@@ -5,6 +5,7 @@
  * 改完需要重启服务端才生效，面板显式说明，不假装热生效。
  */
 import { useCallback, useEffect, useState } from "react";
+import { Icon } from "../ui/Icon.js";
 import { api, type Settings, type TtsKeys } from "../api.js";
 import { navigate } from "../router.jsx";
 
@@ -79,7 +80,9 @@ export function SettingsScreen() {
     <div className="screen">
       <header className="screen-bar">
         <button className="ghost-btn" onClick={() => navigate("/")}>
-          ← 剧目库
+          <span className="btn-icon">
+            <Icon name="back" /> 剧目库
+          </span>
         </button>
         <h2>设置</h2>
         <span className="muted">改动写回服务端 .env，重启服务端后生效</span>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "../ui/Icon.js";
 import type { LineageNodeView, LineageView } from "@stage-ai/core";
 import { api } from "../api.js";
 import { beatAnchors, buildBeats, type BeatCard } from "./beats.js";
@@ -91,7 +92,9 @@ export function RouteTree(
     <div className="route-screen">
       <header className="screen-bar">
         <button className="ghost-btn" onClick={props.onBack}>
-          ← 舞台
+          <span className="btn-icon">
+            <Icon name="back" /> 舞台
+          </span>
         </button>
         <span className="muted">路线</span>
         <span className="muted">从左到右是时间；分岔点往下扇开。点节点回看那一拍</span>
@@ -167,18 +170,25 @@ function BeatActions({
     <div className="lineage-actions">
       {lineKey && (
         <button className="ghost-btn" onClick={() => onRewind(lineKey)}>
-          ⟲ 跳到这里回看
+          <span className="btn-icon">
+            <Icon name="undo" /> 跳到这里回看
+          </span>
         </button>
       )}
       <button className="ghost-btn" disabled={busy} onClick={() => ops.fork(card.id)}>
-        {canRewind ? "🌿 从这里岔出去" : "🌿 岔回去（接回世界线）"}
+        <span className="btn-icon">
+          <Icon name="fork" />
+          {canRewind ? "从这里岔出去" : "岔回去（接回世界线）"}
+        </span>
       </button>
       <button
         className="ghost-btn"
         disabled={busy}
         onClick={() => ops.rewrite(card.id, "beat", note.trim() || undefined)}
       >
-        ↺ 重生成这一拍
+        <span className="btn-icon">
+          <Icon name="rewrite" /> 重生成这一拍
+        </span>
       </button>
       <span className="lineage-inline-input">
         <input
@@ -276,7 +286,9 @@ function NodeActions({ row, busy, ops }: { row: Row; busy: boolean; ops: Lineage
     <div className="lineage-actions">
       {row.editable && !editing && (
         <button className="ghost-btn" disabled={busy} onClick={() => setEditing(true)}>
-          ✎ 改写台词
+          <span className="btn-icon">
+            <Icon name="pencil" /> 改写台词
+          </span>
         </button>
       )}
       <button
@@ -284,10 +296,14 @@ function NodeActions({ row, busy, ops }: { row: Row; busy: boolean; ops: Lineage
         disabled={busy}
         onClick={() => ops.rewrite(row.id, "beat", note.trim() || undefined)}
       >
-        ↺ 重写这一幕
+        <span className="btn-icon">
+          <Icon name="rewrite" /> 重写这一幕
+        </span>
       </button>
       <button className="ghost-btn" disabled={busy} onClick={() => ops.fork(row.id)}>
-        🌿 从此分岔
+        <span className="btn-icon">
+          <Icon name="fork" /> 从此分岔
+        </span>
       </button>
       <span className="lineage-inline-input">
         <input
@@ -304,7 +320,9 @@ function NodeActions({ row, busy, ops }: { row: Row; busy: boolean; ops: Lineage
           setNote("");
         }}
       >
-        💬 从此 OOC 重演
+        <span className="btn-icon">
+          <Icon name="ooc" /> 从此 OOC 重演
+        </span>
       </button>
       {editing && (
         <span className="lineage-editor">

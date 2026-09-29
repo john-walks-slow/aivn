@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Icon } from "../ui/Icon.js";
 import type { StopPayload } from "@stage-ai/core";
 
 interface StopPanelProps {
@@ -97,7 +98,9 @@ export function StopPanel({
               onClick={() => onChoice(index)}
             >
               <span className="choice-text">{option.text}</span>
-              {seenChoices?.has(option.text) && <span className="choice-seen">✓ 已选过</span>}
+              {seenChoices?.has(option.text) && <span className="choice-seen">
+                <Icon name="check" size={12} /> 已选过
+              </span>}
             </button>
           ))}
           <button
@@ -130,7 +133,13 @@ export function StopPanel({
               onClick={polish}
               disabled={disabled || polishing || draft.trim() === ""}
             >
-              {polishing ? "润色中…" : "✨ 润色"}
+              {polishing ? (
+                "润色中…"
+              ) : (
+                <span className="btn-icon">
+                  <Icon name="sparkles" /> 润色
+                </span>
+              )}
             </button>
             {original !== null && (
               <button type="button" className="link-btn" onClick={undoPolish} disabled={polishing}>

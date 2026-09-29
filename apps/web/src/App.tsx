@@ -4,12 +4,11 @@ import { applyPlayTheme, reloadPlayTheme, THEME_CHANGED } from "./theme.js";
 import { LibraryView } from "./views/LibraryView.js";
 import { TitleView } from "./views/TitleView.js";
 import { StageScreen } from "./views/StageScreen.js";
-import { AssetsView } from "./views/AssetsView.js";
 import { SavesView } from "./views/SavesView.js";
 import { WorkshopScreen } from "./views/WorkshopScreen.js";
 import { SettingsScreen } from "./views/SettingsScreen.js";
 
-/** hash 路由：#/ 剧目库 · #/settings 设置 · #/play/:id Title · #/play/:id/stage 舞台 · #/play/:id/saves 周目 · #/play/:id/workshop 工坊 · #/play/:id/assets 素材与配置。 */
+/** hash 路由：#/ 剧目库 · #/settings 设置 · #/play/:id Title · #/play/:id/stage 舞台 · #/play/:id/saves 周目 · #/play/:id/workshop 工坊。 */
 export function App() {
   const route = useRoute();
   const [head, playId, sub] = route.segments;
@@ -35,9 +34,6 @@ export function App() {
   }
   if (head === "play" && playId && sub === "workshop") {
     return <WorkshopScreen playId={playId} />;
-  }
-  if (head === "play" && playId && sub === "assets") {
-    return <AssetsView playId={playId} />;
   }
   if (head === "play" && playId) {
     return <TitleView playId={playId} />;

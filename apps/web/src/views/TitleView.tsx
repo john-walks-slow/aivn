@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Icon } from "../ui/Icon.js";
 import { api, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
 
@@ -55,7 +56,9 @@ export function TitleView({ playId }: { playId: string }) {
     <div className="screen title-screen">
       <header className="screen-bar">
         <button className="ghost-btn" onClick={() => navigate("/")}>
-          ← 剧目库
+          <span className="btn-icon">
+            <Icon name="back" /> 剧目库
+          </span>
         </button>
       </header>
 
@@ -91,7 +94,6 @@ export function TitleView({ playId }: { playId: string }) {
               周目{saves.length > 0 ? `（${saves.length}）` : ""}
             </button>
             <button onClick={() => navigate(`/play/${playId}/workshop`)}>工坊</button>
-            <button onClick={() => navigate(`/play/${playId}/assets`)}>素材与配置</button>
             <a className="btn-as-label" href={`/api/plays/${playId}/export`}>
               导出剧目包
             </a>
