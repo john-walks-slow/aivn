@@ -3,7 +3,7 @@ import type { AssetKind, AssetMeta, CharacterCard, LibraryEntry, PlayConfig } fr
 import { languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
 import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
-import { ImageLightbox } from "./ImageLightbox.js";
+import { ImageLightbox } from "../ui/ImageLightbox.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";
 import { useVoiceCatalog, type VoiceCatalogState } from "../voice/useVoiceCatalog.js";
@@ -288,7 +288,14 @@ export function AssetsPanel({ playId }: { playId: string }) {
         </div>
       </section>
 
-      {zoom && <ImageLightbox url={zoom.url} name={zoom.name} onClose={() => setZoom(null)} />}
+      {zoom && (
+        <ImageLightbox
+          images={[{ url: zoom.url, caption: zoom.name }]}
+          index={0}
+          onIndex={() => {}}
+          onClose={() => setZoom(null)}
+        />
+      )}
       {libraryInto !== null && (
         <LibraryBrowser
           playId={playId}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PlayDetail } from "../api.js";
 import { navigate } from "../router.jsx";
-import { useStageSocket, type WorkshopInbound } from "../stage/useStageSocket.js";
+import { useStageSocket } from "../stage/useStageSocket.js";
 import { usePlayback } from "../stage/director.js";
 import { VoiceDirector } from "../stage/audio.js";
 import { buildAssetIndex, type AssetIndex } from "../stage/assets.js";
@@ -30,7 +30,8 @@ import {
 } from "../stage/settings.js";
 import { PromptQueuePanel } from "../stage/PromptQueuePanel.js";
 import { useVisualViewport } from "../stage/viewport.js";
-import { WorkshopPanel, type WorkshopMode } from "../workshop/WorkshopPanel.js";
+import { useEscape } from "../ui/escape.js";
+import { toggleWorkshop, useWorkshopOverlay } from "../workshop/useWorkshopOverlay.js";
 
 /** 演出屏：舞台（视觉层+打字机+导演栏）/ 回顾 / 路线三视图 + 停止点面板，共用侧栏外壳。 */
 export function StageScreen({ playId }: { playId: string }) {
@@ -52,13 +53,14 @@ export function StageScreen({ playId }: { playId: string }) {
   const [rebase, setRebase] = useState({ token: 0, resume: true });
   /** 谱系代次：每轮、结构操作后自增，把最新的树拉回来。 */
   const [lineageNonce, setLineageNonce] = useState(0);
-  const [workshop, setWorkshop] = useState<WorkshopMode | null>(null);
   /** 回顾的第二视图：剧作家的原始历史（同一份内容区，切视图不换外壳）。 */
   const [rawHistory, setRawHistory] = useState(false);
   const [historyNonce, setHistoryNonce] = useState(0);
   /** 路线画布把镜头操作交给侧栏（见 RouteCanvas 的 onControls）。 */
   const [routeControls, setRouteControls] = useState<RouteControls | null>(null);
   const setRouteControlsStable = useCallback((c: RouteControls) => setRouteControls(c), []);
+  /** 工坊是 app 级浮层，这里只读它开没开——连接与开合都在浮层自己那边。 */
+  const workshopOpen = useWorkshopOverlay()?.playId === playId;
   /** 按住 Ctrl 的快进档：舞台层只报键，播放层管节奏。 */
   const [turbo, setTurbo] = useState(false);
   const toast = useToasts();
@@ -68,14 +70,6 @@ export function StageScreen({ playId }: { playId: string }) {
   const playbackRef = useRef<ReturnType<typeof usePlayback> | null>(null);
   // 谱系只在这两个导演视图里拉取（打开/操作后/手动刷新），不做每轮广播
   const lineage = useLineage(playId, lineageNonce);
-  // 工坊下行消息的订阅表：面板挂载时登记，卸载时注销（与舞台状态机解耦）
-  const workshopHandlers = useRef(new Set<(msg: WorkshopInbound) => void>());
-  const subscribeWorkshop = useCallback((handler: (msg: WorkshopInbound) => void) => {
-    workshopHandlers.current.add(handler);
-    return () => {
-      workshopHandlers.current.delete(handler);
-    };
-  }, []);
   const { push: pushToast } = toast;
 
   const stage = useStageSocket(playId, {
@@ -104,9 +98,6 @@ export function StageScreen({ playId }: { playId: string }) {
     onAssetFailed: (id, message) => {
       playbackRef.current?.settleAssets([id]);
       pushToast(`生图失败：${message}`, "warn");
-    },
-    onWorkshop: (msg) => {
-      for (const handler of workshopHandlers.current) handler(msg);
     },
   });
 
@@ -223,17 +214,9 @@ export function StageScreen({ playId }: { playId: string }) {
     stage.sendContinue();
   }, [stage.sendContinue]);
 
-  // 工坊浮层开着时，Esc 关工坊；否则回到舞台。侧栏是常驻的，不需要「关掉」它。
-  useEffect(() => {
-    if (view === "stage" && !workshop) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== "Escape") return;
-      if (workshop) setWorkshop(null);
-      else setView("stage");
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [view, workshop]);
+  // 回顾 / 路线这两个视图压在舞台上，关掉它们的自然动作是 Esc。
+  // 工坊是独立浮层、自己认领 Esc（见 useEscape），这里不再代它处理。
+  useEscape(() => setView("stage"), view !== "stage");
 
   // 谱系定期拉取：路线视图开着时看得到直播的树；舞台停在停止点上也拉——
   // 此刻这一轮的事件才刚落库，导演栏的锚点要指得准。
@@ -400,8 +383,8 @@ export function StageScreen({ playId }: { playId: string }) {
         onToggleVoice={toggleVoice}
         continueCard={continueCard}
         onToggleContinueCard={toggleContinueCard}
-        workshopOpen={workshop !== null}
-        onWorkshop={() => setWorkshop((cur) => (cur ? null : "drawer"))}
+        workshopOpen={workshopOpen}
+        onWorkshop={() => toggleWorkshop(playId)}
         onExit={() => navigate(`/play/${playId}`)}
         tools={tools}
       >
@@ -483,24 +466,12 @@ export function StageScreen({ playId }: { playId: string }) {
         {/* 提示一律走浮层 toast，不占内容区顶部的一条 */}
         <ToastStack toasts={toast.toasts} onDismiss={toast.dismiss} />
 
-        {/* 待注入队列：空则不占地方。排队中的句子能改也能撤 */}
-        {view === "stage" && !workshop && (
+        {/* 待注入队列：空则不占地方。排队中的句子能改也能撤。工坊浮层开着时不叠给它看 */}
+        {view === "stage" && !workshopOpen && (
           <PromptQueuePanel
             items={stage.queue}
             onEdit={(id, text) => stage.sendPromptEdit(id, text)}
             onDelete={(id) => stage.sendPromptDelete(id)}
-          />
-        )}
-
-        {view === "stage" && workshop && (
-          <WorkshopPanel
-            playId={playId}
-            mode={workshop}
-            onModeChange={setWorkshop}
-            onClose={() => setWorkshop(null)}
-            subscribe={subscribeWorkshop}
-            send={stage.send}
-            connected={stage.connected}
           />
         )}
       </StageShell>

@@ -9,6 +9,7 @@ import type { TranscriptEntry } from "./transcript.js";
 import { api } from "../api.js";
 import type { HistoryBeat, HistoryEntry } from "../api.js";
 import { Icon } from "../ui/Icon.js";
+import { escapeClaimed } from "../ui/escape.js";
 
 interface StageTheaterProps {
   visual: VisualState;
@@ -153,6 +154,8 @@ export function StageTheater({
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
+      // 上面还浮着模态浮层（工坊抽屉）时 Esc 归那层，别连带把舞台的导演注也撤了
+      if (e.key === "Escape" && escapeClaimed()) return;
       if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
         scrub(-1);
         e.preventDefault();

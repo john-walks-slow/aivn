@@ -1291,7 +1291,7 @@ select:focus {
   flex: 1;
 }
 
-/* ── 工坊（D9）抽屉 / 全屏 ─────────────── */
+/* ── 工坊（D9）浮层：抽屉 / 全屏 ─────────── */
 
 .workshop {
   display: flex;
@@ -1299,7 +1299,17 @@ select:focus {
   background: var(--panel);
   border-left: 1px solid var(--line);
   box-shadow: -8px 0 28px rgb(0 0 0 / 0.08);
-  z-index: 40;
+  /* 浮层：压过页面自身的一切 chrome（顶栏 30 / 舞台浮层 45），
+     让出 55/60 给资源库浏览、灯箱与 toast 这些工坊自己拉起的层 */
+  z-index: 50;
+}
+
+/* 抽屉是模态的：背后页面不接受点击，点空白即收起 */
+.workshop-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: rgb(0 0 0 / 0.3);
 }
 
 .workshop-drawer {
@@ -1309,18 +1319,18 @@ select:focus {
 }
 
 .workshop-full {
-  flex: 1;
-  min-height: 0;
-  max-width: 1080px;
-  width: 100%;
-  margin: 0 auto;
+  position: fixed;
+  inset: 0;
   border-left: none;
   box-shadow: none;
 }
 
-.workshop-screen {
-  max-width: none;
-  padding: 0;
+/* 手机上抽屉本来就占满宽度，铺满/收起没有区别
+   （选择器要压过 button.icon-btn 的 display，故带上 .workshop） */
+@media (max-width: 460px) {
+  .workshop .workshop-mode-btn {
+    display: none;
+  }
 }
 
 .workshop-bar {
@@ -1340,7 +1350,7 @@ select:focus {
   white-space: nowrap;
 }
 
-/* 四个 tab：对话 / 素材 / 文件 / 创作口径 */
+/* 四个 tab：对话 / 素材 / 配置（创作口径）/ 文件 */
 .workshop-tabs {
   display: flex;
   gap: 2px;
@@ -2620,60 +2630,6 @@ select:focus {
   max-height: 100%;
   object-fit: contain;
   display: block;
-}
-
-.image-lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: rgb(0 0 0 / 0.82);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  cursor: zoom-out;
-}
-
-.image-lightbox-figure {
-  margin: 0;
-  max-width: 100%;
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  cursor: default;
-}
-
-.image-lightbox-figure img {
-  max-width: 100%;
-  max-height: calc(100vh - 96px);
-  object-fit: contain;
-  border-radius: var(--radius);
-  background: #fff;
-}
-
-.image-lightbox-figure figcaption {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: #fff;
-  font-size: 12.5px;
-}
-
-.image-lightbox-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.image-lightbox-figure .ghost-btn {
-  color: #fff;
-  flex-shrink: 0;
-}
-
-.image-lightbox-figure .ghost-btn:hover {
-  color: var(--accent);
 }
 
 /* ── 创作口径 ─────────────── */

@@ -1,58 +1,65 @@
 import { useEffect, useRef, useState } from "react";
 import type { ClientMessage, WorkshopAssetView } from "@stage-ai/core";
 import { api } from "../api.js";
-import type { WorkshopInbound } from "../stage/useStageSocket.js";
+import type { WorkshopInbound } from "./useWorkshopSocket.js";
 import { Icon, type IconName } from "../ui/Icon.js";
 import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
+import { useEscape } from "../ui/escape.js";
 import { AssetsPanel } from "./AssetsPanel.js";
 import { CraftPanel } from "./CraftPanel.js";
 import { FileBrowser } from "./FileBrowser.js";
 import { WorkshopMarkdown } from "./WorkshopMarkdown.js";
 import { useWorkshop } from "./useWorkshop.js";
-
-/** 抽屉/全屏两种形态：抽屉从右侧滑入压在舞台上，全屏独占页面。 */
-export type WorkshopMode = "drawer" | "full";
+import type { WorkshopMode, WorkshopTab } from "./useWorkshopOverlay.js";
 
 const TABS: { id: WorkshopTab; label: string; icon: IconName }[] = [
   { id: "chat", label: "对话", icon: "chat" },
   { id: "assets", label: "素材", icon: "assets" },
+  // 「配置」就是剧作家的创作口径（memory/always/craft.md），工坊对话改的是同一份
+  { id: "craft", label: "配置", icon: "craft" },
   { id: "files", label: "文件", icon: "files" },
-  { id: "craft", label: "创作口径", icon: "craft" },
 ];
 
-type WorkshopTab = "chat" | "assets" | "files" | "craft";
-
 /**
- * 工坊面板（D9）：meta-chat 多会话 + 剧目文件浏览编辑。
+ * 工坊面板（D9）：meta-chat 多会话 + 剧目素材/配置/文件。
+ * 宿主是 app 级浮层（WorkshopOverlay），抽屉与全屏只是它的两种形态。
  * 与演出并行——工坊 agent 写盘只影响下一轮（服务端在轮边界重建 runtime）。
  */
 export function WorkshopPanel({
   playId,
   mode,
+  initialTab,
   onModeChange,
   onClose,
   subscribe,
   send,
   connected,
+  socketError,
 }: {
   playId: string;
   mode: WorkshopMode;
-  /** 省略则不显示抽屉/全屏切换（全屏独立页没有可切的另一半）。 */
-  onModeChange?: (mode: WorkshopMode) => void;
+  /** 打开时落在哪个 tab（缺省对话）。 */
+  initialTab?: WorkshopTab;
+  onModeChange: (mode: WorkshopMode) => void;
   onClose: () => void;
   /** 注册工坊下行消息回调（返回取消订阅）。 */
   subscribe: (handler: (msg: WorkshopInbound) => void) => () => void;
   send: (msg: ClientMessage) => void;
   /** WS 连通性：断线要解锁本轮、重连要重新报到。省略则不做这件事（调用方自己管）。 */
   connected?: boolean;
+  /** WS 自身的报错（连接由浮层宿主管，面板只管显示）。 */
+  socketError?: string | null;
 }) {
   const workshop = useWorkshop(send);
   const { state } = workshop;
-  const [tab, setTab] = useState<WorkshopTab>("chat");
+  const [tab, setTab] = useState<WorkshopTab>(initialTab ?? "chat");
   const [input, setInput] = useState("");
   const [showThreads, setShowThreads] = useState(false);
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // 浮层是模态的：Esc 归它，且只归最上面那一层（灯箱开着时先关灯箱）
+  useEscape(onClose);
 
   // 面板一挂上就先订阅再报到（StrictMode 下会走两遍，报到幂等）
   useEffect(() => subscribe(workshop.onMessage), [subscribe, workshop.onMessage]);
@@ -87,22 +94,25 @@ export function WorkshopPanel({
   const activeThread = state.threads.find((t) => t.id === state.activeId);
 
   return (
-    <aside className={`workshop workshop-${mode}`} aria-label="工坊">
+    <aside
+      className={`workshop workshop-${mode}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label="工坊"
+    >
       <header className="workshop-bar">
         <button className="ghost-btn icon-btn" onClick={() => setShowThreads((v) => !v)} title="线程列表">
           <Icon name="menu" />
         </button>
         <span className="workshop-title">{activeThread?.title ?? "新线程"}</span>
         <div className="workshop-bar-actions">
-          {onModeChange && (
-            <button
-              className="ghost-btn small-btn icon-btn icon-btn-sm"
-              onClick={() => onModeChange(mode === "drawer" ? "full" : "drawer")}
-              title={mode === "drawer" ? "全屏" : "收成抽屉"}
-            >
-              <Icon name={mode === "drawer" ? "expand" : "collapse"} size={14} />
-            </button>
-          )}
+          <button
+            className="ghost-btn small-btn icon-btn icon-btn-sm workshop-mode-btn"
+            onClick={() => onModeChange(mode === "drawer" ? "full" : "drawer")}
+            title={mode === "drawer" ? "铺满全屏" : "收成抽屉"}
+          >
+            <Icon name={mode === "drawer" ? "expand" : "collapse"} size={14} />
+          </button>
           <button className="ghost-btn small-btn icon-btn icon-btn-sm" onClick={onClose} title="关闭">
             <Icon name="close" size={14} />
           </button>
@@ -172,9 +182,9 @@ export function WorkshopPanel({
         </div>
       )}
 
-      {state.error && (
+      {(state.error || socketError) && (
         <div className="error-banner small" role="alert">
-          {state.error}
+          {state.error ?? socketError}
         </div>
       )}
 

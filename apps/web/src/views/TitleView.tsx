@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Icon } from "../ui/Icon.js";
 import { api, readinessAdvice, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
+import { openWorkshop } from "../workshop/useWorkshopOverlay.js";
 
-/** Title Screen：开始新周目 / 继续 / 周目 / 工坊 / 素材与配置 / 导出剧目包。 */
+/** Title Screen：开始新周目（就绪门）/ 继续 / 周目 / 工坊浮层（可直接落到素材与配置）/ 导出剧目包。 */
 export function TitleView({ playId }: { playId: string }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [saves, setSaves] = useState<SaveInfo[]>([]);
@@ -93,7 +94,7 @@ export function TitleView({ playId }: { playId: string }) {
             <button onClick={() => navigate(`/play/${playId}/saves`)}>
               周目{saves.length > 0 ? `（${saves.length}）` : ""}
             </button>
-            <button onClick={() => navigate(`/play/${playId}/workshop`)}>工坊</button>
+            <button onClick={() => openWorkshop(playId)}>工坊</button>
             <a className="btn-as-label" href={`/api/plays/${playId}/export`}>
               导出剧目包
             </a>
@@ -111,11 +112,11 @@ export function TitleView({ playId }: { playId: string }) {
           {!readiness?.ready && missing.length > 0 && (
             <p className="title-gate">
               还不能开演：缺 {missing.join("、")}。请到
-              <button className="link-btn" onClick={() => navigate(`/play/${playId}/workshop`)}>
+              <button className="link-btn" onClick={() => openWorkshop(playId)}>
                 工坊
               </button>
               与 AI 共创补齐，或到
-              <button className="link-btn" onClick={() => navigate(`/play/${playId}/assets`)}>
+              <button className="link-btn" onClick={() => openWorkshop(playId, { tab: "assets" })}>
                 素材与配置
               </button>
               手动补齐。
@@ -125,7 +126,7 @@ export function TitleView({ playId }: { playId: string }) {
             <p className="muted small">
               还没有 {advice.join("、")}——可以开演（舞台落氛围底色、没有立绘的角色不上台），
               也可到
-              <button className="link-btn" onClick={() => navigate(`/play/${playId}/workshop`)}>
+              <button className="link-btn" onClick={() => openWorkshop(playId)}>
                 工坊
               </button>
               让 AI 先把底图和定妆照生成出来。

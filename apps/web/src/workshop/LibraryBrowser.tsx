@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { describeAsset, type AssetKind, type LibraryEntry } from "@stage-ai/core";
 import { api, libraryFileUrl } from "../api.js";
 import { Icon } from "../ui/Icon.js";
-import { ImageLightbox } from "./ImageLightbox.js";
+import { useEscape } from "../ui/escape.js";
+import { ImageLightbox } from "../ui/ImageLightbox.js";
 
 /**
  * 资源库浏览（素材页 / 角色卡旁的「从资源库导入」弹层）。
@@ -98,13 +99,7 @@ export function LibraryBrowser({
       .finally(() => setBusy(null));
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   const shown = filter ? entries.filter(filter) : entries;
 
@@ -239,7 +234,14 @@ export function LibraryBrowser({
             </p>
           )}
         </div>
-      {zoom && <ImageLightbox url={zoom.url} name={zoom.name} onClose={() => setZoom(null)} />}
+      {zoom && (
+        <ImageLightbox
+          images={[{ url: zoom.url, caption: zoom.name }]}
+          index={0}
+          onIndex={() => {}}
+          onClose={() => setZoom(null)}
+        />
+      )}
     </div>
   );
 }
