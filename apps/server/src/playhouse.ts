@@ -6,6 +6,7 @@ import { PlaywrightOrchestrator, type CarryOver, type OrchestratorRuntimeState }
 import type { SaveInfo } from "./saves.js";
 import type { PlayConfig } from "@stage-ai/core";
 import type { ServerConfig } from "./config.js";
+import { imagePendingTtlMs } from "./config.js";
 import { createCpaProvider } from "./provider.js";
 import { createTts } from "./tts.js";
 import { createImageBackend } from "./imagegen.js";
@@ -35,6 +36,8 @@ export interface PlayRuntime {
   synth?: (text: string, voiceId: string) => Promise<{ url: string }>;
   /** 生图资产层（D6）：预发射/manifest；未启用生图则为 undefined。 */
   images?: ImageAssets;
+  /** 骨架占位的兜底上界（毫秒）：由生图配置算出，随 hello 下发（见 imagePendingTtlMs）。 */
+  assetsTtlMs: number;
 }
 
 /** hello 载荷（transport 连接建立与 runtime 重建续接共用）。 */
@@ -46,6 +49,7 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
     cast: runtime.cast,
     voice: runtime.voice,
     assets: runtime.images?.snapshot(),
+    assetsTtlMs: runtime.assetsTtlMs,
     epoch: runtime.orchestrator.currentEpoch,
     idle: !runtime.orchestrator.isBusy,
     saveId: runtime.save.id,
@@ -534,6 +538,7 @@ export class PlayHouse {
       voice: !!synth,
       synth,
       images,
+      assetsTtlMs: imagePendingTtlMs(this.config.image),
     };
   }
 }

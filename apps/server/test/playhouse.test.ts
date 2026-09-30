@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LineageTree } from "@stage-ai/core";
-import { PlayHouse } from "../src/playhouse.js";
+import { PlayHouse, helloPayload } from "../src/playhouse.js";
 import { PlayLibrary } from "../src/store.js";
 import { AssetLibrary } from "../src/library.js";
 import { loadConfig } from "../src/config.js";
@@ -40,6 +40,13 @@ describe("PlayHouse 周目作用域：逛不建，看戏才建", () => {
   });
 
   const saveIds = (): Promise<string[]> => library.saves("p1").list().then((s) => s.map((x) => x.id));
+
+  it("hello 带上骨架兜底上界：客户端不知道生图要多久，这个数只能服务端给", async () => {
+    const runtime = await house.stage("p1");
+    expect(helloPayload("p1", runtime).type).toBe("hello");
+    const hello = helloPayload("p1", runtime) as { assetsTtlMs?: number };
+    expect(hello.assetsTtlMs).toBe(450_000);
+  });
 
   it("get() 不建周目：runtime 落在无会话作用域上", async () => {
     const runtime = await house.get("p1");

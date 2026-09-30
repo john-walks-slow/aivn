@@ -185,6 +185,8 @@ export function StageScreen({ playId }: { playId: string }) {
     // D5 文字先行 + 语音收尾：自动模式等当前句语音播完再推进
     hold: director.holdsLine(),
     turbo,
+    // D6 骨架兜底上界：服务端按生图配置下发，客户端不再自己猜生成要多久
+    assetsTtlMs: stage.assetsTtlMs,
     onLineStart: (line) => director.lineStarted(line?.seq, line?.type === "say"),
     onFastForward: () => director.fastForward(),
   });

@@ -26,6 +26,11 @@ export interface StageSocket {
   epoch: number;
   /** 服务端 TTS 能力（hello.voice；false 时隐藏语音开关）。 */
   voiceAvailable: boolean;
+  /**
+   * 骨架占位的兜底上界（毫秒，hello.assetsTtlMs）：一次预发射真正可能花多久。
+   * null = 服务端没给（旧协议），播放层回落到保守默认值。
+   */
+  assetsTtlMs: number | null;
   /** 当前周目档名（舞台顶部显示；换档经 hello 续接）。 */
   saveName: string | null;
   sendChoice: (index: number) => void;
@@ -72,6 +77,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
   const [isActEnd, setActEnd] = useState(false);
   const [names, setNames] = useState<Record<string, string>>({});
   const [voiceAvailable, setVoiceAvailable] = useState(false);
+  const [assetsTtlMs, setAssetsTtlMs] = useState<number | null>(null);
   const [epoch, setEpoch] = useState(0);
   const [saveName, setSaveName] = useState<string | null>(null);
   /** 本地缓冲所属代号：与服务端不一致说明缓冲已被结构性操作整段替换。 */
@@ -109,6 +115,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
           case "hello":
             setNames(Object.fromEntries((msg.cast ?? []).map(({ id, name }) => [id, name])));
             setVoiceAvailable(msg.voice ?? false);
+            if (msg.assetsTtlMs !== undefined) setAssetsTtlMs(msg.assetsTtlMs);
             if (msg.assets) handlersRef.current.onAssets?.(msg.assets);
             // 换了周目 = 换了一棵树：本地缓冲与新树无关，作废重放
             const switched = msg.saveId !== undefined && msg.saveId !== saveIdRef.current;
@@ -274,6 +281,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
     isActEnd,
     epoch,
     voiceAvailable,
+    assetsTtlMs,
     saveName,
     sendChoice,
     sendFree,

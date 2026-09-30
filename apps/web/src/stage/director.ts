@@ -23,8 +23,18 @@ export interface VisualState {
 /**
  * 骨架占位上限（D6 铁律：骨架禁止永久停留）。到货/失败都会立刻摘掉占位，
  * 但重连重放历史 preload、或瞬态通知恰好丢在断线窗口里时没人来摘——超时兜底。
+ *
+ * 上界由服务端按生图配置下发（hello.assetsTtlMs），因为只有服务端知道一次预发射
+ * 真正可能花多久。这个兜底只在「没人会再来说一声」时开火，早于它摘掉占位等于
+ * 把正在生成的骨架自己撤了——那正是 45s 写死时的后果。服务端没给（旧协议）时的
+ * 回落值刻意取大，宁可多等也不误杀。
  */
-const PENDING_TTL_MS = 45_000;
+const PENDING_TTL_MS = 600_000;
+
+/** 兜底上界（毫秒）：服务端没给 assetsTtlMs 时的保守值。 */
+export function pendingTtlMs(fromServer: number | null | undefined): number {
+  return fromServer !== null && fromServer !== undefined && fromServer > 0 ? fromServer : PENDING_TTL_MS;
+}
 
 const EMPTY_VISUAL: VisualState = {
   bg: null,
@@ -173,6 +183,8 @@ export function usePlayback(
     resumeAfterReset?: boolean;
     /** 按住 Ctrl 的快进档：当前行一次读完，行间不设停顿，一路追到缓冲末端。 */
     turbo?: boolean;
+    /** 骨架占位的兜底上界（hello.assetsTtlMs）；缺省用保守默认值。 */
+    assetsTtlMs?: number | null;
   } & PlaybackHooks,
 ): Playback {
   const [visual, setVisual] = useState<VisualState>(EMPTY_VISUAL);
@@ -385,13 +397,14 @@ export function usePlayback(
   }, [opts.revision, cues, applyVisual]);
 
   // 骨架超时兜底：定期摘掉到点还没到货的占位，落到氛围底色而不是一直闪
+  const pendingTtl = pendingTtlMs(opts.assetsTtlMs);
   useEffect(() => {
     if (Object.keys(visual.pending).length === 0) return;
     const timer = setInterval(() => {
       const now = Date.now();
       setVisual((prev) => {
         const stale = Object.entries(prev.pending)
-          .filter(([, v]) => now - v.at >= PENDING_TTL_MS)
+          .filter(([, v]) => now - v.at >= pendingTtl)
           .map(([id]) => id);
         if (stale.length === 0) return prev;
         const pending = { ...prev.pending };
@@ -400,7 +413,7 @@ export function usePlayback(
       });
     }, 5000);
     return () => clearInterval(timer);
-  }, [visual.pending]);
+  }, [visual.pending, pendingTtl]);
 
   const settleAssets = useCallback((ids: string[]): void => {
     if (ids.length === 0) return;
