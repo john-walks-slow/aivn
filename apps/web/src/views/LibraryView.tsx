@@ -64,7 +64,7 @@ export function LibraryView() {
                 </span>
               </div>
               <p className="card-premise">
-                {play.premise.length > 90 ? `${play.premise.slice(0, 90)}…` : play.premise || "（premise 待补）"}
+                {play.premise.length > 90 ? `${play.premise.slice(0, 90)}…` : play.premise || "（故事前提待补）"}
               </p>
               <p className="muted small">
                 {missing.length > 0

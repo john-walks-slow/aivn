@@ -313,7 +313,10 @@ describe("工坊 prompt 与工具", () => {
       background: true,
       hasSession: false,
     });
-    expect(noPremise).toContain("未满足（缺 premise）");
+    // 说人话，不吐字段名：玩家与模型都该看到「缺故事前提」，而不是 `premise`
+    expect(noPremise).toContain("未满足（缺故事前提）");
+    expect(noPremise).toContain("memory/always/premise.md");
+    expect(noPremise).not.toContain("play.json 的 premise");
   });
 
   it("线程标题取首条消息前 20 字", () => {

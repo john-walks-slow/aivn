@@ -67,7 +67,7 @@ export function TitleView({ playId }: { playId: string }) {
       {detail && (
         <div className="title-body">
           <h1>{detail.play.title}</h1>
-          <p className="title-premise">{detail.premise || "（premise 待补）"}</p>
+          <p className="title-premise">{detail.premise || "（故事前提待补）"}</p>
           <p className="muted small">
             {detail.play.characters.map((c) => c.name).join(" · ") || "（无角色）"}
           </p>
