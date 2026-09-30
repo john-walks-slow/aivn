@@ -48,3 +48,8 @@ library/**/*.wav
 library/**/*.flac
 # Python 字节码
 __pycache__/
+
+# pi-mcp-adapter 的 legacy 项目配置（<cwd>/.pi/mcp.json）：canonical 位置是仓库根的
+# .mcp.json（两者都被读时 legacy 会被 shadow），且它存的是 exa 密钥明文——不进 git。
+# 密钥改从 api-vault 取，见 .mcp.json 里 `!` 前缀的命令式取值。
+.pi/
