@@ -40,8 +40,8 @@ function sceneLine(key: string, seq: number, text: string): ScriptLine {
   return line(key, seq, text, "scene");
 }
 
-describe("buildBeats 一拍一卡", () => {
-  it("beat_end 收束、换场景不切拍", () => {
+describe("buildBeats 一轮一卡", () => {
+  it("beat_end 收束、换场景不切轮", () => {
     const cards = buildBeats(
       view(
         [
@@ -49,7 +49,7 @@ describe("buildBeats 一拍一卡", () => {
           ["b", "scene", 4, undefined, true, { bg: "bg-rooftop" }],
           ["c", "say", 5, "第二句"],
           ["d", "beat_end"],
-          ["e", "say", 9, "下一拍"],
+          ["e", "say", 9, "下一轮"],
           ["f", "beat_end"],
         ],
         "f",
@@ -89,30 +89,30 @@ describe("buildBeats 一拍一卡", () => {
     expect(cards[2]!.isLeaf).toBe(true);
   });
 
-  it("分岔卡的后继卡从新行起算，不受前一拍的废弃尾巴影响", () => {
+  it("分岔卡的后继卡从新行起算，不受前一轮的废弃尾巴影响", () => {
     const cards = buildBeats(
       view(
         [
           ["a", "say", 1, "开场"],
           ["b", "beat_end"],
-          ["c", "say", 4, "原第二拍"],
+          ["c", "say", 4, "原第二轮"],
           ["d", "say", 8, "分岔点", false],
           ["e", "beat_end", undefined, undefined, false],
-          ["f", "say", 9, "新第二拍"],
+          ["f", "say", 9, "新第二轮"],
           ["g", "beat_end"],
         ],
         "g",
       ),
-      [line("l1", 1, "开场"), line("l2", 4, "原第二拍"), line("l3", 9, "新第二拍")],
+      [line("l1", 1, "开场"), line("l2", 4, "原第二轮"), line("l3", 9, "新第二轮")],
     );
     expect(cards.map((card) => [card.id, card.startSeq])).toEqual([
       ["a", 1],
       ["c", 4],
       ["f", 9],
     ]);
-    // 活动路径上的卡片摘要取该拍首行原文
+    // 活动路径上的卡片摘要取该轮首行原文
     expect(cards[0]!.preview).toBe("开场");
-    expect(cards[2]!.preview).toBe("新第二拍");
+    expect(cards[2]!.preview).toBe("新第二轮");
   });
 
   it("废弃分支的行已不在缓冲里 → 没有可回看目标", () => {
@@ -133,15 +133,15 @@ describe("buildBeats 一拍一卡", () => {
     expect(firstLineOf(cards[1]!, [line("l1", 1, "开场")])).toBeNull();
   });
 
-  it("重演出来的新拍挂在被重写的那一拍下（兄弟，不是无根新枝）", () => {
+  it("重演出来的新轮挂在被重写的那一轮下（兄弟，不是无根新枝）", () => {
     const cards = buildBeats(
       view(
         [
-          ["a", "say", 1, "第一拍"],
+          ["a", "say", 1, "第一轮"],
           ["b", "beat_end"],
-          ["c", "say", 4, "第二拍", false],
+          ["c", "say", 4, "第二轮", false],
           ["r", "fork", undefined, "重演"],
-          ["d", "say", 9, "第二拍·重演"],
+          ["d", "say", 9, "第二轮·重演"],
           ["e", "beat_end"],
         ],
         "e",
@@ -153,7 +153,7 @@ describe("buildBeats 一拍一卡", () => {
       ["c", "a"],
       ["d", "c"],
     ]);
-    expect(cards[1]!.isAbandoned).toBe(true); // 旧版那一拍作废，但新拍挂在它下面
+    expect(cards[1]!.isAbandoned).toBe(true); // 旧版那一轮作废，但新轮挂在它下面
     expect(cards[2]!.onPath).toBe(true);
   });
 

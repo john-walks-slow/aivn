@@ -27,14 +27,14 @@ export interface StageSocket {
   scene: string;
   names: Readonly<Record<string, string>>;
   stop: StopPayload | null;
-  isActEnd: boolean;
+  isNoStop: boolean;
   /** 事件缓冲代号（P6）：结构性操作后整段重放，播放层据此强制复位。 */
   epoch: number;
   /** 服务端 TTS 能力（hello.voice；false 时隐藏语音开关）。 */
   voiceAvailable: boolean;
   /** 当前周目档名（舞台顶部显示；换档经 hello 续接）。 */
   saveName: string | null;
-  /** 插一句的待注入队列（右上角面板）：空闲时立刻落笔，演出中先排队等这一拍收束。 */
+  /** 插一句的待注入队列（右上角面板）：空闲时立刻落笔，演出中先排队等这一轮收束。 */
   queue: readonly PromptQueueItem[];
   sendChoice: (index: number) => void;
   sendFree: (text: string) => void;
@@ -79,7 +79,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
   /** WS 连通性：节拍状态里的 "connecting" 兼作断线态，分不出首次连接与闪断，工坊要的是这个。 */
   const [connected, setConnected] = useState(false);
   const [stop, setStop] = useState<StopPayload | null>(null);
-  const [isActEnd, setActEnd] = useState(false);
+  const [isNoStop, setNoStop] = useState(false);
   const [names, setNames] = useState<Record<string, string>>({});
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const [epoch, setEpoch] = useState(0);
@@ -88,7 +88,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
   /** 本地缓冲所属代号：与服务端不一致说明缓冲已被结构性操作整段替换。 */
   const epochRef = useRef(0);
   const [tick, setTick] = useState(0); // lines/cues/scene 由 builder 持有，tick 触发重渲染
-  // 拍已收束 ≠ 可操作：模型那一轮收尾期间服务端仍 engaged，beat_settled 之后按钮才解禁
+  // 轮已收束 ≠ 可操作：模型那一轮收尾期间服务端仍 engaged，beat_settled 之后按钮才解禁
   const [settled, setSettled] = useState(false);
   const builderRef = useRef(new ScriptBuilder());
   const lastSeqRef = useRef(0);
@@ -152,7 +152,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
           case "beat_start":
             setSettled(false);
             setStop(null);
-            setActEnd(false);
+            setNoStop(false);
             setError(null);
             setState("streaming");
             handlersRef.current.onBeatStart?.();
@@ -180,7 +180,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
             return;
           case "beat_end":
             setStop(msg.stop ?? null);
-            setActEnd(msg.reason === "act_end");
+            setNoStop(msg.reason === "no_stop");
             setState("stopped");
             return;
           case "prompt_queue":
@@ -203,17 +203,19 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
               builderRef.current.apply(event, seq);
             }
             setStop(msg.stop ?? null);
-            setActEnd(msg.reason === "act_end");
-            // 重放即一条静止的现状：没有新事件在流，操作条应当立刻可用
-            setState("stopped");
-            setSettled(true);
+            setNoStop(msg.reason === "no_stop");
+            // 「重演这一轮」的重建后面紧跟着一轮新内容：此刻按终局处理会让舞台摆出
+            // 可点击播放的界面，而新的一轮一秒后才到——先摆等待态
+            const streaming = msg.resuming === true || (msg.reason !== "no_stop" && !msg.stop);
+            setState(streaming ? "streaming" : "stopped");
+            setSettled(!streaming);
             setError(null);
             setTick((t) => t + 1);
             handlersRef.current.onRebase?.({
               epoch: msg.epoch,
               ...(msg.note ? { note: msg.note } : {}),
-              // 停在新分支的停止点 = 等玩家继续；停在拍中 = 接下来还会有事件流
-              busy: msg.reason !== "act_end" && !msg.stop,
+              // 停在新分支的停止点 = 等玩家继续；停在轮中 = 接下来还会有事件流
+              busy: streaming,
             });
             return;
           }
@@ -288,7 +290,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
     scene: builderRef.current.scene,
     names,
     stop,
-    isActEnd,
+    isNoStop,
     epoch,
     voiceAvailable,
     saveName,

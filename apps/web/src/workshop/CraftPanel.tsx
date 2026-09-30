@@ -3,7 +3,7 @@ import { api } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 
 /**
- * 创作口径：剧作家每一拍怎么写都听这一份（memory/always/craft.md）。
+ * 创作口径：剧作家每一轮怎么写都听这一份（memory/always/craft.md）。
  * 与工坊对话改的是同一个文件——用户在这里手写，工坊 agent 也用 write_file 改它。
  */
 export function CraftPanel({ playId }: { playId: string }) {

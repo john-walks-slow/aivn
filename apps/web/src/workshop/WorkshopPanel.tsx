@@ -24,7 +24,7 @@ type WorkshopTab = "chat" | "assets" | "files" | "craft";
 
 /**
  * 工坊面板（D9）：meta-chat 多会话 + 剧目文件浏览编辑。
- * 与演出并行——工坊 agent 写盘只影响下一拍（服务端在拍边界重建 runtime）。
+ * 与演出并行——工坊 agent 写盘只影响下一轮（服务端在轮边界重建 runtime）。
  */
 export function WorkshopPanel({
   playId,

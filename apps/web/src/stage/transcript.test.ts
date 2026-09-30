@@ -52,7 +52,7 @@ describe("buildTranscript 会话记录", () => {
     expect(entries[1]).toMatchObject({ text: "我点点头", type: "say", actorId: "player", seq: null });
   });
 
-  it("分岔/拍边界这些结构节点都不进记录", () => {
+  it("分岔/轮边界这些结构节点都不进记录", () => {
     const entries = buildTranscript(
       view([
         ["n1", "say", 1, "……"],

@@ -18,7 +18,7 @@ export interface TranscriptEntry {
   nodeId: string | null;
 }
 
-/** 只有这三类算「会话里说过的话」；其余（场景/音效/CG/立绘/停止点/幕末/生图预发射）都是布景。 */
+/** 只有这三类算「会话里说过的话」；其余（场景/音效/CG/立绘/停止点/本轮收束/生图预发射）都是布景。 */
 const SPOKEN: ReadonlySet<LineageNodeView["kind"]> = new Set(["say", "narrate", "thought"]);
 
 /**
@@ -90,7 +90,7 @@ function fromView(view: LineageView, lines: readonly ScriptLine[]): TranscriptEn
 }
 
 /**
- * 谱系是按需拉取的，落后缓冲一两个节拍；把缓冲里还没进谱系的台词行补在末尾，
+ * 谱系是按需拉取的，落后缓冲一两个轮；把缓冲里还没进谱系的台词行补在末尾，
  * 否则「回顾」会缺最新一两句，而那正是玩家最想翻回去看的那几句。
  */
 function withFreshTail(entries: TranscriptEntry[], lines: readonly ScriptLine[]): TranscriptEntry[] {

@@ -61,7 +61,7 @@ function parseAttrs(source: string): Map<string, string> | null {
  *
  * - feed() 增量喂入 token 流，chunk 可在任意位置撕裂；
  * - endMessage() 消息边界：未完成标签丢弃，未闭合包裹标签自动闭合（保留已流出台词）；
- * - 解析到闭合 <stop> 后本节拍闸门开启，其后一切内容静默丢弃，直到 resetBeat()；
+ * - 解析到闭合 <stop> 后本轮闸门开启，其后一切内容静默丢弃，直到 resetBeat()；
  * - 未知标签按字面文本输出（不丢用户可见内容），残缺标签/属性才丢弃。
  */
 export class StageDslParser {

@@ -22,7 +22,7 @@ export interface ServerConfig {
   compactRatio: number;
   /** 纪元压缩保留的最近上下文（token 估算）：切尾点之后的原文留在对话体。 */
   keepRecentTokens: number;
-  /** 单拍超时（毫秒）：网关挂住时 provider 既不报错也不收流，到点 abort 这一拍。 */
+  /** 单轮超时（毫秒）：网关挂住时 provider 既不报错也不收流，到点 abort 这一轮。 */
   beatTimeoutMs: number;
   /** 生图管线（D6）：出图后端 + 预发射 + 媒体缓存。 */
   image: {
@@ -77,7 +77,7 @@ function parsePositiveInt(name: string, raw: string | undefined, fallback: numbe
   return n;
 }
 
-/** (0,1] 比例解析：越界阈值会让纪元压缩永不触发或每拍都触发，非法值回退默认并告警。 */
+/** (0,1] 比例解析：越界阈值会让纪元压缩永不触发或每轮都触发，非法值回退默认并告警。 */
 function parseRatio(name: string, raw: string | undefined, fallback: number): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0 || n > 1) {
@@ -118,8 +118,8 @@ export function loadConfig(
       env.STAGE_KEEP_RECENT_TOKENS,
       20000,
     ),
-    // 一拍 240s：一拍里有生图预发射和多轮记忆工具调用，60s 不够；再久就是网关挂了。
-    // 到点 abort 这一拍，按拍失败收束（空拍护栏给玩家重试入口），不是无声卡死。
+    // 一轮 240s：一轮里有生图预发射和多轮记忆工具调用，60s 不够；再久就是网关挂了。
+    // 到点 abort 这一轮，按轮失败收束（空轮护栏给玩家重试入口），不是无声卡死。
     beatTimeoutMs: parsePositiveInt("STAGE_BEAT_TIMEOUT_MS", env.STAGE_BEAT_TIMEOUT_MS, 240_000),
     image: {
       enabled: env.STAGE_IMAGE_ENABLED !== "false",
@@ -156,7 +156,7 @@ export function loadConfig(
       timeoutMs: parsePositiveInt("STAGE_EXA_TIMEOUT_MS", env.STAGE_EXA_TIMEOUT_MS, 20_000),
     },
   };
-  // 保留预算 ≥ 触发阈值：每拍都判定超标却永远切不出可压段，纪元压缩静默失效
+  // 保留预算 ≥ 触发阈值：每轮都判定超标却永远切不出可压段，纪元压缩静默失效
   if (config.keepRecentTokens >= config.contextWindow * config.compactRatio) {
     console.warn(
       `[stage-ai] STAGE_KEEP_RECENT_TOKENS（${config.keepRecentTokens}）≥ 触发阈值（${Math.floor(

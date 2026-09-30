@@ -150,8 +150,8 @@ type DslStop = Omit<StopPayload, "stopType"> & { stopType: StopType };
 
 /**
  * 谱系 stop 节点 → 停止点载荷。
- * 老档里的 `pause` 归一为 null：它当年是模型写的幕间「什么都不做就继续」，
- * 那种幕间现在由 `beat_end(act_end)` 承担（黑场 +「下一幕」），不是停止点。
+ * 老档里的 `pause` 归一为 null：它当年是模型写的「什么都不做就继续」，
+ * 那种收尾现在由 `beat_end(no_stop)` 承担（一个普通的「继续」），不是停止点。
  */
 export function stopFromNode(node: LineageNodeView): DslStop | null {
   const stopType = node.stopType ?? readLegacyStopType(node.attrs);

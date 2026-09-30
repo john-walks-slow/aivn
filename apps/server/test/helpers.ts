@@ -12,7 +12,7 @@ export interface FakeResponse {
   beatDone?: boolean;
   /** 额外工具调用（与 beat_done 同批：如 write_memory）。 */
   toolCalls?: { name: string; args: Record<string, unknown> }[];
-  /** 闸门：正文照发，但 done 押后到 gate 兑现——用来把某一拍卡在「演出中」。 */
+  /** 闸门：正文照发，但 done 押后到 gate 兑现——用来把某一轮卡在「演出中」。 */
   gate?: Promise<unknown>;
 }
 export const PLAY: PlayConfig = {

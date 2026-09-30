@@ -63,7 +63,7 @@ describe("行级事件与分支树", () => {
     expect(fork.kind).toBe("fork");
     expect(fork.parentId).toBe(say1.id);
     expect(tree.leafId).toBe(fork.id);
-    // 锚点本身留在链上（上一拍的选择因此保留、不重新问），它之后的内容不在了
+    // 锚点本身留在链上（上一轮的选择因此保留、不重新问），它之后的内容不在了
     expect(tree.ancestorChain(fork.id)).toContain(say1.id);
     expect(tree.ancestorChain(fork.id)).not.toContain(say2.id);
     // fork 是结构标记，物化剧本不占行

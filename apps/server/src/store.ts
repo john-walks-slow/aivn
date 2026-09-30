@@ -129,7 +129,7 @@ export class PlayStore {
 
   /**
    * 会话全量（beat 收束时写；谱系树 + 引擎状态 + 场景 + 编排器运行态 + 剧作家历史）。
-   * 顺带更新档元信息（拍数 / 最后一句），让周目列表不必读会话文件。
+   * 顺带更新档元信息（轮数 / 最后一句），让周目列表不必读会话文件。
    */
   async saveSession(
     tree: LineageTree,
@@ -154,7 +154,7 @@ export class PlayStore {
     await this.touchMeta(tree);
   }
 
-  /** 落盘后回写档元信息：拍数与最后一句沿当前路径算，与列表卡显示同源。 */
+  /** 落盘后回写档元信息：轮数与最后一句沿当前路径算，与列表卡显示同源。 */
   private async touchMeta(tree: LineageTree): Promise<void> {
     if (!this.saveId) return;
     const chain = tree.chainEvents(tree.leafId);
@@ -408,7 +408,7 @@ export class PlayLibrary {
           title,
           premise: "",
           characters: [],
-          opening: "（游戏开始，请演出第一幕的开幕）",
+          opening: "（游戏开始，请演出第一轮）",
           initialState: { turn: 0, affinity: {}, flags: {} },
           initialScene: "未定",
         },

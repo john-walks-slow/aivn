@@ -91,7 +91,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
     }
   });
 
-  it("玩家 choice → 第二拍 act_end（无 stop）", async () => {
+  it("玩家 choice → 第二轮 no_stop（无 stop）", async () => {
     const { orchestrator, messages, tree } = setup([
       { text: BEAT_1, beatDone: true },
       { text: BEAT_2, beatDone: true },
@@ -105,10 +105,10 @@ describe("PlaywrightOrchestrator 闭环", () => {
     expect(beatEnds).toHaveLength(2);
     const second = beatEnds[1]!;
     if (second.type === "beat_end") {
-      expect(second.reason).toBe("act_end");
+      expect(second.reason).toBe("no_stop");
       expect(second.stop).toBeUndefined();
     }
-    // 第二拍事件 seq 续接
+    // 第二轮事件 seq 续接
     const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
     expect(events.every((e) => e.seq > 0)).toBe(true);
     expect(orchestrator.lastSeq).toBeGreaterThan(seqAfterBeat1);
@@ -145,7 +145,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
     expect(orchestrator.isBusy).toBe(false);
   });
 
-  it("无效选项索引 → error 且不开新拍", async () => {
+  it("无效选项索引 → error 且不开新轮", async () => {
     const { orchestrator, messages } = setup([{ text: BEAT_1, beatDone: true }]);
     await orchestrator.playerAction({ kind: "free", text: "开局" });
     const beatStartsBefore = messages.filter((m) => m.type === "beat_start").length;
@@ -166,16 +166,16 @@ describe("PlaywrightOrchestrator 闭环", () => {
       { contexts },
     );
     await orchestrator.playerAction({ kind: "free", text: "开局" });
-    // 停在 choice 停止点（空闲态）：插一句直接开新拍，并声明玩家未作回应
+    // 停在 choice 停止点（空闲态）：插一句直接开新轮，并声明玩家未作回应
     await orchestrator.playerAction({
       kind: "prompt",
-      text: "下一拍让澪提到天文社",
+      text: "下一轮让澪提到天文社",
     });
 
     expect(tree.materialize().findLast((e) => e.kind === "prompt")?.payload?.input)
-      .toBe("下一拍让澪提到天文社");
+      .toBe("下一轮让澪提到天文社");
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(2);
-    expect(lastUserText(contexts)).toContain("【用户输入】\n下一拍让澪提到天文社");
+    expect(lastUserText(contexts)).toContain("【用户输入】\n下一轮让澪提到天文社");
     expect(lastUserText(contexts)).toContain("未作回应");
   });
 
@@ -207,7 +207,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
     }
   });
 
-  it("空拍护栏：零产出 → 显式 error + pause 重试入口，不静默伪装 act_end（P0）", async () => {
+  it("空轮护栏：零产出 → 显式 error + pause 重试入口，不静默伪装 no_stop（P0）", async () => {
     const { orchestrator, messages } = setup([{ text: "", beatDone: true }]);
     await orchestrator.playerAction({ kind: "free", text: "开局" });
 
@@ -217,13 +217,13 @@ describe("PlaywrightOrchestrator 闭环", () => {
     const beatEnd = lastBeatEnd(messages);
     expect(beatEnd.type).toBe("beat_end");
     if (beatEnd.type === "beat_end") {
-      // 这一拍没有自然收尾，不能拿幕末的「下一幕」冒充正常结束
+      // 这一轮没有自然收尾，不能拿幕末的「下一幕」冒充正常结束
       expect(beatEnd.reason).toBe("stop");
       expect(beatEnd.stop?.stopType).toBe("pause");
     }
   });
 
-  it("空拍护栏：provider 抛错（网关 429/断网）→ error 携带原因 + pause 可重试", async () => {
+  it("空轮护栏：provider 抛错（网关 429/断网）→ error 携带原因 + pause 可重试", async () => {
     const messages: ServerMessage[] = [];
     const orchestrator = new PlaywrightOrchestrator({
       streamFn: () => {
@@ -250,7 +250,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
       expect(beatEnd.reason).toBe("stop");
       expect(beatEnd.stop?.stopType).toBe("pause");
     }
-    // 玩家可经「继续」重开一拍
+    // 玩家可经「继续」重开一轮
     expect(orchestrator.isBusy).toBe(false);
   });
 
@@ -281,17 +281,17 @@ describe("PlaywrightOrchestrator 闭环", () => {
     const replay = restored.stoppedReplay;
     expect(replay?.type).toBe("beat_end");
     expect(replay?.stop?.stopType).toBe("choice");
-    // 续演走第二拍而非 opening（beat_start 仅直播；事件缓冲见第二拍舞台事件）
+    // 续演走第二轮而非 opening（beat_start 仅直播；事件缓冲见第二轮舞台事件）
     await restored.playerAction({ kind: "continue" });
     const seqAfter = restored.eventsAfter(total);
     expect(seqAfter.length).toBeGreaterThan(0);
     expect(seqAfter.some((e) => e.event.kind === "say_start")).toBe(true);
   });
 
-  it("幕末恢复：上一拍的停止点不复活（停在 act_end 就是黑场 + 下一幕）", async () => {
+  it("幕末恢复：上一轮的停止点不复活（停在 no_stop 就是黑场 + 下一幕）", async () => {
     const first = setup([{ text: BEAT_1, beatDone: true }, { text: BEAT_2, beatDone: true }]);
     await first.orchestrator.playerAction({ kind: "free", text: "我到了" });
-    // 第一拍 choice 停止点 → 第二拍 act_end（无 stop）
+    // 第一轮 choice 停止点 → 第二轮 no_stop（无 stop）
     await first.orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
 
     const restored = new PlaywrightOrchestrator({
@@ -311,12 +311,12 @@ describe("PlaywrightOrchestrator 闭环", () => {
     const replay = restored.stoppedReplay;
     expect(replay?.type).toBe("beat_end");
     if (replay?.type === "beat_end") {
-      expect(replay.reason).toBe("act_end");
+      expect(replay.reason).toBe("no_stop");
       expect(replay.stop).toBeUndefined();
     }
   });
 
-  it("网关挂住不把舞台拖死：到点中断这一拍，报错并交还空闲", async () => {
+  it("网关挂住不把舞台拖死：到点中断这一轮，报错并交还空闲", async () => {
     // 网关挂住的真实形态是「连接还在、流不来了」——provider 既不抛错也不收流，
     // 舞台会一直停在「剧作家正在落笔…」。这里用一个只在 abort 时才收束的流复现：
     // abort 之后真实 fetch 以 AbortError 结束，对外表现为一条带 errorMessage 的
@@ -359,7 +359,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
     expect(errors).toHaveLength(1);
     // 我们主动 abort 的，报错要说人话而不是把 AbortError 原样丢给玩家
     expect((errors[0] as { message: string }).message).toContain("没有动静");
-    // 收束后必须回到空闲：下一拍还能开，否则是卡死而不是超时
+    // 收束后必须回到空闲：下一轮还能开，否则是卡死而不是超时
     expect(orchestrator.runtimeState.beatNo).toBe(1);
   });
 });
@@ -468,7 +468,7 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
     const search = tools.find((t) => t.name === "search_archive")!;
 
     const hit = await search.execute("t1", { query: "旧约定" });
-    expect(textOf(hit)).toContain("第 1 拍");
+    expect(textOf(hit)).toContain("第 1 轮");
     expect(textOf(hit)).toContain("澪在走廊提到了旧约定");
     const miss = await search.execute("t2", { query: "完全无关的词" });
     expect(textOf(miss)).toContain("无命中");
@@ -498,13 +498,13 @@ describe("长会话装配", () => {
     // 轮尾 C 区：最新 user 消息含【状态】与【用户输入】
     expect(lastUserText(contexts)).toContain("【状态】");
     expect(lastUserText(contexts)).toContain("【用户输入】\n我第 30 次开口");
-    // 30 拍全部正常收束（无空拍护栏触发）
+    // 30 轮全部正常收束（无空轮护栏触发）
     expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(30);
     expect(messages.filter((m) => m.type === "error")).toEqual([]);
   });
 
-  it("演出中插一句：当前拍收敛 → 队列兑现 → 立即续写下一拍", async () => {
-    // 第一拍流挂起直到插一句到达：模拟「玩家在演出进行中插话」的真实时序
+  it("演出中插一句：当前轮收敛 → 队列兑现 → 立即续写下一轮", async () => {
+    // 第一轮流挂起直到插一句到达：模拟「玩家在演出进行中插话」的真实时序
     let releaseFirst = (): void => {};
     const gate = new Promise<void>((resolve) => (releaseFirst = resolve));
     const contexts: { messages: { role: string }[] }[] = [];
@@ -583,7 +583,7 @@ describe("长会话装配", () => {
     });
 
     const first = orchestrator.playerAction({ kind: "free", text: "我到了" });
-    while (call === 0) await new Promise((resolve) => setTimeout(resolve, 0)); // 等第一拍开流
+    while (call === 0) await new Promise((resolve) => setTimeout(resolve, 0)); // 等第一轮开流
     await orchestrator.playerAction({ kind: "prompt", text: "节奏加快一点" }); // busy → 进队列
     const queued = messages.filter((m) => m.type === "prompt_queue").at(-1);
     expect(queued?.type === "prompt_queue" && queued.items[0]).toMatchObject({
@@ -593,14 +593,14 @@ describe("长会话装配", () => {
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1); // 还没兑现
 
     releaseFirst();
-    await first; // 拍 1 收敛
-    await orchestrator.whenIdle(); // 队列在收束后异步兑现，等它开完拍
+    await first; // 轮 1 收敛
+    await orchestrator.whenIdle(); // 队列在收束后异步兑现，等它开完轮
 
     expect(messages.filter((m) => m.type === "error")).toEqual([]);
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(2);
     expect(call).toBe(2);
     expect(lastUserText(contexts)).toContain("【用户输入】\n节奏加快一点");
-    // 插话时拍一还在演，等到它落幕才呈现出一个选择点：玩家没点选项就说了别的，按未作回应处理
+    // 插话时轮一还在演，等到它落幕才呈现出一个选择点：玩家没点选项就说了别的，按未作回应处理
     expect(lastUserText(contexts)).toContain("未作回应");
     // 兑现完就把队列清空：面板标题写的是「接下来要说的话」，没有下一句就不该还挂着
     const settledQueue = messages.filter((m) => m.type === "prompt_queue").at(-1);
@@ -647,7 +647,7 @@ describe("长会话装配", () => {
     expect(JSON.stringify(lastUser)).toContain("场景细节：黄昏，教室只剩两人");
   });
 
-  it("记忆工具轮次不撕裂节拍：先查记忆→再写剧本→beat_done 仍是同一拍", async () => {
+  it("记忆工具轮次不撕裂轮：先查记忆→再写剧本→beat_done 仍是同一轮", async () => {
     // 真实高频路径：模型先 read_memory_detail / search_archive 拿资料，再续写剧本
     const { orchestrator, messages } = setup(
       [
@@ -666,7 +666,7 @@ describe("长会话装配", () => {
 
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
 
-    // 三个 turn 仍属于一拍：只开一次拍、只收一次束、无空拍护栏
+    // 三个 turn 仍属于一轮：只开一次轮、只收一次束、无空轮护栏
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1);
     expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(1);
     expect(messages.filter((m) => m.type === "error")).toEqual([]);
@@ -674,7 +674,7 @@ describe("长会话装配", () => {
     if (beatEnd.type === "beat_end") expect(beatEnd.stop?.stopType).toBe("choice");
   });
 
-  it("只调记忆工具就结束（零剧本产出）→ 空拍护栏显式报错、给 pause 重试入口", async () => {
+  it("只调记忆工具就结束（零剧本产出）→ 空轮护栏显式报错、给 pause 重试入口", async () => {
     const { orchestrator, messages } = setup(
       [
         {
@@ -711,7 +711,7 @@ describe("长会话装配", () => {
     ]);
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
 
-    // 只演出一拍：同批调用没有让节拍继续空转
+    // 只演出一轮：同批调用没有让轮继续空转
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1);
     expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(1);
     expect(orchestrator.isBusy).toBe(false);

@@ -341,14 +341,14 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
     name: "list_saves",
     label: "列出周目",
     description:
-      "列出这部剧目的全部周目（存档）及其 id、名称、拍数、最后一句。要读故事树时先用它拿 saveId。",
+      "列出这部剧目的全部周目（存档）及其 id、名称、轮数、最后一句。要读故事树时先用它拿 saveId。",
     parameters: emptyParams,
     execute: async () => {
       const list = await deps.saves.list();
       if (list.length === 0) return textResult("（还没有任何周目）");
       return textResult(
         list
-          .map((s) => `${s.id}\t${s.name}${s.current ? "（当前活动档）" : ""}\t${s.beats} 拍\t最后：${s.preview || "（无）"}`)
+          .map((s) => `${s.id}\t${s.name}${s.current ? "（当前活动档）" : ""}\t${s.beats} 轮\t最后：${s.preview || "（无）"}`)
           .join("\n"),
       );
     },
@@ -565,7 +565,7 @@ const LINEAGE_KIND_LABEL: Record<string, string> = {
   stop: "停止点",
   player: "玩家表态",
   ooc: "导演注",
-  beat_end: "幕末",
+  beat_end: "本轮收束",
   edit: "改写行",
   rewrite: "重写请求",
 };
@@ -682,7 +682,7 @@ ${ctx.canBrowseLibrary ? libraryGuide : ""}
 # 剧目写作要点
 
 - premise：3~6 句，交代世界、主角处境、核心张力；不要写成大纲列表。
-- 创作口径（memory/always/craft.md）：剧作家每一拍怎么写台词都听这一份——节奏多密、情绪怎么落地、
+- 创作口径（memory/always/craft.md）：剧作家每一轮怎么写台词都听这一份——节奏多密、情绪怎么落地、
   有什么禁忌。用户说「节奏太快」「别让角色太主动」这类创作口味要求，就改这里（只改风格条目，
   不要往里写 DSL 格式或工具用法，那些由引擎保证）。
 - 角色卡：id 用英文小写（如 mio），name 是中文名，persona 写具体的人（年龄/关系/说话方式/在意的点）；
@@ -702,7 +702,7 @@ ${ctx.canSearch ? searchGuide : ""}
 - read_lineage 默认只返回**当前分支路径**上的节点；用户问「有没有走过的另一条线」才加 allBranches=true。
 - 节点很多时按 offset 翻页（默认 60 条一页），别指望一次读完。
 - 节点 id 是操作故事树的凭据，回复用户时带上 id，他才能去「路线」视图里定位。
-- 树是行级事件日志：say 是台词、narrate 旁白、thought 心理、player 玩家表态、stop 停止点、beat_end 幕末。
+- 树是行级事件日志：say 是台词、narrate 旁白、thought 心理、player 玩家表态、stop 停止点、beat_end 本轮收束。
   统计「某角色说了几句」就是数 say 节点。
 
 # 当前状态

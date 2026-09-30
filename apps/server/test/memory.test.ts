@@ -57,11 +57,11 @@ describe("PlayMemory", () => {
     // 树：e1 → e2（分支 A）→ e3；e1 → e4（分支 B）→ e5
     const tree = new LineageTree();
     const e1 = tree.append("scene", { payload: { attrs: { bg: "a" } } });
-    const e2 = tree.append("say", { text: "分支A第一拍" });
-    const e3 = tree.append("say", { text: "分支A第二拍" });
+    const e2 = tree.append("say", { text: "分支A第一轮" });
+    const e3 = tree.append("say", { text: "分支A第二轮" });
     tree.jumpTo(e1.id);
-    const e4 = tree.append("say", { text: "分支B第一拍" });
-    const e5 = tree.append("say", { text: "分支B第二拍" });
+    const e4 = tree.append("say", { text: "分支B第一轮" });
+    const e5 = tree.append("say", { text: "分支B第二轮" });
 
     const memory = new PlayMemory({
       slices: [
@@ -84,17 +84,17 @@ describe("PlayMemory", () => {
   it("appendArchive：追加后可检索；空切片跳过", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stage-memory-archive-"));
     const archiveFile = join(dir, "memory", "archive", "events.jsonl");
-    const memory = new PlayMemory({ archiveFile, slices: [slice("e1", 1, "第一拍内容")] });
+    const memory = new PlayMemory({ archiveFile, slices: [slice("e1", 1, "第一轮内容")] });
 
-    await memory.appendArchive(slice("e2", 2, "第二拍：告白发生了"));
+    await memory.appendArchive(slice("e2", 2, "第二轮：告白发生了"));
     await memory.appendArchive(slice("e3", 3, "  ")); // 空白摘要 → 不落盘
 
     // 重载：两行 JSONL（e1 预置 + e2 追加；e3 被跳过）
     const reloaded = await PlayMemory.load(new PlayStore(dir));
     expect(reloaded.searchArchive("告白", new Set(["e2"]))).toHaveLength(1);
     // e1 只在内存预置、未落盘；e3 空白摘要被跳过 → 文件仅 e2 一行
-    expect(reloaded.searchArchive("第一拍", new Set(["e1"]))).toHaveLength(0);
-    expect(reloaded.searchArchive("第二拍", new Set(["e9"]))).toHaveLength(0);
+    expect(reloaded.searchArchive("第一轮", new Set(["e1"]))).toHaveLength(0);
+    expect(reloaded.searchArchive("第二轮", new Set(["e9"]))).toHaveLength(0);
   });
 
   it("archiveFile=null：纯内存检索，不落盘也不报错", async () => {

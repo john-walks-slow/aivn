@@ -50,7 +50,7 @@ function strip(asset: Asset): GeneratedAsset {
 
 export class ImageAssets {
   private readonly byId = new Map<string, Asset>();
-  /** 同一 id 的在飞请求去重：preload 与引用它的 cg/scene 常在几拍内先后到达。 */
+  /** 同一 id 的在飞请求去重：preload 与引用它的 cg/scene 常在几轮内先后到达。 */
   private readonly inflight = new Map<string, Promise<GeneratedAsset>>();
   /** 同一张图（内容指纹）的在飞生成：不同 id 共用同描述时只出一次图。 */
   private readonly generating = new Map<string, Promise<void>>();
@@ -98,7 +98,7 @@ export class ImageAssets {
 
   /**
    * 预发射：命中即同步返回，未命中则后台生成（不阻塞演出）。
-   * 同 id 已在飞则挂同一 Promise——同拍内重复 preload 不重复烧配额。
+   * 同 id 已在飞则挂同一 Promise——同轮内重复 preload 不重复烧配额。
    */
   preload(type: "bg" | "cg", prompt: string, id: string): Promise<GeneratedAsset> {
     const cached = this.byId.get(id);

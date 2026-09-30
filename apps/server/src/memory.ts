@@ -119,7 +119,7 @@ export class PlayMemory {
     return hits;
   }
 
-  /** 逐节拍事件切片追加（finishBeat 调用；JSONL append-only）。 */
+  /** 逐轮事件切片追加（finishBeat 调用；JSONL append-only）。 */
   async appendArchive(slice: ArchiveSlice): Promise<void> {
     if (slice.summary.trim() === "") return;
     this.slices.push(slice);
@@ -163,7 +163,7 @@ export interface IndexCard {
   file: string;
 }
 
-/** archive 逐节拍事件切片（entryId = 收束时谱系叶，防剧透过滤键）。 */
+/** archive 逐轮事件切片（entryId = 收束时谱系叶，防剧透过滤键）。 */
 export interface ArchiveSlice {
   entryId: string;
   turn: number;

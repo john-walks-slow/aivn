@@ -31,7 +31,7 @@ export function StageScreen({ playId }: { playId: string }) {
   const [view, setView] = useState<StageView>("stage");
   /** P6 缓冲换代：token 变化 = 事件缓冲被整段重放；resume 决定快进还是继续流式。 */
   const [rebase, setRebase] = useState({ token: 0, resume: true });
-  /** 谱系代次：每拍、结构操作后自增，把最新的树拉回来。 */
+  /** 谱系代次：每轮、结构操作后自增，把最新的树拉回来。 */
   const [lineageNonce, setLineageNonce] = useState(0);
   const [workshop, setWorkshop] = useState<WorkshopMode | null>(null);
   /** 操作条常驻：舞台上有几个能点的键，藏起来等于让玩家猜。H 手动收起做沉浸模式，仅此一种隐藏途径。 */
@@ -43,7 +43,7 @@ export function StageScreen({ playId }: { playId: string }) {
   const generated = useGeneratedAssets();
   // 生图回调要在 socket 建连时就能摸到 playback，但 playback 声明在后面
   const playbackRef = useRef<ReturnType<typeof usePlayback> | null>(null);
-  // 谱系只在这两个导演视图里拉取（打开/操作后/手动刷新），不做每拍广播
+  // 谱系只在这两个导演视图里拉取（打开/操作后/手动刷新），不做每轮广播
   const lineage = useLineage(playId, lineageNonce);
   // 工坊下行消息的订阅表：面板挂载时登记，卸载时注销（与舞台状态机解耦）
   const workshopHandlers = useRef(new Set<(msg: WorkshopInbound) => void>());
@@ -59,7 +59,7 @@ export function StageScreen({ playId }: { playId: string }) {
     onAudio: (ready) => director.handleAudio(ready),
     onBeatStart: () => {
       director.beatStarted();
-      setLineageNonce((n) => n + 1); // 上一拍的玩家表态进谱系了，选肢的「已选过」要跟上
+      setLineageNonce((n) => n + 1); // 上一轮的玩家表态进谱系了，选肢的「已选过」要跟上
     },
     onReset: () => director.reset(),
     // 原地改写：缓冲已就地换字，谱系刷新把剧本/路线的标签换成新文本
@@ -131,7 +131,7 @@ export function StageScreen({ playId }: { playId: string }) {
     stage.lines,
   ]);
 
-  // 拍是谱系行级日志上的区间，跟舞台行用同一个 seq 对尺：任意一行反查回它的拍与台词节点，
+  // 轮是谱系行级日志上的区间，跟舞台行用同一个 seq 对尺：任意一行反查回它的轮与台词节点，
   // 四原语就有着落点——不用跳到别的视图去找「刚才那一句」。
   const cards = useMemo(() => (lineage.view ? buildBeats(lineage.view, stage.lines) : []), [
     lineage.view,
@@ -154,13 +154,13 @@ export function StageScreen({ playId }: { playId: string }) {
   });
   playbackRef.current = playback;
 
-  // 拍收束后还要等编排器真正空闲（beat_settled），否则玩家点选项会被「演出进行中」挡回
+  // 轮收束后还要等编排器真正空闲（beat_settled），否则玩家点选项会被「演出进行中」挡回
   const busy = stage.state === "streaming" || stage.state === "connecting" || !stage.settled;
   // D4：先演完再交互——打字机未消费完前不露出停止点（防剧透/防提前发送）
   const lineDone = playback.current === null || playback.shownLength >= playback.current.text.length;
   const panelReady = !busy && playback.exhausted && lineDone;
 
-  // 「继续」不再单列按钮：等新内容时（pause 停止点）点舞台即开新拍，生成中沿用同一套 pending 反馈。
+  // 「继续」不再单列按钮：等新内容时（pause 停止点）点舞台即开新轮，生成中沿用同一套 pending 反馈。
   const canContinue = panelReady && stage.stop?.stopType === "pause";
   const continued = useRef(false);
   useEffect(() => {
@@ -186,7 +186,7 @@ export function StageScreen({ playId }: { playId: string }) {
   }, [view, workshop]);
 
   // 谱系定期拉取：路线视图开着时看得到直播的树；舞台停在停止点上也拉——
-  // 此刻这一拍的事件才刚落库，导演栏的锚点要指得准。
+  // 此刻这一轮的事件才刚落库，导演栏的锚点要指得准。
   const { reload: reloadLineage } = lineage;
   useEffect(() => {
     if (view === "stage" && !panelReady) return;
@@ -194,7 +194,7 @@ export function StageScreen({ playId }: { playId: string }) {
     return () => clearInterval(timer);
   }, [view, panelReady, reloadLineage]);
 
-  // 拍是谱系行级日志上的区间，跟舞台行用同一个 seq 对尺：当前显示行反查回它的拍与台词节点，
+  // 轮是谱系行级日志上的区间，跟舞台行用同一个 seq 对尺：当前显示行反查回它的轮与台词节点，
   // 四原语就有着落点——不用跳到别的视图去找「刚才那一句」。
   const targets: DirectorTargets = useMemo(() => {
     const line = playback.view;
@@ -206,7 +206,7 @@ export function StageScreen({ playId }: { playId: string }) {
     };
   }, [cards, lineage.view, playback.view]);
 
-  /** 回顾里每条自己落在哪一拍：玩家发来的话没有拍，工具栏上的重来就置灰。 */
+  /** 回顾里每条自己落在哪一轮：玩家发来的话没有轮，工具栏上的重来就置灰。 */
   const beatFor = useCallback(
     (entry: TranscriptEntry): string | null =>
       lineage.view ? (beatAtLine(cards, entry)?.id ?? null) : null,
@@ -267,7 +267,7 @@ export function StageScreen({ playId }: { playId: string }) {
               panelReady ? (
                 <StopPanel
                   stop={stage.stop}
-                  isActEnd={stage.isActEnd}
+                  isNoStop={stage.isNoStop}
                   disabled={busy}
                   seenChoices={seenChoices}
                   onChoice={stage.sendChoice}

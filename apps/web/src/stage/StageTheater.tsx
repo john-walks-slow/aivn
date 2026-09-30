@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { emptyDialogHint } from "./playbackState.js";
 import { actorName } from "./script.js";
 import type { Playback, VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
@@ -17,13 +18,13 @@ interface StageTheaterProps {
   index: AssetIndex;
   /** 服务端 TTS 能力（false 时隐藏语音相关的一切）。 */
   voiceAvailable: boolean;
-  /** 结构性操作会腰斩正在演的这一幕，busy 时 ✎/↺ 置灰（插一句仍可用，它排进待注入队列）。 */
+  /** 结构性操作会腰斩正在演的这一轮，busy 时 ✎/↺ 置灰（插一句仍可用，它排进待注入队列）。 */
   busy: boolean;
   /** 操作条可见性（H 键手动收起做沉浸模式，仅此一种隐藏途径）。 */
   chrome: boolean;
-  /** 由当前显示行 seq 反查出的锚点：编辑绑行，重来绑整幕。 */
+  /** 由当前显示行 seq 反查出的锚点：编辑绑行，重来绑整轮。 */
   targets: DirectorTargets;
-  /** 插一句：唯一的输入通道。空闲时立刻开新拍，演出中排进待注入队列。 */
+  /** 插一句：唯一的输入通道。空闲时立刻开新轮，演出中排进待注入队列。 */
   onPrompt: (text: string) => void;
   onEdit: (nodeId: string, text: string) => void;
   onFork: (nodeId: string, opts?: { resume?: boolean }) => void;
@@ -31,14 +32,14 @@ interface StageTheaterProps {
   hasVoice: (seq: number | null) => boolean;
   onUnlock: () => void;
   onView: (view: StageView) => void;
-  /** 点舞台即开新拍：等到内容演完且存在 pause 停止点时成立（不再单列「继续」按钮）。 */
+  /** 点舞台即开新轮：等到内容演完且存在 pause 停止点时成立（不再单列「继续」按钮）。 */
   canContinue: boolean;
   onContinue: () => void;
   /** 操作条可见性控制：碰到舞台叫它回来，H 键手动切换。 */
   onChrome: (next: boolean) => void;
   /** 快进档：按住 Ctrl 期间为 true，松开/失焦回 false。 */
   onTurbo: (on: boolean) => void;
-  /** 舞台层浮层：停止点的选肢卡片、入戏输入、幕末黑场（均在台词条之上层级）。 */
+  /** 舞台层浮层：停止点的选肢卡片、入戏输入、无停止点收尾（均在台词条之上层级）。 */
   overlay?: ReactNode;
 }
 
@@ -210,7 +211,7 @@ export function StageTheater({
   }, [onTurbo]);
 
   /**
-   * 舞台点击：回看中 → 往回追一句；等新内容时（pause 停止点）→ 直接开新拍。
+   * 舞台点击：回看中 → 往回追一句；等新内容时（pause 停止点）→ 直接开新轮。
    * 「继续」不再单列按钮，翻下一句和继续演是同一个动作。
    */
   const onStageClick = (): void => {
@@ -282,7 +283,7 @@ export function StageTheater({
     }
     if (action === "restart" && targets.beatId) {
       onFork(targets.beatId, { resume: true });
-      // 填了就当「插一句」紧跟着落进重演的那一拍里；留空就是纯粹重演。
+      // 填了就当「插一句」紧跟着落进重演的那一轮里；留空就是纯粹重演。
       if (text) onPrompt(text);
     }
   };
@@ -336,7 +337,7 @@ export function StageTheater({
         )}
         <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
           {shown ||
-            (view ? "" : live && exhausted ? "剧作家正在落笔…" : "（点击开始）")}
+            (view ? "" : emptyDialogHint(live))}
           {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
         </p>
         {/* 导演栏：四个原语 + 重听/自动，全在对话界面内就地完成，不跳视图 */}
@@ -388,7 +389,7 @@ export function StageTheater({
             <button
               type="button"
               className={`dir-btn ${action === "restart" ? "on" : ""}`}
-              title={busy ? "剧作家正在写，暂时不能重来" : "这一幕重新来一次（会分岔）"}
+              title={busy ? "剧作家正在写，暂时不能重来" : "重演这一轮（会分岔）"}
               disabled={busy || !targets.beatId}
               onClick={(e) => {
                 e.stopPropagation();
@@ -435,7 +436,7 @@ export function StageTheater({
             <div className="director-hint">
               {action === "prompt" && "可以是某个角色的行动或台词，也可以是给这场戏的指示"}
               {action === "edit" && "就地改这一句，改完接着演，不重演"}
-              {action === "restart" && "留空 = 只重来这一幕；填了 = 连意图一起给"}
+              {action === "restart" && "留空 = 只重演这一轮；填了 = 连意图一起给"}
             </div>
             <div className="director-input">
               {action === "prompt" && (
@@ -481,8 +482,8 @@ export function StageTheater({
                   ? "改写"
                   : action === "restart"
                     ? draft.trim()
-                      ? "重来这一幕 · 带着这句"
-                      : "重来这一幕"
+                      ? "重演这一轮 · 带着这句"
+                      : "重演这一轮"
                     : "插一句"}
               </button>
               <button type="button" className="ghost-btn" onClick={() => setAction(null)}>
@@ -530,7 +531,7 @@ export function BacklogView({
   busy: boolean;
   voiceAvailable: boolean;
   hasVoice: (seq: number | null) => boolean;
-  /** 这一条落在哪一拍（重来的锚点）；玩家自己发来的话没有拍，返 null。 */
+  /** 这一条落在哪一轮（重来的锚点）；玩家自己发来的话没有轮，返 null。 */
   beatFor: (entry: TranscriptEntry) => string | null;
   onSeek: (key: string) => void;
   onReplay: (seq: number) => void;
@@ -671,7 +672,7 @@ export function BacklogView({
                     <button
                       type="button"
                       className="bl-tool"
-                      title={busy ? "剧作家正在写，暂时不能重来" : "这一幕重新来一次（会分岔）"}
+                      title={busy ? "剧作家正在写，暂时不能重来" : "重演这一轮（会分岔）"}
                       disabled={busy || !beat}
                       onClick={() => beat && onFork(beat, { resume: true })}
                     >
@@ -699,9 +700,9 @@ const HISTORY_KIND: Record<HistoryEntry["role"], { label: string; cls: string }>
 };
 
 /**
- * 剧作家原始历史：活动周目最近若干拍的 session 快照（REST 只读，不建 runtime、不改状态）。
+ * 剧作家原始历史：活动周目最近若干轮的 session 快照（REST 只读，不建 runtime、不改状态）。
  * 与回顾互补——回顾只给解析后的台词与选肢，这里给写出来之前的原文：注入上下文、
- * 思考、未经解析的原始 DSL、工具调用。空表不是错误：还没落盘（读盘落后一拍）
+ * 思考、未经解析的原始 DSL、工具调用。空表不是错误：还没落盘（读盘落后一轮）
  * 或纪元压缩前没有留存。标题条由外层 BacklogView 统一给，这里只出内容。
  */
 function HistoryView({ playId, nonce }: { playId: string; nonce: number }) {
@@ -749,7 +750,7 @@ function HistoryView({ playId, nonce }: { playId: string; nonce: number }) {
               })}
             </section>
           ))}
-          <p className="muted hx-foot">只读快照，落盘比当前拍慢一步——要最新的按标题条的「刷新」。</p>
+          <p className="muted hx-foot">只读快照，落盘比当前轮慢一步——要最新的按标题条的「刷新」。</p>
         </>
       )}
     </div>

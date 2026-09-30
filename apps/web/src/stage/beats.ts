@@ -1,38 +1,38 @@
 import type { LineageNodeView, LineageView, StopType } from "@stage-ai/core";
 import type { ScriptLine } from "./script.js";
 
-/** 分岔来源：这张卡是被重演的那一拍顶出来的，父卡 id + 它当时的拍号。 */
+/** 分岔来源：这张卡是被重演的那一轮顶出来的，父卡 id + 它当时的轮号。 */
 export interface ForkOrigin {
   nodeId: string;
   turn: number;
 }
 
-/** 一拍一卡：拍不是存储实体，是行级事件日志上的区间，渲染期聚合出来。 */
+/** 一轮一卡：轮不是存储实体，是行级事件日志上的区间，渲染期聚合出来。 */
 export interface BeatCard {
-  /** 代表事件 id = 该拍首个事件 id（分岔/重来锚点用它）。 */
+  /** 代表事件 id = 该轮首个事件 id（分岔/重来锚点用它）。 */
   id: string;
   turn: number;
   nodes: LineageNodeView[];
-  /** 摘要：拍内首句台词/narration，≤32 字。整拍只有布景就是空串。 */
+  /** 摘要：轮内首句台词/narration，≤32 字。整轮只有布景就是空串。 */
   preview: string;
   speakers: string[];
-  /** 这一拍落笔的墙上时刻（毫秒）：卡上给玩家看的是时间，不是拍号。 */
+  /** 这一轮落笔的墙上时刻（毫秒）：卡上给玩家看的是时间，不是轮号。 */
   at: number;
   sceneBg: string | null;
   stopType: StopType | null;
-  /** 本拍首个剧本事件的 seq：回看/定位到该拍首行。全无 seq（老档/纯插一句拍）时为 null。 */
+  /** 本轮首个剧本事件的 seq：回看/定位到该轮首行。全无 seq（老档/纯插一句轮）时为 null。 */
   startSeq: number | null;
   onPath: boolean;
   isLeaf: boolean;
   isAbandoned: boolean;
   depth: number;
   parentId: string | null;
-  /** 承接哪一个 fork 标记长出来的；不是分岔重演出来的拍为 null。 */
+  /** 承接哪一个 fork 标记长出来的；不是分岔重演出来的轮为 null。 */
   forkedFrom: ForkOrigin | null;
 }
 
 /**
- * 切拍规则：换场景不切；分岔口、fork 标记之后、beat_end 之后各开新拍。
+ * 切轮规则：换场景不切；分岔口、fork 标记之后、beat_end 之后各开新轮。
  * 定位用每个剧本事件自带的 seq（编排器写入 payload.seq，与客户端 ScriptLine.seq 同尺），
  * 所以分岔/废弃分支的卡片也能各自对到自己的那一行。
  */
@@ -45,11 +45,11 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
   let closed = true;
   // 链上前一个进卡的事件（preload/fork 也在链上，比对分岔口时不能拿它们当邻居）
   let prevInChain: string | null = null;
-  // 最近的 fork 标记：下一个开出来的卡就是被重演的那一拍顶出来的
+  // 最近的 fork 标记：下一个开出来的卡就是被重演的那一轮顶出来的
   let pendingFork: LineageNodeView | null = null;
 
   for (const node of ordered) {
-    // fork 是世界线断裂标记不是剧情：挂回被分岔的那张卡，新拍是它的兄弟，不是无根的新枝
+    // fork 是世界线断裂标记不是剧情：挂回被分岔的那张卡，新轮是它的兄弟，不是无根的新枝
     if (node.kind === "preload") {
       prevInChain = node.id;
       continue;
@@ -62,11 +62,11 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
       continue;
     }
 
-    // 拍内事件逐个直挂上一个；一旦挂回更早的祖先，就是分岔口，开新卡
+    // 轮内事件逐个直挂上一个；一旦挂回更早的祖先，就是分岔口，开新卡
     const atFork = prevInChain !== null && node.parentId !== prevInChain;
     if (!current || closed || atFork) {
       const parent = atFork ? cardOfNode.get(node.parentId ?? "") ?? null : current;
-      // fork 标记的父就是被分岔的那个节点（拍首），从那儿继承拍号做徽标文案
+      // fork 标记的父就是被分岔的那个节点（轮首），从那儿继承轮号做徽标文案
       const anchor = pendingFork?.parentId ? byId.get(pendingFork.parentId) ?? null : null;
       current = newCard(node, parent, pendingFork && anchor ? { nodeId: anchor.id, turn: anchor.turn } : null);
       pendingFork = null;
@@ -79,7 +79,7 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
     if (node.kind === "beat_end") closed = true;
   }
 
-  // 场景是持续状态：换了一次就一直有效到下一次换。拍里没有 scene 事件的，继承上一拍的景。
+  // 场景是持续状态：换了一次就一直有效到下一次换。轮里没有 scene 事件的，继承上一轮的景。
   let currentBg: string | null = null;
   for (const card of cards) {
     card.onPath = card.nodes.some((n) => n.onPath);
@@ -92,7 +92,7 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
   const leafCard = cards.find((card) => card.nodes.some((n) => n.id === view.leafId));
   if (leafCard) leafCard.isLeaf = true;
 
-  // 活动路径上的卡片：摘要取本拍的第一句台词（场景/音效行只是布景，不配当摘要）。
+  // 活动路径上的卡片：摘要取本轮的第一句台词（场景/音效行只是布景，不配当摘要）。
   // 找不着就留着 collect() 从树上取的正文——行缓冲只覆盖不擦除。
   for (const [card, text] of beatPreviews(cards, lines)) {
     if (text) setPreview(card, text);
@@ -101,8 +101,8 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
 }
 
 /**
- * 活动路径卡片 → 这一拍该显示的摘要。废弃分支的行不在缓冲里；本拍只有布景的卡
- * 也不能去认下一拍的行，否则摘要会指到别人家门口。取不到就交回空串（调用方保留树上的正文）。
+ * 活动路径卡片 → 这一轮该显示的摘要。废弃分支的行不在缓冲里；本轮只有布景的卡
+ * 也不能去认下一轮的行，否则摘要会指到别人家门口。取不到就交回空串（调用方保留树上的正文）。
  */
 function beatPreviews(
   cards: readonly BeatCard[],
@@ -123,8 +123,8 @@ function beatPreviews(
 const SPOKEN = new Set<ScriptLine["type"]>(["say", "narrate", "thought"]);
 
 /**
- * 摘要取本拍的第一句台词：锚点行自己就是台词就直接用；锚点是布景行就往后找本拍内的
- * 第一句，越不过下一拍的起点。整拍只有控制指令就返回空串（卡上显示「（无台词）」）——
+ * 摘要取本轮的第一句台词：锚点行自己就是台词就直接用；锚点是布景行就往后找本轮内的
+ * 第一句，越不过下一轮的起点。整轮只有控制指令就返回空串（卡上显示「（无台词）」）——
  * 控制指令不端给玩家。
  */
 function spokenText(anchor: ScriptLine, lines: readonly ScriptLine[], until: number | null): string {
@@ -141,8 +141,8 @@ function spokenText(anchor: ScriptLine, lines: readonly ScriptLine[], until: num
 }
 
 /**
- * 该拍在世界线上的首行；废弃分支的行已不在缓冲里，定位不到就是 null。
- * `until` 是下一拍的起点：越过它就说明本拍根本没台词。
+ * 该轮在世界线上的首行；废弃分支的行已不在缓冲里，定位不到就是 null。
+ * `until` 是下一轮的起点：越过它就说明本轮根本没台词。
  */
 export function firstLineOf(
   card: BeatCard,
@@ -162,8 +162,8 @@ export function firstLineOf(
 const EDITABLE = new Set<LineageNodeView["kind"]>(["say", "narrate", "thought"]);
 
 /**
- * 舞台上正在显示的那一行落在哪一拍——导演原语的锚点。
- * 舞台缓冲里只有当前分支的行，所以只在 onPath 的卡里找；纯布景拍没有 seq，定位不到就是 null。
+ * 舞台上正在显示的那一行落在哪一轮——导演原语的锚点。
+ * 舞台缓冲里只有当前分支的行，所以只在 onPath 的卡里找；纯布景轮没有 seq，定位不到就是 null。
  * 回看游标可能停在玩家发来的那句话上（它没有 seq），同样定位不到——原语按钮就该是灰的。
  */
 export function beatAtLine(
@@ -228,7 +228,7 @@ function setPreview(card: BeatCard, text: string): void {
   card.preview = text.length > 32 ? `${text.slice(0, 32)}…` : text;
 }
 
-/** 停止点类型；老档把类型存在 attrs.type 下，读不到或旧版 pause 一律按「无停止点」算（= 幕末）。 */
+/** 停止点类型；老档把类型存在 attrs.type 下，读不到或旧版 pause 一律按「无停止点」算（= 本轮无停止点收尾）。 */
 function stopTypeOf(attrs: LineageNodeView["attrs"]): StopType | null {
   const value = attrs.stopType ?? attrs.type;
   return value === "choice" || value === "free" ? value : null;

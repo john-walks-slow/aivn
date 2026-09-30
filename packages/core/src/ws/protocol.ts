@@ -4,8 +4,8 @@ import type { SequencedEvent, StageEvent } from "../dsl/events.js";
 export interface StopPayload {
   /**
    * choice/free 来自剧本（模型写的 `<stop>`）；pause 只由编排器自己造——
-   * 拍中分岔被截断、或空拍报错时给玩家一个重试入口，模型写不出来，
-   * 幕末（act_end）也不会走到这里，幕末只有黑场 + 「下一幕」。
+   * 轮中分岔被截断、或空轮报错时给玩家一个重试入口，模型写不出来，
+   * 无 stop 的收尾（no_stop）也不会走到这里，它只有一个「继续」。
    */
   stopType: "choice" | "free" | "pause";
   options?: { text: string; value?: string }[];
@@ -14,8 +14,8 @@ export interface StopPayload {
 
 export interface BeatEndPayload {
   beatId: string;
-  /** stop = 交互停止点；act_end = 一幕自然写完（beat_done 收束，无 <stop>）。 */
-  reason: "stop" | "act_end";
+  /** stop = 交互停止点；no_stop = 本轮自然写完（beat_done 收束，无 <stop>），只有一个「继续」出口。 */
+  reason: "stop" | "no_stop";
   stop?: StopPayload;
 }
 
@@ -23,11 +23,11 @@ export interface BeatEndPayload {
 export interface PromptQueueItem {
   id: string;
   text: string;
-  /** 入队时的拍号：面板上写「排进第 7 拍」。 */
+  /** 入队时的轮号：面板上写「排进第 7 轮」。 */
   beatNo: number;
-  /** pending = 还没落笔，可改可删；sent = 已并入某一拍，等下一拍开始后淡出。 */
+  /** pending = 还没落笔，可改可删；sent = 已并入某一轮，等下一轮开始后淡出。 */
   status: "pending" | "sent";
-  /** sent 时的落笔拍号。 */
+  /** sent 时的落笔轮号。 */
   sentBeatNo?: number;
 }
 
@@ -84,7 +84,7 @@ export type ServerMessage =
        * 客户端重连时发现与本地不一致 → 清空本地缓冲、lastSeq 归零后全量重放。
        */
       epoch?: number;
-      /** 连上这一刻编排器就是空闲的（没有在跑的拍）。重连/刷新后客户端据此直接放开操作条，
+      /** 连上这一刻编排器就是空闲的（没有在跑的轮）。重连/刷新后客户端据此直接放开操作条，
        *  不用等一场本来不会到来的 beat_settled。 */
       idle?: boolean;
       /** 当前挂着的存档（周目）id：换档后客户端据此认出新现场。 */
@@ -113,15 +113,22 @@ export type ServerMessage =
       epoch: number;
       leafId: string | null;
       events: SequencedEvent[];
-      /** 重建后的停止点（无 = 幕完/拍中，客户端按 continue 处理）。 */
+      /** 重建后的停止点（无 = 本轮写完/轮中，客户端按 continue 处理）。 */
       stop?: StopPayload;
-      reason?: "stop" | "act_end";
+      reason?: "stop" | "no_stop";
+      /**
+       * 重建之后紧接着会开新的一轮（「重演这一轮」）。
+       * 不带这个标记时重建就是终局，客户端可以直接快进到新分支末尾；带了它就必须
+       * 先把旧台词收起来进入等待态——否则 stage 看到「已演完」就摆出可点击播放的
+       * 终局界面，而新的一轮其实一秒后才到。
+       */
+      resuming?: boolean;
       /** 本次操作的人类可读说明（前端提示条）。 */
       note?: string;
     }
   /** 一行台词/旁白被原地改写：客户端按 seq 就地替换该行文字，不重放全量事件。 */
   | { type: "line_edited"; nodeId: string; text: string; seq?: number }
-  /** 待注入队列的全量快照（右上角排队面板）：落笔的会留在面板里等这一拍收束。 */
+  /** 待注入队列的全量快照（右上角排队面板）：落笔的会留在面板里等这一轮收束。 */
   | { type: "prompt_queue"; items: PromptQueueItem[] }
   // —— 工坊（D9）：与演出并行的一条独立 agent 通道，消息都带 threadId 以便前端分流 ——
   | { type: "workshop_threads"; threads: WorkshopThreadInfo[]; activeId: string | null }
@@ -150,7 +157,7 @@ export type ClientMessage =
   | { type: "player_choice"; optionIndex: number }
   | { type: "player_free"; text: string }
   | { type: "continue" }
-  /** 插一句：唯一输入通道。空闲时开新拍；演出中排进待注入队列（可改可删，当拍收束后自动兑现）。 */
+  /** 插一句：唯一输入通道。空闲时开新轮；演出中排进待注入队列（可改可删，当轮收束后自动兑现）。 */
   | { type: "prompt"; text: string }
   /** 改队列里还没落笔的一句。 */
   | { type: "prompt_edit"; id: string; text: string }
@@ -159,7 +166,7 @@ export type ClientMessage =
   /** 语音控制（D5 背压）：enabled=总开关（关=停合成）；paused=暂停预取（快进态/缓冲积压）。 */
   | { type: "tts_control"; enabled?: boolean; paused?: boolean }
   /** 分岔：世界线挂到 nodeId 并落一条 fork 标记，其后内容整段转兄弟分支。
-   *  resume=true = 「重来这一幕」：分岔后立刻续演，中间不设停止点。 */
+   *  resume=true = 「重演这一轮」：分岔后立刻续演，中间不设停止点。 */
   | { type: "fork"; nodeId: string; resume?: boolean }
   | { type: "edit"; nodeId: string; newText: string }
   /** 跳转：世界线挂到 nodeId，不生成内容。活节点上往前走，废弃节点上回到那条线。 */

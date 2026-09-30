@@ -6,7 +6,7 @@ import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { PlayMemory } from "../src/memory.js";
 import type { TtsSynthFn } from "../src/voice.js";
 
-/** 与 orchestrator.test.ts 同构的假 LLM 流（单拍文本直出）。 */
+/** 与 orchestrator.test.ts 同构的假 LLM 流（单轮文本直出）。 */
 function fakeStream(text: string): StreamFn {
   return () => {
     const stream = createAssistantMessageEventStream();

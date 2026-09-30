@@ -72,9 +72,9 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
   it("craft.md 覆盖默认口径（用户手写与工坊 agent 改的是同一份）", () => {
     const prompt = buildSystemPrompt({
       play: PLAY,
-      memory: new PlayMemory({ craft: "# 创作口径\n\n每拍只写一句。" }),
+      memory: new PlayMemory({ craft: "# 创作口径\n\n每轮只写一句。" }),
     });
-    expect(prompt).toContain("每拍只写一句。");
+    expect(prompt).toContain("每轮只写一句。");
     expect(prompt).not.toContain(DEFAULT_CRAFT);
   });
 

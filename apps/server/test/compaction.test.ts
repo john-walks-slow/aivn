@@ -98,7 +98,7 @@ describe("纪元压缩：切尾点与转录", () => {
     const text = renderTranscript([
       user("【玩家表态】我到了"),
       assistant('<say id="mio">……太慢了！</say>[调用 write_memory]'),
-      toolResult("search_archive", "【第 1 拍】澪在走廊提到了旧约定"),
+      toolResult("search_archive", "【第 1 轮】澪在走廊提到了旧约定"),
     ]);
     expect(text).toContain("【玩家/导演】【玩家表态】我到了");
     expect(text).toContain("……太慢了！");
@@ -125,9 +125,9 @@ describe("纪元压缩：切尾点与转录", () => {
     expect(splitSummary("## 前情提要\n## 剧情进展").oneLiner).toBe("剧情进展");
   });
 
-  it("seed 消息带纪元与拍号，正文原样嵌入", () => {
+  it("seed 消息带纪元与轮号，正文原样嵌入", () => {
     const seed = renderSeed(2, 24, "## 剧情进展\n两人走到旧校舍。");
-    expect(seed).toContain("【前情提要·纪元 2】（截至第 24 拍");
+    expect(seed).toContain("【前情提要·纪元 2】（截至第 24 轮");
     expect(seed).toContain("## 剧情进展\n两人走到旧校舍。");
     expect(seed).toContain("不要重演");
   });
@@ -155,7 +155,7 @@ describe("PlayMemory 纪元卡", () => {
 
     await memory.appendArc({
       id: "epoch-e1-1",
-      title: "纪元 1｜截至第 12 拍",
+      title: "纪元 1｜截至第 12 轮",
       summary: "澪甩开了主角。",
       detail: "## 剧情进展\n旧校舍。",
     });
@@ -163,7 +163,7 @@ describe("PlayMemory 纪元卡", () => {
     expect(memory.cards).toHaveLength(1);
     expect(memory.readCard("epoch-e1-1", ["epoch-e1-1"])).toContain("旧校舍");
     const onDisk = await readFile(join(dir, "memory", "index", "arcs", "epoch-e1-1.md"), "utf8");
-    expect(onDisk).toContain("# 纪元 1｜截至第 12 拍");
+    expect(onDisk).toContain("# 纪元 1｜截至第 12 轮");
     expect(onDisk).toContain("澪甩开了主角。");
 
     // 谱系级过滤：别的分支不得读到这条纪元
@@ -216,7 +216,7 @@ describe("编排器纪元压缩", () => {
     return { orchestrator, tree, contexts, messages };
   }
 
-  // 两拍对话体约 90 token 估算：预算 84 触发；保留 20 token 恰好留下第二拍的 user + 剧本
+  // 两轮对话体约 90 token 估算：预算 84 触发；保留 20 token 恰好留下第二轮的 user + 剧本
   const TIGHT = { contextWindow: 140, triggerRatio: 0.6, keepRecentTokens: 20 };
   const ROOMY = {
     contextWindow: 1_000_000,
@@ -245,7 +245,7 @@ describe("编排器纪元压缩", () => {
     await orchestrator.playerAction({ kind: "continue" });
     expect(memory.cards).toHaveLength(0);
 
-    // 第三拍开拍前跨过纪元边界
+    // 第三轮开轮前跨过纪元边界
     await orchestrator.playerAction({ kind: "continue" });
 
     const arcs = memory.cards.filter((c) => c.layer === "arcs");
@@ -259,7 +259,7 @@ describe("编排器纪元压缩", () => {
     expect(buildSystemPrompt({ play: PLAY, assets: {}, memory, arcIds: [arcs[0]!.file] })).toContain(
       "澪甩开了主角的手",
     );
-    // 对话体：seed 摘要打头 + 保留的最近轮次（第一拍原文已不在）
+    // 对话体：seed 摘要打头 + 保留的最近轮次（第一轮原文已不在）
     const rendered = JSON.stringify(systems);
     expect(rendered).toContain("【前情提要·纪元 1】");
     expect(rendered).not.toContain("放学后的走廊空无一人");
@@ -313,7 +313,7 @@ describe("编排器纪元压缩", () => {
     );
   });
 
-  it("压缩请求在飞时 dispose：不落卡、不重建 Agent、不再开拍", async () => {
+  it("压缩请求在飞时 dispose：不落卡、不重建 Agent、不再开轮", async () => {
     const memory = new PlayMemory({
       arcsDir: join(await mkdtemp(join(tmpdir(), "stage-arc-")), "memory", "index", "arcs"),
     });

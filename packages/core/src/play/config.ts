@@ -51,7 +51,7 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
     characters: data.characters,
     ...(protagonist ? { protagonist } : {}),
     ...(data.voiceLanguage?.trim() ? { voiceLanguage: data.voiceLanguage.trim() } : {}),
-    opening: data.opening ?? "（游戏开始，请演出第一幕的开幕）",
+    opening: data.opening ?? "（游戏开始，请演出第一轮）",
     initialState: data.initialState ?? { turn: 0, affinity: {}, flags: {} },
     initialScene: data.initialScene ?? "未定",
   };

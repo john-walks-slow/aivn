@@ -16,7 +16,7 @@ const PLAY_JSON = JSON.stringify({
   initialScene: "s",
 });
 
-/** 一棵只追加不分支的树，n 拍。 */
+/** 一棵只追加不分支的树，n 轮。 */
 function treeOf(beats: number, texts: string[]): LineageTree {
   const tree = new LineageTree();
   texts.forEach((text) => tree.append("say", { text, payload: { seq: tree.events.length } }));
@@ -144,7 +144,7 @@ describe("PlayStore 按周目隔离会话", () => {
     ]);
   });
 
-  it("档元信息随会话更新：拍数与最后一句取当前路径", async () => {
+  it("档元信息随会话更新：轮数与最后一句取当前路径", async () => {
     const saves = library.saves("p1");
     const save = await saves.create();
     const store = library.saveStore("p1", save.id);

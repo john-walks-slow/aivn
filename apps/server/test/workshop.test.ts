@@ -228,7 +228,7 @@ describe("工坊 prompt 与工具", () => {
     const text = JSON.stringify(await listSaves.execute("c2", {}, undefined as never));
     expect(text).toContain("s1");
     expect(text).toContain("第一周目");
-    expect(text).toContain("3 拍");
+    expect(text).toContain("3 轮");
   });
 
   it("read_lineage 只给当前分支，全量模式才带上废弃分支", async () => {
@@ -741,15 +741,15 @@ describe("WorkshopSession：一轮对话", () => {
   });
 });
 
-describe("whenIdle：工坊热改等节拍边界", () => {
-  it("演出进行中不兑现，拍收束后立即兑现", async () => {
+describe("whenIdle：工坊热改等轮边界", () => {
+  it("演出进行中不兑现，轮收束后立即兑现", async () => {
     let release = (): void => {};
     const gate = new Promise<void>((resolve) => (release = resolve));
     let call = 0;
     const base = createFakeStreamFn([{ text: BEAT_1, beatDone: true }, { text: BEAT_2, beatDone: true }]);
     const tree = new LineageTree();
     const orchestrator = new PlaywrightOrchestrator({
-      // 第一拍挂在门上：模拟「正在演戏」的那段时间窗
+      // 第一轮挂在门上：模拟「正在演戏」的那段时间窗
       streamFn: (model, context, options) => {
         call += 1;
         if (call > 1) return base(model, context, options);

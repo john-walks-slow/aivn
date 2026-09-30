@@ -9,7 +9,7 @@ import { layoutRoute, NODE_H, NODE_W, type PlacedCard, type RouteDir } from "./r
 interface CanvasProps {
   cards: readonly BeatCard[];
   ops: LineageOps;
-  /** 演出进行中：结构性操作会腰斩这一幕，按钮置灰。 */
+  /** 演出进行中：结构性操作会腰斩这一轮，按钮置灰。 */
   busy: boolean;
   onBack: () => void;
   names: Readonly<Record<string, string>>;
@@ -134,7 +134,7 @@ export function RouteCanvas({ cards, ops, busy, onBack, names, index }: CanvasPr
     });
   };
 
-  /** 把某一拍送到视野中央（「跳到最新」用）。 */
+  /** 把某一轮送到视野中央（「跳到最新」用）。 */
   const focusCard = useCallback(
     (card: BeatCard) => {
       const target = placed.find((p) => p.card.id === card.id);
@@ -242,7 +242,7 @@ export function RouteCanvas({ cards, ops, busy, onBack, names, index }: CanvasPr
 }
 
 /**
- * 一张卡 = 这一拍：左上角落笔时刻、正文、左下角是谁说的，两个动词（跳转 / 分岔）长在卡里的右下角。
+ * 一张卡 = 这一轮：左上角落笔时刻、正文、左下角是谁说的，两个动词（跳转 / 分岔）长在卡里的右下角。
  * 没有检视栏：想对哪一段动手指，就在那一段自己的卡上动手，不用先去点开它。
  * 跳转 = 把世界线挂到这张卡上，不生成内容；分岔 = 退到这张卡之前重写并重新生成。
  */
@@ -295,7 +295,7 @@ function Node({
             type="button"
             className="route-node-tool"
             disabled={busy}
-            title={hint || "从这一幕分岔：另开一条线，它之后的剧情留作旧分支"}
+            title={hint || "从这一轮分岔：另开一条线，它之后的剧情留作旧分支"}
             onClick={() => ops.fork(card.id)}
           >
             <Icon name="fork" />

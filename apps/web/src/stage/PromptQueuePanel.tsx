@@ -5,9 +5,9 @@ import { Icon } from "../ui/Icon.js";
 /**
  * 待注入队列（右上角独立浮层）。
  *
- * 演出进行中也能发话：话先落在这里，这一拍收束时才注入。行内可改可撤——
+ * 演出进行中也能发话：话先落在这里，这一轮收束时才注入。行内可改可撤——
  * 改完的仍是原来那句话，注入时用的就是这一份。已注入的行留在面板里淡出，
- * 让玩家看见「这句进去了」，下一拍到来时退场。
+ * 让玩家看见「这句进去了」，下一轮到来时退场。
  */
 export function PromptQueuePanel({
   items,
@@ -64,7 +64,7 @@ export function PromptQueuePanel({
               <>
                 <span className="prompt-queue-text">{item.text}</span>
                 <span className="prompt-queue-meta">
-                  {item.status === "pending" ? `第 ${item.beatNo + 1} 拍` : `已进第 ${item.sentBeatNo} 拍`}
+                  {item.status === "pending" ? `第 ${item.beatNo + 1} 轮` : `已进第 ${item.sentBeatNo} 轮`}
                 </span>
                 {item.status === "pending" && (
                   <>

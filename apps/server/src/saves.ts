@@ -17,7 +17,7 @@ export interface SaveMeta {
   name: string;
   createdAt: number;
   updatedAt: number;
-  /** 已演出拍数（当前路径上的 beat_end 计数）。 */
+  /** 已演出轮数（当前路径上的 beat_end 计数）。 */
   beats: number;
   /** 当前路径最后一句台词/旁白（截断），供列表卡显示。 */
   preview: string;

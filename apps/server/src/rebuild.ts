@@ -28,7 +28,7 @@ export function stopFromEvent(event: LineageEvent): StopPayload | null {
   return stopFromNode(toNodeView(event));
 }
 
-/** 一拍的重建素材：玩家输入（可空 = 开场）与已演出脚本。 */
+/** 一轮的重建素材：玩家输入（可空 = 开场）与已演出脚本。 */
 export interface RebuiltBeat {
   user: string;
   assistant: string;
@@ -37,11 +37,11 @@ export interface RebuiltBeat {
 /**
  * 谱系链 → LLM 对话轮次。
  *
- * 拍边界 = 上一个 beat_end 之后的第一个事件；末尾未收束的半拍（拍中节点分岔）也成拍。
+ * 轮边界 = 上一个 beat_end 之后的第一个事件；末尾未收束的半轮（轮中节点分岔）也成轮。
  * 玩家输入段照搬玩家原话（不在重建时替模型润色），【状态】不进历史轮次——
  * 状态由下一次生成时的 user 消息携带，避免 anachronistic 的旧状态快照。
  *
- * 链尾若是「有输入没台词」的一组（分岔落在一次表态上），它不能成拍：`{user, assistant:""}`
+ * 链尾若是「有输入没台词」的一组（分岔落在一次表态上），它不能成轮：`{user, assistant:""}`
  * 这种空回复轮次在 Anthropic 一族的接口上直接 400。这类输入原样退回给编排器，
  * 由下一轮生成时并进 user 消息——玩家那句话因此不会丢，也不需要造假轮次。
  */

@@ -1,7 +1,7 @@
 import type { BeatCard } from "./beats.js";
 
 /** 节点盒子：固定尺寸才能算整齐的树，卡面内容超出就截断。
- *  高度 = 拍号 + 三行正文 + 底行（角色 + 两个动词），两个动词长在卡里，不另开工具条。 */
+ *  高度 = 轮号 + 三行正文 + 底行（角色 + 两个动词），两个动词长在卡里，不另开工具条。 */
 export const NODE_W = 208;
 export const NODE_H = 128;
 /** 流向、兄弟两个方向上相邻盒子之间的空隙。 */
@@ -24,7 +24,7 @@ export interface PlacedEdge {
   d: string;
   live: boolean;
   dead: boolean;
-  /** 从旧版那一拍斜插出来的分岔线。 */
+  /** 从旧版那一轮斜插出来的分岔线。 */
   fork: boolean;
 }
 
@@ -111,7 +111,7 @@ export function layoutRoute(cards: readonly BeatCard[], dir: RouteDir = "horizon
       d: edgePath(parent, entry, dir),
       live: parent.card.onPath && entry.card.onPath,
       dead: !parent.card.onPath && !entry.card.onPath,
-      // 通向分岔拍首的那条线就是分岔线——它从旧版那一拍旁边斜插出来，画法要跟普通连线分开
+      // 通向分岔轮首的那条线就是分岔线——它从旧版那一轮旁边斜插出来，画法要跟普通连线分开
       fork: entry.card.forkedFrom !== null,
     });
   }

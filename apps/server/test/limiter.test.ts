@@ -33,7 +33,7 @@ describe("Limiter：并发闸门", () => {
     expect(log).toEqual(["+a", "-a", "+b", "-b", "+c", "-c"]);
   });
 
-  it("槽位直接转让给 waiter：新任务不能插空（对拍序列）", async () => {
+  it("槽位直接转让给 waiter：新任务不能插空（对轮序列）", async () => {
     const limiter = new Limiter(1);
     const { start, log } = tracker();
     const first = limiter.run(async () => {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { shouldAutoStart } from "./playbackState.js";
 import type { Cue, ScriptLine } from "./script.js";
 import type { TranscriptEntry } from "./transcript.js";
 
@@ -76,7 +77,7 @@ const LONG_PAUSES = new Set(["。", "！", "？", "…", "—", "」", "』"]);
 const SHORT_PAUSES = new Set(["，", "、", "；", "：", "）", ".", ",", "!", "?", ";"]);
 
 /**
- * 下一个字要等多久：上一个字是标点就多停一拍，否则按基础速度。
+ * 下一个字要等多久：上一个字是标点就多停一轮，否则按基础速度。
  * 主题变量每 250ms 读一次就够——theme.css 换皮后节奏跟着变，但不值得每个字都问一次样式引擎。
  */
 interface Tempo {
@@ -185,6 +186,8 @@ export function usePlayback(
   const [scrubIndex, setScrubIndex] = useState<number | null>(null);
   const cursorRef = useRef(0);
   const fastForwardedRef = useRef(!opts.resume);
+  /** 快进到末尾后要不要显示末行；false = 只推进游标与视觉，留给等待态。 */
+  const showTailRef = useRef(opts.resumeAfterReset === true);
   const linesRef = useRef(lines);
   linesRef.current = lines;
   const transcript = opts.transcript;
@@ -356,7 +359,11 @@ export function usePlayback(
     setShownLength(0);
     setScrubIndex(null);
     setVisual(EMPTY_VISUAL);
-    fastForwardedRef.current = !opts.resumeAfterReset; // true 则紧接着快进到新分支末尾
+    // 两种情况都要快进到新分支末尾：区别只在要不要把最后一句旧台词显示出来。
+    // 后面还有内容在来时不显示——舞台要停在「剧作家正在落笔…」的等待态，
+    // 一旦露出旧台词，玩家会以为这就是重来的结果。
+    fastForwardedRef.current = false;
+    showTailRef.current = opts.resumeAfterReset === true;
   }, [opts.resetToken, opts.resumeAfterReset]);
 
   // cues 到达/重置检测：builder reset（fresh start）→ 播放归零
@@ -376,13 +383,31 @@ export function usePlayback(
       cursorRef.current = cues.length;
       let lastLineKey: string | null = null;
       for (const cue of cues) if (cue.kind === "line") lastLineKey = cue.lineKey;
-      if (lastLineKey) {
+      if (lastLineKey && showTailRef.current) {
         setCurrentKey(lastLineKey);
         const line = linesRef.current.find((l) => l.key === lastLineKey);
         setShownLength(line?.text.length ?? 0);
       }
     }
   }, [opts.revision, cues, applyVisual]);
+
+  // 演出中「等新内容」的起播：此刻没有正在显示的台词，新的一句一到就起播，不必让玩家点一下。
+  // 只在 current 为 null 时生效——正在读的句子不会被新到的内容抢走，阅读节奏仍归玩家；
+  // 玩家自己点着读完最后一句（current 归 null、屏幕显示「剧作家正在落笔…」）之后，
+  // 新内容一到就该自己出现，这正是「边生成边演出」。
+  useEffect(() => {
+    const go = shouldAutoStart({
+      live: opts.live,
+      auto,
+      hold: opts.hold === true,
+      hasCurrent: current !== null,
+      cursor: cursorRef.current,
+      cueCount: cues.length,
+    });
+    if (!go) return;
+    const timer = setTimeout(() => consumeNext(), 80);
+    return () => clearTimeout(timer);
+  }, [opts.live, auto, current, cues, consumeNext, opts.revision, opts.hold]);
 
   // 骨架超时兜底：定期摘掉到点还没到货的占位，落到氛围底色而不是一直闪
   useEffect(() => {

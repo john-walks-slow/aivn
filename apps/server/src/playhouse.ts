@@ -253,7 +253,7 @@ export class PlayHouse {
 
   /**
    * 切档：只改活动档指针 + 重建 runtime。
-   * 等节拍边界再切——演出进行中换 runtime 会让这一拍凭空消失（与工坊写盘同一条铁律）。
+   * 等轮边界再切——演出进行中换 runtime 会让这一轮凭空消失（与工坊写盘同一条铁律）。
    */
   async switchSave(playId: string, saveId: string): Promise<void> {
     const saves = this.library.saves(playId);
@@ -293,7 +293,7 @@ export class PlayHouse {
   private async reloadAfterWorkshopWrite(playId: string): Promise<void> {
     const old = this.runtimes.get(playId);
     if (!old) return;
-    // 等节拍边界：演出进行中重建会让这一拍凭空消失
+    // 等轮边界：演出进行中重建会让这一轮凭空消失
     await old.orchestrator.whenIdle();
     // 等待期间可能已 reload/切档/删除——只在原实例还在位时才替换
     if (this.runtimes.get(playId) !== old) return;

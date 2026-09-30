@@ -66,7 +66,7 @@ async function callApi(library: PlayLibrary, url: string, method = "GET"): Promi
 }
 
 describe("编排器历史累积", () => {
-  it("多拍累积：按拍分组，拍内 seq 自增，角色顺序与模型输出一致", async () => {
+  it("多轮累积：按轮分组，轮内 seq 自增，角色顺序与模型输出一致", async () => {
     const orchestrator = setup([
       { text: BEAT_2, thinking: "澪这次别再嘴硬了。", beatDone: true },
       { text: BEAT_2, beatDone: true },
@@ -84,7 +84,7 @@ describe("编排器历史累积", () => {
       "assistant",
       "toolCall",
     ]);
-    // 注入的 user 原文入史，且落在它真正开启的那拍：首拍 = 开场词 + 状态区，其后每拍同形
+    // 注入的 user 原文入史，且落在它真正开启的那轮：首轮 = 开场词 + 状态区，其后每轮同形
     expect(beats[0]!.entries[0]).toMatchObject({ beat: 1, seq: 1, role: "user" });
     expect(beats[0]!.entries[0]!.text.startsWith(PLAY.opening)).toBe(true);
     expect(beats[0]!.entries[0]!.text).toContain("【状态】");
@@ -119,7 +119,7 @@ describe("编排器历史累积", () => {
     });
   });
 
-  it("超出保留拍数：按拍截断，最早的整拍连同其条目一起丢", async () => {
+  it("超出保留轮数：按轮截断，最早的整轮连同其条目一起丢", async () => {
     const orchestrator = setup([{ text: BEAT_2, beatDone: true }]);
 
     for (let i = 0; i < HISTORY_BEATS_KEPT + 1; i += 1) {
@@ -133,7 +133,7 @@ describe("编排器历史累积", () => {
     expect(beats.every((b) => b.entries.every((e) => e.beat === b.turn))).toBe(true);
   });
 
-  it("拍中截断：在第 2 拍中途分岔，第 2 拍的历史不进新分支，第 1 拍原样保留", async () => {
+  it("轮中截断：在第 2 轮中途分岔，第 2 轮的历史不进新分支，第 1 轮原样保留", async () => {
     const orchestrator = setup([
       { text: BEAT_2, beatDone: true },
       { text: BEAT_2, beatDone: true },
@@ -142,7 +142,7 @@ describe("编排器历史累积", () => {
     await orchestrator.playerAction({ kind: "continue" });
     expect(orchestrator.history.map((b) => b.turn)).toEqual([1, 2]);
 
-    // 拍中分岔即截断：目标节点取第 1 拍幕末之后的行，第 2 拍演了一半的后半段一律不进新分支
+    // 轮中分岔即截断：目标节点取第 1 轮幕末之后的行，第 2 轮演了一半的后半段一律不进新分支
     const view = orchestrator.lineageView();
     const kinds = new Map(view.nodes.map((n) => [n.id, n.kind]));
     const afterFirstBeat = view.pathIds.slice(
@@ -154,10 +154,10 @@ describe("编排器历史累积", () => {
     expect(orchestrator.history.map((b) => b.turn)).toEqual([1]);
   });
 
-  it("分岔后重演：兄弟分支的历史被丢弃，新分支接着开拍", async () => {
+  it("分岔后重演：兄弟分支的历史被丢弃，新分支接着开轮", async () => {
     const orchestrator = setup([{ text: BEAT_2, beatDone: true }]);
     await orchestrator.playerAction({ kind: "continue" });
-    // 从幕首分岔：第 1 拍只演了一半，也一并作废
+    // 从幕首分岔：第 1 轮只演了一半，也一并作废
     const say = orchestrator.lineageView().nodes.find((n) => n.kind === "say")!;
     await orchestrator.jumpTo(say.id!);
     expect(orchestrator.history).toEqual([]);

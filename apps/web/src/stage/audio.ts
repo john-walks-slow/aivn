@@ -49,7 +49,7 @@ export class VoiceDirector {
   private readonly lines = new Map<number, LineAudio>();
   private currentSeq: number | null = null;
   /**
-   * 行 → 短语音频 URL 台账。跨拍保留：解码好的 AudioBuffer 在 beatStarted 就随 lines 一起扔了，
+   * 行 → 短语音频 URL 台账。跨轮保留：解码好的 AudioBuffer 在 beatStarted 就随 lines 一起扔了，
    * 但文件还躺在服务端的内容寻址缓存里——回顾要能重听旧句，靠的就是这张表重新拉一遍。
    */
   private readonly urls = new Map<number, Map<number, string>>();
@@ -57,7 +57,7 @@ export class VoiceDirector {
   private replaySources = new Map<AudioBufferSourceNode, GainNode>();
   /** 每次发起重听自增：迟到的解码结果发现令牌已变就自我淘汰。 */
   private replayToken = 0;
-  /** 已见最大 seq（beatStarted 时冻结为门槛：旧拍迟到音频直接丢弃）。 */
+  /** 已见最大 seq（beatStarted 时冻结为门槛：旧轮迟到音频直接丢弃）。 */
   private maxSeqSeen = 0;
   private floorSeq = 0;
   private pausedSent = false;
@@ -173,7 +173,7 @@ export class VoiceDirector {
   handleAudio(ready: { seq: number; phrase: number; url: string }): void {
     if (!this.enabled) return;
     this.rememberUrl(ready.seq, ready.phrase, ready.url);
-    // 旧拍迟到音频（beat 已收束后 TTS 才完成）与已播过的行：直接丢弃
+    // 旧轮迟到音频（beat 已收束后 TTS 才完成）与已播过的行：直接丢弃
     if (ready.seq <= this.floorSeq) return;
     if (this.currentSeq !== null && ready.seq < this.currentSeq) return;
     this.maxSeqSeen = Math.max(this.maxSeqSeen, ready.seq);
@@ -207,7 +207,7 @@ export class VoiceDirector {
     this.finishCurrent();
   }
 
-  /** 新节拍开始：停掉全部残留语音，旧拍迟到音频一律丢弃（floor 门槛）。 */
+  /** 新轮开始：停掉全部残留语音，旧轮迟到音频一律丢弃（floor 门槛）。 */
   beatStarted(): void {
     this.fadeAll();
     this.lines.clear();

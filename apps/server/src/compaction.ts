@@ -6,7 +6,7 @@ import { estimateContextTokens, estimateTokens } from "@earendil-works/pi-agent-
  *
  * 三区装配约定下，A 区（system）与 B 区（对话体）在一个纪元内逐 token 稳定以命中前缀缓存；
  * 纪元边界是唯一允许突变对话体的时刻：切掉早期轮次，压缩成一张 arcs 摘要卡（A 区新增一行，
- * 仍纪元内冻结），原文早已逐拍落进 archive，检索层照常命中。
+ * 仍纪元内冻结），原文早已逐轮落进 archive，检索层照常命中。
  */
 
 /** 单条消息在摘要输入里的截断上限：DSL 原文可很长，摘要只需剧情骨架。 */
@@ -152,7 +152,7 @@ export function withSeed(tail: readonly AgentMessage[], seed: string): AgentMess
 /** 压缩后回注对话体的前情提要正文：告诉剧作家「这些已经是前情，别重演」。 */
 export function renderSeed(epochNo: number, beatNo: number, body: string): string {
   return [
-    `【前情提要·纪元 ${epochNo}】（截至第 ${beatNo} 拍的早期演出已压缩归档）`,
+    `【前情提要·纪元 ${epochNo}】（截至第 ${beatNo} 轮的早期演出已压缩归档）`,
     "",
     body,
     "",

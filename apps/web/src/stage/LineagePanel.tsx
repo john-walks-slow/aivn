@@ -9,7 +9,7 @@ import type { ScriptLine } from "./script.js";
 
 /**
  * 路线视图只留树上才有的世界线写操作。
- * 插一句 / 改台词 / 重来这一幕都在对话框底部的导演栏（锚点由当前行 seq 反查），剧本视图已删——
+ * 插一句 / 改台词 / 重演这一轮都在对话框底部的导演栏（锚点由当前行 seq 反查），剧本视图已删——
  * 逐行铺开的那份视图不值得再维护一份渲染。
  * 跳转（jump）与分岔（branch）是其中两个正交动词：前者把世界线挂到已有节点、
  * 不生成内容；后者退到该段之前重写并重新生成。
@@ -25,7 +25,7 @@ export interface LineageOps {
   fork: (nodeId: string, opts?: { resume?: boolean }) => void;
 }
 
-/** 谱系拉取：打开视图与每次操作后刷新（树不随节拍广播，避免每拍搬运全量节点）。 */
+/** 谱系拉取：打开视图与每次操作后刷新（树不随轮广播，避免每轮搬运全量节点）。 */
 export function useLineage(playId: string, nonce: number): {
   view: LineageView | null;
   error: string | null;

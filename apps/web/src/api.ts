@@ -72,9 +72,9 @@ export interface PlayDetail {
  * 形状与服务端一一对应（web 不得 import server 包，这里是契约的手写副本）。
  */
 export interface HistoryEntry {
-  /** 拍号（与服务端 `runtime.beatNo` 同尺）。 */
+  /** 轮号（与服务端 `runtime.beatNo` 同尺）。 */
   beat: number;
-  /** 拍内自增序号（从 1 起）。 */
+  /** 轮内自增序号（从 1 起）。 */
   seq: number;
   role: "user" | "thinking" | "assistant" | "toolCall";
   /** role ≠ toolCall 时有：原文，不解析不裁剪。 */
@@ -145,9 +145,9 @@ export const api = {
   lineage: (id: string) => request<LineageView>(`/api/plays/${id}/lineage`),
 
   /**
-   * 剧作家原始历史：活动周目最近若干拍的 session 快照（注入原文 / 思考 / 原始 DSL / 工具调用）。
+   * 剧作家原始历史：活动周目最近若干轮的 session 快照（注入原文 / 思考 / 原始 DSL / 工具调用）。
    * 只读——不建 runtime、不改任何状态，所以它是「回看这场戏怎么写出来的」的唯一入口。
-   * 读盘落后一拍（拍收束时才落盘），拿不到就回空表，不报错。
+   * 读盘落后一轮（轮收束时才落盘），拿不到就回空表，不报错。
    */
   history: (id: string) => request<{ beats: HistoryBeat[] }>(`/api/plays/${id}/history`),
 
@@ -173,7 +173,7 @@ export const api = {
   deleteSave: (id: string, saveId: string) =>
     request<{ ok: boolean }>(`/api/plays/${id}/saves/${saveId}`, { method: "DELETE" }),
 
-  /** 切档：改活动档指针并重建 runtime；演出进行中等当前一拍演完。 */
+  /** 切档：改活动档指针并重建 runtime；演出进行中等当前一轮演完。 */
   activateSave: (id: string, saveId: string) =>
     request<{ ok: boolean }>(`/api/plays/${id}/active`, {
       method: "PUT",
@@ -259,7 +259,7 @@ export const api = {
   deleteFile: (id: string, path: string) =>
     request<{ ok: boolean }>(`/api/plays/${id}/files?path=${encodeURIComponent(path)}`, { method: "DELETE" }),
 
-  /** 创作口径：剧作家每一拍怎么写都听这一份。缺文件时服务端回退默认正文。 */
+  /** 创作口径：剧作家每一轮怎么写都听这一份。缺文件时服务端回退默认正文。 */
   craft: (id: string) => request<Craft>(`/api/plays/${id}/craft`),
 
   saveCraft: (id: string, content: string) =>

@@ -4,7 +4,7 @@ import { helloPayload, type PlayHouse, type PlayRuntime } from "./playhouse.js";
 
 /**
  * WS 会话层（多剧目）：/ws?play=<id> 连接路由到剧目 runtime。
- * 新周目 = 建一棵空树，连接建立后 autostart 自己开拍，协议里没有「重开」消息；
+ * 新周目 = 建一棵空树，连接建立后 autostart 自己开轮，协议里没有「重开」消息；
  * resume 增量重放；其余玩家动作。
  * 客户端集合挂在 PlayHouse（与 runtime 生命周期解耦）；每次派发现查 runtime——
  * 切档 switchSave / 配置保存 reload 重建后，活连接自动路由到新实例，不断线。
@@ -135,7 +135,7 @@ async function routeMessage(
       return;
     // —— 导演操作：跳转 / 分岔 / 编辑，彼此正交 ——
     //     jumpTo 只移挂载点、不生成任何内容；分岔落一条 fork 标记，其后内容整段转兄弟分支。
-    //     resume=true 一次往返完成「重来这一幕」：分岔后立刻续演，中间不设停止点
+    //     resume=true 一次往返完成「重演这一轮」：分岔后立刻续演，中间不设停止点
     case "jump":
       await orchestrator.jumpTo(msg.nodeId);
       return;

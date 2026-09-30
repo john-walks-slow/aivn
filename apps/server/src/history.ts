@@ -10,9 +10,9 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 /** 带正文的条目（注入文本 / 思考 / 模型原始输出）。 */
 export interface HistoryTextEntry {
-  /** 拍号：与 `runtime.beatNo` 同尺。 */
+  /** 轮号：与 `runtime.beatNo` 同尺。 */
   beat: number;
-  /** 拍内自增序号（从 1 起）：稳定排序与去重的锚。 */
+  /** 轮内自增序号（从 1 起）：稳定排序与去重的锚。 */
   seq: number;
   role: "user" | "thinking" | "assistant";
   /** 原文。不解析、不裁剪、不转义——「模型到底吐了什么」是这层的唯一职责。 */
@@ -30,23 +30,23 @@ export interface HistoryToolCallEntry {
 
 export type HistoryEntry = HistoryTextEntry | HistoryToolCallEntry;
 
-/** 一拍的历史。 */
+/** 一轮的历史。 */
 export interface HistoryBeat {
-  /** 拍号（与 entries[].beat 冗余一份，客户端按拍分组时不必回扫）。 */
+  /** 轮号（与 entries[].beat 冗余一份，客户端按轮分组时不必回扫）。 */
   turn: number;
   /** 按 seq 升序。 */
   entries: HistoryEntry[];
 }
 
 /**
- * 落盘保留拍数。
- * 历史体积随拍数线性涨，而单拍原文常带长思考 + 未裁剪 DSL（比落谱系的行级文本大一个量级），
- * session.json 每次拍收束都全量重写，无上限攒下去会既胀又慢。20 拍足够回看「最近这一段怎么写的」，
+ * 落盘保留轮数。
+ * 历史体积随轮数线性涨，而单轮原文常带长思考 + 未裁剪 DSL（比落谱系的行级文本大一个量级），
+ * session.json 每次收束都全量重写，无上限攒下去会既胀又慢。20 轮足够回看「最近这一段怎么写的」，
  * 更早的内容在 archive 与纪元摘要里另有去处。
  */
 export const HISTORY_BEATS_KEPT = 20;
 
-/** 内部累加组：多带一个「本拍首条记录时的谱系叶」，分岔/跳转后据此判断这一拍还在不在当前分支上。 */
+/** 内部累加组：多带一个「本轮首条记录时的谱系叶」，分岔/跳转后据此判断这一轮还在不在当前分支上。 */
 interface HistoryGroup extends HistoryBeat {
   leafId: string | null;
 }
@@ -57,7 +57,7 @@ type HistoryPayload =
 
 /**
  * 历史累积器（编排器私有状态，进程内一份）。
- * 只保留最近 {@link HISTORY_BEATS_KEPT} 拍——落盘与对外快照走的是同一份截断结果，两边不会打架。
+ * 只保留最近 {@link HISTORY_BEATS_KEPT} 轮——落盘与对外快照走的是同一份截断结果，两边不会打架。
  */
 export class HistoryRecorder {
   private readonly groups: HistoryGroup[] = [];
@@ -78,7 +78,7 @@ export class HistoryRecorder {
     }));
   }
 
-  /** 注入的 user 原文（B 区拼出的状态区 / 导演注 / 玩家表态）。beat 传「将要开的那一拍」。 */
+  /** 注入的 user 原文（B 区拼出的状态区 / 导演注 / 玩家表态）。beat 传「将要开的那一轮」。 */
   addUser(beat: number, text: string, leafId: string | null): void {
     this.push(beat, leafId, { role: "user", text });
   }
@@ -93,9 +93,9 @@ export class HistoryRecorder {
   }
 
   /**
-   * 上下文重建后回退：只留下挂载点路径上、且已演完的拍。
-   * 两条判据缺一不可——`onPath` 滤掉兄弟与废弃分支；`completedBeat` 滤掉被拍中截断砍掉后半的那一拍
-   * （它在旧分支上不成立，新分支要重新演一遍，混着看等于把两个世界的同一拍拼到一起）。
+   * 上下文重建后回退：只留下挂载点路径上、且已演完的轮。
+   * 两条判据缺一不可——`onPath` 滤掉兄弟与废弃分支；`completedBeat` 滤掉被轮中截断砍掉后半的那一轮
+   * （它在旧分支上不成立，新分支要重新演一遍，混着看等于把两个世界的同一轮拼到一起）。
    */
   rebaseTo(onPath: ReadonlySet<string>, completedBeat: number): void {
     for (let i = this.groups.length - 1; i >= 0; i -= 1) {
@@ -109,7 +109,7 @@ export class HistoryRecorder {
   private push(beat: number, leafId: string | null, payload: HistoryPayload): void {
     let group = this.groups.find((g) => g.turn === beat);
     if (!group) {
-      // 拍号在回跳后会变小（跳转回旧节点），新组按拍号插回原位而不是挂在末尾
+      // 轮号在回跳后会变小（跳转回旧节点），新组按轮号插回原位而不是挂在末尾
       const at = this.groups.findIndex((g) => g.turn > beat);
       group = { turn: beat, entries: [], leafId };
       this.groups.splice(at === -1 ? this.groups.length : at, 0, group);

@@ -9,7 +9,7 @@ export interface Toast {
   kind: ToastKind;
 }
 
-/** 普通提示自己退场的时间；错误要等人点掉——它多半是「这一拍演不下去了」，不能一闪而过。 */
+/** 普通提示自己退场的时间；错误要等人点掉——它多半是「这一轮演不下去了」，不能一闪而过。 */
 const AUTO_DISMISS_MS = 3600;
 
 export interface Toaster {

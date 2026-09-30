@@ -4,7 +4,7 @@ import { Icon } from "../ui/Icon.js";
 
 interface StopPanelProps {
   stop: StopPayload | null;
-  isActEnd: boolean;
+  isNoStop: boolean;
   disabled: boolean;
   /** 玩家在这条线路之外选过/说过同款选项的文案（用于「✓ 已选过」留痕）。 */
   seenChoices?: ReadonlySet<string>;
@@ -29,16 +29,16 @@ const trap = {
  * 停止点（玩家主权的三种形态，P6.5）：
  * - choice：舞台中央悬浮的选肢卡片，数字键 1..9 直选，选过的打勾留痕；
  * - free：对话框形态的入戏输入（可 LLM 润色，撤销保原稿）；
- * - pause：只在编排器造出来时出现（拍中分岔被截断 / 空拍报错）——不出按钮，
- *   玩家点舞台即表态续写开新拍（见 StageTheater.onStageClick）；
- * - 幕末（beat_done 无 stop）：黑场上的「下一幕」按钮——这一拍戏已经讲完，
- *   下一幕不在剧本里，所以只有这一个出口，点了才开新拍。
+ * - pause：只在编排器造出来时出现（轮中分岔被截断 / 空轮报错）——不出按钮，
+ *   玩家点舞台即表态续写开新轮（见 StageTheater.onStageClick）；
+ * - 本轮写完（beat_done 无 stop）：舞台中央一个「继续」——这一轮没有给玩家介入点，
+ *   所以只有这一个出口，点了才开新轮。样式与选肢同卡，不压黑舞台。
  * 自由输入是从选项卡点开的，有一个返回键——选了不说的自由，选项还摆在那里。
- * 插一句 / 改台词 / 重来这一幕在对话框底部的导演栏里，不在此。
+ * 插一句 / 改台词 / 重演这一轮在对话框底部的导演栏里，不在此。
  */
 export function StopPanel({
   stop,
-  isActEnd,
+  isNoStop,
   disabled,
   seenChoices,
   onChoice,
@@ -54,13 +54,13 @@ export function StopPanel({
   const [polishing, setPolishing] = useState(false);
   const [polishError, setPolishError] = useState<string | null>(null);
 
-  // 换停止点即清场：自由输入是这一拍的一次性入口，草稿不该带到下一拍。
+  // 换停止点即清场：自由输入是这一轮的一次性入口，草稿不该带到下一轮。
   useEffect(() => {
     setFreeOpen(false);
     setDraft("");
     setOriginal(null);
     setPolishError(null);
-  }, [stop, isActEnd]);
+  }, [stop, isNoStop]);
 
   const options = stop?.stopType === "choice" ? (stop.options ?? []) : [];
   const choosing = options.length > 0 && !freeOpen;
@@ -191,16 +191,19 @@ export function StopPanel({
         </footer>
       )}
 
-      {/* pause（拍中截断 / 空拍报错）不再单列「继续」按钮：点舞台就是继续，
+      {/* pause（轮中截断 / 空轮报错）不再单列「继续」按钮：点舞台就是继续，
           与翻下一句同一个动作，生成中沿用同一套 pending/streaming 反馈。 */}
-      {/* 幕末：黑场 + 下一幕。整个面板盖住舞台，视觉上就是幕与幕之间的黑场。
-          这一出留着自己的按钮：幕末没有台词可点，「下一幕」是全屏黑场里唯一的出口。 */}
-      {isActEnd && !stop && !freeOpen && (
-        <footer className="act-curtain">
-          <button type="button" className="act-next" onClick={onContinue} disabled={disabled}>
-            下一幕
-          </button>
-        </footer>
+      {/* 本轮没有停止点、直接写完：唯一的出口就是开下一轮。跟选肢用同一张卡片样式，
+          不压黑舞台——引擎里不存在比轮更大的单位，界面也不该暗示有。 */}
+      {isNoStop && !stop && !freeOpen && (
+        <div className="choice-overlay" role="group" aria-label="继续">
+          <div className="choices">
+            <button type="button" className="choice" onClick={onContinue} disabled={disabled}>
+              <Icon name="forward" />
+              继续
+            </button>
+          </div>
+        </div>
       )}
     </>
   );

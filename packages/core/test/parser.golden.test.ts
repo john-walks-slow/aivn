@@ -51,7 +51,7 @@ const SAMPLE_BEAT = [
   '<thought id="mio">（这家伙，到底在想什么呢……）</thought>',
 ].join("\n");
 
-describe("完整节拍", () => {
+describe("完整轮", () => {
   it("整段一次喂入，产出有序事件流", () => {
     const { events, parser } = collect();
     parser.feed(SAMPLE_BEAT);
@@ -160,7 +160,7 @@ describe("消息边界自动闭合", () => {
 });
 
 describe("stop 闸门", () => {
-  it("stop 闭合后丢弃其后本节拍的一切事件", () => {
+  it("stop 闭合后丢弃其后本轮的一切事件", () => {
     const { events, parser } = collect();
     parser.feed('<narrate>她笑了笑。</narrate><stop type="free"></stop><narrate>不应出现</narrate><say id="x">也不应出现</say>');
     parser.endMessage();
@@ -178,10 +178,10 @@ describe("stop 闸门", () => {
     expect(events[0]).toMatchObject({ kind: "stop", stopType: "free", placeholder: "你做什么？" });
 
     parser.resetBeat();
-    parser.feed('<narrate>新节拍正常</narrate>');
+    parser.feed('<narrate>新轮正常</narrate>');
     parser.endMessage();
     expect(events.filter((e) => e.kind === "narrate_text").map((e) => (e as { delta: string }).delta)).toEqual([
-      "新节拍正常",
+      "新轮正常",
     ]);
   });
 
@@ -202,7 +202,7 @@ describe("stop 闸门", () => {
     expect(selfClosing.events[0]).toMatchObject({ kind: "stop", stopType: "choice" });
   });
 
-  it("pause 已从 stop 类型里移除，幕末由 beat_end/act_end 表达", () => {
+  it("pause 已从 stop 类型里移除，幕末由 beat_end/no_stop 表达", () => {
     const legacy = collect();
     legacy.parser.feed('<stop type="pause"></stop>');
     expect(legacy.events).toHaveLength(0);

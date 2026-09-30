@@ -294,7 +294,7 @@ export async function handleHttp(
     }
 
     if (sub === "active" && parts.length === 4 && method === "PUT") {
-      // 切档：只改指针 + 重建 runtime；演出进行中等当前一拍演完
+      // 切档：只改指针 + 重建 runtime；演出进行中等当前一轮演完
       const body = JSON.parse((await readBody(req)).toString("utf8")) as { saveId?: string };
       if (!body.saveId) return fail(res, 400, "缺少 saveId");
       await playhouse.switchSave(playId, body.saveId);

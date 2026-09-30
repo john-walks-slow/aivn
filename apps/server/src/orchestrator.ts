@@ -38,15 +38,15 @@ import type { PlayConfig } from "@stage-ai/core";
 import type { PlayMemory } from "./memory.js";
 import { VoicePipeline, type TtsSynthFn } from "./voice.js";
 
-/** 生成批次收束工具（D3：交互停止点之后或一幕写完时调用）。 */
+/** 生成批次收束工具（D3：交互停止点之后或本轮写完时调用）。 */
 const beatDoneParams = Type.Object({}, { additionalProperties: false });
 
 export function createBeatDoneTool(): AgentTool<TSchema> {
   return {
     name: "beat_done",
-    label: "结束本节拍",
+    label: "结束本轮",
     description:
-      "本节拍演出内容已写完（交互停止点之后，或一幕自然写完）时调用，不与其他工具同批调用",
+      "本轮演出内容已写完（交互停止点之后，或本轮自然写完）时调用，不与其他工具同批调用",
     parameters: beatDoneParams,
     execute: async () => ({
       content: [{ type: "text", text: "ok" }],
@@ -60,7 +60,7 @@ export function createBeatDoneTool(): AgentTool<TSchema> {
 const AFFINITY_DELTA_CAP = 5;
 const AFFINITY_MAX = 100;
 
-/** 重建接力保留预算（token）：接住最近几拍就够，更早的细节走 archive 检索。 */
+/** 重建接力保留预算（token）：接住最近几轮就够，更早的细节走 archive 检索。 */
 const CARRY_OVER_TOKENS = 8000;
 
 /** 记忆工具依赖（D7）：engine 拥有状态真值，stateFiles 随谱系快照走。 */
@@ -115,7 +115,7 @@ export function createMemoryTools(deps: MemoryToolDeps): AgentTool<TSchema>[] {
     name: "update_state",
     label: "提议状态更新",
     description:
-      "提议更新引擎状态（好感度增量/旗标）。好感度传增量（如 koharu: 2 表示 +2，单次 |增量|≤5，值域 0~100）；旗标传目标值。引擎校验后才生效，【状态】区下轮反映。剧情有实质推进时才调用，不要每拍都调。",
+      "提议更新引擎状态（好感度增量/旗标）。好感度传增量（如 koharu: 2 表示 +2，单次 |增量|≤5，值域 0~100）；旗标传目标值。引擎校验后才生效，【状态】区下轮反映。剧情有实质推进时才调用，不要每轮都调。",
     parameters: updateStateParams,
     execute: async (_toolCallId, params: Static<typeof updateStateParams>) => {
       const { affinity, flags } = params;
@@ -155,7 +155,7 @@ export function createMemoryTools(deps: MemoryToolDeps): AgentTool<TSchema>[] {
     name: "write_memory",
     label: "更新活跃状态文件",
     description:
-      "维护活跃状态文件：scene（当前场景/在场人物/时间，一两行）或 threads（当前活跃剧情线与悬念，要点列表）。每拍有实质变化时更新，保持简短——全文会在下轮【状态】区注入。",
+      "维护活跃状态文件：scene（当前场景/在场人物/时间，一两行）或 threads（当前活跃剧情线与悬念，要点列表）。每轮有实质变化时更新，保持简短——全文会在下轮【状态】区注入。",
     parameters: writeMemoryParams,
     execute: async (_toolCallId, params: Static<typeof writeMemoryParams>) => {
       const { file, content } = params;
@@ -187,7 +187,7 @@ export function createMemoryTools(deps: MemoryToolDeps): AgentTool<TSchema>[] {
     name: "search_archive",
     label: "检索历史往事",
     description:
-      "全文检索本分支历史演出（过往节拍的剧本切片）。需要回看发生过什么、玩家说过什么时调用；只命中当前分支可见的历史，不会召回其他分支。",
+      "全文检索本分支历史演出（过往轮的剧本切片）。需要回看发生过什么、玩家说过什么时调用；只命中当前分支可见的历史，不会召回其他分支。",
     parameters: searchArchiveParams,
     execute: async (_toolCallId, params: Static<typeof searchArchiveParams>) => {
       const { query, limit } = params;
@@ -197,7 +197,7 @@ export function createMemoryTools(deps: MemoryToolDeps): AgentTool<TSchema>[] {
         Math.max(1, Math.min(10, limit ?? 5)),
       );
       if (hits.length === 0) return textResult("（无命中：当前分支历史中未检索到相关内容）");
-      return textResult(hits.map((h) => `【第 ${h.turn} 拍】\n${h.summary}`).join("\n\n"));
+      return textResult(hits.map((h) => `【第 ${h.turn} 轮】\n${h.summary}`).join("\n\n"));
     },
   };
 
@@ -239,7 +239,7 @@ export interface OrchestratorOptions {
   onLineageEvent?: (event: LineageEvent) => void;
   /** 会话落盘钩子（beat 收束时调用）；返回 Promise 时 whenIdle 会等它落地。 */
   persist: () => void | Promise<void>;
-  /** 服务器重启恢复：上次会话的运行态（事件缓冲/节拍号/停止点）。 */
+  /** 服务器重启恢复：上次会话的运行态（事件缓冲/轮号/停止点）。 */
   restored?: OrchestratorRuntimeState;
   /** 服务器重启恢复：已落盘的剧作家历史（不回灌的话，下一次落盘就把重启前的历史清成空白）。 */
   restoredHistory?: HistoryBeat[];
@@ -254,8 +254,8 @@ export interface OrchestratorOptions {
     keepRecentTokens: number;
   };
   /**
-   * 单拍超时（毫秒）。网关挂住时 provider 既不报错也不收流，编排器会一直等下去，
-   * 舞台表现为「剧作家正在落笔…」永远不结束。超点即 abort 这一拍，按拍失败收束。
+   * 单轮超时（毫秒）。网关挂住时 provider 既不报错也不收流，编排器会一直等下去，
+   * 舞台表现为「剧作家正在落笔…」永远不结束。超点即 abort 这一轮，按轮失败收束。
    * 不传 = 不设上限。
    */
   beatTimeoutMs?: number;
@@ -292,7 +292,7 @@ interface OpenLine {
 
 /**
  * Playwriter 编排器：pi Agent 流式输出 → StageDslParser → IR 事件（seq）→ 广播；
- * 谱系行级聚合 + 快照；beat 生命周期（start → 流式 → stop/act_end 收束）。
+ * 谱系行级聚合 + 快照；beat 生命周期（start → 流式 → stop/no_stop 收束）。
  *
  * 三区装配：A 区 = system prompt（固定）；B 区 = 逐轮追加的 user 消息
  * （【状态】+【导演注】?+【玩家表态】，Active State 进 user 消息保证 KV 前缀稳定）。
@@ -311,9 +311,9 @@ export class PlaywrightOrchestrator {
   private openLine: OpenLine | null = null;
   private autostarted = false;
   private disposed = false;
-  /** 一拍正在开（纪元压缩等前置步骤未完）：对外等同 busy，防止并发 beginBeat。 */
+  /** 一轮正在开（纪元压缩等前置步骤未完）：对外等同 busy，防止并发 beginBeat。 */
   private beatPending = false;
-  /** 等待「编排器空闲」的挂起者（工坊写盘要在拍边界重建 runtime，不打断进行中的演出）。 */
+  /** 等待「编排器空闲」的挂起者（工坊写盘要在轮边界重建 runtime，不打断进行中的演出）。 */
   private idleWaiters: (() => void)[] = [];
   /** 最近一次会话落盘任务：重建 runtime 前必须等它落地，否则可能读到写了一半的 session.json。 */
   private pendingPersist: Promise<void> | null = null;
@@ -321,21 +321,21 @@ export class PlaywrightOrchestrator {
   private readonly signalController = new AbortController();
   /** 语音预取管线（D5）：say 行 → 分句 → TTS 预取 → audio_ready。 */
   private readonly voice: VoicePipeline | null;
-  /** 本拍内 pi agent 的流错误（message_end.errorMessage）；每拍重置。 */
+  /** 本轮内 pi agent 的流错误（message_end.errorMessage）；每轮重置。 */
   private beatError: string | null = null;
-  /** 这一拍是被我们自己的超时掐断的：provider 随之报的是 AbortError，不是根因。 */
+  /** 这一轮是被我们自己的超时掐断的：provider 随之报的是 AbortError，不是根因。 */
   private beatTimedOut = false;
-  /** 本拍内产出的舞台事件数（空拍检测）。 */
+  /** 本轮内产出的舞台事件数（空轮检测）。 */
   private beatEvents = 0;
-  /** 本拍台词文本（archive 切片摘要来源）。 */
+  /** 本轮台词文本（archive 切片摘要来源）。 */
   private beatLines: string[] = [];
-  /** 本 turn 调用了 beat_done → 拍在此收束（普通工具轮次不算边界，否则记忆查询会撕裂节拍）。 */
+  /** 本 turn 调用了 beat_done → 轮在此收束（普通工具轮次不算边界，否则记忆查询会撕裂轮）。 */
   private beatClosed = false;
   /** always/state 活跃状态文件内容（谱系级，随快照走；write_memory 工具维护）。 */
   private stateFiles: Record<string, string> = {};
   /** 当前分支已走过的纪元摘要 id（谱系级，随快照走；纪元压缩时追加）。 */
   private arcIds: string[] = [];
-  /** 待注入的插一句（演出中收到，等这一拍收束再兑现）。不落盘：重启后队列不复活。 */
+  /** 待注入的插一句（演出中收到，等这一轮收束再兑现）。不落盘：重启后队列不复活。 */
   private pending: PromptQueueItem[] = [];
   private pendingSeq = 0;
   /** 链尾悬空的用户输入（分岔落在一次表态上时截下来的）：并进下一轮，不造空 assistant 轮次。 */
@@ -370,7 +370,7 @@ export class PlaywrightOrchestrator {
         })
       : null;
     if (opts.restored) {
-      // 恢复会话：回填事件缓冲与节拍状态，autostart 视为已完成（续演不重开开场）
+      // 恢复会话：回填事件缓冲与轮状态，autostart 视为已完成（续演不重开开场）
       this.events.push(...opts.restored.events);
       this.seq = this.events.at(-1)?.seq ?? 0;
       this.beatNo = opts.restored.beatNo;
@@ -416,7 +416,7 @@ export class PlaywrightOrchestrator {
       },
     });
     // 批次收束兜底：pi 仅在「批内全部工具结果都 terminate」时收束 turn，模型若把 beat_done
-    // 与记忆工具同批调用，terminate 会被吞掉导致本拍继续空转——此时按 beat_done 显式收束 run。
+    // 与记忆工具同批调用，terminate 会被吞掉导致本轮继续空转——此时按 beat_done 显式收束 run。
     agent.finishTurn = async (turn) => {
       const calls = turn.message.content.filter((c) => c.type === "toolCall");
       if (!calls.some((c) => c.name === "beat_done")) return undefined;
@@ -444,7 +444,7 @@ export class PlaywrightOrchestrator {
   }
 
   /**
-   * 剧作家 session 历史（只读）：按拍分组，条目为注入的 user 原文 / 思考 / 原始 DSL / 工具调用。
+   * 剧作家 session 历史（只读）：按轮分组，条目为注入的 user 原文 / 思考 / 原始 DSL / 工具调用。
    * 与 `agent.state.messages` 不同源——对话体会被纪元压缩砍掉重建，这里是边跑边攒的独立账本。
    * 随 session 落盘，REST `/api/plays/:id/history` 读它。
    */
@@ -456,7 +456,7 @@ export class PlaywrightOrchestrator {
    * 重建接力：把对话体的最近一段切出来交给新实例。
    * A 区（systemPrompt）是只读的，工坊改了创作口径/设定就只能重建 Agent——不接力就等于每改一次失忆一次。
    * 切点与纪元压缩同原则：落点必是 user 消息，工具调用对不被劈开；预算取压缩保留预算的一小截，
-   * 够接住最近几拍即可，更早的细节本就逐拍落进 archive，search_archive 检索得回来。
+   * 够接住最近几轮即可，更早的细节本就逐轮落进 archive，search_archive 检索得回来。
    */
   carryOver(note: string): CarryOver | null {
     const messages = this.agent.state.messages;
@@ -469,7 +469,7 @@ export class PlaywrightOrchestrator {
       tokens += estimateTokens(messages[cut]!) * scale;
     }
     while (cut < messages.length && messages[cut]?.role !== "user") cut += 1;
-    // 落在末尾：没有可接力的完整轮次（空拍 / 只有 system）
+    // 落在末尾：没有可接力的完整轮次（空轮 / 只有 system）
     if (cut >= messages.length) return null;
     return { messages: messages.slice(cut), note };
   }
@@ -489,7 +489,7 @@ export class PlaywrightOrchestrator {
     this.flushIdleWaiters(); // 挂起的重建请求不得悬着
   }
 
-  /** 空闲时立刻兑现，否则等到下一个拍边界（工坊热改 premise 不能腰斩进行中的演出）。 */
+  /** 空闲时立刻兑现，否则等到下一个轮边界（工坊热改 premise 不能腰斩进行中的演出）。 */
   whenIdle(): Promise<void> {
     if (this.disposed) return Promise.resolve();
     if (!this.engaged) return this.pendingPersist ?? Promise.resolve();
@@ -530,7 +530,7 @@ export class PlaywrightOrchestrator {
     return this.busy;
   }
 
-  /** 对外可接收新输入的空闲判据：一拍开窗中（busy）或正在开拍（纪元压缩等前置）。 */
+  /** 对外可接收新输入的空闲判据：一轮开窗中（busy）或正在开新一轮（纪元压缩等前置）。 */
   private get engaged(): boolean {
     return this.busy || this.beatPending;
   }
@@ -547,14 +547,14 @@ export class PlaywrightOrchestrator {
   get stoppedReplay(): {
     type: "beat_end";
     beatId: string;
-    reason: "stop" | "act_end";
+    reason: "stop" | "no_stop";
     stop?: StopPayload;
   } | null {
     if (this.busy || !this.autostarted || this.beatNo === 0) return null;
     return {
       type: "beat_end",
       beatId: `beat-${this.beatNo}`,
-      reason: this.lastStop ? "stop" : "act_end",
+      reason: this.lastStop ? "stop" : "no_stop",
       stop: this.lastStop ?? undefined,
     };
   }
@@ -566,9 +566,9 @@ export class PlaywrightOrchestrator {
     void this.beginBeat(this.opts.play.opening);
   }
 
-  /** 玩家操作 → 下一节拍。插一句在演出中排进待注入队列，其余动作必须 idle。 */
+  /** 玩家操作 → 下一轮。插一句在演出中排进待注入队列，其余动作必须 idle。 */
   async playerAction(action: PlayerAction): Promise<void> {
-    // 插一句是唯一支持演出中投递的输入：它在拍边界统一兑现，不打断进行中的这一拍。
+    // 插一句是唯一支持演出中投递的输入：它在轮边界统一兑现，不打断进行中的这一轮。
     // engaged 覆盖纪元压缩窗口（压缩期间 busy 仍为 false，但 Agent 随时可能被重建，
     // 并发 beginBeat 会打架），此时也只排队——不投进即将被替换的实例。
     if (action.kind === "prompt") {
@@ -590,7 +590,7 @@ export class PlaywrightOrchestrator {
     if (this.engaged) {
       this.send({
         type: "error",
-        message: "演出进行中，请等待当前节拍结束",
+        message: "演出进行中，请等待当前轮结束",
         recoverable: true,
       });
       return;
@@ -615,7 +615,7 @@ export class PlaywrightOrchestrator {
     }
     if (!this.autostarted) {
       this.autostarted = true;
-      // 开场这一句同样落谱系：否则它只活在对话体里，玩家在拍内分岔就再也找不回来
+      // 开场这一句同样落谱系：否则它只活在对话体里，玩家在轮内分岔就再也找不回来
       if (resolved) this.appendLineage("prompt", { payload: { input: resolved.text } });
       const inputs = resolved ? [resolved.text] : [];
       await this.beginBeat(`${this.opts.play.opening}\n\n${this.renderPromptTurn(inputs)}`);
@@ -629,11 +629,11 @@ export class PlaywrightOrchestrator {
   }
 
   /**
-   * 兑现一批插一句：落谱系 → 开拍。
+   * 兑现一批插一句：落谱系 → 开始新一轮。
    *
-   * 谱系节点在**注入时**才落（排队期间玩家还能改还能撤），且挂在开拍之前——
-   * 它是这一拍的第一条输入节点，锚点分岔从这里起就等于「从这句话重演」。
-   * 已落笔的旧批次在这里出列：它在面板上显示过「已落笔」，新一轮开拍就不该再占位。
+   * 谱系节点在**注入时**才落（排队期间玩家还能改还能撤），且挂在开新一轮之前——
+   * 它是这一轮的第一条输入节点，锚点分岔从这里起就等于「从这句话重演」。
+   * 已落笔的旧批次在这里出列：它在面板上显示过「已落笔」，新一轮开始时就不该再占位。
    * 收束后的排队兑现由 beginBeat 的 onBeatSettled 统一接管，本方法不重复。
    */
   private async deliverPrompts(items: readonly PromptQueueItem[]): Promise<void> {
@@ -647,14 +647,14 @@ export class PlaywrightOrchestrator {
     await this.beginBeat(this.renderPromptTurn(items.map((item) => item.text)));
   }
 
-  /** 拍收束后的收尾：先兑现排队输入（保持 engaged），没有才放行 whenIdle。 */
+  /** 本轮收束后的收尾：先兑现排队输入（保持 engaged），没有才放行 whenIdle。 */
   private onBeatSettled(): void {
     this.send({ type: "beat_settled" });
     // 只取还没落笔的：已注入的那批不能再来一遍，否则同一句话会进两次谱系
     const items = this.pending.filter((item) => item.status === "pending");
     if (items.length === 0) {
       // 队列空了就把已落笔的那批也带走：面板写的是「接下来要说的话」，
-      // 没有下一句时它就该消失，不能把上一拍的回执永远挂在右上角。
+      // 没有下一句时它就该消失，不能把上一轮的回执永远挂在右上角。
       if (this.pending.length > 0) {
         this.pending = [];
         this.broadcastPromptQueue();
@@ -662,7 +662,7 @@ export class PlaywrightOrchestrator {
       this.flushIdleWaiters();
       return;
     }
-    this.beatPending = true; // 先占位再放行：engaged 不能在「这一拍完了但下一拍没开」的缝里掉下去
+    this.beatPending = true; // 先占位再放行：engaged 不能在「这一轮完了但下一轮没开」的缝里掉下去
     void this.deliverPrompts(items);
   }
 
@@ -715,7 +715,7 @@ export class PlaywrightOrchestrator {
    *
    * `resume: true` = 分岔后立刻续演（用户说的「重来」）：目标节点之后的内容整段截断，
    * 挂载点后紧接一个 fork 标记事件，续演内容挂它之下。中间不设停止点——等价于玩家在
-   * 上一拍末尾按了「继续」，零点击。
+   * 上一轮末尾按了「继续」，零点击。
    */
   async forkTo(nodeId: string, opts?: { resume?: boolean }): Promise<void> {
     this.guardIdle();
@@ -725,7 +725,7 @@ export class PlaywrightOrchestrator {
     }
     // rebaseAt 同步完成（含 recordFork），beginBeat 同步置 beatPending：
     // 整个 fork+续演是一步，中间没有让 engaged 掉下去的空档。
-    this.rebaseAt(nodeId, "这一幕重来", { resume: true });
+    this.rebaseAt(nodeId, "重演这一轮", { resume: true });
     await this.beginBeat(this.renderPromptTurn([]));
   }
 
@@ -755,7 +755,7 @@ export class PlaywrightOrchestrator {
   }
 
   private guardIdle(): void {
-    if (this.engaged) throw new Error("演出进行中，请等待当前节拍结束");
+    if (this.engaged) throw new Error("演出进行中，请等待当前轮结束");
   }
 
   /**
@@ -769,8 +769,8 @@ export class PlaywrightOrchestrator {
    * 保持同刻铁律：旧分支的活跃状态、剧情线引用与 archive 检索范围一并回退，
    * 兄弟/废弃分支的往事不可召回（防剧透）。
    *
-   * `resume: true` 时不停在这个停止点：挂载点落在拍中的节点也照样续演——
-   * 拍首锚点由客户端算出（见计划 §7.2），服务端不需要知道「拍边界」这件事。
+   * `resume: true` 时不停在这个停止点：挂载点落在轮中的节点也照样续演——
+   * 轮首锚点由客户端算出（见计划 §7.2），服务端不需要知道「轮边界」这件事。
    */
   private rebaseAt(nodeId: string, note: string, opts?: { resume?: boolean; mark?: boolean }): void {
     this.guardIdle();
@@ -783,7 +783,7 @@ export class PlaywrightOrchestrator {
     else tree.recordFork(nodeId);
     // 链尾悬空的表态（分岔落在一次输入上）并进下一轮，不造空 assistant 轮次
     this.trailingInputs = trailingInputs;
-    // 历史跟着分支回退：不在新路径上的拍（兄弟与废弃分支）、以及被拍中截断砍掉后半的那一拍，
+    // 历史跟着分支回退：不在新路径上的轮（兄弟与废弃分支）、以及被轮中截断砍掉后半的那一轮，
     // 都已经不属于这一场了（铁律：分岔/跳转随分支走，防剧透同一原则）
     this.historyRecorder.rebaseTo(tree.pathSet(), this.beatNo);
     this.events.length = 0;
@@ -800,7 +800,9 @@ export class PlaywrightOrchestrator {
       leafId: tree.leafId,
       events: [...this.events],
       ...(this.lastStop ? { stop: this.lastStop } : {}),
-      reason: this.lastStop ? "stop" : "act_end",
+      reason: this.lastStop ? "stop" : "no_stop",
+      // resume=true 的重建（重演这一轮）后面紧跟着一轮新内容，不能说成「已演完」
+      ...(opts?.resume ? { resuming: true } : {}),
       note,
     });
     this.persist();
@@ -843,8 +845,8 @@ export class PlaywrightOrchestrator {
 
   /**
    * 停止点恢复：停在 stop/beat_end 边界 → 还原该停止点（choice 选项原样回到面板）；
-   * 停在拍中（写一半被打断）→ 给一个 pause 停止点，玩家按「继续」重开一拍。
-   * 注意 pause 只在这一条路径上出现，幕末（beat_end）永远走 null → 黑场 +「下一幕」。
+   * 停在轮中（写一半被打断）→ 给一个 pause 停止点，玩家按「继续」重开一轮。
+   * 注意 pause 只在这一条路径上出现，无 stop 的收尾永远走 null → 一个普通的「继续」。
    *
    * `resume`（分岔后立刻续演）时一律清空：分岔的语义就是「不等玩家选，接着演」。
    */
@@ -859,8 +861,8 @@ export class PlaywrightOrchestrator {
       return;
     }
     if (last.kind === "beat_end") {
-      // 只在本拍内找停止点：全链 findLast 会把上一拍的 stop 复活到幕末的档里，
-      // 玩家看到的就不是黑场 +「下一幕」，而是隔了一拍就作废的旧选项
+      // 只在本轮内找停止点：全链 findLast 会把上一轮的 stop 复活到无停止点收尾的档里，
+      // 玩家看到的就不是一个正常出口，而是隔了一轮就作废的旧选项
       const prevBoundary = chain.slice(0, -1).findLastIndex((event) => event.kind === "beat_end");
       const stop = chain.slice(prevBoundary + 1).findLast((event) => event.kind === "stop");
       this.lastStop = stop ? stopFromEvent(stop) : null;
@@ -879,7 +881,7 @@ export class PlaywrightOrchestrator {
     return lineageToBeats(chain, names, this.opts.play.opening);
   }
 
-  /** 对话轮次 → LLM 消息（历史拍的玩家原话与已演出脚本，状态不进历史轮次）。 */
+  /** 对话轮次 → LLM 消息（历史轮的玩家原话与已演出脚本，状态不进历史轮次）。 */
   private renderBeats(beats: readonly RebuiltBeat[]): AgentMessage[] {
     const now = Date.now();
     const messages: AgentMessage[] = [];
@@ -958,18 +960,18 @@ export class PlaywrightOrchestrator {
   private async beginBeat(userText: string): Promise<void> {
     this.beatPending = true;
     // 网关挂住是看不见的故障：provider 既不抛错也不收流，await 会永远挂着。
-    // 到点直接 abort 这一拍，让 finishBeat 的空拍护栏收成一次可重试的失败。
+    // 到点直接 abort 这一轮，让 finishBeat 的空轮护栏收成一次可重试的失败。
     const deadline = this.opts.beatTimeoutMs;
     const timer =
       deadline && deadline > 0
         ? setTimeout(() => {
             this.beatTimedOut = true;
-            this.beatError = `剧作家这一拍超过 ${Math.round(deadline / 1000)} 秒没有动静，已中断`;
+            this.beatError = `剧作家这一轮超过 ${Math.round(deadline / 1000)} 秒没有动静，已中断`;
             this.agent.abort();
           }, deadline)
         : null;
     try {
-      // 纪元边界：拍与拍之间是唯一允许突变 A 区/对话体的时刻（空前缀缓存豁免）
+      // 纪元边界：轮与轮之间是唯一允许突变 A 区/对话体的时刻（空前缀缓存豁免）
       await this.maybeCompactEpoch();
       if (this.disposed) return;
       // B 区注入原文入史：状态区/导演注/玩家表态是拼出来的文本，谱系里只留得下玩家的那一句
@@ -978,7 +980,7 @@ export class PlaywrightOrchestrator {
       await this.agent.prompt(userText);
       await this.agent.waitForIdle();
     } catch (error) {
-      // prompt 抛错（网络/中断）：记入 beatError，由 finishBeat 的空拍护栏统一收束
+      // prompt 抛错（网络/中断）：记入 beatError，由 finishBeat 的空轮护栏统一收束
       this.beatError = error instanceof Error ? error.message : String(error);
     } finally {
       if (timer) clearTimeout(timer);
@@ -992,7 +994,7 @@ export class PlaywrightOrchestrator {
   /**
    * 纪元压缩：对话体涨到窗口预算（默认 60%）时，把早期轮次压成一张 arcs 摘要卡并重建 Agent。
    * - 摘要失败/无可压段：只告警不动对话体——压缩是优化不是正确性前提，不做降级；
-   * - 切掉的原文早已逐拍落进 archive，检索层（search_archive）照常命中。
+   * - 切掉的原文早已逐轮落进 archive，检索层（search_archive）照常命中。
    */
   private async maybeCompactEpoch(): Promise<void> {
     const compaction = this.opts.compaction;
@@ -1017,7 +1019,7 @@ export class PlaywrightOrchestrator {
     try {
       await this.opts.memory.appendArc({
         id: arcId,
-        title: `纪元 ${epochNo}｜截至第 ${this.beatNo} 拍`,
+        title: `纪元 ${epochNo}｜截至第 ${this.beatNo} 轮`,
         summary: oneLiner,
         detail: body,
       });
@@ -1036,7 +1038,7 @@ export class PlaywrightOrchestrator {
     this.persist();
   }
 
-  /** 生成纪元摘要；失败只告警并返回 null（压缩是优化不是正确性前提，不阻断本拍开拍）。 */
+  /** 生成纪元摘要；失败只告警并返回 null（压缩是优化不是正确性前提，不阻断本轮开轮）。 */
   private async summarizeEpoch(head: readonly AgentMessage[]): Promise<EpochSummary | null> {
     try {
       const summary = await completeText(
@@ -1058,7 +1060,7 @@ export class PlaywrightOrchestrator {
     }
   }
 
-  /** 拍窗口记账（开拍与 turn_start 续窗共用）。 */
+  /** 轮窗口记账（开轮与 turn_start 续窗共用）。 */
   private startBeatWindow(): void {
     this.busy = true;
     this.beatNo += 1;
@@ -1091,10 +1093,10 @@ export class PlaywrightOrchestrator {
       }
       this.parser.endMessage();
     } else if (event.type === "turn_start") {
-      // 一个 run 里可能拆成多个 turn（工具批次收束后继续）：每个新 turn 重开拍窗
+      // 一个 run 里可能拆成多个 turn（工具批次收束后继续）：每个新 turn 重开轮窗
       if (!this.busy || this.beatClosed) this.startBeatWindow();
     } else if (event.type === "turn_end") {
-      // 只在真实边界（beat_done）收束：同一拍内的记忆工具轮次（turn_end）必须继续流动
+      // 只在真实边界（beat_done）收束：同一轮内的记忆工具轮次（turn_end）必须继续流动
       if (this.beatClosed) this.finishBeat();
     } else if (event.type === "agent_end") {
       // 正常路径已在 turn_end 收束；此处兜底异常/中止路径（幂等）
@@ -1115,27 +1117,27 @@ export class PlaywrightOrchestrator {
         placeholder: "（本轮选项生成失败，请自由回应）",
       };
     }
-    // 空拍护栏：生成失败/零产出不得静默伪装成正常收束——显式 error + pause 停止点给玩家重试入口
-    // （这一拍没有自然收尾，给不了「下一幕」，只能让玩家按「继续」重开一拍）
+    // 空轮护栏：生成失败/零产出不得静默伪装成正常收束——显式 error + pause 停止点给玩家重试入口
+    // （这一轮没有自然收尾，给不了出口，只能让玩家按「继续」重开一轮）
     if (this.beatEvents === 0 && !stop) {
       this.send({
         type: "error",
-        message: `本节拍生成失败：${this.beatError ?? "模型未产出任何剧本内容"}`,
+        message: `本轮生成失败：${this.beatError ?? "模型未产出任何剧本内容"}`,
         recoverable: true,
       });
       stop = { stopType: "pause" };
     } else if (this.beatError) {
       this.send({
         type: "error",
-        message: `本节拍生成中断：${this.beatError}`,
+        message: `本轮生成中断：${this.beatError}`,
         recoverable: true,
       });
     }
     this.beatError = null;
     this.lastStop = stop;
     this.appendLineage("beat_end", {
-      // seq 锚点：前端按它把行级事件切成一拍一张卡，且能精确跳到拍首行
-      payload: { reason: stop ? "stop" : "act_end", seq: this.seq },
+      // seq 锚点：前端按它把行级事件切成一轮一张卡，且能精确跳到轮首行
+      payload: { reason: stop ? "stop" : "no_stop", seq: this.seq },
     });
     // 谱系快照随 beat 收束保存（分岔/续演恢复用）：活跃状态文件 + arcs 引用（谱系级记忆）
     const engine = this.opts.engine;
@@ -1143,7 +1145,7 @@ export class PlaywrightOrchestrator {
       state: { ...this.stateFiles },
       arcs: [...this.arcIds],
     };
-    // 克隆后再存：快照按节点留档，存引用会被后续拍的原地修改污染（分岔恢复必须拿到当拍真值）
+    // 克隆后再存：快照按节点留档，存引用会被后续轮的原地修改污染（分岔恢复必须拿到当轮真值）
     this.opts.tree.saveSnapshot(
       {
         ...engine,
@@ -1152,7 +1154,7 @@ export class PlaywrightOrchestrator {
       },
       memory,
     );
-    // archive 逐节拍切片（D7 第三层）：本拍台词全文，entryId = 谱系叶（防剧透过滤键）
+    // archive 逐轮切片（D7 第三层）：本轮台词全文，entryId = 谱系叶（防剧透过滤键）
     void this.opts.memory
       .appendArchive({
         entryId: this.opts.tree.leafId ?? "",
@@ -1168,7 +1170,7 @@ export class PlaywrightOrchestrator {
     this.send({
       type: "beat_end",
       beatId: `beat-${this.beatNo}`,
-      reason: stop ? "stop" : "act_end",
+      reason: stop ? "stop" : "no_stop",
       stop: stop ?? undefined,
     });
     this.persist();
