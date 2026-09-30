@@ -410,7 +410,9 @@ export function StageTheater({
             <button
               type="button"
               className={`dir-btn ${playback.auto ? "on" : ""}`}
-              title="自动播放"
+              title={playback.auto ? "自动播放：开（点一下关）" : "自动播放：关（点一下开）"}
+              aria-pressed={playback.auto}
+              aria-label="自动播放"
               onClick={(e) => {
                 e.stopPropagation();
                 playback.setAuto(!playback.auto);
@@ -428,7 +430,7 @@ export function StageTheater({
             }
             hint={
               action === "prompt"
-                ? "可以是某个角色的行动或台词，也可以是给这场戏的指示"
+                ? "可以是某个角色的行动或台词，也可以是给这场戏的指示。带 OOC：前缀 = 跳出角色，直接给剧作家下指令（他会照办，但不会跳出戏来跟你对话）"
                 : action === "edit"
                   ? "就地改这一句，改完接着演，不重演"
                   : "留空 = 只重演这一轮；填了 = 连意图一起给"
@@ -463,7 +465,8 @@ export function StageTheater({
                 <button
                   type="button"
                   className={`ooc-shortcut ${draft.startsWith(OOC_PREFIX) ? "on" : ""}`}
-                  title="以 OOC 开头 = 明确指示剧作家调整方向（遵从但不跳出戏外回应）"
+                  title="以 OOC 开头 = 跳出角色，直接给剧作家下指令（他会照办，但不会跳出戏来跟你对话）"
+                  aria-label="以 OOC 前缀给剧作家下指令"
                   onClick={() =>
                     setDraft((prev) =>
                       prev.startsWith(OOC_PREFIX) ? prev.slice(OOC_PREFIX.length) : OOC_PREFIX + prev,

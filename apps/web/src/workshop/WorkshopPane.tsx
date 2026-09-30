@@ -90,8 +90,10 @@ export function WorkshopPane({
     setLightbox({ images: images.map((a) => ({ url: a.url, caption: a.path })), index });
 
   const activeThread = state.threads.find((t) => t.id === state.activeId);
-  // 新会话还没发出第一句时，这一栏写「新会话」，不写上一条会话的名字
-  const threadName = workshop.freshThread ? "新会话" : (activeThread?.title ?? "新会话");
+  // 一个会话都没有时，切换器没得切，不渲染——否则它会和右边的「新会话」并排成两个同名按钮。
+  // 新会话还没发出第一句时，切换器写「未命名会话」，让右边那个「新会话」只有一个同名出口。
+  const hasThreads = state.threads.length > 0;
+  const threadName = workshop.freshThread ? "未命名会话" : (activeThread?.title ?? "未命名会话");
 
   return (
     <div className="workshop-pane">
@@ -132,17 +134,19 @@ export function WorkshopPane({
         <>
           {/* 会话层：对话页的子结构。收起时只占一条，选中即收起。 */}
           <div className="thread-bar">
-            <button
-              type="button"
-              className="thread-toggle"
-              onClick={() => setThreadsOpen((v) => !v)}
-              aria-expanded={threadsOpen}
-              title="切换会话"
-            >
-              <Icon name="backlog" size={14} />
-              <span className="thread-current">{threadName}</span>
-              <Icon name={threadsOpen ? "up" : "down"} size={14} />
-            </button>
+            {hasThreads && (
+              <button
+                type="button"
+                className="thread-toggle"
+                onClick={() => setThreadsOpen((v) => !v)}
+                aria-expanded={threadsOpen}
+                title="切换会话"
+              >
+                <Icon name="backlog" size={14} />
+                <span className="thread-current">{threadName}</span>
+                <Icon name={threadsOpen ? "up" : "down"} size={14} />
+              </button>
+            )}
             <button
               type="button"
               className="ghost-btn small-btn thread-new"

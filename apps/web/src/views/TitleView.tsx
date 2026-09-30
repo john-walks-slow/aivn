@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "../ui/Icon.js";
+import { Modal } from "../ui/Modal.js";
 import { api, readinessAdvice, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
 import { workshopUrl } from "../stage/view.js";
@@ -10,6 +11,7 @@ export function TitleView({ playId }: { playId: string }) {
   const [saves, setSaves] = useState<SaveInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const reload = useCallback((): void => {
     api
@@ -41,8 +43,11 @@ export function TitleView({ playId }: { playId: string }) {
   };
 
   const removePlay = (): void => {
-    const title = detail?.play.title ?? playId;
-    if (!window.confirm(`删除剧目「${title}」？剧本、素材与全部存档将一并删除，不可恢复。`)) return;
+    setConfirmingDelete(true);
+  };
+
+  const doRemovePlay = (): void => {
+    setConfirmingDelete(false);
     api
       .deletePlay(playId)
       .then(() => navigate("/"))
@@ -72,6 +77,31 @@ export function TitleView({ playId }: { playId: string }) {
           <p className="muted small">
             {detail.play.characters.map((c) => c.name).join(" · ") || "（无角色）"}
           </p>
+
+          {/* 就绪说明排在按钮之前：不能按的按钮放在最显眼的位置，读到它的人先撞墙再找解释。 */}
+          {!readiness?.ready && missing.length > 0 && (
+            <p className="title-gate">
+              还不能开演：缺 {missing.join("、")}。请到
+              <button className="link-btn" onClick={() => navigate(workshopUrl(playId))}>
+                工坊
+              </button>
+              与 AI 共创补齐，或到
+              <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "assets"))}>
+                素材页
+              </button>
+              手动补齐。
+            </p>
+          )}
+          {readiness?.ready && advice.length > 0 && (
+            <p className="muted small">
+              还没有 {advice.join("、")}——可以开演（舞台落氛围底色、没有立绘的角色不上台），
+              也可到
+              <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "assets"))}>
+                工坊
+              </button>
+              让 AI 先把底图和定妆照生成出来。
+            </p>
+          )}
 
           <div className="title-menu">
             {/* 有周目时，「继续」是主按钮且排在前：来得最多的动作该是最显眼的那一个。
@@ -111,31 +141,30 @@ export function TitleView({ playId }: { playId: string }) {
               已有 {saves.length} 个周目，每个周目一棵独立故事树，互不覆盖。
             </p>
           )}
-
-          {!readiness?.ready && missing.length > 0 && (
-            <p className="title-gate">
-              还不能开演：缺 {missing.join("、")}。请到
-              <button className="link-btn" onClick={() => navigate(workshopUrl(playId))}>
-                工坊
-              </button>
-              与 AI 共创补齐，或到
-              <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "assets"))}>
-                素材页
-              </button>
-              手动补齐。
-            </p>
-          )}
-          {readiness?.ready && advice.length > 0 && (
-            <p className="muted small">
-              还没有 {advice.join("、")}——可以开演（舞台落氛围底色、没有立绘的角色不上台），
-              也可到
-              <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "assets"))}>
-                工坊
-              </button>
-              让 AI 先把底图和定妆照生成出来。
-            </p>
-          )}
         </div>
+      )}
+
+      {confirmingDelete && (
+        <Modal
+          title="删除剧目"
+          hint={
+            <>
+              删掉「{detail?.play.title ?? playId}」后，剧本、素材与全部 {saves.length} 个周目存档一并消失，无法恢复。
+            </>
+          }
+          width={440}
+          onClose={() => setConfirmingDelete(false)}
+          footer={
+            <>
+              <button onClick={() => setConfirmingDelete(false)}>取消</button>
+              <button className="primary danger-btn" onClick={doRemovePlay}>
+                确认删除
+              </button>
+            </>
+          }
+        >
+          <p className="muted small">要删的是这个剧目本身，不是某一个周目。</p>
+        </Modal>
       )}
     </div>
   );

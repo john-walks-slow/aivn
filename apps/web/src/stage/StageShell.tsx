@@ -45,9 +45,9 @@ export interface StageShellProps {
 
 const NAV: { id: StageView; label: string; icon: IconName; hint: string }[] = [
   { id: "stage", label: "舞台", icon: "play", hint: "正在演的内容" },
-  { id: "backlog", label: "回顾", icon: "backlog", hint: "这一场说过的话" },
-  { id: "route", label: "路线", icon: "fork", hint: "岔出去的世界线" },
-  { id: "workshop", label: "工坊", icon: "workshop", hint: "改设定与剧目文件" },
+  { id: "backlog", label: "回顾", icon: "backlog", hint: "回顾：这一场说过的话" },
+  { id: "route", label: "路线", icon: "fork", hint: "路线：岔出去的世界线" },
+  { id: "workshop", label: "工坊", icon: "workshop", hint: "工坊：改设定与剧目文件" },
 ];
 
 export function StageShell(props: StageShellProps) {

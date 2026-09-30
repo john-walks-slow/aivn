@@ -2326,6 +2326,27 @@ select:focus {
     font-size: 15.5px;
   }
 
+  /* 选肢层贴底排：竖屏画面本来就窄，居中一列卡片会把立绘从头到脚压在下面，
+     只剩头顶露出来。底部留出 200px 避开台词条——台词条是 absolute 叠在舞台上的
+     （z-index 12 > 选肢层 6），不留位置的话卡片会被台词条盖住下半张，点不到。 */
+  .choice-overlay {
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8% 10px 200px;
+  }
+
+  .choice {
+    min-height: 46px;
+    padding: 10px 12px;
+  }
+
+  /* 选肢时把立绘抬上去。竖屏的卡片列占了中段，不抬的话脸正好压在卡片下面，
+     只剩发顶露在外面——玩家要选的恰恰是卡，不是脸，但脸也不该整个消失。 */
+  .theater-stage:has(.choice-overlay) .theater-sprite {
+    bottom: 46%;
+    height: 58%;
+  }
+
   .settings-field {
     grid-template-columns: 1fr;
   }

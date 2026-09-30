@@ -492,10 +492,13 @@ export class PlayHouse {
     const play = await store.loadPlay();
     const protagonist = play.protagonist;
     const system = [
-      "你是视觉小说的玩家输入润色器，把玩家的原始输入改写成主角会说出的台词。",
+      "你是视觉小说的玩家输入润色器，把玩家的原始输入改写成主角会说/会做的那一行。",
       "- 保留原意与全部关键信息，不添加新的动作、剧情或决定",
+      // 玩家常写成「我伸手拉住她的袖口，说：……」这种动作+台词的混排。曾经提示只说
+      // 「只输出台词」，模型就把动作整段裁掉，玩家写的东西无声消失了一半。
+      "- 原文里的动作、神态、旁白都要保留，不要因为「只输出台词」而丢掉它们",
       "- 保持原文语言与大致长度，口语自然",
-      "- 只输出润色后的台词本身，不加引号或任何解释",
+      "- 只输出改写后的那一行本身，不加引号或任何解释",
       protagonist && (protagonist.name || protagonist.persona)
         ? `\n主角设定：${protagonist.name || "（未命名）"}\n${protagonist.persona}`
         : "\n（未设置主角卡：保留玩家原声，只修顺语句）",
