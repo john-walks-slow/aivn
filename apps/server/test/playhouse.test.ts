@@ -21,6 +21,7 @@ function testConfig(playsRoot: string): ServerConfig {
     keepRecentTokens: 12000,
     image: { enabled: false, model: "x", size: "1024x1024", concurrency: 1, timeoutMs: 1000 },
     tts: { enabled: false, keysPath: "", proxy: "", baseUrl: "", concurrency: 1 },
+    exa: { enabled: false, keysPath: "", baseUrl: "", proxy: "", timeoutMs: 1000 },
   } as unknown as ServerConfig;
 }
 
