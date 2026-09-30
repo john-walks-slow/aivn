@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "../ui/Icon.js";
+import { stamp } from "../ui/stamp.js";
 import type { AssetIndex } from "./assets.js";
 import type { BeatCard } from "./beats.js";
 import type { LineageOps } from "./LineagePanel.js";
@@ -241,7 +242,7 @@ export function RouteCanvas({ cards, ops, busy, onBack, names, index }: CanvasPr
 }
 
 /**
- * 一张卡 = 这一拍：左上角拍号、正文、左下角是谁说的，两个动词（跳转 / 分岔）长在卡里的右下角。
+ * 一张卡 = 这一拍：左上角落笔时刻、正文、左下角是谁说的，两个动词（跳转 / 分岔）长在卡里的右下角。
  * 没有检视栏：想对哪一段动手指，就在那一段自己的卡上动手，不用先去点开它。
  * 跳转 = 把世界线挂到这张卡上，不生成内容；分岔 = 退到这张卡之前重写并重新生成。
  */
@@ -275,7 +276,7 @@ function Node({
   return (
     <div className={cls} style={{ left: placed.x, top: placed.y, width: NODE_W, height: NODE_H }} title={text}>
       {bg && <img className="route-node-bg" src={bg} alt="" aria-hidden />}
-      <span className="route-node-no">第 {card.turn} 拍</span>
+      <span className="route-node-stamp">{stamp(card.at)}</span>
       <span className="route-node-text">{text}</span>
       <span className="route-node-foot">
         <span className="route-node-who">{who}</span>
@@ -284,10 +285,11 @@ function Node({
             type="button"
             className="route-node-tool"
             disabled={busy}
-            title={hint || "跳到这里：世界线落到这一段，不生成新内容"}
+            title={hint || "回到这里：世界线落到这一段，不生成新内容"}
             onClick={() => ops.jump(card.id)}
           >
-            <Icon name="locate" />
+            <Icon name="return" />
+            回到这里
           </button>
           <button
             type="button"
@@ -297,6 +299,7 @@ function Node({
             onClick={() => ops.branch(card.id, "beat")}
           >
             <Icon name="fork" />
+            分岔
           </button>
         </span>
       </span>

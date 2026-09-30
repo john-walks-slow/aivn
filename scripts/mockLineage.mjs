@@ -7,6 +7,7 @@ import { mkdir, writeFile, copyFile, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LineageTree } from "../packages/core/dist/lineage/model.js";
+import { lineageToEvents, stopFromNode, toNodeView } from "../packages/core/dist/lineage/replay.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const playId = process.argv[2] ?? "mock-deep";
@@ -17,22 +18,45 @@ const dir = join(root, "plays", playId);
 const KOHARU = "koharu";
 const PREVIEW_KINDS = new Set(["say", "narrate", "thought"]); // 与服务端 store.ts 保持一致
 
+/**
+ * 一个节点在重放里占几个 seq —— 必须和 `packages/core/src/lineage/replay.ts` 同尺，
+ * 否则路线树拿 payload.seq 去对客户端的行 seq 会全体漂移。
+ * 台词现场是 start + 文本 + end 三段（空台词只有两段），布景/演员/停止点各一段，
+ * rewrite 与 beat_end 不产生事件、pause 停止点被归一成 null，它们在客户端没有 seq。
+ */
+function seqSpan(kind, text, extra) {
+  if (kind === "say" || kind === "narrate" || kind === "thought") return text ? 3 : 2;
+  if (kind === "stop") return (extra.stopType ?? "") === "pause" ? 0 : 1;
+  if (kind === "rewrite" || kind === "beat_end" || kind === "preload") return 0;
+  if (kind === "player" || kind === "ooc") return 0;
+  return 1;
+}
+
 /** 造一棵树。 */
 function buildTree(shape) {
   const tree = new LineageTree();
   let seq = 0;
 
   /** 在当前叶尖追加一个事件（叶尖由 append 自动推进）。 */
-  const add = (kind, text, extra = {}) => tree.append(kind, { text, payload: { seq: seq++, ...extra } });
+  const add = (kind, text, extra = {}) => {
+    const span = seqSpan(kind, text, extra);
+    if (!span) return tree.append(kind, { text, payload: { ...extra } });
+    const base = seq + 1;
+    seq += span;
+    return tree.append(kind, { text, payload: { seq: base, ...extra } });
+  };
 
-  /** 一拍：场景 + 几句台词 + 停止点 + beat_end。 */
+  /**
+   * 一拍：场景 + 几句台词 + 停止点 + beat_end。
+   * marker 是分岔标注，按编排器的规矩只落在拍边界（beat_end 之后）——放进拍中会把
+   * 停止点顶成一张没有台词的空卡。
+   */
   const beat = ({ bg, lines, stop, marker }) => {
     add("scene", "", { attrs: { bg, bgm: "bgm_sunset" } });
     lines.forEach((line, i) => {
       add("actor", "", { attrs: { id: KOHARU, pos: i === 0 ? "center" : "left" } });
       add("say", line, { attrs: { id: KOHARU, mood: i === 0 ? "smile" : "normal" } });
     });
-    if (marker) add("rewrite", "", { granularity: "beat", instruction: marker });
     if (stop === "choice") {
       add("stop", "", {
         stopType: "choice",
@@ -47,6 +71,7 @@ function buildTree(shape) {
       add("stop", "", { stopType: "pause" });
     }
     add("beat_end", "", { reason: stop ?? "pause" });
+    if (marker) add("rewrite", "", { granularity: "beat", instruction: marker });
     return tree.leafId;
   };
 
@@ -102,10 +127,23 @@ for (let i = 0; i < saveCount; i += 1) {
   // 各档交替两种树形：切档时舞台上的最后一句必须不同，才看得出换没换树
   const shape = i % 2 === 0 ? pattern : pattern === "deep" ? "flat" : "deep";
   const tree = buildTree(shape);
-  const events = tree.export().events.map((event, j) => ({ ...event, createdAt: 1_700_000_000_000 + j * 1000 }));
-  const id = `s${(1_700_000_000_000 + i * 86_400_000).toString(36)}`;
+  // 时间也得像真的：路线卡左上角显示的是落笔时刻，整棵树钉在同一分钟就看不出先后。
+  // 最近一拍落在刚刚，往前每拍退 40 秒（比真演出快，但先后顺序与真跑一致）。
+  const now = Date.now() - i * 86_400_000;
+  const all = tree.export().events;
+  const events = all.map((event, j) => ({ ...event, createdAt: now - (all.length - j) * 40_000 }));
+  // 事件缓冲 = 客户端重放的那串 IR 事件。恢复档靠它在 hello 之后整段重放，
+  // 空缓冲的存档舞台连第一句都开不了场（路线视图只读树，看不出这个洞）。
+  const view = tree.chainEvents(tree.leafId).map(toNodeView);
+  const stopNode = [...view].reverse().find((n) => n.kind === "stop");
+  const runtime = {
+    events: lineageToEvents(view),
+    beatNo: view.filter((n) => n.kind === "beat_end").length,
+    lastStop: stopNode ? stopFromNode(stopNode) : null,
+    epoch: 1,
+  };
+  const id = `s${now.toString(36)}`;
   const name = `第 ${i + 1} 周目`;
-  const now = 1_757_000_000_000 + i * 86_400_000;
   const saveDir = join(dir, "saves", id);
   await mkdir(saveDir, { recursive: true });
   await writeFile(join(saveDir, "meta.json"), JSON.stringify(metaOf(tree, id, name, now), null, 2));
@@ -117,7 +155,7 @@ for (let i = 0; i < saveCount; i += 1) {
         lineage: { ...tree.export(), events },
         engine: { flags: {}, sceneDetails: {}, activeThreads: [] },
         scene: "黄昏的教室",
-        runtime: { events: [], beatNo: 0, epoch: 0 },
+        runtime,
         savedAt: now,
       },
       null,

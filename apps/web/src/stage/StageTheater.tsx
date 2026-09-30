@@ -40,6 +40,8 @@ interface StageTheaterProps {
   onContinue: () => void;
   /** 操作条可见性控制：碰到舞台叫它回来，H 键手动切换。 */
   onChrome: (next: boolean) => void;
+  /** 快进档：按住 Ctrl 期间为 true，松开/失焦回 false。 */
+  onTurbo: (on: boolean) => void;
   /** 舞台层浮层：停止点的选肢卡片、入戏输入、幕末黑场（均在台词条之上层级）。 */
   overlay?: ReactNode;
 }
@@ -53,6 +55,11 @@ export interface DirectorTargets {
 }
 
 const POS_CLASS: Record<string, string> = { left: "pos-left", center: "pos-center", right: "pos-right" };
+
+/** 输入态：输入框里的按键是文字的，不能被舞台的快捷键与快进档抢走。 */
+function isTyping(t: EventTarget | null): boolean {
+  return t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
+}
 
 /**
  * 立绘：表情差分之间交叉淡入。
@@ -111,6 +118,7 @@ export function StageTheater({
   canContinue,
   onContinue,
   onChrome,
+  onTurbo,
   overlay,
 }: StageTheaterProps) {
   /**
@@ -157,8 +165,6 @@ export function StageTheater({
   }, [scrub]);
 
   useEffect(() => {
-    const isTyping = (t: EventTarget | null): boolean =>
-      t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
       if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
@@ -185,6 +191,26 @@ export function StageTheater({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [scrub, scrubbed, action, onView, toggleChrome]);
+
+  // 快进档：按住 Ctrl 追到缓冲末端，松开立刻回到原节奏。
+  // 失焦也撤档——切出去时 Ctrl 可能停在按下状态，回来就变成永远在快进。
+  useEffect(() => {
+    const down = (e: KeyboardEvent): void => {
+      if (e.key === "Control" && !isTyping(e.target)) onTurbo(true);
+    };
+    const up = (e: KeyboardEvent): void => {
+      if (e.key === "Control") onTurbo(false);
+    };
+    const blur = (): void => onTurbo(false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+    };
+  }, [onTurbo]);
 
   /**
    * 舞台点击：回看中 → 往回追一句；等新内容时（pause 停止点）→ 直接开新拍。

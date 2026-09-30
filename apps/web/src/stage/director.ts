@@ -171,6 +171,8 @@ export function usePlayback(
     resetToken?: number;
     /** 换代后是否快进到新分支末尾（false = 停住继续流式演出）。 */
     resumeAfterReset?: boolean;
+    /** 按住 Ctrl 的快进档：当前行一次读完，行间不设停顿，一路追到缓冲末端。 */
+    turbo?: boolean;
   } & PlaybackHooks,
 ): Playback {
   const [visual, setVisual] = useState<VisualState>(EMPTY_VISUAL);
@@ -192,6 +194,7 @@ export function usePlayback(
   hooksRef.current = { onLineStart: opts.onLineStart, onFastForward: opts.onFastForward };
 
   const current = currentKey ? (linesRef.current.find((l) => l.key === currentKey) ?? null) : null;
+  const turbo = opts.turbo ?? false;
 
   /**
    * 回看游标走会话记录，不走脚本缓冲。
@@ -299,17 +302,34 @@ export function usePlayback(
 
   // 打字机：本地节奏逐字推进（目标行文本随流式增长，追赶即等待）。
   // 标点决定下一个字的等待时长——逗号类短停、句号类长停，读起来才有呼吸（galgame 惯例）。
+  // 快进档：不等字，整行一次读完（语音同步淡出，与点击二段式第一段同一套钩子）。
   useEffect(() => {
     if (!current || shownLength >= current.text.length) return;
+    if (turbo) {
+      setShownLength(current.text.length);
+      hooksRef.current.onFastForward?.();
+      return;
+    }
     const timer = setTimeout(() => setShownLength((n) => n + 1), charDelay(current.text, shownLength));
     return () => clearTimeout(timer);
-  }, [current, shownLength]);
+  }, [current, shownLength, turbo]);
+
+  // 快进（按住 Ctrl）：不依赖自动模式——松手立刻回到原节奏，中途只追缓冲里已有的内容。
+  // 回看中不推进：正在读历史时把播放头往前拽，读到的东西就白翻了。
+  useEffect(() => {
+    if (!turbo || scrubIndex !== null) return;
+    if (current && shownLength < current.text.length) return;
+    if (cursorRef.current >= cues.length) return;
+    const timer = setTimeout(() => consumeNext(), 30);
+    return () => clearTimeout(timer);
+  }, [turbo, scrubIndex, current, shownLength, cues, consumeNext, opts.revision]);
 
   // 自动模式：行播完且还有后续 → 延迟推进；尚未开演时自动起播。
   // 语音 hold：当前行语音仍在播则暂缓（D5 文字先行、语音收尾再走）。
+  // 快进档交给上面的 drain effect，免得两条路同时消费队列把 cue 跳过。
   // 依赖 opts.revision：cues 是原地变更的稳定引用，新事件批次到达时须重新评估。
   useEffect(() => {
-    if (!auto) return;
+    if (!auto || turbo) return;
     if (opts.hold) return;
     if (!current) {
       if (cursorRef.current >= cues.length) return;
@@ -322,7 +342,7 @@ export function usePlayback(
     const delay = Math.min(900 + current.text.length * 55, 3200);
     const timer = setTimeout(() => consumeNext(), delay);
     return () => clearTimeout(timer);
-  }, [auto, current, lineComplete, cues, consumeNext, opts.revision, opts.hold]);
+  }, [auto, current, lineComplete, cues, consumeNext, opts.revision, opts.hold, turbo]);
 
   // 缓冲替换检测（P6）：resetToken 变化 = 事件缓冲已被结构性操作整段重放
   // （cues 长度未必变短，length 比较看不出分岔/重写——必须靠代号）

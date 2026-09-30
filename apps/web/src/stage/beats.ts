@@ -7,9 +7,11 @@ export interface BeatCard {
   id: string;
   turn: number;
   nodes: LineageNodeView[];
-  /** 摘要：拍内首句台词/narration，≤32 字。 */
+  /** 摘要：拍内首句台词/narration，≤32 字。整拍只有布景就是空串。 */
   preview: string;
   speakers: string[];
+  /** 这一拍落笔的墙上时刻（毫秒）：卡上给玩家看的是时间，不是拍号。 */
+  at: number;
   sceneBg: string | null;
   stopType: StopType | null;
   /** 本拍首个剧本事件的 seq：回看/定位到该拍首行。全无 seq（老档/纯导演注拍）时为 null。 */
@@ -76,44 +78,52 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
   const leafCard = cards.find((card) => card.nodes.some((n) => n.id === view.leafId));
   if (leafCard) leafCard.isLeaf = true;
 
-  // 活动路径上的卡片：摘要取该拍的第一句台词（场景/音效行只是布景，不配当摘要）
-  for (const [card, line] of beatAnchors(cards, lines)) {
-    if (card.onPath && line) setPreview(card, spokenText(line, lines));
+  // 活动路径上的卡片：摘要取本拍的第一句台词（场景/音效行只是布景，不配当摘要）。
+  // 找不着就留着 collect() 从树上取的正文——行缓冲只覆盖不擦除。
+  for (const [card, text] of beatPreviews(cards, lines)) {
+    if (text) setPreview(card, text);
   }
   return cards;
 }
 
 /**
- * 活动路径卡片 → 舞台上的那一行。废弃分支的行不在缓冲里；本拍没有台词的卡（纯场景切换）
- * 也不能去认下一拍的行，否则摘要和回看都会指到别人家门口。
+ * 活动路径卡片 → 这一拍该显示的摘要。废弃分支的行不在缓冲里；本拍只有布景的卡
+ * 也不能去认下一拍的行，否则摘要会指到别人家门口。取不到就交回空串（调用方保留树上的正文）。
  */
-function beatAnchors(
+function beatPreviews(
   cards: readonly BeatCard[],
   lines: readonly ScriptLine[],
-): Map<BeatCard, ScriptLine | null> {
-  const map = new Map<BeatCard, ScriptLine | null>();
+): Map<BeatCard, string> {
+  const map = new Map<BeatCard, string>();
   const startSeqs = cards.map((card) => card.startSeq);
   cards.forEach((card, i) => {
     if (!card.onPath) return;
     const next = startSeqs.slice(i + 1).find((seq) => seq !== null && seq > (card.startSeq ?? 0));
-    map.set(card, firstLineOf(card, lines, next ?? null));
+    const anchor = firstLineOf(card, lines, next ?? null);
+    map.set(card, anchor ? spokenText(anchor, lines, next ?? null) : "");
   });
   return map;
 }
 
-/** 从锚点行往后找第一句有台词的行；整拍只有布景就退回锚点行自己的文本。 */
-function spokenText(anchor: ScriptLine, lines: readonly ScriptLine[]): string {
-  if (anchor.text && anchor.type !== "scene" && anchor.type !== "sfx" && anchor.type !== "cg") {
-    return anchor.text;
-  }
+/** 台词三类。scene/sfx/cg 是控制指令，落到卡上是 `bg_xxx · bgm_yyy` 这种工程串。 */
+const SPOKEN = new Set<ScriptLine["type"]>(["say", "narrate", "thought"]);
+
+/**
+ * 摘要取本拍的第一句台词：锚点行自己就是台词就直接用；锚点是布景行就往后找本拍内的
+ * 第一句，越不过下一拍的起点。整拍只有控制指令就返回空串（卡上显示「（无台词）」）——
+ * 控制指令不端给玩家。
+ */
+function spokenText(anchor: ScriptLine, lines: readonly ScriptLine[], until: number | null): string {
+  if (SPOKEN.has(anchor.type) && anchor.text) return anchor.text;
   const spoken = lines.find(
     (l) =>
       l.seq !== undefined &&
       l.seq >= (anchor.seq ?? 0) &&
+      (until === null || l.seq < until) &&
       l.text &&
-      l.type === "say",
+      SPOKEN.has(l.type),
   );
-  return spoken?.text ?? anchor.text;
+  return spoken?.text ?? "";
 }
 
 /**
@@ -174,6 +184,7 @@ function newCard(first: LineageNodeView, parent: BeatCard | null): BeatCard {
     nodes: [],
     preview: "",
     speakers: [],
+    at: first.createdAt,
     sceneBg: null,
     stopType: null,
     startSeq: null,

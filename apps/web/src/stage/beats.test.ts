@@ -31,8 +31,13 @@ function view(specs: NodeSpec[], leafId: string): LineageView {
   return { nodes, leafId, pathIds: nodes.filter((n) => n.onPath).map((n) => n.id) };
 }
 
-function line(key: string, seq: number, text: string): ScriptLine {
-  return { key, seq, text } as ScriptLine;
+function line(key: string, seq: number, text: string, type: ScriptLine["type"] = "say"): ScriptLine {
+  return { key, seq, text, type };
+}
+
+/** 控制指令行：舞台上是布景/音效，落到卡上就是 `bg_xxx · bgm_yyy` 这种工程串。 */
+function sceneLine(key: string, seq: number, text: string): ScriptLine {
+  return line(key, seq, text, "scene");
 }
 
 describe("buildBeats 一拍一卡", () => {
@@ -56,6 +61,8 @@ describe("buildBeats 一拍一卡", () => {
     expect(cards[1]!.startSeq).toBe(9);
     expect(cards[0]!.sceneBg).toBe("bg-rooftop");
     expect(cards[0]!.nodes).toHaveLength(4);
+    // 卡上给玩家看的是这一拍落笔的时刻
+    expect(cards[0]!.at).toBe(1_700_000_000_000);
   });
 
   it("挂回祖先即分岔口：新卡 depth+1、废弃分支标记", () => {
@@ -184,5 +191,53 @@ describe("buildBeats 一拍一卡", () => {
       [],
     );
     expect(cards.map((card) => card.id)).toEqual(["a", "c"]);
+  });
+
+  it("整拍只有控制指令（布景/音效）→ 摘要空着，不端工程串给玩家", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "scene", 1, undefined, true, { bg: "bg-classroom" }],
+          ["b", "sfx", 3],
+          ["c", "beat_end"],
+        ],
+        "c",
+      ),
+      [sceneLine("l1", 1, "bg-classroom · bgm-sunset")],
+    );
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.preview).toBe("");
+  });
+
+  it("布景开拍、台词在后 → 摘要取本拍那句台词", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "scene", 1, undefined, true, { bg: "bg-classroom" }],
+          ["b", "say", 2, "第一句"],
+          ["c", "beat_end"],
+        ],
+        "c",
+      ),
+      [sceneLine("l1", 1, "bg-classroom · bgm-sunset"), line("l2", 2, "第一句")],
+    );
+    expect(cards[0]!.preview).toBe("第一句");
+  });
+
+  it("纯布景拍不去认下一拍的台词（摘要与回看都不越界）", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "scene", 1, undefined, true, { bg: "bg-classroom" }],
+          ["b", "beat_end"],
+          ["c", "say", 9, "下一拍的台词"],
+          ["d", "beat_end"],
+        ],
+        "d",
+      ),
+      [sceneLine("l1", 1, "bg-classroom · bgm-sunset"), line("l2", 9, "下一拍的台词")],
+    );
+    expect(cards[0]!.preview).toBe("");
+    expect(cards[1]!.preview).toBe("下一拍的台词");
   });
 });

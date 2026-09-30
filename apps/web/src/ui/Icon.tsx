@@ -67,6 +67,8 @@ const ICONS = {
   shrink: PanelLeftClose,
   refresh: RotateCw,
   reply: CornerUpLeft,
+  /** 「回到这里」：世界线挂回目标节点，与工坊的「回复」同形不同义。 */
+  return: CornerUpLeft,
   download: Download,
   pencil: Pencil,
   undo: Undo2,
