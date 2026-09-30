@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Icon } from "../ui/Icon.js";
 import type { IconName } from "../ui/Icon.js";
 import type { StageView } from "./StageTheater.js";
@@ -13,8 +14,11 @@ export interface GameBarProps {
   voiceOn: boolean;
   workshopOpen: boolean;
   saveName: string | null;
+  /** 设置项：本轮写完时摆「（继续）」卡（默认关 = 点舞台续演）。 */
+  continueCard: boolean;
   onView: (view: StageView) => void;
   onToggleVoice: () => void;
+  onToggleContinueCard: () => void;
   onWorkshop: () => void;
   onSaves: () => void;
   onExit: () => void;
@@ -31,13 +35,16 @@ export function GameBar({
   voiceOn,
   workshopOpen,
   saveName,
+  continueCard,
   onView,
   onToggleVoice,
+  onToggleContinueCard,
   onWorkshop,
   onSaves,
   onExit,
   hidden,
 }: GameBarProps) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   if (hidden) return null;
   return (
     <nav className="gui-bar" aria-label="主菜单">
@@ -91,7 +98,30 @@ export function GameBar({
           <Icon name="workshop" size={17} />
           <span className="gui-label">STUDIO</span>
         </button>
+        <button
+          type="button"
+          className={`gui-btn ${settingsOpen ? "on" : ""}`.trim()}
+          onClick={() => setSettingsOpen((open) => !open)}
+          title="设置"
+          aria-pressed={settingsOpen}
+        >
+          <Icon name="settings" size={17} />
+          <span className="gui-label">CONFIG</span>
+        </button>
       </div>
+
+      {/* 设置就摆在顶栏里：可以逐个点开看的开关，比藏进二级菜单少一层猜测 */}
+      {settingsOpen && (
+        <div className="gui-settings" role="group" aria-label="设置">
+          <label className="gui-setting">
+            <input type="checkbox" checked={continueCard} onChange={onToggleContinueCard} />
+            <span>
+              本轮写完时显示「（继续）」卡
+              <em>关着的时候，演到最后一句再点一下就接着演，不会多出一个停顿。</em>
+            </span>
+          </label>
+        </div>
+      )}
     </nav>
   );
 }

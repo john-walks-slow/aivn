@@ -265,6 +265,80 @@ describe("stop 闸门", () => {
   });
 });
 
+describe("注释 note", () => {
+  it("正文整体吞掉，不产出任何事件，两侧台词不受影响", () => {
+    const { events, parser } = collect();
+    parser.feed(
+      [
+        '<say id="mio">你来了。</say>',
+        "<note>我打算这一轮收在天台，下一轮再写告白；玩家大概会选第二个选项。</note>",
+        '<say id="mio">上来吧。</say>',
+      ].join("\n"),
+    );
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual([
+      "say_start",
+      "say_text",
+      "say_end",
+      "say_start",
+      "say_text",
+      "say_end",
+    ]);
+    expect(events.map((e) => ("delta" in e ? e.delta : e.kind)).join("")).not.toContain("天台，下一轮");
+  });
+
+  it("撕裂喂入与整段喂入等价", () => {
+    const source = '<narrate>风停了。</narrate>\n<note>这里我想快一点过</note>\n<say id="mio">走吧。</say>';
+    const whole = collect();
+    whole.parser.feed(source);
+    whole.parser.endMessage();
+    for (const chunkSize of [1, 2, 3, 5, 7]) {
+      const torn = collect();
+      feedTorn(torn.parser, source, chunkSize);
+      torn.parser.endMessage();
+      expect(mergeDeltas(torn.events)).toEqual(mergeDeltas(whole.events));
+      expect(torn.parser.warnings).toEqual([]);
+    }
+  });
+
+  it("未闭合的注释在消息边界结束，不影响后续消息", () => {
+    const { events, parser } = collect();
+    parser.feed("<note>先记一下：这局要走坏结局");
+    parser.endMessage();
+    expect(events).toEqual([]);
+    expect(parser.warnings).toEqual([]);
+
+    parser.feed('<say id="mio">别回头。</say>');
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end"]);
+  });
+
+  it("注释内的标签一律丢弃，穿不出来", () => {
+    const { events, parser } = collect();
+    parser.feed('<note>试一下 <say id="mio">不该出现</say> 和 <option>也不该</option></note><say id="mio">这句才该演。</say>');
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end"]);
+    expect(events[1]).toEqual({ kind: "say_text", delta: "这句才该演。" });
+    expect(parser.warnings.filter((w) => w.type === "malformed_tag").length).toBeGreaterThan(0);
+  });
+
+  it("忘了闭合注释时 stop 仍生效：结构标签不能被注释吞掉", () => {
+    const { events, parser } = collect();
+    parser.feed('<note>该问玩家了<stop type="free" placeholder="你怎么想"></stop>');
+    parser.endMessage();
+    expect(events).toEqual([{ kind: "stop", stopType: "free", options: undefined, placeholder: "你怎么想" }]);
+    expect(parser.warnings.some((w) => w.type === "auto_closed")).toBe(true);
+  });
+
+  it("自闭合注释是空注释，直接忽略", () => {
+    const { events, parser } = collect();
+    parser.feed('<note/><say id="mio">嗯。</say>');
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end"]);
+    expect(parser.warnings).toEqual([]);
+  });
+});
+
 describe("容错与字面文本", () => {
   it("未知标签按字面文本输出，不丢内容", () => {
     const { events, parser } = collect();

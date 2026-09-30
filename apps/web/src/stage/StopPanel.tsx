@@ -5,6 +5,8 @@ import { Icon } from "../ui/Icon.js";
 interface StopPanelProps {
   stop: StopPayload | null;
   isNoStop: boolean;
+  /** 这一轮的出口摆成卡片（设置项，默认关；关了点舞台就是继续）。 */
+  showContinue: boolean;
   disabled: boolean;
   /** 玩家在这条线路之外选过/说过同款选项的文案（用于「✓ 已选过」留痕）。 */
   seenChoices?: ReadonlySet<string>;
@@ -27,18 +29,19 @@ const trap = {
 
 /**
  * 停止点（玩家主权的三种形态，P6.5）：
- * - choice：舞台中央悬浮的选肢卡片，数字键 1..9 直选，选过的打勾留痕；
+ * - choice：舞台中央悬浮的选肢卡片，选过的打勾留痕；
  * - free：对话框形态的入戏输入（可 LLM 润色，撤销保原稿）；
  * - pause：只在编排器造出来时出现（轮中分岔被截断 / 空轮报错）——不出按钮，
  *   玩家点舞台即表态续写开新轮（见 StageTheater.onStageClick）；
- * - 本轮写完（beat_done 无 stop）：舞台中央一个「继续」——这一轮没有给玩家介入点，
- *   所以只有这一个出口，点了才开新轮。样式与选肢同卡，不压黑舞台。
+ * - 本轮写完（beat_done 无 stop）：默认没有卡片，点舞台就是继续（与翻句同一个动作）；
+ *   设置里打开了「（继续）」卡才在这里摆一个普通选项——括号表明它是系统给的，不是角色给的台词。
  * 自由输入是从选项卡点开的，有一个返回键——选了不说的自由，选项还摆在那里。
  * 插一句 / 改台词 / 重演这一轮在对话框底部的导演栏里，不在此。
  */
 export function StopPanel({
   stop,
   isNoStop,
+  showContinue,
   disabled,
   seenChoices,
   onChoice,
@@ -191,16 +194,16 @@ export function StopPanel({
         </footer>
       )}
 
-      {/* pause（轮中截断 / 空轮报错）不再单列「继续」按钮：点舞台就是继续，
+      {/* pause（轮中截断 / 空轮报错）与默认设置下的本轮写完都不摆按钮：点舞台就是继续，
           与翻下一句同一个动作，生成中沿用同一套 pending/streaming 反馈。 */}
-      {/* 本轮没有停止点、直接写完：唯一的出口就是开下一轮。跟选肢用同一张卡片样式，
-          不压黑舞台——引擎里不存在比轮更大的单位，界面也不该暗示有。 */}
-      {isNoStop && !stop && !freeOpen && (
-        <div className="choice-overlay" role="group" aria-label="继续">
+      {/* 设置里打开「（继续）」卡时才摆：跟选肢用同一张卡片样式，不压黑舞台——
+          引擎里不存在比轮更大的单位，界面也不该暗示有。 */}
+      {isNoStop && showContinue && !stop && !freeOpen && (
+        <div className="choice-overlay" role="group" aria-label="继续" {...trap}>
           <div className="choices">
             <button type="button" className="choice" onClick={onContinue} disabled={disabled}>
               <Icon name="forward" />
-              继续
+              （继续）
             </button>
           </div>
         </div>

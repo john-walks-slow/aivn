@@ -8,6 +8,8 @@
  *  - 起播条件只看玩家点击，演出中的新内容于是永远等着被点一下才出现。
  */
 
+import type { StopPayload } from "@stage-ai/core";
+
 /**
  * 空对话区该显示什么。
  *
@@ -44,4 +46,41 @@ export function shouldAutoStart(input: AutoStartInput): boolean {
   if (!input.live || input.auto || input.hold) return false;
   if (input.hasCurrent) return false;
   return input.cursor < input.cueCount;
+}
+
+export interface StopAffordanceInput {
+  /** 停止点面板就绪：这一轮演完、编排器空闲（与出选肢卡同一个条件）。 */
+  ready: boolean;
+  /** 引擎给的停止点类型；这一轮没有停止点时为 null。 */
+  stopType: StopPayload["stopType"] | null;
+  /** 这一轮没写 stop（beat_end 的 no_stop）。 */
+  isNoStop: boolean;
+  /** 设置项：本轮写完时摆一张「（继续）」卡。默认关。 */
+  continueCardOn: boolean;
+}
+
+export interface StopAffordance {
+  /** 舞台中央摆一张「（继续）」卡。 */
+  showContinueCard: boolean;
+  /** 点舞台（= 翻下一句的那个动作）即开下一轮。 */
+  clickToContinue: boolean;
+}
+
+/**
+ * 本轮写完时玩家看到的出口：一张卡，或者「点舞台继续」。两者互斥。
+ *
+ * 默认（设置关）是没有卡的——演到最后一句话，再点一下就直接开下一轮，
+ * 与翻句是同一个动作，玩家不必先意识到「这一轮结束了」。设置打开才摆卡：
+ * 有些玩家想看见边界，那是一个明确的停顿。
+ *
+ * pause 例外：它是编排器自造的重试口（轮中截断 / 空轮报错），不是剧本写出来的
+ * 停止点，永远走点舞台，不占卡片位。
+ */
+export function stopAffordance(input: StopAffordanceInput): StopAffordance {
+  const none: StopAffordance = { showContinueCard: false, clickToContinue: false };
+  if (!input.ready) return none;
+  if (input.stopType === "pause") return { ...none, clickToContinue: true };
+  // 有真停止点（choice/free）时出口是选项本身，不额外给继续
+  if (!input.isNoStop || input.stopType !== null) return none;
+  return input.continueCardOn ? { ...none, showContinueCard: true } : { ...none, clickToContinue: true };
 }

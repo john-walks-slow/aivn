@@ -13,11 +13,33 @@
  * 受影响的主要是生图 prompt 等自由文本字段，触发时该标签整体降级丢弃（有 warning），可回喂自修正。
  */
 
-export const DSL_TAGS = ["scene", "actor", "say", "narrate", "thought", "sfx", "preload_asset", "cg", "stop"] as const;
+export const DSL_TAGS = [
+  "scene",
+  "actor",
+  "say",
+  "narrate",
+  "thought",
+  "sfx",
+  "preload_asset",
+  "cg",
+  "stop",
+  "note",
+] as const;
 export type DslTag = (typeof DSL_TAGS)[number];
 
 /** 自闭合指令标签（无正文）。 */
 export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "sfx", "preload_asset", "cg"]);
+
+/**
+ * 注释标签——**不产出任何 IR 事件**（解析器吞掉正文）。
+ *
+ * 它的存在是个出口，不是功能：剧作家被要求「输出里只有剧本」，但模型总有想说的
+ * 非剧本内容（记录打算、提醒自己伏笔、把话说出来再放下）。给它一个合法的地方写，
+ * 「不聊天、不解释、不提问」这条契约才可能绝对化——否则模型只能靠违规来表达。
+ * 内容不进谱系、不上舞台；模型自己的 assistant 消息原文仍在它的上下文里，
+ * 所以它写下的注释在后续轮次对它自己依然可见。要跨会话留存请走记忆工具。
+ */
+export const NOTE_TAG = "note";
 
 /**
  * stop 的交互类型（v1.1 冻结）——这是**模型能写的**白名单。

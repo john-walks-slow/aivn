@@ -13,6 +13,13 @@ import { beatAtLine, buildBeats, editableNodeAtLine } from "../stage/beats.js";
 import { buildTranscript, type TranscriptEntry } from "../stage/transcript.js";
 import { ToastStack, useToasts } from "../stage/toast.js";
 import { StopPanel } from "../stage/StopPanel.js";
+import { stopAffordance } from "../stage/playbackState.js";
+import {
+  readFlag,
+  writeFlag,
+  SETTING_CONTINUE_CARD,
+  SETTING_VOICE,
+} from "../stage/settings.js";
 import { PromptQueuePanel } from "../stage/PromptQueuePanel.js";
 import { useVisualViewport } from "../stage/viewport.js";
 import { WorkshopPanel, type WorkshopMode } from "../workshop/WorkshopPanel.js";
@@ -23,7 +30,11 @@ export function StageScreen({ playId }: { playId: string }) {
   if (!directorRef.current) directorRef.current = new VoiceDirector();
   const director = directorRef.current;
   const [, setAudioTick] = useState(0); // 语音状态变化（hold 解除/解锁）触发重渲染
-  const [voiceOn, setVoiceOn] = useState(() => localStorage.getItem("stage-voice") !== "0");
+  const [voiceOn, setVoiceOn] = useState(() => readFlag(localStorage, SETTING_VOICE, true));
+  /** 本轮写完时摆「（继续）」卡。默认关：点舞台就是续演，与翻下一句同一个动作。 */
+  const [continueCard, setContinueCard] = useState(() =>
+    readFlag(localStorage, SETTING_CONTINUE_CARD, false),
+  );
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [assets, setAssets] = useState<Record<string, string[]>>({});
   /** 当前周目档名：顶栏上的存档芯片，点它去周目页换一棵故事树。 */
@@ -160,8 +171,15 @@ export function StageScreen({ playId }: { playId: string }) {
   const lineDone = playback.current === null || playback.shownLength >= playback.current.text.length;
   const panelReady = !busy && playback.exhausted && lineDone;
 
-  // 「继续」不再单列按钮：等新内容时（pause 停止点）点舞台即开新轮，生成中沿用同一套 pending 反馈。
-  const canContinue = panelReady && stage.stop?.stopType === "pause";
+  // 「继续」的出口形态：默认是点舞台（与翻下一句同一个动作），设置里打开才摆一张卡。
+  // pause（轮中截断/空轮报错）永远走点舞台——它是引擎自造的，不是剧本写出来的停止点。
+  const affordance = stopAffordance({
+    ready: panelReady,
+    stopType: stage.stop?.stopType ?? null,
+    isNoStop: stage.isNoStop,
+    continueCardOn: continueCard,
+  });
+  const canContinue = affordance.clickToContinue;
   const continued = useRef(false);
   useEffect(() => {
     if (!canContinue) continued.current = false;
@@ -224,7 +242,13 @@ export function StageScreen({ playId }: { playId: string }) {
   const toggleVoice = (): void => {
     const next = !voiceOn;
     setVoiceOn(next);
-    localStorage.setItem("stage-voice", next ? "1" : "0");
+    writeFlag(localStorage, SETTING_VOICE, next);
+  };
+
+  const toggleContinueCard = (): void => {
+    const next = !continueCard;
+    setContinueCard(next);
+    writeFlag(localStorage, SETTING_CONTINUE_CARD, next);
   };
 
   const unlockVoice = (): void => {
@@ -268,6 +292,7 @@ export function StageScreen({ playId }: { playId: string }) {
                 <StopPanel
                   stop={stage.stop}
                   isNoStop={stage.isNoStop}
+                  showContinue={affordance.showContinueCard}
                   disabled={busy}
                   seenChoices={seenChoices}
                   onChoice={stage.sendChoice}
@@ -320,8 +345,10 @@ export function StageScreen({ playId }: { playId: string }) {
         voiceOn={voiceOn}
         workshopOpen={workshop !== null}
         saveName={saveName}
+        continueCard={continueCard}
         onView={setView}
         onToggleVoice={toggleVoice}
+        onToggleContinueCard={toggleContinueCard}
         onWorkshop={() => setWorkshop((cur) => (cur ? null : "drawer"))}
         onSaves={() => navigate(`/play/${playId}/saves`)}
         onExit={() => navigate(`/play/${playId}`)}

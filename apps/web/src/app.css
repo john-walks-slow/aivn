@@ -2900,6 +2900,41 @@ select:focus {
   margin: 4px 3px;
   background: rgb(255 255 255 / 0.16);
 }
+/* 设置面板挂在顶栏底下（顶栏是 fixed，用它当定位基准）；同为暗底白字，不另起一套视觉 */
+.gui-settings {
+  position: absolute;
+  top: 100%;
+  right: 12px;
+  pointer-events: auto;
+  margin-top: 6px;
+  min-width: 232px;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 12px;
+  background: rgb(12 12 16 / 0.86);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(8px);
+}
+.gui-setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: rgb(255 255 255 / 0.88);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.gui-setting input {
+  margin: 2px 0 0;
+  accent-color: rgb(255 255 255 / 0.8);
+  cursor: pointer;
+}
+.gui-setting em {
+  display: block;
+  color: rgb(255 255 255 / 0.5);
+  font-size: 11px;
+  font-style: normal;
+}
 /* ── 导演栏（P6 交互重构） ──── */
 
 .free-back {

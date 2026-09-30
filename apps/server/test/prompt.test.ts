@@ -84,4 +84,30 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
     // beat_done 独占批次是引擎事实，不属于用户可改口径
     expect(prompt).toContain("beat_done");
   });
+
+  it("讲清工作方式：stop 是这一轮的出口，没有 stop 时引擎接上下一轮", () => {
+    const prompt = buildSystemPrompt({ play: PLAY });
+    expect(prompt).toContain("# 你怎么工作");
+    expect(prompt).toContain("stop 是这一轮的出口，不是故事的终点");
+    expect(prompt).toContain("引擎直接接上下一轮");
+  });
+
+  it("输出纯净写在不可改的契约里，且指向 <note> 这个出口", () => {
+    const prompt = buildSystemPrompt({ play: PLAY });
+    const contract = prompt.slice(prompt.indexOf("# 演出契约（引擎规则，不可改）"));
+    expect(contract).toContain("你是剧本引擎，不是助手");
+    expect(contract).toContain("不聊天、不寒暄");
+    expect(contract).toContain("<note>");
+    // 注释标签要在格式段里教会，否则模型不知道有这个出口
+    expect(prompt).toContain("## 注释（不是剧本，写给自己）");
+  });
+
+  it("输出纯净不再依赖可被用户删掉的口径文件", () => {
+    const prompt = buildSystemPrompt({
+      play: PLAY,
+      memory: new PlayMemory({ craft: "# 创作口径\n\n只写一句。" }),
+    });
+    expect(prompt).not.toContain(DEFAULT_CRAFT);
+    expect(prompt).toContain("你是剧本引擎，不是助手");
+  });
 });
