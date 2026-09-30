@@ -5,6 +5,8 @@ export interface ScriptLine {
   key: string;
   type: "say" | "narrate" | "thought" | "scene" | "sfx" | "cg";
   actorId?: string;
+  /** say 标签的 name 属性：覆盖本句名牌，不查角色表。 */
+  nameOverride?: string;
   mood?: string;
   text: string;
   /** say/narrate/thought 行起始事件的 seq（audio_ready 语音关联键）。 */
@@ -100,7 +102,8 @@ export class ScriptBuilder {
           key: key(),
           type: "say",
           actorId: event.id,
-          mood: event.mood,
+          ...(event.mood ? { mood: event.mood } : {}),
+          ...(event.name ? { nameOverride: event.name } : {}),
           seq,
           text: "",
         };

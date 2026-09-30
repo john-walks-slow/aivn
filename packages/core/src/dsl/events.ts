@@ -1,4 +1,4 @@
-import type { ActorAttrs, CgAttrs, OptionAttrs, PreloadAssetAttrs, SceneAttrs, SfxAttrs, StopType } from "./spec.js";
+import type { ActorAttrs, CgAttrs, OptionAttrs, PreloadAssetAttrs, SceneAttrs, SayAttrs, SfxAttrs, StopType } from "./spec.js";
 
 /**
  * StageEvent —— 解析器产出的语义事件（编排器加 seq 后即为发往客户端的 IR 事件）。
@@ -7,7 +7,7 @@ import type { ActorAttrs, CgAttrs, OptionAttrs, PreloadAssetAttrs, SceneAttrs, S
 export type StageEvent =
   | ({ kind: "scene" } & SceneAttrs)
   | ({ kind: "actor" } & ActorAttrs)
-  | ({ kind: "say_start"; id: string; mood?: string })
+  | ({ kind: "say_start" } & SayAttrs)
   | { kind: "say_text"; delta: string }
   | { kind: "say_end" }
   | { kind: "narrate_start" }

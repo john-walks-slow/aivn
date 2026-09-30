@@ -19,6 +19,8 @@ export class PlayMemory {
   readonly craft: string;
   /** always/premise.md（世界观前提，缺文件即缺——就绪门与 A 区注入的唯一来源）。 */
   readonly premise: string;
+  /** always/characters/<id>.md — 角色设定（persona/台词风格）；id → 全文。纪元内冻结，工坊热改走 reload。 */
+  readonly characters: ReadonlyMap<string, string>;
   /** index 卡（用户设定卡 + 纪元 arcs 卡，标题+一句话摘要注入 A 区）。 */
   readonly cards: IndexCard[];
   /** archive 切片文件（空 = 不落盘，纯内存检索——测试/无归档剧目）。 */
@@ -32,6 +34,7 @@ export class PlayMemory {
     opts: {
       craft?: string;
       premise?: string;
+      characters?: Map<string, string>;
       cards?: IndexCard[];
       archiveFile?: string | null;
       arcsDir?: string | null;
@@ -40,6 +43,7 @@ export class PlayMemory {
   ) {
     this.craft = opts.craft ?? "";
     this.premise = opts.premise ?? "";
+    this.characters = opts.characters ?? new Map();
     this.cards = opts.cards ?? [];
     this.archiveFile = opts.archiveFile ?? null;
     this.arcsDir = opts.arcsDir ?? null;
@@ -47,9 +51,10 @@ export class PlayMemory {
   }
 
   static async load(store: PlayStore): Promise<PlayMemory> {
-    const [craft, premise, indexCards, arcCards, slices] = await Promise.all([
+    const [craft, premise, characters, indexCards, arcCards, slices] = await Promise.all([
       readText(store.memoryDir("always", "craft.md")),
       readText(store.memoryDir("always", "premise.md")),
+      loadCharacters(store.memoryDir("always", "characters")),
       loadCards(store),
       loadArcs(store),
       loadArchive(store.memoryDir("archive", "events.jsonl")),
@@ -57,6 +62,7 @@ export class PlayMemory {
     return new PlayMemory({
       craft,
       premise,
+      characters,
       cards: [...indexCards, ...arcCards],
       archiveFile: store.memoryDir("archive", "events.jsonl"),
       arcsDir: store.memoryDir("arcs"),
@@ -262,6 +268,19 @@ async function loadArchive(path: string): Promise<ArchiveSlice[]> {
     }
   }
   return slices;
+}
+
+/** 扫描 always/characters/ 目录，返回 id → 全文 Map（文件名去 .md 即 id）。 */
+async function loadCharacters(dir: string): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (!existsSync(dir)) return result;
+  for (const entry of (await readdir(dir)).sort()) {
+    if (!entry.endsWith(".md")) continue;
+    const id = entry.replace(/\.md$/, "");
+    const text = await readText(join(dir, entry));
+    if (text) result.set(id, text);
+  }
+  return result;
 }
 
 /**

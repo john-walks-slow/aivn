@@ -27,6 +27,7 @@ interface OpenWrap {
   tag: "say" | "narrate" | "thought";
   id?: string;
   mood?: string;
+  name?: string;
 }
 
 interface StopParse {
@@ -281,11 +282,13 @@ export class StageDslParser {
       case "preload_asset": {
         const type = attrs.get("type");
         const prompt = attrs.get("prompt");
-        const id = attrs.get("id");
+        const rawId = attrs.get("id");
         if (type !== "bg" && type !== "cg" && type !== "sprite") {
           return this.dropTag("preload_asset", `type 非法: ${type ?? "(缺)"}`);
         }
-        if (!prompt || !id) return this.dropTag("preload_asset", "缺 prompt 或 id");
+        if (!prompt || !rawId) return this.dropTag("preload_asset", "缺 prompt 或 id");
+        // sprite id 缺 variant 时默认 neutral（允许写 <preload_asset type="sprite" id="xiaoyu" .../>）
+        const id = type === "sprite" && !rawId.includes(":") ? `${rawId}:neutral` : rawId;
         this.emit({ kind: "preload_asset", type, prompt, id });
         return;
       }
@@ -305,8 +308,8 @@ export class StageDslParser {
           this.warn("nested_wrap", `<${name}> 打开时 <${this.openWrap.tag}> 未闭合，自动闭合前者`);
           this.closeWrap();
         }
-        this.openWrap = { tag: name, id, mood: attrs.get("mood") };
-        if (name === "say") this.emit({ kind: "say_start", id: id!, mood: attrs.get("mood") });
+        this.openWrap = { tag: name, id, mood: attrs.get("mood"), name: attrs.get("name") };
+        if (name === "say") this.emit({ kind: "say_start", id: id!, ...(attrs.get("mood") ? { mood: attrs.get("mood") } : {}), ...(attrs.get("name") ? { name: attrs.get("name") } : {}) });
         else if (name === "narrate") this.emit({ kind: "narrate_start" });
         else this.emit({ kind: "thought_start", id: id! });
         return;

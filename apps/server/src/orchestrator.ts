@@ -72,6 +72,11 @@ export interface MemoryToolDeps {
   stateFiles: Record<string, string>;
   /** 当前分支已走过的纪元（谱系级：分岔回旧分支不得读到后世的章节摘要）。 */
   arcIds: () => readonly string[];
+  /**
+   * 写 always/characters/<id>.md 并 upsert play.json stub（id/name）。
+   * 由 playhouse 实现，编排器不直接做文件 I/O。
+   */
+  writeCharacter?: (id: string, content: string) => Promise<void>;
 }
 
 function textResult(text: string): AgentToolResult {
@@ -90,8 +95,13 @@ const updateStateParams = Type.Object(
 
 const writeMemoryParams = Type.Object(
   {
-    file: Type.Union([Type.Literal("scene"), Type.Literal("threads")]),
-    content: Type.String({ maxLength: 2000 }),
+    file: Type.Union([
+      Type.Literal("scene"),
+      Type.Literal("threads"),
+      // characters/<id>：建立/更新角色设定（persona/台词风格），同时在 play.json 注册 stub
+      Type.String({ pattern: "^characters/[a-zA-Z][a-zA-Z0-9_-]{0,39}$" }),
+    ]),
+    content: Type.String({ maxLength: 4000 }),
   },
   { additionalProperties: false },
 );
@@ -153,14 +163,29 @@ export function createMemoryTools(deps: MemoryToolDeps): AgentTool<TSchema>[] {
 
   const writeMemory: AgentTool<typeof writeMemoryParams> = {
     name: "write_memory",
-    label: "更新活跃状态文件",
+    label: "写记忆文件",
     description:
-      "维护活跃状态文件：scene（当前场景/在场人物/时间，一两行）或 threads（当前活跃剧情线与悬念，要点列表）。每轮有实质变化时更新，保持简短——全文会在下轮【状态】区注入。",
+      "写记忆文件。\n" +
+      "- file=\"scene\"：当前场景/在场人物/时间（一两行），每轮有实质变化时更新，全文下轮注入【状态】区。\n" +
+      "- file=\"threads\"：活跃剧情线与悬念（要点列表），每轮有实质变化时更新，全文下轮注入【状态】区。\n" +
+      "- file=\"characters/<id>\"：建立/更新角色设定（persona、台词风格）。首行建议写 `# 名字`，引擎据此在角色表注册 id 和显示名。下一轮边界角色出现在 A 区【角色表】。",
     parameters: writeMemoryParams,
     execute: async (_toolCallId, params: Static<typeof writeMemoryParams>) => {
       const { file, content } = params;
-      deps.stateFiles[file] = content.trim();
-      return textResult(`已更新 ${file}.md。`);
+      if (file === "scene" || file === "threads") {
+        deps.stateFiles[file] = content.trim();
+        return textResult(`已更新 ${file}.md。`);
+      }
+      // characters/<id> 分支：落盘 + upsert play.json stub
+      if (!deps.writeCharacter) {
+        return textResult("（当前运行环境不支持写角色设定，请通过工坊完成。）");
+      }
+      const charId = file.replace(/^characters\//, "");
+      await deps.writeCharacter(charId, content.trim());
+      // 从内容首行解析名字（# 名字）
+      const nameMatch = /^#\s+(.+)$/m.exec(content);
+      const name = nameMatch?.[1]?.trim() ?? charId;
+      return textResult(`已写入 ${file}.md，角色「${name}」（id: ${charId}）将在下一拍边界出现在角色表。`);
     },
   };
 
@@ -246,8 +271,19 @@ export interface OrchestratorOptions {
   restoredHistory?: HistoryBeat[];
   /** 语音管线合成函数（无则本剧目无声：hello.voice=false）。 */
   tts?: { synth: TtsSynthFn; concurrency?: number };
-  /** 生图预发射钩子（D6）：解析到 preload_asset 即后台发起，不占播放；无则只记谱系。 */
+  /** 生图预发射钩子（D6）：解析到 preload_asset bg/cg 即后台发起，不占播放；无则只记谱系。 */
   onPreloadAsset?: (type: "bg" | "cg", prompt: string, id: string) => void;
+  /**
+   * 立绘预发射钩子：解析到 preload_asset type="sprite" 即后台发起。
+   * charId = 角色 id，expression = 差分名（已默认补全 neutral），prompt = 生图描述。
+   * 无则只记谱系不发起生图。
+   */
+  onPreloadSprite?: (charId: string, expression: string, prompt: string) => void;
+  /**
+   * 写角色设定钩子：write_memory file="characters/<id>" 时调用。
+   * 负责落盘 always/characters/<id>.md 并 upsert play.json stub。
+   */
+  onWriteCharacter?: (charId: string, content: string) => Promise<void>;
   /** 纪元压缩阈值（窗口占比）与保留预算；不传则只增不减到模型自己报错。 */
   compaction?: {
     contextWindow: number;
@@ -411,6 +447,7 @@ export class PlaywrightOrchestrator {
             tree: opts.tree,
             stateFiles: this.stateFiles,
             arcIds: () => this.arcIds,
+            writeCharacter: opts.onWriteCharacter,
           }),
         ],
         messages,
@@ -1230,7 +1267,7 @@ export class PlaywrightOrchestrator {
           kind: "say",
           id: event.id,
           text: "",
-          attrs: { id: event.id, ...(event.mood ? { mood: event.mood } : {}) },
+          attrs: { id: event.id, ...(event.mood ? { mood: event.mood } : {}), ...(event.name ? { name: event.name } : {}) },
           seq,
         };
         return;
@@ -1301,9 +1338,14 @@ export class PlaywrightOrchestrator {
             attrs: { type: event.type, prompt: event.prompt, id: event.id },
           },
         });
-        // 立绘差分不做生图（一致性不足，见 D6）：只记谱系，不发起
-        if (event.type === "bg" || event.type === "cg") {
-          // 已有同名导入素材就不烧配额（提示词也要求别重复生成，这里兜底）。
+        if (event.type === "sprite") {
+          // sprite id 格式已由 parser 补全为 <charId>:<expression>
+          const colonIdx = event.id.indexOf(":");
+          const charId = colonIdx >= 0 ? event.id.slice(0, colonIdx) : event.id;
+          const expression = colonIdx >= 0 ? event.id.slice(colonIdx + 1) : "neutral";
+          this.opts.onPreloadSprite?.(charId, expression, event.prompt);
+        } else {
+          // bg/cg：已有同名导入素材就不烧配额（提示词也要求别重复生成，这里兜底）。
           // 素材清单的键是目录名（backgrounds/cg），与 DSL 的 type（bg/cg）不同名。
           const kind = event.type === "bg" ? "backgrounds" : "cg";
           const owned = (this.opts.assets?.[kind] ?? []).some(

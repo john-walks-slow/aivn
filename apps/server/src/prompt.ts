@@ -83,12 +83,14 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   };
   const characters = play.characters
     .map((c) => {
+      // 设定优先读 memory/always/characters/<id>.md，fallback 到 play.json 的 persona 字段
+      const personaText = ctx.memory?.characters.get(c.id) ?? c.persona;
       // 差分列表优先取角色卡 sprites 键名（前端按它解析立绘）；未配置映射时回退磁盘文件 stem
       const expressions =
         c.sprites && Object.keys(c.sprites).length > 0
           ? Object.keys(c.sprites)
           : (ctx.assets?.[`sprites/${c.id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
-      return `### ${c.name}（id: ${c.id}）\n${c.persona}${c.voice ? `\n音色：${c.voice}` : ""}${
+      return `### ${c.name}（id: ${c.id}）\n${personaText}${c.voice ? `\n音色：${c.voice}` : ""}${
         expressions.length > 0
           ? `\n立绘差分 expression：${expressions.map((e) => label(e, c.id)).join(" | ")}`
           : ""
@@ -183,6 +185,31 @@ ${assetSection}${craftSection}${indexSection}
 - **立绘差分不做生图**：只能用清单里已列出的差分名，**不存在的差分系统不会帮你补**（preload 对立绘无效）。
   写一个清单里没有的差分名，角色不会不上台，但会**默默换成该角色的第一张立绘**，表情对不上。
   某角色一张立绘都没有时，别让 ta 上台——改用旁白/台词交代，或只写有立绘的角色。
+## 引入新角色
+
+需要引入角色表里没有的新角色时，按以下步骤：
+
+**1. 先建档（write_memory）**，声明角色设定：
+
+    write_memory("characters/xiaoyu", "# 小雨\\n咖啡店打工的少女，说话温柔，常用省略号。")
+
+- 路径格式：characters/<id>（id 只含字母/数字/下划线/连字符，最长 40 字符）
+- 文件首行 "# 名字"，引擎据此在角色表注册 id 与显示名
+- 下一轮边界角色即可见于 A 区角色表
+
+**2. 生立绘（preload_asset type="sprite"）**，后台出图，不阻塞台词：
+
+    <preload_asset type="sprite" id="xiaoyu:neutral" prompt="2D anime style, ..."/>
+
+- id 格式：<charId> 或 <charId>:<expression>；省略 expression 时默认 neutral（定妆照）
+- 已有 neutral 时出其他差分会自动垫图保持一致性
+- 无角色卡也能生图，但 write_memory 建了档之后图才能在 A 区角色表里显示差分
+
+**3. 临时角色（一次性 NPC）** 不需要建档，直接在 say 上写 name 属性：
+
+    <say id="passerby" name="路人甲">你好啊。</say>
+
+name 只覆盖本句名牌，不写入角色表，无 TTS 音色。
 
 ## 台词（三类，正文为原生文本，不要转义）
 

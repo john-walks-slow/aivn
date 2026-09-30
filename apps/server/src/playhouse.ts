@@ -1,6 +1,7 @@
 import type { ServerMessage } from "@stage-ai/core";
-import { LineageTree, isVoiceId, type EngineStateSnapshot } from "@stage-ai/core";
+import { LineageTree, isVoiceId, parsePlayConfig, type EngineStateSnapshot } from "@stage-ai/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
+import { withPlayConfigLock } from "./store.js";
 import type { AssetLibrary } from "./library.js";
 import { PlaywrightOrchestrator, type CarryOver, type OrchestratorRuntimeState } from "./orchestrator.js";
 import type { SaveInfo } from "./saves.js";
@@ -20,6 +21,8 @@ import { WorkshopSession } from "./workshopSession.js";
 import { completeText } from "./llm.js";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 export interface PlayRuntime {
   orchestrator: PlaywrightOrchestrator;
@@ -321,6 +324,73 @@ export class PlayHouse {
     }
   }
 
+  /**
+   * 立绘预发射：preload_asset type="sprite" 后台发起。
+   * 复用工坊素材管线（neutral 垫图 + 抠底 + sprites 补写），生成完成后触发 reload
+   * 让前端收到更新后的 hello（新 sprites 映射 + A 区角色表更新）。
+   */
+  private async preloadSprite(
+    playId: string,
+    store: PlayStore,
+    charId: string,
+    expression: string,
+    prompt: string,
+  ): Promise<void> {
+    const spriteId = `${charId}:${expression}`;
+    if (!this.imageBackend) {
+      for (const send of this.clientsFor(playId)) {
+        send({ type: "asset_failed", id: spriteId, message: "生图未启用" });
+      }
+      return;
+    }
+    try {
+      const { WorkshopAssets } = await import("./workshopAssets.js");
+      const { PlayFiles } = await import("./playFiles.js");
+      const files = new PlayFiles(store);
+      const assets = new WorkshopAssets(playId, {
+        files,
+        store,
+        backend: this.imageBackend,
+        limiter: this.limiterFor(playId),
+        onWrite: () => { /* 不走工坊撤销通道 */ },
+      });
+      await assets.generate({ kind: "sprite", characterId: charId, expression }, prompt);
+      // 生图落 assets/sprites/ 后，reload 让前端收到更新的 hello（新 sprites 映射）
+      await this.reload(playId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[stage-ai] 立绘生图失败 ${spriteId}: ${message}`);
+      for (const send of this.clientsFor(playId)) {
+        send({ type: "asset_failed", id: spriteId, message });
+      }
+    }
+  }
+
+  /**
+   * 写角色设定文件（always/characters/<id>.md）并 upsert play.json stub。
+   * write_memory file="characters/<id>" 时由编排器触发。
+   */
+  private async writeCharacter(store: PlayStore, charId: string, content: string): Promise<void> {
+    // 1. 写 always/characters/<id>.md
+    const charDir = store.memoryDir("always", "characters");
+    const charFile = join(charDir, `${charId}.md`);
+    await mkdir(dirname(charFile), { recursive: true });
+    await writeFile(charFile, content, "utf8");
+
+    // 2. upsert play.json stub（id + name），已存在则不覆盖
+    const nameMatch = /^#\s+(.+)$/m.exec(content);
+    const name = nameMatch?.[1]?.trim() ?? charId;
+    await withPlayConfigLock(store.dir, async () => {
+      const config = await store.loadPlay();
+      if (config.characters.some((c) => c.id === charId)) return;
+      const updated: PlayConfig = {
+        ...config,
+        characters: [...config.characters, { id: charId, name, persona: "" }],
+      };
+      await writeFile(join(store.dir, "play.json"), JSON.stringify(updated, null, 2), "utf8");
+    });
+  }
+
   /** 「开始新周目」：建一棵空树并切过去。旧档原封不动——不删任何事件日志。 */
   async createSave(playId: string, name?: string): Promise<SaveInfo> {
     const created = await this.library.saves(playId).create(name);
@@ -504,6 +574,8 @@ export class PlayHouse {
       scene,
       tts: synth ? { synth, concurrency: this.config.tts.concurrency } : undefined,
       onPreloadAsset: (type, prompt, id) => void this.preloadAsset(play.id, type, prompt, id),
+      onPreloadSprite: (charId, expression, prompt) => void this.preloadSprite(play.id, store, charId, expression, prompt),
+      onWriteCharacter: (charId, content) => this.writeCharacter(store, charId, content),
       compaction: {
         contextWindow: this.config.contextWindow,
         triggerRatio: this.config.compactRatio,

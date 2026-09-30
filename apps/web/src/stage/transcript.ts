@@ -11,6 +11,8 @@ export interface TranscriptEntry {
   /** 显示形态：line 用自己的说话方式，input 借对话框样式。 */
   type: "say" | "narrate" | "thought";
   actorId: string | null;
+  /** 一次性名牌覆盖（来自 say name="..."），只影响本句名牌显示。 */
+  nameOverride?: string;
   text: string;
   /** 台词行的起始事件序号（语音关联键）；玩家输入没有 seq。 */
   seq: number | null;
@@ -44,6 +46,7 @@ function fromLine(line: ScriptLine): TranscriptEntry {
     kind: "line",
     type: line.type === "sfx" || line.type === "cg" || line.type === "scene" ? "narrate" : line.type,
     actorId: line.actorId ?? null,
+    ...(line.nameOverride ? { nameOverride: line.nameOverride } : {}),
     text: line.text,
     seq: line.seq ?? null,
     nodeId: null,
@@ -67,6 +70,7 @@ function fromView(view: LineageView, lines: readonly ScriptLine[]): TranscriptEn
         kind: "line",
         type: node.kind as "say" | "narrate" | "thought",
         actorId: (node.attrs.id as string | undefined) ?? line?.actorId ?? null,
+        ...(line?.nameOverride ? { nameOverride: line.nameOverride } : {}),
         text: line?.text || node.text,
         seq: node.seq ?? null,
         nodeId: node.id,

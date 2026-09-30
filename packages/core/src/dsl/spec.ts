@@ -86,9 +86,22 @@ export interface SfxAttrs {
   volume?: number;
 }
 
+/** say 属性：name 可选，覆盖本句名牌（临时显示，不写入角色表）。 */
+export interface SayAttrs {
+  id: string;
+  /** 覆盖本句名牌文字；留空则查角色表，找不到则显示 id 原文。 */
+  name?: string;
+  mood?: string;
+}
+
 export interface PreloadAssetAttrs {
   type: "bg" | "cg" | "sprite";
   prompt: string;
+  /**
+   * 资产 id。
+   * - bg/cg：直接是素材 id。
+   * - sprite：`<charId>` 或 `<charId>:<expression>`；省略 expression 时默认 `neutral`。
+   */
   id: string;
 }
 

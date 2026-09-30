@@ -317,7 +317,7 @@ export function StageTheater({
 
       <div className="theater-dialog" role="text">
         {view && (view.type === "say" || view.type === "thought") && (
-          <div className="dialog-name">{actorName(names, view.actorId) || "？"}</div>
+          <div className="dialog-name">{view.nameOverride ?? (actorName(names, view.actorId) || "？")}</div>
         )}
         <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
           {shown ||
