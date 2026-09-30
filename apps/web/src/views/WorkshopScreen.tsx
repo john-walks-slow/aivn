@@ -28,6 +28,7 @@ export function WorkshopScreen({ playId }: { playId: string }) {
         onClose={() => navigate(`/play/${playId}`)}
         subscribe={socket.subscribe}
         send={socket.send}
+        connected={socket.connected}
       />
     </div>
   );

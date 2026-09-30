@@ -343,6 +343,7 @@ export function StageScreen({ playId }: { playId: string }) {
           onClose={() => setWorkshop(null)}
           subscribe={subscribeWorkshop}
           send={stage.send}
+          connected={stage.connected}
         />
       )}
     </div>

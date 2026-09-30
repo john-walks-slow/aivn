@@ -131,6 +131,19 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
     send({ type: "workshop_open" });
   }, [send]);
 
+  /**
+   * 连接断了：这一轮的结果永远送不回来（busy 只由 done/error 复位），
+   * 不解锁的话界面会永久停在「思考中…」。半截输出直接丢掉——它没进 messages，
+   * 重连后服务端会重发完整历史。
+   */
+  const onDisconnected = useCallback((): void => {
+    setState((prev) =>
+      prev.busy
+        ? { ...prev, busy: false, streaming: "", activity: null, error: "连接断开了，正在重连…" }
+        : prev,
+    );
+  }, []);
+
   const chat = useCallback(
     (text: string): void => {
       const content = text.trim();
@@ -172,5 +185,5 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
     setState((prev) => ({ ...prev, writes: prev.writes.filter((w) => w.at !== at) }));
   }, []);
 
-  return { state, onMessage, open, chat, activate, setArchived, remove, dismissWrite };
+  return { state, onMessage, open, onDisconnected, chat, activate, setArchived, remove, dismissWrite };
 }
