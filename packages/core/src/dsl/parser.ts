@@ -1,7 +1,7 @@
 import type { StageEvent } from "./events.js";
 import {
   DSL_TAGS,
-  NOTE_TAG,
+  COMMENT_TAG,
   OPTION_TAG,
   STOP_TYPES,
   VOID_TAGS,
@@ -63,15 +63,15 @@ function parseAttrs(source: string): Map<string, string> | null {
  * - feed() 增量喂入 token 流，chunk 可在任意位置撕裂；
  * - endMessage() 消息边界：未完成标签丢弃，未闭合包裹标签自动闭合（保留已流出台词）；
  * - 解析到闭合 <stop> 后本轮闸门开启，其后一切内容静默丢弃，直到 resetBeat()；
- * - <note> 正文整体吞掉、不产出事件（注释是模型的出口，不是演出内容）；
+ * - <comment> 正文整体吞掉、不产出事件（注释是模型的出口，不是演出内容）；
  * - 未知标签按字面文本输出（不丢用户可见内容），残缺标签/属性才丢弃。
  */
 export class StageDslParser {
   private buffer = "";
   private openWrap: OpenWrap | null = null;
   private stopParse: StopParse | null = null;
-  /** 正在一条 <note> 里：正文吞掉，且除 </note> 外的一切标签都不许开工。 */
-  private noteParse = false;
+  /** 正在一条 <comment> 里：正文吞掉，且除 </comment> 外的一切标签都不许开工。 */
+  private commentParse = false;
   private stopped = false;
   readonly warnings: ParserWarning[] = [];
 
@@ -108,7 +108,7 @@ export class StageDslParser {
     }
     this.buffer = "";
     // 注释不跨消息：边界即结束，正文已经吞完，剩下的残句也一并丢掉
-    this.noteParse = false;
+    this.commentParse = false;
     if (this.stopParse?.option) this.closeOption();
     if (this.stopParse) this.emitStop();
     if (this.openWrap) this.closeWrap();
@@ -118,7 +118,7 @@ export class StageDslParser {
     this.stopped = false;
     this.openWrap = null;
     this.stopParse = null;
-    this.noteParse = false;
+    this.commentParse = false;
     this.buffer = "";
   }
 
@@ -192,8 +192,8 @@ export class StageDslParser {
       this.emitStop();
       return false;
     }
-    if (this.noteParse && name === NOTE_TAG) {
-      this.noteParse = false;
+    if (this.commentParse && name === COMMENT_TAG) {
+      this.commentParse = false;
       return false;
     }
     if (this.openWrap && name === this.openWrap.tag) {
@@ -223,18 +223,18 @@ export class StageDslParser {
   }
 
   private handleTag(name: string, attrs: Map<string, string>, selfClosing: boolean): void {
-    if (this.noteParse) {
-      if (name === NOTE_TAG) {
-        this.warn("malformed_tag", "<note> 嵌套，忽略内层");
+    if (this.commentParse) {
+      if (name === COMMENT_TAG) {
+        this.warn("malformed_tag", "<comment> 嵌套，忽略内层");
         return;
       }
       // stop 是结构标签，不能被一条忘了闭合的注释吞掉——先自动闭合注释再继续
       if (name !== "stop") {
-        this.warn("malformed_tag", `<${name}> 出现在 <note> 内，丢弃`);
+        this.warn("malformed_tag", `<${name}> 出现在 <comment> 内，丢弃`);
         return;
       }
-      this.warn("auto_closed", "<stop> 前自动闭合未闭合的 <note>");
-      this.noteParse = false;
+      this.warn("auto_closed", "<stop> 前自动闭合未闭合的 <comment>");
+      this.commentParse = false;
     }
     if (this.stopParse && name !== OPTION_TAG) {
       this.warn("malformed_tag", `<${name}> 出现在 <stop> 内，丢弃`);
@@ -244,13 +244,13 @@ export class StageDslParser {
       this.warn("malformed_tag", `<${name}> 为指令标签，应为自闭合（其正文将按裸文本丢弃）`);
     }
     switch (name) {
-      case NOTE_TAG: {
+      case COMMENT_TAG: {
         if (selfClosing) return;
         if (this.openWrap) {
-          this.warn("auto_closed", `<note> 前自动闭合未闭合的 <${this.openWrap.tag}>`);
+          this.warn("auto_closed", `<comment> 前自动闭合未闭合的 <${this.openWrap.tag}>`);
           this.closeWrap();
         }
-        this.noteParse = true;
+        this.commentParse = true;
         return;
       }
       case "scene": {
@@ -369,8 +369,8 @@ export class StageDslParser {
 
   private emitText(text: string): void {
     if (text === "") return;
-    // 注释优先于一切：连 openWrap 也轮不到（note 不会与包裹标签并存，见 handleTag）
-    if (this.noteParse) return;
+    // 注释优先于一切：连 openWrap 也轮不到（comment 不会与包裹标签并存，见 handleTag）
+    if (this.commentParse) return;
     if (this.stopParse) {
       if (this.stopParse.option) this.stopParse.option.text += text;
       return;

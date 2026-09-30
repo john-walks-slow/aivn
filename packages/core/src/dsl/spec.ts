@@ -23,7 +23,7 @@ export const DSL_TAGS = [
   "preload_asset",
   "cg",
   "stop",
-  "note",
+  "comment",
 ] as const;
 export type DslTag = (typeof DSL_TAGS)[number];
 
@@ -39,7 +39,7 @@ export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "sfx", 
  * 内容不进谱系、不上舞台；模型自己的 assistant 消息原文仍在它的上下文里，
  * 所以它写下的注释在后续轮次对它自己依然可见。要跨会话留存请走记忆工具。
  */
-export const NOTE_TAG = "note";
+export const COMMENT_TAG = "comment";
 
 /**
  * stop 的交互类型（v1.1 冻结）——这是**模型能写的**白名单。

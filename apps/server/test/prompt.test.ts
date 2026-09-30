@@ -92,12 +92,12 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
     expect(prompt).toContain("引擎直接接上下一轮");
   });
 
-  it("输出纯净写在不可改的契约里，且指向 <note> 这个出口", () => {
+  it("输出纯净写在不可改的契约里，且指向 <comment> 这个出口", () => {
     const prompt = buildSystemPrompt({ play: PLAY });
     const contract = prompt.slice(prompt.indexOf("# 演出契约（引擎规则，不可改）"));
     expect(contract).toContain("你是剧本引擎，不是助手");
     expect(contract).toContain("不聊天、不寒暄");
-    expect(contract).toContain("<note>");
+    expect(contract).toContain("<comment>");
     // 注释标签要在格式段里教会，否则模型不知道有这个出口
     expect(prompt).toContain("## 注释（不是剧本，写给自己）");
   });
@@ -109,5 +109,15 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
     });
     expect(prompt).not.toContain(DEFAULT_CRAFT);
     expect(prompt).toContain("你是剧本引擎，不是助手");
+  });
+
+  it("格式段示范的 <comment> 开闭标签必须配平——模型照抄不闭合的示范就写坏了", () => {
+    const prompt = buildSystemPrompt({ play: PLAY });
+    // 只查格式段：契约里的「放进 <comment>」是提及，不是示范，不该被算进去
+    const section = prompt.slice(prompt.indexOf("## 注释"), prompt.indexOf("## 停止点"));
+    const opens = section.match(/<comment>/g) ?? [];
+    const closes = section.match(/<\/comment>/g) ?? [];
+    expect(opens.length).toBeGreaterThan(0);
+    expect(closes.length).toBe(opens.length);
   });
 });
