@@ -42,6 +42,7 @@ AI galgame 引擎：LLM 剧作家（playwriter）流式输出 Stage DSL（XML �
 - 解析器改动必须保持撕裂等价性测试（chunk=1/2/3/5/7）与消息边界自动闭合用例全绿——这是 P0 冻结契约的回归线
 - 语音本地联调：`.env` 的 STAGE_TTS_*（默认读 `~/.config/fish-audio/keys.json`，走 7890 代理）；无 key 时 hello.voice=false、客户端自动隐藏语音开关
 - 音色目录联调：起服务后 `curl :8787/api/voices`（首次走网络抓 10 页约数十秒，之后命中 `media-cache/voices.json` 约 60ms）；`?refresh=1` 强制重抓
+- 过夜 soak（`pnpm soak`）：**不带 `--minutes` 是零成本预检**——不连 WS、不调模型，只查服务端与剧目就绪门，报出要烧哪个模型；`--minutes=N` 才真跑（真调 LLM、要花钱），跑完在 `plays/<剧目>/soak/<时间戳>.md` 留报告，退出码 0/1/2。别再写「默认跑 6 小时」的 soak——盲跑几小时才排查是这脚本被重做的唯一原因
 
 ## 规范
 

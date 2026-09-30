@@ -496,13 +496,18 @@ pnpm typecheck         # 全部包
 pnpm -r build
 ```
 
-过夜稳定性跑（自带四道审计：记忆卡非空、旁支内容不泄漏到当前缓冲、重放 seq 连续、RSS 趋势不涨）：
+过夜稳定性跑（自带四道审计：记忆层非空、旁支内容不泄漏到当前缓冲、重放 seq 连续、RSS 趋势不涨）。
+
+**不带 `--minutes` 就是预检**——不连 WS、不调模型，秒退，只报服务端在不在、剧目过不过就绪门、要烧哪个模型：
 
 ```bash
-node scripts/soak.mjs --minutes=360 --interval=45   # 默认参数
-node scripts/soak.mjs --play=demo --minutes=20      # 短跑验证
+pnpm soak                                   # 预检，零开销
+pnpm soak -- --minutes=360                  # 过夜跑（真调 LLM，要花钱）
+pnpm soak -- --play=demo --minutes=20       # 短跑验证
 ```
 
-脚本零依赖（Node 22 内置 `WebSocket`），按节奏自动选择/自由输入/继续/OOC，每隔几轮把四原语连打一遍。
+跑完在 `plays/<剧目>/soak/<时间戳>.md` 留一份报告（控制台只打摘要与路径），退出码：0 通过 / 1 审计不通过 / 2 跑不起来（服务端不通、剧目不就绪、WS 连不上）。
+
+脚本零依赖（Node 22 内置 `WebSocket` 与 `fetch`），按节奏轮换选项/自由输入/继续/插一句（`OOC：` 前缀），每隔五轮打一个导演动词——跳转 / 改台词 / 重演这一轮 / 分岔轮换，锚点一律取轮首。
 
 架构与路线（P0–P7）见 `docs/features/260928-stage-ai-mvp/260928-stage-ai-mvp.plan.md`；模块地图见 `AGENTS.md`。
