@@ -194,6 +194,17 @@ export async function handleHttp(
       }
     }
 
+    // —— Agent 设置页的两个目录：网关模型清单 + 工具目录 ——
+    if (parts[0] === "api" && parts[1] === "agents" && parts.length === 3 && method === "GET") {
+      if (parts[2] === "models") {
+        // 读不到网关就报错：模型下拉是「这个 agent 到底在用什么模型」的唯一真相，
+        // 静默退化成默认模型的话，用户看到的和实际计费的对不上。
+        const { models, defaultModel } = await playhouse.gatewayModels(url.searchParams.get("refresh") === "1");
+        return json(res, 200, { models, defaultModel });
+      }
+      if (parts[2] === "tools") return json(res, 200, { tools: playhouse.tools() });
+    }
+
     // —— 设置面板（P6）：.env 与 TTS keys 全部 GUI 可改，不要求用户碰配置文件 ——
     if (parts[0] === "api" && parts[1] === "config" && parts.length === 2) {
       if (!settings) return fail(res, 404, "设置面板未启用");

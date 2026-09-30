@@ -49,7 +49,7 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
     });
     expect(prompt).toContain("# 已生成的图");
     expect(prompt).toContain("bg_town_dusk（bg）—— small town at dusk, anime background");
-    expect(prompt).toContain("不要再 preload_asset");
+    expect(prompt).toContain("不要再 generate_image");
   });
 
   it("记忆索引：有分类的带 [分类] 前缀，顶层卡不打空括号", () => {
@@ -112,11 +112,14 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
     expect(prompt).toContain("beat_done");
   });
 
-  it("讲清工作方式：stop 是这一轮的出口，没有 stop 时引擎接上下一轮", () => {
+  it("讲清工作方式：beat_done 是这一轮的出口，没有停止点时引擎接上下一轮", () => {
     const prompt = buildSystemPrompt({ play: PLAY });
     expect(prompt).toContain("# 你怎么工作");
-    expect(prompt).toContain("stop 是这一轮的出口，不是故事的终点");
-    expect(prompt).toContain("引擎直接接上下一轮");
+    expect(prompt).toContain("停止点是这一轮的出口，不是故事的终点");
+    expect(prompt).toContain("引擎接上的下一轮");
+    // 停止点不再是文本标签，教的是工具参数
+    expect(prompt).toContain("## 结束轮（beat_done）");
+    expect(prompt).not.toContain("<stop");
   });
 
   it("输出纯净写在不可改的契约里，且指向 <comment> 这个出口", () => {
@@ -141,7 +144,7 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
   it("格式段示范的 <comment> 开闭标签必须配平——模型照抄不闭合的示范就写坏了", () => {
     const prompt = buildSystemPrompt({ play: PLAY });
     // 只查格式段：契约里的「放进 <comment>」是提及，不是示范，不该被算进去
-    const section = prompt.slice(prompt.indexOf("## 注释"), prompt.indexOf("## 停止点"));
+    const section = prompt.slice(prompt.indexOf("## 注释"), prompt.indexOf("## 结束轮（beat_done）"));
     const opens = section.match(/<comment>/g) ?? [];
     const closes = section.match(/<\/comment>/g) ?? [];
     expect(opens.length).toBeGreaterThan(0);

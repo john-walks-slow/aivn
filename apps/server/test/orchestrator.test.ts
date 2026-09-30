@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { LineageTree, type ServerMessage } from "@stage-ai/core";
-import { PlaywrightOrchestrator, createMemoryTools } from "../src/orchestrator.js";
+import { PlaywrightOrchestrator } from "../src/orchestrator.js";
+import { createMemoryTools } from "../src/agentkit/memoryTool.js";
 import { PlayMemory } from "../src/memory.js";
-import { BEAT_1, BEAT_2, CARD, PLAY, createFakeStreamFn, type FakeResponse } from "./helpers.js";
+import { BEAT_1, BEAT_1_STOP, BEAT_2, CARD, PLAY, createFakeStreamFn, type FakeResponse } from "./helpers.js";
 
 function setup(
   responses: FakeResponse[],
@@ -55,7 +56,7 @@ function lastUserText(contexts: CapturedContext[]): string {
 
 describe("PlaywrightOrchestrator 闭环", () => {
   it("开局 → 流式事件 → stop 交互 → beat_end(stop)", async () => {
-    const { orchestrator, messages } = setup([{ text: BEAT_1, beatDone: true }]);
+    const { orchestrator, messages } = setup([{ text: BEAT_1, beatDone: BEAT_1_STOP }]);
 
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
 
@@ -84,16 +85,13 @@ describe("PlaywrightOrchestrator 闭环", () => {
     if (beatEnd.type === "beat_end") {
       expect(beatEnd.reason).toBe("stop");
       expect(beatEnd.stop?.stopType).toBe("choice");
-      expect(beatEnd.stop?.options).toEqual([
-        { text: "道歉", value: "a" },
-        { text: "装傻", value: undefined },
-      ]);
+      expect(beatEnd.stop?.options).toEqual([{ text: "道歉" }, { text: "装傻" }]);
     }
   });
 
   it("玩家 choice → 第二轮 no_stop（无 stop）", async () => {
     const { orchestrator, messages, tree } = setup([
-      { text: BEAT_1, beatDone: true },
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
       { text: BEAT_2, beatDone: true },
     ]);
 
@@ -160,7 +158,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
     const contexts: { messages: { role: string }[] }[] = [];
     const { orchestrator, messages, tree } = setup(
       [
-        { text: BEAT_1, beatDone: true },
+        { text: BEAT_1, beatDone: BEAT_1_STOP },
         { text: BEAT_2, beatDone: true },
       ],
       { contexts },
@@ -190,21 +188,28 @@ describe("PlaywrightOrchestrator 闭环", () => {
     expect(orchestrator.eventsAfter(total)).toHaveLength(0);
   });
 
-  it("choice 零选项 → 护栏降级 free stop（D3）", async () => {
-    const { orchestrator, messages } = setup([
-      {
-        text: '<narrate>她看了看表。</narrate><stop type="choice"></stop>',
-        beatDone: true,
-      },
+  it("beat_done 参数校验：单项选项被 schema 拒绝，这一轮不产生停止点（护栏从编排器移进 schema）", async () => {
+    // options 的 minItems=2 由 pi 的参数校验兜住：只写一条会拿到校验错误回执，模型重来一次。
+    // 编排器那条「choice 无选项 → 降级 free」的护栏随之删除，不再有"降级"这条路。
+    const base = createFakeStreamFn([
+      { text: '<narrate>她看了看表。</narrate>', beatDone: { options: ["走吧"] } },
+      { text: '<narrate>她还在等。</narrate>', beatDone: true },
     ]);
+    let calls = 0;
+    const { orchestrator, messages } = setup([], {
+      streamFn: (model, context, options) => {
+        calls += 1;
+        return base(model, context, options);
+      },
+    });
     await orchestrator.playerAction({ kind: "free", text: "开局" });
 
+    expect(calls).toBe(2);
+    const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
+    expect(events.some((e) => e.kind === "stop")).toBe(false);
     const beatEnd = lastBeatEnd(messages);
     expect(beatEnd.type).toBe("beat_end");
-    if (beatEnd.type === "beat_end") {
-      expect(beatEnd.reason).toBe("stop");
-      expect(beatEnd.stop?.stopType).toBe("free");
-    }
+    if (beatEnd.type === "beat_end") expect(beatEnd.reason).toBe("no_stop");
   });
 
   it("空轮护栏：零产出 → 显式 error + pause 重试入口，不静默伪装 no_stop（P0）", async () => {
@@ -255,7 +260,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
   });
 
   it("运行态恢复：不重开开场、重放完整、stoppedReplay 可续演（服务器重启续演）", async () => {
-    const first = setup([{ text: BEAT_1, beatDone: true }]);
+    const first = setup([{ text: BEAT_1, beatDone: BEAT_1_STOP }]);
     await first.orchestrator.playerAction({ kind: "free", text: "开局" });
     const total = first.orchestrator.lastSeq;
 
@@ -537,7 +542,7 @@ describe("长会话装配", () => {
               type: "toolCall",
               id: `call-${turn}`,
               name: "beat_done",
-              arguments: {},
+              arguments: turn === 1 ? { options: ["道歉", "装傻"] } : {},
             },
           ],
           api: "openai-completions",
@@ -659,7 +664,7 @@ describe("长会话装配", () => {
           text: "",
           toolCalls: [{ name: "search_archive", args: { query: "旧约定" } }],
         },
-        { text: BEAT_1, beatDone: true },
+        { text: BEAT_1, beatDone: BEAT_1_STOP },
       ],
       { memory: new PlayMemory({ cards: [CARD] }) },
     );
@@ -743,7 +748,6 @@ describe("音频属性进谱系（缺省/停止/音量在重放时要还原得�
     '<scene bg="corridor" bgm="piano" bgm_volume="0.4" ambient="rain" ambient_volume="0.2"/>',
     '<sfx src="door" volume="0.35"/>',
     "<narrate>门在响。</narrate>",
-    '<stop type="choice"><option value="a">开门</option></stop>',
   ].join("\n");
 
   /** 谱系里 scene 节点的 attrs（重放读的就是它）。 */
@@ -770,7 +774,7 @@ describe("音频属性进谱系（缺省/停止/音量在重放时要还原得�
 
   it("空串的 bgm/ambient 归一化成 none：显式停止在谱系里不能变成 undefined", async () => {
     const { orchestrator, tree } = setup([
-      { text: '<scene bg="corridor" bgm=""/><narrate>静了。</narrate><stop type="choice"><option value="a">嗯</option></stop>', beatDone: true },
+      { text: '<scene bg="corridor" bgm=""/><narrate>静了。</narrate>', beatDone: true },
     ]);
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
     expect(sceneAttrs(tree)[0]).toMatchObject({ bg: "corridor", bgm: "none" });
@@ -778,7 +782,7 @@ describe("音频属性进谱系（缺省/停止/音量在重放时要还原得�
 
   it("没写 bgm 就是没写：谱系里不能凭空多出 none（否则每场换景都停乐）", async () => {
     const { orchestrator, tree } = setup([
-      { text: '<scene bg="classroom"/><narrate>教室里没人。</narrate><stop type="choice"><option value="a">走</option></stop>', beatDone: true },
+      { text: '<scene bg="classroom"/><narrate>教室里没人。</narrate>', beatDone: true },
     ]);
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
     expect("bgm" in sceneAttrs(tree)[0]!).toBe(false);

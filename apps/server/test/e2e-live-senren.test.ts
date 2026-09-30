@@ -6,12 +6,12 @@ import { Flow2ApiImageGen } from "../src/flowImage.js";
 import { Limiter } from "../src/limiter.js";
 import { PlayFiles } from "../src/playFiles.js";
 import { PlayStore } from "../src/store.js";
-import { WorkshopAssets } from "../src/workshopAssets.js";
+import { PlayAssets } from "../src/playAssets.js";
 import type { ImageBackend } from "../src/imageBackend.js";
 
 /**
  * 柚子社《千恋＊万花》四角色的**真实生图**端到端演练——走的是工坊出图的那条完整管线
- * （`WorkshopAssets` → flow2api → 抠底 → 落 `assets/sprites/<id>/`），不是裸客户端。
+ * （`PlayAssets` → flow2api → 抠底 → 落 `assets/sprites/<id>/`），不是裸客户端。
  *
  *   STAGE_E2E_LIVE=1 STAGE_FLOW_API_KEY=<key> pnpm exec vitest run test/e2e-live-senren.test.ts
  *
@@ -130,10 +130,10 @@ async function makeStore(): Promise<PlayStore> {
   return new PlayStore(dir);
 }
 
-async function setup(): Promise<{ assets: WorkshopAssets; playDir: string }> {
+async function setup(): Promise<{ assets: PlayAssets; playDir: string }> {
   const store = await makeStore();
   const files = new PlayFiles(store);
-  const assets = new WorkshopAssets("senren", {
+  const assets = new PlayAssets("senren", {
     store,
     files,
     backend: liveBackend(),

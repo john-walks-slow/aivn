@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { estimateContextTokens, estimateTokens } from "@earendil-works/pi-agent-core";
+import { renderBeatDone } from "./agentkit/beatTool.js";
 
 /**
  * 纪元压缩（epoch compaction）：长会话的上下文治理。
@@ -32,7 +33,6 @@ export const EPOCH_SUMMARY_SYSTEM = [
 
 /** 单条消息渲染上限外的省略号。 */
 const TRUNCATED = "…（略）";
-
 /**
  * 对话体的 token 计量。触发判定与切尾点必须用**同一把尺子**，否则中文内容下
  * （pi 的字符启发式按 chars/4 折算，一个汉字只算 0.25 token，而 provider 实测约 1 token/字）
@@ -64,6 +64,10 @@ export function measureContext(messages: readonly AgentMessage[]): ContextMeasur
  * 落点必须是一条 user 消息——保留段以完整的一轮开场，工具调用对不被劈开。
  * scale 为 measureContext 标定的系数，与触发判定同尺。
  * 返回 0 表示无段可压（对话体本身就短于保留预算）。
+ *
+ * 预算落在消息中间时先向后顺延到下一条 user（宁可少留也不超预算）。顺延会越界时改为
+ * 向前退到本轮开头：对话体尾巴上永远挂着 beat_done 的 toolResult，而它本身没有下一条 user，
+ * 只认顺延的话这里恒判「无可压段」——纪元压缩一辈子不触发，长会话会一路涨到模型报错。
  */
 export function pickCutIndex(
   messages: readonly AgentMessage[],
@@ -76,9 +80,12 @@ export function pickCutIndex(
     cut -= 1;
     tokens += estimateTokens(messages[cut]!) * scale;
   }
-  while (cut < messages.length && messages[cut]?.role !== "user") cut += 1;
+  let next = cut;
+  while (next < messages.length && messages[next]?.role !== "user") next += 1;
+  if (next < messages.length) cut = next;
+  else while (cut > 1 && messages[cut]?.role !== "user") cut -= 1;
   // 下标 0 是 A 区 system 消息，不能进被压段；退无可退时判为无可压缩
-  return cut >= messages.length || cut <= 1 ? 0 : cut;
+  return messages[cut]?.role !== "user" || cut <= 1 ? 0 : cut;
 }
 
 /** 消息列表 → 供摘要模型阅读的纯文本转录（system 消息不在其中，调用方自行切片）。 */
@@ -167,7 +174,9 @@ function renderMessage(message: AgentMessage): string {
     case "assistant": {
       const text = blockText(message.content);
       const blocks = Array.isArray(message.content) ? message.content : [];
-      const tools = blocks.filter((b) => b.type === "toolCall").map((b) => `[调用 ${b.name}]`);
+      const tools = blocks
+        .filter((b) => b.type === "toolCall")
+        .map((b) => (b.name === "beat_done" ? renderBeatDone(b.arguments) : `[调用 ${b.name}]`));
       return truncate([text, ...tools].filter(Boolean).join("\n"));
     }
     case "toolResult":

@@ -42,7 +42,7 @@ export interface PlaySummary {
  * `PlayLibrary.store()` 每次调用都 new 一个 PlayStore，拿对象身份当锁的 key 等于没锁
  * （每个 HTTP 请求各持一份，队列直接穿透）。目录路径才是同一剧目的真正身份。
  * 挂在 store.ts 而不是某个业务模块：play.json 与 assets/manifest.json 的写入方散在
- * http / workshop / workshopAssets / assetImport 四处，锁得由最底层的存储面来发。
+ * http / workshop / playAssets / assetImport 四处，锁得由最底层的存储面来发。
  */
 const configWrites = new Map<string, Promise<unknown>>();
 

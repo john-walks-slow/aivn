@@ -66,13 +66,24 @@ describe("纪元压缩：切尾点与转录", () => {
     expect(pickCutIndex(messages, 60)).toBe(5);
     // 预算大到覆盖全部对话体 → 无可压段
     expect(pickCutIndex(messages, 100_000)).toBe(0);
-    // 预算刚好落在 toolResult 上：向后顺延到下一条 user，顺延过头则判无可压
+    // 预算落在 toolResult 上：向前退到那一条 user（工具调用对不被劈开），退无可退判无可压
     const withTool: AgentMessage[] = [
       user("轮".repeat(400)),
       assistant("回".repeat(400)),
       toolResult("search_archive", "命中"),
     ];
     expect(pickCutIndex(withTool, 1)).toBe(0);
+    // 尾巴上挂着 beat_done 的 toolResult 是常态：预算落在那条 assistant 上时，
+    // 顺延会越界（toolResult 之后没有 user），必须能退回本轮的 user
+    const stranded: AgentMessage[] = [
+      user("一".repeat(400)),
+      assistant("二".repeat(400)),
+      toolResult("beat_done", "命中"),
+      user("三".repeat(400)),
+      assistant("四".repeat(400)),
+      toolResult("beat_done", "命中"),
+    ];
+    expect(pickCutIndex(stranded, 60)).toBe(3);
     // 边缘：只有一条超长 user（没有第二轮可切）→ 顺延越界，判为无可压段
     expect(pickCutIndex([user("长".repeat(4000)), assistant("回")], 1)).toBe(0);
     expect(pickCutIndex([], 1)).toBe(0);

@@ -19,7 +19,7 @@ import {
  * `16:9`→1376x768 ✅、`9:16`→768x1376 ✅、`3:4`→1200x896 ❌、`4:3`→1200x896 ❌
  * （gemini-3.1-flash-image 与 gemini-3.0-pro-image 表现一致）。解析器把 `3:4` 正确翻成
  * `three-four` 内部模型名，上游却不认，于是静默回一张横图——**不报错**。所以本层只做
- * 白名单自校验，真正的兜底在 `WorkshopAssets.assertCanvas`：画幅不符就报错，不落盘。
+ * 白名单自校验，真正的兜底在 `PlayAssets.assertCanvas`：画幅不符就报错，不落盘。
  */
 
 /** 已确认支持出图的别名（`GET /v1/models/aliases`；注意别名不在 `GET /v1beta/models` 里）。 */

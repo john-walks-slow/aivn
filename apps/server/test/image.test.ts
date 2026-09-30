@@ -11,7 +11,7 @@ import { PlayStore } from "../src/store.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { LineageTree } from "@stage-ai/core";
 import { PlayMemory } from "../src/memory.js";
-import { createFakeStreamFn, PLAY } from "./helpers.js";
+import { BEAT_2, createFakeStreamFn, PLAY } from "./helpers.js";
 
 async function makeStore(): Promise<PlayStore> {
   const dir = await mkdtemp(join(tmpdir(), "stage-image-"));
@@ -205,44 +205,60 @@ describe("CpaImageGen：cpa 两种出图协议", () => {
   });
 });
 
-describe("编排器：preload_asset 预发射钩子", () => {
-  it("bg/cg 触发预发射，sprite 不发，已有同名素材不烧配额", async () => {
+describe("剧作家 generate_image：后台排产（占住时间线位置，不等图）", () => {
+  it("bg/cg 预发射 + 发起后台生成，静态素材已有的跳过，立绘走 kickSprite", async () => {
     const store = await makeStore();
-    const tree = new LineageTree();
-    const calls: [string, string, string][] = [];
+    const preloaded: string[] = [];
+    const kicked: string[] = [];
+    const spriteKicks: string[] = [];
     const orchestrator = new PlaywrightOrchestrator({
       streamFn: createFakeStreamFn([
         {
-          text:
-            '<preload_asset type="bg" prompt="rainy station" id="bg_station"/>\n' +
-            '<preload_asset type="cg" prompt="confession" id="cg_01"/>\n' +
-            '<preload_asset type="sprite" prompt="smile" id="sp_smile"/>\n' +
-            '<preload_asset type="bg" prompt="sunset corridor" id="bg_rooftop_sunset"/>\n' +
-            '<stop type="free"></stop>',
+          text: "",
+          toolCalls: [
+            { name: "generate_image", args: { kind: "background", prompt: "rainy station", name: "bg_station" } },
+            { name: "generate_image", args: { kind: "cg", prompt: "confession", name: "cg_01" } },
+            {
+              name: "generate_image",
+              args: { kind: "sprite", prompt: "smile", characterId: "mio", expression: "smile" },
+            },
+            // 工坊已经导入过这张：同一个 id 不该再烧一次配额
+            {
+              name: "generate_image",
+              args: { kind: "background", prompt: "sunset corridor", name: "bg_rooftop_sunset" },
+            },
+          ],
         },
+        { text: BEAT_2, beatDone: true },
       ]),
       model: {} as never,
       getApiKey: () => "test-key",
       play: { ...PLAY, id: "img" },
       memory: await PlayMemory.load(store),
-      tree,
+      tree: new LineageTree(),
       engine: { turn: 0, affinity: {}, flags: {} },
       scene: "走廊",
       persist: () => {},
-      // 已有导入素材的 id：不该再发一次生图
-      assets: { backgrounds: ["bg_rooftop_sunset.jpg"] },
-      onPreloadAsset: (type, prompt, id) => {
-        calls.push([type, prompt, id]);
+      imageTools: {
+        // 立绘目标在不在盘上由 PlayAssets 自己判；这条用例只关心排产决策
+        playAssets: { exists: async () => false } as never,
+        kick: (_type, _prompt, id) => kicked.push(id),
+        kickSprite: (charId) => spriteKicks.push(charId),
+        hasStaticAsset: (_type, id) => id === "bg_rooftop_sunset",
       },
       onServerMessage: () => {},
     });
     await orchestrator.autostart();
     await orchestrator.whenIdle();
-    // bg_rooftop_sunset 已在 assets/backgrounds 里 → 不发起
-    expect(calls).toEqual([
-      ["bg", "rainy station", "bg_station"],
-      ["cg", "confession", "cg_01"],
-    ]);
+
+    // 只有**图真的要来**的调用才占时间线位置（骨架占位出现在演出顺序里的那一行）：
+    // 静态素材里已有的那张既不发也不占位——占了等不到 asset_ready，只会白闪到超时。
+    const preload = orchestrator.eventsAfter(0).filter((e) => e.event.kind === "preload_asset");
+    // 同批工具是并行的，落线顺序看谁先走完（立绘要先查盘上有没有）——比集合不比顺序
+    const ids = preload.map((e) => (e.event as { id: string }).id).sort();
+    expect(ids).toEqual(["bg_station", "cg_01", "mio:smile"]);
+    expect(kicked).toEqual(["bg_station", "cg_01"]);
+    expect(spriteKicks).toEqual(["mio"]);
     orchestrator.dispose();
   });
 });

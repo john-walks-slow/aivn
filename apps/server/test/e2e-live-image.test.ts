@@ -18,7 +18,7 @@ import { IMAGE_ASPECTS, IMAGE_SIZES, aspectMatches } from "../src/imageBackend.j
  * 为什么断言 9:16 而不是更“自然”的 3:4：2026-09-29 对本机网关实测（imageSize=2k）
  *   16:9 → 1376x768 ✅   9:16 → 768x1376 ✅   3:4 → 1200x896 ❌   4:3 → 1200x896 ❌
  * 解析器把 3:4 正确翻成内部模型名 three-four，上游却不认，静默回一张横图。
- * 立绘因此改用 9:16（竖版全身立绘本身也更配），并由 `WorkshopAssets.assertCanvas` 兜底。
+ * 立绘因此改用 9:16（竖版全身立绘本身也更配），并由 `PlayAssets.assertCanvas` 兜底。
  */
 
 const LIVE = process.env.STAGE_E2E_LIVE === "1";
@@ -82,7 +82,7 @@ describe.skipIf(!LIVE)("E2E 真实生图（STAGE_E2E_LIVE=1 才跑，全程只�
       const size = imageSizeOf(out.data);
       expect(size, `无法识别的图片格式：${out.mimeType}`).not.toBeNull();
       console.log(`[live-image] 尺寸 ${size!.width}x${size!.height}`);
-      // 与 WorkshopAssets.assertCanvas 同一把尺：画幅不符必须是红的，不能悄悄落盘
+      // 与 PlayAssets.assertCanvas 同一把尺：画幅不符必须是红的，不能悄悄落盘
       expect(aspectMatches(size!, aspectRatio)).toBe(true);
     },
     300_000,

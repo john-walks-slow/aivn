@@ -1,49 +1,40 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
-import { parsePlayConfig } from "@stage-ai/core";
+import { parsePlayConfig, type WorkshopAssetView } from "@stage-ai/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
 import type { Limiter } from "./limiter.js";
 import type { PlayFiles } from "./playFiles.js";
 import type { PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
-import type { WorkshopWrite } from "./workshop.js";
+import type { WorkshopWrite } from "./agentkit/deps.js";
 
 /**
- * 剧目素材生成层：工坊 `generate_asset` 的落盘实现。
+ * 剧目素材生成层：**工坊与剧作家共用的唯一出图实现**（两个 agent 的 `generate_image` 工具都走这里）。
  *
  * 与 D6 的 `ImageAssets` 分工明确——
- * - `ImageAssets` 落 media-cache/，内容寻址缓存，playwriter 预发射用，运行时不进 git；
+ * - `ImageAssets` 落 media-cache/，内容寻址缓存，剧作家预发射 bg/cg 用，运行时不进 git；
  * - 本层落 `assets/`，进 git，是剧目定义的一部分，素材页看得见、用户能改能删。
- * 落静态素材还有个好处：playwriter 后续 `preload_asset` 同 id 会被「静态优先」跳过，
+ * 落静态素材还有个好处：剧作家后续 `generate_image` 同 id 会被「静态优先」跳过，
  * 不会把工坊定的图重生一遍。
  *
  * 角色一致性靠 `neutral` 差分兼任定妆照与垫图——它既是合法差分（actor 能直接引用），
  * 又是进 git 后换机器也保得住的「同一个人」。不另开 assets/refs/ 目录，免得污染素材清单。
+ *
+ * 实例由 PlayHouse 按剧目缓存：工坊与剧作家拿的是同一个，两边同时要同一张图时
+ * 在飞去重只烧一次配额（`inflight` 表按目标路径，跨角色共享）。
  */
 
 /** 立绘差分名 = 文件名主体，故用素材名的字符集；角色 id 不受此限（play.json 里可能叫 Koharu）。 */
 const STEM = /^[a-z][a-z0-9_]{0,39}$/;
 
+/** 自动注册的临时角色 id：它会成为 play.json 条目与 assets/sprites/ 目录名，与 write_memory 同一套白名单。 */
+const CHAR_ID = /^[A-Za-z][A-Za-z0-9_-]{0,39}$/;
+
 const NEUTRAL = "neutral";
 
-/**
- * 立绘身份锚：正脸站姿，差分都从它派生。竖构图提示词里也点明，配合 9:16 画布。
- *
- * 后半段不是修饰词是硬约束：`src/cutout.ts` 的全局色键抠底要求 2D 平涂 + 纯白纯色底，
- * 3D 渲染的白衣离底色只有几格色差，抠底会连人带和服一起啃掉；剪影连成一片就没法分割人物与底色。
- */
-const NEUTRAL_SUFFIX =
-  "full body, front-facing standing pose, neutral expression, both arms held slightly away from the body " +
-  "so the silhouette is clearly separated, clear empty white space between the twin tails and between " +
-  "the arms and the body. Japanese anime style 2D character illustration, flat cel shading with clean " +
-  "crisp lineart, NOT a 3D render, no 3D CGI look. Plain solid pure white background, no text, no shadow, " +
-  "no gradient, no vignette, vertical portrait composition.";
-/** 差分：只改表情，身份特征一律锁死——垫图之外的第二道保险。画风要求与定妆照一字不差，否则两个人。 */
-const IDENTITY_SUFFIX =
-  "Same character as the reference image: identical hairstyle, hair color, eye color, outfit and body type. " +
-  "Change only the facial expression. Same 2D flat cel-shaded anime illustration style, NOT a 3D render, " +
-  "same plain solid pure white background, no text, no shadow, no gradient.";
+/** 谁触发的这次出图。工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产。 */
+export type AssetNotify = "workshop" | "silent";
 
 export type AssetKind = "background" | "cg" | "sprite";
 
@@ -51,10 +42,20 @@ export interface AssetTarget {
   kind: AssetKind;
   /** 背景/CG 的素材 id（同时是文件名主体）。 */
   name?: string;
-  /** 立绘所属角色 id（对 play.json 角色做成员校验，不用正则）。 */
+  /** 立绘所属角色 id（默认对 play.json 角色做成员校验）。 */
   characterId?: string;
   /** 立绘差分名（neutral / smile / ...）。 */
   expression?: string;
+}
+
+export interface GenerateOptions {
+  /** 事件去向：工坊要撤销条与素材气泡，剧作家的后台预发射一律静默。 */
+  notify?: AssetNotify;
+  /**
+   * 角色不在 play.json 时自动注册一个 stub（剧作家的临时角色生图）。
+   * 给了就建，不给仍按成员校验报错——工坊侧的角色表是用户与工坊的账，不该被一次出图悄悄塞进陌生人。
+   */
+  characterName?: string;
 }
 
 export interface GeneratedPlayAsset {
@@ -77,24 +78,34 @@ interface AssetSpec {
   aspect: ImageAspect;
   characterId?: string;
   expression?: string;
+  /** 角色不在 play.json 时自动补的 stub（null = 不自动注册，缺失即报错）。 */
+  stubName?: string;
 }
 
-export interface WorkshopAssetsDeps {
+export interface PlayAssetsDeps {
   store: PlayStore;
   files: PlayFiles;
   backend: ImageBackend;
   limiter: Limiter;
   /** play.json 立绘映射补写要进撤销条（二进制本身不进）。 */
-  onWrite: (write: WorkshopWrite) => void;
+  onWrite: (write: WorkshopWrite, notify: AssetNotify) => void;
+  /** 素材到货（工坊侧挂到对话气泡里）。 */
+  onAsset?: (asset: WorkshopAssetView, replaced: boolean, notify: AssetNotify) => void;
+  /**
+   * play.json 被这一层改过（补写差分映射 / 注册临时角色 stub）：宿主据此决定要不要重建 runtime。
+   * 工坊侧一轮收束时自己会重建，这里收到 "workshop" 无需动作；剧作家侧在拍内不能腰斩演出，
+   * 收到 "silent" 得排到轮边界。
+   */
+  onPlayConfigChanged?: (notify: AssetNotify) => void;
 }
 
-export class WorkshopAssets {
+export class PlayAssets {
   /** 同一目标的在飞生成：同批次两次调用打同一路径会烧两份配额、竞态写、覆盖标记说不清。 */
   private readonly inflight = new Map<string, Promise<GeneratedPlayAsset[]>>();
 
   constructor(
     private readonly playId: string,
-    private readonly deps: WorkshopAssetsDeps,
+    private readonly deps: PlayAssetsDeps,
   ) {}
 
   async generate(
@@ -102,16 +113,28 @@ export class WorkshopAssets {
     prompt: string,
     style?: string,
     cutoutTuning?: Partial<CutoutTuning>,
+    options?: GenerateOptions,
   ): Promise<GeneratedPlayAsset[]> {
-    const spec = await this.resolve(target);
+    const notify = options?.notify ?? "workshop";
+    const spec = await this.resolve(target, notify, options?.characterName);
     const key = `${spec.kindPath}/${spec.stem}`;
     const running = this.inflight.get(key);
     if (running) return running;
-    const job = this.run(spec, prompt, style, cutoutTuning).finally(() => {
+    const job = this.run(spec, prompt, style, cutoutTuning, notify).finally(() => {
       if (this.inflight.get(key) === job) this.inflight.delete(key);
     });
     this.inflight.set(key, job);
     return job;
+  }
+
+  /** 目标是否已有图（工坊/剧作家跳过重复出图用）。 */
+  async exists(target: AssetTarget): Promise<boolean> {
+    if (target.kind === "sprite") {
+      if (!target.characterId || !target.expression) return false;
+      return (await this.existingPath(`sprites/${target.characterId}`, target.expression)) !== null;
+    }
+    if (!target.name) return false;
+    return (await this.existingPath(target.kind === "background" ? "backgrounds" : "cg", target.name)) !== null;
   }
 
   /** 返回的数组可能第一项是自动补的定妆照——那是真金白银出的图，必须一起交给上层广播。 */
@@ -120,8 +143,9 @@ export class WorkshopAssets {
     prompt: string,
     style?: string,
     cutoutTuning?: Partial<CutoutTuning>,
+    notify: AssetNotify = "workshop",
   ): Promise<GeneratedPlayAsset[]> {
-    const auto = spec.kind === "sprite" ? await this.ensureNeutral(spec, prompt) : null;
+    const auto = spec.kind === "sprite" ? await this.ensureNeutral(spec, prompt, notify) : null;
     const references = await this.referencesFor(spec);
     const { data, mimeType } = await this.deps.limiter.run(
       () =>
@@ -137,7 +161,7 @@ export class WorkshopAssets {
     const bytes = spec.kind === "sprite" ? (await cutout(data, tuning)).data : data;
     const ext = spec.kind === "sprite" ? ".png" : extOf(mimeType);
     const written = await this.persist(spec, bytes, ext);
-    if (spec.kind === "sprite") await this.mapSprite(spec, `${spec.stem}${ext}`);
+    if (spec.kind === "sprite") await this.mapSprite(spec, `${spec.stem}${ext}`, notify);
     return auto ? [auto, { ...written, autoNeutral: true }] : [{ ...written, autoNeutral: false }];
   }
 
@@ -179,9 +203,10 @@ export class WorkshopAssets {
   /**
    * 校验目标：素材名走文件名白名单，角色 id 走 play.json 成员校验。
    * 角色 id 不做正则——`parsePlayConfig` 不约束它的大小写，`Koharu` 这类 id 完全合法。
+   * 例外是「自动注册 stub」这条路：那时角色还不存在，id 会直接变成目录名，必须过白名单。
    */
-  private async resolve(target: AssetTarget): Promise<AssetSpec> {
-    if (target.kind === "sprite") return this.resolveSprite(target);
+  private async resolve(target: AssetTarget, notify: AssetNotify, characterName?: string): Promise<AssetSpec> {
+    if (target.kind === "sprite") return this.resolveSprite(target, notify, characterName);
     const name = target.name?.trim() ?? "";
     if (!name) throw new Error("背景/CG 必须给 name（素材 id，剧本里的 bg/cg id 就是它）");
     if (!STEM.test(name)) {
@@ -195,18 +220,34 @@ export class WorkshopAssets {
     };
   }
 
-  private async resolveSprite(target: AssetTarget): Promise<AssetSpec> {
+  private async resolveSprite(
+    target: AssetTarget,
+    notify: AssetNotify,
+    characterName?: string,
+  ): Promise<AssetSpec> {
     const characterId = target.characterId?.trim() ?? "";
     if (!characterId) throw new Error("立绘必须给 characterId（play.json 里的角色 id）");
-    const play = await this.deps.store.loadPlay();
-    const ids = play.characters.map((c) => c.id);
-    if (!ids.includes(characterId)) {
-      throw new Error(`play.json 里没有角色「${characterId}」。可选：${ids.join(" / ")}`);
-    }
     const expression = target.expression?.trim() ?? "";
     if (!expression) throw new Error("立绘必须给 expression（差分名，如 neutral / smile）");
     if (!STEM.test(expression)) {
       throw new Error(`差分名「${expression}」非法：只允许小写字母开头的 a-z/数字/下划线，最长 40 字符`);
+    }
+    const play = await this.deps.store.loadPlay();
+    const ids = play.characters.map((c) => c.id);
+    let stubName: string | undefined;
+    if (!ids.includes(characterId)) {
+      // 自动注册只认「调用方明确给了显示名」的那条路：给不出名字就说明它不知道自己在给谁画，
+      // 宁可报错让模型把 name 补上，也不要在角色表里落一个 id 当名字的条目。
+      const name = characterName?.trim() ?? "";
+      if (notify !== "silent" || !name) {
+        throw new Error(`play.json 里没有角色「${characterId}」。可选：${ids.join(" / ")}`);
+      }
+      if (!CHAR_ID.test(characterId)) {
+        throw new Error(
+          `角色 id「${characterId}」不能自动注册：只允许字母开头的字母/数字/下划线/连字符，最长 40 字符`,
+        );
+      }
+      stubName = name;
     }
     return {
       kind: "sprite",
@@ -215,6 +256,7 @@ export class WorkshopAssets {
       aspect: "9:16",
       characterId,
       expression,
+      ...(stubName ? { stubName } : {}),
     };
   }
 
@@ -229,7 +271,7 @@ export class WorkshopAssets {
    * 靠 `inflight` 挡住：6 条内层调用的目标都是 `sprites/<id>/neutral` 这同一个 key，
    * 后到的 5 条直接复用第一条的 promise（见 generate 与 test 里「并发出 6 个差分」那条）。
    */
-  private async ensureNeutral(spec: AssetSpec, prompt: string): Promise<GeneratedPlayAsset | null> {
+  private async ensureNeutral(spec: AssetSpec, prompt: string, notify: AssetNotify): Promise<GeneratedPlayAsset | null> {
     if (spec.expression === NEUTRAL) return null;
     if (await this.existingPath(spec.kindPath, NEUTRAL)) return null;
     const others = await this.spriteStems(spec.characterId!);
@@ -245,6 +287,9 @@ export class WorkshopAssets {
     const [auto] = await this.generate(
       { kind: "sprite", characterId: spec.characterId, expression: NEUTRAL },
       `a calm neutral-expression front-facing standing portrait. ${prompt}`,
+      undefined,
+      undefined,
+      { notify, ...(spec.stubName ? { characterName: spec.stubName } : {}) },
     );
     return auto ?? null;
   }
@@ -258,27 +303,33 @@ export class WorkshopAssets {
   }
 
   /**
-   * 立绘映射补写：文件在盘上但 play.json 没映射，playwriter 与编排器都取不到，等于没生成。
+   * 立绘映射补写：文件在盘上但 play.json 没映射，剧作家与编排器都取不到，等于没生成。
+   * 临时角色（剧作家给的 stub）也在这一步一并注册进角色表。
    *
-   * 排队锁不可省：一次对话里模型可以并发调两次 generate_asset，也会和立绘包导入撞上，
+   * 排队锁不可省：一次对话里模型可以并发调两次 generate_image，也会和立绘包导入撞上，
    * 三个 read-modify-write 各自读到旧 play.json，后写的会把先写的差分映射整个冲掉
    * （用户看到的现象是「刚出的表情在角色卡里消失了」）。锁按剧目目录发（`store.dir`），
    * 与资源库导入共用同一条——两条路径改的是同一份 play.json。
    */
-  private mapSprite(spec: AssetSpec, file: string): Promise<void> {
+  private mapSprite(spec: AssetSpec, file: string, notify: AssetNotify): Promise<void> {
     return withPlayConfigLock(this.deps.store.dir, async () => {
       const raw = await this.deps.files.read("play.json");
       const config = parsePlayConfig(JSON.parse(raw));
-      const character = config.characters.find((c) => c.id === spec.characterId);
-      if (!character) return;
-      const next = { ...character, sprites: { ...(character.sprites ?? {}), [spec.expression!]: file } };
+      const existing = config.characters.find((c) => c.id === spec.characterId);
+      if (!existing && !spec.stubName) return;
+      const characters = existing
+        ? config.characters
+        : [...config.characters, { id: spec.characterId!, name: spec.stubName!, persona: "" }];
+      const target = existing ?? characters[characters.length - 1]!;
+      const next = { ...target, sprites: { ...(target.sprites ?? {}), [spec.expression!]: file } };
       const content = JSON.stringify(
-        { ...config, characters: config.characters.map((c) => (c.id === spec.characterId ? next : c)) },
+        { ...config, characters: characters.map((c) => (c.id === spec.characterId ? next : c)) },
         null,
         2,
       );
       await this.deps.files.write("play.json", content);
-      this.deps.onWrite({ path: "play.json", before: raw, after: content });
+      this.deps.onWrite({ path: "play.json", before: raw, after: content }, notify);
+      this.deps.onPlayConfigChanged?.(notify);
     });
   }
 
@@ -313,3 +364,21 @@ function sniffMime(data: Buffer): string {
   if (data.length > 12 && data.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
   return "image/jpeg";
 }
+
+/**
+ * 立绘身份锚：正脸站姿，差分都从它派生。竖构图提示词里也点明，配合 9:16 画布。
+ *
+ * 后半段不是修饰词是硬约束：`src/cutout.ts` 的全局色键抠底要求 2D 平涂 + 纯白纯色底，
+ * 3D 渲染的白衣离底色只有几格色差，抠底会连人带和服一起啃掉；剪影连成一片就没法分割人物与底色。
+ */
+const NEUTRAL_SUFFIX =
+  "full body, front-facing standing pose, neutral expression, both arms held slightly away from the body " +
+  "so the silhouette is clearly separated, clear empty white space between the twin tails and between " +
+  "the arms and the body. Japanese anime style 2D character illustration, flat cel shading with clean " +
+  "crisp lineart, NOT a 3D render, no 3D CGI look. Plain solid pure white background, no text, no shadow, " +
+  "no gradient, no vignette, vertical portrait composition.";
+/** 差分：只改表情，身份特征一律锁死——垫图之外的第二道保险。画风要求与定妆照一字不差，否则两个人。 */
+const IDENTITY_SUFFIX =
+  "Same character as the reference image: identical hairstyle, hair color, eye color, outfit and body type. " +
+  "Change only the facial expression. Same 2D flat cel-shaded anime illustration style, NOT a 3D render, " +
+  "same plain solid pure white background, no text, no shadow, no gradient.";

@@ -1,22 +1,26 @@
-import type { AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
+import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ServerMessage, WorkshopAssetView, WorkshopChatMessage, WorkshopThreadInfo } from "@stage-ai/core";
-import type { ImageBackend } from "./imageBackend.js";
+import type {
+  AgentSettings,
+  ServerMessage,
+  WorkshopAssetView,
+  WorkshopChatMessage,
+  WorkshopThreadInfo,
+} from "@stage-ai/core";
 import type { Exa } from "./exa.js";
-import type { Limiter } from "./limiter.js";
 import { PlayFiles } from "./playFiles.js";
 import type { AssetLibrary } from "./library.js";
 import type { PlaySaves } from "./saves.js";
 import type { PlayStore } from "./store.js";
 import {
   buildWorkshopPrompt,
-  createWorkshopTools,
   deriveThreadTitle,
   runWorkshopTurn,
   type WorkshopMessage,
   type WorkshopWrite,
 } from "./workshop.js";
-import { WorkshopAssets, type GeneratedPlayAsset } from "./workshopAssets.js";
+import { createAgentKit, type AgentKit } from "./agentkit/kit.js";
+import type { PlayAssets } from "./playAssets.js";
 import { WorkshopThreads, type WorkshopThread } from "./workshopThreads.js";
 
 /**
@@ -34,10 +38,11 @@ export interface WorkshopSessionOptions {
   emit: (msg: ServerMessage) => void;
   /** 剧目文件被改动后通知宿主（play.json/memory/素材改动触发 runtime reload，保存即生效）。 */
   onFilesChanged: () => void;
-  /** 生图后端；未配置则 `generate_asset` 工具直接回不可用（不装死工具）。 */
-  imageBackend?: ImageBackend;
-  /** 与 D6 预发射共用的生图并发闸门（挂 PlayHouse，reload 不换实例）。 */
-  limiter: Limiter;
+  /**
+   * 素材生成层（PlayHouse 按剧目缓存的那一个，与剧作家共用）。
+   * 未启用生图时不传：工具回「生图未启用」，提示词也不注入出图章节。
+   */
+  playAssets?: PlayAssets;
   /** 周目（存档）管理面：read_lineage 前先列周目。 */
   saves: PlaySaves;
   /** 按 saveId 取存档级操作面（读故事树只走磁盘 session.json，不建 runtime）。 */
@@ -46,13 +51,14 @@ export interface WorkshopSessionOptions {
   assetLibrary?: AssetLibrary;
   /** 联网检索客户端；未配置则 `web_search` 工具不注册、prompt 不提联网。 */
   exa?: Exa;
+  /** 工坊 agent 的运行设置（play.json 的 agents.workshop）：思考档位与工具开关。 */
+  agents?: AgentSettings;
 }
 
 export class WorkshopSession {
   readonly files: PlayFiles;
   private readonly threads: WorkshopThreads;
-  private readonly tools: AgentTool<any>[];
-  private readonly assets?: WorkshopAssets;
+  private readonly kit: AgentKit;
   /** 当前线程（面板现场；服务端持有，任何客户端连上都看到同一条）。 */
   private activeId: string | null = null;
   /** 一轮对话在飞：拒绝并发发问（工坊对话是串行的）。 */
@@ -65,22 +71,16 @@ export class WorkshopSession {
   constructor(private readonly opts: WorkshopSessionOptions) {
     this.files = new PlayFiles(opts.store);
     this.threads = new WorkshopThreads(opts.store);
-    if (opts.imageBackend) {
-      this.assets = new WorkshopAssets(opts.playId, {
-        store: opts.store,
-        files: this.files,
-        backend: opts.imageBackend,
-        limiter: opts.limiter,
-        onWrite: (write) => this.broadcastWrite(write),
-      });
-    }
-    this.tools = createWorkshopTools({
+    this.kit = createAgentKit({
+      role: "workshop",
       playId: opts.playId,
+      disabled: new Set(opts.agents?.disabledTools ?? []),
+      thinking: opts.agents?.thinking,
       files: this.files,
       store: opts.store,
       onWrite: (write) => this.broadcastWrite(write),
-      assets: this.assets,
-      onAsset: (asset) => this.broadcastAsset(asset),
+      onAsset: (asset, replaced) => this.broadcastAsset(asset, replaced),
+      playAssets: opts.playAssets,
       saves: opts.saves,
       saveStore: opts.saveStore,
       assetLibrary: opts.assetLibrary,
@@ -149,7 +149,8 @@ export class WorkshopSession {
           streamFn: this.opts.streamFn,
           model: this.opts.model,
           getApiKey: this.opts.getApiKey,
-          tools: this.tools,
+          tools: this.kit.tools,
+          thinkingLevel: this.kit.thinking,
           systemPrompt: await this.systemPrompt(),
         },
         history,
@@ -214,6 +215,19 @@ export class WorkshopSession {
     });
   }
 
+  /**
+   * 转发一次写盘事件（供剧目级 PlayAssets 调用：素材层归 PlayHouse 所有，
+   * 但撤销条要挂进**当前工坊线程**的对话流里，只有会话知道 threadId）。
+   */
+  pushWrite(write: WorkshopWrite): void {
+    this.broadcastWrite(write);
+  }
+
+  /** 转发一次素材到货事件（同 pushWrite）。 */
+  pushAsset(asset: WorkshopAssetView): void {
+    this.broadcastAsset(asset);
+  }
+
   /** 素材到货：先瞬态播报（对话流立刻可见），同时挂到本轮收束的那条消息上。 */
   private broadcastAsset(asset: WorkshopAssetView, replaced = false): void {
     this.changedDuringTurn = true;
@@ -253,9 +267,9 @@ export class WorkshopSession {
       title: play.title,
       files: listing,
       readiness,
-      canGenerate: !!this.assets,
-      canSearch: !!this.opts.exa,
-      canBrowseLibrary: !!this.opts.assetLibrary,
+      canGenerate: this.kit.can.image,
+      canSearch: this.kit.can.search,
+      canBrowseLibrary: this.kit.can.library,
     });
   }
 }

@@ -198,7 +198,7 @@ export async function importFromLibrary(
     applyCharacter(play, entry.id, card ?? {}, spriteMap, req.target === "protagonist");
     result.protagonist = req.target === "protagonist";
     if (!result.protagonist) result.characters.push(entry.id);
-    // 不带尾换行：与 savePlay / workshopAssets 的写法一致，别让撤销后的文本对不上
+    // 不带尾换行：与 savePlay / playAssets 的写法一致，别让撤销后的文本对不上
     const after = JSON.stringify(parsePlayConfig(play), null, 2);
     await files.write("play.json", after);
     if (before !== after) result.writes.push({ path: "play.json", before, after });

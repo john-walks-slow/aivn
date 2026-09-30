@@ -56,3 +56,56 @@ describe("GET /api/plays/:id 的前提字段", () => {
     expect(body.play).not.toHaveProperty("premise");
   });
 });
+
+describe("Agent 设置页的两个目录", () => {
+  it("GET /api/agents/models 透出网关模型清单与默认模型（refresh 透传）", async () => {
+    const seen: boolean[] = [];
+    const res = new FakeRes();
+    await handleHttp(
+      { url: "/api/agents/models?refresh=1", method: "GET" } as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new PlayLibrary("/tmp"),
+      {
+        gatewayModels: async (refresh?: boolean) => {
+          seen.push(refresh === true);
+          return { models: [{ id: "gpt-5", name: "GPT-5" }], defaultModel: "gpt-5" };
+        },
+      } as unknown as PlayHouse,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual({ models: [{ id: "gpt-5", name: "GPT-5" }], defaultModel: "gpt-5" });
+    expect(seen).toEqual([true]);
+  });
+
+  it("GET /api/agents/models 网关读不到就报错，不悄悄退回默认模型", async () => {
+    const res = new FakeRes();
+    await handleHttp(
+      { url: "/api/agents/models", method: "GET" } as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new PlayLibrary("/tmp"),
+      {
+        gatewayModels: async () => {
+          throw new Error("网关模型清单读取失败 HTTP 502");
+        },
+      } as unknown as PlayHouse,
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.payload).toContain("网关模型清单读取失败");
+  });
+
+  it("GET /api/agents/tools 返回工具目录（设置页渲染开关用）", async () => {
+    const res = new FakeRes();
+    await handleHttp(
+      { url: "/api/agents/tools", method: "GET" } as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new PlayLibrary("/tmp"),
+      {
+        tools: () => [{ id: "beat_done", label: "结束本轮", group: "beat", roles: ["playwriter"] }],
+      } as unknown as PlayHouse,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload).tools).toEqual([
+      { id: "beat_done", label: "结束本轮", group: "beat", roles: ["playwriter"] },
+    ]);
+  });
+});

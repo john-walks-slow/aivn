@@ -10,22 +10,27 @@ import { PlayFiles } from "../src/playFiles.js";
 import { PlaySaves } from "../src/saves.js";
 import { PlayStore } from "../src/store.js";
 import { Limiter } from "../src/limiter.js";
-import { WorkshopAssets } from "../src/workshopAssets.js";
-import type { GeneratedPlayAsset } from "../src/workshopAssets.js";
+import { PlayAssets } from "../src/playAssets.js";
+import type { GeneratedPlayAsset } from "../src/playAssets.js";
 import { WorkshopThreads } from "../src/workshopThreads.js";
 import { WorkshopSession } from "../src/workshopSession.js";
-import {
-  buildWorkshopPrompt,
-  createWorkshopTools,
-  deriveThreadTitle,
-  renderReadiness,
-  type WorkshopPromptContext,
-} from "../src/workshop.js";
+import { buildWorkshopPrompt, deriveThreadTitle, type WorkshopPromptContext } from "../src/workshop.js";
+import type { WorkshopKitDeps } from "../src/agentkit/deps.js";
+import { createAgentKit } from "../src/agentkit/kit.js";
+import { renderReadiness } from "../src/agentkit/readiness.js";
 import { Exa } from "../src/exa.js";
 import { createFakeStreamFn, BEAT_1, BEAT_2, PLAY } from "./helpers.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { LineageTree } from "@stage-ai/core";
 import { PlayMemory } from "../src/memory.js";
+
+/**
+ * 测试用的工具装配。工坊与剧作家共用一个基座（`createAgentKit`），这里只固定 role 与空开关，
+ * 各条用例继续按依赖面传参（files / store / playAssets / exa…）——测的就是真实那份装配。
+ */
+type WorkshopTestDeps = Omit<WorkshopKitDeps, "role" | "playId" | "disabled">;
+const createWorkshopTools = (deps: WorkshopTestDeps) =>
+  createAgentKit({ role: "workshop", playId: "test", disabled: new Set(), ...deps }).tools;
 
 /** 造一个带最小剧目目录的 PlayStore：play.json + 记忆卡 + 会话日志（后者必须不可见）。 */
 async function makeStore(): Promise<PlayStore> {
@@ -361,7 +366,7 @@ describe("工坊 prompt 与工具", () => {
   });
 });
 
-describe("工坊工具：generate_asset", () => {
+describe("工坊工具：generate_image", () => {
   const deps = (over: Partial<Parameters<typeof createWorkshopTools>[0]> = {}): Parameters<typeof createWorkshopTools>[0] => ({
     files: new PlayFiles(store),
     store,
@@ -378,15 +383,15 @@ describe("工坊工具：generate_asset", () => {
   it("出图成功：落盘 + 广播 asset + 结果回给模型", async () => {
     await setup();
     const events: GeneratedPlayAsset[] = [];
-    const assets = new WorkshopAssets("test", {
+    const assets = new PlayAssets("test", {
       store,
       files: new PlayFiles(store),
       backend: { generate: async () => ({ data: Buffer.from("x"), mimeType: "image/jpeg" }) },
       limiter: new Limiter(1),
       onWrite: () => {},
     });
-    const tools = createWorkshopTools(deps({ assets, onAsset: (a) => events.push(a) }));
-    const gen = tools.find((t) => t.name === "generate_asset")!;
+    const tools = createWorkshopTools(deps({ playAssets: assets, onAsset: (a) => events.push(a) }));
+    const gen = tools.find((t) => t.name === "generate_image")!;
 
     const out = JSON.stringify(await gen.execute("c1", { kind: "background", name: "rooftop", prompt: "黄昏天台" }));
     expect(out).toContain("已生成：assets/backgrounds/rooftop.jpg");
@@ -429,10 +434,10 @@ describe("工坊工具：generate_asset", () => {
     expect(JSON.stringify(out)).toContain("不是可看的图片");
   });
 
-  it("generate_asset：cutout 参数原样传到抠底层（agent 看图后重出用）", async () => {
+  it("generate_image：cutout 参数原样传到抠底层（agent 看图后重出用）", async () => {
     await setup();
     const tunings: (unknown[] | undefined)[] = [];
-    const assets = new WorkshopAssets("test", {
+    const assets = new PlayAssets("test", {
       store,
       files: new PlayFiles(store),
       backend: {
@@ -453,8 +458,8 @@ describe("工坊工具：generate_asset", () => {
       tunings.push(tuning);
       return [{ kind: target.kind as never, path: "assets/sprites/mio/neutral.png", url: "/u", replaced: false }];
     });
-    const tools = createWorkshopTools(deps({ assets }));
-    const gen = tools.find((t) => t.name === "generate_asset")!;
+    const tools = createWorkshopTools(deps({ playAssets: assets }));
+    const gen = tools.find((t) => t.name === "generate_image")!;
     await gen.execute("c1", {
       kind: "sprite",
       characterId: "mio",
@@ -478,7 +483,7 @@ describe("工坊工具：generate_asset", () => {
 
   it("出图失败：把原因回给模型而不是抛出去（让模型如实转告用户）", async () => {
     await setup();
-    const assets = new WorkshopAssets("test", {
+    const assets = new PlayAssets("test", {
       store,
       files: new PlayFiles(store),
       backend: {
@@ -489,7 +494,7 @@ describe("工坊工具：generate_asset", () => {
       limiter: new Limiter(1),
       onWrite: () => {},
     });
-    const gen = createWorkshopTools(deps({ assets })).find((t) => t.name === "generate_asset")!;
+    const gen = createWorkshopTools(deps({ playAssets: assets })).find((t) => t.name === "generate_image")!;
     const out = JSON.stringify(
       await gen.execute("c1", { kind: "background", name: "rooftop", prompt: "黄昏天台" }),
     );
@@ -499,7 +504,7 @@ describe("工坊工具：generate_asset", () => {
 
   it("没配生图后端：直说并给出替代路径，不让模型空转", async () => {
     await setup();
-    const gen = createWorkshopTools(deps()).find((t) => t.name === "generate_asset")!;
+    const gen = createWorkshopTools(deps()).find((t) => t.name === "generate_image")!;
     const out = JSON.stringify(
       await gen.execute("c1", { kind: "background", name: "rooftop", prompt: "黄昏天台" }),
     );
@@ -610,6 +615,7 @@ describe("WorkshopSession：一轮对话", () => {
     },
   ): WorkshopSession {
     return new WorkshopSession({
+      playId: "test",
       store,
       streamFn: extra.streamFn,
       model: {} as never,
@@ -675,11 +681,16 @@ describe("WorkshopSession：一轮对话", () => {
     const session = new WorkshopSession({
       store,
       playId: "test",
-      imageBackend: { generate: async () => ({ data: png, mimeType: "image/png" }) },
-      limiter: new Limiter(1),
+      playAssets: new PlayAssets("test", {
+        store,
+        files: new PlayFiles(store),
+        backend: { generate: async () => ({ data: png, mimeType: "image/png" }) },
+        limiter: new Limiter(1),
+        onWrite: () => {},
+      }),
       // 第一轮：先出一张背景图；下一轮回空内容触发错误路径
       streamFn: createFakeStreamFn([
-        { text: "", toolCalls: [{ name: "generate_asset", args: { kind: "background", name: "rooftop", prompt: "黄昏天台" } }] },
+        { text: "", toolCalls: [{ name: "generate_image", args: { kind: "background", name: "rooftop", prompt: "黄昏天台" } }] },
         { text: "" },
       ]),
       model: {} as never,

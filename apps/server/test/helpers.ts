@@ -8,8 +8,11 @@ export interface FakeResponse {
   text: string;
   /** 剧作家的思考文本（assistant 消息里的 thinking 块）。 */
   thinking?: string;
-  /** 是否附带 beat_done 工具调用。 */
-  beatDone?: boolean;
+  /**
+   * 附带 beat_done 工具调用。true = 本轮自然演完（不带停止点载荷）；
+   * 给对象就是交出停止点（选项/自由输入），与模型真调工具时的参数同形。
+   */
+  beatDone?: boolean | { options?: string[]; placeholder?: string };
   /** 额外工具调用（与 beat_done 同批：如 write_memory）。 */
   toolCalls?: { name: string; args: Record<string, unknown> }[];
   /** 闸门：正文照发，但 done 押后到 gate 兑现——用来把某一轮卡在「演出中」。 */
@@ -33,13 +36,19 @@ export const CARD: IndexCard = {
   file: "旧约定",
 };
 
+/**
+ * 第一轮的剧本正文。停止点不在这里——它由 beat_done 的工具参数交出（`beatDone` 字段）。
+ * 旧写法 `<stop type="choice">` 现在会被解析器当遗留标签静默丢弃，测试里不该再出现。
+ */
 export const BEAT_1 = [
   '<scene bg="corridor_dusk" bgm="melancholy" transition="fade"/>',
   '<actor id="mio" pos="center" expression="pout" action="enter"/>',
   "<narrate>放学后的走廊空无一人。</narrate>",
   '<say id="mio" mood="annoyed">……太慢了！</say>',
-  '<stop type="choice"><option value="a">道歉</option><option>装傻</option></stop>',
 ].join("\n");
+
+/** 第一轮的停止点载荷（选项两条），与 BEAT_1 配套。 */
+export const BEAT_1_STOP = { options: ["道歉", "装傻"] };
 
 export const BEAT_2 = [
   '<say id="mio" mood="soft">……算了。</say>',
@@ -110,7 +119,14 @@ export function createFakeStreamFn(responses: FakeResponse[]): StreamFn {
             type: "toolCall",
             id: "call-1",
             name: "beat_done",
-            arguments: {},
+            // 参数走工具 schema 校验（validateToolArguments），形状必须与真实调用一致
+            arguments:
+              response.beatDone === true
+                ? {}
+                : {
+                    ...(response.beatDone.options ? { options: response.beatDone.options } : {}),
+                    ...(response.beatDone.placeholder ? { placeholder: response.beatDone.placeholder } : {}),
+                  },
           });
           finalMessage.stopReason = "toolUse";
         }

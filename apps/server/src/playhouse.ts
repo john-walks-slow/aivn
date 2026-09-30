@@ -8,12 +8,16 @@ import type { SaveInfo } from "./saves.js";
 import type { PlayConfig } from "@stage-ai/core";
 import type { ServerConfig } from "./config.js";
 import { imagePendingTtlMs } from "./config.js";
-import { createCpaProvider } from "./provider.js";
+import { createCpaProvider, fetchGatewayModels, resolveCpaModel, type GatewayModel } from "./provider.js";
 import { createTts } from "./tts.js";
 import { createImageBackend } from "./imagegen.js";
 import type { ImageBackend } from "./imageBackend.js";
 import { createExa, type Exa } from "./exa.js";
 import { ImageAssets } from "./imageAssets.js";
+import { PlayAssets } from "./playAssets.js";
+import { PlayFiles } from "./playFiles.js";
+import { skillsPrompt } from "./skills.js";
+import { agentToolCatalog } from "./agentkit/kit.js";
 import { Limiter } from "./limiter.js";
 import { Translator } from "./translate.js";
 import { PlayMemory } from "./memory.js";
@@ -60,6 +64,9 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
   };
 }
 
+/** 网关模型清单缓存时长：网关上加模型不频繁，但也不能让用户非刷新不可。 */
+const GATEWAY_MODELS_TTL_MS = 5 * 60_000;
+
 /** 音色试听固定样本文案（素材管理页「试听」按钮）。 */
 const TTS_SAMPLE_TEXT = "你好呀！这就是我的声音，以后请多多指教哦。";
 
@@ -105,6 +112,8 @@ export class PlayHouse {
   }
   private readonly provider: ReturnType<typeof createCpaProvider>["provider"];
   private readonly model: ReturnType<typeof createCpaProvider>["model"];
+  /** 按剧目解析出来的模型缓存（agents 段选了什么 id → 那个模型对象）。 */
+  private readonly modelCache = new Map<string, Model<"openai-completions">>();
   private readonly tts: ReturnType<typeof createTts>;
   private readonly imageBackend: ImageBackend | null;
   /** 工坊联网检索（无 key 为 null：工坊少一个工具）。与 TTS 一样是进程级客户端，不随 runtime 重建。 */
@@ -115,6 +124,16 @@ export class PlayHouse {
    * 挂在 runtime 上的闸门会在换 runtime 时把老 workshop 留在旧闸门上，两个闸门各放 2 张 → 超发。
    */
   private readonly limiters = new Map<string, Limiter>();
+  /**
+   * 剧目级素材生成层（工坊与剧作家共用同一个）。
+   * 必须挂 PlayHouse 而不是 runtime：reload 只换编排器，两个 runtime 各建一份的话
+   * 同一个目标的在飞去重就失效了（两边同时要同一张图会烧两份配额）。
+   */
+  private readonly playAssets = new Map<string, PlayAssets>();
+  /** 排到轮边界的 runtime 重建（剧作家立绘落盘后 play.json 变了）；同剧目串行，避免连着重装。 */
+  private readonly pendingRebuilds = new Map<string, Promise<void>>();
+  /** 网关模型清单缓存（网关上加了模型要能刷出来，故留了 TTL 而不是永久缓存）。 */
+  private gatewayModelsCache: { models: GatewayModel[]; at: number } | null = null;
   /** 正在建的周目（key=playId）：同剧目并发的舞台连接共用一棵树，不会各建一棵。 */
   private readonly ensuring = new Map<string, Promise<string>>();
   /** 正在为舞台构建 runtime（key=playId）：同上，并发连接共用一次构建，不会各建一个编排器。 */
@@ -262,7 +281,45 @@ export class PlayHouse {
     return clients;
   }
 
-  /** 剧目级生图闸门（D6 预发射与工坊出图共用，见字段注释）。 */
+  /** 剧目级素材层（首次调用时装配；未启用生图为 undefined）。 */
+  private playAssetsFor(playId: string, store: PlayStore): PlayAssets | undefined {
+    if (!this.imageBackend) return undefined;
+    const cached = this.playAssets.get(playId);
+    if (cached) return cached;
+    const assets = new PlayAssets(playId, {
+      store,
+      files: new PlayFiles(store),
+      backend: this.imageBackend,
+      limiter: this.limiterFor(playId),
+      // 工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产——按 notify 分流。
+      // 事件由工坊会话转发（它知道当前线程号），工坊实例不在时就没有对话流可挂。
+      onWrite: (write, notify) => {
+        if (notify !== "workshop") return;
+        this.runtimes.get(playId)?.workshop.pushWrite(write);
+      },
+      onAsset: (asset, _replaced, notify) => {
+        if (notify !== "workshop") return;
+        this.runtimes.get(playId)?.workshop.pushAsset(asset);
+      },
+      // 剧作家给临时角色生立绘会改 play.json：拍进行中不能腰斩演出，排到轮边界再重建
+      onPlayConfigChanged: (notify) => {
+        if (notify === "silent") this.rebuildAtBeatBoundary(playId, "剧作家新增了立绘素材");
+      },
+    });
+    this.playAssets.set(playId, assets);
+    return assets;
+  }
+
+  /** 剧目配置里的模型 id → 模型对象（缓存；缺省是服务端默认模型）。 */
+  private modelFor(modelId: string | undefined): Model<"openai-completions"> {
+    if (!modelId || modelId === this.config.modelId) return this.model;
+    const cached = this.modelCache.get(modelId);
+    if (cached) return cached;
+    const resolved = resolveCpaModel(this.config, modelId);
+    this.modelCache.set(modelId, resolved);
+    return resolved;
+  }
+
   private limiterFor(playId: string): Limiter {
     let limiter = this.limiters.get(playId);
     if (!limiter) {
@@ -325,9 +382,10 @@ export class PlayHouse {
   }
 
   /**
-   * 立绘预发射：preload_asset type="sprite" 后台发起。
-   * 复用工坊素材管线（neutral 垫图 + 抠底 + sprites 补写），生成完成后触发 reload
-   * 让前端收到更新后的 hello（新 sprites 映射 + A 区角色表更新）。
+   * 立绘预发射：generate_image kind="sprite" 后台发起。
+   * 走与工坊同一个 PlayAssets（neutral 垫图 + 抠底 + 差分映射补写 + 临时角色注册）。
+   * play.json 的改动由 PlayAssets 的 onPlayConfigChanged 排到轮边界重建——拍进行中直接 reload
+   * 会把正在进行的这一轮腰斩掉。
    */
   private async preloadSprite(
     playId: string,
@@ -335,28 +393,24 @@ export class PlayHouse {
     charId: string,
     expression: string,
     prompt: string,
+    characterName?: string,
   ): Promise<void> {
     const spriteId = `${charId}:${expression}`;
-    if (!this.imageBackend) {
+    const assets = this.playAssetsFor(playId, store);
+    if (!assets) {
       for (const send of this.clientsFor(playId)) {
         send({ type: "asset_failed", id: spriteId, message: "生图未启用" });
       }
       return;
     }
     try {
-      const { WorkshopAssets } = await import("./workshopAssets.js");
-      const { PlayFiles } = await import("./playFiles.js");
-      const files = new PlayFiles(store);
-      const assets = new WorkshopAssets(playId, {
-        files,
-        store,
-        backend: this.imageBackend,
-        limiter: this.limiterFor(playId),
-        onWrite: () => { /* 不走工坊撤销通道 */ },
-      });
-      await assets.generate({ kind: "sprite", characterId: charId, expression }, prompt);
-      // 生图落 assets/sprites/ 后，reload 让前端收到更新的 hello（新 sprites 映射）
-      await this.reload(playId);
+      await assets.generate(
+        { kind: "sprite", characterId: charId, expression },
+        prompt,
+        undefined,
+        undefined,
+        { notify: "silent", characterName },
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[stage-ai] 立绘生图失败 ${spriteId}: ${message}`);
@@ -456,18 +510,57 @@ export class PlayHouse {
    * 与 reload 的区别：工坊会话本身**不能**被重建（不然正在进行的对话与线程现场会被打断），
    * 所以只换编排器、复用同一个 workshop 实例（其 files/threads 直读磁盘，无需刷新）。
    */
-  private async reloadAfterWorkshopWrite(playId: string): Promise<void> {
+  private async reloadAfterWorkshopWrite(playId: string, note: string = SETTINGS_UPDATED): Promise<void> {
     const old = this.runtimes.get(playId);
     if (!old) return;
     // 等节拍边界：演出进行中重建会让这一拍凭空消失
     await old.orchestrator.whenIdle();
     // 等待期间可能已 reload/切档/删除——只在原实例还在位时才替换
     if (this.runtimes.get(playId) !== old) return;
-    const fresh = await this.buildRuntime(playId, old.store.saveId, carryOverFrom(old, SETTINGS_UPDATED));
+    const fresh = await this.buildRuntime(playId, old.store.saveId, carryOverFrom(old, note));
     const runtime = { ...fresh, workshop: old.workshop };
     old.orchestrator.dispose();
     this.runtimes.set(playId, runtime);
     this.announce(playId, runtime);
+  }
+
+  /**
+   * 排到轮边界重建 runtime：剧作家侧改 play.json（给临时角色生立绘补写差分映射）时用。
+   *
+   * 与工坊写盘的区别只有触发时机——都在节拍边界换编排器。必须排队：一轮里出三张立绘就是三次调用，
+   * 齐步走会连着重装三份 runtime。
+   */
+  private rebuildAtBeatBoundary(playId: string, note: string): void {
+    const previous = this.pendingRebuilds.get(playId) ?? Promise.resolve();
+    const next = previous
+      .then(() => this.reloadAfterWorkshopWrite(playId, note))
+      .catch((error: unknown) =>
+        console.warn(
+          `[stage-ai] 轮边界重建 runtime 失败: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      )
+      .finally(() => {
+        if (this.pendingRebuilds.get(playId) === next) this.pendingRebuilds.delete(playId);
+      });
+    this.pendingRebuilds.set(playId, next);
+  }
+
+  /** Agent 设置页的数据源：网关模型清单（读不到就报错，不静默退化成默认模型）。 */
+  async gatewayModels(refresh = false): Promise<{ models: GatewayModel[]; defaultModel: string }> {
+    if (!refresh) {
+      const cached = this.gatewayModelsCache;
+      if (cached && Date.now() - cached.at < GATEWAY_MODELS_TTL_MS) {
+        return { models: cached.models, defaultModel: this.config.modelId };
+      }
+    }
+    const models = await fetchGatewayModels(this.config);
+    this.gatewayModelsCache = { models, at: Date.now() };
+    return { models, defaultModel: this.config.modelId };
+  }
+
+  /** 工具目录（Agent 设置页的开关清单）。与装配用的是同一份定义。 */
+  tools(): ReturnType<typeof agentToolCatalog> {
+    return agentToolCatalog();
   }
 
   /** 广播到剧目客户端组。 */
@@ -524,7 +617,10 @@ export class PlayHouse {
     save: { id: string; name: string },
     seed?: CarryOver,
   ): Promise<PlayRuntime> {
-    const { model } = this;
+    // 两个 agent 各按剧目配置解析模型（Agent 页签改的就是 play.json 的 agents 段）；
+    // 缺省即服务端默认模型。润色/翻译旁路跟剧作家走——同一段文字两种口吻最怪。
+    const model = this.modelFor(play.agents?.playwriter?.model);
+    const workshopModel = this.modelFor(play.agents?.workshop?.model);
     const tts = this.tts;
     // 剧目记忆（D7 三层）：craft/premise/index 随 runtime 重建读入（工坊热改走 reload 即时生效）
     const memory = await PlayMemory.load(store);
@@ -563,12 +659,15 @@ export class PlayHouse {
       ? new ImageAssets(play.id, store, this.imageBackend, this.limiterFor(play.id))
       : undefined;
     if (images) await images.load();
+    // 剧目级素材层：工坊与剧作家共用同一个（跨角色在飞去重只烧一份配额）
+    const playAssets = this.playAssetsFor(play.id, store);
+    const staticAssets = await store.listAssets();
     const orchestrator = new PlaywrightOrchestrator({
       streamFn: this.streamFn,
       model,
       getApiKey: () => this.config.apiKey,
       play,
-      assets: await store.listAssets(),
+      assets: staticAssets,
       assetNotes: await store.assetMeta(),
       generatedAssets: images?.notes(),
       memory,
@@ -576,8 +675,24 @@ export class PlayHouse {
       engine,
       scene,
       tts: synth ? { synth, concurrency: this.config.tts.concurrency } : undefined,
-      onPreloadAsset: (type, prompt, id) => void this.preloadAsset(play.id, type, prompt, id),
-      onPreloadSprite: (charId, expression, prompt) => void this.preloadSprite(play.id, store, charId, expression, prompt),
+      agents: play.agents?.playwriter,
+      // 出图技能清单：与工坊共用同一份 skills/ 目录，read_skill 是同一个工具
+      skills: await skillsPrompt(),
+      imageTools: playAssets
+        ? {
+            playAssets,
+            images,
+            kick: (type, prompt, id) => void this.preloadAsset(play.id, type, prompt, id),
+            kickSprite: (charId, expression, prompt, characterName) =>
+              void this.preloadSprite(play.id, store, charId, expression, prompt, characterName),
+            // 素材清单的键是目录名（backgrounds/cg），与 DSL 的 type（bg/cg）不同名
+            hasStaticAsset: (type, id) =>
+              (staticAssets[type === "bg" ? "backgrounds" : "cg"] ?? []).some(
+                (file) => file.replace(/\.\w+$/, "") === id,
+              ),
+            exa: this.exa ?? undefined,
+          }
+        : undefined,
       onWriteCharacter: (charId, content) => this.writeCharacter(store, charId, content),
       compaction: {
         contextWindow: this.config.contextWindow,
@@ -607,16 +722,16 @@ export class PlayHouse {
       playId: play.id,
       store,
       streamFn: this.streamFn,
-      model,
+      model: workshopModel,
       getApiKey: () => this.config.apiKey,
       emit: (msg) => this.broadcast(play.id, msg),
       onFilesChanged: () => void this.reloadAfterWorkshopWrite(play.id),
-      imageBackend: this.imageBackend ?? undefined,
-      limiter: this.limiterFor(play.id),
+      playAssets,
       saves: this.library.saves(play.id),
       saveStore: (saveId) => this.library.saveStore(play.id, saveId),
       assetLibrary: this.assetLibrary,
       exa: this.exa ?? undefined,
+      agents: play.agents?.workshop,
     });
     return {
       orchestrator,

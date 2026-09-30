@@ -1,5 +1,6 @@
 import { describeAsset, type AssetMeta, type EngineStateSnapshot } from "@stage-ai/core";
 import type { PlayConfig } from "@stage-ai/core";
+import { SEARCH_GUIDE } from "./agentkit/searchTool.js";
 import type { PlayMemory } from "./memory.js";
 
 /** 素材清单（store.listAssets 原样；keys: backgrounds/cg/sfx/bgm/sprites/<charId>）。 */
@@ -60,6 +61,12 @@ export interface PromptContext {
   generated?: GeneratedNote[];
   memory?: PlayMemory;
   arcIds?: readonly string[];
+  /** 出图技能清单（<available_skills> 块）：read_skill 的索引，与工坊共用同一份。 */
+  skills?: string;
+  /** 生图工具在位（工具被关掉时整章不注入——教它调一个不存在的工具只会空转）。 */
+  canImage?: boolean;
+  /** 联网检索在位（同上）。 */
+  canSearch?: boolean;
 }
 
 /**
@@ -105,13 +112,14 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   };
   const generatedSection =
     generated.length > 0
-      ? `\n# 已生成的图（早已存在，直接引用 id，不要再 preload_asset）\n\n${generated
+      ? `\n# 已生成的图（早已存在，直接引用 id，不要再 generate_image）\n\n${generated
           .map((g) => `${g.id}（${g.type}）—— ${g.prompt}`)
           .join("\n")}\n`
       : "";
   // 配乐/音效的编排规则：清单给了元数据之后，怎么用还是得讲清楚——
   // 「缺省保持」这条尤其重要，模型换景时顺手重写 bgm 是最常见的失误。
   const audioRule = stems("bgm").length > 0 || stems("sfx").length > 0 ? AUDIO_RULES : "";
+  const noImages = stems("backgrounds").length === 0 && stems("cg").length === 0;
   const assetSection = [
     section("可用背景 bg", "backgrounds", "\nscene 的 bg 优先取这些 id。"),
     section("可用音乐 bgm", "bgm"),
@@ -120,8 +128,8 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     section("已有插图 cg", "cg"),
     generatedSection,
     // 清单全空时上面几段拼成空串，这段就没人看得见——而此时正是最该让剧作家自己画图的时候
-    stems("backgrounds").length === 0 && stems("cg").length === 0
-      ? `\n# 没有任何背景与插图\n\n剧目还没有一张图。每写到一个新场景，先用 preload_asset 预发射一张背景再引用它的 id。\n`
+    noImages && ctx.canImage !== false
+      ? `\n# 没有任何背景与插图\n\n剧目还没有一张图。每写到一个新场景，先用 generate_image 排一张背景，再在 3–5 句之后引用它的 id。\n`
       : "",
   ].join("");
 
@@ -142,12 +150,13 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 
 # 你怎么工作
 
-一轮一轮地写：写一小段戏 → 调 beat_done 收束 → 拿到玩家的回应、或引擎接上的下一轮 → 接着写。
-这一轮怎么收束，只看戏演到哪了：
-- 演到玩家该表态/行动的地方：写 <stop>，把主导权交给他；
-- 这一段自然演完：不写 <stop>，引擎直接接上下一轮，玩家点一下「继续」。
+一轮一轮地写：写一小段戏 → 调 beat_done 收束（顺便交出这一轮的停止点）→ 拿到玩家的回应、
+或引擎接上的下一轮 → 接着写。
 
-stop 是这一轮的出口，不是故事的终点——玩家回应之后，故事继续由你往下写。
+beat_done 的参数决定这一轮停在哪里：给 2~4 个 options 就是把主导权交给玩家选；
+只给 placeholder 就是停在自由输入框；两个都不给就是本轮自然演完、玩家点「继续」接下一轮。
+
+停止点是这一轮的出口，不是故事的终点——玩家回应之后，故事继续由你往下写。
 世界线、存档、重演、跳转是引擎和玩家的事，不用你操心，也写不进剧本。
 
 # 剧目设定
@@ -168,48 +177,6 @@ ${assetSection}${craftSection}${indexSection}
 <actor id="角色id" pos="left|center|right" expression="表情id" action="enter|leave|shake"/>
 <sfx src="音效id" volume="0.5"/>
 <cg id="cgid" caption="插图说明"/>
-<preload_asset type="bg|cg" prompt="英文生图描述" id="资源id"/>
-
-# 缺素材时自己画（生图，约 15-30 秒，先发射后使用）
-
-可用清单里没有、但剧情需要的背景或插图，用 preload_asset 预发射，然后在它出场的位置照常引用同一个 id：
-<preload_asset type="bg" prompt="abandoned classroom at dusk, warm sunset light through dusty windows, anime visual novel background, no text" id="bg_classroom_dusk"/>
-<scene bg="bg_classroom_dusk" .../>   ← 3–5 句台词之后才引用
-
-规则：
-- **提前 3–5 句发射**：图要 15–30 秒才到，引用太早只会看到骨架占位；
-- **id 自取**：用简短英文下划线 id（如 bg_rooftop_dusk、cg_rooftop_01），引用时一字不差；
-- **prompt 写英文**，写清主体/环境/光线/视角/画风，末尾加 "anime visual novel background, no text"；
-- **不要凭空造 id**：可用清单与「已生成的图」里已有的背景和插图直接引用，别重复生成。
-- **按描述选素材**：清单里带括号说明的是画面内容（差分的名字未必与画面相符），先看说明再挑 id。
-- **立绘差分不做生图**：只能用清单里已列出的差分名，**不存在的差分系统不会帮你补**（preload 对立绘无效）。
-  写一个清单里没有的差分名，角色不会不上台，但会**默默换成该角色的第一张立绘**，表情对不上。
-  某角色一张立绘都没有时，别让 ta 上台——改用旁白/台词交代，或只写有立绘的角色。
-## 引入新角色
-
-需要引入角色表里没有的新角色时，按以下步骤：
-
-**1. 先建档（write_memory）**，声明角色设定：
-
-    write_memory("characters/xiaoyu", "# 小雨\\n咖啡店打工的少女，说话温柔，常用省略号。")
-
-- 路径格式：characters/<id>（id 只含字母/数字/下划线/连字符，最长 40 字符）
-- 文件首行 "# 名字"，引擎据此在角色表注册 id 与显示名
-- 下一轮边界角色即可见于 A 区角色表
-
-**2. 生立绘（preload_asset type="sprite"）**，后台出图，不阻塞台词：
-
-    <preload_asset type="sprite" id="xiaoyu:neutral" prompt="2D anime style, ..."/>
-
-- id 格式：<charId> 或 <charId>:<expression>；省略 expression 时默认 neutral（定妆照）
-- 已有 neutral 时出其他差分会自动垫图保持一致性
-- 无角色卡也能生图，但 write_memory 建了档之后图才能在 A 区角色表里显示差分
-
-**3. 临时角色（一次性 NPC）** 不需要建档，直接在 say 上写 name 属性：
-
-    <say id="passerby" name="路人甲">你好啊。</say>
-
-name 只覆盖本句名牌，不写入角色表，无 TTS 音色。
 
 ## 台词（三类，正文为原生文本，不要转义）
 
@@ -224,27 +191,47 @@ name 只覆盖本句名牌，不写入角色表，无 TTS 音色。
 它不上舞台、不进谱系，玩家看不到——任何"想说但不是剧本"的内容都放这里，
 不要散落在台词之间。
 
-## 停止点（玩家交互）
+## 结束轮（beat_done）
 
-只有两种，在「主角必须表态/行动」的瞬间给出：
-<stop type="choice">
-<option value="选项值">选项文本</option>
-<option>另一个选项</option>
-</stop>
-<stop type="free" placeholder="输入框提示语"></stop>
+一轮到边界时你只做一个动作：**调用 beat_done 工具**，参数就是这一轮的出口。
 
-## 结束轮
-
-一轮到边界时，你只做一个动作：**调用 beat_done 工具**。两种边界走同一条路：
-
-- 写了 <stop>：标签闭合之后，就调 beat_done，中间不要再写任何剧本内容。
-- 没写 <stop>：本轮自然演完（最后一句台词或旁白之后），就调 beat_done。
+- 主角必须表态/行动的瞬间 → beat_done(options=["…","…"])，给 2~4 条互斥的选项；
+  选项文本就是玩家面板上那一行，要短、要像玩家会说的话。
+- 想给一个自由回答的口子 → beat_done(placeholder="想对他说什么？")。
+- 这一段自然演完（还在往前推剧情）→ beat_done()，两个参数都不给。
 
 beat_done 必须**独占一次工具调用**——不与 write_memory、update_state 等其他工具放在同一批里。
+调完之后本轮就结束了：不要再输出任何内容（没有停止点时也不要写收尾交代或过场说明），
+想说点什么写进 <comment>。轮与轮之间由引擎接续。
 
-没写停止点时，beat_done 之后**一个字都不要多写**：不要写收尾交代、不要总结、不要写
-「本轮到此结束」「一切落定」「如需继续请…」这类过场说明，也不要另起一段往下演。轮与轮之间
-由引擎接续，你多写的每一句都会变成玩家读到的多余旁白。想说点什么，写进 <comment>。
+${imageChapter(ctx.canImage !== false)}
+${ctx.canSearch ? SEARCH_GUIDE : ""}${ctx.skills ? `\n${ctx.skills}\n` : ""}
+## 引入新角色
+
+需要引入角色表里没有的新角色时，按以下步骤：
+
+**1. 先建档（write_memory）**，声明角色设定：
+
+    write_memory("characters/xiaoyu", "# 小雨\\n咖啡店打工的少女，说话温柔，常用省略号。")
+
+- 路径格式：characters/<id>（id 只含字母/数字/下划线/连字符，最长 40 字符）
+- 文件首行 "# 名字"，引擎据此在角色表注册 id 与显示名
+- 下一轮边界角色即可见于 A 区角色表
+
+**2. 生立绘（generate_image kind="sprite"）**，后台出图，不阻塞台词：
+
+    generate_image(kind="sprite", characterId="xiaoyu", characterName="小雨", expression="neutral", prompt="2D anime style, …")
+
+- 省略 expression 时默认 neutral（定妆照）
+- 已有 neutral 时出其他差分会自动垫图保持一致性
+- 立绘约 100 秒才出：不要在这一轮就让它上台，3–5 句之后再 \`<actor id="xiaoyu" expression="neutral">\`
+
+**3. 临时角色（一次性 NPC）**：只出声不出图也行，直接在 say 上写 name 属性：
+
+    <say id="passerby" name="路人甲">你好啊。</say>
+
+name 只覆盖本句名牌，不写入角色表，无 TTS 音色。这类角色想有立绘也行：
+generate_image 里给它 characterId + characterName，系统会自动在角色表里建一个空设定的角色。
 
 # 演出契约（引擎规则，不可改）
 
@@ -258,7 +245,36 @@ beat_done 必须**独占一次工具调用**——不与 write_memory、update_s
    否则 = 其中某个角色（可能就是主角，也可能是别人）的行动、话语或心理，照字面意思演成该角色的言行。
    两种都不要在剧本里复述这段文字本身。
 5. 标注「未作回应」时：不要替玩家编造台词或行动，让角色自然接戏并在合适时机再给回应机会。
-6. 主角做了决定性的动作/承诺时给 stop；只是往前推剧情时直接往下演，不要每轮都停下来问。`;
+6. 主角做了决定性的动作/承诺时给停止点；只是往前推剧情时直接往下演，不要每轮都停下来问。`;
+}
+
+/** 出图章节（生图工具不可用时换成一句「没有生图」的话，不教它调一个不存在的工具）。 */
+function imageChapter(can: boolean): string {
+  if (!can) {
+    return `## 生图
+
+本剧目没有开启生图：不要在剧本里引用清单之外的背景/插图/立绘差分，用旁白和台词交代画面。`;
+  }
+  return `## 缺素材时自己画（generate_image）
+
+可用清单里没有、但剧情需要的背景或插图，用 generate_image 排一张（后台出图，发起即返回），
+然后在它出场的位置照常引用同一个 id：
+
+    generate_image(kind="background", name="bg_classroom_dusk", prompt="abandoned classroom at dusk, warm sunset light through dusty windows, anime visual novel background, no text")
+    …3–5 句台词…
+    <scene bg="bg_classroom_dusk" .../>
+
+规则：
+- **走函数调用**：generate_image 是一个工具，照上面的写法**发起调用**；把它当成剧本里的文本标签来写
+  （形如 <call:generate_image …/> 那样夹在台词之间）引擎不认，那张图不会出现，也不会有人告诉你出错了；
+- **提前 3–5 句发起**：图要 15–30 秒才到，引用太早只会看到骨架占位；
+- **id 自取**：用简短英文下划线 id（如 bg_rooftop_dusk、cg_rooftop_01），引用时一字不差；
+- **prompt 写英文**，写清主体/环境/光线/视角/画风，末尾加 "anime visual novel background, no text"；
+- **不要凭空造 id**：可用清单与「已生成的图」里已有的背景和插图直接引用，别重复生成；
+  工具回执说「已经生成过 / 已经在队列里 / 剧目里已有」时就更不要再发一次；
+- **按描述选素材**：清单里带括号说明的是画面内容（差分的名字未必与画面相符），先看说明再挑 id。
+- **立绘差分**：用 generate_image(kind="sprite") 出，落在剧目素材里，角色表里还没有的角色会先建一个。
+  某角色一张立绘都没有、又还没来得及出图时，别让 ta 上台——改用旁白/台词交代，或只写有立绘的角色。`;
 }
 
 /** user 消息【状态】区（B 区，每轮变化但 append-only）。stateFiles = always/state 谱系级内容（D7）。 */

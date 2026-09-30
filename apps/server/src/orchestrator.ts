@@ -14,12 +14,18 @@ import {
   type LineageEvent,
   type LineageView,
   type MemorySnapshot,
+  type PreloadAssetAttrs,
   type SequencedEvent,
   type StageEvent,
   type StopPayload,
   type PromptQueueItem,
 } from "@stage-ai/core";
 import type { ServerMessage } from "@stage-ai/core";
+import { createAgentKit, type AgentKit } from "./agentkit/kit.js";
+import type { ModelStop } from "./agentkit/deps.js";
+import type { Exa } from "./exa.js";
+import type { ImageAssets } from "./imageAssets.js";
+import type { PlayAssets } from "./playAssets.js";
 import { buildSystemPrompt, renderStateSection, type AssetManifest, type AssetNotes, type GeneratedNote } from "./prompt.js";
 import { lineageToBeats, lineageToEvents, stopFromEvent, type RebuiltBeat } from "./rebuild.js";
 import {
@@ -34,201 +40,12 @@ import {
 } from "./compaction.js";
 import { completeText } from "./llm.js";
 import { HistoryRecorder, type HistoryBeat } from "./history.js";
-import type { PlayConfig } from "@stage-ai/core";
+import type { AgentSettings, PlayConfig } from "@stage-ai/core";
 import type { PlayMemory } from "./memory.js";
 import { VoicePipeline, type TtsSynthFn } from "./voice.js";
 
-/** 生成批次收束工具（D3：交互停止点之后或本轮写完时调用）。 */
-const beatDoneParams = Type.Object({}, { additionalProperties: false });
-
-export function createBeatDoneTool(): AgentTool<TSchema> {
-  return {
-    name: "beat_done",
-    label: "结束本轮",
-    description:
-      "本轮演出内容已写完（交互停止点之后，或本轮自然写完）时调用，不与其他工具同批调用",
-    parameters: beatDoneParams,
-    execute: async () => ({
-      content: [{ type: "text", text: "ok" }],
-      details: undefined,
-      terminate: true,
-    }),
-  };
-}
-
-/** 好感度单次增量上限与值域（引擎校验，模型只可提议）。 */
-const AFFINITY_DELTA_CAP = 5;
-const AFFINITY_MAX = 100;
-
 /** 重建接力保留预算（token）：接住最近几轮就够，更早的细节走 archive 检索。 */
 const CARRY_OVER_TOKENS = 8000;
-
-/** 记忆工具依赖（D7）：engine 拥有状态真值，stateFiles 随谱系快照走。 */
-export interface MemoryToolDeps {
-  engine: EngineStateSnapshot;
-  characterIds: ReadonlySet<string>;
-  memory: PlayMemory;
-  tree: LineageTree;
-  stateFiles: Record<string, string>;
-  /** 当前分支已走过的纪元（谱系级：分岔回旧分支不得读到后世的章节摘要）。 */
-  arcIds: () => readonly string[];
-  /**
-   * 写 always/characters/<id>.md 并 upsert play.json stub（id/name）。
-   * 由 playhouse 实现，编排器不直接做文件 I/O。
-   */
-  writeCharacter?: (id: string, content: string) => Promise<void>;
-}
-
-function textResult(text: string): AgentToolResult {
-  return { content: [{ type: "text", text }], details: undefined };
-}
-
-const updateStateParams = Type.Object(
-  {
-    affinity: Type.Optional(Type.Record(Type.String(), Type.Number())),
-    flags: Type.Optional(
-      Type.Record(Type.String(), Type.Union([Type.String(), Type.Number(), Type.Boolean()])),
-    ),
-  },
-  { additionalProperties: false },
-);
-
-const writeMemoryParams = Type.Object(
-  {
-    file: Type.Union([
-      Type.Literal("scene"),
-      Type.Literal("threads"),
-      // characters/<id>：建立/更新角色设定（persona/台词风格），同时在 play.json 注册 stub
-      Type.String({ pattern: "^characters/[a-zA-Z][a-zA-Z0-9_-]{0,39}$" }),
-    ]),
-    content: Type.String({ maxLength: 4000 }),
-  },
-  { additionalProperties: false },
-);
-
-const readMemoryDetailParams = Type.Object(
-  { name: Type.String() },
-  { additionalProperties: false },
-);
-
-const searchArchiveParams = Type.Object(
-  {
-    query: Type.String({ maxLength: 200 }),
-    limit: Type.Optional(Type.Number()),
-  },
-  { additionalProperties: false },
-);
-
-/** playwriter 记忆工具组（D7）：update_state（引擎校验）/ write_memory / read_memory_detail / search_archive。 */
-export function createMemoryTools(deps: MemoryToolDeps): AgentTool<TSchema>[] {
-  const updateState: AgentTool<typeof updateStateParams> = {
-    name: "update_state",
-    label: "提议状态更新",
-    description:
-      "提议更新引擎状态（好感度增量/旗标）。好感度传增量（如 koharu: 2 表示 +2，单次 |增量|≤5，值域 0~100）；旗标传目标值。引擎校验后才生效，【状态】区下轮反映。剧情有实质推进时才调用，不要每轮都调。",
-    parameters: updateStateParams,
-    execute: async (_toolCallId, params: Static<typeof updateStateParams>) => {
-      const { affinity, flags } = params;
-      const applied: string[] = [];
-      const rejected: string[] = [];
-      for (const [charId, delta] of Object.entries(affinity ?? {})) {
-        if (!deps.characterIds.has(charId)) {
-          rejected.push(`${charId} 不是本剧角色`);
-          continue;
-        }
-        if (!Number.isInteger(delta) || Math.abs(delta) > AFFINITY_DELTA_CAP) {
-          rejected.push(`${charId} 增量须为整数且 |Δ|≤${AFFINITY_DELTA_CAP}（收到 ${delta}）`);
-          continue;
-        }
-        const current = deps.engine.affinity[charId] ?? 0;
-        const next = Math.max(0, Math.min(AFFINITY_MAX, current + delta));
-        deps.engine.affinity[charId] = next;
-        applied.push(`${charId} ${delta >= 0 ? "+" : ""}${delta}（${current}→${next}）`);
-      }
-      for (const [key, value] of Object.entries(flags ?? {})) {
-        deps.engine.flags[key] = value;
-        applied.push(`旗标 ${key}=${String(value)}`);
-      }
-      if (applied.length === 0 && rejected.length === 0) return textResult("未提供任何更新。");
-      return textResult(
-        [
-          applied.length > 0 ? `已生效：${applied.join("；")}` : null,
-          rejected.length > 0 ? `被拒绝（请修正后重试）：${rejected.join("；")}` : null,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      );
-    },
-  };
-
-  const writeMemory: AgentTool<typeof writeMemoryParams> = {
-    name: "write_memory",
-    label: "写记忆文件",
-    description:
-      "写记忆文件。\n" +
-      "- file=\"scene\"：当前场景/在场人物/时间（一两行），每轮有实质变化时更新，全文下轮注入【状态】区。\n" +
-      "- file=\"threads\"：活跃剧情线与悬念（要点列表），每轮有实质变化时更新，全文下轮注入【状态】区。\n" +
-      "- file=\"characters/<id>\"：建立/更新角色设定（persona、台词风格）。首行建议写 `# 名字`，引擎据此在角色表注册 id 和显示名。下一轮边界角色出现在 A 区【角色表】。",
-    parameters: writeMemoryParams,
-    execute: async (_toolCallId, params: Static<typeof writeMemoryParams>) => {
-      const { file, content } = params;
-      if (file === "scene" || file === "threads") {
-        deps.stateFiles[file] = content.trim();
-        return textResult(`已更新 ${file}.md。`);
-      }
-      // characters/<id> 分支：落盘 + upsert play.json stub
-      if (!deps.writeCharacter) {
-        return textResult("（当前运行环境不支持写角色设定，请通过工坊完成。）");
-      }
-      const charId = file.replace(/^characters\//, "");
-      await deps.writeCharacter(charId, content.trim());
-      // 从内容首行解析名字（# 名字）
-      const nameMatch = /^#\s+(.+)$/m.exec(content);
-      const name = nameMatch?.[1]?.trim() ?? charId;
-      return textResult(`已写入 ${file}.md，角色「${name}」（id: ${charId}）将在下一拍边界出现在角色表。`);
-    },
-  };
-
-  const readMemoryDetail: AgentTool<typeof readMemoryDetailParams> = {
-    name: "read_memory_detail",
-    label: "读记忆卡详情",
-    description:
-      "读取记忆索引中某条卡的完整内容（系统提示词「记忆索引」列表里的名称，或 [分类] 后的相对路径如 locations/旧校舍）。" +
-      "涉及某地点/设定/旧章节时先查再写，避免与既有设定矛盾。",
-    parameters: readMemoryDetailParams,
-    execute: async (_toolCallId, params: Static<typeof readMemoryDetailParams>) => {
-      const { name } = params;
-      const arcIds = deps.arcIds();
-      const detail = deps.memory.readCard(name, arcIds);
-      if (detail) return textResult(detail);
-      const available = deps.memory
-        .visibleContext(arcIds)
-        .map((c) => c.name)
-        .join("、");
-      return textResult(`未找到「${name}」。可用条目：${available || "（无）"}。`);
-    },
-  };
-
-  const searchArchive: AgentTool<typeof searchArchiveParams> = {
-    name: "search_archive",
-    label: "检索历史往事",
-    description:
-      "全文检索本分支历史演出（过往轮的剧本切片）。需要回看发生过什么、玩家说过什么时调用；只命中当前分支可见的历史，不会召回其他分支。",
-    parameters: searchArchiveParams,
-    execute: async (_toolCallId, params: Static<typeof searchArchiveParams>) => {
-      const { query, limit } = params;
-      const hits = deps.memory.searchArchive(
-        query,
-        deps.tree.pathSet(),
-        Math.max(1, Math.min(10, limit ?? 5)),
-      );
-      if (hits.length === 0) return textResult("（无命中：当前分支历史中未检索到相关内容）");
-      return textResult(hits.map((h) => `【第 ${h.turn} 轮】\n${h.summary}`).join("\n\n"));
-    },
-  };
-
-  return [updateState, writeMemory, readMemoryDetail, searchArchive];
-}
 
 export type PlayerAction =
   | { kind: "choice"; optionIndex: number }
@@ -271,14 +88,27 @@ export interface OrchestratorOptions {
   restoredHistory?: HistoryBeat[];
   /** 语音管线合成函数（无则本剧目无声：hello.voice=false）。 */
   tts?: { synth: TtsSynthFn; concurrency?: number };
-  /** 生图预发射钩子（D6）：解析到 preload_asset bg/cg 即后台发起，不占播放；无则只记谱系。 */
-  onPreloadAsset?: (type: "bg" | "cg", prompt: string, id: string) => void;
   /**
-   * 立绘预发射钩子：解析到 preload_asset type="sprite" 即后台发起。
-   * charId = 角色 id，expression = 差分名（已默认补全 neutral），prompt = 生图描述。
-   * 无则只记谱系不发起生图。
+   * 生图能力（未启用时整段不给：工具回不可用，也不会往时间线上摆永远等不到的骨架）。
+   * bg/cg 落 media-cache 运行时缓存，立绘与临时角色落 assets/（与工坊同一个 PlayAssets）。
    */
-  onPreloadSprite?: (charId: string, expression: string, prompt: string) => void;
+  imageTools?: {
+    playAssets?: PlayAssets;
+    images?: ImageAssets;
+    /** 后台发起 bg/cg：宿主负责 asset_ready / asset_failed 广播（工具不等图）。 */
+    kick: (type: "bg" | "cg", prompt: string, id: string) => void;
+    /** 后台发起立绘：同上的失败广播。characterName 供角色表里还没有的角色自动建 stub。 */
+    kickSprite: (
+      charId: string,
+      expression: string,
+      prompt: string,
+      characterName?: string,
+    ) => void;
+    /** 这个 id 的背景/插图是不是已经在 assets/ 里（工坊导入的静态素材）——有就不烧配额。 */
+    hasStaticAsset: (type: "bg" | "cg", id: string) => boolean;
+    /** 联网检索（配了 key 才注册 web_search）。 */
+    exa?: Exa;
+  };
   /**
    * 写角色设定钩子：write_memory file="characters/<id>" 时调用。
    * 负责落盘 always/characters/<id>.md 并 upsert play.json stub。
@@ -298,6 +128,13 @@ export interface OrchestratorOptions {
   beatTimeoutMs?: number;
   /** 重建接力：A 区变了（工坊改了创作口径/设定）时携带的对话尾，见 carryOver。 */
   seed?: CarryOver;
+  /**
+   * 剧作家的 agent 设置（play.json 的 agents.playwriter）：模型由宿主解析成 opts.model 传进来，
+   * 这里只用思考档位与工具开关。缺省即「思考 off、工具全开」。
+   */
+  agents?: AgentSettings;
+  /** 出图技能清单（<available_skills> 块）：read_skill 的索引，与工坊共用同一份。 */
+  skills?: string;
 }
 
 /**
@@ -384,6 +221,8 @@ export class PlaywrightOrchestrator {
   private loggedEvents = 0;
   /** 剧作家历史累积器（思考/原始 DSL/工具调用；随 session.json 落盘，只读对外）。 */
   private readonly historyRecorder: HistoryRecorder;
+  /** 统一基座装好的工具（一次构造，纪元压缩重建 Agent 时复用同一份）。 */
+  private readonly kit: AgentKit;
 
   constructor(opts: OrchestratorOptions) {
     this.opts = opts;
@@ -397,6 +236,27 @@ export class PlaywrightOrchestrator {
       // 已有事件早已落过 JSONL，不重复补推
       this.loggedEvents = opts.tree.export().events.length;
     }
+    this.kit = createAgentKit({
+      role: "playwriter",
+      playId: opts.play.id,
+      disabled: new Set(opts.agents?.disabledTools ?? []),
+      thinking: opts.agents?.thinking,
+      engine: opts.engine,
+      characterIds: new Set(opts.play.characters.map((c) => c.id)),
+      memory: opts.memory,
+      tree: opts.tree,
+      stateFiles: this.stateFiles,
+      arcIds: () => this.arcIds,
+      writeCharacter: opts.onWriteCharacter,
+      emitStop: (stop) => this.emitStop(stop),
+      emitPreload: (attrs) => this.onStageEvent({ kind: "preload_asset", ...attrs }),
+      playAssets: opts.imageTools?.playAssets,
+      kick: opts.imageTools?.kick ?? (() => {}),
+      kickSprite: opts.imageTools?.kickSprite ?? (() => {}),
+      statusOf: (id) => opts.imageTools?.images?.statusOf(id) ?? "none",
+      hasStaticAsset: opts.imageTools?.hasStaticAsset ?? (() => false),
+      exa: opts.imageTools?.exa,
+    });
     this.agent = this.buildAgent(opts.seed ? withSeed(opts.seed.messages, opts.seed.note) : []);
     this.voice = opts.tts
       ? new VoicePipeline({
@@ -435,21 +295,13 @@ export class PlaywrightOrchestrator {
           generated: opts.generatedAssets,
           memory: opts.memory,
           arcIds: this.arcIds,
+          skills: opts.skills,
+          canImage: this.kit.can.image,
+          canSearch: this.kit.can.search,
         }),
         model: opts.model,
-        thinkingLevel: "off",
-        tools: [
-          createBeatDoneTool(),
-          ...createMemoryTools({
-            engine: opts.engine,
-            characterIds: new Set(opts.play.characters.map((c) => c.id)),
-            memory: opts.memory,
-            tree: opts.tree,
-            stateFiles: this.stateFiles,
-            arcIds: () => this.arcIds,
-            writeCharacter: opts.onWriteCharacter,
-          }),
-        ],
+        thinkingLevel: this.kit.thinking,
+        tools: this.kit.tools,
         messages,
       },
     });
@@ -875,7 +727,10 @@ export class PlaywrightOrchestrator {
     engine.turn = state.engine.turn;
     engine.affinity = { ...state.engine.affinity };
     engine.flags = { ...state.engine.flags };
-    this.stateFiles = { ...state.stateFiles };
+    // 原地换内容而不是换对象：write_memory 工具闭包持有的是这个对象，
+    // 换引用的话分岔之后记忆工具会写到一个没人再读的对象上去（状态区再也不更新）。
+    for (const key of Object.keys(this.stateFiles)) delete this.stateFiles[key];
+    Object.assign(this.stateFiles, state.stateFiles);
     this.arcIds = [...state.arcIds];
     this.beatNo = engine.turn;
     this.opts.scene = state.scene;
@@ -1148,13 +1003,6 @@ export class PlaywrightOrchestrator {
     this.parser.resetBeat();
     let stop = this.pendingStop;
     this.pendingStop = null;
-    // D3 护栏：choice 无选项 = 交互死路，降级 free stop（parser 侧已有 warning 供回喂）
-    if (stop?.stopType === "choice" && (stop.options?.length ?? 0) === 0) {
-      stop = {
-        stopType: "free",
-        placeholder: "（本轮选项生成失败，请自由回应）",
-      };
-    }
     // 空轮护栏：生成失败/零产出不得静默伪装成正常收束——显式 error + pause 停止点给玩家重试入口
     // （这一轮没有自然收尾，给不了出口，只能让玩家按「继续」重开一轮）
     if (this.beatEvents === 0 && !stop) {
@@ -1239,6 +1087,22 @@ export class PlaywrightOrchestrator {
     this.send({ type: "events", events: [sequenced] });
     this.accumulateLineage(event, this.seq);
     this.feedVoice(event, this.seq);
+  }
+
+  /**
+   * beat_done 交出的停止点 → stop IR 事件。
+   *
+   * 走的是与解析器产出完全同一条管道（加 seq → 广播 → 落谱系）：停止点在时间线上是可见的，
+   * 停止点重放、回看与分岔都靠谱系里那条 stop 事件，所以它不能是「工具的一个副作用」，
+   * 只能是「工具产出的一种事件」。选项数由 schema 的 minItems 兜住，这里不再兜第二手。
+   */
+  private emitStop(stop: ModelStop): void {
+    this.onStageEvent({
+      kind: "stop",
+      stopType: stop.stopType,
+      ...(stop.options ? { options: stop.options } : {}),
+      ...(stop.placeholder ? { placeholder: stop.placeholder } : {}),
+    });
   }
 
   /** 语音管线喂入（D5）：say 三段事件 → 分句预取。narrate/thought 不配音。 */
@@ -1332,27 +1196,14 @@ export class PlaywrightOrchestrator {
         });
         return;
       case "preload_asset":
+        // 只记时间线上的位置（骨架占位、谱系回放）。**发起生图是 generate_image 工具的事**：
+        // 工具已经判过「静态优先 / 已在飞 / 已排队」，在这里再发起一次就是两套决策打架。
         this.appendLineage("preload", {
           payload: {
             seq,
             attrs: { type: event.type, prompt: event.prompt, id: event.id },
           },
         });
-        if (event.type === "sprite") {
-          // sprite id 格式已由 parser 补全为 <charId>:<expression>
-          const colonIdx = event.id.indexOf(":");
-          const charId = colonIdx >= 0 ? event.id.slice(0, colonIdx) : event.id;
-          const expression = colonIdx >= 0 ? event.id.slice(colonIdx + 1) : "neutral";
-          this.opts.onPreloadSprite?.(charId, expression, event.prompt);
-        } else {
-          // bg/cg：已有同名导入素材就不烧配额（提示词也要求别重复生成，这里兜底）。
-          // 素材清单的键是目录名（backgrounds/cg），与 DSL 的 type（bg/cg）不同名。
-          const kind = event.type === "bg" ? "backgrounds" : "cg";
-          const owned = (this.opts.assets?.[kind] ?? []).some(
-            (file) => file.replace(/\.\w+$/, "") === event.id,
-          );
-          if (!owned) this.opts.onPreloadAsset?.(event.type, event.prompt, event.id);
-        }
         return;
       case "cg":
         this.appendLineage("cg", {

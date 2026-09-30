@@ -110,6 +110,15 @@ export class ImageAssets {
     return job;
   }
 
+  /**
+   * 这个 id 现在的状态（工具回执用，决定要不要重复发起）：
+   * ready = 已出图可直接引用；queued = 正在出或已排产；none = 没有。
+   */
+  statusOf(id: string): "ready" | "queued" | "none" {
+    if (this.byId.has(id)) return "ready";
+    return this.inflight.has(id) ? "queued" : "none";
+  }
+
   private async run(type: "bg" | "cg", prompt: string, id: string): Promise<GeneratedAsset> {
     const file = fileName(type, prompt, ASPECT_BY_TYPE[type]);
     await this.ensure(file, prompt, type);

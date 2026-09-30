@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Limiter } from "../src/limiter.js";
 import { PlayFiles } from "../src/playFiles.js";
 import { PlayStore } from "../src/store.js";
-import { WorkshopAssets } from "../src/workshopAssets.js";
+import { PlayAssets } from "../src/playAssets.js";
 import type { GeneratedImage, ImageAspect, ImageBackend, ImageRequest } from "../src/imageBackend.js";
 import type { WorkshopWrite } from "../src/workshop.js";
 
@@ -84,7 +84,7 @@ function stubBackend(mimeType = "image/jpeg"): { backend: ImageBackend; calls: I
 }
 
 function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2): {
-  assets: WorkshopAssets;
+  assets: PlayAssets;
   files: PlayFiles;
   writes: WorkshopWrite[];
 } {
@@ -93,7 +93,7 @@ function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2): {
   return {
     files,
     writes,
-    assets: new WorkshopAssets("test", {
+    assets: new PlayAssets("test", {
       store,
       files,
       backend,
@@ -103,7 +103,7 @@ function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2): {
   };
 }
 
-describe("WorkshopAssets：工坊素材落盘", () => {
+describe("PlayAssets：工坊素材落盘", () => {
   it("背景落 assets/backgrounds/ 16:9，同名再生成算覆盖并清掉旧扩展名", async () => {
     const store = await makeStore();
     const { backend } = stubBackend("image/jpeg");
@@ -179,6 +179,39 @@ describe("WorkshopAssets：工坊素材落盘", () => {
     // 角色 id 不走文件名正则：play.json 里的 Koharu 完全合法
     const out = await assets.generate({ kind: "sprite", characterId: "Koharu", expression: "smile" }, "p");
     expect(out.at(-1)!.path).toBe("assets/sprites/Koharu/smile.png");
+  });
+
+  it("临时角色：剧作家给 characterName 就自动注册 stub；工坊侧不给名字仍按成员校验报错", async () => {
+    const store = await makeStore();
+    const { assets, files, writes } = makeAssets(store, stubBackend().backend);
+
+    // 工坊（notify 缺省）：角色表是用户与工坊的账，一次出图不该悄悄塞进陌生人
+    await expect(
+      assets.generate({ kind: "sprite", characterId: "ran", expression: "neutral" }, "p", undefined, undefined, {
+        characterName: "岚",
+      }),
+    ).rejects.toThrow(/没有角色「ran」/);
+
+    // 剧作家（notify=silent + characterName）：临时角色边出边注册，回到角色表与差分映射
+    const out = await assets.generate({ kind: "sprite", characterId: "ran", expression: "neutral" }, "p", undefined, undefined, {
+      notify: "silent",
+      characterName: "岚",
+    });
+    expect(out.at(-1)!.path).toBe("assets/sprites/ran/neutral.png");
+    const config = JSON.parse(await readFile(join(store.dir, "play.json"), "utf8"));
+    expect(config.characters.map((c: { id: string }) => c.id)).toContain("ran");
+    expect(config.characters.find((c: { id: string }) => c.id === "ran")).toMatchObject({
+      name: "岚",
+      sprites: { neutral: "neutral.png" },
+    });
+    expect(writes.some((w) => w.path === "play.json")).toBe(true);
+
+    // 静默出图不给名字：模型不知道自己在给谁画，宁可报错让它把名字补上
+    await expect(
+      assets.generate({ kind: "sprite", characterId: "sora", expression: "neutral" }, "p", undefined, undefined, {
+        notify: "silent",
+      }),
+    ).rejects.toThrow(/没有角色「sora」/);
   });
 
   it("差分自动先定妆照：垫图带上、提示词锁身份，play.json 立绘映射一并补写", async () => {
