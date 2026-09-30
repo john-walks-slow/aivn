@@ -2339,6 +2339,7 @@ select:focus {
 
 /* 宽屏上别把一句话拉成横贯 1920px 的一条线——按可读宽度居中 */
 .backlog-list,
+.backlog-empty,
 .backlog-panel > .muted {
   max-width: 860px;
   margin-inline: auto;
