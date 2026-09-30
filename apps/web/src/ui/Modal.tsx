@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
  * 两处必须自己做、外层替不了的：
  *  1. **吞掉触摸事件**：舞台监听着左右滑（翻句）与上滑（看回顾），不拦的话
  *     在输入框上滑一下就顺手把视图切走了。
- *  2. **Esc 收窗**：外层 StageScreen 也监听 Esc（关视图），两个都跑会连关两层。
+ *  2. **吃掉 Esc**：外层 StageScreen 也监听 Esc（关视图），不拦就等于连按两下才关得掉。
  *
  * 挂到 body 上（portal）：台词条带 `backdrop-filter`，那是 fixed 定位的包含块——
  * 直接渲染在它里面的话，模态窗会以台词条为基准居中，而不是屏幕。
@@ -50,12 +50,12 @@ export function Modal({
   }, []);
 
   useEffect(() => {
-    if (!dismissible) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
+      if (e.key !== "Escape") return;
+      // 不可关的模态窗（free 停止点）也吃掉 Esc：它已经叫停了外层，
+      // 否则按一下就把视图切走了，而这一轮的话还没说。
+      e.stopPropagation();
+      if (dismissible) onClose();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);

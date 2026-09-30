@@ -64,6 +64,8 @@ const TOOL_LABEL: Record<string, string> = {
 export function useWorkshop(send: (msg: ClientMessage) => void) {
   const [state, setState] = useState<WorkshopState>(EMPTY);
   const activeRef = useRef<string | null>(null);
+  /** 「新会话」待发：下一次 chat 不带 threadId，服务端据此新建一条（chat 消费掉它）。 */
+  const [freshThread, setFreshThread] = useState(false);
 
   const onMessage = useCallback((msg: WorkshopInbound): void => {
     setState((prev) => {
@@ -155,13 +157,23 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
         busy: true,
         error: null,
       }));
-      send({ type: "workshop_chat", threadId: state.activeId ?? undefined, text: content });
+      // 不带 threadId = 新开一条会话（服务端按首条消息取标题）
+      send({
+        type: "workshop_chat",
+        threadId: freshThread ? undefined : (state.activeId ?? undefined),
+        text: content,
+      });
+      setFreshThread(false);
     },
-    [send, state.activeId, state.busy],
+    [send, state.activeId, state.busy, freshThread],
   );
+
+  /** 开新会话：不立刻建（服务端没有「空会话」这个动作），只把下一条消息标记成新会话的第一句。 */
+  const newThread = useCallback((): void => setFreshThread(true), []);
 
   const activate = useCallback(
     (threadId: string): void => {
+      setFreshThread(false);
       send({ type: "workshop_activate", threadId });
     },
     [send],
@@ -185,5 +197,17 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
     setState((prev) => ({ ...prev, writes: prev.writes.filter((w) => w.at !== at) }));
   }, []);
 
-  return { state, onMessage, open, onDisconnected, chat, activate, setArchived, remove, dismissWrite };
+  return {
+    state,
+    freshThread,
+    onMessage,
+    open,
+    onDisconnected,
+    chat,
+    newThread,
+    activate,
+    setArchived,
+    remove,
+    dismissWrite,
+  };
 }

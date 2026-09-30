@@ -2,14 +2,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "../ui/Icon.js";
 import type { StageView } from "./view.js";
+import { VIEW_LABEL } from "./view.js";
 
 /**
- * 舞台外壳：左侧导航栏 + 右侧内容区。三个视图（舞台 / 回顾 / 路线）共用这一套，
+ * 舞台外壳：左侧导航栏 + 右侧内容区。四个视图（舞台 / 回顾 / 路线 / 工坊）共用这一套，
  * 换视图不再像换了一个产品——导航、控件风格、宽屏下的版面全都在这里定死。
  *
  * 为什么是侧栏而不是顶栏：宽屏上顶栏只能占一条横线，剩下的版面还是满屏铺开，
  * 回顾的句子在 1920px 下拉成一条线。侧栏把导航收成一条竖列，内容区就能按
- * 「可读的一栏」排版，路线画布也能把整片宽高让出来。栏宽可拖可折叠，跟工坊面板同一套做法。
+ * 「可读的一栏」排版，路线画布也能把整片宽高让出来。栏宽可拖可折叠。
+ *
+ * 工坊曾经是盖在舞台上的右侧抽屉，另有一个自带顶栏的独立页——两套外壳并存的代价
+ * 是「从标题页进工坊，顶栏整个换掉」。现在工坊是本外壳的第四个视图：
+ * 顶栏（剧目块 + 折叠键）进哪个视图都长一样，进出工坊不跳变。
  */
 
 const WIDTH_KEY = "stage-side-width";
@@ -33,25 +38,16 @@ export interface StageShellProps {
   title: string;
   saveName: string | null;
   onSaves: () => void;
-  voiceOn: boolean;
-  voiceAvailable: boolean;
-  onToggleVoice: () => void;
-  /** 本轮写完的出口：true = 摆「（继续）」卡，false = 点一下舞台接着演。 */
-  continueCard: boolean;
-  onToggleContinueCard: () => void;
-  workshopOpen: boolean;
-  onWorkshop: () => void;
   /** 当前视图自己的工具（回顾的视图切换、路线的镜头控制）。没有就不留这一段。 */
   tools?: ReactNode;
-  /** 当前视图的标题（内容区顶部用；没有就只留侧栏）。 */
-  label?: string;
   children: ReactNode;
 }
 
-const NAV: { id: Exclude<StageView, "stage"> | "stage"; label: string; icon: IconName; hint: string }[] = [
+const NAV: { id: StageView; label: string; icon: IconName; hint: string }[] = [
   { id: "stage", label: "舞台", icon: "play", hint: "正在演的内容" },
-  { id: "backlog", label: "回顾", icon: "menu", hint: "这一场说过的话" },
+  { id: "backlog", label: "回顾", icon: "backlog", hint: "这一场说过的话" },
   { id: "route", label: "路线", icon: "fork", hint: "岔出去的世界线" },
+  { id: "workshop", label: "工坊", icon: "workshop", hint: "改设定与剧目文件" },
 ];
 
 export function StageShell(props: StageShellProps) {
@@ -146,8 +142,9 @@ export function StageShell(props: StageShellProps) {
             onClick={() => setOpenAndRemember(!open)}
             title={open ? "收起侧栏" : "展开侧栏"}
             aria-expanded={open}
+            aria-label={open ? "收起侧栏" : "展开侧栏"}
           >
-            <Icon name={open ? "shrink" : "menu"} />
+            <Icon name={open ? "shrink" : "unshrink"} size={17} />
           </button>
         </header>
 
@@ -168,16 +165,6 @@ export function StageShell(props: StageShellProps) {
               <span className="side-label">{item.label}</span>
             </button>
           ))}
-          <button
-            type="button"
-            className={`side-nav-btn${props.workshopOpen ? " active" : ""}`}
-            onClick={props.onWorkshop}
-            title="工坊：改设定与剧目文件"
-            aria-pressed={props.workshopOpen}
-          >
-            <Icon name="workshop" size={16} />
-            <span className="side-label">工坊</span>
-          </button>
         </nav>
 
         {props.tools && <div className="stage-side-tools">{props.tools}</div>}
@@ -189,29 +176,6 @@ export function StageShell(props: StageShellProps) {
               <span className="side-label">{props.saveName}</span>
             </button>
           )}
-          {props.voiceAvailable && (
-            <button
-              type="button"
-              className="side-voice"
-              onClick={props.onToggleVoice}
-              aria-pressed={props.voiceOn}
-              title={props.voiceOn ? "静音" : "开声"}
-            >
-              <Icon name={props.voiceOn ? "volume" : "mute"} size={16} />
-              <span className="side-label">{props.voiceOn ? "有声音" : "静音"}</span>
-            </button>
-          )}
-          <label
-            className="side-setting"
-            title="本轮写完的出口：摆「（继续）」卡，还是点一下舞台接着演"
-          >
-            <input
-              type="checkbox"
-              checked={props.continueCard}
-              onChange={props.onToggleContinueCard}
-            />
-            <span className="side-label">写完摆「继续」卡</span>
-          </label>
         </footer>
 
         {!narrow && (
@@ -242,10 +206,23 @@ export function StageShell(props: StageShellProps) {
             title="打开导航"
             aria-label="打开导航"
           >
-            <Icon name="menu" size={18} />
+            <Icon name="unshrink" size={18} />
           </button>
         )}
-        {props.label && <h1 className="stage-main-title">{props.label}</h1>}
+        {view !== "stage" && (
+          <div className="view-bar">
+            <h1 className="view-bar-title">{VIEW_LABEL[view]}</h1>
+            <button
+              type="button"
+              className="view-bar-close"
+              onClick={() => onView("stage")}
+              title="回到舞台（Esc）"
+              aria-label="回到舞台"
+            >
+              <Icon name="close" size={15} />
+            </button>
+          </div>
+        )}
         {children}
       </main>
     </div>

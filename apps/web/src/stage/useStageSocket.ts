@@ -72,7 +72,11 @@ export interface StageSocketHandlers {
   onLineEdited?: (nodeId: string, text: string) => void;
 }
 
-export function useStageSocket(playId: string, handlers?: StageSocketHandlers): StageSocket {
+export function useStageSocket(
+  playId: string,
+  handlers?: StageSocketHandlers,
+  opts?: { workshopOnly?: boolean },
+): StageSocket {
   const [state, setState] = useState<BeatState>("connecting");
   const stateRef = useRef<BeatState>("connecting");
   stateRef.current = state;
@@ -104,7 +108,11 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
   useEffect(() => {
     let closed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?play=${encodeURIComponent(playId)}`;
+    // workshopOnly：从标题页直达工坊时用。服务端据此跳过 autostart 也不建周目——
+    // 逛工坊不该把演出开起来，更不该凭空多出「第 1 周目」。
+    const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?play=${encodeURIComponent(playId)}${
+      opts?.workshopOnly ? "&workshop=1" : ""
+    }`;
 
     const connect = (): void => {
       const ws = new WebSocket(url);
@@ -247,7 +255,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
       if (timer) clearTimeout(timer);
       wsRef.current?.close();
     };
-  }, [playId]);
+  }, [playId, opts?.workshopOnly]);
 
   const send = useCallback((msg: ClientMessage): void => {
     const ws = wsRef.current;

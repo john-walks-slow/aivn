@@ -37,3 +37,23 @@ export function stageTabFromQuery(search: string | null | undefined): WorkshopTa
   const raw = new URLSearchParams(search ?? "").get("tab");
   return TABS.find((t) => t === raw) ?? "chat";
 }
+
+/**
+ * 认 URL 上的 `workshop=1`：这一条连接**不开演**（服务端据此跳过 autostart，
+ * 也不建周目、不计语音观众）。标题页「工坊」与就绪门里的补齐链接走它。
+ *
+ * 与 `view=` 分开是有意的：`view` 说“落在哪个视图”，`workshop=1` 说“这条连接
+ * 是不是真的在开演”。于是从工坊点「回顾」可以重挂成一条真舞台连接并落在回顾，
+ * 而不必先把人丢回舞台。
+ */
+export function workshopConnectionFromQuery(search: string | null | undefined): boolean {
+  return new URLSearchParams(search ?? "").get("workshop") === "1";
+}
+
+/**
+ * 工坊直达地址。工坊没有独立路由——它是舞台外壳的第四个视图，所以入口就是
+ * 舞台地址带上 `view=workshop`（`tab=` 直接落在某一页，如素材页）。
+ */
+export function workshopUrl(playId: string, tab?: WorkshopTab): string {
+  return `/play/${playId}/stage?view=workshop&workshop=1${tab ? `&tab=${tab}` : ""}`;
+}

@@ -6,14 +6,17 @@ import { TitleView } from "./views/TitleView.js";
 import { StageScreen } from "./views/StageScreen.js";
 import { SavesView } from "./views/SavesView.js";
 import { SettingsScreen } from "./views/SettingsScreen.js";
-import { WorkshopOverlay } from "./workshop/WorkshopOverlay.js";
-import { closeWorkshop, useWorkshopOverlay } from "./workshop/useWorkshopOverlay.js";
 
-/** hash 路由：#/ 剧目库 · #/settings 设置 · #/play/:id Title · #/play/:id/stage 舞台 · #/play/:id/saves 周目。 */
+/**
+ * hash 路由：#/ 剧目库 · #/settings 设置 · #/play/:id Title · #/play/:id/stage 舞台
+ * （带 ?view=workshop[&tab=…][&workshop=1] 直达工坊）· #/play/:id/saves 周目。
+ *
+ * 工坊没有独立路由：它是舞台外壳的第四个视图。少一个路由就少一套顶栏——
+ * 从标题页进工坊时页头整个换掉，正是这套外壳要收拾的毛病。
+ */
 export function App() {
   const route = useRoute();
   const [head, playId, sub] = route.segments;
-  const workshop = useWorkshopOverlay();
 
   // 剧目主题：进出剧目挂载/摘除，切剧目时重挂一张表。
   useEffect(() => {
@@ -27,30 +30,15 @@ export function App() {
     return () => window.removeEventListener(THEME_CHANGED, onReload);
   }, []);
 
-  // 工坊是浮层不是页面——没有自己的路由，换页就收起（浏览器后退也走这条路）
-  useEffect(() => {
-    closeWorkshop();
-  }, [route.path]);
-
-  const screen = (() => {
-    if (head === "settings") return <SettingsScreen />;
-    if (head === "play" && playId && sub === "stage") return <StageScreen playId={playId} />;
-    if (head === "play" && playId && sub === "saves") return <SavesView playId={playId} />;
-    if (head === "play" && playId) return <TitleView playId={playId} />;
-    return <LibraryView />;
-  })();
-
-  return (
-    <>
-      {screen}
-      {workshop && (
-        <WorkshopOverlay
-          key={workshop.playId}
-          playId={workshop.playId}
-          mode={workshop.mode}
-          tab={workshop.tab}
-        />
-      )}
-    </>
-  );
+  if (head === "settings") return <SettingsScreen />;
+  if (head === "play" && playId && sub === "stage") {
+    return <StageScreen playId={playId} search={route.query.toString()} />;
+  }
+  if (head === "play" && playId && sub === "saves") {
+    return <SavesView playId={playId} />;
+  }
+  if (head === "play" && playId) {
+    return <TitleView playId={playId} />;
+  }
+  return <LibraryView />;
 }

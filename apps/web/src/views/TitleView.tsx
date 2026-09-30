@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Icon } from "../ui/Icon.js";
 import { api, readinessAdvice, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
-import { openWorkshop } from "../workshop/useWorkshopOverlay.js";
+import { workshopUrl } from "../stage/view.js";
 
-/** Title Screen：开始新周目（就绪门）/ 继续 / 周目 / 工坊浮层（可直接落到素材与配置）/ 导出剧目包。 */
+/** Title Screen：开始新周目 / 继续 / 周目 / 工坊 / 导出剧目包。 */
 export function TitleView({ playId }: { playId: string }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [saves, setSaves] = useState<SaveInfo[]>([]);
@@ -74,27 +74,30 @@ export function TitleView({ playId }: { playId: string }) {
           </p>
 
           <div className="title-menu">
-            <button
-              className="primary"
-              disabled={!readiness?.ready || starting}
-              title={readiness?.ready ? "" : `缺：${missing.join("、")}`}
-              onClick={startNew}
-            >
-              开始新周目
-            </button>
-            {current && (
+            {/* 有周目时，「继续」是主按钮且排在前：来得最多的动作该是最显眼的那一个。
+                开始新周目永远排在它后面（副按钮），没有周目时它自己就是主按钮。 */}
+            {current ? (
               <button
+                className="primary"
                 disabled={!readiness?.ready}
                 title={readiness?.ready ? "" : `缺：${missing.join("、")}`}
                 onClick={() => navigate(`/play/${playId}/stage`)}
               >
                 继续（{current.name}）
               </button>
-            )}
+            ) : null}
+            <button
+              className={current ? "" : "primary"}
+              disabled={!readiness?.ready || starting}
+              title={readiness?.ready ? "" : `缺：${missing.join("、")}`}
+              onClick={startNew}
+            >
+              开始新周目
+            </button>
             <button onClick={() => navigate(`/play/${playId}/saves`)}>
               周目{saves.length > 0 ? `（${saves.length}）` : ""}
             </button>
-            <button onClick={() => openWorkshop(playId)}>工坊</button>
+            <button onClick={() => navigate(workshopUrl(playId))}>工坊</button>
             <a className="btn-as-label" href={`/api/plays/${playId}/export`}>
               导出剧目包
             </a>
@@ -112,12 +115,12 @@ export function TitleView({ playId }: { playId: string }) {
           {!readiness?.ready && missing.length > 0 && (
             <p className="title-gate">
               还不能开演：缺 {missing.join("、")}。请到
-              <button className="link-btn" onClick={() => openWorkshop(playId)}>
+              <button className="link-btn" onClick={() => navigate(workshopUrl(playId))}>
                 工坊
               </button>
               与 AI 共创补齐，或到
-              <button className="link-btn" onClick={() => openWorkshop(playId, { tab: "assets" })}>
-                素材与配置
+              <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "assets"))}>
+                素材页
               </button>
               手动补齐。
             </p>
@@ -126,7 +129,7 @@ export function TitleView({ playId }: { playId: string }) {
             <p className="muted small">
               还没有 {advice.join("、")}——可以开演（舞台落氛围底色、没有立绘的角色不上台），
               也可到
-              <button className="link-btn" onClick={() => openWorkshop(playId)}>
+              <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "assets"))}>
                 工坊
               </button>
               让 AI 先把底图和定妆照生成出来。

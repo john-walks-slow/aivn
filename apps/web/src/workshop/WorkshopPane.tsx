@@ -1,65 +1,62 @@
 import { useEffect, useRef, useState } from "react";
 import type { ClientMessage, WorkshopAssetView } from "@stage-ai/core";
 import { api } from "../api.js";
-import type { WorkshopInbound } from "./useWorkshopSocket.js";
+import type { WorkshopInbound } from "../stage/useStageSocket.js";
 import { Icon, type IconName } from "../ui/Icon.js";
 import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
-import { useEscape } from "../ui/escape.js";
+import type { WorkshopTab } from "../stage/view.js";
 import { AssetsPanel } from "./AssetsPanel.js";
-import { CraftPanel } from "./CraftPanel.js";
 import { FileBrowser } from "./FileBrowser.js";
+import { MemoryPanel } from "./MemoryPanel.js";
 import { WorkshopMarkdown } from "./WorkshopMarkdown.js";
+import { WorkshopSettings } from "./WorkshopSettings.js";
 import { useWorkshop } from "./useWorkshop.js";
-import type { WorkshopMode, WorkshopTab } from "./useWorkshopOverlay.js";
 
 const TABS: { id: WorkshopTab; label: string; icon: IconName }[] = [
   { id: "chat", label: "对话", icon: "chat" },
   { id: "assets", label: "素材", icon: "assets" },
-  // 「配置」就是剧作家的创作口径（memory/always/craft.md），工坊对话改的是同一份
-  { id: "craft", label: "配置", icon: "craft" },
   { id: "files", label: "文件", icon: "files" },
+  { id: "memory", label: "记忆", icon: "memory" },
+  { id: "settings", label: "设置", icon: "settings" },
 ];
 
 /**
- * 工坊面板（D9）：meta-chat 多会话 + 剧目素材/配置/文件。
- * 宿主是 app 级浮层（WorkshopOverlay），抽屉与全屏只是它的两种形态。
- * 与演出并行——工坊 agent 写盘只影响下一轮（服务端在轮边界重建 runtime）。
+ * 工坊：搭台的地方（改设定、补素材、翻文件、调记忆、设置）。D9 的 meta-chat 多会话。
+ *
+ * 它是舞台外壳的**第四个视图**，不是盖在舞台上的浮层，也不是自带顶栏的独立页：
+ * 顶栏与侧栏跟舞台完全一致，从标题页直达工坊时也不会整个换掉（见 stage/view.ts 的入口约定）。
+ * 顶栏（视图名 + 回到舞台）归外壳，这里只管自己这一行页签与内容。
+ *
+ * 会话（旧称「线程」）是**对话页内部的一层**，不占导航位：一条会话头 + 点开的列表。
+ * 顶栏里放会话名的话，导航栏就得跟着对话进度改字改宽——那正是要收拾的毛病。
  */
-export function WorkshopPanel({
+export function WorkshopPane({
   playId,
-  mode,
-  initialTab,
-  onModeChange,
-  onClose,
+  tab,
+  onTab,
   subscribe,
   send,
   connected,
-  socketError,
+  voice,
+  continueCard,
 }: {
   playId: string;
-  mode: WorkshopMode;
-  /** 打开时落在哪个 tab（缺省对话）。 */
-  initialTab?: WorkshopTab;
-  onModeChange: (mode: WorkshopMode) => void;
-  onClose: () => void;
+  tab: WorkshopTab;
+  onTab: (tab: WorkshopTab) => void;
   /** 注册工坊下行消息回调（返回取消订阅）。 */
   subscribe: (handler: (msg: WorkshopInbound) => void) => () => void;
   send: (msg: ClientMessage) => void;
-  /** WS 连通性：断线要解锁本轮、重连要重新报到。省略则不做这件事（调用方自己管）。 */
+  /** WS 连通性：断线要解锁本轮、重连要重新报到。 */
   connected?: boolean;
-  /** WS 自身的报错（连接由浮层宿主管，面板只管显示）。 */
-  socketError?: string | null;
+  voice: { on: boolean; available: boolean; onToggle: () => void };
+  continueCard: { on: boolean; onToggle: () => void };
 }) {
   const workshop = useWorkshop(send);
   const { state } = workshop;
-  const [tab, setTab] = useState<WorkshopTab>(initialTab ?? "chat");
   const [input, setInput] = useState("");
-  const [showThreads, setShowThreads] = useState(false);
+  const [threadsOpen, setThreadsOpen] = useState(false);
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  // 浮层是模态的：Esc 归它，且只归最上面那一层（灯箱开着时先关灯箱）
-  useEscape(onClose);
 
   // 面板一挂上就先订阅再报到（StrictMode 下会走两遍，报到幂等）
   useEffect(() => subscribe(workshop.onMessage), [subscribe, workshop.onMessage]);
@@ -70,7 +67,7 @@ export function WorkshopPanel({
     if (connected === false && state.busy) workshop.onDisconnected();
   }, [connected, state.busy, workshop.onDisconnected]);
 
-  // 连上（含断线重连）就重新报到，服务端会重发线程与历史，本轮结果也就回来了
+  // 连上（含断线重连）就重新报到，服务端会重发会话与历史，本轮结果也就回来了
   useEffect(() => {
     if (connected) workshop.open();
   }, [connected, workshop.open]);
@@ -86,39 +83,18 @@ export function WorkshopPanel({
     if (text === "") return;
     workshop.chat(text);
     setInput("");
+    setThreadsOpen(false);
   };
 
   const openImage = (images: WorkshopAssetView[], index: number): void =>
     setLightbox({ images: images.map((a) => ({ url: a.url, caption: a.path })), index });
 
   const activeThread = state.threads.find((t) => t.id === state.activeId);
+  // 新会话还没发出第一句时，这一栏写「新会话」，不写上一条会话的名字
+  const threadName = workshop.freshThread ? "新会话" : (activeThread?.title ?? "新会话");
 
   return (
-    <aside
-      className={`workshop workshop-${mode}`}
-      role="dialog"
-      aria-modal="true"
-      aria-label="工坊"
-    >
-      <header className="workshop-bar">
-        <button className="ghost-btn icon-btn" onClick={() => setShowThreads((v) => !v)} title="线程列表">
-          <Icon name="menu" />
-        </button>
-        <span className="workshop-title">{activeThread?.title ?? "新线程"}</span>
-        <div className="workshop-bar-actions">
-          <button
-            className="ghost-btn small-btn icon-btn icon-btn-sm workshop-mode-btn"
-            onClick={() => onModeChange(mode === "drawer" ? "full" : "drawer")}
-            title={mode === "drawer" ? "铺满全屏" : "收成抽屉"}
-          >
-            <Icon name={mode === "drawer" ? "expand" : "collapse"} size={14} />
-          </button>
-          <button className="ghost-btn small-btn icon-btn icon-btn-sm" onClick={onClose} title="关闭">
-            <Icon name="close" size={14} />
-          </button>
-        </div>
-      </header>
-
+    <div className="workshop-pane">
       <nav className="workshop-tabs" role="tablist">
         {TABS.map((item) => (
           <button
@@ -126,7 +102,7 @@ export function WorkshopPanel({
             role="tab"
             aria-selected={tab === item.id}
             className={`workshop-tab${tab === item.id ? " active" : ""}`}
-            onClick={() => setTab(item.id)}
+            onClick={() => onTab(item.id)}
           >
             <Icon name={item.icon} size={14} />
             {item.label}
@@ -134,57 +110,9 @@ export function WorkshopPanel({
         ))}
       </nav>
 
-      {showThreads && (
-        <div className="workshop-threads">
-          <button
-            className="primary small-btn"
-            onClick={() => {
-              setTab("chat");
-              setShowThreads(false);
-              setInput("");
-            }}
-          >
-            <span className="btn-icon">
-              <Icon name="plus" size={13} /> 新线程
-            </span>
-          </button>
-          {state.threads.map((thread) => (
-            <div key={thread.id} className={`thread-row${thread.id === state.activeId ? " active" : ""}`}>
-              <button
-                className="thread-name"
-                onClick={() => {
-                  workshop.activate(thread.id);
-                  setShowThreads(false);
-                }}
-              >
-                {thread.archived && <span className="muted">[归档] </span>}
-                {thread.title}
-              </button>
-              <button
-                className="ghost-btn tiny-btn icon-btn icon-btn-xs"
-                onClick={() => workshop.setArchived(thread.id, !thread.archived)}
-                title={thread.archived ? "取消归档" : "归档"}
-              >
-                <Icon name={thread.archived ? "reply" : "download"} size={13} />
-              </button>
-              <button
-                className="ghost-btn tiny-btn danger-btn icon-btn icon-btn-xs"
-                onClick={() => {
-                  if (window.confirm(`删除线程「${thread.title}」？`)) workshop.remove(thread.id);
-                }}
-                title="删除"
-              >
-                <Icon name="close" size={13} />
-              </button>
-            </div>
-          ))}
-          {state.threads.length === 0 && <p className="muted small">还没有工坊线程。</p>}
-        </div>
-      )}
-
-      {(state.error || socketError) && (
+      {state.error && (
         <div className="error-banner small" role="alert">
-          {state.error ?? socketError}
+          {state.error}
         </div>
       )}
 
@@ -194,10 +122,82 @@ export function WorkshopPanel({
 
       {tab === "assets" && <AssetsPanel playId={playId} />}
 
-      {tab === "craft" && <CraftPanel playId={playId} />}
+      {tab === "memory" && <MemoryPanel playId={playId} revision={state.writes.length} />}
+
+      {tab === "settings" && (
+        <WorkshopSettings voice={voice} continueCard={continueCard} />
+      )}
 
       {tab === "chat" && (
         <>
+          {/* 会话层：对话页的子结构。收起时只占一条，选中即收起。 */}
+          <div className="thread-bar">
+            <button
+              type="button"
+              className="thread-toggle"
+              onClick={() => setThreadsOpen((v) => !v)}
+              aria-expanded={threadsOpen}
+              title="切换会话"
+            >
+              <Icon name="backlog" size={14} />
+              <span className="thread-current">{threadName}</span>
+              <Icon name={threadsOpen ? "up" : "down"} size={14} />
+            </button>
+            <button
+              type="button"
+              className="ghost-btn small-btn thread-new"
+              onClick={() => {
+                workshop.newThread();
+                setInput("");
+                setThreadsOpen(false);
+              }}
+              title="开一个新会话（下一条消息算它的第一句）"
+            >
+              <span className="btn-icon">
+                <Icon name="plus" size={13} /> 新会话
+              </span>
+            </button>
+          </div>
+
+          {threadsOpen && (
+            <div className="thread-list">
+              {state.threads.length === 0 && <p className="muted small">还没有会话。</p>}
+              {state.threads.map((thread) => (
+                <div
+                  key={thread.id}
+                  className={`thread-row${thread.id === state.activeId ? " active" : ""}`}
+                >
+                  <button
+                    className="thread-name"
+                    onClick={() => {
+                      workshop.activate(thread.id);
+                      setThreadsOpen(false);
+                    }}
+                  >
+                    {thread.archived && <span className="muted">[归档] </span>}
+                    {thread.title}
+                  </button>
+                  <button
+                    className="ghost-btn tiny-btn icon-btn icon-btn-xs"
+                    onClick={() => workshop.setArchived(thread.id, !thread.archived)}
+                    title={thread.archived ? "取消归档" : "归档"}
+                  >
+                    <Icon name={thread.archived ? "reply" : "download"} size={13} />
+                  </button>
+                  <button
+                    className="ghost-btn tiny-btn danger-btn icon-btn icon-btn-xs"
+                    onClick={() => {
+                      if (window.confirm(`删除会话「${thread.title}」？`)) workshop.remove(thread.id);
+                    }}
+                    title="删除"
+                  >
+                    <Icon name="close" size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="workshop-chat" ref={scrollRef}>
             {state.messages.length === 0 && !state.streaming && (
               <div className="workshop-empty">
@@ -233,7 +233,9 @@ export function WorkshopPanel({
               </div>
             )}
             {state.activity && <div className="chat-activity">{state.activity}…</div>}
-            {state.busy && !state.streaming && !state.activity && <div className="chat-activity">思考中…</div>}
+            {state.busy && !state.streaming && !state.activity && (
+              <div className="chat-activity">思考中…</div>
+            )}
           </div>
 
           <footer className="workshop-input">
@@ -261,7 +263,7 @@ export function WorkshopPanel({
           {state.writes.map((write) => (
             <div key={write.at} className="write-row">
               <span className="file-path">
-                <Icon name="craft" size={13} /> {write.path}
+                <Icon name="memory" size={13} /> {write.path}
               </span>
               <button
                 className="ghost-btn tiny-btn"
@@ -300,7 +302,7 @@ export function WorkshopPanel({
           onClose={() => setLightbox(null)}
         />
       )}
-    </aside>
+    </div>
   );
 }
 

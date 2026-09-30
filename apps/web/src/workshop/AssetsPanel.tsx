@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssetKind, AssetMeta, CharacterCard, LibraryEntry, PlayConfig } from "@stage-ai/core";
 import { languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
 import { api, assetUrl, type PlayDetail } from "../api.js";
+import { navigate } from "../router.jsx";
+import { workshopUrl } from "../stage/view.js";
 import { Icon } from "../ui/Icon.js";
 import { ImageLightbox } from "../ui/ImageLightbox.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
@@ -21,9 +23,9 @@ export function AssetsPanel({ playId }: { playId: string }) {
   const [draft, setDraft] = useState<PlayConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  /** 世界观前提独立于 play.json（写 memory/always/premise.md），所以有自己的草稿态。 */
+  /** 世界观前提落在 memory/always/premise.md（不随 play.json 走），编辑器在「记忆」页：
+      这里只读回显 + 跳过去。同一份文件两个编辑器，改一处忘了另一处是最难查的一类不一致。 */
   const [premise, setPremise] = useState("");
-  const [premiseDraft, setPremiseDraft] = useState("");
   const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null);
   /** 资源库导入的落点：null = 面板关闭，"" = 素材（无落点），"protagonist" = 主角卡，角色 id = 角色列表。 */
   const [libraryInto, setLibraryInto] = useState<string | null>(null);
@@ -38,7 +40,6 @@ export function AssetsPanel({ playId }: { playId: string }) {
         setDetail(d);
         setDraft(d.play);
         setPremise(d.premise);
-        setPremiseDraft(d.premise);
       })
       .catch((e: Error) => setError(e.message));
     api.listAssets(playId).then(setAssets).catch(() => {});
@@ -56,25 +57,11 @@ export function AssetsPanel({ playId }: { playId: string }) {
 
   const save = (): void => {
     if (!draft) return;
-    // premise 落在 memory/always/premise.md，不随 play.json 走，但它就在这块面板里——
-    // 保存配置必须连它一起提交，否则 reload 会把手写的前提冲回服务端旧值
-    const work: Promise<unknown>[] = [api.savePlay(draft)];
-    if (premiseDraft !== premise) work.push(api.savePremise(playId, premiseDraft));
-    Promise.all(work)
+    api
+      .savePlay(draft)
       .then(() => {
         setSaved(true);
         reload();
-      })
-      .catch((e: Error) => setError(e.message));
-  };
-
-  /** 只改前提时的快捷口：与「保存配置」提交的是同一份内容。 */
-  const savePremiseOnly = (): void => {
-    api
-      .savePremise(playId, premiseDraft)
-      .then(() => {
-        setPremise(premiseDraft);
-        setSaved(true);
       })
       .catch((e: Error) => setError(e.message));
   };
@@ -133,24 +120,19 @@ export function AssetsPanel({ playId }: { playId: string }) {
             <span>标题</span>
             <input value={draft.title} onChange={(e) => patch((p) => (p.title = e.target.value))} />
           </label>
-          <label className="field">
+          <div className="field premise-field">
             <span>
               premise（世界与人物设定）
               <button
                 className="ghost-btn small"
-                disabled={premise === premiseDraft}
-                onClick={savePremiseOnly}
+                onClick={() => navigate(workshopUrl(playId, "memory"))}
+                title="世界观前提写在 memory/always/premise.md，编辑器在「记忆」页"
               >
-                只存前提
+                去记忆页编辑
               </button>
             </span>
-            <textarea
-              rows={4}
-              placeholder="写进 memory/always/premise.md —— 剧作家每一拍都读它，空着则开不了演"
-              value={premiseDraft}
-              onChange={(e) => setPremiseDraft(e.target.value)}
-            />
-          </label>
+            <p className="premise-view">{premise || "（还没写——开不了演）"}</p>
+          </div>
           <label className="field">
             <span>opening（开局指令）</span>
             <textarea

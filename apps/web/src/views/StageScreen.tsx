@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PlayDetail } from "../api.js";
 import { navigate } from "../router.jsx";
-import { useStageSocket } from "../stage/useStageSocket.js";
+import { useStageSocket, type WorkshopInbound } from "../stage/useStageSocket.js";
 import { usePlayback } from "../stage/director.js";
 import { VoiceDirector } from "../stage/audio.js";
 import { buildAssetIndex, type AssetIndex } from "../stage/assets.js";
@@ -13,6 +13,7 @@ import {
   type DirectorTargets,
 } from "../stage/StageTheater.js";
 import type { StageView } from "../stage/view.js";
+import { stageTabFromQuery, stageViewFromQuery, workshopConnectionFromQuery } from "../stage/view.js";
 import { RouteTree, useLineage, type LineageOps } from "../stage/LineagePanel.js";
 import type { RouteControls } from "../stage/RouteCanvas.js";
 import { StageShell } from "../stage/StageShell.js";
@@ -31,10 +32,10 @@ import {
 import { PromptQueuePanel } from "../stage/PromptQueuePanel.js";
 import { useVisualViewport } from "../stage/viewport.js";
 import { useEscape } from "../ui/escape.js";
-import { toggleWorkshop, useWorkshopOverlay } from "../workshop/useWorkshopOverlay.js";
+import { WorkshopPane } from "../workshop/WorkshopPane.js";
 
-/** 演出屏：舞台（视觉层+打字机+导演栏）/ 回顾 / 路线三视图 + 停止点面板，共用侧栏外壳。 */
-export function StageScreen({ playId }: { playId: string }) {
+/** 演出屏：舞台（视觉层+打字机+导演栏）/ 回顾 / 路线 / 工坊四视图，共用侧栏外壳。 */
+export function StageScreen({ playId, search }: { playId: string; /** 路由上的 query：?view=workshop[&tab=…]（标题页直达工坊）。 */ search?: string }) {
   const directorRef = useRef<VoiceDirector | null>(null);
   if (!directorRef.current) directorRef.current = new VoiceDirector();
   const director = directorRef.current;
@@ -48,19 +49,48 @@ export function StageScreen({ playId }: { playId: string }) {
   const [assets, setAssets] = useState<Record<string, string[]>>({});
   /** 当前周目档名：侧栏底部的存档芯片，点它去周目页换一棵故事树。 */
   const [saveName, setSaveName] = useState<string | null>(null);
-  const [view, setView] = useState<StageView>("stage");
   /** P6 缓冲换代：token 变化 = 事件缓冲被整段重放；resume 决定快进还是继续流式。 */
   const [rebase, setRebase] = useState({ token: 0, resume: true });
   /** 谱系代次：每轮、结构操作后自增，把最新的树拉回来。 */
   const [lineageNonce, setLineageNonce] = useState(0);
+  /**
+   * 从标题页直达工坊（?view=workshop&workshop=1）：工坊是本外壳的一个视图，
+   * 顶栏与侧栏跟舞台完全一致（不再有另一个自带顶栏的工坊页）。
+   */
+  const workshopEntry = workshopConnectionFromQuery(search);
+  const [view, setView] = useState<StageView>(() => stageViewFromQuery(search));
+  const [workshopTab, setWorkshopTab] = useState(() => stageTabFromQuery(search));
+
+  /**
+   * 回到舞台。从标题页直达工坊时（workshop=1）那条连接不 autostart，本地切视图只会
+   * 得到一块永远不开演的舞台——所以重挂路由换一条真舞台连接（重挂即 autostart）。
+   * 舞台内部切工坊不重连：那条连接本来就在开着。
+   */
+  const goStage = useCallback((): void => {
+    if (workshopEntry) {
+      navigate(`/play/${playId}/stage`);
+      return;
+    }
+    setView("stage");
+  }, [workshopEntry, playId]);
+
+  /** 侧栏导航：工坊内部就地切；工坊入口模式下切去别的视图要换真舞台连接。 */
+  const goView = useCallback(
+    (next: StageView): void => {
+      if (workshopEntry && next !== "workshop") {
+        navigate(`/play/${playId}/stage?view=${next}`);
+        return;
+      }
+      setView(next);
+    },
+    [workshopEntry, playId],
+  );
   /** 回顾的第二视图：剧作家的原始历史（同一份内容区，切视图不换外壳）。 */
   const [rawHistory, setRawHistory] = useState(false);
   const [historyNonce, setHistoryNonce] = useState(0);
   /** 路线画布把镜头操作交给侧栏（见 RouteCanvas 的 onControls）。 */
   const [routeControls, setRouteControls] = useState<RouteControls | null>(null);
   const setRouteControlsStable = useCallback((c: RouteControls) => setRouteControls(c), []);
-  /** 工坊是 app 级浮层，这里只读它开没开——连接与开合都在浮层自己那边。 */
-  const workshopOpen = useWorkshopOverlay()?.playId === playId;
   /** 按住 Ctrl 的快进档：舞台层只报键，播放层管节奏。 */
   const [turbo, setTurbo] = useState(false);
   const toast = useToasts();
@@ -70,6 +100,14 @@ export function StageScreen({ playId }: { playId: string }) {
   const playbackRef = useRef<ReturnType<typeof usePlayback> | null>(null);
   // 谱系只在这两个导演视图里拉取（打开/操作后/手动刷新），不做每轮广播
   const lineage = useLineage(playId, lineageNonce);
+  // 工坊下行消息的订阅表：面板挂载时登记，卸载时注销（与舞台状态机解耦）
+  const workshopHandlers = useRef(new Set<(msg: WorkshopInbound) => void>());
+  const subscribeWorkshop = useCallback((handler: (msg: WorkshopInbound) => void) => {
+    workshopHandlers.current.add(handler);
+    return () => {
+      workshopHandlers.current.delete(handler);
+    };
+  }, []);
   const { push: pushToast } = toast;
 
   const stage = useStageSocket(playId, {
@@ -87,7 +125,7 @@ export function StageScreen({ playId }: { playId: string }) {
       setRebase((cur) => ({ token: cur.token + 1, resume: !streaming }));
       setLineageNonce((n) => n + 1);
       if (note) pushToast(note, "warn");
-      setView("stage"); // 结构操作后回舞台看结果
+      goStage(); // 结构操作后回舞台看结果
     },
     // D6 生图：到货即登记（预解码后淡入），失败只提示——舞台视觉不因图卡住
     onAssets: (list) => generated.add(list),
@@ -99,7 +137,10 @@ export function StageScreen({ playId }: { playId: string }) {
       playbackRef.current?.settleAssets([id]);
       pushToast(`生图失败：${message}`, "warn");
     },
-  });
+    onWorkshop: (msg) => {
+      for (const handler of workshopHandlers.current) handler(msg);
+    },
+  }, { workshopOnly: workshopEntry });
 
   // 渲染期回调绑定（N6：置于 stage 声明后，闭包引用才不踩未初始化的 TDZ）
   director.onNotify = () => setAudioTick((t) => t + 1);
@@ -117,14 +158,14 @@ export function StageScreen({ playId }: { playId: string }) {
     () => ({
       jump: (nodeId: string) => {
         jump(nodeId);
-        setView("stage");
+        goStage();
       },
       fork: (nodeId: string, opts?: { resume?: boolean }) => {
         fork(nodeId, opts);
-        setView("stage");
+        goStage();
       },
     }),
-    [jump, fork],
+    [jump, fork, goStage],
   );
 
 
@@ -214,9 +255,9 @@ export function StageScreen({ playId }: { playId: string }) {
     stage.sendContinue();
   }, [stage.sendContinue]);
 
-  // 回顾 / 路线这两个视图压在舞台上，关掉它们的自然动作是 Esc。
-  // 工坊是独立浮层、自己认领 Esc（见 useEscape），这里不再代它处理。
-  useEscape(() => setView("stage"), view !== "stage");
+  // Esc 回到舞台（侧栏是常驻的，不需要「关掉」它）。走 ui/escape.ts 的浮层栈：
+  // 输入模态窗开着的那一下归它，视图栏只在自己是栈顶时才认领。
+  useEscape(() => goStage(), view !== "stage");
 
   // 谱系定期拉取：路线视图开着时看得到直播的树；舞台停在停止点上也拉——
   // 此刻这一轮的事件才刚落库，导演栏的锚点要指得准。
@@ -374,17 +415,10 @@ export function StageScreen({ playId }: { playId: string }) {
     <div className="screen stage-screen">
       <StageShell
         view={view}
-        onView={setView}
+        onView={goView}
         title={detail?.play.title ?? playId}
         saveName={saveName}
         onSaves={() => navigate(`/play/${playId}/saves`)}
-        voiceOn={voiceOn}
-        voiceAvailable={stage.voiceAvailable}
-        onToggleVoice={toggleVoice}
-        continueCard={continueCard}
-        onToggleContinueCard={toggleContinueCard}
-        workshopOpen={workshopOpen}
-        onWorkshop={() => toggleWorkshop(playId)}
         onExit={() => navigate(`/play/${playId}`)}
         tools={tools}
       >
@@ -428,8 +462,7 @@ export function StageScreen({ playId }: { playId: string }) {
           ) : (
             <div className="overlay">正在连接舞台…</div>
           )
-        ) : view === "backlog" ? (
-          rawHistory ? (
+        ) : view === "backlog" ? (          rawHistory ? (
             <HistoryView playId={playId} nonce={historyNonce} />
           ) : (
             <BacklogView
@@ -449,7 +482,7 @@ export function StageScreen({ playId }: { playId: string }) {
               onFork={fork}
             />
           )
-        ) : (
+        ) : view === "route" ? (
           <RouteTree
             view={lineage.view}
             error={lineage.error}
@@ -461,13 +494,24 @@ export function StageScreen({ playId }: { playId: string }) {
             lines={stage.lines}
             onControls={setRouteControlsStable}
           />
+        ) : (
+          <WorkshopPane
+            playId={playId}
+            tab={workshopTab}
+            onTab={setWorkshopTab}
+            subscribe={subscribeWorkshop}
+            send={stage.send}
+            connected={stage.connected}
+            voice={{ on: voiceOn, available: stage.voiceAvailable, onToggle: toggleVoice }}
+            continueCard={{ on: continueCard, onToggle: toggleContinueCard }}
+          />
         )}
 
         {/* 提示一律走浮层 toast，不占内容区顶部的一条 */}
         <ToastStack toasts={toast.toasts} onDismiss={toast.dismiss} />
 
-        {/* 待注入队列：空则不占地方。排队中的句子能改也能撤。工坊浮层开着时不叠给它看 */}
-        {view === "stage" && !workshopOpen && (
+        {/* 待注入队列：空则不占地方。排队中的句子能改也能撤 */}
+        {view === "stage" && (
           <PromptQueuePanel
             items={stage.queue}
             onEdit={(id, text) => stage.sendPromptEdit(id, text)}

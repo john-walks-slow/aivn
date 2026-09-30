@@ -3,6 +3,8 @@ import {
   stageTabFromQuery,
   stageViewFromQuery,
   VIEW_LABEL,
+  workshopConnectionFromQuery,
+  workshopUrl,
   type StageView,
   type WorkshopTab,
 } from "../src/stage/view.js";
@@ -38,5 +40,26 @@ describe("入口视图解析", () => {
 describe("视图名", () => {
   it("四个视图各有一个中文名（外壳视图栏与 README 用同一份）", () => {
     expect(Object.values(VIEW_LABEL)).toEqual(["舞台", "回顾", "路线", "工坊"]);
+  });
+});
+
+describe("连接模式", () => {
+  it("workshop=1 = 逛工坊，不 autostart（标题页直达工坊走这条）", () => {
+    expect(workshopConnectionFromQuery("view=workshop&workshop=1")).toBe(true);
+  });
+
+  it("默认是真舞台连接：重挂即开演，这是既有行为", () => {
+    expect(workshopConnectionFromQuery("")).toBe(false);
+    expect(workshopConnectionFromQuery("view=workshop")).toBe(false);
+  });
+});
+
+describe("工坊直达地址", () => {
+  it("工坊是舞台外壳的一个视图：入口就是舞台地址带 view+连接模式", () => {
+    expect(workshopUrl("demo")).toBe("/play/demo/stage?view=workshop&workshop=1");
+  });
+
+  it("可以顺带落在某一页（就绪门里的「素材页」）", () => {
+    expect(workshopUrl("demo", "assets")).toBe("/play/demo/stage?view=workshop&workshop=1&tab=assets");
   });
 });
