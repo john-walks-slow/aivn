@@ -1153,9 +1153,14 @@ select:focus {
   font-weight: 500;
 }
 
-/* ── 音色库（P6 增量）───────────────── */
+/* ── 全屏浏览面板（音色库 / 资源库共用外壳）──────────────
+   两个面板都是「一条工具栏 + 一片可滚网格」的形状，尺寸与手感必须一致，
+   否则用户在两个面板之间来回切换时会觉得是两个产品。 */
 
-.voice-library {
+.picker {
+  /* 工具栏边距与控件高：关闭键的位置和尺寸都从这里算，改一处两处跟着动 */
+  --picker-bar-pad: 12px;
+  --picker-ctrl-h: 19px;
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -1164,91 +1169,129 @@ select:focus {
   background: var(--bg);
 }
 
-.voice-library-bar {
+.picker-bar {
   position: relative;
   display: flex;
   align-items: center;
+  /* 换行时（窄屏）也要让每行元素保持同一基线，所以间距统一 */
   flex-wrap: wrap;
   gap: 8px;
-  /* 右侧给固定定位的关闭键让位，别把「重新抓取」压到它底下 */
-  padding: 12px 54px 12px 16px;
+  /* 右侧留白让给绝对定位的关闭键：键宽 + 右留白 + 与前面元素的间距 */
+  padding: var(--picker-bar-pad) calc(var(--picker-bar-pad) * 2 + var(--picker-ctrl-h) + 18px)
+    var(--picker-bar-pad) 16px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
 
-.voice-library-search {
+.picker-search {
   /* 窄屏下先让搜索框独占一行，而不是把下拉和按钮挤成竖排 */
   flex: 1 1 150px;
   min-width: 0;
 }
+
+/* 右侧信息组（计数 / 重新抓取）：宽屏时贴着右边，窄屏放不下就整组换行 */
+.picker-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.picker-count {
+  white-space: nowrap;
+}
+
+/* 关闭键绝对定位在工具栏右侧，不参与 flex 换行——它是全屏面板唯一的退出途径
+   （Esc 在手机上没有），被挤到第二行就等于找不着了。
+   高度写死成 --picker-bar-pad * 2 + 控件高，与工具栏第一行等高：
+   - 早期版本写死 top: 8px，比同一行其它元素高出 8px，一眼看得出没对齐；
+   - 改用 top/bottom 撑满又会在窄屏换行时横跨两行、宽度还被内容撑塌成一条缝。
+   边距与控件高都取自同一组变量，改一处两处跟着动。 */
+.picker-close {
+  position: absolute;
+  top: var(--picker-bar-pad);
+  right: 10px;
+  width: calc(var(--picker-bar-pad) * 2 + var(--picker-ctrl-h));
+  height: calc(var(--picker-bar-pad) * 2 + var(--picker-ctrl-h));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--ink-soft);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.picker-close:hover {
+  color: var(--ink);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* 网格容器：flex 列里必须显式 min-height: 0，否则 auto 最小尺寸会顶着，
+   网格撑出横向滚动条。行高必须显式给 min-content——auto 在这里会算崩：
+   容器高度是定死的（flex: 1 撑的），卡片作为 overflow: hidden 的 flex 列容器，
+   浏览器给它的 max-content 高度只有几像素，整行就跟着塌掉，封面/描述/按钮全被裁掉。 */
+.picker-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 40px;
+  display: grid;
+  /* 150px 下限：手机上排得下两列，桌面排得下八九列；auto-fill 遇到放不下就少排一列，
+     绝不把卡片压到比下限还窄。 */
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-auto-rows: min-content;
+  gap: 12px;
+  align-content: start;
+}
+
+/* 资源库的卡片带一行描述 + 一条底栏（id / 导入），150px 太窄读不了字 */
+.picker-grid.picker-grid-wide {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+/* 「显示更多」是网格子项，不跨列的话会缩在一个格子里 */
+.picker-grid > .ghost-btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+/* 面板顶部的一行说明（导入是复制、库里还有多少条） */
+.picker-note {
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.picker-note code {
+  font-size: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+/* ── 音色库（P6 增量）───────────────── */
+
+
+
 
 .voice-library-lang {
   flex: 0 1 auto;
   max-width: 160px;
 }
 
-.voice-library-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  /* 宽屏时贴着右边；窄屏放不下就整组换到第二行 */
-  margin-left: auto;
-}
 
-.voice-library-count {
-  white-space: nowrap;
-}
-
-/* 关闭键固定在顶栏右上角，不参与 flex 换行——它是这个全屏面板唯一的退出途径
    （Esc 在手机上没有），被挤到第二行就等于找不着了。 */
-.voice-library-close {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  font-size: 20px;
-  line-height: 1;
-  color: var(--ink-soft);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  cursor: pointer;
-}
 
-.voice-library-close:hover {
-  color: var(--ink);
-  background: var(--accent-soft);
-}
 
-.voice-library-grid {
-  flex: 1;
-  /* flex 列容器里不给 min-height:0 的话 auto 最小尺寸会顶着，网格就撑出横向滚动条 */
-  min-height: 0;
-  overflow-y: auto;
-  padding: 14px 16px 40px;
-  display: grid;
-  /* 150px 下限：手机上排得下两列，桌面排得下八九列；auto-fill 遇到放不下就少排一列，
-     绝不把卡片压到比下限还窄——侧栏时代就是这么把网格挤爆的。 */
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  /* 行高必须显式给 min-content。auto 在这里会算崩：网格容器高度是定死的（flex:1 撑的），
-     卡片作为 overflow:hidden 的 flex 列容器，浏览器给它的 max-content 高度只有 7px，
-     整行就跟着塌成 7px，封面/描述/按钮全被裁掉。min-content 才是卡片真正的自然高度。 */
-  grid-auto-rows: min-content;
-  gap: 12px;
-  align-content: start;
-}
-
-/* 「显示更多」是网格子项，不跨列的话会缩在一个格子里 */
-.voice-library-grid > .ghost-btn {
-  grid-column: 1 / -1;
-  justify-self: start;
-}
 
 .voice-card {
   display: flex;
@@ -2498,72 +2541,21 @@ select:focus {
 
 /* ── 资源库浏览弹层 ─────────────── */
 
-.library-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  background: rgb(0 0 0 / 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
 
-.library-panel {
-  display: flex;
-  flex-direction: column;
-  width: min(960px, 100%);
-  max-height: 100%;
-  background: var(--bg);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-}
 
-.library-head {
-  display: flex;
-  align-items: center;
-  padding: 12px 14px 8px;
-  border-bottom: 1px solid var(--line);
-}
 
-.library-head h3 {
-  margin: 0;
-  font-size: 15px;
-}
 
-.library-head .icon-btn {
-  margin-left: auto;
-}
 
-.library-hint {
-  margin: 0;
-  padding: 8px 14px;
-  font-size: 12.5px;
-  color: var(--ink-soft);
-  border-bottom: 1px solid var(--line);
-}
 
-.library-hint code,
-.library-empty code {
-  font-size: 12px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  padding: 0 3px;
-}
 
-.library-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-}
 
 .library-tabs {
   display: inline-flex;
   gap: 2px;
   flex-wrap: wrap;
+  /* 窄屏时让整组 tab 换到搜索框下面独占一行，而不是把搜索框挤没 */
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .library-tab {
@@ -2593,25 +2585,6 @@ select:focus {
   color: var(--ink-faint);
 }
 
-.library-search {
-  flex: 1;
-  min-width: 140px;
-  padding: 6px 10px;
-  font: inherit;
-  font-size: 13px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
-  color: var(--ink);
-}
-
-.library-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 12px;
-  padding: 0 14px 16px;
-  overflow-y: auto;
-}
 
 .library-card {
   display: flex;
@@ -2626,8 +2599,10 @@ select:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 108px;
-  padding: 6px;
+  /* 16:10 定高，比原来的 108px 固定像素更接近音色卡的方形封面观感，
+     卡片宽一点时缩略图也随之变大，不再是窄窄一条 */
+  aspect-ratio: 16 / 10;
+  padding: 8px;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
@@ -2682,10 +2657,13 @@ select:focus {
 .library-card-desc {
   margin: 0;
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--ink-soft);
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  /* 5 行而不是 3 行：这些描述是用户判断「要不要导入这条素材」的唯一依据，截到 3 行时
+     「适合都市夜景、终章、俯瞰全城…」后面的取舍条件全没了。 */
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -2748,6 +2726,14 @@ select:focus {
   font-size: 13px;
   line-height: 1.7;
   color: var(--ink-soft);
+}
+
+.library-empty code {
+  font-size: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 3px;
 }
 
 /* ── 图片预览与灯箱 ─────────────── */

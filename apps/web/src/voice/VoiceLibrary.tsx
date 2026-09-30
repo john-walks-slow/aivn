@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { countVoicesByLanguage, languageLabel, type VoiceEntry } from "@stage-ai/core";
 import { api } from "../api.js";
+import { Icon } from "../ui/Icon.js";
 import type { VoiceCatalogState } from "./useVoiceCatalog.js";
 
 /** Fish 封面图 CDN（cover_image 是 `coverimage/<id>` 相对路径）。 */
@@ -85,10 +86,10 @@ export function VoiceLibrary({
   const visible = matched.slice(0, limit);
 
   return (
-    <div className="voice-library" role="dialog" aria-label="音色库">
-      <header className="voice-library-bar">
+    <div className="picker" role="dialog" aria-label="音色库">
+      <header className="picker-bar">
         <input
-          className="voice-library-search"
+          className="picker-search"
           placeholder="搜索音色名 / 描述 / 标签"
           value={query}
           autoFocus
@@ -110,8 +111,8 @@ export function VoiceLibrary({
             </option>
           ))}
         </select>
-        <div className="voice-library-meta">
-          <span className="muted small voice-library-count">
+        <div className="picker-meta">
+          <span className="muted small picker-count">
             {catalog
               ? `匹配 ${matched.length} / ${entries.length}${catalog.stale ? "（离线快照）" : ""}`
               : loading
@@ -123,12 +124,12 @@ export function VoiceLibrary({
           </button>
         </div>
         <button
-          className="voice-library-close"
+          className="picker-close"
           aria-label="关闭音色库"
           title="关闭"
           onClick={onClose}
         >
-          ×
+          <Icon name="close" size={15} />
         </button>
       </header>
 
@@ -137,7 +138,7 @@ export function VoiceLibrary({
           音色库加载失败：{error}
         </div>
       ) : (
-        <div className="voice-library-grid">
+        <div className="picker-grid">
           {visible.map((entry) => (
             <article key={entry.id} className="voice-card">
               <div className="voice-card-cover">

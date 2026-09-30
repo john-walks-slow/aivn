@@ -94,47 +94,53 @@ export function LibraryBrowser({
   }, [onClose]);
 
   return (
-    <div className="library-overlay" role="dialog" aria-label="从资源库导入素材">
-      <div className="library-panel">
-        <header className="library-head">
-          <h3>资源库</h3>
-          <button className="icon-btn" onClick={onClose} title="关闭" aria-label="关闭">
-            <Icon name="close" size={15} />
-          </button>
-        </header>
-        <p className="library-hint">
-          导入是把文件复制进本剧目（assets/），并把描述写进素材表，剧作家据此选素材。库里还有
-          <code>{total}</code> 条，删掉库里那一份也不影响本剧目。
-        </p>
-
-        <div className="library-bar">
-          <div className="library-tabs">
-            {KINDS.map((k) => (
-              <button
-                key={k.key || "all"}
-                className={`library-tab ${kind === k.key ? "on" : ""}`}
-                onClick={() => setKind(k.key)}
-              >
-                {k.label}
-                {k.key && counts[k.key] ? <span className="n">{counts[k.key]}</span> : null}
-              </button>
-            ))}
-          </div>
-          <input
-            className="library-search"
-            placeholder="搜描述、标签、情绪，如 黄昏 / 钢琴 / 雨"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+    <div className="picker" role="dialog" aria-label="从资源库导入素材">
+      <header className="picker-bar">
+        <div className="library-tabs">
+          {KINDS.map((k) => (
+            <button
+              key={k.key || "all"}
+              className={`library-tab ${kind === k.key ? "on" : ""}`}
+              onClick={() => setKind(k.key)}
+            >
+              {k.label}
+              {k.key && counts[k.key] ? <span className="n">{counts[k.key]}</span> : null}
+            </button>
+          ))}
         </div>
+        <input
+          className="picker-search"
+          placeholder="搜描述、标签、情绪，如 黄昏 / 钢琴 / 雨"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <div className="picker-meta">
+          <span className="muted small picker-count">
+            {loading ? "扫描中…" : `匹配 ${total} 条`}
+          </span>
+        </div>
+        <button
+          className="picker-close"
+          onClick={onClose}
+          title="关闭"
+          aria-label="关闭"
+        >
+          <Icon name="close" size={15} />
+        </button>
+      </header>
 
-        {error && (
-          <div className="error-banner" role="alert">
-            {error}
-          </div>
-        )}
+      <p className="picker-note">
+        导入是把文件复制进本剧目（assets/），并把描述写进素材表，剧作家据此选素材。删掉库里那一份
+        不影响本剧目。
+      </p>
 
-        <div className="library-grid">
+      {error && (
+        <div className="error-banner" role="alert">
+          {error}
+        </div>
+      )}
+
+      <div className="picker-grid picker-grid-wide">
           {entries.map((entry) => {
             const file = entry.files[0];
             const isAudio = AUDIO.has(entry.kind);
@@ -211,7 +217,6 @@ export function LibraryBrowser({
             </p>
           )}
         </div>
-      </div>
       {zoom && <ImageLightbox url={zoom.url} name={zoom.name} onClose={() => setZoom(null)} />}
     </div>
   );
