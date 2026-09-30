@@ -26,3 +26,8 @@ plays/*/workshop/
 .shots/
 # playwright-cli 会话产物
 .playwright-cli/
+# 素材管线的跑批产物（scripts/gen_*.py 的输出）不是仓库内容，跑一遍就有。
+# 前导斜杠必须留着：不锚在仓库根的话这条会连 plays/demo/assets/ 一起吃掉
+/assets/
+# Python 字节码
+__pycache__/
