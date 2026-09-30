@@ -10,6 +10,8 @@ import { api } from "../api.js";
 import type { HistoryBeat, HistoryEntry } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { escapeClaimed } from "../ui/escape.js";
+import { Modal } from "../ui/Modal.js";
+import type { StageView } from "./view.js";
 
 interface StageTheaterProps {
   visual: VisualState;
@@ -36,11 +38,13 @@ interface StageTheaterProps {
   onContinue: () => void;
   /** 快进档：按住 Ctrl 期间为 true，松开/失焦回 false。 */
   onTurbo: (on: boolean) => void;
-  /** 舞台层浮层：停止点的选肢卡片、入戏输入、无停止点收尾（均在台词条之上层级）。 */
+  /**
+   * 停止点浮层（选肢卡、自由输入、no_stop 时的「（继续）」卡）。
+   * 它挂在**画面区**里：只盖住背景与立绘，台词条、导演栏、侧栏都照常可点——
+   * 选肢时要紧的只有「别手滑把这一轮点了过去」。
+   */
   overlay?: ReactNode;
 }
-
-export type StageView = "stage" | "backlog" | "route";
 
 export interface DirectorTargets {
   beatId: string | null;
@@ -316,6 +320,10 @@ export function StageTheater({
             {visual.cg?.caption && <p className="theater-cg-caption">{visual.cg.caption}</p>}
           </div>
         )}
+
+        {/* 停止点浮层只在画面区内：台词条与导演栏留在浮层之外，选肢期间照常可点可用。
+            这里仍然吃触摸事件——舞台监听着左右滑（翻句）与上滑（看回顾）。 */}
+        {overlay}
       </div>
 
       <div className="theater-dialog" role="text">
@@ -414,17 +422,42 @@ export function StageTheater({
         </div>
 
         {action && (
-          <div
-            className="director-panel"
-            onClick={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
-            onTouchEnd={(e) => e.stopPropagation()}
+          <Modal
+            title={
+              action === "prompt" ? "插一句" : action === "edit" ? "改写这句台词" : "重演这一轮"
+            }
+            hint={
+              action === "prompt"
+                ? "可以是某个角色的行动或台词，也可以是给这场戏的指示"
+                : action === "edit"
+                  ? "就地改这一句，改完接着演，不重演"
+                  : "留空 = 只重演这一轮；填了 = 连意图一起给"
+            }
+            onClose={() => setAction(null)}
+            footer={
+              <>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={submitAction}
+                  disabled={
+                    action === "restart" ? !targets.beatId : action === "edit" ? draft.trim() === "" : false
+                  }
+                >
+                  {action === "edit"
+                    ? "改写"
+                    : action === "restart"
+                      ? draft.trim()
+                        ? "重演这一轮 · 带着这句"
+                        : "重演这一轮"
+                      : "插一句"}
+                </button>
+                <button type="button" className="ghost-btn" onClick={() => setAction(null)}>
+                  取消
+                </button>
+              </>
+            }
           >
-            <div className="director-hint">
-              {action === "prompt" && "可以是某个角色的行动或台词，也可以是给这场戏的指示"}
-              {action === "edit" && "就地改这一句，改完接着演，不重演"}
-              {action === "restart" && "留空 = 只重演这一轮；填了 = 连意图一起给"}
-            </div>
             <div className="director-input">
               {action === "prompt" && (
                 <button
@@ -454,35 +487,11 @@ export function StageTheater({
                   if (e.key !== "Enter") return;
                   submitAction();
                 }}
-                autoFocus
               />
             </div>
-            <div className="director-actions">
-              <button
-                type="button"
-                onClick={submitAction}
-                disabled={
-                  action === "restart" ? !targets.beatId : action === "edit" ? draft.trim() === "" : false
-                }
-              >
-                {action === "edit"
-                  ? "改写"
-                  : action === "restart"
-                    ? draft.trim()
-                      ? "重演这一轮 · 带着这句"
-                      : "重演这一轮"
-                    : "插一句"}
-              </button>
-              <button type="button" className="ghost-btn" onClick={() => setAction(null)}>
-                收起
-              </button>
-            </div>
-          </div>
+          </Modal>
         )}
       </div>
-
-      {/* 停止点浮层与台词条同级（都在舞台之上），入戏输入因此能贴着台词条下沿而不被它盖住 */}
-      {overlay}
     </div>
   );
 }

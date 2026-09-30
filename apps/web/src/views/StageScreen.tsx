@@ -11,8 +11,8 @@ import {
   HistoryView,
   StageTheater,
   type DirectorTargets,
-  type StageView,
 } from "../stage/StageTheater.js";
+import type { StageView } from "../stage/view.js";
 import { RouteTree, useLineage, type LineageOps } from "../stage/LineagePanel.js";
 import type { RouteControls } from "../stage/RouteCanvas.js";
 import { StageShell } from "../stage/StageShell.js";

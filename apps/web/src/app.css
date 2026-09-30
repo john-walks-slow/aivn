@@ -411,8 +411,6 @@ button.link-btn {
   display: flex;
   flex-direction: column;
   height: 100%;
-  /* 入戏输入行的高度：台词条要用它给自己让位，否则长台词的下沿会被输入行盖住 */
-  --stop-h: 67px; /* 输入框 45 + 上下 padding 10/12 */
   --safe-b: env(safe-area-inset-bottom, 0px);
 }
 
@@ -772,38 +770,19 @@ button.link-btn {
 
 /* ── 停止点（浮在舞台上，不占底部条） ────────────── */
 
-/* 入戏输入行：贴在台词条下沿，像 VN 文本框里的输入栏（层级压在台词条之上）。 */
-.stop-panel {
-  position: absolute;
-  z-index: 14;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: calc(var(--stop-h) + var(--safe-b));
-  box-sizing: border-box;
-  padding: 10px 20px calc(12px + var(--safe-b));
-  background: var(--dialog-bg);
-  border-top: 1px solid var(--dialog-line);
-  backdrop-filter: blur(14px) saturate(1.1);
-}
-
-/* 输入行开着时，台词条坐在它上沿——否则长台词的下沿会被输入行盖住。
-   安全区已由输入行让过，台词条不必再补一次；只把浮起的间距对齐到文本框的 6px。 */
-.theater:has(.stop-panel) .theater-dialog {
-  bottom: calc(var(--stop-h) + var(--safe-b) + 6px);
-  padding-bottom: 12px;
-}
-
-/* 选肢：舞台中央悬浮卡片堆（脸的位置留空），点击区宽、序号可按。 */
+/* 选肢：画面区中央悬浮卡片堆（脸的位置留空），点击区宽、序号可按。
+   只盖住背景与立绘——台词条、导演栏、侧栏都在它之外，照常可点可用；
+   这一层自己要吃掉触摸与点击：选项摆着的时候，点画面不能当成「继续」。 */
 .choice-overlay {
   position: absolute;
   inset: 0;
-  z-index: 15;
+  z-index: 6;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 12px;
   padding: 8% 0 4%;
+  overflow-y: auto;
   background: var(--choice-scrim);
   animation: choice-in 0.22s ease-out;
 }
@@ -892,6 +871,95 @@ button.primary:hover:not(:disabled) {
   color: var(--ink-soft);
 }
 
+/* ── 模态窗（插一句 / 改台词 / 重演这一轮 / 停止点自由输入） ──── */
+
+/* 挂在 body 上（Modal 用 portal）：层级要在舞台浮层与侧栏遮罩之上。 */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px calc(20px + var(--safe-b, 0px));
+  background: rgb(10 10 14 / 0.42);
+  animation: choice-in 0.16s ease-out;
+}
+
+.modal-card {
+  box-sizing: border-box;
+  max-width: 100%;
+  /* 软键盘顶起时不能顶出屏外：卡片自己封顶 + 内部滚（--kb 由 useVisualViewport 写入）。 */
+  max-height: min(78dvh, 640px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px 14px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgb(0 0 0 / 0.3);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
+.modal-x {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink-faint);
+  font-size: 14px;
+  line-height: 1;
+}
+.modal-x:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.modal-hint {
+  margin: -4px 0 0;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.modal-foot .free-back {
+  margin: 0 auto 0 0;
+}
+
+/* 自由输入：输入框 + 润色/撤销跟它同一行 */
 .free-box {
   display: flex;
   gap: 8px;
@@ -899,19 +967,6 @@ button.primary:hover:not(:disabled) {
 
 .free-box input {
   flex: 1;
-}
-
-/* ── 导演面板（长在对话框底部，见 .director-panel） ──── */
-
-.director-hint {
-  font-size: 12.5px;
-  color: var(--accent);
-}
-
-.director-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
 }
 
 /* ── 输入与遮罩 ────────────────────────── */
@@ -3023,27 +3078,14 @@ select:focus {
 
 /* ── 导演栏（P6 交互重构） ──── */
 
+/* 自由输入模态窗里的「返回选项」：普通幽灵键，不再是浮在画面上的胶囊 */
 .free-back {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 3px;
-  margin: 0 auto 6px;
-  padding: 3px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: none;
-  color: var(--ink-muted);
-  font-size: 12.5px;
-  cursor: pointer;
+  font-size: 13px;
 }
-.free-back:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.free-back .ico {
-  width: 14px;
-  height: 14px;
-}
+
 /* 导演栏：贴在对话框底部，三个小图标（插一句 / 改台词 / 重演这一轮） */
 .dialog-foot {
   display: flex;
@@ -3064,19 +3106,14 @@ select:focus {
   position: relative;
   width: 46px;
   height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   border: none;
   border-radius: var(--radius);
   background: none;
   color: var(--ink-soft);
   cursor: pointer;
   transition: color var(--hover-ms) ease, background-color var(--hover-ms) ease;
-}
-.dir-btn .ico {
-  width: 24px;
-  height: 24px;
 }
 .dir-btn:hover:not(:disabled) {
   background: var(--accent-soft);
@@ -3090,21 +3127,7 @@ select:focus {
   opacity: 0.35;
   cursor: default;
 }
-/* 原语面板长在对话框里，不浮到舞台上面 */
-.director-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 0 0;
-  border-top: 1px solid var(--line);
-}
-.director-panel input {
-  border: none;
-  outline: none;
-  background: transparent;
-  font: inherit;
-}
-/* 输入行 + OOC 快捷前缀按钮 */
+/* 三个原语的输入改走 ui/Modal.tsx（不再长在对话框里）——这里只留 OOC 快捷前缀 */
 .director-input {
   display: flex;
   align-items: center;
@@ -3127,11 +3150,13 @@ select:focus {
   background: var(--accent-soft);
 }
 
-/* 待注入队列：右上角独立面板，空则不渲染。排队中的话能改也能撤 */
+/* 待注入队列：内容区右上角独立面板，空则不渲染。排队中的话能改也能撤。
+   定位挂在内容区（.stage-main，position: relative）而不是视口：之前写的是
+   fixed + 一个早已不存在的顶栏偏移（--gui-h），面板凭空下移 52px。 */
 .prompt-queue {
-  position: fixed;
+  position: absolute;
   z-index: 40;
-  top: calc(var(--gui-h, 52px) + 8px);
+  top: 8px;
   right: 12px;
   width: min(78vw, 280px);
   padding: 8px 10px;
@@ -3188,10 +3213,6 @@ select:focus {
   color: var(--ink-faint);
   cursor: pointer;
 }
-.prompt-queue-tool .ico {
-  width: 13px;
-  height: 13px;
-}
 .prompt-queue-tool:hover {
   color: var(--accent);
 }
@@ -3216,9 +3237,9 @@ select:focus {
 }
 /* 提示走浮层：钉在顶部的横幅会在演出时占掉画面一条，还要手动去点掉 */
 .toast-stack {
-  position: fixed;
+  position: absolute;
   z-index: 60;
-  top: calc(var(--gui-h, 52px) + 4px);
+  top: 8px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

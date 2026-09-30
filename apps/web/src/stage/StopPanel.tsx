@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { StopPayload } from "@stage-ai/core";
 import { Icon } from "../ui/Icon.js";
+import { Modal } from "../ui/Modal.js";
 
 interface StopPanelProps {
   stop: StopPayload | null;
@@ -29,14 +30,18 @@ const trap = {
 
 /**
  * 停止点（玩家主权的三种形态，P6.5）：
- * - choice：舞台中央悬浮的选肢卡片，选过的打勾留痕；
- * - free：对话框形态的入戏输入（可 LLM 润色，撤销保原稿）；
+ * - choice：画面中央悬浮的选肢卡片，选过的打勾留痕；
+ * - free：模态窗形态的入戏输入（可 LLM 润色，撤销保原稿）；
  * - pause：只在编排器造出来时出现（轮中分岔被截断 / 空轮报错）——不出按钮，
  *   玩家点舞台即表态续写开新轮（见 StageTheater.onStageClick）；
  * - 本轮写完（beat_done 无 stop）：默认没有卡片，点舞台就是继续（与翻句同一个动作）；
  *   设置里打开了「（继续）」卡才在这里摆一个普通选项——括号表明它是系统给的，不是角色给的台词。
  * 自由输入是从选项卡点开的，有一个返回键——选了不说的自由，选项还摆在那里。
  * 插一句 / 改台词 / 重演这一轮在对话框底部的导演栏里，不在此。
+ *
+ * 本组件挂在**画面区**里（StageTheater 把它放进 `.theater-stage`）：选肢卡片仍然居中、
+ * 背景仍然暗化，但台词条、导演栏、侧栏与排队面板都在浮层之外，选肢期间照常能点能用。
+ * 唯一被挡住的是「点画面继续」——选项摆着的时候，那一下必须是选中的那张卡。
  */
 export function StopPanel({
   stop,
@@ -142,19 +147,37 @@ export function StopPanel({
       )}
 
       {(stop?.stopType === "free" || freeOpen) && (
-        <footer className="stop-panel" {...trap}>
-          {canBackOut && (
-            <button
-              type="button"
-              className="free-back"
-              onClick={backToChoices}
-              disabled={disabled}
-              title="不自己写了，回去选"
-            >
-              <Icon name="prev" />
-              返回选项
-            </button>
-          )}
+        <Modal
+          title="自己写一句"
+          hint={
+            canBackOut
+              ? "不说选项，以主角口吻写一句。想回去选就点左下角。"
+              : "以主角口吻写一句，剧作家会照着往下演。"
+          }
+          width={560}
+          onClose={backToChoices}
+          dismissible={canBackOut}
+          footer={
+            <>
+              {canBackOut && (
+                <button
+                  type="button"
+                  className="ghost-btn free-back"
+                  onClick={backToChoices}
+                  disabled={disabled}
+                  title="不自己写了，回去选"
+                >
+                  <Icon name="prev" size={14} />
+                  返回选项
+                </button>
+              )}
+              {polishError && <span className="muted small">润色失败：{polishError}</span>}
+              <button type="button" className="primary" onClick={submitFree} disabled={disabled || draft.trim() === ""}>
+                说
+              </button>
+            </>
+          }
+        >
           <div className="free-box">
             <input
               value={draft}
@@ -162,7 +185,6 @@ export function StopPanel({
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submitFree()}
               disabled={disabled}
-              autoFocus
             />
             <button
               type="button"
@@ -186,12 +208,8 @@ export function StopPanel({
                 撤销
               </button>
             )}
-            <button type="button" onClick={submitFree} disabled={disabled || draft.trim() === ""}>
-              说
-            </button>
-            {polishError && <span className="muted small">润色失败：{polishError}</span>}
           </div>
-        </footer>
+        </Modal>
       )}
 
       {/* pause（轮中截断 / 空轮报错）与默认设置下的本轮写完都不摆按钮：点舞台就是继续，
