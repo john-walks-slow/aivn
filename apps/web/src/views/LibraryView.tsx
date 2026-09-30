@@ -1,11 +1,29 @@
 import { useEffect, useState } from "react";
 import { Icon } from "../ui/Icon.js";
-import { api, readinessAdvice, readinessMissing, type PlaySummary } from "../api.js";
+import {
+  api,
+  assetUrl,
+  readinessAdvice,
+  readinessMissing,
+  type PlaySummary,
+} from "../api.js";
 import { navigate } from "../router.jsx";
 
-/** 应用首页 = 剧目库：剧目卡片 + 新建 + 剧目包导入。 */
+/**
+ * 封面：取这张剧目里第一张背景，其次插图。
+ * 作品选择界面靠封面认人——纯文字牌排出来是列表页，不是启动器。
+ */
+function coverOf(playId: string, assets: Record<string, string[]> | undefined): string | null {
+  const bg = assets?.backgrounds?.[0];
+  if (bg) return assetUrl(playId, "backgrounds", bg);
+  const cg = assets?.cg?.[0];
+  return cg ? assetUrl(playId, "cg", cg) : null;
+}
+
+/** 应用首页 = 剧目库：作品牌 + 底部一条管理入口。 */
 export function LibraryView() {
   const [plays, setPlays] = useState<PlaySummary[] | null>(null);
+  const [covers, setCovers] = useState<Record<string, string | null>>({});
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newId, setNewId] = useState("");
@@ -14,7 +32,17 @@ export function LibraryView() {
   const reload = (): void => {
     api
       .listPlays()
-      .then(setPlays)
+      .then((list) => {
+        setPlays(list);
+        void Promise.all(
+          list.map((play) =>
+            api
+              .listAssets(play.id)
+              .then((assets) => [play.id, coverOf(play.id, assets)] as const)
+              .catch(() => [play.id, null] as const),
+          ),
+        ).then((pairs) => setCovers(Object.fromEntries(pairs)));
+      })
       .catch((e: Error) => setError(e.message));
   };
   useEffect(reload, []);
@@ -37,9 +65,8 @@ export function LibraryView() {
 
   return (
     <div className="screen library">
-      <header className="screen-bar">
-        <h1>Stage-AI</h1>
-        <span className="muted">剧目库</span>
+      <header className="screen-bar wordmark-bar">
+        <h1 className="wordmark">Stage&#8209;AI</h1>
         <button className="ghost-btn" onClick={() => navigate("/settings")}>
           设置
         </button>
@@ -55,63 +82,70 @@ export function LibraryView() {
         {(plays ?? []).map((play) => {
           const missing = readinessMissing(play.readiness);
           const advice = readinessAdvice(play.readiness);
+          const cover = covers[play.id];
           return (
             <button key={play.id} className="card" onClick={() => navigate(`/play/${play.id}`)}>
-              <div className="card-head">
-                <strong>{play.title}</strong>
+              <span className="card-cover">
+                {cover ? <img src={cover} alt="" loading="lazy" /> : <span className="card-cover-blank" />}
                 <span className={`badge ${play.readiness.ready ? "ok" : "warn"}`}>
                   {play.readiness.ready ? "可开演" : "未就绪"}
                 </span>
-              </div>
-              <p className="card-premise">
-                {play.premise.length > 90 ? `${play.premise.slice(0, 90)}…` : play.premise || "（故事前提待补）"}
-              </p>
-              <p className="muted small">
-                {missing.length > 0
-                  ? `缺：${missing.join("、")}`
-                  : advice.length > 0
-                    ? `无图可演（缺 ${advice.join("、")}）`
-                    : `id: ${play.id}`}
-              </p>
+              </span>
+              <span className="card-body">
+                <strong className="card-name">{play.title}</strong>
+                <span className="card-premise">
+                  {play.premise.length > 72 ? `${play.premise.slice(0, 72)}…` : play.premise || "（故事前提待补）"}
+                </span>
+                <span className="muted small card-meta">
+                  {missing.length > 0
+                    ? `缺 ${missing.join("、")}`
+                    : advice.length > 0
+                      ? `还没有 ${advice.join("、")}`
+                      : ""}
+                </span>
+              </span>
             </button>
           );
         })}
-
-        <div className="card card-new">
-          {creating ? (
-            <div className="create-form">
-              <input placeholder="剧目 id（字母数字_-）" value={newId} onChange={(e) => setNewId(e.target.value)} />
-              <input placeholder="标题" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
-              <span className="row">
-                <button onClick={create}>创建</button>
-                <button className="ghost-btn" onClick={() => setCreating(false)}>
-                  取消
-                </button>
-              </span>
-            </div>
-          ) : (
-            <div className="new-actions">
-              <button onClick={() => setCreating(true)}><span className="btn-icon">
-                <Icon name="plus" /> 新建剧目
-              </span></button>
-              <label className="btn-as-label">
-                导入剧目包
-                <input
-                  type="file"
-                  accept=".zip"
-                  hidden
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) importZip(file);
-                  }}
-                />
-              </label>
-            </div>
-          )}
-        </div>
       </div>
 
-      {plays !== null && plays.length === 0 && <p className="muted">还没有剧目——新建或导入一个开始。</p>}
+      {plays !== null && plays.length === 0 && <p className="muted library-empty">还没有剧目——建一个开始。</p>}
+
+      <footer className="library-manage">
+        {creating ? (
+          <div className="create-form">
+            <input placeholder="剧目 id（字母数字_-）" value={newId} onChange={(e) => setNewId(e.target.value)} />
+            <input placeholder="标题" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
+            <span className="row">
+              <button className="primary" onClick={create}>
+                建这个剧目
+              </button>
+              <button className="ghost-btn" onClick={() => setCreating(false)}>
+                取消
+              </button>
+            </span>
+          </div>
+        ) : (
+          <>
+            <button className="library-verb" onClick={() => setCreating(true)}>
+              <Icon name="plus" size={15} />
+              新建剧目
+            </button>
+            <label className="library-verb">
+              导入剧目包
+              <input
+                type="file"
+                accept=".zip"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) importZip(file);
+                }}
+              />
+            </label>
+          </>
+        )}
+      </footer>
     </div>
   );
 }

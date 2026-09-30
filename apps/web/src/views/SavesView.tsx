@@ -109,8 +109,9 @@ export function SavesView({ playId }: { playId: string }) {
       {saves?.length === 0 && <p className="muted small">还没有周目——点右上角开始第一周目。</p>}
 
       <div className="saves-list">
-        {saves?.map((save) => (
+        {saves?.map((save, i) => (
           <div key={save.id} className={`save-card${save.current ? " current" : ""}`}>
+            <p className="save-no">{String(i + 1).padStart(2, "0")}</p>
             <div className="card-head">
               {editing === save.id ? (
                 <input
@@ -126,7 +127,7 @@ export function SavesView({ playId }: { playId: string }) {
               ) : (
                 <span className="save-name">{save.name}</span>
               )}
-              {save.current && <span className="badge ok">当前进行中</span>}
+              {save.current && <span className="badge ok">进行中</span>}
             </div>
 
             <p className="muted small">

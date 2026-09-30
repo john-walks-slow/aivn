@@ -366,7 +366,8 @@ export function StageTheater({
                 setDraft("");
               }}
             >
-              <Icon name="chat" />
+              <Icon name="chat" size={15} />
+              插一句
             </button>
             <button
               type="button"
@@ -379,7 +380,8 @@ export function StageTheater({
                 setDraft(targets.lineText);
               }}
             >
-              <Icon name="pencil" />
+              <Icon name="pencil" size={15} />
+              改写
             </button>
             <button
               type="button"
@@ -392,7 +394,8 @@ export function StageTheater({
                 setDraft("");
               }}
             >
-              <Icon name="rewrite" />
+              <Icon name="rewrite" size={15} />
+              重来
             </button>
             {voiceAvailable && hasVoice(view?.seq ?? null) && (
               <button
@@ -404,7 +407,8 @@ export function StageTheater({
                   if (view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
                 }}
               >
-                <Icon name="volume" />
+                <Icon name="volume" size={15} />
+                重听
               </button>
             )}
             <button
@@ -418,7 +422,8 @@ export function StageTheater({
                 playback.setAuto(!playback.auto);
               }}
             >
-              {playback.auto ? <Icon name="pause" /> : <Icon name="play" />}
+              {playback.auto ? <Icon name="pause" size={15} /> : <Icon name="play" size={15} />}
+              自动
             </button>
           </div>
         </div>
