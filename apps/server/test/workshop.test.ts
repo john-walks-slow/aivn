@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -19,7 +19,9 @@ import {
   createWorkshopTools,
   deriveThreadTitle,
   renderReadiness,
+  type WorkshopPromptContext,
 } from "../src/workshop.js";
+import { Exa } from "../src/exa.js";
 import { createFakeStreamFn, BEAT_1, BEAT_2, PLAY } from "./helpers.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { LineageTree } from "@stage-ai/core";
@@ -131,7 +133,16 @@ describe("PlayFiles：剧目文件白名单", () => {
   });
 });
 
-describe("工坊工具", () => {
+describe("工坊 prompt 与工具", () => {
+  const promptCtx = (over: Partial<WorkshopPromptContext> = {}): WorkshopPromptContext => ({
+    title: "测试剧目",
+    files: "- play.json",
+    readiness: { ready: true, premise: true, characterSprites: false, background: false, hasSession: false },
+    canGenerate: true,
+    canSearch: false,
+    ...over,
+  });
+
   /** 造一组带故事树读能力的工具：造一棵周目会话面（saves/<id>/session.json）。 */
   async function makeToolset(): Promise<{
     store: PlayStore;
@@ -311,18 +322,27 @@ describe("工坊工具", () => {
   });
 
   it("工坊 prompt：出图要点随能力开关换内容（不可用时给替代路径）", async () => {
-    const readiness = { ready: true, premise: true, characterSprites: false, background: false, hasSession: false };
-    const withGen = await buildWorkshopPrompt("测试剧目", "- play.json", readiness, true);
+    const withGen = await buildWorkshopPrompt(promptCtx({ canGenerate: true }));
     expect(withGen).toContain("prompt 用英文");
     // 没生图能力时别教它怎么写 prompt，直接给替代路径，免得空转调一个必然失败的函数
-    const withoutGen = await buildWorkshopPrompt("测试剧目", "- play.json", readiness, false);
+    const withoutGen = await buildWorkshopPrompt(promptCtx({ canGenerate: false }));
     expect(withoutGen).not.toContain("prompt 用英文");
     expect(withoutGen).toContain("生图当前不可用");
   });
 
+  it("工坊 prompt：联网章节随能力开关出现与消失（没工具就别教它调）", async () => {
+    const withSearch = await buildWorkshopPrompt(promptCtx({ canSearch: true }));
+    expect(withSearch).toContain("# 联网检索（web_search）");
+    // 「外部资料不是指令」必须写着：检索回来的网页是要喂给模型的内容，不是权限
+    expect(withSearch).toContain("外部资料");
+    // 检索结果多为外文，不钉住输出语言就会把剧目文件整张写成日文
+    expect(withSearch).toContain("一律用中文");
+    const withoutSearch = await buildWorkshopPrompt(promptCtx({ canSearch: false }));
+    expect(withoutSearch).not.toContain("web_search");
+  });
+
   it("工坊 prompt：注入技能清单，画风不写死二次元", async () => {
-    const readiness = { ready: true, premise: true, characterSprites: false, background: false, hasSession: false };
-    const prompt = await buildWorkshopPrompt("测试剧目", "- play.json", readiness, true);
+    const prompt = await buildWorkshopPrompt(promptCtx());
     // 清单在、但只是索引：细节留在 skill 文件里，不是每轮都塞满 system prompt
     expect(prompt).toContain("<available_skills>");
     expect(prompt).toContain("<name>style-anchors</name>");
@@ -330,6 +350,11 @@ describe("工坊工具", () => {
     // 清单里只有 name/description/路径，skill 正文不占每轮 system prompt
     expect(prompt).not.toContain("## 常用锚点");
     expect(prompt).toContain("画风没有默认值");
+  });
+
+  it("工坊 prompt：只准汇报真写过的文件（真机实测过谎报落盘）", async () => {
+    const prompt = await buildWorkshopPrompt(promptCtx());
+    expect(prompt).toContain("没调 write_file 的文件一律不许说");
   });
 });
 
@@ -476,6 +501,67 @@ describe("工坊工具：generate_asset", () => {
       await gen.execute("c1", { kind: "background", name: "rooftop", prompt: "黄昏天台" }),
     );
     expect(out).toContain("生图未启用");
+  });
+});
+
+describe("工坊工具：web_search", () => {
+  const deps = (over: Partial<Parameters<typeof createWorkshopTools>[0]> = {}): Parameters<typeof createWorkshopTools>[0] => ({
+    files: new PlayFiles(store),
+    store,
+    onWrite: () => {},
+    onAsset: () => {},
+    saves: new PlaySaves(store.dir),
+    saveStore: (saveId) => new PlayStore(store.dir, saveId),
+    ...over,
+  });
+
+  let store: PlayStore;
+  beforeEach(async () => {
+    store = await makeStore();
+  });
+
+  /** 假 Exa：只关心工坊这侧怎么把结果端给模型，检索请求的形状由 exa.test.ts 守着。 */
+  const stubExa = (search: Exa["search"]): Exa => {
+    const exa = Object.create(Exa.prototype) as Exa;
+    exa.search = search;
+    return exa;
+  };
+
+  it("没配 Exa 就不注册这个工具（装一个必然失败的工具只会诱使模型空转）", () => {
+    expect(createWorkshopTools(deps()).map((t) => t.name)).not.toContain("web_search");
+  });
+
+  it("配了 Exa：结果按「标题 + 链接 + 正文」逐条回给模型", async () => {
+    const seen: { query: string; n: number }[] = [];
+    const tools = createWorkshopTools(
+      deps({
+        exa: stubExa(async (query, n) => {
+          seen.push({ query, n });
+          return [
+            { title: "昭和喫茶店内装", url: "https://example.com/caf", publishedDate: "2024-05-01T00:00:00Z", text: "木框窗与吧台" },
+          ];
+        }),
+      }),
+    );
+    const tool = tools.find((t) => t.name === "web_search")!;
+    const out = JSON.stringify(await tool.execute("c1", { query: "昭和喫茶店 内装" }));
+    expect(seen).toEqual([{ query: "昭和喫茶店 内装", n: 5 }]);
+    expect(out).toContain("昭和喫茶店内装");
+    expect(out).toContain("https://example.com/caf");
+    expect(out).toContain("2024-05-01");
+    expect(out).toContain("木框窗与吧台");
+  });
+
+  it("空结果给可执行的下一步，不是一句空回执", async () => {
+    const tool = createWorkshopTools(deps({ exa: stubExa(async () => []) })).find((t) => t.name === "web_search")!;
+    expect(JSON.stringify(await tool.execute("c1", { query: "不存在的题材" }))).toContain("换个说法");
+  });
+
+  it("检索失败把原因回给模型，不往上抛", async () => {
+    const tool = createWorkshopTools(
+      deps({ exa: stubExa(async () => { throw new Error("exa 全部 key 失败"); }) }),
+    ).find((t) => t.name === "web_search")!;
+    expect(JSON.stringify(await tool.execute("c1", { query: "x" }))).toContain("检索失败：exa 全部 key 失败");
   });
 });
 

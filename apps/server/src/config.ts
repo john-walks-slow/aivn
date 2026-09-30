@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { IMAGE_SIZES, type ImageSize } from "./imageBackend.js";
@@ -51,6 +52,14 @@ export interface ServerConfig {
     proxy: string;
     baseUrl: string;
     concurrency: number;
+  };
+  /** 工坊联网检索（Exa）：工坊 agent 唯一的联网口子，一次调用同时搜索并取回正文。 */
+  exa: {
+    enabled: boolean;
+    keysPath: string;
+    baseUrl: string;
+    proxy: string;
+    timeoutMs: number;
   };
 }
 
@@ -134,6 +143,13 @@ export function loadConfig(
       baseUrl: env.STAGE_TTS_BASE_URL ?? "https://api.fish.audio",
       concurrency: parsePositiveInt("STAGE_TTS_CONCURRENCY", env.STAGE_TTS_CONCURRENCY, 2),
     },
+    exa: {
+      enabled: env.STAGE_EXA_ENABLED !== "false",
+      keysPath: resolve(repoRoot, env.STAGE_EXA_KEYS ?? join(homedir(), ".config/exa/keys.json")),
+      baseUrl: env.STAGE_EXA_BASE_URL ?? "https://api.exa.ai",
+      proxy: env.STAGE_EXA_PROXY ?? "http://127.0.0.1:7890",
+      timeoutMs: parsePositiveInt("STAGE_EXA_TIMEOUT_MS", env.STAGE_EXA_TIMEOUT_MS, 20_000),
+    },
   };
   // 保留预算 ≥ 触发阈值：每拍都判定超标却永远切不出可压段，纪元压缩静默失效
   if (config.keepRecentTokens >= config.contextWindow * config.compactRatio) {
@@ -144,4 +160,16 @@ export function loadConfig(
     );
   }
   return config;
+}
+
+/** 多 key 凭据文件：接受 `["k1","k2"]` 或 `{"keys": [...]}`，缺失/坏文件按空表处理。 */
+export function readKeysFile(path: string): string[] {
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
+    const list = Array.isArray(raw) ? raw : (raw as { keys?: unknown })?.keys;
+    if (!Array.isArray(list)) return [];
+    return list.filter((k): k is string => typeof k === "string" && k.trim() !== "");
+  } catch {
+    return [];
+  }
 }

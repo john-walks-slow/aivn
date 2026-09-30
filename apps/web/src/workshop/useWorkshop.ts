@@ -53,6 +53,11 @@ const TOOL_LABEL: Record<string, string> = {
   delete_file: "删除文件",
   get_readiness: "检查就绪条件",
   generate_asset: "出图中（几十秒，别急着发下一条）",
+  inspect_asset: "看图",
+  read_skill: "读出图技能",
+  list_saves: "查看周目",
+  read_lineage: "读故事树",
+  web_search: "联网检索中",
 };
 
 /** 工坊状态机：把服务端 workshop_* 下行消息收敛成面板可直接渲染的形态。 */

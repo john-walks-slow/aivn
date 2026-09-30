@@ -2,6 +2,7 @@ import type { AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ServerMessage, WorkshopAssetView, WorkshopChatMessage, WorkshopThreadInfo } from "@stage-ai/core";
 import type { ImageBackend } from "./imageBackend.js";
+import type { Exa } from "./exa.js";
 import type { Limiter } from "./limiter.js";
 import { PlayFiles } from "./playFiles.js";
 import type { AssetLibrary } from "./library.js";
@@ -43,6 +44,8 @@ export interface WorkshopSessionOptions {
   saveStore: (saveId: string) => PlayStore;
   /** 应用级素材资源库：工坊 agent 可浏览与导入（只读，库本身由用户在本地目录维护）。 */
   assetLibrary?: AssetLibrary;
+  /** 联网检索客户端；未配置则 `web_search` 工具不注册、prompt 不提联网。 */
+  exa?: Exa;
 }
 
 export class WorkshopSession {
@@ -81,6 +84,7 @@ export class WorkshopSession {
       saves: opts.saves,
       saveStore: opts.saveStore,
       assetLibrary: opts.assetLibrary,
+      exa: opts.exa,
     });
   }
 
@@ -245,7 +249,14 @@ export class WorkshopSession {
       this.opts.store.readiness(),
     ]);
     const listing = files.map((f) => `${f.writable ? "可写" : "只读"} ${f.path}（${f.size}B）`).join("\n");
-    return buildWorkshopPrompt(play.title, listing, readiness, !!this.assets, !!this.opts.assetLibrary);
+    return buildWorkshopPrompt({
+      title: play.title,
+      files: listing,
+      readiness,
+      canGenerate: !!this.assets,
+      canSearch: !!this.opts.exa,
+      canBrowseLibrary: !!this.opts.assetLibrary,
+    });
   }
 }
 

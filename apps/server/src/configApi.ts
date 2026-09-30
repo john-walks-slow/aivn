@@ -6,7 +6,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ServerConfig } from "./config.js";
+import { readKeysFile, type ServerConfig } from "./config.js";
 
 /** 设置面板的传输面：配置形态 + 凭据存在位（不回传明文）。 */
 export interface SettingsView {
@@ -233,19 +233,4 @@ function readEnv(path: string): Map<string, string> {
     out.set(trimmed.slice(0, eq).trim(), trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, ""));
   }
   return out;
-}
-
-/** TTS keys 文件：接受数组或 `{ keys: [...] }`，坏文件按空处理。 */
-function readKeysFile(path: string): string[] {
-  try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
-    if (Array.isArray(raw)) return raw.filter((k): k is string => typeof k === "string");
-    if (raw && typeof raw === "object") {
-      const keys = (raw as { keys?: unknown }).keys;
-      if (Array.isArray(keys)) return keys.filter((k): k is string => typeof k === "string");
-    }
-    return [];
-  } catch {
-    return [];
-  }
 }
