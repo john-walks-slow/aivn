@@ -57,7 +57,7 @@ for (const key of ["name", "persona", "voice", "voiceId"] as const) {
 ## 验证
 
 - `pnpm typecheck` 三个包全绿。
-- `pnpm test`：core 92 / web 31 / server 253（新增 4 条：纯角色卡导入、字段级合并、`target=protagonist` 落点、嵌套子目录 + arcs 独立过滤）。
+- `pnpm test`：core 92 / web 31 / server 260（新增 7 条：纯角色卡导入、字段级合并、`target=protagonist` 落点、嵌套子目录 + arcs 独立过滤）。
 - 测试抓到过一个真 bug：让「没声明 character 就不碰 play.json」后，只有立绘图的角色无处安放差分映射——已修为按目录名建空壳卡。
 
 **未做实机验证**：`acquire-port` 因本机内存不足（可用 1541MB < 需要的 2048MB，其余三个服务是别的 agent 起的）拒绝放行，起不了 dev 服务，界面行为没有截图验证。逻辑层由测试覆盖，但「素材页长什么样、覆盖按钮什么时候变字」需要用户在服务可起时看一眼。
