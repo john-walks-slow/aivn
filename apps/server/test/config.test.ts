@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, readKeysFile } from "../src/config.js";
+import { imagePendingTtlMs, loadConfig, readKeysFile } from "../src/config.js";
 
 describe("ServerConfig 纪元压缩参数", () => {
   it("默认窗口/阈值/保留预算", () => {
@@ -55,5 +55,17 @@ describe("ServerConfig 联网检索与凭据文件", () => {
     expect(readKeysFile(write("blank.json", '["k1", "", 2]'))).toEqual(["k1"]);
     expect(readKeysFile(write("garbage.json", "not json"))).toEqual([]);
     expect(readKeysFile(join(dir, "missing.json"))).toEqual([]);
+  });
+});
+
+describe("骨架兜底上界", () => {
+  it("覆盖「自己超时 + 排队等到自己」最坏情况，且随生图配置缩放", () => {
+    const base = loadConfig({}, "/repo").image;
+    // 默认 150s 超时、并发 6、队列 12 → 自己一次 + 排在两批后面 = 450s
+    expect(imagePendingTtlMs(base)).toBe(450_000);
+
+    // 超时变长、并发变小 → 上界跟着变长（写死 45s 时这两条都无从谈起）
+    expect(imagePendingTtlMs({ ...base, timeoutMs: 60_000 })).toBe(180_000);
+    expect(imagePendingTtlMs({ ...base, concurrency: 12 })).toBe(300_000);
   });
 });

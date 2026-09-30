@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { IMAGE_SIZES, type ImageSize } from "./imageBackend.js";
+import { DEFAULT_MAX_QUEUE } from "./limiter.js";
 
 /** 服务端配置：环境变量驱动（cpa 网关 + 模型 + 剧目库根目录 + fish-audio TTS）。 */
 export interface ServerConfig {
@@ -165,6 +166,19 @@ export function loadConfig(
     );
   }
   return config;
+}
+
+/**
+ * 一次预发射真正可能花多久（毫秒）：客户端拿它当「通知永远不来」的兜底上界，
+ * 随 hello 下发（见 `ws/protocol.ts` 的 assetsTtlMs）。写死 45s 时的后果是
+ * 正在生成的骨架被自己撤掉——生图默认 150s 才超时，骨架从来活不到图到货。
+ *
+ * 最坏情况 = 自己一次超时 + 排在并发闸门队尾的时间（队列上限 12，按并发折成几批）。
+ * 这只是兜底上界：正常的图一两分钟就到，届时 asset_ready 已经把占位摘了。
+ */
+export function imagePendingTtlMs(image: ServerConfig["image"]): number {
+  const batches = Math.ceil(DEFAULT_MAX_QUEUE / Math.max(1, image.concurrency));
+  return image.timeoutMs * (1 + batches);
 }
 
 /** 多 key 凭据文件：接受 `["k1","k2"]` 或 `{"keys": [...]}`，缺失/坏文件按空表处理。 */
