@@ -275,7 +275,7 @@ STAGE_FLOW_SIZE=2k
 | 页 | 能做什么 |
 | --- | --- |
 | **对话** | 多线程 meta-chat。左上菜单键开线程列表：新建 / 切换 / 归档 / 删除。线程只存对话，文件是剧目共享的 |
-| **素材** | 剧目配置（标题 / premise / opening / 语音语言 / 主角卡 / 角色卡与立绘差分映射）+ 背景 / CG / 音效 / BGM / 立绘上传。图片直接出缩略图，点开看大图；音效和 BGM 可就地试听 |
+| **素材** | 剧目配置（标题 / opening / 语音语言 / 主角卡 / 角色卡与立绘差分映射）+ 世界观前提（独立保存按钮）+ 背景 / CG / 音效 / BGM 上传。角色卡与主角卡各带一个「从资源库导入」入口，立绘在角色卡里传。图片直接出缩略图，点开看大图；音效和 BGM 可就地试听 |
 | **文件** | 剧目文件树 + 文本编辑（保存按钮；未保存有标记）。可改 `play.json` 与 `memory/**`，`assets/**` 只读——图片和音频在右侧直接预览，不进编辑器 |
 | **创作口径** | 剧作家每次生成怎么写都听这一份。自由写 Markdown，不用挑选项；工坊对话里也能让 agent 改同一份 |
 
@@ -314,7 +314,7 @@ STAGE_FLOW_SIZE=2k
 
 ## 素材资源库（library/）
 
-一个跨剧目复用的本地素材目录（`STAGE_LIBRARY_ROOT`，默认仓库根 `library/`）：背景、CG、立绘包、BGM、音效，每条都带元数据。**库本身不做 UI 管理**——往目录里扔文件就是加素材，界面只提供「从资源库浏览、搜索、导入」。
+一个跨剧目复用的本地素材目录（`STAGE_LIBRARY_ROOT`，默认仓库根 `library/`）：背景、CG、角色包、BGM、音效，每条都带元数据。**库本身不做 UI 管理**——往目录里扔文件就是加素材，界面只提供「从资源库浏览、搜索、导入」。
 
 ### 目录约定
 
@@ -325,10 +325,12 @@ library/
 ├── backgrounds/bg_classroom_sunset/   背景（16:9）
 │   ├── meta.json
 │   └── bg_classroom_sunset.jpg
-├── sprites/nanase/                    立绘是「角色包」，一整套差分
+├── characters/nanase/                 角色包：一张角色卡（立绘可有可无）
 │   ├── meta.json
 │   ├── neutral.png
 │   └── smile.png
+├── characters/aoi/                    纯角色卡：没有立绘也能成条目
+│   └── meta.json
 ├── bgm/bgm_bittersweet/               BGM
 │   ├── meta.json
 │   └── bgm_bittersweet.mp3
@@ -337,10 +339,13 @@ library/
     └── sfx_door_knock.ogg
 ```
 
-- 类别目录就是 `backgrounds` / `cg` / `sprites` / `bgm` / `sfx`，与剧目素材目录同名
+- 类别目录就是 `backgrounds` / `cg` / `characters` / `bgm` / `sfx`
 - `meta.json` **可缺省**：没有它也能罗列，标题回退成 id、描述留空。但要让剧作家看得懂、让搜索搜得到，就补一份
 - 背景 / CG / BGM / 音效一个条目一个文件（多放了会只取第一个，并在条目上列出「其余未使用」的告警）
-- 立绘包：`meta.expressions` 记「表情名 → 文件 + 说明」，导入时自动写进 `play.json` 的角色卡
+- 角色包（`characters/`）：`meta.character` 是角色卡（`name` / `persona` / `voice` / `voiceId`），导入时写进 `play.json`；`meta.expressions` 记「差分名 → 文件 + 说明」，导入时自动写进该角色的 `sprites` 映射
+  - **立绘是可选的**：一个只有 `meta.character` 的目录就是一张角色卡，先定人设、图后面再画
+  - `meta.character.protagonist: true` 标为玩家角色，主角卡的「从资源库导入」只列这些条目
+  - 目录里的图不写 `expressions` 也能导——按文件名当差分名
 
 ### meta.json
 
@@ -378,14 +383,17 @@ library/
 
 素材页右上角「从资源库导入」打开浏览面板：按类别切换、关键词搜索（匹配 id / 标题 / 描述 / 标签 / 情绪 / 场景）、图片点开灯箱、音频就地试听，每条一个「导入」按钮（已导入的打勾，重复导入显示「覆盖」）。导入完立刻出现在剧目素材列表里，并带上刚写进去的描述。
 
+角色卡与主角卡各有一个自己的「从资源库导入」入口（角色卡那处顺带管立绘上传与差分映射），两者共用同一个浏览面板——主角卡入口只列 `protagonist: true` 的角色条目，且**只导角色卡不导立绘**（主角在舞台上没有立绘位，图片复制过去没人引用）。
+
 **导入是复制，不是引用。** 剧目包要能导出、素材静态服务零改动、你把资源库目录删了老剧照样开演——代价是同一个背景在几部剧里存几份。导入会：
 
-- 把文件复制到 `assets/<kind>/`（立绘包复制到 `assets/sprites/<id>/`），同名 stem 的其它扩展名文件先清掉
+- 把文件复制到 `assets/<kind>/`（角色立绘复制到 `assets/sprites/<id>/`），同名 stem 的其它扩展名文件先清掉
 - 把资源库的元数据写进 `assets/manifest.json`（剧目里手写的补充说明不会被冲掉）
-- 立绘包顺带把差分写进 `play.json` 的角色卡；角色不存在就按 `character` 新建一张卡
+- 角色卡写进 `play.json`：**库里写了什么字段就覆盖什么字段，没写的保留剧目侧手改的**（`name` / `persona` / `voice` / `voiceId`）；角色不存在就新建一张
+- 条目里带立绘就一并复制并登记差分映射；没有立绘也照常导（只写角色卡）；只有图没有卡的条目按目录名建一张空壳卡，别让差分映射无处安放
 - 触发 `playhouse.reload`——**保存即生效**，与素材上传同一条路
 
-工坊对话里也能干同样的事，它有两个专门工具：`list_library`（按类别过滤 + 关键词搜索，结果有上限，附总数与告警）与 `import_asset`（立绘包可只导部分差分）。回执会说明落到哪些路径、`play.json` 变没变、剧本里该怎么引用。
+工坊对话里也能干同样的事，它有两个专门工具：`list_library`（按类别过滤 + 关键词搜索，结果有上限，附总数与告警）与 `import_asset`（角色包可只导部分差分，`target: "protagonist"` 写主角卡）。回执会说明落到哪些路径、`play.json` 变没变、剧本里该怎么引用。
 
 ### 音乐与音效怎么被编排
 
@@ -402,11 +410,11 @@ library/
 
 `library/` 里已经预置了一批可直接用的种子素材，全部是许可清晰可再分发的：
 
-- **背景 5 张**：本项目用 flow2api 生成的二次元 16:9 空景（黄昏教室 / 放学走廊 / 天台 / 雨夜窗边 / 樱花街道）
-- **立绘 1 套**（`sprites/nanase/`）：同一角色的四张表情差分（neutral / smile / worried / surprised），由项目抠底管线落成透明 PNG
-- **BGM / 音效**：来自 OpenGameArt（CC0）、incompetech（CC BY 4.0）、Wikimedia Commons（PD/CC0），逐条转码到浏览器能直接播的格式，出处与署名写在各自的 `meta.json` 里
+- **背景 384 张**：Uncle Mugen（anime 赛璐璐 / 3D 渲染混合风，1920×1080 WebP，教室 / 礼堂 / 咖啡厅 / 街道 / 海边等，多数自带 day-evening-night 变体）、Pandita Studio（教室 / 走廊 / 食堂 × 4 时段，4K PNG），以及本项目用 flow2api 生成的少量二次元空景
+- **角色 11 个**（`characters/<id>/`）：7 个带角色卡（其中 `aoi` 标了 `protagonist`，零媒体、只有人设），4 个是纯立绘包（breezy 系列没有 `meta.character`，导入时按目录名建卡再挂差分）；`nanase` 一套四张表情差分由项目抠底管线落成透明 PNG
+- **BGM 20 首 / 音效 33 条**：来自 OpenGameArt（CC0）、incompetech（CC BY 4.0）、Wikimedia Commons（PD/CC0），逐条转码到浏览器能直接播的格式，出处与署名写在各自的 `meta.json` 里
 
-来源调研与逐条许可见 `docs/features/260930-asset-library/seed-sources.research.md`。
+来源调研与逐条许可见 `docs/features/260930-asset-library/seed-sources.research.md`，新增素材的筛选记录见 `docs/features/260930-asset-library/galgame-asset-sources.research.md`。
 
 > ⚠️ 素材目录进 git 等于**把素材原文件本身再分发**，这比「可商用」严格得多。日系素材站（魔王魂、効果音ラボ、OpenTracks 旧 DOVA 等）的条款大多只授权使用、禁止再配布，所以不在清单里。要加自己的素材时，同样先确认许可允许再分发。
 
@@ -436,13 +444,16 @@ library/
 plays/<id>/memory/
 ├── always/
 │   ├── craft.md         # 创作口径：剧作家每一轮怎么写（工坊「创作口径」页编辑的就是它，可留空）
-│   └── premise.md       # 世界观前提（留空则用 play.json 的 premise）
+│   └── premise.md       # 世界观前提（唯一真相源；**留空则开不了演**）
 ├── index/               # 记忆索引：标题列表每轮注入，剧作家按需读详情
-│   ├── locations/       # 地点卡
-│   ├── lore/            # 设定/背景卡
-│   └── arcs/            # 纪元前情提要卡（长会话自动压缩产物，运行时不进 git）
+│   ├── locations/       # 地点卡（建议的分类，非强制）
+│   ├── lore/            # 设定/背景卡（同上；子目录可以任意加，嵌套也行）
+│   └── 旧约定.md          # 顶层卡也行，不必分类
+├── arcs/                # 纪元前情提要卡（引擎自动产物，运行时不进 git，别手工放）
 └── archive/             # 逐轮历史切片（引擎自动写入，检索式召回，不进 git）
 ```
+
+`index/` 下的子目录名会作为 `[分类]` 标在提示词的索引行里（`locations/` 放地点、`lore/` 放设定是建议的分类方式，不强制），嵌套多深都能读。`arcs/` 不在 `index/` 里：它由引擎生成，文件名就是路线快照引用的 id，手工放东西进去会绕过按分支过滤。
 
 `arcs/` 无需手工维护：对话体涨到窗口预算（见上「长会话与纪元压缩」）时自动生成一张卡，记录该纪元发生了什么。它是**路线级**记忆——分岔回到早期分支时，不会读到那条分支上尚未发生的纪元摘要。
 

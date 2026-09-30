@@ -68,14 +68,17 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage
       return;
     }
     stageConnections.delete(playId);
-    // 最后一个观众离场：没人能消费 audio_ready 了，停合成（重连时客户端会重发 enabled 同步回来）
-    void playhouse.get(playId).then((runtime) => runtime.orchestrator.setTtsState({ enabled: false }));
+    // 最后一个观众离场：没人能消费 audio_ready 了，停合成（重连时客户端会重发 enabled 同步回来）。
+    // 用 peek 不用 get：get 会懒加载，凭空把 runtime 拉回来常驻一份。
+    playhouse.peek(playId)?.orchestrator.setTtsState({ enabled: false });
   };
   ws.on("close", drop);
   ws.on("error", drop);
 
   void (async () => {
-    const runtime = await playhouse.get(playId);
+    // 舞台连上 = 玩家要看戏，runtime 必须挂在真实的故事树上（没有就先建一棵）；
+    // 工坊连接只是逛，不该凭空多出一个周目。
+    const runtime = await (stage ? playhouse.stage(playId) : playhouse.get(playId));
     // runtime 就绪前就断开了：不注册，否则残留 sender 会让「最后一个观众」永远判不出来
     if (dropped) return;
     registered = playhouse.clientsFor(playId);
@@ -88,7 +91,7 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage
 
   async function dispatch(msg: ClientMessage): Promise<void> {
     // 每次现查：runtime 重建（配置保存 reload / 切档 switchSave）后自动路由到新实例
-    const current = await playhouse.get(playId);
+    const current = await (stage ? playhouse.stage(playId) : playhouse.get(playId));
     await routeMessage(current, sender, msg);
   }
 }

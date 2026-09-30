@@ -88,10 +88,10 @@ describe("AssetLibrary：扫描本地资源库目录", () => {
   });
 
   it("立绘差分指向不存在的文件时提前告警", async () => {
-    await makeEntry(root, "sprites", "mio", { "neutral.png": "x" }, {
+    await makeEntry(root, "characters", "mio", { "neutral.png": "x" }, {
       expressions: { neutral: { file: "neutral.png" }, sad: { file: "sad.png" } },
     });
-    const entry = await library.entry("sprites", "mio");
+    const entry = await library.entry("characters", "mio");
     expect(entry!.warnings?.[0]).toBe("差分 sad 指向的 sad.png 不在目录里");
   });
 
@@ -184,11 +184,11 @@ describe("importFromLibrary：资源库 → 剧目", () => {
   });
 
   it("立绘包：落 sprites/<id>/ 并把差分写进角色卡", async () => {
-    await makeEntry(libRoot, "sprites", "mio", { "neutral.png": "n", "smile.png": "s" }, {
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "smile.png": "s" }, {
       character: { name: "澪", persona: "元气少女" },
       expressions: { neutral: { file: "neutral.png" }, smile: { file: "smile.png", description: "笑" } },
     });
-    const result = await importFromLibrary(library, plays.store("p1"), { kind: "sprites", entryId: "mio" });
+    const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
     expect(result.files).toEqual(["assets/sprites/mio/neutral.png", "assets/sprites/mio/smile.png"]);
     expect(result.characters).toEqual(["mio"]);
     expect(result.manifestKeys).toEqual(["mio/neutral", "mio/smile"]);
@@ -196,6 +196,62 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     expect(play.characters[0]).toMatchObject({ id: "mio", name: "澪", sprites: { neutral: "neutral.png", smile: "smile.png" } });
     const manifest = JSON.parse(await readFile(join(playsRoot, "p1", "assets", "manifest.json"), "utf8"));
     expect(manifest["mio/smile"]).toMatchObject({ description: "笑" });
+  });
+
+  it("纯角色卡：没有立绘也能导入（先定人设、图后面再画）", async () => {
+    await makeEntry(libRoot, "characters", "yuzuki", {}, {
+      character: { name: "柚月", persona: "沉默的转学生", voice: "短句", voiceId: "a".repeat(32) },
+    });
+    const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "yuzuki" });
+    expect(result.files).toEqual([]);
+    expect(result.characters).toEqual(["yuzuki"]);
+    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
+    expect(play.characters[0]).toMatchObject({ id: "yuzuki", name: "柚月", voice: "短句", voiceId: "a".repeat(32) });
+  });
+
+  it("导入已有角色：库里写了什么覆盖什么，没写的字段留住剧目侧手改", async () => {
+    const store = plays.store("p1");
+    await writeFile(
+      join(playsRoot, "p1", "play.json"),
+      JSON.stringify({
+        id: "p1",
+        title: "覆盖",
+        characters: [{ id: "yuzuki", name: "旧名", persona: "剧目里手写的补充", voice: "旧语气" }],
+        opening: "（开始）",
+        initialScene: "s",
+      }),
+    );
+    // meta 只写了 name 与 persona：voice 没写，剧目侧那一条得原样留下
+    await makeEntry(libRoot, "characters", "yuzuki", {}, { character: { name: "新月", persona: "库里的版本" } });
+    await importFromLibrary(library, store, { kind: "characters", entryId: "yuzuki" });
+    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
+    expect(play.characters[0]).toMatchObject({ name: "新月", persona: "库里的版本", voice: "旧语气" });
+  });
+
+  it("target=protagonist 写主角卡，不动角色列表", async () => {
+    await makeEntry(libRoot, "characters", "rio", {}, { character: { name: "理央", persona: "玩家扮演" } });
+    const store = plays.store("p1");
+    await writeFile(
+      join(playsRoot, "p1", "play.json"),
+      JSON.stringify({ id: "p1", title: "T", characters: [], opening: "（开始）", initialScene: "s" }),
+    );
+    const result = await importFromLibrary(library, store, { kind: "characters", entryId: "rio", target: "protagonist" });
+    expect(result.protagonist).toBe(true);
+    expect(result.characters).toEqual([]);
+    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
+    expect(play.protagonist).toEqual({ name: "理央", persona: "玩家扮演" });
+    expect(play.characters).toEqual([]);
+  });
+
+  it("target=protagonist 不复制立绘：主角在舞台上没有立绘位，复制过去就是没人引用的孤儿文件", async () => {
+    await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n", "smile.png": "s" }, {
+      character: { name: "理央", persona: "玩家扮演" },
+      expressions: { neutral: { file: "neutral.png" }, smile: { file: "smile.png" } },
+    });
+    const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "rio", target: "protagonist" });
+    expect(result.files).toEqual([]);
+    expect(result.manifestKeys).toEqual([]);
+    expect(existsSync(join(playsRoot, "p1", "assets", "sprites", "rio"))).toBe(false);
   });
 
   it("只导选中的差分，且不冲掉角色卡里已有的其它差分", async () => {
@@ -212,9 +268,9 @@ describe("importFromLibrary：资源库 → 剧目", () => {
         "assets/sprites/mio/happy.png": "已有",
       }),
     );
-    await makeEntry(libRoot, "sprites", "mio", { "neutral.png": "n", "sad.png": "s" });
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "sad.png": "s" });
     const store = plays.store("p2");
-    await importFromLibrary(library, store, { kind: "sprites", entryId: "mio", expressions: ["sad"] });
+    await importFromLibrary(library, store, { kind: "characters", entryId: "mio", expressions: ["sad"] });
     const play = JSON.parse(await readFile(join(playsRoot, "p2", "play.json"), "utf8"));
     expect(play.characters[0].sprites).toEqual({ happy: "happy.png", sad: "sad.png" });
     expect(existsSync(join(playsRoot, "p2", "assets", "sprites", "mio", "happy.png"))).toBe(true);
@@ -262,23 +318,23 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
   });
 
   it("并发导两个角色包：两份差分映射都得在（各读旧配置会互相冲掉）", async () => {
-    await makeEntry(libRoot, "sprites", "mio", { "neutral.png": "n" });
-    await makeEntry(libRoot, "sprites", "rio", { "neutral.png": "n" });
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" });
+    await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n" });
     // 刻意各调一次 plays.store()：真实 REST 路径就是这样，每个请求各持一份新实例。
     // 复用同一个 store 变量会让锁的 key 恰好对上，把串行假象测出来。
     await Promise.all([
-      importFromLibrary(library, plays.store("p1"), { kind: "sprites", entryId: "mio" }),
-      importFromLibrary(library, plays.store("p1"), { kind: "sprites", entryId: "rio" }),
+      importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" }),
+      importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "rio" }),
     ]);
     const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
     expect(play.characters.map((c: { id: string }) => c.id).sort()).toEqual(["mio", "rio"]);
   });
 
   it("同一个包分两次导不同差分：后一次不能把前一次的差分冲掉", async () => {
-    await makeEntry(libRoot, "sprites", "mio", { "neutral.png": "n", "smile.png": "s", "sad.png": "d" });
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "smile.png": "s", "sad.png": "d" });
     await Promise.all([
-      importFromLibrary(library, plays.store("p1"), { kind: "sprites", entryId: "mio", expressions: ["neutral", "smile"] }),
-      importFromLibrary(library, plays.store("p1"), { kind: "sprites", entryId: "mio", expressions: ["sad"] }),
+      importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio", expressions: ["neutral", "smile"] }),
+      importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio", expressions: ["sad"] }),
     ]);
     const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
     expect(play.characters[0].sprites).toMatchObject({ neutral: "neutral.png", smile: "smile.png", sad: "sad.png" });
@@ -305,8 +361,8 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
   });
 
   it("导入要报出改过的文本：工坊据此给撤销条", async () => {
-    await makeEntry(libRoot, "sprites", "mio", { "neutral.png": "n" });
-    const result = await importFromLibrary(library, plays.store("p1"), { kind: "sprites", entryId: "mio" });
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" });
+    const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
     const paths = result.writes.map((w) => w.path).sort();
     expect(paths).toEqual(["assets/manifest.json", "play.json"]);
     for (const w of result.writes) {

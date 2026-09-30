@@ -17,7 +17,7 @@ function zipOf(files: Record<string, string | Uint8Array>): Buffer {
 }
 
 const PLAY_JSON = (id: string): string =>
-  JSON.stringify({ id, title: "T", premise: "x", characters: [], opening: "（开始）", initialScene: "s" });
+  JSON.stringify({ id, title: "T", characters: [], opening: "（开始）", initialScene: "s" });
 
 describe("PlayLibrary 剧目包导入与删除", () => {
   let root: string;
@@ -74,7 +74,8 @@ describe("PlayLibrary 剧目包导入与删除", () => {
   it("就绪门只看 premise：没有图照样 ready（工坊出图是后话）", async () => {
     await library.createEmpty("pic", "图不多");
     const store = library.store("pic");
-    await writeFile(join(root, "pic", "play.json"), PLAY_JSON("pic").replace('"premise":"x"', '"premise":"有前提"'));
+    await writeFile(join(root, "pic", "play.json"), PLAY_JSON("pic"));
+    await store.savePremise("黄昏的走廊。\n");
     const readiness = await store.readiness();
     expect(readiness.characterSprites).toBe(false);
     expect(readiness.background).toBe(false);
@@ -84,13 +85,29 @@ describe("PlayLibrary 剧目包导入与删除", () => {
 
   it("play.json 留空但写了 memory/always/premise.md 也算就绪", async () => {
     await library.createEmpty("mem", "记忆卡");
-    await writeFile(join(root, "mem", "play.json"), PLAY_JSON("mem").replace('"premise":"x"', '"premise":""'));
+    await writeFile(join(root, "mem", "play.json"), PLAY_JSON("mem"));
     const store = library.store("mem");
+    // premise 已从 play.json 移出：唯一真相源是 memory/always/premise.md，文件不存在就是缺
     expect((await store.readiness()).premise).toBe(false);
+    expect(await store.premise()).toBe("");
 
-    await mkdir(join(root, "mem", "memory", "always"), { recursive: true });
-    await writeFile(join(root, "mem", "memory", "always", "premise.md"), "# 前提\n黄昏的走廊。\n");
+    await store.savePremise("# 前提\n黄昏的走廊。\n");
     expect((await store.readiness()).premise).toBe(true);
+    expect(await store.premise()).toContain("黄昏");
+  });
+
+  it("旧剧目：前提还躺在 play.json 里也认（否则就绪门直接拦死用户的剧）", async () => {
+    await library.createEmpty("old", "旧剧目");
+    await writeFile(
+      join(root, "old", "play.json"),
+      JSON.stringify({ id: "old", title: "T", premise: "黄昏的走廊。", characters: [], opening: "（开始）", initialScene: "s" }),
+    );
+    const store = library.store("old");
+    expect(await store.premise()).toBe("黄昏的走廊。");
+    expect((await store.readiness()).premise).toBe(true);
+    // 用户把前提存进 memory 之后，以 memory 为准
+    await store.savePremise("新写的前提。\n");
+    expect(await store.premise()).toBe("新写的前提。\n");
   });
 
   it("立绘清单排序稳定（素材页每次打开顺序一致）", async () => {

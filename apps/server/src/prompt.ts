@@ -123,14 +123,15 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       : "",
   ].join("");
 
-  const premise = memory?.premise.trim() || play.premise;
+  // 世界观前提的唯一真相源是 memory/always/premise.md：没有它就没有 A 区，剧作家无从下手
+  const premise = memory?.premise.trim() ?? "";
   // 创作口径：外置到 memory/always/craft.md（工坊与用户共编），缺失/空则回退默认。
   // 原样注入——文件自带「# 创作口径」标题，不再套一层壳。
   const craftSection = `\n${(memory?.craft.trim() || DEFAULT_CRAFT).trim()}\n`;
   const cards = memory?.visibleContext(ctx.arcIds ?? []) ?? [];
   const indexSection =
     cards.length > 0
-      ? `\n# 记忆索引（按需查详情）\n\n${cards.map((c) => `- [${c.layer}] ${c.name}：${c.summary}`).join("\n")}\n\n需要某条完整内容时调用 read_memory_detail 工具（传名称）。历史往事用 search_archive 检索。\n`
+      ? `\n# 记忆索引（按需查详情）\n\n${cards.map((c) => `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}：${c.summary}`).join("\n")}\n\n需要某条完整内容时调用 read_memory_detail 工具（传名称）。历史往事用 search_archive 检索。\n`
       : "";
 
   return `你是一部视觉小说的剧作家（playwriter），实时为一部正在"直播"的游戏写剧本。

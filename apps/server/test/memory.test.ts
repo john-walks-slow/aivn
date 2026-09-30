@@ -8,6 +8,7 @@ import { PlayStore } from "../src/store.js";
 
 const CARD: IndexCard = {
   layer: "lore",
+  arc: false,
   name: "旧校舍拆除",
   summary: "旧校舍将在文化祭后拆除。",
   detail: "# 旧校舍拆除\n旧校舍将在文化祭后拆除，具体日期未定。\n",
@@ -50,7 +51,56 @@ describe("PlayMemory", () => {
     expect(memory.cards[0]!.summary).toBe("旧校舍将在文化祭后拆除，具体日期未定。");
     expect(memory.readCard("旧校舍拆除")).toContain("具体日期未定");
     expect(memory.readCard("旧校舍拆除.md")).toContain("具体日期未定"); // 文件名亦可
+    expect(memory.readCard("lore/旧校舍拆除")).toContain("具体日期未定"); // 相对 index/ 的路径亦可
     expect(memory.readCard("不存在")).toBeNull();
+  });
+
+  it("load：index 收任意子目录（含多层嵌套），layer 是相对 index/ 的路径", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stage-memory-"));
+    await mkdir(join(dir, "memory", "index", "locations"), { recursive: true });
+    await mkdir(join(dir, "memory", "index", "lore", "结界"), { recursive: true });
+    await writeFile(join(dir, "memory", "index", "旧约定.md"), "# 旧约定\n顶层卡不必分类。\n", "utf8");
+    await writeFile(join(dir, "memory", "index", "locations", "旧校舍.md"), "# 旧校舍\n四层走廊。\n", "utf8");
+    await writeFile(join(dir, "memory", "index", "lore", "结界", "代价.md"), "# 代价\n每破一次结界折寿一年。\n", "utf8");
+    // arcs 在 index 之外：它的文件名是谱系快照引用的 arcId，不能跟用户卡混在一起
+    await mkdir(join(dir, "memory", "arcs"), { recursive: true });
+    await writeFile(join(dir, "memory", "arcs", "epoch-e1-1.md"), "# 第一纪元\n两人走到旧校舍。\n", "utf8");
+
+    const memory = await PlayMemory.load(new PlayStore(dir));
+
+    const byFile = new Map(memory.cards.map((c) => [c.file, c]));
+    expect([...byFile.keys()].sort()).toEqual(["epoch-e1-1", "locations/旧校舍", "lore/结界/代价", "旧约定"]);
+    expect(byFile.get("旧约定")!.layer).toBe(""); // 顶层卡没有分类
+    expect(byFile.get("locations/旧校舍")!.layer).toBe("locations");
+    expect(byFile.get("lore/结界/代价")!.layer).toBe("lore/结界");
+    expect(byFile.get("epoch-e1-1")!.layer).toBe("arcs");
+    // arcs 按分支过滤：不在这条分支上的纪元摘要一律不注入 A 区
+    expect(memory.visibleCards([]).map((c) => c.file)).toEqual(["locations/旧校舍", "lore/结界/代价", "旧约定"]);
+    expect(memory.visibleCards(["epoch-e1-1"]).map((c) => c.file)).toContain("epoch-e1-1");
+  });
+
+  it("用户自己建的 index/arcs/ 卡不被当成纪元卡过滤掉", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stage-memory-"));
+    await mkdir(join(dir, "memory", "index", "arcs"), { recursive: true });
+    // 目录名叫 arcs、文件名也是 arcId 形状，但它没有 arc 标记：这是剧目设定卡
+    await writeFile(join(dir, "memory", "index", "arcs", "prologue.md"), "# 序章设定\n故事开场就发生在结界里。\n", "utf8");
+    const memory = await PlayMemory.load(new PlayStore(dir));
+    const card = memory.cards[0]!;
+    expect(card.layer).toBe("arcs");
+    expect(card.arc).toBe(false);
+    // 不在当前分支上也得看得见——否则用户的设定卡会在 A 区里凭空消失
+    expect(memory.visibleCards([]).map((c) => c.file)).toEqual(["arcs/prologue"]);
+  });
+
+  it("卡没写 # 标题时用文件名，读详情认文件名/相对路径/标题三种写法", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stage-memory-"));
+    await mkdir(join(dir, "memory", "index", "locations"), { recursive: true });
+    await writeFile(join(dir, "memory", "index", "locations", "school.md"), "没有标题行，只有正文。\n", "utf8");
+    const memory = await PlayMemory.load(new PlayStore(dir));
+    expect(memory.cards[0]!.name).toBe("school");
+    expect(memory.readCard("school")).toContain("没有标题行");
+    expect(memory.readCard("school.md")).toContain("没有标题行");
+    expect(memory.readCard("locations/school")).toContain("没有标题行");
   });
 
   it("search_archive：命中 + 防剧透（祖先链 ⊆ 当前分支路径）", () => {

@@ -9,8 +9,8 @@
  * 所以「描述」比标题重要，标签/情绪/时长是让它**按情境选**的辅助。
  */
 
-/** 素材类别（与剧目素材目录同名，少一层映射）：sprites 是角色包，其余是单文件条目。 */
-export const ASSET_KINDS = ["backgrounds", "cg", "sprites", "bgm", "sfx"] as const;
+/** 素材类别：characters 是角色包（角色卡 + 可选立绘），其余是单文件条目。 */
+export const ASSET_KINDS = ["backgrounds", "cg", "characters", "bgm", "sfx"] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
 
 /** 音频类别：带时长/情绪的那一类。 */
@@ -35,6 +35,8 @@ export interface AssetCharacter {
   voice?: string;
   /** TTS 音色 id（play.json 的 voiceId）。 */
   voiceId?: string;
+  /** 玩家扮演的角色：导入时落 play.json 的 protagonist 而不是 characters 数组。 */
+  protagonist?: boolean;
 }
 
 export interface AssetMeta {
@@ -53,7 +55,7 @@ export interface AssetMeta {
   loop?: boolean;
   /** 建议默认音量（0–1）。 */
   volume?: number;
-  /** 立绘包的角色卡原料：导入时角色不存在就按它建卡。 */
+  /** 角色包的角色卡原料：导入时按它建卡或更新同 id 的角色（protagonist 则落主角卡）。 */
   character?: AssetCharacter;
   /** 立绘差分表：表情名 → 文件与画面说明。 */
   expressions?: Record<string, SpriteExpression>;
@@ -72,7 +74,7 @@ export interface LibraryEntry {
   title: string;
   description: string;
   meta: AssetMeta;
-  /** sprites 是整套差分，其余类型是单文件（多出来的会被列进 warnings）。 */
+  /** characters 可以是整套立绘（也可以一张图都没有——纯角色卡条目），其余类型是单文件。 */
   files: LibraryFile[];
   /** 全部分文件的字节和。 */
   size: number;
@@ -122,6 +124,7 @@ export function parseAssetMeta(raw: unknown): AssetMeta {
       const v = text(c[key]);
       if (v) character[key] = v;
     }
+    if (c.protagonist === true) character.protagonist = true;
     if (Object.keys(character).length > 0) meta.character = character;
   }
   if (data.expressions && typeof data.expressions === "object" && !Array.isArray(data.expressions)) {

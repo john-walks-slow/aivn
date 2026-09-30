@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../ui/Icon.js";
 import { stamp } from "../ui/stamp.js";
 import type { AssetIndex } from "./assets.js";
@@ -11,14 +11,34 @@ interface CanvasProps {
   ops: LineageOps;
   /** 演出进行中：结构性操作会腰斩这一轮，按钮置灰。 */
   busy: boolean;
-  onBack: () => void;
   names: Readonly<Record<string, string>>;
   /** 素材索引：卡片的背景氛围从这儿取，取不到就是纯文字卡。 */
   index: AssetIndex | null;
+  /**
+   * 把镜头操作交给外层（侧栏的「工具」段）。画布本身不再浮一层按钮：
+   * 导航与镜头都属于侧栏，画布只管把整片宽高让给树。
+   */
+  onControls: (controls: RouteControls) => void;
+}
+
+/** 侧栏「路线工具」段要用的镜头操作。 */
+export interface RouteControls {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  fitAll: () => void;
+  /** 送最新一拍到视野中央（世界线的叶尖）。 */
+  toLatest: () => void;
+  /** 回到故事的开头。 */
+  toRoot: () => void;
+  dir: RouteDir;
+  setDir: (dir: RouteDir) => void;
+  canGoLatest: boolean;
 }
 
 /** 再小也认得出字：低于这个倍数就宁可让玩家横向拖。 */
 const MIN_ZOOM = 0.55;
+/** 走过这么多像素才算拖动（见 onPointerDown 的注释：别把点按吃成拖动）。 */
+const DRAG_SLOP = 4;
 
 /** 镜头：位移 + 缩放。滚轮缩放、拖拽平移、「看全树」把整棵树收进视野。 */
 interface Camera {
@@ -27,19 +47,32 @@ interface Camera {
   k: number;
 }
 
-export function RouteCanvas({ cards, ops, busy, onBack, names, index }: CanvasProps) {
+interface Drag {
+  px: number;
+  py: number;
+  cam: Camera;
+  /** 越过阈值了吗：没越过就还没抢走指针，click 还得留给卡片里的动词。 */
+  armed: boolean;
+}
+
+export function RouteCanvas({ cards, ops, busy, names, index, onControls }: CanvasProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{ px: number; py: number; cam: Camera } | null>(null);
+  const dragRef = useRef<Drag | null>(null);
   /** 玩家自己动过镜头（拖/缩/看全树）吗——动过就不再自动取景抢镜头。 */
   const manual = useRef(false);
   const [camera, setCamera] = useState<Camera>({ x: 24, y: 24, k: 1 });
-  const [dir, setDir] = useState<RouteDir>("horizontal");
+  /** 玩家点名要的方向；null = 跟着窗口走（宽屏横读、竖屏纵读）。 */
+  const [pinned, setPinned] = useState<RouteDir | null>(null);
+  const [auto, setAuto] = useState<RouteDir>("horizontal");
+  const dir = pinned ?? auto;
   const layout = layoutRoute(cards, dir);
   const { placed, edges, width, height } = layout;
 
-  // 方向看窗口：宽屏横着读时间、竖屏从上往下
+  // 方向看窗口：宽屏横着读时间、竖屏从上往下。玩家点名过就不再抢。
   useEffect(() => {
-    const sync = (): void => setDir(window.innerWidth >= window.innerHeight ? "horizontal" : "vertical");
+    if (pinned) return;
+    const sync = (): void =>
+      setAuto(window.innerWidth >= window.innerHeight ? "horizontal" : "vertical");
     sync();
     window.addEventListener("resize", sync);
     window.addEventListener("orientationchange", sync);
@@ -47,7 +80,7 @@ export function RouteCanvas({ cards, ops, busy, onBack, names, index }: CanvasPr
       window.removeEventListener("resize", sync);
       window.removeEventListener("orientationchange", sync);
     };
-  }, []);
+  }, [pinned]);
 
   // 打开路线时的取景：贴着根开始读。基本塞得下就整棵塞下（差个边角就露半张卡片很难看），
   // 塞不下就只按摊开方向收，宁可超屏让人拖，也不把字缩到看不清。
@@ -106,22 +139,44 @@ export function RouteCanvas({ cards, ops, busy, onBack, names, index }: CanvasPr
     });
   }, []);
 
+  // 拖动阈值：手指/指针走过它才算拖动。
+  // 低于阈值就松手的那一下必须留给 click —— 卡片里的「回到这里」「由此分岔」和
+  // 侧栏浮层上的按键都在这块画布里，pointerdown 就抢走捕获会把它们的 click 一起吃掉。
   const onPointerDown = (e: React.PointerEvent): void => {
     if (e.button !== 0) return;
-    dragRef.current = { px: e.clientX, py: e.clientY, cam: camera };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { px: e.clientX, py: e.clientY, cam: camera, armed: false };
   };
   const onPointerMove = (e: React.PointerEvent): void => {
     const drag = dragRef.current;
     if (!drag) return;
-    manual.current = true;
+    if (!drag.armed) {
+      if (Math.hypot(e.clientX - drag.px, e.clientY - drag.py) < DRAG_SLOP) return;
+      drag.armed = true;
+      manual.current = true;
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
     setCamera({ ...drag.cam, x: drag.cam.x + (e.clientX - drag.px), y: drag.cam.y + (e.clientY - drag.py) });
   };
   const endDrag = (): void => {
     dragRef.current = null;
   };
 
-  const zoomBy = (factor: number): void => {
+  // 松手可能发生在画布外（拖到窗口边缘松手、指针被系统截走），那时 pointerup
+  // 不会冒到画布上。挂在 window 上收尾，否则残留的 dragRef 会让「只是路过」的
+  // pointermove 继续平移画布。
+  useEffect(() => {
+    const release = (): void => {
+      dragRef.current = null;
+    };
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    return () => {
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+    };
+  }, []);
+
+  const zoomBy = useCallback((factor: number): void => {
     const box = frameRef.current?.getBoundingClientRect();
     if (!box) return;
     manual.current = true;
@@ -132,7 +187,7 @@ export function RouteCanvas({ cards, ops, busy, onBack, names, index }: CanvasPr
       const cy = box.height / 2;
       return { k, x: cx - (cx - cur.x) * ratio, y: cy - (cy - cur.y) * ratio };
     });
-  };
+  }, []);
 
   /** 把某一轮送到视野中央（「跳到最新」用）。 */
   const focusCard = useCallback(
@@ -140,6 +195,7 @@ export function RouteCanvas({ cards, ops, busy, onBack, names, index }: CanvasPr
       const target = placed.find((p) => p.card.id === card.id);
       const box = frameRef.current?.getBoundingClientRect();
       if (!target || !box) return;
+      manual.current = true;
       setCamera((cur) => ({
         k: cur.k,
         x: box.width / 2 - (target.x + NODE_W / 2) * cur.k,
@@ -153,9 +209,29 @@ export function RouteCanvas({ cards, ops, busy, onBack, names, index }: CanvasPr
   const jumpToLatest = useCallback(() => {
     const leaf = cards.find((c) => c.isLeaf);
     if (!leaf) return;
-    manual.current = true; // 玩家点名要去那儿，之后的视口变化别再把镜头拽回根
     focusCard(leaf);
   }, [cards, focusCard]);
+
+  const toRoot = useCallback(() => {
+    manual.current = true; // 玩家点名看开头，之后的视口变化别再抢镜头
+    frameFromRoot();
+  }, [frameFromRoot]);
+
+  const zoomIn = useCallback(() => zoomBy(1.15), [zoomBy]);
+  const zoomOut = useCallback(() => zoomBy(1 / 1.15), [zoomBy]);
+  const setDir = useCallback((next: RouteDir) => {
+    manual.current = true;
+    setPinned(next);
+  }, []);
+  const canGoLatest = cards.some((c) => c.isLeaf);
+
+  // 把手柄交给外层的侧栏。依赖全是稳定引用或原语值，对象身份稳定，
+  // 外层 setState 拿到同一个对象就不会再触发一轮渲染。
+  const controls = useMemo<RouteControls>(
+    () => ({ zoomIn, zoomOut, fitAll, toLatest: jumpToLatest, toRoot, dir, setDir, canGoLatest }),
+    [zoomIn, zoomOut, fitAll, jumpToLatest, toRoot, dir, setDir, canGoLatest],
+  );
+  useEffect(() => onControls(controls), [onControls, controls]);
 
   return (
     <div className="route-frame">
@@ -203,48 +279,15 @@ export function RouteCanvas({ cards, ops, busy, onBack, names, index }: CanvasPr
             />
           ))}
         </div>
-
-        {/* 画布占满整页：导航与镜头浮在它上面，不跟树抢版面 */}
-        <div className="route-overlay">
-          <div className="route-overlay-top">
-            <button className="ghost-btn icon-btn route-float" onClick={onBack} title="回舞台">
-              <Icon name="back" />
-            </button>
-            <span className="muted route-hint">
-              {dir === "horizontal" ? "从左到右是时间" : "从上到下是时间"} · 分岔点往下扇开 · 每张卡右下角就管这一段
-            </span>
-          </div>
-          <div className="route-overlay-bottom">
-            <div className="route-zoom" title="拖拽平移 · 滚轮缩放">
-              <button className="ghost-btn icon-btn" onClick={() => zoomBy(1.15)} title="放大">
-                <Icon name="zoomIn" />
-              </button>
-              <button className="ghost-btn icon-btn" onClick={() => zoomBy(1 / 1.15)} title="缩小">
-                <Icon name="zoomOut" />
-              </button>
-              <button className="ghost-btn icon-btn" onClick={fitAll} title="看全树">
-                <Icon name="expand" />
-              </button>
-              <button
-                className="ghost-btn icon-btn"
-                onClick={jumpToLatest}
-                disabled={!cards.some((c) => c.isLeaf)}
-                title="跳到最新"
-              >
-                <Icon name="locate" />
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
 }
 
 /**
- * 一张卡 = 这一轮：左上角落笔时刻、正文、左下角是谁说的，两个动词（跳转 / 分岔）长在卡里的右下角。
+ * 一张卡 = 这一轮：左上角落笔时刻、正文、左下角是谁说的，两个动词（回到这里 / 由此分岔）长在卡里的右下角。
  * 没有检视栏：想对哪一段动手指，就在那一段自己的卡上动手，不用先去点开它。
- * 跳转 = 把世界线挂到这张卡上，不生成内容；分岔 = 退到这张卡之前重写并重新生成。
+ * 回到这里 = 把世界线挂到这张卡上，不生成内容；由此分岔 = 退到这张卡之前重写并重新生成。
  */
 function Node({
   placed,
@@ -274,7 +317,7 @@ function Node({
   const hint = busy ? "剧作家正在写，暂时不能动这一段" : "";
 
   return (
-    <div className={cls} style={{ left: placed.x, top: placed.y, width: NODE_W, height: NODE_H }} title={text}>
+    <div className={cls} style={{ left: placed.x, top: placed.y, width: NODE_W, height: NODE_H }}>
       {bg && <img className="route-node-bg" src={bg} alt="" aria-hidden />}
       <span className="route-node-stamp">{stamp(card.at)}</span>
       <span className="route-node-text">{text}</span>
@@ -295,11 +338,11 @@ function Node({
             type="button"
             className="route-node-tool"
             disabled={busy}
-            title={hint || "从这一轮分岔：另开一条线，它之后的剧情留作旧分支"}
+            title={hint || "由此分岔：世界线移到这一段并留下标记，不重新生成；它之后原有的剧情留作旧分支"}
             onClick={() => ops.fork(card.id)}
           >
             <Icon name="fork" />
-            分岔
+            由此分岔
           </button>
         </span>
       </span>

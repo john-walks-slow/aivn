@@ -19,13 +19,16 @@ import {
  *
  * 一个条目 = 一个目录，目录名即素材 id。id 会原样成为剧目里的文件名主体，
  * 也就是剧本 `<scene bg="…">` 引用的那个名字，所以跨剧目导入后引用方式不变。
+ *
+ * `characters` 是唯一可以零媒体的类别：一个只有 `meta.character` 的目录就是一张角色卡，
+ * 立绘差分是它的可选附件——角色先定下来、图后面再画是常见的搭台顺序。
  */
 
 /** 各 kind 收哪些扩展名：放错地方的视频/压缩包不进清单，免得列表被垃圾塞满。 */
 const KIND_EXT: Record<AssetKind, ReadonlySet<string>> = {
   backgrounds: new Set([".png", ".jpg", ".jpeg", ".webp"]),
   cg: new Set([".png", ".jpg", ".jpeg", ".webp"]),
-  sprites: new Set([".png", ".webp"]),
+  characters: new Set([".png", ".webp"]),
   bgm: new Set([".mp3", ".ogg", ".m4a", ".wav", ".flac"]),
   sfx: new Set([".mp3", ".ogg", ".m4a", ".wav", ".flac"]),
 };
@@ -78,20 +81,20 @@ export class AssetLibrary {
     }
   }
 
-  /** 扫描单个条目；目录不存在或缺素材文件返回 null（空目录不算条目，免得列一堆废卡）。 */
+  /** 扫描单个条目。空目录不算条目——但 characters 有一张角色卡就成立，立绘是可选附件。 */
   async entry(kind: AssetKind, id: string): Promise<LibraryEntry | null> {
     if (!ENTRY_ID.test(id) || id.includes("..")) return null;
     const warnings: string[] = [];
     const all = await this.mediaFiles(kind, id);
-    if (all.length === 0) return null;
+    const meta = parseAssetMeta(await this.readMeta(kind, id, warnings));
+    if (all.length === 0 && !meta.character) return null;
     // 单文件类别只认第一个（按名字排序）：多放的文件不是用来猜的，列出来让人自己清
-    const files = kind === "sprites" ? all : all.slice(0, 1);
-    if (kind !== "sprites" && all.length > 1) {
+    const files = kind === "characters" ? all : all.slice(0, 1);
+    if (kind !== "characters" && all.length > 1) {
       warnings.push(`一个条目只取一个文件，已取 ${files[0]!.name}；其余 ${all.length - 1} 个未使用`);
     }
-    const meta = parseAssetMeta(await this.readMeta(kind, id, warnings));
     // 差分表里的文件名对不上目录实际内容时提前说：等到导入那一刻才发现就晚了
-    if (kind === "sprites" && meta.expressions) {
+    if (kind === "characters" && meta.expressions) {
       for (const [name, expr] of Object.entries(meta.expressions)) {
         if (!files.some((f) => f.name === expr.file)) {
           warnings.push(`差分 ${name} 指向的 ${expr.file} 不在目录里`);

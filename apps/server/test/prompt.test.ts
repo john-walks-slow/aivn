@@ -52,6 +52,33 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
     expect(prompt).toContain("不要再 preload_asset");
   });
 
+  it("记忆索引：有分类的带 [分类] 前缀，顶层卡不打空括号", () => {
+    const memory = new PlayMemory({
+      cards: [
+        { layer: "locations", name: "旧校舍", summary: "四层走廊", detail: "", file: "locations/旧校舍", arc: false },
+        { layer: "lore", name: "结界", summary: "折寿一年", detail: "", file: "lore/结界", arc: false },
+        { layer: "", name: "旧约定", summary: "顶层卡不必分类", detail: "", file: "旧约定", arc: false },
+      ],
+    });
+    const prompt = buildSystemPrompt({ play: PLAY, memory });
+    expect(prompt).toContain("- [locations] 旧校舍：四层走廊");
+    expect(prompt).toContain("- [lore] 结界：折寿一年");
+    // 顶层卡的 layer 是空串：打出来就是「- [] 」，丑且误导
+    expect(prompt).toContain("- 旧约定：顶层卡不必分类");
+    expect(prompt).not.toContain("- [] ");
+  });
+
+  it("纪元卡只在它所属的分支上出现（防剧透）", () => {
+    const memory = new PlayMemory({
+      cards: [
+        { layer: "arcs", name: "第一纪元", summary: "两人走到旧校舍", detail: "", file: "epoch-e1-1", arc: true },
+        { layer: "locations", name: "旧校舍", summary: "四层走廊", detail: "", file: "locations/旧校舍", arc: false },
+      ],
+    });
+    expect(buildSystemPrompt({ play: PLAY, memory, arcIds: [] })).not.toContain("第一纪元");
+    expect(buildSystemPrompt({ play: PLAY, memory, arcIds: ["epoch-e1-1"] })).toContain("- [arcs] 第一纪元");
+  });
+
   it("没有描述表时清单退化为纯 id，行为与从前一致", () => {
     const prompt = buildSystemPrompt({ play: PLAY, assets: { backgrounds: ["bg_dusk.jpg"] } });
     expect(prompt).toContain("- bg_dusk\n");

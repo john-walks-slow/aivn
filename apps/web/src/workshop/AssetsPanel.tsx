@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AssetKind, AssetMeta, CharacterCard, PlayConfig } from "@stage-ai/core";
+import type { AssetKind, AssetMeta, CharacterCard, LibraryEntry, PlayConfig } from "@stage-ai/core";
 import { languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
 import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
@@ -21,9 +21,12 @@ export function AssetsPanel({ playId }: { playId: string }) {
   const [draft, setDraft] = useState<PlayConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [spriteChar, setSpriteChar] = useState("");
+  /** 世界观前提独立于 play.json（写 memory/always/premise.md），所以有自己的草稿态。 */
+  const [premise, setPremise] = useState("");
+  const [premiseDraft, setPremiseDraft] = useState("");
   const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null);
-  const [library, setLibrary] = useState(false);
+  /** 资源库导入的落点：null = 面板关闭，"" = 素材（无落点），"protagonist" = 主角卡，角色 id = 角色列表。 */
+  const [libraryInto, setLibraryInto] = useState<string | null>(null);
   const voices = useVoiceCatalog();
   /** 正在开音色库的角色下标（null = 面板关闭）。 */
   const [libraryChar, setLibraryChar] = useState<number | null>(null);
@@ -34,6 +37,8 @@ export function AssetsPanel({ playId }: { playId: string }) {
       .then((d) => {
         setDetail(d);
         setDraft(d.play);
+        setPremise(d.premise);
+        setPremiseDraft(d.premise);
       })
       .catch((e: Error) => setError(e.message));
     api.listAssets(playId).then(setAssets).catch(() => {});
@@ -51,11 +56,25 @@ export function AssetsPanel({ playId }: { playId: string }) {
 
   const save = (): void => {
     if (!draft) return;
-    api
-      .savePlay(draft)
+    // premise 落在 memory/always/premise.md，不随 play.json 走，但它就在这块面板里——
+    // 保存配置必须连它一起提交，否则 reload 会把手写的前提冲回服务端旧值
+    const work: Promise<unknown>[] = [api.savePlay(draft)];
+    if (premiseDraft !== premise) work.push(api.savePremise(playId, premiseDraft));
+    Promise.all(work)
       .then(() => {
         setSaved(true);
         reload();
+      })
+      .catch((e: Error) => setError(e.message));
+  };
+
+  /** 只改前提时的快捷口：与「保存配置」提交的是同一份内容。 */
+  const savePremiseOnly = (): void => {
+    api
+      .savePremise(playId, premiseDraft)
+      .then(() => {
+        setPremise(premiseDraft);
+        setSaved(true);
       })
       .catch((e: Error) => setError(e.message));
   };
@@ -96,7 +115,7 @@ export function AssetsPanel({ playId }: { playId: string }) {
       {readiness && (
         <div className="assets-pane-head">
           <span className={`badge ${readiness.ready ? "ok" : "warn"}`}>
-            {readiness.ready ? "就绪门：可开演" : "就绪门：未就绪"}
+            {readiness.ready ? "能开演" : "还不能开演"}
           </span>
         </div>
       )}
@@ -115,11 +134,21 @@ export function AssetsPanel({ playId }: { playId: string }) {
             <input value={draft.title} onChange={(e) => patch((p) => (p.title = e.target.value))} />
           </label>
           <label className="field">
-            <span>premise（世界与人物设定）</span>
+            <span>
+              premise（世界与人物设定）
+              <button
+                className="ghost-btn small"
+                disabled={premise === premiseDraft}
+                onClick={savePremiseOnly}
+              >
+                只存前提
+              </button>
+            </span>
             <textarea
               rows={4}
-              value={draft.premise}
-              onChange={(e) => patch((p) => (p.premise = e.target.value))}
+              placeholder="写进 memory/always/premise.md —— 剧作家每一拍都读它，空着则开不了演"
+              value={premiseDraft}
+              onChange={(e) => setPremiseDraft(e.target.value)}
             />
           </label>
           <label className="field">
@@ -170,6 +199,13 @@ export function AssetsPanel({ playId }: { playId: string }) {
             <p className="muted small">
               留空则「<Icon name="sparkles" size={12} /> 润色」走通用模式（只修顺语句，不改口吻）。
             </p>
+            <div className="row small">
+              <button className="ghost-btn" onClick={() => setLibraryInto("protagonist")} title="从资源库导入一张主角卡">
+                <span className="btn-icon">
+                  <Icon name="download" size={13} /> 从资源库导入
+                </span>
+              </button>
+            </div>
           </div>
 
           <h3>角色卡</h3>
@@ -180,7 +216,9 @@ export function AssetsPanel({ playId }: { playId: string }) {
               char={char}
               files={assets[`sprites/${char.id}`] ?? []}
               voices={voices}
-              onBrowseLibrary={() => setLibraryChar(i)}
+              onPickVoice={() => setLibraryChar(i)}
+              onBrowseLibrary={() => setLibraryInto(char.id)}
+              onUploadSprite={(file) => upload(`sprites/${char.id}`, file)}
               onChange={(fn) => patch((p) => fn(p.characters[i]!))}
               onRemove={() => patch((p) => p.characters.splice(i, 1))}
             />
@@ -211,7 +249,7 @@ export function AssetsPanel({ playId }: { playId: string }) {
       <section className="panel">
         <div className="assets-section-head">
           <h3>素材</h3>
-          <button className="ghost-btn" onClick={() => setLibrary(true)} title="从应用级资源库挑素材复制进本剧目">
+          <button className="ghost-btn" onClick={() => setLibraryInto("")} title="从应用级资源库挑素材复制进本剧目">
             <span className="btn-icon">
               <Icon name="download" size={14} /> 从资源库导入
             </span>
@@ -247,52 +285,30 @@ export function AssetsPanel({ playId }: { playId: string }) {
               </ul>
             </div>
           ))}
-
-          <div className="upload-cell">
-            <strong>sprites/&lt;角色id&gt;</strong>
-            <span className="row small">
-              <input
-                placeholder="角色 id"
-                value={spriteChar}
-                onChange={(e) => setSpriteChar(e.target.value)}
-                className="small-input"
-              />
-              <label className="btn-as-label small">
-                上传立绘
-                <input
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file && spriteChar.trim()) upload(`sprites/${spriteChar.trim()}`, file);
-                  }}
-                />
-              </label>
-            </span>
-            {spritesDirs.map((dir) => (
-              <ul key={dir} className="asset-list">
-                {(assets[dir] ?? []).map((name) => (
-                  <AssetRow
-                    key={name}
-                    playId={playId}
-                    dir={dir}
-                    name={name}
-                    label={`${dir}/${name}`}
-                    note={noteFor(dir, name)}
-                    onRemove={() => remove(dir, name)}
-                    onZoom={() => setZoom({ url: assetUrl(playId, dir, name), name: `${dir}/${name}` })}
-                  />
-                ))}
-              </ul>
-            ))}
-          </div>
         </div>
       </section>
 
       {zoom && <ImageLightbox url={zoom.url} name={zoom.name} onClose={() => setZoom(null)} />}
-      {library && (
-        <LibraryBrowser playId={playId} imported={isImported} onClose={() => setLibrary(false)} onImported={reload} />
+      {libraryInto !== null && (
+        <LibraryBrowser
+          playId={playId}
+          imported={(kind, id) =>
+            kind === "characters"
+              ? libraryInto === "protagonist"
+                ? Boolean(detail?.play.protagonist?.name || detail?.play.protagonist?.persona)
+                : (detail?.play.characters ?? []).some((c) => c.id === id)
+              : isImported(kind, id)
+          }
+          onClose={() => setLibraryInto(null)}
+          onImported={reload}
+          {...(libraryInto === "protagonist"
+            ? {
+                target: "protagonist" as const,
+                title: "从资源库导入主角卡",
+                filter: (e: LibraryEntry) => Boolean(e.meta.character?.protagonist),
+              }
+            : {})}
+        />
       )}
       {libraryChar !== null && draft && (
         <VoiceLibrary
@@ -369,7 +385,9 @@ function CharacterEditor({
   char,
   files,
   voices,
+  onPickVoice,
   onBrowseLibrary,
+  onUploadSprite,
   onChange,
   onRemove,
 }: {
@@ -377,7 +395,9 @@ function CharacterEditor({
   char: CharacterCard;
   files: string[];
   voices: VoiceCatalogState;
+  onPickVoice: () => void;
   onBrowseLibrary: () => void;
+  onUploadSprite: (file: File) => void;
   onChange: (fn: (char: CharacterCard) => void) => void;
   onRemove: () => void;
 }) {
@@ -450,7 +470,7 @@ function CharacterEditor({
         onChange={(e) => onChange((c) => (c.persona = e.target.value))}
       />
       <div className="voice-row">
-        <button className="ghost-btn voice-picker" onClick={onBrowseLibrary}>
+        <button className="ghost-btn voice-picker" onClick={onPickVoice}>
           音色：{voices.nameOf(char.voiceId)}
         </button>
         {char.voiceId && (
@@ -462,7 +482,7 @@ function CharacterEditor({
           {previewing ? "合成中…" : "试听"}
         </button>
       </div>
-      <p className="muted small">立绘差分映射（expression → 文件）——差分文件需先上传到 sprites/{char.id}/</p>
+      <p className="muted small">立绘差分映射（expression → 文件）——差分文件传在这里，会落到 sprites/{char.id}/</p>
       {rows.map((row) => (
         <div key={row.id} className="row small">
           <input
@@ -487,6 +507,28 @@ function CharacterEditor({
         </div>
       ))}
       <div className="row small">
+        <label className="btn-as-label small">
+          上传立绘
+          <input
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onUploadSprite(file);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <button
+          className="ghost-btn"
+          onClick={onBrowseLibrary}
+          title={`从资源库导入一个角色的角色卡与立绘（按条目的 id 新建或覆盖同 id 的角色，不是填这张卡）`}
+        >
+          <span className="btn-icon">
+            <Icon name="download" size={13} /> 从资源库导入
+          </span>
+        </button>
         <button className="ghost-btn" onClick={addRow}>
           <span className="btn-icon">
             <Icon name="plus" size={13} /> 添加映射

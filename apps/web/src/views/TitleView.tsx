@@ -3,7 +3,7 @@ import { Icon } from "../ui/Icon.js";
 import { api, readinessAdvice, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
 
-/** Title Screen：开始新周目（就绪门）/ 继续 / 周目 / 工坊 / 素材与配置 / 导出剧目包。 */
+/** Title Screen：开始新周目 / 继续 / 周目 / 工坊 / 素材与配置 / 导出剧目包。 */
 export function TitleView({ playId }: { playId: string }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [saves, setSaves] = useState<SaveInfo[]>([]);
@@ -67,7 +67,7 @@ export function TitleView({ playId }: { playId: string }) {
       {detail && (
         <div className="title-body">
           <h1>{detail.play.title}</h1>
-          <p className="title-premise">{detail.play.premise}</p>
+          <p className="title-premise">{detail.premise || "（故事前提待补）"}</p>
           <p className="muted small">
             {detail.play.characters.map((c) => c.name).join(" · ") || "（无角色）"}
           </p>
@@ -82,7 +82,11 @@ export function TitleView({ playId }: { playId: string }) {
               开始新周目
             </button>
             {current && (
-              <button onClick={() => navigate(`/play/${playId}/stage`)}>
+              <button
+                disabled={!readiness?.ready}
+                title={readiness?.ready ? "" : `缺：${missing.join("、")}`}
+                onClick={() => navigate(`/play/${playId}/stage`)}
+              >
                 继续（{current.name}）
               </button>
             )}
@@ -106,7 +110,7 @@ export function TitleView({ playId }: { playId: string }) {
 
           {!readiness?.ready && missing.length > 0 && (
             <p className="title-gate">
-              就绪门未过（缺：{missing.join("、")}）——请到
+              还不能开演：缺 {missing.join("、")}。请到
               <button className="link-btn" onClick={() => navigate(`/play/${playId}/workshop`)}>
                 工坊
               </button>

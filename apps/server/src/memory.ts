@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, extname, join, relative } from "node:path";
 import MiniSearch from "minisearch";
 import type { PlayStore } from "./store.js";
 
@@ -8,13 +8,18 @@ import type { PlayStore } from "./store.js";
  * 剧目记忆（D7 三层）：always（每轮注入）/ index（标题列表注入 + 详情按需读）/ archive（只可检索命中）。
  * 剧目级内容（craft/premise/index 卡）读自 memory/ 目录，随 runtime 重建即时生效；
  * 谱系级内容（state 文件、arcs 引用）走 LineageTree 快照，archive 切片落 events.jsonl。
+ *
+ * `index/` 下可以有任意子目录（`locations/` 放地点、`lore/` 放设定只是惯例，不是约束），
+ * 卡的 layer 就是相对 `index/` 的子目录路径。A 区里标出来是为了让剧作家知道这张卡属于哪一块。
+ * `arcs/` 在 index 之外：它是纪元压缩的机器产物，文件名就是谱系快照引用的 arcId，
+ * 跟用户可写的设定卡混在一个目录里，手改或手建会绕过按分支过滤的防剧透。
  */
 export class PlayMemory {
   /** always/craft.md（剧艺守则，可空——空则用系统提示词内置准则）。 */
   readonly craft: string;
-  /** always/premise.md（世界观前提，可空——空则回退 play.json premise）。 */
+  /** always/premise.md（世界观前提，缺文件即缺——就绪门与 A 区注入的唯一来源）。 */
   readonly premise: string;
-  /** index 卡（locations/lore/arcs 三层，标题+一句话摘要注入 A 区）。 */
+  /** index 卡（用户设定卡 + 纪元 arcs 卡，标题+一句话摘要注入 A 区）。 */
   readonly cards: IndexCard[];
   /** archive 切片文件（空 = 不落盘，纯内存检索——测试/无归档剧目）。 */
   private readonly archiveFile: string | null;
@@ -42,18 +47,19 @@ export class PlayMemory {
   }
 
   static async load(store: PlayStore): Promise<PlayMemory> {
-    const [craft, premise, cards, slices] = await Promise.all([
+    const [craft, premise, indexCards, arcCards, slices] = await Promise.all([
       readText(store.memoryDir("always", "craft.md")),
       readText(store.memoryDir("always", "premise.md")),
       loadCards(store),
+      loadArcs(store),
       loadArchive(store.memoryDir("archive", "events.jsonl")),
     ]);
     return new PlayMemory({
       craft,
       premise,
-      cards,
+      cards: [...indexCards, ...arcCards],
       archiveFile: store.memoryDir("archive", "events.jsonl"),
-      arcsDir: store.memoryDir("index", "arcs"),
+      arcsDir: store.memoryDir("arcs"),
       slices,
     });
   }
@@ -67,10 +73,13 @@ export class PlayMemory {
     }));
   }
 
-  /** 当前分支可见的 A 区 index 卡（arcs 按 ids 过滤——分岔回旧分支不得看到后世的章节摘要）。 */
+  /**
+   * 当前分支可见的 A 区卡（arcs 按 arcIds 过滤——分岔回旧分支不得看到后世的章节摘要）。
+   * 用户写的 index 卡一律可见：它们是剧目设定，不随分支变化。
+   */
   visibleCards(arcIds: readonly string[] = []): IndexCard[] {
     const allowed = new Set(arcIds);
-    return this.cards.filter((c) => c.layer !== "arcs" || allowed.has(c.file));
+    return this.cards.filter((c) => !c.arc || allowed.has(c.file));
   }
 
   /** 同上，但只给标题+摘要（A 区注入用）。 */
@@ -84,12 +93,14 @@ export class PlayMemory {
     }));
   }
 
-  /** 按标题或文件名读 index 卡详情（read_memory_detail 工具后端）。arcs 按当前分支过滤。 */
+  /** 按标题、相对路径或文件名读 index 卡详情（read_memory_detail 工具后端）。arcs 按当前分支过滤。 */
   readCard(name: string, arcIds: readonly string[] = []): string | null {
     const key = name.replace(/\.md$/, "");
     const allowed = new Set(arcIds);
     const card = this.cards.find(
-      (c) => (c.name === key || c.file === key) && (c.layer !== "arcs" || allowed.has(c.file)),
+      (c) =>
+        (c.name === key || c.file === key || c.file.split("/").pop() === key) &&
+        (!c.arc || allowed.has(c.file)),
     );
     return card ? card.detail : null;
   }
@@ -130,7 +141,7 @@ export class PlayMemory {
   }
 
   /**
-   * 纪元摘要落盘（纪元压缩产物）：写入 index/arcs/<id>.md 并即时进 cards——下一个纪元的
+   * 纪元摘要落盘（纪元压缩产物）：写入 memory/arcs/<id>.md 并即时进 cards——下一个纪元的
    * A 区立即带得上这条摘要（纪元内冻结）。arcId 由编排器给定（谱系级快照引用同一 id）。
    */
   async appendArc(arc: {
@@ -147,6 +158,7 @@ export class PlayMemory {
       summary: arc.summary,
       detail,
       file: arc.id,
+      arc: true,
     });
     if (!this.arcsDir) return;
     await mkdir(this.arcsDir, { recursive: true });
@@ -156,11 +168,19 @@ export class PlayMemory {
 
 /** index 卡：首行 `# 标题`，次行一句话摘要，其余为详情（read_memory_detail 返回全文）。 */
 export interface IndexCard {
-  layer: "locations" | "lore" | "arcs";
+  /** 相对 `memory/index/` 的子目录路径（顶层卡为空串）；arcs 卡恒为 `"arcs"`，只作提示词里的分类标签。 */
+  layer: string;
   name: string;
   summary: string;
   detail: string;
+  /** 相对 `memory/index/` 的路径（不含扩展名）；arcs 卡是 arcId。 */
   file: string;
+  /**
+   * 纪元压缩产物（跟分支走，按 arcIds 过滤）。
+   * 显式标记而非拿 layer 名字认：用户完全可以在 `index/arcs/` 下面放自己的设定卡，
+   * 那些卡是剧目设定，不该跟着分支消失。
+   */
+  arc: boolean;
 }
 
 /** archive 逐轮事件切片（entryId = 收束时谱系叶，防剧透过滤键）。 */
@@ -180,32 +200,53 @@ async function readText(path: string): Promise<string> {
   return readFile(path, "utf8");
 }
 
-/** index 三层目录扫描（arcs 为纪元压缩产物，P4b 写入；手工放卡同样生效）。 */
+/** index 递归扫描：任意子目录都收，layer 取相对 index/ 的子目录路径（顶层卡为空串）。 */
 async function loadCards(store: PlayStore): Promise<IndexCard[]> {
-  const layers = ["locations", "lore", "arcs"] as const;
   const cards: IndexCard[] = [];
-  for (const layer of layers) {
-    const dir = store.memoryDir("index", layer);
-    if (!existsSync(dir)) continue;
-    // 排序：readdir 顺序由文件系统决定，A 区行序漂移会让整个前缀缓存失效
-    for (const entry of (await readdir(dir)).sort()) {
-      if (!entry.endsWith(".md")) continue;
-      const detail = await readText(join(dir, entry));
-      const lines = detail.split("\n").map((l) => l.trim());
-      const title = lines.map((l) => /^#\s+(.+)$/.exec(l)?.[1]).find(Boolean);
-      const name = title ?? entry.replace(/\.md$/, "");
-      const titleIdx = lines.findIndex((l) => /^#\s+/.test(l));
-      const summary = lines.slice(titleIdx + 1).find((l) => l !== "") ?? "";
-      cards.push({
-        layer,
-        name,
-        summary,
-        detail,
-        file: entry.replace(/\.md$/, ""),
-      });
-    }
+  await collectCards(store.memoryDir("index"), store.memoryDir("index"), "", cards);
+  // 排序：readdir 顺序由文件系统决定，A 区行序漂移会让整个前缀缓存失效
+  cards.sort((a, b) => a.file.localeCompare(b.file));
+  return cards;
+}
+
+/** 纪元摘要卡（纪元压缩产物，落在 index 之外的 memory/arcs/）。 */
+async function loadArcs(store: PlayStore): Promise<IndexCard[]> {
+  const dir = store.memoryDir("arcs");
+  if (!existsSync(dir)) return [];
+  const cards: IndexCard[] = [];
+  for (const entry of (await readdir(dir)).sort()) {
+    if (extname(entry) !== ".md") continue;
+    const file = entry.replace(/\.md$/, "");
+    cards.push({ ...parseCard(file, await readText(join(dir, entry))), layer: "arcs", file, arc: true });
   }
   return cards;
+}
+
+/** 递归下钻 index/，把每个 .md 收成一张卡（子目录名即 layer）。 */
+async function collectCards(root: string, dir: string, layer: string, out: IndexCard[]): Promise<void> {
+  if (!existsSync(dir)) return;
+  for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.name.startsWith(".")) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await collectCards(root, path, layer ? `${layer}/${entry.name}` : entry.name, out);
+      continue;
+    }
+    if (extname(entry.name) !== ".md") continue;
+    // 分隔符归一：Windows 的 relative 吐反斜杠，卡的路径键全项目要一致
+    const file = relative(root, path).replace(/\\/g, "/").replace(/\.md$/, "");
+    out.push({ ...parseCard(file, await readText(path)), layer, file, arc: false });
+  }
+}
+
+/** 卡解析：首行 `# 标题`，次行（首个非空行）一句话摘要，其余是详情。没写标题就用文件名。 */
+function parseCard(file: string, detail: string): Omit<IndexCard, "layer" | "file" | "arc"> {
+  const lines = detail.split("\n").map((l) => l.trim());
+  const titleIdx = lines.findIndex((l) => /^#\s+/.test(l));
+  const title = titleIdx >= 0 ? /^#\s+(.+)$/.exec(lines[titleIdx]!)?.[1] : undefined;
+  const summary = lines.slice(titleIdx + 1).find((l) => l !== "") ?? "";
+  // 标题之后的首个非空行是摘要；没写标题时退到全文首个非空行
+  return { name: title?.trim() || file.split("/").pop() || file, summary, detail };
 }
 
 async function loadArchive(path: string): Promise<ArchiveSlice[]> {

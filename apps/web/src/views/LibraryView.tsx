@@ -63,7 +63,9 @@ export function LibraryView() {
                   {play.readiness.ready ? "可开演" : "未就绪"}
                 </span>
               </div>
-              <p className="card-premise">{play.premise ? `${play.premise.slice(0, 90)}…` : "（premise 待补）"}</p>
+              <p className="card-premise">
+                {play.premise.length > 90 ? `${play.premise.slice(0, 90)}…` : play.premise || "（故事前提待补）"}
+              </p>
               <p className="muted small">
                 {missing.length > 0
                   ? `缺：${missing.join("、")}`

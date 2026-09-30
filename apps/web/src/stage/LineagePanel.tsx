@@ -3,8 +3,7 @@ import type { LineageView } from "@stage-ai/core";
 import { api } from "../api.js";
 import type { AssetIndex } from "./assets.js";
 import { buildBeats } from "./beats.js";
-import { Icon } from "../ui/Icon.js";
-import { RouteCanvas } from "./RouteCanvas.js";
+import { RouteCanvas, type RouteControls } from "./RouteCanvas.js";
 import type { ScriptLine } from "./script.js";
 
 /**
@@ -52,31 +51,30 @@ interface PanelProps {
   names: Readonly<Record<string, string>>;
   busy: boolean;
   onReload: () => void;
-  onBack: () => void;
   ops: LineageOps;
 }
 
 /**
  * 路线：一棵从左往右读时间的树。x = 时间（树深度），兄弟往下扇开。
- * 画布占满整页，导航与镜头浮在它上面——树要始终是一棵树，不该被两条横条挤成一条缝。
+ * 画布只管把整片内容区让给树——导航与镜头都归外层侧栏，页面上不再浮一层按钮。
  * 导演动词直接长在每张卡下面，不设检视栏：想动哪一段就在那一段自己的卡上动手。
  */
-export function RouteTree(props: PanelProps & { index: AssetIndex | null; lines: readonly ScriptLine[] }) {
+export function RouteTree(
+  props: PanelProps & {
+    index: AssetIndex | null;
+    lines: readonly ScriptLine[];
+    onControls: (controls: RouteControls) => void;
+  },
+) {
   const { view, names, busy, ops } = props;
   const cards = useMemo(() => (view ? buildBeats(view, props.lines) : []), [view, props.lines]);
 
   return (
     <div className="route-screen">
       {props.error && <div className="error-banner">{props.error}</div>}
-      {!props.view ? (
+      {!props.view || cards.length === 0 ? (
         <div className="route-blank">
-          <BackFloat onBack={props.onBack} />
-          <div className="overlay">读取路线…</div>
-        </div>
-      ) : cards.length === 0 ? (
-        <div className="route-blank">
-          <BackFloat onBack={props.onBack} />
-          <p className="muted route-empty">还没有历史——玩过一阵之后，这里会长出路线树。</p>
+          <div className="overlay">{props.view ? "还没有剧情——演过一阵之后，这里会长出路线树。" : "读取路线…"}</div>
         </div>
       ) : (
         <RouteCanvas
@@ -85,18 +83,9 @@ export function RouteTree(props: PanelProps & { index: AssetIndex | null; lines:
           index={props.index}
           ops={ops}
           busy={busy}
-          onBack={props.onBack}
+          onControls={props.onControls}
         />
       )}
     </div>
-  );
-}
-
-/** 空态/加载态下画布不在，退回键就浮在空态上，路线页永远回得去。 */
-function BackFloat({ onBack }: { onBack: () => void }) {
-  return (
-    <button className="ghost-btn icon-btn route-float" onClick={onBack} title="回舞台">
-      <Icon name="back" />
-    </button>
   );
 }
