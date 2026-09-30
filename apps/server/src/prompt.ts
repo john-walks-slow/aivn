@@ -61,8 +61,6 @@ export interface PromptContext {
   generated?: GeneratedNote[];
   memory?: PlayMemory;
   arcIds?: readonly string[];
-  /** 出图技能清单（<available_skills> 块）：read_skill 的索引，与工坊共用同一份。 */
-  skills?: string;
   /** 生图工具在位（工具被关掉时整章不注入——教它调一个不存在的工具只会空转）。 */
   canImage?: boolean;
   /** 联网检索在位（同上）。 */
@@ -205,7 +203,7 @@ beat_done 必须**独占一次工具调用**——不与 write_memory、update_s
 想说点什么写进 <comment>。轮与轮之间由引擎接续。
 
 ${imageChapter(ctx.canImage !== false)}
-${ctx.canSearch ? SEARCH_GUIDE : ""}${ctx.skills ? `\n${ctx.skills}\n` : ""}
+${ctx.canSearch ? SEARCH_GUIDE : ""}
 ## 引入新角色
 
 需要引入角色表里没有的新角色时，按以下步骤：

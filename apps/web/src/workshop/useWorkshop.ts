@@ -56,7 +56,7 @@ const TOOL_LABEL: Record<string, string> = {
   list_library: "查素材资源库",
   import_asset: "从资源库导入素材",
   inspect_asset: "看图",
-  read_skill: "读出图技能",
+  read_skill: "读技能库",
   list_saves: "查看周目",
   read_lineage: "读故事树",
   web_search: "联网检索中",

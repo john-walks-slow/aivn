@@ -133,8 +133,6 @@ export interface OrchestratorOptions {
    * 这里只用思考档位与工具开关。缺省即「思考 off、工具全开」。
    */
   agents?: AgentSettings;
-  /** 出图技能清单（<available_skills> 块）：read_skill 的索引，与工坊共用同一份。 */
-  skills?: string;
 }
 
 /**
@@ -295,7 +293,6 @@ export class PlaywrightOrchestrator {
           generated: opts.generatedAssets,
           memory: opts.memory,
           arcIds: this.arcIds,
-          skills: opts.skills,
           canImage: this.kit.can.image,
           canSearch: this.kit.can.search,
         }),

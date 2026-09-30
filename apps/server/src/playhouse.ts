@@ -16,7 +16,6 @@ import { createExa, type Exa } from "./exa.js";
 import { ImageAssets } from "./imageAssets.js";
 import { PlayAssets } from "./playAssets.js";
 import { PlayFiles } from "./playFiles.js";
-import { skillsPrompt } from "./skills.js";
 import { agentToolCatalog } from "./agentkit/kit.js";
 import { Limiter } from "./limiter.js";
 import { Translator } from "./translate.js";
@@ -676,8 +675,6 @@ export class PlayHouse {
       scene,
       tts: synth ? { synth, concurrency: this.config.tts.concurrency } : undefined,
       agents: play.agents?.playwriter,
-      // 出图技能清单：与工坊共用同一份 skills/ 目录，read_skill 是同一个工具
-      skills: await skillsPrompt(),
       imageTools: playAssets
         ? {
             playAssets,

@@ -50,16 +50,17 @@ const names = (kit: AgentKit): string[] => kit.tools.map((t) => t.name).sort();
 describe("agent kit：两个角色的暴露面", () => {
   it("剧作家拿轮收束与记忆，不拿剧目文件与故事树", () => {
     const kit = playwriter();
-    expect(names(kit)).toEqual(["beat_done", "generate_image", "read_memory_detail", "read_skill", "search_archive", "update_state", "write_memory"]);
+    expect(names(kit)).toEqual(["beat_done", "generate_image", "read_memory_detail", "search_archive", "update_state", "write_memory"]);
     expect(names(kit)).not.toContain("write_file");
     expect(names(kit)).not.toContain("read_lineage");
   });
 
-  it("工坊拿剧目文件与故事树，不拿轮收束与演出记忆", () => {
+  it("工坊拿剧目文件、故事树与技能库，不拿轮收束与演出记忆", () => {
     const kit = workshop();
     expect(names(kit)).toContain("write_file");
     expect(names(kit)).toContain("read_lineage");
     expect(names(kit)).toContain("generate_image");
+    expect(names(kit)).toContain("read_skill");
     expect(names(kit)).not.toContain("beat_done");
     expect(names(kit)).not.toContain("update_state");
   });

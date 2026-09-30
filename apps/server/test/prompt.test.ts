@@ -141,6 +141,13 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
     expect(prompt).toContain("你是剧本引擎，不是助手");
   });
 
+  it("剧作家 prompt 不再出现技能清单：它没有 read_skill 这个工具", () => {
+    // 教模型调一个装不进去的工具，它只会反复空转。技能库归搭台助手。
+    const prompt = buildSystemPrompt({ play: PLAY });
+    expect(prompt).not.toContain("<available_skills>");
+    expect(prompt).not.toContain("read_skill");
+  });
+
   it("格式段示范的 <comment> 开闭标签必须配平——模型照抄不闭合的示范就写坏了", () => {
     const prompt = buildSystemPrompt({ play: PLAY });
     // 只查格式段：契约里的「放进 <comment>」是提及，不是示范，不该被算进去

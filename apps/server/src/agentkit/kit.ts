@@ -28,7 +28,7 @@ export const TOOL_GROUPS = {
   beat: "轮与停止点",
   memory: "记忆与状态",
   image: "生图",
-  skill: "出图技能",
+  skill: "技能库",
   files: "剧目文件",
   library: "素材资源库",
   lineage: "故事树",
@@ -55,7 +55,7 @@ const TOOL_ROLES: Record<string, { label: string; group: ToolGroup; roles: Agent
   read_memory_detail: { label: "读记忆卡详情", group: "memory", roles: ["playwriter"] },
   search_archive: { label: "检索历史往事", group: "memory", roles: ["playwriter"] },
   generate_image: { label: "生成剧目素材", group: "image", roles: ["playwriter", "workshop"] },
-  read_skill: { label: "读出图技能", group: "skill", roles: ["playwriter", "workshop"] },
+  read_skill: { label: "读技能库", group: "skill", roles: ["workshop"] },
   web_search: { label: "联网检索", group: "web", roles: ["playwriter", "workshop"] },
   list_files: { label: "列出剧目文件", group: "files", roles: ["workshop"] },
   read_file: { label: "读剧目文件", group: "files", roles: ["workshop"] },
@@ -134,7 +134,7 @@ export function createAgentKit(deps: AgentKitDeps & { thinking?: ThinkingLevel }
   };
 }
 
-/** 剧作家的工具：轮收束 + 记忆 + 生图（后台排产）+ 技能 + 联网。 */
+/** 剧作家的工具：轮收束 + 记忆 + 生图（后台排产）+ 联网。 */
 function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
   return [
     createBeatDoneTool(deps),
@@ -148,12 +148,11 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
       statusOf: deps.statusOf,
       hasStaticAsset: deps.hasStaticAsset,
     }),
-    createReadSkillTool(),
     ...(deps.exa ? [createWebSearchTool(deps.exa)] : []),
   ];
 }
 
-/** 工坊的工具：剧目文件 + 生图（同步）+ 素材库 + 故事树 + 技能 + 联网。 */
+/** 工坊的工具：剧目文件 + 生图（同步）+ 素材库 + 故事树 + 技能库 + 联网。 */
 function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
   return [
     ...createFilesTools(deps),
