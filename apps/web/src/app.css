@@ -634,6 +634,8 @@ button.link-btn {
   pointer-events: none;
   background:
     linear-gradient(96deg, rgb(16 13 11 / 0.86) 0%, rgb(16 13 11 / 0.62) 44%, rgb(16 13 11 / 0.2) 78%),
+    /* 右栏菜单压在底图右侧，再补一道从右往左的遮幅：底图局部过曝时白字不会消失 */
+      linear-gradient(270deg, rgb(16 13 11 / 0.5), transparent 34%),
     linear-gradient(180deg, rgb(16 13 11 / 0.55), transparent 22%, transparent 56%, rgb(16 13 11 / 0.72));
 }
 
@@ -3774,9 +3776,14 @@ select:focus {
   color: var(--accent);
 }
 
-/* 有视图栏时，唤出键与视图名不撞：把它往下让开一栏 */
+/* 有视图栏时，唤出键进视图栏左边的空档（不是往下压到内容上）：
+   往下压 46px 正好落在工坊那排 tab 上——窄屏一格内容都不该被导航键盖住。 */
 .stage-main:has(.view-bar) .side-drawer-btn {
-  top: calc(46px + env(safe-area-inset-top));
+  top: calc(8px + env(safe-area-inset-top));
+  left: 8px;
+}
+.stage-main:has(.view-bar) .view-bar {
+  padding-left: 54px;
 }
 
 /* 窄屏：侧栏改成盖在内容上的抽屉，不再挤压内容区 */
