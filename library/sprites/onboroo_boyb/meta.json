@@ -1,0 +1,42 @@
+{
+  "title": "onboroo boyB",
+  "description": "onboroo 男生立绘，2200×3500 RGBA 真透明。",
+  "persona": "冷静的男学生",
+  "voice": "语气沉稳，说话慢",
+  "tags": [
+    "onboroo",
+    "galgame",
+    "uniform"
+  ],
+  "source": "onboroo (https://onboroo.itch.io/visual-novel-sprite-pack)",
+  "license": "CC-BY-4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "attribution": "VN Sprite Pack by onboroo (https://onboroo.itch.io/visual-novel-sprite-pack) licensed under CC BY 4.0",
+  "character": {
+    "name": "boyB",
+    "persona": "冷静的男学生",
+    "voice": "语气沉稳，说话慢"
+  },
+  "expressions": {
+    "angry": {
+      "file": "angry.png",
+      "description": "angry"
+    },
+    "neutral": {
+      "file": "default.png",
+      "description": "neutral"
+    },
+    "happy": {
+      "file": "happy.png",
+      "description": "happy"
+    },
+    "sad": {
+      "file": "sad.png",
+      "description": "sad"
+    },
+    "smile": {
+      "file": "smile.png",
+      "description": "smile"
+    }
+  }
+}

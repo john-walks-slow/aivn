@@ -1,0 +1,66 @@
+{
+  "title": "Breezy Oak",
+  "description": "Breezy 免费 VN 立绘，角色 oak，13 个差分表情。原文件是真透明 PNG，不需要抠底管线。",
+  "tags": [
+    "Breezy",
+    "免费立绘",
+    "galgame"
+  ],
+  "source": "Breezy (https://breezy-the-cat.itch.io/visual-novel-sprites)",
+  "license": "CC0",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "expressions": {
+    "grin": {
+      "file": "oak_grin.png",
+      "description": "咧嘴笑"
+    },
+    "grin2": {
+      "file": "oak_grin2.png",
+      "description": "咧嘴笑、2"
+    },
+    "happy": {
+      "file": "oak_happy.png",
+      "description": "开心"
+    },
+    "happy2": {
+      "file": "oak_happy2.png",
+      "description": "开心、2"
+    },
+    "nervous": {
+      "file": "oak_nervous.png",
+      "description": "紧张"
+    },
+    "neutral": {
+      "file": "oak_neutral.png",
+      "description": "无表情"
+    },
+    "paper": {
+      "file": "oak_paper.png",
+      "description": "纸张翻页帧"
+    },
+    "paper2": {
+      "file": "oak_paper2.png",
+      "description": "纸张翻页帧、2"
+    },
+    "paper3": {
+      "file": "oak_paper3.png",
+      "description": "纸张翻页帧、3"
+    },
+    "shy": {
+      "file": "oak_shy.png",
+      "description": "害羞"
+    },
+    "smile1": {
+      "file": "oak_smile1.png",
+      "description": "微笑、1"
+    },
+    "smile2": {
+      "file": "oak_smile2.png",
+      "description": "微笑、2"
+    },
+    "worried": {
+      "file": "oak_worried.png",
+      "description": "担心"
+    }
+  }
+}

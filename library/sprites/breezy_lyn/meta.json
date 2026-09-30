@@ -1,0 +1,98 @@
+{
+  "title": "Breezy lyn",
+  "description": "Breezy 免费 VN 立绘，角色 lyn，21 个差分表情。原文件是真透明 PNG，不需要抠底管线。",
+  "tags": [
+    "Breezy",
+    "免费立绘",
+    "galgame"
+  ],
+  "source": "Breezy (https://breezy-the-cat.itch.io/visual-novel-sprites)",
+  "license": "CC0",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "expressions": {
+    "flirt": {
+      "file": "lyn_flirt.png",
+      "description": "调侃"
+    },
+    "flirt2": {
+      "file": "lyn_flirt2.png",
+      "description": "调侃、2"
+    },
+    "mad": {
+      "file": "lyn_mad.png",
+      "description": "发怒"
+    },
+    "nervous1": {
+      "file": "lyn_nervous1.png",
+      "description": "紧张、1"
+    },
+    "neutral": {
+      "file": "lyn_neutral.png",
+      "description": "无表情"
+    },
+    "neutral_bigsmile": {
+      "file": "lyn_neutral_bigsmile.png",
+      "description": "大笑"
+    },
+    "neutral_close": {
+      "file": "lyn_neutral_close.png",
+      "description": "特写"
+    },
+    "neutral_pog": {
+      "file": "lyn_neutral_pog.png",
+      "description": "疑惑"
+    },
+    "neutral_t": {
+      "file": "lyn_neutral_t.png",
+      "description": "字母 T 姿势"
+    },
+    "paper1": {
+      "file": "lyn_paper1.png",
+      "description": "纸张翻页帧、1"
+    },
+    "paper2": {
+      "file": "lyn_paper2.png",
+      "description": "纸张翻页帧、2"
+    },
+    "paper3": {
+      "file": "lyn_paper3.png",
+      "description": "纸张翻页帧、3"
+    },
+    "sassy": {
+      "file": "lyn_sassy.png",
+      "description": "泼辣"
+    },
+    "shy1": {
+      "file": "lyn_shy1.png",
+      "description": "害羞、1"
+    },
+    "shy2": {
+      "file": "lyn_shy2.png",
+      "description": "害羞、2"
+    },
+    "unimpressed": {
+      "file": "lyn_unimpressed.png",
+      "description": "无语"
+    },
+    "worried": {
+      "file": "lyn_worried.png",
+      "description": "担心"
+    },
+    "worried2": {
+      "file": "lyn_worried2.png",
+      "description": "担心、2"
+    },
+    "worried3": {
+      "file": "lyn_worried3.png",
+      "description": "担心、3"
+    },
+    "worried4": {
+      "file": "lyn_worried4.png",
+      "description": "担心、4"
+    },
+    "worried5": {
+      "file": "lyn_worried5.png",
+      "description": "担心、5"
+    }
+  }
+}
