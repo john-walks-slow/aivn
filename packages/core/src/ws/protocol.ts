@@ -1,20 +1,38 @@
 import type { SequencedEvent, StageEvent } from "../dsl/events.js";
 
+/**
+ * 停止点类型（模型能写的白名单，由 `beat_done` 工具参数承载）。
+ *
+ * 只有两种玩家主权点：选肢（choice）/ 自由表态（free）。
+ * 「什么都不做就继续」曾经是第三种（pause），已删除：模型爱用它收尾，收出来的是
+ * 「一切圆满落幕…」这类旁白加一个不知何时出现的「继续」按钮。没有停止点的收尾走
+ * beat_end 的 no_stop 分支，客户端呈现为一个普通的「继续」。
+ * 编排器自己造的 pause 重试入口不在这个白名单里，只住在 {@link StopPayload}。
+ */
+export const STOP_TYPES = ["choice", "free"] as const;
+export type StopType = (typeof STOP_TYPES)[number];
+
+/** 一个选肢：玩家面板上的一行。 */
+export interface StopOption {
+  text: string;
+  value?: string;
+}
+
 /** 停止点载荷（编排器随 beat_end 下发，前端渲染选项/输入框）。 */
 export interface StopPayload {
   /**
-   * choice/free 来自剧本（模型写的 `<stop>`）；pause 只由编排器自己造——
+   * choice/free 来自模型（beat_done 的参数）；pause 只由编排器自己造——
    * 轮中分岔被截断、或空轮报错时给玩家一个重试入口，模型写不出来，
-   * 无 stop 的收尾（no_stop）也不会走到这里，它只有一个「继续」。
+   * 无停止点的收尾（no_stop）也不会走到这里，它只有一个「继续」。
    */
-  stopType: "choice" | "free" | "pause";
-  options?: { text: string; value?: string }[];
+  stopType: StopType | "pause";
+  options?: StopOption[];
   placeholder?: string;
 }
 
 export interface BeatEndPayload {
   beatId: string;
-  /** stop = 交互停止点；no_stop = 本轮自然写完（beat_done 收束，无 <stop>），只有一个「继续」出口。 */
+  /** stop = 交互停止点；no_stop = 本轮自然写完（beat_done 不带选项收束），只有一个「继续」出口。 */
   reason: "stop" | "no_stop";
   stop?: StopPayload;
 }

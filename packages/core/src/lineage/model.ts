@@ -12,7 +12,7 @@
  * - 谱系快照随分支走：恢复 = 当前路径上最近的快照。
  */
 
-import type { OptionAttrs, StopType } from "../dsl/spec.js";
+import type { StopOption, StopType } from "../ws/protocol.js";
 import { toNodeView } from "./replay.js";
 
 export type LineageEventKind =
@@ -102,7 +102,7 @@ export interface LineageNodeView {
   /** stop 事件专有：停止点类型/选项/占位文案。attrs 里那个 stopType 只是给旧客户端兜底的，
    *  客户端只读回看要按原样重建停止点，选项必须留在投影里。 */
   stopType?: StopType;
-  stopOptions?: OptionAttrs[];
+  stopOptions?: StopOption[];
   stopPlaceholder?: string;
 }
 

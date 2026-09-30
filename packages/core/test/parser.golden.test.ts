@@ -45,7 +45,6 @@ const SAMPLE_BEAT = [
   '<actor id="mio" pos="center" expression="pout" action="enter"/>',
   "<narrate>放学后的走廊空无一人，夕阳把课桌的影子拉得很长。</narrate>",
   '<say id="mio" mood="annoyed">……太慢了！不是约好立刻集合的吗？</say>',
-  '<preload_asset type="cg" prompt="two students on rooftop at sunset" id="cg_rooftop_01"/>',
   '<cg id="cg_rooftop_01" caption="黄昏的天台"/>',
   '<sfx src="wind" volume="0.3"/>',
   '<thought id="mio">（这家伙，到底在想什么呢……）</thought>',
@@ -66,7 +65,6 @@ describe("完整轮", () => {
       "say_start",
       "say_text",
       "say_end",
-      "preload_asset",
       "cg",
       "sfx",
       "thought_start",
@@ -108,19 +106,10 @@ describe("流式撕裂容错", () => {
     });
   }
 
-  it("stop 标签自身撕裂也能正确闭合", () => {
+  it("旧标签撕裂喂入也整条丢弃，不半截泄漏", () => {
     const { events, parser } = collect();
     feedTorn(parser, '<stop type="choice"><option>去天台</option><option>回家</option></stop>', 3);
-    expect(events).toEqual([
-      {
-        kind: "stop",
-        stopType: "choice",
-        options: [
-          { text: "去天台", value: undefined },
-          { text: "回家", value: undefined },
-        ],
-      },
-    ]);
+    expect(events).toEqual([]);
   });
 });
 
@@ -159,109 +148,41 @@ describe("消息边界自动闭合", () => {
   });
 });
 
-describe("stop 闸门", () => {
-  it("stop 闭合后丢弃其后本轮的一切事件", () => {
+describe("已迁进工具的旧标签（静默降级）", () => {
+  it("stop / option 整条丢弃，台词不受影响", () => {
     const { events, parser } = collect();
-    parser.feed('<narrate>她笑了笑。</narrate><stop type="free"></stop><narrate>不应出现</narrate><say id="x">也不应出现</say>');
+    parser.feed(
+      '<say id="mio">你终于来了。</say><stop type="choice"><option>天台</option><option>回家</option></stop>',
+    );
     parser.endMessage();
-    expect(events.map((e) => e.kind)).toEqual(["narrate_start", "narrate_text", "narrate_end", "stop"]);
-    expect(parser.gated).toBe(true);
+    expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end"]);
+    // stop + 两个 option 三个开标签各一条
+    expect(parser.warnings.filter((w) => w.type === "legacy_tag")).toHaveLength(3);
   });
 
-  it("闸门跨消息持续，直到 resetBeat", () => {
+  it("preload_asset 丢弃而不是原样当台词念出去", () => {
     const { events, parser } = collect();
-    parser.feed('<stop type="free" placeholder="你做什么？"></stop>');
+    parser.feed(
+      '<preload_asset type="bg" prompt="rooftop at dusk" id="bg_rooftop"/><say id="mio">走。</say>',
+    );
     parser.endMessage();
-    parser.feed('<narrate>下一条消息也被吞</narrate>');
+    expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end"]);
+    expect(parser.warnings.some((w) => w.type === "legacy_tag" && w.detail.includes("preload_asset"))).toBe(true);
+  });
+
+  it("旧标签的自闭合 / 非自闭合写法都丢弃", () => {
+    const { events, parser } = collect();
+    parser.feed('<preload_asset type="cg" prompt="x" id="y"/><stop type="free">忘了闭合');
     parser.endMessage();
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ kind: "stop", stopType: "free", placeholder: "你做什么？" });
+    expect(events).toEqual([]);
+    expect(parser.warnings.filter((w) => w.type === "legacy_tag")).toHaveLength(2);
+  });
 
-    parser.resetBeat();
-    parser.feed('<narrate>新轮正常</narrate>');
+  it("旧标签后仍有正常剧本：不再有 stop 闸门", () => {
+    const { events, parser } = collect();
+    parser.feed('<stop type="free"></stop><narrate>这一句照常演。</narrate>');
     parser.endMessage();
-    expect(events.filter((e) => e.kind === "narrate_text").map((e) => (e as { delta: string }).delta)).toEqual([
-      "新轮正常",
-    ]);
-  });
-
-  it("stop 前未闭合台词自动闭合（防前端悬空）", () => {
-    const { events, parser } = collect();
-    parser.feed('<say id="mio">还没说完的话<stop type="free"></stop>');
-    parser.endMessage();
-    expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end", "stop"]);
-  });
-
-  it("两种 stop 类型", () => {
-    const free = collect();
-    free.parser.feed('<stop type="free" placeholder="你的回应？"></stop>');
-    expect(free.events[0]).toMatchObject({ kind: "stop", stopType: "free", placeholder: "你的回应？" });
-
-    const selfClosing = collect();
-    selfClosing.parser.feed('<stop type="choice"/>');
-    expect(selfClosing.events[0]).toMatchObject({ kind: "stop", stopType: "choice" });
-  });
-
-  it("pause 已从 stop 类型里移除，幕末由 beat_end/no_stop 表达", () => {
-    const legacy = collect();
-    legacy.parser.feed('<stop type="pause"></stop>');
-    expect(legacy.events).toHaveLength(0);
-    expect(legacy.parser.gated).toBe(false);
-  });
-
-  it("choice 选项带 value 属性", () => {
-    const { events, parser } = collect();
-    parser.feed('<stop type="choice"><option value="rooftop">去天台</option><option>回家</option></stop>');
-    expect(events[0]).toEqual({
-      kind: "stop",
-      stopType: "choice",
-      options: [
-        { text: "去天台", value: "rooftop" },
-        { text: "回家", value: undefined },
-      ],
-    });
-  });
-
-  it("漏写 </option>：流内 </stop> 收束已流出的选项文本", () => {
-    const { events, parser } = collect();
-    parser.feed('<stop type="choice"><option>去天台</stop>');
-    expect(events[0]).toEqual({
-      kind: "stop",
-      stopType: "choice",
-      options: [{ text: "去天台", value: undefined }],
-    });
-  });
-
-  it("漏写 </option>：消息边界同样收束", () => {
-    const { events, parser } = collect();
-    parser.feed('<stop type="choice"><option>回家');
-    parser.endMessage();
-    expect(events[0]).toEqual({
-      kind: "stop",
-      stopType: "choice",
-      options: [{ text: "回家", value: undefined }],
-    });
-  });
-
-  it("自闭合 option：无正文立即收束，连续自闭合不丢", () => {
-    const { events, parser } = collect();
-    parser.feed('<stop type="choice"><option value="a"/><option value="b"/></stop>');
-    expect(events[0]).toEqual({
-      kind: "stop",
-      stopType: "choice",
-      options: [
-        { text: "", value: "a" },
-        { text: "", value: "b" },
-      ],
-    });
-    expect(parser.warnings).toEqual([]);
-  });
-
-  it("choice 零选项：事件照发但警告（护栏回喂通道）", () => {
-    const { events, parser } = collect();
-    parser.feed('<stop type="choice"></stop>');
-    expect(events[0]).toEqual({ kind: "stop", stopType: "choice" });
-    expect(parser.warnings.some((w) => w.type === "malformed_tag" && w.detail.includes("choice"))).toBe(true);
+    expect(events.map((e) => e.kind)).toEqual(["narrate_start", "narrate_text", "narrate_end"]);
   });
 });
 
@@ -315,19 +236,23 @@ describe("注释 comment", () => {
 
   it("注释内的标签一律丢弃，穿不出来", () => {
     const { events, parser } = collect();
-    parser.feed('<comment>试一下 <say id="mio">不该出现</say> 和 <option>也不该</option></comment><say id="mio">这句才该演。</say>');
+    parser.feed('<comment>试一下 <say id="mio">不该出现</say> 和 <scene bg="x"/></comment><say id="mio">这句才该演。</say>');
     parser.endMessage();
     expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end"]);
     expect(events[1]).toEqual({ kind: "say_text", delta: "这句才该演。" });
     expect(parser.warnings.filter((w) => w.type === "malformed_tag").length).toBeGreaterThan(0);
   });
 
-  it("忘了闭合注释时 stop 仍生效：结构标签不能被注释吞掉", () => {
+  it("忘闭合的注释吞到消息边界为止，下一条消息照常解析", () => {
     const { events, parser } = collect();
-    parser.feed('<comment>该问玩家了<stop type="free" placeholder="你怎么想"></stop>');
+    parser.feed('<comment>该问她了<say id="mio">你怎么想？</say>');
     parser.endMessage();
-    expect(events).toEqual([{ kind: "stop", stopType: "free", options: undefined, placeholder: "你怎么想" }]);
-    expect(parser.warnings.some((w) => w.type === "auto_closed")).toBe(true);
+    // 注释里写的示范不当场演出来——这是「没有结构标签出口」换来的
+    expect(events).toEqual([]);
+
+    parser.feed('<say id="mio">那就问吧。</say>');
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end"]);
   });
 
   it("自闭合注释是空注释，直接忽略", () => {
@@ -372,18 +297,12 @@ describe("容错与字面文本", () => {
     expect(parser.warnings.some((w) => w.type === "orphan_text")).toBe(true);
   });
 
-  it("缺必填属性的标签丢弃（actor 缺 id / preload type 非法）", () => {
+  it("缺必填属性的标签丢弃（actor 缺 id / sfx 缺 src / cg 缺 id）", () => {
     const { events, parser } = collect();
-    parser.feed('<actor pos="left"/><preload_asset type="movie" prompt="x" id="y"/><scene/>');
+    parser.feed('<actor pos="left"/><sfx volume="0.2"/><cg caption="无 id"/><scene/>');
     parser.endMessage();
     expect(events).toEqual([{ kind: "scene" }]);
-    expect(parser.warnings.filter((w) => w.type === "malformed_tag")).toHaveLength(2);
-  });
-
-  it("stop 内只允许 option，其他标签丢弃", () => {
-    const { events, parser } = collect();
-    parser.feed('<stop type="choice"><scene bg="x"/><option>甲</option><say id="a">hi</say></stop>');
-    expect(events).toEqual([{ kind: "stop", stopType: "choice", options: [{ text: "甲", value: undefined }] }]);
+    expect(parser.warnings.filter((w) => w.type === "malformed_tag")).toHaveLength(3);
   });
 
   it("mismatched 闭合标签丢弃，不影响正文", () => {

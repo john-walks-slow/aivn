@@ -1,5 +1,5 @@
 /**
- * Stage DSL v1 —— 冻结规范（docs/features/260928-stage-ai-mvp 计划 §6）。
+ * Stage DSL v1 —— 冻结规范（docs/features/260928-stage-ai-mvp 计划 §6，2026-09-30 收缩至 v1.1）。
  *
  * 语法规则：
  *  1. 标签式：`<tag attr="...">正文</tag>` 或自闭合 `<tag attr="..."/>`。
@@ -7,7 +7,11 @@
  *  3. 台词正文为原生文本（可含换行），零转义。
  *  4. 消息边界自动闭合：包裹类标签未闭合时收尾保留已流出台词。
  *  5. 每条 assistant 消息独立解析；工具调用轮次对播放透明。
- *  6. stop 即闸门：解析到闭合 <stop> 后丢弃其后本轮的一切事件。
+ *
+ * **标签集只收「会出现在时间线上」的东西**（`260930-agent-kit` 计划 §2）：
+ * 停止点与轮收束并进 `beat_done` 工具参数，生图预发射变成 `generate_image` 工具——
+ * 它们是对宿主说的话，不是剧本。三者的 IR 事件（`stop` / `preload_asset`）仍在事件流里，
+ * 改由工具产出，client 侧不感知这次迁移。
  *
  * 已知限制（v1 接受）：属性值含 ">" 会使标签头提前截断（解析按首个 ">" 定界，不感知引号）——
  * 受影响的主要是生图 prompt 等自由文本字段，触发时该标签整体降级丢弃（有 warning），可回喂自修正。
@@ -20,15 +24,13 @@ export const DSL_TAGS = [
   "narrate",
   "thought",
   "sfx",
-  "preload_asset",
   "cg",
-  "stop",
   "comment",
 ] as const;
 export type DslTag = (typeof DSL_TAGS)[number];
 
 /** 自闭合指令标签（无正文）。 */
-export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "sfx", "preload_asset", "cg"]);
+export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "sfx", "cg"]);
 
 /**
  * 注释标签——**不产出任何 IR 事件**（解析器吞掉正文）。
@@ -42,18 +44,14 @@ export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "sfx", 
 export const COMMENT_TAG = "comment";
 
 /**
- * stop 的交互类型（v1.1 冻结）——这是**模型能写的**白名单。
- * 只有两种玩家主权点：选肢（choice）/ 自由表态（free）。
- * 旧版的第三种 pause（「什么都不做就继续」）已从 DSL 删除：模型爱用它收尾，
- * 收出来的是「一切圆满落幕…」这类旁白加一个不知何时出现的「继续」按钮。
- * 没有 stop 的收尾走 beat_end 的 no_stop 分支，客户端呈现为一个普通的「继续」。
- * 编排器自己造的 pause 重试入口不在这个白名单里（见 ws/protocol.ts 的 StopPayload）。
+ * 已从 DSL 迁进工具的旧标签——**静默降级，不按未知标签原样输出**。
+ *
+ * 模型对旧形态有肌肉记忆，硬判成未知标签会把 `<stop type="choice">` 当台词原样吐到舞台上，
+ * 那比丢掉糟得多。命中即丢弃并挂一条 warning：一次调用静默失效，模型下一轮自己改正。
+ * 退出说明：`stop`/`option` 的载荷改由 `beat_done(options, placeholder)` 承载，
+ * `preload_asset` 改由 `generate_image` 工具承载。
  */
-export const STOP_TYPES = ["choice", "free"] as const;
-export type StopType = (typeof STOP_TYPES)[number];
-
-/** stop 内唯一的子标签。 */
-export const OPTION_TAG = "option";
+export const LEGACY_TAGS: ReadonlySet<string> = new Set(["stop", "option", "preload_asset"]);
 
 /**
  * 场景指令属性。
@@ -94,28 +92,7 @@ export interface SayAttrs {
   mood?: string;
 }
 
-export interface PreloadAssetAttrs {
-  type: "bg" | "cg" | "sprite";
-  prompt: string;
-  /**
-   * 资产 id。
-   * - bg/cg：直接是素材 id。
-   * - sprite：`<charId>` 或 `<charId>:<expression>`；省略 expression 时默认 `neutral`。
-   */
-  id: string;
-}
-
 export interface CgAttrs {
   id: string;
   caption?: string;
-}
-
-export interface StopAttrs {
-  type: StopType;
-  placeholder?: string;
-}
-
-export interface OptionAttrs {
-  text: string;
-  value?: string;
 }

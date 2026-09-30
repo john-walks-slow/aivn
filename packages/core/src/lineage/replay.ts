@@ -1,5 +1,5 @@
 import type { SequencedEvent, StageEvent } from "../dsl/events.js";
-import type { OptionAttrs, StopType } from "../dsl/spec.js";
+import type { StopOption, StopType } from "../ws/protocol.js";
 import type { LineageEvent, LineageNodeView } from "./model.js";
 import type { StopPayload } from "../ws/protocol.js";
 
@@ -38,7 +38,7 @@ export function toNodeView(event: LineageEvent): LineageNodeView {
 function readStop(payload: LineageEvent["payload"]): Pick<LineageNodeView, "stopType" | "stopOptions" | "stopPlaceholder"> {
   const raw = (payload ?? {}) as {
     stopType?: StopType;
-    options?: OptionAttrs[];
+    options?: StopOption[];
     placeholder?: string;
   };
   if (raw.stopType !== "choice" && raw.stopType !== "free") return {};
