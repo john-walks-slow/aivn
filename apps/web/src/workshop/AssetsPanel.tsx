@@ -56,11 +56,25 @@ export function AssetsPanel({ playId }: { playId: string }) {
 
   const save = (): void => {
     if (!draft) return;
-    api
-      .savePlay(draft)
+    // premise 落在 memory/always/premise.md，不随 play.json 走，但它就在这块面板里——
+    // 保存配置必须连它一起提交，否则 reload 会把手写的前提冲回服务端旧值
+    const work: Promise<unknown>[] = [api.savePlay(draft)];
+    if (premiseDraft !== premise) work.push(api.savePremise(playId, premiseDraft));
+    Promise.all(work)
       .then(() => {
         setSaved(true);
         reload();
+      })
+      .catch((e: Error) => setError(e.message));
+  };
+
+  /** 只改前提时的快捷口：与「保存配置」提交的是同一份内容。 */
+  const savePremiseOnly = (): void => {
+    api
+      .savePremise(playId, premiseDraft)
+      .then(() => {
+        setPremise(premiseDraft);
+        setSaved(true);
       })
       .catch((e: Error) => setError(e.message));
   };
@@ -125,9 +139,9 @@ export function AssetsPanel({ playId }: { playId: string }) {
               <button
                 className="ghost-btn small"
                 disabled={premise === premiseDraft}
-                onClick={() => api.savePremise(playId, premiseDraft).then(reload).catch((e: Error) => setError(e.message))}
+                onClick={savePremiseOnly}
               >
-                保存前提
+                只存前提
               </button>
             </span>
             <textarea
@@ -506,7 +520,11 @@ function CharacterEditor({
             }}
           />
         </label>
-        <button className="ghost-btn" onClick={onBrowseLibrary} title={`从资源库导入 ${char.id} 的角色卡与立绘`}>
+        <button
+          className="ghost-btn"
+          onClick={onBrowseLibrary}
+          title={`从资源库导入一个角色的角色卡与立绘（按条目的 id 新建或覆盖同 id 的角色，不是填这张卡）`}
+        >
           <span className="btn-icon">
             <Icon name="download" size={13} /> 从资源库导入
           </span>

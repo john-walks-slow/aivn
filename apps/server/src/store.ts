@@ -231,7 +231,21 @@ export class PlayStore {
    */
   async premise(): Promise<string> {
     const path = this.memoryDir("always", "premise.md");
-    return existsSync(path) ? readFile(path, "utf8") : "";
+    if (existsSync(path)) return readFile(path, "utf8");
+    // 旧剧目的前提还躺在 play.json 里（字段已从契约删除，但文件是用户的数据）：
+    // 只读回退，不自动搬——让用户看见原文再自己决定存到哪，别悄悄改别人的剧目文件
+    const legacy = await this.legacyPremise();
+    return legacy ?? "";
+  }
+
+  /** 旧版 play.json 的 premise 字段（parsePlayConfig 已不认识它，只能读原始 JSON）。 */
+  private async legacyPremise(): Promise<string | null> {
+    try {
+      const raw = JSON.parse(await readFile(join(this.dir, "play.json"), "utf8")) as { premise?: unknown };
+      return typeof raw.premise === "string" && raw.premise.trim() !== "" ? raw.premise : null;
+    } catch {
+      return null;
+    }
   }
 
   /** 写世界观前提（用户与工坊共用一个入口）。走 config 锁：同目录的 play.json 可能正被别人改。 */

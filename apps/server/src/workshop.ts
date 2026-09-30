@@ -509,12 +509,13 @@ function renderImportResult(kind: string, result: ImportResult): string {
     ].join("\n");
   }
   // 角色包里卡与图是两件独立的事（可能只有卡没有图），回执要分别说清落了什么
+  if (result.protagonist) {
+    return [`已导入角色卡 ${result.id} → play.json 的主角卡`, "主角没有立绘位（舞台只画角色），所以这次没有复制图片。"].join("\n");
+  }
   const sprites = result.files.length
     ? `，立绘 ${result.files.length} 张落在 ${result.files[0]!.replace(/\/[^/]+$/, "")}/`
     : "（这个条目没有立绘，只导了角色卡）";
-  const card = result.protagonist
-    ? `play.json 已写入主角卡 ${result.id}${result.files.length ? "，差分映射挂在同 id 的角色上" : ""}`
-    : `play.json 已写入角色卡 ${result.characters.join("、")}${result.files.length ? " 与差分映射，剧作家可以直接 <actor id=\"…\" expression=\"…\"> 上台" : ""}`;
+  const card = `play.json 已写入角色卡 ${result.characters.join("、")}${result.files.length ? " 与差分映射，剧作家可以直接 <actor id=\"…\" expression=\"…\"> 上台" : ""}`;
   return [`已导入角色 ${result.id}${sprites}`, card].join("\n");
 }
 

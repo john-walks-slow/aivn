@@ -243,6 +243,17 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     expect(play.characters).toEqual([]);
   });
 
+  it("target=protagonist 不复制立绘：主角在舞台上没有立绘位，复制过去就是没人引用的孤儿文件", async () => {
+    await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n", "smile.png": "s" }, {
+      character: { name: "理央", persona: "玩家扮演" },
+      expressions: { neutral: { file: "neutral.png" }, smile: { file: "smile.png" } },
+    });
+    const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "rio", target: "protagonist" });
+    expect(result.files).toEqual([]);
+    expect(result.manifestKeys).toEqual([]);
+    expect(existsSync(join(playsRoot, "p1", "assets", "sprites", "rio"))).toBe(false);
+  });
+
   it("只导选中的差分，且不冲掉角色卡里已有的其它差分", async () => {
     await plays.importZip(
       zipOf({

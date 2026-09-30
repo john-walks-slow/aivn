@@ -79,7 +79,7 @@ export class PlayMemory {
    */
   visibleCards(arcIds: readonly string[] = []): IndexCard[] {
     const allowed = new Set(arcIds);
-    return this.cards.filter((c) => c.layer !== "arcs" || allowed.has(c.file));
+    return this.cards.filter((c) => !c.arc || allowed.has(c.file));
   }
 
   /** 同上，但只给标题+摘要（A 区注入用）。 */
@@ -93,12 +93,14 @@ export class PlayMemory {
     }));
   }
 
-  /** 按标题或文件名读 index 卡详情（read_memory_detail 工具后端）。arcs 按当前分支过滤。 */
+  /** 按标题、相对路径或文件名读 index 卡详情（read_memory_detail 工具后端）。arcs 按当前分支过滤。 */
   readCard(name: string, arcIds: readonly string[] = []): string | null {
     const key = name.replace(/\.md$/, "");
     const allowed = new Set(arcIds);
     const card = this.cards.find(
-      (c) => (c.name === key || c.file === key) && (c.layer !== "arcs" || allowed.has(c.file)),
+      (c) =>
+        (c.name === key || c.file === key || c.file.split("/").pop() === key) &&
+        (!c.arc || allowed.has(c.file)),
     );
     return card ? card.detail : null;
   }
@@ -156,6 +158,7 @@ export class PlayMemory {
       summary: arc.summary,
       detail,
       file: arc.id,
+      arc: true,
     });
     if (!this.arcsDir) return;
     await mkdir(this.arcsDir, { recursive: true });
@@ -165,13 +168,19 @@ export class PlayMemory {
 
 /** index 卡：首行 `# 标题`，次行一句话摘要，其余为详情（read_memory_detail 返回全文）。 */
 export interface IndexCard {
-  /** "arcs" = 纪元产物（跟分支走）；其余是相对 `memory/index/` 的子目录路径（顶层卡为空串）。 */
+  /** 相对 `memory/index/` 的子目录路径（顶层卡为空串）；arcs 卡恒为 `"arcs"`，只作提示词里的分类标签。 */
   layer: string;
   name: string;
   summary: string;
   detail: string;
   /** 相对 `memory/index/` 的路径（不含扩展名）；arcs 卡是 arcId。 */
   file: string;
+  /**
+   * 纪元压缩产物（跟分支走，按 arcIds 过滤）。
+   * 显式标记而非拿 layer 名字认：用户完全可以在 `index/arcs/` 下面放自己的设定卡，
+   * 那些卡是剧目设定，不该跟着分支消失。
+   */
+  arc: boolean;
 }
 
 /** archive 逐节拍事件切片（entryId = 收束时谱系叶，防剧透过滤键）。 */
@@ -208,7 +217,7 @@ async function loadArcs(store: PlayStore): Promise<IndexCard[]> {
   for (const entry of (await readdir(dir)).sort()) {
     if (extname(entry) !== ".md") continue;
     const file = entry.replace(/\.md$/, "");
-    cards.push({ ...parseCard(await readText(join(dir, entry))), layer: "arcs", file });
+    cards.push({ ...parseCard(file, await readText(join(dir, entry))), layer: "arcs", file, arc: true });
   }
   return cards;
 }
@@ -224,18 +233,20 @@ async function collectCards(root: string, dir: string, layer: string, out: Index
       continue;
     }
     if (extname(entry.name) !== ".md") continue;
-    const file = relative(root, path).replace(/\.md$/, "");
-    out.push({ ...parseCard(await readText(path)), layer, file });
+    // 分隔符归一：Windows 的 relative 吐反斜杠，卡的路径键全项目要一致
+    const file = relative(root, path).replace(/\\/g, "/").replace(/\.md$/, "");
+    out.push({ ...parseCard(file, await readText(path)), layer, file, arc: false });
   }
 }
 
-/** 卡解析：首行 `# 标题`，次行（首个非空行）一句话摘要，其余是详情。 */
-function parseCard(detail: string): Omit<IndexCard, "layer" | "file"> {
+/** 卡解析：首行 `# 标题`，次行（首个非空行）一句话摘要，其余是详情。没写标题就用文件名。 */
+function parseCard(file: string, detail: string): Omit<IndexCard, "layer" | "file" | "arc"> {
   const lines = detail.split("\n").map((l) => l.trim());
   const titleIdx = lines.findIndex((l) => /^#\s+/.test(l));
-  const name = (titleIdx >= 0 ? /^#\s+(.+)$/.exec(lines[titleIdx]!)?.[1] : undefined) ?? "";
+  const title = titleIdx >= 0 ? /^#\s+(.+)$/.exec(lines[titleIdx]!)?.[1] : undefined;
   const summary = lines.slice(titleIdx + 1).find((l) => l !== "") ?? "";
-  return { name, summary, detail };
+  // 标题之后的首个非空行是摘要；没写标题时退到全文首个非空行
+  return { name: title?.trim() || file.split("/").pop() || file, summary, detail };
 }
 
 async function loadArchive(path: string): Promise<ArchiveSlice[]> {

@@ -139,7 +139,10 @@ export async function importFromLibrary(
   // ── 文件复制在锁外：整包图片几十兆，进锁会把整条剧目配置队列堵住 ──
   const manifest: [string, AssetMeta][] = [];
   const spriteMap: Record<string, string> = {};
-  if (isCharacter) {
+  // 主角卡没有立绘位（舞台只画 characters，protagonist 只供音色与润色），
+  // 复制过去就是没人引用的孤儿文件——只导卡，不导图
+  const copyMedia = isCharacter && req.target !== "protagonist";
+  if (copyMedia) {
     for (const expression of pickedExpressions(entry, req.expressions)) {
       const source = fileForExpression(entry, expression);
       if (!source) throw new Error(`差分 ${expression} 在资源库条目里没有对应文件`);
@@ -157,7 +160,8 @@ export async function importFromLibrary(
       ]);
       spriteMap[expression] = `${expression}${ext}`;
     }
-  } else {
+  } else if (!isCharacter) {
+    // 单文件类别：背景 / CG / BGM / 音效
     const source = entry.files[0];
     if (source) {
       const ext = extname(source.name).toLowerCase();
@@ -172,15 +176,17 @@ export async function importFromLibrary(
   await withPlayConfigLock(store.dir, async () => {
     // before 与 after 都在锁内现取：撤销条要能精确回滚，锁外读到的可能已被别人改过
     const manifestBefore = await files.read("assets/manifest.json").catch(() => null);
-    const current = await readManifest(files);
-    for (const [key, meta] of manifest) {
-      current[key] = mergeMeta(current[key], meta);
-      result.manifestKeys.push(key);
-    }
-    const manifestText = `${JSON.stringify(current, null, 2)}\n`;
-    await files.write("assets/manifest.json", manifestText);
-    if (manifestBefore !== manifestText) {
-      result.writes.push({ path: "assets/manifest.json", before: manifestBefore, after: manifestText });
+    if (manifest.length > 0) {
+      const current = await readManifest(files);
+      for (const [key, meta] of manifest) {
+        current[key] = mergeMeta(current[key], meta);
+        result.manifestKeys.push(key);
+      }
+      const manifestText = `${JSON.stringify(current, null, 2)}\n`;
+      await files.write("assets/manifest.json", manifestText);
+      if (manifestBefore !== manifestText) {
+        result.writes.push({ path: "assets/manifest.json", before: manifestBefore, after: manifestText });
+      }
     }
 
     const card = entry.meta.character;
@@ -212,17 +218,17 @@ function applyCharacter(
   toProtagonist: boolean,
 ): void {
   if (toProtagonist) {
-    // 主角卡只有 name/persona 两个字段：台词风格与音色是角色的事，主角用不到
-    const merged = {
-      name: card.name ?? play.protagonist?.name ?? id,
-      persona: card.persona ?? play.protagonist?.persona ?? "",
+    // 主角卡只有 name/persona 两个字段：台词风格与音色是角色的事，主角用不到。
+    // 与下面同一条判据——空串不算「库里写了」，否则会把已有名字抹成空白触发整张卡被丢弃
+    play.protagonist = {
+      name: card.name || play.protagonist?.name || id,
+      persona: card.persona || play.protagonist?.persona || "",
     };
-    play.protagonist = merged;
     return;
   }
   let character = play.characters.find((c) => c.id === id);
   if (!character) {
-    character = { id, name: card.name ?? id, persona: card.persona ?? "", sprites: {} } satisfies CharacterCard;
+    character = { id, name: card.name || id, persona: card.persona || "", sprites: {} } satisfies CharacterCard;
     play.characters.push(character);
   }
   for (const key of ["name", "persona", "voice", "voiceId"] as const) {

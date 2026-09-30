@@ -96,6 +96,20 @@ describe("PlayLibrary 剧目包导入与删除", () => {
     expect(await store.premise()).toContain("黄昏");
   });
 
+  it("旧剧目：前提还躺在 play.json 里也认（否则就绪门直接拦死用户的剧）", async () => {
+    await library.createEmpty("old", "旧剧目");
+    await writeFile(
+      join(root, "old", "play.json"),
+      JSON.stringify({ id: "old", title: "T", premise: "黄昏的走廊。", characters: [], opening: "（开始）", initialScene: "s" }),
+    );
+    const store = library.store("old");
+    expect(await store.premise()).toBe("黄昏的走廊。");
+    expect((await store.readiness()).premise).toBe(true);
+    // 用户把前提存进 memory 之后，以 memory 为准
+    await store.savePremise("新写的前提。\n");
+    expect(await store.premise()).toBe("新写的前提。\n");
+  });
+
   it("立绘清单排序稳定（素材页每次打开顺序一致）", async () => {
     await library.importZip(
       zipOf({

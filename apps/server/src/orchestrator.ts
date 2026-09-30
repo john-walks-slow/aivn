@@ -167,7 +167,7 @@ export function createMemoryTools(deps: MemoryToolDeps): AgentTool<TSchema>[] {
     name: "read_memory_detail",
     label: "读记忆卡详情",
     description:
-      "读取记忆索引中某条卡的完整内容（系统提示词「记忆索引」列表里的名称，或 [分类] 后的相对路径如 lore/结界）。" +
+      "读取记忆索引中某条卡的完整内容（系统提示词「记忆索引」列表里的名称，或 [分类] 后的相对路径如 locations/旧校舍）。" +
       "涉及某地点/设定/旧章节时先查再写，避免与既有设定矛盾。",
     parameters: readMemoryDetailParams,
     execute: async (_toolCallId, params: Static<typeof readMemoryDetailParams>) => {
