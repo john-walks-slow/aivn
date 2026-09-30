@@ -29,5 +29,20 @@ plays/*/workshop/
 # 素材管线的跑批产物（scripts/gen_*.py 的输出）不是仓库内容，跑一遍就有。
 # 前导斜杠必须留着：不锚在仓库根的话这条会连 plays/demo/assets/ 一起吃掉
 /assets/
+# 应用级素材库的媒体文件不进 git（2026-09-30 起）。
+# 理由：媒体是原文件本身，会随剧目包再分发，而 git 仓库不是分发渠道；且 700+ 个
+# 二进制把 .git 撑到 337MB，换台机器 clone 一次就是几百兆的网络与磁盘代价。
+# **meta.json 照旧进 git**——那是这次整理真正的产出：id、中文标题、适用场景、
+# 情绪/场景标签、许可与署名写法、原始出处 URL。媒体按 meta 里的 sourceUrl 重新
+# 抓即可复原，整理成果不会丢。
+# 判据只有一个：媒体（png/jpg/webp/mp3/ogg/wav/flac）不进，元数据进。
+library/**/*.png
+library/**/*.jpg
+library/**/*.jpeg
+library/**/*.webp
+library/**/*.mp3
+library/**/*.ogg
+library/**/*.wav
+library/**/*.flac
 # Python 字节码
 __pycache__/

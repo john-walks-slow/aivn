@@ -796,7 +796,9 @@ Kenney 音频包 zip 直链（本次实测抽出，全部 CC0）：
 
 ## 8. 明确不可入库（仅可用于剧目内引用）
 
-> 以下源**素材本身是好的**，可以用于剧目演出（在演出现场播放、或写进 `plays/*/assets/`，只要不把原文件当素材再分发）；但**不能进 `library/`**，因为 `library/` 会随 git 与剧目包把原文件分发出去。
+> 以下源**素材本身是好的**，可以用于剧目演出（在演出现场播放、或写进 `plays/*/assets/`，只要不把原文件当素材再分发）；但**不能进 `library/`**，因为 `library/` 的媒体文件会随剧目包分发出原文件。
+>
+> **完整清单（含每条的禁止条款原文）已移到 §10.3**，本节只留判定原则。
 
 ### 8.1 日本免费素材站（逐条核实）
 
@@ -849,20 +851,95 @@ Kenney 音频包 zip 直链（本次实测抽出，全部 CC0）：
 
 ---
 
-## 10. 待办 / 未完成验证
+## 10. 台账：已入库 / 还能抓 / 抓不了
 
-1. **PeriTune 逐曲日期核对**：`Tender Gaze` / `Last Embrace` / `Hanadoki` / `Pale Warmth` / `Petite Walk` / `Gentle Brew` / `Lollipop Lane` / `Sunlit Café` 的公开日期未确认——**这是能否入库的唯一判据**。
-2. **OtoLogic 逐包下载**：本轮只实测了 `Japanese_School_Bell05-mp3.zip`。其余 130+ 分类页的 zip 需要按 §7.1 的脚本批量跑一遍（每包 ≈1–3 MB）。
-3. **Freesound 登录会话**：需要一次人工登录取得 cookie，才能批量拉取 §6.2 的 CC0 具体音。
-4. **体育馆 CC0 缺口**：CC0 只有 2 条，需补跑 `basketball` / `whistle` / `squeaky shoes` / `cheer crowd` 等关键词。
-5. **社团活动 CC0 缺口**：`school club brass band` 返回 0 条，需换 `brass band practice` / `school festival` / `band rehearsal` / `cheerleading` 再跑。
-6. **Soundimage.org 再分发条款**：需把 IP 许可全文读完确认无「不得单独再分发」类限制。
-7. **Alenia Studios `Infinite Lo-Fi`**：许可行与 Amapola/Anyun 不同，需单条确认。
-8. **Mayra / Polarsound / Pandita / Oasis Game Assets / tone diary**：许可未明，需向作者确认或放弃。
-9. **itch CC0 合集页** `itch.io/c/8078079/cc0-audio-no-ai` 本轮 SSL 失败未读取。
-10. **OGA 若干部位 slug 需重查**：`fantasy-sound-effects`、`platformer-sounds`、`cc0-sound-effects`、`ak-game-audio`、`starfield-romance` 本次返回 404 或未取到许可字段。
-11. **OtoLogic 童謡类目**（`music_box-douyo-*`、`wood_mallet-douyo-*`）：童谣可能含第三方曲目版权，逐条确认后才能用。
-12. **tungerman 完整 10 曲曲名**：官方只公开 5 首；完整清单需从下载到的 `[MP3]/[OGG]/[FLAC] Tearjerker Music Pack.zip` 内文件名列。
+> 状态截至 **2026-09-30 本轮入库后**。此前的待办清单已按实际消耗重写。
+> 入库后库现状：bgm 61 条、sfx 196 条（合计从 20+33 涨到 257）。
+
+### 10.1 本轮已入库（不再重复抓）
+
+| 源 | 抓了什么 | 脚本 |
+| --- | --- | --- |
+| OtoLogic `pop-music-piano01` + `music-box01` | BGM 29 首 | `scripts/curate-oto-bgm.py` |
+| OtoLogic 20 个 SFX 分类页 | SE 150 条（去重变体后 196 目录中 150 为本轮） | `scripts/curate-oto-sfx.py` |
+| OGA `Some character themes (originally for visual novel)` | 4 首 CC0，WAV→MP3 | `scripts/curate-oga-audio.py` |
+| OGA `School day / Rain / Sun` | 3 首 CC0 | 同上 |
+| OGA `Upbeat Visual Novel Music` | 5 首 CC BY 3.0 + BY-SA 3.0 | 同上 |
+| OGA `Pencil Sounds`、`10 Book Page Flips` | 12 条 CC0 | 同上 |
+
+**OtoLogic 已抓的 20 个 SFX 分类页**：`school_bell01` / `announce01` / `heartbeat01` / `books01` / `writing_material02` / `footsteps01` / `clock01` / `doorbell01` / `flashback01` / `flash01` / `sparkle01` / `curtain01` / `scene_change01` / `city_ambi01` / `instruments-piano01` / `dizzy01` / `sigh01` / `electronic-chime01` / `applause-cheer01`，以及 `motion-slide01`。
+**没抓的 OtoLogic BGM 页**：`ambient01`（含不穏系 The Dark Eternal Night、透明系夢想）、`short-loop01`（loop 01 明亮/02 轻快/03 紧迫）、`minimal01`（对白垫底）、`orchestra01`、`game-*-gb/nes`（8bit）、`jazz01` / `rock01` / `electronica01` / `soul01` / `pop-music-synth01` / `pop-music01` / `bossanova01` / `other01` / `instruments*` / `documentary01` / `recent`。
+
+### 10.2 还能抓（按「值不值」排序）
+
+| 优先级 | 源 | 内容 | 阻碍 |
+| --- | --- | --- | --- |
+| **P0** | **Tungerman Tearjerker Music Pack** | 10 首钢琴曲（Visions of Innocence / Survivor's Lament / Acceptance / A Moment of Silence / Afterglow…）。CC BY 4.0 条款**明写允许 repost**：「4. Reposting. You are free to repost my tracks so long as you mention my name」 | 无。上次下到 71%（62MB/88MB）是被主动 kill 的，给足 5 分钟超时即可 |
+| **P0** | **OGA 已验证直链的 CC0/CC-BY 条目** | `JRPG Piano.mp3`(502KB CC0)、`Anime-esque Intro-Outro Theme.zip`(CC0)、`first_light_particles_0.wav`(25MB CC0，日系 OST 风)、`pageflips.zip`(11 变体 CC BY-SA 4.0)、`paper_pages`(CC BY 3.0)、`100-CC0-SFX_0.zip`、`80-CC0-RPG-SFX_0.zip`、`beeps.zip`、`winjingle.zip`(11.6MB)、`heartbeat.mp3` | 无，纯 curl |
+| **P1** | **Freesound §6.2 的 110+ 条 CC0** | 走廊脚步（`455782` 高中走廊）、图书馆/空教室底噪、椅子拖动（`571295`/`571294`/`173940`）、撕纸、蝉鸣（`717588`/`571090`/`396809`）、耳鸣（`377205`–`377208`）、体育馆脚步（`472673`） | **需人工登录一次**：`/s/<id>/download/` 会 302 到 `/home/login/`，apiv2 也要 token |
+| **P1** | **OtoLogic 剩余分类页** | 见 10.1 末段。`ambient01` 补蝉鸣/不穏系，`minimal01` 补对白垫底 | 无，§7.1 脚本可直接跑 |
+| **P2** | **ObsydianX Interface SFX Pack 1** | 200+ UI 音（Confirm/Back/Cursor/Error 多风格多 pattern），CC0，OGG 版 17MB | 无 |
+| **P2** | **Zane Little Music** | 54 首 CC0（FMA 专辑页明写 `CC0 1.0 Universal`），itch/OGA/FMA 三处都有 | 无。作者注明这些曲子**不是无缝循环** |
+| **P2** | **Kevin MacLeod / incompetech**、**Alexander Nakarada / CreatorChords** | 都是 CC BY 4.0，游戏 bundle 目录 | 无 |
+| **P3** | **Tallbeard FREE Music Loop Bundle** | 200+ 首 CC0，11 个 zip（先下 `-song-browser.zip` 780KB 看目录） | 体量大，风格偏西式 |
+| **P3** | **FreePD 镜像** | 原站 freepd.com **已永久关闭**；<https://codeberg.org/fineless71/FreePD>、<https://github.com/0lhi/FreePD> 均 CC0，真·公有领域（19 世纪古典改编） | 无 |
+| **待定** | **PeriTune** | 8 首候选：`Tender Gaze` / `Last Embrace` / `Hanadoki` / `Pale Warmth` / `Petite Walk` / `Gentle Brew` / `Lollipop Lane` / `Sunlit Café` | **逐曲发布日期未确认，这是能否入库的唯一判据**（见 §3） |
+| **待定** | **Soundimage.org（Eric Matyas，1900+ 曲）** | 授权允许 reproduce and Share，但**署名必须出现在作品内部**（不能只写简介） | 需读完 IP 许可全文，确认无「不得单独再分发」类限制 |
+| **要你拍板** | **roskovair Cinematic Piano BGM** | 15 首，zip 28.9MB 早已下到本地未入库。页面 `Asset license: CC0` 且描述「Released under CC0 license」 | **作者评论区 3 年前留言**：「I'm not interested in distributing the music itself outside of itch.io or having others distribute it to any other websites on my behalf.」法律上 CC0 成立，作者意愿相反 |
+
+### 10.3 抓不了（素材好但条款不允许原文件再分发）
+
+> 判定尺子见 §0：`library/` 的媒体文件随 git 与剧目包分发 = 原文件被再分发，
+> 只允许「嵌入作品使用」的源一律不入库。**能在剧目内引用，不能进 `library/`。**
+
+**日本免费站（§8.1 逐条核实过禁止条款原文）**
+
+| 站点 | 关键条款 | 备注 |
+| --- | --- | --- |
+| **魔王魂 maou.audio** | 「曲単品を再配布するのはNG」 | 免费/商用 OK/无需注册/18禁 OK。**明确允许改编曲当素材分发**（「魔王魂の曲を改変した音楽を音楽素材として配布してもOK」），教育用途二次配布需署名+链接+文件名含 `maoudamashii` |
+| **DOVA-SYNDROME** | 禁止 #5 复制公开 / #6 非权利者二次配布 | 免费/免署名/商用 OK |
+| **Springin' Sound Stock** | FAQ 明写「効果音を自由なタイミングで鳴らせるアプリ…での使用は再配布に該当」 | 1000+ 音，**正好命中本项目的使用方式** |
+| **効果音ラボ / 効果音辞典 / 甘茶の音楽工房 / 音人 On-Jin / ポケットサウンド / くらげ工匠 / 無料効果音で遊ぼう！/ MusMus** | 全部明文再配布禁止 | 音人 On-Jin 例外：系统上音源必然暴露时（ツクール等）加「著作者表示 + 二次配布禁止」标注可获许可——那是「随作品暴露」，不是「素材库分发」 |
+| **ぴぽや（倉庫）** | 无料素材允许再配布（须连同本规约、无偿无条件）；**有料素材禁止** | 主要做图/立绘，**不含音频** |
+| **Monochi Project** | 禁止「未编辑或仅微加工内容的无许可二次配布」 | 角色/世界观素材，无音频 |
+
+**itch.io（§8.2 逐条核实过）**
+
+| 包 | 禁止原文 | 内容 |
+| --- | --- | --- |
+| **syuP ADV Game BGM Pack** | 「Redistribution prohibited」 | 10 首，曲名直接就是 galgame 场景：Morning Light / Quiet Path / Small Memories / Soft Rain / Twilight Reverie / Secret Garden / Gentle Breeze / Fading Memory / Evening Glow / Silent Farewell。**风格最对，可惜** |
+| **ELV Games VN Music 1/2/4** | 「may not be resold, published, or distributed in any way except as an integral part of the project for which they were used; **this also applies to those that have been edited or modified**」 | 16 首全带 loop 版 |
+| **WAFU Sound Works Vol.3 VN Music Pack** | 「No reselling/redistributing the audio itself」 | 12 曲 × 4 mood，WAV 48k/16bit + OGG + seamless loop，共 48 文件 |
+| **Alenia Studios Amapola / Anyun / Heritage** | CC BY 4.0 **+ 附加条款**「No Resale: Standalone redistribution or resale of these audio files is strictly prohibited」 | Amapola = 20 首钢琴；Anyun = 13 首叙事曲（含 BPM/乐器标注） |
+| **Vacuous BGM**（Vol.01–07 / For Male Vol.01–07） | 「Redistribution of the raw audio files or resale as stock music is not permitted」 | 每卷 12 首 loop-ready WAV，4–7 分钟/曲。档案页写「No attribution required」与条款矛盾 ⇒ 按不可入库处理 |
+| **Potat0Master BGM Pack 1** | 「you cannot resell or distribute them in the form that it is downloaded or even when it is modified」 | 5 首免费 |
+| **glowcompany Seoul School** | 「You may not resell or redistribute the assets as assets」 | $9，23 个音（上下课 4 音钟/粉笔/翻页/椅子摩擦/推拉门/柜门/脚步/饮水机/走廊人声/空教室底噪/托盘/哨子/球弹跳/8 UI）。**是韩式不是日式** |
+| **moodfrog Household Foley Megapack** | 「royalty-free… no attribution required」是营销词，未授权再分发 | 100 MP3，**且是 Suno AI 生成** |
+| **composersquad / meraj-melody / cyberleaf / n91music / alexeyshishnin** cinematic piano 系列 | 付费 $1.60–19，或纯「royalty free」营销词 | composersquad 那包还登记了 **YouTube Content ID** ⇒ 双重不可用 |
+
+**许可未明（须问作者，暂不入库）**
+
+- `Mayra`（只写 credit required，未提再分发）、`Polarsound`（「royalty-free」纯营销词）、`Pandita Studio`、`Oasis Game Assets`、`tone diary Everyday Hearts`（$5，Sunny Campus / First Confession / Rainy Promise / Starry Walk Home，许可未列明）
+- `Page Turning Sfx`（Nicole Marie）：要求署名 + 允许商用 + 允许随作品出售，但**未明说可再分发原文件**
+- `Visual Novel Audio Pack Vol.2`（FulminisIctus）：SFX = CC-BY 4.0，但**音乐 = CC-BY-NC 4.0** ⇒ NC 不可商用入库
+- `Come Home`（Jan Hehr，15 首，605MB）、`Elegant Emotional Piano BGM`（okamennme，$5）、`Alenia Infinite Lo-Fi`（许可行与 Amapola/Anyun 不同，需单条确认）
+
+**两个容易误判的**
+
+- **Pixabay**：「You cannot sell or distribute Content on a **Standalone** basis」+ 另禁 ML 训练/建库。措辞与 CC0 同样宽，但站点条款另有约束，不与 CC0 源混为一谈
+- **Keynata Commons**（99 首，含 17 首 J-Pop）：许可 CC0，但**是 AI 作曲**。itch 合集页 `itch.io/c/8078079/cc0-audio-no-ai` 明确把这类排除
+
+### 10.4 仍未解决的核实项
+
+1. PeriTune 8 首候选的公开发布日期（§3、§10.2）
+2. Soundimage.org IP 许可全文，确认无「不得单独再分发」
+3. Alenia Studios `Infinite Lo-Fi` 单独确认
+4. Freesound 会话（一次人工登录，之后 §6.2 整批可拉）
+5. itch CC0 合集页 `itch.io/c/8078079/cc0-audio-no-ai` 上轮 SSL EOF 未读
+6. OGA 若干部位 slug 需重查：`fantasy-sound-effects`、`platformer-sounds`、`cc0-sound-effects`、`ak-game-audio`、`starfield-romance`
+7. OtoLogic 童謡类目（`music_box-douyo-*`、`wood_mallet-douyo-*`）：童谣可能含第三方曲目版权，逐条确认后才能用
+8. tungerman 完整 10 曲曲名：官方只公开 5 首，其余从 zip 内文件名列
+9. 体育馆 / 社团活动 CC0 仍缺：换 `brass band practice` / `school festival` / `band rehearsal` / `cheerleading` / `whistle` / `squeaky shoes` 再跑 Freesound
 
 ---
 
