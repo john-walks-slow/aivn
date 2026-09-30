@@ -21,11 +21,15 @@ if [ "$WANT_SERVER" = 0 ] && [ "$WANT_WEB" = 0 ]; then
   echo "--no-server 与 --no-web 不能同时给：没东西可起"; exit 2
 fi
 
-# server + web 共用一个内存槽位（512MB 预算），一次申请 2 个端口
 if [ "$WANT_SERVER" = 1 ] && [ "$WANT_WEB" = 1 ]; then
-  read -r STAGE_PORT STAGE_WEB_PORT <<< "$(acquire-port --wait 2)" || {
-    echo "!! 端口分配失败（跑 acquire-port --list 查槽位，或内存余量不足）"; exit 1;
-  }
+  # server + web 共用一个内存槽位（512MB 预算），一次申请 2 个端口。
+  # read 在 here-string 上永远成功（空输入也返回 0），拿不到端口时不会走 || 分支——
+  # 必须逐个判空，否则端口号是空的，server 监听随机口、web 抢占默认 5173。
+  read -r STAGE_PORT STAGE_WEB_PORT <<<"$(acquire-port --wait 2)" || true
+  if [ -z "${STAGE_PORT:-}" ] || [ -z "${STAGE_WEB_PORT:-}" ]; then
+    echo "!! 端口分配失败（跑 acquire-port --list 查槽位，或内存余量不足）"
+    exit 1
+  fi
 elif [ "$WANT_WEB" = 1 ]; then
   STAGE_WEB_PORT="$(acquire-port --wait)" || { echo "!! web 端口分配失败"; exit 1; }
 else

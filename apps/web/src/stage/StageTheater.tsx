@@ -21,8 +21,6 @@ interface StageTheaterProps {
   oocQueued: boolean;
   /** 结构性操作会腰斩正在演的这一幕，busy 时 ↺/🌿 置灰（OOC 仍可用，走 steer 注入）。 */
   busy: boolean;
-  /** 操作条可见性（H 键手动收起做沉浸模式，仅此一种隐藏途径）。 */
-  chrome: boolean;
   /** 由当前显示行 seq 反查出的锚点：编辑绑行，跳转/分岔绑整幕。 */
   targets: DirectorTargets;
   /** 导演原语：OOC / 编辑 / 分岔 / 跳转，彼此正交。 */
@@ -38,8 +36,6 @@ interface StageTheaterProps {
   /** 点舞台即开新拍：等到内容演完且存在 pause 停止点时成立（不再单列「继续」按钮）。 */
   canContinue: boolean;
   onContinue: () => void;
-  /** 操作条可见性控制：碰到舞台叫它回来，H 键手动切换。 */
-  onChrome: (next: boolean) => void;
   /** 快进档：按住 Ctrl 期间为 true，松开/失焦回 false。 */
   onTurbo: (on: boolean) => void;
   /** 舞台层浮层：停止点的选肢卡片、入戏输入、幕末黑场（均在台词条之上层级）。 */
@@ -105,7 +101,6 @@ export function StageTheater({
   voiceAvailable,
   oocQueued,
   busy,
-  chrome,
   targets,
   onOoc,
   onEdit,
@@ -117,7 +112,6 @@ export function StageTheater({
   onView,
   canContinue,
   onContinue,
-  onChrome,
   onTurbo,
   overlay,
 }: StageTheaterProps) {
@@ -144,12 +138,6 @@ export function StageTheater({
     playback;
   const shown = view ? view.text.slice(0, viewLength) : "";
   const lineDone = current !== null && shownLength >= current.text.length;
-  const poke = useCallback((): void => {
-    onChrome(true);
-  }, [onChrome]);
-  const toggleChrome = useCallback((): void => {
-    onChrome(!chrome);
-  }, [chrome, onChrome]);
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→/空格 往回追。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
@@ -180,9 +168,6 @@ export function StageTheater({
         setAction(null);
         setDraft("");
         e.preventDefault();
-      } else if (e.key === "h" || e.key === "H") {
-        toggleChrome();
-        e.preventDefault();
       } else if (e.key === "l" || e.key === "L") {
         onView("backlog");
         e.preventDefault();
@@ -190,7 +175,7 @@ export function StageTheater({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [scrub, scrubbed, action, onView, toggleChrome]);
+  }, [scrub, scrubbed, action, onView]);
 
   // 快进档：按住 Ctrl 追到缓冲末端，松开立刻回到原节奏。
   // 失焦也撤档——切出去时 Ctrl 可能停在按下状态，回来就变成永远在快进。
@@ -218,7 +203,6 @@ export function StageTheater({
    */
   const onStageClick = (): void => {
     onUnlock();
-    poke();
     if (scrubbed) scrub(1);
     else if (canContinue) onContinue();
     else advance();
@@ -482,14 +466,13 @@ export function StageTheater({
 /**
  * 回顾：整屏重读这一场说过的所有话——剧作家的台词、玩家的选择与输入、导演注。
  *
- * 点一行不再直接跳回那一刻：翻到过去是为了在这儿做点什么（重听、改写、分岔、跳转），
- * 所以每条下面挂一排图标工具栏，跳回舞台只是其中一个。点正文本身不做任何事，避免误触。
+ * 点一行不再直接跳回那一刻：翻到过去是为了在这儿做点什么（重听、改写、由此分岔），
+ * 所以每条下面挂一排动词按钮，跳回舞台只是其中一个。点正文本身不做任何事，避免误触。
  *
- * 标题条右端是「剧作家原始历史」开关：拉 session 快照，看这一场是怎么被写出来的
- * （注入原文 / 思考 / 未经解析的原始 DSL / 工具调用）——演出侧只看得到结果，缺口在这里补。
+ * 「回顾 / 原始历史」这组切换由外层放进侧栏的工具段（视图切换属于导航，不该再横一条），
+ * 这里只出内容。
  */
 export function BacklogView({
-  playId,
   entries,
   names,
   headKey,
@@ -501,10 +484,7 @@ export function BacklogView({
   onReplay,
   onEdit,
   onRewrite,
-  onJump,
-  onClose,
 }: {
-  playId: string;
   entries: readonly TranscriptEntry[];
   names: Readonly<Record<string, string>>;
   headKey: string | null;
@@ -516,69 +496,19 @@ export function BacklogView({
   onSeek: (key: string) => void;
   onReplay: (seq: number) => void;
   onEdit: (nodeId: string, text: string) => void;
-  /** 分岔：重写出新剧情（onRewrite 是分岔的既有入口，别名另起只会多一套叫法）。 */
+  /** 分岔：退到该段之前重写并重新生成。 */
   onRewrite: (beatId: string, instruction?: string) => void;
-  /** 跳转：世界线挂到该拍，不生成内容。 */
-  onJump: (nodeId: string) => void;
-  onClose: () => void;
 }) {
   /** 改写就地改：点开编辑框在回顾里完成，不跳视图。 */
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [showHistory, setShowHistory] = useState(false);
-  // 刷新计数住在外层：标题条只有一根，刷新键得从 HistoryView 的外面按。
-  const [historyNonce, setHistoryNonce] = useState(0);
-  const reloadHistory = useCallback(() => setHistoryNonce((n) => n + 1), []);
 
   return (
-    <div className="screen stage-screen backlog-screen">
-      <header className="panel-bar">
-        <div className="seg" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={!showHistory}
-            className={`seg-btn ${showHistory ? "" : "active"}`.trim()}
-            onClick={() => setShowHistory(false)}
-          >
-            回顾
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={showHistory}
-            className={`seg-btn ${showHistory ? "active" : ""}`.trim()}
-            onClick={() => setShowHistory(true)}
-            title="剧作家的 session 快照：注入原文、思考、原始 DSL 与工具调用"
-          >
-            原始历史
-          </button>
-        </div>
-        <div className="panel-bar-actions">
-          {showHistory ? (
-            <button
-              type="button"
-              className="ghost-btn small-btn"
-              onClick={reloadHistory}
-              title="重新拉取（内容还没写进存档）"
-            >
-              <Icon name="refresh" size={14} />
-              刷新
-            </button>
-          ) : null}
-          <button type="button" className="ghost-btn small-btn icon-btn icon-btn-sm" onClick={onClose} title="关闭">
-            <Icon name="close" size={14} />
-          </button>
-        </div>
-      </header>
-      {showHistory ? (
-        <HistoryView playId={playId} nonce={historyNonce} />
+    <div className="backlog-panel">
+      {entries.length === 0 ? (
+        <p className="backlog-empty">还没有说出口的话。</p>
       ) : (
-        <div className="panel-body">
-          {entries.length === 0 ? (
-            <p className="backlog-empty">还没有说出口的话。</p>
-          ) : (
-            <ol className="backlog-list">
+        <ol className="backlog-list">
           {entries.map((item) => {
             const beat = beatFor(item);
             const editable = item.kind === "line" && item.nodeId !== null;
@@ -620,14 +550,17 @@ export function BacklogView({
                     </button>
                   </div>
                 ) : (
+                  /* 动词带字样：几十像素的方块里分不出「重听」和「改写」，更看不出两个同义
+                     按钮的区别。「由此分岔」只留一个——重生成是分岔的副产品，不单列第二动词。 */
                   <div className="bl-tools">
                     <button
                       type="button"
                       className="bl-tool"
-                      title="回到舞台的这一刻"
+                      title="在舞台上重看到这一句"
                       onClick={() => onSeek(item.key)}
                     >
-                      <Icon name="prev" />
+                      <Icon name="prev" size={14} />
+                      回到舞台
                     </button>
                     {playable && (
                       <button
@@ -636,7 +569,8 @@ export function BacklogView({
                         title="重听这句"
                         onClick={() => item.seq !== null && onReplay(item.seq)}
                       >
-                        <Icon name="play" />
+                        <Icon name="play" size={14} />
+                        重听
                       </button>
                     )}
                     {editable && (
@@ -649,35 +583,26 @@ export function BacklogView({
                           setDraft(item.text);
                         }}
                       >
-                        <Icon name="pencil" />
+                        <Icon name="pencil" size={14} />
+                        改写
                       </button>
                     )}
                     <button
                       type="button"
                       className="bl-tool"
-                      title={busy ? "剧作家正在写，暂时不能分岔" : "从这一幕分岔出去"}
                       disabled={busy || !beat}
+                      title={busy ? "剧作家正在写，暂时不能分岔" : "由此分岔：退到这一幕之前重写并重新生成"}
                       onClick={() => beat && onRewrite(beat)}
                     >
-                      <Icon name="rewrite" />
-                    </button>
-                    <button
-                      type="button"
-                      className="bl-tool"
-                      title={busy ? "剧作家正在写，暂时不能分岔" : "从这里重写出一段新剧情"}
-                      disabled={busy || !beat}
-                      onClick={() => beat && onRewrite(beat)}
-                    >
-                      <Icon name="fork" />
+                      <Icon name="fork" size={14} />
+                      由此分岔
                     </button>
                   </div>
                 )}
               </li>
             );
           })}
-          </ol>
-        )}
-        </div>
+        </ol>
       )}
     </div>
   );
@@ -692,12 +617,12 @@ const HISTORY_KIND: Record<HistoryEntry["role"], { label: string; cls: string }>
 };
 
 /**
- * 剧作家原始历史：活动周目最近若干拍的 session 快照（REST 只读，不建 runtime、不改状态）。
+ * 剧作家的原始历史：活动周目最近若干拍的 session 快照（REST 只读，不建 runtime、不改状态）。
  * 与回顾互补——回顾只给解析后的台词与选肢，这里给写出来之前的原文：注入上下文、
  * 思考、未经解析的原始 DSL、工具调用。空表不是错误：还没落盘（读盘落后一拍）
- * 或纪元压缩前没有留存。标题条由外层 BacklogView 统一给，这里只出内容。
+ * 或纪元压缩前没有留存。
  */
-function HistoryView({ playId, nonce }: { playId: string; nonce: number }) {
+export function HistoryView({ playId, nonce }: { playId: string; nonce: number }) {
   const [beats, setBeats] = useState<HistoryBeat[] | null>(null);
   useEffect(() => {
     let alive = true;
@@ -710,41 +635,37 @@ function HistoryView({ playId, nonce }: { playId: string; nonce: number }) {
     };
   }, [playId, nonce]);
 
+  if (beats === null) return <div className="overlay">读取历史…</div>;
+  if (beats.length === 0) {
+    return <p className="backlog-empty">还没有留存的历史——生成完就写进来了。</p>;
+  }
   return (
-    <div className="panel-body">
-      {beats === null ? (
-        <div className="overlay">读取历史…</div>
-      ) : beats.length === 0 ? (
-        <p className="backlog-empty">还没有留存的历史——生成完就写进来了。</p>
-      ) : (
-        <>
-          {beats.map((beat) => (
-            <section key={beat.turn} className="hx-beat">
-              <header className="hx-beat-head">
-                <span>第 {beat.turn} 次生成</span>
-                <span className="muted">{beat.entries.length} 条</span>
-              </header>
-              {beat.entries.map((entry) => {
-                const kind = HISTORY_KIND[entry.role];
-                return (
-                  <div key={`${entry.beat}-${entry.seq}`} className={`hx-entry ${kind.cls}`}>
-                    <span className="hx-kind">
-                      {kind.label}
-                      {entry.role === "toolCall" && entry.name ? ` · ${entry.name}` : ""}
-                    </span>
-                    {entry.role === "toolCall" ? (
-                      <pre className="hx-tool">{JSON.stringify(entry.args ?? {}, null, 2)}</pre>
-                    ) : (
-                      <p className="hx-text">{entry.text}</p>
-                    )}
-                  </div>
-                );
-              })}
-            </section>
-          ))}
-          <p className="muted hx-foot">只读快照，落盘比当前拍慢一步——要最新的按标题条的「刷新」。</p>
-        </>
-      )}
+    <div className="backlog-panel">
+      {beats.map((beat) => (
+        <section key={beat.turn} className="hx-beat">
+          <header className="hx-beat-head">
+            <span>第 {beat.turn} 次生成</span>
+            <span className="muted">{beat.entries.length} 条</span>
+          </header>
+          {beat.entries.map((entry) => {
+            const kind = HISTORY_KIND[entry.role];
+            return (
+              <div key={`${entry.beat}-${entry.seq}`} className={`hx-entry ${kind.cls}`}>
+                <span className="hx-kind">
+                  {kind.label}
+                  {entry.role === "toolCall" && entry.name ? ` · ${entry.name}` : ""}
+                </span>
+                {entry.role === "toolCall" ? (
+                  <pre className="hx-tool">{JSON.stringify(entry.args ?? {}, null, 2)}</pre>
+                ) : (
+                  <p className="hx-text">{entry.text}</p>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      ))}
+      <p className="muted hx-foot">只读快照，落盘比当前拍慢一步——要最新的按侧栏的「刷新」。</p>
     </div>
   );
 }

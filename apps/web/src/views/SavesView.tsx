@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "../ui/Icon.js";
 import { stamp } from "../ui/stamp.js";
-import { api, type SaveInfo } from "../api.js";
+import { api, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
 
 /**
@@ -10,6 +10,7 @@ import { navigate } from "../router.jsx";
  */
 export function SavesView({ playId }: { playId: string }) {
   const [saves, setSaves] = useState<SaveInfo[] | null>(null);
+  const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -20,8 +21,17 @@ export function SavesView({ playId }: { playId: string }) {
       .listSaves(playId)
       .then(setSaves)
       .catch((e: Error) => setError(e.message));
+    api
+      .playDetail(playId)
+      .then(setDetail)
+      .catch((e: Error) => setError(e.message));
   }, [playId]);
   useEffect(reload, [reload]);
+
+  // 剧目还没准备好（缺故事前提）时进不去舞台：进去也只有一片空场
+  const ready = detail?.readiness.ready ?? false;
+  const missing = detail ? readinessMissing(detail.readiness) : [];
+  const gateHint = ready ? "" : `还差 ${missing.join("、")}，到剧目页补齐后才能进舞台`;
 
   const guard = (id: string, run: () => Promise<unknown>): void => {
     setBusyId(id);
@@ -77,7 +87,7 @@ export function SavesView({ playId }: { playId: string }) {
           </span>
         </button>
         <h2>周目</h2>
-        <button className="primary" disabled={busyId !== null} onClick={startNew}>
+        <button className="primary" disabled={busyId !== null || !ready} title={gateHint} onClick={startNew}>
           开始新周目
         </button>
       </header>
@@ -87,6 +97,8 @@ export function SavesView({ playId }: { playId: string }) {
           {error}
         </div>
       )}
+
+      {!ready && detail && <div className="error-banner">{gateHint}。</div>}
 
       <p className="muted small saves-hint">
         每个周目是一棵独立的故事树。开始新周目只新建一棵，旧的原封不动；改名只改标签，不动故事。
@@ -136,7 +148,8 @@ export function SavesView({ playId }: { playId: string }) {
                 <>
                   <button
                     className={save.current ? "" : "primary"}
-                    disabled={busyId !== null}
+                    disabled={busyId !== null || !ready}
+                    title={gateHint}
                     onClick={() => enter(save)}
                   >
                     {save.current ? "回到舞台" : "进入"}

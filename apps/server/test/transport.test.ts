@@ -3,7 +3,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { PlayHouse, PlayRuntime } from "../src/playhouse.js";
 import { attachTransport } from "../src/transport.js";
 
-/** 假 PlayHouse：只提供 transport 用到的三个入口，把 setTtsState 调用记下来。 */
+/** 假 PlayHouse：只提供 transport 用到的入口，把 setTtsState 调用记下来。 */
 function fakePlayhouse() {
   const tts: { enabled?: boolean; paused?: boolean }[] = [];
   const runtime = {
@@ -22,7 +22,10 @@ function fakePlayhouse() {
     save: { id: "stest", name: "第 1 周目" },
   };
   const playhouse = {
+    // 舞台连上走 stage（缺周目才建），逛工坊走 get（不建）
+    stage: (): Promise<PlayRuntime> => Promise.resolve(runtime as unknown as PlayRuntime),
     get: (): Promise<PlayRuntime> => Promise.resolve(runtime as unknown as PlayRuntime),
+    peek: (): PlayRuntime => runtime as unknown as PlayRuntime,
     clientsFor: (): Set<(msg: unknown) => void> => new Set(),
   };
   return { playhouse: playhouse as unknown as PlayHouse, tts };

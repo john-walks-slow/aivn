@@ -6,9 +6,17 @@ import { usePlayback } from "../stage/director.js";
 import { VoiceDirector } from "../stage/audio.js";
 import { buildAssetIndex, type AssetIndex } from "../stage/assets.js";
 import { useGeneratedAssets } from "../stage/generatedAssets.js";
-import { BacklogView, StageTheater, type DirectorTargets, type StageView } from "../stage/StageTheater.js";
-import { GameBar } from "../stage/GameBar.js";
+import {
+  BacklogView,
+  HistoryView,
+  StageTheater,
+  type DirectorTargets,
+  type StageView,
+} from "../stage/StageTheater.js";
 import { RouteTree, useLineage, type LineageOps } from "../stage/LineagePanel.js";
+import type { RouteControls } from "../stage/RouteCanvas.js";
+import { StageShell } from "../stage/StageShell.js";
+import { Icon } from "../ui/Icon.js";
 import { beatAtLine, buildBeats, editableNodeAtLine } from "../stage/beats.js";
 import { buildTranscript, type TranscriptEntry } from "../stage/transcript.js";
 import { ToastStack, useToasts } from "../stage/toast.js";
@@ -16,7 +24,7 @@ import { StopPanel } from "../stage/StopPanel.js";
 import { useVisualViewport } from "../stage/viewport.js";
 import { WorkshopPanel, type WorkshopMode } from "../workshop/WorkshopPanel.js";
 
-/** 演出屏：舞台（视觉层+打字机+导演栏）/ 回顾 / 路线三视图 + 停止点面板。 */
+/** 演出屏：舞台（视觉层+打字机+导演栏）/ 回顾 / 路线三视图 + 停止点面板，共用侧栏外壳。 */
 export function StageScreen({ playId }: { playId: string }) {
   const directorRef = useRef<VoiceDirector | null>(null);
   if (!directorRef.current) directorRef.current = new VoiceDirector();
@@ -25,7 +33,7 @@ export function StageScreen({ playId }: { playId: string }) {
   const [voiceOn, setVoiceOn] = useState(() => localStorage.getItem("stage-voice") !== "0");
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [assets, setAssets] = useState<Record<string, string[]>>({});
-  /** 当前周目档名：顶栏上的存档芯片，点它去周目页换一棵故事树。 */
+  /** 当前周目档名：侧栏底部的存档芯片，点它去周目页换一棵故事树。 */
   const [saveName, setSaveName] = useState<string | null>(null);
   const [view, setView] = useState<StageView>("stage");
   /** P6 缓冲换代：token 变化 = 事件缓冲被整段重放；resume 决定快进还是继续流式。 */
@@ -34,8 +42,12 @@ export function StageScreen({ playId }: { playId: string }) {
   const [lineageNonce, setLineageNonce] = useState(0);
   const [oocQueued, setOocQueued] = useState(false);
   const [workshop, setWorkshop] = useState<WorkshopMode | null>(null);
-  /** 操作条常驻：舞台上有几个能点的键，藏起来等于让玩家猜。H 手动收起做沉浸模式，仅此一种隐藏途径。 */
-  const [chrome, setChrome] = useState(true);
+  /** 回顾的第二视图：剧作家的原始历史（同一份内容区，切视图不换外壳）。 */
+  const [rawHistory, setRawHistory] = useState(false);
+  const [historyNonce, setHistoryNonce] = useState(0);
+  /** 路线画布把镜头操作交给侧栏（见 RouteCanvas 的 onControls）。 */
+  const [routeControls, setRouteControls] = useState<RouteControls | null>(null);
+  const setRouteControlsStable = useCallback((c: RouteControls) => setRouteControls(c), []);
   /** 按住 Ctrl 的快进档：舞台层只报键，播放层管节奏。 */
   const [turbo, setTurbo] = useState(false);
   const toast = useToasts();
@@ -99,6 +111,25 @@ export function StageScreen({ playId }: { playId: string }) {
     [sendBranch],
   );
   const ops: LineageOps = useMemo(() => ({ jump, branch }), [jump, branch]);
+
+  /**
+   * 路线页上的结构操作做完就回舞台。跳转没有新内容可演、留在原地的话树上的高亮会跟着
+   * 挂载点动，玩家只会看到「点了没反应」；分岔的重写结果也只在舞台上看得见。
+   * 舞台导演栏那条 ops 不切视图——那里本来就在舞台上。
+   */
+  const routeOps: LineageOps = useMemo(
+    () => ({
+      jump: (nodeId: string) => {
+        jump(nodeId);
+        setView("stage");
+      },
+      branch: (nodeId: string, instruction?: string) => {
+        branch(nodeId, instruction);
+        setView("stage");
+      },
+    }),
+    [jump, branch],
+  );
 
 
   // 走过的岔路口：玩家在这条线之外已经说过的选项，卡片上打「✓ 已选过」提醒存在多条命运
@@ -178,7 +209,7 @@ export function StageScreen({ playId }: { playId: string }) {
     stage.sendContinue();
   }, [stage.sendContinue]);
 
-  // 三个浮层都是 z-index 压在顶栏之上的，关掉它们的自然动作是 Esc。
+  // 工坊浮层开着时，Esc 关工坊；否则回到舞台。侧栏是常驻的，不需要「关掉」它。
   useEffect(() => {
     if (view === "stage" && !workshop) return;
     const onKey = (e: KeyboardEvent): void => {
@@ -243,113 +274,206 @@ export function StageScreen({ playId }: { playId: string }) {
     if (socketError) pushToast(socketError, "error");
   }, [socketError, pushToast]);
 
+  // 侧栏的工具段：当前视图自己才有的操作（回顾的第二个视图、路线的镜头）。
+  // 导航（舞台/回顾/路线/工坊）归侧栏本体，退出只有「回剧目」一个出口。
+  const tools = view === "backlog" ? (
+    <>
+      <div className="side-tools-title">看什么</div>
+      <div className="seg side-seg" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!rawHistory}
+          className={`seg-btn ${rawHistory ? "" : "active"}`.trim()}
+          onClick={() => setRawHistory(false)}
+        >
+          说过的话
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={rawHistory}
+          className={`seg-btn ${rawHistory ? "active" : ""}`.trim()}
+          onClick={() => setRawHistory(true)}
+          title="剧作家的 session 快照：注入原文、思考、原始 DSL 与工具调用"
+        >
+          原始历史
+        </button>
+      </div>
+      {rawHistory && (
+        <button
+          type="button"
+          className="side-tool-btn"
+          onClick={() => setHistoryNonce((n) => n + 1)}
+          title="重新拉取（内容还没写进存档）"
+        >
+          <Icon name="refresh" size={15} />
+          刷新
+        </button>
+      )}
+    </>
+  ) : view === "route" ? (
+    routeControls && (
+      <>
+        <div className="side-tools-title">镜头</div>
+        <div className="side-seg" role="group" aria-label="时间方向">
+          <button
+            type="button"
+            className={`seg-btn ${routeControls.dir === "horizontal" ? "active" : ""}`.trim()}
+            onClick={() => routeControls.setDir("horizontal")}
+            title="从左到右读时间"
+          >
+            横向
+          </button>
+          <button
+            type="button"
+            className={`seg-btn ${routeControls.dir === "vertical" ? "active" : ""}`.trim()}
+            onClick={() => routeControls.setDir("vertical")}
+            title="从上到下读时间"
+          >
+            纵向
+          </button>
+        </div>
+        <div className="side-tool-grid">
+          <button type="button" className="side-tool-btn" onClick={routeControls.toRoot} title="回到开头">
+            <Icon name="prev" size={15} />
+            开头
+          </button>
+          <button
+            type="button"
+            className="side-tool-btn"
+            onClick={routeControls.toLatest}
+            disabled={!routeControls.canGoLatest}
+            title="跳到最新"
+          >
+            <Icon name="locate" size={15} />
+            最新
+          </button>
+          <button type="button" className="side-tool-btn" onClick={routeControls.zoomOut} title="缩小">
+            <Icon name="zoomOut" size={15} />
+            缩小
+          </button>
+          <button type="button" className="side-tool-btn" onClick={routeControls.zoomIn} title="放大">
+            <Icon name="zoomIn" size={15} />
+            放大
+          </button>
+          <button type="button" className="side-tool-btn wide" onClick={routeControls.fitAll} title="看全树">
+            <Icon name="expand" size={15} />
+            看全树
+          </button>
+        </div>
+        <p className="side-hint">拖动平移 · 滚轮缩放 · 每张卡右下角就管这一段</p>
+      </>
+    )
+  ) : null;
+
   return (
     <div className="screen stage-screen">
-      {view === "stage" ? (
-        index ? (
-          <StageTheater
-            visual={playback.visual}
-            playback={playback}
-            live={stage.state === "streaming"}
-            names={stage.names}
-            index={index}
-            voiceAvailable={stage.voiceAvailable}
-            busy={busy}
-            oocQueued={oocQueued}
-            chrome={chrome}
-            targets={targets}
-            onView={setView}
-            onOoc={stage.sendOoc}
-            onJump={jump}
-            onRewrite={branch}
-            onEdit={edit}
-            onReplay={replay}
-            hasVoice={hasVoice}
-            onUnlock={unlockVoice}
-            onChrome={setChrome}
-            onTurbo={setTurbo}
-            canContinue={canContinue}
-            onContinue={continueBeat}
-            overlay={
-              panelReady ? (
-                <StopPanel
-                  stop={stage.stop}
-                  isActEnd={stage.isActEnd}
-                  disabled={busy}
-                  seenChoices={seenChoices}
-                  onChoice={stage.sendChoice}
-                  onFree={stage.sendFree}
-                  onContinue={stage.sendContinue}
-                  onPolish={(text) => api.polish(playId, text).then(({ text: polished }) => polished)}
-                />
-              ) : null
-            }
-          />
-        ) : (
-          <div className="overlay">正在连接舞台…</div>
-        )
-      ) : view === "backlog" ? (
-        <BacklogView
-          playId={playId}
-          entries={playback.history}
-          names={stage.names}
-          headKey={playback.current?.key ?? null}
-          busy={busy}
-          voiceAvailable={stage.voiceAvailable}
-          hasVoice={hasVoice}
-          beatFor={beatFor}
-          onSeek={(key) => {
-            playback.seek(key);
-            setView("stage");
-          }}
-          onReplay={replay}
-          onEdit={edit}
-          onJump={jump}
-          onRewrite={branch}
-          onClose={() => setView("stage")}
-        />
-      ) : (
-        <RouteTree
-          view={lineage.view}
-          error={lineage.error}
-          names={stage.names}
-          busy={busy}
-          onReload={lineage.reload}
-          onBack={() => setView("stage")}
-          ops={ops}
-          index={index}
-          lines={stage.lines}
-        />
-      )}
-
-      {/* 顶栏浮在三个视图之上：不在视图里，而是这个剧目的常驻 HUD */}
-      <GameBar
+      <StageShell
         view={view}
-        voiceOn={voiceOn}
-        workshopOpen={workshop !== null}
-        saveName={saveName}
         onView={setView}
-        onToggleVoice={toggleVoice}
-        onWorkshop={() => setWorkshop((cur) => (cur ? null : "drawer"))}
+        title={detail?.play.title ?? playId}
+        saveName={saveName}
         onSaves={() => navigate(`/play/${playId}/saves`)}
+        voiceOn={voiceOn}
+        voiceAvailable={stage.voiceAvailable}
+        onToggleVoice={toggleVoice}
+        workshopOpen={workshop !== null}
+        onWorkshop={() => setWorkshop((cur) => (cur ? null : "drawer"))}
         onExit={() => navigate(`/play/${playId}`)}
-        hidden={!chrome}
-      />
+        tools={tools}
+      >
+        {view === "stage" ? (
+          index ? (
+            <StageTheater
+              visual={playback.visual}
+              playback={playback}
+              live={stage.state === "streaming"}
+              names={stage.names}
+              index={index}
+              voiceAvailable={stage.voiceAvailable}
+              busy={busy}
+              oocQueued={oocQueued}
+              targets={targets}
+              onView={setView}
+              onOoc={stage.sendOoc}
+              onJump={jump}
+              onRewrite={branch}
+              onEdit={edit}
+              onReplay={replay}
+              hasVoice={hasVoice}
+              onUnlock={unlockVoice}
+              onTurbo={setTurbo}
+              canContinue={canContinue}
+              onContinue={continueBeat}
+              overlay={
+                panelReady ? (
+                  <StopPanel
+                    stop={stage.stop}
+                    isActEnd={stage.isActEnd}
+                    disabled={busy}
+                    seenChoices={seenChoices}
+                    onChoice={stage.sendChoice}
+                    onFree={stage.sendFree}
+                    onContinue={stage.sendContinue}
+                    onPolish={(text) => api.polish(playId, text).then(({ text: polished }) => polished)}
+                  />
+                ) : null
+              }
+            />
+          ) : (
+            <div className="overlay">正在连接舞台…</div>
+          )
+        ) : view === "backlog" ? (
+          rawHistory ? (
+            <HistoryView playId={playId} nonce={historyNonce} />
+          ) : (
+            <BacklogView
+              entries={playback.history}
+              names={stage.names}
+              headKey={playback.current?.key ?? null}
+              busy={busy}
+              voiceAvailable={stage.voiceAvailable}
+              hasVoice={hasVoice}
+              beatFor={beatFor}
+              onSeek={(key) => {
+                playback.seek(key);
+                setView("stage");
+              }}
+              onReplay={replay}
+              onEdit={edit}
+              onRewrite={branch}
+            />
+          )
+        ) : (
+          <RouteTree
+            view={lineage.view}
+            error={lineage.error}
+            names={stage.names}
+            busy={busy}
+            onReload={lineage.reload}
+            ops={routeOps}
+            index={index}
+            lines={stage.lines}
+            onControls={setRouteControlsStable}
+          />
+        )}
 
-      {/* 提示一律走浮层 toast，不占舞台顶部的固定一条 */}
-      <ToastStack toasts={toast.toasts} onDismiss={toast.dismiss} />
+        {/* 提示一律走浮层 toast，不占内容区顶部的一条 */}
+        <ToastStack toasts={toast.toasts} onDismiss={toast.dismiss} />
 
-      {view === "stage" && workshop && (
-        <WorkshopPanel
-          playId={playId}
-          mode={workshop}
-          onModeChange={setWorkshop}
-          onClose={() => setWorkshop(null)}
-          subscribe={subscribeWorkshop}
-          send={stage.send}
-          connected={stage.connected}
-        />
-      )}
+        {view === "stage" && workshop && (
+          <WorkshopPanel
+            playId={playId}
+            mode={workshop}
+            onModeChange={setWorkshop}
+            onClose={() => setWorkshop(null)}
+            subscribe={subscribeWorkshop}
+            send={stage.send}
+            connected={stage.connected}
+          />
+        )}
+      </StageShell>
     </div>
   );
 }

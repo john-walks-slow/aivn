@@ -1950,15 +1950,6 @@ select:focus {
 
 /* ── 路线：横向时间轴的树（x = 时间，y = 兄弟序） ── */
 
-/* 路线图占满舞台页——它是地图，不该挤在侧栏里 */
-.route-screen {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  width: 100%;
-  min-height: 0;
-}
-
 .route-frame {
   display: flex;
   flex: 1 1 auto;
@@ -2166,80 +2157,12 @@ select:focus {
   text-overflow: ellipsis;
 }
 
-/* 画布上的浮层：导航与镜头不占树的版面，空白处都能点回去 */
-.route-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 8px;
-  pointer-events: none;
-}
-
-.route-overlay-top,
-.route-overlay-bottom {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-
-.route-overlay-bottom {
-  justify-content: flex-end;
-  align-items: flex-end;
-}
-
-.route-overlay > * {
-  pointer-events: auto;
-}
-
-.route-hint {
-  flex: 1 1 auto;
-  font-size: 11.5px;
-  text-align: right;
-  padding: 6px 8px;
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg) 78%, transparent);
-}
-
-.route-zoom {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-}
-
-.route-zoom button {
-  border-radius: 0;
-}
-
-.route-zoom button + button {
-  border-top: 1px solid var(--line);
-}
-
-/* 空态/加载态：画布不在，退回键浮在空白上 */
+/* 空态/加载态：画布不在，剩一句话占住中间 */
 .route-blank {
   position: relative;
   display: grid;
   flex: 1 1 auto;
   place-items: center;
-}
-
-.route-float {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  box-shadow: var(--shadow);
-}
-
-.route-empty {
-  padding: 24px;
 }
 
 /* ── 设置面板（P6）───────────── */
@@ -2405,41 +2328,7 @@ select:focus {
   height: calc(100dvh - var(--kb, 0px));
 }
 
-/* ── 沉浸：操作条淡出 + 回顾抽屉 ────────────── */
-
-.theater-bar.chrome-hidden {
-  opacity: 0;
-  pointer-events: none;
-  height: 0;
-  padding: 0;
-  overflow: hidden;
-  border-bottom: none;
-}
-
-.backlog {
-  position: absolute;
-  z-index: 40;
-  top: 8px;
-  left: 8px;
-  bottom: 8px;
-  width: min(360px, 82vw);
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-}
-
-.backlog-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 8px 8px 14px;
-  border-bottom: 1px solid var(--line);
-  font-weight: 600;
-  font-size: 14px;
-}
+/* ── 回顾：正文列表 ────────────── */
 
 .backlog-empty {
   margin: 0;
@@ -2448,8 +2337,14 @@ select:focus {
   font-size: 14px;
 }
 
+/* 宽屏上别把一句话拉成横贯 1920px 的一条线——按可读宽度居中 */
+.backlog-list,
+.backlog-panel > .muted {
+  max-width: 860px;
+  margin-inline: auto;
+  width: 100%;
+}
 .backlog-list {
-  margin: 0;
   padding: 6px;
   list-style: none;
 }
@@ -2870,75 +2765,322 @@ select:focus {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   舞台控制（instage-controls）：顶栏 HUD / 导演栏 / 回顾 / toast
+   舞台外壳：左侧导航栏 + 内容区（舞台 / 回顾 / 路线 / 工坊共用）
    压在 main 的通用样式之后——同优先级时后者生效。
    ───────────────────────────────────────────────────────────── */
 
-/* ── 顶栏：游戏 HUD（图标 + 暗底 + 白色英文），浮在三个视图之上 ── */
+/* 折叠后侧栏只剩图标一条，52px 刚好放一个 16px 图标加内边距 */
+.stage-shell {
+  --side-collapsed: 52px;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg);
+}
 
-.gui-bar {
-  position: fixed;
-  inset: 0 0 auto 0;
-  z-index: 30;
+.stage-side {
+  position: relative;
   display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--side-w, 232px);
+  width: var(--side-w, 232px);
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  transition: flex-basis var(--hover-ms) ease;
+}
+
+.side-closed .stage-side {
+  flex-basis: var(--side-collapsed);
+  width: var(--side-collapsed);
+}
+.side-closed .side-label,
+.side-closed .side-title,
+.side-closed .stage-side-tools {
+  display: none;
+}
+/* 收起后 52px 只放得下一个图标：退出块与折叠键各自居中 */
+.side-closed .stage-side-head {
+  flex-direction: column;
+  gap: 6px;
+}
+.side-closed .side-exit {
   justify-content: center;
-  padding: calc(6px + env(safe-area-inset-top)) 10px 6px;
-  pointer-events: none;
-  transition:
-    opacity var(--fade-ms) ease,
-    transform var(--fade-ms) ease;
+  padding: 6px;
 }
-.gui-bar-group {
-  pointer-events: auto;
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid rgb(255 255 255 / 0.14);
-  border-radius: 12px;
-  background: rgb(12 12 16 / 0.72);
-  box-shadow: 0 4px 18px rgb(0 0 0 / 0.45);
-  backdrop-filter: blur(8px);
-}
-.gui-btn {
+
+/* 顶部：剧目块（也是离开这场戏的唯一出口）+ 折叠键 */
+.stage-side-head {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 6px 10px;
+  gap: 4px;
+  padding: calc(8px + env(safe-area-inset-top)) 8px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.side-exit {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 8px;
   border: none;
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: none;
-  color: rgb(255 255 255 / 0.82);
-  font-size: 10.5px;
-  letter-spacing: 0.09em;
-  line-height: 1;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
   cursor: pointer;
+}
+.side-exit:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.side-title {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  font-size: 14.5px;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.side-collapse {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.side-collapse:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* 导航：图标 + 中文，风格跟工坊 tab 一致 */
+.stage-side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.side-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
   transition:
     background-color var(--hover-ms) ease,
     color var(--hover-ms) ease;
 }
-.gui-btn:hover {
-  background: rgb(255 255 255 / 0.12);
-  color: #fff;
+.side-nav-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
-.gui-btn.on {
-  background: rgb(255 255 255 / 0.2);
-  color: #fff;
-}
-.gui-ico {
-  width: 17px;
-  height: 17px;
-  flex-shrink: 0;
-}
-.gui-label {
+.side-nav-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
   font-weight: 600;
 }
-.gui-sep {
-  width: 1px;
-  margin: 4px 3px;
-  background: rgb(255 255 255 / 0.16);
+.side-nav-btn > svg {
+  flex-shrink: 0;
 }
+.side-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 当前视图自己的工具（回顾的两个视图、路线的镜头） */
+.stage-side-tools {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 8px 8px;
+  border-top: 1px solid var(--line);
+  scrollbar-width: thin;
+}
+
+.side-tools-title {
+  padding: 8px 2px 0;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.side-tool-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.side-tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--hover-ms) ease,
+    color var(--hover-ms) ease,
+    border-color var(--hover-ms) ease;
+}
+.side-tool-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.side-tool-btn:disabled {
+  color: var(--ink-faint);
+  cursor: default;
+  opacity: 0.5;
+}
+.side-tool-btn.wide {
+  grid-column: 1 / -1;
+  justify-content: center;
+}
+
+.side-hint {
+  margin: 2px 0 0;
+  color: var(--ink-faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 底部：周目（跳周目页）与语音开关 */
+.stage-side-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: auto;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.side-save,
+.side-voice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.side-save:hover,
+.side-voice:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.side-save > svg,
+.side-voice > svg {
+  flex-shrink: 0;
+}
+
+/* 右边缘的拖动条：双击复位 */
+.side-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  z-index: 2;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.side-resizer:hover {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* 内容区：舞台画面要满幅，所以这一层不排任何页面级留白 */
+.stage-main {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.stage-main-title {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+}
+
+/* 窄屏抽屉关着时的唤出键：浮在内容左上角，压一张卡的位置，换回全部导航 */
+.side-drawer-btn {
+  position: absolute;
+  z-index: 3;
+  top: calc(8px + env(safe-area-inset-top));
+  left: 8px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink-soft);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+.side-drawer-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 窄屏：侧栏改成盖在内容上的抽屉，不再挤压内容区 */
+.side-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  background: rgb(10 10 14 / 0.34);
+}
+.side-narrow .stage-side {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 45;
+  flex-basis: min(268px, 78vw);
+  width: min(268px, 78vw);
+  box-shadow: var(--shadow);
+}
+.side-narrow.side-closed .stage-side {
+  display: none;
+}
+
 /* ── 导演栏（P6 交互重构） ──── */
 
 .free-back {
@@ -3098,68 +3240,25 @@ select:focus {
     transform: translateY(-6px);
   }
 }
-/* ── 路线：横向时间轴的树（x = 时间，y = 兄弟序） ── */
-
-/* ── 舞台上的三个浮层（回顾 / 路线 / 工坊）─────────────────
-   三者都是 z-index 高过顶栏（.gui-bar 是 30）的全屏浮层，各自带关闭键：
-   开着的时候顶栏就看不见，不需要「再点一次收起」这层间接。 */
-
-/* 回顾：整屏浮层，不再是从侧面拉出来的抽屉——手机上抽屉只有半屏宽，读台词费劲 */
-.backlog-screen,
+/* 回顾 / 路线不再是盖住整屏的浮层：导航与出口都归侧栏，它们只是内容区里的两页。
+   位置固定 + z-index 的全屏浮层是旧顶栏时代的做法（顶栏会被盖住，所以每页得自带关闭键），
+   现在顶栏没了，继续盖着只会在切视图时闪一下黑边。 */
 .route-screen {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  box-sizing: border-box;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
   width: 100%;
-  max-width: none;
-  margin: 0;
   background: var(--bg);
 }
-/* 浮层自己的标题条：左标题 + 右动作（含关闭键）。顶栏已被盖住，这里得自带出口 */
-.panel-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
-  border-bottom: 1px solid var(--line);
-}
-.panel-title {
-  font-weight: 600;
-  font-size: 15px;
-  white-space: nowrap;
-}
-.panel-bar-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-}
-.panel-bar-actions .ghost-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 30px;
-  padding: 5px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
-  cursor: pointer;
-}
-.panel-bar-actions .ghost-btn.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.panel-bar-actions .ghost-btn.icon-btn {
-  padding: 5px;
-}
-.panel-note {
-  font-size: 12px;
+
+/* 回顾正文：手机上抽屉只有半屏宽读台词费劲，所以整页铺开按可读宽度排 */
+.backlog-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px max(16px, env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom));
+  scrollbar-width: thin;
 }
 
 /* 视图切换：一根标题条里切两种内容，不叠第二条栏 */
@@ -3193,23 +3292,17 @@ select:focus {
   align-items: center;
   gap: 4px;
 }
-@media (max-width: 640px) {
-  .panel-note {
-    display: none;
-  }
-}
-.panel-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding-bottom: calc(10px + env(safe-area-inset-bottom));
-}
-/* ── 沉浸：顶栏淡出 ────────────── */
 
-.gui-bar.chrome-hidden {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-6px);
+/* 侧栏里用同一个 .seg，但要撑满栏宽（工坊面板里的保持内容宽度） */
+.side-seg {
+  display: flex;
+  width: 100%;
+}
+.side-seg .seg-btn {
+  flex: 1 1 auto;
+  padding: 5px 6px;
+  font-size: 13px;
+  text-align: center;
 }
 /* 正文不响应点击：翻到过去是为了在这一条下面做点什么，误触跳走比多点一下更烦 */
 .bl-text {
@@ -3237,35 +3330,42 @@ select:focus {
   padding-left: 12px;
   border-left: 2px solid var(--line);
 }
+/* 回顾里每条台词下面的动词条。白底浅灰等于没有：底、边框、字色都得看得见，
+   动词带字样（「回到舞台 / 重听 / 改写 / 由此分岔」）而不是二十几像素的方块。 */
 .bl-tools {
   display: flex;
-  gap: 4px;
-  padding: 2px 6px 0;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 6px 8px;
 }
 .bl-tool {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 38px;
-  height: 34px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--ink-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
   cursor: pointer;
-  opacity: 0.55;
-  transition: opacity 0.12s, background 0.12s, color 0.12s;
-}
-.bl-tools:hover .bl-tool,
-.bl-tool:hover {
-  opacity: 1;
+  white-space: nowrap;
+  transition:
+    background-color var(--hover-ms) ease,
+    color var(--hover-ms) ease,
+    border-color var(--hover-ms) ease;
 }
 .bl-tool:hover:not(:disabled) {
+  border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
 }
 .bl-tool:disabled {
-  opacity: 0.18;
+  color: var(--ink-faint);
+  background: var(--bg);
   cursor: default;
 }
 .bl-edit {
@@ -3345,24 +3445,4 @@ select:focus {
   color: var(--ink-faint);
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-/* 窄屏只留图标：英文标签会把舞台盖掉一条 */
-@media (max-width: 480px) {
-  .gui-label {
-    display: none;
-  }
-
-  .gui-btn {
-    padding: 8px 12px;
-  }
-
-  /* 档名是唯一的纯文字按钮，窄屏下截断——整条顶栏必须留在屏幕内 */
-  .gui-save-label {
-    display: block;
-    max-width: 92px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 }

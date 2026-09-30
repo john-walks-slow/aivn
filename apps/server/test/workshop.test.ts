@@ -294,7 +294,7 @@ describe("工坊 prompt 与工具", () => {
     expect(second).toContain("第 3 句");
   });
 
-  it("就绪门只卡 premise，立绘与背景只是建议项", () => {
+  it("开演条件只卡 premise，立绘与背景只是建议项", () => {
     const noImages = renderReadiness({
       ready: true,
       premise: true,
@@ -302,7 +302,7 @@ describe("工坊 prompt 与工具", () => {
       background: false,
       hasSession: false,
     });
-    expect(noImages).toContain("已就绪，可开演");
+    expect(noImages).toContain("已满足，可开演");
     expect(noImages).toContain("缺（建议补）");
     expect(noImages).toContain("不是门槛");
 
@@ -313,7 +313,7 @@ describe("工坊 prompt 与工具", () => {
       background: true,
       hasSession: false,
     });
-    expect(noPremise).toContain("未就绪（缺 premise）");
+    expect(noPremise).toContain("未满足（缺 premise）");
   });
 
   it("线程标题取首条消息前 20 字", () => {

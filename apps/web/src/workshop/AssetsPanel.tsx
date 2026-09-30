@@ -96,7 +96,7 @@ export function AssetsPanel({ playId }: { playId: string }) {
       {readiness && (
         <div className="assets-pane-head">
           <span className={`badge ${readiness.ready ? "ok" : "warn"}`}>
-            {readiness.ready ? "就绪门：可开演" : "就绪门：未就绪"}
+            {readiness.ready ? "能开演" : "还不能开演"}
           </span>
         </div>
       )}

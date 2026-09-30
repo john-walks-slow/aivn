@@ -114,7 +114,8 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
             const switched = msg.saveId !== undefined && msg.saveId !== saveIdRef.current;
             if (msg.saveId !== undefined) {
               saveIdRef.current = msg.saveId;
-              setSaveName(msg.saveName ?? msg.saveId);
+              // 空 saveId = 这棵剧目还没有周目（runtime 落在无会话作用域上）；空档名不显示成芯片
+              setSaveName(msg.saveName || msg.saveId || null);
             }
             // 代号不一致 = 缓冲已被结构性操作整段替换：本地 seq 全部作废，全量重放
             const restamped =

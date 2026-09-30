@@ -87,6 +87,13 @@ export class PlayHouse {
   }
   /** 每剧目 WS 客户端发送器集合：与 runtime 生命周期解耦——配置保存重建 runtime 不断连接。 */
   private readonly clientsByPlay = new Map<string, Set<(msg: ServerMessage) => void>>();
+  /**
+   * 只看已加载的 runtime，不触发懒加载。
+   * 观众离场停合成走这里——用 get() 会把 runtime 重新拉回来，凭空占住一份。
+   */
+  peek(playId: string): PlayRuntime | undefined {
+    return this.runtimes.get(playId);
+  }
   private readonly provider: ReturnType<typeof createCpaProvider>["provider"];
   private readonly model: ReturnType<typeof createCpaProvider>["model"];
   private readonly tts: ReturnType<typeof createTts>;
@@ -99,6 +106,10 @@ export class PlayHouse {
    * 挂在 runtime 上的闸门会在换 runtime 时把老 workshop 留在旧闸门上，两个闸门各放 2 张 → 超发。
    */
   private readonly limiters = new Map<string, Limiter>();
+  /** 正在建的周目（key=playId）：同剧目并发的舞台连接共用一棵树，不会各建一棵。 */
+  private readonly ensuring = new Map<string, Promise<string>>();
+  /** 正在为舞台构建 runtime（key=playId）：同上，并发连接共用一次构建，不会各建一个编排器。 */
+  private readonly staging = new Map<string, Promise<PlayRuntime>>();
   /** 演出编排与润色/翻译旁路共用的流式调用入口。 */
   private readonly streamFn: StreamFn;
 
@@ -117,21 +128,94 @@ export class PlayHouse {
       this.provider.streamSimple(m as Model<"openai-completions">, context, options);
   }
 
-  /** 取或懒加载剧目 runtime（恢复活动档的既有会话）。 */
+  /**
+   * 取或懒加载剧目 runtime。
+   *
+   * 剧目还没有任何周目时，runtime 落在**无会话作用域**的操作面上（saveId 为 null）：
+   * 逛工坊、读路线、列文件都不该凭空多出一个「第 1 周目」——建不建第一棵树是玩家的动作。
+   * 舞台连接走 {@link stage}，那里才确保有一棵可写的树。
+   */
   async get(playId: string): Promise<PlayRuntime> {
     const existing = this.runtimes.get(playId);
     if (existing) return existing;
-    const saves = this.library.saves(playId);
-    // 直连 /ws 而没先建档：兜底建一棵空树，runtime 永远有存档可挂
-    const saveId = (await saves.readActive()) ?? (await saves.create()).id;
+    const saveId = await this.library.saves(playId).readActive();
     const runtime = await this.buildRuntime(playId, saveId);
     this.runtimes.set(playId, runtime);
     return runtime;
   }
 
-  /** 从磁盘构建剧目 runtime（play.json + 指定存档的会话恢复）。 */
-  private async buildRuntime(playId: string, saveId: string, seed?: CarryOver): Promise<PlayRuntime> {
-    const store = this.library.saveStore(playId, saveId);
+  /**
+   * 舞台连接用的 runtime：必须挂在某一棵故事树上，剧目一棵都没有时先建一棵。
+   * 这是唯一会自动建周目的入口——玩家连上舞台就是在看戏，没树可写。
+   *
+   * 已经挂在树上的直接返回，不碰磁盘：dispatch 每条客户端消息都会走这里。
+   */
+  async stage(playId: string): Promise<PlayRuntime> {
+    const existing = this.runtimes.get(playId);
+    if (existing && existing.save.id) return existing;
+    // 单飞：并发来的两条连接（onConnection 与 dispatch 几乎同时）共用一次构建。
+    // 少了它，两边都会 buildRuntime，后完成的覆盖先完成的——先建的那份 orchestrator
+    // 没人 dispose（内存泄漏），两条连接还各写一份同一个周目。
+    const inflight = this.staging.get(playId);
+    if (inflight) return inflight;
+    const task = this.buildStageRuntime(playId).finally(() => this.staging.delete(playId));
+    this.staging.set(playId, task);
+    return task;
+  }
+
+  /** 把 runtime 换到一棵真实的故事树上（工坊逛出来的无会话那份写不了盘）。 */
+  private async buildStageRuntime(playId: string): Promise<PlayRuntime> {
+    const saveId = await this.ensureSave(playId);
+    const current = this.runtimes.get(playId);
+    if (current && current.save.id === saveId) return current;
+    if (current) {
+      // 等节拍边界：换 runtime 时演出进行中会让这一拍凭空消失
+      await current.orchestrator.whenIdle();
+      if (this.runtimes.get(playId) !== current) {
+        // 等期间已被切档/reload 换掉了，用现成那份
+        const fresh = this.runtimes.get(playId);
+        if (fresh) return fresh;
+      } else {
+        current.orchestrator.dispose();
+        this.runtimes.delete(playId);
+      }
+    }
+    const runtime = await this.buildRuntime(playId, saveId);
+    // 工坊实例不跟着换：换了会把玩家正在进行的对话与线程现场打断（同 reloadAfterWorkshopWrite）
+    const merged = current ? { ...runtime, workshop: current.workshop } : runtime;
+    this.runtimes.set(playId, merged);
+    this.announce(playId, merged);
+    return merged;
+  }
+
+  /** 活动周目 id，没有就建一棵（并发连接只建一次：同剧目同时来的两个舞台连接共用一棵树）。 */
+  private async ensureSave(playId: string): Promise<string> {
+    const saves = this.library.saves(playId);
+    const active = await saves.readActive();
+    if (active) return active;
+    const inflight = this.ensuring.get(playId);
+    if (inflight) return inflight;
+    const task = saves
+      .create()
+      .then((created) => created.id)
+      .finally(() => this.ensuring.delete(playId));
+    this.ensuring.set(playId, task);
+    return task;
+  }
+
+  /** 丢掉 runtime（剧目一个周目都不剩时：回到无会话作用域，等舞台连上再建）。 */
+  private async dropRuntime(playId: string): Promise<void> {
+    const existing = this.runtimes.get(playId);
+    if (!existing) return;
+    await existing.orchestrator.whenIdle();
+    if (this.runtimes.get(playId) !== existing) return;
+    existing.orchestrator.dispose();
+    this.runtimes.delete(playId);
+  }
+
+  /** 从磁盘构建剧目 runtime（play.json + 指定存档的会话恢复；saveId 为 null = 无会话作用域）。 */
+  private async buildRuntime(playId: string, saveId: string | null, seed?: CarryOver): Promise<PlayRuntime> {
+    const store = saveId ? this.library.saveStore(playId, saveId) : this.library.store(playId);
     const play = await store.loadPlay();
     const session = await store.loadSession();
     const tree = new LineageTree();
@@ -140,7 +224,10 @@ export class PlayHouse {
       ...play.initialState,
     };
     const scene = session?.scene ?? play.initialScene;
-    const save = { id: saveId, name: await this.library.saves(playId).nameOf(saveId) };
+    const save = {
+      id: saveId ?? "",
+      name: saveId ? await this.library.saves(playId).nameOf(saveId) : "",
+    };
     return this.createRuntime(store, play, tree, engine, scene, session?.runtime, save, seed);
   }
 
@@ -168,7 +255,7 @@ export class PlayHouse {
   async reload(playId: string): Promise<void> {
     const old = this.runtimes.get(playId);
     if (!old) return;
-    const fresh = await this.buildRuntime(playId, old.store.saveId!, carryOverFrom(old, PLAY_RELOADED));
+    const fresh = await this.buildRuntime(playId, old.store.saveId ?? null, carryOverFrom(old, PLAY_RELOADED));
     old.orchestrator.dispose();
     this.runtimes.set(playId, fresh);
     this.announce(playId, fresh);
@@ -231,12 +318,15 @@ export class PlayHouse {
     return info;
   }
 
-  /** 删档：删的是当前档时切到最近更新的一档（一档不剩则冷建一棵空树）。 */
+  /** 删档：删的是当前档时切到最近更新的一档。一棵都不剩就退回无会话作用域——舞台连上时再新建。 */
   async deleteSave(playId: string, saveId: string): Promise<void> {
     const saves = this.library.saves(playId);
     const wasActive = (await saves.readActive()) === saveId;
     await saves.remove(saveId); // 删的是活动档时，指针已顺延到剩下的第一棵
-    if (wasActive) await this.switchSave(playId, (await saves.readActive()) ?? (await saves.create()).id);
+    if (!wasActive) return;
+    const next = await saves.readActive();
+    if (next) await this.switchSave(playId, next);
+    else await this.dropRuntime(playId);
   }
 
   /**
@@ -285,11 +375,7 @@ export class PlayHouse {
     await old.orchestrator.whenIdle();
     // 等待期间可能已 reload/切档/删除——只在原实例还在位时才替换
     if (this.runtimes.get(playId) !== old) return;
-    const fresh = await this.buildRuntime(
-      playId,
-      old.store.saveId!,
-      carryOverFrom(old, SETTINGS_UPDATED),
-    );
+    const fresh = await this.buildRuntime(playId, old.store.saveId, carryOverFrom(old, SETTINGS_UPDATED));
     const runtime = { ...fresh, workshop: old.workshop };
     old.orchestrator.dispose();
     this.runtimes.set(playId, runtime);

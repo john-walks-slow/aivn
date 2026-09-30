@@ -11,7 +11,7 @@ export interface ImportResult {
   writes: { path: string; before: string | null; after: string }[];
 }
 
-/** 就绪门（D13）：开演前置检查。 */
+/** 开演前置检查：引擎手上缺的东西直接照出来。 */
 export interface Readiness {
   ready: boolean;
   premise: boolean;
@@ -24,9 +24,11 @@ export interface Readiness {
  * 缺项文案分两档，别混：
  * - 硬门槛只有 premise：没有它剧本无从写起，开不了演。
  * - 立绘与背景是建议项：没图照样开演（舞台落氛围底色，没有立绘的角色不上台）。
+ *
+ * 文案直说引擎缺什么，不跟玩家讲「就绪门」那套内部说法。
  */
 export const readinessMissing = (r: Readiness): string[] =>
-  r.premise ? [] : ["premise"];
+  r.premise ? [] : ["故事前提"];
 
 export const readinessAdvice = (r: Readiness): string[] => [
   ...(r.characterSprites ? [] : ["角色立绘"]),

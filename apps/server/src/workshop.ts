@@ -242,7 +242,7 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
 
   const readiness: AgentTool<typeof emptyParams> = {
     name: "get_readiness",
-    label: "检查就绪门",
+    label: "检查开演条件",
     description: "检查剧目是否达到可开演条件（premise / 角色立绘映射 / 背景图）。",
     parameters: emptyParams,
     execute: async () => textResult(renderReadiness(await deps.store.readiness())),
@@ -615,7 +615,7 @@ function renderLineage(
 
 export function renderReadiness(r: Readiness): string {
   return [
-    `就绪门：${r.ready ? "已就绪，可开演" : "未就绪（缺 premise）"}`,
+    `开演条件：${r.ready ? "已满足，可开演" : "未满足（缺 premise）"}`,
     `- premise：${r.premise ? "✓" : "✗ 缺（play.json 的 premise，或 memory/always/premise.md）——这是唯一的硬门槛"}`,
     `- 角色立绘映射：${r.characterSprites ? "✓" : "缺（建议补）"}`,
     `- 背景图：${r.background ? "✓" : "缺（建议补）"}`,
