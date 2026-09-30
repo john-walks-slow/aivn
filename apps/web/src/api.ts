@@ -1,4 +1,4 @@
-import type { AssetMeta, LibraryEntry, LineageView, PlayConfig } from "@stage-ai/core";
+import type { AssetMeta, LibraryEntry, LineageView, PlayConfig, VoiceCatalog, VoiceEntry } from "@stage-ai/core";
 
 /** 资源库导入回执（服务端 assetImport 的结果原样）。 */
 export interface ImportResult {
@@ -229,6 +229,12 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(req),
     }),
+
+  /** Fish 公共音色库目录（服务端抓取并缓存）。`refresh` 强制重抓。 */
+  voiceCatalog: (refresh = false) => request<VoiceCatalog>(`/api/voices${refresh ? "?refresh=1" : ""}`),
+
+  /** 单条音色解析：用于"已填 voiceId 但不在热门目录内"的展示与试听。 */
+  voice: (voiceId: string) => request<VoiceEntry>(`/api/voices/${voiceId}`),
 
   /** 音色试听：服务端合成固定样本，返回 media-cache URL。 */
   ttsPreview: (id: string, voiceId: string) =>

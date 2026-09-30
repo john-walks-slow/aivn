@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssetKind, AssetMeta, CharacterCard, PlayConfig } from "@stage-ai/core";
-import { VOICE_PRESETS } from "@stage-ai/core";
+import { languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
 import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { ImageLightbox } from "./ImageLightbox.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
+import { VoiceLibrary } from "../voice/VoiceLibrary.js";
+import { useVoiceCatalog, type VoiceCatalogState } from "../voice/useVoiceCatalog.js";
 
 const KINDS = ["backgrounds", "cg", "sfx", "bgm"] as const;
 
@@ -22,6 +24,9 @@ export function AssetsPanel({ playId }: { playId: string }) {
   const [spriteChar, setSpriteChar] = useState("");
   const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null);
   const [library, setLibrary] = useState(false);
+  const voices = useVoiceCatalog();
+  /** 正在开音色库的角色下标（null = 面板关闭）。 */
+  const [libraryChar, setLibraryChar] = useState<number | null>(null);
 
   const reload = useCallback((): void => {
     api
@@ -132,11 +137,15 @@ export function AssetsPanel({ playId }: { playId: string }) {
               onChange={(e) => patch((p) => (p.voiceLanguage = e.target.value || undefined))}
             >
               <option value="">跟随剧本语言（不翻译）</option>
-              <option value="zh">中文（zh）</option>
-              <option value="ja">日本語（ja）</option>
-              <option value="en">English（en）</option>
-              <option value="ko">한국어（ko）</option>
+              {Object.keys(LANGUAGE_LABELS)
+                .sort()
+                .map((code) => (
+                  <option key={code} value={code}>
+                    {languageLabel(code)}（{code}）
+                  </option>
+                ))}
             </select>
+            <p className="muted small">翻译由 LLM 完成，任何小语种都能用——前提是所选音色支持该语言。</p>
           </label>
 
           <h3>主角卡（玩家）</h3>
@@ -170,6 +179,8 @@ export function AssetsPanel({ playId }: { playId: string }) {
               playId={playId}
               char={char}
               files={assets[`sprites/${char.id}`] ?? []}
+              voices={voices}
+              onBrowseLibrary={() => setLibraryChar(i)}
               onChange={(fn) => patch((p) => fn(p.characters[i]!))}
               onRemove={() => patch((p) => p.characters.splice(i, 1))}
             />
@@ -283,6 +294,17 @@ export function AssetsPanel({ playId }: { playId: string }) {
       {library && (
         <LibraryBrowser playId={playId} imported={isImported} onClose={() => setLibrary(false)} onImported={reload} />
       )}
+      {libraryChar !== null && draft && (
+        <VoiceLibrary
+          playId={playId}
+          voices={voices}
+          onClose={() => setLibraryChar(null)}
+          onPick={(entry) => {
+            patch((p) => (p.characters[libraryChar]!.voiceId = entry.id));
+            setLibraryChar(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -346,12 +368,16 @@ function CharacterEditor({
   playId,
   char,
   files,
+  voices,
+  onBrowseLibrary,
   onChange,
   onRemove,
 }: {
   playId: string;
   char: CharacterCard;
   files: string[];
+  voices: VoiceCatalogState;
+  onBrowseLibrary: () => void;
   onChange: (fn: (char: CharacterCard) => void) => void;
   onRemove: () => void;
 }) {
@@ -366,7 +392,7 @@ function CharacterEditor({
     })),
   );
 
-  /** 音色试听：服务端合成固定样本 → 播放（预置二次元音色库）。 */
+  /** 音色试听：服务端合成固定样本 → 播放（Fish 公共库音色，目录内目录外都能试）。 */
   const previewVoice = (): void => {
     if (!char.voiceId || previewing) return;
     setPreviewing(true);
@@ -378,6 +404,12 @@ function CharacterEditor({
       .catch((e: Error) => window.alert(`试听失败：${e.message}`))
       .finally(() => setPreviewing(false));
   };
+
+  // 目录外的 voiceId（demo 剧目的萝莉萌妹等）按 id 单条解析出名字，不装作"未设置"
+  const { resolve: resolveVoice } = voices;
+  useEffect(() => {
+    resolveVoice(char.voiceId);
+  }, [resolveVoice, char.voiceId]);
 
   const commit = (source: SpriteRow[]): void => {
     onChange((c) => {
@@ -418,20 +450,14 @@ function CharacterEditor({
         onChange={(e) => onChange((c) => (c.persona = e.target.value))}
       />
       <div className="voice-row">
-        <select
-          value={char.voiceId ?? ""}
-          onChange={(e) => onChange((c) => (c.voiceId = e.target.value || undefined))}
-        >
-          <option value="">音色：未设置（不配音）</option>
-          {VOICE_PRESETS.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}（{v.tone}）
-            </option>
-          ))}
-          {char.voiceId && !VOICE_PRESETS.some((v) => v.id === char.voiceId) && (
-            <option value={char.voiceId}>自定义 {char.voiceId.slice(0, 8)}…</option>
-          )}
-        </select>
+        <button className="ghost-btn voice-picker" onClick={onBrowseLibrary}>
+          音色：{voices.nameOf(char.voiceId)}
+        </button>
+        {char.voiceId && (
+          <button className="ghost-btn" onClick={() => onChange((c) => (c.voiceId = undefined))}>
+            清除
+          </button>
+        )}
         <button className="ghost-btn" disabled={!char.voiceId || previewing} onClick={previewVoice}>
           {previewing ? "合成中…" : "试听"}
         </button>

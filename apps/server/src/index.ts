@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { loadConfig } from "./config.js";
@@ -7,6 +8,7 @@ import { AssetLibrary } from "./library.js";
 import { PlayHouse } from "./playhouse.js";
 import { handleHttp } from "./http.js";
 import { settingsFileFor } from "./configApi.js";
+import { VoiceCatalogService } from "./voiceCatalog.js";
 import { attachTransport } from "./transport.js";
 
 export async function main(): Promise<void> {
@@ -18,9 +20,10 @@ export async function main(): Promise<void> {
   const assets = new AssetLibrary(config.libraryRoot);
   const playhouse = new PlayHouse(library, config, assets);
   const settings = settingsFileFor(config, repoRoot);
+  const voices = new VoiceCatalogService(config, join(repoRoot, "media-cache/voices.json"));
 
   const server = createServer((req, res) => {
-    void handleHttp(req, res, library, playhouse, settings, assets);
+    void handleHttp(req, res, library, playhouse, settings, assets, voices);
   });
   const wss = new WebSocketServer({ noServer: true });
   attachTransport(wss, playhouse);

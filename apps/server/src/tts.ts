@@ -108,17 +108,26 @@ export class FishTts {
   }
 }
 
-/** 从配置装配 TTS 客户端；未启用或无可用 key 返回 null（hello.voice=false，客户端隐藏语音开关）。 */
-export function createTts(config: ServerConfig): FishTts | null {
-  if (!config.tts.enabled) return null;
-  let keys: unknown = [];
+/**
+ * 读 fish key 文件（音色库目录与 TTS 合成共用同一批 key）。
+ * 返回空数组表示无可用 key——调用方自行报错，不静默降级。
+ */
+export function readTtsKeys(config: ServerConfig): string[] {
+  let keys: unknown;
   try {
     keys = JSON.parse(readFileSync(config.tts.keysPath, "utf8"));
   } catch {
-    console.warn(`[stage-ai] TTS key 文件不可读（语音停用）: ${config.tts.keysPath}`);
-    return null;
+    console.warn(`[stage-ai] TTS key 文件不可读: ${config.tts.keysPath}`);
+    return [];
   }
-  const valid = Array.isArray(keys) ? keys.filter((k): k is string => typeof k === "string" && k.startsWith("sk-")) : [];
+  if (!Array.isArray(keys)) return [];
+  return keys.filter((k): k is string => typeof k === "string" && k.startsWith("sk-"));
+}
+
+/** 从配置装配 TTS 客户端；未启用或无可用 key 返回 null（hello.voice=false，客户端隐藏语音开关）。 */
+export function createTts(config: ServerConfig): FishTts | null {
+  if (!config.tts.enabled) return null;
+  const valid = readTtsKeys(config);
   if (valid.length === 0) {
     console.warn(`[stage-ai] TTS key 文件为空（语音停用）: ${config.tts.keysPath}`);
     return null;

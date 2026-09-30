@@ -1,35 +1,93 @@
 /**
- * 预置二次元音色库（fish-audio reference_id）——server（voiceId 校验）与 web（试听下拉）共享。
- * 全部音色经 fish-tts 合成验证可用；新增音色须先实测再入列。
+ * Fish Audio 音色库契约——server 从公共库 API 抓取，web 音色库面板消费。
+ *
+ * 音色列表不再硬编码：Fish 公共库（`GET {base}/model`）当前可达 1000 条热门音色，
+ * 横跨 19 种语言。目录由 `apps/server/src/voiceCatalog.ts` 抓取缓存后经 `/api/voices` 下发。
  */
-export interface VoicePreset {
-  /** fish-audio reference_id（角色卡 voiceId 直接填此值）。 */
+
+/** 一条音色（角色卡 voiceId 直接填 `id`，即 fish 的 reference_id）。 */
+export interface VoiceEntry {
+  /** fish-audio reference_id（32 位 hex），也是 play.json 的 voiceId。 */
   id: string;
-  name: string;
-  /** 声线特点（UI 提示用）。 */
-  tone: string;
+  title: string;
+  /** 音色描述（Fish 社区作者写的说明），UI 副标题。 */
+  description: string;
+  /** 支持语言（ISO 639-1）；多语言音色在每个语言筛选下都出现。 */
+  languages: string[];
+  /** 社区标签（male/female/narration/energetic…），UI 可展示或做二次筛选。 */
+  tags: string[];
+  /** 收藏数——库内默认排序键（热度）。 */
+  likes: number;
+  /** 封面图路径（Fish CDN 的 `coverimage/<id>` 相对路径），空串表示无图。 */
+  cover: string;
 }
 
-export const VOICE_PRESETS: VoicePreset[] = [
-  { id: "f82e3885ac22468eb6c773b96f2c5752", name: "萝莉萌妹", tone: "中文·幼态萌妹" },
-  { id: "0c54c26032024142bf6339dc4d4aca1b", name: "Cute Girl", tone: "甜美灵动·轻快少女" },
-  { id: "73647cd4ff7c477cb787d5fd8068f3e8", name: "アニメ声の少女", tone: "标准动漫少女音" },
-  { id: "0c7771ca5910484e8a4933068017fcee", name: "Rem", tone: "温柔治愈·女仆声线" },
-  { id: "abf4fa2e25634b41aadc4e0ef9ddaea5", name: "元气女仆", tone: "活泼元气" },
-  { id: "c174516c799a42e7be88b96c86cfbd3e", name: "Frieren", tone: "平静空灵·知性" },
-  { id: "3fd70bbcdb6342df8c0c4143b958944b", name: "Furina", tone: "戏剧感·娇俏" },
-  { id: "deb7b4e20b7048b19f96b646bfaa4549", name: "ラム", tone: "傲娇姐姐" },
-  { id: "4c415bf6872a4700adbda9a2d8b02fbb", name: "ツンデレ女子", tone: "傲娇系" },
-  { id: "20967b3d497045b78e992924f2f05488", name: "神尾観鈴", tone: "治愈系" },
-  { id: "5161d41404314212af1254556477c17d", name: "元気な女性", tone: "元气系女性" },
-  { id: "0089dce5fefb4c6ba9b9f2f0debe1ddc", name: "落ち着いた女性", tone: "沉稳系女性" },
-  { id: "825c9e9870494118ad93b6853a22d5e7", name: "女性ナレーション", tone: "旁白系" },
-  { id: "ed3a1c523b524870a85a5a76cb1e0c3d", name: "元気な少年", tone: "元气正太" },
-  { id: "efc1ce3726a64bbc947d53a1465204aa", name: "派蒙", tone: "中文·小飞毯" },
-  { id: "0b8449eb752c4f888f463fc5d2c0db65", name: "可莉", tone: "中文·蹦蹦炸弹" },
-];
+export interface VoiceCatalog {
+  entries: VoiceEntry[];
+  /** 抓取时刻（epoch ms）——UI 展示新鲜度。 */
+  fetchedAt: number;
+  /** Fish 声明的全库总数（免费档可达窗口 1000），用于说明"仅列热门前 N"。 */
+  totalAvailable: number;
+  /** 本次目录是否来自磁盘快照（抓取 API 失败时沿用上次的）。 */
+  stale: boolean;
+}
 
-/** voiceId 是否为已知预置音色（或形如 fish reference_id 的 32 位 hex）。 */
+/** ISO 639-1 → 中文显示名。语音语言下拉与音色库语言轨共用；未收录的代码原样显示。 */
+export const LANGUAGE_LABELS: Record<string, string> = {
+  ar: "العربية / 阿拉伯语",
+  bn: "বাংলা / 孟加拉语",
+  cy: "Cymraeg / 威尔士语",
+  de: "Deutsch / 德语",
+  el: "Ελληνικά / 希腊语",
+  en: "English / 英语",
+  es: "Español / 西班牙语",
+  fa: "فارسی / 波斯语",
+  fr: "Français / 法语",
+  he: "עברית / 希伯来语",
+  hi: "हिन्दी / 印地语",
+  hu: "Magyar / 匈牙利语",
+  id: "Bahasa Indonesia / 印尼语",
+  it: "Italiano / 意大利语",
+  ja: "日本語 / 日语",
+  ko: "한국어 / 韩语",
+  lv: "Latviešu / 拉脱维亚语",
+  ms: "Bahasa Melayu / 马来语",
+  nl: "Nederlands / 荷兰语",
+  no: "Norsk / 挪威语",
+  pl: "Polski / 波兰语",
+  pt: "Português / 葡萄牙语",
+  ro: "Română / 罗马尼亚语",
+  ru: "Русский / 俄语",
+  sv: "Svenska / 瑞典语",
+  sw: "Kiswahili / 斯瓦希里语",
+  ta: "தமிழ் / 泰米尔语",
+  th: "ไทย / 泰语",
+  tl: "Tagalog / 他加禄语",
+  tr: "Türkçe / 土耳其语",
+  uk: "Українська / 乌克兰语",
+  ur: "اردو / 乌尔都语",
+  vi: "Tiếng Việt / 越南语",
+  zh: "中文",
+  zu: "isiZulu / 祖鲁语",
+};
+
+/** 语言显示名（未收录代码原样返回，避免小语种在 UI 上显示成空白）。 */
+export function languageLabel(code: string): string {
+  return LANGUAGE_LABELS[code] ?? code;
+}
+
+/** 目录按语言分组计数（降序）——音色库语言轨的数据源。 */
+export function countVoicesByLanguage(entries: VoiceEntry[]): { code: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    for (const code of entry.languages) counts.set(code, (counts.get(code) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([code, count]) => ({ code, count }))
+    .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+}
+
+/** voiceId 是否形如 fish reference_id（32 位 hex）。 */
 export function isVoiceId(id: string): boolean {
-  return VOICE_PRESETS.some((v) => v.id === id) || /^[0-9a-f]{32}$/.test(id);
+  return /^[0-9a-f]{32}$/.test(id);
 }
