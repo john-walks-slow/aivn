@@ -5,7 +5,7 @@ import type {
   WorkshopChatMessage,
   WorkshopThreadInfo,
 } from "@stage-ai/core";
-import type { WorkshopInbound } from "./useWorkshopSocket.js";
+import type { WorkshopInbound } from "../stage/useStageSocket.js";
 
 /** 工坊面板的一次写盘记录（可一键撤销）。 */
 export interface WorkshopWriteRecord {

@@ -7,6 +7,9 @@ import type {
   StopPayload,
 } from "@stage-ai/core";
 
+/** 工坊通道下行消息：与演出事件共用连接、按 type 分流（工坊是舞台外壳的一个视图）。 */
+export type WorkshopInbound = Extract<ServerMessage, { type: `workshop_${string}` }>;
+
 import { ScriptBuilder, type ScriptLine, type Cue } from "./script.js";
 
 export type BeatState = "connecting" | "streaming" | "stopped" | "error";
@@ -60,6 +63,8 @@ export interface StageSocketHandlers {
   onAudio?: (ready: { seq: number; phrase: number; url: string }) => void;
   onBeatStart?: () => void;
   onReset?: () => void;
+  /** 工坊通道下行消息：工坊复用工坊所在那条连接，不再单开一条。 */
+  onWorkshop?: (msg: WorkshopInbound) => void;
   /** hello 带回来的既有生成资产全集（重连即恢复可见）。 */
   onAssets?: (assets: GeneratedAsset[]) => void;
   /** 结构性操作完成（P6 rebase）：缓冲已整段重放，播放层须复位后快进到新分支末尾。 */
@@ -235,6 +240,8 @@ export function useStageSocket(
             setError(msg.message);
             return;
           default:
+            // 工坊通道（workshop_*）：与演出状态机无关，整包外发
+            if (msg.type.startsWith("workshop_")) handlersRef.current.onWorkshop?.(msg as WorkshopInbound);
             return;
         }
       };
