@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Icon } from "../ui/Icon.js";
+
 import {
   api,
   assetUrl,
@@ -128,7 +128,6 @@ export function LibraryView() {
         ) : (
           <>
             <button className="library-verb" onClick={() => setCreating(true)}>
-              <Icon name="plus" size={15} />
               新建剧目
             </button>
             <label className="library-verb">

@@ -355,6 +355,9 @@ export function StageTheater({
               </>
             )}
           </div>
+          {/* 快捷菜单：纯文字，无边框无底色。真实 ADV 的系统入口一律直接写字
+              （AUTO / SKIP / LOG / SAVE / LOAD / CONFIG），不用线性图标——
+              见 docs/features/260930-game-ux 的调研 §2.1 与 §5.5。 */}
           <div className="director-bar">
             <button
               type="button"
@@ -366,7 +369,6 @@ export function StageTheater({
                 setDraft("");
               }}
             >
-              <Icon name="chat" size={15} />
               插一句
             </button>
             <button
@@ -380,7 +382,6 @@ export function StageTheater({
                 setDraft(targets.lineText);
               }}
             >
-              <Icon name="pencil" size={15} />
               改写
             </button>
             <button
@@ -394,7 +395,6 @@ export function StageTheater({
                 setDraft("");
               }}
             >
-              <Icon name="rewrite" size={15} />
               重来
             </button>
             {voiceAvailable && hasVoice(view?.seq ?? null) && (
@@ -407,7 +407,6 @@ export function StageTheater({
                   if (view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
                 }}
               >
-                <Icon name="volume" size={15} />
                 重听
               </button>
             )}
@@ -422,7 +421,6 @@ export function StageTheater({
                 playback.setAuto(!playback.auto);
               }}
             >
-              {playback.auto ? <Icon name="pause" size={15} /> : <Icon name="play" size={15} />}
               自动
             </button>
           </div>

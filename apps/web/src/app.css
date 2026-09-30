@@ -1405,18 +1405,8 @@ button.primary:hover:not(:disabled) {
   color: var(--panel);
 }
 
-/* 画面暗角：上下各压一道，中间的画面最亮，视线自然落回台词窗。
-   z-index 1 —— 压住背景与立绘（无 z-index），但让选肢浮层（z-index 6）与
-   CG 字幕照旧盖在上面。 */
-.theater-stage::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background:
-    linear-gradient(180deg, rgb(12 9 7 / 0.42), transparent 20%, transparent 52%, rgb(12 9 7 / 0.5));
-}
+/* 画面不做整体压暗：样本里几乎每款都只靠文本框自身的半透明与背景拉开层次，
+   整幅压暗是最容易把画面做回 web 后台的一步（调研 §2.1 / §5.6）。 */
 
 /* ── 模态窗（插一句 / 改台词 / 重演这一轮 / 停止点自由输入） ──── */
 
@@ -3815,9 +3805,9 @@ select:focus {
   font-size: 13px;
 }
 
-/* 快捷菜单（Quick Menu）：贴在台词窗下沿的一条横排短词。
-   带字样是项目既有决定（路线节点卡已经这么做）——二十几像素的方块里
-   分不出「重听」和「改写」，也看不出两个同义键的区别。 */
+/* 快捷菜单（Quick Menu）：压在台词窗下沿的一条横排短词。
+   纯文字、无边框、无底色——真实 ADV 的系统入口就是这样，靠文字本身的
+   轻微投影浮在画面上，悬停时才点亮。 */
 .dialog-foot {
   display: flex;
   align-items: center;
@@ -3825,7 +3815,6 @@ select:focus {
   gap: 12px;
   margin-top: 4px;
   padding-top: 7px;
-  border-top: 1px solid rgb(240 230 210 / 0.16);
 }
 .dialog-hint-foot {
   min-height: 18px;
@@ -3833,39 +3822,44 @@ select:focus {
 .director-bar {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   flex: 0 0 auto;
-  margin: -7px -8px -7px 0;
+  margin: -4px -10px -6px 0;
 }
 .dir-btn {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
   /* 拇指要够得着：点击区不低于 40px（≥ 44px 触控下限的一半，整排仍在窗内） */
   min-height: 40px;
-  padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: 1px;
+  padding: 0 11px;
+  border: none;
+  border-radius: 0;
   background: none;
-  color: rgb(242 235 222 / 0.78);
+  color: rgb(242 235 222 / 0.7);
+  font: inherit;
   font-size: 12.5px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.14em;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
   cursor: pointer;
-  transition:
-    color var(--hover-ms) ease,
-    background-color var(--hover-ms) ease,
-    border-color var(--hover-ms) ease;
+  transition: color var(--hover-ms) ease;
+}
+/* 分隔：短词之间一道竖线，不再是图标之间的方块底 */
+.dir-btn + .dir-btn::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 11px;
+  background: rgb(240 230 210 / 0.22);
+  transform: translateY(-50%);
 }
 .dir-btn:hover:not(:disabled) {
-  background: rgb(242 235 222 / 0.1);
-  border-color: rgb(240 230 210 / 0.32);
   color: #fff;
 }
 .dir-btn.on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  color: #f2a7a0;
 }
 .dir-btn:disabled {
   opacity: 0.3;
