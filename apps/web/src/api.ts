@@ -70,6 +70,22 @@ export interface PlayDetail {
   readiness: Readiness;
 }
 
+/** 网关模型清单的一行（Agent 设置页的模型下拉）。 */
+export interface GatewayModel {
+  id: string;
+  name: string;
+}
+
+/** 工具目录的一行（Agent 设置页的工具开关，按 group 分组）。 */
+export interface AgentToolEntry {
+  id: string;
+  label: string;
+  group: string;
+  /** 分组的中文名（服务端 TOOL_GROUPS 的另一半），设置页表头直接用它。 */
+  groupLabel: string;
+  roles: string[];
+}
+
 /**
  * 剧作家 session 历史快照（只读）：「模型到底吐了什么」——注入的原文、思考、
  * 未经解析的原始 DSL、工具调用。与谱系的分工见 `apps/server/src/history.ts`。
@@ -211,6 +227,18 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(play),
     }),
+
+  /**
+   * Agent 设置页的模型下拉数据源（服务端转问网关 `/v1/models`）。
+   * 网关读不到时这个请求会失败——**不静默退回默认模型**：看到的模型和实际计费的对不上比报错糟。
+   */
+  agentModels: (refresh = false) =>
+    request<{ models: GatewayModel[]; defaultModel: string }>(
+      `/api/agents/models${refresh ? "?refresh=1" : ""}`,
+    ),
+
+  /** Agent 设置页的工具目录（两个角色共用的那一份真相源）。 */
+  agentTools: () => request<{ tools: AgentToolEntry[] }>("/api/agents/tools"),
 
   listAssets: (id: string) => request<Record<string, string[]>>(`/api/plays/${id}/assets`),
 

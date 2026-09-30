@@ -17,11 +17,11 @@ export const VIEW_LABEL: Record<StageView, string> = {
   workshop: "工坊",
 };
 
-/** 工坊内的五个页签。会话（旧称线程）不占页签位——它是「对话」页内部的一层。 */
-export type WorkshopTab = "chat" | "assets" | "files" | "memory" | "settings";
+/** 工坊内的六个页签。会话（旧称线程）不占页签位——它是「对话」页内部的一层。 */
+export type WorkshopTab = "chat" | "assets" | "files" | "memory" | "agent" | "settings";
 
 const VIEWS: StageView[] = ["stage", "backlog", "route", "workshop"];
-const TABS: WorkshopTab[] = ["chat", "assets", "files", "memory", "settings"];
+const TABS: WorkshopTab[] = ["chat", "assets", "files", "memory", "agent", "settings"];
 
 /**
  * 认 URL 上的 `view=`：认不出（缺省、拼错）一律回舞台。

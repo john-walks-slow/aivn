@@ -5,6 +5,7 @@ import type { WorkshopInbound } from "../stage/useStageSocket.js";
 import { Icon, type IconName } from "../ui/Icon.js";
 import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
 import type { WorkshopTab } from "../stage/view.js";
+import { AgentPane } from "./AgentPane.js";
 import { AssetsPanel } from "./AssetsPanel.js";
 import { FileBrowser } from "./FileBrowser.js";
 import { MemoryPanel } from "./MemoryPanel.js";
@@ -17,11 +18,12 @@ const TABS: { id: WorkshopTab; label: string; icon: IconName }[] = [
   { id: "assets", label: "素材", icon: "assets" },
   { id: "files", label: "文件", icon: "files" },
   { id: "memory", label: "记忆", icon: "memory" },
+  { id: "agent", label: "Agent", icon: "sparkles" },
   { id: "settings", label: "设置", icon: "settings" },
 ];
 
 /**
- * 工坊：搭台的地方（改设定、补素材、翻文件、调记忆、设置）。D9 的 meta-chat 多会话。
+ * 工坊：搭台的地方（改设定、补素材、翻文件、调记忆、调 agent、设置）。D9 的 meta-chat 多会话。
  *
  * 它是舞台外壳的**第四个视图**，不是盖在舞台上的浮层，也不是自带顶栏的独立页：
  * 顶栏与侧栏跟舞台完全一致，从标题页直达工坊时也不会整个换掉（见 stage/view.ts 的入口约定）。
@@ -125,6 +127,8 @@ export function WorkshopPane({
       {tab === "assets" && <AssetsPanel playId={playId} />}
 
       {tab === "memory" && <MemoryPanel playId={playId} revision={state.writes.length} />}
+
+      {tab === "agent" && <AgentPane playId={playId} />}
 
       {tab === "settings" && (
         <WorkshopSettings voice={voice} continueCard={continueCard} />
