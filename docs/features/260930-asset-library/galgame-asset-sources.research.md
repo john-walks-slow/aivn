@@ -1,7 +1,7 @@
 # Galgame / Visual-Novel 素材来源调研报告
 
 > 调研日期：2026-09-30
-> 调研目标：为 stage-ai 应用级素材资源库（`library/{backgrounds,cg,sprites}`）寻找**可合法获取、可再分发、高质量的免费二次元 / galgame 风格素材**。
+> 调研目标：为 stage-ai 应用级素材资源库（`library/{backgrounds,cg,characters}`）寻找**可合法获取、可再分发、高质量的免费二次元 / galgame 风格素材**。
 > 覆盖两类需求：**① 动漫风格 16:9 场景背景（无人/空景）**、**② 透明背景人物立绘（立ち絵）含多表情差分**。
 > 所有结论中标注 **[实测]** 的条目均由本轮实际下载、解包、逐字节读取验证（PNG IHDR 色彩类型、WebP VP8X alpha 标志、alpha 直方图、目录树），非仅凭页面描述。
 

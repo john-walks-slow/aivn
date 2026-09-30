@@ -405,11 +405,11 @@ library/
 
 `library/` 里已经预置了一批可直接用的种子素材，全部是许可清晰可再分发的：
 
-- **背景 5 张**：本项目用 flow2api 生成的二次元 16:9 空景（黄昏教室 / 放学走廊 / 天台 / 雨夜窗边 / 樱花街道）
-- **立绘 1 套**（`sprites/nanase/`）：同一角色的四张表情差分（neutral / smile / worried / surprised），由项目抠底管线落成透明 PNG
-- **BGM / 音效**：来自 OpenGameArt（CC0）、incompetech（CC BY 4.0）、Wikimedia Commons（PD/CC0），逐条转码到浏览器能直接播的格式，出处与署名写在各自的 `meta.json` 里
+- **背景 384 张**：Uncle Mugen（anime 赛璐璐 / 3D 渲染混合风，1920×1080 WebP，教室 / 礼堂 / 咖啡厅 / 街道 / 海边等，多数自带 day-evening-night 变体）、Pandita Studio（教室 / 走廊 / 食堂 × 4 时段，4K PNG），以及本项目用 flow2api 生成的少量二次元空景
+- **角色 11 个**（`characters/<id>/`）：7 个带角色卡（其中 `aoi` 标了 `protagonist`，零媒体、只有人设），4 个是纯立绘包（breezy 系列没有 `meta.character`，导入时按目录名建卡再挂差分）；`nanase` 一套四张表情差分由项目抠底管线落成透明 PNG
+- **BGM 20 首 / 音效 33 条**：来自 OpenGameArt（CC0）、incompetech（CC BY 4.0）、Wikimedia Commons（PD/CC0），逐条转码到浏览器能直接播的格式，出处与署名写在各自的 `meta.json` 里
 
-来源调研与逐条许可见 `docs/features/260930-asset-library/seed-sources.research.md`。
+来源调研与逐条许可见 `docs/features/260930-asset-library/seed-sources.research.md`，新增素材的筛选记录见 `docs/features/260930-asset-library/galgame-asset-sources.research.md`。
 
 > ⚠️ 素材目录进 git 等于**把素材原文件本身再分发**，这比「可商用」严格得多。日系素材站（魔王魂、効果音ラボ、OpenTracks 旧 DOVA 等）的条款大多只授权使用、禁止再配布，所以不在清单里。要加自己的素材时，同样先确认许可允许再分发。
 
