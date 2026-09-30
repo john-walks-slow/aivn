@@ -43,10 +43,13 @@ export function Modal({
 }) {
   const cardRef = useRef<HTMLDivElement | null>(null);
 
-  // 打开就把光标放进第一个可聚焦控件：不点一下屏幕就能直接打字。
+  // 打开就把光标放进输入框（不点一下屏幕就能直接打字）。输入框优先于按钮：
+  // 导演栏的「OOC：」快捷前缀排在输入框前面，抢先拿到焦点就等于要先按一下 Tab。
   useEffect(() => {
-    const first = cardRef.current?.querySelector<HTMLElement>("input, textarea, button");
-    first?.focus();
+    const card = cardRef.current;
+    const target = card?.querySelector<HTMLElement>("input, textarea, button");
+    target?.focus();
+    if (target instanceof HTMLInputElement) target.select();
   }, []);
 
   useEffect(() => {

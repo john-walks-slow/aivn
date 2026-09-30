@@ -77,8 +77,10 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   /** 侧栏导航：工坊内部就地切；工坊入口模式下切去别的视图要换真舞台连接。 */
   const goView = useCallback(
     (next: StageView): void => {
-      if (workshopEntry && next !== "workshop") {
-        navigate(`/play/${playId}/stage?view=${next}`);
+      if (workshopEntry) {
+        // 换一条真舞台连接（重挂即 autostart）并落在目标视图；去舞台不要带 query，
+        // 留着 ?view=stage 会让人以为这里还需要一个参数。
+        navigate(next === "stage" ? `/play/${playId}/stage` : `/play/${playId}/stage?view=${next}`);
         return;
       }
       setView(next);

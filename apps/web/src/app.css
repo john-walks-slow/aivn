@@ -2917,14 +2917,16 @@ select:focus {
 }
 
 /* 折叠/展开键：无边框幽灵键。侧栏头已经有一个带底色的剧目块了，再来一个
-   描边圆角矩形就是两个抢眼的按钮排排坐；图标居中靠 Icon 里的 display:block
-   （inline svg 的基线会把它顶上去 2~3px）。 */
+   描边圆角矩形就是两个抢眼的按钮排排坐。
+   padding: 0 是必须的：全局 button 有 9px/14px 的内边距，32px 见方的键会被
+   挤成 4px 内容框，图标因此向右溢出 7px——就是「图标没居中」的根因。 */
 .side-collapse {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
   width: 32px;
   height: 32px;
+  padding: 0;
   border: none;
   border-radius: var(--radius);
   background: none;
@@ -3127,6 +3129,7 @@ select:focus {
   place-items: center;
   width: 30px;
   height: 30px;
+  padding: 0;
   border: none;
   border-radius: var(--radius);
   background: none;
@@ -3138,7 +3141,7 @@ select:focus {
   color: var(--accent);
 }
 
-/* 窄屏抽屉关着时的唤出键：浮在内容左上角，换回全部导航。幽灵键同款。 */
+/* 窄屏抽屉关着时的唤出键：浮在内容左上角，换回全部导航。幽灵键同款（padding: 0 同理）。 */
 .side-drawer-btn {
   position: absolute;
   z-index: 3;
@@ -3148,6 +3151,7 @@ select:focus {
   place-items: center;
   width: 38px;
   height: 38px;
+  padding: 0;
   border: none;
   border-radius: var(--radius);
   background: var(--panel);
@@ -3208,11 +3212,13 @@ select:focus {
   gap: 4px;
   flex: 0 0 auto;
 }
-/* 拇指要够得着：46px 的点击区（≥ 44px 触控下限），图标同步放大 */
+/* 拇指要够得着：46px 的点击区（≥ 44px 触控下限）。padding: 0 是必须的：
+   全局 button 的 9px/14px 内边距会把 46px 方块挤成 18px 内容框，图标向右偏 3px。 */
 .dir-btn {
   position: relative;
   width: 46px;
   height: 46px;
+  padding: 0;
   display: grid;
   place-items: center;
   border: none;

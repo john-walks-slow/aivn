@@ -32,7 +32,10 @@ export function App() {
 
   if (head === "settings") return <SettingsScreen />;
   if (head === "play" && playId && sub === "stage") {
-    return <StageScreen playId={playId} search={route.query.toString()} />;
+    // key = query：工坊入口与「回舞台」都靠改 query 换一条连接（workshop=1 → 真舞台连接），
+    // 而 hash 变化不会重新挂载同一个路由的组件——不拿 query 当 key，重挂就是空操作，
+    // 舞台会一片空白（连接还是工坊那条，不会 autostart）。
+    return <StageScreen key={route.query.toString()} playId={playId} search={route.query.toString()} />;
   }
   if (head === "play" && playId && sub === "saves") {
     return <SavesView playId={playId} />;
