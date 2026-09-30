@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClientMessage, ServerMessage } from "@stage-ai/core";
-import type { WorkshopInbound } from "../stage/useStageSocket.js";
+/** 工坊通道下行消息：与演出事件同一套 WS 协议，但只由工坊连接消费。 */
+export type WorkshopInbound = Extract<ServerMessage, { type: `workshop_${string}` }>;
 
 export type WorkshopSubscribe = (handler: (msg: WorkshopInbound) => void) => () => void;
 
 /**
- * 工坊专用 WS 连接（独立全屏工坊页用）：只收 workshop_* 下行、只发工坊上行。
- * 带 `?workshop=1`——服务端据此跳过 autostart，逛工坊不会把演出开起来。
+ * 工坊专用 WS 连接（工坊浮层用，全站只此一处建连接）：只收 workshop_* 下行、只发工坊上行。
+ * 带 `?workshop=1`——服务端据此跳过 autostart，逛工坊不会把演出开起来；也不计入舞台连接数。
  */
 export function useWorkshopSocket(playId: string): {
   connected: boolean;

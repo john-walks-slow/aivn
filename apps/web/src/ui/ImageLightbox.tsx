@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useEscape } from "./escape.js";
 
 export interface LightboxImage {
   url: string;
@@ -24,15 +25,17 @@ export function ImageLightbox({
 }) {
   const current = images[index];
 
+  // Esc 归全局浮层栈（开着它的那一层才是栈顶）；左右翻页是灯箱自己的事
+  useEscape(onClose);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
       if (e.key === "ArrowRight" && index < images.length - 1) onIndex(index + 1);
       if (e.key === "ArrowLeft" && index > 0) onIndex(index - 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [index, images.length, onIndex, onClose]);
+  }, [index, images.length, onIndex]);
 
   if (!current) return null;
   return (

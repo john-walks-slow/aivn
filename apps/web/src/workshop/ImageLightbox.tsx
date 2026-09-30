@@ -1,5 +1,5 @@
-import { useEffect } from "react";
 import { Icon } from "../ui/Icon.js";
+import { useEscape } from "../ui/escape.js";
 
 /** 图片灯箱：点开看大图，点任意处/Esc 关闭。缩略图太小看不出素材好坏，这是刚需。 */
 export function ImageLightbox({
@@ -11,13 +11,7 @@ export function ImageLightbox({
   name: string;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   return (
     <div className="image-lightbox" onClick={onClose} role="dialog" aria-label={name}>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { describeAsset, type AssetKind, type LibraryEntry } from "@stage-ai/core";
 import { api, libraryFileUrl } from "../api.js";
 import { Icon } from "../ui/Icon.js";
+import { useEscape } from "../ui/escape.js";
 import { ImageLightbox } from "./ImageLightbox.js";
 
 /**
@@ -85,13 +86,7 @@ export function LibraryBrowser({
       .finally(() => setBusy(null));
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   return (
     <div className="library-overlay" role="dialog" aria-label="从资源库导入素材">

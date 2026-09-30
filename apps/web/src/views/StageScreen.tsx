@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PlayDetail } from "../api.js";
 import { navigate } from "../router.jsx";
-import { useStageSocket, type WorkshopInbound } from "../stage/useStageSocket.js";
+import { useStageSocket } from "../stage/useStageSocket.js";
 import { usePlayback } from "../stage/director.js";
 import { VoiceDirector } from "../stage/audio.js";
 import { buildAssetIndex, type AssetIndex } from "../stage/assets.js";
@@ -14,7 +14,8 @@ import { buildTranscript, type TranscriptEntry } from "../stage/transcript.js";
 import { ToastStack, useToasts } from "../stage/toast.js";
 import { StopPanel } from "../stage/StopPanel.js";
 import { useVisualViewport } from "../stage/viewport.js";
-import { WorkshopPanel, type WorkshopMode } from "../workshop/WorkshopPanel.js";
+import { useEscape } from "../ui/escape.js";
+import { toggleWorkshop, useWorkshopOverlay } from "../workshop/useWorkshopOverlay.js";
 
 /** 演出屏：舞台（视觉层+打字机+导演栏）/ 回顾 / 路线三视图 + 停止点面板。 */
 export function StageScreen({ playId }: { playId: string }) {
@@ -33,7 +34,9 @@ export function StageScreen({ playId }: { playId: string }) {
   /** 谱系代次：每拍、结构操作后自增，把最新的树拉回来。 */
   const [lineageNonce, setLineageNonce] = useState(0);
   const [oocQueued, setOocQueued] = useState(false);
-  const [workshop, setWorkshop] = useState<WorkshopMode | null>(null);
+  /** 工坊是 app 级浮层，这里只读它开没开——连接与开合都在浮层自己那边。 */
+  const workshop = useWorkshopOverlay();
+  const workshopOpen = workshop?.playId === playId;
   /** 操作条常驻：舞台上有几个能点的键，藏起来等于让玩家猜。H 手动收起做沉浸模式，仅此一种隐藏途径。 */
   const [chrome, setChrome] = useState(true);
   /** 按住 Ctrl 的快进档：舞台层只报键，播放层管节奏。 */
@@ -45,14 +48,6 @@ export function StageScreen({ playId }: { playId: string }) {
   const playbackRef = useRef<ReturnType<typeof usePlayback> | null>(null);
   // 谱系只在这两个导演视图里拉取（打开/操作后/手动刷新），不做每拍广播
   const lineage = useLineage(playId, lineageNonce);
-  // 工坊下行消息的订阅表：面板挂载时登记，卸载时注销（与舞台状态机解耦）
-  const workshopHandlers = useRef(new Set<(msg: WorkshopInbound) => void>());
-  const subscribeWorkshop = useCallback((handler: (msg: WorkshopInbound) => void) => {
-    workshopHandlers.current.add(handler);
-    return () => {
-      workshopHandlers.current.delete(handler);
-    };
-  }, []);
   const { push: pushToast } = toast;
 
   const stage = useStageSocket(playId, {
@@ -81,9 +76,6 @@ export function StageScreen({ playId }: { playId: string }) {
     onAssetFailed: (id, message) => {
       playbackRef.current?.settleAssets([id]);
       pushToast(`生图失败：${message}`, "warn");
-    },
-    onWorkshop: (msg) => {
-      for (const handler of workshopHandlers.current) handler(msg);
     },
   });
 
@@ -178,17 +170,9 @@ export function StageScreen({ playId }: { playId: string }) {
     stage.sendContinue();
   }, [stage.sendContinue]);
 
-  // 三个浮层都是 z-index 压在顶栏之上的，关掉它们的自然动作是 Esc。
-  useEffect(() => {
-    if (view === "stage" && !workshop) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== "Escape") return;
-      if (workshop) setWorkshop(null);
-      else setView("stage");
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [view, workshop]);
+  // 回顾 / 路线这两个视图压在舞台上，关掉它们的自然动作是 Esc。
+  // 工坊是独立浮层、自己认领 Esc（见 useEscape），这里不再代它处理。
+  useEscape(() => setView("stage"), view !== "stage");
 
   // 谱系定期拉取：路线视图开着时看得到直播的树；舞台停在停止点上也拉——
   // 此刻这一拍的事件才刚落库，导演栏的锚点要指得准。
@@ -326,11 +310,11 @@ export function StageScreen({ playId }: { playId: string }) {
       <GameBar
         view={view}
         voiceOn={voiceOn}
-        workshopOpen={workshop !== null}
+        workshopOpen={workshopOpen}
         saveName={saveName}
         onView={setView}
         onToggleVoice={toggleVoice}
-        onWorkshop={() => setWorkshop((cur) => (cur ? null : "drawer"))}
+        onWorkshop={() => toggleWorkshop(playId)}
         onSaves={() => navigate(`/play/${playId}/saves`)}
         onExit={() => navigate(`/play/${playId}`)}
         hidden={!chrome}
@@ -338,18 +322,6 @@ export function StageScreen({ playId }: { playId: string }) {
 
       {/* 提示一律走浮层 toast，不占舞台顶部的固定一条 */}
       <ToastStack toasts={toast.toasts} onDismiss={toast.dismiss} />
-
-      {view === "stage" && workshop && (
-        <WorkshopPanel
-          playId={playId}
-          mode={workshop}
-          onModeChange={setWorkshop}
-          onClose={() => setWorkshop(null)}
-          subscribe={subscribeWorkshop}
-          send={stage.send}
-          connected={stage.connected}
-        />
-      )}
     </div>
   );
 }

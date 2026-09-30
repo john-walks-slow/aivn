@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { countVoicesByLanguage, languageLabel, type VoiceEntry } from "@stage-ai/core";
 import { api } from "../api.js";
+import { useEscape } from "../ui/escape.js";
 import type { VoiceCatalogState } from "./useVoiceCatalog.js";
 
 /** Fish 封面图 CDN（cover_image 是 `coverimage/<id>` 相对路径）。 */
@@ -64,13 +65,7 @@ export function VoiceLibrary({
   // 换筛选条件时回到第一页，否则会停在一个空白的第 N 页
   useEffect(() => setLimit(PAGE_SIZE), [language, query]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   const preview = (entry: VoiceEntry): void => {
     if (previewingId) return;
