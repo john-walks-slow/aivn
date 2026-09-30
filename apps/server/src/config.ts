@@ -22,6 +22,8 @@ export interface ServerConfig {
   compactRatio: number;
   /** 纪元压缩保留的最近上下文（token 估算）：切尾点之后的原文留在对话体。 */
   keepRecentTokens: number;
+  /** 单拍超时（毫秒）：网关挂住时 provider 既不报错也不收流，到点 abort 这一拍。 */
+  beatTimeoutMs: number;
   /** 生图管线（D6）：出图后端 + 预发射 + 媒体缓存。 */
   image: {
     enabled: boolean;
@@ -116,6 +118,9 @@ export function loadConfig(
       env.STAGE_KEEP_RECENT_TOKENS,
       20000,
     ),
+    // 一拍 240s：一拍里有生图预发射和多轮记忆工具调用，60s 不够；再久就是网关挂了。
+    // 到点 abort 这一拍，按拍失败收束（空拍护栏给玩家重试入口），不是无声卡死。
+    beatTimeoutMs: parsePositiveInt("STAGE_BEAT_TIMEOUT_MS", env.STAGE_BEAT_TIMEOUT_MS, 240_000),
     image: {
       enabled: env.STAGE_IMAGE_ENABLED !== "false",
       backend: parseEnum("STAGE_IMAGE_BACKEND", env.STAGE_IMAGE_BACKEND, ["cpa", "flow2api"] as const, "cpa"),

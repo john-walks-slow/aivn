@@ -253,6 +253,12 @@ export interface OrchestratorOptions {
     triggerRatio: number;
     keepRecentTokens: number;
   };
+  /**
+   * 单拍超时（毫秒）。网关挂住时 provider 既不报错也不收流，编排器会一直等下去，
+   * 舞台表现为「剧作家正在落笔…」永远不结束。超点即 abort 这一拍，按拍失败收束。
+   * 不传 = 不设上限。
+   */
+  beatTimeoutMs?: number;
   /** 重建接力：A 区变了（工坊改了创作口径/设定）时携带的对话尾，见 carryOver。 */
   seed?: CarryOver;
 }
@@ -317,6 +323,8 @@ export class PlaywrightOrchestrator {
   private readonly voice: VoicePipeline | null;
   /** 本拍内 pi agent 的流错误（message_end.errorMessage）；每拍重置。 */
   private beatError: string | null = null;
+  /** 这一拍是被我们自己的超时掐断的：provider 随之报的是 AbortError，不是根因。 */
+  private beatTimedOut = false;
   /** 本拍内产出的舞台事件数（空拍检测）。 */
   private beatEvents = 0;
   /** 本拍台词文本（archive 切片摘要来源）。 */
@@ -949,6 +957,17 @@ export class PlaywrightOrchestrator {
 
   private async beginBeat(userText: string): Promise<void> {
     this.beatPending = true;
+    // 网关挂住是看不见的故障：provider 既不抛错也不收流，await 会永远挂着。
+    // 到点直接 abort 这一拍，让 finishBeat 的空拍护栏收成一次可重试的失败。
+    const deadline = this.opts.beatTimeoutMs;
+    const timer =
+      deadline && deadline > 0
+        ? setTimeout(() => {
+            this.beatTimedOut = true;
+            this.beatError = `剧作家这一拍超过 ${Math.round(deadline / 1000)} 秒没有动静，已中断`;
+            this.agent.abort();
+          }, deadline)
+        : null;
     try {
       // 纪元边界：拍与拍之间是唯一允许突变 A 区/对话体的时刻（空前缀缓存豁免）
       await this.maybeCompactEpoch();
@@ -962,6 +981,7 @@ export class PlaywrightOrchestrator {
       // prompt 抛错（网络/中断）：记入 beatError，由 finishBeat 的空拍护栏统一收束
       this.beatError = error instanceof Error ? error.message : String(error);
     } finally {
+      if (timer) clearTimeout(timer);
       // prompt 异常路径可能不发 agent_end：兜底收束（正常路径 busy 已被 finishBeat 清零）
       if (this.busy) this.finishBeat();
       this.beatPending = false;
@@ -1043,6 +1063,7 @@ export class PlaywrightOrchestrator {
     this.busy = true;
     this.beatNo += 1;
     this.beatError = null;
+    this.beatTimedOut = false;
     this.beatEvents = 0;
     this.beatLines = [];
     this.beatClosed = false;
@@ -1062,7 +1083,8 @@ export class PlaywrightOrchestrator {
       this.parser.feed(event.assistantMessageEvent.delta);
     } else if (event.type === "message_end" && event.message.role === "assistant") {
       // pi agent 的 provider 失败不抛异常，而是 assistant message 带 errorMessage 正常收束——捕获之
-      if (event.message.errorMessage) this.beatError = event.message.errorMessage;
+      // 超时是我们主动 abort 的，随之而来的 AbortError 只是症状，保留说人话的那条
+      if (event.message.errorMessage && !this.beatTimedOut) this.beatError = event.message.errorMessage;
       // 完整 assistant 消息：思考块与 toolCall 只在这里出现（流式增量拿不全），入史趁早
       if (this.busy) {
         this.historyRecorder.addAssistantMessage(this.beatNo, event.message, this.opts.tree.leafId);

@@ -417,6 +417,7 @@ export class PlayHouse {
         triggerRatio: this.config.compactRatio,
         keepRecentTokens: this.config.keepRecentTokens,
       },
+      beatTimeoutMs: this.config.beatTimeoutMs,
       onServerMessage: (msg) => {
         for (const send of this.clientsFor(play.id)) send(msg);
       },

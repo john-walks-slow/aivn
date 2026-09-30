@@ -8,7 +8,7 @@ import { BEAT_1, BEAT_2, CARD, PLAY, createFakeStreamFn, type FakeResponse } fro
 
 function setup(
   responses: FakeResponse[],
-  opts: { contexts?: unknown[]; memory?: PlayMemory } = {},
+  opts: { contexts?: unknown[]; memory?: PlayMemory; beatTimeoutMs?: number; streamFn?: StreamFn } = {},
 ): {
   orchestrator: PlaywrightOrchestrator;
   messages: ServerMessage[];
@@ -17,12 +17,14 @@ function setup(
   const messages: ServerMessage[] = [];
   const tree = new LineageTree();
   const base = createFakeStreamFn(responses);
-  const streamFn: StreamFn = opts.contexts
-    ? (model, context, options) => {
-        opts.contexts!.push(context);
-        return base(model, context, options);
-      }
-    : base;
+  const streamFn: StreamFn =
+    opts.streamFn ??
+    (opts.contexts
+      ? (model, context, options) => {
+          opts.contexts!.push(context);
+          return base(model, context, options);
+        }
+      : base);
   const orchestrator = new PlaywrightOrchestrator({
     streamFn,
     model: {} as never,
@@ -32,6 +34,7 @@ function setup(
     tree,
     engine: { ...PLAY.initialState },
     scene: PLAY.initialScene,
+    ...(opts.beatTimeoutMs !== undefined ? { beatTimeoutMs: opts.beatTimeoutMs } : {}),
     onServerMessage: (msg) => messages.push(msg),
     persist: () => {},
   });
@@ -311,6 +314,53 @@ describe("PlaywrightOrchestrator 闭环", () => {
       expect(replay.reason).toBe("act_end");
       expect(replay.stop).toBeUndefined();
     }
+  });
+
+  it("网关挂住不把舞台拖死：到点中断这一拍，报错并交还空闲", async () => {
+    // 网关挂住的真实形态是「连接还在、流不来了」——provider 既不抛错也不收流，
+    // 舞台会一直停在「剧作家正在落笔…」。这里用一个只在 abort 时才收束的流复现：
+    // abort 之后真实 fetch 以 AbortError 结束，对外表现为一条带 errorMessage 的
+    // assistant 消息、零剧本产出——正是下面断言的那个形状。
+    const hung: StreamFn = (_model, _context, options) => {
+      const stream = createAssistantMessageEventStream();
+      const partial = { role: "assistant", content: [] } as AssistantMessage;
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial });
+        options?.signal?.addEventListener("abort", () => {
+          const message: AssistantMessage = {
+            role: "assistant",
+            content: [],
+            api: "openai-completions",
+            provider: "fake",
+            model: "fake-test",
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            },
+            stopReason: "error",
+            errorMessage: "AbortError: The operation was aborted",
+            timestamp: Date.now(),
+          };
+          stream.push({ type: "done", message });
+          stream.end(message);
+        });
+      });
+      return stream;
+    };
+    const { orchestrator, messages } = setup([{ text: BEAT_1 }], { streamFn: hung, beatTimeoutMs: 40 });
+
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+
+    const errors = messages.filter((m) => m.type === "error");
+    expect(errors).toHaveLength(1);
+    // 我们主动 abort 的，报错要说人话而不是把 AbortError 原样丢给玩家
+    expect((errors[0] as { message: string }).message).toContain("没有动静");
+    // 收束后必须回到空闲：下一拍还能开，否则是卡死而不是超时
+    expect(orchestrator.runtimeState.beatNo).toBe(1);
   });
 });
 
