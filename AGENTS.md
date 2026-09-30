@@ -17,6 +17,7 @@ AI galgame 引擎：LLM 剧作家（playwriter）流式输出 Stage DSL（XML �
 ## 开发与调试
 
 - 启动：`pnpm --filter @stage-ai/server start`（需根目录 `.env`：cpa 网关 STAGE_BASE_URL/STAGE_API_KEY/STAGE_MODEL_ID 等）+ `pnpm --filter @stage-ai/web dev`（:5180，/ws 代理 :8787）
+- worktree 开发走 `./scripts/dev-worktree.sh`（`--no-server`/`--no-web`/`--no-tunnel`）：端口一律 `acquire-port` 动态取，**web 起来后默认再开一条 CF quick 隧道并打印公网地址**——交给用户验收时给公网 URL，不是 `127.0.0.1`（用户要用手机看）。dev-tunnel.sh 只有一份全局 pidfile 且不校验端口，已有隧道在跑时脚本会跳过并提示，不会把别人的 URL 报给你；隧道随脚本退出自动 stop
 - Node ≥ 22.19（pi-agent-core engines 要求），pnpm workspace
 - `pnpm test` —— vitest（core 92 + web 31 + server 249，测试范围按改动模块控制）。另有真机生图 e2e 默认 skip，要跑必须 `STAGE_E2E_LIVE=1`（花钱），别混进日常回归
 - `pnpm typecheck` / `pnpm build`（改 core 后须 rebuild，web/server 走 workspace symlink 的 dist 类型）
