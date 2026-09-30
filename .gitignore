@@ -19,6 +19,8 @@ plays/*/memory/index/arcs/
 plays/*/memory/archive/
 # 工坊 meta-chat 线程（运行时会话，不进 git）
 plays/*/workshop/
+# soak 报告（scripts/soak.mjs 的跑批产物，留档回看用，不进 git）
+plays/*/soak/
 .mnemon/
 .worktrees/
 
