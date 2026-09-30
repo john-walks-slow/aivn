@@ -5,7 +5,7 @@ import { Icon } from "../ui/Icon.js";
 import { ImageLightbox } from "./ImageLightbox.js";
 
 /**
- * 资源库浏览（素材页「从资源库导入」弹层）。
+ * 资源库浏览（素材页 / 角色卡旁的「从资源库导入」弹层）。
  *
  * 资源库本身没有管理界面——条目由用户在本地 `library/<kind>/<id>/` 目录里增删改，
  * 这里只做一件事：把库里有什么说清楚，让人挑着导入。导入是**复制**进剧目，所以
@@ -16,7 +16,7 @@ const KINDS: { key: AssetKind | ""; label: string }[] = [
   { key: "", label: "全部" },
   { key: "backgrounds", label: "背景" },
   { key: "cg", label: "插图" },
-  { key: "sprites", label: "立绘" },
+  { key: "characters", label: "角色" },
   { key: "bgm", label: "音乐" },
   { key: "sfx", label: "音效" },
 ];
@@ -29,6 +29,9 @@ export function LibraryBrowser({
   imported,
   onClose,
   onImported,
+  target,
+  filter,
+  title = "从资源库导入素材",
 }: {
   playId: string;
   /** 本剧目已有的条目（kind/id → true），用来标「已导入 / 覆盖」。 */
@@ -36,6 +39,11 @@ export function LibraryBrowser({
   onClose: () => void;
   /** 导入成功后回调：素材页刷新清单。 */
   onImported: () => void;
+  /** 落点：角色列表（缺省）或主角卡。 */
+  target?: "protagonist";
+  /** 只列满足条件的条目——主角卡入口只看标了 protagonist 的角色。 */
+  filter?: (entry: LibraryEntry) => boolean;
+  title?: string;
 }) {
   const [kind, setKind] = useState<AssetKind | "">("");
   const [query, setQuery] = useState("");
@@ -76,9 +84,14 @@ export function LibraryBrowser({
     setBusy(entry.id);
     setError(null);
     api
-      .importLibraryAsset(playId, { kind: entry.kind, entryId: entry.id })
+      .importLibraryAsset(playId, {
+        kind: entry.kind,
+        entryId: entry.id,
+        ...(target ? { target } : {}),
+      })
       .then((r) => {
-        setDone((prev) => ({ ...prev, [entry.id]: `已导入 ${r.files.length} 个文件` }));
+        const what = entry.kind === "characters" ? "角色卡" : `${r.files.length} 个文件`;
+        setDone((prev) => ({ ...prev, [entry.id]: `已导入 ${what}` }));
         onImported();
       })
       .catch((e: Error) => setError(e.message))
@@ -93,8 +106,10 @@ export function LibraryBrowser({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const shown = filter ? entries.filter(filter) : entries;
+
   return (
-    <div className="picker" role="dialog" aria-label="从资源库导入素材">
+    <div className="picker" role="dialog" aria-label={title}>
       <header className="picker-bar">
         <div className="library-tabs">
           {KINDS.map((k) => (
@@ -116,7 +131,7 @@ export function LibraryBrowser({
         />
         <div className="picker-meta">
           <span className="muted small picker-count">
-            {loading ? "扫描中…" : `匹配 ${total} 条`}
+            {loading ? "扫描中…" : filter ? `可选 ${shown.length} 个角色` : `匹配 ${total} 条`}
           </span>
         </div>
         <button
@@ -130,8 +145,9 @@ export function LibraryBrowser({
       </header>
 
       <p className="picker-note">
-        导入是把文件复制进本剧目（assets/），并把描述写进素材表，剧作家据此选素材。删掉库里那一份
-        不影响本剧目。
+        {target === "protagonist"
+          ? "导入会把这个角色的人设写进本剧目的主角卡（覆盖现有的），条目里的立绘一并复制。"
+          : "导入是把内容复制进本剧目（素材落 assets/，角色卡写进 play.json），删掉库里那一份不影响本剧目。"}
       </p>
 
       {error && (
@@ -141,9 +157,10 @@ export function LibraryBrowser({
       )}
 
       <div className="picker-grid picker-grid-wide">
-          {entries.map((entry) => {
+          {shown.map((entry) => {
             const file = entry.files[0];
             const isAudio = AUDIO.has(entry.kind);
+            const isCharacter = entry.kind === "characters";
             const preview = file ? libraryFileUrl(entry.kind, entry.id, file.name) : "";
             const already = imported(entry.kind, entry.id);
             const note = done[entry.id];
@@ -162,7 +179,7 @@ export function LibraryBrowser({
                   ) : file && isAudio ? (
                     <audio className="asset-audio" src={preview} controls preload="none" />
                   ) : (
-                    <span className="library-thumb library-thumb-blank" title={entry.id}>
+                    <span className="library-thumb library-thumb-blank" title={isCharacter ? "只有角色卡，没有立绘" : entry.id}>
                       <Icon name={isAudio ? "volume" : "assets"} size={18} />
                     </span>
                   )}
@@ -170,13 +187,14 @@ export function LibraryBrowser({
                 <div className="library-card-body">
                   <strong className="library-card-title" title={entry.id}>
                     {entry.title}
+                    {entry.meta.character?.protagonist && <span className="tag">主角</span>}
                   </strong>
                   {detail && <p className="library-card-desc">{detail}</p>}
-                  {entry.kind === "sprites" && (
+                  {isCharacter && (
                     <p className="library-card-desc">
                       差分：
                       {(Object.keys(entry.meta.expressions ?? {}).join("、") ||
-                        entry.files.map((f) => f.name).join("、")) || "（未在 meta 里声明，按文件名导入）"}
+                        entry.files.map((f) => f.name).join("、")) || "（无立绘，只导角色卡）"}
                     </p>
                   )}
                   {entry.warnings?.map((w) => (
@@ -208,9 +226,13 @@ export function LibraryBrowser({
               </article>
             );
           })}
-          {!loading && entries.length === 0 && (
+          {!loading && shown.length === 0 && (
             <p className="library-empty">
-              {query.trim() ? `没有匹配「${query.trim()}」的素材。` : "资源库是空的。"}
+              {filter
+                ? "资源库里没有标为「主角」的角色。在条目的 meta.json 里给 character 写 protagonist: true，它就会出现在这里。"
+                : query.trim()
+                  ? `没有匹配「${query.trim()}」的素材。`
+                  : "资源库是空的。"}
               <br />
               条目放在服务端配置的素材库目录里（<code>library/&lt;类别&gt;/&lt;素材id&gt;/</code>，
               可选放一份 <code>meta.json</code> 写描述），本页不提供管理。

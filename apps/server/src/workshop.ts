@@ -109,11 +109,11 @@ const generateAssetParams = Type.Object(
 const inspectAssetParams = Type.Object({ path: Type.String({ maxLength: 300 }) }, { additionalProperties: false });
 const readSkillParams = Type.Object({ name: Type.String({ maxLength: 64 }) }, { additionalProperties: false });
 
-/** 资源库类别：与剧目素材目录同名，模型看到 backgrounds 就知道落 assets/backgrounds。 */
+/** 资源库类别：characters 是角色包（角色卡 + 可选立绘），其余是单文件条目。 */
 const libraryKind = Type.Union([
   Type.Literal("backgrounds"),
   Type.Literal("cg"),
-  Type.Literal("sprites"),
+  Type.Literal("characters"),
   Type.Literal("bgm"),
   Type.Literal("sfx"),
 ]);
@@ -130,8 +130,10 @@ const importAssetParams = Type.Object(
     kind: libraryKind,
     /** 资源库条目 id（list_library 给的那一列），导入后它就是剧本里的引用名。 */
     entryId: Type.String({ maxLength: 64 }),
-    /** 立绘包只导这几条差分（缺省全导）。 */
+    /** 角色包只导这几条差分（缺省全导）。 */
     expressions: Type.Optional(Type.Array(Type.String({ maxLength: 32 }), { maxItems: 40 })),
+    /** 给 "protagonist" 时写进 play.json 的主角卡而不是角色列表。 */
+    target: Type.Optional(Type.Literal("protagonist")),
   },
   { additionalProperties: false },
 );
@@ -384,8 +386,8 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
       label: "浏览素材资源库",
       description:
         "浏览应用级素材资源库（跨剧目复用的本地素材目录，用户在本地维护）。" +
-        "可给 kind 过滤类别（backgrounds/cg/sprites/bgm/sfx），可给 query 按关键词搜描述与标签。" +
-        "每行是：id | 类别 | 标题 | 描述（立绘包还会列出可用差分名）。" +
+        "可给 kind 过滤类别（backgrounds/cg/characters/bgm/sfx），可给 query 按关键词搜描述与标签。" +
+        "每行是：id | 类别 | 标题 | 描述（角色包还会列出可用差分名与是否标了主角）。" +
         "找现成素材一律先来这里，库里有的就别再 generate_asset 出一张。",
       parameters: listLibraryParams,
       execute: async (_id, params: Static<typeof listLibraryParams>) => {
@@ -405,11 +407,12 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
         const lines = shown.map((e) => {
           const detail = describeAsset(e.meta);
           const expressions =
-            e.kind === "sprites"
+            e.kind === "characters"
               ? ` | 差分：${Object.keys(e.meta.expressions ?? {}).join(", ") || e.files.map((f) => f.name).join(", ")}`
               : "";
+          const role = e.meta.character?.protagonist ? " | 主角" : "";
           const warning = e.warnings?.length ? ` | ⚠ ${e.warnings.join("；")}` : "";
-          return `${e.id} | ${e.kind} | ${e.title} | ${detail}${expressions}${warning}`;
+          return `${e.id} | ${e.kind} | ${e.title} | ${detail}${expressions}${role}${warning}`;
         });
         if (matched.length > shown.length) {
           lines.push(`（共 ${matched.length} 条，这里只列了前 ${shown.length} 条；用 query 缩小范围）`);
@@ -423,8 +426,8 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
       label: "从资源库导入素材",
       description:
         "把资源库里的一个素材复制进本剧目（kind + entryId 来自 list_library），并把元数据写进剧目的素材描述表，" +
-        "让剧作家看得懂它是什么、能按情绪选曲。立绘包会自动写进 play.json 的角色卡与差分映射。" +
-        "回执里带引用写法，可以直接转述给用户。",
+        "让剧作家看得懂它是什么、能按情绪选曲。kind=characters 时把角色卡写进 play.json（配 target=protagonist " +
+        "则写主角卡），有条目里的立绘就一并复制并登记差分映射。回执里带引用写法，可以直接转述给用户。",
       parameters: importAssetParams,
       execute: async (_id, params: Static<typeof importAssetParams>) => {
         if (!isAssetKind(params.kind)) return textResult(`未知素材类别: ${params.kind}`);
@@ -435,6 +438,7 @@ export function createWorkshopTools(deps: WorkshopToolDeps): AgentTool<any>[] {
             ...(params.expressions && params.expressions.length > 0
               ? { expressions: params.expressions }
               : {}),
+            ...(params.target ? { target: params.target } : {}),
           });
           for (const path of result.files) {
             deps.onAsset({
@@ -482,7 +486,7 @@ function viewKind(kind: string): WorkshopAssetView["kind"] {
       return "background";
     case "cg":
       return "cg";
-    case "sprites":
+    case "characters":
       return "sprite";
     default:
       return kind === "sfx" ? "sfx" : "bgm";
@@ -491,24 +495,27 @@ function viewKind(kind: string): WorkshopAssetView["kind"] {
 
 /** 导入回执：落盘位置 + 剧本引用写法，agent 直接照着转述给用户。 */
 function renderImportResult(kind: string, result: ImportResult): string {
-  const usage: Record<string, string> = {
-    backgrounds: `<scene bg="${result.id}" />`,
-    cg: `<cg id="${result.id}" />`,
-    bgm: `<scene bgm="${result.id}" />`,
-    sfx: `<sfx src="${result.id}" />`,
-    sprites: `<actor id="${result.characters[0] ?? result.id}" expression="<差分名>" />`,
-  };
-  const head =
-    kind === "sprites"
-      ? `已导入立绘包 ${result.id}（${result.files.length} 个差分）→ ${result.files[0]?.replace(/\/[^/]+$/, "")}/`
-      : `已导入 ${result.id} → ${result.files[0]}`;
-  return [
-    head,
-    kind === "sprites"
-      ? `play.json 已写入角色卡 ${result.characters.join("、")} 与差分映射${result.characters.length > 0 ? "，剧作家可以直接 <actor id=\"…\"> 上台" : ""}`
-      : "素材描述已写进 assets/manifest.json，剧作家在剧本里能按描述选它。",
-    `剧本里这样引用：${usage[kind] ?? result.id}`,
-  ].join("\n");
+  if (kind !== "characters") {
+    const usage: Record<string, string> = {
+      backgrounds: `<scene bg="${result.id}" />`,
+      cg: `<cg id="${result.id}" />`,
+      bgm: `<scene bgm="${result.id}" />`,
+      sfx: `<sfx src="${result.id}" />`,
+    };
+    return [
+      `已导入 ${result.id} → ${result.files[0]}`,
+      "素材描述已写进 assets/manifest.json，剧作家在剧本里能按描述选它。",
+      `剧本里这样引用：${usage[kind] ?? result.id}`,
+    ].join("\n");
+  }
+  // 角色包里卡与图是两件独立的事（可能只有卡没有图），回执要分别说清落了什么
+  const sprites = result.files.length
+    ? `，立绘 ${result.files.length} 张落在 ${result.files[0]!.replace(/\/[^/]+$/, "")}/`
+    : "（这个条目没有立绘，只导了角色卡）";
+  const card = result.protagonist
+    ? `play.json 已写入主角卡 ${result.id}${result.files.length ? "，差分映射挂在同 id 的角色上" : ""}`
+    : `play.json 已写入角色卡 ${result.characters.join("、")}${result.files.length ? " 与差分映射，剧作家可以直接 <actor id=\"…\" expression=\"…\"> 上台" : ""}`;
+  return [`已导入角色 ${result.id}${sprites}`, card].join("\n");
 }
 
 /** 联网检索工具：Exa 一次调用同时给结果与正文，模型不必再单独抓页。 */
@@ -615,8 +622,8 @@ function renderLineage(
 
 export function renderReadiness(r: Readiness): string {
   return [
-    `开演条件：${r.ready ? "已满足，可开演" : "未满足（缺 premise）"}`,
-    `- premise：${r.premise ? "✓" : "✗ 缺（play.json 的 premise，或 memory/always/premise.md）——这是唯一的硬门槛"}`,
+    `开演条件：${r.ready ? "已满足，可开演" : "未满足（缺故事前提）"}`,
+    `- 故事前提：${r.premise ? "✓" : "✗ 缺（memory/always/premise.md）——这是唯一的硬门槛"}`,
     `- 角色立绘映射：${r.characterSprites ? "✓" : "缺（建议补）"}`,
     `- 背景图：${r.background ? "✓" : "缺（建议补）"}`,
     "（立绘与背景不是门槛：没有图也能开演，演出时落氛围底色、没有立绘的角色不上台）",
@@ -686,8 +693,11 @@ ${ctx.canBrowseLibrary ? libraryGuide : ""}
   有什么禁忌。用户说「节奏太快」「别让角色太主动」这类创作口味要求，就改这里（只改风格条目，
   不要往里写 DSL 格式或工具用法，那些由引擎保证）。
 - 角色卡：id 用英文小写（如 mio），name 是中文名，persona 写具体的人（年龄/关系/说话方式/在意的点）；
-  voiceId 从预置音色库挑；sprites 是「表情名 → 立绘文件名」的映射。
-- 记忆卡（memory/index/locations| lore/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。
+  voiceId 从预置音色库挑；sprites 是「表情名 → 立绘文件名」的映射。库里已有合适的角色可以先
+  \`import_asset\`（kind=characters）导进来再改，别从零重写。
+- 记忆卡（memory/index/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。
+  index 下可以建子目录分门别类，**建议** \`locations/\` 放地点、\`lore/\` 放世界设定（不是硬要求，
+  但分类后 A 区里每行都带 [分类] 前缀，剧作家更容易知道该去哪张卡里查）。
 - 记忆卡是给演出用的：写具体可用的设定（地点长什么样、约定是什么），不写"待补充"。
 - 素材描述表（assets/manifest.json）：\`{"文件名去扩展名": "画面里有什么"}\`。剧作家只看得懂 id 认不出画面，
   背景/插图/立绘差分配一句具体描述（色调、时间、氛围），差分名与画面不符时在描述里点明。
@@ -732,10 +742,13 @@ const searchGuide = `# 联网检索（web_search）
 /** 资源库章节（仅在库可用时拼进 system prompt）：先找现成的，再谈出图。 */
 const libraryGuide = `# 素材资源库（list_library / import_asset）
 
-服务器上有一份跨剧目复用的本地素材目录（背景 / CG / 立绘 / BGM / 音效），由用户在本地目录里维护，你只读不写。
+服务器上有一份跨剧目复用的本地素材目录（背景 / CG / 角色 / BGM / 音效），由用户在本地目录里维护，你只读不写。
 
-- **要素材先查库**。用户说"弄张黄昏教室的图""配首忧伤的音乐""来个门响的音效"，先用 \`list_library\`
+- **要素材先查库**。用户说"弄张黄昏教室的图""配首忧伤的音乐""来个门响的音效""找个角色"，先用 \`list_library\`
   （可以带 kind 或 query 关键词）看有没有现成的，有就 \`import_asset\` 导入。库里有就**不要**再 generate_asset。
+- **kind=characters 是角色包**：条目里的角色卡会写进 play.json（配 target=protagonist 则写主角卡），
+  条目里带立绘就一并复制并登记差分映射。库里有设定、但立绘还空着的角色很正常——先导卡、图后面再画。
+  库里的角色 id 就是立绘目录名，导入后 \`<actor id="…">\` 直接可用。
 - **库和剧目各存一份**：import_asset 是把文件复制进本剧目的 assets/，删库不影响剧目；但资源库里的
   素材不会自动出现在别的剧目里，要用就得各导一次。
 - 导入素材的元数据（描述、标签、音乐的情绪/适用场景/时长/是否可循环）会一并写进剧目素材表，

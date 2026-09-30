@@ -1,6 +1,12 @@
 import type { EngineStateSnapshot } from "../lineage/model.js";
 
-/** 剧目配置（plays/<id>/play.json）——server 与 web 共享的跨端契约。 */
+/**
+ * 剧目配置（plays/<id>/play.json）——server 与 web 共享的跨端契约。
+ *
+ * 这里只放引擎要读的结构。**世界观前提不在这里**：它在 `memory/always/premise.md`，
+ * 是纯内容、与 craft.md 同层，且由用户和工坊反复改（放这里就得读改写 play.json，
+ * 与那两处 config 写入方抢锁）。就绪门与 A 区注入都只认那个文件。
+ */
 export interface CharacterCard {
   id: string;
   name: string;
@@ -22,7 +28,6 @@ export interface ProtagonistCard {
 export interface PlayConfig {
   id: string;
   title: string;
-  premise: string;
   characters: CharacterCard[];
   /** 主角（玩家）角色卡：无则输入润色走通用模式。 */
   protagonist?: ProtagonistCard;
@@ -46,8 +51,6 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
   return {
     id: data.id,
     title: data.title,
-    // premise 允许为空（新建脚手架）：由就绪门（D13）负责提示补全，不在此处校验
-    premise: data.premise ?? "",
     characters: data.characters,
     ...(protagonist ? { protagonist } : {}),
     ...(data.voiceLanguage?.trim() ? { voiceLanguage: data.voiceLanguage.trim() } : {}),

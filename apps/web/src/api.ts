@@ -65,6 +65,8 @@ export interface SaveInfo {
 
 export interface PlayDetail {
   play: PlayConfig;
+  /** 世界观前提全文（memory/always/premise.md）——A 区注入的同一份，标题页显示与设置页编辑都走它。 */
+  premise: string;
   readiness: Readiness;
 }
 
@@ -142,6 +144,14 @@ export const api = {
   listPlays: () => request<PlaySummary[]>("/api/plays"),
 
   playDetail: (id: string) => request<PlayDetail>(`/api/plays/${id}`),
+
+  /** 世界观前提（memory/always/premise.md）：单独读写，不走 play.json。 */
+  savePremise: (id: string, content: string) =>
+    request<{ ok: true }>(`/api/plays/${id}/premise`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content }),
+    }),
 
   /** 路线树（P6）：全量节点含废弃分支；打开路线视图时取，操作后刷新。 */
   lineage: (id: string) => request<LineageView>(`/api/plays/${id}/lineage`),
@@ -224,8 +234,11 @@ export const api = {
       `/api/library?kind=${encodeURIComponent(kind ?? "")}&q=${encodeURIComponent(q ?? "")}`,
     ),
 
-  /** 从资源库导入到本剧目（复制文件 + 写素材表/角色卡），保存即生效。 */
-  importLibraryAsset: (id: string, req: { kind: string; entryId: string; expressions?: string[] }) =>
+  /** 从资源库导入到本剧目（复制文件 + 写素材表/角色卡），保存即生效。target=protagonist 落主角卡。 */
+  importLibraryAsset: (
+    id: string,
+    req: { kind: string; entryId: string; expressions?: string[]; target?: "protagonist" },
+  ) =>
     request<ImportResult>(`/api/plays/${id}/assets/import`, {
       method: "POST",
       headers: { "content-type": "application/json" },

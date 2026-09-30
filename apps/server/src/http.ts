@@ -15,6 +15,8 @@ const BODY_LIMIT = 64 * 1024 * 1024;
 
 /** 创作口径落盘路径（工坊 agent 与设置页改的是同一份）。 */
 const CRAFT_PATH = "memory/always/craft.md";
+/** 世界观前提落盘路径（A 区注入 + 就绪门 + 剧目卡简介的唯一来源）。 */
+const PREMISE_PATH = "memory/always/premise.md";
 
 const MIME: Record<string, string> = {
   png: "image/png",
@@ -247,7 +249,8 @@ export async function handleHttp(
     if (!sub) {
       if (method === "GET") {
         const play = await store.loadPlay();
-        return json(res, 200, { play, readiness: await store.readiness() });
+        // premise 不在 play.json 里（A 区注入用的那份），详情页要显示就现取
+        return json(res, 200, { play, premise: await store.premise(), readiness: await store.readiness() });
       }
       if (method === "DELETE") {
         await playhouse.deletePlay(playId);
@@ -358,6 +361,19 @@ export async function handleHttp(
       }
       return fail(res, 405, "不支持的方法");
     }
+    // —— 世界观前提（premise.md）：与 craft 同层的另一个一等公民，改完立刻重建 runtime ——
+    if (sub === "premise" && parts.length === 4) {
+      const runtime = await playhouse.get(playId);
+      if (method === "GET") return json(res, 200, { content: await store.premise() });
+      if (method === "PUT") {
+        const body = JSON.parse((await readBody(req)).toString("utf8")) as { content?: string };
+        if (typeof body.content !== "string") return fail(res, 400, "缺少 content");
+        // 走工坊的 writeFile：它已经把「写盘 → 撤销条 → 等节拍边界再重建 runtime」串好了
+        await runtime.workshop.writeFile(PREMISE_PATH, body.content);
+        return json(res, 200, { ok: true });
+      }
+      return fail(res, 405, "不支持的方法");
+    }
     if (sub === "assets" && parts.length === 4) {
       if (method === "GET") return json(res, 200, await store.listAssets());
       if (method === "POST") {
@@ -387,10 +403,14 @@ export async function handleHttp(
         kind?: string;
         entryId?: string;
         expressions?: string[];
+        target?: string;
       };
       if (!body.entryId) return fail(res, 400, "缺少 entryId");
       if (!body.kind || !(ASSET_KINDS_LIST as readonly string[]).includes(body.kind)) {
         return fail(res, 400, `未知素材类别: ${body.kind ?? ""}`);
+      }
+      if (body.target !== undefined && body.target !== "protagonist") {
+        return fail(res, 400, `未知导入落点: ${body.target}`);
       }
       const result = await importFromLibrary(assets, store, {
         kind: body.kind as AssetKind,
@@ -398,6 +418,7 @@ export async function handleHttp(
         ...(Array.isArray(body.expressions) && body.expressions.length > 0
           ? { expressions: body.expressions }
           : {}),
+        ...(body.target ? { target: "protagonist" as const } : {}),
       });
       await playhouse.reload(playId);
       return json(res, 200, result);

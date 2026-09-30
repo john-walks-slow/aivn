@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { join, resolve, sep, dirname } from "node:path";
 import { unzipSync, zipSync } from "fflate";
 import {
   LineageTree,
@@ -31,6 +31,7 @@ export interface Readiness {
 export interface PlaySummary {
   id: string;
   title: string;
+  /** 一句话简介：取自 memory/always/premise.md（playwriter A 区注入的同一份）。 */
   premise: string;
   readiness: Readiness;
 }
@@ -198,12 +199,8 @@ export class PlayStore {
     const bgDir = join(this.dir, "assets/backgrounds");
     const background = existsSync(bgDir) && (await readdir(bgDir)).some((f) => /\.(png|jpe?g|webp)$/i.test(f));
     const hasSession = await hasAnySave(this.dir);
-    // premise 有两个来源：play.json 与记忆卡。playwriter 取的是 memory.premise || play.premise，
-    // 就绪门只看前者的话，工坊只写记忆卡就会一直红着而剧作家其实已经在用新前提。
-    const memoryPremise = this.memoryDir("always", "premise.md");
-    const premise =
-      play.premise.trim() !== "" ||
-      (existsSync(memoryPremise) && (await readFile(memoryPremise, "utf8")).trim() !== "");
+    // 世界观前提的唯一真相源：memory/always/premise.md。缺它就没有 A 区，也就没有可演的剧。
+    const premise = (await this.premise()).trim() !== "";
     return {
       ready: premise,
       premise,
@@ -223,9 +220,27 @@ export class PlayStore {
     return join(this.dir, "media-cache", "tts");
   }
 
-  /** 剧目记忆目录（D7：always/index 剧目级进 git；index/arcs 与 archive 运行时不进）。 */
+  /** 剧目记忆目录（D7：always/index 剧目级进 git；arcs 与 archive 运行时不进）。 */
   memoryDir(...segments: string[]): string {
     return join(this.dir, "memory", ...segments);
+  }
+
+  /**
+   * 世界观前提（memory/always/premise.md）：A 区注入、就绪门、剧目卡简介的唯一真相源。
+   * 与 craft.md 同层——是纯内容不是引擎结构，所以不进 play.json。
+   */
+  async premise(): Promise<string> {
+    const path = this.memoryDir("always", "premise.md");
+    return existsSync(path) ? readFile(path, "utf8") : "";
+  }
+
+  /** 写世界观前提（用户与工坊共用一个入口）。走 config 锁：同目录的 play.json 可能正被别人改。 */
+  async savePremise(text: string): Promise<void> {
+    await withPlayConfigLock(this.dir, async () => {
+      const path = this.memoryDir("always", "premise.md");
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, text, "utf8");
+    });
   }
 
   /** TTS 音频绝对路径（静态服务；file 已白名单校验）。 */
@@ -334,7 +349,8 @@ export class PlayLibrary {
         summaries.push({
           id: play.id,
           title: play.title,
-          premise: play.premise,
+          // 简介取自 A 区注入的同一份前提，剧目卡上看到的与剧作家读到的是同一句话
+          premise: (await store.premise()).replace(/\s+/g, " ").trim().slice(0, 120),
           readiness: await store.readiness(),
         });
       } catch {
@@ -394,19 +410,19 @@ export class PlayLibrary {
     return zipSync(files, { level: 6 });
   }
 
-  /** 新建空剧目（剧目库「新建」脚手架）。premise 留空——就绪门会把它列为缺项。 */
+  /** 新建空剧目（剧目库「新建」脚手架）。前提不预置——就绪门会把它列为缺项。 */
   async createEmpty(playId: string, title: string): Promise<void> {
     const dir = join(this.root, playId);
     if (existsSync(join(dir, "play.json"))) throw new Error(`剧目已存在: ${playId}`);
     await mkdir(join(dir, "assets", "backgrounds"), { recursive: true });
     await mkdir(join(dir, "assets", "sprites"), { recursive: true });
+    await mkdir(join(dir, "memory", "always"), { recursive: true });
     await writeFile(
       join(dir, "play.json"),
       JSON.stringify(
         {
           id: playId,
           title,
-          premise: "",
           characters: [],
           opening: "（游戏开始，请演出第一幕的开幕）",
           initialState: { turn: 0, affinity: {}, flags: {} },

@@ -150,7 +150,7 @@ describe("PlayMemory 纪元卡", () => {
   it("appendArc 落盘 + 即时进 cards；visibleCards 按分支过滤", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stage-arc-"));
     const memory = new PlayMemory({
-      arcsDir: join(dir, "memory", "index", "arcs"),
+      arcsDir: join(dir, "memory", "arcs"),
     });
 
     await memory.appendArc({
@@ -162,7 +162,7 @@ describe("PlayMemory 纪元卡", () => {
 
     expect(memory.cards).toHaveLength(1);
     expect(memory.readCard("epoch-e1-1", ["epoch-e1-1"])).toContain("旧校舍");
-    const onDisk = await readFile(join(dir, "memory", "index", "arcs", "epoch-e1-1.md"), "utf8");
+    const onDisk = await readFile(join(dir, "memory", "arcs", "epoch-e1-1.md"), "utf8");
     expect(onDisk).toContain("# 纪元 1｜截至第 12 拍");
     expect(onDisk).toContain("澪甩开了主角。");
 
@@ -226,7 +226,7 @@ describe("编排器纪元压缩", () => {
 
   it("超阈值：压成 arcs 卡 + 重建 Agent（seed 落对话体头）", async () => {
     const memory = new PlayMemory({
-      arcsDir: join(await mkdtemp(join(tmpdir(), "stage-arc-")), "memory", "index", "arcs"),
+      arcsDir: join(await mkdtemp(join(tmpdir(), "stage-arc-")), "memory", "arcs"),
     });
     const { orchestrator, tree, contexts } = setup(
       [
@@ -315,7 +315,7 @@ describe("编排器纪元压缩", () => {
 
   it("压缩请求在飞时 dispose：不落卡、不重建 Agent、不再开拍", async () => {
     const memory = new PlayMemory({
-      arcsDir: join(await mkdtemp(join(tmpdir(), "stage-arc-")), "memory", "index", "arcs"),
+      arcsDir: join(await mkdtemp(join(tmpdir(), "stage-arc-")), "memory", "arcs"),
     });
     const { orchestrator, messages } = setup(
       [
