@@ -9,6 +9,8 @@ export type BeatState = "connecting" | "streaming" | "stopped" | "error";
 
 export interface StageSocket {
   state: BeatState;
+  /** WS 连通性：断线时为 false（节拍状态里的 "connecting" 兼作断线态，分不出首次连接与闪断）。 */
+  connected: boolean;
   /** 编排器已空闲：beat_end 之后还要等它收尾，此前任何操作都会被服务端挡回。 */
   settled: boolean;
   error: string | null;
@@ -64,6 +66,8 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
   const stateRef = useRef<BeatState>("connecting");
   stateRef.current = state;
   const [error, setError] = useState<string | null>(null);
+  /** WS 连通性：节拍状态里的 "connecting" 兼作断线态，分不出首次连接与闪断，工坊要的是这个。 */
+  const [connected, setConnected] = useState(false);
   const [stop, setStop] = useState<StopPayload | null>(null);
   const [isActEnd, setActEnd] = useState(false);
   const [names, setNames] = useState<Record<string, string>>({});
@@ -95,6 +99,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
 
       ws.onopen = () => {
         retryRef.current = 0;
+        setConnected(true);
         // 总是 resume：lastSeq=0（页面刷新/内存丢失）= 全量重放；网络闪断 = 增量补发
         ws.send(JSON.stringify({ type: "resume", lastSeq: lastSeqRef.current } satisfies ClientMessage));
       };
@@ -206,6 +211,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
       };
       ws.onclose = () => {
         if (closed) return;
+        setConnected(false);
         setState("connecting");
         const delay = Math.min(500 * 2 ** retryRef.current, 4000);
         retryRef.current += 1;
@@ -254,6 +260,7 @@ export function useStageSocket(playId: string, handlers?: StageSocketHandlers): 
 
   return {
     state,
+    connected,
     settled,
     error,
     /** lines/cues 为原地变更的稳定引用，下游 effect 以 revision 驱动。 */

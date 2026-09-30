@@ -33,6 +33,7 @@ export function WorkshopPanel({
   onClose,
   subscribe,
   send,
+  connected,
 }: {
   playId: string;
   mode: WorkshopMode;
@@ -42,6 +43,8 @@ export function WorkshopPanel({
   /** 注册工坊下行消息回调（返回取消订阅）。 */
   subscribe: (handler: (msg: WorkshopInbound) => void) => () => void;
   send: (msg: ClientMessage) => void;
+  /** WS 连通性：断线要解锁本轮、重连要重新报到。省略则不做这件事（调用方自己管）。 */
+  connected?: boolean;
 }) {
   const workshop = useWorkshop(send);
   const { state } = workshop;
@@ -52,11 +55,18 @@ export function WorkshopPanel({
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // 面板一挂上就先订阅再报到（StrictMode 下会走两遍，报到幂等）
+  useEffect(() => subscribe(workshop.onMessage), [subscribe, workshop.onMessage]);
+
+  // 断线：busy 只由 done/error 复位，不解锁就永久卡在「思考中…」。
+  // 依赖里带 busy——断线期间点发送也会走到这里（send 静默丢弃，但状态已乐观置 busy）。
   useEffect(() => {
-    const off = subscribe(workshop.onMessage);
-    workshop.open();
-    return off;
-  }, [subscribe, workshop.onMessage, workshop.open]);
+    if (connected === false && state.busy) workshop.onDisconnected();
+  }, [connected, state.busy, workshop.onDisconnected]);
+
+  // 连上（含断线重连）就重新报到，服务端会重发线程与历史，本轮结果也就回来了
+  useEffect(() => {
+    if (connected) workshop.open();
+  }, [connected, workshop.open]);
 
   // 新消息/流式增量追随到底部
   useEffect(() => {
