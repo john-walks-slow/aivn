@@ -21,7 +21,7 @@ export const VIEW_LABEL: Record<StageView, string> = {
 export type WorkshopTab = "chat" | "assets" | "files" | "memory" | "agent" | "settings";
 
 const VIEWS: StageView[] = ["stage", "backlog", "route", "workshop"];
-const TABS: WorkshopTab[] = ["chat", "assets", "files", "memory", "agent", "settings"];
+const TABS: WorkshopTab[] = ["chat", "memory", "assets", "files", "agent", "settings"];
 
 /**
  * 认 URL 上的 `view=`：认不出（缺省、拼错）一律回舞台。

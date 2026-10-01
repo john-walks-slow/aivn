@@ -90,7 +90,7 @@ export function TitleView({ playId }: { playId: string }) {
               <p className="title-note">
                 还没有{missing.join("、")}——现在开演，剧作家会自己发挥。想要一个确定的世界，去
                 <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "memory"))}>
-                  工坊的记忆页
+                  工坊的「设定与记忆」
                 </button>
                 写「世界与人物设定」。
               </p>

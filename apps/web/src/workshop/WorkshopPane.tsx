@@ -8,16 +8,16 @@ import type { WorkshopTab } from "../stage/view.js";
 import { AgentPane } from "./AgentPane.js";
 import { AssetsPanel } from "./AssetsPanel.js";
 import { FileBrowser } from "./FileBrowser.js";
-import { MemoryPanel } from "./MemoryPanel.js";
+import { SettingsPane } from "./SettingsPane.js";
 import { WorkshopMarkdown } from "./WorkshopMarkdown.js";
 import { WorkshopSettings } from "./WorkshopSettings.js";
 import { useWorkshop } from "./useWorkshop.js";
 
 const TABS: { id: WorkshopTab; label: string; icon: IconName }[] = [
   { id: "chat", label: "对话", icon: "chat" },
+  { id: "memory", label: "设定与记忆", icon: "memory" },
   { id: "assets", label: "素材", icon: "assets" },
   { id: "files", label: "文件", icon: "files" },
-  { id: "memory", label: "记忆", icon: "memory" },
   { id: "agent", label: "Agent", icon: "sparkles" },
   { id: "settings", label: "设置", icon: "settings" },
 ];
@@ -126,7 +126,7 @@ export function WorkshopPane({
 
       {tab === "assets" && <AssetsPanel playId={playId} />}
 
-      {tab === "memory" && <MemoryPanel playId={playId} revision={state.writes.length} />}
+      {tab === "memory" && <SettingsPane playId={playId} revision={state.writes.length} />}
 
       {tab === "agent" && <AgentPane playId={playId} />}
 

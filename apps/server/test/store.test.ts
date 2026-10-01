@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zipSync } from "fflate";
@@ -62,10 +62,13 @@ describe("PlayLibrary 剧目包导入与删除", () => {
     ).rejects.toThrow("非法剧目 id");
   });
 
-  it("createEmpty premise 留空 → 检查报「还没有前提」；remove 整目录删除", async () => {
+  it("createEmpty 落盘设定模板；remove 整目录删除", async () => {
     await library.createEmpty("blank", "空白");
-    const readiness = await library.store("blank").readiness();
-    expect(readiness.premise).toBe(false);
+    const store = library.store("blank");
+    // 新剧目自带一份可改的引导正文：打开就知道该写什么，不用先知道「记忆」这个概念
+    expect(await store.premise()).toContain("世界与人物设定");
+    expect((await store.readiness()).premise).toBe(true);
+    expect(await readFile(join(root, "blank", "memory/always/craft.md"), "utf8")).toContain("创作口径");
     await library.remove("blank");
     expect(existsSync(join(root, "blank"))).toBe(false);
   });
@@ -81,11 +84,12 @@ describe("PlayLibrary 剧目包导入与删除", () => {
     expect(readiness.premise).toBe(true);
   });
 
-  it("play.json 留空但写了 memory/always/premise.md 也算就绪", async () => {
+  it("play.json 留空但写了 memory/always/premise.md 才算数", async () => {
     await library.createEmpty("mem", "记忆卡");
     await writeFile(join(root, "mem", "play.json"), PLAY_JSON("mem"));
     const store = library.store("mem");
-    // premise 已从 play.json 移出：唯一真相源是 memory/always/premise.md，文件不存在就是缺
+    // premise 已从 play.json 移出：唯一真相源是 memory/always/premise.md
+    await rm(join(root, "mem", "memory/always/premise.md"));
     expect((await store.readiness()).premise).toBe(false);
     expect(await store.premise()).toBe("");
 
@@ -94,8 +98,9 @@ describe("PlayLibrary 剧目包导入与删除", () => {
     expect(await store.premise()).toContain("黄昏");
   });
 
-  it("旧剧目：前提还躺在 play.json 里也认（否则就绪门直接拦死用户的剧）", async () => {
+  it("旧剧目：前提还躺在 play.json 里也认（否则用户的剧会空掉）", async () => {
     await library.createEmpty("old", "旧剧目");
+    await rm(join(root, "old", "memory/always/premise.md"), { force: true });
     await writeFile(
       join(root, "old", "play.json"),
       JSON.stringify({ id: "old", title: "T", premise: "黄昏的走廊。", characters: [], opening: "（开始）", initialScene: "s" }),

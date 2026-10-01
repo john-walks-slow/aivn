@@ -54,7 +54,7 @@ const ICONS = {
   files: FolderOpen,
   assets: Image,
   craft: PenLine,
-  /** 记忆（工坊「记忆」页）：memory/** 下的常驻设定与设定卡。 */
+  /** 记忆（工坊「设定与记忆」页）：memory/** 下的常驻设定与设定卡。 */
   memory: BookOpen,
   settings: SlidersHorizontal,
   workshop: Hammer,
