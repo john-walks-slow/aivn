@@ -63,7 +63,7 @@ pnpm --filter @stage-ai/web dev
 | `STAGE_IMAGE_BASE_URL` | `http://127.0.0.1:9999` | 生图服务根地址。**别带 `/v1` 或 `/v1beta`**，版本段按格式自己拼 |
 | `STAGE_IMAGE_API_KEY` | 空 | gemini 格式走 `x-goog-api-key`，openai 格式走 `Authorization: Bearer`。**只放 .env，别提交** |
 | `STAGE_IMAGE_MODEL` | `gpt-image-2` | 出图模型名，按所选格式与网关填 |
-| `STAGE_IMAGE_SIZE` | `1k` | 出图档位 `1k` / `2k` / `4k` = 短边像素量级。gemini 原样交给上游 `imageConfig`；openai 按画幅换算成 `WxH`（16:9 的 `1k` → `1824x1024`） |
+| `STAGE_IMAGE_SIZE` | `1K` | 出图档位 `1K` / `2K` / `4K`（**K 大写**，官方拒小写）= 总像素量级。gemini 原样交给上游 `imageConfig.imageSize`；openai 按画幅换算成 `WxH`（16:9 的 `1K` → `1360x768`）。也可直接写字面像素 `1536x1024`（openai 专用，见下） |
 | `STAGE_IMAGE_CONCURRENCY` | `6` | 并发出图上限。每张图 15–140s，并发太小会拖穿预发射窗口 |
 | `STAGE_IMAGE_TIMEOUT_MS` | `180000` | 单图超时。超时按失败处理，舞台保持降级视觉 |
 | `STAGE_IMAGE_REFERENCE` | `neutral` | 垫图（参考图）策略，**仅 gemini 格式有效**，见下 |
@@ -73,8 +73,8 @@ pnpm --filter @stage-ai/web dev
 STAGE_IMAGE_FORMAT=gemini
 STAGE_IMAGE_BASE_URL=http://127.0.0.1:38000
 STAGE_IMAGE_API_KEY=<your-api-key>
-STAGE_IMAGE_MODEL=gemini-3.1-flash-image   # flow2api 必须填别名，见下
-STAGE_IMAGE_SIZE=1k                        # 本机实测 1k 与 2k 同像素，1k 快 35%
+STAGE_IMAGE_MODEL=gemini-3.1-flash-image   # 别名怎么挑见下
+STAGE_IMAGE_SIZE=1K
 STAGE_IMAGE_REFERENCE=neutral
 
 # .env 示例 B：官方 OpenAI 或任何 images/generations 兼容网关
@@ -82,7 +82,7 @@ STAGE_IMAGE_FORMAT=openai
 STAGE_IMAGE_BASE_URL=https://api.openai.com
 STAGE_IMAGE_API_KEY=<your-api-key>
 STAGE_IMAGE_MODEL=gpt-image-2
-STAGE_IMAGE_SIZE=1k
+STAGE_IMAGE_SIZE=1K                         # gpt-image-1 系列只认标准尺寸，改成 1536x1024
 ```
 
 两款格式的能力差：
@@ -91,12 +91,22 @@ STAGE_IMAGE_SIZE=1k
 | --- | --- | --- |
 | 端点 | `POST {base}/v1beta/models/{model}:generateContent` | `POST {base}/v1/images/generations` |
 | 认证头 | `x-goog-api-key` | `Authorization: Bearer` |
-| 画幅 | `generationConfig.imageConfig.aspectRatio` | 换算进 `size`：短边取档位像素，长边按比例算并对齐到 16 的倍数 |
-| 垫图 | 支持（`inlineData` 排在提示词之后） | **不支持**——接口没有参考图入参，工坊要出差分时直接报错，不静默丢弃 |
+| 画幅 | `generationConfig.imageConfig.aspectRatio`，官方 14 个取值 | 没有画幅参数，**并进 `size`**：档位按总像素量级换算，两边对齐 16 的倍数（`1K`/`16:9` → `1360x768`） |
+| 尺寸 | `imageConfig.imageSize`，只认 `512` / `1K` / `2K` / `4K`（K 大写） | `size` 是**字面 `WxH`**，合法值按模型分家，见下 |
+| 垫图 | 支持（`inlineData` 排在提示词之后，Gemini 3 系上限 14 张） | `/generations` 没有参考图入参——工坊要出差分时直接报错，不静默丢弃（图生图走 `/v1/images/edits`，本站未接） |
 | 返回 | `candidates[0].content.parts[].inlineData`（`fileData` 会单独报错） | `data[0].b64_json` 或 `data[0].url`（远端 url 由本站下载） |
 
-> 2026-10-01 实测可用的组合：flow2api（`http://127.0.0.1:38000`）与 cpa 网关（`http://127.0.0.1:9999`）都认 Gemini 原生端点——`gemini-3.1-flash-image` 走 `:generateContent` 回 `inlineData`，画幅 16:9 生效（返回 1376x768；cpa 约 15s）；cpa 另可走 `openai` 格式的 `gpt-image-2` / `seedream-5.0-lite`。flow2api 那条路模型名**必须填别名**（`gemini-3.1-flash-image` / `gemini-3.0-pro-image`），填完整模型名会让画幅与档位被静默忽略。
-> `seedream-5.0-lite` 走 openai 格式时上游要求 **≥3686400 像素**，`1k` 档换算出来不够，会报 400。
+**`STAGE_IMAGE_SIZE` 的两种写法**：档位 `1K` / `2K` / `4K`（= 总像素量级，1K ≈ 1024²；官方 Gemini
+另有一个 `512`（0.5K，仅 3.1 Flash Image），本配置没开放），或字面像素 `1536x1024`。档位只对
+「支持任意尺寸」的模型成立——OpenAI 的合法 `size` 是分模型的：`gpt-image-2` 系支持任意
+`WxH`（宽高能被 16 整除、画幅 1:3–3:1、上限 `3840x2160`），而 `gpt-image-1` / `-1-mini` / `-1.5`
+只认 `1024x1024` / `1536x1024` / `1024x1536`（外加 `auto`），`dall-e-3` 只认 `1024x1024` /
+`1792x1024` / `1024x1792`，`dall-e-2` 只认三个正方形。跑老模型就把这一项写成它认的字面尺寸。
+档位算出来的尺寸越过 `3840x2160` 会在发请求前报错（`4K` 在 openai 格式下必超），不会白发出去。
+
+> 2026-10-01 实测可用的组合：flow2api（`http://127.0.0.1:38000`）与 cpa 网关（`http://127.0.0.1:9999`）都认 Gemini 原生端点——`:generateContent` 回 `inlineData`，画幅与档位都生效（`1K`/`16:9` → 1376x768，`2K` → 2752x1536，`4:3` → 1200x896，`21:9` → 1584x672，与 Google 官方分辨率表逐条吻合）；cpa 另可走 `openai` 格式的 `gpt-image-2` / `seedream-5.0-lite`。
+> flow2api 的**别名**模型名（`gemini-3.1-flash-image-portrait-2k`）把画幅档位写死在名字里，`imageConfig` 会被忽略（实测：传 `9:16` 仍回 1376x768）；裸名 `gemini-3.1-flash-image` 吃 `imageConfig`（实测 `9:16` → 768x1376）。
+> `seedream-5.0-lite` 走 openai 格式时上游要求 **≥3686400 像素**，`1K` 档换算出来不够，会报 400。
 
 垫图（参考图）策略 `STAGE_IMAGE_REFERENCE`：
 
@@ -108,20 +118,24 @@ STAGE_IMAGE_SIZE=1k
 实测带垫图的单张耗时是文生图的两倍（9:16：69s → 138s）而像素一模一样。
 默认保一致性（差分本来就不多），嫌慢就改 `none`；垫图这条路只有立绘差分会走，背景与 CG 不涉及。
 
-> 画幅只有 `16:9` 与 `9:16` 可靠（背景/CG 用 16:9、立绘用 9:16）。实测 `3:4` / `4:3` 会被静默改成 1200x896 横图——所以工坊在落盘前会核对实际画幅，不符就报错不写文件。
+> 画幅：cpa 走真 Gemini，官方 14 个取值（`1:1 / 1:4 / 1:8 / 2:3 / 3:2 / 3:4 / 4:1 / 4:3 / 4:5 / 5:4 / 8:1 / 9:16 / 16:9 / 21:9`）都能按预期出（实测 `4:3` → 1200x896、`21:9` → 1584x672，与官方表一致）。本站只用到 `16:9`（背景/CG）与 `9:16`（立绘）；flow2api 的别名模型名把画幅写死、与 `aspectRatio` 冲突时以别名为准。工坊在落盘前一律核对实际画幅，不符就报错不写文件。
 
-**分辨率与耗时**（2026-10-01 本机实测，`gemini-3.1-flash-image`，一次一张、串行）：
+**分辨率与耗时**（2026-10-01 本机实测，**flow2api** 上 `gemini-3.1-flash-image`，一次一张、串行）：
 
 | `STAGE_IMAGE_SIZE` | 16:9 背景 | 9:16 立绘（垫图） | 成图像素 |
 | --- | --- | --- | --- |
-| `1k` | 73.2s | 138.2s | 16:9 → 1376x768，9:16 → 768x1376 |
-| `2k` | 115.1s | 215.8s | **与 `1k` 逐像素相同** |
-| `4k` | 网关 503 | — | 需要 Ult 账号，本机没有 |
+| `1K` | 73.2s | 138.2s | 16:9 → 1376x768，9:16 → 768x1376 |
+| `2K` | 115.1s | 215.8s | **与 `1K` 逐像素相同** |
+| `4K` | 网关 503 | — | 需要 Ult 账号，本机没有 |
 
-所以本机账号下 `2k` 只是多花 42–78 秒换回同一张图（上游放大失败时网关静默退回原图），
-**`STAGE_IMAGE_SIZE=1k` 是这里最划算的一刀**。真正贵的是垫图（70s → 138s），提速的另一半靠
+所以在这条路上 `2K` 只是多花 42–78 秒换回同一张图（上游放大失败时网关静默退回原图），
+**`STAGE_IMAGE_SIZE=1K` 是这里最划算的一刀**。真正贵的是垫图（70s → 138s），提速的另一半靠
 剧作家提前 3–5 句排产（`generate_image` 是后台排产，图在台词演出期间出）。完整数据与备选旋钮见
 `docs/freeform/261001-image-speed.md`。
+
+> 这张表是 **flow2api 这条路**的数据，别套到别处：flow2api 把 `2K` / `4K` 翻成模型名后缀
+> （`…-landscape-2k`），放大失败时静默退回 1K、`4K` 直接要 Ult 账号。cpa 走真 Gemini，
+> `2K` 就是实打实的 2752x1536（141.7s）。
 
 立绘抠底调参（默认值对 2D 平涂纯白底是对得上的，一般**不用改**；工坊 agent 出完图自己看过觉得不对时，会在 `generate_image` 调用上临时改这三个值）：
 

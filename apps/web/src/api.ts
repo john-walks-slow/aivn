@@ -141,8 +141,8 @@ export interface Settings {
     apiKey: string;
     apiKeySet: boolean;
     model: string;
-    /** 出图档位 1k / 2k / 4k（= 短边像素量级）。 */
-    size: "1k" | "2k" | "4k";
+    /** 出图档位 `1K` / `2K` / `4K`（= 总像素量级），或字面像素 `1536x1024`（openai 格式用）。 */
+    size: string;
     concurrency: number;
     timeoutMs: number;
     reference: "none" | "neutral";

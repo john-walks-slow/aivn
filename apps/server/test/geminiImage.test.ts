@@ -29,13 +29,14 @@ const opts: GeminiImageOptions = {
   baseUrl: "http://127.0.0.1:38000",
   apiKey: "test-key",
   model: "gemini-3.1-flash-image",
-  size: "2k",
+  size: "2K",
   timeoutMs: 1000,
 };
 
 describe("GeminiImageGen：Gemini 原生生图", () => {
-  it("非法画幅尺寸构造期就拦下", () => {
-    expect(() => new GeminiImageGen({ ...opts, size: "8k" as never })).toThrow(/STAGE_IMAGE_SIZE/);
+  it("非法画幅尺寸构造期就拦下；字面像素尺寸本接口没有这个入参", () => {
+    expect(() => new GeminiImageGen({ ...opts, size: "8K" as never })).toThrow(/STAGE_IMAGE_SIZE/);
+    expect(() => new GeminiImageGen({ ...opts, size: "1536x1024" })).toThrow(/Gemini 格式的档位只认/);
   });
 
   it("请求形状：模型名进 URL、x-goog-api-key 进头、画幅与尺寸进 imageConfig", async () => {
@@ -48,7 +49,14 @@ describe("GeminiImageGen：Gemini 原生生图", () => {
     expect(call.headers["x-goog-api-key"]).toBe("test-key");
     const config = (call.body.generationConfig as { responseModalities: string[]; imageConfig: Record<string, string> });
     expect(config.responseModalities).toEqual(["IMAGE"]);
-    expect(config.imageConfig).toEqual({ aspectRatio: "3:4", imageSize: "2k" });
+    expect(config.imageConfig).toEqual({ aspectRatio: "3:4", imageSize: "2K" });
+  });
+
+  it("配置里写小写 2k 也按官方的大写发出去", async () => {
+    const { fetchImpl, calls } = fakeFetch(() => inlineResponse());
+    await new GeminiImageGen({ ...opts, size: "2k" }, fetchImpl as never).generate({ prompt: "x" });
+    const config = (calls[0]!.body.generationConfig as { imageConfig: Record<string, string> }).imageConfig;
+    expect(config.imageSize).toBe("2K");
   });
 
   it("垫图走 inlineData，且排在提示词之后", async () => {
@@ -99,6 +107,35 @@ describe("GeminiImageGen：Gemini 原生生图", () => {
     );
   });
 
+  it("parts 空但带 finishMessage / blockReason 时要把原因带出来（cpa 实测只给这个）", async () => {
+    const { fetchImpl } = fakeFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            candidates: [{ content: { parts: [] }, finishMessage: "Unable to show the generated image." }],
+          }),
+          { status: 200 },
+        ),
+    );
+    await expect(new GeminiImageGen(opts, fetchImpl as never).generate({ prompt: "x" })).rejects.toThrow(
+      /没有图像内容：Unable to show the generated image/,
+    );
+
+    const { fetchImpl: blocked } = fakeFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            candidates: [{ content: { parts: [] } }],
+            promptFeedback: { blockReason: "SAFETY" },
+          }),
+          { status: 200 },
+        ),
+    );
+    await expect(new GeminiImageGen(opts, blocked as never).generate({ prompt: "x" })).rejects.toThrow(
+      /没有图像内容：SAFETY/,
+    );
+  });
+
   it("HTTP 报错带出状态与响应片段", async () => {
     const { fetchImpl } = fakeFetch(() => new Response("auth_unavailable", { status: 503 }));
     await expect(new GeminiImageGen(opts, fetchImpl as never).generate({ prompt: "x" })).rejects.toThrow(
@@ -109,7 +146,7 @@ describe("GeminiImageGen：Gemini 原生生图", () => {
   it("非法画幅在发请求前就报错（上游拿到坏画幅不报错，只会降级出方图）", async () => {
     const { fetchImpl, calls } = fakeFetch(() => inlineResponse());
     await expect(
-      new GeminiImageGen(opts, fetchImpl as never).generate({ prompt: "x", aspectRatio: "21:9" as never }),
+      new GeminiImageGen(opts, fetchImpl as never).generate({ prompt: "x", aspectRatio: "5:3" as never }),
     ).rejects.toThrow(/画幅/);
     expect(calls).toHaveLength(0);
   });

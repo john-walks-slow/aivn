@@ -112,10 +112,11 @@ describe("设置面板后端", () => {
     expect(mask("")).toBe("");
   });
 
-  it("生图面：格式 / 地址 / 档位读写同构，凭据同样只回掩码", () => {
+  it("生图面：格式 / 地址 / 档位读写同构，凭据同样只回掩码；档位写回时归一化成官方大写", () => {
     const { file, envPath } = fixture("STAGE_IMAGE_FORMAT=gemini\nSTAGE_IMAGE_SIZE=1k\n");
     const view = file.read();
     expect(view.image.format).toBe("gemini");
+    // 读是照抄 .env 原文（面板照实显示）；归一化发生在服务端装配与写回两处
     expect(view.image.size).toBe("1k");
     expect(view.image.apiKey).toBe("flow••••9876");
     expect(view.image.model).toBe("gemini-3.1-flash-image");
@@ -124,6 +125,10 @@ describe("设置面板后端", () => {
     // 掩码回传 = 不改；新值才写
     expect(file.write({ image: { apiKey: view.image.apiKey } as never })).toEqual([]);
     expect(file.write({ image: { size: "4k" } as never })).toEqual(["STAGE_IMAGE_SIZE"]);
+    expect(readFileSync(envPath, "utf8")).toContain("STAGE_IMAGE_SIZE=4K");
+    expect(file.write({ image: { size: "1536x1024" } as never })).toEqual(["STAGE_IMAGE_SIZE"]);
+    expect(readFileSync(envPath, "utf8")).toContain("STAGE_IMAGE_SIZE=1536x1024");
+    expect(() => file.write({ image: { size: "huge" } as never })).toThrow(/STAGE_IMAGE_SIZE/);
     expect(file.write({ image: { format: "openai" } as never })).toEqual(["STAGE_IMAGE_FORMAT"]);
     expect(file.write({ image: { apiKey: "brand-new-image-key" } as never })).toEqual(["STAGE_IMAGE_API_KEY"]);
     expect(readFileSync(envPath, "utf8")).toContain("STAGE_IMAGE_API_KEY=brand-new-image-key");

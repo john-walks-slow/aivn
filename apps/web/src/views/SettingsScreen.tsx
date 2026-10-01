@@ -233,7 +233,7 @@ export function SettingsScreen() {
             </Field>
             <Field
               label="出图模型"
-              hint="按格式填。flow2api 必须填别名（gemini-3.1-flash-image / gemini-3.0-pro-image），填完整模型名画幅会被静默忽略"
+              hint="按格式填。flow2api 必须把画幅档位写进别名（gemini-3.1-flash-image-landscape-2k 这种），填裸模型名画幅会被静默忽略"
             >
               <input
                 value={draft.image.model}
@@ -243,11 +243,11 @@ export function SettingsScreen() {
               />
             </Field>
             <div className="settings-grid">
-              <Field label="出图档位" hint="1k / 2k / 4k = 短边像素量级；openai 格式按画幅换算成 WxH">
+              <Field label="出图档位" hint="1K / 2K / 4K = 总像素量级（K 大写），openai 格式按画幅换算成 WxH；也可直接写字面尺寸如 1536x1024">
                 <input
                   value={draft.image.size}
                   onChange={(e) =>
-                    setDraft({ ...draft, image: { ...draft.image, size: e.target.value as Settings["image"]["size"] } })
+                    setDraft({ ...draft, image: { ...draft.image, size: e.target.value } })
                   }
                 />
               </Field>

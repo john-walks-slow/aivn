@@ -7,6 +7,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readKeysFile, type ServerConfig } from "./config.js";
+import { imageSizeText, parseImageSize } from "./imageBackend.js";
 
 /** 设置面板的传输面：配置形态 + 凭据存在位（不回传明文）。 */
 export interface SettingsView {
@@ -130,7 +131,9 @@ export class SettingsFile {
       if (image.format !== undefined) set(this.envPath, "STAGE_IMAGE_FORMAT", image.format, changed);
       if (image.baseUrl !== undefined) set(this.envPath, "STAGE_IMAGE_BASE_URL", image.baseUrl, changed);
       if (image.model !== undefined) set(this.envPath, "STAGE_IMAGE_MODEL", image.model, changed);
-      if (image.size !== undefined) set(this.envPath, "STAGE_IMAGE_SIZE", image.size, changed);
+      if (image.size !== undefined) {
+        set(this.envPath, "STAGE_IMAGE_SIZE", imageSizeText(parseImageSize(image.size)), changed);
+      }
       if (image.concurrency !== undefined) {
         set(this.envPath, "STAGE_IMAGE_CONCURRENCY", String(int(image.concurrency, "出图并发")), changed);
       }

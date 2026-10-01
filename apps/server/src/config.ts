@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { IMAGE_SIZES, type ImageSize } from "./imageBackend.js";
+import { parseImageSize, imageSizeText } from "./imageBackend.js";
 import { DEFAULT_MAX_QUEUE } from "./limiter.js";
 
 /** 服务端配置：环境变量驱动（cpa 网关 + 模型 + 剧目库根目录 + fish-audio TTS）。 */
@@ -38,10 +38,13 @@ export interface ServerConfig {
     /** 生图服务根地址（不要再带 `/v1` 或 `/v1beta`，版本段由格式自己拼）。 */
     baseUrl: string;
     apiKey: string;
-    /** 出图模型名，按所选格式填（flow2api 那条路必须填别名，完整模型名会让它忽略 imageConfig）。 */
+    /** 出图模型名，按所选格式填（flow2api 那条路要把画幅档位写进别名，否则 imageConfig 被忽略）。 */
     model: string;
-    /** 出图档位 = 短边像素量级。gemini 原样交给上游 imageConfig，openai 换算成 WxH 填 size。 */
-    size: ImageSize;
+    /**
+     * 出图档位或字面像素（`STAGE_IMAGE_SIZE`，构造期已归一化）：`1K` / `2K` / `4K`，或 `1536x1024`。
+     * gemini 只认档位（原样交给 `imageConfig.imageSize`），openai 只认像素（档位由 `canvasFor` 换算）。
+     */
+    size: string;
     /** 并发出图上限（每图 15–140s，串行会把预发射窗口拖穿）。 */
     concurrency: number;
     /** 单图超时（毫秒）：超时按失败降级，占位骨架不留死。 */
@@ -129,7 +132,8 @@ export function loadConfig(
       baseUrl: env.STAGE_IMAGE_BASE_URL ?? "http://127.0.0.1:9999",
       apiKey: env.STAGE_IMAGE_API_KEY ?? "",
       model: env.STAGE_IMAGE_MODEL ?? "gpt-image-2",
-      size: parseEnum("STAGE_IMAGE_SIZE", env.STAGE_IMAGE_SIZE, IMAGE_SIZES, "1k"),
+      // 启动即校验并归一化（配置里写 1k 也认，发出去的一律是官方的大写 1K）。
+      size: imageSizeText(parseImageSize(env.STAGE_IMAGE_SIZE ?? "1K")),
       // 6 是按本地网关定的：单价近乎免费，工坊一次要出几个差分，
       // 串行等 6×100s 用户受不了。换成计费网关时按钱包调小。
       concurrency: parsePositiveInt("STAGE_IMAGE_CONCURRENCY", env.STAGE_IMAGE_CONCURRENCY, 6),

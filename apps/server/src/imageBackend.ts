@@ -6,13 +6,73 @@
  * `geminiImage.ts` 与 `openaiImage.ts` 两个实现里，调用方只描述「要一张什么图」。
  */
 
-/** 接受的画幅。上游不认的画幅不一定报错而是静默降级，故配置处要先自校验。 */
-export const IMAGE_ASPECTS = ["16:9", "9:16", "1:1", "4:3", "3:4"] as const;
+/**
+ * 接受的画幅 = **两款官方接口的交集**。
+ *
+ * Gemini `imageConfig.aspectRatio` 官方支持 `1:1 / 1:4 / 4:1 / 1:8 / 8:1 / 2:3 / 3:2 / 3:4 / 4:3 /
+ * 4:5 / 5:4 / 9:16 / 16:9 / 21:9`（网关回 400 时的报文与之逐字一致），其中 `1:4 / 4:1 / 1:8 /
+ * 8:1` 超出 OpenAI `size` 的 1:3–3:1 限制，故不收。本产品实际只用到 `16:9`（背景 / CG）与
+ * `9:16`（立绘），其余留给自定义调用方。
+ *
+ * 上游不认的画幅不一定报错而是静默降级（flow2api 实测），落盘前的兜底是 `PlayAssets.assertCanvas`。
+ */
+export const IMAGE_ASPECTS = [
+  "16:9",
+  "9:16",
+  "1:1",
+  "3:2",
+  "2:3",
+  "4:3",
+  "3:4",
+  "5:4",
+  "4:5",
+  "21:9",
+] as const;
 export type ImageAspect = (typeof IMAGE_ASPECTS)[number];
 
-/** 出图档位 = 短边像素量级。 */
-export const IMAGE_SIZES = ["1k", "2k", "4k"] as const;
+/**
+ * 出图档位 = Gemini `imageConfig.imageSize` 的官方词汇，**`K` 必须大写**——官方文档原文
+ * 「You must use an uppercase 'K' … Lowercase parameters (e.g., 1k) will be rejected」，
+ * 写错时网关回 400 `Unsupported image_size '8K'. Supported values are: 1K, 2K, 4K, 512, 512P, 512PX.`
+ * （cpa 网关实测；本地网关宽容，小写能过，官方 API 不行）。
+ *
+ * 语义是**总像素量级**（1K ≈ 1024²、2K ≈ 2048²、4K ≈ 4096²），画幅只决定这块面积怎么摆：
+ * 官方分辨率表 16:9 → 1376x768 / 2752x1536 / 5504x3072，1:1 的 1K 正好 1024x1024（cpa 实测
+ * 一致）。官方另有 `512`（0.5K，仅 3.1 Flash Image），本配置没开放。
+ */
+export const IMAGE_SIZES = ["1K", "2K", "4K"] as const;
 export type ImageSize = (typeof IMAGE_SIZES)[number];
+
+/**
+ * `STAGE_IMAGE_SIZE` 的两种写法：档位（Gemini 的词汇）或字面像素（OpenAI `size` 的词汇）。
+ * 两款格式各取所需——Gemini 只认档位，OpenAI 只认 `WxH`。
+ */
+export type ImageSizeSpec =
+  | { kind: "tier"; tier: ImageSize }
+  | { kind: "px"; width: number; height: number };
+
+const PIXEL_SIZE = /^(\d{2,5})\s*[x×]\s*(\d{2,5})$/;
+
+/** 档位大小写不敏感——配置里写 `1k` 也认，对外一律发官方的大写形式。 */
+export function parseImageSize(raw: string): ImageSizeSpec {
+  const value = raw.trim();
+  const tier = IMAGE_SIZES.find((size) => size.toLowerCase() === value.toLowerCase());
+  if (tier) return { kind: "tier", tier };
+  const pixels = PIXEL_SIZE.exec(value);
+  if (pixels) return { kind: "px", width: Number(pixels[1]), height: Number(pixels[2]) };
+  throw new Error(
+    `STAGE_IMAGE_SIZE（${raw}）非法，可填档位 ${IMAGE_SIZES.join(" / ")}（K 大写）或字面像素 1536x1024`,
+  );
+}
+
+export function imageSizeText(spec: ImageSizeSpec): string {
+  return spec.kind === "tier" ? spec.tier : `${spec.width}x${spec.height}`;
+}
+
+/** 档位的总像素量级——画幅按比例分这块面积（`1K` → 1024²、`2K` → 2048²、`4K` → 4096²）。 */
+export function tierArea(tier: ImageSize): number {
+  return Number(tier.slice(0, -1)) ** 2 * 1024 ** 2;
+}
 
 export interface ImageRequest {
   prompt: string;
