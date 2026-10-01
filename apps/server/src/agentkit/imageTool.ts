@@ -18,7 +18,15 @@ import { linesResult, reason, textResult } from "./result.js";
  * 剧作家是**后台预发射**：一轮只有 240s，立绘一张约 100s，等不起也不该等——
  * 它的契约是「提前 3–5 句发起，之后再引用」。
  */
-const generateImageParams = Type.Object(
+/**
+ * 参数 schema 按角色裁剪：`expression`（立绘差分名）只有工坊有。
+ *
+ * 同一份实现、同一个工具名，但**剧作家拿不到这个参数**：它的立绘只能是 neutral 定妆照，
+ * 差分由工坊在用户眼前生成（垫图保一致性，见 SYNC_DESCRIPTION）。参数层不给，比运行时
+ * 回一句「不行」省掉一次白跑的往返——一轮只有 240s，浪费在拒绝上不划算。
+ */
+function imageParams(withExpression: boolean) {
+  return Type.Object(
   {
     kind: Type.Union([Type.Literal("background"), Type.Literal("cg"), Type.Literal("sprite")]),
     /** 背景/CG 的素材 id，剧本里的 bg/cg id 就是它。 */
@@ -27,8 +35,8 @@ const generateImageParams = Type.Object(
     characterId: Type.Optional(Type.String({ maxLength: 40 })),
     /** 剧作家专用：角色不在角色表时用这个名字自动注册（临时角色）。工坊侧不给，按成员校验报错。 */
     characterName: Type.Optional(Type.String({ maxLength: 40 })),
-    /** 立绘差分名，如 neutral / smile。 */
-    expression: Type.Optional(Type.String({ maxLength: 40 })),
+    /** 立绘差分名，如 neutral / smile（只有工坊有这个参数）。 */
+    ...(withExpression ? { expression: Type.Optional(Type.String({ maxLength: 40 })) } : {}),
     /** 画风锚点（可选），如「厚涂写实电影感」「赛璐珞动画」。不给就不预设风格，按角色描述走。 */
     style: Type.Optional(Type.String({ maxLength: 200 })),
     /** 立绘抠底微调（可选，只对 kind=sprite 生效）。用 inspect_asset 看图觉得抠得不干净时才填（工坊侧）。 */
@@ -52,7 +60,11 @@ const generateImageParams = Type.Object(
     prompt: Type.String({ minLength: 1, maxLength: 4000, description: "英文出图提示词，描述画面本身（不含负面词）" }),
   },
   { additionalProperties: false },
-);
+  );
+}
+
+const generateImageParams = imageParams(true);
+const playwriterImageParams = imageParams(false);
 
 const SYNC_DESCRIPTION = [
   "出一张剧目素材并落进 assets/：背景(kind=background) / CG(kind=cg) 给 name，",
@@ -64,13 +76,14 @@ const SYNC_DESCRIPTION = [
 
 const QUEUED_DESCRIPTION = [
   "出一张剧目素材并**后台排产**（发起即返回，不等图）：背景(kind=background) / CG(kind=cg) 给 name，",
-  "立绘(kind=sprite) 给 characterId + expression（角色不在角色表时再给 characterName，会自动建一个临时角色）。",
+  "立绘(kind=sprite) 给 characterId，出的**只能是 neutral 定妆照**（差分由工坊在用户面前生成，别试也别写 expression）。" +
+  "角色不在角色表时再给 characterName，会自动建一个临时角色。",
   "背景 16:9、CG 16:9、立绘 9:16 竖构图全身；提示词写英文，只描述画面本身。",
   "**提前 3–5 句发起**：图要一分多钟才到（flow2api 实测 1k 档 70–80s、2k 档 110s 上下），" +
   "出席位置太早只会看到骨架占位，拿到回执后照常写台词，",
   "到出场的那一行再用 <scene bg=\"…\"> 或 <cg id=\"…\">、<actor expression=\"…\"> 引用同一个 id。",
   "回执会告诉你这张是新建排产、已经在队列里，还是剧目里已经有同名素材（已有的直接引用，别重复发起）。",
-  "立绘会自动抠底成透明 PNG，非 neutral 差分自动拿该角色的 neutral 定妆照做垫图。",
+  "立绘会自动抠底成透明 PNG。**这个工具没有 expression 参数**：要别的表情就引用角色表里已有的差分，没有就先用 neutral。",
 ].join("");
 
 /** 工坊：同步出图，回执带图片给用户看。 */
@@ -103,7 +116,7 @@ export function createGenerateImageTool(deps: ImageToolDeps): AgentTool<typeof g
     name: "generate_image",
     label: "生成剧目素材",
     description: deps.mode === "sync" ? SYNC_DESCRIPTION : QUEUED_DESCRIPTION,
-    parameters: generateImageParams,
+    parameters: deps.mode === "sync" ? generateImageParams : playwriterImageParams,
     execute: async (_toolCallId, params: Static<typeof generateImageParams>) => {
       if (!deps.playAssets && deps.mode === "queued") {
         return textResult(
@@ -135,7 +148,7 @@ async function runSync(
       kind: params.kind,
       name: params.name,
       characterId: params.characterId,
-      expression: params.expression,
+      expression: typeof params.expression === "string" ? params.expression : undefined,
     },
     params.prompt,
     params.style,
@@ -158,18 +171,16 @@ async function runQueued(
   const assets = deps.playAssets!;
   if (params.kind === "sprite") {
     const charId = params.characterId?.trim() ?? "";
-    const expression = params.expression?.trim() || "neutral";
     if (!charId) throw new Error("立绘必须给 characterId（角色 id）");
-    if (await assets.exists({ kind: "sprite", characterId: charId, expression })) {
-      return textResult(
-        `${charId} 的 ${expression} 立绘剧目里已经有了，直接 <actor id="${charId}" expression="${expression}"> 引用，不用重出。`,
-      );
+    if (await assets.exists({ kind: "sprite", characterId: charId, expression: "neutral" })) {
+      return textResult(`${charId} 的 neutral 立绘剧目里已经有了，直接 <actor id="${charId}"> 引用，不用重出。`);
     }
-    deps.emitPreload({ type: "sprite", id: `${charId}:${expression}`, prompt: params.prompt });
-    deps.kickSprite(charId, expression, params.prompt, params.characterName?.trim() || undefined);
+    deps.emitPreload({ type: "sprite", id: `${charId}:neutral`, prompt: params.prompt });
+    deps.kickSprite(charId, "neutral", params.prompt, params.characterName?.trim() || undefined);
     return textResult(
-      `已排产：立绘 ${charId}/${expression}（约一分多钟）。` +
-        "别在这一轮就让它上台，3–5 句之后再 <actor id=… expression=…>；角色表里还没有它时会自动建一个临时角色。",
+      `已排产：立绘 ${charId}/neutral（约一分多钟）。` +
+        "别在这一轮就让它上台，3–5 句之后再 <actor id=…>；角色表里还没有它时会自动建一个临时角色。" +
+        "这个工具不产差分：别的表情用角色表里已有的，没有就先用中性表情顶上。",
     );
   }
   const id = params.name?.trim() ?? "";

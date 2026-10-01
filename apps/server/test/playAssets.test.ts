@@ -83,7 +83,7 @@ function stubBackend(mimeType = "image/jpeg"): { backend: ImageBackend; calls: I
   return { backend, calls };
 }
 
-function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2): {
+function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2, reference?: "none" | "neutral"): {
   assets: PlayAssets;
   files: PlayFiles;
   writes: WorkshopWrite[];
@@ -98,6 +98,7 @@ function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2): {
       files,
       backend,
       limiter: new Limiter(concurrency),
+      ...(reference ? { reference } : {}),
       onWrite: (w) => writes.push(w),
     }),
   };
@@ -214,6 +215,21 @@ describe("PlayAssets：工坊素材落盘", () => {
     ).rejects.toThrow(/没有角色「sora」/);
   });
 
+  it("STAGE_IMAGE_REFERENCE=none：差分走纯文生图，不带参考图（定妆照照样自动补）", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend, 2, "none");
+
+    const out = await assets.generate({ kind: "sprite", characterId: "mio", expression: "smile" }, "少女");
+
+    expect(out.at(-1)!.path).toBe("assets/sprites/mio/smile.png");
+    // 定妆照是合法差分（actor 能直接引用），自动补一张；两次出图都不带垫图
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.references).toEqual([]);
+    expect(calls[1]!.references).toEqual([]);
+    expect(existsSync(files.absoluteOf("assets/sprites/mio/neutral.png"))).toBe(true);
+  });
+
   it("差分自动先定妆照：垫图带上、提示词锁身份，play.json 立绘映射一并补写", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
@@ -328,7 +344,7 @@ describe("PlayAssets：工坊素材落盘", () => {
   it("并发出 6 个差分：定妆照只出 1 张，6 个差分垫的都是这同一张", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
-    const { assets, files } = makeAssets(store, backend, 6);
+    const { assets, files } = makeAssets(store, backend);
     const names = ["smile", "shy", "angry", "sad", "surprised", "thinking"];
 
     const results = await Promise.all(

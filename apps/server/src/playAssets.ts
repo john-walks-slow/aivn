@@ -4,6 +4,7 @@ import { parsePlayConfig, type WorkshopAssetView } from "@stage-ai/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
 import type { Limiter } from "./limiter.js";
+import { jobIdForImage, type PendingJobs } from "./pendingJobs.js";
 import type { PlayFiles } from "./playFiles.js";
 import type { PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
@@ -87,6 +88,10 @@ export interface PlayAssetsDeps {
   files: PlayFiles;
   backend: ImageBackend;
   limiter: Limiter;
+  /** 垫图策略：不传 = 派生差分时用该角色的 neutral 定妆照垫图（保角色一致性）；none = 不传参考图。 */
+  reference?: "none" | "neutral";
+  /** 在生成的事（面板上那一行）：出图期间让玩家看得见在忙什么、等了多久。 */
+  pending?: PendingJobs;
   /** play.json 立绘映射补写要进撤销条（二进制本身不进）。 */
   onWrite: (write: WorkshopWrite, notify: AssetNotify) => void;
   /** 素材到货（工坊侧挂到对话气泡里）。 */
@@ -147,15 +152,30 @@ export class PlayAssets {
   ): Promise<GeneratedPlayAsset[]> {
     const auto = spec.kind === "sprite" ? await this.ensureNeutral(spec, prompt, notify) : null;
     const references = await this.referencesFor(spec);
-    const { data, mimeType } = await this.deps.limiter.run(
-      () =>
-        this.deps.backend.generate({
-          prompt: suffixFor(spec, style ? `${style}, ${prompt}` : prompt),
-          aspectRatio: spec.aspect,
-          references,
-        }),
-      "normal",
-    );
+    const fullPrompt = suffixFor(spec, style ? `${style}, ${prompt}` : prompt);
+    // 记的是「开始等」的那一刻：排队等位的那一分多钟也是玩家在等的时间。
+    const kind = spec.kind === "background" ? "bg" : spec.kind;
+    const done = this.deps.pending?.begin({
+      id: jobIdForImage(kind, `${spec.kindPath}/${spec.stem}`),
+      kind,
+      label: labelFor(spec),
+      prompt: fullPrompt,
+    });
+    let data: Buffer;
+    let mimeType: string;
+    try {
+      ({ data, mimeType } = await this.deps.limiter.run(
+        () =>
+          this.deps.backend.generate({
+            prompt: fullPrompt,
+            aspectRatio: spec.aspect,
+            references,
+          }),
+        "normal",
+      ));
+    } finally {
+      done?.();
+    }
     this.assertCanvas(spec, data);
     const tuning = resolveTuning(cutoutTuning);
     const bytes = spec.kind === "sprite" ? (await cutout(data, tuning)).data : data;
@@ -294,7 +314,12 @@ export class PlayAssets {
     return auto ?? null;
   }
 
+  /**
+   * 垫图（参考图）。默认给（与 `config.image.reference` 的默认值一致）：差分靠它才是同一个人，
+   * 代价是单张从 69s 变 138s（实测），像素一模一样。`STAGE_IMAGE_REFERENCE=none` 可以掐掉这条省钱。
+   */
   private async referencesFor(spec: AssetSpec) {
+    if (this.deps.reference === "none") return [];
     if (spec.kind !== "sprite" || spec.expression === NEUTRAL) return [];
     const neutral = await this.existingPath(spec.kindPath, NEUTRAL);
     if (!neutral) return [];
@@ -350,6 +375,12 @@ export class PlayAssets {
       .map((f) => f.slice(0, f.lastIndexOf(".")))
       .sort();
   }
+}
+
+/** pending 面板上那一行的话。 */
+function labelFor(spec: AssetSpec): string {
+  if (spec.kind === "sprite") return `立绘 ${spec.characterId}/${spec.expression}`;
+  return spec.kind === "background" ? `背景 ${spec.stem}` : `CG ${spec.stem}`;
 }
 
 function suffixFor(spec: AssetSpec, prompt: string): string {

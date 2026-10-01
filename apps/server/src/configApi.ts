@@ -77,6 +77,7 @@ export class SettingsFile {
         size: text("STAGE_IMAGE_SIZE", this.config.image.size),
         concurrency: num("STAGE_IMAGE_CONCURRENCY", this.config.image.concurrency),
         timeoutMs: num("STAGE_IMAGE_TIMEOUT_MS", this.config.image.timeoutMs),
+        reference: text("STAGE_IMAGE_REFERENCE", this.config.image.reference) as ServerConfig["image"]["reference"],
       },
       flow: {
         baseUrl: text("STAGE_FLOW_BASE_URL", this.config.flow.baseUrl),

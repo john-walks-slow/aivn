@@ -38,6 +38,8 @@ export interface ServerConfig {
     concurrency: number;
     /** 单图超时（毫秒）：超时按失败降级，占位骨架不留死。 */
     timeoutMs: number;
+    /** 垫图策略：neutral = 派生立绘差分时用该角色的 neutral 定妆照垫图（默认）；none = 纯文生图。 */
+    reference: "none" | "neutral";
   };
   /** flow2api 后端（`image.backend=flow2api` 时生效）。 */
   flow: {
@@ -131,6 +133,11 @@ export function loadConfig(
       // 串行等 6×100s 用户受不了。改用 cpa 计费后端时按钱包调小。
       concurrency: parsePositiveInt("STAGE_IMAGE_CONCURRENCY", env.STAGE_IMAGE_CONCURRENCY, 6),
       timeoutMs: parsePositiveInt("STAGE_IMAGE_TIMEOUT_MS", env.STAGE_IMAGE_TIMEOUT_MS, 150_000),
+      // 垫图（参考图）策略：neutral = 派生立绘差分时拿该角色的 neutral 定妆照垫图（保角色一致性）；
+      // none = 全走文生图，差分与其它表情就不是同一个人了。
+      // 默认 neutral：垫图让单张耗时翻倍（实测 9:16 69s → 138s）而像素一模一样，
+      // 但一致性是演出观感的事；差分只由工坊（用户眼前）生成，剧作家在参数层就拿不到 expression。
+      reference: parseEnum("STAGE_IMAGE_REFERENCE", env.STAGE_IMAGE_REFERENCE, ["none", "neutral"] as const, "neutral"),
     },
     flow: {
       baseUrl: env.STAGE_FLOW_BASE_URL ?? "http://127.0.0.1:38000",

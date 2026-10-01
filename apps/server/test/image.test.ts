@@ -8,6 +8,7 @@ import { ImageAssets } from "../src/imageAssets.js";
 import { Limiter } from "../src/limiter.js";
 import type { ImageBackend } from "../src/imageBackend.js";
 import { PlayStore } from "../src/store.js";
+import { createGenerateImageTool } from "../src/agentkit/imageTool.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { LineageTree } from "@stage-ai/core";
 import { PlayMemory } from "../src/memory.js";
@@ -218,10 +219,8 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
           toolCalls: [
             { name: "generate_image", args: { kind: "background", prompt: "rainy station", name: "bg_station" } },
             { name: "generate_image", args: { kind: "cg", prompt: "confession", name: "cg_01" } },
-            {
-              name: "generate_image",
-              args: { kind: "sprite", prompt: "smile", characterId: "mio", expression: "smile" },
-            },
+            // 立绘只出 neutral：这个工具没有 expression 参数，带了会被 schema 挡下（下面单测锁住）
+            { name: "generate_image", args: { kind: "sprite", prompt: "neutral portrait", characterId: "mio" } },
             // 工坊已经导入过这张：同一个 id 不该再烧一次配额
             {
               name: "generate_image",
@@ -256,9 +255,25 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
     const preload = orchestrator.eventsAfter(0).filter((e) => e.event.kind === "preload_asset");
     // 同批工具是并行的，落线顺序看谁先走完（立绘要先查盘上有没有）——比集合不比顺序
     const ids = preload.map((e) => (e.event as { id: string }).id).sort();
-    expect(ids).toEqual(["bg_station", "cg_01", "mio:smile"]);
+    expect(ids).toEqual(["bg_station", "cg_01", "mio:neutral"]);
     expect(kicked).toEqual(["bg_station", "cg_01"]);
     expect(spriteKicks).toEqual(["mio"]);
     orchestrator.dispose();
+  });
+
+  it("剧作家的 generate_image 没有 expression 参数（差分只能工坊出），工坊的有", async () => {
+    const queued = createGenerateImageTool({
+      mode: "queued",
+      playAssets: undefined,
+      emitPreload: () => {},
+      kick: () => {},
+      kickSprite: () => {},
+      statusOf: () => "none",
+      hasStaticAsset: () => false,
+    });
+    const sync = createGenerateImageTool({ mode: "sync", playAssets: undefined, onAsset: () => {} });
+    const props = (t: { parameters: { properties?: Record<string, unknown> } }) => Object.keys(t.parameters.properties ?? {});
+    expect(props(queued)).not.toContain("expression");
+    expect(props(sync)).toContain("expression");
   });
 });

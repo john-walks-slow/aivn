@@ -218,11 +218,13 @@ ${ctx.canSearch ? SEARCH_GUIDE : ""}
 
 **2. 生立绘（generate_image kind="sprite"）**，后台出图，不阻塞台词：
 
-    generate_image(kind="sprite", characterId="xiaoyu", characterName="小雨", expression="neutral", prompt="2D anime style, …")
+    generate_image(kind="sprite", characterId="xiaoyu", characterName="小雨", prompt="2D anime style, …")
 
-- 省略 expression 时默认 neutral（定妆照）
-- 已有 neutral 时出其他差分会自动垫图保持一致性
-- 立绘要一分多钟才出（flow2api 实测 70–110s）：不要在这一轮就让它上台，3–5 句之后再 \`<actor id="xiaoyu" expression="neutral">\`
+- **这个工具没有 expression 参数，你只能出 neutral 定妆照**。差分（表情差分）由搭台助手在用户面前生成，
+  垫图保角色一致性，你既做不到也不该在拍内等它
+- 要别的表情就去用角色表里**已有**的差分（\`<actor id="xiaoyu" expression="smile">\`），
+  没有就用 neutral 顶上——不要为了凑表情去生成
+- 立绘要一分多钟才出（flow2api 实测 70–110s）：不要在这一轮就让它上台，3–5 句之后再 \`<actor id="xiaoyu">\`
 
 **3. 临时角色（一次性 NPC）**：只出声不出图也行，直接在 say 上写 name 属性：
 
