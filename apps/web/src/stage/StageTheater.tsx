@@ -23,6 +23,9 @@ interface StageTheaterProps {
   index: AssetIndex;
   /** 服务端 TTS 能力（false 时隐藏语音相关的一切）。 */
   voiceAvailable: boolean;
+  /** 语音总开关（对话框右下角的「语音」）：关 = 停合成，也省配额。 */
+  voiceOn: boolean;
+  onToggleVoice: () => void;
   /** 结构性操作会腰斩正在演的这一轮，busy 时 ✎/↺ 置灰（插一句仍可用，它排进待注入队列）。 */
   busy: boolean;
   /** 由当前显示行 seq 反查出的锚点：编辑绑行，重来绑整轮。 */
@@ -42,7 +45,7 @@ interface StageTheaterProps {
   onTurbo: (on: boolean) => void;
   /**
    * 停止点浮层（选肢卡、自由输入、no_stop 时的「（继续）」卡）。
-   * 它挂在**画面区**里：只盖住背景与立绘，台词条、导演栏、侧栏都照常可点——
+   * 它挂在**画面区**里：只盖住背景与立绘，台词条、工具栏、侧栏都照常可点——
    * 选肢时要紧的只有「别手滑把这一轮点了过去」。
    */
   overlay?: ReactNode;
@@ -98,7 +101,7 @@ function Sprite({ url, pos, name }: { url: string | null; pos: string; name: str
   );
 }
 
-/** 舞台：背景/立绘/CG 视觉层 + 打字机对话框 + 二段式点击 + 自动模式 + sfx/bgm + 语音 + 导演栏。 */
+/** 舞台：背景/立绘/CG 视觉层 + 打字机对话框 + 二段式点击 + 自动模式 + sfx/bgm + 语音 + 导演工具栏（右上角）。 */
 export function StageTheater({
   visual,
   playback,
@@ -114,6 +117,8 @@ export function StageTheater({
   onFork,
   onReplay,
   hasVoice,
+  voiceOn,
+  onToggleVoice,
   onUnlock,
   onView,
   canContinue,
@@ -138,7 +143,7 @@ export function StageTheater({
     };
   }, []);
   /** 导演栏的面板：三个动作的全部输入都在对话框里收，不跳视图。 */
-  const [action, setAction] = useState<"prompt" | "edit" | "restart" | null>(null);
+  const [action, setAction] = useState<"prompt" | "edit" | "restart" | "segment" | null>(null);
   const [draft, setDraft] = useState("");
   const { view, viewLength, current, shownLength, exhausted, advance, scrub, scrubbed, follow } =
     playback;
@@ -271,6 +276,12 @@ export function StageTheater({
       if (text) onPrompt(text);
       return;
     }
+    if (action === "segment" && targets.beatId) {
+      // 打断当前轮并立刻起新分支：效果等同于先 fork 再 prompt，但一步到位。
+      onFork(targets.beatId, { resume: true });
+      if (text) onPrompt(text);
+      return;
+    }
     if (action === "edit") {
       if (text && targets.lineNodeId) onEdit(targets.lineNodeId, text);
       return;
@@ -324,9 +335,73 @@ export function StageTheater({
           </div>
         )}
 
-        {/* 停止点浮层只在画面区内：台词条与导演栏留在浮层之外，选肢期间照常可点可用。
+        {/* 停止点浮层只在画面区内：台词条与工具栏留在浮层之外，选肢期间照常可点可用。
             这里仍然吃触摸事件——舞台监听着左右滑（翻句）与上滑（看回顾）。 */}
         {overlay}
+      </div>
+
+      {/* 导演工具栏（提示/改写/重来/重听）：舞台右上角浮层。点击动作 stopPropagation，
+           不劫持舞台的继续/回看手势。 */}
+      <div className="theater-director">
+        <button
+          type="button"
+          className={`dir-btn ${action === "prompt" ? "on" : ""}`}
+          title="提示：可以是角色的行动或台词，也可以是给这场戏的指示"
+          aria-label="提示"
+          onClick={(e) => {
+            e.stopPropagation();
+            setAction(action === "prompt" ? null : "prompt");
+            setDraft("");
+          }}
+        >
+          <Icon name="chat" size={17} />
+          提示
+        </button>
+        <button
+          type="button"
+          className={`dir-btn ${action === "edit" ? "on" : ""}`}
+          title={targets.lineNodeId ? "编辑当前这句台词" : "这里没有台词可改"}
+          aria-label="改写当前这句台词"
+          disabled={!targets.lineNodeId}
+          onClick={(e) => {
+            e.stopPropagation();
+            setAction(action === "edit" ? null : "edit");
+            setDraft(targets.lineText);
+          }}
+        >
+          <Icon name="pencil" size={17} />
+          改写
+        </button>
+        <button
+          type="button"
+          className={`dir-btn ${action === "restart" ? "on" : ""}`}
+          title={busy ? "剧作家正在写，暂时不能重来" : "重演这一轮（会分岔）"}
+          aria-label="重演这一轮"
+          disabled={busy || !targets.beatId}
+          onClick={(e) => {
+            e.stopPropagation();
+            setAction(action === "restart" ? null : "restart");
+            setDraft("");
+          }}
+        >
+          <Icon name="rewrite" size={17} />
+          重来
+        </button>
+        {voiceAvailable && hasVoice(view?.seq ?? null) && (
+          <button
+            type="button"
+            className="dir-btn"
+            title="重听这句"
+            aria-label="重听这句"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
+            }}
+          >
+            <Icon name="volume" size={17} />
+            重听
+          </button>
+        )}
       </div>
 
       <div className="theater-dialog" role="text">
@@ -338,7 +413,7 @@ export function StageTheater({
             (view ? "" : emptyDialogHint(live, fresh))}
           {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
         </p>
-        {/* 导演栏：四个原语 + 重听/自动，全在对话界面内就地完成，不跳视图 */}
+        {/* 台词条底缘：左是状态提示（回看中 / 生成中），右是游戏选项 */}
         <div className="dialog-foot">
           <div className="dialog-hint dialog-hint-foot">
             {scrubbed ? (
@@ -358,71 +433,11 @@ export function StageTheater({
               </>
             )}
           </div>
-          {/* 快捷菜单：图标按钮，压在台词窗右下角。提示 / 改写 / 重来 / 重听 / 自动，
-              动作靠图标辨认，含义走 title 与 aria-label。 */}
-          <div className="director-bar">
+          {/* 游戏选项：自动 / 语音 / 回看，落在对话框右下角。导演动作见舞台右上角的工具栏。 */}
+          <div className="dialog-options">
             <button
               type="button"
-              className={`dir-btn ${action === "prompt" ? "on" : ""}`}
-              title="提示：可以是角色的行动或台词，也可以是给这场戏的指示"
-              aria-label="提示"
-              onClick={(e) => {
-                e.stopPropagation();
-                setAction(action === "prompt" ? null : "prompt");
-                setDraft("");
-              }}
-            >
-              <Icon name="chat" size={17} />
-              提示
-            </button>
-            <button
-              type="button"
-              className={`dir-btn ${action === "edit" ? "on" : ""}`}
-              title={targets.lineNodeId ? "编辑当前这句台词" : "这里没有台词可改"}
-              aria-label="改写当前这句台词"
-              disabled={!targets.lineNodeId}
-              onClick={(e) => {
-                e.stopPropagation();
-                setAction(action === "edit" ? null : "edit");
-                setDraft(targets.lineText);
-              }}
-            >
-              <Icon name="pencil" size={17} />
-              改写
-            </button>
-            <button
-              type="button"
-              className={`dir-btn ${action === "restart" ? "on" : ""}`}
-              title={busy ? "剧作家正在写，暂时不能重来" : "重演这一轮（会分岔）"}
-              aria-label="重演这一轮"
-              disabled={busy || !targets.beatId}
-              onClick={(e) => {
-                e.stopPropagation();
-                setAction(action === "restart" ? null : "restart");
-                setDraft("");
-              }}
-            >
-              <Icon name="rewrite" size={17} />
-              重来
-            </button>
-            {voiceAvailable && hasVoice(view?.seq ?? null) && (
-              <button
-                type="button"
-                className="dir-btn"
-                title="重听这句"
-                aria-label="重听这句"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
-                }}
-              >
-                <Icon name="volume" size={17} />
-                重听
-              </button>
-            )}
-            <button
-              type="button"
-              className={`dir-btn ${playback.auto ? "on" : ""}`}
+              className={`dir-btn ${playback.auto ? "tgl-on" : ""}`}
               title={playback.auto ? "自动播放：开（点一下关）" : "自动播放：关（点一下开）"}
               aria-pressed={playback.auto}
               aria-label="自动播放"
@@ -434,30 +449,85 @@ export function StageTheater({
               {playback.auto ? <Icon name="pause" size={17} /> : <Icon name="play" size={17} />}
               自动
             </button>
+            {voiceAvailable && (
+              <button
+                type="button"
+                className={`dir-btn ${voiceOn ? "tgl-on" : ""}`}
+                title={voiceOn ? "语音播放：开（点一下关）" : "语音播放：关（点一下开）"}
+                aria-pressed={voiceOn}
+                aria-label="语音播放"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleVoice();
+                }}
+              >
+                <Icon name="volume" size={17} />
+                语音
+              </button>
+            )}
+            <button
+              type="button"
+              className="dir-btn"
+              title="回退一句（同方向键 ←）"
+              aria-label="回退一句"
+              disabled={!scrubbed && playback.history.length === 0}
+              onClick={(e) => {
+                e.stopPropagation();
+                scrub(-1);
+              }}
+            >
+              <Icon name="prev" size={17} />
+              回看
+            </button>
           </div>
         </div>
 
         {action && (
           <Modal
             title={
-              action === "prompt" ? "提示" : action === "edit" ? "改写这句台词" : "重演这一轮"
+              action === "prompt"
+                ? "提示"
+                : action === "edit"
+                  ? "改写这句台词"
+                  : action === "restart"
+                    ? "重演这一轮"
+                    : "打断当前轮并续写"
             }
             hint={
               action === "prompt"
                 ? "可以是某个角色的行动或台词，也可以是给这场戏的指示。带 OOC：前缀 = 跳出角色，直接给剧作家下指令（他会照办，但不会跳出戏来跟你对话）"
                 : action === "edit"
                   ? "就地改这一句，改完接着演，不重演"
-                  : "留空 = 只重演这一轮；填了 = 连意图一起给"
+                  : action === "restart"
+                    ? "留空 = 只重演这一轮；填了 = 连意图一起给"
+                    : "在这一轮这里切断，从这里起新分支继续演。留空 = 只打断；填了 = 带着这句进新轮"
             }
             onClose={() => setAction(null)}
             footer={
               <>
+                {action === "prompt" && (
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    disabled={!targets.beatId}
+                    title="打断当前轮并从这里起新分支（等同于先重来再提示，一步到位）"
+                    onClick={() => {
+                      setAction("segment");
+                    }}
+                  >
+                    分段
+                  </button>
+                )}
                 <button
                   type="button"
                   className="primary"
                   onClick={submitAction}
                   disabled={
-                    action === "restart" ? !targets.beatId : action === "edit" ? draft.trim() === "" : false
+                    action === "restart" || action === "segment"
+                      ? !targets.beatId
+                      : action === "edit"
+                        ? draft.trim() === ""
+                        : false
                   }
                 >
                   {action === "edit"
@@ -466,7 +536,11 @@ export function StageTheater({
                       ? draft.trim()
                         ? "重演这一轮 · 带着这句"
                         : "重演这一轮"
-                      : "提示"}
+                      : action === "segment"
+                        ? draft.trim()
+                          ? "打断并续写"
+                          : "打断当前轮"
+                        : "提示"}
                 </button>
                 <button type="button" className="ghost-btn" onClick={() => setAction(null)}>
                   取消

@@ -441,6 +441,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
               names={stage.names}
               index={index}
               voiceAvailable={stage.voiceAvailable}
+              voiceOn={voiceOn}
+              onToggleVoice={toggleVoice}
               busy={busy}
               targets={targets}
               onView={setView}

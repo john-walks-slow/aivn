@@ -1831,11 +1831,6 @@ select:focus {
   max-width: 160px;
 }
 
-
-   （Esc 在手机上没有），被挤到第二行就等于找不着了。 */
-
-
-
 .voice-card {
   display: flex;
   flex-direction: column;
@@ -3878,12 +3873,45 @@ select:focus {
 .dialog-hint-foot {
   min-height: 18px;
 }
-.director-bar {
+/* 游戏选项：自动 / 语音 / 回看，只管播放，不改内容 */
+.dialog-options {
   display: flex;
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
   margin: -6px -12px -8px 0;
+}
+/* 导演工具栏：舞台右上角的一排导演动作（提示 / 改写 / 重来 / 重听）。
+   「正在生成」面板排在这条的正下方（.prompt-queue 的 top 见下），两块同在右上角
+   但上下错开、不重叠——之前两处都锚 top/right，整块叠上 211×42 看着像同一块面板。
+   自带一块底，而不是把字直接浮在画面上：光靠 text-shadow 撑，浅色背景一压就读不出来。
+   底跟说话人名牌同白（nameplate-bg），但不描主题色的边——说话人名牌那圈红是
+   「谁在说话」的标记，工具栏没有这个含义，跟着描一圈只会白添一个视觉重点。 */
+.theater-director {
+  position: absolute;
+  z-index: 45;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  right: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px;
+  max-width: calc(100% - 20px);
+  padding: 0 4px;
+  border-radius: 1px;
+  background: var(--nameplate-bg);
+  box-shadow: var(--shadow);
+}
+.theater-director .dir-btn {
+  color: var(--nameplate-ink);
+  text-shadow: none;
+}
+.theater-director .dir-btn:hover:not(:disabled) {
+  background: rgb(35 32 28 / 0.07);
+}
+.theater-director .dir-btn.on {
+  background: var(--accent);
+  color: #fff;
 }
 /* 图标 + 文字的键：无边框无底色，图标在前、短词在后。
    padding: 0 只在纵向收，横向留 10px 让图标不贴边。
@@ -3917,6 +3945,14 @@ select:focus {
   background: var(--accent);
   color: #fff;
 }
+/* 常开态（自动 / 语音）：只表示「开着」，不是主要行动点。
+   .on 那块实心主色底是给「面板正开着」设计的——瞬时的、点两下就消失。
+   常开状态会一直挂在屏幕上，用实心主色会被读成 CTA 或警示：
+   一排三个键里它跳出来、另两个灰着，看起来像在报警而不是在自动播放。 */
+.dir-btn.tgl-on {
+  background: rgb(242 235 222 / 0.16);
+  color: #fff;
+}
 .dir-btn:disabled {
   opacity: 0.28;
   cursor: default;
@@ -3944,13 +3980,15 @@ select:focus {
   background: var(--accent-soft);
 }
 
-/* 待注入队列：内容区右上角独立面板，空则不渲染。排队中的话能改也能撤。
+/* 待注入队列：内容区右上角、导演工具栏正下方的独立面板，空则不渲染。排队中的话能改也能撤。
    定位挂在内容区（.stage-main，position: relative）而不是视口：之前写的是
-   fixed + 一个早已不存在的顶栏偏移（--gui-h），面板凭空下移 52px。 */
+   fixed + 一个早已不存在的顶栏偏移（--gui-h），面板凭空下移 52px。
+   top 要让开 .theater-director（8px 起、44px 高 = 8+44=52），60px 留 8px 空档；
+   之前这里跟工具栏同锚 top:8px，两块整块叠上，看着像同一块面板。 */
 .prompt-queue {
   position: absolute;
   z-index: 40;
-  top: 8px;
+  top: calc(60px + env(safe-area-inset-top, 0px));
   right: 12px;
   width: min(78vw, 280px);
   padding: 8px 10px;
