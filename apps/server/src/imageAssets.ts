@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { GeneratedAsset } from "@stage-ai/core";
+import type { GeneratedAsset, GeneratedImageEntry } from "@stage-ai/core";
 import type { GeneratedNote } from "./prompt.js";
 import type { PlayStore } from "./store.js";
 import type { ImageAspect, ImageBackend } from "./imageBackend.js";
@@ -19,7 +19,8 @@ import { jobIdForImage, type PendingJobs } from "./pendingJobs.js";
  * 失败一律抛出由调用方降级（既有素材/氛围色），不留永久骨架。
  */
 
-interface ManifestEntry {
+/** manifest 落盘格式（id → 文件 + 出图描述）。导出给测试直接写盘。 */
+export interface ManifestEntry {
   id: string;
   type: "bg" | "cg";
   file: string;
@@ -67,28 +68,24 @@ export class ImageAssets {
   ) {}
 
   async load(): Promise<void> {
-    let entries: unknown;
-    try {
-      entries = JSON.parse(await readFile(this.manifestPath(), "utf8"));
-    } catch {
-      return; // 首次运行或 manifest 损坏：文件在磁盘上还是权威，无从恢复即从零开始
-    }
-    if (!Array.isArray(entries)) return;
-    for (const entry of entries as ManifestEntry[]) {
-      if (!entry?.id || !entry.file) continue;
-      if (!existsSync(this.store.imagePath(entry.file))) continue;
-      this.byId.set(entry.id, {
-        id: entry.id,
-        type: entry.type === "cg" ? "cg" : "bg",
-        url: `/plays/${this.playId}/media/img/${entry.file}`,
-        prompt: entry.prompt,
-      });
+    for (const entry of await readGeneratedEntries(this.playId, this.store)) {
+      this.byId.set(entry.id, entry);
     }
   }
 
   /** manifest 全集快照（hello 携带；重连即恢复已生成资产）。 */
   snapshot(): GeneratedAsset[] {
     return [...this.byId.values()].map(strip);
+  }
+
+  /** 全集带 prompt（CG 页的台账）：这里是要给人看的读接口，prompt 不藏。 */
+  entries(): GeneratedImageEntry[] {
+    return [...this.byId.values()].map((a) => ({
+      id: a.id,
+      type: a.type,
+      url: a.url,
+      ...(a.prompt ? { prompt: a.prompt } : {}),
+    }));
   }
 
   /** 已生成图目录（id + prompt）：注入剧作家提示词，让它记得自己造过哪些 id。 */
@@ -222,4 +219,35 @@ export class ImageAssets {
   private manifestPath(): string {
     return join(this.store.imageDir(), "manifest.json");
   }
+}
+
+/**
+ * 直接读盘上的 manifest（不经 ImageAssets 实例）。
+ *
+ * CG 页要的是一张只读清单，为此装配一个 runtime 太重——runtime 会挂编排器、连工坊通道，
+ * 而这一页只想知道盘上有哪些图。文件是权威：文件不在的条目一律跳过。
+ */
+export async function readGeneratedEntries(
+  playId: string,
+  store: PlayStore,
+): Promise<(Asset & { prompt?: string })[]> {
+  let entries: unknown;
+  try {
+    entries = JSON.parse(await readFile(join(store.imageDir(), "manifest.json"), "utf8"));
+  } catch {
+    return []; // 首次运行或 manifest 损坏：无从恢复即当作还没有图
+  }
+  if (!Array.isArray(entries)) return [];
+  const out: (Asset & { prompt?: string })[] = [];
+  for (const entry of entries as ManifestEntry[]) {
+    if (!entry?.id || !entry.file) continue;
+    if (!existsSync(store.imagePath(entry.file))) continue;
+    out.push({
+      id: entry.id,
+      type: entry.type === "cg" ? "cg" : "bg",
+      url: `/plays/${playId}/media/img/${entry.file}`,
+      ...(entry.prompt ? { prompt: entry.prompt } : {}),
+    });
+  }
+  return out;
 }

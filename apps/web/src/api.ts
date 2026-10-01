@@ -1,4 +1,12 @@
-import type { AssetMeta, LibraryEntry, LineageView, PlayConfig, VoiceCatalog, VoiceEntry } from "@stage-ai/core";
+import type {
+  AssetMeta,
+  CgEntry,
+  LibraryEntry,
+  LineageView,
+  PlayConfig,
+  VoiceCatalog,
+  VoiceEntry,
+} from "@stage-ai/core";
 
 /** 资源库导入回执（服务端 assetImport 的结果原样）。 */
 export interface ImportResult {
@@ -284,6 +292,12 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ voiceId }),
     }),
+
+  /**
+   * CG 页的台账：静态素材（assets/cg，带素材表描述）与站内生成的图（带生图 prompt）
+   * 合成一张清单，同一 id 只出现一次。只读盘上已有的东西，不触发生图。
+   */
+  cgCatalog: (id: string) => request<{ entries: CgEntry[] }>(`/api/plays/${id}/cg`),
 
   listFiles: (id: string) => request<PlayFile[]>(`/api/plays/${id}/files`),
 

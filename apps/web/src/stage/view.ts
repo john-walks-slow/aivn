@@ -1,26 +1,27 @@
 /**
- * 舞台外壳的视图枚举：舞台 / 回顾 / 路线 / 工坊。
+ * 舞台外壳的视图枚举：舞台 / 回顾 / 路线 / CG / 工坊。
  *
- * 工坊与前三个是**同一种东西**——同一个外壳下的四个视图，不是一个盖在舞台上的浮层。
+ * 工坊与前四个是**同一种东西**——同一个外壳下的五个视图，不是一个盖在舞台上的浮层。
  * 从标题页直达工坊靠 URL 带上 `?view=workshop`（舞台外壳只多认这一个 query 参数），
  * 好处是顶栏跟侧栏跟舞台完全一致，玩家看不出自己是从哪进来的。
  */
 
-/** 视图 id。舞台是默认项，其余三个由侧栏导航切换。 */
-export type StageView = "stage" | "backlog" | "route" | "workshop";
+/** 视图 id。舞台是默认项，其余四个由侧栏导航切换。 */
+export type StageView = "stage" | "backlog" | "route" | "cg" | "workshop";
 
 /** 视图的中文名：侧栏导航、视图栏标题与 README 共用一份，不各写各的。 */
 export const VIEW_LABEL: Record<StageView, string> = {
   stage: "舞台",
   backlog: "回顾",
   route: "路线",
+  cg: "CG",
   workshop: "工坊",
 };
 
 /** 工坊内的六个页签。会话（旧称线程）不占页签位——它是「对话」页内部的一层。 */
 export type WorkshopTab = "chat" | "assets" | "files" | "memory" | "agent" | "settings";
 
-const VIEWS: StageView[] = ["stage", "backlog", "route", "workshop"];
+const VIEWS: StageView[] = ["stage", "backlog", "route", "cg", "workshop"];
 const TABS: WorkshopTab[] = ["chat", "memory", "assets", "files", "agent", "settings"];
 
 /**
@@ -51,7 +52,7 @@ export function workshopConnectionFromQuery(search: string | null | undefined): 
 }
 
 /**
- * 工坊直达地址。工坊没有独立路由——它是舞台外壳的第四个视图，所以入口就是
+ * 工坊直达地址。工坊没有独立路由——它是舞台外壳的第五个视图，所以入口就是
  * 舞台地址带上 `view=workshop`（`tab=` 直接落在某一页，如素材页）。
  */
 export function workshopUrl(playId: string, tab?: WorkshopTab): string {

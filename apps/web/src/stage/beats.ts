@@ -18,6 +18,9 @@ export interface BeatCard {
   speakers: string[];
   /** 这一轮落笔的墙上时刻（毫秒）：卡上给玩家看的是时间，不是轮号。 */
   at: number;
+  /** 本轮最后一张 CG 的素材 id（`<cg id>`）。只在有 CG 的轮上非空，**不跨轮继承**——
+   *  CG 是插进这一幕的画，下一幕回到该回的背景；卡片照抄「这一轮屏幕上是什么」。 */
+  cgId: string | null;
   sceneBg: string | null;
   stopType: StopType | null;
   /** 本轮首个剧本事件的 seq：回看/定位到该轮首行。全无 seq（老档/纯插一句轮）时为 null。 */
@@ -199,6 +202,7 @@ function newCard(first: LineageNodeView, parent: BeatCard | null, forkedFrom: Fo
     preview: "",
     speakers: [],
     at: first.createdAt,
+    cgId: null,
     sceneBg: null,
     stopType: null,
     startSeq: null,
@@ -214,6 +218,8 @@ function newCard(first: LineageNodeView, parent: BeatCard | null, forkedFrom: Fo
 function collect(card: BeatCard): void {
   for (const node of card.nodes) {
     if (node.kind === "scene" && node.attrs.bg) card.sceneBg = node.attrs.bg;
+    // 同一轮多张 CG 时取最后一张：那是这一幕结束前屏幕上停着的那张
+    if (node.kind === "cg" && node.attrs.id) card.cgId = node.attrs.id;
     if (node.kind === "stop") card.stopType = stopTypeOf(node.attrs);
     if (node.kind === "say" || node.kind === "thought") {
       const who = node.attrs.id ?? "";

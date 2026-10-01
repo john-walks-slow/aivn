@@ -27,6 +27,10 @@ describe("入口视图解析", () => {
     expect(stageViewFromQuery("view=workshopp")).toBe<StageView>("stage");
   });
 
+  it("认 CG 页（?view=cg 直达同一外壳下的第五个视图）", () => {
+    expect(stageViewFromQuery("view=cg")).toBe<StageView>("cg");
+  });
+
   it("工坊 tab：素材页直达（就绪门那句「到素材与配置」用）", () => {
     expect(stageTabFromQuery("tab=assets")).toBe<WorkshopTab>("assets");
   });
@@ -38,8 +42,8 @@ describe("入口视图解析", () => {
 });
 
 describe("视图名", () => {
-  it("四个视图各有一个中文名（外壳视图栏与 README 用同一份）", () => {
-    expect(Object.values(VIEW_LABEL)).toEqual(["舞台", "回顾", "路线", "工坊"]);
+  it("五个视图各有一个中文名（外壳视图栏与 README 用同一份）", () => {
+    expect(Object.values(VIEW_LABEL)).toEqual(["舞台", "回顾", "路线", "CG", "工坊"]);
   });
 });
 

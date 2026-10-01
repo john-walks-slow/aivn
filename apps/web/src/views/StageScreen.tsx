@@ -15,6 +15,7 @@ import {
 import type { StageView } from "../stage/view.js";
 import { stageTabFromQuery, stageViewFromQuery, workshopConnectionFromQuery } from "../stage/view.js";
 import { RouteTree, useLineage, type LineageOps } from "../stage/LineagePanel.js";
+import { CgView } from "../stage/CgView.js";
 import type { RouteControls } from "../stage/RouteCanvas.js";
 import { StageShell } from "../stage/StageShell.js";
 import { Icon } from "../ui/Icon.js";
@@ -34,7 +35,7 @@ import { useVisualViewport } from "../stage/viewport.js";
 import { useEscape } from "../ui/escape.js";
 import { WorkshopPane } from "../workshop/WorkshopPane.js";
 
-/** 演出屏：舞台（视觉层+打字机+导演栏）/ 回顾 / 路线 / 工坊四视图，共用侧栏外壳。 */
+/** 演出屏：舞台（视觉层+打字机+导演栏）/ 回顾 / 路线 / CG / 工坊五视图，共用侧栏外壳。 */
 export function StageScreen({ playId, search }: { playId: string; /** 路由上的 query：?view=workshop[&tab=…]（标题页直达工坊）。 */ search?: string }) {
   const directorRef = useRef<VoiceDirector | null>(null);
   if (!directorRef.current) directorRef.current = new VoiceDirector();
@@ -90,6 +91,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   /** 回顾的第二视图：剧作家的原始历史（同一份内容区，切视图不换外壳）。默认给原始历史。 */
   const [rawHistory, setRawHistory] = useState(true);
   const [historyNonce, setHistoryNonce] = useState(0);
+  /** CG 页代次：每有一张图到货就自增——开着这一页时新图直接出现在网格里。 */
+  const [cgNonce, setCgNonce] = useState(0);
   /** 路线画布把镜头操作交给侧栏（见 RouteCanvas 的 onControls）。 */
   const [routeControls, setRouteControls] = useState<RouteControls | null>(null);
   const setRouteControlsStable = useCallback((c: RouteControls) => setRouteControls(c), []);
@@ -134,6 +137,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     onAssetReady: (asset) => {
       generated.add([asset]);
       playbackRef.current?.settleAssets([asset.id]);
+      if (asset.type === "cg") setCgNonce((n) => n + 1); // CG 页开着就把它补进网格
     },
     onAssetFailed: (id, message) => {
       playbackRef.current?.settleAssets([id]);
@@ -510,6 +514,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
             lines={stage.lines}
             onControls={setRouteControlsStable}
           />
+        ) : view === "cg" ? (
+          <CgView playId={playId} nonce={cgNonce} />
         ) : (
           <WorkshopPane
             playId={playId}

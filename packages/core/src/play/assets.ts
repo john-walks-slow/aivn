@@ -61,6 +61,33 @@ export interface AssetMeta {
   expressions?: Record<string, SpriteExpression>;
 }
 
+/**
+ * 站内生成的一张图（CG 页的台账）。与 WS 的 `GeneratedAsset` 只差 prompt：
+ * 那个刻意不带 prompt（协议给的是画面，不是内部注解），CG 页是给人读的，
+ * 「这张图当初是用什么描述生成的」正是它要看的东西。
+ */
+export interface GeneratedImageEntry {
+  id: string;
+  type: "bg" | "cg";
+  url: string;
+  /** 生图 prompt；老 manifest 条目可能没有。 */
+  prompt?: string;
+}
+
+/** CG 页台账的一条：静态素材与站内生成的图共用这一个形态，靠 origin 区分。 */
+export interface CgEntry {
+  /** 素材 id = 文件名主体 = 剧本 `<cg id>` 的引用名。 */
+  id: string;
+  /** 图片 URL：静态走素材静态服务，生成的走生图产物静态服务。 */
+  url: string;
+  /** 素材（assets/cg，用户导入或工坊生成落盘）还是站内预发射生成的图。 */
+  origin: "asset" | "generated";
+  /** 生图 prompt：站内生成的图自带；被静态素材顶掉同名 id 时从那条记录里捡回来。 */
+  prompt?: string;
+  /** 素材表里的描述（assets/manifest.json）：静态素材才有。 */
+  description?: string;
+}
+
 /** 资源库条目里的一个文件（预览与体积；URL 由各端按自己的路由拼）。 */
 export interface LibraryFile {
   name: string;

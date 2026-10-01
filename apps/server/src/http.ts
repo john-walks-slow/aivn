@@ -5,9 +5,18 @@ import { join } from "node:path";
 import { withPlayConfigLock, type PlayLibrary } from "./store.js";
 import type { AssetLibrary } from "./library.js";
 import { importFromLibrary } from "./assetImport.js";
+import { readGeneratedEntries } from "./imageAssets.js";
 import type { PlayHouse } from "./playhouse.js";
 import type { SettingsFile } from "./configApi.js";
-import { parsePlayConfig, libraryEntryMatches, ASSET_KINDS as ASSET_KINDS_LIST, type AssetKind } from "@stage-ai/core";
+import {
+  parsePlayConfig,
+  libraryEntryMatches,
+  ASSET_KINDS as ASSET_KINDS_LIST,
+  type AssetKind,
+  type AssetMeta,
+  type CgEntry,
+  type GeneratedImageEntry,
+} from "@stage-ai/core";
 import { DEFAULT_CRAFT } from "./prompt.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
 
@@ -78,6 +87,43 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
 function extOf(name: string): string {
   const idx = name.lastIndexOf(".");
   return idx === -1 ? "" : name.slice(idx + 1).toLowerCase();
+}
+
+/**
+ * CG 页的台账：静态素材与站内生成的图合成一张清单。
+ *
+ * 同一 id 只留一条，静态优先——与 `stage/assets.ts` 的解析口径一致（用户导入的是最终资产，
+ * 同名生成图只是还没被静态素材顶掉的那一份）。两类各自缺的东西在同一条里补齐：
+ * 静态素材没有生图 prompt 但有素材表描述，生成的图反过来。
+ */
+function cgCatalog(
+  playId: string,
+  staticFiles: readonly string[],
+  meta: Record<string, AssetMeta>,
+  generated: readonly GeneratedImageEntry[],
+): CgEntry[] {
+  const out: CgEntry[] = [];
+  const taken = new Set<string>();
+  for (const file of staticFiles) {
+    const id = file.slice(0, file.length - extOf(file).length - 1);
+    if (!id || taken.has(id)) continue;
+    taken.add(id);
+    const generated_ = generated.find((g) => g.id === id);
+    out.push({
+      id,
+      url: `/plays/${playId}/assets/cg/${file}`,
+      origin: "asset",
+      // 同名生成图也认：那条记录里带着这张 id 当初的出图描述，静态素材把它覆盖了但描述还在
+      ...(generated_?.prompt ? { prompt: generated_.prompt } : {}),
+      ...(meta[id]?.description ? { description: meta[id]!.description } : {}),
+    });
+  }
+  for (const asset of generated) {
+    if (asset.type !== "cg" || taken.has(asset.id)) continue;
+    taken.add(asset.id);
+    out.push({ id: asset.id, url: asset.url, origin: "generated", ...(asset.prompt ? { prompt: asset.prompt } : {}) });
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /**
@@ -438,6 +484,17 @@ export async function handleHttp(
       // 素材元数据表（stem → 描述/标签/情绪…）：素材页显示副标题用，剧作家提示词也吃这一份
       if (method !== "GET") return fail(res, 405, "不支持的方法");
       return json(res, 200, await store.assetMeta());
+    }
+    if (sub === "cg" && parts.length === 4) {
+      // CG 页的台账：静态素材（assets/cg，带素材表描述）+ 站内生成的图（带生图 prompt）。
+      // 只读盘上已有的东西：不建 runtime、不触发生图——这一页只为看图，不该牵动演出那条线。
+      if (method !== "GET") return fail(res, 405, "不支持的方法");
+      const [meta, assets, generated] = await Promise.all([
+        store.assetMeta(),
+        store.listAssets(),
+        readGeneratedEntries(playId, store),
+      ]);
+      return json(res, 200, { entries: cgCatalog(playId, assets.cg ?? [], meta, generated) });
     }
     if (sub === "tts-preview" && parts.length === 4) {
       if (method !== "POST") return fail(res, 405, "不支持的方法");

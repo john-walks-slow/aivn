@@ -5,7 +5,7 @@ import type { StageView } from "./view.js";
 import { VIEW_LABEL } from "./view.js";
 
 /**
- * 舞台外壳：左侧导航栏 + 右侧内容区。四个视图（舞台 / 回顾 / 路线 / 工坊）共用这一套，
+ * 舞台外壳：左侧导航栏 + 右侧内容区。五个视图（舞台 / 回顾 / 路线 / CG / 工坊）共用这一套，
  * 换视图不再像换了一个产品——导航、控件风格、宽屏下的版面全都在这里定死。
  *
  * 为什么是侧栏而不是顶栏：宽屏上顶栏只能占一条横线，剩下的版面还是满屏铺开，
@@ -13,7 +13,7 @@ import { VIEW_LABEL } from "./view.js";
  * 「可读的一栏」排版，路线画布也能把整片宽高让出来。栏宽可拖可折叠。
  *
  * 工坊曾经是盖在舞台上的右侧抽屉，另有一个自带顶栏的独立页——两套外壳并存的代价
- * 是「从标题页进工坊，顶栏整个换掉」。现在工坊是本外壳的第四个视图：
+ * 是「从标题页进工坊，顶栏整个换掉」。现在工坊是本外壳的五个视图之一：
  * 顶栏（剧目块 + 折叠键）进哪个视图都长一样，进出工坊不跳变。
  */
 
@@ -47,6 +47,7 @@ const NAV: { id: StageView; label: string; icon: IconName; hint: string }[] = [
   { id: "stage", label: "舞台", icon: "play", hint: "正在演的内容" },
   { id: "backlog", label: "回顾", icon: "backlog", hint: "回顾：这一场说过的话" },
   { id: "route", label: "路线", icon: "fork", hint: "路线：岔出去的世界线" },
+  { id: "cg", label: "CG", icon: "assets", hint: "CG：这一场出过的插图与它们的提示词" },
   { id: "workshop", label: "工坊", icon: "workshop", hint: "工坊：改设定与剧目文件" },
 ];
 

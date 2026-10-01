@@ -240,4 +240,39 @@ describe("buildBeats 一轮一卡", () => {
     expect(cards[0]!.preview).toBe("");
     expect(cards[1]!.preview).toBe("下一拍的台词");
   });
+
+  it("本拍的 CG 记在卡上，且不跨拍继承（背景才继承）", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "scene", 1, undefined, true, { bg: "bg-classroom" }],
+          ["b", "cg", 2, undefined, true, { id: "cg-confession" }],
+          ["c", "beat_end"],
+          ["d", "say", 9, "下一拍"],
+          ["e", "beat_end"],
+        ],
+        "e",
+      ),
+      [],
+    );
+    expect(cards[0]!.cgId).toBe("cg-confession");
+    // CG 是插进这一幕的画，下一幕回到该回的背景
+    expect(cards[1]!.cgId).toBeNull();
+    expect(cards[1]!.sceneBg).toBe("bg-classroom");
+  });
+
+  it("同一拍多张 CG → 取最后一张（这一幕结束前屏幕上停着的那张）", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "cg", 1, undefined, true, { id: "cg-a" }],
+          ["b", "cg", 2, undefined, true, { id: "cg-b" }],
+          ["c", "beat_end"],
+        ],
+        "c",
+      ),
+      [],
+    );
+    expect(cards[0]!.cgId).toBe("cg-b");
+  });
 });

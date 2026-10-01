@@ -313,7 +313,9 @@ function Node({
     .join(" ");
   const who = card.speakers.map((id) => names[id] ?? id).join("、");
   const text = card.preview || "（无台词）";
-  const bg = index?.bg(card.sceneBg) ?? null;
+  // 画面：这一幕出过的 CG 优先于背景。CG 才是这一幕真正给玩家看的那张画，
+  // 拿背景顶上来等于告诉玩家「这一幕没出过图」。
+  const bg = (card.cgId ? index?.cg(card.cgId) : null) ?? index?.bg(card.sceneBg) ?? null;
   const hint = busy ? "剧作家正在写，暂时不能动这一段" : "";
 
   return (
