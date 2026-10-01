@@ -65,7 +65,10 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
   const [pinned, setPinned] = useState<RouteDir | null>(null);
   const [auto, setAuto] = useState<RouteDir>("horizontal");
   const dir = pinned ?? auto;
-  const layout = layoutRoute(cards, dir);
+  // 布局必须 memo：placed 的对象身份是下面那条「把手柄交给外层」effect 的地基。
+  // 每次渲染都重排一次 → focusCard/jumpToLatest/controls 全换身份 → effect 重跑
+  // → 外层 setRouteControls 收到新对象再渲染一圈，闭成 Maximum update depth exceeded。
+  const layout = useMemo(() => layoutRoute(cards, dir), [cards, dir]);
   const { placed, edges, width, height } = layout;
 
   // 方向看窗口：宽屏横着读时间、竖屏从上往下。玩家点名过就不再抢。
