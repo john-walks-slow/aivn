@@ -14,6 +14,8 @@ export interface ImportResult {
   id: string;
   files: string[];
   characters: string[];
+  /** 这次写的是主角卡（角色列表为空）。 */
+  protagonist: boolean;
   manifestKeys: string[];
   /** 剧目配置/素材表的改动（进工坊撤销条；REST 直连时前端不用它）。 */
   writes: { path: string; before: string | null; after: string }[];

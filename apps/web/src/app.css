@@ -3296,6 +3296,10 @@ select:focus {
   background: var(--panel-2);
   color: var(--ink);
 }
+.setting-card.add {
+  border-style: dashed;
+  background: none;
+}
 .setting-card > svg {
   grid-area: icon;
   color: var(--ink-faint);
@@ -3407,22 +3411,6 @@ select:focus {
   gap: 10px;
   margin: 0;
 }
-
-/* 素材页里的世界观前提：只读回显 + 跳去记忆页（编辑器只有一处） */
-.premise-view {
-  margin: 0;
-  padding: 8px 12px;
-  border: 1px dashed var(--line);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  max-height: 8em;
-  overflow-y: auto;
-}
-
 /* ─────────────────────────────────────────────────────────────
    舞台外壳：左侧导航栏 + 内容区（舞台 / 回顾 / 路线 / 工坊共用）
    压在 main 的通用样式之后——同优先级时后者生效。

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { describeAsset, type AssetKind, type LibraryEntry } from "@stage-ai/core";
-import { api, libraryFileUrl } from "../api.js";
+import { api, libraryFileUrl, type ImportResult } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { useEscape } from "../ui/escape.js";
 import { ImageLightbox } from "../ui/ImageLightbox.js";
@@ -39,7 +39,8 @@ export function LibraryBrowser({
   imported: (kind: AssetKind, id: string) => boolean;
   onClose: () => void;
   /** 导入成功后回调：素材页刷新清单。 */
-  onImported: () => void;
+  /** 导入成功：回执里带这次建/覆盖了哪些角色卡 id，调用方据此把焦点挪到落点。 */
+  onImported: (r: ImportResult) => void;
   /** 落点：角色列表（缺省）或主角卡。 */
   target?: "protagonist";
   /** 只列满足条件的条目——主角卡入口只看标了 protagonist 的角色。 */
@@ -93,7 +94,7 @@ export function LibraryBrowser({
       .then((r) => {
         const what = entry.kind === "characters" ? "角色卡" : `${r.files.length} 个文件`;
         setDone((prev) => ({ ...prev, [entry.id]: `已导入 ${what}` }));
-        onImported();
+        onImported(r);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setBusy(null));

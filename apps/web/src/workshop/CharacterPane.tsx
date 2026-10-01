@@ -105,6 +105,22 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
             <span className="setting-card-summary">{c.persona || "（还没写性格）"}</span>
           </button>
         ))}
+        {/* 加人也是这个网格里的一件事：入口摆在人旁边，而不是滚到底部那个角落 */}
+        <button
+          type="button"
+          className="setting-card add"
+          onClick={() => setLibraryInto("")}
+          title="从应用级资源库挑角色卡与立绘复制进本剧目（按条目的 id 建角色，同 id 则覆盖）"
+        >
+          <Icon name="download" size={14} />
+          <span className="setting-card-title">从资源库导入</span>
+          <span className="setting-card-summary">复制现成的角色卡与立绘</span>
+        </button>
+        <button type="button" className="setting-card add" onClick={addCharacter}>
+          <Icon name="plus" size={14} />
+          <span className="setting-card-title">新建角色</span>
+          <span className="setting-card-summary">从空白开始写</span>
+        </button>
       </div>
 
       {active === PROTAGONIST_KEY ? (
@@ -124,7 +140,7 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
             <div className="row small">
               <button className="ghost-btn" onClick={() => setLibraryInto(PROTAGONIST_KEY)}>
                 <span className="btn-icon">
-                  <Icon name="download" size={13} /> 从资源库导入
+                  <Icon name="download" size={13} /> 从资源库导入主角卡
                 </span>
               </button>
             </div>
@@ -161,27 +177,7 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
             }}
           />
         </section>
-      ) : (
-        <section className="panel">
-          <p className="muted small">这张剧目还没有角色。导入现成的，或自己新建一张。</p>
-          <p className="row">
-            <button
-              className="ghost-btn"
-              onClick={() => setLibraryInto("")}
-              title="从应用级资源库挑角色卡与立绘复制进本剧目（按条目的 id 建角色，同 id 则覆盖）"
-            >
-              <span className="btn-icon">
-                <Icon name="download" size={13} /> 从资源库导入角色
-              </span>
-            </button>
-            <button className="ghost-btn" onClick={addCharacter}>
-              <span className="btn-icon">
-                <Icon name="plus" /> 添加角色
-              </span>
-            </button>
-          </p>
-        </section>
-      )}
+      ) : null}
 
       {detail && (active === PROTAGONIST_KEY || activeIndex >= 0) && (
         <p className="row">
@@ -191,25 +187,6 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
           {saved && <span className="muted small">已保存</span>}
         </p>
       )}
-      {detail && (active === PROTAGONIST_KEY || activeIndex >= 0) && (
-        <p className="row">
-          <button
-            className="ghost-btn"
-            onClick={() => setLibraryInto("")}
-            title="从应用级资源库挑角色卡与立绘复制进本剧目（按条目的 id 建角色，同 id 则覆盖）"
-          >
-            <span className="btn-icon">
-              <Icon name="download" size={13} /> 从资源库导入角色
-            </span>
-          </button>
-          <button className="ghost-btn" onClick={addCharacter}>
-            <span className="btn-icon">
-              <Icon name="plus" /> 添加角色
-            </span>
-          </button>
-        </p>
-      )}
-
       {libraryInto !== null && detail && (
         <LibraryBrowser
           playId={playId}
@@ -221,7 +198,7 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
               : false
           }
           onClose={() => setLibraryInto(null)}
-          onImported={() => (libraryInto === PROTAGONIST_KEY ? focus(PROTAGONIST_KEY) : focus(`char:${libraryInto}`))}
+          onImported={(r) => focus(r.protagonist ? PROTAGONIST_KEY : `char:${r.characters[0] ?? libraryInto}`)}
           {...(libraryInto === PROTAGONIST_KEY
             ? {
                 target: "protagonist" as const,
