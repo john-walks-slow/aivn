@@ -52,6 +52,10 @@
   --dialog-ink-soft: #c6bba9; /* 旁白 */
   --dialog-ink-thought: #a9a6c4; /* 内心独白 */
   --dialog-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+  /* 舞台浮层的圆角：台词条 + 画面上浮的那几块（导演工具栏 / 排队面板 / 侧栏唤出键）。
+     全局 --radius 是 2px（近直角，给页面里的卡片与键），但这几块是压在画面上的
+     「窗」，圆角大一点才跟画面脱开、读得出是浮在上面的一层。 */
+  --stage-radius: 10px;
   --nameplate-bg: #fffcf5;
   --nameplate-ink: #23201c;
   --nameplate-line: var(--accent);
@@ -975,7 +979,7 @@ button.link-btn {
 }
 
 /* 台词条：浮在画面上的窗，不是页面里的一块。深色玻璃压住背景图，白字才立得住。
-   近直角 + 一道亮描边 + 一道内发丝线——AVG 窗框的老办法，比圆角 + 投影像游戏。 */
+   一道亮描边 + 一道内发丝线 + 圆角——AVG 窗框的老办法，比只靠投影像游戏。 */
 .theater-dialog {
   position: absolute;
   z-index: 12;
@@ -987,7 +991,7 @@ button.link-btn {
   box-sizing: border-box;
   background: var(--dialog-bg);
   border: 1px solid var(--dialog-line);
-  border-radius: 2px;
+  border-radius: var(--stage-radius);
   padding: 22px 30px 14px;
   /* 预留三行（见 .dialog-text 的 min-height）：1~3 行的台词来回换时高度恒定，画面不再顶一下沉一下 */
   min-height: 168px;
@@ -1116,11 +1120,10 @@ button.link-btn {
   text-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
 }
 
-/* 旁白居中弱色：和台词分型，是 AVG 读起来有节奏的关键 */
+/* 旁白只弱色，不居中：居中是排版式的分型，一段话被居中之后每行起点都在变，
+   眼睛要重新找行首，读长旁白反而费劲。跟台词一样左对齐，靠颜色分型就够。 */
 .dialog-text.narrate {
   color: var(--dialog-ink-soft);
-  text-align: center;
-  padding: 0 2em;
 }
 
 .dialog-text.thought {
@@ -3799,6 +3802,8 @@ select:focus {
 }
 
 /* 窄屏抽屉关着时的唤出键：浮在内容左上角，换回全部导航。幽灵键同款（padding: 0 同理）。 */
+/* 侧栏唤出键：跟台词条同一块深色玻璃。画面上四角浮着的东西（唤出键 / 导演工具栏 /
+   排队面板）用同一套底色与圆角，才看得出是同一层界面浮在画面上，而不是三张卡片。 */
 .side-drawer-btn {
   position: absolute;
   z-index: 3;
@@ -3809,15 +3814,16 @@ select:focus {
   width: 38px;
   height: 38px;
   padding: 0;
-  border: none;
-  border-radius: var(--radius);
-  background: var(--panel);
-  color: var(--ink-soft);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--dialog-line);
+  border-radius: var(--stage-radius);
+  background: var(--dialog-bg);
+  color: var(--dialog-ink);
+  box-shadow: var(--dialog-shadow);
   cursor: pointer;
 }
 .side-drawer-btn:hover {
-  color: var(--accent);
+  background: rgb(242 235 222 / 0.14);
+  color: #fff;
 }
 
 /* 有视图栏时，唤出键进视图栏左边的空档（不是往下压到内容上）：
@@ -3884,9 +3890,8 @@ select:focus {
 /* 导演工具栏：舞台右上角的一排导演动作（提示 / 改写 / 重来 / 重听）。
    「正在生成」面板排在这条的正下方（.prompt-queue 的 top 见下），两块同在右上角
    但上下错开、不重叠——之前两处都锚 top/right，整块叠上 211×42 看着像同一块面板。
-   自带一块底，而不是把字直接浮在画面上：光靠 text-shadow 撑，浅色背景一压就读不出来。
-   底跟说话人名牌同白（nameplate-bg），但不描主题色的边——说话人名牌那圈红是
-   「谁在说话」的标记，工具栏没有这个含义，跟着描一圈只会白添一个视觉重点。 */
+   底、描边、字色全跟台词条同一套深色玻璃：这几块都是压在画面上的「窗」，
+   用浅色卡片会跟画面里的亮处打架，也跟下面的台词条不像一家人。 */
 .theater-director {
   position: absolute;
   z-index: 45;
@@ -3898,16 +3903,16 @@ select:focus {
   gap: 2px;
   max-width: calc(100% - 20px);
   padding: 0 4px;
-  border-radius: 1px;
-  background: var(--nameplate-bg);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--dialog-line);
+  border-radius: var(--stage-radius);
+  background: var(--dialog-bg);
+  box-shadow: var(--dialog-shadow);
 }
 .theater-director .dir-btn {
-  color: var(--nameplate-ink);
-  text-shadow: none;
+  color: var(--dialog-ink);
 }
 .theater-director .dir-btn:hover:not(:disabled) {
-  background: rgb(35 32 28 / 0.07);
+  background: rgb(242 235 222 / 0.14);
 }
 .theater-director .dir-btn.on {
   background: var(--accent);
@@ -3992,15 +3997,16 @@ select:focus {
   right: 12px;
   width: min(78vw, 280px);
   padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--dialog-line);
+  border-radius: var(--stage-radius);
+  background: var(--dialog-bg);
+  box-shadow: var(--dialog-shadow);
+  color: var(--dialog-ink);
   font-size: 12.5px;
 }
 .prompt-queue-title {
   margin: 0 0 6px;
-  color: var(--ink-faint);
+  color: var(--dialog-ink-soft);
   font-size: 11px;
 }
 .prompt-queue ul {
@@ -4017,22 +4023,22 @@ select:focus {
   gap: 6px;
   padding: 4px 6px;
   border-left: 2px solid var(--accent);
-  border-radius: 4px;
-  background: var(--dialog, rgba(0, 0, 0, 0.12));
+  border-radius: 6px;
+  background: rgb(242 235 222 / 0.07);
 }
 .prompt-queue-row.sent {
-  border-left-color: var(--line);
+  border-left-color: rgb(238 226 204 / 0.28);
   opacity: 0.5;
 }
 .prompt-queue-text {
   flex: 1 1 auto;
   min-width: 0;
-  color: var(--ink);
+  color: var(--dialog-ink);
   overflow-wrap: anywhere;
 }
 .prompt-queue-meta {
   flex: 0 0 auto;
-  color: var(--ink-faint);
+  color: var(--dialog-ink-soft);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -4042,11 +4048,11 @@ select:focus {
   padding: 2px;
   border: none;
   background: none;
-  color: var(--ink-faint);
+  color: var(--dialog-ink-soft);
   cursor: pointer;
 }
 .prompt-queue-tool:hover {
-  color: var(--accent);
+  color: var(--dialog-ink);
 }
 .prompt-queue-row input {
   flex: 1 1 auto;
@@ -4054,7 +4060,7 @@ select:focus {
   border: none;
   outline: none;
   background: transparent;
-  color: var(--ink);
+  color: var(--dialog-ink);
   font: inherit;
 }
 /* 舞台上不占固定位置的提示走 toast；非演出页面（剧目库/素材/工坊）仍是页面内的一条横幅 */
@@ -4452,7 +4458,7 @@ select:focus {
   margin: 2px 0 0;
   max-height: 9em;
   overflow-y: auto;
-  color: var(--ink-faint);
+  color: var(--dialog-ink-soft);
   font-size: 11px;
   line-height: 1.45;
   overflow-wrap: anywhere;
