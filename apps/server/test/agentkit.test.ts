@@ -81,7 +81,12 @@ describe("agent kit：两个角色的暴露面", () => {
   });
 
   it("写 prompt 的硬约束两个角色同一份（只写在工坊提示词里，等于剧作家那份没修）", () => {
-    const rules = ["逐条带上角色卡的外貌", "垫图就是身份基准", "由引擎自动拼在 prompt 末尾"];
+    const rules = [
+      "逐条带上角色卡的外貌",
+      "垫图就是身份基准",
+      "由引擎自动拼在 prompt 末尾",
+      "姿势、机位、景别都要显式写",
+    ];
     for (const role of [playwriter, workshop] as const) {
       const desc = role().tools.find((t) => t.name === "generate_image")!.description;
       for (const rule of rules) expect(desc).toContain(rule);

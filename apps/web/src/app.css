@@ -1011,20 +1011,20 @@ button.link-btn {
 
 .theater-sprite {
   position: absolute;
-  /* 取景：头顶留 5% 余量，立绘图上大腿线（自顶约 55%）落在台词条上沿——可见部分就是「大腿以上」。
-     桌面实测舞台 758px / 台词条 179px：125% + -30% 时头顶距台面顶 38px、大腿线 580px ≈ 台词条 582px。 */
-  height: 125%;
-  bottom: -30%;
+  /* 取景：头顶留 9% 余量（桌面实测 68px），立绘图上大腿线（自顶约 55%）压在台词条上沿略上方——
+     可见部分是「大腿以上」，人物比满台高小一圈。 */
+  height: 115%;
+  bottom: -24%;
   transform: translateX(-50%);
   transition: opacity var(--fade-ms) ease;
 }
 
 /* 竖屏舞台（412x839）比 9:16 立绘还窄：人物本身只占图宽 70%，两侧各能裁 15% 再多就切到头发，
-   所以这里把高度压到 109%（裁 5%），代价是大腿线落在台词条上方一点，露出到膝盖。 */
+   所以这里把高度压到 102%，代价是大腿线落在台词条上方一段，露出到膝盖。 */
 @media (max-aspect-ratio: 1/1) {
   .theater-sprite {
-    height: 109%;
-    bottom: -15%;
+    height: 102%;
+    bottom: -10%;
   }
 }
 
