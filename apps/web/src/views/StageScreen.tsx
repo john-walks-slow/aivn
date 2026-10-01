@@ -328,7 +328,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   }, [socketError, pushToast]);
 
   // 侧栏的工具段：当前视图自己才有的操作（回顾的第二个视图、路线的镜头）。
-  // 导航（舞台/回顾/路线/工坊）归侧栏本体，退出只有「回剧目」一个出口。
+  // 导航（舞台/回顾/路线/工坊）归侧栏本体，离开这场戏只有底栏「回封面」一个出口。
   const tools = view === "backlog" ? (
     <>
       <div className="side-tools-title">看哪一层</div>

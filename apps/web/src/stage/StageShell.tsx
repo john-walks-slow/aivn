@@ -33,7 +33,7 @@ function readWidth(): number {
 export interface StageShellProps {
   view: StageView;
   onView: (view: StageView) => void;
-  /** 回剧目首页（离开这场戏）。侧栏里唯一的出口，不另配「关闭」键。 */
+  /** 回封面（离开这场戏，回标题画面）。侧栏里唯一的出口，不另配「关闭」键。 */
   onExit: () => void;
   title: string;
   saveName: string | null;
@@ -128,15 +128,7 @@ export function StageShell(props: StageShellProps) {
 
       <aside className="stage-side" ref={sideRef} aria-label="剧目导航">
         <header className="stage-side-head">
-          <button
-            type="button"
-            className="side-exit"
-            onClick={onExit}
-            title={`退出这场戏，回到剧目：${props.title}`}
-          >
-            <Icon name="exit" />
-            <span className="side-title">{props.title}</span>
-          </button>
+          <span className="side-title">{props.title}</span>
           <button
             type="button"
             className="side-collapse"
@@ -170,13 +162,29 @@ export function StageShell(props: StageShellProps) {
 
         {props.tools && <div className="stage-side-tools">{props.tools}</div>}
 
+        {/* 底栏：这场戏自己的两件事——当前周目、离开这场戏。出口不是视图，
+            放在导航里读起来像第六个视图，钉在最底下才对。 */}
         <footer className="stage-side-foot">
           {props.saveName && (
-            <button type="button" className="side-save" onClick={props.onSaves} title="切换周目">
+            <button
+              type="button"
+              className="side-foot-btn"
+              onClick={props.onSaves}
+              title="切换周目"
+            >
               <Icon name="files" size={16} />
               <span className="side-label">{props.saveName}</span>
             </button>
           )}
+          <button
+            type="button"
+            className="side-foot-btn side-exit"
+            onClick={onExit}
+            title={`回到封面：继续、开新周目（${props.title}）`}
+          >
+            <Icon name="exit" size={16} />
+            <span className="side-label">回封面</span>
+          </button>
         </footer>
 
         {!narrow && (

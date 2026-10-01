@@ -3480,17 +3480,13 @@ select:focus {
 .side-closed .stage-side-tools {
   display: none;
 }
-/* 收起后 52px 只放得下一个图标：退出块与折叠键各自居中 */
+/* 收起后 52px 只放得下一个图标：折叠键居中 */
 .side-closed .stage-side-head {
   flex-direction: column;
   gap: 6px;
 }
-.side-closed .side-exit {
-  justify-content: center;
-  padding: 6px;
-}
 
-/* 作品名块：像标题画面上的 logo 那一块，也是离开这场戏的唯一出口 */
+/* 侧栏头：这场戏的名字（纯文本，不可点）+ 折叠键。离开这场戏的出口在底栏（周目下面那一行）。 */
 .stage-side-head {
   display: flex;
   align-items: center;
@@ -3613,6 +3609,11 @@ select:focus {
 .side-nav-btn:hover:not(.active) {
   border-color: var(--line);
 }
+
+/* 导航到此为止：末项不再画下边线（下面要么是工具区、要么是底栏，都会自己画一条） */
+.stage-side-nav .side-nav-btn:last-child {
+  border-bottom: none;
+}
 .side-nav-btn > svg {
   flex-shrink: 0;
 }
@@ -3688,19 +3689,20 @@ select:focus {
   line-height: 1.5;
 }
 
-/* 底部：周目（跳周目页）。演出相关的设置（语音、「无选项轮次间插入继续」）
-   不在这里——它们在工坊的「设置」页，侧栏只负责导航。 */
+/* 底部：这场戏自己的两件事——当前周目（跳周目页）、回封面（离开这场戏）。
+   演出相关的设置（语音、「无选项轮次间插入继续」）不在这里——它们在工坊的「设置」页，
+   侧栏只负责导航。 */
 .stage-side-foot {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
   margin-top: auto;
   padding: 0;
   border-top: 1px solid var(--line);
   background: var(--bg);
 }
 
-.side-save {
+.side-foot-btn {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -3715,12 +3717,16 @@ select:focus {
   text-align: left;
   cursor: pointer;
 }
-.side-save:hover {
+.side-foot-btn:hover {
   background: var(--accent-soft);
   color: var(--accent);
 }
-.side-save > svg {
+.side-foot-btn > svg {
   flex-shrink: 0;
+}
+/* 出口压在周目下面，两者之间留一条线：周目是这场戏内部的事，出口是离开它 */
+.side-exit {
+  border-top: 1px solid var(--line);
 }
 
 /* 右边缘的拖动条：双击复位 */
