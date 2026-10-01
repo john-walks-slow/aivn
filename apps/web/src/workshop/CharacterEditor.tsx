@@ -125,7 +125,7 @@ export function CharacterEditor({
           {previewing ? "合成中…" : "试听"}
         </button>
       </div>
-      <p className="muted small">立绘差分映射（expression → 文件）——差分文件传在这里，会落到 sprites/{char.id}/</p>
+      <p className="muted small">立绘差分映射（表情 → 立绘）</p>
       {rows.map((row) => (
         <div key={row.id} className="row small">
           <input

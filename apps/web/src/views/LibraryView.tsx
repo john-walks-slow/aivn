@@ -2,23 +2,12 @@ import { useEffect, useState } from "react";
 
 import {
   api,
-  assetUrl,
+  coverUrl,
   readinessAdvice,
   readinessMissing,
   type PlaySummary,
 } from "../api.js";
 import { navigate } from "../router.jsx";
-
-/**
- * 封面：取这张剧目里第一张背景，其次插图。
- * 作品选择界面靠封面认人——纯文字牌排出来是列表页，不是启动器。
- */
-function coverOf(playId: string, assets: Record<string, string[]> | undefined): string | null {
-  const bg = assets?.backgrounds?.[0];
-  if (bg) return assetUrl(playId, "backgrounds", bg);
-  const cg = assets?.cg?.[0];
-  return cg ? assetUrl(playId, "cg", cg) : null;
-}
 
 /** 应用首页 = 剧目库：作品牌 + 底部一条管理入口。 */
 export function LibraryView() {
@@ -36,9 +25,8 @@ export function LibraryView() {
         setPlays(list);
         void Promise.all(
           list.map((play) =>
-            api
-              .listAssets(play.id)
-              .then((assets) => [play.id, coverOf(play.id, assets)] as const)
+            Promise.all([api.playDetail(play.id), api.listAssets(play.id)])
+              .then(([detail, assets]) => [play.id, coverUrl(play.id, detail.play.cover, assets)] as const)
               .catch(() => [play.id, null] as const),
           ),
         ).then((pairs) => setCovers(Object.fromEntries(pairs)));

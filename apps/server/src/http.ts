@@ -17,7 +17,6 @@ import {
   type CgEntry,
   type GeneratedImageEntry,
 } from "@stage-ai/core";
-import { DEFAULT_CRAFT } from "./prompt.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
 
 const BODY_LIMIT = 64 * 1024 * 1024;
@@ -403,13 +402,11 @@ export async function handleHttp(
       }
       return fail(res, 405, "不支持的方法");
     }
-    // —— 创作口径（craft.md）：一等公民读写口，缺文件回退默认正文 ——
+    // —— 创作口径（craft.md）：一等公民读写口，默认为空（内置准则在系统提示词里）——
     if (sub === "craft" && parts.length === 4) {
       const runtime = await playhouse.get(playId);
       if (method === "GET") {
-        const onDisk = await runtime.workshop.files.read(CRAFT_PATH).catch(() => "");
-        const content = onDisk.trim() ? onDisk : DEFAULT_CRAFT;
-        return json(res, 200, { content, isDefault: !onDisk.trim() });
+        return json(res, 200, { content: await runtime.workshop.files.read(CRAFT_PATH).catch(() => "") });
       }
       if (method === "PUT") {
         const body = JSON.parse((await readBody(req)).toString("utf8")) as { content?: string };

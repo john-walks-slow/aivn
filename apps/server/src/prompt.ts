@@ -7,15 +7,13 @@ import type { PlayMemory } from "./memory.js";
 export type AssetManifest = Record<string, string[]>;
 
 /**
- * 创作口径默认正文——落盘为 plays/<id>/memory/always/craft.md。
- * 这里只放**风格类**规则（节奏/表达/禁项）；引擎契约（DSL 标签序、工具语义、【状态】区、
- * 输出纯净）留在 buildSystemPrompt 的内置段里，用户改不坏。工坊 agent 与工坊「创作口径」tab 改的都是这一份。
+ * 台词口径的内置部分：每一部剧目的剧作家都照这几条写，所以它是引擎自带的，
+ * 与「演出契约」同层——用户改不掉，也不需要改。
+ *
+ * 剧目自己的风格要求走 memory/always/craft.md（用户与工坊共编，新剧目默认为空）。
+ * 那一栏空着时就只剩这里；它一有内容，两边一起生效，剧目那份是补充而不是替代。
  */
-export const DEFAULT_CRAFT = `# 创作口径
-
-> 这份文件是剧作家的创作口径：台词怎么写、节奏多密、情绪怎么落地。
-> 你可以在工坊里直接改，工坊 agent 也能改，改动从下一轮生效。
-> 格式自由——删条目、换措辞、加自己的规则都可以。
+export const CRAFT_RULES = `# 台词怎么写
 
 1. 一轮 3~8 行台词为宜：一小段有起伏的演出，然后停在停止点等玩家。
 2. 展示而非陈述：情绪走动作、语气与台词本身，不用旁白直接解释心理。
@@ -134,9 +132,10 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 
   // 世界观前提的唯一真相源是 memory/always/premise.md：没有它就没有 A 区，剧作家无从下手
   const premise = memory?.premise.trim() ?? "";
-  // 创作口径：外置到 memory/always/craft.md（工坊与用户共编），缺失/空则回退默认。
-  // 原样注入——文件自带「# 创作口径」标题，不再套一层壳。
-  const craftSection = `\n${(memory?.craft.trim() || DEFAULT_CRAFT).trim()}\n`;
+  // 剧目自己的创作口径：外置到 memory/always/craft.md（工坊与用户共编），默认为空。
+  // 原样注入——文件自带什么标题就带什么标题，不再套一层壳；空则只剩内置的 CRAFT_RULES。
+  const craft = memory?.craft.trim() ?? "";
+  const craftSection = craft ? `\n${craft}\n` : "";
   const cards = memory?.visibleContext(ctx.arcIds ?? []) ?? [];
   const indexSection =
     cards.length > 0
@@ -158,6 +157,7 @@ beat_done 的参数决定这一轮停在哪里：给 2~4 个 options 就是把�
 停止点是这一轮的出口，不是故事的终点——玩家回应之后，故事继续由你往下写。
 世界线、存档、重演、跳转是引擎和玩家的事，不用你操心，也写不进剧本。
 
+${CRAFT_RULES}
 # 剧目设定
 
 ${premise}

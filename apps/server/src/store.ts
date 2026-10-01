@@ -10,7 +10,6 @@ import {
 } from "@stage-ai/core";
 import { parsePlayConfig, parsePlayAssetManifest, type AssetMeta, type PlayConfig } from "@stage-ai/core";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
-import { DEFAULT_CRAFT } from "./prompt.js";
 import { parseHistory, type HistoryBeat } from "./history.js";
 import { hasAnySave, readSaveMeta, saveDirOf, writeSaveMeta, assertSaveId, PlaySaves, type SaveMeta } from "./saves.js";
 
@@ -368,21 +367,6 @@ export class PlayStore {
 }
 
 /** 剧目库（plays/ 根）：列表/导入/导出。 */
-/**
- * 新剧目自带的世界与人物设定模板。
- * 正文是「该怎么写」的引导而不是设定本身：用户打开就知道填什么，两行改完就是自己的设定。
- * 留着这份正文也安全——空树照样能开演（剧作家会自由发挥），这段引导会作为 A 区注入。
- */
-const PREMISE_TEMPLATE = `# 世界与人物设定
-
-写在这里的内容会原样进剧作家的上下文，它据此写每一轮。建议写清三件事：
-
-- 这个世界在哪儿、什么年代、什么规矩
-- 主要人物是谁、想要什么、彼此是什么关系
-- 故事从哪个瞬间开始
-
-还没写完也能直接开演——剧作家会按它已有的东西自由发挥。
-`;
 
 /** 新剧目落盘：play.json + 两份最基础的设定文件。 */
 const CRAFT_PATH = "memory/always/craft.md";
@@ -483,7 +467,9 @@ export class PlayLibrary {
     return zipSync(files, { level: 6 });
   }
 
-  /** 新建空剧目（剧目库「新建」脚手架）。前提不预置——就绪门会把它列为缺项。 */
+  /** 新建空剧目（剧目库「新建」脚手架）。两份常驻设定建好但留空——
+   *  建文件是为了它在设定页有一张卡可编辑，空文件才是「用户还没写」。
+   *  模板正文一律不进 A 区：剧作家该读的是用户写的设定，不是我们的写作指引。 */
   async createEmpty(playId: string, title: string): Promise<void> {
     const dir = join(this.root, playId);
     if (existsSync(join(dir, "play.json"))) throw new Error(`剧目已存在: ${playId}`);
@@ -505,8 +491,8 @@ export class PlayLibrary {
         2,
       ),
     );
-    await writeFile(join(dir, PREMISE_PATH), PREMISE_TEMPLATE);
-    await writeFile(join(dir, CRAFT_PATH), DEFAULT_CRAFT);
+    await writeFile(join(dir, PREMISE_PATH), "");
+    await writeFile(join(dir, CRAFT_PATH), "");
   }
 
   /** 删除剧目（整目录：play.json/素材/会话，不可恢复；调用方先停 runtime）。 */

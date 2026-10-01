@@ -132,9 +132,9 @@ export function StageShell(props: StageShellProps) {
             type="button"
             className="side-exit"
             onClick={onExit}
-            title={`回到剧目：${props.title}`}
+            title={`退出这场戏，回到剧目：${props.title}`}
           >
-            <Icon name="back" />
+            <Icon name="exit" />
             <span className="side-title">{props.title}</span>
           </button>
           <button

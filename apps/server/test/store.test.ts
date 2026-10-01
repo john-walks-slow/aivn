@@ -62,13 +62,14 @@ describe("PlayLibrary 剧目包导入与删除", () => {
     ).rejects.toThrow("非法剧目 id");
   });
 
-  it("createEmpty 落盘设定模板；remove 整目录删除", async () => {
+  it("createEmpty 落两份空设定；remove 整目录删除", async () => {
     await library.createEmpty("blank", "空白");
     const store = library.store("blank");
-    // 新剧目自带一份可改的引导正文：打开就知道该写什么，不用先知道「记忆」这个概念
-    expect(await store.premise()).toContain("世界与人物设定");
-    expect((await store.readiness()).premise).toBe(true);
-    expect(await readFile(join(root, "blank", "memory/always/craft.md"), "utf8")).toContain("创作口径");
+    // 两份设定默认就是空的：引导写在输入框的 placeholder 里，写进文件只会让人
+    // 以为「已经填过了」，而模板正文还会让就绪门误判前提已就位
+    expect((await store.premise()).trim()).toBe("");
+    expect((await store.readiness()).premise).toBe(false);
+    expect((await readFile(join(root, "blank", "memory/always/craft.md"), "utf8")).trim()).toBe("");
     await library.remove("blank");
     expect(existsSync(join(root, "blank"))).toBe(false);
   });

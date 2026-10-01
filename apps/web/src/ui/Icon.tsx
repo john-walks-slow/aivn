@@ -13,6 +13,7 @@ import {
   GitBranch,
   Hammer,
   Image,
+  LogOut,
   Maximize2,
   MessageSquare,
   MessagesSquare,
@@ -44,6 +45,8 @@ import {
  */
 const ICONS = {
   back: ArrowLeft,
+  /** 离开这场戏回剧目库：不是「上一层」，所以不给返回箭头。 */
+  exit: LogOut,
   forward: ArrowRight,
   plus: Plus,
   close: X,

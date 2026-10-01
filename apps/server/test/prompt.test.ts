@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSystemPrompt, DEFAULT_CRAFT } from "../src/prompt.js";
+import { buildSystemPrompt, CRAFT_RULES } from "../src/prompt.js";
 import { PlayMemory } from "../src/memory.js";
 import { PLAY } from "./helpers.js";
 
@@ -106,19 +106,24 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
 });
 
 describe("buildSystemPrompt：创作口径与演出契约", () => {
-  it("没有 craft.md 时用内置默认口径，并标出可改的边界", () => {
+  it("内置口径始终在（craft.md 是补充，不是替代）", () => {
     const prompt = buildSystemPrompt({ play: PLAY });
-    expect(prompt).toContain(DEFAULT_CRAFT);
-    expect(prompt).toContain("# 创作口径");
+    expect(prompt).toContain(CRAFT_RULES);
   });
 
-  it("craft.md 覆盖默认口径（用户手写与工坊 agent 改的是同一份）", () => {
+  it("craft.md 有内容就与内置口径一起注入", () => {
     const prompt = buildSystemPrompt({
       play: PLAY,
-      memory: new PlayMemory({ craft: "# 创作口径\n\n每轮只写一句。" }),
+      memory: new PlayMemory({ craft: "每轮只写一句。" }),
     });
     expect(prompt).toContain("每轮只写一句。");
-    expect(prompt).not.toContain(DEFAULT_CRAFT);
+    expect(prompt).toContain(CRAFT_RULES);
+  });
+
+  it("craft.md 为空时不注入任何剧目口径（新剧目的默认状态）", () => {
+    const prompt = buildSystemPrompt({ play: PLAY, memory: new PlayMemory({ craft: "   " }) });
+    expect(prompt).toContain(CRAFT_RULES);
+    expect(prompt).not.toContain("# 创作口径");
   });
 
   it("演出契约单列为引擎规则，与可改的创作口径分开", () => {
@@ -151,9 +156,8 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
   it("输出纯净不再依赖可被用户删掉的口径文件", () => {
     const prompt = buildSystemPrompt({
       play: PLAY,
-      memory: new PlayMemory({ craft: "# 创作口径\n\n只写一句。" }),
+      memory: new PlayMemory({ craft: "只写一句。" }),
     });
-    expect(prompt).not.toContain(DEFAULT_CRAFT);
     expect(prompt).toContain("你是剧本引擎，不是助手");
   });
 

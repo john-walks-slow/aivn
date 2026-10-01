@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { PlayConfig } from "@stage-ai/core";
+import type { PlayConfig, PlayCover } from "@stage-ai/core";
 import { languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
-import { api, type PlayFile } from "../api.js";
+import { api, assetUrl, type PlayFile } from "../api.js";
 import { Icon, type IconName } from "../ui/Icon.js";
 
 const CRAFT_PATH = "memory/always/craft.md";
@@ -27,6 +27,8 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
   const [open, setOpen] = useState<string | null>(PREMISE_PATH);
   /** 记忆卡的本地正文：只在打开某一张时拉，避免为每张都占一份 state。 */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  /** 可当封面的图：剧目自己的背景与插图。 */
+  const [assets, setAssets] = useState<Record<string, string[]>>({});
 
   const reload = useCallback((): void => {
     api
@@ -34,6 +36,7 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
       .then((d) => setDraft(d.play))
       .catch((e: Error) => setError(e.message));
     api.listFiles(playId).then(setFiles).catch(() => {});
+    api.listAssets(playId).then(setAssets).catch(() => {});
   }, [playId]);
   useEffect(reload, [reload, revision]);
 
@@ -172,6 +175,13 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
               </select>
               <p className="muted small">翻译由 LLM 完成，任何小语种都能用——前提是所选音色支持该语言。</p>
             </label>
+            <CoverPicker
+              playId={playId}
+              assets={assets}
+              current={draft.cover}
+              onPick={(cover) => patch((p) => (p.cover = cover))}
+              onClear={() => patch((p) => delete p.cover)}
+            />
           </>
         ) : active.kind === "file" ? (
           <>
@@ -188,6 +198,7 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
               onChange={(v) => setDrafts((prev) => ({ ...prev, [active.path]: v }))}
               onSave={() => saveFile(active.path)}
               onDirty={(dirty) => setSaved(!dirty)}
+              placeholder={HINTS[active.path] ?? ""}
             />
           </>
         ) : null}
@@ -211,6 +222,76 @@ const TITLES: Record<string, string> = {
   [PREMISE_PATH]: "世界与人物设定",
   [CRAFT_PATH]: "创作口径",
 };
+
+/**
+ * 两份常驻设定的空态提示。
+ *
+ * 新剧目这两份是空的。「该怎么写」的话一旦存进文件就成了设定的一部分，剧作家会当成人写的
+ * 内容照读（写作指引混进设定，是模板化剧目的起点），所以引导只留在占位符里：
+ * 看得见、存不进去、不进模型。
+ */
+const HINTS: Record<string, string> = {
+  [PREMISE_PATH]:
+    "这个世界在哪儿、什么年代、什么规矩；主要人物是谁、想要什么、彼此什么关系；故事从哪个瞬间开始。\n留空也能开演——剧作家会按它已有的东西自由发挥。",
+  [CRAFT_PATH]: "这部剧的台词口径：节奏多密、情绪怎么落地、有什么禁项。\n留空就用引擎内置的通用准则。",
+};
+
+/**
+ * 封面：从剧目已有的背景与插图里挑一张，不另存文件。
+ *
+ * 没指定时剧目库与标题画面按「第一张背景 → 第一张插图」自动取，所以「清除」不是把封面
+ * 清成空白，而是交还给自动挑的那张。
+ */
+function CoverPicker({
+  playId,
+  assets,
+  current,
+  onPick,
+  onClear,
+}: {
+  playId: string;
+  assets: Record<string, string[]>;
+  current: PlayCover | undefined;
+  onPick: (cover: PlayCover) => void;
+  onClear: () => void;
+}) {
+  const images: PlayCover[] = [
+    ...(assets.backgrounds ?? []).map((id) => ({ kind: "backgrounds", id }) as PlayCover),
+    ...(assets.cg ?? []).map((id) => ({ kind: "cg", id }) as PlayCover),
+  ];
+  return (
+    <div className="field">
+      <span>封面</span>
+      {images.length === 0 ? (
+        <p className="muted small">还没有背景或插图可当封面。</p>
+      ) : (
+        <>
+          <div className="cover-picker">
+            {images.map((img) => (
+              <button
+                key={`${img.kind}/${img.id}`}
+                type="button"
+                className={`cover-pick${current?.kind === img.kind && current.id === img.id ? " on" : ""}`}
+                onClick={() => onPick(img)}
+                title={img.id}
+              >
+                <img src={assetUrl(playId, img.kind, img.id)} alt={img.id} loading="lazy" />
+              </button>
+            ))}
+          </div>
+          <p className="row">
+            <button className="ghost-btn" onClick={onClear} disabled={!current}>
+              恢复自动挑选
+            </button>
+            <span className="muted small">
+              {current ? current.id : "自动：背景里挑第一张，没有就用插图里的第一张"}
+            </span>
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
 
 /** 记忆卡所属的组（卡片副标题）：常驻设定先摆，因为它每轮都注入。 */
 function rankOf(key: string): number {
@@ -238,6 +319,7 @@ function FileEditor({
   path,
   value,
   readOnly,
+  placeholder,
   onChange,
   onSave,
   onDirty,
@@ -245,6 +327,8 @@ function FileEditor({
   path: string;
   value: string;
   readOnly: boolean;
+  /** 空态提示（只给两份常驻设定，其余记忆卡没有）。 */
+  placeholder?: string;
   onChange: (v: string) => void;
   onSave: () => void;
   onDirty: (dirty: boolean) => void;
@@ -259,6 +343,7 @@ function FileEditor({
         className="file-body"
         readOnly={readOnly}
         rows={18}
+        placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -267,7 +352,6 @@ function FileEditor({
           <button className="primary" disabled={!dirty} onClick={onSave}>
             保存
           </button>
-          <span className="muted small">{path}</span>
         </p>
       )}
     </>

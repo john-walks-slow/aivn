@@ -4,6 +4,7 @@ import type {
   LibraryEntry,
   LineageView,
   PlayConfig,
+  PlayCover,
   VoiceCatalog,
   VoiceEntry,
 } from "@stage-ai/core";
@@ -157,10 +158,9 @@ export interface TtsKeys {
   keys: string[];
 }
 
-/** 创作口径正文（memory/always/craft.md）。isDefault = 磁盘上没有文件，当前看的是内置默认。 */
+/** 创作口径正文（memory/always/craft.md）。新剧目为空——内置准则在剧作家的系统提示里。 */
 export interface Craft {
   content: string;
-  isDefault: boolean;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -372,4 +372,25 @@ export function fileUrl(playId: string, path: string): string {
 /** 资源库条目内文件的预览 URL（库在服务端只读直出，不经剧目目录）。 */
 export function libraryFileUrl(kind: string, id: string, file: string): string {
   return `/library/${kind}/${id}/${encodeURIComponent(file)}`;
+}
+
+/**
+ * 剧目封面 URL：play.json 里指定的那张，没有就取剧目里第一张背景、其次第一张插图。
+ *
+ * 剧目库封面与标题画面共用这一处——两处各写一遍「先背景后插图」时，改一处就有一处
+ * 显示的是另一张图。指向的图被删了同样回落，不留一个永远裂开的封面。
+ */
+export function coverUrl(
+  playId: string,
+  cover: PlayCover | undefined,
+  assets: Record<string, string[]> | undefined,
+): string | null {
+  if (cover) {
+    const file = (assets?.[cover.kind] ?? []).includes(cover.id) ? cover.id : undefined;
+    if (file) return assetUrl(playId, cover.kind, file);
+  }
+  const bg = assets?.backgrounds?.[0];
+  if (bg) return assetUrl(playId, "backgrounds", bg);
+  const cg = assets?.cg?.[0];
+  return cg ? assetUrl(playId, "cg", cg) : null;
 }

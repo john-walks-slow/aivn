@@ -78,6 +78,9 @@ ${ctx.canGenerate ? imageGuide : "- 生图当前不可用：把该出的图列�
 - **画风没有默认值**：用户没说就问，定下来写进 memory/always/craft.md，之后以它为准。别擅自给整部剧目套二次元。
 - 素材 id 用英文小写（下划线也行）：背景与 CG 的 id 会被剧本的 \`<scene bg="..."\` / \`<cg id="..."\` 直接引用，起名要有语义（rooftop、classroom_dusk），别用 bg1、test2。
 - 覆盖已有素材会替掉用户导入的图，覆盖前先说清楚。
+- **出完图可以顺手把封面指一下**：play.json 的 \`cover\`（\`{"kind":"backgrounds"|"cg","id":"文件名带扩展名"}\`）
+  决定剧目库那张牌与标题画面的底图。不设就自动取第一张背景、没有则第一张插图。
+  用户说「拿这张当封面」时写进去；换图后记得跟着改，被删掉的图会自动回落到自动挑选。
 
 ${skills}
 ${ctx.canBrowseLibrary ? libraryGuide : ""}

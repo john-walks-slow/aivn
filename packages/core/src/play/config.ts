@@ -44,10 +44,24 @@ export interface AgentSettings {
   disabledTools?: string[];
 }
 
+/**
+ * 剧目封面：指向剧目自己的一张图（背景或插图）。
+ *
+ * 只有这两个目录——封面本来就是「剧目里已经有的那张画」，不该另存一份文件，
+ * 换了图也不该有两份要同步。缺省时回落取第一张背景、没有则第一张插图。
+ */
+export interface PlayCover {
+  kind: "backgrounds" | "cg";
+  /** 素材文件名（不是 stem）；静态服务按原名取。 */
+  id: string;
+}
+
 export interface PlayConfig {
   id: string;
   title: string;
   characters: CharacterCard[];
+  /** 剧目卡与标题画面的封面图。缺省按「第一张背景 → 第一张插图」自动取。 */
+  cover?: PlayCover;
   /** 主角（玩家）角色卡：无则输入润色走通用模式。 */
   protagonist?: ProtagonistCard;
   /** 语音语言（ISO 639-1，如 "ja"）：与剧本语言不同时 say 文本先译成该语言再送 TTS；缺省跟随剧本语言。 */
@@ -75,11 +89,22 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
     data.protagonist && (data.protagonist.name.trim() !== "" || data.protagonist.persona.trim() !== "")
       ? { name: data.protagonist.name.trim(), persona: data.protagonist.persona.trim() }
       : undefined;
+  // 封面：只认剧目自己已有的两张图，指错了就当没设（自动取第一张），不该让剧目打不开
+  const coverRaw = (data as { cover?: unknown }).cover as
+    | { kind?: unknown; id?: unknown }
+    | undefined;
+  const cover: PlayCover | undefined =
+    coverRaw?.kind === "backgrounds" || coverRaw?.kind === "cg"
+      ? typeof coverRaw.id === "string" && coverRaw.id.trim() !== ""
+        ? { kind: coverRaw.kind, id: coverRaw.id.trim() }
+        : undefined
+      : undefined;
   const agents = parseAgentConfig(data.agents);
   return {
     id: data.id,
     title: data.title,
     characters: data.characters,
+    ...(cover ? { cover } : {}),
     ...(protagonist ? { protagonist } : {}),
     ...(data.voiceLanguage?.trim() ? { voiceLanguage: data.voiceLanguage.trim() } : {}),
     opening: data.opening ?? "（游戏开始，请演出第一轮）",

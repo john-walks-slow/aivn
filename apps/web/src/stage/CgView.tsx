@@ -40,10 +40,7 @@ export function CgView({ playId, nonce = 0 }: { playId: string; /** 打开视图
         </div>
       ) : entries.length === 0 ? (
         <div className="cg-blank">
-          <div className="overlay">
-            还没有 CG。剧目里的插图来自两处：`assets/cg/` 下的素材，或剧本里
-            <code> &lt;cg id="…" /&gt; </code> 引用的图。
-          </div>
+          <div className="overlay">还没有插图。演到某一场时在舞台上点「生图」，或去工坊的素材页导入。</div>
         </div>
       ) : (
         <div className="cg-grid">

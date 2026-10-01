@@ -1,24 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "../ui/Icon.js";
 import { Modal } from "../ui/Modal.js";
-import { api, assetUrl, readinessAdvice, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
+import { api, coverUrl, readinessAdvice, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
 import { workshopUrl } from "../stage/view.js";
-
-/** 标题画面的底图：取这张剧目的第一张背景素材，没有就走主题色的和纸渐变。 */
-function titleArt(playId: string, files: string[] | undefined): string | null {
-  const first = files?.[0];
-  return first ? assetUrl(playId, "backgrounds", first) : null;
-}
 
 /** Title Screen：背景 + 作品名 + 竖排动词菜单（继续 / 开始新周目 / 周目 / 工坊 / 导出 / 删除）。 */
 export function TitleView({ playId }: { playId: string }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [saves, setSaves] = useState<SaveInfo[]>([]);
-  const [art, setArt] = useState<string | null>(null);
+  const [assets, setAssets] = useState<Record<string, string[]> | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  // 底图与剧目库封面同一套解析（指定的那张，没有就第一张背景、其次第一张插图）：
+  // 同一张画在两个地方出现，就该由同一个函数说了算
+  const art = detail ? coverUrl(playId, detail.play.cover, assets) : null;
 
   const reload = useCallback((): void => {
     api
@@ -31,8 +29,8 @@ export function TitleView({ playId }: { playId: string }) {
       .catch((e: Error) => setError(e.message));
     api
       .listAssets(playId)
-      .then((assets) => setArt(titleArt(playId, assets.backgrounds)))
-      .catch(() => setArt(null));
+      .then(setAssets)
+      .catch(() => setAssets(undefined));
   }, [playId]);
   useEffect(reload, [reload]);
 

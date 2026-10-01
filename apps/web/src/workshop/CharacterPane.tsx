@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { CharacterCard, LibraryEntry, PlayConfig } from "@stage-ai/core";
+import type { CharacterCard, PlayConfig } from "@stage-ai/core";
 import { api, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { CharacterEditor } from "./CharacterEditor.js";
@@ -203,9 +203,9 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
             ? {
                 target: "protagonist" as const,
                 title: "从资源库导入主角卡",
-                filter: (e: LibraryEntry) => Boolean(e.meta.character?.protagonist),
               }
             : {})}
+          only="characters"
         />
       )}
       {voiceFor !== null && draft && (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AssetKind, AssetMeta, LibraryEntry } from "@stage-ai/core";
+import type { AssetKind, AssetMeta } from "@stage-ai/core";
 import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { ImageLightbox } from "../ui/ImageLightbox.js";
@@ -145,9 +145,7 @@ export function AssetsPanel({ playId }: { playId: string }) {
       {libraryInto !== null && (
         <LibraryBrowser
           playId={playId}
-          imported={(kind, id) =>
-            kind === "characters" ? false : isImported(kind, id as AssetKind)
-          }
+          imported={isImported}
           onClose={() => setLibraryInto(null)}
           onImported={reload}
         />
