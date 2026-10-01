@@ -487,7 +487,7 @@ describe("工坊工具：generate_image", () => {
       files: new PlayFiles(store),
       backend: {
         generate: async () => {
-          throw new Error("flow2api 出图失败 HTTP 503：auth_unavailable");
+          throw new Error("生图失败 HTTP 503：auth_unavailable");
         },
       },
       limiter: new Limiter(1),

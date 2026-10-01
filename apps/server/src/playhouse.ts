@@ -10,7 +10,7 @@ import type { ServerConfig } from "./config.js";
 import { imagePendingTtlMs } from "./config.js";
 import { createCpaProvider, fetchGatewayModels, resolveCpaModel, type GatewayModel } from "./provider.js";
 import { createTts } from "./tts.js";
-import { createImageBackend } from "./imagegen.js";
+import { createImageBackend } from "./imageFactory.js";
 import type { ImageBackend } from "./imageBackend.js";
 import { createExa, type Exa } from "./exa.js";
 import { ImageAssets } from "./imageAssets.js";

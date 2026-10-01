@@ -59,31 +59,44 @@ pnpm --filter @stage-ai/web dev
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `STAGE_IMAGE_ENABLED` | `true` | 生图总开关（`false` = 只用导入素材，不发起任何生图） |
-| `STAGE_IMAGE_BACKEND` | `cpa` | 出图后端：`cpa`（下面 `STAGE_IMAGE_*` 一组）或 `flow2api`（本机 Google Flow 逆向网关，见下） |
-| `STAGE_IMAGE_MODEL` | `gpt-image-2` | cpa 网关的出图模型。换模型要同时看网关支持什么 |
-| `STAGE_IMAGE_SIZE` | `1536x1024` | 出图尺寸 `宽x高`。**换 `seedream-5.0-lite` 必须 ≥3686400 像素**（如 `2560x1440`），否则 400 |
-| `STAGE_IMAGE_CONCURRENCY` | `2` | 并发出图上限。每张图 15–30s，并发太小会拖穿预发射窗口 |
-| `STAGE_IMAGE_TIMEOUT_MS` | `150000` | 单图超时。超时按失败处理，舞台保持降级视觉 |
-
-`flow2api` 后端（工坊立绘差分靠它做垫图保角色一致性，cpa 只能文生图）：
-
-| 变量 | 默认 | 说明 |
-| --- | --- | --- |
-| `STAGE_FLOW_BASE_URL` | `http://127.0.0.1:38000` | flow2api 网关地址 |
-| `STAGE_FLOW_API_KEY` | 空 | 网关的 key，走请求头 `x-goog-api-key`。**只放 .env，别提交** |
-| `STAGE_FLOW_MODEL` | `gemini-3.1-flash-image` | **必须填别名**。填完整模型名（如带画幅后缀的）会让画幅与分辨率被静默忽略。本机实测能出图的只有 `gemini-3.1-flash-image`（16:9 约 73s）与 `gemini-3.0-pro-image`（约 89s），`imagen-4.0-generate-preview` 被上游 RPC 拒绝（500） |
-| `STAGE_FLOW_SIZE` | `2k`（代码默认；本机实测建议 `1k`） | 出图档位 `1k` / `2k` / `4k`。见下方「分辨率与耗时」——本机账号下 `1k` 与 `2k` 拿到的像素**一样**，`4k` 要 Ult 账号 |
-| `STAGE_FLOW_TIMEOUT_MS` | `180000` | 单图超时。实测单张 70–115s（垫图同量级），别调太小 |
+| `STAGE_IMAGE_FORMAT` | `openai` | **接口格式，不是产品名**：`gemini` = Google 原生 `:generateContent`（支持垫图）；`openai` = 标准 `/v1/images/generations`。接官方 API、flow2api 还是 cpa 由地址决定 |
+| `STAGE_IMAGE_BASE_URL` | `http://127.0.0.1:9999` | 生图服务根地址。**别带 `/v1` 或 `/v1beta`**，版本段按格式自己拼 |
+| `STAGE_IMAGE_API_KEY` | 空 | gemini 格式走 `x-goog-api-key`，openai 格式走 `Authorization: Bearer`。**只放 .env，别提交** |
+| `STAGE_IMAGE_MODEL` | `gpt-image-2` | 出图模型名，按所选格式与网关填 |
+| `STAGE_IMAGE_SIZE` | `1k` | 出图档位 `1k` / `2k` / `4k` = 短边像素量级。gemini 原样交给上游 `imageConfig`；openai 按画幅换算成 `WxH`（16:9 的 `1k` → `1824x1024`） |
+| `STAGE_IMAGE_CONCURRENCY` | `6` | 并发出图上限。每张图 15–140s，并发太小会拖穿预发射窗口 |
+| `STAGE_IMAGE_TIMEOUT_MS` | `180000` | 单图超时。超时按失败处理，舞台保持降级视觉 |
+| `STAGE_IMAGE_REFERENCE` | `neutral` | 垫图（参考图）策略，**仅 gemini 格式有效**，见下 |
 
 ```bash
-# .env 示例：工坊出图走 flow2api
-STAGE_IMAGE_BACKEND=flow2api
-STAGE_FLOW_BASE_URL=http://127.0.0.1:38000
-STAGE_FLOW_API_KEY=<your-api-key>
-STAGE_FLOW_MODEL=gemini-3.1-flash-image
-STAGE_FLOW_SIZE=1k        # 本机实测 1k 与 2k 同像素，1k 快 35%
-STAGE_IMAGE_REFERENCE=neutral # 垫图（参考图）策略，见下
+# .env 示例 A：本机 flow2api（Google Flow 逆向网关，Gemini 原生端点，支持垫图）
+STAGE_IMAGE_FORMAT=gemini
+STAGE_IMAGE_BASE_URL=http://127.0.0.1:38000
+STAGE_IMAGE_API_KEY=<your-api-key>
+STAGE_IMAGE_MODEL=gemini-3.1-flash-image   # flow2api 必须填别名，见下
+STAGE_IMAGE_SIZE=1k                        # 本机实测 1k 与 2k 同像素，1k 快 35%
+STAGE_IMAGE_REFERENCE=neutral
+
+# .env 示例 B：官方 OpenAI 或任何 images/generations 兼容网关
+STAGE_IMAGE_FORMAT=openai
+STAGE_IMAGE_BASE_URL=https://api.openai.com
+STAGE_IMAGE_API_KEY=<your-api-key>
+STAGE_IMAGE_MODEL=gpt-image-2
+STAGE_IMAGE_SIZE=1k
 ```
+
+两款格式的能力差：
+
+| | `gemini` | `openai` |
+| --- | --- | --- |
+| 端点 | `POST {base}/v1beta/models/{model}:generateContent` | `POST {base}/v1/images/generations` |
+| 认证头 | `x-goog-api-key` | `Authorization: Bearer` |
+| 画幅 | `generationConfig.imageConfig.aspectRatio` | 换算进 `size`：短边取档位像素，长边按比例算并对齐到 16 的倍数 |
+| 垫图 | 支持（`inlineData` 排在提示词之后） | **不支持**——接口没有参考图入参，工坊要出差分时直接报错，不静默丢弃 |
+| 返回 | `candidates[0].content.parts[].inlineData`（`fileData` 会单独报错） | `data[0].b64_json` 或 `data[0].url`（远端 url 由本站下载） |
+
+> 2026-10-01 实测可用的组合：flow2api（`http://127.0.0.1:38000`）与 cpa 网关（`http://127.0.0.1:9999`）都认 Gemini 原生端点——`gemini-3.1-flash-image` 走 `:generateContent` 回 `inlineData`，画幅 16:9 生效（返回 1376x768；cpa 约 15s）；cpa 另可走 `openai` 格式的 `gpt-image-2` / `seedream-5.0-lite`。flow2api 那条路模型名**必须填别名**（`gemini-3.1-flash-image` / `gemini-3.0-pro-image`），填完整模型名会让画幅与档位被静默忽略。
+> `seedream-5.0-lite` 走 openai 格式时上游要求 **≥3686400 像素**，`1k` 档换算出来不够，会报 400。
 
 垫图（参考图）策略 `STAGE_IMAGE_REFERENCE`：
 
@@ -99,14 +112,14 @@ STAGE_IMAGE_REFERENCE=neutral # 垫图（参考图）策略，见下
 
 **分辨率与耗时**（2026-10-01 本机实测，`gemini-3.1-flash-image`，一次一张、串行）：
 
-| `STAGE_FLOW_SIZE` | 16:9 背景 | 9:16 立绘（垫图） | 成图像素 |
+| `STAGE_IMAGE_SIZE` | 16:9 背景 | 9:16 立绘（垫图） | 成图像素 |
 | --- | --- | --- | --- |
 | `1k` | 73.2s | 138.2s | 16:9 → 1376x768，9:16 → 768x1376 |
 | `2k` | 115.1s | 215.8s | **与 `1k` 逐像素相同** |
 | `4k` | 网关 503 | — | 需要 Ult 账号，本机没有 |
 
 所以本机账号下 `2k` 只是多花 42–78 秒换回同一张图（上游放大失败时网关静默退回原图），
-**`STAGE_FLOW_SIZE=1k` 是这里最划算的一刀**。真正贵的是垫图（70s → 138s），提速的另一半靠
+**`STAGE_IMAGE_SIZE=1k` 是这里最划算的一刀**。真正贵的是垫图（70s → 138s），提速的另一半靠
 剧作家提前 3–5 句排产（`generate_image` 是后台排产，图在台词演出期间出）。完整数据与备选旋钮见
 `docs/freeform/261001-image-speed.md`。
 
@@ -120,7 +133,7 @@ STAGE_IMAGE_REFERENCE=neutral # 垫图（参考图）策略，见下
 | `STAGE_CUTOUT_KEY_SMOOTH` | `0.8` | 掩膜降噪的高斯半径（0–8，0 = 关闭）。源图是 JPEG，8x8 块噪声会把掩膜沿轮廓咬出成片缺口、白发被挖成全透明。做法是**色键跑在一份模糊副本上，alpha 仍从原图像素解**。**调大能填回缺口**（实测 0.8/带4 相对不降噪：头部缺口 −31%），代价是边缘略毛、零散半透明点约翻倍。成片缺口肉眼明显时才往上加，并配合 `STAGE_CUTOUT_WEAK` 调小 1~2 |
 | `STAGE_CUTOUT_EDGE_BAND` | `4` | 反解带宽（1–32）。边缘 alpha 走闭式解 `a=(B−I)/(B−F)`，只有落在「离掩膜边界 ≥ 这个带宽」的像素才配当 F 的锚点，带**内**的像素则反解成真实覆盖率。**带宽必须盖得住源图的抗锯齿渐变带**（银发上实测 5px 宽），不够宽时带外那些渐变像素只能退回距离斜坡、被钉成实心，深色舞台底上就是一圈白块和「头发左右上角被挖走一块」。调大过头会反过来把浅色内区当成半透明，洞变多 |
 
-抠不出干净结果会直接报错、让工坊重出，**不会落一张半坏的图**。想单独跑真机出图 e2e（平时测试全用 stub，不烧配额）：`STAGE_E2E_LIVE=1 pnpm --filter @stage-ai/server exec vitest run test/e2e-live-senren.test.ts`，`STAGE_FLOW_*` 一组照常读。
+抠不出干净结果会直接报错、让工坊重出，**不会落一张半坏的图**。想单独跑真机出图 e2e（平时测试全用 stub，不烧配额）：`STAGE_E2E_LIVE=1 pnpm --filter @stage-ai/server exec vitest run test/e2e-live-senren.test.ts`，`.env` 里的 `STAGE_IMAGE_*` 一组照常读。
 
 行为要点：
 

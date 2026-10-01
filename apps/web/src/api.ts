@@ -135,14 +135,18 @@ export interface Settings {
   };
   image: {
     enabled: boolean;
-    backend: "cpa" | "flow2api";
+    /** 接口格式，不是产品名：gemini 支持垫图，openai 不支持。 */
+    format: "gemini" | "openai";
+    baseUrl: string;
+    apiKey: string;
+    apiKeySet: boolean;
     model: string;
-    size: string;
+    /** 出图档位 1k / 2k / 4k（= 短边像素量级）。 */
+    size: "1k" | "2k" | "4k";
     concurrency: number;
     timeoutMs: number;
+    reference: "none" | "neutral";
   };
-  /** flow2api 后端配置（backend=flow2api 时才生效）：key 只回掩码。 */
-  flow: { baseUrl: string; apiKey: string; apiKeySet: boolean; model: string; size: string; timeoutMs: number };
   tts: { enabled: boolean; keysPath: string; proxy: string; baseUrl: string; concurrency: number; keyCount: number };
 }
 

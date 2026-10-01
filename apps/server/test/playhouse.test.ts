@@ -45,7 +45,7 @@ describe("PlayHouse 周目作用域：逛不建，看戏才建", () => {
     const runtime = await house.stage("p1");
     expect(helloPayload("p1", runtime).type).toBe("hello");
     const hello = helloPayload("p1", runtime) as { assetsTtlMs?: number };
-    expect(hello.assetsTtlMs).toBe(450_000);
+    expect(hello.assetsTtlMs).toBe(540_000);
   });
 
   it("get() 不建周目：runtime 落在无会话作用域上", async () => {

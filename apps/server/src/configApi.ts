@@ -23,9 +23,8 @@ export interface SettingsView {
     compactRatio: number;
     keepRecentTokens: number;
   };
-  image: ServerConfig["image"];
-  /** flow2api 生图后端（backend=flow2api 时才生效）：key 只回掩码。 */
-  flow: ServerConfig["flow"] & { apiKeySet: boolean };
+  /** 生图（格式 + 连接 + 档位）：key 只回掩码。 */
+  image: ServerConfig["image"] & { apiKeySet: boolean };
   tts: ServerConfig["tts"] & { keyCount: number };
 }
 
@@ -54,7 +53,7 @@ export class SettingsFile {
       return raw !== "false" && raw !== "0";
     };
     const apiKey = text("STAGE_API_KEY", this.config.apiKey);
-    const flowKey = text("STAGE_FLOW_API_KEY", this.config.flow.apiKey);
+    const imageKey = text("STAGE_IMAGE_API_KEY", this.config.image.apiKey);
     const keysPath = text("STAGE_TTS_KEYS", this.config.tts.keysPath);
     return {
       port: num("STAGE_PORT", this.config.port),
@@ -72,20 +71,15 @@ export class SettingsFile {
       },
       image: {
         enabled: bool("STAGE_IMAGE_ENABLED", this.config.image.enabled),
-        backend: text("STAGE_IMAGE_BACKEND", this.config.image.backend) as ServerConfig["image"]["backend"],
+        format: text("STAGE_IMAGE_FORMAT", this.config.image.format) as ServerConfig["image"]["format"],
+        baseUrl: text("STAGE_IMAGE_BASE_URL", this.config.image.baseUrl),
+        apiKey: mask(imageKey),
+        apiKeySet: imageKey.length > 0,
         model: text("STAGE_IMAGE_MODEL", this.config.image.model),
-        size: text("STAGE_IMAGE_SIZE", this.config.image.size),
+        size: text("STAGE_IMAGE_SIZE", this.config.image.size) as ServerConfig["image"]["size"],
         concurrency: num("STAGE_IMAGE_CONCURRENCY", this.config.image.concurrency),
         timeoutMs: num("STAGE_IMAGE_TIMEOUT_MS", this.config.image.timeoutMs),
         reference: text("STAGE_IMAGE_REFERENCE", this.config.image.reference) as ServerConfig["image"]["reference"],
-      },
-      flow: {
-        baseUrl: text("STAGE_FLOW_BASE_URL", this.config.flow.baseUrl),
-        apiKey: mask(flowKey),
-        apiKeySet: flowKey.length > 0,
-        model: text("STAGE_FLOW_MODEL", this.config.flow.model),
-        size: text("STAGE_FLOW_SIZE", this.config.flow.size) as ServerConfig["flow"]["size"],
-        timeoutMs: num("STAGE_FLOW_TIMEOUT_MS", this.config.flow.timeoutMs),
       },
       tts: {
         enabled: bool("STAGE_TTS_ENABLED", this.config.tts.enabled),
@@ -133,9 +127,8 @@ export class SettingsFile {
       if (image.enabled !== undefined) {
         set(this.envPath, "STAGE_IMAGE_ENABLED", String(image.enabled), changed);
       }
-      if (image.backend !== undefined) {
-        set(this.envPath, "STAGE_IMAGE_BACKEND", image.backend, changed);
-      }
+      if (image.format !== undefined) set(this.envPath, "STAGE_IMAGE_FORMAT", image.format, changed);
+      if (image.baseUrl !== undefined) set(this.envPath, "STAGE_IMAGE_BASE_URL", image.baseUrl, changed);
       if (image.model !== undefined) set(this.envPath, "STAGE_IMAGE_MODEL", image.model, changed);
       if (image.size !== undefined) set(this.envPath, "STAGE_IMAGE_SIZE", image.size, changed);
       if (image.concurrency !== undefined) {
@@ -149,17 +142,11 @@ export class SettingsFile {
           changed,
         );
       }
-    }
-    const flow = patch.flow;
-    if (flow) {
-      if (flow.baseUrl !== undefined) set(this.envPath, "STAGE_FLOW_BASE_URL", flow.baseUrl, changed);
-      if (flow.model !== undefined) set(this.envPath, "STAGE_FLOW_MODEL", flow.model, changed);
-      if (flow.size !== undefined) set(this.envPath, "STAGE_FLOW_SIZE", flow.size, changed);
-      if (flow.timeoutMs !== undefined) {
-        set(this.envPath, "STAGE_FLOW_TIMEOUT_MS", String(int(flow.timeoutMs, "flow2api 出图超时")), changed);
+      if (image.reference !== undefined) {
+        set(this.envPath, "STAGE_IMAGE_REFERENCE", image.reference, changed);
       }
-      if (flow.apiKey !== undefined && flow.apiKey !== mask(this.read().flow.apiKey)) {
-        set(this.envPath, "STAGE_FLOW_API_KEY", flow.apiKey, changed);
+      if (image.apiKey !== undefined && image.apiKey !== mask(this.read().image.apiKey)) {
+        set(this.envPath, "STAGE_IMAGE_API_KEY", image.apiKey, changed);
       }
     }
     const tts = patch.tts;

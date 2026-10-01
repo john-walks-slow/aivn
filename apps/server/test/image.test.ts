@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CpaImageGen } from "../src/imagegen.js";
+import { OpenAiImageGen, canvasFor } from "../src/openaiImage.js";
 import { ImageAssets } from "../src/imageAssets.js";
 import { Limiter } from "../src/limiter.js";
 import type { ImageBackend } from "../src/imageBackend.js";
@@ -156,53 +156,56 @@ describe("ImageAssets：内容寻址缓存与预发射", () => {
   });
 });
 
-describe("CpaImageGen：cpa 两种出图协议", () => {
-  it("images/generations：base64 直接落，url 走二次下载", async () => {
-    const gen = new CpaImageGen(
-      { baseUrl: "http://cpa/v1", apiKey: "test-key", model: "gpt-image-2", size: "1536x1024", timeoutMs: 1000 },
-      (async (input: string) => {
-        if (String(input).endsWith("/images/generations")) {
-          return new Response(
-            JSON.stringify({ data: [{ b64_json: Buffer.from("pix").toString("base64") }] }),
-            { status: 200 },
-          );
-        }
-        return new Response("remote-bytes", { status: 200 });
-      }) as never,
-    );
-    expect((await gen.generate({ prompt: "a" })).data.toString()).toBe("pix");
+const OPENAI_OPTS = {
+  baseUrl: "http://gateway",
+  apiKey: "test-key",
+  model: "gpt-image-2",
+  size: "1k" as const,
+  timeoutMs: 1000,
+};
 
-    const urlGen = new CpaImageGen(
-      { baseUrl: "http://cpa/v1", apiKey: "test-key", model: "gpt-image-2", size: "1536x1024", timeoutMs: 1000 },
-      (async (input: string) => {
-        if (String(input).endsWith("/images/generations")) {
-          return new Response(JSON.stringify({ data: [{ url: "http://cdn/x.jpg" }] }), { status: 200 });
-        }
-        return new Response("remote-bytes", { status: 200 });
-      }) as never,
-    );
-    expect((await urlGen.generate("b")).data.toString()).toBe("remote-bytes");
+describe("OpenAiImageGen：OpenAI 格式生图", () => {
+  it("按画幅把档位换算成 WxH（短边取档位像素，长边对齐 16 的倍数）", () => {
+    expect(canvasFor("16:9", "1k")).toBe("1824x1024");
+    expect(canvasFor("9:16", "1k")).toBe("1024x1824");
+    expect(canvasFor("1:1", "1k")).toBe("1024x1024");
+    expect(canvasFor("16:9", "2k")).toBe("3648x2048");
   });
 
-  it("gemini：SSE 流里抓 delta.images 的 data URL", async () => {
-    const b64 = Buffer.from("streamed-pixels").toString("base64");
-    const sse =
-      `data: ${JSON.stringify({ choices: [{ delta: { content: "" } }] })}\n\n` +
-      `data: ${JSON.stringify({ choices: [{ delta: { images: [{ image_url: { url: `data:image/jpeg;base64,${b64}` } }] } }] })}\n\n` +
-      "data: [DONE]\n\n";
-    const gen = new CpaImageGen(
-      { baseUrl: "http://cpa/v1", apiKey: "test-key", model: "gemini-3.1-flash-image", size: "1536x1024", timeoutMs: 1000 },
-      (async () => new Response(sse, { status: 200 })) as never,
-    );
-    expect((await gen.generate({ prompt: "a" })).data.toString()).toBe("streamed-pixels");
+  it("images/generations：base64 直接落，url 走二次下载", async () => {
+    const sent: Record<string, unknown>[] = [];
+    const gen = new OpenAiImageGen(OPENAI_OPTS, (async (input: string, init: { body: string }) => {
+      if (String(input).endsWith("/v1/images/generations")) {
+        sent.push(JSON.parse(init.body));
+        return new Response(
+          JSON.stringify({ data: [{ b64_json: Buffer.from("pix").toString("base64") }] }),
+          { status: 200 },
+        );
+      }
+      return new Response("remote-bytes", { status: 200 });
+    }) as never);
+    expect((await gen.generate({ prompt: "a", aspectRatio: "9:16" })).data.toString()).toBe("pix");
+    expect(sent[0]).toMatchObject({ model: "gpt-image-2", prompt: "a", size: "1024x1824", n: 1 });
+
+    const urlGen = new OpenAiImageGen(OPENAI_OPTS, (async (input: string) => {
+      if (String(input).endsWith("/v1/images/generations")) {
+        return new Response(JSON.stringify({ data: [{ url: "http://cdn/x.jpg" }] }), { status: 200 });
+      }
+      return new Response("remote-bytes", { status: 200 });
+    }) as never);
+    expect((await urlGen.generate({ prompt: "b" })).data.toString()).toBe("remote-bytes");
+  });
+
+  it("垫图发不出去：有这个接口没有的入参就直接拒，不静默丢弃", async () => {
+    const gen = new OpenAiImageGen(OPENAI_OPTS, (async () => new Response("{}")) as never);
+    await expect(
+      gen.generate({ prompt: "a", references: [{ mimeType: "image/png", data: Buffer.from("x") }] }),
+    ).rejects.toThrow(/没有参考图入参/);
   });
 
   it("网关报错带出状态与响应体片段", async () => {
-    const gen = new CpaImageGen(
-      { baseUrl: "http://cpa/v1", apiKey: "test-key", model: "gpt-image-2", size: "1536x1024", timeoutMs: 1000 },
-      (async () => new Response("auth_unavailable", { status: 503 })) as never,
-    );
-    await expect(gen.generate({ prompt: "a" })).rejects.toThrow("生图 HTTP 503: auth_unavailable");
+    const gen = new OpenAiImageGen(OPENAI_OPTS, (async () => new Response("auth_unavailable", { status: 503 })) as never);
+    await expect(gen.generate({ prompt: "a" })).rejects.toThrow("OpenAI 格式出图失败 HTTP 503：auth_unavailable");
   });
 });
 

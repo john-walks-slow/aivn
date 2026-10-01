@@ -224,7 +224,7 @@ ${ctx.canSearch ? SEARCH_GUIDE : ""}
   垫图保角色一致性，你既做不到也不该在拍内等它
 - 要别的表情就去用角色表里**已有**的差分（\`<actor id="xiaoyu" expression="smile">\`），
   没有就用 neutral 顶上——不要为了凑表情去生成
-- 立绘要一分多钟才出（flow2api 实测 70–110s）：不要在这一轮就让它上台，3–5 句之后再 \`<actor id="xiaoyu">\`
+- 立绘要一分多钟才出（实测 70–110s）：不要在这一轮就让它上台，3–5 句之后再 \`<actor id="xiaoyu">\`
 
 **3. 临时角色（一次性 NPC）**：只出声不出图也行，直接在 say 上写 name 属性：
 

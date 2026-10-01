@@ -24,18 +24,14 @@ function fixture(env: string): { file: SettingsFile; envPath: string; keysPath: 
     keepRecentTokens: 12000,
     image: {
       enabled: true,
-      backend: "cpa",
-      model: "gemini-3.1-flash-image",
-      size: "1024x1024",
-      concurrency: 2,
-      timeoutMs: 90000,
-    },
-    flow: {
+      format: "gemini",
       baseUrl: "http://127.0.0.1:38000",
       apiKey: "flow-secret-9876",
       model: "gemini-3.1-flash-image",
       size: "2k",
+      concurrency: 2,
       timeoutMs: 180000,
+      reference: "neutral",
     },
     tts: { enabled: true, keysPath, proxy: "", baseUrl: "https://api.fish.audio", concurrency: 3 },
   } as unknown as ServerConfig;
@@ -116,18 +112,20 @@ describe("设置面板后端", () => {
     expect(mask("")).toBe("");
   });
 
-  it("flow2api 面：读写同构，凭据同样只回掩码", () => {
-    const { file, envPath } = fixture("STAGE_IMAGE_BACKEND=flow2api\n");
+  it("生图面：格式 / 地址 / 档位读写同构，凭据同样只回掩码", () => {
+    const { file, envPath } = fixture("STAGE_IMAGE_FORMAT=gemini\nSTAGE_IMAGE_SIZE=1k\n");
     const view = file.read();
-    expect(view.image.backend).toBe("flow2api");
-    expect(view.flow.apiKey).toBe("flow••••9876");
-    expect(view.flow.model).toBe("gemini-3.1-flash-image");
+    expect(view.image.format).toBe("gemini");
+    expect(view.image.size).toBe("1k");
+    expect(view.image.apiKey).toBe("flow••••9876");
+    expect(view.image.model).toBe("gemini-3.1-flash-image");
     expect(JSON.stringify(view)).not.toContain("flow-secret-9876");
 
     // 掩码回传 = 不改；新值才写
-    expect(file.write({ flow: { apiKey: view.flow.apiKey } as never })).toEqual([]);
-    expect(file.write({ flow: { size: "4k" } as never })).toEqual(["STAGE_FLOW_SIZE"]);
-    expect(file.write({ flow: { apiKey: "brand-new-flow-key" } as never })).toEqual(["STAGE_FLOW_API_KEY"]);
-    expect(readFileSync(envPath, "utf8")).toContain("STAGE_FLOW_API_KEY=brand-new-flow-key");
+    expect(file.write({ image: { apiKey: view.image.apiKey } as never })).toEqual([]);
+    expect(file.write({ image: { size: "4k" } as never })).toEqual(["STAGE_IMAGE_SIZE"]);
+    expect(file.write({ image: { format: "openai" } as never })).toEqual(["STAGE_IMAGE_FORMAT"]);
+    expect(file.write({ image: { apiKey: "brand-new-image-key" } as never })).toEqual(["STAGE_IMAGE_API_KEY"]);
+    expect(readFileSync(envPath, "utf8")).toContain("STAGE_IMAGE_API_KEY=brand-new-image-key");
   });
 });

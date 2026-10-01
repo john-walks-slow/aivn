@@ -2,14 +2,15 @@
  * 生图后端契约：把「出一张图」从协议细节里抽出来。
  *
  * 两条调用方共用它——playwriter 的 `preload_asset` 预发射（落 media-cache）与
- * 工坊的 `generate_asset`（落静态素材）。cpa 只能文生图，flow2api 支持垫图与画幅，
- * 差异收敛在各实现里，调用方只描述「要一张什么图」。
+ * 工坊的 `generate_asset`（落静态素材）。协议差异（Gemini 原生 / OpenAI 兼容）收敛在
+ * `geminiImage.ts` 与 `openaiImage.ts` 两个实现里，调用方只描述「要一张什么图」。
  */
 
-/** flow2api 接受的画幅。写错不会报错而是静默降级，故配置处要先自校验。 */
+/** 接受的画幅。上游不认的画幅不一定报错而是静默降级，故配置处要先自校验。 */
 export const IMAGE_ASPECTS = ["16:9", "9:16", "1:1", "4:3", "3:4"] as const;
 export type ImageAspect = (typeof IMAGE_ASPECTS)[number];
 
+/** 出图档位 = 短边像素量级。 */
 export const IMAGE_SIZES = ["1k", "2k", "4k"] as const;
 export type ImageSize = (typeof IMAGE_SIZES)[number];
 

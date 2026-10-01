@@ -37,10 +37,10 @@
 
 | 旋钮 | 位置 | 怎么影响 |
 | --- | --- | --- |
-| `STAGE_FLOW_SIZE=1k` | `.env` / `configApi` | **本机最有效的一刀**：背景 115s→73s、立绘 216s→138s，像素不变 |
+| `STAGE_IMAGE_SIZE=1k` | `.env` / `configApi` | **本机最有效的一刀**：背景 115s→73s、立绘 216s→138s，像素不变 |
 | 提前几轮发 `generate_image` | 剧作家提示词与工具描述（已改成「提前 3–5 句」「约一分多钟」） | 排队窗口，决定玩家感不感觉得到等 |
 | `STAGE_IMAGE_CONCURRENCY` | `.env`，代码默认 6 | 只压**批量**的墙钟（实测两张 2k 并发 123s ≈ max 而非 sum），不改善单张时延 |
-| `STAGE_FLOW_MODEL` | `.env` | `gemini-3.1-flash-image` 比 `gemini-3.0-pro-image` 快 ~16s/张；`imagen-*` 本机不可用 |
+| `STAGE_IMAGE_MODEL` | `.env` | `gemini-3.1-flash-image` 比 `gemini-3.0-pro-image` 快 ~16s/张；`imagen-*` 本机不可用 |
 | 换账号/网关 | — | 想要真正的高分辨率（本机 4k 被 Ult 账号卡死），只能换账号或换后端 |
 
 > 画幅只有 `16:9` 与 `9:16` 可靠（`3:4`/`4:3` 会被静默改成 1200x896 横图），这条是 2026-09-29 定的，

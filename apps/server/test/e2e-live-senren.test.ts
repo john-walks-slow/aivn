@@ -2,7 +2,7 @@ import { copyFile, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { Flow2ApiImageGen } from "../src/flowImage.js";
+import { GeminiImageGen } from "../src/geminiImage.js";
 import { Limiter } from "../src/limiter.js";
 import { PlayFiles } from "../src/playFiles.js";
 import { PlayStore } from "../src/store.js";
@@ -11,9 +11,9 @@ import type { ImageBackend } from "../src/imageBackend.js";
 
 /**
  * 柚子社《千恋＊万花》四角色的**真实生图**端到端演练——走的是工坊出图的那条完整管线
- * （`PlayAssets` → flow2api → 抠底 → 落 `assets/sprites/<id>/`），不是裸客户端。
+ * （`PlayAssets` → Gemini 格式 → 抠底 → 落 `assets/sprites/<id>/`），不是裸客户端。
  *
- *   STAGE_E2E_LIVE=1 STAGE_FLOW_API_KEY=<key> pnpm exec vitest run test/e2e-live-senren.test.ts
+ *   STAGE_E2E_LIVE=1 STAGE_IMAGE_API_KEY=<key> pnpm exec vitest run test/e2e-live-senren.test.ts
  *
  * 跑法就是产品约定的两轮节奏：
  *   1. 四个角色各出一张 `neutral` 定妆照（**同批并发**）——这一轮出完就停，
@@ -31,7 +31,7 @@ import type { ImageBackend } from "../src/imageBackend.js";
 
 const LIVE = process.env.STAGE_E2E_LIVE === "1";
 const OUT = process.env.SENREN_OUT_DIR ?? join(tmpdir(), "senren-sprites");
-const SIZE = (process.env.STAGE_FLOW_SIZE ?? "1k") as "1k" | "2k" | "4k";
+const SIZE = (process.env.STAGE_IMAGE_SIZE ?? "1k") as "1k" | "2k" | "4k";
 
 /** 四个角色的外观。identity 段进 neutral 的提示词，差分只换 expression。 */
 interface Chara {
@@ -100,10 +100,10 @@ const EXPRESSIONS = pick("SENREN_EXPRESSIONS", ALL_EXPRESSIONS, (e) => e) as typ
 const HEROINES = CHARA.filter((c) => c.id === "yoshino" || c.id === "murasame");
 
 function liveBackend(): ImageBackend {
-  return new Flow2ApiImageGen({
-    baseUrl: process.env.STAGE_FLOW_BASE_URL ?? "http://127.0.0.1:38000",
-    apiKey: process.env.STAGE_FLOW_API_KEY ?? "",
-    model: process.env.STAGE_FLOW_MODEL ?? "gemini-3.1-flash-image",
+  return new GeminiImageGen({
+    baseUrl: process.env.STAGE_IMAGE_BASE_URL ?? "http://127.0.0.1:38000",
+    apiKey: process.env.STAGE_IMAGE_API_KEY ?? "",
+    model: process.env.STAGE_IMAGE_MODEL ?? "gemini-3.1-flash-image",
     size: SIZE,
     timeoutMs: 300_000,
   });

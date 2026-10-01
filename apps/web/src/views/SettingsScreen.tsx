@@ -12,7 +12,6 @@ import { navigate } from "../router.jsx";
 type Draft = {
   model: Settings["model"];
   image: Settings["image"];
-  flow: Settings["flow"];
   tts: Omit<Settings["tts"], "keyCount">;
 };
 
@@ -32,7 +31,6 @@ export function SettingsScreen() {
         setDraft({
           model: { ...next.model },
           image: { ...next.image },
-          flow: { ...next.flow },
           tts: {
             enabled: next.tts.enabled,
             keysPath: next.tts.keysPath,
@@ -190,99 +188,69 @@ export function SettingsScreen() {
               />
             </Field>
             <Field
-              label="出图后端"
-              hint="cpa = 通用网关（只能文生图）；flow2api = 本机 Google Flow 网关（支持垫图，工坊立绘差分靠它保角色一致性）"
+              label="接口格式"
+              hint="gemini = /v1beta 原生端点，垫图走这里（工坊立绘差分靠它保角色一致性）；openai = /v1/images/generations，不吃垫图"
             >
               <select
-                value={draft.image.backend}
+                value={draft.image.format}
                 onChange={(e) =>
                   setDraft({
                     ...draft,
-                    image: { ...draft.image, backend: e.target.value as Settings["image"]["backend"] },
+                    image: { ...draft.image, format: e.target.value as Settings["image"]["format"] },
                   })
                 }
               >
-                <option value="cpa">cpa</option>
-                <option value="flow2api">flow2api</option>
+                <option value="gemini">gemini</option>
+                <option value="openai">openai</option>
               </select>
             </Field>
-            {draft.image.backend === "flow2api" ? (
-              <>
-                <Field
-                  label="flow2api Key"
-                  hint={
-                    settings.flow.apiKeySet
-                      ? "留空或保持掩码即不改；输入新值即替换"
-                      : "尚未配置——工坊出图会被网关拒"
-                  }
-                >
-                  <input
-                    type="password"
-                    placeholder={settings.flow.apiKey || "未配置"}
-                    onChange={(e) =>
-                      setDraft({ ...draft, flow: { ...draft.flow, apiKey: e.target.value } })
-                    }
-                  />
-                </Field>
-                <Field label="flow2api 地址" hint="本机网关默认 http://127.0.0.1:38000">
-                  <input
-                    value={draft.flow.baseUrl}
-                    onChange={(e) =>
-                      setDraft({ ...draft, flow: { ...draft.flow, baseUrl: e.target.value } })
-                    }
-                  />
-                </Field>
-                <Field
-                  label="flow2api 模型"
-                  hint="必须填别名：gemini-3.1-flash-image | gemini-3.0-pro-image | imagen-4.0-generate-preview。填完整模型名画幅会被静默忽略"
-                >
-                  <input
-                    value={draft.flow.model}
-                    onChange={(e) =>
-                      setDraft({ ...draft, flow: { ...draft.flow, model: e.target.value } })
-                    }
-                  />
-                </Field>
-                <div className="settings-grid">
-                  <Field label="出图档位" hint="1k / 2k / 4k；flash-image 只支持 2k 与 4k">
-                    <input
-                      value={draft.flow.size}
-                      onChange={(e) =>
-                        setDraft({ ...draft, flow: { ...draft.flow, size: e.target.value } })
-                      }
-                    />
-                  </Field>
-                  <NumField
-                    label="出图超时 ms"
-                    value={draft.flow.timeoutMs}
-                    onChange={(v) => setDraft({ ...draft, flow: { ...draft.flow, timeoutMs: v } })}
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <Field
-                  label="出图模型"
-                  hint="gpt-image-2（images/generations）| gemini-3.1-flash-image（流式）"
-                >
-                  <input
-                    value={draft.image.model}
-                    onChange={(e) =>
-                      setDraft({ ...draft, image: { ...draft.image, model: e.target.value } })
-                    }
-                  />
-                </Field>
-                <Field label="尺寸" hint="换 seedream-5.0-lite 需 ≥ 3686400 像素，如 2560x1440">
-                  <input
-                    value={draft.image.size}
-                    onChange={(e) =>
-                      setDraft({ ...draft, image: { ...draft.image, size: e.target.value } })
-                    }
-                  />
-                </Field>
-              </>
-            )}
+            <Field
+              label="生图 Key"
+              hint={
+                settings.image.apiKeySet
+                  ? "留空或保持掩码即不改；输入新值即替换"
+                  : "尚未配置——出图会被网关拒"
+              }
+            >
+              <input
+                type="password"
+                placeholder={settings.image.apiKey || "未配置"}
+                onChange={(e) =>
+                  setDraft({ ...draft, image: { ...draft.image, apiKey: e.target.value } })
+                }
+              />
+            </Field>
+            <Field
+              label="生图地址"
+              hint="服务根地址，别带 /v1 或 /v1beta（版本段按格式自己拼）。本机 flow2api = http://127.0.0.1:38000，cpa = http://127.0.0.1:9999"
+            >
+              <input
+                value={draft.image.baseUrl}
+                onChange={(e) =>
+                  setDraft({ ...draft, image: { ...draft.image, baseUrl: e.target.value } })
+                }
+              />
+            </Field>
+            <Field
+              label="出图模型"
+              hint="按格式填。flow2api 必须填别名（gemini-3.1-flash-image / gemini-3.0-pro-image），填完整模型名画幅会被静默忽略"
+            >
+              <input
+                value={draft.image.model}
+                onChange={(e) =>
+                  setDraft({ ...draft, image: { ...draft.image, model: e.target.value } })
+                }
+              />
+            </Field>
             <div className="settings-grid">
+              <Field label="出图档位" hint="1k / 2k / 4k = 短边像素量级；openai 格式按画幅换算成 WxH">
+                <input
+                  value={draft.image.size}
+                  onChange={(e) =>
+                    setDraft({ ...draft, image: { ...draft.image, size: e.target.value as Settings["image"]["size"] } })
+                  }
+                />
+              </Field>
               <NumField
                 label="出图并发"
                 value={draft.image.concurrency}

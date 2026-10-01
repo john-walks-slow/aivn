@@ -66,10 +66,15 @@ describe("agent kit：两个角色的暴露面", () => {
     expect(names(kit)).not.toContain("update_state");
   });
 
-  it("generate_image 是同一个工具名与 schema，只有描述按等待策略分叉", () => {
+  it("generate_image 是同一个工具，只有描述分叉、schema 少一个 expression", () => {
     const a = playwriter().tools.find((t) => t.name === "generate_image")!;
     const b = workshop().tools.find((t) => t.name === "generate_image")!;
-    expect(JSON.stringify(a.parameters)).toBe(JSON.stringify(b.parameters));
+    // 差分只归工坊：剧作家那份 schema 拿不到 expression，其余参数逐字相同
+    const props = (t: typeof a) => JSON.stringify((t.parameters as { properties: Record<string, unknown> }).properties);
+    expect(props(a)).not.toContain("expression");
+    expect(props(b)).toContain("expression");
+    const { expression: _dropped, ...rest } = (b.parameters as { properties: Record<string, unknown> }).properties;
+    expect(props(a)).toBe(JSON.stringify(rest));
     expect(a.description).not.toBe(b.description);
     expect(b.description).toContain("抠完觉得不干净"); // 工坊同步出图，教它看图重出
     expect(a.description).toContain("后台排产");

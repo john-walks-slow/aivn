@@ -2,17 +2,17 @@ import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { Flow2ApiImageGen } from "../src/flowImage.js";
+import { GeminiImageGen } from "../src/geminiImage.js";
 import { IMAGE_ASPECTS, IMAGE_SIZES, aspectMatches } from "../src/imageBackend.js";
 
 /**
  * 真实网关出图的独立端到端用例——平时 **不跑**（真 API 花钱），要跑时显式开关：
  *
- *   STAGE_E2E_LIVE=1 STAGE_FLOW_API_KEY=<key> pnpm exec vitest run test/e2e-live-image.test.ts
+ *   STAGE_E2E_LIVE=1 STAGE_IMAGE_API_KEY=<key> pnpm exec vitest run test/e2e-live-image.test.ts
  *
  * 全文件最多 **一次** 真实生图（单 it），断言落在「别名 + imageConfig 真的生效」上：
  * 请求 9:16，回来的图就是竖构图。这是别名铁律唯一的自动化证据——传完整模型名时
- * flow2api 会静默忽略 generationConfig，画幅被模型名钉死，而单测里的假 fetch
+ * 网关会静默忽略 generationConfig，画幅被模型名钉死，而单测里的假 fetch
  * 看不见这件事（它会照样把参数拼进请求体）。
  *
  * 为什么断言 9:16 而不是更“自然”的 3:4：2026-09-29 对本机网关实测（imageSize=2k）
@@ -22,7 +22,7 @@ import { IMAGE_ASPECTS, IMAGE_SIZES, aspectMatches } from "../src/imageBackend.j
  */
 
 const LIVE = process.env.STAGE_E2E_LIVE === "1";
-const BASE_URL = process.env.STAGE_FLOW_BASE_URL ?? "http://127.0.0.1:38000";
+const BASE_URL = process.env.STAGE_IMAGE_BASE_URL ?? "http://127.0.0.1:38000";
 const MODEL = "gemini-3.1-flash-image";
 
 /** 读图幅：PNG 走 IHDR，JPEG 走 SOFn 扫描。认不出就返回 null（不因此判失败）。 */
@@ -49,14 +49,14 @@ function imageSizeOf(buf: Buffer): { width: number; height: number } | null {
 
 describe.skipIf(!LIVE)("E2E 真实生图（STAGE_E2E_LIVE=1 才跑，全程只出 1 张）", () => {
   it(
-    "flow2api 别名模型 + imageConfig 9:16 真的生效",
+    "flow2api 的别名模型 + imageConfig 9:16 真的生效",
     async () => {
-      const gen = new Flow2ApiImageGen({
+      const gen = new GeminiImageGen({
         baseUrl: BASE_URL,
-        apiKey: process.env.STAGE_FLOW_API_KEY ?? "",
+        apiKey: process.env.STAGE_IMAGE_API_KEY ?? "",
         model: MODEL,
-        size: (IMAGE_SIZES as readonly string[]).includes(process.env.STAGE_FLOW_SIZE ?? "")
-          ? (process.env.STAGE_FLOW_SIZE as "1k" | "2k" | "4k")
+        size: (IMAGE_SIZES as readonly string[]).includes(process.env.STAGE_IMAGE_SIZE ?? "")
+          ? (process.env.STAGE_IMAGE_SIZE as "1k" | "2k" | "4k")
           : "2k",
         timeoutMs: 240_000,
       });

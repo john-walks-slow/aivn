@@ -28,27 +28,26 @@ export interface ServerConfig {
   /** 生图管线（D6）：出图后端 + 预发射 + 媒体缓存。 */
   image: {
     enabled: boolean;
-    /** 后端实现：cpa（默认，本项目自配网关）| flow2api（本机 Flow 逆向网关，支持垫图与画幅）。 */
-    backend: "cpa" | "flow2api";
-    /** cpa 出图模型：gpt-image-2（images/generations）| gemini-3.1-flash-image（流式出图）。 */
+    /**
+     * 接口格式，不是产品名：
+     * - `gemini` = `POST {base}/v1beta/models/{model}:generateContent`（图片在 inlineData，**支持垫图**）；
+     * - `openai` = `POST {base}/v1/images/generations`（b64_json / url，**没有参考图入参**）。
+     * 接的是官方 API、本机 flow2api 还是 cpa，由 baseUrl 决定。
+     */
+    format: "gemini" | "openai";
+    /** 生图服务根地址（不要再带 `/v1` 或 `/v1beta`，版本段由格式自己拼）。 */
+    baseUrl: string;
+    apiKey: string;
+    /** 出图模型名，按所选格式填（flow2api 那条路必须填别名，完整模型名会让它忽略 imageConfig）。 */
     model: string;
-    /** cpa 出图尺寸（WxH）。换 seedream-5.0-lite 需 ≥3686400 像素（如 2560x1440），否则 400。 */
-    size: string;
-    /** 并发出图上限（每图 15–30s，串行会把预发射窗口拖穿）。 */
+    /** 出图档位 = 短边像素量级。gemini 原样交给上游 imageConfig，openai 换算成 WxH 填 size。 */
+    size: ImageSize;
+    /** 并发出图上限（每图 15–140s，串行会把预发射窗口拖穿）。 */
     concurrency: number;
     /** 单图超时（毫秒）：超时按失败降级，占位骨架不留死。 */
     timeoutMs: number;
-    /** 垫图策略：neutral = 派生立绘差分时用该角色的 neutral 定妆照垫图（默认）；none = 纯文生图。 */
+    /** 垫图策略：neutral = 派生立绘差分时用该角色的 neutral 定妆照垫图（默认）；none = 纯文生图。仅 gemini 格式有效。 */
     reference: "none" | "neutral";
-  };
-  /** flow2api 后端（`image.backend=flow2api` 时生效）。 */
-  flow: {
-    baseUrl: string;
-    apiKey: string;
-    /** 别名模型名，传完整名会让 flow2api 忽略 imageConfig。 */
-    model: string;
-    size: ImageSize;
-    timeoutMs: number;
   };
   /** 语音管线（D5）：fish-audio keys / 代理 / 并发。 */
   tts: {
@@ -126,25 +125,21 @@ export function loadConfig(
     beatTimeoutMs: parsePositiveInt("STAGE_BEAT_TIMEOUT_MS", env.STAGE_BEAT_TIMEOUT_MS, 240_000),
     image: {
       enabled: env.STAGE_IMAGE_ENABLED !== "false",
-      backend: parseEnum("STAGE_IMAGE_BACKEND", env.STAGE_IMAGE_BACKEND, ["cpa", "flow2api"] as const, "cpa"),
+      format: parseEnum("STAGE_IMAGE_FORMAT", env.STAGE_IMAGE_FORMAT, ["gemini", "openai"] as const, "openai"),
+      baseUrl: env.STAGE_IMAGE_BASE_URL ?? "http://127.0.0.1:9999",
+      apiKey: env.STAGE_IMAGE_API_KEY ?? "",
       model: env.STAGE_IMAGE_MODEL ?? "gpt-image-2",
-      size: env.STAGE_IMAGE_SIZE ?? "1536x1024",
-      // 6 是按 flow2api 定的：本地网关单价近乎免费，工坊一次要出几个差分，
-      // 串行等 6×100s 用户受不了。改用 cpa 计费后端时按钱包调小。
+      size: parseEnum("STAGE_IMAGE_SIZE", env.STAGE_IMAGE_SIZE, IMAGE_SIZES, "1k"),
+      // 6 是按本地网关定的：单价近乎免费，工坊一次要出几个差分，
+      // 串行等 6×100s 用户受不了。换成计费网关时按钱包调小。
       concurrency: parsePositiveInt("STAGE_IMAGE_CONCURRENCY", env.STAGE_IMAGE_CONCURRENCY, 6),
-      timeoutMs: parsePositiveInt("STAGE_IMAGE_TIMEOUT_MS", env.STAGE_IMAGE_TIMEOUT_MS, 150_000),
+      // 出图最慢的是带垫图的差分（实测 138s），180s 留够余量。
+      timeoutMs: parsePositiveInt("STAGE_IMAGE_TIMEOUT_MS", env.STAGE_IMAGE_TIMEOUT_MS, 180_000),
       // 垫图（参考图）策略：neutral = 派生立绘差分时拿该角色的 neutral 定妆照垫图（保角色一致性）；
       // none = 全走文生图，差分与其它表情就不是同一个人了。
       // 默认 neutral：垫图让单张耗时翻倍（实测 9:16 69s → 138s）而像素一模一样，
       // 但一致性是演出观感的事；差分只由工坊（用户眼前）生成，剧作家在参数层就拿不到 expression。
       reference: parseEnum("STAGE_IMAGE_REFERENCE", env.STAGE_IMAGE_REFERENCE, ["none", "neutral"] as const, "neutral"),
-    },
-    flow: {
-      baseUrl: env.STAGE_FLOW_BASE_URL ?? "http://127.0.0.1:38000",
-      apiKey: env.STAGE_FLOW_API_KEY ?? "",
-      model: env.STAGE_FLOW_MODEL ?? "gemini-3.1-flash-image",
-      size: parseEnum("STAGE_FLOW_SIZE", env.STAGE_FLOW_SIZE, IMAGE_SIZES, "2k"),
-      timeoutMs: parsePositiveInt("STAGE_FLOW_TIMEOUT_MS", env.STAGE_FLOW_TIMEOUT_MS, 180_000),
     },
     tts: {
       enabled: env.STAGE_TTS_ENABLED !== "false",

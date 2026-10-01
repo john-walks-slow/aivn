@@ -215,7 +215,7 @@ export class PlayAssets {
     if (aspectMatches(size, spec.aspect)) return;
     throw new Error(
       `出图画幅不对：请求 ${spec.aspect}，模型回了 ${size.width}x${size.height}。` +
-        "换个生图后端或模型名（STAGE_IMAGE_BACKEND / STAGE_FLOW_MODEL）再试——" +
+        "换个生图后端或模型名（STAGE_IMAGE_FORMAT / STAGE_IMAGE_MODEL）再试——" +
         "画幅不符的图落进素材只会在演出时崩。",
     );
   }

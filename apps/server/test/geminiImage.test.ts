@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Flow2ApiImageGen } from "../src/flowImage.js";
-import type { FlowImageOptions } from "../src/flowImage.js";
+import { GeminiImageGen } from "../src/geminiImage.js";
+import type { GeminiImageOptions } from "../src/geminiImage.js";
 
 /** 抓下请求并回放脚本化的响应；不打真网关。 */
 function fakeFetch(
@@ -25,7 +25,7 @@ const inlineResponse = (b64 = PNG_B64, mime = "image/png"): Response =>
     { status: 200, headers: { "content-type": "application/json" } },
   );
 
-const opts: FlowImageOptions = {
+const opts: GeminiImageOptions = {
   baseUrl: "http://127.0.0.1:38000",
   apiKey: "test-key",
   model: "gemini-3.1-flash-image",
@@ -33,21 +33,14 @@ const opts: FlowImageOptions = {
   timeoutMs: 1000,
 };
 
-describe("Flow2ApiImageGen：flow2api 出图客户端", () => {
-  it("只接受别名模型名（完整模型名会静默丢掉画幅，宁可构造期报错）", () => {
-    expect(() => new Flow2ApiImageGen({ ...opts, model: "gemini-3.1-flash-image-preview-09-2025" })).toThrow(
-      /不是受支持的别名模型名/,
-    );
-    expect(() => new Flow2ApiImageGen({ ...opts, model: "imagen-4.0-generate-preview" })).not.toThrow();
-  });
-
+describe("GeminiImageGen：Gemini 原生生图", () => {
   it("非法画幅尺寸构造期就拦下", () => {
-    expect(() => new Flow2ApiImageGen({ ...opts, size: "8k" as never })).toThrow(/STAGE_FLOW_SIZE/);
+    expect(() => new GeminiImageGen({ ...opts, size: "8k" as never })).toThrow(/STAGE_IMAGE_SIZE/);
   });
 
-  it("请求形状：别名进 URL、x-goog-api-key 进头、画幅与尺寸进 imageConfig", async () => {
+  it("请求形状：模型名进 URL、x-goog-api-key 进头、画幅与尺寸进 imageConfig", async () => {
     const { fetchImpl, calls } = fakeFetch(() => inlineResponse());
-    const gen = new Flow2ApiImageGen(opts, fetchImpl as never);
+    const gen = new GeminiImageGen(opts, fetchImpl as never);
     await gen.generate({ prompt: "黄昏教室", aspectRatio: "3:4" });
 
     const call = calls[0]!;
@@ -60,7 +53,7 @@ describe("Flow2ApiImageGen：flow2api 出图客户端", () => {
 
   it("垫图走 inlineData，且排在提示词之后", async () => {
     const { fetchImpl, calls } = fakeFetch(() => inlineResponse());
-    const gen = new Flow2ApiImageGen(opts, fetchImpl as never);
+    const gen = new GeminiImageGen(opts, fetchImpl as never);
     await gen.generate({
       prompt: "同一个角色，笑着",
       references: [{ mimeType: "image/png", data: Buffer.from("ref-bytes") }],
@@ -74,7 +67,7 @@ describe("Flow2ApiImageGen：flow2api 出图客户端", () => {
 
   it("base64 图像字节原样解出并带上 mimeType", async () => {
     const { fetchImpl } = fakeFetch(() => inlineResponse(PNG_B64, "image/webp"));
-    const gen = new Flow2ApiImageGen(opts, fetchImpl as never);
+    const gen = new GeminiImageGen(opts, fetchImpl as never);
     const img = await gen.generate({ prompt: "x" });
     expect(img.mimeType).toBe("image/webp");
     expect(img.data.equals(Buffer.from(PNG_B64, "base64"))).toBe(true);
@@ -88,7 +81,7 @@ describe("Flow2ApiImageGen：flow2api 出图客户端", () => {
           { status: 200 },
         ),
     );
-    await expect(new Flow2ApiImageGen(opts, fetchImpl as never).generate({ prompt: "x" })).rejects.toThrow(
+    await expect(new GeminiImageGen(opts, fetchImpl as never).generate({ prompt: "x" })).rejects.toThrow(
       /只回了文件地址/,
     );
   });
@@ -101,22 +94,22 @@ describe("Flow2ApiImageGen：flow2api 出图客户端", () => {
           { status: 200 },
         ),
     );
-    await expect(new Flow2ApiImageGen(opts, fetchImpl as never).generate({ prompt: "x" })).rejects.toThrow(
+    await expect(new GeminiImageGen(opts, fetchImpl as never).generate({ prompt: "x" })).rejects.toThrow(
       /未出图：这张图被安全策略拦截了/,
     );
   });
 
   it("HTTP 报错带出状态与响应片段", async () => {
     const { fetchImpl } = fakeFetch(() => new Response("auth_unavailable", { status: 503 }));
-    await expect(new Flow2ApiImageGen(opts, fetchImpl as never).generate({ prompt: "x" })).rejects.toThrow(
+    await expect(new GeminiImageGen(opts, fetchImpl as never).generate({ prompt: "x" })).rejects.toThrow(
       /HTTP 503.*auth_unavailable/,
     );
   });
 
-  it("非法画幅在发请求前就报错（flow2api 拿到坏画幅不报错，只会降级出方图）", async () => {
+  it("非法画幅在发请求前就报错（上游拿到坏画幅不报错，只会降级出方图）", async () => {
     const { fetchImpl, calls } = fakeFetch(() => inlineResponse());
     await expect(
-      new Flow2ApiImageGen(opts, fetchImpl as never).generate({ prompt: "x", aspectRatio: "21:9" as never }),
+      new GeminiImageGen(opts, fetchImpl as never).generate({ prompt: "x", aspectRatio: "21:9" as never }),
     ).rejects.toThrow(/画幅/);
     expect(calls).toHaveLength(0);
   });

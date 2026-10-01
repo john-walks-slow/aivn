@@ -61,11 +61,11 @@ describe("ServerConfig 联网检索与凭据文件", () => {
 describe("骨架兜底上界", () => {
   it("覆盖「自己超时 + 排队等到自己」最坏情况，且随生图配置缩放", () => {
     const base = loadConfig({}, "/repo").image;
-    // 默认 150s 超时、并发 6、队列 12 → 自己一次 + 排在两批后面 = 450s
-    expect(imagePendingTtlMs(base)).toBe(450_000);
+    // 默认 180s 超时、并发 6、队列 12 → 自己一次 + 排在两批后面 = 540s
+    expect(imagePendingTtlMs(base)).toBe(540_000);
 
     // 超时变长、并发变小 → 上界跟着变长（写死 45s 时这两条都无从谈起）
     expect(imagePendingTtlMs({ ...base, timeoutMs: 60_000 })).toBe(180_000);
-    expect(imagePendingTtlMs({ ...base, concurrency: 12 })).toBe(300_000);
+    expect(imagePendingTtlMs({ ...base, concurrency: 12 })).toBe(360_000);
   });
 });

@@ -3,36 +3,31 @@ import {
   IMAGE_ASPECTS,
   IMAGE_SIZES,
   type GeneratedImage,
-  type ImageAspect,
   type ImageBackend,
   type ImageRequest,
   type ImageSize,
 } from "./imageBackend.js";
 
 /**
- * flow2api 出图客户端：Google Flow 逆向网关的 Gemini 原生端点。
+ * Gemini 原生生图（`POST {base}/v1beta/models/{model}:generateContent`）。
+ * 官方 Gemini API、flow2api、cpa 都认这个形状：提示词与垫图都塞进 `contents[].parts[]`，
+ * 画幅与档位走 `generationConfig.imageConfig`。
  *
- * 铁律——**必须传别名模型名**（`gemini-3.1-flash-image` 这类）：flow2api 靠模型名里的
- * 画幅后缀做路由，收到完整模型名时 `generationConfig` 被**完全忽略**（`model_resolver.py`）。
+ * 铁律——**垫图只在 Gemini 格式下走得通**（`inlineData`）。OpenAI 的 `images/generations`
+ * 没有参考图入参，见 `openaiImage.ts`。
  *
- * 铁律二——**画幅只有 16:9 / 9:16 可靠**。2026-09-29 对本机网关实测（imageSize=2k）：
+ * 铁律二——**画幅写错不一定报错**。2026-09-29 对本机 flow2api 实测（imageSize=2k）：
  * `16:9`→1376x768 ✅、`9:16`→768x1376 ✅、`3:4`→1200x896 ❌、`4:3`→1200x896 ❌
- * （gemini-3.1-flash-image 与 gemini-3.0-pro-image 表现一致）。解析器把 `3:4` 正确翻成
- * `three-four` 内部模型名，上游却不认，于是静默回一张横图——**不报错**。所以本层只做
- * 白名单自校验，真正的兜底在 `PlayAssets.assertCanvas`：画幅不符就报错，不落盘。
+ * （gemini-3.1-flash-image 与 gemini-3.0-pro-image 表现一致）。上游不认的画幅会静默回一张
+ * 横图，所以本层只做白名单自校验，真正的兜底在 `PlayAssets.assertCanvas`：画幅不符就报错，不落盘。
+ *
+ * 模型名不做白名单：这里是通用格式，填哪家的模型名由部署方决定（flow2api 那条路要填别名而不是
+ * 完整模型名，否则 imageConfig 被忽略——见 README）。
  */
 
-/** 已确认支持出图的别名（`GET /v1/models/aliases`；注意别名不在 `GET /v1beta/models` 里）。 */
-const IMAGE_ALIASES = new Set([
-  "gemini-3.1-flash-image",
-  "gemini-3.0-pro-image",
-  "imagen-4.0-generate-preview",
-]);
-
-export interface FlowImageOptions {
+export interface GeminiImageOptions {
   baseUrl: string;
   apiKey: string;
-  /** 别名模型名，构造期校验。 */
   model: string;
   size: ImageSize;
   timeoutMs: number;
@@ -44,24 +39,16 @@ interface GeminiPart {
   fileData?: { mimeType?: string; fileUri?: string };
 }
 
-export class Flow2ApiImageGen implements ImageBackend {
+export class GeminiImageGen implements ImageBackend {
   private readonly fetchImpl: typeof undiciFetch;
 
   constructor(
-    private readonly opts: FlowImageOptions,
+    private readonly opts: GeminiImageOptions,
     fetchImpl?: typeof undiciFetch,
   ) {
     this.fetchImpl = fetchImpl ?? undiciFetch;
-    if (!IMAGE_ALIASES.has(opts.model)) {
-      throw new Error(
-        `STAGE_FLOW_MODEL（${opts.model}）不是受支持的别名模型名。可用：${[...IMAGE_ALIASES].join(" / ")}` +
-          "。传完整模型名会让 flow2api 忽略 imageConfig，画幅被模型名钉死。",
-      );
-    }
     if (!IMAGE_SIZES.includes(opts.size)) {
-      throw new Error(
-        `STAGE_FLOW_SIZE（${opts.size}）非法。可用：${IMAGE_SIZES.join(" / ")}`,
-      );
+      throw new Error(`STAGE_IMAGE_SIZE（${opts.size}）非法。可用：${IMAGE_SIZES.join(" / ")}`);
     }
   }
 
@@ -87,7 +74,7 @@ export class Flow2ApiImageGen implements ImageBackend {
     );
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      throw new Error(`flow2api 出图失败 HTTP ${res.status}：${body.slice(0, 300)}`);
+      throw new Error(`Gemini 出图失败 HTTP ${res.status}：${body.slice(0, 300)}`);
     }
     return parseImage(await res.json().catch(() => null));
   }
@@ -109,7 +96,7 @@ function toParts(req: ImageRequest): GeminiPart[] {
 function parseImage(body: unknown): GeneratedImage {
   const parts = (body as { candidates?: { content?: { parts?: GeminiPart[] } }[] } | null)
     ?.candidates?.[0]?.content?.parts;
-  if (!Array.isArray(parts)) throw new Error("flow2api 响应里没有 candidates");
+  if (!Array.isArray(parts)) throw new Error("出图响应里没有 candidates");
 
   const inline = parts.find((p) => p?.inlineData?.data);
   if (inline?.inlineData?.data) {
@@ -121,13 +108,11 @@ function parseImage(body: unknown): GeneratedImage {
 
   const file = parts.find((p) => p?.fileData?.fileUri);
   if (file?.fileData) {
-    throw new Error(
-      `flow2api 只回了文件地址（${file.fileData.fileUri}）没有图像字节，网关的取图步骤没跑通`,
-    );
+    throw new Error(`只回了文件地址（${file.fileData.fileUri}）没有图像字节，网关的取图步骤没跑通`);
   }
 
   const text = parts.find((p) => typeof p?.text === "string")?.text;
-  if (text) throw new Error(`flow2api 未出图：${text.slice(0, 200)}`);
+  if (text) throw new Error(`未出图：${text.slice(0, 200)}`);
 
-  throw new Error("flow2api 响应里没有图像内容");
+  throw new Error("出图响应里没有图像内容");
 }
