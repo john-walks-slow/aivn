@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CharacterCard, PlayConfig } from "@stage-ai/core";
+import type { CharacterCard, LibraryEntry, PlayConfig } from "@stage-ai/core";
 import { languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
 import { api, type PlayDetail, type PlayFile } from "../api.js";
 import { Icon, type IconName } from "../ui/Icon.js";
@@ -207,6 +207,13 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
                   }
                 />
               </div>
+              <div className="row small">
+                <button className="ghost-btn" onClick={() => setLibraryInto("protagonist")}>
+                  <span className="btn-icon">
+                    <Icon name="download" size={13} /> 从资源库导入
+                  </span>
+                </button>
+              </div>
               <textarea
                 rows={2}
                 placeholder="persona（性格与说话风格——输入润色的口吻依据）"
@@ -215,13 +222,7 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
                   patch((p) => (p.protagonist = { name: p.protagonist?.name ?? "", persona: e.target.value }))
                 }
               />
-              <div className="row small">
-                <button className="ghost-btn" onClick={() => setLibraryInto("protagonist")}>
-                  <span className="btn-icon">
-                    <Icon name="download" size={13} /> 从资源库导入
-                  </span>
-                </button>
-              </div>
+
             </div>
           </>
         ) : active.kind === "file" ? (
@@ -311,7 +312,11 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
           onClose={() => setLibraryInto(null)}
           onImported={reload}
           {...(libraryInto === "protagonist"
-            ? { target: "protagonist" as const, title: "从资源库导入主角卡" }
+            ? {
+                target: "protagonist" as const,
+                title: "从资源库导入主角卡",
+                filter: (e: LibraryEntry) => Boolean(e.meta.character?.protagonist),
+              }
             : {})}
         />
       )}

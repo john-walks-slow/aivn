@@ -90,6 +90,18 @@ export function CharacterEditor({
     <div className="char-card">
       <div className="row">
         <input value={char.name} onChange={(e) => onChange((c) => (c.name = e.target.value))} />
+      </div>
+      {/* 导入入口紧跟名字：埋在立绘差分区下面的话，没人会往下翻 */}
+      <div className="row small">
+        <button
+          className="ghost-btn"
+          onClick={onBrowseLibrary}
+          title={`从资源库导入一个角色的角色卡与立绘（按条目的 id 新建或覆盖同 id 的角色，不是填这张卡）`}
+        >
+          <span className="btn-icon">
+            <Icon name="download" size={13} /> 从资源库导入
+          </span>
+        </button>
         <button className="link-btn" onClick={onRemove}>
           移除角色
         </button>
@@ -151,15 +163,6 @@ export function CharacterEditor({
             }}
           />
         </label>
-        <button
-          className="ghost-btn"
-          onClick={onBrowseLibrary}
-          title={`从资源库导入一个角色的角色卡与立绘（按条目的 id 新建或覆盖同 id 的角色，不是填这张卡）`}
-        >
-          <span className="btn-icon">
-            <Icon name="download" size={13} /> 从资源库导入
-          </span>
-        </button>
         <button className="ghost-btn" onClick={addRow}>
           <span className="btn-icon">
             <Icon name="plus" size={13} /> 添加映射
