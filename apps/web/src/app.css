@@ -313,6 +313,11 @@ button.link-btn {
 .library-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(246px, 1fr));
+  /* 行高必须钉死在内容高度：这个网格是「定高 + overflow-y: auto」的滚动容器，
+     auto 行会被压缩到 min-content 来迁就容器高度（align-content: start 拦不住，
+     它只管剩余空间怎么分）。手机上单列时四张牌被压成 149px，封面只剩十几像素一条，
+     看起来就是「图片没显示」。钉成 max-content 后行按内容走，装不下就滚。 */
+  grid-auto-rows: max-content;
   gap: 20px;
   max-width: 1080px;
   width: 100%;
@@ -499,6 +504,8 @@ button.link-btn {
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* 同 .library-grid：定高滚动容器会把 auto 行压到 min-content，行数一多牌就被压扁 */
+  grid-auto-rows: max-content;
   gap: 14px;
   align-content: start;
   padding: 18px 0 24px;
@@ -4131,6 +4138,8 @@ select:focus {
   scrollbar-width: thin;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  /* 同 .library-grid：定高滚动容器会把 auto 行压到 min-content，图多时整排缩成细条 */
+  grid-auto-rows: max-content;
   gap: 18px;
   align-content: start;
   width: 100%;
