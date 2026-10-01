@@ -251,3 +251,26 @@ export async function readGeneratedEntries(
   }
   return out;
 }
+
+/**
+ * 剧目内出图台账（assets/generated.json）里能进 CG 页的那一部分。
+ *
+ * 与 readGeneratedEntries 同一套判据：文件在才算数，prompt 原样摊给 CG 页。
+ * 只回 cg/bg——CG 页只画这两类；立绘的记录留在文件里（工坊 read_file 读得到，git 里跟着图走）。
+ */
+export async function readPlayLedgerEntries(playId: string, store: PlayStore): Promise<GeneratedImageEntry[]> {
+  const table = await store.ledger();
+  const out: GeneratedImageEntry[] = [];
+  for (const [id, entry] of Object.entries(table)) {
+    if (!entry?.path || !entry.prompt) continue;
+    if (entry.kind !== "cg" && entry.kind !== "background") continue;
+    if (!existsSync(join(store.dir, entry.path))) continue;
+    out.push({
+      id,
+      type: entry.kind === "cg" ? "cg" : "bg",
+      url: `/plays/${playId}/${entry.path}`,
+      prompt: entry.prompt,
+    });
+  }
+  return out;
+}

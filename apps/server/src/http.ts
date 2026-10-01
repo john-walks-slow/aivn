@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { withPlayConfigLock, type PlayLibrary } from "./store.js";
 import type { AssetLibrary } from "./library.js";
 import { importFromLibrary } from "./assetImport.js";
-import { readGeneratedEntries } from "./imageAssets.js";
+import { readGeneratedEntries, readPlayLedgerEntries } from "./imageAssets.js";
 import type { PlayHouse } from "./playhouse.js";
 import type { SettingsFile } from "./configApi.js";
 import {
@@ -113,7 +113,8 @@ function cgCatalog(
       id,
       url: `/plays/${playId}/assets/cg/${file}`,
       origin: "asset",
-      // 同名生成图也认：那条记录里带着这张 id 当初的出图描述，静态素材把它覆盖了但描述还在
+      // 同名生成图也认：那条记录里带着这张 id 当初的出图描述（PlayAssets 记进 assets/generated.json 的
+      // 与 media-cache 那份都在 generated 里），静态素材把它覆盖了但描述还在
       ...(generated_?.prompt ? { prompt: generated_.prompt } : {}),
       ...(meta[id]?.description ? { description: meta[id]!.description } : {}),
     });
@@ -487,14 +488,17 @@ export async function handleHttp(
     }
     if (sub === "cg" && parts.length === 4) {
       // CG 页的台账：静态素材（assets/cg，带素材表描述）+ 站内生成的图（带生图 prompt）。
+      // 两份生成台账并进来：剧作家预发射落在 media-cache/img/manifest.json，工坊与剧作家的
+      // generate_image 落在 assets/generated.json（进 git，跟着静态素材走）。
       // 只读盘上已有的东西：不建 runtime、不触发生图——这一页只为看图，不该牵动演出那条线。
       if (method !== "GET") return fail(res, 405, "不支持的方法");
-      const [meta, assets, generated] = await Promise.all([
+      const [meta, assets, generated, ledger] = await Promise.all([
         store.assetMeta(),
         store.listAssets(),
         readGeneratedEntries(playId, store),
+        readPlayLedgerEntries(playId, store),
       ]);
-      return json(res, 200, { entries: cgCatalog(playId, assets.cg ?? [], meta, generated) });
+      return json(res, 200, { entries: cgCatalog(playId, assets.cg ?? [], meta, [...generated, ...ledger]) });
     }
     if (sub === "tts-preview" && parts.length === 4) {
       if (method !== "POST") return fail(res, 405, "不支持的方法");
