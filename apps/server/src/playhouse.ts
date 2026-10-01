@@ -15,6 +15,7 @@ import type { ImageBackend } from "./imageBackend.js";
 import { createExa, type Exa } from "./exa.js";
 import { ImageAssets } from "./imageAssets.js";
 import { PlayAssets } from "./playAssets.js";
+import { PendingJobs } from "./pendingJobs.js";
 import { PlayFiles } from "./playFiles.js";
 import { agentToolCatalog } from "./agentkit/kit.js";
 import { Limiter } from "./limiter.js";
@@ -42,6 +43,8 @@ export interface PlayRuntime {
   synth?: (text: string, voiceId: string) => Promise<{ url: string }>;
   /** 生图资产层（D6）：预发射/manifest；未启用生图则为 undefined。 */
   images?: ImageAssets;
+  /** 在生成的事（每剧目一份，跨 runtime 重建存活）：面板的快照从这里取。 */
+  pending: PendingJobs;
   /** 骨架占位的兜底上界（毫秒）：由生图配置算出，随 hello 下发（见 imagePendingTtlMs）。 */
   assetsTtlMs: number;
 }
@@ -55,6 +58,8 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
     cast: runtime.cast,
     voice: runtime.voice,
     assets: runtime.images?.snapshot(),
+    // 重连即恢复「正在生成」面板：hello 之后不再补发第二条，客户端只认这一份起点
+    pendingJobs: runtime.pending.snapshot(),
     assetsTtlMs: runtime.assetsTtlMs,
     epoch: runtime.orchestrator.currentEpoch,
     idle: !runtime.orchestrator.isBusy,
@@ -129,6 +134,8 @@ export class PlayHouse {
    * 同一个目标的在飞去重就失效了（两边同时要同一张图会烧两份配额）。
    */
   private readonly playAssets = new Map<string, PlayAssets>();
+  /** 在生成的事的记账处（每剧目一个）：剧作家的轮次、生图、语音合成共用一张表。 */
+  private readonly pendingJobs = new Map<string, PendingJobs>();
   /** 排到轮边界的 runtime 重建（剧作家立绘落盘后 play.json 变了）；同剧目串行，避免连着重装。 */
   private readonly pendingRebuilds = new Map<string, Promise<void>>();
   /** 网关模型清单缓存（网关上加了模型要能刷出来，故留了 TTL 而不是永久缓存）。 */
@@ -280,6 +287,17 @@ export class PlayHouse {
     return clients;
   }
 
+  /** 在生成的事（首次调用时装配）：一改就整表广播，客户端那边是一块面板，不需要增量协议。 */
+  private pendingFor(playId: string): PendingJobs {
+    const cached = this.pendingJobs.get(playId);
+    if (cached) return cached;
+    const jobs = new PendingJobs((snapshot) => {
+      this.broadcast(playId, { type: "pending_jobs", jobs: snapshot });
+    });
+    this.pendingJobs.set(playId, jobs);
+    return jobs;
+  }
+
   /** 剧目级素材层（首次调用时装配；未启用生图为 undefined）。 */
   private playAssetsFor(playId: string, store: PlayStore): PlayAssets | undefined {
     if (!this.imageBackend) return undefined;
@@ -290,6 +308,8 @@ export class PlayHouse {
       files: new PlayFiles(store),
       backend: this.imageBackend,
       limiter: this.limiterFor(playId),
+      reference: this.config.image.reference,
+      pending: this.pendingFor(playId),
       // 工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产——按 notify 分流。
       // 事件由工坊会话转发（它知道当前线程号），工坊实例不在时就没有对话流可挂。
       onWrite: (write, notify) => {
@@ -655,7 +675,7 @@ export class PlayHouse {
     // 生图资产层（D6）：manifest 载入既有资产，预发射复用不重生成。
     // 必须在编排器之前就绪——已生成图的 id/prompt 要进 A 区，否则剧作家忘掉自己造过什么。
     const images = this.imageBackend
-      ? new ImageAssets(play.id, store, this.imageBackend, this.limiterFor(play.id))
+      ? new ImageAssets(play.id, store, this.imageBackend, this.limiterFor(play.id), this.pendingFor(play.id))
       : undefined;
     if (images) await images.load();
     // 剧目级素材层：工坊与剧作家共用同一个（跨角色在飞去重只烧一份配额）
@@ -674,6 +694,7 @@ export class PlayHouse {
       engine,
       scene,
       tts: synth ? { synth, concurrency: this.config.tts.concurrency } : undefined,
+      pending: this.pendingFor(play.id),
       agents: play.agents?.playwriter,
       imageTools: playAssets
         ? {
@@ -739,6 +760,7 @@ export class PlayHouse {
       voice: !!synth,
       synth,
       images,
+      pending: this.pendingFor(play.id),
       assetsTtlMs: imagePendingTtlMs(this.config.image),
     };
   }

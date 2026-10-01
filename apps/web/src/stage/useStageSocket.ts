@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ClientMessage,
   GeneratedAsset,
+  PendingJob,
   PromptQueueItem,
   ServerMessage,
   StopPayload,
@@ -42,6 +43,8 @@ export interface StageSocket {
   saveName: string | null;
   /** 插一句的待注入队列（右上角面板）：空闲时立刻落笔，演出中先排队等这一轮收束。 */
   queue: readonly PromptQueueItem[];
+  /** 正在生成的事（同一块面板的上半截）：剧作家的轮次、生图、语音合成。 */
+  pendingJobs: readonly PendingJob[];
   sendChoice: (index: number) => void;
   sendFree: (text: string) => void;
   sendContinue: () => void;
@@ -96,6 +99,7 @@ export function useStageSocket(
   const [epoch, setEpoch] = useState(0);
   const [saveName, setSaveName] = useState<string | null>(null);
   const [queue, setQueue] = useState<readonly PromptQueueItem[]>([]);
+  const [pendingJobs, setPendingJobs] = useState<readonly PendingJob[]>([]);
   /** 本地缓冲所属代号：与服务端不一致说明缓冲已被结构性操作整段替换。 */
   const epochRef = useRef(0);
   const [tick, setTick] = useState(0); // lines/cues/scene 由 builder 持有，tick 触发重渲染
@@ -136,6 +140,7 @@ export function useStageSocket(
             setNames(Object.fromEntries((msg.cast ?? []).map(({ id, name }) => [id, name])));
             setVoiceAvailable(msg.voice ?? false);
             if (msg.assetsTtlMs !== undefined) setAssetsTtlMs(msg.assetsTtlMs);
+            if (msg.pendingJobs) setPendingJobs(msg.pendingJobs);
             if (msg.assets) handlersRef.current.onAssets?.(msg.assets);
             // 换了周目 = 换了一棵树：本地缓冲与新树无关，作废重放
             const switched = msg.saveId !== undefined && msg.saveId !== saveIdRef.current;
@@ -202,6 +207,9 @@ export function useStageSocket(
             return;
           case "prompt_queue":
             setQueue(msg.items);
+            return;
+          case "pending_jobs":
+            setPendingJobs(msg.jobs);
             return;
           case "line_edited":
             // 原地改写就地替换那一行：谱系重拉要等下一次操作，这里先把画面改对
@@ -313,6 +321,7 @@ export function useStageSocket(
     assetsTtlMs,
     saveName,
     queue,
+    pendingJobs,
     sendChoice,
     sendFree,
     sendContinue,

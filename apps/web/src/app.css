@@ -4264,3 +4264,18 @@ select:focus {
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* 正在生成：与排队话同一块面板的上半截。生图那一行可展开看提示词。 */
+.prompt-queue-row.pending-job {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.pending-job-prompt {
+  flex: 1 0 100%;
+  margin: 2px 0 0;
+  max-height: 9em;
+  overflow-y: auto;
+  color: var(--ink-faint);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}

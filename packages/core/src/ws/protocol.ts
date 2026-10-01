@@ -49,6 +49,18 @@ export interface PromptQueueItem {
   sentBeatNo?: number;
 }
 
+/** 一件正在生成的东西（右上角 pending 面板的一行）。 */
+export interface PendingJob {
+  id: string;
+  kind: "beat" | "bg" | "cg" | "sprite" | "voice";
+  /** 面板上那一行的话：「第 8 轮」「背景 rooftop」「立绘 小夜/smile」「第 3 句台词」。 */
+  label: string;
+  /** 生图类的实际提示词（含自动追加的画风/画布后缀）：点开看模型到底被喂了什么。 */
+  prompt?: string;
+  /** 入列时刻（毫秒）：面板上算「已经等了 40 秒」。 */
+  startedAt: number;
+}
+
 /** 工坊线程（D9 meta-chat 多会话）在协议层的投影。 */
 export interface WorkshopThreadInfo {
   id: string;
@@ -97,6 +109,8 @@ export type ServerMessage =
       voice?: boolean;
       /** 本剧目已生成的资产全集（manifest 快照）：重连即恢复可见，不必等下一次预发射。 */
       assets?: GeneratedAsset[];
+      /** 此刻正在生成的事（面板起点，之后由 pending_jobs 增量整表替换）。 */
+      pendingJobs?: PendingJob[];
       /**
        * 一次预发射真正可能花多久（毫秒）：客户端只拿它当「通知永远不来」的兜底上界。
        * 由服务端的生图超时与队列容量算出——客户端自己猜的数字必然与生图配置脱节
@@ -154,6 +168,11 @@ export type ServerMessage =
   | { type: "line_edited"; nodeId: string; text: string; seq?: number }
   /** 待注入队列的全量快照（右上角排队面板）：落笔的会留在面板里等这一轮收束。 */
   | { type: "prompt_queue"; items: PromptQueueItem[] }
+  /**
+   * 在生成的全量快照（同一块面板的另一半）：剧作家正在写的那一轮、排队/在跑的生图与语音合成。
+   * 瞬态消息（与 prompt_queue 一样不进事件缓冲），重连时随 hello 后的第一条补发。
+   */
+  | { type: "pending_jobs"; jobs: PendingJob[] }
   // —— 工坊（D9）：与演出并行的一条独立 agent 通道，消息都带 threadId 以便前端分流 ——
   | { type: "workshop_threads"; threads: WorkshopThreadInfo[]; activeId: string | null }
   | { type: "workshop_history"; threadId: string; messages: WorkshopChatMessage[] }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { PromptQueueItem } from "@stage-ai/core";
+import type { PendingJob, PromptQueueItem } from "@stage-ai/core";
 import { Icon } from "../ui/Icon.js";
 
 /**
@@ -11,15 +11,28 @@ import { Icon } from "../ui/Icon.js";
  */
 export function PromptQueuePanel({
   items,
+  jobs,
   onEdit,
   onDelete,
 }: {
   items: readonly PromptQueueItem[];
+  /** 正在生成的事（剧作家的轮次 / 背景 / CG / 立绘 / 语音）；空数组 = 这会儿没在生成。 */
+  jobs: readonly PendingJob[];
   onEdit: (id: string, text: string) => void;
   onDelete: (id: string) => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  /** 展开了哪一条的提示词（生图才有，点一下开/合）。 */
+  const [showPrompt, setShowPrompt] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  // 「等了多久」得自己走：这一列是玩家判断还要等多久的唯一依据，静止的数字等于没有。
+  useEffect(() => {
+    if (jobs.length === 0) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [jobs.length]);
 
   // 换了戏就收摊：编辑中的那一行多半已经不在队列里了。
   useEffect(() => {
@@ -28,7 +41,7 @@ export function PromptQueuePanel({
     }
   }, [editing, items]);
 
-  if (items.length === 0) return null;
+  if (items.length === 0 && jobs.length === 0) return null;
 
   const commit = (): void => {
     const text = draft.trim();
@@ -37,7 +50,35 @@ export function PromptQueuePanel({
   };
 
   return (
-    <aside className="prompt-queue" aria-label="待注入的话">
+    <aside className="prompt-queue" aria-label="正在生成的与待注入的话">
+      {jobs.length > 0 && (
+        <>
+          <p className="prompt-queue-title">正在生成</p>
+          <ul>
+            {jobs.map((job) => (
+              <li key={job.id} className="prompt-queue-row pending-job">
+                <span className="prompt-queue-text">{job.label}</span>
+                <span className="prompt-queue-meta">{elapsed(job.startedAt, now)}</span>
+                {job.prompt && (
+                  <button
+                    type="button"
+                    className="prompt-queue-tool"
+                    title={showPrompt === job.id ? "收起提示词" : "看提示词"}
+                    onClick={() => setShowPrompt(showPrompt === job.id ? null : job.id)}
+                  >
+                    <Icon name={showPrompt === job.id ? "close" : "zoomIn"} />
+                  </button>
+                )}
+                {showPrompt === job.id && job.prompt && (
+                  <p className="pending-job-prompt">{job.prompt}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {items.length === 0 ? null : (
+        <>
       <p className="prompt-queue-title">接下来要说的话</p>
       <ul>
         {items.map((item) => (
@@ -94,6 +135,16 @@ export function PromptQueuePanel({
           </li>
         ))}
       </ul>
+        </>
+      )}
     </aside>
   );
+}
+
+/** 「等了 40 秒」：到分钟换算写法，其余按秒取整。 */
+function elapsed(startedAt: number, now: number): string {
+  const sec = Math.max(0, Math.round((now - startedAt) / 1000));
+  if (sec < 60) return `${sec} 秒`;
+  const min = Math.floor(sec / 60);
+  return `${min} 分 ${sec % 60} 秒`;
 }

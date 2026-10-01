@@ -7,6 +7,7 @@ import type { GeneratedNote } from "./prompt.js";
 import type { PlayStore } from "./store.js";
 import type { ImageAspect, ImageBackend } from "./imageBackend.js";
 import { Limiter } from "./limiter.js";
+import { jobIdForImage, type PendingJobs } from "./pendingJobs.js";
 
 /**
  * 生图资产层（D6）：剧目级 manifest + 内容寻址缓存 + 并发闸门 + 在飞去重。
@@ -62,6 +63,7 @@ export class ImageAssets {
     private readonly store: PlayStore,
     private readonly gen: ImageBackend,
     private readonly limiter: Limiter,
+    private readonly pending?: PendingJobs,
   ) {}
 
   async load(): Promise<void> {
@@ -121,7 +123,18 @@ export class ImageAssets {
 
   private async run(type: "bg" | "cg", prompt: string, id: string): Promise<GeneratedAsset> {
     const file = fileName(type, prompt, ASPECT_BY_TYPE[type]);
-    await this.ensure(file, prompt, type);
+    // 预发射是后台跑的：面板上得看得见它在等，否则整轮演完了图还没来、玩家只当它不存在
+    const done = this.pending?.begin({
+      id: jobIdForImage(type, id),
+      kind: type,
+      label: type === "bg" ? `背景 ${id}` : `CG ${id}`,
+      prompt,
+    });
+    try {
+      await this.ensure(file, prompt, type);
+    } finally {
+      done?.();
+    }
     const asset: Asset = {
       id,
       type,

@@ -1,4 +1,5 @@
 import { PhraseChunker } from "@stage-ai/core";
+import type { PendingJobs } from "./pendingJobs.js";
 
 /** 合成函数（FishTts + 剧目 URL 前缀绑定；测试注入 fake）。 */
 export type TtsSynthFn = (text: string, voiceId: string) => Promise<{ url: string }>;
@@ -11,6 +12,8 @@ export interface VoicePipelineOptions {
   emit: (ready: { seq: number; phrase: number; url: string }) => void;
   /** 并发合成上限，默认 2。 */
   concurrency?: number;
+  /** 在合成的事（面板上那一行）：一行台词一条，别把每个分句都摆出来。 */
+  pending?: PendingJobs;
 }
 
 /**
@@ -37,6 +40,7 @@ export class VoicePipeline {
     if (!on) {
       this.queue.length = 0;
       this.closeLine();
+      this.opts.pending?.clearKind("voice");
     } else {
       // 重新开启视为新会话（B2 纵深防御）：清掉客户端可能残留的背压暂停，泵复活
       this.paused = false;
@@ -75,6 +79,7 @@ export class VoicePipeline {
     this.disposed = true;
     this.queue.length = 0;
     this.closeLine();
+    this.opts.pending?.clearKind("voice");
   }
 
   private closeLine(): void {
@@ -96,6 +101,11 @@ export class VoicePipeline {
       const job = this.queue.shift();
       if (!job) return;
       this.inFlight += 1;
+      const done = this.opts.pending?.begin({
+        id: `voice:${job.seq}`,
+        kind: "voice",
+        label: `第 ${job.phrase + 1} 句台词`,
+      });
       this.opts
         .synth(job.text, job.voiceId)
         .then(({ url }) => {
@@ -108,6 +118,7 @@ export class VoicePipeline {
           );
         })
         .finally(() => {
+          done?.();
           this.inFlight -= 1;
           this.pump();
         });

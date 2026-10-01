@@ -43,6 +43,7 @@ import { HistoryRecorder, type HistoryBeat } from "./history.js";
 import type { AgentSettings, PlayConfig } from "@stage-ai/core";
 import type { PlayMemory } from "./memory.js";
 import { VoicePipeline, type TtsSynthFn } from "./voice.js";
+import type { PendingJobs } from "./pendingJobs.js";
 
 /** 重建接力保留预算（token）：接住最近几轮就够，更早的细节走 archive 检索。 */
 const CARRY_OVER_TOKENS = 8000;
@@ -88,6 +89,8 @@ export interface OrchestratorOptions {
   restoredHistory?: HistoryBeat[];
   /** 语音管线合成函数（无则本剧目无声：hello.voice=false）。 */
   tts?: { synth: TtsSynthFn; concurrency?: number };
+  /** 在生成的事（右上角 pending 面板）：剧作家的轮次记在这儿。 */
+  pending?: PendingJobs;
   /**
    * 生图能力（未启用时整段不给：工具回不可用，也不会往时间线上摆永远等不到的骨架）。
    * bg/cg 落 media-cache 运行时缓存，立绘与临时角色落 assets/（与工坊同一个 PlayAssets）。
@@ -209,6 +212,8 @@ export class PlaywrightOrchestrator {
   private arcIds: string[] = [];
   /** 待注入的插一句（演出中收到，等这一轮收束再兑现）。不落盘：重启后队列不复活。 */
   private pending: PromptQueueItem[] = [];
+  /** 本轮在 pending 面板上的那一条（收束时销掉）：剧作家正在写的那一轮。 */
+  private pendingBeatJob: (() => void) | null = null;
   private pendingSeq = 0;
   /** 链尾悬空的用户输入（分岔落在一次表态上时截下来的）：并进下一轮，不造空 assistant 轮次。 */
   private trailingInputs: string[] = [];
@@ -262,6 +267,7 @@ export class PlaywrightOrchestrator {
           voiceOf: (charId) => opts.play.characters.find((c) => c.id === charId)?.voiceId,
           emit: (ready) => this.send({ type: "audio_ready", ...ready }),
           concurrency: opts.tts.concurrency,
+          pending: opts.pending,
         })
       : null;
     if (opts.restored) {
@@ -960,6 +966,13 @@ export class PlaywrightOrchestrator {
     this.beatLines = [];
     this.beatClosed = false;
     this.opts.engine.turn = this.beatNo;
+    // 面板上的「正在写第 N 轮」：一轮最长 240s，没有这一条玩家只能对着静止的舞台等
+    this.pendingBeatJob?.();
+    this.pendingBeatJob = this.opts.pending?.begin({
+      id: `beat:${this.beatNo}`,
+      kind: "beat",
+      label: `第 ${this.beatNo} 轮`,
+    }) ?? null;
     this.send({ type: "beat_start", beatId: `beat-${this.beatNo}` });
     this.send({
       type: "lineage",
@@ -997,6 +1010,8 @@ export class PlaywrightOrchestrator {
   private finishBeat(): void {
     if (!this.busy) return;
     this.busy = false;
+    this.pendingBeatJob?.();
+    this.pendingBeatJob = null;
     this.parser.resetBeat();
     let stop = this.pendingStop;
     this.pendingStop = null;
