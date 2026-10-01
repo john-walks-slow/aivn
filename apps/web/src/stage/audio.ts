@@ -17,6 +17,8 @@ const PAUSE_AT = 10;
 const RESUME_AT = 3;
 /** 重听 URL 台账的行数上限（内存护栏）。 */
 const URL_LEDGER_MAX = 500;
+/** 「合成中」标记的兜底上界：合成失败时服务端不回消息，靠它自己熄灯。 */
+const PENDING_TTL_MS = 45_000;
 
 interface PhraseAudio {
   url: string;
@@ -80,6 +82,15 @@ export class VoiceDirector {
     return n;
   }
 
+  /**
+   * 合成中（服务端已把短语发去合成、音频还没回来）的行 → 短语序号 → 记录时刻。
+   * 只用来给界面一个「正在生成」的信号；真音频到达就摘掉，轮切换时整体清空。
+   *
+   * 记时刻是因为合成会失败，而失败那条路服务端只打一行告警、没有任何消息回来：
+   * 没有上界的话喇叭会一直闪到本轮结束，看着像语音卡死了。
+   */
+  private readonly pendingPhrases = new Map<number, Map<number, number>>();
+
   /** 用户手势解锁（遮罩点击）：取得共享 context 并 resume，补解码积压。 */
   unlock(): void {
     if (this.ctx) return;
@@ -100,14 +111,51 @@ export class VoiceDirector {
     if (!on) {
       this.fadeAll();
       this.lines.clear();
+      this.pendingPhrases.clear();
       this.clearBackpressure();
     }
     this.notify();
   }
 
-  /** 这一行有没有可重听的语音（回顾的播放按钮据此显不显示）。 */
-  hasVoice(seq: number | null | undefined): boolean {
-    return seq !== null && seq !== undefined && this.urls.has(seq);
+  /**
+   * 一行的语音三态。合成中也占一个位——图标闪着，玩家才知道这句有配音、只是还没好。
+   * 语音总开关关掉时一律 none：那时候不是「没配音」，是不要配音。
+   */
+  voiceState(seq: number | null | undefined): "none" | "pending" | "ready" {
+    if (!this.enabled || seq === null || seq === undefined) return "none";
+    if (this.urls.has(seq)) return "ready";
+    if (!this.pendingPhrases.has(seq)) return "none";
+    this.pruneStalePending();
+    return this.pendingPhrases.has(seq) ? "pending" : "none";
+  }
+
+  /** audio_pending 到达：记下这一行正在合成，让界面亮起喇叭。 */
+  markPending(seq: number, phrase: number): void {
+    if (!this.enabled) return;
+    this.pruneStalePending();
+    let row = this.pendingPhrases.get(seq);
+    if (!row) {
+      row = new Map();
+      this.pendingPhrases.set(seq, row);
+    }
+    row.set(phrase, Date.now());
+    this.notify();
+  }
+
+  private clearPending(seq: number, phrase: number): void {
+    const row = this.pendingPhrases.get(seq);
+    if (!row) return;
+    row.delete(phrase);
+    if (row.size === 0) this.pendingPhrases.delete(seq);
+  }
+
+  /** 合成失败的短语不会回消息，按上界自己摘掉，别让喇叭闪到本轮结束。 */
+  private pruneStalePending(): void {
+    const cutoff = Date.now() - PENDING_TTL_MS;
+    for (const [seq, row] of this.pendingPhrases) {
+      for (const [phrase, at] of row) if (at < cutoff) row.delete(phrase);
+      if (row.size === 0) this.pendingPhrases.delete(seq);
+    }
   }
 
   /**
@@ -171,6 +219,7 @@ export class VoiceDirector {
 
   /** audio_ready 到达：存储 + 预取解码。 */
   handleAudio(ready: { seq: number; phrase: number; url: string }): void {
+    this.clearPending(ready.seq, ready.phrase);
     if (!this.enabled) return;
     this.rememberUrl(ready.seq, ready.phrase, ready.url);
     // 旧轮迟到音频（beat 已收束后 TTS 才完成）与已播过的行：直接丢弃
@@ -187,6 +236,8 @@ export class VoiceDirector {
     line.phrases.set(ready.phrase, phrase);
     if (this.ctx) void this.decode(line, phrase);
     this.checkBackpressure();
+    // 喇叭要立刻从「合成中」切回「可重听」：新状态没人看得到就会一直闪下去。
+    this.notify();
   }
 
   /** 播放行切换（usePlayback onLineStart）：narrate/scene 行 seq=undefined → 仅收尾上一行。 */
@@ -211,6 +262,7 @@ export class VoiceDirector {
   beatStarted(): void {
     this.fadeAll();
     this.lines.clear();
+    this.pendingPhrases.clear();
     this.clearBackpressure();
     this.currentSeq = null;
     this.floorSeq = this.maxSeqSeen;
@@ -235,6 +287,7 @@ export class VoiceDirector {
     this.fadeAll();
     this.stopReplay();
     this.lines.clear();
+    this.pendingPhrases.clear();
     this.clearBackpressure();
     this.currentSeq = null;
   }

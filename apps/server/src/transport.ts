@@ -148,6 +148,9 @@ async function routeMessage(
     case "edit":
       orchestrator.editLine(msg.nodeId, msg.newText);
       return;
+    case "read":
+      orchestrator.setReadPos({ seq: msg.seq, len: msg.len });
+      return;
     // —— 工坊（D9）：与演出同一连接、不同通道；工坊对话不阻塞演出 ——
     case "workshop_open":
       await runtime.workshop.snapshot();

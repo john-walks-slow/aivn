@@ -784,3 +784,122 @@ describe("音频属性进谱系（缺省/停止/音量在重放时要还原得�
     expect("bgm" in sceneAttrs(tree)[0]!).toBe(false);
   });
 });
+
+describe("DSL 出错回灌（#9：模型得知道自己上一轮哪里被丢了）", () => {
+  // 散文混在合法 DSL 之间：这一轮照样演出成功，但多出来的散文被丢了，得回灌给它
+  const BEAT_WITH_PROSE = [
+    "<narrate>她笑了笑。</narrate>",
+    "总之这里应该再细腻一点，氛围也要写出来。",
+    '<stop type="choice"><option value="a">道歉</option></stop>',
+  ].join("\n");
+
+  it("模型夹带散文 → 下一轮 user 消息带【上一轮输出的问题】并讲明只输出 DSL", async () => {
+    const contexts: unknown[] = [];
+    const { orchestrator } = setup(
+      [{ text: BEAT_WITH_PROSE, beatDone: true }, { text: BEAT_2, beatDone: true }],
+      { contexts },
+    );
+
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    const text = lastUserText(contexts as CapturedContext[]);
+    expect(text).toContain("【上一轮输出的问题】");
+    expect(text).toContain("DSL 之外的散文");
+    expect(text).toContain("不要输出 DSL 之外的散文");
+  });
+
+  it("干净的一轮不发回灌块（上下文不塞无用的话）", async () => {
+    const contexts: unknown[] = [];
+    const { orchestrator } = setup([{ text: BEAT_1, beatDone: true }, { text: BEAT_2, beatDone: true }], {
+      contexts,
+    });
+
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    expect(lastUserText(contexts as CapturedContext[])).not.toContain("【上一轮输出的问题】");
+  });
+
+  it("回灌只发一次：第三轮不该还在念上一轮的问题", async () => {
+    const contexts: unknown[] = [];
+    const { orchestrator } = setup(
+      [
+        { text: BEAT_WITH_PROSE, beatDone: true },
+        { text: BEAT_2, beatDone: true },
+        { text: BEAT_2, beatDone: true },
+      ],
+      { contexts },
+    );
+
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    await orchestrator.playerAction({ kind: "continue" });
+
+    const texts = (contexts as CapturedContext[]).map((c) => lastUserText([c]));
+    expect(texts.filter((t) => t.includes("【上一轮输出的问题】"))).toHaveLength(1);
+  });
+
+  it("回灌限量 8 条：错得再多也别把上下文塞满", async () => {
+    const contexts: unknown[] = [];
+    const noisy = Array.from({ length: 12 }, (_, i) => `第 ${i} 处多余的散文`).join("\n");
+    const { orchestrator } = setup(
+      [
+        { text: `${noisy}\n<stop type="choice"><option value="a">道歉</option></stop>`, beatDone: true },
+        { text: BEAT_2, beatDone: true },
+      ],
+      { contexts },
+    );
+
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    const bullets = lastUserText(contexts as CapturedContext[])
+      .split("\n")
+      .filter((l) => l.startsWith("- DSL 之外的散文"));
+    expect(bullets).toHaveLength(8);
+  });
+});
+
+describe("阅读位置落盘（#3：刷新回到读到的那一句）", () => {
+  it("setReadPos 进 runtimeState，重启后 readingPos 原样回来", () => {
+    const { orchestrator } = setup([{ text: BEAT_1, beatDone: true }]);
+    expect(orchestrator.readingPos).toBeNull();
+
+    orchestrator.setReadPos({ seq: 42, len: 7 });
+    expect(orchestrator.readingPos).toEqual({ seq: 42, len: 7 });
+    expect(orchestrator.runtimeState.readPos).toEqual({ seq: 42, len: 7 });
+  });
+
+  it("重复上报同一位置不排第二次落盘（打字机逐字报位置会打爆 session.json）", async () => {
+    let persists = 0;
+    const { orchestrator } = setup([{ text: BEAT_1, beatDone: true }]);
+    (orchestrator as unknown as { opts: { persist: () => void } }).opts.persist = () => {
+      persists += 1;
+    };
+
+    orchestrator.setReadPos({ seq: 1, len: 1 });
+    orchestrator.setReadPos({ seq: 1, len: 1 });
+    orchestrator.setReadPos({ seq: 1, len: 2 });
+    orchestrator.setReadPos({ seq: 1, len: 2 });
+    expect(persists).toBe(0); // 只排队，定时器未到
+  });
+
+  it("老档没有 readPos 字段时恢复成 null，客户端退回「快进到末尾」", () => {
+    const first = setup([{ text: BEAT_1, beatDone: true }]);
+    const restored = new PlaywrightOrchestrator({
+      streamFn: createFakeStreamFn([{ text: BEAT_2, beatDone: true }]),
+      model: {} as never,
+      getApiKey: () => "test-key",
+      play: PLAY,
+      memory: new PlayMemory({ cards: [CARD] }),
+      tree: first.tree,
+      engine: { ...PLAY.initialState },
+      scene: PLAY.initialScene,
+      onServerMessage: () => {},
+      persist: () => {},
+      restored: { ...first.orchestrator.runtimeState, readPos: undefined },
+    });
+    expect(restored.readingPos).toBeNull();
+  });
+});

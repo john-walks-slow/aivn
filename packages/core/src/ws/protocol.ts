@@ -69,6 +69,14 @@ export interface GeneratedAsset {
   type: "bg" | "cg";
 }
 
+/** 玩家读到哪儿：正在显示的那一行的 seq 与已显示字数。刷新后据此回到原处，而不是跳到本轮末尾。 */
+export interface ReadPos {
+  /** ScriptLine.seq：say_start / narrate_start / thought_start 事件的序号，跨 rebase 稳定。 */
+  seq: number;
+  /** 该行已打出的字数（打字机中途刷新也不丢进度）。 */
+  len: number;
+}
+
 export type ServerMessage =
   | {
       type: "hello";
@@ -97,6 +105,8 @@ export type ServerMessage =
       saveId?: string;
       /** 当前存档的档名（舞台顶部显示；改名经 announce 续接）。 */
       saveName?: string;
+      /** 上次退出时读到的位置：老档没有这个字段，客户端退回「快进到本轮末尾」的老行为。 */
+      readPos?: ReadPos;
     }
   | { type: "beat_start"; beatId: string }
   | { type: "events"; events: SequencedEvent[] }
@@ -105,6 +115,11 @@ export type ServerMessage =
   | { type: "beat_settled" }
   /** 语音预取就绪（D5）：seq = 所属 say 行 say_start 事件的序号，客户端据此关联行。 */
   | { type: "audio_ready"; seq: number; phrase: number; url: string }
+  /**
+   * 语音已开始合成（D5）：短语进了队列、音频还没生成。
+   * 没有它，合成期间那一行连喇叭图标都不显示——「正在生成」和「这句没配音」看起来一模一样。
+   */
+  | { type: "audio_pending"; seq: number; phrase: number }
   /** 生成就绪（D6）：客户端预解码后就地 crossfade 淡入，台词早已先行。瞬态消息不进事件缓冲。 */
   | { type: "asset_ready"; asset: GeneratedAsset }
   /** 生图失败（非慢）：客户端保持降级视觉（既有素材/氛围色），不弹占位。 */
@@ -177,6 +192,8 @@ export type ClientMessage =
   | { type: "edit"; nodeId: string; newText: string }
   /** 跳转：世界线挂到 nodeId，不生成内容。活节点上往前走，废弃节点上回到那条线。 */
   | { type: "jump"; nodeId: string }
+  /** 阅读位置上报：打字机推进时防抖发送，服务端落盘（刷新后回到原处而不是本轮末尾）。 */
+  | { type: "read"; seq: number; len: number }
   // —— 工坊（D9）：线程管理 + 对话 + 文件编辑；与演出共用一条连接，服务端按 type 分流 ——
   /** 打开面板：回线程列表与当前现场。 */
   | { type: "workshop_open" }

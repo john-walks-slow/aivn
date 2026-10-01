@@ -3,6 +3,7 @@ import type {
   ClientMessage,
   GeneratedAsset,
   PromptQueueItem,
+  ReadPos,
   ServerMessage,
   StopPayload,
 } from "@stage-ai/core";
@@ -40,6 +41,8 @@ export interface StageSocket {
   assetsTtlMs: number | null;
   /** 当前周目档名（舞台顶部显示；换档经 hello 续接）。 */
   saveName: string | null;
+  /** 上次退出时读到的位置（hello.readPos）：首屏据此 seek，而不是快进到本轮末尾。 */
+  readPos: ReadPos | null;
   /** 插一句的待注入队列（右上角面板）：空闲时立刻落笔，演出中先排队等这一轮收束。 */
   queue: readonly PromptQueueItem[];
   sendChoice: (index: number) => void;
@@ -50,6 +53,8 @@ export interface StageSocket {
   sendPromptEdit: (id: string, text: string) => void;
   sendPromptDelete: (id: string) => void;
   sendTtsControl: (state: { enabled?: boolean; paused?: boolean }) => void;
+  /** 上报阅读位置（播放头推进时防抖调用）：服务端节流落盘，刷新后回到原处。 */
+  sendRead: (pos: ReadPos) => void;
   // Director ops: jump moves the world line, fork opens a branch
   sendJump: (nodeId: string) => void;
   sendFork: (nodeId: string, opts?: { resume?: boolean }) => void;
@@ -61,6 +66,8 @@ export interface StageSocket {
 /** 语音/重置事件外发钩子（StageScreen 绑定 VoiceDirector）。 */
 export interface StageSocketHandlers {
   onAudio?: (ready: { seq: number; phrase: number; url: string }) => void;
+  /** 某个短语已进入合成：喇叭立刻亮起来，音频到位前不再像「这句没配音」。 */
+  onAudioPending?: (pending: { seq: number; phrase: number }) => void;
   onBeatStart?: () => void;
   onReset?: () => void;
   /** 工坊通道下行消息：工坊复用工坊所在那条连接，不再单开一条。 */
@@ -95,6 +102,7 @@ export function useStageSocket(
   const [assetsTtlMs, setAssetsTtlMs] = useState<number | null>(null);
   const [epoch, setEpoch] = useState(0);
   const [saveName, setSaveName] = useState<string | null>(null);
+  const [readPos, setReadPos] = useState<ReadPos | null>(null);
   const [queue, setQueue] = useState<readonly PromptQueueItem[]>([]);
   /** 本地缓冲所属代号：与服务端不一致说明缓冲已被结构性操作整段替换。 */
   const epochRef = useRef(0);
@@ -156,6 +164,8 @@ export function useStageSocket(
               setTick((t) => t + 1);
               ws.send(JSON.stringify({ type: "resume", lastSeq: 0 } satisfies ClientMessage));
             }
+            // 阅读位置跟着分支走：缓冲整段换过之后，上次的 seq 属于另一条世界线，不能拿来 seek
+            setReadPos(restamped || switched ? null : (msg.readPos ?? null));
             // hello 自报空闲（刷新进来的空闲现场）：直接落 stopped，不必等 beat_settled。
             // 注意不能先无条件把 connecting 提升为 streaming——stateRef 在渲染期赋值，
             // 同一次同步回调里读到的仍是旧值，那个判断永远不会成立，页面会卡死在 streaming。
@@ -191,6 +201,9 @@ export function useStageSocket(
             return;
           case "audio_ready":
             handlersRef.current.onAudio?.({ seq: msg.seq, phrase: msg.phrase, url: msg.url });
+            return;
+          case "audio_pending":
+            handlersRef.current.onAudioPending?.({ seq: msg.seq, phrase: msg.phrase });
             return;
           case "beat_settled":
             setSettled(true);
@@ -292,6 +305,10 @@ export function useStageSocket(
     (nodeId: string, newText: string) => send({ type: "edit", nodeId, newText }),
     [send],
   );
+  const sendRead = useCallback(
+    (pos: ReadPos) => send({ type: "read", seq: pos.seq, len: pos.len }),
+    [send],
+  );
 
   void tick;
 
@@ -312,6 +329,7 @@ export function useStageSocket(
     voiceAvailable,
     assetsTtlMs,
     saveName,
+    readPos,
     queue,
     sendChoice,
     sendFree,
@@ -320,6 +338,7 @@ export function useStageSocket(
     sendPromptEdit,
     sendPromptDelete,
     sendTtsControl: (ttsState) => send({ type: "tts_control", ...ttsState }),
+    sendRead,
     sendJump,
     sendFork,
     sendEdit,

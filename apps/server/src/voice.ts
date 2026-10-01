@@ -7,8 +7,8 @@ export interface VoicePipelineOptions {
   synth: TtsSynthFn;
   /** 角色卡 voiceId 查询（无音色角色/旁白返回 undefined → 不合成）。 */
   voiceOf: (charId: string) => string | undefined;
-  /** audio_ready 出口（编排器广播）。 */
-  emit: (ready: { seq: number; phrase: number; url: string }) => void;
+  /** 语音事件出口（编排器广播）：started = 短语进了队列，ready = 音频生成完毕。 */
+  emit: (event: { seq: number; phrase: number; state: "started" | "ready"; url?: string }) => void;
   /** 并发合成上限，默认 2。 */
   concurrency?: number;
 }
@@ -85,7 +85,10 @@ export class VoicePipeline {
 
   private enqueue(text: string): void {
     if (!this.voiceId || !this.enabled) return;
-    this.queue.push({ text, voiceId: this.voiceId, seq: this.lineSeq, phrase: this.phraseNo++ });
+    const job = { text, voiceId: this.voiceId, seq: this.lineSeq, phrase: this.phraseNo++ };
+    this.queue.push(job);
+    // 先报「开始合成」再排队：客户端要在这条消息到达时就亮起喇叭，而不是等第一个字节回来。
+    this.opts.emit({ seq: job.seq, phrase: job.phrase, state: "started" });
     this.pump();
   }
 
@@ -99,10 +102,12 @@ export class VoicePipeline {
       this.opts
         .synth(job.text, job.voiceId)
         .then(({ url }) => {
-          if (!this.disposed && this.enabled) this.opts.emit({ seq: job.seq, phrase: job.phrase, url });
+          if (!this.disposed && this.enabled) {
+            this.opts.emit({ seq: job.seq, phrase: job.phrase, state: "ready", url });
+          }
         })
         .catch((error: unknown) => {
-          // 音频失败不阻塞演出：告警后丢弃该句
+          // 音频失败不阻塞演出：告警后丢弃该句（客户端的喇叭就此熄灭）
           console.warn(
             `[stage-ai] TTS 失败（跳过）: ${error instanceof Error ? error.message : String(error)}`,
           );

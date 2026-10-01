@@ -197,8 +197,9 @@ export function StageShell(props: StageShellProps) {
       </aside>
 
       <main className="stage-main">
-        {/* 窄屏抽屉关着时，唤出它的键得在内容区里——侧栏本身已被隐藏 */}
-        {narrow && !open && (
+        {/* 窄屏抽屉关着时得有唤出它的键。舞台页浮在内容左上角（画面上不能压东西）；
+            其余视图它并进视图栏、落在标题左边——那里本来就有一条横栏，再浮一个就是两层 chrome。 */}
+        {narrow && !open && view === "stage" && (
           <button
             type="button"
             className="side-drawer-btn"
@@ -211,7 +212,20 @@ export function StageShell(props: StageShellProps) {
         )}
         {view !== "stage" && (
           <div className="view-bar">
-            <h1 className="view-bar-title">{VIEW_LABEL[view]}</h1>
+            <div className="view-bar-lead">
+              {narrow && !open && (
+                <button
+                  type="button"
+                  className="side-drawer-btn"
+                  onClick={() => setOpenAndRemember(true)}
+                  title="打开导航"
+                  aria-label="打开导航"
+                >
+                  <Icon name="unshrink" size={16} />
+                </button>
+              )}
+              <h1 className="view-bar-title">{VIEW_LABEL[view]}</h1>
+            </div>
             <button
               type="button"
               className="view-bar-close"

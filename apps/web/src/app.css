@@ -25,7 +25,9 @@
   --radius: 6px;
 
   /* ② 演出层 */
-  --stage-bg: #0d0d10; /* 舞台衬底（图片未到/加载中露出的底） */
+  /* 舞台衬底：没有背景图时露出来的底色。白底而不是深色——剧本还没配景就是空白画布，
+     深底会被读成「画面加载不出来」。 */
+  --stage-bg: #ffffff;
   --dialog-bg: rgb(255 255 255 / 0.93);
   --dialog-line: #e6e4df;
   --dialog-ink: #1a1a1a;
@@ -3162,10 +3164,11 @@ select:focus {
   color: var(--accent);
 }
 
-/* 窄屏抽屉关着时的唤出键：浮在内容左上角，换回全部导航。幽灵键同款（padding: 0 同理）。 */
+/* 窄屏抽屉关着时的唤出键：浮在内容左上角，换回全部导航。幽灵键同款（padding: 0 同理）。
+   z-index 要压过选肢层（6）：选项摆着的时候导航还得能点开，否则玩家被关在一张卡片前。 */
 .side-drawer-btn {
   position: absolute;
-  z-index: 3;
+  z-index: 8;
   top: calc(8px + env(safe-area-inset-top));
   left: 8px;
   display: grid;
@@ -3184,9 +3187,21 @@ select:focus {
   color: var(--accent);
 }
 
-/* 有视图栏时，唤出键与视图名不撞：把它往下让开一栏 */
-.stage-main:has(.view-bar) .side-drawer-btn {
-  top: calc(46px + env(safe-area-inset-top));
+/* 非舞台视图：唤出键并进视图栏、落在标题左边，不再浮在内容上压住第一行。
+   同一个 .side-drawer-btn 在这里是常规流里的一枚，尺寸也收成和标题行同高。 */
+.view-bar-lead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.view-bar-lead .side-drawer-btn {
+  position: static;
+  width: 30px;
+  height: 30px;
+  box-shadow: none;
+  background: none;
 }
 
 /* 窄屏：侧栏改成盖在内容上的抽屉，不再挤压内容区 */
@@ -3257,6 +3272,32 @@ select:focus {
   background: var(--accent-soft);
   outline: 1px solid var(--accent);
 }
+
+/* 语音合成中：喇叭位留着但闪。音频还没到就消失，玩家只会以为这句没配音；
+   置灰又和「这句没有音色」长得一样。合成是不可点的等待态。 */
+.dir-btn.voice-pending {
+  color: var(--accent);
+  opacity: 1;
+  animation: voice-blink 1s ease-in-out infinite;
+}
+
+@keyframes voice-blink {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dir-btn.voice-pending {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 .dir-btn:disabled {
   opacity: 0.35;
   cursor: default;
