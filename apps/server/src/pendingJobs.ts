@@ -41,6 +41,13 @@ export class PendingJobs {
     if (changed) this.publish();
   }
 
+  /** 整表清空（runtime 被丢弃/重建时）：那些活儿已经没人收尾了，不清就永远挂在面板上。 */
+  clearAll(): void {
+    if (this.jobs.size === 0) return;
+    this.jobs.clear();
+    this.publish();
+  }
+
   snapshot(): PendingJob[] {
     return [...this.jobs.values()].sort((a, b) => a.startedAt - b.startedAt);
   }

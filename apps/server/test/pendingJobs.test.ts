@@ -26,6 +26,15 @@ describe("PendingJobs：在生成的事（右上角面板那一列）", () => {
     last();
   });
 
+  it("clearAll 清空整表（runtime 被丢弃时那些活儿没人收尾）", () => {
+    const jobs = new PendingJobs(() => {});
+    jobs.begin({ id: "beat:1", kind: "beat", label: "第 1 轮" });
+    jobs.begin({ id: jobIdForImage("bg", "x"), kind: "bg", label: "背景 x" });
+    jobs.clearAll();
+    expect(jobs.snapshot()).toEqual([]);
+    jobs.clearAll(); // 幂等，空表不再广播
+  });
+
   it("clearKind 只清某一类（语音开关关掉时清语音条目，别的活儿还在跑）", () => {
     const jobs = new PendingJobs(() => {});
     const bg = jobs.begin({ id: jobIdForImage("bg", "rooftop"), kind: "bg", label: "背景 rooftop" });

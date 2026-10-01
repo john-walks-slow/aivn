@@ -379,6 +379,11 @@ export class PlaywrightOrchestrator {
     this.agent.abort();
     this.signalController.abort();
     this.voice?.dispose();
+    // 这一层的活儿（轮次、以及随本实例一起被丢掉的预发射）没人再收尾，
+    // 不清就永远挂在玩家面板上——runtime 重建/切档都走这一个出口。
+    this.pendingBeatJob?.();
+    this.pendingBeatJob = null;
+    this.opts.pending?.clearAll();
     this.flushIdleWaiters(); // 挂起的重建请求不得悬着
   }
 
