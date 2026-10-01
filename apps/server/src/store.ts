@@ -36,6 +36,19 @@ export interface PlaySummary {
   readiness: Readiness;
 }
 
+/** 出图台账的一条记录（assets/generated.json，引擎写、其余只读）。 */
+export interface PlayLedgerEntry {
+  /** 素材 id：背景/CG 用文件名主体，立绘用 `<角色id>/<差分名>`（与 prompt.ts 查表同一种键）。 */
+  id: string;
+  kind: "background" | "cg" | "sprite";
+  /** 剧目内相对路径。文件是权威：图没了这条记录就不算数。 */
+  path: string;
+  /** 实际发给模型的 prompt 原文（含引擎拼的画风与构图后缀），原样留档。 */
+  prompt: string;
+  /** 记账时刻（ISO），给人看溯源用。 */
+  at: string;
+}
+
 /**
  * 剧目配置文件的读改写互斥队列，按剧目目录绝对路径索引。
  *
@@ -292,6 +305,35 @@ export class PlayStore {
     } catch {
       return {};
     }
+  }
+
+  /**
+   * 出图台账：assets/generated.json 的 id → 记录。没有或损坏即空表。
+   *
+   * 与 manifest.json 分开有两个原因：**一张表一个写者**（manifest 是工坊与用户写的，
+   * 记录出图 prompt 是引擎写的，实测两边都动同一张表时，工坊补一条描述就把引擎记的 prompt 整条冲掉了），
+   * 以及**不该被改**——素材描述是人话、出图 prompt 是原样留档，混在一格里谁都能顺手改坏。
+   * 这个文件工坊只读（assets/ 下除 manifest.json 外都不可写），进 git，跟着图走。
+   */
+  async ledger(): Promise<Record<string, PlayLedgerEntry>> {
+    try {
+      const parsed: unknown = JSON.parse(await readFile(this.ledgerPath(), "utf8"));
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+      return parsed as Record<string, PlayLedgerEntry>;
+    } catch {
+      return {};
+    }
+  }
+
+  /** 记一次出图（引擎专用）。同 id 覆盖：一张图只有最后一次出图的 prompt 有意义。 */
+  async saveLedgerEntry(entry: PlayLedgerEntry): Promise<void> {
+    const table = await this.ledger();
+    await mkdir(join(this.dir, "assets"), { recursive: true });
+    await writeFile(this.ledgerPath(), `${JSON.stringify({ ...table, [entry.id]: entry }, null, 2)}\n`);
+  }
+
+  private ledgerPath(): string {
+    return join(this.dir, "assets", "generated.json");
   }
 
   /** play.json 全量保存（素材与配置页编辑）。 */

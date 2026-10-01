@@ -76,11 +76,12 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const { play, memory, generated = [] } = ctx;
   const notes = ctx.notes ?? {};
   /**
-   * 素材元数据查找：立绘差分优先按「角色id/差分名」找（多角色剧目里光写 smile 会撞车），
-   * 找不到再回落到裸差分名——手写的旧 manifest 就是裸名。
+   * 素材元数据查找：立绘差分按「角色id/差分名」找（多角色剧目里光写 smile 会撞车），
+   * 裸差分名那张老表并进来兜底——两套键约定会并存（引擎记 prompt 用规范键，
+   * 手写/工坊早期写的描述多是裸名），按字段合并，谁有值用谁的，别让一条把另一条挡掉。
    */
   const metaOf = (id: string, charId?: string): AssetMeta =>
-    (charId ? notes[`${charId}/${id}`] : undefined) ?? notes[id] ?? {};
+    charId ? { ...notes[id], ...notes[`${charId}/${id}`] } : (notes[id] ?? {});
   /** 清单项渲染：把描述、标签、情绪、时长都摆出来，让剧作家按画面/情境选而不是猜文件名。 */
   const label = (name: string, charId?: string): string => {
     const detail = describeAsset(metaOf(name, charId));
@@ -218,7 +219,7 @@ ${ctx.canSearch ? SEARCH_GUIDE : ""}
 
 **2. 生立绘（generate_image kind="sprite"）**，后台出图，不阻塞台词：
 
-    generate_image(kind="sprite", characterId="xiaoyu", characterName="小雨", prompt="2D anime style, …")
+    generate_image(kind="sprite", characterId="xiaoyu", characterName="小雨", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view, plain white background")
 
 - **这个工具没有 expression 参数，你只能出 neutral 定妆照**。差分（表情差分）由搭台助手在用户面前生成，
   垫图保角色一致性，你既做不到也不该在拍内等它

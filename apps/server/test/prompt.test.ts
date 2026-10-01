@@ -42,6 +42,22 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
     expect(prompt).toContain("expression：pout（鼓腮嗔怒）");
   });
 
+  it("立绘差分的两套键约定合并取字段：规范键只有 prompt 时别把裸键的描述挡掉", () => {
+    const play = { ...PLAY, characters: [{ id: "mio", name: "澪", persona: "p", sprites: { neutral: "n.png" } }] };
+    // 引擎记 prompt 走 <角色id>/<差分名>，手写与工坊补的描述常是裸差分名：两套并存是现实
+    const prompt = buildSystemPrompt({
+      play,
+      notes: { "mio/neutral": { prompt: "a girl with pink hair" }, neutral: { description: "粉发定妆照" } },
+    });
+    expect(prompt).toContain("expression：neutral（粉发定妆照）");
+    // 规范键自己的字段仍然赢
+    const both = buildSystemPrompt({
+      play,
+      notes: { "mio/neutral": { description: "规范键的描述" }, neutral: { description: "裸键的描述" } },
+    });
+    expect(both).toContain("expression：neutral（规范键的描述）");
+  });
+
   it("已生成的图带 id 与 prompt 进清单，并提示直接引用", () => {
     const prompt = buildSystemPrompt({
       play: PLAY,

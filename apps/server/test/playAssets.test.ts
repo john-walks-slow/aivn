@@ -371,3 +371,72 @@ describe("PlayAssets：工坊素材落盘", () => {
     // 流水线上任何一点扰动都会翻成假红。这条测的是去重语义，不是性能，给足预算。
   }, 30_000);
 });
+
+describe("PlayAssets：出图留痕", () => {
+  it("prompt 记进 assets/generated.json：立绘用 <角色id>/<差分名> 键，背景用文件名主体", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+    await assets.generate({ kind: "background", name: "rooftop" }, "黄昏天台");
+
+    const ledger = JSON.parse(await readFile(files.absoluteOf("assets/generated.json"), "utf8"));
+    // 键与剧作家查表的方式一致（prompt.ts 先试 <角色id>/<差分名>），否则记录查不到
+    expect(ledger["mio/neutral"]).toMatchObject({
+      kind: "sprite",
+      path: "assets/sprites/mio/neutral.png",
+      // 记的是模型实际收到的那条（含引擎拼的构图后缀），不是工坊填的那半句
+      prompt: calls[0]!.prompt,
+    });
+    expect(ledger.rooftop).toMatchObject({ kind: "background", prompt: calls[1]!.prompt });
+    // 一张表一个写者：素材描述表归工坊与用户，出图不许碰它
+    expect(existsSync(files.absoluteOf("assets/manifest.json"))).toBe(false);
+  });
+
+  it("台账不与工坊的描述表互相覆盖：各写各的", async () => {
+    const store = await makeStore();
+    await mkdir(join(store.dir, "assets"), { recursive: true });
+    await writeFile(join(store.dir, "assets", "manifest.json"), JSON.stringify({ neutral: "工坊写的描述" }));
+    const { assets, files } = makeAssets(store, stubBackend().backend);
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+
+    expect(JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8")).neutral).toBe("工坊写的描述");
+    expect(JSON.parse(await readFile(files.absoluteOf("assets/generated.json"), "utf8"))["mio/neutral"].prompt).toBeTruthy();
+  });
+
+  it("并发出 6 个差分：台账一条都不许被后写的冲掉", async () => {
+    const store = await makeStore();
+    const { assets, files } = makeAssets(store, stubBackend().backend);
+    await Promise.all(
+      ["normal", "smile", "shy", "angry", "sad", "surprised"].map((expression) =>
+        assets.generate({ kind: "sprite", characterId: "mio", expression }, "少女"),
+      ),
+    );
+    const ledger = JSON.parse(await readFile(files.absoluteOf("assets/generated.json"), "utf8"));
+    // 自动补的定妆照 + 6 个差分 = 7 条；读改写不串行就会只剩最后一条
+    expect(Object.keys(ledger).sort()).toEqual([
+      "mio/angry",
+      "mio/neutral",
+      "mio/normal",
+      "mio/sad",
+      "mio/shy",
+      "mio/smile",
+      "mio/surprised",
+    ]);
+  }, 30_000);
+
+  it("定妆照后缀不发明人物特征：只说哪里要留白，不写死发型", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await assets.generate(
+      { kind: "sprite", characterId: "mio", expression: "neutral" },
+      "a girl with pink long straight hair down to her waist",
+    );
+    // 后缀里的每个词都会被当成设定印进图里：这里曾写着「between the twin tails」，
+    // 于是所有角色都长出双马尾——prompt 明写 long straight hair 也救不回来。
+    const sent = calls[0]!.prompt;
+    expect(sent).toContain("clear empty white space between the arms and the body");
+    expect(sent.toLowerCase()).not.toMatch(/twin|tail|braid|ponytail/);
+  });
+});

@@ -170,6 +170,8 @@ export class PlayAssets {
             prompt: fullPrompt,
             aspectRatio: spec.aspect,
             references,
+            // 立绘要抠底，源图分辨率是唯一能压住轮廓锯齿的手段；背景与 CG 不挑这个。
+            minTier: spec.kind === "sprite" ? "2K" : undefined,
           }),
         "normal",
       ));
@@ -182,6 +184,7 @@ export class PlayAssets {
     const ext = spec.kind === "sprite" ? ".png" : extOf(mimeType);
     const written = await this.persist(spec, bytes, ext);
     if (spec.kind === "sprite") await this.mapSprite(spec, `${spec.stem}${ext}`, notify);
+    await this.recordPrompt(spec, written.path, fullPrompt);
     return auto ? [auto, { ...written, autoNeutral: true }] : [{ ...written, autoNeutral: false }];
   }
 
@@ -197,6 +200,32 @@ export class PlayAssets {
       url: `/plays/${this.playId}/${rel}`,
       replaced: previous !== null,
     };
+  }
+
+  /**
+   * 出图留痕：把这张图实际用的 prompt 原文记进 assets/generated.json。
+   *
+   * 不记就等于没发生过——工坊出的图只剩像素，prompt 既不进工坊线程也不进任何台账，
+   * 换个机器 clone 下来谁都说不出这张图当初是怎么生成的。键与立绘查表一致：
+   * 背景/CG 用文件名主体，立绘用 `<角色id>/<差分名>`。
+   *
+   * 写独立台账而不是素材描述表：那张表归工坊与用户写，实测两边都动同一张表时，
+   * 工坊补一条中文描述就把引擎记的 prompt 整条替换掉了。一张表一个写者。
+   * 并发差分同时记账要走剧目锁，否则后写的会冲掉先写的记录。
+   */
+  private async recordPrompt(spec: AssetSpec, path: string, prompt: string): Promise<void> {
+    const id = spec.kind === "sprite" ? `${spec.characterId}/${spec.stem}` : spec.stem;
+    const kind = spec.kind === "background" ? "background" : spec.kind;
+    try {
+      await withPlayConfigLock(this.deps.store.dir, () =>
+        this.deps.store.saveLedgerEntry({ id, kind, path, prompt, at: new Date().toISOString() }),
+      );
+    } catch (error) {
+      // 图已经落盘了，为一条记账把一次成功的出图报成失败更糟；这里出声，图与 prompt 对不上时能查到。
+      console.warn(
+        `[stage-ai] 出图 prompt 未记进 assets/generated.json（${id}）: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   /**
@@ -401,13 +430,17 @@ function sniffMime(data: Buffer): string {
  *
  * 后半段不是修饰词是硬约束：`src/cutout.ts` 的全局色键抠底要求 2D 平涂 + 纯白纯色底，
  * 3D 渲染的白衣离底色只有几格色差，抠底会连人带和服一起啃掉；剪影连成一片就没法分割人物与底色。
+ *
+ * 后缀只规定构图，不描述任何人物特征——它每个词都会被当成设定印进图里。早先这里写的是
+ * 「between the twin tails」（为了发梢与身体之间留纯白），等于给所有角色定了个双马尾：
+ * 实测 prompt 里明写 pink long straight hair，出来的仍是双马尾。要什么发型由角色卡的锚点说。
  */
 const NEUTRAL_SUFFIX =
   "full body, front-facing standing pose, neutral expression, both arms held slightly away from the body " +
-  "so the silhouette is clearly separated, clear empty white space between the twin tails and between " +
-  "the arms and the body. Japanese anime style 2D character illustration, flat cel shading with clean " +
-  "crisp lineart, NOT a 3D render, no 3D CGI look. Plain solid pure white background, no text, no shadow, " +
-  "no gradient, no vignette, vertical portrait composition.";
+  "so the silhouette is clearly separated, clear empty white space between the arms and the body and " +
+  "between the hair and the arms. Japanese anime style 2D character illustration, flat cel shading with " +
+  "clean crisp lineart, NOT a 3D render, no 3D CGI look. Plain solid pure white background, no text, no " +
+  "shadow, no gradient, no vignette, vertical portrait composition.";
 /** 差分：只改表情，身份特征一律锁死——垫图之外的第二道保险。画风要求与定妆照一字不差，否则两个人。 */
 const IDENTITY_SUFFIX =
   "Same character as the reference image: identical hairstyle, hair color, eye color, outfit and body type. " +

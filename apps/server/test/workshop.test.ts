@@ -327,6 +327,25 @@ describe("工坊 prompt 与工具", () => {
     expect(deriveThreadTitle("一".repeat(30))).toBe(`${"一".repeat(20)}…`);
   });
 
+  it("工坊 prompt：流程与验收的规则都在（外貌锚点那条搬进了共享工具说明）", async () => {
+    const prompt = await buildWorkshopPrompt(promptCtx({ canGenerate: true }));
+    // 外貌锚点是工具契约不是工坊职责：工坊侧只留一句指路，正文在 generate_image 的 description 里
+    expect(prompt).toContain("看 generate_image 的工具说明");
+    // neutral 不覆盖 normal：agent 曾宣称「会覆盖 normal.png」，实际多出一个键、两个人并存
+    expect(prompt).toContain("neutral 与其它差分名是两个名字");
+    // 自查要逐条结论：inspect_asset 看过仍汇报「已严格按设定完成」，被单独追问才承认图不对
+    expect(prompt).toContain("逐条核对再汇报");
+    expect(prompt).toContain("已严格按设定完成");
+    // 失败要把接口原话带给用户：「生图服务暂时不可用」让人无法判断是额度还是网关挂了
+    expect(prompt).toContain("出图失败把接口原话带给用户");
+    // 描述表：立绘差分的键与剧作家查表一致；补描述只许定点改，别拿别的条目当锚点（实测抹掉过一条）
+    expect(prompt).toContain("<角色id>/<差分名>");
+    expect(prompt).toContain("别拿别的条目的行当锚点");
+    // 出图留痕：引擎写、agent 只读，重出前先看上一版 prompt
+    expect(prompt).toContain("assets/generated.json");
+    expect(prompt).toContain("先 read_file 看上一版是怎么写的");
+  });
+
   it("工坊 prompt：出图要点随能力开关换内容（不可用时给替代路径）", async () => {
     const withGen = await buildWorkshopPrompt(promptCtx({ canGenerate: true }));
     expect(withGen).toContain("prompt 用英文");

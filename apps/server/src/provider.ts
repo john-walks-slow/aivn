@@ -20,6 +20,10 @@ export function createCpaProvider(config: ServerConfig): {
 
   const model: Model<"openai-completions"> = {
     ...builtin,
+    // 只继承上下文/思考档位这类与调用协议无关的元数据：api 必须钉死在 OpenAI 兼容面。
+    // 内置目录里 gemini-* 的 api 是 google-generative-ai，跟着继承会让 cpa provider 直接报
+    //「no API implementation」，模型下拉里可选的任何非 OpenAI 内置模型都选不动。
+    api: "openai-completions",
     id: config.modelId,
     name: `${config.modelId} (cpa)`,
     provider: CPA_PROVIDER_ID,
@@ -90,6 +94,7 @@ function buildModel(
 ): Model<"openai-completions"> {
   return {
     ...base,
+    api: "openai-completions",
     id,
     name: `${id} (cpa)`,
     provider: CPA_PROVIDER_ID,

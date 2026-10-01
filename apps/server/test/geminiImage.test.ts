@@ -59,6 +59,17 @@ describe("GeminiImageGen：Gemini 原生生图", () => {
     expect(config.imageSize).toBe("2K");
   });
 
+  it("请求声明的档位下限会抬高档位，但不会把配置降下来", async () => {
+    const at = async (cfg: string, minTier?: "2K" | "4K") => {
+      const { fetchImpl, calls } = fakeFetch(() => inlineResponse());
+      await new GeminiImageGen({ ...opts, size: cfg }, fetchImpl as never).generate({ prompt: "x", minTier });
+      return (calls[0]!.body.generationConfig as { imageConfig: Record<string, string> }).imageConfig.imageSize;
+    };
+    expect(await at("1K", "2K")).toBe("2K"); // 立绘抠底：1K 抬到 2K
+    expect(await at("4K", "2K")).toBe("4K"); // 配置更高时不动
+    expect(await at("1K")).toBe("1K"); // 背景与 CG 不声明，跟着配置
+  });
+
   it("垫图走 inlineData，且排在提示词之后", async () => {
     const { fetchImpl, calls } = fakeFetch(() => inlineResponse());
     const gen = new GeminiImageGen(opts, fetchImpl as never);

@@ -64,8 +64,12 @@ export function AssetsPanel({ playId }: { playId: string }) {
   const isImported = (kind: AssetKind, id: string): boolean => owned.has(`${kind}/${id}`);
   /** 素材行的副标题：素材表里的描述（剧作家在提示词里看到的是同一句）。 */
   const noteFor = (dir: string, name: string): string | null => {
-    const key = dir.startsWith("sprites/") ? `${dir.slice("sprites/".length)}/${stemOf(name)}` : stemOf(name);
-    return assetMeta[key]?.description ?? null;
+    const stem = stemOf(name);
+    const key = dir.startsWith("sprites/") ? `${dir.slice("sprites/".length)}/${stem}` : stem;
+    // 立绘的键有两套约定并存的现实：规范的 <角色id>/<差分名> 与旧表的裸差分名。
+    // 规范那条可能只有引擎记的 prompt 没有描述，回落到裸名，别显示成「没有描述」。
+    const legacy = key === stem ? undefined : assetMeta[stem]?.description;
+    return assetMeta[key]?.description ?? legacy ?? null;
   };
 
   return (

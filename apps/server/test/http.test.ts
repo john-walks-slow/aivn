@@ -197,6 +197,38 @@ describe("GET /api/plays/:id/cg：CG 页的台账", () => {
     });
   });
 
+  it("assets/generated.json 里记的出图 prompt 进 CG 台账（工坊 generate_image 那条路）", async () => {
+    await writeFile(join(root, "p1", "assets", "cg", "cg_confession.png"), "x");
+    await writeFile(
+      join(root, "p1", "assets", "generated.json"),
+      JSON.stringify({
+        cg_confession: {
+          id: "cg_confession",
+          kind: "cg",
+          path: "assets/cg/cg_confession.png",
+          prompt: "two students at dusk, cinematic",
+          at: "2026-10-01T10:00:00.000Z",
+        },
+      }),
+    );
+    const { body } = await get();
+    expect(body.entries[0]).toMatchObject({
+      id: "cg_confession",
+      origin: "asset",
+      prompt: "two students at dusk, cinematic",
+    });
+  });
+
+  it("台账里图已删的条目不算数（磁盘是权威）", async () => {
+    await writeFile(
+      join(root, "p1", "assets", "generated.json"),
+      JSON.stringify({
+        cg_gone: { id: "cg_gone", kind: "cg", path: "assets/cg/cg_gone.png", prompt: "p", at: "2026-10-01T10:00:00.000Z" },
+      }),
+    );
+    expect((await get()).body.entries).toEqual([]);
+  });
+
   it("背景类的生成图不进 CG 页", async () => {
     await writeManifest([{ id: "bg_classroom", type: "bg", file: "b.jpg" }]);
     expect((await get()).body.entries).toEqual([]);

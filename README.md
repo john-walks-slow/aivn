@@ -200,6 +200,14 @@ STAGE_IMAGE_SIZE=1K                         # gpt-image-1 系列只认标准尺�
 - 从资源库导入的素材，元数据会原样写进这张表——不用重复描述一遍
 - 剧作家自己生出来的图不用手写：生图清单会把它造过的 id 和当时的描述一起注入提示词，剧作家换台重开也知道这些图已经存在，直接引用即可，不会换个名字重画一遍
 
+### 出图记录（assets/generated.json）
+
+工坊或剧作家调 `generate_image` 出图时，引擎会把**这次实际发给模型的 prompt 原文**记进剧目目录的 `assets/generated.json`（进 git，跟着图走）：键是素材 id（立绘用 `koharu/neutral` 这样的 `<角色id>/<差分名>`），值带图的相对路径、prompt 原文与出图时间。
+
+- 这份记录**只读**：素材描述归你和工坊写（`assets/manifest.json`），出图 prompt 归引擎写，两边不碰同一张表
+- 换个机器 clone 下来也知道这张图当初是怎么生成的；要重出同一张图，工坊会先读这份记录在它基础上改
+- 站内生成的 CG 也会把这条 prompt 摊开在 CG 视图上；剧作家预发射那批另有一份在 `media-cache/img/manifest.json`
+
 ### 语音（可选，不配则无声演出）
 
 | 变量 | 默认 | 说明 |
@@ -247,7 +255,7 @@ CG 视图（`#/play/<id>/stage?view=cg`）是这一场已经出过的插图清�
 
 | 来源 | 卡上的角标 | 卡片显示的文字 |
 | --- | --- | --- |
-| 剧目目录里的静态素材 `plays/<id>/assets/cg/*` | 素材 | `assets/manifest.json` 里手写的中文描述 |
+| 剧目目录里的静态素材 `plays/<id>/assets/cg/*` | 素材 | `assets/manifest.json` 里手写的中文描述；这张图是站内生成的（同 id）时一并摊开它的出图 prompt |
 | 站内生成的图（`plays/<id>/media-cache/img/`） | 站内生成 | 生图 prompt（模型当初收到的原文） |
 
 点缩略图开灯箱看原图。开着这一页时，只要引擎生成新的 CG 到货，网格会自动补上，不必刷新。这一页只读盘上已有的文件，不会触发生图，也不消耗任何配额。
@@ -607,6 +615,7 @@ plays/<id>/
 ├── play.json          # 剧目定义（进 git）
 ├── assets/            # 素材（进 git）：backgrounds/ cg/ sfx/ bgm/ sprites/<charId>/
 │                     #   manifest.json —— stem 到画面说明的描述表（见上）
+│                     #   generated.json —— 出图记录：id 到这次实际用的 prompt 原文（引擎写，只读）
 ├── memory/            # 剧目记忆（见上：always/ 与 index/locations,lore 进 git）
 ├── media-cache/       # TTS / 生图等生成缓存（不进 git）
 ├── workshop/          # 工坊 meta-chat 会话（不进 git）

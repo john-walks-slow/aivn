@@ -66,10 +66,34 @@ function imageParams(withExpression: boolean) {
 const generateImageParams = imageParams(true);
 const playwriterImageParams = imageParams(false);
 
+/**
+ * 写 prompt 的硬约束，两个角色共享。
+ *
+ * 放这里而不是放各自的 system prompt：这份 description 是两个角色唯一共用的工具说明，
+ * 写在提示词里的同一条规则只会修到一侧——外貌锚点那条就只加过工坊，剧作家出的
+ * 第一张立绘照样不贴角色卡。流程与验收（什么时候发起、出完怎么核对、失败怎么转述）
+ * 各归各的提示词，那是角色职责，不是工具契约。
+ */
+const PROMPT_RULES = [
+  "写 prompt：",
+  "画面里出现角色时，**逐条带上角色卡的外貌**——发色、发型与长度、发饰、瞳色、脸上记号（泪痣、眼镜）、",
+  "上衣、领巾或领结、裙、袜、鞋、手里拿着的东西，一条一条写进 prompt；角色卡没写的不要自己发明。",
+  "只写「a girl with pink hair」这种泛化描述，等于把衣服和配件交给模型默认，出来的人不是卡上那个人",
+  "（实测：人设写白百褶裙 + 黑过膝袜 + 颈上拍立得，图里出来藏青裙 + 白中短袜 + 肩上包）。",
+  "非 neutral 的立绘会自动垫上该角色的 neutral 定妆照，**垫图就是身份基准**：prompt 里只写这次要改的东西",
+  "（表情、姿势、角度），别重新描述长相——重写一遍会和垫图打架。垫图也**不会**把姿势锁回站桩：",
+  "实测「垫图 + 明确写姿势机位」照样能出俯视坐姿、拾级而下的动态画面，只垫图不写姿势则一定是正面站桩。",
+  "**姿势、机位、景别都要显式写**：只说「她站在天台上」出来是对称站立的正面像，要说清机位（平视/俯视/仰视/侧身回眸）",
+  "、动作（坐/走/倚靠栏杆/回头）与景别（full body / medium shot / close-up）——不写景别，袜子、鞋这类细节直接出框。",
+  "立绘的抠底构图与画风后缀（纯白底、平涂、哪里要留白）由引擎自动拼在 prompt 末尾，别在 prompt 里",
+  "重复也别改写它；背景与 CG 没有这层后缀，构图要求要自己写。",
+].join("");
+
 const SYNC_DESCRIPTION = [
   "出一张剧目素材并落进 assets/：背景(kind=background) / CG(kind=cg) 给 name，",
   "立绘(kind=sprite) 给 characterId + expression。立绘会自动抠底成透明 PNG（引擎要靠它叠在场景上）。",
   "非 neutral 的立绘会自动拿该角色的 neutral 定妆照做垫图，所以同一个角色的差分是同一个人。",
+  PROMPT_RULES,
   "一次工具调用只出一张图；要出多个差分就在同一个批次里多次调用本工具，它们是并行的。",
   "抠完觉得不干净（白边、剪纸毛刺）时，用 inspect_asset 看图，再带 cutout 参数重出。",
 ].join("");
@@ -79,6 +103,7 @@ const QUEUED_DESCRIPTION = [
   "立绘(kind=sprite) 给 characterId，出的**只能是 neutral 定妆照**（差分由工坊在用户面前生成，别试也别写 expression）。" +
   "角色不在角色表时再给 characterName，会自动建一个临时角色。",
   "背景 16:9、CG 16:9、立绘 9:16 竖构图全身；提示词写英文，只描述画面本身。",
+  PROMPT_RULES,
   "**提前 3–5 句发起**：图要一分多钟才到（实测 1k 档 70–80s、2k 档 110s 上下），" +
   "出席位置太早只会看到骨架占位，拿到回执后照常写台词，",
   "到出场的那一行再用 <scene bg=\"…\"> 或 <cg id=\"…\">、<actor expression=\"…\"> 引用同一个 id。",
