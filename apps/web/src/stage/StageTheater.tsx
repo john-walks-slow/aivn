@@ -355,14 +355,14 @@ export function StageTheater({
               </>
             )}
           </div>
-          {/* 快捷菜单：图标按钮，压在台词窗右下角。插一句 / 改写 / 重来 / 重听 / 自动，
+          {/* 快捷菜单：图标按钮，压在台词窗右下角。提示 / 改写 / 重来 / 重听 / 自动，
               动作靠图标辨认，含义走 title 与 aria-label。 */}
           <div className="director-bar">
             <button
               type="button"
               className={`dir-btn ${action === "prompt" ? "on" : ""}`}
-              title="插一句：可以是角色的行动或台词，也可以是给这场戏的指示"
-              aria-label="插一句"
+              title="提示：可以是角色的行动或台词，也可以是给这场戏的指示"
+              aria-label="提示"
               onClick={(e) => {
                 e.stopPropagation();
                 setAction(action === "prompt" ? null : "prompt");
@@ -370,6 +370,7 @@ export function StageTheater({
               }}
             >
               <Icon name="chat" size={17} />
+              提示
             </button>
             <button
               type="button"
@@ -384,6 +385,7 @@ export function StageTheater({
               }}
             >
               <Icon name="pencil" size={17} />
+              改写
             </button>
             <button
               type="button"
@@ -398,6 +400,7 @@ export function StageTheater({
               }}
             >
               <Icon name="rewrite" size={17} />
+              重来
             </button>
             {voiceAvailable && hasVoice(view?.seq ?? null) && (
               <button
@@ -411,6 +414,7 @@ export function StageTheater({
                 }}
               >
                 <Icon name="volume" size={17} />
+                重听
               </button>
             )}
             <button
@@ -425,6 +429,7 @@ export function StageTheater({
               }}
             >
               {playback.auto ? <Icon name="pause" size={17} /> : <Icon name="play" size={17} />}
+              自动
             </button>
           </div>
         </div>
@@ -432,7 +437,7 @@ export function StageTheater({
         {action && (
           <Modal
             title={
-              action === "prompt" ? "插一句" : action === "edit" ? "改写这句台词" : "重演这一轮"
+              action === "prompt" ? "提示" : action === "edit" ? "改写这句台词" : "重演这一轮"
             }
             hint={
               action === "prompt"
@@ -458,7 +463,7 @@ export function StageTheater({
                       ? draft.trim()
                         ? "重演这一轮 · 带着这句"
                         : "重演这一轮"
-                      : "插一句"}
+                      : "提示"}
                 </button>
                 <button type="button" className="ghost-btn" onClick={() => setAction(null)}>
                   取消

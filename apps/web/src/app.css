@@ -3826,20 +3826,24 @@ select:focus {
   flex: 0 0 auto;
   margin: -6px -12px -8px 0;
 }
-/* 方形图标键：无边框无底色，图标直接浮在窗上。
-   padding: 0 是必须的——全局 button 的内边距会把 42px 方块挤成 14px 内容框。
-   42px 见方 ≈ 触控下限，且整排仍在窗内不顶到窗沿。 */
+/* 图标 + 文字的键：无边框无底色，图标在前、短词在后。
+   padding: 0 只在纵向收，横向留 10px 让图标不贴边。
+   42px 高 ≈ 触控下限，整排仍在窗内不顶到窗沿。 */
 .dir-btn {
   position: relative;
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 42px;
+  padding: 0 10px;
   border: none;
   border-radius: 1px;
   background: none;
   color: rgb(242 235 222 / 0.72);
+  font: inherit;
+  font-size: 12.5px;
+  letter-spacing: 0.1em;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.55);
   cursor: pointer;
   transition:
     color var(--hover-ms) ease,
