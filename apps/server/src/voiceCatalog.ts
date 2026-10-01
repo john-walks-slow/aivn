@@ -5,7 +5,6 @@ import { dirname } from "node:path";
 import { fetch as undiciFetch, ProxyAgent } from "undici";
 import type { VoiceCatalog, VoiceEntry } from "@stage-ai/core";
 import type { ServerConfig } from "./config.js";
-import { readTtsKeys } from "./tts.js";
 
 /**
  * Fish Audio 公共音色库客户端。
@@ -138,8 +137,8 @@ export class VoiceCatalogService {
   /** 多 key 轮询：GET 与合成共用 key 池，401/402/429 时换下一把。 */
   private createFetcher(): VoiceFetcher {
     return async <T>(path: string): Promise<T> => {
-      const keys = readTtsKeys(this.config);
-      if (keys.length === 0) throw new Error("未配置 fish key，无法获取音色库");
+      const keys = this.config.tts.keys;
+      if (keys.length === 0) throw new Error("未配置 STAGE_TTS_KEYS，无法获取音色库");
       let lastError: unknown = null;
       for (const key of keys) {
         try {

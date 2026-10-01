@@ -5,12 +5,10 @@ import { describe, expect, it } from "vitest";
 import type { ServerConfig } from "../src/config.js";
 import { SettingsFile, mask } from "../src/configApi.js";
 
-function fixture(env: string): { file: SettingsFile; envPath: string; keysPath: string } {
+function fixture(env: string): { file: SettingsFile; envPath: string } {
   const dir = mkdtempSync(join(tmpdir(), "stage-config-"));
   const envPath = join(dir, ".env");
   writeFileSync(envPath, env, "utf8");
-  const keysPath = join(dir, "tts-keys.json");
-  writeFileSync(keysPath, JSON.stringify(["fish-key-one", "fish-key-two"]), "utf8");
   const config = {
     port: 8787,
     playsRoot: dir,
@@ -34,20 +32,25 @@ function fixture(env: string): { file: SettingsFile; envPath: string; keysPath: 
       timeoutMs: 180000,
       reference: "neutral",
     },
-    tts: { enabled: true, keysPath, proxy: "", baseUrl: "https://api.fish.audio", concurrency: 3 },
+    tts: { enabled: true, keys: ["fish-key-one", "fish-key-two"], proxy: "", baseUrl: "https://api.fish.audio", concurrency: 3 },
+    exa: { enabled: true, keys: ["exa-key-one"], baseUrl: "https://api.exa.ai", proxy: "", timeoutMs: 20000 },
   } as unknown as ServerConfig;
-  return { file: new SettingsFile(envPath, config), envPath, keysPath };
+  return { file: new SettingsFile(envPath, config), envPath };
 }
 
 describe("设置面板后端", () => {
   it("读：凭据只回掩码，附存在位", () => {
-    const { file } = fixture("STAGE_MODEL_ID=low\n");
+    const { file } = fixture("STAGE_MODEL_ID=low\nSTAGE_TTS_KEYS=fish-key-one, fish-key-two\n");
     const view = file.read();
     expect(view.model.apiKey).toBe("sk-s••••1234");
     expect(view.model.apiKeySet).toBe(true);
     expect(view.model.modelId).toBe("low");
     expect(view.tts.keyCount).toBe(2);
+    expect(view.tts.masked).toEqual(["fish••••-one", "fish••••-two"]);
+    // 明文永不出服务端：面板输入框恒空，留空即「保持不变」
+    expect(view.tts.keys).toBe("");
     expect(JSON.stringify(view)).not.toContain("sk-secret-value-1234");
+    expect(JSON.stringify(view)).not.toContain("fish-key-one");
   });
 
   it("写：只改被改的键，注释与无关键原样保留", () => {
@@ -109,16 +112,34 @@ describe("设置面板后端", () => {
     expect(readFileSync(envPath, "utf8")).toContain("STAGE_MODELS=\n");
   });
 
-  it("TTS keys：整体覆盖为 JSON 数组，读取容错", () => {
-    const { file, keysPath } = fixture("");
-    file.writeTtsKeys(["k1", "k2", "k3"]);
-    expect(JSON.parse(readFileSync(keysPath, "utf8"))).toEqual(["k1", "k2", "k3"]);
-    expect(file.readTtsKeys()).toEqual(["k1", "k2", "k3"]);
+  it("多把 key：走同一个保存入口，留空=不改，填入=整组替换", () => {
+    const { file, envPath } = fixture("STAGE_TTS_KEYS=old-1, old-2\n");
 
-    writeFileSync(keysPath, JSON.stringify({ keys: ["a", "b"] }), "utf8");
-    expect(file.readTtsKeys()).toEqual(["a", "b"]);
-    writeFileSync(keysPath, "not json", "utf8");
-    expect(file.readTtsKeys()).toEqual([]);
+    // 面板回传的空串（输入框没动）不该擦掉已存的 key
+    expect(file.write({ tts: { keys: "" } as never })).toEqual([]);
+    expect(file.write({ tts: { keys: "   " } as never })).toEqual([]);
+    expect(readFileSync(envPath, "utf8")).toContain("STAGE_TTS_KEYS=old-1, old-2");
+
+    // 填入即整组替换，归一化成逗号分隔存回 .env
+    expect(file.write({ tts: { keys: "new-1, new-2 , new-3" } as never })).toEqual(["STAGE_TTS_KEYS"]);
+    expect(readFileSync(envPath, "utf8")).toContain("STAGE_TTS_KEYS=new-1,new-2,new-3");
+    expect(file.read().tts.keyCount).toBe(3);
+  });
+
+  it("联网检索面与语音面同构：开关/端点/超时/密钥都可改", () => {
+    const { file, envPath } = fixture("STAGE_EXA_KEYS=exa-key-one\n");
+    expect(file.read().exa.keyCount).toBe(1);
+    expect(file.read().exa.masked).toEqual(["exa-••••-one"]);
+
+    expect(file.write({ exa: { enabled: false, timeoutMs: 30000, keys: "e1,e2" } as never })).toEqual([
+      "STAGE_EXA_ENABLED",
+      "STAGE_EXA_TIMEOUT_MS",
+      "STAGE_EXA_KEYS",
+    ]);
+    const env = readFileSync(envPath, "utf8");
+    expect(env).toContain("STAGE_EXA_ENABLED=false");
+    expect(env).toContain("STAGE_EXA_TIMEOUT_MS=30000");
+    expect(env).toContain("STAGE_EXA_KEYS=e1,e2");
   });
 
   it("掩码：短密钥不露头尾，空值为空串", () => {

@@ -1,6 +1,4 @@
-import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { parseImageSize, imageSizeText } from "./imageBackend.js";
 import { DEFAULT_MAX_QUEUE } from "./limiter.js";
 
@@ -65,7 +63,8 @@ export interface ServerConfig {
   /** 语音管线（D5）：fish-audio keys / 代理 / 并发。 */
   tts: {
     enabled: boolean;
-    keysPath: string;
+    /** 多把 key 轮询（`STAGE_TTS_KEYS`，逗号分隔）。 */
+    keys: string[];
     proxy: string;
     baseUrl: string;
     concurrency: number;
@@ -73,7 +72,8 @@ export interface ServerConfig {
   /** 工坊联网检索（Exa）：工坊 agent 唯一的联网口子，一次调用同时搜索并取回正文。 */
   exa: {
     enabled: boolean;
-    keysPath: string;
+    /** 多把 key 轮询（`STAGE_EXA_KEYS`，逗号分隔）；Exa 的免费额度按 key 给。 */
+    keys: string[];
     baseUrl: string;
     proxy: string;
     timeoutMs: number;
@@ -174,17 +174,14 @@ export function loadConfig(
     },
     tts: {
       enabled: env.STAGE_TTS_ENABLED !== "false",
-      keysPath: resolve(
-        repoRoot,
-        env.STAGE_TTS_KEYS ?? join(homedir(), ".config/fish-audio/keys.json"),
-      ),
+      keys: parseKeyList(env.STAGE_TTS_KEYS),
       proxy: env.STAGE_TTS_PROXY ?? "http://127.0.0.1:7890",
       baseUrl: env.STAGE_TTS_BASE_URL ?? "https://api.fish.audio",
       concurrency: parsePositiveInt("STAGE_TTS_CONCURRENCY", env.STAGE_TTS_CONCURRENCY, 2),
     },
     exa: {
       enabled: env.STAGE_EXA_ENABLED !== "false",
-      keysPath: resolve(repoRoot, env.STAGE_EXA_KEYS ?? join(homedir(), ".config/exa/keys.json")),
+      keys: parseKeyList(env.STAGE_EXA_KEYS),
       baseUrl: env.STAGE_EXA_BASE_URL ?? "https://api.exa.ai",
       proxy: env.STAGE_EXA_PROXY ?? "http://127.0.0.1:7890",
       timeoutMs: parsePositiveInt("STAGE_EXA_TIMEOUT_MS", env.STAGE_EXA_TIMEOUT_MS, 20_000),
@@ -214,14 +211,12 @@ export function imagePendingTtlMs(image: ServerConfig["image"]): number {
   return image.timeoutMs * (1 + batches);
 }
 
-/** 多 key 凭据文件：接受 `["k1","k2"]` 或 `{"keys": [...]}`，缺失/坏文件按空表处理。 */
-export function readKeysFile(path: string): string[] {
-  try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
-    const list = Array.isArray(raw) ? raw : (raw as { keys?: unknown })?.keys;
-    if (!Array.isArray(list)) return [];
-    return list.filter((k): k is string => typeof k === "string" && k.trim() !== "");
-  } catch {
-    return [];
+/** 多 key 凭据（`STAGE_TTS_KEYS` / `STAGE_EXA_KEYS`）：逗号或换行分隔，保序去重。 */
+export function parseKeyList(raw: string | undefined): string[] {
+  const out: string[] = [];
+  for (const part of (raw ?? "").split(/[,\s]+/)) {
+    const key = part.trim();
+    if (key !== "" && !out.includes(key)) out.push(key);
   }
+  return out;
 }

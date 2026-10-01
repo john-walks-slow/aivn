@@ -150,12 +150,17 @@ export interface Settings {
     timeoutMs: number;
     reference: "none" | "neutral";
   };
-  tts: { enabled: boolean; keysPath: string; proxy: string; baseUrl: string; concurrency: number; keyCount: number };
+  tts: KeyListSettings & { enabled: boolean; proxy: string; baseUrl: string; concurrency: number };
+  exa: KeyListSettings & { enabled: boolean; baseUrl: string; proxy: string; timeoutMs: number };
 }
 
-export interface TtsKeys {
-  count: number;
-  keys: string[];
+/** 多 key 凭据字段：明文不回传，输入框留空即「不改」。 */
+export interface KeyListSettings {
+  /** 逗号分隔的明文；服务端读侧恒回空串。 */
+  keys: string;
+  /** 已存 key 的掩码（仅显示）。 */
+  masked: string[];
+  keyCount: number;
 }
 
 /** 创作口径正文（memory/always/craft.md）。新剧目为空——内置准则在剧作家的系统提示里。 */
@@ -347,15 +352,6 @@ export const api = {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),
-    }),
-
-  ttsKeys: () => request<TtsKeys>("/api/config/tts-keys"),
-
-  saveTtsKeys: (keys: string[]) =>
-    request<{ count: number }>("/api/config/tts-keys", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ keys }),
     }),
 };
 

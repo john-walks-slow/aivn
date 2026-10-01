@@ -1,5 +1,5 @@
 import { fetch as undiciFetch, ProxyAgent } from "undici";
-import { readKeysFile, type ServerConfig } from "./config.js";
+import type { ServerConfig } from "./config.js";
 
 /**
  * Exa 检索客户端（工坊 agent 唯一的联网口子）。
@@ -99,9 +99,9 @@ function parseResults(raw: unknown): ExaResult[] {
 /** 从配置装配 Exa 客户端；未启用或无可用 key 返回 null（工具不注册，prompt 里也不提联网）。 */
 export function createExa(config: ServerConfig): Exa | null {
   if (!config.exa.enabled) return null;
-  const keys = readKeysFile(config.exa.keysPath);
+  const keys = config.exa.keys;
   if (keys.length === 0) {
-    console.warn(`[stage-ai] Exa key 文件缺失或为空（工坊联网停用）: ${config.exa.keysPath}`);
+    console.warn("[stage-ai] STAGE_EXA_KEYS 为空（工坊联网停用）");
     return null;
   }
   return new Exa({

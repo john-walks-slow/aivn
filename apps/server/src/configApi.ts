@@ -2,12 +2,25 @@
  * 设置面板后端（P6）：把 `.env` 当作可写配置面——用户不该被迫手动改配置文件。
  *
  * 读写都按「解析成有序键值对 → 只改被改的键 → 逐行重写」执行，保留注释与未涉及的键。
- * 敏感值（API Key / TTS keys）只回掩码，前端原样回传掩码即视为「不改」。
+ * 凭据（API Key / 多把 key 的列表）只回掩码，前端留空即视为「不改」——
+ * 面板只有一个保存入口，任何凭据都不许有绕过它单独落盘的通道。
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { readKeysFile, type ServerConfig } from "./config.js";
+import { parseKeyList, type ServerConfig } from "./config.js";
 import { imageSizeText, parseImageSize } from "./imageBackend.js";
+
+/** 多 key 凭据字段（`STAGE_TTS_KEYS` / `STAGE_EXA_KEYS`）的传输面。 */
+export interface KeyListView {
+  /**
+   * 逗号分隔的明文。**读侧恒为空串**——输入框留空即「保持不变」，
+   * 填入即整组替换。单独一个写入按钮是设置面板最容易被误操作毁掉凭据的地方。
+   */
+  keys: string;
+  /** 已存 key 的掩码列表（仅供显示「已存 N 把」）。 */
+  masked: string[];
+  keyCount: number;
+}
 
 /** 设置面板的传输面：配置形态 + 凭据存在位（不回传明文）。 */
 export interface SettingsView {
@@ -28,7 +41,9 @@ export interface SettingsView {
   };
   /** 生图（格式 + 连接 + 档位）：key 只回掩码。 */
   image: ServerConfig["image"] & { apiKeySet: boolean };
-  tts: ServerConfig["tts"] & { keyCount: number };
+  tts: Omit<ServerConfig["tts"], "keys"> & KeyListView;
+  /** 工坊联网检索（Exa）。 */
+  exa: Omit<ServerConfig["exa"], "keys"> & KeyListView;
 }
 
 export class SettingsFile {
@@ -57,7 +72,6 @@ export class SettingsFile {
     };
     const apiKey = text("STAGE_API_KEY", this.config.apiKey);
     const imageKey = text("STAGE_IMAGE_API_KEY", this.config.image.apiKey);
-    const keysPath = text("STAGE_TTS_KEYS", this.config.tts.keysPath);
     return {
       port: num("STAGE_PORT", this.config.port),
       playsRoot: text("STAGE_PLAYS_ROOT", this.config.playsRoot),
@@ -87,11 +101,17 @@ export class SettingsFile {
       },
       tts: {
         enabled: bool("STAGE_TTS_ENABLED", this.config.tts.enabled),
-        keysPath,
         proxy: text("STAGE_TTS_PROXY", this.config.tts.proxy),
         baseUrl: text("STAGE_TTS_BASE_URL", this.config.tts.baseUrl),
         concurrency: num("STAGE_TTS_CONCURRENCY", this.config.tts.concurrency),
-        keyCount: readKeysFile(keysPath).length,
+        ...keyListView(parseKeyList(text("STAGE_TTS_KEYS", ""))),
+      },
+      exa: {
+        enabled: bool("STAGE_EXA_ENABLED", this.config.exa.enabled),
+        baseUrl: text("STAGE_EXA_BASE_URL", this.config.exa.baseUrl),
+        proxy: text("STAGE_EXA_PROXY", this.config.exa.proxy),
+        timeoutMs: num("STAGE_EXA_TIMEOUT_MS", this.config.exa.timeoutMs),
+        ...keyListView(parseKeyList(text("STAGE_EXA_KEYS", ""))),
       },
     };
   }
@@ -159,23 +179,24 @@ export class SettingsFile {
     const tts = patch.tts;
     if (tts) {
       if (tts.enabled !== undefined) set(this.envPath, "STAGE_TTS_ENABLED", String(tts.enabled), changed);
-      if (tts.keysPath !== undefined) set(this.envPath, "STAGE_TTS_KEYS", tts.keysPath, changed);
       if (tts.proxy !== undefined) set(this.envPath, "STAGE_TTS_PROXY", tts.proxy, changed);
       if (tts.baseUrl !== undefined) set(this.envPath, "STAGE_TTS_BASE_URL", tts.baseUrl, changed);
       if (tts.concurrency !== undefined) {
         set(this.envPath, "STAGE_TTS_CONCURRENCY", String(int(tts.concurrency, "语音并发")), changed);
       }
+      writeKeyList(this.envPath, "STAGE_TTS_KEYS", tts.keys, "语音密钥", changed);
+    }
+    const exa = patch.exa;
+    if (exa) {
+      if (exa.enabled !== undefined) set(this.envPath, "STAGE_EXA_ENABLED", String(exa.enabled), changed);
+      if (exa.baseUrl !== undefined) set(this.envPath, "STAGE_EXA_BASE_URL", exa.baseUrl, changed);
+      if (exa.proxy !== undefined) set(this.envPath, "STAGE_EXA_PROXY", exa.proxy, changed);
+      if (exa.timeoutMs !== undefined) {
+        set(this.envPath, "STAGE_EXA_TIMEOUT_MS", String(int(exa.timeoutMs, "检索超时")), changed);
+      }
+      writeKeyList(this.envPath, "STAGE_EXA_KEYS", exa.keys, "检索密钥", changed);
     }
     return changed;
-  }
-
-  /** TTS keys 文件的明文键（仅供 PUT 整体覆盖；GET 侧只回条数与掩码）。 */
-  readTtsKeys(): string[] {
-    return readKeysFile(this.read().tts.keysPath);
-  }
-
-  writeTtsKeys(keys: string[]): void {
-    writeFileSync(this.read().tts.keysPath, JSON.stringify(keys, null, 2), "utf8");
   }
 }
 
@@ -187,6 +208,24 @@ export function settingsFileFor(config: ServerConfig, repoRoot: string): Setting
 export function mask(secret: string): string {
   if (secret.length <= 8) return secret ? "••••" : "";
   return `${secret.slice(0, 4)}••••${secret.slice(-4)}`;
+}
+
+/** 多 key 字段的读侧视图：明文不回传，只给掩码与条数。 */
+function keyListView(keys: string[]): KeyListView {
+  return { keys: "", masked: keys.map(mask), keyCount: keys.length };
+}
+
+/**
+ * 多 key 字段的写侧：留空 = 保持不变，填入 = 整组替换。
+ *
+ * 「清空」不是可表达的意图——想停用语音/联网有各自的启用开关，
+ * 而「不小心清空」是真的发生过（粘贴一把新 key 顺手抹掉另外两把）。
+ */
+function writeKeyList(path: string, name: string, raw: string | undefined, label: string, changed: string[]): void {
+  if (raw === undefined || raw.trim() === "") return;
+  const list = parseKeyList(raw);
+  if (list.length === 0) throw new Error(`${label}没有解析出任何 key`);
+  set(path, name, list.join(","), changed);
 }
 
 function int(value: number, label: string): number {

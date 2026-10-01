@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { imagePendingTtlMs, loadConfig, parseModelList, readKeysFile } from "../src/config.js";
+import { imagePendingTtlMs, loadConfig, parseKeyList, parseModelList } from "../src/config.js";
 
 describe("STAGE_MODELS 支持清单", () => {
   it("不配 = 不限制（空表）", () => {
@@ -42,32 +39,26 @@ describe("ServerConfig 纪元压缩参数", () => {
   });
 });
 
-describe("ServerConfig 联网检索与凭据文件", () => {
-  it("exa 默认开、走本地代理；env 能改 key 路径与端点", () => {
+describe("ServerConfig 联网检索与凭据", () => {
+  it("exa 默认开、走本地代理；env 能改端点与开关", () => {
     const base = loadConfig({}, "/repo");
     expect(base.exa.enabled).toBe(true);
     expect(base.exa.baseUrl).toBe("https://api.exa.ai");
     expect(base.exa.proxy).toBe("http://127.0.0.1:7890");
-    expect(base.exa.keysPath).toContain(".config/exa/keys.json");
+    expect(base.exa.keys).toEqual([]);
 
-    const custom = loadConfig({ STAGE_EXA_KEYS: "keys/exa.json", STAGE_EXA_ENABLED: "false" }, "/repo");
-    expect(custom.exa.keysPath).toBe("/repo/keys/exa.json");
+    const custom = loadConfig({ STAGE_EXA_ENABLED: "false" }, "/repo");
     expect(custom.exa.enabled).toBe(false);
   });
 
-  it("凭据文件两种形状都认；坏文件按空表处理（不拖垮装配）", () => {
-    const dir = mkdtempSync(join(tmpdir(), "stage-keys-"));
-    const write = (name: string, body: string): string => {
-      const path = join(dir, name);
-      writeFileSync(path, body);
-      return path;
-    };
-    expect(readKeysFile(write("array.json", '["k1", "k2"]'))).toEqual(["k1", "k2"]);
-    expect(readKeysFile(write("object.json", '{"keys":["k1"]}'))).toEqual(["k1"]);
-    // 空串与空文件都当没配，不把脏 key 递给 API
-    expect(readKeysFile(write("blank.json", '["k1", "", 2]'))).toEqual(["k1"]);
-    expect(readKeysFile(write("garbage.json", "not json"))).toEqual([]);
-    expect(readKeysFile(join(dir, "missing.json"))).toEqual([]);
+  it("多把 key 从 env 逗号分隔读入（不再指向凭据文件）", () => {
+    expect(parseKeyList(undefined)).toEqual([]);
+    expect(parseKeyList("   ")).toEqual([]);
+    expect(parseKeyList("k1, k2 , k3")).toEqual(["k1", "k2", "k3"]);
+    expect(parseKeyList("k1 k2\tk3")).toEqual(["k1", "k2", "k3"]);
+    // 保序去重：轮询顺序就是配置里写的顺序
+    expect(parseKeyList("k2, k1, k2")).toEqual(["k2", "k1"]);
+    expect(loadConfig({ STAGE_TTS_KEYS: "sk-a,sk-b" }, "/repo").tts.keys).toEqual(["sk-a", "sk-b"]);
   });
 });
 

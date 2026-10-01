@@ -251,29 +251,14 @@ export async function handleHttp(
       if (parts[2] === "tools") return json(res, 200, { tools: playhouse.tools() });
     }
 
-    // —— 设置面板（P6）：.env 与 TTS keys 全部 GUI 可改，不要求用户碰配置文件 ——
+    // —— 设置面板（P6）：.env 全部 GUI 可改，不要求用户碰配置文件 ——
+    // 只有一个 PUT：凭据与普通配置走同一条写入路径，面板上也只有「保存设置 / 放弃改动」两个出口。
     if (parts[0] === "api" && parts[1] === "config" && parts.length === 2) {
       if (!settings) return fail(res, 404, "设置面板未启用");
       if (method === "GET") return json(res, 200, settings.read());
       if (method === "PUT") {
         const patch = JSON.parse((await readBody(req)).toString("utf8"));
         return json(res, 200, { changed: settings.write(patch) });
-      }
-      return fail(res, 405, "不支持的方法");
-    }
-    if (parts[0] === "api" && parts[1] === "config" && parts[2] === "tts-keys" && parts.length === 3) {
-      if (!settings) return fail(res, 404, "设置面板未启用");
-      if (method === "GET") {
-        const keys = settings.readTtsKeys();
-        return json(res, 200, { count: keys.length, keys: keys.map((k) => `${k.slice(0, 6)}••••`) });
-      }
-      if (method === "PUT") {
-        const body = JSON.parse((await readBody(req)).toString("utf8")) as { keys?: unknown };
-        if (!Array.isArray(body.keys) || body.keys.some((k) => typeof k !== "string" || !k.trim())) {
-          return fail(res, 400, "TTS keys 必须是字符串数组");
-        }
-        settings.writeTtsKeys(body.keys as string[]);
-        return json(res, 200, { count: (body.keys as string[]).length });
       }
       return fail(res, 405, "不支持的方法");
     }

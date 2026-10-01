@@ -1,18 +1,20 @@
 /**
- * 设置面板（P6）：模型网关 / 出图 / 语音三组，全部 GUI 可改。
+ * 设置面板（P6）：模型网关 / 出图 / 语音 / 联网四组，全部 GUI 可改。
  *
- * 落点是服务端 `.env` 与 TTS keys 文件（configApi 负责逐键回写）——用户不碰配置文件。
+ * 落点是服务端 `.env`（configApi 负责逐键回写）——用户不碰配置文件。
  * 改完需要重启服务端才生效，面板显式说明，不假装热生效。
  */
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "../ui/Icon.js";
-import { api, type Settings, type TtsKeys } from "../api.js";
+import { api, type GatewayModel, type Settings } from "../api.js";
 import { navigate } from "../router.jsx";
+import { ModelSelect, modelSourceHint } from "../ui/ModelSelect.js";
 
 type Draft = {
   model: Settings["model"];
   image: Settings["image"];
-  tts: Omit<Settings["tts"], "keyCount">;
+  tts: Omit<Settings["tts"], "keys"> & { keys: string };
+  exa: Omit<Settings["exa"], "keys"> & { keys: string };
 };
 
 export function SettingsScreen() {
@@ -20,8 +22,18 @@ export function SettingsScreen() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string[] | null>(null);
-  const [keys, setKeys] = useState<TtsKeys | null>(null);
-  const [keyDraft, setKeyDraft] = useState("");
+  const [models, setModels] = useState<GatewayModel[] | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
+
+  const loadModels = useCallback((refresh = false): void => {
+    api
+      .agentModels(refresh)
+      .then((r) => {
+        setModels(r.models);
+        setModelError(null);
+      })
+      .catch((err: unknown) => setModelError(err instanceof Error ? err.message : String(err)));
+  }, []);
 
   const load = useCallback(() => {
     api
@@ -31,21 +43,13 @@ export function SettingsScreen() {
         setDraft({
           model: { ...next.model },
           image: { ...next.image },
-          tts: {
-            enabled: next.tts.enabled,
-            keysPath: next.tts.keysPath,
-            proxy: next.tts.proxy,
-            baseUrl: next.tts.baseUrl,
-            concurrency: next.tts.concurrency,
-          },
+          tts: { ...next.tts, keys: "" },
+          exa: { ...next.exa, keys: "" },
         });
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
-    api
-      .ttsKeys()
-      .then(setKeys)
-      .catch(() => setKeys(null));
-  }, []);
+    loadModels();
+  }, [loadModels]);
 
   useEffect(load, [load]);
 
@@ -54,21 +58,6 @@ export function SettingsScreen() {
     try {
       const { changed } = await api.saveSettings(draft);
       setSaved(changed);
-      setError(null);
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const saveKeys = async (): Promise<void> => {
-    const list = keyDraft
-      .split(/[\n,]/)
-      .map((k) => k.trim())
-      .filter(Boolean);
-    try {
-      await api.saveTtsKeys(list);
-      setKeyDraft("");
       setError(null);
       load();
     } catch (err) {
@@ -103,39 +92,34 @@ export function SettingsScreen() {
       ) : (
         <div className="settings-body">
           <Group title="模型网关">
-            <Field label="模型 ID" hint="cpa 网关的模型名；低端机可用 low / medium 别名">
-              <input
+            <Field label="模型 ID" hint={modelSourceHint(models ?? [], settings.model.models)}>
+              <ModelSelect
                 value={draft.model.modelId}
-                onChange={(e) =>
-                  setDraft({ ...draft, model: { ...draft.model, modelId: e.target.value } })
-                }
+                models={models}
+                error={modelError}
+                onChange={(id) => setDraft({ ...draft, model: { ...draft.model, modelId: id } })}
+                onRetry={() => loadModels(true)}
               />
             </Field>
             <Field
               label="支持的模型"
-              hint="逗号分隔，剧目「Agent」页的模型下拉只给这几个；留空 = 网关有什么给什么"
+              hint="逗号分隔，上面那个下拉与剧目「Agent」页的下拉都只给这几个；留空 = 网关有什么给什么"
             >
               <input
                 value={draft.model.models}
-                onChange={(e) =>
-                  setDraft({ ...draft, model: { ...draft.model, models: e.target.value } })
-                }
+                onChange={(e) => setDraft({ ...draft, model: { ...draft.model, models: e.target.value } })}
               />
             </Field>
             <Field label="元数据基座" hint="决定上下文/价格估算的假模型，必须与网关实际能力匹配">
               <input
                 value={draft.model.modelBase}
-                onChange={(e) =>
-                  setDraft({ ...draft, model: { ...draft.model, modelBase: e.target.value } })
-                }
+                onChange={(e) => setDraft({ ...draft, model: { ...draft.model, modelBase: e.target.value } })}
               />
             </Field>
             <Field label="网关地址" hint="OpenAI 兼容端点">
               <input
                 value={draft.model.baseUrl}
-                onChange={(e) =>
-                  setDraft({ ...draft, model: { ...draft.model, baseUrl: e.target.value } })
-                }
+                onChange={(e) => setDraft({ ...draft, model: { ...draft.model, baseUrl: e.target.value } })}
               />
             </Field>
             <Field
@@ -149,9 +133,7 @@ export function SettingsScreen() {
               <input
                 type="password"
                 placeholder={settings.model.apiKey || "未配置"}
-                onChange={(e) =>
-                  setDraft({ ...draft, model: { ...draft.model, apiKey: e.target.value } })
-                }
+                onChange={(e) => setDraft({ ...draft, model: { ...draft.model, apiKey: e.target.value } })}
               />
             </Field>
             <div className="settings-grid">
@@ -178,24 +160,17 @@ export function SettingsScreen() {
                 label="保留上下文"
                 hint="必须小于压缩阈值"
                 value={draft.model.keepRecentTokens}
-                onChange={(v) =>
-                  setDraft({ ...draft, model: { ...draft.model, keepRecentTokens: v } })
-                }
+                onChange={(v) => setDraft({ ...draft, model: { ...draft.model, keepRecentTokens: v } })}
               />
             </div>
           </Group>
 
           <Group title="出图">
-            <Field
-              label="启用生图"
-              hint="关闭后场景只走氛围底色，不占出图配额"
-            >
+            <Field label="启用生图" hint="关闭后场景只走氛围底色，不占出图配额">
               <input
                 type="checkbox"
                 checked={draft.image.enabled}
-                onChange={(e) =>
-                  setDraft({ ...draft, image: { ...draft.image, enabled: e.target.checked } })
-                }
+                onChange={(e) => setDraft({ ...draft, image: { ...draft.image, enabled: e.target.checked } })}
               />
             </Field>
             <Field
@@ -226,9 +201,7 @@ export function SettingsScreen() {
               <input
                 type="password"
                 placeholder={settings.image.apiKey || "未配置"}
-                onChange={(e) =>
-                  setDraft({ ...draft, image: { ...draft.image, apiKey: e.target.value } })
-                }
+                onChange={(e) => setDraft({ ...draft, image: { ...draft.image, apiKey: e.target.value } })}
               />
             </Field>
             <Field
@@ -237,9 +210,7 @@ export function SettingsScreen() {
             >
               <input
                 value={draft.image.baseUrl}
-                onChange={(e) =>
-                  setDraft({ ...draft, image: { ...draft.image, baseUrl: e.target.value } })
-                }
+                onChange={(e) => setDraft({ ...draft, image: { ...draft.image, baseUrl: e.target.value } })}
               />
             </Field>
             <Field
@@ -248,18 +219,14 @@ export function SettingsScreen() {
             >
               <input
                 value={draft.image.model}
-                onChange={(e) =>
-                  setDraft({ ...draft, image: { ...draft.image, model: e.target.value } })
-                }
+                onChange={(e) => setDraft({ ...draft, image: { ...draft.image, model: e.target.value } })}
               />
             </Field>
             <div className="settings-grid">
               <Field label="出图档位" hint="1K / 2K / 4K = 总像素量级（K 大写），openai 格式按画幅换算成 WxH；也可直接写字面尺寸如 1536x1024">
                 <input
                   value={draft.image.size}
-                  onChange={(e) =>
-                    setDraft({ ...draft, image: { ...draft.image, size: e.target.value } })
-                  }
+                  onChange={(e) => setDraft({ ...draft, image: { ...draft.image, size: e.target.value } })}
                 />
               </Field>
               <NumField
@@ -300,32 +267,47 @@ export function SettingsScreen() {
               value={draft.tts.concurrency}
               onChange={(v) => setDraft({ ...draft, tts: { ...draft.tts, concurrency: v } })}
             />
-            <Field
-              label="密钥文件"
-              hint="多把 key 轮询；当前已存 {count} 把"
-              count={keys?.count ?? settings.tts.keyCount}
-            >
+            <KeyField
+              label="语音密钥"
+              hint="多把 key 轮询；已存 {count} 把（留空=保持不变，填入=整组替换）"
+              value={draft.tts.keys}
+              masked={settings.tts.masked}
+              onChange={(keys) => setDraft({ ...draft, tts: { ...draft.tts, keys } })}
+            />
+          </Group>
+
+          <Group title="联网检索（Exa）">
+            <Field label="启用检索" hint="工坊 agent 唯一的联网口子；关掉就只剩离线工具">
               <input
-                value={draft.tts.keysPath}
-                onChange={(e) => setDraft({ ...draft, tts: { ...draft.tts, keysPath: e.target.value } })}
+                type="checkbox"
+                checked={draft.exa.enabled}
+                onChange={(e) => setDraft({ ...draft, exa: { ...draft.exa, enabled: e.target.checked } })}
               />
             </Field>
-            <Field label="新增密钥" hint="粘贴 key（逗号或换行分隔），点「写入密钥」覆盖整个文件">
-              <textarea
-                rows={2}
-                value={keyDraft}
-                placeholder="sk-xxxx, sk-yyyy"
-                onChange={(e) => setKeyDraft(e.target.value)}
+            <Field label="服务地址" hint="exa 兼容端点">
+              <input
+                value={draft.exa.baseUrl}
+                onChange={(e) => setDraft({ ...draft, exa: { ...draft.exa, baseUrl: e.target.value } })}
               />
             </Field>
-            <div className="row">
-              <button className="ghost-btn" onClick={() => void saveKeys()}>
-                写入密钥
-              </button>
-              {keys && keys.count > 0 && (
-                <span className="muted">已存：{keys.keys.map((k) => `${k}••••`).join("　")}</span>
-              )}
-            </div>
+            <Field label="代理" hint="本机走 代理 混合端口，如 http://127.0.0.1:7890">
+              <input
+                value={draft.exa.proxy}
+                onChange={(e) => setDraft({ ...draft, exa: { ...draft.exa, proxy: e.target.value } })}
+              />
+            </Field>
+            <NumField
+              label="检索超时 ms"
+              value={draft.exa.timeoutMs}
+              onChange={(v) => setDraft({ ...draft, exa: { ...draft.exa, timeoutMs: v } })}
+            />
+            <KeyField
+              label="检索密钥"
+              hint="多把 key 轮询；已存 {count} 把（留空=保持不变，填入=整组替换）"
+              value={draft.exa.keys}
+              masked={settings.exa.masked}
+              onChange={(keys) => setDraft({ ...draft, exa: { ...draft.exa, keys } })}
+            />
           </Group>
 
           <div className="row">
@@ -352,17 +334,36 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-function Field(props: {
+/**
+ * 多把 key 的凭据输入框。
+ *
+ * 输入框**永远是空的**，已存的 key 只以掩码出现在 placeholder 里：
+ * 「留空 = 不变」只有输入框真的是空的时候才成立，预填掩码再让用户去删是事故的配方。
+ */
+function KeyField(props: {
   label: string;
-  hint?: string;
-  count?: number;
-  children: React.ReactNode;
+  hint: string;
+  value: string;
+  masked: string[];
+  onChange: (value: string) => void;
 }) {
+  return (
+    <Field label={props.label} hint={props.hint.replace("{count}", String(props.masked.length))}>
+      <input
+        value={props.value}
+        placeholder={props.masked.join("　") || "未配置"}
+        onChange={(e) => props.onChange(e.target.value)}
+      />
+    </Field>
+  );
+}
+
+function Field(props: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="settings-field">
       <span className="settings-label">{props.label}</span>
       {props.children}
-      {props.hint && <span className="settings-hint">{props.hint.replace("{count}", String(props.count ?? 0))}</span>}
+      {props.hint && <span className="settings-hint">{props.hint}</span>}
     </label>
   );
 }

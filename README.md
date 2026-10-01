@@ -228,7 +228,7 @@ STAGE_IMAGE_SIZE=1K                         # gpt-image-1 系列只认标准尺�
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `STAGE_TTS_ENABLED` | `true` | 语音总开关（无可用 key 时自动停用） |
-| `STAGE_TTS_KEYS` | `~/.config/fish-audio/keys.json` | fish-audio key 列表文件（JSON 数组，多 key 自动轮询 401/402/429） |
+| `STAGE_TTS_KEYS` | 空 | fish-audio key 列表，逗号分隔（多 key 自动轮询 401/402/429）。也可以填换行分隔 |
 | `STAGE_TTS_PROXY` | `http://127.0.0.1:7890` | 访问 api.fish.audio 的代理；留空直连 |
 | `STAGE_TTS_BASE_URL` | `https://api.fish.audio` | TTS API 地址 |
 | `STAGE_TTS_CONCURRENCY` | `2` | 并发合成上限（句级预取） |
@@ -365,10 +365,11 @@ CG 视图（`#/play/<id>/stage?view=cg`）是这一场已经出过的插图清�
 
 剧目库页那份设置可以**不动手改 `.env`**：
 
-- 凭据不回传明文：API Key / 语音密钥只显示掩码（`abcd••••mnop`），留空或保持掩码保存 = 不改这一项。
+- 凭据不回传明文：API Key / 语音密钥 / 检索密钥只显示掩码（`abcd••••mnop`），输入框恒为空。留空保存 = 不改这一项。
 - `.env` 按行改写：注释与没动的行原样保留；文件里没有的键追加到末尾。
-- 语音密钥单独一组：把 fish-audio key 粘进去点「写入密钥」即覆盖 `~/.config/fish-audio/keys.json`（多 key 自动轮询）。
-- 支持模型清单（`STAGE_MODELS`）就是模型网关组里的一行逗号分隔模型 id。清单里的 id 网关没有时，工坊「Agent」页的模型下拉会直接报错点名——按报出来的名字改清单，或从网关 `/v1/models` 抄一个现成的 id。
+- 多把 key 跟其他字段走同一个「保存设置」：语音密钥与检索密钥都是**整组替换**——留空 = 保持不变，粘进新的一组 = 旧的全部作废、换成新的一组（逗号分隔，写回时压成一行）。没有单独的「写入密钥」按钮，免得密钥和其余配置走两条路、改一半。
+- 模型 ID 是下拉：值取自 `GET /api/agents/models`（网关 `/v1/models` 清单 ∩ `STAGE_MODELS` 支持清单），读不到清单会显式报错并给重试，不静默退化成手填。清单外的旧值会补一项「不在支持清单里」照原样显示。
+- 支持模型清单（`STAGE_MODELS`）就是模型网关组里的一行逗号分隔模型 id。留空 = 网关有什么给什么。清单里的 id 网关没有时，工坊「Agent」页的模型下拉会直接报错点名——按报出来的名字改清单，或从网关 `/v1/models` 抄一个现成的 id。
 
 字段含义与上面各 `.env` 表格一一对应，改完建议看一眼 `GET /api/config` 的回包（掩码后的值 + `changed` 列表）。
 
@@ -581,7 +582,7 @@ library/
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `STAGE_EXA_ENABLED` | `true` | 联网总开关（`false` = 工坊完全不联网） |
-| `STAGE_EXA_KEYS` | `~/.config/exa/keys.json` | Exa key 列表文件（JSON 数组，也接受 `{"keys": [...]}`；多 key 自动轮询 401/402/429） |
+| `STAGE_EXA_KEYS` | 空 | Exa key 列表，逗号分隔（Exa 的免费额度按 key 给，多 key 自动轮询 401/402/429） |
 | `STAGE_EXA_BASE_URL` | `https://api.exa.ai` | Exa API 地址 |
 | `STAGE_EXA_PROXY` | `http://127.0.0.1:7890` | 访问 api.exa.ai 的代理；留空直连 |
 | `STAGE_EXA_TIMEOUT_MS` | `20000` | 单次检索超时 |

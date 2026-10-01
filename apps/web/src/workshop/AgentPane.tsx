@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AgentConfig, AgentSettings, PlayConfig, ThinkingLevel } from "@stage-ai/core";
 import { THINKING_LEVELS } from "@stage-ai/core";
 import { api, type AgentToolEntry, type GatewayModel } from "../api.js";
+import { ModelSelect } from "../ui/ModelSelect.js";
 
 /**
  * 工坊「Agent」页：这部剧的两个 agent 各自跑什么模型、想多深、能用哪些工具。
@@ -121,34 +122,14 @@ export function AgentPane({ playId }: { playId: string }) {
 
             <label className="field">
               <span>模型</span>
-              {modelError ? (
-                <div className="row agent-model-error">
-                  <span className="muted small">模型清单读不出来：{modelError}</span>
-                  <button type="button" className="ghost-btn small-btn" onClick={() => loadModels(true)}>
-                    重试
-                  </button>
-                </div>
-              ) : (
-                <select
-                  value={settings.model ?? ""}
-                  disabled={models === null}
-                  onChange={(e) => patch(role.id, (s) => setOrClear(s, "model", e.target.value))}
-                >
-                  <option value="">
-                    跟随服务端默认{defaultModel ? `（${defaultModel}）` : ""}
-                  </option>
-                  {(models ?? []).map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name === m.id ? m.id : `${m.name}（${m.id}）`}
-                    </option>
-                  ))}
-                  {/* play.json 里手填的模型可能不在服务端清单内（老剧目，或清单后来改了）：
-                      补一项显示出来——select 的 value 找不到对应 option 会渲染成空白，看着像设置丢了 */}
-                  {settings.model && !(models ?? []).some((m) => m.id === settings.model) && (
-                    <option value={settings.model}>{settings.model}（不在支持清单里）</option>
-                  )}
-                </select>
-              )}
+              <ModelSelect
+                value={settings.model ?? ""}
+                models={models}
+                error={modelError}
+                emptyLabel={`跟随服务端默认${defaultModel ? `（${defaultModel}）` : ""}`}
+                onChange={(id) => patch(role.id, (s) => setOrClear(s, "model", id, ""))}
+                onRetry={() => loadModels(true)}
+              />
               <p className="muted small">
                 网关按量计费：工坊跑便宜模型、剧作家跑强模型是常见配法。
                 {loadingModels && " 正在读模型清单…"}
