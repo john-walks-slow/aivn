@@ -123,7 +123,7 @@ export function AgentPane({ playId }: { playId: string }) {
               <span>模型</span>
               {modelError ? (
                 <div className="row agent-model-error">
-                  <span className="muted small">读不到网关模型清单：{modelError}</span>
+                  <span className="muted small">模型清单读不出来：{modelError}</span>
                   <button type="button" className="ghost-btn small-btn" onClick={() => loadModels(true)}>
                     重试
                   </button>
@@ -142,6 +142,11 @@ export function AgentPane({ playId }: { playId: string }) {
                       {m.name === m.id ? m.id : `${m.name}（${m.id}）`}
                     </option>
                   ))}
+                  {/* play.json 里手填的模型可能不在服务端清单内（老剧目，或清单后来改了）：
+                      补一项显示出来——select 的 value 找不到对应 option 会渲染成空白，看着像设置丢了 */}
+                  {settings.model && !(models ?? []).some((m) => m.id === settings.model) && (
+                    <option value={settings.model}>{settings.model}（不在支持清单里）</option>
+                  )}
                 </select>
               )}
               <p className="muted small">

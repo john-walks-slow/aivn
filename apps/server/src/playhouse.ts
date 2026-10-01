@@ -8,7 +8,7 @@ import type { SaveInfo } from "./saves.js";
 import type { PlayConfig } from "@stage-ai/core";
 import type { ServerConfig } from "./config.js";
 import { imagePendingTtlMs } from "./config.js";
-import { createCpaProvider, fetchGatewayModels, resolveCpaModel, type GatewayModel } from "./provider.js";
+import { createCpaProvider, fetchGatewayModels, resolveCpaModel, supportedModels, type GatewayModel } from "./provider.js";
 import { createTts } from "./tts.js";
 import { createImageBackend } from "./imageFactory.js";
 import type { ImageBackend } from "./imageBackend.js";
@@ -587,17 +587,24 @@ export class PlayHouse {
     this.pendingRebuilds.set(playId, next);
   }
 
-  /** Agent 设置页的数据源：网关模型清单（读不到就报错，不静默退化成默认模型）。 */
+  /**
+   * Agent 设置页的数据源：网关模型清单 ∩ `STAGE_MODELS` 支持清单
+   * （读不到就报错，不静默退化成默认模型）。
+   *
+   * 缓存的是**网关原始清单**，收窄在读时做：清单只在启动时定一次，但它只值几行过滤，
+   * 而原始清单才是「网关上加了新模型」要重取的那份东西（refresh 打的就是它）。
+   */
   async gatewayModels(refresh = false): Promise<{ models: GatewayModel[]; defaultModel: string }> {
+    let models: GatewayModel[] | undefined;
     if (!refresh) {
       const cached = this.gatewayModelsCache;
-      if (cached && Date.now() - cached.at < GATEWAY_MODELS_TTL_MS) {
-        return { models: cached.models, defaultModel: this.config.modelId };
-      }
+      if (cached && Date.now() - cached.at < GATEWAY_MODELS_TTL_MS) models = cached.models;
     }
-    const models = await fetchGatewayModels(this.config);
-    this.gatewayModelsCache = { models, at: Date.now() };
-    return { models, defaultModel: this.config.modelId };
+    if (!models) {
+      models = await fetchGatewayModels(this.config);
+      this.gatewayModelsCache = { models, at: Date.now() };
+    }
+    return { models: supportedModels(models, this.config.models), defaultModel: this.config.modelId };
   }
 
   /** 工具目录（Agent 设置页的开关清单）。与装配用的是同一份定义。 */

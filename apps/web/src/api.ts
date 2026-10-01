@@ -125,6 +125,8 @@ export interface Settings {
   model: {
     modelId: string;
     modelBase: string;
+    /** 支持模型清单原文（`STAGE_MODELS`，逗号分隔）；空 = 网关有什么给什么。 */
+    models: string;
     baseUrl: string;
     apiKey: string;
     apiKeySet: boolean;

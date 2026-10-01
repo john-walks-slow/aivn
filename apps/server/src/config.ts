@@ -13,6 +13,11 @@ export interface ServerConfig {
   libraryRoot: string;
   modelId: string;
   modelBase: string; // pi-ai 内置基础模型（继承 api/cost/contextWindow 等元数据）
+  /**
+   * 这台部署支持哪些模型（`STAGE_MODELS`）：剧目「Agent」页的模型下拉只给这些。
+   * 空 = 不限制，沿用「网关 `/v1/models` 有什么给什么」。顺序按配置里写的来。
+   */
+  models: string[];
   baseUrl: string;
   apiKey: string;
   /** 单请求输出上限（max_tokens）：钳住捐赠元数据的虚高 maxTokens——streamSimple 不传时以 model.maxTokens 填充发出，超网关限制即 400。 */
@@ -103,6 +108,21 @@ function parseEnum<T extends string>(name: string, raw: string | undefined, allo
   return value;
 }
 
+/**
+ * `STAGE_MODELS`：这台部署支持哪些模型 id（逗号或空白分隔）。
+ *
+ * 空 = 不限制（网关有什么给什么）。保序去重——下拉的顺序就是配置里写的顺序，
+ * 「便宜→贵」这种配法用字母序排出来等于没排。
+ */
+export function parseModelList(raw: string | undefined): string[] {
+  const out: string[] = [];
+  for (const part of (raw ?? "").split(/[,\s]+/)) {
+    const id = part.trim();
+    if (id !== "" && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
 export function loadConfig(
   env: NodeJS.ProcessEnv = process.env,
   repoRoot = process.cwd(),
@@ -113,6 +133,7 @@ export function loadConfig(
     libraryRoot: resolve(repoRoot, env.STAGE_LIBRARY_ROOT ?? "library"),
     modelId: env.STAGE_MODEL_ID ?? "ms/deepseek-ai/DeepSeek-V4.1-Flash",
     modelBase: env.STAGE_MODEL_BASE ?? "deepseek/deepseek-flash",
+    models: parseModelList(env.STAGE_MODELS),
     baseUrl: env.STAGE_BASE_URL ?? "http://127.0.0.1:9999/v1",
     apiKey: env.STAGE_API_KEY ?? "sk-1234",
     maxTokens: parsePositiveInt("STAGE_MAX_TOKENS", env.STAGE_MAX_TOKENS, 32768),

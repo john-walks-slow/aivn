@@ -16,6 +16,7 @@ function fixture(env: string): { file: SettingsFile; envPath: string; keysPath: 
     playsRoot: dir,
     modelId: "low",
     modelBase: "deepseek-chat",
+    models: [],
     baseUrl: "http://127.0.0.1:9999/v1",
     apiKey: "sk-secret-value-1234",
     maxTokens: 32768,
@@ -92,6 +93,20 @@ describe("设置面板后端", () => {
     const { file, envPath } = fixture("STAGE_MODEL_ID=low\n");
     expect(file.write({ model: { modelId: "low" } as never })).toEqual([]);
     expect(readFileSync(envPath, "utf8")).toBe("STAGE_MODEL_ID=low\n");
+  });
+
+  it("支持的模型清单：面板输入什么就原样存什么（文本形态往返，解析在启动时做）", () => {
+    const listed = fixture("STAGE_MODEL_ID=low\nSTAGE_MODELS=low, high\n");
+    expect(listed.file.read().model.models).toBe("low, high");
+
+    const { file, envPath } = fixture("STAGE_MODEL_ID=low\n");
+    expect(file.read().model.models).toBe("");
+    expect(file.write({ model: { models: "low, high" } as never })).toEqual(["STAGE_MODELS"]);
+    expect(readFileSync(envPath, "utf8")).toContain("STAGE_MODELS=low, high");
+    expect(file.read().model.models).toBe("low, high");
+    // 清空 = 回到「不限制」，也是一个真改动
+    expect(file.write({ model: { models: "" } as never })).toEqual(["STAGE_MODELS"]);
+    expect(readFileSync(envPath, "utf8")).toContain("STAGE_MODELS=\n");
   });
 
   it("TTS keys：整体覆盖为 JSON 数组，读取容错", () => {

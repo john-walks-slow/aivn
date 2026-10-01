@@ -107,6 +107,26 @@ export interface GatewayModel {
 }
 
 /**
+ * 按 `STAGE_MODELS` 收窄网关清单（剧目「Agent」页模型下拉的数据源）。
+ *
+ * 清单**收窄**网关，不取代它：网关 `/v1/models` 仍是「哪些模型真能发出去」的真相，
+ * `STAGE_MODELS` 只决定给用户看哪几个（本机 cpa 网关有 143 个 id，多半余额耗尽，
+ * 在里面翻出两个 agent 各跑哪个并不现实）。
+ *
+ * 清单里的 id 网关没有就报错点名，不静默丢掉：下拉里摆一个发不出去的模型比整个下拉挂掉
+ * 更让人误会——选之前看不出来，选完才在剧目里 400。顺序按清单写的来（保序即「便宜→贵」的排法）。
+ */
+export function supportedModels(gateway: GatewayModel[], allow: string[]): GatewayModel[] {
+  if (allow.length === 0) return gateway;
+  const byId = new Map(gateway.map((m) => [m.id, m]));
+  const missing = allow.filter((id) => !byId.has(id));
+  if (missing.length > 0) {
+    throw new Error(`STAGE_MODELS 里的模型网关没有：${missing.join("、")}`);
+  }
+  return allow.map((id) => byId.get(id)!);
+}
+
+/**
  * 读网关的模型清单（`GET {baseUrl}/models`）。
  *
  * 读不到就抛错：模型下拉是「这个 agent 到底在用什么模型」的唯一真相，

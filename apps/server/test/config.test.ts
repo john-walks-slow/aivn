@@ -2,7 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { imagePendingTtlMs, loadConfig, readKeysFile } from "../src/config.js";
+import { imagePendingTtlMs, loadConfig, parseModelList, readKeysFile } from "../src/config.js";
+
+describe("STAGE_MODELS 支持清单", () => {
+  it("不配 = 不限制（空表）", () => {
+    expect(loadConfig({}, "/repo").models).toEqual([]);
+    expect(parseModelList(undefined)).toEqual([]);
+    expect(parseModelList("   ")).toEqual([]);
+  });
+
+  it("逗号与空白都算分隔，保序去重（下拉的顺序就是配置里写的顺序）", () => {
+    expect(parseModelList("low, high\tvision\nmedium")).toEqual(["low", "high", "vision", "medium"]);
+    expect(loadConfig({ STAGE_MODELS: "low, low ,high" }, "/repo").models).toEqual(["low", "high"]);
+  });
+});
 
 describe("ServerConfig 纪元压缩参数", () => {
   it("默认窗口/阈值/保留预算", () => {

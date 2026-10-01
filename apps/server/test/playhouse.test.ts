@@ -106,6 +106,23 @@ describe("PlayHouse 周目作用域：逛不建，看戏才建", () => {
     // 那份 runtime 早已被 stage() 换掉、orchestrator 已 dispose，拿到就是死的
     expect(await house.get("p1")).not.toBe(browsing);
   });
+
+  it("模型下拉 = 网关清单 ∩ 支持清单：只给点名的几个，顺序照配置", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ data: [{ id: "low" }, { id: "high" }, { id: "vision" }] }), {
+        status: 200,
+      })) as typeof fetch;
+    try {
+      const config = loadConfig({ STAGE_IMAGE_ENABLED: "false", STAGE_MODELS: "high,low" }, root);
+      const narrowed = new PlayHouse(library, config, new AssetLibrary(join(root, "library")));
+      const listed = await narrowed.gatewayModels();
+      expect(listed.models.map((m) => m.id)).toEqual(["high", "low"]);
+      expect(listed.defaultModel).toBe(config.modelId);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 });
 
 describe("导演生图：前置守卫（都不该碰生图后端）", () => {

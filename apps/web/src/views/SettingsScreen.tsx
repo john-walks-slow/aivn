@@ -111,6 +111,17 @@ export function SettingsScreen() {
                 }
               />
             </Field>
+            <Field
+              label="支持的模型"
+              hint="逗号分隔，剧目「Agent」页的模型下拉只给这几个；留空 = 网关有什么给什么"
+            >
+              <input
+                value={draft.model.models}
+                onChange={(e) =>
+                  setDraft({ ...draft, model: { ...draft.model, models: e.target.value } })
+                }
+              />
+            </Field>
             <Field label="元数据基座" hint="决定上下文/价格估算的假模型，必须与网关实际能力匹配">
               <input
                 value={draft.model.modelBase}

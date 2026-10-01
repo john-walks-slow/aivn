@@ -16,6 +16,8 @@ export interface SettingsView {
   model: {
     modelId: string;
     modelBase: string;
+    /** `STAGE_MODELS` 原文（逗号分隔）：文本即传输形态，面板上输入什么就存什么，解析在启动时做。 */
+    models: string;
     baseUrl: string;
     apiKey: string;
     apiKeySet: boolean;
@@ -62,6 +64,7 @@ export class SettingsFile {
       model: {
         modelId: text("STAGE_MODEL_ID", this.config.modelId),
         modelBase: text("STAGE_MODEL_BASE", this.config.modelBase),
+        models: text("STAGE_MODELS", this.config.models.join(",")),
         baseUrl: text("STAGE_BASE_URL", this.config.baseUrl),
         apiKey: mask(apiKey),
         apiKeySet: apiKey.length > 0,
@@ -100,6 +103,7 @@ export class SettingsFile {
     if (model) {
       if (model.modelId !== undefined) set(this.envPath, "STAGE_MODEL_ID", model.modelId, changed);
       if (model.modelBase !== undefined) set(this.envPath, "STAGE_MODEL_BASE", model.modelBase, changed);
+      if (model.models !== undefined) set(this.envPath, "STAGE_MODELS", model.models, changed);
       if (model.baseUrl !== undefined) set(this.envPath, "STAGE_BASE_URL", model.baseUrl, changed);
       if (model.maxTokens !== undefined) {
         set(this.envPath, "STAGE_MAX_TOKENS", String(int(model.maxTokens, "输出上限")), changed);
