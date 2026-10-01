@@ -1,6 +1,6 @@
 # 刷新后停止点丢失 排查
 
-**状态：已定位，未修（本轮只记录）。** 出现于 2026-09-30 路线画布收尾时的刷新复测，属 P1 起就存在的既有缺陷（`7da9227`），与本轮改动无关。
+**状态：已修复（2026-10-01，分支 `feat/cg-director`）。** 出现于 2026-09-30 路线画布收尾时的刷新复测，属 P1 起就存在的既有缺陷（`7da9227`），与路线画布改动无关。
 
 ## 现象
 
@@ -52,10 +52,26 @@
 - 任何 `engine.turn` 解析为 0 的恢复路径（缺快照的存档、外部写入的 session.json）。
 - 不受影响：挂载点在第 1 拍及以后（路径上有快照，`beatNo > 0`），以及正忙时的连接（那时本来就不该有停止点）。
 
-## 建议修法（未实施）
+## 修法与实施
 
-让 `hello` 一次说清「玩家此刻站在哪」——把 `stoppedReplay` 的 `stop`/`reason` 并进 `hello`，客户端只认这一条；或者退一步，把守卫里的 `beatNo === 0` 换成 `!this.autostarted`（`autostarted` 才是「有没有开演」的判据，`beatNo` 是挂载点位置）。两者都动协议面，需同步 `packages/core/src/ws/protocol.ts`。
+两条候选里选了退一步那条：**`beatNo === 0` → `!this.autostarted`**。
 
-## 本轮处置
+- `autostarted` 才是「有没有开演」的判据（`start()` / `playerAction()` / 从 session 恢复时置位），
+  `beatNo` 是挂载点**位置**。原守卫把两件事混成一件，于是「挂载点在第 0 拍」被当成「还没开演」，
+  恢复用的重放被吞掉。
+- 客户端只认 `stop` / `reason` 两个字段，`beat_end.beatId` 从头到尾没被用过；
+  所以 `beat_end` 这条补发通道不需要协议侧配合，改动只落在服务端一处。
 
-按范围纪律**不修**（既有缺陷，与路线画布改动无关），作为显式已知限制记录：刷新进来的玩家可能落到「stopped 但无停止点」，此时四动词仍可用，但没有停止点面板。见 `260930-route-canvas.plan.md` 与工作小结。
+```ts
+// orchestrator.ts::stoppedReplay
+if (this.busy || !this.autostarted) return null;
+```
+
+回归覆盖见 `apps/server/test/orchestrator.test.ts` 的「重连恢复（停止点补发）」：
+挂载点在第 0 拍深处（`snapshots: []`、`beatNo: 0`、`lastStop: pause`）时 `stoppedReplay()` 必须返回
+停止点；真正没开演（`autostarted === false`）时必须返回 null。
+
+## 关联
+
+与本次同批修的另外两条一起落在 `feat/cg-director`：`feat/director-cg`（导演生图按钮）、
+`feat/fix-stage-crash`（不存在的剧目 WS 连接把进程带走）。

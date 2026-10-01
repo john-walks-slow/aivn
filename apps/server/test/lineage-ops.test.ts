@@ -4,7 +4,7 @@ import { LineageTree, type ServerMessage } from "@stage-ai/core";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { PlayMemory } from "../src/memory.js";
 import { lineageToBeats, lineageToEvents, stopFromEvent } from "../src/rebuild.js";
-import { BEAT_1, BEAT_2, CARD, PLAY, createFakeStreamFn, type FakeResponse } from "./helpers.js";
+import { BEAT_1, BEAT_1_STOP, BEAT_2, CARD, PLAY, createFakeStreamFn, type FakeResponse } from "./helpers.js";
 
 function setup(
   responses: FakeResponse[],
@@ -41,7 +41,7 @@ function setup(
 /** 跑出两轮空闲的现场：轮一有 choice 停止点，轮二 no_stop 收束。 */
 async function playedTwoBeats(): Promise<ReturnType<typeof setup>> {
   const s = setup([
-    { text: BEAT_1, beatDone: true },
+    { text: BEAT_1, beatDone: BEAT_1_STOP },
     { text: BEAT_2, beatDone: true },
   ]);
   await s.orchestrator.playerAction({ kind: "free", text: "我到了" });
@@ -67,7 +67,7 @@ function beatTwoHead(tree: LineageTree): string {
 /** 两轮现场（与 playedTwoBeats 同形）但多备一次响应，供「重来」后的续演取用。 */
 async function setupWithExtraBeat(): Promise<ReturnType<typeof setup>> {
   const s = setup([
-    { text: BEAT_1, beatDone: true },
+    { text: BEAT_1, beatDone: BEAT_1_STOP },
     { text: BEAT_2, beatDone: true },
     { text: BEAT_2, beatDone: true },
   ]);
@@ -87,7 +87,7 @@ function busyStage(): {
     open = resolve;
   });
   const s = setup([
-    { text: BEAT_1, beatDone: true, gate },
+    { text: BEAT_1, beatDone: BEAT_1_STOP, gate },
     { text: BEAT_2, beatDone: true },
     { text: BEAT_2, beatDone: true },
   ]);
@@ -183,7 +183,7 @@ describe("导演操作 · 编排器（分岔 / 编辑 / 插一句）", () => {
 
   it("跳到废弃分支：世界线真的落到那条线，当前剧情作废但历史一条不少", async () => {
     const s = setup([
-      { text: BEAT_1, beatDone: true },
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
       { text: BEAT_2, beatDone: true },
       { text: BEAT_2, beatDone: true },
     ]);

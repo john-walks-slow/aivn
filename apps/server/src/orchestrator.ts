@@ -448,7 +448,11 @@ export class PlaywrightOrchestrator {
     reason: "stop" | "no_stop";
     stop?: StopPayload;
   } | null {
-    if (this.busy || !this.autostarted || this.beatNo === 0) return null;
+    // 判据只有「开没开演」（autostarted 会随恢复的会话一起置位）。曾经还挂着
+    // `beatNo === 0`，把「挂载点落在第 0 拍内」误当成「还没开演」——快照只在每拍收束时
+    // 写，第 0 拍内没有快照，stateAt 的 turn 回落 0，于是停止点重放被吞掉，
+    // 玩家刷新后停在 stopped 却没有面板可点。
+    if (this.busy || !this.autostarted) return null;
     return {
       type: "beat_end",
       beatId: `beat-${this.beatNo}`,

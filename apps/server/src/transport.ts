@@ -78,7 +78,26 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage
   void (async () => {
     // 舞台连上 = 玩家要看戏，runtime 必须挂在真实的故事树上（没有就先建一棵）；
     // 工坊连接只是逛，不该凭空多出一个周目。
-    const runtime = await (stage ? playhouse.stage(playId) : playhouse.get(playId));
+    // 剧目不存在时 loadPlay 会抛 ENOENT —— 这个 promise 没人接，整进程会被 unhandled
+    // rejection 带走。残留的旧连接就能把整个 API 弄崩，所以在这里就地收场：
+    // 先把观众计数还回去（drop 只在 close 时跑，那时已经把 dropped 置上、计数已还过），
+    // 再回一帧不可恢复的错误并关闭连接。
+    let runtime: PlayRuntime;
+    try {
+      runtime = await (stage ? playhouse.stage(playId) : playhouse.get(playId));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[stage-ai] WS 连接失败 play=${playId}: ${message}`);
+      if (!dropped && stage) {
+        dropped = true;
+        const left = (stageConnections.get(playId) ?? 1) - 1;
+        if (left > 0) stageConnections.set(playId, left);
+        else stageConnections.delete(playId);
+      }
+      sender({ type: "error", message: `剧目打不开：${playId}（${message}）`, recoverable: false });
+      ws.close(1008, "剧目不存在");
+      return;
+    }
     // runtime 就绪前就断开了：不注册，否则残留 sender 会让「最后一个观众」永远判不出来
     if (dropped) return;
     registered = playhouse.clientsFor(playId);

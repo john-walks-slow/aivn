@@ -55,6 +55,10 @@
 
 测试里外层**只记账不 setState**：真照着 `StageScreen` 写会重现滚雪球，`render()` 直接不返回、整个文件挂死（本机实测）。挂死的测试没法读断言差异，所以这里只测第一推动力——「什么都没变，effect 该不该再交一次」，那正是回路的开关。
 
-## 顺带记一笔（未处理）
+## 顺带记一笔（已修）
 
-排查时误踩：API 进程收到一个 play id 不存在的 WS 连接就整进程崩（`PlayStore.loadPlay` 的 ENOENT 没人接，`transport.ts:79`）。本机是别的 worktree 的残留客户端连到我这个端口触发的，与本缺陷无关，没有纳入本次改动范围。
+排查时误踩：API 进程收到一个 play id 不存在的 WS 连接就整进程崩（`PlayStore.loadPlay` 的 ENOENT 没人接，`transport.ts:79`）。本机是别的 worktree 的残留客户端连到我这个端口触发的，与本缺陷无关。
+
+已并入 `feat/cg-director` 一并修复（`feat/fix-stage-crash`）：连接建立时就地 try/catch，
+失败先归还舞台连接计数、再回一帧 `error`（`recoverable: false`）并 `close(1008)`，
+不把异常逃出那个没人接的 async IIFE。详见 `docs/issues/261001-stage-crash-unknown-play/`。

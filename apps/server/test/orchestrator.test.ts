@@ -98,6 +98,31 @@ describe("导演生图", () => {
   });
 });
 
+describe("重连恢复（停止点补发）", () => {
+  const restored = (beatNo: number): OrchestratorRuntimeState => ({
+    events: [],
+    beatNo,
+    lastStop: { stopType: "pause" },
+    epoch: 3,
+  });
+
+  it("挂载点落在第 0 拍内（引擎 turn 回落 0）也要补发停止点", () => {
+    const { orchestrator } = setup([], { restored: restored(0) });
+    expect(orchestrator.stoppedReplay).toEqual({
+      type: "beat_end",
+      beatId: "beat-0",
+      reason: "stop",
+      stop: { stopType: "pause" },
+    });
+  });
+
+  it("还没开演过的不补发（空树上没有停止点可补）", () => {
+    const { orchestrator } = setup([]);
+    expect(orchestrator.fresh).toBe(true);
+    expect(orchestrator.stoppedReplay).toBeNull();
+  });
+});
+
 describe("空树的第一轮", () => {
   it("不自己开局：fresh 为真，start() 之后才落第一拍", async () => {
     const { orchestrator, messages } = setup([{ text: BEAT_1, beatDone: true }]);

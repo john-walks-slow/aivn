@@ -44,19 +44,26 @@ export async function completeText(
   );
   let text = "";
   let error: string | null = null;
+  let stopReason: string | null = null;
   for await (const event of stream) {
     if (event.type === "text_delta") {
       text += event.delta;
     } else if (event.type === "error") {
       error = event.error.errorMessage ?? "LLM 调用失败";
-    } else if (event.type === "done" && text === "") {
-      // 非流式兜底：从终态消息提取文本
-      for (const block of event.message.content) {
-        if (block.type === "text") text += block.text;
+    } else if (event.type === "done") {
+      stopReason = event.reason;
+      if (text === "") {
+        // 非流式兜底：从终态消息提取文本
+        for (const block of event.message.content) {
+          if (block.type === "text") text += block.text;
+        }
       }
     }
   }
   if (error) throw new Error(error);
+  // 撞输出上限的响应是一句被砍在半路的话（"…wearing"），不是模型的完整答案。
+  // 不看 reason 就收下，它会一路流到玩家眼前：润色成半句、生图跑偏整个场景。
+  if (stopReason === "length") throw new Error("模型输出超过单发上限，结果被截断，请重试");
   const result = text.trim();
   if (result === "") throw new Error("模型返回空文本");
   return result;
