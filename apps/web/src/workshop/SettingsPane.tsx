@@ -278,25 +278,42 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
       </section>
 
       {detail && (
-        <p className="row">
-          <button
-            className="ghost-btn"
-            onClick={() =>
-              patch((p) => {
-                p.characters.push({
-                  id: `char${p.characters.length + 1}`,
-                  name: "新角色",
-                  persona: "",
-                  sprites: {},
-                });
-              })
-            }
-          >
-            <span className="btn-icon">
-              <Icon name="plus" /> 添加角色
-            </span>
-          </button>
-        </p>
+        <>
+          <h3>角色卡</h3>
+          <p className="muted small">
+            {draft.characters.length === 0
+              ? "还没有角色。可以从资源库导入现成的角色卡（含立绘），或自己新建一张。"
+              : `这张剧目有 ${draft.characters.length} 个角色。`}
+          </p>
+          <p className="row">
+            <button
+              className="ghost-btn"
+              onClick={() => setLibraryInto("")}
+              title="从应用级资源库挑角色卡与立绘复制进本剧目（按条目的 id 建角色，同 id 则覆盖）"
+            >
+              <span className="btn-icon">
+                <Icon name="download" size={13} /> 从资源库导入角色
+              </span>
+            </button>
+            <button
+              className="ghost-btn"
+              onClick={() =>
+                patch((p) => {
+                  p.characters.push({
+                    id: `char${p.characters.length + 1}`,
+                    name: "新角色",
+                    persona: "",
+                    sprites: {},
+                  });
+                })
+              }
+            >
+              <span className="btn-icon">
+                <Icon name="plus" /> 添加角色
+              </span>
+            </button>
+          </p>
+        </>
       )}
 
       {libraryInto !== null && detail && (
