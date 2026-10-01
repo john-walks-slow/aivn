@@ -74,8 +74,32 @@
 查下来提示词本身停在 `…wearing`，是网关把流掐在半路——于是加了两道校验
 （`MIN_CG_PROMPT_WORDS` + `completeText` 的 `reason === "length"`）。
 
-加了校验之后又连跑三次都没能拿到好结果：网关侧明显不健康（LLM 单发要 2 分钟以上、
-返回半句、生图跑 5 分半失败）。**校验本身被真机验证到了**：其中一次浏览器里弹出了
-「写出来的出图提示词只有半句（模型响应被截断），请再点一次生图」，且**没有白烧一张图的配额**。
+加校验之后连跑几次都没能拿到好结果，**但原因全在本机环境，不在代码**（下面「查到的两处环境问题」）。
 
-所以待办：网关恢复后重跑一次验收（照 `.validation.md` 逐条走）。
+## 验收通过的一轮（换模型 + 重启生图 token 之后）
+
+服务端 29681 + vite 63801，Playwright 全流程：
+
+| 步骤 | 结果 |
+| --- | --- |
+| 点「生图」→ 填指令 → 提交 | 通过 |
+| 排队面板 | `正在生成` / `CG cg_mupeqiv8  1 秒` → `刚刚完成` / `已完成` → 约 4 秒后收起 |
+| 合成出的提示词 | 68 词，完整：「A classroom at sunset, warm golden light through windows, …, navy sailor uniform, crooked tie, flushed cheeks, …, backlit by sun」 |
+| 出的图 | 黄昏教室、藏青水手服粉发少女、脸颊绯红、双手背后、逆光，窗边坐着一个人——与剧情对得上 |
+| CG 页 | 多出一张卡，角标「站内生成」，卡上摊着提示词原文 |
+
+## 查到的两处环境问题
+
+1. **默认剧作家模型不能写短提示词**。`gemini-3.5-flash-lite` 在 cpa 上走 `antigravity` 这条路，
+   让它写一句出图提示词时**吐 1~2 个 token 就自己停**（`finish_reason` 还报 `stop`），
+   同一段提示词 8 次只合格 2 次、切到 `reasoning: off` 是 0/6。规律是模型一选 Danbooru
+   标签体（`1girl, …`）就必挂，选自然语言就正常。换成 `nim/nvidia/nemotron-3-super-120b-a12b`
+   是 6/6，已把 `.env` 的 `STAGE_MODEL_ID` 换过去。
+2. **flow2api 的生图 token 被自动禁用**，`is_active=0` → 所有生图请求 503
+   「没有可用的Token进行图片生成」。`token_stats.consecutive_error_count` 已经到 11，
+   而它自己那个「429 自动解封 / 协议刷新」任务又坏了（`last_st_refresh_result` 是一句
+   `curl: (35) TLS connect error`），所以 token 就一直禁着。
+   手工 `UPDATE tokens SET is_active=1` + 把 `consecutive_error_count` 清零后立刻恢复。
+
+第 2 条跟 stage-ai 无关，但它会让「生图失败」看起来像我们的 bug，排查时先看
+`sqlite3 /opt/flow2api/data/flow.db "select email,is_active from tokens"`。
