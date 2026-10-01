@@ -40,7 +40,7 @@ tsc -p apps/web/tsconfig.json --noEmit    # 0
 
 真机 e2e（`./scripts/dev-worktree.sh`，端口经 `acquire-port` 动态分配；公网 quick tunnel 地址见交付消息）：
 
-1. **两个目录端点**：`GET /api/agents/tools` 返回 18 个工具（带中文名 / 分组 / 归哪些角色）；`GET /api/agents/models` 透传网关 `/v1/models`（本机网关 200，列出 cere/… 等模型）。
+1. **两个目录端点**：`GET /api/agents/tools` 返回 19 个工具（带中文名 / 分组 / 归哪些角色）；`GET /api/agents/models` 透传网关 `/v1/models`（本机网关 200，列出 cere/… 等模型）。
 2. **工坊「Agent」页**：模型下拉首项为「跟随服务端默认（gemini-3.5-flash-lite）」、思考档位四档、工具按「轮与停止点 / 生图 / 记忆与状态…」分组列出开关，页面无红字、无错位。
 3. **设置落盘**：把剧作家思考档位改成「浅思考（low）」→ 点「保存设置」→ `plays/demo/play.json` 出现
    ```json
@@ -87,3 +87,24 @@ tsc -p apps/web/tsconfig.json --noEmit    # 0
   成功路径由 `test/image.test.ts` 的假流 + 既有的 `STAGE_E2E_LIVE=1` 真机 e2e 兜底。
 - **工坊侧改模型后真开一轮**：模型解析（`resolveCpaModel`）与装配（`createAgentKit`）都有单测，
   真机只验了「设置 → play.json → 服务端接受」这一段；工坊长对话本身没有真跑（成本高、收益低）。
+
+## 五、增量：定点编辑工具（2026-10-01）
+
+用户要求「编辑工具全面仿照 pi 原生的设计，区别仅仅是限制范围」。落成 `edit_file`
+（`agentkit/filesTool.ts` + `agentkit/editText.ts`），只归工坊——剧作家的记忆写入走 `write_memory`。
+
+| 需求 | 验证方式 | 结论 |
+| --- | --- | --- |
+| schema 与 pi 的 `edit` 同形（`path` + `edits[{oldText,newText}]`，`minItems: 1`） | `test/editFile.test.ts`：`prepareArguments` 兼容 JSON 字符串 / 单对象 / 顶层 `oldText+newText` 三种历史写法 | 通过 |
+| 匹配语义：精确 → 模糊（NFKC / 行尾空白 / 智能引号 / 连字符 / 特殊空格） | 同上：「引号/行尾空白不一致也能改，且只重写被触碰的行」——未触碰的行按原字节拷回 | 通过 |
+| 唯一性与重叠：命中多处或两段交叠一律拒绝 | 同上两条用例 | 通过 |
+| BOM 与行尾原样保留 | 同上：`\uFEFFa\r\nb\r\n` 改一行后仍是 CRLF + BOM | 通过 |
+| 范围限制：路径走 PlayFiles 白名单、play.json 过 `parsePlayConfig` | 同上：`session.json` 与不存在的文件都拒绝且不落盘；把 `play.json` 改坏结构不落盘 | 通过 |
+| 同一路径的写操作串行 | `fileLocks`（同一 Map 管 `write_file` / `edit_file` / `delete_file`），pi 的 `withFileMutationQueue` 的最小版 | 通过（代码路径；并发时序由锁保证） |
+
+单测：`test/editFile.test.ts` 12 passed、`test/agentkit.test.ts` 12 passed、`test/workshop.test.ts` 38 passed、
+`test/prompt.test.ts` 15 passed；`tsc -p apps/server/tsconfig.json --noEmit` 0。
+
+顺带修掉两处工具描述与实现不符（同一次改动里）：`inspect_asset` 声称「和 read_file 同一套白名单」
+但实际只做路径越界检查（改用 `pathOf(path, "read")`，白名单这才真的生效）；
+`delete_file` 说「删除 memory/ 下的文件」而实现还能删 `theme.css` 与 `assets/manifest.json`（描述改成实话）。

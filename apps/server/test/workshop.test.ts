@@ -362,7 +362,8 @@ describe("工坊 prompt 与工具", () => {
 
   it("工坊 prompt：只准汇报真写过的文件（真机实测过谎报落盘）", async () => {
     const prompt = await buildWorkshopPrompt(promptCtx());
-    expect(prompt).toContain("没调 write_file 的文件一律不许说");
+    expect(prompt).toContain("没调 write_file / edit_file 的文件一律不许说");
+    expect(prompt).toContain("只改几段用 edit_file");
   });
 });
 

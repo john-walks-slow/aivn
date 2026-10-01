@@ -59,6 +59,7 @@ const TOOL_ROLES: Record<string, { label: string; group: ToolGroup; roles: Agent
   web_search: { label: "联网检索", group: "web", roles: ["playwriter", "workshop"] },
   list_files: { label: "列出剧目文件", group: "files", roles: ["workshop"] },
   read_file: { label: "读剧目文件", group: "files", roles: ["workshop"] },
+  edit_file: { label: "编辑剧目文件", group: "files", roles: ["workshop"] },
   write_file: { label: "写剧目文件", group: "files", roles: ["workshop"] },
   delete_file: { label: "删除剧目文件", group: "files", roles: ["workshop"] },
   get_readiness: { label: "检查开演条件", group: "files", roles: ["workshop"] },

@@ -58,6 +58,7 @@ describe("agent kit：两个角色的暴露面", () => {
   it("工坊拿剧目文件、故事树与技能库，不拿轮收束与演出记忆", () => {
     const kit = workshop();
     expect(names(kit)).toContain("write_file");
+    expect(names(kit)).toContain("edit_file");
     expect(names(kit)).toContain("read_lineage");
     expect(names(kit)).toContain("generate_image");
     expect(names(kit)).toContain("read_skill");
