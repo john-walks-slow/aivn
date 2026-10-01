@@ -6,6 +6,7 @@ import { Icon, type IconName } from "../ui/Icon.js";
 import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
 import type { WorkshopTab } from "../stage/view.js";
 import { AgentPane } from "./AgentPane.js";
+import { CharacterPane } from "./CharacterPane.js";
 import { AssetsPanel } from "./AssetsPanel.js";
 import { FileBrowser } from "./FileBrowser.js";
 import { SettingsPane } from "./SettingsPane.js";
@@ -15,6 +16,7 @@ import { useWorkshop } from "./useWorkshop.js";
 
 const TABS: { id: WorkshopTab; label: string; icon: IconName }[] = [
   { id: "chat", label: "对话", icon: "chat" },
+  { id: "characters", label: "角色", icon: "users" },
   { id: "memory", label: "设定与记忆", icon: "memory" },
   { id: "assets", label: "素材", icon: "assets" },
   { id: "files", label: "文件", icon: "files" },
@@ -127,6 +129,7 @@ export function WorkshopPane({
       {tab === "assets" && <AssetsPanel playId={playId} />}
 
       {tab === "memory" && <SettingsPane playId={playId} revision={state.writes.length} />}
+      {tab === "characters" && <CharacterPane playId={playId} revision={state.writes.length} />}
 
       {tab === "agent" && <AgentPane playId={playId} />}
 

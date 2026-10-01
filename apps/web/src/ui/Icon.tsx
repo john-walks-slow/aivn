@@ -28,6 +28,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   TriangleAlert,
+  Users,
   Undo2,
   Volume2,
   X,
@@ -53,6 +54,8 @@ const ICONS = {
   backlog: MessagesSquare,
   files: FolderOpen,
   assets: Image,
+  /** 角色（工坊「角色」页）：主角卡与角色卡。 */
+  users: Users,
   craft: PenLine,
   /** 记忆（工坊「设定与记忆」页）：memory/** 下的常驻设定与设定卡。 */
   memory: BookOpen,

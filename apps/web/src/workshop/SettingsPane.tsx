@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CharacterCard, LibraryEntry, PlayConfig } from "@stage-ai/core";
+import type { PlayConfig } from "@stage-ai/core";
 import { languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
-import { api, type PlayDetail, type PlayFile } from "../api.js";
+import { api, type PlayFile } from "../api.js";
 import { Icon, type IconName } from "../ui/Icon.js";
-import { CharacterEditor } from "./CharacterEditor.js";
-import { LibraryBrowser } from "./LibraryBrowser.js";
-import { VoiceLibrary } from "../voice/VoiceLibrary.js";
-import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
 
 const CRAFT_PATH = "memory/always/craft.md";
 const PREMISE_PATH = "memory/always/premise.md";
@@ -14,8 +10,7 @@ const PREMISE_PATH = "memory/always/premise.md";
 /** 一张设定卡。kind 决定展开区渲染哪个编辑器，不决定它长什么样。 */
 type Card =
   | { key: string; kind: "play"; icon: IconName; title: string; summary: string }
-  | { key: string; kind: "file"; icon: IconName; title: string; summary: string; path: string; readOnly: boolean }
-  | { key: string; kind: "character"; icon: IconName; title: string; summary: string; index: number };
+  | { key: string; kind: "file"; icon: IconName; title: string; summary: string; path: string; readOnly: boolean };
 
 /**
  * 设定与记忆：一张剧目的全部「写下来的东西」都在这一页——
@@ -25,29 +20,20 @@ type Card =
  * 列表 + 侧栏那套布局和「文件」页没有区别，等于给同一件事两个入口。
  */
 export function SettingsPane({ playId, revision }: { playId: string; revision: number }) {
-  const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [draft, setDraft] = useState<PlayConfig | null>(null);
   const [files, setFiles] = useState<PlayFile[]>([]);
-  const [assets, setAssets] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [open, setOpen] = useState<string | null>(PREMISE_PATH);
   /** 记忆卡的本地正文：只在打开某一张时拉，避免为每张都占一份 state。 */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [libraryInto, setLibraryInto] = useState<string | null>(null);
-  const [libraryChar, setLibraryChar] = useState<number | null>(null);
-  const voices = useVoiceCatalog();
 
   const reload = useCallback((): void => {
     api
       .playDetail(playId)
-      .then((d) => {
-        setDetail(d);
-        setDraft(d.play);
-      })
+      .then((d) => setDraft(d.play))
       .catch((e: Error) => setError(e.message));
     api.listFiles(playId).then(setFiles).catch(() => {});
-    api.listAssets(playId).then(setAssets).catch(() => {});
   }, [playId]);
   useEffect(reload, [reload, revision]);
 
@@ -121,18 +107,8 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
       });
     }
     out.sort((a, b) => rankOf(a.key) - rankOf(b.key));
-    draft.characters.forEach((c, index) => {
-      out.push({
-        key: `char:${c.id}`,
-        kind: "character",
-        icon: "assets",
-        title: c.name || c.id,
-        summary: c.persona || "（还没写性格）",
-        index,
-      });
-    });
     return out;
-  }, [draft, files]);
+  }, [files]);
 
   if (!draft) return <div className="workshop-tab-pane">读取中…</div>;
 
@@ -196,34 +172,6 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
               </select>
               <p className="muted small">翻译由 LLM 完成，任何小语种都能用——前提是所选音色支持该语言。</p>
             </label>
-            <h3>主角卡（玩家）</h3>
-            <div className="char-card">
-              <div className="row">
-                <input
-                  placeholder="主角名（如：你 / 转学生）"
-                  value={draft.protagonist?.name ?? ""}
-                  onChange={(e) =>
-                    patch((p) => (p.protagonist = { name: e.target.value, persona: p.protagonist?.persona ?? "" }))
-                  }
-                />
-              </div>
-              <div className="row small">
-                <button className="ghost-btn" onClick={() => setLibraryInto("protagonist")}>
-                  <span className="btn-icon">
-                    <Icon name="download" size={13} /> 从资源库导入
-                  </span>
-                </button>
-              </div>
-              <textarea
-                rows={2}
-                placeholder="persona（性格与说话风格——输入润色的口吻依据）"
-                value={draft.protagonist?.persona ?? ""}
-                onChange={(e) =>
-                  patch((p) => (p.protagonist = { name: p.protagonist?.name ?? "", persona: e.target.value }))
-                }
-              />
-
-            </div>
           </>
         ) : active.kind === "file" ? (
           <>
@@ -242,30 +190,7 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
               onDirty={(dirty) => setSaved(!dirty)}
             />
           </>
-        ) : (
-          <>
-            <h3>角色卡</h3>
-            <CharacterEditor
-              playId={playId}
-              char={draft.characters[active.index] as CharacterCard}
-              files={assets[`sprites/${draft.characters[active.index]!.id}`] ?? []}
-              voices={voices}
-              onPickVoice={() => setLibraryChar(active.index)}
-              onBrowseLibrary={() => setLibraryInto(draft.characters[active.index]!.id)}
-              onUploadSprite={(file) =>
-                api
-                  .uploadAsset(playId, `sprites/${draft.characters[active.index]!.id}`, file.name, file)
-                  .then(reload)
-                  .catch((e: Error) => setError(e.message))
-              }
-              onChange={(fn) => patch((p) => fn(p.characters[active.index]!))}
-              onRemove={() => {
-                patch((p) => p.characters.splice(active.index, 1));
-                setOpen(null);
-              }}
-            />
-          </>
-        )}
+        ) : null}
 
         {active !== null && active.kind !== "file" && (
           <p className="row">
@@ -275,79 +200,9 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
             {saved && <span className="muted small">已保存</span>}
           </p>
         )}
+
       </section>
 
-      {detail && (
-        <>
-          <h3>角色卡</h3>
-          <p className="muted small">
-            {draft.characters.length === 0
-              ? "还没有角色。可以从资源库导入现成的角色卡（含立绘），或自己新建一张。"
-              : `这张剧目有 ${draft.characters.length} 个角色。`}
-          </p>
-          <p className="row">
-            <button
-              className="ghost-btn"
-              onClick={() => setLibraryInto("")}
-              title="从应用级资源库挑角色卡与立绘复制进本剧目（按条目的 id 建角色，同 id 则覆盖）"
-            >
-              <span className="btn-icon">
-                <Icon name="download" size={13} /> 从资源库导入角色
-              </span>
-            </button>
-            <button
-              className="ghost-btn"
-              onClick={() =>
-                patch((p) => {
-                  p.characters.push({
-                    id: `char${p.characters.length + 1}`,
-                    name: "新角色",
-                    persona: "",
-                    sprites: {},
-                  });
-                })
-              }
-            >
-              <span className="btn-icon">
-                <Icon name="plus" /> 添加角色
-              </span>
-            </button>
-          </p>
-        </>
-      )}
-
-      {libraryInto !== null && detail && (
-        <LibraryBrowser
-          playId={playId}
-          imported={(kind, id) =>
-            kind === "characters"
-              ? libraryInto === "protagonist"
-                ? Boolean(detail.play.protagonist?.name || detail.play.protagonist?.persona)
-                : detail.play.characters.some((c) => c.id === id)
-              : false
-          }
-          onClose={() => setLibraryInto(null)}
-          onImported={reload}
-          {...(libraryInto === "protagonist"
-            ? {
-                target: "protagonist" as const,
-                title: "从资源库导入主角卡",
-                filter: (e: LibraryEntry) => Boolean(e.meta.character?.protagonist),
-              }
-            : {})}
-        />
-      )}
-      {libraryChar !== null && draft && (
-        <VoiceLibrary
-          playId={playId}
-          voices={voices}
-          onClose={() => setLibraryChar(null)}
-          onPick={(entry) => {
-            patch((p) => (p.characters[libraryChar]!.voiceId = entry.id));
-            setLibraryChar(null);
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -360,7 +215,6 @@ const TITLES: Record<string, string> = {
 /** 记忆卡所属的组（卡片副标题）：常驻设定先摆，因为它每轮都注入。 */
 function rankOf(key: string): number {
   if (key === "play") return -1;
-  if (key.startsWith("char:")) return 3;
   if (key.startsWith("memory/always/")) return 0;
   return key.startsWith("memory/index/") ? 1 : 2;
 }
