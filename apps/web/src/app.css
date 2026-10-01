@@ -666,7 +666,6 @@ button.link-btn {
 .title-screen.has-art .title-chars,
 .title-screen.has-art .title-note,
 .title-screen.has-art .title-item-sub,
-.title-screen.has-art .title-item::before,
 .title-screen.has-art .title-foot-id {
   color: #b6a894;
 }
@@ -682,16 +681,8 @@ button.link-btn {
   border-color: rgb(240 230 210 / 0.45);
 }
 
-.title-screen.has-art .title-item:hover:not(:disabled)::before {
-  background: #fff;
-}
-
 .title-screen.has-art .title-item.main {
   color: #f2c6a6;
-}
-
-.title-screen.has-art .title-item.main::before {
-  background: #f2c6a6;
 }
 
 .title-screen.has-art .title-note.warn {
@@ -783,8 +774,7 @@ button.link-btn {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  position: relative;
-  padding: 11px 14px 11px 20px;
+  padding: 11px 14px;
   border: none;
   border-bottom: 1px solid var(--line);
   border-radius: 0;
@@ -799,28 +789,10 @@ button.link-btn {
   transition: color var(--hover-ms) ease;
 }
 
-/* 标尺：静止时一截短横，悬停/主项时拉通 */
-.title-item::before {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 50%;
-  width: 10px;
-  height: 1px;
-  background: var(--ink-faint);
-  transform: translateY(-50%);
-  transition: width var(--hover-ms) ease, background-color var(--hover-ms) ease;
-}
-
 .title-item:hover:not(:disabled) {
   background: none;
   border-color: var(--line);
   color: var(--accent);
-}
-
-.title-item:hover:not(:disabled)::before {
-  width: 14px;
-  background: var(--accent);
 }
 
 .title-item.main {
@@ -829,12 +801,6 @@ button.link-btn {
   font-weight: 600;
   letter-spacing: 0.16em;
   color: var(--accent);
-}
-
-.title-item.main::before {
-  width: 16px;
-  height: 2px;
-  background: var(--accent);
 }
 
 .title-item.sub {
