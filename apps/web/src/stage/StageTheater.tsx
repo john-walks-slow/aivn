@@ -355,26 +355,27 @@ export function StageTheater({
               </>
             )}
           </div>
-          {/* 快捷菜单：纯文字，无边框无底色。真实 ADV 的系统入口一律直接写字
-              （AUTO / SKIP / LOG / SAVE / LOAD / CONFIG），不用线性图标——
-              见 docs/features/260930-game-ux 的调研 §2.1 与 §5.5。 */}
+          {/* 快捷菜单：图标按钮，压在台词窗右下角。插一句 / 改写 / 重来 / 重听 / 自动，
+              动作靠图标辨认，含义走 title 与 aria-label。 */}
           <div className="director-bar">
             <button
               type="button"
               className={`dir-btn ${action === "prompt" ? "on" : ""}`}
               title="插一句：可以是角色的行动或台词，也可以是给这场戏的指示"
+              aria-label="插一句"
               onClick={(e) => {
                 e.stopPropagation();
                 setAction(action === "prompt" ? null : "prompt");
                 setDraft("");
               }}
             >
-              插一句
+              <Icon name="chat" size={17} />
             </button>
             <button
               type="button"
               className={`dir-btn ${action === "edit" ? "on" : ""}`}
               title={targets.lineNodeId ? "编辑当前这句台词" : "这里没有台词可改"}
+              aria-label="改写当前这句台词"
               disabled={!targets.lineNodeId}
               onClick={(e) => {
                 e.stopPropagation();
@@ -382,12 +383,13 @@ export function StageTheater({
                 setDraft(targets.lineText);
               }}
             >
-              改写
+              <Icon name="pencil" size={17} />
             </button>
             <button
               type="button"
               className={`dir-btn ${action === "restart" ? "on" : ""}`}
               title={busy ? "剧作家正在写，暂时不能重来" : "重演这一轮（会分岔）"}
+              aria-label="重演这一轮"
               disabled={busy || !targets.beatId}
               onClick={(e) => {
                 e.stopPropagation();
@@ -395,19 +397,20 @@ export function StageTheater({
                 setDraft("");
               }}
             >
-              重来
+              <Icon name="rewrite" size={17} />
             </button>
             {voiceAvailable && hasVoice(view?.seq ?? null) && (
               <button
                 type="button"
                 className="dir-btn"
                 title="重听这句"
+                aria-label="重听这句"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
                 }}
               >
-                重听
+                <Icon name="volume" size={17} />
               </button>
             )}
             <button
@@ -421,7 +424,7 @@ export function StageTheater({
                 playback.setAuto(!playback.auto);
               }}
             >
-              自动
+              {playback.auto ? <Icon name="pause" size={17} /> : <Icon name="play" size={17} />}
             </button>
           </div>
         </div>
