@@ -55,11 +55,27 @@
 - `apps/server/test/orchestrator.test.ts`：导演生图 3 例 + 停止点补发 2 例。
 - `apps/server/test/playhouse.test.ts`：导演生图两道前置守卫 2 例。
 - `apps/server/test/lineage-ops.test.ts`：修好 main 上遗留的红测夹具。
-- `pnpm typecheck` 三包全过；apps/server 335 例、apps/web 64 例全过。
+- `pnpm typecheck` 三包全过；apps/server 339 例、apps/web 64 例。
+- `apps/server/test/playAssets.test.ts` 在本机全量并发跑时有 3 条 5s 超时（每次是哪几条在变），
+  单跑该文件 14/14 全绿——机器只有 8GB，同期还开着 vite / API / chromium。不是本次改动引入。
 
-## 遗留 / 已知
+## 真机验证（浏览器实跑）
 
-- `MAX_TOKENS = 2048` 对「始终思考」的模型偏紧，截断现在会报错而不是静默出错，
-  但如果频繁触发要把它调大（`apps/server/src/llm.ts`）。
-- `media-cache` 里没有的图不进 git：导演生成的图只活在本机盘上，CG 页显示为「站内生成」。
-  这是刻意的（见 `261001-director-cg.plan.md` 的「图存哪」）。
+服务端 29681 + vite 63801，Playwright 点完整个流程：
+
+- 导演栏「生图」按钮出现在 `提示 / 改写 / 重来 / 生图` 一排里；空树时置灰，
+  开演后解禁。
+- 点开 Modal（标题「生成插图」）、填指令、提交，走通。
+- 排队面板：`正在生成` → `CG cg_mupbe1a7  1 秒` → 图到后 `刚刚完成` / `已完成` / 行变淡
+  → 约 4 秒后整块收起。
+- CG 页：多出一张卡，角标「站内生成」，卡上摊着提示词原文。
+
+**但那次出的图跑偏了**：内容是日式商店街、纸杯咖啡、招牌上全是假汉字。
+查下来提示词本身停在 `…wearing`，是网关把流掐在半路——于是加了两道校验
+（`MIN_CG_PROMPT_WORDS` + `completeText` 的 `reason === "length"`）。
+
+加了校验之后又连跑三次都没能拿到好结果：网关侧明显不健康（LLM 单发要 2 分钟以上、
+返回半句、生图跑 5 分半失败）。**校验本身被真机验证到了**：其中一次浏览器里弹出了
+「写出来的出图提示词只有半句（模型响应被截断），请再点一次生图」，且**没有白烧一张图的配额**。
+
+所以待办：网关恢复后重跑一次验收（照 `.validation.md` 逐条走）。
