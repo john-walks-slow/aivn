@@ -80,6 +80,19 @@ export interface ImageRequest {
   aspectRatio?: ImageAspect;
   /** 参考图（垫图）：角色一致性的唯一可靠手段，prompt 措辞锁不住脸。 */
   references?: { mimeType: string; data: Buffer }[];
+  /**
+   * 档位下限，只声明「不能低于这个」，实际档位由后端与配置共同决定（取两者更高）。
+   *
+   * 立绘要抠底，而抠底的锯齿是模型画在源图轮廓上的——提高源图分辨率是唯一有效的软化手段
+   * （形态学平滑实测反而把 1px 缺口从 3385 推到 4419）。所以立绘请求声明 2K 下限，
+   * 背景与 CG 不声明，跟着 `STAGE_IMAGE_SIZE` 走。
+   */
+  minTier?: ImageSize;
+}
+
+/** 两个档位取更高的那个（`IMAGE_SIZES` 已按低到高排列）。 */
+export function higherTier(a: ImageSize, b: ImageSize): ImageSize {
+  return IMAGE_SIZES.indexOf(a) >= IMAGE_SIZES.indexOf(b) ? a : b;
 }
 
 export interface GeneratedImage {

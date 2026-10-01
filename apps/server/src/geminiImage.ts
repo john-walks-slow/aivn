@@ -2,11 +2,13 @@ import { fetch as undiciFetch } from "undici";
 import {
   IMAGE_ASPECTS,
   IMAGE_SIZES,
+  higherTier,
   imageSizeText,
   parseImageSize,
   type GeneratedImage,
   type ImageBackend,
   type ImageRequest,
+  type ImageSize,
 } from "./imageBackend.js";
 
 /**
@@ -70,6 +72,11 @@ export class GeminiImageGen implements ImageBackend {
     this.tier = spec.tier;
   }
 
+  /** 档位 = 配置与本次请求下限里更高的那个（立绘要 2K 抠底，背景/CG 跟配置）。 */
+  private tierOf(req: ImageRequest): string {
+    return req.minTier ? higherTier(this.tier as ImageSize, req.minTier) : this.tier;
+  }
+
   async generate(req: ImageRequest): Promise<GeneratedImage> {
     const aspectRatio = req.aspectRatio ?? "16:9";
     if (!IMAGE_ASPECTS.includes(aspectRatio)) {
@@ -84,7 +91,7 @@ export class GeminiImageGen implements ImageBackend {
           contents: [{ role: "user", parts: toParts(req) }],
           generationConfig: {
             responseModalities: ["IMAGE"],
-            imageConfig: { aspectRatio, imageSize: this.tier },
+            imageConfig: { aspectRatio, imageSize: this.tierOf(req) },
           },
         }),
         signal: AbortSignal.timeout(this.opts.timeoutMs),

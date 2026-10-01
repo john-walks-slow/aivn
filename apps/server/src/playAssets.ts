@@ -170,6 +170,8 @@ export class PlayAssets {
             prompt: fullPrompt,
             aspectRatio: spec.aspect,
             references,
+            // 立绘要抠底，源图分辨率是唯一能压住轮廓锯齿的手段；背景与 CG 不挑这个。
+            minTier: spec.kind === "sprite" ? "2K" : undefined,
           }),
         "normal",
       ));
