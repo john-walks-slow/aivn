@@ -11,14 +11,15 @@
 | --- | --- | --- |
 | 类型（三包） | `pnpm --filter @stage-ai/core build && pnpm -r typecheck` | 通过 |
 | core 单测 | `pnpm --filter @stage-ai/core test` | 102 passed（7 文件） |
-| web 单测 | `pnpm --filter @stage-ai/web test` | 69 passed（10 文件） |
-| server 单测 | `pnpm --filter @stage-ai/server test` | 284 passed / 3 skipped（26 文件） |
+| web 单测 | `pnpm --filter @stage-ai/web test` | 74 passed（10 文件） |
+| server 单测 | `pnpm --filter @stage-ai/server test` | 286 passed / 3 skipped（26 文件） |
 
 新增用例：
 - `packages/core/test/parser.golden.test.ts`「告警是一次性投递」3 例（`takeWarnings` 取走即清空、跨 `resetBeat` 仍在、干净轮取空表）
 - `apps/server/test/orchestrator.test.ts`「DSL 出错回灌」4 例 + 「阅读位置落盘」3 例
-- `apps/web/test/resumeSeek.test.ts` 4 例（`lineCueIndexAt` 命中 / 找不到 / cue 与行对不上 / 无 seq 布景行）
 - `apps/server/test/prompt.test.ts` 2 例（单轮长度是硬要求、默认口径不再钉死 3~8 行）
+- `apps/web/test/resumeSeek.test.ts` 4 例（`lineCueIndexAt` 命中 / 找不到 / cue 与行对不上 / 无 seq 布景行）
+- `apps/web/test/playbackState.test.ts` 5 例（台词条归属优先级：回声 > 当前行 > 空提示）
 
 ## 14 条逐条实测
 
@@ -35,7 +36,7 @@
 | 9 | 模型输出不合 DSL 时回灌给模型 | `finishBeat` 在 `resetBeat()` 之前 `parser.takeWarnings()`，经 `describeBeatWarnings`（英文枚举名 → 中文症状、去重、上限 8 条）在下一轮 user 消息的【状态】之后插一段「【上一轮输出的问题】」。四个 server 用例走真实编排器 + 真实 parser 验证 |
 | 10 | 非舞台页的展开键进标题栏 | 回顾 / 路线 / 工坊三视图的展开键都在 `.view-bar-lead` 里、贴在标题左边（`position: static`）；舞台页仍浮在画面左上角 |
 | 11 | 每轮变长 | 真跑两轮：14 句 / 604 字、14 句 / 767 字（改前实测 6 句 / 257 字）。病根是 `DEFAULT_CRAFT` 里「一轮 3~8 行台词为宜」，已改成 10~25 句；系统提示词加「单轮该写多长」小节，并在**不可改的演出契约**里再钉一条「一轮至少 10 句」——口径文件是用户可改的，长度规则不能只写在那里 |
-| 12 | 没立绘不显示、没背景显白 | `Sprite` 给 `<img>` 加 `onError`，加载失败即退场，DOM 里不留浏览器裂图；`--stage-bg` 从 `#0d0d10` 改为 `#ffffff` |
+| 12 | 没立绘不显示、没背景显白 | 把 `smile.png` 改名制造真 404：`.theater-sprite` 从 1 个变 0 个、全页裂图 0，`.theater-stage` 计算底色 `rgb(255, 255, 255)`；`--stage-bg` 从 `#0d0d10` 改为 `#ffffff` |
 | 13 | 编辑 / 重新生成 / 分岔的置灰有真实理由 | 三个键的 title 改为按 `busy → 锚点缺失` 分级说明：「演出进行中，暂时不能改写」优先于「这里没有剧作家的台词可改」。busy 时实测三者 disabled 且 title 是真实原因 |
 | 14 | 生图接上本机 flow2api 并跑通 | `STAGE_E2E_LIVE=1 STAGE_FLOW_API_KEY=… npx vitest run test/e2e-live-image.test.ts` → 145s 出图，768×1376 JPEG / 642822 bytes。`.env` 已切 `STAGE_IMAGE_BACKEND=flow2api` |
 
