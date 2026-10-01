@@ -32,6 +32,7 @@ import {
   Users,
   Undo2,
   Volume2,
+  VolumeX,
   X,
   ZoomIn,
   ZoomOut,
@@ -81,6 +82,8 @@ const ICONS = {
   play: Play,
   pause: Pause,
   volume: Volume2,
+  /** 与 volume 配对：总开关关掉的态。单靠一层浅底读不出开关，翻字形才不含糊。 */
+  "volume-off": VolumeX,
   prev: ChevronLeft,
   down: ChevronDown,
   up: ChevronUp,

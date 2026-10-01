@@ -411,8 +411,9 @@ export function StageTheater({
           <button
             type="button"
             className="dir-btn"
-            title="重听这句"
+            title={!voiceOn ? "语音已关，先打开语音再重听" : "重听这句"}
             aria-label="重听这句"
+            disabled={!voiceOn}
             onClick={(e) => {
               e.stopPropagation();
               if (view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
@@ -481,7 +482,7 @@ export function StageTheater({
                   onToggleVoice();
                 }}
               >
-                <Icon name="volume" size={17} />
+                <Icon name={voiceOn ? "volume" : "volume-off"} size={17} />
                 语音
               </button>
             )}
