@@ -71,9 +71,9 @@ pnpm --filter @stage-ai/web dev
 | --- | --- | --- |
 | `STAGE_FLOW_BASE_URL` | `http://127.0.0.1:38000` | flow2api 网关地址 |
 | `STAGE_FLOW_API_KEY` | 空 | 网关的 key，走请求头 `x-goog-api-key`。**只放 .env，别提交** |
-| `STAGE_FLOW_MODEL` | `gemini-3.1-flash-image` | **必须填别名**（`gemini-3.1-flash-image` / `gemini-3.0-pro-image` / `imagen-4.0-generate-preview`）。填完整模型名（如带画幅后缀的）会让画幅与分辨率被静默忽略 |
-| `STAGE_FLOW_SIZE` | `2k` | 出图档位 `1k` / `2k` / `4k`。`gemini-3.1-flash-image` 只支持 `2k` / `4k` |
-| `STAGE_FLOW_TIMEOUT_MS` | `180000` | 单图超时。实测出图常在 100–140s，别调太小 |
+| `STAGE_FLOW_MODEL` | `gemini-3.1-flash-image` | **必须填别名**。填完整模型名（如带画幅后缀的）会让画幅与分辨率被静默忽略。本机实测能出图的只有 `gemini-3.1-flash-image`（16:9 约 73s）与 `gemini-3.0-pro-image`（约 89s），`imagen-4.0-generate-preview` 被上游 RPC 拒绝（500） |
+| `STAGE_FLOW_SIZE` | `2k`（代码默认；本机实测建议 `1k`） | 出图档位 `1k` / `2k` / `4k`。见下方「分辨率与耗时」——本机账号下 `1k` 与 `2k` 拿到的像素**一样**，`4k` 要 Ult 账号 |
+| `STAGE_FLOW_TIMEOUT_MS` | `180000` | 单图超时。实测单张 70–115s（垫图同量级），别调太小 |
 
 ```bash
 # .env 示例：工坊出图走 flow2api
@@ -81,10 +81,23 @@ STAGE_IMAGE_BACKEND=flow2api
 STAGE_FLOW_BASE_URL=http://127.0.0.1:38000
 STAGE_FLOW_API_KEY=<your-api-key>
 STAGE_FLOW_MODEL=gemini-3.1-flash-image
-STAGE_FLOW_SIZE=2k
+STAGE_FLOW_SIZE=1k        # 本机实测 1k 与 2k 同像素，1k 快 35%
 ```
 
 > 画幅只有 `16:9` 与 `9:16` 可靠（背景/CG 用 16:9、立绘用 9:16）。实测 `3:4` / `4:3` 会被静默改成 1200x896 横图——所以工坊在落盘前会核对实际画幅，不符就报错不写文件。
+
+**分辨率与耗时**（2026-10-01 本机实测，`gemini-3.1-flash-image`，一次一张、串行）：
+
+| `STAGE_FLOW_SIZE` | 16:9 背景 | 9:16 立绘（垫图） | 成图像素 |
+| --- | --- | --- | --- |
+| `1k` | 73.2s | 138.2s | 16:9 → 1376x768，9:16 → 768x1376 |
+| `2k` | 115.1s | 215.8s | **与 `1k` 逐像素相同** |
+| `4k` | 网关 503 | — | 需要 Ult 账号，本机没有 |
+
+所以本机账号下 `2k` 只是多花 42–78 秒换回同一张图（上游放大失败时网关静默退回原图），
+**`STAGE_FLOW_SIZE=1k` 是这里最划算的一刀**。真正贵的是垫图（70s → 138s），提速的另一半靠
+剧作家提前 3–5 句排产（`generate_image` 是后台排产，图在台词演出期间出）。完整数据与备选旋钮见
+`docs/freeform/261001-image-speed.md`。
 
 立绘抠底调参（默认值对 2D 平涂纯白底是对得上的，一般**不用改**；工坊 agent 出完图自己看过觉得不对时，会在 `generate_image` 调用上临时改这三个值）：
 

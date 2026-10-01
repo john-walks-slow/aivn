@@ -66,7 +66,8 @@ const QUEUED_DESCRIPTION = [
   "出一张剧目素材并**后台排产**（发起即返回，不等图）：背景(kind=background) / CG(kind=cg) 给 name，",
   "立绘(kind=sprite) 给 characterId + expression（角色不在角色表时再给 characterName，会自动建一个临时角色）。",
   "背景 16:9、CG 16:9、立绘 9:16 竖构图全身；提示词写英文，只描述画面本身。",
-  "**提前 3–5 句发起**：图约 15–30 秒才到，出席位置太早只会看到骨架占位，拿到回执后照常写台词，",
+  "**提前 3–5 句发起**：图要一分多钟才到（flow2api 实测 1k 档 70–80s、2k 档 110s 上下），" +
+  "出席位置太早只会看到骨架占位，拿到回执后照常写台词，",
   "到出场的那一行再用 <scene bg=\"…\"> 或 <cg id=\"…\">、<actor expression=\"…\"> 引用同一个 id。",
   "回执会告诉你这张是新建排产、已经在队列里，还是剧目里已经有同名素材（已有的直接引用，别重复发起）。",
   "立绘会自动抠底成透明 PNG，非 neutral 差分自动拿该角色的 neutral 定妆照做垫图。",
@@ -167,7 +168,7 @@ async function runQueued(
     deps.emitPreload({ type: "sprite", id: `${charId}:${expression}`, prompt: params.prompt });
     deps.kickSprite(charId, expression, params.prompt, params.characterName?.trim() || undefined);
     return textResult(
-      `已排产：立绘 ${charId}/${expression}（约 100 秒）。` +
+      `已排产：立绘 ${charId}/${expression}（约一分多钟）。` +
         "别在这一轮就让它上台，3–5 句之后再 <actor id=… expression=…>；角色表里还没有它时会自动建一个临时角色。",
     );
   }
@@ -186,6 +187,6 @@ async function runQueued(
   if (status === "queued") return textResult(`${id} 已经在生成队列里了（同一个 id 不会出两张图），照常在出场处引用。`);
   deps.kick(type, params.prompt, id);
   return textResult(
-    `已排产：${id}（${type}，约 15–30 秒）。3–5 句之后用 ${type === "bg" ? `<scene bg="${id}">` : `<cg id="${id}">`} 引用它。`,
+    `已排产：${id}（${type}，约一分多钟）。3–5 句之后用 ${type === "bg" ? `<scene bg="${id}">` : `<cg id="${id}">`} 引用它。`,
   );
 }

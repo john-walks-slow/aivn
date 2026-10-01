@@ -222,7 +222,7 @@ ${ctx.canSearch ? SEARCH_GUIDE : ""}
 
 - 省略 expression 时默认 neutral（定妆照）
 - 已有 neutral 时出其他差分会自动垫图保持一致性
-- 立绘约 100 秒才出：不要在这一轮就让它上台，3–5 句之后再 \`<actor id="xiaoyu" expression="neutral">\`
+- 立绘要一分多钟才出（flow2api 实测 70–110s）：不要在这一轮就让它上台，3–5 句之后再 \`<actor id="xiaoyu" expression="neutral">\`
 
 **3. 临时角色（一次性 NPC）**：只出声不出图也行，直接在 say 上写 name 属性：
 
@@ -265,7 +265,7 @@ function imageChapter(can: boolean): string {
 规则：
 - **走函数调用**：generate_image 是一个工具，照上面的写法**发起调用**；把它当成剧本里的文本标签来写
   （形如 <call:generate_image …/> 那样夹在台词之间）引擎不认，那张图不会出现，也不会有人告诉你出错了；
-- **提前 3–5 句发起**：图要 15–30 秒才到，引用太早只会看到骨架占位；
+- **提前 3–5 句发起**：图要一分多钟才到，引用太早只会看到骨架占位；
 - **id 自取**：用简短英文下划线 id（如 bg_rooftop_dusk、cg_rooftop_01），引用时一字不差；
 - **prompt 写英文**，写清主体/环境/光线/视角/画风，末尾加 "anime visual novel background, no text"；
 - **不要凭空造 id**：可用清单与「已生成的图」里已有的背景和插图直接引用，别重复生成；
