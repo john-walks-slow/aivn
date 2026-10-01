@@ -22,6 +22,20 @@ pnpm --filter @stage-ai/web dev
 
 打开 http://127.0.0.1:5180 即可。
 
+### 单端口跑整站（公网部署用）
+
+`pnpm -r build` 之后服务端会顺带把 `apps/web/dist` 挂在自己端口上：页面、`/api`、`/ws`、`/plays`
+同一个源，不需要再单独跑 vite。配好 `STAGE_PASSWORD` 后就可以直接指向这一个端口：
+
+```bash
+pnpm -r build
+STAGE_PORT=8787 STAGE_PASSWORD=你的密码 pnpm --filter @stage-ai/server start
+# 浏览器打开 http://127.0.0.1:8787
+```
+
+要对外暴露就在前面挂一层隧道（Cloudflare tunnel / nginx / frp 都行）。
+**没配 `STAGE_PASSWORD` 时不要把端口直接暴露到公网**——剧目文件、剧作家对话、素材都能匿名读写。
+
 ## 配置项（.env）
 
 ### LLM 网关（必填）
@@ -29,6 +43,7 @@ pnpm --filter @stage-ai/web dev
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `STAGE_PORT` | `8787` | 服务端端口 |
+| `STAGE_PASSWORD` | 空 | 访问密码（HTTP Basic，用户名随意）。**挂到公网前必设**：不设就是任何人打开就能翻剧目、改剧目、烧生图额度。浏览器首次访问弹框输入密码，之后随请求带上。留空 = 本机直连不设防 |
 | `STAGE_PLAYS_ROOT` | `plays` | 剧目库根目录（每子目录一剧目） |
 | `STAGE_LIBRARY_ROOT` | `library` | 素材资源库根目录（见「素材资源库」）。目录不存在 = 空库，素材页的「从资源库导入」会显示空列表 |
 | `STAGE_MODEL_ID` | — | 模型 id（经网关路由的完整 id） |

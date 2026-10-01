@@ -7,6 +7,11 @@ import { DEFAULT_MAX_QUEUE } from "./limiter.js";
 /** 服务端配置：环境变量驱动（cpa 网关 + 模型 + 剧目库根目录 + fish-audio TTS）。 */
 export interface ServerConfig {
   port: number;
+  /**
+   * 公网入口的访问密码（`STAGE_PASSWORD`，HTTP Basic）。空 = 不设防（本机直连的开发场景）；
+   * 挂到公网隧道上就该设，否则任何人都能开剧目、改剧目、烧生图额度。
+   */
+  password: string;
   /** 剧目库根目录（多剧目，每子目录一剧目）。 */
   playsRoot: string;
   /** 应用级素材资源库根目录（每子目录一素材条目，用户在本地目录里增删改，服务端只读）。 */
@@ -129,6 +134,7 @@ export function loadConfig(
 ): ServerConfig {
   const config: ServerConfig = {
     port: Number(env.STAGE_PORT ?? "8787"),
+    password: env.STAGE_PASSWORD ?? "",
     playsRoot: resolve(repoRoot, env.STAGE_PLAYS_ROOT ?? "plays"),
     libraryRoot: resolve(repoRoot, env.STAGE_LIBRARY_ROOT ?? "library"),
     modelId: env.STAGE_MODEL_ID ?? "ms/deepseek-ai/DeepSeek-V4.1-Flash",
