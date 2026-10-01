@@ -80,6 +80,17 @@ describe("agent kit：两个角色的暴露面", () => {
     expect(a.description).toContain("后台排产");
   });
 
+  it("写 prompt 的硬约束两个角色同一份（只写在工坊提示词里，等于剧作家那份没修）", () => {
+    const rules = ["逐条带上角色卡的外貌", "垫图就是身份基准", "由引擎自动拼在 prompt 末尾"];
+    for (const role of [playwriter, workshop] as const) {
+      const desc = role().tools.find((t) => t.name === "generate_image")!.description;
+      for (const rule of rules) expect(desc).toContain(rule);
+    }
+    // 流程与验收仍各归各的：工坊管看图与重出，剧作家管提前发起
+    expect(workshop().tools.find((t) => t.name === "generate_image")!.description).toContain("inspect_asset");
+    expect(playwriter().tools.find((t) => t.name === "generate_image")!.description).toContain("提前 3–5 句发起");
+  });
+
   it("没配 Exa 就不注册 web_search，配了才装（且两个角色同一份实现）", () => {
     const exa = { search: async () => [] } as never;
     expect(names(playwriter())).not.toContain("web_search");

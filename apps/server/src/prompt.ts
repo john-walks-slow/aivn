@@ -219,7 +219,7 @@ ${ctx.canSearch ? SEARCH_GUIDE : ""}
 
 **2. 生立绘（generate_image kind="sprite"）**，后台出图，不阻塞台词：
 
-    generate_image(kind="sprite", characterId="xiaoyu", characterName="小雨", prompt="2D anime style, …")
+    generate_image(kind="sprite", characterId="xiaoyu", characterName="小雨", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view, plain white background")
 
 - **这个工具没有 expression 参数，你只能出 neutral 定妆照**。差分（表情差分）由搭台助手在用户面前生成，
   垫图保角色一致性，你既做不到也不该在拍内等它

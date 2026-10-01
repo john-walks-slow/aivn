@@ -327,10 +327,10 @@ describe("工坊 prompt 与工具", () => {
     expect(deriveThreadTitle("一".repeat(30))).toBe(`${"一".repeat(20)}…`);
   });
 
-  it("工坊 prompt：立绘出图四条硬规则都在（实测各漏一条的教训）", async () => {
+  it("工坊 prompt：流程与验收的规则都在（外貌锚点那条搬进了共享工具说明）", async () => {
     const prompt = await buildWorkshopPrompt(promptCtx({ canGenerate: true }));
-    // 外貌锚点：不带进 prompt 就出不来卡上那个人（实测图里是藏青裙 + 白中短袜，人设写白裙 + 黑过膝袜）
-    expect(prompt).toContain("必须逐条带上角色卡的外貌");
+    // 外貌锚点是工具契约不是工坊职责：工坊侧只留一句指路，正文在 generate_image 的 description 里
+    expect(prompt).toContain("看 generate_image 的工具说明");
     // neutral 不覆盖 normal：agent 曾宣称「会覆盖 normal.png」，实际多出一个键、两个人并存
     expect(prompt).toContain("neutral 与其它差分名是两个名字");
     // 自查要逐条结论：inspect_asset 看过仍汇报「已严格按设定完成」，被单独追问才承认图不对
