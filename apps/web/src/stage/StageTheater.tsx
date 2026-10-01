@@ -258,8 +258,13 @@ export function StageTheater({
   const onStageClick = (): void => {
     onUnlock();
     if (scrubbed) scrub(1);
-    else if (playerEcho) onEchoDismiss();
-    else if (canContinue) onContinue();
+    else if (playerEcho) {
+      // 回声占着台词条时，这一下既是「我看过了」也是「往下走」——
+      // 否则玩家点两下才看得见自己那句话之后的内容。
+      onEchoDismiss();
+      if (canContinue) onContinue();
+      else advance();
+    } else if (canContinue) onContinue();
     else advance();
   };
 
@@ -393,17 +398,20 @@ export function StageTheater({
       </div>
 
       <div className="theater-dialog" role="text">
-        {view ? (
+        {playerEcho ? (
+          <div className="dialog-name">你</div>
+        ) : (
+          view &&
           (view.type === "say" || view.type === "thought") && (
             <div className="dialog-name">{view.nameOverride ?? (actorName(names, view.actorId) || "？")}</div>
           )
-        ) : (
-          playerEcho && <div className="dialog-name">你</div>
         )}
-        <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
-          {shown ||
-            (view ? "" : playerEcho || emptyDialogHint(live))}
-          {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
+        {/* 回声期间台词条归它：玩家一按下就得看见自己说了什么，不能被上一句挡回去。
+            真台词一到（播放头换行）回声自动让位，见 StageScreen 的 echoText。 */}
+        <p className={`dialog-text ${!playerEcho && view?.type === "thought" ? "thought" : !playerEcho && view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
+          {playerEcho || shown ||
+            (view ? "" : emptyDialogHint(live))}
+          {view && !playerEcho && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
         </p>
         {/* 导演栏：四个原语 + 重听/自动，全在对话界面内就地完成，不跳视图 */}
         <div className="dialog-foot">
