@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "../ui/Icon.js";
 import { stamp } from "../ui/stamp.js";
-import { api, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
+import { api, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
 
 /**
@@ -27,11 +27,6 @@ export function SavesView({ playId }: { playId: string }) {
       .catch((e: Error) => setError(e.message));
   }, [playId]);
   useEffect(reload, [reload]);
-
-  // 剧目还没准备好（缺故事前提）时进不去舞台：进去也只有一片空场
-  const ready = detail?.readiness.ready ?? false;
-  const missing = detail ? readinessMissing(detail.readiness) : [];
-  const gateHint = ready ? "" : `还差 ${missing.join("、")}，到剧目页补齐后才能进舞台`;
 
   const guard = (id: string, run: () => Promise<unknown>): void => {
     setBusyId(id);
@@ -87,7 +82,7 @@ export function SavesView({ playId }: { playId: string }) {
           </span>
         </button>
         <h2>周目</h2>
-        <button className="primary" disabled={busyId !== null || !ready} title={gateHint} onClick={startNew}>
+        <button className="primary" disabled={busyId !== null} onClick={startNew}>
           开始新周目
         </button>
       </header>
@@ -98,7 +93,6 @@ export function SavesView({ playId }: { playId: string }) {
         </div>
       )}
 
-      {!ready && detail && <div className="error-banner">{gateHint}。</div>}
 
       <p className="muted small saves-hint">
         每个周目是一棵独立的故事树。开始新周目只新建一棵，旧的原封不动；改名只改标签，不动故事。
@@ -149,8 +143,7 @@ export function SavesView({ playId }: { playId: string }) {
                 <>
                   <button
                     className={save.current ? "" : "primary"}
-                    disabled={busyId !== null || !ready}
-                    title={gateHint}
+                    disabled={busyId !== null}
                     onClick={() => enter(save)}
                   >
                     {save.current ? "回到舞台" : "进入"}

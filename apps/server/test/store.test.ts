@@ -62,16 +62,15 @@ describe("PlayLibrary 剧目包导入与删除", () => {
     ).rejects.toThrow("非法剧目 id");
   });
 
-  it("createEmpty premise 留空 → 就绪门判缺；remove 整目录删除", async () => {
+  it("createEmpty premise 留空 → 检查报「还没有前提」；remove 整目录删除", async () => {
     await library.createEmpty("blank", "空白");
     const readiness = await library.store("blank").readiness();
     expect(readiness.premise).toBe(false);
-    expect(readiness.ready).toBe(false);
     await library.remove("blank");
     expect(existsSync(join(root, "blank"))).toBe(false);
   });
 
-  it("就绪门只看 premise：没有图照样 ready（工坊出图是后话）", async () => {
+  it("没有图只是「还没有」，不挡开演（工坊出图是后话）", async () => {
     await library.createEmpty("pic", "图不多");
     const store = library.store("pic");
     await writeFile(join(root, "pic", "play.json"), PLAY_JSON("pic"));
@@ -80,7 +79,6 @@ describe("PlayLibrary 剧目包导入与删除", () => {
     expect(readiness.characterSprites).toBe(false);
     expect(readiness.background).toBe(false);
     expect(readiness.premise).toBe(true);
-    expect(readiness.ready).toBe(true);
   });
 
   it("play.json 留空但写了 memory/always/premise.md 也算就绪", async () => {

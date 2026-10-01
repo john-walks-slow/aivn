@@ -457,9 +457,14 @@ export class PlaywrightOrchestrator {
     };
   }
 
-  /** 首个客户端连接后开局。 */
-  autostart(): void {
-    if (this.autostarted || this.engaged) return;
+  /** 这棵树还没开演过：没有周目内容，等玩家自己按「开演」。 */
+  get fresh(): boolean {
+    return !this.autostarted && this.beatNo === 0;
+  }
+
+  /** 开演第一轮。空树不会自己开——玩家在舞台上按「开演」才走这一步。 */
+  start(): void {
+    if (!this.fresh || this.engaged) return;
     this.autostarted = true;
     void this.beginBeat(this.opts.play.opening);
   }

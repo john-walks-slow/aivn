@@ -87,8 +87,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     },
     [workshopEntry, playId],
   );
-  /** 回顾的第二视图：剧作家的原始历史（同一份内容区，切视图不换外壳）。 */
-  const [rawHistory, setRawHistory] = useState(false);
+  /** 回顾的第二视图：剧作家的原始历史（同一份内容区，切视图不换外壳）。默认给原始历史。 */
+  const [rawHistory, setRawHistory] = useState(true);
   const [historyNonce, setHistoryNonce] = useState(0);
   /** 路线画布把镜头操作交给侧栏（见 RouteCanvas 的 onControls）。 */
   const [routeControls, setRouteControls] = useState<RouteControls | null>(null);
@@ -433,6 +433,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
               visual={playback.visual}
               playback={playback}
               live={stage.state === "streaming"}
+              fresh={stage.fresh}
               names={stage.names}
               index={index}
               voiceAvailable={stage.voiceAvailable}
@@ -449,7 +450,17 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
               canContinue={canContinue}
               onContinue={continueBeat}
               overlay={
-                panelReady ? (
+                stage.fresh ? (
+                  /* 空树：摆一个「开演」，等玩家按第一下。第一轮不在连接建立时自动开局。 */
+                  <div className="choice-overlay" role="group" aria-label="开演">
+                    <div className="choices">
+                      <button type="button" className="choice" onClick={stage.sendStart}>
+                        <Icon name="play" />
+                        <span className="choice-text">开演</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : panelReady ? (
                   <StopPanel
                     stop={stage.stop}
                     isNoStop={stage.isNoStop}

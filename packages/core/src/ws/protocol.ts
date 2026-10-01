@@ -104,6 +104,8 @@ export type ServerMessage =
       type: "hello";
       sessionId: string;
       lastSeq: number;
+      /** 这棵树还没开演过：客户端据此摆「开演」按钮，而不是一片空场。 */
+      fresh?: boolean;
       cast?: { id: string; name: string }[];
       /** 服务端 TTS 能力（配置了 fish-audio keys 才为 true；false 时客户端隐藏语音开关）。 */
       voice?: boolean;
@@ -197,6 +199,8 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: "resume"; lastSeq: number }
+  /** 开演：空树的第一轮由玩家在舞台上按「开演」起，连接建立时不再自动开局。 */
+  | { type: "start" }
   | { type: "player_choice"; optionIndex: number }
   | { type: "player_free"; text: string }
   | { type: "continue" }

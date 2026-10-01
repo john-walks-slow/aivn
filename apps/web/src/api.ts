@@ -11,9 +11,8 @@ export interface ImportResult {
   writes: { path: string; before: string | null; after: string }[];
 }
 
-/** 开演前置检查：引擎手上缺的东西直接照出来。 */
+/** 开演前置检查：引擎手上还没有的东西（只作提示，不挡开演）。 */
 export interface Readiness {
-  ready: boolean;
   premise: boolean;
   characterSprites: boolean;
   background: boolean;
@@ -21,9 +20,8 @@ export interface Readiness {
 }
 
 /**
- * 缺项文案分两档，别混：
- * - 硬门槛只有 premise：没有它剧本无从写起，开不了演。
- * - 立绘与背景是建议项：没图照样开演（舞台落氛围底色，没有立绘的角色不上台）。
+ * 还没有的故事设定。世界观前提不写也能开演——剧作家会自由发挥，
+ * 想要一个确定的世界才去写。立绘与背景同理（没图就落氛围底色，没有立绘的角色不上台）。
  *
  * 文案直说引擎缺什么，不跟玩家讲「就绪门」那套内部说法。
  */

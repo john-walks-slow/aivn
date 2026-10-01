@@ -17,6 +17,8 @@ interface StageTheaterProps {
   visual: VisualState;
   playback: Playback;
   live: boolean;
+  /** 空树：还没开演过，台词区提示改说「按开演」。 */
+  fresh?: boolean;
   names: Readonly<Record<string, string>>;
   index: AssetIndex;
   /** 服务端 TTS 能力（false 时隐藏语音相关的一切）。 */
@@ -101,6 +103,7 @@ export function StageTheater({
   visual,
   playback,
   live,
+  fresh,
   names,
   index,
   voiceAvailable,
@@ -332,7 +335,7 @@ export function StageTheater({
         )}
         <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
           {shown ||
-            (view ? "" : emptyDialogHint(live))}
+            (view ? "" : emptyDialogHint(live, fresh))}
           {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
         </p>
         {/* 导演栏：四个原语 + 重听/自动，全在对话界面内就地完成，不跳视图 */}

@@ -84,7 +84,7 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage
     registered = playhouse.clientsFor(playId);
     registered.add(sender);
     sendHello(ws, playId, runtime);
-    if (stage) runtime.orchestrator.autostart();
+    // 不在这里开局：空树的第一轮由玩家在舞台上按「开演」起。
     established = true;
     for (const msg of pending.splice(0)) dispatchSafe(msg);
   })();
@@ -115,6 +115,9 @@ async function routeMessage(
       if (missed.length > 0) sender({ type: "events", events: missed });
       return;
     }
+    case "start":
+      orchestrator.start();
+      return;
     case "player_choice":
       await orchestrator.playerAction({ kind: "choice", optionIndex: msg.optionIndex });
       return;

@@ -21,6 +21,8 @@ export interface StageSocket {
   connected: boolean;
   /** 编排器已空闲：beat_end 之后还要等它收尾，此前任何操作都会被服务端挡回。 */
   settled: boolean;
+  /** 空树（还没开演过）：舞台摆「开演」按钮，不自己开局。 */
+  fresh: boolean;
   error: string | null;
   /** lines/cues 版本号：每次事件批次自增（两者是稳定引用，原地变更）。 */
   revision: number;
@@ -48,6 +50,8 @@ export interface StageSocket {
   sendChoice: (index: number) => void;
   sendFree: (text: string) => void;
   sendContinue: () => void;
+  /** 开演空树的第一轮。 */
+  sendStart: () => void;
   sendPrompt: (text: string) => void;
   /** 排队面板：改一句 / 撤一句（都已注入的不认，服务端回 error）。 */
   sendPromptEdit: (id: string, text: string) => void;
@@ -105,6 +109,8 @@ export function useStageSocket(
   const [tick, setTick] = useState(0); // lines/cues/scene 由 builder 持有，tick 触发重渲染
   // 轮已收束 ≠ 可操作：模型那一轮收尾期间服务端仍 engaged，beat_settled 之后按钮才解禁
   const [settled, setSettled] = useState(false);
+  /** 空树：舞台摆「开演」按钮，等玩家按，不自己开局。 */
+  const [fresh, setFresh] = useState(false);
   const builderRef = useRef(new ScriptBuilder());
   const lastSeqRef = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
@@ -137,6 +143,7 @@ export function useStageSocket(
         const msg = JSON.parse(String(raw.data)) as ServerMessage;
         switch (msg.type) {
           case "hello":
+            setFresh(msg.fresh ?? false);
             setNames(Object.fromEntries((msg.cast ?? []).map(({ id, name }) => [id, name])));
             setVoiceAvailable(msg.voice ?? false);
             if (msg.assetsTtlMs !== undefined) setAssetsTtlMs(msg.assetsTtlMs);
@@ -284,6 +291,7 @@ export function useStageSocket(
   const sendChoice = useCallback((index: number) => send({ type: "player_choice", optionIndex: index }), [send]);
   const sendFree = useCallback((text: string) => send({ type: "player_free", text }), [send]);
   const sendContinue = useCallback(() => send({ type: "continue" }), [send]);
+  const sendStart = useCallback(() => send({ type: "start" }), [send]);
   const sendPrompt = useCallback((text: string) => send({ type: "prompt", text }), [send]);
   const sendPromptEdit = useCallback(
     (id: string, text: string) => send({ type: "prompt_edit", id, text }),
@@ -307,6 +315,7 @@ export function useStageSocket(
     state,
     connected,
     settled,
+    fresh,
     error,
     /** lines/cues 为原地变更的稳定引用，下游 effect 以 revision 驱动。 */
     revision: tick,
@@ -325,6 +334,7 @@ export function useStageSocket(
     sendChoice,
     sendFree,
     sendContinue,
+    sendStart,
     sendPrompt,
     sendPromptEdit,
     sendPromptDelete,

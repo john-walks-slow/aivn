@@ -299,27 +299,25 @@ describe("工坊 prompt 与工具", () => {
     expect(second).toContain("第 3 句");
   });
 
-  it("开演条件只卡 premise，立绘与背景只是建议项", () => {
+  it("没有硬门槛：前提与图都只是「还没有」", () => {
     const noImages = renderReadiness({
-      ready: true,
       premise: true,
       characterSprites: false,
       background: false,
       hasSession: false,
     });
-    expect(noImages).toContain("已满足，可开演");
+    expect(noImages).toContain("没有硬门槛");
     expect(noImages).toContain("缺（建议补）");
     expect(noImages).toContain("不是门槛");
 
     const noPremise = renderReadiness({
-      ready: false,
       premise: false,
       characterSprites: true,
       background: true,
       hasSession: false,
     });
     // 说人话，不吐字段名：玩家与模型都该看到「缺故事前提」，而不是 `premise`
-    expect(noPremise).toContain("未满足（缺故事前提）");
+    expect(noPremise).toContain("不写也行");
     expect(noPremise).toContain("memory/always/premise.md");
     expect(noPremise).not.toContain("play.json 的 premise");
   });

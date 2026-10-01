@@ -247,7 +247,7 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
       },
       onServerMessage: () => {},
     });
-    await orchestrator.autostart();
+    await orchestrator.start();
     await orchestrator.whenIdle();
 
     // 只有**图真的要来**的调用才占时间线位置（骨架占位出现在演出顺序里的那一行）：

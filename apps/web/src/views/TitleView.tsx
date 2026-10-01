@@ -84,21 +84,18 @@ export function TitleView({ playId }: { playId: string }) {
               {detail.play.characters.map((c) => c.name).join(" · ") || "（无角色）"}
             </p>
 
-            {/* 就绪说明排在按钮之前：不能按的按钮放在最显眼的位置，读到它的人先撞墙再找解释。 */}
-            {!readiness?.ready && missing.length > 0 && (
-              <p className="title-note warn">
-                还不能开演：缺 {missing.join("、")}。请到
-                <button className="link-btn" onClick={() => navigate(workshopUrl(playId))}>
-                  工坊
+            {/* 缺什么都不是门槛，只是「还没有」。没写故事前提照样能开演，
+                剧作家会自由发挥——想让它自由发挥就什么都别写。 */}
+            {missing.length > 0 && (
+              <p className="title-note">
+                还没有{missing.join("、")}——现在开演，剧作家会自己发挥。想要一个确定的世界，去
+                <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "memory"))}>
+                  工坊的记忆页
                 </button>
-                与 AI 共创补齐，或到
-                <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "assets"))}>
-                  素材页
-                </button>
-                手动补齐。
+                写「世界与人物设定」。
               </p>
             )}
-            {readiness?.ready && advice.length > 0 && (
+            {advice.length > 0 && (
               <p className="title-note">
                 还没有 {advice.join("、")}——可以开演（舞台落氛围底色、没有立绘的角色不上台），
                 也可到
@@ -119,20 +116,14 @@ export function TitleView({ playId }: { playId: string }) {
               {/* 有周目时，「继续」是主项且排在前：来得最多的动作该是最显眼的那一个。
                   开始新周目永远排在它后面，没有周目时它自己就是主项。 */}
               {current ? (
-                <button
-                  className="title-item main"
-                  disabled={!readiness?.ready}
-                  title={readiness?.ready ? "" : `缺：${missing.join("、")}`}
-                  onClick={() => navigate(`/play/${playId}/stage`)}
-                >
+                <button className="title-item main" onClick={() => navigate(`/play/${playId}/stage`)}>
                   继续
                   <span className="title-item-sub">{current.name}</span>
                 </button>
               ) : null}
               <button
                 className={`title-item${current ? "" : " main"}`}
-                disabled={!readiness?.ready || starting}
-                title={readiness?.ready ? "" : `缺：${missing.join("、")}`}
+                disabled={starting}
                 onClick={startNew}
               >
                 开始新周目

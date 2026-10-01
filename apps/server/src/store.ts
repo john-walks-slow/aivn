@@ -16,9 +16,8 @@ import { hasAnySave, readSaveMeta, saveDirOf, writeSaveMeta, assertSaveId, PlayS
 /** 周目列表卡的「最后一句」只认这三种带正文的行。 */
 const PREVIEW_KINDS: ReadonlySet<string> = new Set(["say", "narrate", "thought"]);
 
-/** 就绪门细项（D13）：开演前置检查。 */
+/** 开演前置检查的细项：引擎手上还没有的东西（只作提示，不挡开演）。 */
 export interface Readiness {
-  ready: boolean;
   premise: boolean;
   /** ≥1 角色卡含立绘映射且差分文件存在。 */
   characterSprites: boolean;
@@ -178,17 +177,15 @@ export class PlayStore {
   }
 
   /**
-   * 就绪门检查：**只卡 premise**——图全可选。
-   * 背景与立绘是建议项：没有图照样开演（舞台落氛围底色、没有立绘的角色不上台），
-   * 演出不等素材，设定能边演边补。`characterSprites` / `background` 仍返回，
-   * 素材页与工坊拿它做补齐建议。
+   * 开演前置检查（只作提示，不挡开演）：没有故事前提照样能演，剧作家会自由发挥；
+   * 没图也照样演，舞台落氛围底色、没有立绘的角色不上台。这些都只是「还没有什么」。
    */
   async readiness(): Promise<Readiness> {
     let play: PlayConfig | null = null;
     try {
       play = await this.loadPlay();
     } catch {
-      return { ready: false, premise: false, characterSprites: false, background: false, hasSession: false };
+      return { premise: false, characterSprites: false, background: false, hasSession: false };
     }
     const spritesDir = join(this.dir, "assets/sprites");
     const characterSprites =
@@ -199,10 +196,9 @@ export class PlayStore {
     const bgDir = join(this.dir, "assets/backgrounds");
     const background = existsSync(bgDir) && (await readdir(bgDir)).some((f) => /\.(png|jpe?g|webp)$/i.test(f));
     const hasSession = await hasAnySave(this.dir);
-    // 世界观前提的唯一真相源：memory/always/premise.md。缺它就没有 A 区，也就没有可演的剧。
+    // 世界观前提的唯一真相源：memory/always/premise.md。
     const premise = (await this.premise()).trim() !== "";
     return {
-      ready: premise,
       premise,
       characterSprites,
       background,

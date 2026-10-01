@@ -87,8 +87,8 @@ export function LibraryView() {
             <button key={play.id} className="card" onClick={() => navigate(`/play/${play.id}`)}>
               <span className="card-cover">
                 {cover ? <img src={cover} alt="" loading="lazy" /> : <span className="card-cover-blank" />}
-                <span className={`badge ${play.readiness.ready ? "ok" : "warn"}`}>
-                  {play.readiness.ready ? "可开演" : "未就绪"}
+                <span className={`badge ${play.readiness.hasSession ? "ok" : ""}`}>
+                  {play.readiness.hasSession ? "有周目" : "未开演"}
                 </span>
               </span>
               <span className="card-body">
@@ -97,11 +97,9 @@ export function LibraryView() {
                   {play.premise.length > 72 ? `${play.premise.slice(0, 72)}…` : play.premise || "（故事前提待补）"}
                 </span>
                 <span className="muted small card-meta">
-                  {missing.length > 0
-                    ? `缺 ${missing.join("、")}`
-                    : advice.length > 0
-                      ? `还没有 ${advice.join("、")}`
-                      : ""}
+                  {missing.length > 0 || advice.length > 0
+                    ? `还没有 ${[...missing, ...advice].join("、")}`
+                    : ""}
                 </span>
               </span>
             </button>

@@ -82,6 +82,12 @@ export function AssetsPanel({ playId }: { playId: string }) {
   };
 
   const readiness = detail?.readiness;
+  const missingAssets = readiness
+    ? [
+        ...(readiness.characterSprites ? [] : ["角色立绘"]),
+        ...(readiness.background ? [] : ["背景图"]),
+      ]
+    : [];
   const spritesDirs = Object.keys(assets).filter((k) => k.startsWith("sprites/"));
   /** 剧目里已有的条目：立绘按角色目录（目录名即条目 id），其余按 stem。 */
   const owned = useMemo(() => {
@@ -101,8 +107,8 @@ export function AssetsPanel({ playId }: { playId: string }) {
     <div className="workshop-tab-pane assets-pane">
       {readiness && (
         <div className="assets-pane-head">
-          <span className={`badge ${readiness.ready ? "ok" : "warn"}`}>
-            {readiness.ready ? "能开演" : "还不能开演"}
+          <span className={`badge ${missingAssets.length === 0 ? "ok" : ""}`}>
+            {missingAssets.length === 0 ? "素材齐了" : `还没有 ${missingAssets.join("、")}`}
           </span>
         </div>
       )}
@@ -131,7 +137,7 @@ export function AssetsPanel({ playId }: { playId: string }) {
                 去记忆页编辑
               </button>
             </span>
-            <p className="premise-view">{premise || "（还没写——开不了演）"}</p>
+            <p className="premise-view">{premise || "（还没写。现在开演也行，剧作家会自己发挥。）"}</p>
           </div>
           <label className="field">
             <span>opening（开局指令）</span>

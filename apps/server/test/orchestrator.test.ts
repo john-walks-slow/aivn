@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { LineageTree, type ServerMessage } from "@stage-ai/core";
@@ -53,6 +53,30 @@ function lastUserText(contexts: CapturedContext[]): string {
   const message = contexts.at(-1)!.messages.filter((m) => m.role === "user").at(-1)!;
   return (message.content ?? []).map((c) => (c.type === "text" ? (c.text ?? "") : "")).join("\n");
 }
+
+describe("空树的第一轮", () => {
+  it("不自己开局：fresh 为真，start() 之后才落第一拍", async () => {
+    const { orchestrator, messages } = setup([{ text: BEAT_1, beatDone: true }]);
+
+    expect(orchestrator.fresh).toBe(true);
+    orchestrator.start();
+    expect(orchestrator.fresh).toBe(false);
+    await vi.waitFor(() => expect(lastBeatEnd(messages)).toBeTruthy());
+  });
+
+  it("start() 只认第一次：再按不会开出第二轮", async () => {
+    const { orchestrator, messages } = setup([
+      { text: BEAT_1, beatDone: true },
+      { text: BEAT_2, beatDone: true },
+    ]);
+
+    orchestrator.start();
+    await vi.waitFor(() => expect(lastBeatEnd(messages)).toBeTruthy());
+    const beats = messages.filter((m) => m.type === "beat_end").length;
+    orchestrator.start();
+    expect(messages.filter((m) => m.type === "beat_end").length).toBe(beats);
+  });
+});
 
 describe("PlaywrightOrchestrator 闭环", () => {
   it("开局 → 流式事件 → stop 交互 → beat_end(stop)", async () => {

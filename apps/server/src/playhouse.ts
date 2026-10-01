@@ -55,6 +55,7 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
     type: "hello",
     sessionId: playId,
     lastSeq: runtime.orchestrator.lastSeq,
+    fresh: runtime.orchestrator.fresh,
     cast: runtime.cast,
     voice: runtime.voice,
     assets: runtime.images?.snapshot(),

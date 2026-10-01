@@ -16,7 +16,8 @@ import type { StopPayload } from "@stage-ai/core";
  * 演出中就是「剧作家正在落笔…」——没有台词可显示只可能是还在写，报「点击开始」
  * 是撒谎；非演出中才是真的等玩家发话。
  */
-export function emptyDialogHint(live: boolean): string {
+export function emptyDialogHint(live: boolean, fresh = false): string {
+  if (fresh) return "还没开演——按画面上的「开演」开始。";
   return live ? "剧作家正在落笔…" : "（点击开始）";
 }
 
