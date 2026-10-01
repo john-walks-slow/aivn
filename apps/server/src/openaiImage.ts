@@ -1,7 +1,6 @@
 import { fetch as undiciFetch } from "undici";
 import {
   IMAGE_ASPECTS,
-  IMAGE_SIZES,
   imageSizeText,
   parseImageSize,
   tierArea,
