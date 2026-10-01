@@ -4416,6 +4416,11 @@ select:focus {
   align-items: flex-start;
   flex-wrap: wrap;
 }
+/* 收尾后还留着的那几秒：压暗，别和还在跑的抢注意力。 */
+.prompt-queue-row.pending-job.done .prompt-queue-text,
+.prompt-queue-row.pending-job.done .prompt-queue-meta {
+  color: var(--ink-faint);
+}
 .pending-job-prompt {
   flex: 1 0 100%;
   margin: 2px 0 0;

@@ -25,7 +25,7 @@ import { WorkshopSession } from "./workshopSession.js";
 import { completeText } from "./llm.js";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export interface PlayRuntime {
@@ -75,6 +75,19 @@ const GATEWAY_MODELS_TTL_MS = 5 * 60_000;
 /** 音色试听固定样本文案（素材管理页「试听」按钮）。 */
 const TTS_SAMPLE_TEXT = "你好呀！这就是我的声音，以后请多多指教哦。";
 
+/** 导演生图：把当前这一幕写成一句英文出图提示词的提示词。 */
+const CG_PROMPT_SYSTEM = [
+  "你是视觉小说的插图提示词写手：把「这一幕演到哪儿了」写成一句英文出图提示词，供 AI 出图模型使用。",
+  "- 只输出提示词本身：英文、逗号分隔的画面要素；不加引号、不加解释、不写负面词",
+  "- 画面落在当前这一幕上：谁在场、什么动作与表情、什么场景、什么光线与气氛",
+  "- 不要出现任何文字、字幕、对话框、分镜格、漫画式的描述",
+  "- 有【玩家要求】时以它为准，其余要素都为它服务；没有就照剧情自己构图",
+  "- 长度控制在 60 词上下，句首大写",
+].join("\n");
+
+/** 出图提示词的最短词数：低于它基本是被截断的半句，不是模型认真写的短提示词。 */
+const MIN_CG_PROMPT_WORDS = 15;
+
 /** 工坊改了剧目文件（创作口径/premise/记忆卡）后的接力说明。 */
 const SETTINGS_UPDATED = [
   "【设定已更新】（在本轮之前，剧目文件被修改过——创作口径或剧目设定已经换新）",
@@ -88,6 +101,15 @@ const PLAY_RELOADED = [
   "以上是刚刚之前已经演出的内容，属于既成事实。请按当前 A 区的最新设定继续往后写，",
   "不要复述、不要重演。",
 ].join("\n");
+
+/** 读一个可选文件：没有就是没有，不是错误。 */
+async function readFileOrEmpty(path: string): Promise<string> {
+  try {
+    return await readFile(path, "utf8");
+  } catch {
+    return "";
+  }
+}
 
 /** 从旧编排器取对话尾接力；对话体太短接不住就返回 undefined（新实例从零开始也没丢什么）。 */
 function carryOverFrom(runtime: PlayRuntime, note: string): CarryOver | undefined {
@@ -625,6 +647,71 @@ export class PlayHouse {
       system,
       text,
     );
+  }
+
+  /**
+   * 导演生图：玩家在舞台上点名要一张插图，玩家指令可留空。
+   *
+   * 顺序是「先写提示词，再落位置，最后发起」——提示词写不出来就什么都没发生，
+   * 不会在时间线上留下一个等不到图的空节点。
+   */
+  async requestCg(playId: string, instruction?: string): Promise<void> {
+    const runtime = await this.stage(playId);
+    if (!runtime.images) {
+      throw new Error("生图未启用（STAGE_IMAGE_ENABLED=false 或后端缺凭据）");
+    }
+    const play = await runtime.store.loadPlay();
+    const wanted = instruction?.trim() ?? "";
+    const { lines, scene } = runtime.orchestrator.recentScript();
+    if (lines.length === 0 && !wanted) {
+      throw new Error("还没有剧情可画：先演一会儿，或者直接写下想要什么样的图");
+    }
+    const craft = await readFileOrEmpty(runtime.store.memoryDir("always", "craft.md"));
+    const prompt = await this.composeCgPrompt(play, { lines, scene, wanted, craft });
+    // 网关偶尔把单发流掐在半路，而且仍然报 finish_reason=stop（实测：78 字符停在 "wearing"，
+    // 还有一次只给了 6 字符）。半句提示词出图会整个跑偏，却看起来一切正常——按系统提示里
+    // 「60 词上下」的约定验一下长度，不达标就当没写成，让玩家再点一次，
+    // 而不是烧一张配额换一张废图。
+    if (prompt.split(/\s+/).length < MIN_CG_PROMPT_WORDS) {
+      throw new Error("写出来的出图提示词只有半句（模型响应被截断），请再点一次生图");
+    }
+    const id = `cg_${Date.now().toString(36)}`;
+    runtime.orchestrator.directorCg(id);
+    void this.preloadAsset(playId, "cg", prompt, id);
+  }
+
+  /** 「这一幕演到哪儿了」+ 玩家指令 → 一句英文出图提示词。模型用剧目里剧作家的那个。 */
+  private async composeCgPrompt(
+    play: PlayConfig,
+    ctx: { lines: readonly string[]; scene: string; wanted: string; craft: string },
+  ): Promise<string> {
+    const user = [
+      `【当前场景】${ctx.scene}`,
+      `【角色】\n${play.characters.map((c) => `- ${c.name}${c.persona ? `：${c.persona.slice(0, 120)}` : ""}`).join("\n")}`,
+      ctx.craft ? `【创作口径】\n${ctx.craft.slice(0, 800)}` : "",
+      ctx.lines.length > 0
+        ? `【刚才演到的（最新在最后）】\n${ctx.lines.join("\n")}`
+        : "【刚才演到的】（还没有台词）",
+      ctx.wanted ? `【玩家要求】${ctx.wanted}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const text = await completeText(
+      {
+        streamFn: this.streamFn,
+        model: this.modelFor(play.agents?.playwriter?.model),
+        getApiKey: () => this.config.apiKey,
+      },
+      CG_PROMPT_SYSTEM,
+      user,
+    );
+    const prompt = text
+      .trim()
+      .replace(/^```[a-z]*\n?/i, "")
+      .replace(/\n?```$/, "")
+      .trim();
+    if (!prompt) throw new Error("写不出出图提示词（模型没有返回内容）");
+    return prompt;
   }
 
   private async createRuntime(

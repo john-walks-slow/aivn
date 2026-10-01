@@ -2,14 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { LineageTree, type ServerMessage } from "@stage-ai/core";
-import { PlaywrightOrchestrator } from "../src/orchestrator.js";
+import { PlaywrightOrchestrator, type OrchestratorRuntimeState } from "../src/orchestrator.js";
 import { createMemoryTools } from "../src/agentkit/memoryTool.js";
 import { PlayMemory } from "../src/memory.js";
 import { BEAT_1, BEAT_1_STOP, BEAT_2, CARD, PLAY, createFakeStreamFn, type FakeResponse } from "./helpers.js";
 
 function setup(
   responses: FakeResponse[],
-  opts: { contexts?: unknown[]; memory?: PlayMemory; beatTimeoutMs?: number; streamFn?: StreamFn } = {},
+  opts: {
+    contexts?: unknown[];
+    memory?: PlayMemory;
+    beatTimeoutMs?: number;
+    streamFn?: StreamFn;
+    restored?: OrchestratorRuntimeState;
+  } = {},
 ): {
   orchestrator: PlaywrightOrchestrator;
   messages: ServerMessage[];
@@ -36,6 +42,7 @@ function setup(
     engine: { ...PLAY.initialState },
     scene: PLAY.initialScene,
     ...(opts.beatTimeoutMs !== undefined ? { beatTimeoutMs: opts.beatTimeoutMs } : {}),
+    ...(opts.restored ? { restored: opts.restored } : {}),
     onServerMessage: (msg) => messages.push(msg),
     persist: () => {},
   });
@@ -53,6 +60,43 @@ function lastUserText(contexts: CapturedContext[]): string {
   const message = contexts.at(-1)!.messages.filter((m) => m.role === "user").at(-1)!;
   return (message.content ?? []).map((c) => (c.type === "text" ? (c.text ?? "") : "")).join("\n");
 }
+
+describe("导演生图", () => {
+  /** 走完一拍，让树上有台词、有停止点——这才是「演到哪儿了」的样子。 */
+  async function staged() {
+    const built = setup([{ text: BEAT_1, beatDone: BEAT_1_STOP }]);
+    await built.orchestrator.playerAction({ kind: "free", text: "我到了" });
+    return built;
+  }
+
+  it("directorCg 把位置钉在点下这一刻：节点挂在当前世界线末尾并广播", async () => {
+    const { orchestrator, messages, tree } = await staged();
+    orchestrator.directorCg("cg_demo");
+
+    const chain = tree.materialize();
+    expect(chain.at(-1)?.kind).toBe("cg");
+    expect(chain.at(-1)?.payload?.attrs?.id).toBe("cg_demo");
+
+    const sent = messages
+      .flatMap((m) => (m.type === "events" ? m.events : []))
+      .map((e) => e.event);
+    const cg = sent.findLast((e) => e.kind === "cg");
+    expect(cg).toMatchObject({ kind: "cg", id: "cg_demo" });
+  });
+
+  it("recentScript 取当前世界线最近几句台词，最新在最后", async () => {
+    const { orchestrator } = await staged();
+    expect(orchestrator.recentScript()).toEqual({
+      lines: ["放学后的走廊空无一人。", "……太慢了！"],
+      scene: "corridor_dusk",
+    });
+  });
+
+  it("空树：没有台词也没有场景可照", () => {
+    const { orchestrator } = setup([]);
+    expect(orchestrator.recentScript()).toEqual({ lines: [], scene: PLAY.initialScene });
+  });
+});
 
 describe("空树的第一轮", () => {
   it("不自己开局：fresh 为真，start() 之后才落第一拍", async () => {

@@ -92,7 +92,7 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage
   async function dispatch(msg: ClientMessage): Promise<void> {
     // 每次现查：runtime 重建（配置保存 reload / 切档 switchSave）后自动路由到新实例
     const current = await (stage ? playhouse.stage(playId) : playhouse.get(playId));
-    await routeMessage(current, sender, msg);
+    await routeMessage(playhouse, playId, current, sender, msg);
   }
 }
 
@@ -104,6 +104,8 @@ function sendHello(ws: WebSocket, playId: string, runtime: PlayRuntime): void {
 }
 
 async function routeMessage(
+  playhouse: PlayHouse,
+  playId: string,
   runtime: PlayRuntime,
   sender: (msg: ServerMessage) => void,
   msg: ClientMessage,
@@ -150,6 +152,10 @@ async function routeMessage(
       return;
     case "edit":
       orchestrator.editLine(msg.nodeId, msg.newText);
+      return;
+    case "generate_cg":
+      // 生图要穿过编排器落位置、穿过 PlayHouse 写提示词，两者都在这一层汇合
+      await playhouse.requestCg(playId, msg.instruction);
       return;
     // —— 工坊（D9）：与演出同一连接、不同通道；工坊对话不阻塞演出 ——
     case "workshop_open":

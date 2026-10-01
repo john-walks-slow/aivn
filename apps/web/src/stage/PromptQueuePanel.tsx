@@ -53,12 +53,19 @@ export function PromptQueuePanel({
     <aside className="prompt-queue" aria-label="正在生成的与待注入的话">
       {jobs.length > 0 && (
         <>
-          <p className="prompt-queue-title">正在生成</p>
+          <p className="prompt-queue-title">
+            {jobs.some((job) => job.state === "running") ? "正在生成" : "刚刚完成"}
+          </p>
           <ul>
             {jobs.map((job) => (
-              <li key={job.id} className="prompt-queue-row pending-job">
+              <li
+                key={job.id}
+                className={`prompt-queue-row pending-job${job.state === "done" ? " done" : ""}`}
+              >
                 <span className="prompt-queue-text">{job.label}</span>
-                <span className="prompt-queue-meta">{elapsed(job.startedAt, now)}</span>
+                <span className="prompt-queue-meta">
+                  {job.state === "done" ? "已完成" : elapsed(job.startedAt, now)}
+                </span>
                 {job.prompt && (
                   <button
                     type="button"

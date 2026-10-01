@@ -1,10 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { PendingJob } from "@stage-ai/core";
 import { PendingJobs, jobIdForImage } from "../src/pendingJobs.js";
+
+/** 记账用例一律关掉停留：它们测的是「谁在表里」，不是「在表里待多久」。 */
+function tracker(emit: (jobs: PendingJob[]) => void = () => {}): PendingJobs {
+  return new PendingJobs(emit, 0);
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("PendingJobs：在生成的事（右上角面板那一列）", () => {
   it("begin 发一次快照，end 再发一次；同名 id 覆盖而不是并排两行", () => {
     const pushes: number[] = [];
-    const jobs = new PendingJobs((snapshot) => pushes.push(snapshot.length));
+    const jobs = tracker((snapshot) => pushes.push(snapshot.length));
     const done = jobs.begin({ id: "beat:1", kind: "beat", label: "第 1 轮" });
     expect(pushes.at(-1)).toBe(1);
     done();
@@ -14,7 +24,7 @@ describe("PendingJobs：在生成的事（右上角面板那一列）", () => {
   });
 
   it("按入列先后排（同一毫秒内保持入列顺序），结束各归各位", async () => {
-    const jobs = new PendingJobs(() => {});
+    const jobs = tracker();
     const first = jobs.begin({ id: "a", kind: "bg", label: "背景" });
     const sameTick = jobs.begin({ id: "b", kind: "voice", label: "台词" });
     await new Promise((r) => setTimeout(r, 2));
@@ -27,7 +37,7 @@ describe("PendingJobs：在生成的事（右上角面板那一列）", () => {
   });
 
   it("clearAll 清空整表（runtime 被丢弃时那些活儿没人收尾）", () => {
-    const jobs = new PendingJobs(() => {});
+    const jobs = tracker();
     jobs.begin({ id: "beat:1", kind: "beat", label: "第 1 轮" });
     jobs.begin({ id: jobIdForImage("bg", "x"), kind: "bg", label: "背景 x" });
     jobs.clearAll();
@@ -36,12 +46,56 @@ describe("PendingJobs：在生成的事（右上角面板那一列）", () => {
   });
 
   it("clearKind 只清某一类（语音开关关掉时清语音条目，别的活儿还在跑）", () => {
-    const jobs = new PendingJobs(() => {});
+    const jobs = tracker();
     const bg = jobs.begin({ id: jobIdForImage("bg", "rooftop"), kind: "bg", label: "背景 rooftop" });
     jobs.begin({ id: "voice:7", kind: "voice", label: "第 1 句台词" });
     jobs.clearKind("voice");
     expect(jobs.snapshot().map((j) => j.kind)).toEqual(["bg"]);
     bg();
+    expect(jobs.snapshot()).toEqual([]);
+  });
+});
+
+describe("PendingJobs 完成态", () => {
+  it("收尾不是立刻消失：先标 done 留在表里，到点才走", () => {
+    vi.useFakeTimers();
+    const pushes: (string | null)[] = [];
+    const jobs = new PendingJobs((snapshot) => pushes.push(snapshot[0]?.state ?? null));
+    const done = jobs.begin({ id: jobIdForImage("cg", "cg_x"), kind: "cg", label: "CG cg_x" });
+    expect(jobs.snapshot()[0]?.state).toBe("running");
+
+    done();
+    expect(jobs.snapshot()).toHaveLength(1);
+    expect(jobs.snapshot()[0]?.state).toBe("done");
+
+    vi.advanceTimersByTime(4000);
+    expect(jobs.snapshot()).toEqual([]);
+    // 三拍广播：入列、标完成、真删
+    expect(pushes).toEqual(["running", "done", null]);
+  });
+
+  it("同名条目重新起一遍：旧收尾与旧计时器都不许动它", () => {
+    vi.useFakeTimers();
+    const jobs = new PendingJobs(() => {}, 3000);
+    const first = jobs.begin({ id: jobIdForImage("cg", "same"), kind: "cg", label: "CG same" });
+    first();
+    expect(jobs.snapshot()[0]?.state).toBe("done");
+
+    jobs.begin({ id: jobIdForImage("cg", "same"), kind: "cg", label: "CG same" });
+    vi.advanceTimersByTime(5000); // 旧计时器这一刻到点
+    expect(jobs.snapshot()[0]?.state).toBe("running");
+  });
+
+  it("clearAll 连同停留计时一起清（清完不该又被计时器推一次广播）", () => {
+    vi.useFakeTimers();
+    const pushes: number[] = [];
+    const jobs = new PendingJobs((snap) => pushes.push(snap.length));
+    const done = jobs.begin({ id: "beat:1", kind: "beat", label: "第 1 轮" });
+    done();
+    jobs.clearAll();
+    const after = pushes.length;
+    vi.advanceTimersByTime(10_000);
+    expect(pushes.length).toBe(after);
     expect(jobs.snapshot()).toEqual([]);
   });
 });

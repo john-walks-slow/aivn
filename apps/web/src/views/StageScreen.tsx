@@ -449,6 +449,9 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
               onPrompt={stage.sendPrompt}
               onFork={fork}
               onEdit={edit}
+              onGenerateCg={(instruction) =>
+                stage.send({ type: "generate_cg", ...(instruction ? { instruction } : {}) })
+              }
               onReplay={replay}
               hasVoice={hasVoice}
               onUnlock={unlockVoice}

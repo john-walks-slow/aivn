@@ -34,6 +34,8 @@ interface StageTheaterProps {
   onPrompt: (text: string) => void;
   onEdit: (nodeId: string, text: string) => void;
   onFork: (nodeId: string, opts?: { resume?: boolean }) => void;
+  /** 导演生图：按当前这一幕出一张插图，指令可留空。 */
+  onGenerateCg: (instruction: string) => void;
   onReplay: (seq: number) => void;
   hasVoice: (seq: number | null) => boolean;
   onUnlock: () => void;
@@ -115,6 +117,7 @@ export function StageTheater({
   onPrompt,
   onEdit,
   onFork,
+  onGenerateCg,
   onReplay,
   hasVoice,
   voiceOn,
@@ -142,8 +145,8 @@ export function StageTheater({
       created.sfx.dispose();
     };
   }, []);
-  /** 导演栏的面板：三个动作的全部输入都在对话框里收，不跳视图。 */
-  const [action, setAction] = useState<"prompt" | "edit" | "restart" | "segment" | null>(null);
+  /** 导演栏的面板：几个动作的全部输入都在对话框里收，不跳视图。 */
+  const [action, setAction] = useState<"prompt" | "edit" | "restart" | "segment" | "cg" | null>(null);
   const [draft, setDraft] = useState("");
   const { view, viewLength, current, shownLength, exhausted, advance, scrub, scrubbed, follow } =
     playback;
@@ -290,7 +293,9 @@ export function StageTheater({
       onFork(targets.beatId, { resume: true });
       // 填了就当「插一句」紧跟着落进重演的那一轮里；留空就是纯粹重演。
       if (text) onPrompt(text);
+      return;
     }
+    if (action === "cg") onGenerateCg(text);
   };
 
   return (
@@ -386,6 +391,21 @@ export function StageTheater({
         >
           <Icon name="rewrite" size={17} />
           重来
+        </button>
+        <button
+          type="button"
+          className={`dir-btn ${action === "cg" ? "on" : ""}`}
+          title={fresh ? "还没有剧情可以入画" : "为这一幕生成一张插图（指令可留空）"}
+          aria-label="生成插图"
+          disabled={fresh}
+          onClick={(e) => {
+            e.stopPropagation();
+            setAction(action === "cg" ? null : "cg");
+            setDraft("");
+          }}
+        >
+          <Icon name="assets" size={17} />
+          生图
         </button>
         {voiceAvailable && hasVoice(view?.seq ?? null) && (
           <button
@@ -491,7 +511,9 @@ export function StageTheater({
                   ? "改写这句台词"
                   : action === "restart"
                     ? "重演这一轮"
-                    : "打断当前轮并续写"
+                    : action === "cg"
+                      ? "生成插图"
+                      : "打断当前轮并续写"
             }
             hint={
               action === "prompt"
@@ -500,7 +522,9 @@ export function StageTheater({
                   ? "就地改这一句，改完接着演，不重演"
                   : action === "restart"
                     ? "留空 = 只重演这一轮；填了 = 连意图一起给"
-                    : "在这一轮这里切断，从这里起新分支继续演。留空 = 只打断；填了 = 带着这句进新轮"
+                    : action === "cg"
+                      ? "留空 = 照刚才演到的这一幕自己构图；填了 = 按你写的来。这一张就落在你按下这一刻的位置上"
+                      : "在这一轮这里切断，从这里起新分支继续演。留空 = 只打断；填了 = 带着这句进新轮"
             }
             onClose={() => setAction(null)}
             footer={
@@ -540,7 +564,9 @@ export function StageTheater({
                         ? draft.trim()
                           ? "打断并续写"
                           : "打断当前轮"
-                        : "提示"}
+                        : action === "cg"
+                          ? "生成"
+                          : "提示"}
                 </button>
                 <button type="button" className="ghost-btn" onClick={() => setAction(null)}>
                   取消
@@ -571,7 +597,9 @@ export function StageTheater({
                     ? "改写这句台词…"
                     : action === "restart"
                       ? "想换什么方向？（可留空）"
-                      : "想让这场戏接下来怎么走…"
+                      : action === "cg"
+                        ? "想让这张图是什么样？（可留空）"
+                        : "想让这场戏接下来怎么走…"
                 }
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {

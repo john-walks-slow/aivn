@@ -23,6 +23,7 @@ describe("PlayHouse 周目作用域：逛不建，看戏才建", () => {
   let root: string;
   let library: PlayLibrary;
   let house: PlayHouse;
+  let config: ReturnType<typeof loadConfig>;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "stageai-playhouse-"));
@@ -31,7 +32,7 @@ describe("PlayHouse 周目作用域：逛不建，看戏才建", () => {
     await writeFile(join(playDir, "play.json"), PLAY_JSON);
     library = new PlayLibrary(root);
     // 生图关掉：runtime 只碰磁盘，不发任何网络请求
-    const config = loadConfig({ STAGE_IMAGE_ENABLED: "false" }, root);
+    config = loadConfig({ STAGE_IMAGE_ENABLED: "false" }, root);
     house = new PlayHouse(library, config, new AssetLibrary(join(root, "library")));
   });
 
@@ -104,5 +105,58 @@ describe("PlayHouse 周目作用域：逛不建，看戏才建", () => {
     // 在飞表里若还留着 browsing 这条已兑现的 promise，这里拿回的就是它——
     // 那份 runtime 早已被 stage() 换掉、orchestrator 已 dispose，拿到就是死的
     expect(await house.get("p1")).not.toBe(browsing);
+  });
+});
+
+describe("导演生图：前置守卫（都不该碰生图后端）", () => {
+  let root: string;
+  let library: PlayLibrary;
+  let house: PlayHouse;
+
+  /** 生图开着的 PlayHouse：填一个永远不会被打到的网关地址，出题之前不发任何请求。 */
+  async function houseWithImages(enabled: boolean): Promise<PlayHouse> {
+    const config = loadConfig(
+      enabled
+        ? {
+            STAGE_IMAGE_ENABLED: "true",
+            STAGE_IMAGE_FORMAT: "gemini",
+            STAGE_IMAGE_BASE_URL: "http://127.0.0.1:1",
+            STAGE_IMAGE_API_KEY: "test-key",
+            STAGE_IMAGE_MODEL: "no-such-model",
+          }
+        : { STAGE_IMAGE_ENABLED: "false" },
+      root,
+    );
+    return new PlayHouse(library, config, new AssetLibrary(join(root, "library")));
+  }
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "stageai-cg-"));
+    const playDir = join(root, "p1");
+    await mkdir(playDir, { recursive: true });
+    await writeFile(join(playDir, "play.json"), PLAY_JSON);
+    library = new PlayLibrary(root);
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("生图没开：直接说没开，不静默", async () => {
+    house = await houseWithImages(false);
+    await expect(house.requestCg("p1")).rejects.toThrow(/生图未启用/);
+  });
+
+  it("空树又没有指令：无可画，也明说", async () => {
+    house = await houseWithImages(true);
+    await expect(house.requestCg("p1")).rejects.toThrow(/还没有剧情可画/);
+  });
+
+  it("模型只吐半句：当作没写成，不拿它去烧一张图", async () => {
+    house = await houseWithImages(true);
+    // 网关把流掐在半路、仍报 stop 时，提示词会停在 "…wearing" 这种半句上。
+    const half = house as unknown as { composeCgPrompt: () => Promise<string> };
+    half.composeCgPrompt = async () => "17-year-old girl with long straight pink hair, wearing";
+    await expect(house.requestCg("p1", "黄昏窗边")).rejects.toThrow(/半句/);
   });
 });

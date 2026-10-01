@@ -657,6 +657,31 @@ export class PlaywrightOrchestrator {
     });
   }
 
+  /**
+   * 导演生图：在**点下这一刻**的位置落一个 cg 节点（加 seq → 广播 → 落谱系，与模型
+   * 写 `<cg id>` 同一条路），图到不到货都先把位置钉住。
+   *
+   * 为什么不等图到了再落：谱系是 append-only 的树，新节点挂的是当时的叶子。图要一分多钟，
+   * 那时玩家多半已经往下演了几拍——「生成完插进去」插到的会是「玩到哪儿了」，不是请求的那一刻。
+   * 这与剧作家的预发射同构：骨架先占位，到货再原地填。
+   */
+  directorCg(id: string): void {
+    this.onStageEvent({ kind: "cg", id });
+  }
+
+  /** 导演生图的上下文：当前这条世界线上最近几句说出口的话，加当前场景。 */
+  recentScript(limit = 12): { lines: string[]; scene: string } {
+    const chain = this.opts.tree.chainEvents(this.opts.tree.leafId);
+    const lines: string[] = [];
+    for (let i = chain.length - 1; i >= 0 && lines.length < limit; i -= 1) {
+      const event = chain[i]!;
+      if (event.kind !== "say" && event.kind !== "narrate" && event.kind !== "thought") continue;
+      const text = event.text?.trim();
+      if (text) lines.push(text);
+    }
+    return { lines: lines.reverse(), scene: this.opts.scene };
+  }
+
   private guardIdle(): void {
     if (this.engaged) throw new Error("演出进行中，请等待当前轮结束");
   }

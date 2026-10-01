@@ -59,6 +59,11 @@ export interface PendingJob {
   prompt?: string;
   /** 入列时刻（毫秒）：面板上算「已经等了 40 秒」。 */
   startedAt: number;
+  /**
+   * running = 还在跑；done = 已经收尾，面板上再留一会儿才消失。
+   * 收尾即删的话那一行只能凭空蒸发，玩家看不见「它刚才完成了」。
+   */
+  state: "running" | "done";
 }
 
 /** 工坊线程（D9 meta-chat 多会话）在协议层的投影。 */
@@ -216,6 +221,9 @@ export type ClientMessage =
    *  resume=true = 「重演这一轮」：分岔后立刻续演，中间不设停止点。 */
   | { type: "fork"; nodeId: string; resume?: boolean }
   | { type: "edit"; nodeId: string; newText: string }
+  /** 导演生图：按当前这一刻的剧情（可带玩家指令）写提示词并出一张 CG。
+   *  落点是**点下这一刻**在时间线上的位置，与剧作家的预发射同一套机制。 */
+  | { type: "generate_cg"; instruction?: string }
   /** 跳转：世界线挂到 nodeId，不生成内容。活节点上往前走，废弃节点上回到那条线。 */
   | { type: "jump"; nodeId: string }
   // —— 工坊（D9）：线程管理 + 对话 + 文件编辑；与演出共用一条连接，服务端按 type 分流 ——
