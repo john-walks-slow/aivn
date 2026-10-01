@@ -686,7 +686,11 @@ button.link-btn {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(230px, 300px);
   gap: 40px;
-  align-items: center;
+  /* safe：内容比视口高时改从顶部排（普通 center 会同时往上往下溢出，
+     往上那截被 .screen 的 overflow:hidden 吃掉——手机上就是标题被切掉）。
+     排不下就自己滚，不切。 */
+  align-items: safe center;
+  overflow-y: auto;
   padding: 3vh 0 3vh;
 }
 
@@ -834,7 +838,7 @@ button.link-btn {
   .title-body {
     grid-template-columns: minmax(0, 1fr);
     gap: 22px;
-    align-content: center;
+    align-content: safe center;
     padding: 2vh 0;
   }
 }
