@@ -25,7 +25,7 @@
 | # | 期望 | 实测证据 |
 | --- | --- | --- |
 | 1 | 语音合成中有闪烁喇叭，音频到了就换回可重听 | `markPending(seq,phrase)` 后 `.dir-btn.voice-pending` 出现，`animation-name=voice-blink`、`title=语音生成中`、`disabled=true`；`handleAudio` 到达后立刻切回 `title=重听这句`、`disabled=false` |
-| 2 | 选项 / 自由发言发完立刻显示成消息 | 点选项后 `StageScreen` 的 `playerEcho` 立刻是 `（选择了：…）`，对话框名牌显示「你」；播放头一动即交回真正的台词 |
+| 2 | 选项 / 自由发言发完立刻显示成消息 | 点选肢卡 250ms 后台词条名牌 = **你**、正文 = `（选择了："…"）`；点一下舞台即让位给接下来的内容。**这一条 e2e 时判错了**：当时是读 React fiber 断言 `playerEcho` 已写入，没看图——台词条的两处渲染写的是「有当前行就显示当前行，没有才轮到回声」，而选肢停止点上上一句正是当前行，所以屏幕上根本看不到回声。已改成回声优先 |
 | 3 | 刷新回到上次读到的那一句 | 客户端 WS 上行 `{type:"read"}` → 服务端 `setReadPos` 节流落盘 → `session.json` 的 `runtime.readPos` 写实 → 重连 `hello.readPos` 带同一值 → `usePlayback` 首次快进按 `lineCueIndexAt` seek 回那一行并接着上次字数继续打 |
 | 4 | 选项遮罩不挡 sidebar 展开键 | `.side-drawer-btn` 的 `z-index` 从 3 提到 8，压过 `.choice-overlay` 的 6；窄屏下选项摆着时点展开键仍能开抽屉 |
 | 5 | 自由输入是选项的一种，modal 可关 | 选项列表末尾多一张 ghost 卡「自由输入」；DSL 直接给 `free` 停止点时列表也只有它一张。点它才弹 modal，`✕` / `Esc` / 遮罩三条路径都能关，关掉回到列表 |

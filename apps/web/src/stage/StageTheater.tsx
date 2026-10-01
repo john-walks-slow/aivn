@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { emptyDialogHint } from "./playbackState.js";
+import { dialogContent } from "./playbackState.js";
 import { actorName } from "./script.js";
 import type { Playback, VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
@@ -190,6 +190,17 @@ export function StageTheater({
     playback;
   const shown = view ? view.text.slice(0, viewLength) : "";
   const lineDone = current !== null && shownLength >= current.text.length;
+  // 名牌与正文的归属交给纯函数判：这三者的优先级踩过一次坑，不在 JSX 里重排。
+  const dialog = dialogContent({
+    playerEcho,
+    viewName:
+      view && (view.type === "say" || view.type === "thought")
+        ? (view.nameOverride ?? (actorName(names, view.actorId) || "？"))
+        : null,
+    shown,
+    hasView: view !== null,
+    live,
+  });
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→/空格 往回追。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
@@ -398,19 +409,11 @@ export function StageTheater({
       </div>
 
       <div className="theater-dialog" role="text">
-        {playerEcho ? (
-          <div className="dialog-name">你</div>
-        ) : (
-          view &&
-          (view.type === "say" || view.type === "thought") && (
-            <div className="dialog-name">{view.nameOverride ?? (actorName(names, view.actorId) || "？")}</div>
-          )
-        )}
+        {dialog.name && <div className="dialog-name">{dialog.name}</div>}
         {/* 回声期间台词条归它：玩家一按下就得看见自己说了什么，不能被上一句挡回去。
             真台词一到（播放头换行）回声自动让位，见 StageScreen 的 echoText。 */}
         <p className={`dialog-text ${!playerEcho && view?.type === "thought" ? "thought" : !playerEcho && view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
-          {playerEcho || shown ||
-            (view ? "" : emptyDialogHint(live))}
+          {dialog.text}
           {view && !playerEcho && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
         </p>
         {/* 导演栏：四个原语 + 重听/自动，全在对话界面内就地完成，不跳视图 */}

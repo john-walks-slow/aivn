@@ -8,7 +8,7 @@
 | # | 诉求 | 落点 |
 | --- | --- | --- |
 | 1 | 语音生成中要有标志 | 新增 `audio_pending`（core 协议）+ `VoiceDirector.pendingPhrases` 三态机 + `.dir-btn.voice-pending` 闪烁 |
-| 2 | 选项/自由发言立刻显示成消息 | `StageScreen` 的 `echo` 回声：发话瞬间先把这句话顶进对话框，播放头一动就交回真实内容 |
+| 2 | 选项/自由发言立刻显示成消息 | `StageScreen` 的 `echo` 回声：发话瞬间先把这句话顶进对话框，播放头一动就交回真实内容。**台词条要回声优先**——初版写成「有当前行就显示当前行」，停止点上上一句正是当前行，屏幕上根本看不到回声 |
 | 3 | 阅读进度真实保存 | `read` 上行 → `Orchestrator.readPos` → `session.json` → `hello.readPos` → 播放层 seek |
 | 4 | 选项遮罩不遮 sidebar 展开键 | `.side-drawer-btn` z-index 3 → 8（压过 `.choice-overlay` 的 6） |
 | 5 | 自由输入是一种 option | `StopPanel` 统一选项列表，末尾固定一张「自由输入」ghost 卡；模态窗恒可关 |

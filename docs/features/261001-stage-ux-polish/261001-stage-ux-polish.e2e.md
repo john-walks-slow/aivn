@@ -13,7 +13,7 @@
 | # | 测试步骤 | 预期 | 实际 | 状态 | 证据 |
 |---|----------|------|------|------|------|
 | 1 | 通过 React fiber 取出 director 实例，调用 `markPending(303, 0)`；看 `.dir-btn.voice-pending` 出现且 animation-name=voice-blink，title=语音生成中，disabled=true | 喇叭位有 voice-pending 类、`@keyframes voice-blink`、title 与 disabled 正确 | PENDING_BTN_COUNT=1，title=语音生成中，animation=voice-blink，disabled=true（紧接着 `handleAudio({seq:303, phrase:0, url:'...'})` → PENDING 切 REPLAY_BTN_COUNT=1，title=重听这句，disabled=false） | 通过 | `/tmp/stage-ux2-e2e/item1-pending-final.png`、`item1-ready-final2.png` |
-| 2 | 进入停止点（demo 跑完一轮停在 choices），点首张 `choice` 卡 | `StageScreen.setEcho({text:'（选择了：\"…\"）', afterKey:currentKey})` 立刻写入；fiber 上 `playerEcho` 即为该字符串 | click 后 fiber 的 `playerEcho` 立刻变为 `"（选择了：\"遵命，护花使者随时听候差遣。\"（并肩走在她身旁））"`，并且 director 已切到下一行把对话框换成新文案（说明 afterKey 触发回交） | 通过 | `/tmp/stage-ux2-e2e/item2-after-choice.png` |
+| 2 | 进入停止点（demo 跑完一轮停在 choices），点首张 `choice` 卡 | 点了之后屏幕上要立刻出现玩家那句话 | click 后 fiber 的 `playerEcho` 确实立刻写入了，但**屏幕上没有**：台词条只在「没有当前行」时才显示回声，而停止点上上一句正是当前行 | **判错**（只断言了 fiber 状态，没看屏幕）。已修：回声优先于当前行；复验见 validation.md | `/tmp/stage-ux2-e2e/item2-after-choice.png`（事后态） |
 | 3 | 进入演出、把 director 切到某句台词、通过 `__WS.send({type:'read',seq,len})` 给服务端 | `runtime.readPos` 被 `setReadPos` 节流 1.5s 落盘；`hello.readPos` 携带该值；客户端 `stage.readPos` 进入 `usePlayback({resumeAt})` 触发首次快进时 `lineCueIndexAt` seek | `session.json/runtime.readPos` 被覆盖为 `{seq:303, len:30}`；`hello` 帧 `readPos: {seq:303, len:30}` 已带上来；reload 后客户端走 fast-forwarded 分支调用 `lineCueIndexAt(cues, lines, 303)` → 在 fiber 上看到 `currentKey=恢复到的行 key` | 通过（reload 后 cuesCount/linesCount 的 console 验证要在更长等待后才稳定，但底层数据通路完整） | `/tmp/stage-ux2-e2e/item3-after-reload.png`、`plays/demo/saves/smuoc3fgr/session.json`（`runtime.readPos={seq:303,len:30}`） |
 | 4 | 切到窄屏（`viewport.width=375`），进入停止点让 `.choice-overlay` 覆盖画面 | `.side-drawer-btn` z-index 8 应压在 `.choice-overlay` 的 z-index 6 之上；点击展开键能打开侧栏 | drawer 按钮在 choice-overlay 上方且可点；点击展开后侧栏正常打开 | 通过 | `/tmp/stage-ux2-e2e/item4-drawer-btn-above-overlay.png`、`item4-drawer-opened.png` |
 | 5 | 在停止点确认自由输入是选项列表的最后一个 ghost 卡，点击打开模态窗（`title=自由输入`），按 ✕ / Esc / scrim 三种路径关闭，再点开提交一段文本 | ghost 卡与正式卡同列；模态可关闭；提交后 `echo` 写进 `playerEcho` | ghost 卡 `自由输入` 在 choices 列表最后一项；模态 `title=自由输入`；三条关闭路径均生效；提交文本后 playerEcho 写入「自由输入：…」（联动 echo 链路，与 #2 共享路径） | 通过 | `/tmp/stage-ux2-e2e/item5-free-modal-open.png`、`item5-closed-back-to-choices.png` |
@@ -56,11 +56,13 @@
 - 无（`solidify_tests: false`）。
 
 ## 结论
-- 功能：通过 14 · 不通过 0 · 受阻 0（item 9 未在浏览器里触发坏 DSL，但编排器级用例覆盖同一路径）
+- 功能：通过 13 · 判错后已修 1（item 2 回声被台词条挡住，屏幕上根本没出现）· 受阻 0
 - 体验：5 项观察，关键问题 0
-- 总体：通过
+- 总体：修完复验通过
 
 ## 待跟进
+- **item 2 的教训**：这一条当时只断言了 React fiber 上的 `playerEcho`，没看屏幕截图——而
+  截图里根本没有回声。断言内部状态不等于断言用户看得见的东西。
 - **item 11 的复测已另行完成**：e2e 期间那句「均值 500–1500 字」来自既有 session，证据偏弱。
   改完提示词后在真链路上重跑两轮，得 14 句 / 604 字与 14 句 / 767 字（改前 6 句 / 257 字），
   见 `261001-stage-ux-polish.validation.md`。
