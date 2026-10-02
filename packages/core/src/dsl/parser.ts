@@ -2,6 +2,8 @@ import type { StageEvent } from "./events.js";
 import {
   COMMENT_TAG,
   DSL_TAGS,
+  isActorAnchor,
+  isActorShot,
   LEGACY_TAGS,
   VOID_TAGS,
 } from "./spec.js";
@@ -236,7 +238,15 @@ export class StageDslParser {
       case "actor": {
         const id = attrs.get("id");
         if (!id) return this.dropTag("actor", "缺 id");
-        this.emit({ kind: "actor", id, ...pick(attrs, ["pos", "expression", "action"]) });
+        const shotRaw = attrs.get("shot");
+        const anchorRaw = attrs.get("anchor");
+        this.emit({
+          kind: "actor",
+          id,
+          ...pick(attrs, ["pos", "expression", "state", "action", "leave"]),
+          ...(shotRaw && isActorShot(shotRaw) ? { shot: shotRaw } : {}),
+          ...(anchorRaw && isActorAnchor(anchorRaw) ? { anchor: anchorRaw } : {}),
+        });
         return;
       }
       case "sfx": {

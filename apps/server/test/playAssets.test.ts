@@ -158,14 +158,42 @@ describe("PlayAssets：工坊素材落盘", () => {
     // 先定妆照：没有它时每条差分都会先自动补一张，把调用序号顶掉一位
     await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "full" }, "p");
     calls.length = 0;
-    // 半身/胸像用竖长画幅出：人脸占画幅近一半，仍按 9:16 出会被拉成窄条
+    // 半身用竖长画幅出：人脸占画幅近一半，仍按 9:16 出会被拉成窄条。
+    // square 是非人主体那一档（猫、道具），也走 1:1，但提示词走的是另一套后缀。
     await assets.generate({ kind: "sprite", characterId: "mio", expression: "a", framing: "half" }, "p");
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "b", framing: "bust" }, "p");
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "b", framing: "square" }, "p");
     await assets.generate({ kind: "sprite", characterId: "mio", expression: "c", framing: "full" }, "p");
     expect(calls.map((c) => c.aspectRatio)).toEqual(["3:4", "1:1", "9:16"]);
     expect(calls[0]!.prompt).toMatch(/medium shot, waist-up/);
-    expect(calls[1]!.prompt).toMatch(/head and shoulders bust shot/);
     expect(calls[2]!.prompt).toMatch(/full body, head to toe/);
+  });
+
+  it("square（非人主体）不出人形词：没有 standing / 双臂 / 头顶留白", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    // 非人主体也是角色卡里的一条（成员校验照样拦），只是它声明 framing: square
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "square" }, "a cat");
+    const prompt = calls[0]!.prompt;
+    // 人形专属词一个都不能有——给猫写「双臂离开身体以分离轮廓」，出来的是人形猫
+    expect(prompt).not.toMatch(/standing/i);
+    expect(prompt).not.toMatch(/arms/i);
+    expect(prompt).not.toMatch(/above the head/i);
+    expect(prompt).not.toMatch(/face/i);
+    // 但通用构图与画风约束还在，抠底靠的就是这层
+    expect(prompt).toMatch(/entire subject fully inside the frame/i);
+    expect(prompt).toMatch(/pure white background/i);
+  });
+
+  it("full/half（人）保留人形姿势词：抠底要轮廓分得开", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "full" }, "a girl");
+    const prompt = calls[0]!.prompt;
+    expect(prompt).toMatch(/standing pose/i);
+    expect(prompt).toMatch(/arms held slightly away/i);
+    expect(prompt).toMatch(/above the head/i);
   });
 
   it("立绘取景：play.json 角色上声明的取景会被沿用，不必每次都传", async () => {
@@ -186,16 +214,16 @@ describe("PlayAssets：工坊素材落盘", () => {
     const { assets, files } = makeAssets(store, backend);
     await store.savePlay({
       ...(await store.loadPlay()),
-      characters: [{ id: "mio", name: "澪", persona: "", framing: "full", spriteFraming: { wow: "bust" } }],
+      characters: [{ id: "mio", name: "澪", persona: "", framing: "full", spriteFraming: { wow: "square" } }],
     });
     await assets.generate({ kind: "sprite", characterId: "mio", expression: "wow" }, "p");
-    // 第 0 次调用是自动补的定妆照：它按**角色级**取景出，不按这条差分的胸像
+    // 第 0 次调用是自动补的定妆照：它按**角色级**取景出，不按这条差分的 square
     expect(calls[0]!.aspectRatio).toBe("9:16");
     expect(calls[1]!.aspectRatio).toBe("1:1");
     const play = JSON.parse(await files.read("play.json")) as {
       characters: { framing?: string; spriteFraming?: Record<string, string> }[];
     };
-    expect(play.characters[0]!.spriteFraming).toEqual({ neutral: "full", wow: "bust" });
+    expect(play.characters[0]!.spriteFraming).toEqual({ neutral: "full", wow: "square" });
     // 差分覆盖只是覆盖，角色级声明不能被一张差分带走
     expect(play.characters[0]!.framing).toBe("full");
   });
@@ -212,15 +240,17 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(play.characters[0]!.spriteFraming).toEqual({ neutral: "half" });
   });
 
-  it("立绘取景：差分的提示词也带景别，否则垫图（全身）会把 closeup 拖回全身", async () => {
+  it("立绘取景：差分的提示词也带景别，否则垫图（全身）会把方形主体拖回人形", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "full" }, "p");
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "closeup", framing: "bust" }, "p");
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "square" }, "a cat");
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "sleepy", framing: "square" }, "sleepy");
     expect(calls[1]!.references.length).toBe(1);
-    expect(calls[1]!.prompt).toMatch(/Same character as the reference image/);
-    expect(calls[1]!.prompt).toMatch(/head and shoulders bust shot/);
+    expect(calls[1]!.prompt).toMatch(/same subject as the reference image/i);
+    expect(calls[1]!.prompt).toMatch(/entire subject fully inside the frame/i);
+    // 差分说「只改状态」而不是「只改面部表情」——猫没有「面部表情」可改
+    expect(calls[1]!.prompt).not.toMatch(/facial expression/i);
   });
 
   it("CG 参考立绘：按给定顺序垫多张，提示词里点名「第几张是谁」", async () => {

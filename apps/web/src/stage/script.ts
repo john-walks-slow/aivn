@@ -1,4 +1,4 @@
-import type { StageEvent } from "@stage-ai/core";
+import type { ActorAnchor, ActorShot, StageEvent } from "@stage-ai/core";
 
 /** 前端剧本行模型：StageEvent 流 → 渲染行（log 视图与舞台台词共用）。 */
 export interface ScriptLine {
@@ -30,7 +30,21 @@ export type Cue =
       ambientVolume?: number;
       transition?: string;
     }
-  | { key: string; kind: "actor"; id: string; pos?: string; expression?: string; action?: string }
+  | {
+      key: string;
+      kind: "actor";
+      id: string;
+      pos?: string;
+      expression?: string;
+      /** 非人状态差分（与 expression 同构，分开只为模型提示）。 */
+      state?: string;
+      /** 运镜档位（作用于已有立绘，不重新生图）。 */
+      shot?: ActorShot;
+      /** 对齐基准（bottom 人贴底 / center 悬空物 / top 垂下）。 */
+      anchor?: ActorAnchor;
+      action?: string;
+      leave?: string;
+    }
   | { key: string; kind: "sfx"; src: string; volume?: number }
   | { key: string; kind: "cg"; id: string; caption?: string }
   /** 生图预发射（D6）：只记「id 正在生成」，用于未就绪时的骨架占位。 */
@@ -92,7 +106,18 @@ export class ScriptBuilder {
         this.cues.push({ key: key(), kind: "cg", id: event.id, caption: event.caption });
         return;
       case "actor":
-        this.cues.push({ key: key(), kind: "actor", id: event.id, pos: event.pos, expression: event.expression, action: event.action });
+        this.cues.push({
+          key: key(),
+          kind: "actor",
+          id: event.id,
+          pos: event.pos,
+          expression: event.expression,
+          state: event.state,
+          shot: event.shot,
+          anchor: event.anchor,
+          action: event.action,
+          leave: event.leave,
+        });
         return;
       case "preload_asset":
         this.cues.push({ key: key(), kind: "preload", id: event.id, type: event.type });

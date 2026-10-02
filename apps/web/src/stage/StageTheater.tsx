@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
-import type { SpriteFraming } from "@stage-ai/core";
+import type { CSSProperties, ReactNode } from "react";
+import { actionAnimation, type ActorAction, type ActorAnchor, type ActorShot, type SpriteFraming } from "@stage-ai/core";
 import { dialogContent, emptyDialogHint } from "./playbackState.js";
 import { actorName } from "./script.js";
 import type { Playback, VisualState } from "./director.js";
@@ -120,9 +120,6 @@ const GUIDE_HINT: Record<GuideMode, string> = {
   guide: "跟下一轮一起发：话排进队列，等你点选项或输入时一起送到剧作家。",
   fork: "从正在看的这一行开新分支。",
 };
-
-const POS_CLASS: Record<string, string> = { left: "pos-left", center: "pos-center", right: "pos-right" };
-
 /** 输入态：输入框里的按键是文字的，不能被舞台的快捷键与快进档抢走。 */
 function isTyping(t: EventTarget | null): boolean {
   return t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
@@ -130,6 +127,20 @@ function isTyping(t: EventTarget | null): boolean {
 
 /** 插一句的快捷前缀：以它开头 = 明确指示，剧作家遵从但不跳出戏外回应。正文里也要认得这个。 */
 const OOC_PREFIX = "OOC：";
+
+/**
+ * 运镜缩放：把立绘推近/拉远。
+ *
+ * 作用于**已有素材**、不重新生图——「给她一个特写」在舞台上就是把她的图放大。
+ * 放大锚在头顶（CSS 的 transform-origin: top center），所以推近时头不动、身体往
+ * 画面下沿长出去被裁掉，正是「镜头推近」的观感。数值是拍脑袋定的视觉档，不是可调参数。
+ */
+const SHOT_SCALE: Record<ActorShot, number> = {
+  wide: 0.86,
+  normal: 1,
+  close: 1.35,
+  extreme: 1.85,
+};
 
 /**
  * 立绘：表情差分之间交叉淡入。
@@ -143,11 +154,25 @@ function Sprite({
   pos,
   name,
   framing,
+  shot,
+  anchor,
+  leaving,
+  action,
+  actionSeq,
+  speaking,
 }: {
   url: string | null;
   pos: string;
   name: string;
   framing: SpriteFraming;
+  shot: ActorShot | null;
+  anchor: ActorAnchor;
+  leaving: boolean;
+  /** 行为词（剧本的 `action=`）：一次性演出，配方在 app.css 的 @keyframes。 */
+  action: ActorAction | null;
+  /** 同一行为词要能连演（nod 之后又 nod），靠这个序号让 animation 重挂一次。 */
+  actionSeq: number;
+  speaking: boolean;
 }): ReactNode {
   const [current, setCurrent] = useState<string | null>(url);
   const [outgoing, setOutgoing] = useState<string | null>(null);
@@ -168,8 +193,37 @@ function Sprite({
     };
   }, [url, current]);
 
+  // 行为词是一次性演出：播完就把 .acting 摘掉，否则它会一直占着 --scale。
+  // 连演同一个词要能重播——同一个 animation 值连写两次不会重来，所以用一个
+  // 递增的 nonce 不去改 animation 名（改了就找不到 @keyframes），而是作为第二个
+  // 参数传给 animation：同名动画的 animation-name 与前一次不同，浏览器就认成
+  // 新动画从 0% 播起——这是重播同一段 CSS 动画的标准手法。
+  const [acting, setActing] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    if (!action) {
+      setActing(false);
+      return;
+    }
+    setActing(true);
+    setNonce((n) => n + 1);
+    const timer = setTimeout(() => setActing(false), 560);
+    return () => clearTimeout(timer);
+  }, [action, actionSeq]);
+
   if (!current) return null;
-const cls = `theater-sprite framing-${framing} ${POS_CLASS[pos] ?? "pos-center"}`;
+  // 站位类直接用 pos-*（CSS 里各自带 --x 偏移，见 app.css）。
+  // shot/anchor 走行内 CSS 变量——它们是这一句台词的状态，不该在 CSS 里枚举出类名。
+  const cls = `theater-sprite framing-${framing} pos-${pos} anchor-${anchor}${
+    leaving ? " leaving" : ""
+  }${speaking ? " speaking" : ""}${acting ? " acting" : ""}`;
+  const style: CSSProperties = {
+    "--scale": SHOT_SCALE[shot ?? "normal"],
+    "--sprite-act": actionAnimation(action) ?? "none",
+    // 时间不是数字：delay 与 iteration-count 相邻时，两个裸数字会让浏览器
+    // 判不出哪个是哪个、整条 animation 丢弃（见 app.css .acting 的注释）。
+    "--act-nonce": `-${(nonce % 100) / 1000}s`,
+  } as CSSProperties;
   // 加载失败就地退场（详见上方注释）：裂图比空舞台更像坏了。
   const onError = (): void => {
     setOutgoing(null);
@@ -178,7 +232,7 @@ const cls = `theater-sprite framing-${framing} ${POS_CLASS[pos] ?? "pos-center"}
   return (
     <>
       {outgoing && <img className={`${cls} sprite-out`} src={outgoing} alt="" aria-hidden />}
-      <img className={cls} src={current} alt={name} onError={onError} />
+      <img className={cls} style={style} src={current} alt={name} onError={onError} />
     </>
   );
 }
@@ -498,15 +552,30 @@ voiceState,
           />
         )}
 
-        {Object.entries(visual.sprites).map(([id, slot]) => (
-          <Sprite
-            key={id}
-            url={index.sprite(id, slot.expression)}
-            pos={slot.pos ?? "center"}
-            name={actorName(names, id)}
-            framing={index.spriteFraming(id, slot.expression)}
-          />
-        ))}
+        {/* 当前说话人：旁白/独白没有 actorId（null），谁都不亮。 */}
+        {Object.entries(visual.sprites).map(([id, slot]) => {
+          const speakingId = playback.view?.actorId ?? null;
+          // state 与 expression 共用同一张 sprites[] 映射表（人写表情、物写状态），
+          // 所以取图用 expression ?? state。写错时两者都没有，sprite() 会退回该角色第一张。
+          const variant = slot.expression ?? slot.state;
+          return (
+            <Sprite
+              key={id}
+              url={index.sprite(id, variant)}
+              pos={slot.resolvedPos}
+              name={actorName(names, id)}
+              framing={index.spriteFraming(id, variant)}
+              shot={slot.shot}
+              anchor={slot.anchor}
+              leaving={slot.leaving === true}
+              action={slot.action}
+              actionSeq={slot.actionSeq}
+              // 说话者呼吸：gal 里几乎每场都是「说这句的人亮着、轻轻动着」，
+              // 默认开——写进剧本要模型每句都记得标记，漏一句就断了。
+              speaking={id === speakingId}
+            />
+          );
+        })}
 
         {cgUrl && (
           <div className="theater-cg">

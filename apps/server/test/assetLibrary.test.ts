@@ -204,12 +204,12 @@ describe("importFromLibrary：资源库 → 剧目", () => {
       framing: "half",
       expressions: {
         neutral: { file: "neutral.png" },
-        closeup: { file: "closeup.png", framing: "bust" },
+        closeup: { file: "closeup.png", framing: "square" },
       },
     });
     await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
     const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
-    expect(play.characters[0]).toMatchObject({ framing: "half", spriteFraming: { closeup: "bust" } });
+    expect(play.characters[0]).toMatchObject({ framing: "half", spriteFraming: { closeup: "square" } });
   });
 
   it("立绘取景：只导一条差分不该把该角色其它差分的取景覆盖抹掉", async () => {
@@ -219,7 +219,7 @@ describe("importFromLibrary：资源库 → 剧目", () => {
       JSON.stringify({
         id: "p1",
         title: "保留",
-        characters: [{ id: "mio", name: "澪", persona: "", framing: "full", spriteFraming: { angry: "bust" } }],
+        characters: [{ id: "mio", name: "澪", persona: "", framing: "full", spriteFraming: { angry: "square" } }],
         opening: "（开始）",
         initialScene: "s",
       }),
@@ -232,7 +232,7 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
     // 条目没声明 framing：剧目侧的值原样留着（含别的差分的覆盖），导入不许顺手清掉
     expect(play.characters[0].framing).toBe("full");
-    expect(play.characters[0].spriteFraming).toEqual({ angry: "bust" });
+    expect(play.characters[0].spriteFraming).toEqual({ angry: "square" });
   });
 
   it("纯角色卡：没有立绘也能导入（先定人设、图后面再画）", async () => {

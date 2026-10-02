@@ -72,11 +72,46 @@ export interface SceneAttrs {
   transition?: string;
 }
 
+/** 运镜档位：作用于**已有立绘**（放大 + 上移），不触发重新生成。 */
+export const ACTOR_SHOTS = ["wide", "normal", "close", "extreme"] as const;
+export type ActorShot = (typeof ACTOR_SHOTS)[number];
+
+export function isActorShot(value: unknown): value is ActorShot {
+  return typeof value === "string" && (ACTOR_SHOTS as readonly string[]).includes(value);
+}
+
+/** 对齐基准：图的哪条边锚在 stage 上。默认 bottom（脚踩地）；悬空物写 center。 */
+export const ACTOR_ANCHORS = ["bottom", "center", "top"] as const;
+export type ActorAnchor = (typeof ACTOR_ANCHORS)[number];
+
+export function isActorAnchor(value: unknown): value is ActorAnchor {
+  return typeof value === "string" && (ACTOR_ANCHORS as readonly string[]).includes(value);
+}
+
 export interface ActorAttrs {
   id: string;
+  /** 显式站位（left/center/right 等；缺省走在场人数自动排布）。 */
   pos?: string;
+  /** 人物表情差分。 */
   expression?: string;
+  /**
+   * 非人状态差分（完好/破损/发光等）。
+   *
+   * 与 expression 语义同构（都是换一张图），分开只是为了给模型提示：
+   * 写猫写道具时用 state，写人用 expression，模型不会把猫的状态词当成表情。
+   */
+  state?: string;
+  /** 运镜：当前这句台词的景别强调（wide/normal/close/extreme），不重新生图。 */
+  shot?: ActorShot;
+  /** 对齐基准（bottom 人贴底 / center 悬空物 / top 垂下）。 */
+  anchor?: ActorAnchor;
+  /**
+   * 动作词（nudge/stagger/jump/nod/bow/turn/shake/sway）。
+   * 保留旧 action="exit"/"leave" 的兼容。
+   */
   action?: string;
+  /** 退场动画（fade/walk 等），有它即表示离场。 */
+  leave?: string;
 }
 
 export interface SfxAttrs {

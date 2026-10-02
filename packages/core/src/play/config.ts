@@ -124,13 +124,19 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
  *
  * 取景是**声明**出来的（见 play/framing.ts），手滑写个 "半身" 只能当没写：
  * 让它掉回缺省全身，远好过在舞台上按一个查不到的档位去找 CSS 类。
+ *
+ * 逐差分那圈也走 `framingOf` 而不是 `isSpriteFraming`，跟条目级对齐：已下线的
+ * `bust` 在两条路径上都要降级成 `half`（见 framing.ts 的 LEGACY_SPRITE_FRAMING）。
+ * 两边规则不一样的话，同一份存量数据在角色卡上被丢掉、在资源库上被降级，
+ * 用户看到的现象是「从库里导入之后站位变了」，而两边的代码都「正确」。
  */
 function parseCharacter(card: CharacterCard): CharacterCard {
   const framing = framingOf(card.framing);
   const overrides: Record<string, SpriteFraming> = {};
   for (const [expression, value] of Object.entries(card.spriteFraming ?? {})) {
-    if (expression.trim() === "" || !isSpriteFraming(value)) continue;
-    overrides[expression] = value;
+    if (expression.trim() === "") continue;
+    const framing = framingOf(value);
+    if (framing) overrides[expression] = framing;
   }
   const out: CharacterCard = { ...card };
   if (framing) out.framing = framing;

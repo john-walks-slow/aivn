@@ -52,9 +52,9 @@ function imageParams(withExpression: boolean) {
     /** 立绘取景（只对 kind=sprite 生效；不给则沿用该角色已声明的，默认全身）。 */
     framing: Type.Optional(
       Type.Union([
-        Type.Literal("bust", { description: "胸像：只到头肩" }),
-        Type.Literal("half", { description: "半身：到腰" }),
-        Type.Literal("full", { description: "全身：到脚" }),
+        Type.Literal("full", { description: "全身：人到脚。人物立绘的常规选择" }),
+        Type.Literal("half", { description: "半身：到腰。对话时人物更大更清楚" }),
+        Type.Literal("square", { description: "方形：正方画幅、主体完整入画。给猫、道具这类非人主体" }),
       ]),
     ),
     /** 画风锚点（可选），如「厚涂写实电影感」「赛璐珞动画」。不给就不预设风格，按角色描述走。 */
@@ -105,8 +105,10 @@ const PROMPT_RULES = [
   "实测「垫图 + 明确写姿势机位」照样能出俯视坐姿、拾级而下的动态画面，只垫图不写姿势则一定是正面站桩。",
   "**姿势、机位、景别都要显式写**：只说「她站在天台上」出来是对称站立的正面像，要说清机位（平视/俯视/仰视/侧身回眸）",
   "、动作（坐/走/倚靠栏杆/回头）与景别（full body / medium shot / close-up）——不写景别，袜子、鞋这类细节直接出框。",
-  "立绘的**取景用 framing 参数声明**（bust 胸像 / half 半身 / full 全身）：它决定画幅、构图与舞台上的站位，",
-  "同一个角色要保持同一档；只有刻意做特写差分时才给某条差分换档。不给就沿用该角色已有的声明。",
+  "立绘的**取景用 framing 参数声明**（full 全身 / half 半身 / square 方形）：它决定画幅、构图与舞台上的站位，" +
+  "同一个角色要保持同一档。人物用 full 或 half；**猫、道具这类非人主体用 square**——" +
+  "「全身/半身」是人形术语，套到它们身上语义不通，正方画幅也让主体占满画布、不浪费上下空间。" +
+  "不给就沿用该角色已有的声明。",
   "立绘的抠底构图与画风后缀（纯白底、平涂、哪里要留白）由引擎自动拼在 prompt 末尾，别在 prompt 里",
   "重复也别改写它；背景与 CG 没有这层后缀，构图要求要自己写。",
 ].join("");
@@ -136,7 +138,7 @@ const QUEUED_DESCRIPTION = [
   "出一张剧目素材并**后台排产**（发起即返回，不等图）：背景(kind=background) / CG(kind=cg) 给 name，",
   "立绘(kind=sprite) 给 characterId，出的**只能是 neutral 定妆照**（差分由工坊在用户面前生成，别试也别写 expression）。" +
   "角色不在角色表时再给 characterName，会自动建一个临时角色。",
-  "背景 16:9、CG 16:9、立绘竖构图（取景 full 用 9:16、half 3:4、bust 1:1）；提示词写英文，只描述画面本身。",
+  "背景 16:9、CG 16:9、立绘竖构图（取景 full 用 9:16、half 3:4、square 1:1）；提示词写英文，只描述画面本身。",
   PROMPT_RULES,
   "**提前 3–5 句发起**：图要一分多钟才到（实测 1k 档 70–80s、2k 档 110s 上下），" +
   "出席位置太早只会看到骨架占位，拿到回执后照常写台词，",
