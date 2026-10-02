@@ -34,6 +34,7 @@ export const ROLE_INSTALLABLE: Record<AgentRole, readonly string[]> = {
     "get_readiness",
     "inspect_asset",
     "generate_image",
+    "recut_sprite",
     "read_skill",
     "list_saves",
     "read_lineage",

@@ -219,7 +219,7 @@ export class PlayStore {
     };
   }
 
-  /** 素材绝对路径（静态服务；kindPath 已白名单校验，如 "sprites/mio/neutral.png"）。 */
+  /** 素材绝对路径（静态服务；kindPath 已白名单校验，如 "sprites/角色id/neutral.png"）。 */
   assetPath(kindPath: string): string {
     return join(this.dir, "assets", ...kindPath.split("/"));
   }
@@ -232,6 +232,14 @@ export class PlayStore {
   /** 剧目记忆目录（D7：always/index 剧目级进 git；arcs 与 archive 运行时不进）。 */
   memoryDir(...segments: string[]): string {
     return join(this.dir, "memory", ...segments);
+  }
+
+  /**
+   * 立绘留底原片目录（media-cache/sprite-sources/<角色id>/）：抠底前那一张原片。
+   * 只为原地重抠（`PlayAssets.recut`）留着，是跑批产物不是剧目内容，不进 git。
+   */
+  spriteSourceDir(...segments: string[]): string {
+    return join(this.dir, "media-cache", "sprite-sources", ...segments);
   }
 
   /**

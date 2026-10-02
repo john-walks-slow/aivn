@@ -54,7 +54,7 @@ export function createMemoryTools(
     name: "update_state",
     label: "提议状态更新",
     description:
-      "提议更新引擎状态（好感度增量/旗标）。好感度传增量（如 koharu: 2 表示 +2，单次 |增量|≤5，值域 0~100）；旗标传目标值。引擎校验后才生效，【状态】区下轮反映。剧情有实质推进时才调用，不要每轮都调。",
+      "提议更新引擎状态（好感度增量/旗标）。好感度传增量（如 \`<角色id>\`: 2 表示 +2，单次 |增量|≤5，值域 0~100）；旗标传目标值。引擎校验后才生效，【状态】区下轮反映。剧情有实质推进时才调用，不要每轮都调。",
     parameters: updateStateParams,
     execute: async (_toolCallId, params: Static<typeof updateStateParams>) => {
       const { affinity, flags } = params;

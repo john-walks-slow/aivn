@@ -72,7 +72,7 @@ export function createLibraryTools(deps?: LibraryToolDeps): AgentTool<any>[] {
     label: "浏览素材资源库",
     description:
       "浏览应用级素材资源库（跨剧目复用的本地素材目录，由用户在本地维护，你只读不写）。\n" +
-      "**要素材先查库**。用户说「弄张黄昏教室的图」「配首忧伤的音乐」「来个门响的音效」「找个角色」，先用本工具" +
+      "**要素材先查库**。用户说「弄张教室的图」「配首忧伤的音乐」「来个门响的音效」「找个角色」，先用本工具" +
       "（可以带 kind 或 query 关键词）看有没有现成的，有就 import_asset 导入。库里有就**不要**再 generate_image。\n" +
       "可给 kind 过滤类别（backgrounds/cg/characters/bgm/sfx），可给 query 按关键词搜描述与标签。\n" +
       "每行是：id | 类别 | 标题 | 描述（角色包还会列出可用差分名与是否标了主角）。\n" +

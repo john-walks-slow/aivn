@@ -160,12 +160,15 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
     });
     const sync = createGenerateImageTool({ mode: "sync", playAssets: undefined, onAsset: () => {} });
     const props = (t: { parameters: { properties?: Record<string, unknown> } }) => Object.keys(t.parameters.properties ?? {});
-    for (const key of ["expression", "referenceCharacters", "framing", "style", "cutout"]) {
+    for (const key of ["expression", "referenceCharacters", "framing", "style"]) {
       expect(props(queued)).toContain(key);
       expect(props(sync)).toContain(key);
     }
     // 同步与排产只差 description 与等待策略，参数对象必须是同一份
     expect(queued.parameters).toBe(sync.parameters);
+    // 抠底参数两个角色都不给：填它得先看过成图，而出图那一刻没人看过图
+    expect(props(queued)).not.toContain("cutout");
+    expect(props(sync)).not.toContain("cutout");
   });
 
   it("垫图参数透传到后台发起（剧作家出的 CG 也要锁得住角色）", () => {

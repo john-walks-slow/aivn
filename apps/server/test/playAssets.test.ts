@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Limiter } from "../src/limiter.js";
+import { cutout, resolveTuning } from "../src/cutout.js";
 import { PlayFiles } from "../src/playFiles.js";
 import { PlayStore } from "../src/store.js";
 import { PlayAssets } from "../src/playAssets.js";
@@ -105,6 +106,73 @@ function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2, re
       onWrite: (w) => writes.push(w),
     }),
   };
+}
+
+describe("PlayAssets：原地重抠（抠底参数的后悔药）", () => {
+  it("出图留底原片，重抠不再调后端、只改透明边缘（不透明像素逐位相同）", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    const [first] = await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+    expect(calls).toHaveLength(1);
+    const source = store.spriteSourceDir("mio", "neutral.jpg");
+    expect(existsSync(source)).toBe(true); // 留底在 media-cache/：抠底前那一张原片，跑批产物不进 git
+
+    const tuning = { strong: 4, weak: 20 };
+    const recut = await assets.recut({ kind: "sprite", characterId: "mio", expression: "neutral" }, tuning);
+    expect(calls).toHaveLength(1); // 重新出图会多烧一份配额，这里一次都没有
+    expect(recut.path).toBe("assets/sprites/mio/neutral.png");
+    expect(recut.replaced).toBe(true);
+    const written = await readFile(files.absoluteOf(recut.path));
+    expect((await sharp(written).metadata()).hasAlpha).toBe(true);
+    // 参数真的走到抠底层了：产物等于拿同一张留底按这档参数重抠的结果
+    const expected = await cutout(await readFile(source), resolveTuning(tuning));
+    expect(written.equals(expected.data)).toBe(true);
+    // 而画面没动：两处都不透明的像素逐位相同，只改了边缘的透明度
+    expect(await opaquePixelDiff(files.absoluteOf(first!.path), files.absoluteOf(recut.path))).toBe(0);
+  });
+
+  it("没留底原片的老图 / 上传图直接报错，不偷偷重新出图", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+    // 用户自己上传的立绘：assets/ 里有一张，media-cache 里没有留底
+    await mkdir(join(files.absoluteOf("assets/sprites/Koharu")), { recursive: true });
+    await writeFile(files.absoluteOf("assets/sprites/Koharu/neutral.png"), await realImage("9:16", "image/png"));
+    await expect(assets.recut({ kind: "sprite", characterId: "Koharu", expression: "neutral" })).rejects.toThrow(
+      /没有留底原片/,
+    );
+    await expect(assets.recut({ kind: "sprite", characterId: "mio", expression: "smile" })).rejects.toThrow(
+      /还没有抠底图/,
+    );
+    expect(calls).toHaveLength(1); // 两种情况都不该退回「重新出图」
+  });
+
+  it("重抠失败不落半残图：原来的透明 PNG 原封不动", async () => {
+    const store = await makeStore();
+    const { assets, files } = makeAssets(store, stubBackend().backend);
+    const [res] = await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+    const before = await readFile(files.absoluteOf(res!.path));
+    // 把留底换成一张纯底图：抠底认不出前景，按覆盖率守卫直接报错
+    const blank = await sharp({ create: { width: 768, height: 1365, channels: 3, background: "#ffffff" } })
+      .png()
+      .toBuffer();
+    await writeFile(store.spriteSourceDir("mio", "neutral.jpg"), blank);
+    await expect(assets.recut({ kind: "sprite", characterId: "mio", expression: "neutral" })).rejects.toThrow(/抠底失败/);
+    expect(await readFile(files.absoluteOf(res!.path))).toEqual(before);
+  });
+});
+
+/** 两张 RGBA 里「两处都不透明」的像素有多少处 RGB 不同——重抠只该动边缘。 */
+async function opaquePixelDiff(a: string, b: string): Promise<number> {
+  const [ra, rb] = await Promise.all([sharp(a).ensureAlpha().raw().toBuffer(), sharp(b).ensureAlpha().raw().toBuffer()]);
+  let diff = 0;
+  for (let i = 0; i < ra.length; i += 4) {
+    if (ra[i + 3] !== 255 || rb[i + 3] !== 255) continue;
+    if (ra[i] !== rb[i] || ra[i + 1] !== rb[i + 1] || ra[i + 2] !== rb[i + 2]) diff += 1;
+  }
+  return diff;
 }
 
 describe("PlayAssets：工坊素材落盘", () => {

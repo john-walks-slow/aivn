@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   DEFAULT_SPRITE_FRAMING,
   parsePlayConfig,
@@ -147,7 +148,6 @@ export class PlayAssets {
     target: AssetTarget,
     prompt: string,
     style?: string,
-    cutoutTuning?: Partial<CutoutTuning>,
     options?: GenerateOptions,
   ): Promise<GeneratedPlayAsset[]> {
     const notify = options?.notify ?? "workshop";
@@ -155,11 +155,39 @@ export class PlayAssets {
     const key = `${spec.kindPath}/${spec.stem}`;
     const running = this.inflight.get(key);
     if (running) return running;
-    const job = this.run(spec, prompt, style, cutoutTuning, notify).finally(() => {
+    const job = this.run(spec, prompt, style, notify).finally(() => {
       if (this.inflight.get(key) === job) this.inflight.delete(key);
     });
     this.inflight.set(key, job);
     return job;
+  }
+
+  /**
+   * 原地重抠立绘：拿抠底前留的原片重跑一遍抠底，覆盖 assets/ 里那张透明 PNG。
+   *
+   * 只为「图挺好、抠得脏」而存在：这种没法靠重新出图解决（重画出来是另一张图，
+   * 用户刚点头的那张会被顶掉，还白烧一次配额）。留了底就是本地几秒的事，画面一个像素不变。
+   */
+  async recut(target: AssetTarget, tuning?: Partial<CutoutTuning>): Promise<GeneratedPlayAsset> {
+    const spec = await this.resolve(target, "workshop");
+    if (spec.kind !== "sprite") throw new Error("只有立绘需要抠底");
+    if (!(await this.existingPath(spec.kindPath, spec.stem))) {
+      throw new Error(`${spec.characterId}/${spec.stem} 还没有抠底图，先 generate_image 出图再来重抠。`);
+    }
+    const { data } = await cutout(await this.readSpriteSource(spec), resolveTuning(tuning));
+    return { ...(await this.persist(spec, data, ".png")), autoNeutral: false };
+  }
+
+  private async readSpriteSource(spec: AssetSpec): Promise<Buffer> {
+    const dir = this.deps.store.spriteSourceDir(spec.characterId!);
+    for (const ext of [".jpg", ".jpeg", ".png", ".webp"]) {
+      const file = join(dir, `${spec.stem}${ext}`);
+      if (existsSync(file)) return readFile(file);
+    }
+    throw new Error(
+      `${spec.characterId}/${spec.stem} 没有留底原片（抠底前那一张），没法原地重抠。` +
+        "留底是出图时顺手写的：更早出的图、用户自己上传的立绘都没有——那种只能重新出图。",
+    );
   }
 
   /** 目标是否已有图（工坊/剧作家跳过重复出图用）。 */
@@ -192,7 +220,6 @@ export class PlayAssets {
     spec: AssetSpec,
     prompt: string,
     style?: string,
-    cutoutTuning?: Partial<CutoutTuning>,
     notify: AssetNotify = "workshop",
   ): Promise<GeneratedPlayAsset[]> {
     const auto = spec.kind === "sprite" ? await this.ensureNeutral(spec, prompt, notify) : null;
@@ -230,13 +257,42 @@ export class PlayAssets {
       done?.();
     }
     this.assertCanvas(spec, data);
-    const tuning = resolveTuning(cutoutTuning);
-    const bytes = spec.kind === "sprite" ? (await cutout(data, tuning)).data : data;
+    const bytes = spec.kind === "sprite" ? await this.cutSprite(spec, data, mimeType) : data;
     const ext = spec.kind === "sprite" ? ".png" : extOf(mimeType);
     const written = await this.persist(spec, bytes, ext);
     if (spec.kind === "sprite") await this.mapSprite(spec, `${spec.stem}${ext}`, notify);
     await this.recordPrompt(spec, written.path, fullPrompt);
     return auto ? [auto, { ...written, autoNeutral: true }] : [{ ...written, autoNeutral: false }];
+  }
+
+  /**
+   * 立绘落盘前的最后一步：抠底成透明 PNG，并把**抠底前的原片**留一份。
+   *
+   * 留底是抠底参数唯一的后悔药：透明 PNG 一落盘底色就没了，之后想改抠底只剩「重新出图」——
+   * 而重新出图出来的是另一张画，用户刚点头的那张会被顶掉，还白烧一份配额。
+   * 留了底，「图挺好、抠得脏」就是本地重跑一遍的事（见 `recut`）。
+   *
+   * 留底写在 media-cache/（跑批产物，不进 git）：换机器后老图没法重抠，这是有意的取舍——
+   * 原片是中间物，不是剧目内容。写失败只记一条告警，不把一次成功的出图报成失败。
+   */
+  private async cutSprite(spec: AssetSpec, data: Buffer, mimeType: string): Promise<Buffer> {
+    const { data: png } = await cutout(data, resolveTuning());
+    await this.keepSpriteSource(spec, data, mimeType);
+    return png;
+  }
+
+  private async keepSpriteSource(spec: AssetSpec, data: Buffer, mimeType: string): Promise<void> {
+    if (!spec.characterId) return;
+    const dir = this.deps.store.spriteSourceDir(spec.characterId);
+    try {
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, `${spec.stem}${extOf(mimeType)}`), data);
+    } catch (error) {
+      console.warn(
+        `[stage-ai] 立绘 ${spec.characterId}/${spec.stem} 的留底原片没写成（之后没法原地重抠）：` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   /** 落盘 + 清掉同 stem 的旧扩展名。抠底输出恒为 PNG，扩展名变了旧的 .jpg 必须清掉。 */
@@ -420,7 +476,6 @@ export class PlayAssets {
     const [auto] = await this.generate(
       { kind: "sprite", characterId: spec.characterId, expression: NEUTRAL, framing: neutralFraming },
       `${NEUTRAL_LEAD[neutralFraming]} ${prompt}`,
-      undefined,
       undefined,
       { notify, ...(spec.stubName ? { characterName: spec.stubName } : {}) },
     );

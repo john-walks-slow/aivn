@@ -452,40 +452,48 @@ describe("工坊工具：generate_image", () => {
     expect(JSON.stringify(out)).toContain("不是可看的图片");
   });
 
-  it("generate_image：cutout 参数原样传到抠底层（agent 看图后重出用）", async () => {
+  it("抠底参数不在 generate_image 上（出图时没人看过图，填了也是默认值）", async () => {
     await setup();
-    const tunings: (unknown[] | undefined)[] = [];
-    const assets = new PlayAssets("test", {
-      store,
-      files: new PlayFiles(store),
-      backend: {
-        generate: async () => ({
-          data: await sharp({
-            create: { width: 768, height: 1376, channels: 3, background: "#ffffff" },
-          })
-            .png()
-            .toBuffer(),
-          mimeType: "image/png",
-        }),
-      },
-      limiter: new Limiter(1),
-      onWrite: () => {},
-    });
-    const spy = vi.spyOn(assets, "generate");
-    spy.mockImplementation(async (target, prompt, style, tuning) => {
-      tunings.push(tuning);
-      return [{ kind: target.kind as never, path: "assets/sprites/mio/neutral.png", url: "/u", replaced: false }];
-    });
-    const tools = createWorkshopTools(deps({ playAssets: assets }));
+    const tools = createWorkshopTools(deps());
     const gen = tools.find((t) => t.name === "generate_image")!;
-    await gen.execute("c1", {
-      kind: "sprite",
-      characterId: "mio",
-      expression: "neutral",
-      prompt: "a girl",
-      cutout: { weak: 12, minHole: 40 },
-    });
-    expect(tunings).toEqual([{ weak: 12, minHole: 40 }]);
+    expect(Object.keys((gen.parameters as { properties: object }).properties)).not.toContain("cutout");
+  });
+
+  it("recut_sprite：调参原样走到抠底层，回执带图片给用户看（不用重新出图）", async () => {
+    await setup();
+    const recuts: unknown[] = [];
+    const assets = {
+      recut: vi.fn(async (target: { characterId: string; expression?: string }, tuning: unknown) => {
+        recuts.push({ ...target, tuning });
+        return {
+          kind: "sprite" as const,
+          path: `assets/sprites/${target.characterId}/${target.expression}.png`,
+          url: `/plays/test/assets/sprites/${target.characterId}/${target.expression}.png`,
+          replaced: true,
+          autoNeutral: false,
+        };
+      }),
+    } as unknown as PlayAssets;
+    const events: GeneratedPlayAsset[] = [];
+    const tools = createWorkshopTools(deps({ playAssets: assets, onAsset: (asset: GeneratedPlayAsset) => events.push(asset) }));
+    const recut = tools.find((t) => t.name === "recut_sprite")!;
+    const result = await recut.execute("c1", { characterId: "mio", expression: "neutral", cutout: { weak: 12, minHole: 40 } });
+    expect(recuts).toEqual([
+      { kind: "sprite", characterId: "mio", expression: "neutral", tuning: { weak: 12, minHole: 40 } },
+    ]);
+    const out = JSON.stringify(result);
+    expect(out).toContain("画面没变");
+    // 用户是照这张图验收的：没有图片链接等于让人凭空点头
+    expect(out).toContain("![assets/sprites/mio/neutral.png](/plays/test/assets/sprites/mio/neutral.png)");
+    expect(events).toHaveLength(1);
+
+    // 失败也要回可读的话（没有留底的老图就是这样），不抛栈
+    const failing = { recut: async () => { throw new Error("mio/neutral 没有留底原片"); } } as unknown as PlayAssets;
+    const bad = await (createWorkshopTools(deps({ playAssets: failing })).find((t) => t.name === "recut_sprite")!).execute(
+      "c2",
+      { characterId: "mio" },
+    );
+    expect(JSON.stringify(bad)).toContain("重抠失败：mio/neutral 没有留底原片");
   });
 
   it("工坊工具：read_skill 读得到技能全文，读不到就回可读的报错", async () => {

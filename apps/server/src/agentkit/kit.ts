@@ -8,6 +8,7 @@ import { createGenerateImageTool } from "./imageTool.js";
 import { createLibraryTools } from "./libraryTool.js";
 import { createLineageTools } from "./lineageTool.js";
 import { createMemoryTools } from "./memoryTool.js";
+import { createRecutSpriteTool } from "./recutTool.js";
 import { createVoiceTool } from "./voiceTool.js";
 import { createWebSearchTool } from "./searchTool.js";
 import { createReadSkillTool } from "./skillTool.js";
@@ -63,6 +64,7 @@ const TOOL_CATALOG: Record<string, { label: string; group: ToolGroup }> = {
   read_memory_detail: { label: "读记忆卡详情", group: "memory" },
   search_archive: { label: "检索历史往事", group: "memory" },
   generate_image: { label: "生成剧目素材", group: "image" },
+  recut_sprite: { label: "重抠立绘底", group: "image" },
   read_skill: { label: "读技能库", group: "skill" },
   list_voices: { label: "查音色库", group: "voice" },
   web_search: { label: "联网检索", group: "web" },
@@ -208,6 +210,10 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
     ...createFilesTools(deps),
     createGenerateImageTool({
       mode: "sync",
+      playAssets: deps.playAssets,
+      onAsset: (path, url, kind, replaced) => deps.onAsset({ kind, path, url }, replaced),
+    }),
+    createRecutSpriteTool({
       playAssets: deps.playAssets,
       onAsset: (path, url, kind, replaced) => deps.onAsset({ kind, path, url }, replaced),
     }),

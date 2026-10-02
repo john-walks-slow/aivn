@@ -435,7 +435,7 @@ export class PlayHouse {
       return;
     }
     try {
-      const [asset] = await assets.generate(target, prompt, undefined, undefined, { notify: "silent" });
+      const [asset] = await assets.generate(target, prompt, undefined, { notify: "silent" });
       if (!asset) return;
       sender({ type: "asset_ready", asset: { id, type, url: asset.url } });
     } catch (error) {
@@ -472,7 +472,6 @@ export class PlayHouse {
       await assets.generate(
         { kind: "sprite", characterId: charId, expression, framing },
         prompt,
-        undefined,
         undefined,
         { notify: "silent", characterName },
       );

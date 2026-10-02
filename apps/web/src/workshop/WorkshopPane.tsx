@@ -252,6 +252,42 @@ export function WorkshopPane({
             )}
           </div>
 
+          {state.writes.length > 0 && (
+            <div className="workshop-writes">
+              {state.writes.map((write) => (
+                <div key={write.at} className="write-row">
+                  <span className="file-path">
+                    <Icon name="memory" size={13} /> {write.path}
+                  </span>
+                  <button
+                    className="ghost-btn tiny-btn"
+                    onClick={() => {
+                      const restore = write.before ?? null;
+                      const path = write.path;
+                      void (async () => {
+                        try {
+                          if (restore === null) {
+                            await api.deleteFile(playId, path);
+                          } else {
+                            await api.saveFile(playId, path, restore);
+                          }
+                          workshop.dismissWrite(write.at);
+                        } catch {
+                          // 撤销失败保留记录，用户可重试
+                        }
+                      })();
+                    }}
+                  >
+                    撤销
+                  </button>
+                  <button className="ghost-btn tiny-btn" onClick={() => workshop.dismissWrite(write.at)}>
+                    知道了
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <footer className="workshop-input">
             <textarea
               value={input}
@@ -270,42 +306,6 @@ export function WorkshopPane({
             </button>
           </footer>
         </>
-      )}
-
-      {state.writes.length > 0 && (
-        <div className="workshop-writes">
-          {state.writes.map((write) => (
-            <div key={write.at} className="write-row">
-              <span className="file-path">
-                <Icon name="memory" size={13} /> {write.path}
-              </span>
-              <button
-                className="ghost-btn tiny-btn"
-                onClick={() => {
-                  const restore = write.before ?? null;
-                  const path = write.path;
-                  void (async () => {
-                    try {
-                      if (restore === null) {
-                        await api.deleteFile(playId, path);
-                      } else {
-                        await api.saveFile(playId, path, restore);
-                      }
-                      workshop.dismissWrite(write.at);
-                    } catch {
-                      // 撤销失败保留记录，用户可重试
-                    }
-                  })();
-                }}
-              >
-                撤销
-              </button>
-              <button className="ghost-btn tiny-btn" onClick={() => workshop.dismissWrite(write.at)}>
-                知道了
-              </button>
-            </div>
-          ))}
-        </div>
       )}
 
       {lightbox && (

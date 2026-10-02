@@ -245,7 +245,7 @@ export function createFilesTools(
     label: "看剧目图片",
     description:
       "把 assets/ 下的一张图读进来给你自己看（真的看图，不是返回文件路径）。" +
-      "立绘抠底只干净不干净、画风对不对、是不是同一个人——都靠它判断。path 用相对路径，如 assets/sprites/koharu/neutral.png。",
+      "立绘抠底只干净不干净、画风对不对、是不是同一个人——都靠它判断。path 用相对路径，如 assets/sprites/角色id/neutral.png。",
     parameters: inspectAssetParams,
     execute: async (_id, params: Static<typeof inspectAssetParams>) => {
       try {
