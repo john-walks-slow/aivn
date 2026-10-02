@@ -609,15 +609,16 @@ voiceState,
       </div>
 
       <div className="theater-dialog" role="text" ref={dialogRef}>
-{dialog.name && <div className="dialog-name">{dialog.name}</div>}
         {/* 回声期间台词条归它：玩家一按下就得看见自己说了什么，不能被上一句挡回去。
             真台词一到（播放头换行）回声自动让位，见 StageScreen 的 echoText。 */}
         <p className={`dialog-text ${!playerEcho && view?.type === "thought" ? "thought" : !playerEcho && view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
           {dialogBody}
           {view && !playerEcho && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
         </p>
-        {/* 台词条底缘：左是状态提示（回看中 / 生成中），右是游戏选项 */}
+        {/* 台词条底缘：左端是说话人名牌，右端是游戏选项，中间的空档留给状态提示（回看中 / 生成中）。
+            名牌落在这一排里而不是浮在台词条上方：贴着窗的下缘才看得出它属于这块窗。 */}
         <div className="dialog-foot">
+          {dialog.name && <div className="dialog-name">{dialog.name}</div>}
           <div className="dialog-hint dialog-hint-foot">
             {scrubbed ? (
               <button type="button" className="dialog-rewind" onClick={follow} title="回到最新">

@@ -1073,7 +1073,9 @@ button.link-btn {
   background: var(--dialog-bg);
   border: 1px solid var(--dialog-line);
   border-radius: var(--stage-radius);
-  padding: 22px 30px 14px;
+  /* 名牌要出血到对话框的左边缘（见 .dialog-name），所以这份内边距得有个名字 */
+  --dialog-pad-x: 30px;
+  padding: 22px var(--dialog-pad-x) 14px;
   /* 预留三行（见 .dialog-text 的 min-height）：1~3 行的台词来回换时高度恒定，画面不再顶一下沉一下 */
   min-height: 168px;
   display: flex;
@@ -1204,25 +1206,24 @@ button.link-btn {
   margin: 0;
 }
 
-/* 说话人：白底 + 中性描边的小牌，整块坐在文本窗上方不压它——骑在上沿等于把名牌
-   切成两半（描边横穿名字）。描边也不跟主色：名牌每句都在，主色描边会把整条台词条钉成一个框。
-   底色字色取舞台那套（浅底浅牌 / 深底深牌），跟着舞台深浅走。 */
+/* 说话人：台词条底缘左端的一小块牌，直角、贴着窗的下缘（出血到左边缘与下边缘，
+   所以它跟这块窗是连着的，不是一个浮在上面的小圆片）。底色字色取舞台那套令牌：
+   深底深牌浅字、浅底浅牌深字。描边不跟主色——名牌每句都在，主色描边会把整条台词条
+   钉成一个框。 */
 .dialog-name {
-  position: absolute;
-  bottom: 100%;
-  left: 22px;
-  margin-bottom: 8px;
-  max-width: 62%;
-  padding: 1px 13px;
-  border: 1px solid var(--nameplate-line);
-  border-radius: 999px;
+  align-self: flex-end;
+  margin: 4px 0 -8px calc(-1 * var(--dialog-pad-x));
+  padding: 3px 16px 4px;
+  border: none;
+  border-radius: 0;
   background: var(--nameplate-bg);
   color: var(--nameplate-ink);
   font-family: var(--font-serif);
   font-weight: 600;
-  font-size: 13px;
-  letter-spacing: 0.12em;
+  font-size: 12.5px;
+  letter-spacing: 0.14em;
   line-height: 1.7;
+  white-space: nowrap;
 }
 
 .dialog-text {
@@ -1427,8 +1428,20 @@ button.link-btn {
   padding-bottom: calc(var(--dialog-h, 168px) + 3% + var(--safe-b, 0px));
   padding-left: 16px;
   overflow-y: auto;
-  background: var(--choice-scrim);
   animation: choice-in 0.22s ease-out;
+  pointer-events: none;
+}
+
+/* 变暗只给画面（背景图 / 立绘 / CG），不给盖在画面上的那些界面层：
+   台词条、导演栏、侧栏唤出键、排队的面板——它们是玩家此刻还要读、还要点的，
+   跟着压暗等于把选项摆在一条读不清的路前面。遮罩因此挂在画面区里，
+   不在选肢层上；选肢层只管摆卡片。 */
+.theater:has(.choice-overlay) .theater-stage::after {
+  content: "";
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  background: var(--choice-scrim);
   pointer-events: none;
 }
 
@@ -3102,7 +3115,8 @@ select:focus {
   }
 
   .theater-dialog {
-    padding: 10px 14px 8px;
+    --dialog-pad-x: 14px;
+    padding: 10px var(--dialog-pad-x) 8px;
     min-height: 96px;
   }
 
