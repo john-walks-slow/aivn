@@ -13,6 +13,7 @@ import type {
 export type WorkshopInbound = Extract<ServerMessage, { type: `workshop_${string}` }>;
 
 import { ScriptBuilder, type ScriptLine, type Cue } from "./script.js";
+import { helloSync } from "./helloSync.js";
 
 export type BeatState = "connecting" | "streaming" | "stopped" | "error";
 
@@ -115,6 +116,8 @@ export function useStageSocket(
   const [pendingJobs, setPendingJobs] = useState<readonly PendingJob[]>([]);
   /** 本地缓冲所属代号：与服务端不一致说明缓冲已被结构性操作整段替换。 */
   const epochRef = useRef(0);
+  /** 本连接是否已经收到过 hello：首屏那次不算「换了树/换代」（见 helloSync）。 */
+  const seenHelloRef = useRef(false);
   const [tick, setTick] = useState(0); // lines/cues/scene 由 builder 持有，tick 触发重渲染
   // 轮已收束 ≠ 可操作：模型那一轮收尾期间服务端仍 engaged，beat_settled 之后按钮才解禁
   const [settled, setSettled] = useState(false);
@@ -159,18 +162,24 @@ export function useStageSocket(
             if (msg.pendingJobs) setPendingJobs(msg.pendingJobs);
             if (msg.assets) handlersRef.current.onAssets?.(msg.assets);
             // 换了周目 = 换了一棵树：本地缓冲与新树无关，作废重放
-            const switched = msg.saveId !== undefined && msg.saveId !== saveIdRef.current;
+            const sync = helloSync({
+              seen: seenHelloRef.current,
+              saveId: saveIdRef.current,
+              helloSaveId: msg.saveId,
+              epoch: epochRef.current,
+              helloEpoch: msg.epoch,
+            });
+            seenHelloRef.current = true;
+            const switched = sync.switched;
             if (msg.saveId !== undefined) {
               saveIdRef.current = msg.saveId;
               // 空 saveId = 这棵剧目还没有周目（runtime 落在无会话作用域上）；空档名不显示成芯片
               setSaveName(msg.saveName || msg.saveId || null);
             }
-            // 代号不一致 = 缓冲已被结构性操作整段替换：本地 seq 全部作废，全量重放
-            const restamped =
-              msg.epoch !== undefined && msg.epoch !== epochRef.current && !switched;
-            if (restamped) epochRef.current = msg.epoch!;
+            if (sync.adoptedEpoch !== undefined) epochRef.current = sync.adoptedEpoch;
+            const restamped = sync.restamped;
             if ((restamped || switched) && lastSeqRef.current > 0) {
-              if (restamped) setEpoch(msg.epoch!);
+              if (restamped) setEpoch(sync.adoptedEpoch!);
               lastSeqRef.current = 0;
               builderRef.current.reset();
               handlersRef.current.onReset?.();
