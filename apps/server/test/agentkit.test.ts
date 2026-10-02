@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PlayMemory } from "../src/memory.js";
 import { LineageTree } from "@stage-ai/core";
 import { agentToolCatalog, createAgentKit, defaultToolsFor, type AgentKit } from "../src/agentkit/kit.js";
+import { ROLE_INSTALLABLE } from "../src/agentkit/role.js";
 import type { PlaywriterKitDeps, WorkshopKitDeps } from "../src/agentkit/deps.js";
 
 /**
@@ -53,13 +54,12 @@ const names = (kit: AgentKit): string[] => kit.tools.map((t) => t.name).sort();
 describe("agent kit：两个角色的暴露面", () => {
   it("剧作家拿轮收束与记忆，不拿剧目文件与故事树", () => {
     const kit = playwriter();
-    expect(names(kit)).toEqual(["beat_done", "read_memory_detail", "search_archive", "update_state", "write_memory"]);
+    expect(names(kit)).toEqual(["beat_done", "list_library", "read_memory_detail", "search_archive", "update_state", "write_memory"]);
     expect(names(kit)).not.toContain("write_file");
     expect(names(kit)).not.toContain("read_lineage");
-    // 生图与资源库对剧作家默认关，勾上才装
-    expect(names(playwriter({}, [...defaultToolsFor("playwriter"), "generate_image", "list_library"]))).toEqual(
-      expect.arrayContaining(["generate_image", "list_library"]),
-    );
+    // 生图对剧作家默认关，勾上才装
+    expect(names(playwriter())).not.toContain("generate_image");
+    expect(names(playwriter({}, [...defaultToolsFor("playwriter"), "generate_image"]))).toContain("generate_image");
   });
 
   it("工坊拿剧目文件、故事树与技能库，不拿轮收束与演出记忆", () => {
@@ -157,14 +157,16 @@ describe("agent kit：工具目录（设置页的数据源）", () => {
     expect(catalog[0]).not.toHaveProperty("roles");
   });
 
-  it("剧作家默认不开生图与资源库，开工坊那一套；用户勾了就能开", () => {
+  it("剧作家默认不开生图、开只读查库；用户勾了就能开", () => {
     const playDefault = defaultToolsFor("playwriter");
     expect(playDefault).toContain("beat_done");
     expect(playDefault).not.toContain("generate_image");
-    expect(playDefault).not.toContain("list_library");
+    // 查库开着：宿主的引用即导入只认同名 id，看不见库里有什么就等于瞎猜
+    expect(playDefault).toContain("list_library");
+    expect(playDefault).not.toContain("import_asset");
     expect(playDefault).not.toContain("write_file");
 
-    expect([...defaultToolsFor("workshop")].sort()).toEqual(agentToolCatalog().map((t) => t.id).sort());
+    expect([...defaultToolsFor("workshop")].sort()).toEqual(agentToolCatalog("workshop").map((t) => t.id).sort());
 
     // 用户在设置页勾上：play.json 的启用集直接生效，不再有第二道代码默认
     const opened = playwriter({}, ["beat_done", "generate_image", "list_library"]);
@@ -177,6 +179,27 @@ describe("agent kit：工具目录（设置页的数据源）", () => {
     expect(agentToolCatalog().map((t) => t.id)).toContain("import_asset");
     expect(names(playwriter())).not.toContain("import_asset");
     expect(names(playwriter({}, [...defaultToolsFor("playwriter"), "import_asset"]))).toContain("import_asset");
+  });
+
+  it("设置页的目录必须等于工厂真实装出来的工具——否则卡上挂着一个勾了也没用的开关", () => {
+    // 改依赖面时要改 role.ts 的 ROLE_INSTALLABLE 和 kit.ts 的角色工厂两处；这条是那两处之间的锁。
+    // 按依赖都配齐来比：web_search 卡在 Exa key 上，资源库两个卡在库目录上。
+    const exa = { search: async () => [] } as never;
+    expect(agentToolCatalog("playwriter").map((t) => t.id).sort()).toEqual(
+      names(playwriter({ exa }, ROLE_INSTALLABLE.playwriter)).sort(),
+    );
+    expect(agentToolCatalog("workshop").map((t) => t.id).sort()).toEqual(
+      names(workshop({ exa }, ROLE_INSTALLABLE.workshop)).sort(),
+    );
+  });
+
+  it("beat_done 只列给剧作家：搭台那张卡上挂个勾了也没用的开关是骗人", () => {
+    // 装配层早就分开了（workshopTools 里没有 createBeatDoneTool），漏的是设置页的目录
+    expect(agentToolCatalog("playwriter").map((t) => t.id)).toContain("beat_done");
+    expect(agentToolCatalog("workshop").map((t) => t.id)).not.toContain("beat_done");
+    expect([...defaultToolsFor("workshop")]).not.toContain("beat_done");
+    // 就算 play.json 里残留了旧的启用集，也装不上——过滤时匹配不到任何工具
+    expect(names(workshop({}, [...defaultToolsFor("workshop"), "beat_done"]))).not.toContain("beat_done");
   });
 
   it("两个角色的资源库工具是同一份实现（剧作家只是没有对话流可挂撤销条）", () => {

@@ -257,7 +257,10 @@ export const api = {
     ),
 
   /** Agent 设置页的工具目录（两个角色共用的那一份真相源）。 */
-  agentTools: () => request<{ tools: AgentToolEntry[]; defaults: Record<string, string[]> }>("/api/agents/tools"),
+  /** 工具目录按角色返回——`beat_done` 只装给剧作家，给搭台那张卡列出来就是骗人。 */
+  agentTools: () => request<{ tools: Record<"playwriter" | "workshop", AgentToolEntry[]>; defaults: Record<string, string[]> }>(
+    "/api/agents/tools",
+  ),
 
   listAssets: (id: string) => request<Record<string, string[]>>(`/api/plays/${id}/assets`),
 

@@ -1,13 +1,13 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel } from "@stage-ai/core";
 import { createBeatDoneTool } from "./beatTool.js";
+import { AGENT_ROLES, ROLE_INSTALLABLE, type AgentRole } from "./role.js";
 import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "./deps.js";
 import { createFilesTools } from "./filesTool.js";
 import { createGenerateImageTool } from "./imageTool.js";
 import { createLibraryTools } from "./libraryTool.js";
 import { createLineageTools } from "./lineageTool.js";
 import { createMemoryTools } from "./memoryTool.js";
-import { AGENT_ROLES, type AgentRole } from "./role.js";
 import { createWebSearchTool } from "./searchTool.js";
 import { createReadSkillTool } from "./skillTool.js";
 
@@ -90,14 +90,22 @@ const DEFAULT_ENABLED: Record<AgentRole, string[]> = {
     "write_memory",
     "read_memory_detail",
     "search_archive",
+    // 只读浏览：宿主的引用即导入只认同名 id，不知道库里有什么就等于瞎猜。
+    // import_asset 不开——导入走 DSL 引用，模型自己动手抄一遍 id 没有额外收益。
+    "list_library",
     "web_search",
   ],
-  workshop: Object.keys(TOOL_CATALOG),
+  workshop: [...ROLE_INSTALLABLE.workshop],
 };
 
-/** 全部工具目录，按分组排序——设置页直接渲染它。 */
-export function agentToolCatalog(): AgentToolEntry[] {
-  return Object.entries(TOOL_CATALOG)
+
+/** 工具目录，按分组排序。不给 role 是全集；给了就只出这个角色真装得上的。 */
+export function agentToolCatalog(role?: AgentRole): AgentToolEntry[] {
+  const installable = role ? new Set(ROLE_INSTALLABLE[role]) : null;
+  const catalog = installable
+    ? Object.fromEntries(Object.entries(TOOL_CATALOG).filter(([id]) => installable.has(id)))
+    : TOOL_CATALOG;
+  return Object.entries(catalog)
     .map(([id, meta]) => ({
       id,
       label: meta.label,
@@ -106,6 +114,7 @@ export function agentToolCatalog(): AgentToolEntry[] {
     }))
     .sort((a, b) => a.group.localeCompare(b.group) || a.id.localeCompare(b.id));
 }
+
 
 /** 某个角色的默认启用集（设置页据此渲染开关的初始态，不依赖运行时配置）。 */
 export function defaultToolsFor(role: AgentRole): ReadonlySet<string> {

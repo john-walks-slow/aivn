@@ -19,7 +19,7 @@ import { PlayAssets } from "./playAssets.js";
 import { PendingJobs } from "./pendingJobs.js";
 import { PlayFiles } from "./playFiles.js";
 import { agentToolCatalog, defaultToolsFor } from "./agentkit/kit.js";
-import { AGENT_ROLES } from "./agentkit/role.js";
+import { AGENT_ROLES, type AgentRole } from "./agentkit/role.js";
 import { Limiter } from "./limiter.js";
 import { Translator } from "./translate.js";
 import { PlayMemory } from "./memory.js";
@@ -166,9 +166,9 @@ export class PlayHouse {
   private readonly pendingRebuilds = new Map<string, Promise<void>>();
   /** 网关模型清单缓存（网关上加了模型要能刷出来，故留了 TTL 而不是永久缓存）。 */
   private gatewayModelsCache: { models: GatewayModel[]; at: number } | null = null;
-  /** 正在建的周目（key=playId）：同剧目并发的舞台连接共用一棵树，不会各建一棵。 */
+  /** 正在建的周目（key=playId）：同剧目并发的「开演」共用一棵树，不会各建一棵。 */
   private readonly ensuring = new Map<string, Promise<string>>();
-  /** 正在为舞台构建 runtime（key=playId）：同上，并发连接共用一次构建，不会各建一个编排器。 */
+  /** 正在为「开演」换 runtime（key=playId）：同上，并发的开演共用一次构建，不会各装一个编排器。 */
   private readonly staging = new Map<string, Promise<PlayRuntime>>();
   /** 演出编排与润色/翻译旁路共用的流式调用入口。 */
   private readonly streamFn: StreamFn;
@@ -193,14 +193,15 @@ export class PlayHouse {
    *
    * 剧目还没有任何周目时，runtime 落在**无会话作用域**的操作面上（saveId 为 null）：
    * 逛工坊、读路线、列文件都不该凭空多出一个「第 1 周目」——建不建第一棵树是玩家的动作。
-   * 舞台连接走 {@link stage}，那里才确保有一棵可写的树。
+   * 舞台连接走同一份：连上舞台也只读活动档，读不到就落在无会话作用域上，等他在舞台上按
+   * 「开演」时才由 {@link begin} 换到真树上。
    */
   async get(playId: string): Promise<PlayRuntime> {
     const existing = this.runtimes.get(playId);
     if (existing) return existing;
     // 单飞：装配横跨 readActive / buildRuntime 两个 await，并发的第二个调用者若也往下走
     // 会另装一份 runtime，后 set 的把先 set 的顶掉——先装那份 orchestrator 没人 dispose。
-    // 与 stage() 的 staging 表同一个道理，那边保的是周目不重复建，这边保的是 runtime 不重复装。
+    // 与 begin() 的 staging 表同一个道理，那边保的是周目不重复建，这边保的是 runtime 不重复装。
     const inflight = this.building.get(playId);
     if (inflight) return inflight;
     const task = this.buildSessionless(playId).finally(() => this.building.delete(playId));
@@ -217,17 +218,17 @@ export class PlayHouse {
   }
 
   /**
-   * 舞台连接用的 runtime：必须挂在某一棵故事树上，剧目一棵都没有时先建一棵。
-   * 这是唯一会自动建周目的入口——玩家连上舞台就是在看戏，没树可写。
+   * 「开演」：这一刻才建第一棵故事树，并把 runtime 挪上去。
    *
-   * 已经挂在树上的直接返回，不碰磁盘：dispatch 每条客户端消息都会走这里。
+   * 连上舞台与逛工坊拿到的是同一份 runtime（{@link get}）——没有活动档时它落在无会话作用域上，
+   * 而无会话作用域的 PlayStore 写不了盘（会话面直接抛），所以第一轮必须先换到真树上再 start。
+   * 已经挂在树上的原样返回：不换树，「继续」进来的每一拍都不该付一次重建的代价。
    */
-  async stage(playId: string): Promise<PlayRuntime> {
+  async begin(playId: string): Promise<PlayRuntime> {
     const existing = this.runtimes.get(playId);
     if (existing && existing.save.id) return existing;
-    // 单飞：并发来的两条连接（onConnection 与 dispatch 几乎同时）共用一次构建。
-    // 少了它，两边都会 buildRuntime，后完成的覆盖先完成的——先建的那份 orchestrator
-    // 没人 dispose（内存泄漏），两条连接还各写一份同一个周目。
+    // 单飞：同剧目并发的两条「开演」共用一次构建，否则后完成的把先完成的顶掉，
+    // 先装出来的那份 orchestrator 没人 dispose（内存泄漏）。
     const inflight = this.staging.get(playId);
     if (inflight) return inflight;
     const task = this.buildStageRuntime(playId).finally(() => this.staging.delete(playId));
@@ -235,11 +236,12 @@ export class PlayHouse {
     return task;
   }
 
-  /** 把 runtime 换到一棵真实的故事树上（工坊逛出来的无会话那份写不了盘）。 */
+  /** 把 runtime 换到一棵真实的故事树上（无会话作用域那份写不了盘）。 */
   private async buildStageRuntime(playId: string): Promise<PlayRuntime> {
     const saveId = await this.ensureSave(playId);
     const current = this.runtimes.get(playId);
     if (current && current.save.id === saveId) return current;
+    let carried: string[] = [];
     if (current) {
       // 等节拍边界：换 runtime 时演出进行中会让这一拍凭空消失
       await current.orchestrator.whenIdle();
@@ -248,6 +250,8 @@ export class PlayHouse {
         const fresh = this.runtimes.get(playId);
         if (fresh) return fresh;
       } else {
+        // 开演前插的提示只活在旧实例内存里：不接手就跟着 dispose 一起没了
+        carried = current.orchestrator.takePendingPrompts();
         current.orchestrator.dispose();
         this.runtimes.delete(playId);
       }
@@ -257,6 +261,7 @@ export class PlayHouse {
     const merged = current ? { ...runtime, workshop: current.workshop } : runtime;
     this.runtimes.set(playId, merged);
     this.announce(playId, merged);
+    for (const text of carried) void merged.orchestrator.playerAction({ kind: "prompt", text });
     return merged;
   }
 
@@ -655,9 +660,13 @@ export class PlayHouse {
   }
 
   /** 工具目录（Agent 设置页的开关清单）。与装配用的是同一份定义。 */
-  tools(): { tools: ReturnType<typeof agentToolCatalog>; defaults: Record<string, string[]> } {
+  tools(): { tools: Record<AgentRole, ReturnType<typeof agentToolCatalog>>; defaults: Record<string, string[]> } {
     return {
-      tools: agentToolCatalog(),
+      // 按角色出：设置页给两张卡各画一排开关，指向一个装不上的工具只会让人以为勾了有用
+      tools: {
+        playwriter: agentToolCatalog("playwriter"),
+        workshop: agentToolCatalog("workshop"),
+      },
       // 设置页要按「默认勾选什么」渲染初始态：play.json 没写 tools 时走的就是这份
       defaults: Object.fromEntries(AGENT_ROLES.map((role) => [role, [...defaultToolsFor(role)]])),
     };
@@ -714,7 +723,7 @@ export class PlayHouse {
    * 不会在时间线上留下一个等不到图的空节点。
    */
   async requestCg(playId: string, instruction?: string): Promise<void> {
-    const runtime = await this.stage(playId);
+    const runtime = await this.get(playId);
     if (!this.imageBackend) {
       throw new Error("生图未启用（STAGE_IMAGE_ENABLED=false 或后端缺凭据）");
     }

@@ -39,7 +39,8 @@ export function AgentPane({ playId }: { playId: string }) {
   const [draft, setDraft] = useState<PlayConfig | null>(null);
   const [models, setModels] = useState<GatewayModel[] | null>(null);
   const [defaultModel, setDefaultModel] = useState("");
-  const [tools, setTools] = useState<AgentToolEntry[]>([]);
+  /** 按角色分的工具目录：`beat_done` 只装给剧作家，两张卡列同一份就是骗人。 */
+  const [toolsByRole, setToolsByRole] = useState<Record<string, AgentToolEntry[]>>({});
   /** 各角色的默认启用集（服务端给的）：play.json 没写 tools 时就是这个。 */
   const [toolDefaults, setToolDefaults] = useState<Record<string, string[]>>({});
   const [modelError, setModelError] = useState<string | null>(null);
@@ -74,7 +75,7 @@ export function AgentPane({ playId }: { playId: string }) {
     api
       .agentTools()
       .then((r) => {
-        setTools(r.tools);
+        setToolsByRole(r.tools ?? {});
         setToolDefaults(r.defaults ?? {});
       })
       .catch((e: Error) => setError(e.message));
@@ -117,6 +118,7 @@ export function AgentPane({ playId }: { playId: string }) {
 
       {ROLES.map((role) => {
         const settings = draft.agents?.[role.id] ?? {};
+        const tools = toolsByRole[role.id] ?? [];
         const groups = [...new Set(tools.map((t) => t.group))];
         // play.json 没写 tools = 走服务端默认；写了就是用户的显式选择，两者在界面上是同一个开关
         const enabled = new Set(settings.tools ?? toolDefaults[role.id] ?? []);
