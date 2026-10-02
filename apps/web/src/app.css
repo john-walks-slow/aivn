@@ -101,6 +101,11 @@
   --pause-short-ms: 120; /* 逗号类额外停顿 */
   --pause-long-ms: 240; /* 句号类额外停顿 */
   --fade-ms: 220; /* 立绘差分 / 背景切换 */
+  --move-ms: 380ms; /* 立绘换位、换景别（运镜）——比差分慢，走过去不是瞬移 */
+  --act-ms: 520ms; /* 行为词演出时长（点一次头、抖一下） */
+  /* 缓动：起步快、尾巴长。站位与运镜都是「一个演员走过去」的观感，
+     ease-in-out 匀加速匀减速最像。 */
+  --move-ease: cubic-bezier(0.33, 0, 0.2, 1);
   --hover-ms: 140;
 }
 
@@ -108,6 +113,8 @@
   :root {
     --type-ms: 0;
     --fade-ms: 0;
+    --move-ms: 0ms;
+    --act-ms: 0ms;
   }
 }
 
@@ -1121,13 +1128,55 @@ button.link-btn {
    画幅上沿），10% 保证最紧的那批头顶也还留得住一条缝。
 
    高度必须写死：<img> 是替换元素，只给 top/bottom 而 height:auto 的话浏览器判定
-   过约束会忽略 bottom、图按原始像素尺寸画出来（比舞台大一大圈）。 */
+   过约束会忽略 bottom、图按原始像素尺寸画出来（比舞台大一大圈）。
+
+   水平位置走 transform 而不是 left（--x）：left 过渡每帧触发重排，五六个立绘同框
+   就是每帧一次全舞台重排；transform 只走合成层，零重排。--x 存的是「离画面中心的
+   偏移百分比」，-50% 那半张图是图自身居中，与位置无关，所以合成式是
+   translateX(-50% + var(--x))。--scale 是运镜：整体放大，头顶不动、身体往下长出画面，
+   就是「推近」。
+
+   四层变换各占一个互不覆盖的属性，所以谁也不会把谁冲掉：
+     transform → 站位（--x）与运镜（--scale），两者有 transition，换位/换景别平滑
+     translate → 行为词的一次性位移（@keyframes 驱动）
+     scale     → 行为词的压扁挤压，或说话者的呼吸（同一时刻只会有一个）
+     rotate    → 行为词的倾身
+   全部锚在 transform-origin: top center（头顶），所以人是「原地动」而不是整张图在飘。 */
 .theater-sprite {
+  --x: 0%;
+  --scale: 1;
   position: absolute;
   top: 10%;
   height: 90%;
-  transform: translateX(-50%);
-  transition: opacity var(--fade-ms) ease;
+  transform-origin: top center;
+  transform: translateX(calc(-50% + var(--x))) scale(var(--scale));
+  /* 立绘的一切变化都默认带过渡：换表情、换站位、换景别、退场都是同一个元素上的动画。
+     少了这条，角色只是「啪」地一下跳到新位置——台上看着像卡了帧而不是在演。
+     呼吸与行为词走 animation 不走 transition，所以不列在这里（列了两边会互相等）。 */
+  transition:
+    opacity var(--fade-ms) ease,
+    transform var(--move-ms) var(--move-ease);
+}
+
+/* 正在演行为词：这一刻运镜让位。行为词自己的 translate/scale/rotate 与运镜的
+   transform 是两个独立属性、正常应该并存，但两者都改缩放观感——特写（scale 1.35）
+   叠一记点头会让人物突然弹一下，所以行为词期间把运镜压回 1。
+   演完自动恢复，运镜不用重播。
+
+   --act-nonce 是重播用：同一个 animation-name 连写两次不会重来，把 delay 换成另一个值，
+   浏览器就认成新动画从 0% 播起。**必须写成时间**（`-0.001s`）：delay 与 iteration-count
+   位置相邻，写成裸数字就成了 `520ms ease 1 1` 这种两个数挨着，浏览器判不出哪个是哪个，
+   整条 animation 被静默丢弃（animation-name 变 none，动画永远不启动）。 */
+.theater-sprite.acting {
+  --scale: 1;
+  animation: var(--sprite-act) var(--act-ms) var(--move-ease) var(--act-nonce, 0s) 1;
+}
+
+/* 说话者：轻微呼吸常驻（gal 里几乎每场都是「说话的人亮着、轻轻动着」）。
+   与行为词共用 scale 通道，所以两者同时成立时以行为词为准——class 顺序保证
+   .acting 的 animation 后写会覆盖。 */
+.theater-sprite.speaking {
+  animation: sprite-breathe 3.4s ease-in-out infinite;
 }
 
 /* 全身：高度 = 90% + 42%，图的下沿越过舞台下沿 42%，大腿以下被画面切掉。 */
@@ -1155,16 +1204,276 @@ button.link-btn {
   opacity: 0;
 }
 
+/* 登场：淡入。退场靠 .leaving（见下）而不是直接卸载——直接卸载没有过渡可播。 */
+.theater-sprite.entering {
+  animation: sprite-in var(--fade-ms) ease;
+}
+
+.theater-sprite.leaving {
+  opacity: 0;
+  transition:
+    opacity var(--fade-ms) ease,
+    transform var(--move-ms) var(--move-ease);
+  pointer-events: none;
+}
+
+@keyframes sprite-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* 机位：偏移量是「离画面中心的百分比」，不是 left 的绝对值。--x 写在行内 style 上
+   （见 StageTheater 的 slotStyle），这里只给 7 个具名档位。负数在左、正数在右。 */
 .pos-left {
-  left: 18%;
+  --x: -32%;
 }
 
 .pos-center {
-  left: 50%;
+  --x: 0%;
 }
 
 .pos-right {
-  left: 82%;
+  --x: 32%;
+}
+
+/* 2 人同框：贴到画面两侧，留出中间说话的空（越靠边人越小越远，这是舞台惯例）。 */
+.pos-far-left {
+  --x: -44%;
+}
+
+.pos-far-right {
+  --x: 44%;
+}
+
+/* 3 人以上用：比 far 更靠外。 */
+.pos-edge-left {
+  --x: -55%;
+}
+
+.pos-edge-right {
+  --x: 55%;
+}
+
+/* 行为词 → 动画配方（core 的 spriteAction.ts 是行为词的唯一真相源）。
+   剧本只写一个词，配方与时长都在这里，不外泄成参数。
+
+   每条 @keyframes **显式写全四个属性**：漏写的属性会保留上一次的值，
+   于是「nod 之后接着 shake」会把点头压出来的挤压带进抖动里。写全 0 才是「这条通道不动」。
+
+   只用可插值的类型（百分比位移、scale、deg 旋转）——自定义属性按 token 替换、
+   不可插值，@keyframes 里驱动它不会平滑补间，还会整段跳。
+   幅度刻意压得小（2%~4%）：立绘贴满画面，位移一大就出画。
+   transform-origin: top center（见 .theater-sprite）让位移与旋转都绕头顶发生，
+   人的脚不动——像在原地动，不是整张图在飘。 */
+@keyframes sprite-act-nudge {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  25% {
+    translate: 1.4% 0;
+    scale: 1 1;
+    rotate: 0.3deg;
+  }
+  75% {
+    translate: -1.4% 0;
+    scale: 1 1;
+    rotate: -0.3deg;
+  }
+}
+
+@keyframes sprite-act-stagger {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  20% {
+    translate: -3% -1%;
+    scale: 0.98 1;
+    rotate: -3.5deg;
+  }
+  55% {
+    translate: 2% 0;
+    scale: 1.02 1;
+    rotate: 1.5deg;
+  }
+  80% {
+    translate: -0.8% 0;
+    scale: 1 1;
+    rotate: -0.5deg;
+  }
+}
+
+@keyframes sprite-act-jump {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  30% {
+    translate: 0 -4%;
+    scale: 0.97 1;
+    rotate: 0deg;
+  }
+  60% {
+    translate: 0 0;
+    scale: 1.04 1;
+    rotate: 0deg;
+  }
+  80% {
+    translate: 0 -1%;
+    scale: 0.99 1;
+    rotate: 0deg;
+  }
+}
+
+@keyframes sprite-act-nod {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  30% {
+    translate: 0 2.5%;
+    scale: 1.02 1;
+    rotate: 0deg;
+  }
+  62% {
+    translate: 0 -0.8%;
+    scale: 0.99 1;
+    rotate: 0deg;
+  }
+}
+
+@keyframes sprite-act-bow {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  45% {
+    translate: 0 2%;
+    scale: 1.04 1;
+    rotate: 0deg;
+  }
+  70% {
+    translate: 0 1.2%;
+    scale: 1.02 1;
+    rotate: 0deg;
+  }
+}
+
+/* 伪转身：横向压扁到 0 再展开，中间全是侧身。立绘没有第二张背面图时的业界通法。 */
+@keyframes sprite-act-turn {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  45% {
+    translate: 2% 0;
+    scale: 0.12 1;
+    rotate: 0deg;
+  }
+  55% {
+    translate: -2% 0;
+    scale: 0.12 1;
+    rotate: 0deg;
+  }
+}
+
+@keyframes sprite-act-shake {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  20% {
+    translate: -1.6% 0.4%;
+    scale: 1 1;
+    rotate: 0.6deg;
+  }
+  40% {
+    translate: 1.6% -0.4%;
+    scale: 1 1;
+    rotate: -0.6deg;
+  }
+  60% {
+    translate: -1.1% 0.3%;
+    scale: 1 1;
+    rotate: 0.4deg;
+  }
+  80% {
+    translate: 1.1% -0.3%;
+    scale: 1 1;
+    rotate: -0.4deg;
+  }
+}
+
+@keyframes sprite-act-sway {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  25% {
+    translate: 2.2% -0.6%;
+    scale: 0.99 1;
+    rotate: 1.2deg;
+  }
+  75% {
+    translate: -2.2% 0.6%;
+    scale: 1.01 1;
+    rotate: -1.2deg;
+  }
+}
+
+/* 说话者轻微呼吸：常驻，不写剧本。0.4% 小到没人会当成「图在抖」，
+   但看得出是活的。 */
+/* 呼吸与运镜共用 scale 这一个通道，所以两者只在自己生效时写 --scale：
+   .acting 时运镜不参与（正在演行为词），呼吸则乘在 --scale 外面。 */
+@keyframes sprite-breathe {
+  0%,
+  100% {
+    scale: 1 1;
+  }
+  50% {
+    scale: 1.004 1.004;
+  }
+}
+
+/* 贴边档：用于「在最角落」或非人小物件（猫/道具）的默认落点。 */
+.pos-bleed-left {
+  --x: -64%;
+}
+
+.pos-bleed-right {
+  --x: 64%;
+}
+
+/* 对齐基准：图的那条边锚在 stage 上。
+   bottom（缺省）= 脚踩地，人走这条；center = 悬空物（猫在半空、漂浮的道具），
+   锚到中心后上下都留白；top = 从上方垂下来的东西（吊灯、垂下的藤）。
+   人形立绘不该用后两档——那三个数是给人物定的摆位。 */
+.theater-sprite.anchor-center {
+  top: 50%;
+  transform: translateX(calc(-50% + var(--x))) scale(var(--scale)) translateY(-50%);
+}
+
+.theater-sprite.anchor-top {
+  top: 0;
+  transform: translateX(calc(-50% + var(--x))) scale(var(--scale));
 }
 
 .theater-cg {

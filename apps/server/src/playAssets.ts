@@ -400,11 +400,11 @@ export class PlayAssets {
     }
     // prompt 是"角色描述 + 本次表情"，直接拿去出定妆照会变成「哭得很凶但表情中性」的自相矛盾指令。
     // 压一条前置的中性描述盖住表情词，角色外观描述留在后面。取景与姿势措辞按**角色级**取景走，
-    // 不按当前这条差分：对胸像/半身说 standing 会把画拉回全身，景别后缀与它当场打架。
+    // 不按当前这条差分：对半身说 standing 会把画拉回全身，景别后缀与它当场打架。
     const neutralFraming = spec.baseFraming ?? DEFAULT_SPRITE_FRAMING;
     const [auto] = await this.generate(
       { kind: "sprite", characterId: spec.characterId, expression: NEUTRAL, framing: neutralFraming },
-      `a calm neutral-expression front-facing ${neutralFraming === "bust" ? "bust" : "standing"} portrait. ${prompt}`,
+      `${NEUTRAL_LEAD[neutralFraming]} ${prompt}`,
       undefined,
       undefined,
       { notify, ...(spec.stubName ? { characterName: spec.stubName } : {}) },
@@ -574,34 +574,101 @@ function sniffMime(data: Buffer): string {
  * 开头的景别随 `spec.framing` 换（`SPRITE_FRAMING_SHOT`）：写死 "full body" 时，
  * 取景是半身的角色照样会被画成全身——出图与舞台声明对不上，站位又得重新量。
  */
-const NEUTRAL_TAIL =
+/**
+ * 立绘后缀：**只写与主体是人还是物无关的构图与画风约束**。
+ *
+ * 姿势词（standing / arms held away / above the head）是人形专属的——给猫或道具
+ * 套上「双臂离开身体以分离轮廓」，模型会给你一只人形猫。所以姿势那一段由
+ * `POSE_TAIL` 单独提供，只在人形取景时拼；非人走 `square`，不碰它。
+ *
+ * 这一段留白给抠底：后半段不是修饰词是硬约束，`src/cutout.ts` 的全局色键抠底要求
+ * 2D 平涂 + 纯白纯色底，3D 渲染的白衣离底色只有几格色差，抠底会连人带和服一起啃掉；
+ * 剪影连成一片就没法分割人物与底色。
+ *
+ * 它也不描述任何人物特征——每个词都会被当成设定印进图里。早先这里写的是
+ * 「between the twin tails」（为了发梢与身体之间留纯白），等于给所有角色定了个双马尾：
+ * 实测 prompt 里明写 pink long straight hair，出来的仍是双马尾。要什么发型由角色卡说。
+ */
+const COMMON_TAIL =
+  ". Japanese anime style 2D illustration, flat cel shading with clean crisp lineart, NOT a 3D render, " +
+  "no 3D CGI look. Plain solid pure white background, no text, no shadow, no gradient, no vignette.";
+
+/** 姿势与留白：人形专属。抠底要轮廓分得开，舞台按统一头顶留白摆位（见 app.css 的 .theater-sprite）。 */
+const POSE_TAIL =
   ", front-facing standing pose, neutral expression, both arms held slightly away from the body " +
   "so the silhouette is clearly separated, clear empty white space between the arms and the body and " +
-  "between the hair and the arms. Japanese anime style 2D character illustration, flat cel shading with " +
-  "clean crisp lineart, NOT a 3D render, no 3D CGI look. Plain solid pure white background, no text, no " +
-  "shadow, no gradient, no vignette, vertical portrait composition" +
-  // 舞台按统一的头顶留白摆位（见 app.css 的 .theater-sprite），人物矮的那一头空间本来就该空得多，
-  // 不点明的话模型会把所有角色都顶到画幅上沿，矮个子的头顶就直接贴边了。
+  "between the hair and the arms" +
+  // 人物矮的那一头空间本来就该空得多，不点明的话模型会把所有角色都顶到画幅上沿，
+  // 矮个子的头顶就直接贴边了。
   ". Shorter characters may leave more empty space above the head, and taller characters may leave less, " +
-  "so every character keeps some space above the head rather than touching the top edge of the frame.";
+  "so every character keeps some space above the head rather than touching the top edge of the frame";
+
+/**
+ * 主体为人（full/half）时的立绘后缀：景别措辞 + 姿势 + 通用约束。
+ *
+ * 开头换的是 `SPRITE_FRAMING_SHOT` 而不是写死的 "full body"：写死时取景是半身的角色
+ * 照样会被画成全身，出图与舞台声明对不上，站位又得重新量。
+ * 这不是对 `framing` 的重复声明——`framing` 决定画幅（像素）与舞台摆位（CSS），
+ * 两者都传不进提示词；模型唯一能知道「画到哪儿」的通道就是措辞。
+ */
+function humanSuffix(framing: SpriteFraming | undefined): string {
+  return SPRITE_FRAMING_SHOT[framing ?? DEFAULT_SPRITE_FRAMING] + POSE_TAIL + COMMON_TAIL;
+}
+
+/**
+ * 主体非人（`square`）时的立绘后缀：只说「完整入画 + 四周留白」。
+ *
+ * 抠底靠的是「主体与纯白底之间有缝」，这与人形无关，所以留白这句留着；
+ * 姿态与「头顶留白」都去掉——猫没有双臂，吊灯没有头顶。
+ */
+const PROP_TAIL =
+  ", the entire subject fully inside the frame with clear empty white space all around it, " +
+  "nothing cropped by the frame edges";
 
 function neutralSuffix(framing: SpriteFraming | undefined): string {
-  return SPRITE_FRAMING_SHOT[framing ?? DEFAULT_SPRITE_FRAMING] + NEUTRAL_TAIL;
+  const f = framing ?? DEFAULT_SPRITE_FRAMING;
+  // square 是「非人主体」的唯一入口，所以它同时决定了后缀走哪一套。
+  // 人与非人的差别只有一处：姿势与头顶留白（人形专属），其余构图与画风约束两边通用。
+  return f === "square" ? SPRITE_FRAMING_SHOT[f] + PROP_TAIL + COMMON_TAIL : humanSuffix(f);
 }
-/** 差分：只改表情，身份特征一律锁死——垫图之外的第二道保险。画风要求与定妆照一字不差，否则两个人。 */
+
+/**
+ * 定妆照的前置中性描述：压住角色卡里的表情词（那一条只对当前差分有效）。
+ *
+ * **按取景取词，不是一句通吃**：给非人主体（`square`）说 standing portrait 会得到
+ * 「猫的肖像照」——standing 与 portrait 都是人形概念，套到猫/道具身上语义不通，
+ * 模型要么给你一只坐着的人形猫，要么干脆画个人。`square` 用「完整入画、中性状态」，
+ * 不提姿势也不提表情，人形主体那边由 NEUTRAL_TAIL 的 standing pose 兜住。
+ */
+const NEUTRAL_LEAD: Record<SpriteFraming, string> = {
+  full: "a calm neutral-expression front-facing standing portrait.",
+  half: "a calm neutral-expression front-facing standing portrait, waist up.",
+  square: "the subject shown whole, in a neutral state.",
+};
+
+/**
+ * 差分：只改**表情/状态**，身份特征一律锁死——垫图之外的第二道保险。
+ * 画风要求与定妆照一字不差，否则两个人。
+ *
+ * 「facial expression」也是人形词，猫的差分（睡着的/炸毛的）说「只改面部表情」会让模型
+ * 认真去找那张猫脸。所以非人那套说的是「只改状态」。
+ */
 const IDENTITY_TAIL =
-  "Change only the facial expression. Same 2D flat cel-shaded anime illustration style, NOT a 3D render, " +
+  "Same 2D flat cel-shaded anime illustration style, NOT a 3D render, " +
   "same plain solid pure white background, no text, no shadow, no gradient.";
+const HUMAN_IDENTITY =
+  "Same character as the reference image: identical hairstyle, hair color, eye color, outfit and body type. " +
+  "Change only the facial expression.";
+const PROP_IDENTITY =
+  "The same subject as the reference image, in the same pose and same colours. Change only its state.";
 
 /**
  * 差分也要点明景别：垫图（neutral 定妆照）是全身时，模型很容易照着垫图把一条
- * closeup 也画成全身。不点明的代价是图出来了取景对不上，舞台按半身摆却是张全身像。
+ * 半身差分也画成全身。不点明的代价是图出来了取景对不上，舞台按半身摆却是张全身像。
  */
 function identitySuffix(framing: SpriteFraming | undefined): string {
-  const shot = SPRITE_FRAMING_SHOT[framing ?? DEFAULT_SPRITE_FRAMING];
-  return (
-    "Same character as the reference image: identical hairstyle, hair color, eye color, outfit and body type. " +
-    `${shot}. ` +
-    IDENTITY_TAIL
-  );
+  const f = framing ?? DEFAULT_SPRITE_FRAMING;
+  const shot = SPRITE_FRAMING_SHOT[f];
+  const lead = f === "square" ? PROP_IDENTITY : HUMAN_IDENTITY;
+  return `${lead} ${shot}. ${f === "square" ? PROP_TAIL + ". " : ""}${IDENTITY_TAIL}`;
 }

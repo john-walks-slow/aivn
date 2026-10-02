@@ -36,9 +36,16 @@ describe("parsePlayConfig：立绘取景", () => {
   });
 
   it("逐差分的取景逐条校验：坏的那条丢掉，别拖累同表里好的那条", () => {
-    const c = card({ framing: "full", spriteFraming: { wow: "bust", bad: "半身", "": "bust" } });
+    const c = card({ framing: "full", spriteFraming: { wow: "square", bad: "半身", "": "square" } });
     expect(c.framing).toBe("full");
-    expect(c.spriteFraming).toEqual({ wow: "bust" });
+    expect(c.spriteFraming).toEqual({ wow: "square" });
+  });
+
+  it("逐差分的 bust 也降级成 half（与条目级同规则）", () => {
+    // 两条路径必须一致：同一份存量数据在角色卡上降级、在资源库上也降级。
+    // 不一致的话用户看到的是「从库里导入后站位变了」，而两边代码都「正确」。
+    const c = card({ framing: "full", spriteFraming: { wow: "bust" } });
+    expect(c.spriteFraming).toEqual({ wow: "half" });
   });
 
   it("整张表都非法时整个字段消失，不留空对象", () => {

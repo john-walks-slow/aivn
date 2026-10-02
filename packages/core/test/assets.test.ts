@@ -51,7 +51,7 @@ describe("parseAssetMeta：库里人手写的 meta.json", () => {
 
   it("取景：只认三档，人手写错的值当没写（退回全身由演出层负责）", () => {
     expect(parseAssetMeta({ framing: "half" }).framing).toBe("half");
-    expect(parseAssetMeta({ framing: "bust" }).framing).toBe("bust");
+    expect(parseAssetMeta({ framing: "square" }).framing).toBe("square");
     expect(parseAssetMeta({ framing: "full" }).framing).toBe("full");
     expect(parseAssetMeta({ framing: "半身" }).framing).toBeUndefined();
     expect(parseAssetMeta({ framing: "FULL" }).framing).toBeUndefined();
@@ -59,18 +59,24 @@ describe("parseAssetMeta：库里人手写的 meta.json", () => {
     expect(parseAssetMeta({}).framing).toBeUndefined();
   });
 
+  it("取景：已下线的 bust 降级成 half，而不是当坏值丢掉", () => {
+    // 存量 meta.json 里真可能写着 bust（它曾经是合法档）。丢掉它 = 这张胸像图
+    // 被当成「没声明取景」，舞台按全身摆位画出来，人物大小错一整个量级。
+    expect(parseAssetMeta({ framing: "bust" }).framing).toBe("half");
+  });
+
   it("取景：差分可以覆盖条目级声明，写错的那条丢掉、好的那条照留", () => {
     const meta = parseAssetMeta({
       framing: "full",
       expressions: {
-        smile: { file: "a.png", framing: "bust" },
+        smile: { file: "a.png", framing: "square" },
         angry: { file: "b.png", framing: "上半身" },
         cry: { file: "c.png", description: "哭" },
       },
     });
     expect(meta.framing).toBe("full");
     expect(meta.expressions).toEqual({
-      smile: { file: "a.png", framing: "bust" },
+      smile: { file: "a.png", framing: "square" },
       angry: { file: "b.png" },
       cry: { file: "c.png", description: "哭" },
     });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReadPos } from "@stage-ai/core";
+import type { ActorAction, ActorAnchor, ActorShot, ReadPos } from "@stage-ai/core";
+import { isActorAction, layoutSprites, parsePosition, type SpritePosition } from "@stage-ai/core";
 import { shouldAutoStart } from "./playbackState.js";
 import type { Cue, ScriptLine } from "./script.js";
 import type { TranscriptEntry } from "./transcript.js";
@@ -12,6 +13,32 @@ export function lineCueIndexAt(cues: readonly Cue[], lines: readonly ScriptLine[
     if (lines.find((l) => l.key === cue.lineKey)?.seq === seq) return i;
   }
   return -1;
+}
+
+/**
+ * 一个人物 sprite 的舞台上状态。
+ *
+ * `pos` 存**显式写过的站位**（undefined = 没点名 = 跟着自动排布走）；`resolvedPos`
+ * 是每次重算后的最终站位。这样「谁手动钉住、谁自动」的信息不会在第一次排布后丢失。
+ */
+export interface SpriteSlot {
+  pos?: SpritePosition;
+  resolvedPos: SpritePosition;
+  expression: string | null;
+  state: string | null;
+  shot: ActorShot | null;
+  anchor: ActorAnchor;
+  /**
+   * 行为词（剧本的 `action=`）与它的演出序号。
+   *
+   * `actionSeq` 是必要的：同一个词连演两次（nod 之后又 nod）必须重播，
+   * 而 React 看到相同的 props 不会重挂 animation。序号每来一次行为词就 +1，
+   * 渲染层拿它当 animation 的重播 nonce（见 StageTheater 的 Sprite）。
+   */
+  action: ActorAction | null;
+  actionSeq: number;
+  /** 正在退场（淡出播完才真正摘掉，见 applyVisual 的 actor 分支）。 */
+  leaving?: boolean;
 }
 
 /** 舞台视觉状态（视觉 cues 即时应用后的累积结果）。 */
@@ -27,9 +54,79 @@ export interface VisualState {
   /** 场景切换方式（fade/cut），供背景层 CSS 过渡。 */
   transition: string | null;
   cg: { id: string; caption?: string } | null;
-  sprites: Record<string, { pos: string; expression: string | null }>;
+  /** 在场角色 id → 舞台状态。站位每次重排都重算（见 applyVisual）。 */
+  sprites: Record<string, SpriteSlot>;
   /** 预发射中（尚未到达）的生图 id（D6）：被 bg/cg 引用时先上骨架占位，不卡台词。 */
   pending: Record<string, { type: "bg" | "cg"; at: number }>;
+}
+
+/** 空 slot 的缺省值——`anchor` 默认 bottom（脚踩地），其余都是「不指定」。 */
+function newSlot(): SpriteSlot {
+  return {
+    resolvedPos: "center",
+    expression: null,
+    state: null,
+    shot: null,
+    anchor: "bottom",
+    action: null,
+    actionSeq: 0,
+  };
+}
+
+/**
+ * 应用一条 `<actor>` 指令：在场表怎么变。
+ *
+ * 纯函数，单独导出是为了能测——站位重算是这一版的中心逻辑，
+ * 而它藏在 `applyVisual` 的 useCallback 里就只能靠实机看。
+ *
+ * **每次都重排全场**：第二个人进场时第一个人要让位，这是「不写位置、按人数自动分配」
+ * 能成立的唯一办法。显式钉过 `at` 的不动（pos 有值的退出自动排布），
+ * 其余按剩余人数重新分配，且避开已被占掉的档位。
+ */
+export function applyActorCue(
+  sprites: Record<string, SpriteSlot>,
+  cue: Extract<Cue, { kind: "actor" }>,
+): Record<string, SpriteSlot> {
+  const isLeave = Boolean(cue.leave) || cue.action === "exit" || cue.action === "leave";
+  const leaving = sprites[cue.id];
+  const next: Record<string, SpriteSlot> = isLeave
+    ? // 软删除而不是从表里抹掉：直接抹掉没有淡出可播，角色是「啪」地消失。
+      leaving
+      ? { ...sprites, [cue.id]: { ...leaving, leaving: true } }
+      : sprites
+    : {
+        ...sprites,
+        [cue.id]: {
+          ...(sprites[cue.id] ?? newSlot()),
+          // 显式站位：认不出来就当没写（走自动），不猜不抛
+          pos: parsePosition(cue.pos) ?? sprites[cue.id]?.pos,
+          expression: cue.expression ?? sprites[cue.id]?.expression ?? null,
+          state: cue.state ?? sprites[cue.id]?.state ?? null,
+          shot: cue.shot ?? sprites[cue.id]?.shot ?? null,
+          anchor: cue.anchor ?? sprites[cue.id]?.anchor ?? "bottom",
+          // 行为词是一次性的：给了就演一次，不给不重播。exit/leave 走退场分支，
+          // 不该同时被当成行为词（`action="leave"` 是退场的旧写法，不是动作）。
+          action: isActorAction(cue.action) ? cue.action : null,
+          actionSeq: isActorAction(cue.action) ? (sprites[cue.id]?.actionSeq ?? 0) + 1 : (sprites[cue.id]?.actionSeq ?? 0),
+          leaving: false,
+        },
+      };
+
+  const explicit = new Map<string, SpritePosition>();
+  for (const [id, slot] of Object.entries(next)) {
+    if (slot.pos && !slot.leaving) explicit.set(id, slot.pos);
+  }
+  // 正在退场的**不占排布名额**：它还在表里只是为了把淡出播完。
+  // 算进去的话，一个人退场后剩下的人永远按「两人同框」摆着，再也回不到居中。
+  const standing = Object.keys(next).filter((id) => !next[id]!.leaving);
+  const layout = layoutSprites(standing, explicit);
+  return Object.fromEntries(
+    Object.entries(next).map(([id, slot]) => [
+      id,
+      // 退场中的人保留它退场前的位置（不动它，淡出才自然）
+      { ...slot, resolvedPos: slot.leaving ? slot.resolvedPos : (layout.get(id) ?? "center") },
+    ]),
+  );
 }
 
 /**
@@ -278,22 +375,8 @@ export function usePlayback(
           if (cue.type === "sprite") return prev;
           return { ...prev, pending: { ...prev.pending, [cue.id]: { type: cue.type, at: Date.now() } } };
         }
-        case "actor": {
-          if (cue.action === "exit" || cue.action === "leave") {
-            const sprites = { ...prev.sprites };
-            delete sprites[cue.id];
-            return { ...prev, sprites };
-          }
-          const existing = prev.sprites[cue.id];
-          return {
-            ...prev,
-            cg: null,
-            sprites: {
-              ...prev.sprites,
-              [cue.id]: { pos: cue.pos ?? existing?.pos ?? "center", expression: cue.expression ?? null },
-            },
-          };
-        }
+        case "actor":
+          return { ...prev, cg: null, sprites: applyActorCue(prev.sprites, cue) };
         default:
           return prev;
       }

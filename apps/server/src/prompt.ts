@@ -189,9 +189,40 @@ ${assetSection}${craftSection}${indexSection}
 ## 场景与立绘指令（必须出现在对应台词之前）
 
 <scene bg="背景id" bgm="音乐id" bgm_volume="0.4" ambient="环境音id" ambient_volume="0.3" transition="fade"/>
-<actor id="角色id" pos="left|center|right" expression="表情id" action="enter|leave|shake"/>
+<actor id="角色id" expression="表情id" shot="景别" action="行为词" leave="退场"/>
 <sfx src="音效id" volume="0.5"/>
 <cg id="cgid" caption="插图说明"/>
+
+**位置不用你写。** 引擎按在场人数自动分配，第二个人进场第一个人自动让开。
+只有在你想钉死某个人（比如主角固定在中间）时才写 pos="center"。
+
+### 立绘的四个可选属性
+
+| 属性 | 取值 | 什么时候用 |
+|---|---|---|
+| expression | 角色表里已有的差分 id | 换表情。换别的差分同样能用 |
+| shot | wide normal close extreme | 镜头远近。**不给就是全身**，用近景只是把镜头推近 |
+| action | 见下表 | 角色的一个反应动作，演一次就结束 |
+| leave | fade | 让这个人退场 |
+
+**行为词**——写「她怎么动」，不写动画参数：
+
+| 词 | 什么场合 |
+|---|---|
+| nudge | 有点动摇、犹豫 |
+| stagger | 被吓到、踉跄 |
+| jump | 兴奋、雀跃 |
+| nod | 点头、同意 |
+| bow | 鞠躬、道歉 |
+| turn | 背过身去 |
+| shake | 发抖、生气 |
+| sway | 放松、犯困 |
+
+同一时刻只给一个人一个行为词。
+
+**非人主体**（猫、道具、悬浮物）在角色表里；它们用 state 换图（人的 expression 的对应物），
+配 anchor="center" 让它飘在画面中间而不是站在地上——anchor 只认 bottom（贴地，默认）、
+center（居中悬空）、top（从上垂下）。
 
 ## 台词（三类，正文为原生文本，不要转义）
 
