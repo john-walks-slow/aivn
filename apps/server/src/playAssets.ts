@@ -39,6 +39,9 @@ const STEM = /^[a-z][a-z0-9_]{0,39}$/;
 /** 自动注册的临时角色 id：它会成为 play.json 条目与 assets/sprites/ 目录名，与 write_memory 同一套白名单。 */
 const CHAR_ID = /^[A-Za-z][A-Za-z0-9_-]{0,39}$/;
 
+/** play.json 里 `sprites[expression]` 的值：只当文件名用，带路径分隔符的一律不认。 */
+const BARE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.(png|jpe?g|webp)$/i;
+
 const NEUTRAL = "neutral";
 
 /** 谁触发的这次出图。工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产。 */
@@ -56,6 +59,11 @@ export interface AssetTarget {
   expression?: string;
   /** 立绘取景（bust/half/full）：决定出图景别与画幅，缺省全身。不给就沿用 play.json 里该角色已有的声明。 */
   framing?: SpriteFraming;
+  /**
+   * 参考立绘（只对 background/cg 生效）：按给定顺序把这些角色的立绘垫给模型，
+   * 顺序即「提示词里第几张图是谁」。立绘本身不给（它垫的是该角色的 neutral 定妆照）。
+   */
+  referenceCharacters?: string[];
 }
 
 export interface GenerateOptions {
@@ -80,6 +88,12 @@ export interface GeneratedPlayAsset {
   autoNeutral: boolean;
 }
 
+/** 一张要垫进背景/CG 的角色立绘：id 用于排引用顺序，name 进提示词标注「这张图是谁」。 */
+interface ReferenceCharacter {
+  id: string;
+  name: string;
+}
+
 interface AssetSpec {
   kind: AssetKind;
   /** assets/ 下的目录：backgrounds | cg | sprites/<charId>。 */
@@ -95,6 +109,8 @@ interface AssetSpec {
   baseFraming?: SpriteFraming;
   /** 角色不在 play.json 时自动补的 stub（null = 不自动注册，缺失即报错）。 */
   stubName?: string;
+  /** 背景/CG 的参考立绘（立绘本身不带）。 */
+  referenceCharacters?: ReferenceCharacter[];
 }
 
 export interface PlayAssetsDeps {
@@ -166,7 +182,13 @@ export class PlayAssets {
   ): Promise<GeneratedPlayAsset[]> {
     const auto = spec.kind === "sprite" ? await this.ensureNeutral(spec, prompt, notify) : null;
     const references = await this.referencesFor(spec);
-    const fullPrompt = suffixFor(spec, style ? `${style}, ${prompt}` : prompt);
+    // 后缀跟着**真正发出去的图**走：STAGE_IMAGE_REFERENCE=none 时一张都没发，
+    // 提示词里却还留着「第几张是谁」，等于凭空给模型指了三张不存在的图。
+    const fullPrompt = suffixFor(
+      spec,
+      style ? `${style}, ${prompt}` : prompt,
+      references.length,
+    );
     // 记的是「开始等」的那一刻：排队等位的那一分多钟也是玩家在等的时间。
     const kind = spec.kind === "background" ? "bg" : spec.kind;
     const done = this.deps.pending?.begin({
@@ -280,7 +302,28 @@ export class PlayAssets {
       kindPath: target.kind === "background" ? "backgrounds" : "cg",
       stem: name,
       aspect: "16:9",
+      ...(target.referenceCharacters?.length
+        ? { referenceCharacters: await this.resolveReferences(target.referenceCharacters) }
+        : {}),
     };
+  }
+
+  /**
+   * 参考立绘的角色表校验。**不做静默丢弃**：调用方点名了要参考某个角色，那个角色没有立绘时
+   * 悄悄出一张少个人的 CG，比直接报错坏得多——图看着是出来了，演出里才发现人对不上。
+   */
+  private async resolveReferences(ids: string[]): Promise<ReferenceCharacter[]> {
+    const play = await this.deps.store.loadPlay();
+    const known = play.characters.map((c) => c.id);
+    const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+    const missing = unique.filter((id) => !known.includes(id));
+    if (missing.length > 0) {
+      throw new Error(`play.json 里没有角色「${missing.join("、")}」。可选：${known.join(" / ") || "（角色表是空的）"}`);
+    }
+    return unique.map((id) => {
+      const character = play.characters.find((c) => c.id === id)!;
+      return { id, name: character.name };
+    });
   }
 
   private async resolveSprite(
@@ -371,15 +414,52 @@ export class PlayAssets {
 
   /**
    * 垫图（参考图）。默认给（与 `config.image.reference` 的默认值一致）：差分靠它才是同一个人，
-   * 代价是单张从 69s 变 138s（实测），像素一模一样。`STAGE_IMAGE_REFERENCE=none` 可以掐掉这条省钱。
+   * 代价是单张从 69s 变 138s（实测），像素一模一样。`STAGE_IMAGE_REFERENCE=none` 可以掐掉这条省钱，
+   * 它是全局开关——显式点名要的 CG 参考立绘同样归它管，否则这个开关形同虚设。
    */
   private async referencesFor(spec: AssetSpec) {
     if (this.deps.reference === "none") return [];
-    if (spec.kind !== "sprite" || spec.expression === NEUTRAL) return [];
-    const neutral = await this.existingPath(spec.kindPath, NEUTRAL);
-    if (!neutral) return [];
-    const data = await readFile(this.deps.files.absoluteOf(neutral));
-    return [{ mimeType: sniffMime(data), data }];
+    if (spec.kind === "sprite") {
+      if (spec.expression === NEUTRAL) return [];
+      const neutral = await this.existingPath(spec.kindPath, NEUTRAL);
+      if (!neutral) return [];
+      return [await this.loadReference(neutral)];
+    }
+    const characters = spec.referenceCharacters ?? [];
+    const refs = [];
+    for (const character of characters) {
+      refs.push(await this.loadReference(await this.referenceSpriteOf(character)));
+    }
+    return refs;
+  }
+
+  /** 一张给定的立绘：优先 neutral（身份基准），否则退回该角色盘上任意一张差分。 */
+  private async referenceSpriteOf(character: ReferenceCharacter): Promise<string> {
+    const play = await this.deps.store.loadPlay();
+    const card = play.characters.find((c) => c.id === character.id);
+    const dir = `sprites/${character.id}`;
+    const expressions = [NEUTRAL, ...Object.keys(card?.sprites ?? {}).filter((e) => e !== NEUTRAL)];
+    for (const expression of expressions) {
+      // `sprites[expression]` 存的是**文件名**，不保证等于差分名（breezy_oak 的 grin 存成
+      // oak_grin2.png）。按差分名去猜会把这种角色判成「没有立绘」，所以先信映射——与 web 侧
+      // `AssetIndex.sprite` 的解析方式保持一致。映射里的值只当文件名用，带路径的一律不认。
+      const mapped = card?.sprites?.[expression];
+      if (mapped && BARE_FILENAME.test(mapped)) {
+        const rel = `assets/${dir}/${mapped}`;
+        if (existsSync(this.deps.files.absoluteOf(rel))) return rel;
+      }
+      const byStem = await this.existingPath(dir, expression);
+      if (byStem) return byStem;
+    }
+    throw new Error(
+      `角色「${character.name}」（${character.id}）还没有立绘，不能当参考图：` +
+        `先 generate_image(kind="sprite") 出一张 ${character.id}/neutral 再来。`,
+    );
+  }
+
+  private async loadReference(rel: string) {
+    const data = await readFile(this.deps.files.absoluteOf(rel));
+    return { mimeType: sniffMime(data), data };
   }
 
   /**
@@ -444,11 +524,33 @@ function labelFor(spec: AssetSpec): string {
   return spec.kind === "background" ? `背景 ${spec.stem}` : `CG ${spec.stem}`;
 }
 
-function suffixFor(spec: AssetSpec, prompt: string): string {
-  if (spec.kind !== "sprite") return prompt;
+function suffixFor(spec: AssetSpec, prompt: string, sentReferences: number): string {
+  if (spec.kind !== "sprite") {
+    return spec.referenceCharacters?.length && sentReferences > 0
+      ? `${prompt}. ${referenceSuffix(spec.referenceCharacters)}`
+      : prompt;
+  }
   return spec.expression === NEUTRAL
     ? `${prompt}, ${neutralSuffix(spec.framing)}`
     : `${prompt}. ${identitySuffix(spec.framing)}`;
+}
+
+/**
+ * 参考立绘在提示词里的**序号锚点**。
+ *
+ * 非可省：`geminiImage.ts` 把垫图按 `references` 的顺序一个个 push 成 inlineData，
+ * 图片本身没有名字，模型只看到「第一张、第二张……」。不点明谁是谁，多人 CG 就会各画各的，
+ * 而且是**看起来完全正常**地画错——不会报错，图也好看，只是七濑长成了澪。
+ *
+ * 编号从 1 起、顺序与 references 数组严格一致；名字取 play.json 的 `name`（角色卡上是同一个人）。
+ */
+function referenceSuffix(characters: ReferenceCharacter[]): string {
+  const roster = characters.map((c, i) => `${i + 1}) ${c.name}`).join(", ");
+  return (
+    `The attached reference images are, in this exact order: ${roster}. ` +
+    "Keep each of them recognisably that same person — identical face, hairstyle, hair color, " +
+    "eye color and outfit — while placing them in the new scene. Do not merge them into one person."
+  );
 }
 
 /** 读回的文件头嗅探 mimeType（扩展名可能与实际字节不符，垫图塞错类型会被网关拒）。 */

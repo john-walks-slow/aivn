@@ -19,11 +19,12 @@ import { linesResult, reason, textResult } from "./result.js";
  * 它的契约是「提前 3–5 句发起，之后再引用」。
  */
 /**
- * 参数 schema 按角色裁剪：`expression`（立绘差分名）只有工坊有。
+ * 参数 schema 按角色裁剪：`expression`（立绘差分名）与 `referenceCharacters`（CG/背景的参考立绘）只有工坊有。
  *
- * 同一份实现、同一个工具名，但**剧作家拿不到这个参数**：它的立绘只能是 neutral 定妆照，
- * 差分由工坊在用户眼前生成（垫图保一致性，见 SYNC_DESCRIPTION）。参数层不给，比运行时
- * 回一句「不行」省掉一次白跑的往返——一轮只有 240s，浪费在拒绝上不划算。
+ * 同一份实现、同一个工具名，但**剧作家拿不到这两个参数**：它的立绘只能是 neutral 定妆照，
+ * 差分由工坊在用户眼前生成（垫图保一致性，见 SYNC_DESCRIPTION）；它的 bg/cg 走 media-cache 的
+ * 后台排产链路（`ImageAssets`），那条链路不接垫图。参数层不给，比运行时回一句「不行」省掉
+ * 一次白跑的往返——一轮只有 240s，浪费在拒绝上不划算。
  */
 function imageParams(withExpression: boolean) {
   return Type.Object(
@@ -37,6 +38,17 @@ function imageParams(withExpression: boolean) {
     characterName: Type.Optional(Type.String({ maxLength: 40 })),
     /** 立绘差分名，如 neutral / smile（只有工坊有这个参数）。 */
     ...(withExpression ? { expression: Type.Optional(Type.String({ maxLength: 40 })) } : {}),
+    /**
+     * 参考立绘（只有工坊有这个参数；只对 kind=background / cg 生效）：把列出的角色立绘垫给模型，
+     * **数组顺序就是提示词里「第一张图、第二张图」的顺序**，不能随意排。角色没有立绘会直接报错。
+     */
+    ...(withExpression
+      ? {
+          referenceCharacters: Type.Optional(
+            Type.Array(Type.String({ maxLength: 40 }), { minItems: 1, maxItems: 6 }),
+          ),
+        }
+      : {}),
     /** 立绘取景（只对 kind=sprite 生效；不给则沿用该角色已声明的，默认全身）。 */
     framing: Type.Optional(
       Type.Union([
@@ -99,11 +111,23 @@ const PROMPT_RULES = [
   "重复也别改写它；背景与 CG 没有这层后缀，构图要求要自己写。",
 ].join("");
 
+/**
+ * 只给工坊：`referenceCharacters` 是工坊独有的参数，写进共享的 PROMPT_RULES 会让剧作家
+ * 照着去调一个它 schema 里根本没有的参数——一次注定被拒的往返，外加一轮 240s 的预算。
+ */
+const REFERENCE_RULE = [
+  "背景与 CG 里**有人物时用 referenceCharacters 垫立绘**（数组顺序即提示词里的先后顺序，别随意排）：",
+  "画面里有人物却只靠文字描述，出来的脸和角色卡对不上；垫了图也不必省略 prompt 里的外貌描述——",
+  "垫图锁的是那张定妆照的脸与服装，画面里的动作、姿态、与他人的相对位置仍然要 prompt 说。",
+].join("");
+
 const SYNC_DESCRIPTION = [
   "出一张剧目素材并落进 assets/：背景(kind=background) / CG(kind=cg) 给 name，",
   "立绘(kind=sprite) 给 characterId + expression。立绘会自动抠底成透明 PNG（引擎要靠它叠在场景上）。",
   "非 neutral 的立绘会自动拿该角色的 neutral 定妆照做垫图，所以同一个角色的差分是同一个人。",
+  "背景与 CG 里有人物时，用 referenceCharacters 列出要垫立绘的角色（顺序即提示词里的先后顺序）。",
   PROMPT_RULES,
+  REFERENCE_RULE,
   "一次工具调用只出一张图；要出多个差分就在同一个批次里多次调用本工具，它们是并行的。",
   "抠完觉得不干净（白边、剪纸毛刺）时，用 inspect_asset 看图，再带 cutout 参数重出。",
 ].join("");
@@ -191,6 +215,9 @@ async function runSync(
       characterId: params.characterId,
       expression: typeof params.expression === "string" ? params.expression : undefined,
       framing: params.framing,
+      referenceCharacters: Array.isArray(params.referenceCharacters)
+        ? params.referenceCharacters.filter((id): id is string => typeof id === "string")
+        : undefined,
     },
     params.prompt,
     params.style,

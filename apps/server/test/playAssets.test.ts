@@ -223,6 +223,126 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(calls[1]!.prompt).toMatch(/head and shoulders bust shot/);
   });
 
+  it("CG 参考立绘：按给定顺序垫多张，提示词里点名「第几张是谁」", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await store.savePlay({
+      ...(await store.loadPlay()),
+      characters: [
+        { id: "mio", name: "澪", persona: "" },
+        { id: "Koharu", name: "小春", persona: "" },
+      ],
+    });
+    for (const id of ["mio", "Koharu"]) {
+      await assets.generate({ kind: "sprite", characterId: id, expression: "neutral" }, "p");
+    }
+    calls.length = 0;
+    await assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mio", "Koharu"] }, "p");
+    expect(calls[0]!.references).toHaveLength(2);
+    // 序号锚点：模型只看到「第一张、第二张」，不点名就会画出两个长得一样的人
+    expect(calls[0]!.prompt).toMatch(/in this exact order: 1\) 澪, 2\) 小春/);
+    expect(calls[0]!.prompt).toMatch(/Do not merge them into one person/);
+  });
+
+  it("CG 参考立绘：数组顺序就是图序，反过来给就得反过来点名", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await store.savePlay({
+      ...(await store.loadPlay()),
+      characters: [
+        { id: "mio", name: "澪", persona: "" },
+        { id: "Koharu", name: "小春", persona: "" },
+      ],
+    });
+    for (const id of ["mio", "Koharu"]) {
+      await assets.generate({ kind: "sprite", characterId: id, expression: "neutral" }, "p");
+    }
+    calls.length = 0;
+    await assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["Koharu", "mio"] }, "p");
+    expect(calls[0]!.prompt).toMatch(/in this exact order: 1\) 小春, 2\) 澪/);
+  });
+
+  it("CG 参考立绘：没有 neutral 也能垫，退回该角色任意一张差分", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    // 该角色只有 smile、根本没有 neutral：映射与盘上的文件都要对上，只改一个不算数
+    await mkdir(files.absoluteOf("assets/sprites/mio"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/sprites/mio/smile.png"), await realImage("9:16", "image/png"));
+    await store.savePlay({
+      ...(await store.loadPlay()),
+      characters: [{ id: "mio", name: "澪", persona: "", sprites: { smile: "smile.png" } }],
+    });
+    calls.length = 0;
+    await assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mio"] }, "p");
+    expect(calls[0]!.references).toHaveLength(1);
+    expect(calls[0]!.prompt).toMatch(/1\) 澪/);
+  });
+
+  it("CG 参考立绘：点名了但那个角色没立绘，直接报错不出一张少人的图", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await expect(
+      assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["Koharu"] }, "p"),
+    ).rejects.toThrow(/角色「小春」（Koharu）还没有立绘/);
+    expect(calls).toHaveLength(0);
+    expect(existsSync(files.absoluteOf("assets/cg/rooftop.jpg"))).toBe(false);
+  });
+
+  it("CG 参考立绘：角色不在角色表时报错并列出可选 id，不静默丢弃", async () => {
+    const store = await makeStore();
+    const { backend } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await expect(
+      assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mio", "ghost"] }, "p"),
+    ).rejects.toThrow(/play.json 里没有角色「ghost」/);
+  });
+
+  it("CG 参考立绘：映射里的文件名不等于差分名时照样找得到（breezy_oak 的 grin → oak_grin2.png）", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await mkdir(files.absoluteOf("assets/sprites/mio"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/sprites/mio/oak_grin2.png"), await realImage("9:16", "image/png"));
+    await store.savePlay({
+      ...(await store.loadPlay()),
+      characters: [{ id: "mio", name: "澪", persona: "", sprites: { grin: "oak_grin2.png" } }],
+    });
+    calls.length = 0;
+    // 按差分名去找会判成「没有立绘」——文件并不叫 grin.png
+    await assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mio"] }, "p");
+    expect(calls[0]!.references).toHaveLength(1);
+    expect(calls[0]!.prompt).toMatch(/1\) 澪/);
+  });
+
+  it("CG 参考立绘：映射里的文件名带路径分隔符时不认（路径穿越不因为是映射就放行）", async () => {
+    const store = await makeStore();
+    const { backend } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await store.savePlay({
+      ...(await store.loadPlay()),
+      characters: [{ id: "mio", name: "澪", persona: "", sprites: { smile: "../../play.json" } }],
+    });
+    await expect(
+      assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mio"] }, "p"),
+    ).rejects.toThrow(/还没有立绘/);
+  });
+
+  it("CG 参考立绘：STAGE_IMAGE_REFERENCE=none 是全局开关，显式点名也一样不发", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend, 2, "none");
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "p");
+    calls.length = 0;
+    await assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mio"] }, "p");
+    expect(calls[0]!.references).toEqual([]);
+    // 开关关掉垫图，但提示词里的序号锚点不能留着——没有图就没有「第几张」
+    expect(calls[0]!.prompt).not.toMatch(/in this exact order/);
+  });
+
   it("画幅回执：模型回的画幅不对就报错，一个字节都不落盘", async () => {
     const store = await makeStore();
     // 实测 flow2api 对 3:4/4:3 静默出 1200x896 横图——立绘拿到横图等于站位崩

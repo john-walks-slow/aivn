@@ -66,18 +66,26 @@ describe("agent kit：两个角色的暴露面", () => {
     expect(names(kit)).not.toContain("update_state");
   });
 
-  it("generate_image 是同一个工具，只有描述分叉、schema 少一个 expression", () => {
+  it("generate_image 是同一个工具，只有描述分叉、schema 少两个工坊独占参数", () => {
     const a = playwriter().tools.find((t) => t.name === "generate_image")!;
     const b = workshop().tools.find((t) => t.name === "generate_image")!;
-    // 差分只归工坊：剧作家那份 schema 拿不到 expression，其余参数逐字相同
+    // 工坊独占：expression（立绘差分）与 referenceCharacters（CG/背景的参考立绘）。
+    // 剧作家的 bg/cg 走 media-cache 后台排产，那条链路不接垫图——参数层就不给，
+    // 也不写进共享的 PROMPT_RULES，免得它照着调一个 schema 里没有的参数。
     const props = (t: typeof a) => JSON.stringify((t.parameters as { properties: Record<string, unknown> }).properties);
     expect(props(a)).not.toContain("expression");
     expect(props(b)).toContain("expression");
-    const { expression: _dropped, ...rest } = (b.parameters as { properties: Record<string, unknown> }).properties;
+    expect(props(a)).not.toContain("referenceCharacters");
+    expect(props(b)).toContain("referenceCharacters");
+    const { expression: _dropped, referenceCharacters: _dropped2, ...rest } = (b.parameters as {
+      properties: Record<string, unknown>;
+    }).properties;
     expect(props(a)).toBe(JSON.stringify(rest));
     expect(a.description).not.toBe(b.description);
     expect(b.description).toContain("抠完觉得不干净"); // 工坊同步出图，教它看图重出
     expect(a.description).toContain("后台排产");
+    expect(b.description).toContain("referenceCharacters");
+    expect(a.description).not.toContain("referenceCharacters");
   });
 
   it("写 prompt 的硬约束两个角色同一份（只写在工坊提示词里，等于剧作家那份没修）", () => {
