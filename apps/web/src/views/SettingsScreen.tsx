@@ -1,9 +1,3 @@
-/**
- * 设置面板（P6）：模型网关 / 出图 / 语音 / 联网四组，全部 GUI 可改。
- *
- * 落点是服务端 `.env`（configApi 负责逐键回写）——用户不碰配置文件。
- * 改完需要重启服务端才生效，面板显式说明，不假装热生效。
- */
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "../ui/Icon.js";
 import { api, type GatewayModel, type Settings } from "../api.js";
@@ -24,6 +18,16 @@ export function SettingsScreen() {
   const [saved, setSaved] = useState<string[] | null>(null);
   const [models, setModels] = useState<GatewayModel[] | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
+
+  // 主题模式状态（分别保存 UI 和 舞台）
+  const [uiMode, setUiMode] = useState<"system" | "light" | "dark">(() => {
+    const val = localStorage.getItem("stage-ai:ui-theme-mode");
+    return (val === "system" || val === "light" || val === "dark") ? val as any : "system";
+  });
+  const [stageMode, setStageMode] = useState<"system" | "light" | "dark">(() => {
+    const val = localStorage.getItem("stage-ai:stage-theme-mode");
+    return (val === "system" || val === "light" || val === "dark") ? val as any : "system";
+  });
 
   const loadModels = useCallback((refresh = false): void => {
     api
@@ -52,6 +56,26 @@ export function SettingsScreen() {
   }, [loadModels]);
 
   useEffect(load, [load]);
+
+  // 监听存储变化，以便其他标签页的改动能同步 UI
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "stage-ai:ui-theme-mode") {
+        const val = e.newValue;
+        if (val === "system" || val === "light" || val === "dark") {
+          setUiMode(val as any);
+        }
+      }
+      if (e.key === "stage-ai:stage-theme-mode") {
+        const val = e.newValue;
+        if (val === "system" || val === "light" || val === "dark") {
+          setStageMode(val as any);
+        }
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   const save = async (): Promise<void> => {
     if (!draft) return;
@@ -310,6 +334,38 @@ export function SettingsScreen() {
             />
           </Group>
 
+          {/* 主题设置 */}
+          <Group title="主题设置">
+            <Field label="界面主题" hint="界面（剧目库/标题/设置/工坊等）的亮暗模式">
+              <select
+                value={uiMode}
+                onChange={(e) => {
+                  const val = e.target.value as "system" | "light" | "dark";
+                  setUiMode(val);
+                  localStorage.setItem("stage-ai:ui-theme-mode", val);
+                }}
+              >
+                <option value="system">跟随系统</option>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+              </select>
+            </Field>
+            <Field label="舞台主题" hint="舞台（画面/台词条/选肢卡等）的亮暗模式">
+              <select
+                value={stageMode}
+                onChange={(e) => {
+                  const val = e.target.value as "system" | "light" | "dark";
+                  setStageMode(val);
+                  localStorage.setItem("stage-ai:stage-theme-mode", val);
+                }}
+              >
+                <option value="system">跟随系统</option>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+              </select>
+            </Field>
+          </Group>
+
           <div className="row">
             <button className="primary-btn" onClick={() => void save()}>
               保存设置
@@ -325,6 +381,7 @@ export function SettingsScreen() {
   );
 }
 
+/* 其余辅助组件保持不变 */
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="settings-group">
@@ -334,12 +391,6 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-/**
- * 多把 key 的凭据输入框。
- *
- * 输入框**永远是空的**，已存的 key 只以掩码出现在 placeholder 里：
- * 「留空 = 不变」只有输入框真的是空的时候才成立，预填掩码再让用户去删是事故的配方。
- */
 function KeyField(props: {
   label: string;
   hint: string;

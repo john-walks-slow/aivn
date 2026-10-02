@@ -162,13 +162,17 @@ describe("PlayStore 按周目隔离会话", () => {
     await expect(playStore.saveSession(treeOf(1, ["x"]), engine, "s")).rejects.toThrow(/无存档作用域/);
   });
 
-  it("就绪门：有没有周目，而不是有没有根目录 session.json", async () => {
+  it("就绪门：数的是周目，而不是根目录 session.json", async () => {
     const playStore = library.store("p1");
-    expect((await playStore.readiness()).hasSession).toBe(false);
+    expect((await playStore.readiness()).saves).toBe(0);
 
     const save = await library.saves("p1").create();
     await library.saveStore("p1", save.id).saveSession(treeOf(1, ["x"]), engine, "s");
-    expect((await playStore.readiness()).hasSession).toBe(true);
+    expect((await playStore.readiness()).saves).toBe(1);
+
+    const second = await library.saves("p1").create();
+    await library.saveStore("p1", second.id).saveSession(treeOf(2, ["y"]), engine, "s");
+    expect((await playStore.readiness()).saves).toBe(2);
   });
 
   it("导出不带运行时数据：saves/ 与 active.json 排除在剧目包之外", async () => {

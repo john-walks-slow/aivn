@@ -183,6 +183,10 @@ export function useStageSocket(
             setStop(null);
             setNoStop(false);
             setError(null);
+            // 一轮开跑 = 这棵树不再是空树。fresh 只在 hello 里下发，而「开演」按下后
+            // 服务端不会再补一条 hello——不在这儿清掉，「开演」卡片就一直摆在画面上，
+            // 对话区也一直停在「还没开演」而不报落笔。
+            setFresh(false);
             setState("streaming");
             handlersRef.current.onBeatStart?.();
             return;

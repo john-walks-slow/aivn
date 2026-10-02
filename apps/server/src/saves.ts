@@ -66,14 +66,14 @@ export async function writeSaveMeta(playDir: string, meta: SaveMeta): Promise<vo
   await rename(tmp, join(dir, "meta.json"));
 }
 
-/** 剧目是否存在任何存档（就绪门「开始新周目」的可用性与「继续」的显隐）。 */
-export async function hasAnySave(playDir: string): Promise<boolean> {
+/** 剧目已有的周目数（就绪门「开始新周目」的可用性与剧目卡上的 n 周目）。 */
+export async function countSaves(playDir: string): Promise<number> {
   const root = savesDirOf(playDir);
-  if (!existsSync(root)) return false;
+  if (!existsSync(root)) return 0;
   try {
-    return (await readdir(root, { withFileTypes: true })).some((e) => e.isDirectory());
+    return (await readdir(root, { withFileTypes: true })).filter((e) => e.isDirectory()).length;
   } catch {
-    return false;
+    return 0;
   }
 }
 

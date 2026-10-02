@@ -11,7 +11,7 @@ import {
 import { parsePlayConfig, parsePlayAssetManifest, type AssetMeta, type PlayConfig } from "@stage-ai/core";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
 import { parseHistory, type HistoryBeat } from "./history.js";
-import { hasAnySave, readSaveMeta, saveDirOf, writeSaveMeta, assertSaveId, PlaySaves, type SaveMeta } from "./saves.js";
+import { countSaves, readSaveMeta, saveDirOf, writeSaveMeta, assertSaveId, PlaySaves, type SaveMeta } from "./saves.js";
 
 /** 周目列表卡的「最后一句」只认这三种带正文的行。 */
 const PREVIEW_KINDS: ReadonlySet<string> = new Set(["say", "narrate", "thought"]);
@@ -23,8 +23,8 @@ export interface Readiness {
   characterSprites: boolean;
   /** ≥1 背景图。 */
   background: boolean;
-  /** 本剧目已有存档（「继续」入口的显隐）。 */
-  hasSession: boolean;
+  /** 本剧目已有的周目数（0 = 还没开演）。 */
+  saves: number;
 }
 
 export interface PlaySummary {
@@ -198,7 +198,7 @@ export class PlayStore {
     try {
       play = await this.loadPlay();
     } catch {
-      return { premise: false, characterSprites: false, background: false, hasSession: false };
+      return { premise: false, characterSprites: false, background: false, saves: 0 };
     }
     const spritesDir = join(this.dir, "assets/sprites");
     const characterSprites =
@@ -208,14 +208,14 @@ export class PlayStore {
       }) ?? false;
     const bgDir = join(this.dir, "assets/backgrounds");
     const background = existsSync(bgDir) && (await readdir(bgDir)).some((f) => /\.(png|jpe?g|webp)$/i.test(f));
-    const hasSession = await hasAnySave(this.dir);
+    const saves = await countSaves(this.dir);
     // 世界观前提的唯一真相源：memory/always/premise.md。
     const premise = (await this.premise()).trim() !== "";
     return {
       premise,
       characterSprites,
       background,
-      hasSession,
+      saves,
     };
   }
 

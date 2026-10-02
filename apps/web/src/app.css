@@ -16,6 +16,27 @@
 
 * {
   box-sizing: border-box;
+  /* 触摸设备上浏览器给每个可点元素铺一层半透明蓝底，手指点下去闪一下。
+     那层蓝是网页味，去掉后点下去只剩元素自己的反馈色。 */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 焦点框只留给键盘 Tab，且走主题色细环；鼠标点、手指点都不出框。
+   两者一起上：只去 outline，纯键盘操作会瞎；只留浏览器默认框，又像在填网页表单。 */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 选中文字时浏览器铺的也是那层网页蓝（手机上长按/双击最容易撞上）。
+   换成主题色的淡底，选词与复制照常能用。 */
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
 }
 
 :root {
@@ -412,10 +433,6 @@ button.link-btn {
   -webkit-box-orient: vertical;
   overflow: hidden;
   flex: 1 1 auto;
-}
-
-.card-meta:empty {
-  display: none;
 }
 
 /* 底部管理条：新建/导入不再是列表里的一张卡，与「玩什么」分开 */
@@ -856,6 +873,14 @@ button.link-btn {
   flex-direction: column;
   height: 100%;
   --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+/* 净画面：藏掉压在画面上的两块窗（台词条 + 右上角导演栏），只剩背景/立绘/CG。
+   两块都是 absolute浮层，display:none 掉不引起回流，.theater-stage 本来就 flex:1 铺满。
+   顶栏（exit/log/branch）和侧栏留在外面——那是出去的路，藏了就容易困在里面。 */
+.theater.bare .theater-director,
+.theater.bare .theater-dialog {
+  display: none;
 }
 
 .theater-bar {
@@ -3523,34 +3548,15 @@ select:focus {
   background: var(--bg);
 }
 
-.side-exit {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 6px 8px;
-  border: none;
-  border-radius: var(--radius);
-  background: none;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.side-exit:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
 .side-title {
+  flex: 1 1 auto;
+  padding: 6px 8px;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   font-family: var(--font-serif);
   font-weight: 600;
   font-size: 15px;
   letter-spacing: 0.08em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* 折叠/展开键：无边框幽灵键。侧栏头已经有一个带底色的剧目块了，再来一个
@@ -3824,7 +3830,9 @@ select:focus {
    排队面板）用同一套底色与圆角，才看得出是同一层界面浮在画面上，而不是三张卡片。 */
 .side-drawer-btn {
   position: absolute;
-  z-index: 3;
+  /* 舞台浮层会盖到它上面（选肢层 6、台词条 12），这里明确压在它们之上，
+     与 .theater-bar 同一档：导航是常驻 chrome，选项摆着的时候也得能点。 */
+  z-index: 20;
   top: calc(8px + env(safe-area-inset-top));
   left: 8px;
   display: grid;
@@ -3858,13 +3866,13 @@ select:focus {
 .side-scrim {
   position: fixed;
   inset: 0;
-  z-index: 44;
+  z-index: 56;
   background: rgb(10 10 14 / 0.34);
 }
 .side-narrow .stage-side {
   position: fixed;
   inset: 0 auto 0 0;
-  z-index: 45;
+  z-index: 57;
   flex-basis: min(268px, 78vw);
   width: min(268px, 78vw);
   box-shadow: var(--shadow);
@@ -3897,7 +3905,7 @@ select:focus {
 .dialog-hint-foot {
   min-height: 18px;
 }
-/* 游戏选项：自动 / 语音 / 回看，只管播放，不改内容 */
+/* 游戏选项：Auto / Voice / Back / Hide，只管播放与看图，不改内容 */
 .dialog-options {
   display: flex;
   align-items: center;

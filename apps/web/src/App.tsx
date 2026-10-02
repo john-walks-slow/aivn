@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useRoute } from "./router.jsx";
 import { applyPlayTheme, reloadPlayTheme, THEME_CHANGED } from "./theme.js";
+import { useTheme } from "./hooks/useTheme.js";
 import { LibraryView } from "./views/LibraryView.js";
 import { TitleView } from "./views/TitleView.js";
 import { StageScreen } from "./views/StageScreen.js";
@@ -29,6 +30,9 @@ export function App() {
     window.addEventListener(THEME_CHANGED, onReload);
     return () => window.removeEventListener(THEME_CHANGED, onReload);
   }, []);
+
+  // UI 舞台主题：读取本地存储模式，根据系统偏好计算实际亮/暗，写入 :root。
+  useTheme();
 
   if (head === "settings") return <SettingsScreen />;
   if (head === "play" && playId && sub === "stage") {

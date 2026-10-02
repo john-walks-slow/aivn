@@ -159,6 +159,8 @@ export function StageTheater({
   /** 导演栏的面板：几个动作的全部输入都在对话框里收，不跳视图。 */
   const [action, setAction] = useState<"prompt" | "edit" | "restart" | "segment" | "cg" | null>(null);
   const [draft, setDraft] = useState("");
+  /** 净画面：藏掉压在画面上的台词条与导演栏，只剩背景/立绘/CG。点画面或按 H/空格/Esc 回来。 */
+  const [hideUi, setHideUi] = useState(false);
   const { view, viewLength, current, shownLength, exhausted, advance, scrub, scrubbed, follow } =
     playback;
   const shown = view ? view.text.slice(0, viewLength) : "";
@@ -182,6 +184,15 @@ export function StageTheater({
       if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
       // 上面还浮着模态浮层（工坊抽屉）时 Esc 归那层，别连带把舞台的导演注也撤了
       if (e.key === "Escape" && escapeClaimed()) return;
+      // 净画面态：按键只有一件事——把界面带回来。别在这里 scrub/advance，
+      // 否则想安安静静看张图，方向键却把台词翻过去了。
+      if (hideUi) {
+        if (e.key === "h" || e.key === "H" || e.key === " " || e.key === "Escape") {
+          setHideUi(false);
+          e.preventDefault();
+        }
+        return;
+      }
       if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
         scrub(-1);
         e.preventDefault();
@@ -202,7 +213,7 @@ export function StageTheater({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [scrub, scrubbed, action, onView]);
+  }, [scrub, scrubbed, action, onView, hideUi]);
 
   // 快进档：按住 Ctrl 追到缓冲末端，松开立刻回到原节奏。
   // 失焦也撤档——切出去时 Ctrl 可能停在按下状态，回来就变成永远在快进。
@@ -230,6 +241,10 @@ export function StageTheater({
    */
   const onStageClick = (): void => {
     onUnlock();
+    if (hideUi) {
+      setHideUi(false);
+      return;
+    }
     if (scrubbed) scrub(1);
     else if (canContinue) onContinue();
     else advance();
@@ -246,6 +261,8 @@ export function StageTheater({
   const onTouchEnd = (e: React.TouchEvent): void => {
     const start = touchRef.current;
     touchRef.current = null;
+    // 净画面态不接手势：滑一下是想看图，不是想翻句。轻点走 click 恢复界面。
+    if (hideUi) return;
     if (!start) return;
     const end = e.changedTouches[0];
     if (!end) return;
@@ -311,7 +328,7 @@ export function StageTheater({
 
   return (
     <div
-      className="theater"
+      className={`theater ${hideUi ? "bare" : ""}`}
       ref={theaterRef}
       onClick={onStageClick}
       onTouchStart={onTouchStart}
@@ -466,51 +483,60 @@ export function StageTheater({
               </>
             )}
           </div>
-          {/* 游戏选项：自动 / 语音 / 回看，落在对话框右下角。导演动作见舞台右上角的工具栏。 */}
+          {/* 游戏选项：Auto / Voice / Back / Hide，落在对话框右下角。导演动作见舞台右上角的工具栏。
+              纯文字无图标：开关态由字面自己说（Auto/Manual、Voice/Muted），
+              不靠图标形状，也不用额外的状态标记。 */}
           <div className="dialog-options">
             <button
               type="button"
               className={`dir-btn ${playback.auto ? "tgl-on" : ""}`}
-              title={playback.auto ? "自动播放：开（点一下关）" : "自动播放：关（点一下开）"}
+              title={playback.auto ? "Auto-play: on (tap to turn off)" : "Auto-play: off (tap to turn on)"}
               aria-pressed={playback.auto}
-              aria-label="自动播放"
               onClick={(e) => {
                 e.stopPropagation();
                 playback.setAuto(!playback.auto);
               }}
             >
-              {playback.auto ? <Icon name="pause" size={17} /> : <Icon name="play" size={17} />}
-              自动
+              {playback.auto ? "Auto" : "Manual"}
             </button>
             {voiceAvailable && (
               <button
                 type="button"
                 className={`dir-btn ${voiceOn ? "tgl-on" : ""}`}
-                title={voiceOn ? "语音播放：开（点一下关）" : "语音播放：关（点一下开）"}
+                title={voiceOn ? "Voice: on (tap to turn off)" : "Voice: off (tap to turn on)"}
                 aria-pressed={voiceOn}
-                aria-label="语音播放"
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleVoice();
                 }}
               >
-                <Icon name={voiceOn ? "volume" : "volume-off"} size={17} />
-                语音
+                {voiceOn ? "VOICE" : "MUTED"}
               </button>
             )}
             <button
               type="button"
               className="dir-btn"
-              title="回退一句（同方向键 ←）"
-              aria-label="回退一句"
+              title="Rewind one line (←)"
               disabled={!scrubbed && playback.history.length === 0}
               onClick={(e) => {
                 e.stopPropagation();
                 scrub(-1);
               }}
             >
-              <Icon name="prev" size={17} />
-              回看
+              BACK
+            </button>
+            <button
+              type="button"
+              className="dir-btn"
+              title="Hide the interface — tap the picture or press H / Space to bring it back"
+              onClick={(e) => {
+                e.stopPropagation();
+                setAction(null);
+                setDraft("");
+                setHideUi(true);
+              }}
+            >
+              HIDE
             </button>
           </div>
         </div>

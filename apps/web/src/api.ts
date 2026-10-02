@@ -27,7 +27,8 @@ export interface Readiness {
   premise: boolean;
   characterSprites: boolean;
   background: boolean;
-  hasSession: boolean;
+  /** 本剧目已有的周目数（0 = 还没开演）。 */
+  saves: number;
 }
 
 /**

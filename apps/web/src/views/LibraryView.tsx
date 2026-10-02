@@ -3,8 +3,6 @@ import { useEffect, useState } from "react";
 import {
   api,
   coverUrl,
-  readinessAdvice,
-  readinessMissing,
   type PlaySummary,
 } from "../api.js";
 import { navigate } from "../router.jsx";
@@ -68,26 +66,18 @@ export function LibraryView() {
 
       <div className="library-grid">
         {(plays ?? []).map((play) => {
-          const missing = readinessMissing(play.readiness);
-          const advice = readinessAdvice(play.readiness);
+          const saves = play.readiness.saves;
           const cover = covers[play.id];
           return (
             <button key={play.id} className="card" onClick={() => navigate(`/play/${play.id}`)}>
               <span className="card-cover">
                 {cover ? <img src={cover} alt="" loading="lazy" /> : <span className="card-cover-blank" />}
-                <span className={`badge ${play.readiness.hasSession ? "ok" : ""}`}>
-                  {play.readiness.hasSession ? "有周目" : "未开演"}
-                </span>
+                <span className={`badge ${saves > 0 ? "ok" : ""}`}>{saves > 0 ? `${saves} 周目` : "未开演"}</span>
               </span>
               <span className="card-body">
                 <strong className="card-name">{play.title}</strong>
                 <span className="card-premise">
                   {play.premise.length > 72 ? `${play.premise.slice(0, 72)}…` : play.premise || "（故事前提待补）"}
-                </span>
-                <span className="muted small card-meta">
-                  {missing.length > 0 || advice.length > 0
-                    ? `还没有 ${[...missing, ...advice].join("、")}`
-                    : ""}
                 </span>
               </span>
             </button>

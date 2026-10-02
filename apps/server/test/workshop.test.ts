@@ -142,7 +142,7 @@ describe("工坊 prompt 与工具", () => {
   const promptCtx = (over: Partial<WorkshopPromptContext> = {}): WorkshopPromptContext => ({
     title: "测试剧目",
     files: "- play.json",
-    readiness: { ready: true, premise: true, characterSprites: false, background: false, hasSession: false },
+    readiness: { ready: true, premise: true, characterSprites: false, background: false, saves: 0 },
     canGenerate: true,
     canSearch: false,
     ...over,
@@ -304,7 +304,7 @@ describe("工坊 prompt 与工具", () => {
       premise: true,
       characterSprites: false,
       background: false,
-      hasSession: false,
+      saves: 0,
     });
     expect(noImages).toContain("没有硬门槛");
     expect(noImages).toContain("缺（建议补）");
@@ -314,7 +314,7 @@ describe("工坊 prompt 与工具", () => {
       premise: false,
       characterSprites: true,
       background: true,
-      hasSession: false,
+      saves: 0,
     });
     // 说人话，不吐字段名：玩家与模型都该看到「缺故事前提」，而不是 `premise`
     expect(noPremise).toContain("不写也行");
