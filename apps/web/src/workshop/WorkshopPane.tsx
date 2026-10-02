@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ClientMessage, WorkshopAssetView } from "@stage-ai/core";
 import { api } from "../api.js";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
@@ -60,6 +60,8 @@ export function WorkshopPane({
   const [input, setInput] = useState("");
   const [threadsOpen, setThreadsOpen] = useState(false);
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
+  /** 压缩摘要是否展开（默认折叠成一行一句话）。 */
+  const [digestOpen, setDigestOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // 面板一挂上就先订阅再报到（StrictMode 下会走两遍，报到幂等）
@@ -75,6 +77,11 @@ export function WorkshopPane({
   useEffect(() => {
     if (connected) workshop.open();
   }, [connected, workshop.open]);
+
+  // 换会话就收起摘要：上一个会话展开着看过全文，下一个不该继承这个姿态
+  useEffect(() => {
+    setDigestOpen(false);
+  }, [state.activeId]);
 
   // 新消息/流式增量追随到底部
   useEffect(() => {
@@ -222,15 +229,35 @@ export function WorkshopPane({
               </div>
             )}
             {state.messages.map((msg, i) => (
-              <div key={`${msg.at}-${i}`} className={`chat-bubble chat-${msg.role}`}>
-                <WorkshopMarkdown
-                  text={msg.text}
-                  onOpen={(images, index) => setLightbox({ images, index })}
-                />
-                {msg.images && msg.images.length > 0 && (
-                  <AssetStrip assets={msg.images} onOpen={openImage} />
+              <Fragment key={`${msg.at}-${i}`}>
+                {i === state.compaction?.cutAt && (
+                  <>
+                    <div className="chat-divider">
+                      <button className="ghost-btn tiny-btn" onClick={() => setDigestOpen(!digestOpen)}>
+                        早期 {state.compaction!.cutAt} 条对话已压缩
+                      </button>
+                      {!digestOpen && <span>{state.compaction!.oneLiner}</span>}
+                    </div>
+                    {digestOpen && (
+                      <div className="chat-digest">
+                        <WorkshopMarkdown
+                          text={state.compaction!.body}
+                          onOpen={(images, index) => setLightbox({ images, index })}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
-              </div>
+                <div className={`chat-bubble chat-${msg.role}`}>
+                  <WorkshopMarkdown
+                    text={msg.text}
+                    onOpen={(images, index) => setLightbox({ images, index })}
+                  />
+                  {msg.images && msg.images.length > 0 && (
+                    <AssetStrip assets={msg.images} onOpen={openImage} />
+                  )}
+                </div>
+              </Fragment>
             ))}
             {state.streaming && (
               <div className="chat-bubble chat-assistant">

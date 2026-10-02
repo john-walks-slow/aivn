@@ -58,13 +58,18 @@ STAGE_PORT=8787 STAGE_PASSWORD=你的密码 pnpm --filter @stage-ai/server start
 
 跑长了以后，对话体不可能无限增长。剧作家只在一个「纪元」内逐轮追加对话；涨到窗口预算时跨过**纪元边界**：早期轮次被压缩成一张 `index/arcs/` 前情提要卡（进 A 区索引），原文早已逐轮落进 `archive/`，仍可用关键词检索到。
 
+工坊对话走同一套治理（每轮开跑前判定、同样触发阈值与保留预算），但产物落在**线程自己身上**而不是记忆卡：早期对话压成一段「本会话已确定事项」写进工坊提示词的 A 区。消息文件一条不删——被压掉的那几条在面板里照常显示，只是对话流中间会多一条分隔（「早期 N 条对话已压缩」，点开是摘要全文）。
+
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `STAGE_CONTEXT_WINDOW` | `131072` | 模型真实上下文窗口。**必须按网关实际限制定**：pi-ai 内置元数据的窗口可能虚高（例如标称 1M 而网关只给 128K） |
 | `STAGE_COMPACT_RATIO` | `0.6` | 触发压缩的窗口占比。越小压得越勤（摘要调用更频繁），越大越省调用但单轮 prompt 更贵 |
 | `STAGE_KEEP_RECENT_TOKENS` | `20000` | 压缩后保留的最近上下文预算（token）。最近这几轮的原文不进摘要，保留原样 |
+| `STAGE_WORKSHOP_CONTEXT_WINDOW` | 同 `STAGE_CONTEXT_WINDOW` | 只给工坊用。工坊可以在剧目的「Agent」页换模型，换了窗口不同的就单独定一份 |
+| `STAGE_WORKSHOP_COMPACT_RATIO` | 同 `STAGE_COMPACT_RATIO` | 同上 |
+| `STAGE_WORKSHOP_KEEP_RECENT_TOKENS` | 同 `STAGE_KEEP_RECENT_TOKENS` | 同上 |
 
-约束：`STAGE_KEEP_RECENT_TOKENS` 必须明显小于 `STAGE_CONTEXT_WINDOW × STAGE_COMPACT_RATIO`，否则每轮都判定超标却永远切不出可压段（启动时会告警）。例：窗口 128K 的网关配 `STAGE_CONTEXT_WINDOW=131072`（默认即可）。
+约束：`STAGE_KEEP_RECENT_TOKENS` 必须明显小于 `STAGE_CONTEXT_WINDOW × STAGE_COMPACT_RATIO`，否则每轮都判定超标却永远切不出可压段（启动时会告警，工坊那组同样会）。例：窗口 128K 的网关配 `STAGE_CONTEXT_WINDOW=131072`（默认即可）。
 
 压缩失败（网关报错、返回空文本、磁盘写不进去）只打警告并跳过，本节照常演出——长会话压缩是省钱的优化，不是演出的前提。
 

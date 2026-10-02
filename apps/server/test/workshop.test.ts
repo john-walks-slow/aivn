@@ -748,6 +748,111 @@ describe("WorkshopSession：一轮对话", () => {
     await expect(session.removeFile("play.json")).rejects.toThrow("不可删除");
   });
 
+  /** 造一条已攒了 12 条消息（6 轮）的长线程：每条 60 字 = 15 token 估算。 */
+  async function seedLongThread(store: PlayStore): Promise<string> {
+    const threads = new WorkshopThreads(store);
+    const thread = await threads.create("世界观");
+    for (let i = 0; i < 6; i += 1) {
+      await threads.append(thread.id, { role: "user", text: `第${i}问`.repeat(30), at: Date.now() });
+      await threads.append(thread.id, { role: "assistant", text: `第${i}答`.repeat(30), at: Date.now() });
+    }
+    return thread.id;
+  }
+
+  describe("线程压缩", () => {
+    /** 开跑前会先发一次摘要请求、再发本轮对话；contexts 按顺序记下每次请求体。 */
+    function compactingSession(
+      store: PlayStore,
+      responses: { text: string }[],
+      compaction: { contextWindow: number; triggerRatio: number; keepRecentTokens: number },
+      failFirstCall = false,
+    ): { session: WorkshopSession; contexts: string[]; emitted: ServerMessage[] } {
+      const contexts: string[] = [];
+      const emitted: ServerMessage[] = [];
+      const base = createFakeStreamFn(responses);
+      const session = new WorkshopSession({
+        playId: "test",
+        store,
+        model: {} as never,
+        getApiKey: () => "test-key",
+        streamFn: (model, context, options) => {
+          contexts.push(JSON.stringify(context));
+          // 摘要走的是第一次请求：把它打掉就是「摘要生成失败」这条路径
+          if (failFirstCall && contexts.length === 1) throw new Error("网关炸了");
+          return base(model, context, options);
+        },
+        emit: (msg) => emitted.push(msg),
+        onFilesChanged: () => {},
+        saves: new PlaySaves(store.dir),
+        saveStore: (saveId) => new PlayStore(store.dir, saveId),
+        compaction,
+      });
+      return { session, contexts, emitted };
+    }
+
+    // 预算 = 400×0.6 = 240 token；工坊 A 区本身就过千，所以这条必然超阈值（测的是压缩路径）
+    const TIGHT = { contextWindow: 400, triggerRatio: 0.6, keepRecentTokens: 60 };
+
+    it("超阈值：早期轮次退出上下文，摘要进 A 区，原文一条不删", async () => {
+      const store = await makeStore();
+      const threadId = await seedLongThread(store);
+      const { session, contexts, emitted } = compactingSession(
+        store,
+        [
+          { text: "定了赛博朋克侦探题材\n\n## 已确定\n- 主角是记不住人脸的女高中生" },
+          { text: "接着写角色卡。" },
+        ],
+        TIGHT,
+      );
+      await session.chat("继续搭", threadId);
+
+      // 第一次请求是摘要（看得见 head），第二次是本轮对话（head 已不在）
+      expect(contexts).toHaveLength(2);
+      expect(contexts[0]).toContain("第0问");
+      expect(contexts[1]).not.toContain("第0问");
+      // 保留 60 token ≈ 4 条，预算落点是 assistant，顺延到下一条 user（下标 10）→ 保留 2 条
+      expect(contexts[1]).toContain("第5问");
+      expect(contexts[1]).toContain("本会话已确定");
+
+      const thread = (await new WorkshopThreads(store).list()).find((t) => t.id === threadId);
+      expect(thread?.compaction?.cutAt).toBe(10);
+      expect(thread?.summary).toBe("定了赛博朋克侦探题材");
+      // 原文仍在：12 条历史一条不少，还多了这一轮
+      expect((await new WorkshopThreads(store).messages(threadId)).length).toBe(14);
+      const history = emitted.filter((m) => m.type === "workshop_history").at(-1) as
+        | { compaction: { cutAt: number } | null; messages: unknown[] }
+        | undefined;
+      expect(history?.compaction?.cutAt).toBe(10);
+      expect(history?.messages).toHaveLength(14);
+    });
+
+    it("摘要请求失败：只告警不压缩，本轮照常开跑", async () => {
+      const store = await makeStore();
+      const threadId = await seedLongThread(store);
+      const { session, contexts, emitted } = compactingSession(store, [{ text: "接着写。" }], TIGHT, true);
+      await session.chat("继续搭", threadId);
+
+      expect(emitted.some((m) => m.type === "workshop_done")).toBe(true);
+      expect(contexts[0]).toContain("第0问"); // 没压掉，本轮仍带着完整历史
+      const thread = (await new WorkshopThreads(store).list()).find((t) => t.id === threadId);
+      expect(thread?.compaction ?? null).toBeNull();
+    });
+
+    it("未超阈值：不压缩", async () => {
+      const store = await makeStore();
+      const threadId = await seedLongThread(store);
+      const { session, contexts } = compactingSession(store, [{ text: "接着写。" }], {
+        contextWindow: 10_000_000,
+        triggerRatio: 0.6,
+        keepRecentTokens: 60,
+      });
+      await session.chat("继续搭", threadId);
+      expect(contexts).toHaveLength(1);
+      const thread = (await new WorkshopThreads(store).list()).find((t) => t.id === threadId);
+      expect(thread?.compaction ?? null).toBeNull();
+    });
+  });
+
   it("一轮内多次写盘只触发一次 runtime 重建", async () => {
     const store = await makeStore();
     let reloads = 0;

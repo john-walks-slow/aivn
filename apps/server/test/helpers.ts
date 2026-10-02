@@ -17,6 +17,8 @@ export interface FakeResponse {
   toolCalls?: { name: string; args: Record<string, unknown> }[];
   /** 闸门：正文照发，但 done 押后到 gate 兑现——用来把某一轮卡在「演出中」。 */
   gate?: Promise<unknown>;
+  /** 回填给 provider 的 input token 数（默认 0 = 不回填，标定系数按 1 算）。 */
+  usageTokens?: number;
 }
 export const PLAY: PlayConfig = {
   id: "test",
@@ -102,13 +104,14 @@ export function createFakeStreamFn(responses: FakeResponse[]): StreamFn {
           api: "openai-completions",
           provider: "fake",
           model: "fake-test",
-          // usage 全零：假流不知道真实上下文大小，交回 pi 的字符启发式（纪元压缩按它判定阈值）
+          // usage 全零：假流不知道真实上下文大小，交回 pi 的字符启发式（纪元压缩按它判定阈值）。
+          // 给了 usageTokens 就按它回填 input —— token 标定系数（工坊线程压缩）测的就是这条路径。
           usage: {
-            input: 0,
+            input: response.usageTokens ?? 0,
             output: 0,
             cacheRead: 0,
             cacheWrite: 0,
-            totalTokens: 0,
+            totalTokens: response.usageTokens ?? 0,
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
           },
           stopReason: "stop",

@@ -8,6 +8,7 @@ import type {
   WorkshopThreadInfo,
 } from "@stage-ai/core";
 import type { Exa } from "./exa.js";
+import type { WebImageFetcher } from "./webImage.js";
 import { PlayFiles } from "./playFiles.js";
 import type { AssetLibrary } from "./library.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
@@ -16,13 +17,21 @@ import type { PlayStore } from "./store.js";
 import {
   buildWorkshopPrompt,
   deriveThreadTitle,
+  historyToMessages,
   runWorkshopTurn,
+  summarizeThread,
   type WorkshopMessage,
   type WorkshopWrite,
 } from "./workshop.js";
+import {
+  capDigest,
+  estimateThreadTokens,
+  pickThreadCutIndex,
+  type EpochSummary,
+} from "./compaction.js";
 import { createAgentKit, enabledToolsFor, type AgentKit } from "./agentkit/kit.js";
 import type { PlayAssets } from "./playAssets.js";
-import { WorkshopThreads, type WorkshopThread } from "./workshopThreads.js";
+import { WorkshopThreads, type ThreadCompaction, type WorkshopThread } from "./workshopThreads.js";
 
 /**
  * 工坊会话（D9）：一个剧目的工坊 runtime——线程管理 + 工坊 agent 执行 + 剧目文件编辑 + 素材生成。
@@ -54,8 +63,16 @@ export interface WorkshopSessionOptions {
   voices?: VoiceCatalogService;
   /** 联网检索客户端；未配置则 `web_search` 工具不注册、prompt 不提联网。 */
   exa?: Exa;
+  /** 网络图下载器；没有它 `view_image` 只认本地路径。 */
+  webImage?: WebImageFetcher;
   /** 工坊 agent 的运行设置（play.json 的 agents.workshop）：思考档位与工具开关。 */
   agents?: AgentSettings;
+  /** 线程压缩参数（工坊可用自己的 STAGE_WORKSHOP_* 一组 env）；不给 = 不压缩。 */
+  compaction?: {
+    contextWindow: number;
+    triggerRatio: number;
+    keepRecentTokens: number;
+  };
 }
 
 export class WorkshopSession {
@@ -89,6 +106,7 @@ export class WorkshopSession {
       assetLibrary: opts.assetLibrary,
       voices: opts.voices,
       exa: opts.exa,
+      webImage: opts.webImage,
     });
   }
 
@@ -130,44 +148,52 @@ export class WorkshopSession {
       this.opts.emit({ type: "workshop_error", threadId: this.activeId, message: "工坊正在回复，稍后再发" });
       return;
     }
-    let thread: WorkshopThread | undefined;
-    if (threadId) {
-      thread = (await this.threads.list()).find((t) => t.id === threadId);
-    }
-    if (!thread) thread = await this.threads.create(deriveThreadTitle(content));
-    const active = thread;
-    this.activeId = active.id;
-
-    const history = await this.threads.messages(active.id);
-    const userMessage: WorkshopMessage = { role: "user", text: content, at: Date.now() };
-    // 首条消息定标题：线程可能是刚建的占位，也可能是空的历史线程
-    await this.threads.append(active.id, userMessage, history.length === 0 ? { title: deriveThreadTitle(content) } : {});
-    await this.snapshot();
-
+    // 一进门就占位：读线程与开跑前的压缩摘要都在飞，期间再发一条会开出第二个 turn
+    // （摘要要走一次模型请求，空档能到秒级）。
     this.running = true;
     this.changedDuringTurn = false;
     this.pendingAssets = [];
     try {
-      const answer = await runWorkshopTurn(
+      let thread: WorkshopThread | undefined;
+      if (threadId) {
+        thread = (await this.threads.list()).find((t) => t.id === threadId);
+      }
+      if (!thread) thread = await this.threads.create(deriveThreadTitle(content));
+      const active = thread;
+      this.activeId = active.id;
+
+      const history = await this.threads.messages(active.id);
+      // 开跑前先看要不要压：压了才不等到这轮请求直接被窗口撑爆。
+      const { visible, prompt } = await this.maybeCompact(active, history);
+      const userMessage: WorkshopMessage = { role: "user", text: content, at: Date.now() };
+      // 首条消息定标题：线程可能是刚建的占位，也可能是空的历史线程
+      await this.threads.append(active.id, userMessage, history.length === 0 ? { title: deriveThreadTitle(content) } : {});
+      await this.snapshot();
+
+      const turn = await runWorkshopTurn(
         {
           streamFn: this.opts.streamFn,
           model: this.opts.model,
           getApiKey: this.opts.getApiKey,
           tools: this.kit.tools,
           thinkingLevel: this.kit.thinking,
-          systemPrompt: await this.systemPrompt(),
+          systemPrompt: prompt,
         },
-        history,
+        visible,
         content,
         {
           onDelta: (delta) => this.opts.emit({ type: "workshop_chunk", threadId: active.id, delta }),
           onTool: (name) => this.opts.emit({ type: "workshop_tool", threadId: active.id, name }),
         },
       );
+      if (turn.scale !== null) {
+        await this.threads.update(active.id, { tokenScale: turn.scale });
+        active.tokenScale = turn.scale;
+      }
       const images = this.pendingAssets;
       this.pendingAssets = [];
-      await this.threads.append(active.id, { role: "assistant", text: answer, at: Date.now(), images });
-      this.opts.emit({ type: "workshop_done", threadId: active.id, text: answer, images });
+      await this.threads.append(active.id, { role: "assistant", text: turn.text, at: Date.now(), images });
+      this.opts.emit({ type: "workshop_done", threadId: active.id, text: turn.text, images });
     } catch (error) {
       // 出错也把已出的图交出去：前面几张图是真金白银，不能因为后续一步失败就凭空消失。
       // 必须落进 threads——收束后的 snapshot 会带着它重放，否则前端一收到 history
@@ -175,21 +201,22 @@ export class WorkshopSession {
       const images = this.pendingAssets;
       this.pendingAssets = [];
       const message = error instanceof Error ? error.message : String(error);
+      const activeId = this.activeId ?? threadId ?? "";
       if (images.length > 0) {
-        await this.threads.append(active.id, {
+        await this.threads.append(activeId, {
           role: "assistant",
           text: `（这一步中断了，但上面 ${images.length} 张图已经出好了）${message}`,
           at: Date.now(),
           images,
         });
       }
-      this.opts.emit({ type: "workshop_error", threadId: active.id, message, images });
+      this.opts.emit({ type: "workshop_error", threadId: activeId, message, images });
     } finally {
       this.running = false;
+      // 一轮里可能写了好几个文件、出了好几张图：收束后只重建一次（保存即生效）
+      if (this.changedDuringTurn) this.opts.onFilesChanged();
+      await this.snapshot();
     }
-    // 一轮里可能写了好几个文件、出了好几张图：收束后只重建一次（保存即生效）
-    if (this.changedDuringTurn) this.opts.onFilesChanged();
-    await this.snapshot();
   }
 
   /**
@@ -247,10 +274,19 @@ export class WorkshopSession {
   }
 
   private async sendHistory(threadId: string): Promise<void> {
-    const messages = await this.threads.messages(threadId);
+    const [messages, thread] = await Promise.all([
+      this.threads.messages(threadId),
+      this.threads.list(),
+    ]);
+    const compaction = thread.find((t) => t.id === threadId)?.compaction ?? null;
     this.opts.emit({
       type: "workshop_history",
       threadId,
+      compaction: compaction && {
+        cutAt: compaction.cutAt,
+        oneLiner: compaction.oneLiner,
+        body: compaction.body,
+      },
       messages: messages.map((m): WorkshopChatMessage => ({
         role: m.role,
         text: m.text,
@@ -260,7 +296,70 @@ export class WorkshopSession {
     });
   }
 
-  private async systemPrompt(): Promise<string> {
+  /**
+   * 开跑前的线程压缩：对话体涨到窗口预算（默认 60%）时，把早期轮次压成一张摘要卡。
+   * 与演出侧同一套治理、同一时刻（每轮开跑前），只是产物落线程而不是 memory/arcs——
+   * 工坊会话是搭台过程，不是剧目事实，进 arcs 会污染剧作家每轮注入的 A 区。
+   *
+   * 消息文件一条不删：只有前 cutAt 条移出 agent 上下文，用户眼前的历史照常完整。
+   * 摘要失败只告警不动对话体（压缩是优化不是正确性前提）。
+   */
+  private async maybeCompact(
+    thread: WorkshopThread,
+    history: readonly WorkshopMessage[],
+  ): Promise<{ visible: WorkshopMessage[]; prompt: string }> {
+    const compaction = thread.compaction ?? null;
+    const view = compaction?.cutAt ?? 0;
+    const visible = history.slice(view);
+    const scale = thread.tokenScale ?? 1;
+    const prompt = await this.systemPrompt(compaction?.body);
+
+    const limit = this.opts.compaction;
+    if (!limit) return { visible, prompt };
+    const used = estimateThreadTokens(prompt, historyToMessages(visible), scale);
+    if (used <= Math.floor(limit.contextWindow * limit.triggerRatio)) return { visible, prompt };
+
+    const cut = pickThreadCutIndex(visible, limit.keepRecentTokens, scale);
+    if (cut === 0) return { visible, prompt };
+    const head = visible.slice(0, cut);
+    let digest: EpochSummary;
+    try {
+      digest = await summarizeThread(
+        {
+          streamFn: this.opts.streamFn,
+          model: this.opts.model,
+          getApiKey: this.opts.getApiKey,
+        },
+        head,
+        compaction?.body ?? "",
+      );
+    } catch (error) {
+      console.warn(
+        `[stage-ai] 工坊线程压缩跳过（摘要生成失败）: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { visible, prompt };
+    }
+    const next: ThreadCompaction = {
+      at: Date.now(),
+      cutAt: view + cut,
+      oneLiner: digest.oneLiner,
+      // 模型是拿旧定稿重写成一份完整文档，不是把两段叠起来（叠加几轮就全是历史噪音）。
+      body: capDigest(digest.body),
+      epochs: (compaction?.epochs ?? 0) + 1,
+    };
+    await this.threads.update(thread.id, { compaction: next, summary: next.oneLiner });
+    thread.compaction = next;
+    thread.tokenScale = scale;
+    console.log(
+      `[stage-ai] 工坊线程压缩：${used} tok → 保留 ${visible.length - cut}/${visible.length} 条，epoch=${next.epochs}`,
+    );
+    return {
+      visible: visible.slice(cut),
+      prompt: await this.systemPrompt(next.body),
+    };
+  }
+
+  private async systemPrompt(digest?: string): Promise<string> {
     const [play, files, readiness] = await Promise.all([
       this.opts.store.loadPlay(),
       this.files.list(),
@@ -275,6 +374,7 @@ export class WorkshopSession {
       canSearch: this.kit.can.search,
       canBrowseLibrary: this.kit.can.library,
       canVoices: this.kit.can.voice,
+      digest,
     });
   }
 }
