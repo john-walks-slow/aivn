@@ -18,9 +18,12 @@ export interface CharacterCard {
   voiceId?: string;
   /** 立绘差分映射：expression id → assets/sprites/<char>/ 文件名（P2 演出层用）。 */
   sprites?: Record<string, string>;
-  /** 立绘取景（bust/half/full）：舞台按它套缩放与落位预设，缺省 = 全身（见 play/framing.ts）。 */
+  /** 立绘取景（full/half/square）：出图画幅与舞台摆位都跟着它走，缺省 = 全身（见 play/framing.ts）。 */
   framing?: SpriteFraming;
-  /** 逐差分的取景覆盖：expression id → 取景。同一角色里混入特写差分时用（如 closeup = bust）。 */
+  /**
+   * 逐差分的取景覆盖：expression id → 取景。同一角色里混入不同画幅的差分时用
+   * （如 shout = full、sigh = half）。bust 已废，写了会降级到 half。
+   */
   spriteFraming?: Record<string, SpriteFraming>;
 }
 

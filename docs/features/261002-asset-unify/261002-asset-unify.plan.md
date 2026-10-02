@@ -214,6 +214,26 @@ DSL 渲染契约（`action` 八词 / `shot` 四档 / anchor 三档——引擎�
 顺带修一个真 bug：工坊提示词里「先查资源库」和「库里已有合适的角色可以 import_asset」两处
 **没有按 `canBrowseLibrary` 收条件**——没配资源库时那两个工具压根没注册，提示词却在教它调。
 
+### 跟随 main（rebase 3 个提交）
+
+main 领先的三条里只有 `d63c1f6` 带新代码，而且是 web 侧（排队面板收起成徽标），
+不碰提示词层。`6236573` 是纯合并，相对 rebase 前的基线内容无差异。
+
+但 `5bf7083`（AGENTS.md 更正立绘取景表）暴露了一类漂移：它只改了 AGENTS.md，
+**README 与源码注释还写着合并前的四档**。一并修掉：
+
+| 位置 | 原文 | 现 |
+| --- | --- | --- |
+| `config.ts` `CharacterCard.framing` | 取景（bust/half/full） | full/half/square，并点明 bust 会被降级 |
+| `config.ts` `spriteFraming` | 举例 `closeup = bust` | 举例换成 full/half 的混合画幅 |
+| `playAssets.ts` `framing` 字段 | 取景（bust/half/full） | full/half/square |
+| `framing.ts` `SPRITE_FRAMING_LABELS` 注释 | 「出图一律按全身来」 | 出图与摆位一起生效 |
+| `README.md` 六处 | 四档表 + 「出图实际只按全身来」 | 三档表 + square 的用途 + bust 降级说明 |
+
+顺带把 `apps/server/vitest.config.ts` 的 `testTimeout` 提到 20s：生图用例要在本机真编
+JPEG/PNG 再抠底，5s 默认值是纯抖动源（同一个文件单跑过、并行跑不过），已经逐条
+override 过两次，换成改默认值。
+
 ## 验证
 
 - `pnpm typecheck`：core / web / server 三个包全过

@@ -30,9 +30,9 @@ export function isSpriteFraming(value: unknown): value is SpriteFraming {
 /**
  * 取景的显示名（资源库浏览、角色卡编辑器、演出层下拉共用）。
  *
- * 取景目前只在**舞台摆位**上真正生效，出图一律按全身来：
- * 半身靠镜头放大实现（后续再做），所以日常开发与验证都只跑 `full`。
- * 这三档留着不删——play.json 里已有的声明、资源库里已入库的条目都指着它，
+ * 这三档**出图与舞台摆位一起生效**：画幅取 `SPRITE_FRAMING_ASPECT`、提示词里的景别措辞
+ * 取 `SPRITE_FRAMING_SHOT`，不是只在摆位上生效、出一律按全身。
+ * 字段留着不删——play.json 里已有的声明、资源库里已入库的条目都指着它，
  * 删字段等于让存量数据读不出来。
  */
 export const SPRITE_FRAMING_LABELS: Record<SpriteFraming, string> = {

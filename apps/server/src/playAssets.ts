@@ -57,7 +57,7 @@ export interface AssetTarget {
   characterId?: string;
   /** 立绘差分名（neutral / smile / ...）。 */
   expression?: string;
-  /** 立绘取景（bust/half/full）：决定出图景别与画幅，缺省全身。不给就沿用 play.json 里该角色已有的声明。 */
+  /** 立绘取景（full/half/square）：决定出图景别与画幅，缺省全身。不给就沿用 play.json 里该角色已有的声明。 */
   framing?: SpriteFraming;
   /**
    * 参考立绘（只对 background/cg 生效）：按给定顺序把这些角色的立绘垫给模型，
