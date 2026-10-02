@@ -897,6 +897,9 @@ export class PlaywrightOrchestrator {
     // 分岔必落标记：分岔不留痕等于没发生过。跳转反过来——它只挪世界线，不宣称这条线岔过。
     if (opts?.mark === false) tree.jumpTo(nodeId);
     else tree.recordFork(nodeId);
+    // 分岔/跳转不经过 append，但谱系日志得立刻跟上：标记漏写，档里的历史分支就看不出
+    // 曾经岔过（下次全量补推前，lineage.jsonl 会一直缺这一条）
+    this.flushLineageLog();
     // 链尾悬空的表态（分岔落在一次输入上）并进下一轮，不造空 assistant 轮次
     this.trailingInputs = trailingInputs;
     // 历史跟着分支回退：不在新路径上的轮（兄弟与废弃分支）、以及被轮中截断砍掉后半的那一轮，

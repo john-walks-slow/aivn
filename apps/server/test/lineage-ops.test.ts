@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { LineageTree, type ServerMessage } from "@stage-ai/core";
+import { LineageTree, type LineageEvent, type ServerMessage } from "@stage-ai/core";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { PlayMemory } from "../src/memory.js";
 import { lineageToBeats, lineageToEvents, stopFromEvent } from "../src/rebuild.js";
@@ -14,10 +14,13 @@ function setup(
   messages: ServerMessage[];
   tree: LineageTree;
   contexts: { messages: { role: string; content?: unknown }[] }[];
+  /** 落盘那份 JSONL 收到的事件序列（等于 onLineageEvent 的入参顺序）。 */
+  logged: LineageEvent[];
 } {
   const messages: ServerMessage[] = [];
   const tree = new LineageTree();
   const contexts = opts.contexts ?? [];
+  const logged: LineageEvent[] = [];
   const base = createFakeStreamFn(responses);
   const streamFn: StreamFn = (model, context, options) => {
     contexts.push(context as { messages: { role: string; content?: unknown }[] });
@@ -33,9 +36,10 @@ function setup(
     engine: { ...PLAY.initialState },
     scene: PLAY.initialScene,
     onServerMessage: (msg) => messages.push(msg),
+    onLineageEvent: (event) => logged.push(event),
     persist: () => {},
   });
-  return { orchestrator, messages, tree, contexts };
+  return { orchestrator, messages, tree, contexts, logged };
 }
 
 /** 跑出两轮空闲的现场：轮一有 choice 停止点，轮二 no_stop 收束。 */
@@ -290,6 +294,16 @@ describe("导演操作 · 编排器（分岔 / 编辑 / 插一句）", () => {
     // 选中的选项与自由输入是同一种节点、同一种段标题
     expect(prompts[0]?.payload?.input).toBe("我到了");
     expect(prompts[1]?.payload?.input).toContain("选择了：道歉");
+  });
+
+  it("分岔标记当场写进谱系日志：不等下一次全量补推", async () => {
+    const { orchestrator, tree, logged } = await playedTwoBeats();
+    const before = logged.filter((e) => e.kind === "fork").length;
+
+    await orchestrator.forkTo(firstNodeOf(tree, "say"));
+
+    expect(logged.filter((e) => e.kind === "fork")).toHaveLength(before + 1);
+    expect(logged.at(-1)?.kind).toBe("fork");
   });
 
   it("「继续」不落谱系节点也不进对话体：只有【状态】一段", async () => {
