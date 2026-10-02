@@ -344,3 +344,32 @@ describe("容错与字面文本", () => {
     expect(parser.warnings.some((w) => w.type === "malformed_tag" && w.detail.includes("自闭合"))).toBe(true);
   });
 });
+
+describe("告警是一次性投递（takeWarnings）", () => {
+  it("取走即清空：回灌给模型的告警不该和下一轮的混成一堆", () => {
+    const { parser } = collect();
+    parser.feed("她笑了笑。");
+    parser.endMessage();
+    expect(parser.warnings.length).toBeGreaterThan(0);
+
+    const taken = parser.takeWarnings();
+    expect(taken.some((w) => w.type === "orphan_text")).toBe(true);
+    expect(parser.warnings).toEqual([]);
+    expect(parser.takeWarnings()).toEqual([]);
+  });
+
+  it("resetBeat 不清告警：收束处要拿到的是这一轮攒下的全部问题", () => {
+    const { parser } = collect();
+    parser.feed("<say id=\"a\">话</narrate>");
+    parser.endMessage();
+    parser.resetBeat();
+    expect(parser.takeWarnings().length).toBeGreaterThan(0);
+  });
+
+  it("干净的一轮取到空表：编排器据此不发回灌块", () => {
+    const { parser } = collect();
+    parser.feed('<narrate>一切正常。</narrate>');
+    parser.endMessage();
+    expect(parser.takeWarnings()).toEqual([]);
+  });
+});

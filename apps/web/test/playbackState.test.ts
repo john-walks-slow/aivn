@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  dialogContent,
   emptyDialogHint,
   shouldAutoStart,
   stopAffordance,
@@ -24,6 +25,34 @@ describe("空对话区文案", () => {
 
   it("非演出中才等玩家发话", () => {
     expect(emptyDialogHint(false)).toBe("（点击开始）");
+  });
+});
+
+describe("台词条归属：回声 > 当前行 > 空提示", () => {
+  const base = { playerEcho: null, viewName: "小春", shown: "……喂。", hasView: true, live: true };
+
+  it("停止点上回声压得住上一句——初版就是死在这里，屏幕上什么都没有", () => {
+    const d = dialogContent({ ...base, playerEcho: "（选择了：走）" });
+    expect(d).toEqual({ name: "你", text: "（选择了：走）" });
+  });
+
+  it("没有回声时照常显示当前行与它的名牌", () => {
+    expect(dialogContent(base)).toEqual({ name: "小春", text: "……喂。" });
+  });
+
+  it("旁白不挂名牌，正文照给", () => {
+    expect(dialogContent({ ...base, viewName: null })).toEqual({ name: null, text: "……喂。" });
+  });
+
+  it("既没有回声也没有当前行才轮到占位文案", () => {
+    expect(dialogContent({ ...base, hasView: false, shown: "", viewName: null })).toEqual({
+      name: null,
+      text: "剧作家正在落笔…",
+    });
+  });
+
+  it("回声空了才回落，不留上一句的残影", () => {
+    expect(dialogContent({ ...base, playerEcho: "" })).toEqual({ name: "小春", text: "……喂。" });
   });
 });
 

@@ -28,16 +28,19 @@ const trap = {
   onTouchEnd: (e: React.TouchEvent) => e.stopPropagation(),
 } as const;
 
+/** 自己写一句也是选项的一种类型：不是单独一个按钮，而是列表里的最后一张卡。 */
+const FREE_CHOICE = "自由输入";
+
 /**
  * 停止点（玩家主权的三种形态，P6.5）：
  * - choice：画面中央悬浮的选肢卡片，选过的打勾留痕；
- * - free：模态窗形态的入戏输入（可 LLM 润色，撤销保原稿）；
+ * - free：没有剧本选项时，列表里就只有「自由输入」这一张卡——它同样是选项，不是旁路；
  * - pause：只在编排器造出来时出现（轮中分岔被截断 / 空轮报错）——不出按钮，
- *   玩家点舞台即表态续写开新轮（见 StageTheater.onStageClick）；
+ *   玩家点舞台即表态续写开新一轮（见 StageTheater.onStageClick）；
  * - 本轮写完（beat_done 无 stop）：默认没有卡片，点舞台就是继续（与翻句同一个动作）；
  *   设置里打开了「（继续）」卡才在这里摆一个普通选项——括号表明它是系统给的，不是角色给的台词。
- * 自由输入是从选项卡点开的，有一个返回键——选了不说的自由，选项还摆在那里。
- * 插一句 / 改台词 / 重演这一轮在对话框底部的导演栏里，不在此。
+ * 自由输入的模态窗随时能关：关掉回到列表，「自由输入」那张卡还摆在那里。
+ * 提示词 / 改写 / 重新生成 / 分岔在对话框底部的导演栏里，不在此。
  *
  * 本组件挂在**画面区**里（StageTheater 把它放进 `.theater-stage`）：选肢卡片仍然居中、
  * 背景仍然暗化，但台词条、导演栏、侧栏与排队面板都在浮层之外，选肢期间照常能点能用。
@@ -55,7 +58,7 @@ export function StopPanel({
   onPolish,
 }: StopPanelProps) {
   const [draft, setDraft] = useState("");
-  /** 自由输入是从选项里点开的（DSL 没给 free 停止点也能自己说）。 */
+  /** 自由输入是从选项列表里点开的（纯 free 停止点也有一张）。 */
   const [freeOpen, setFreeOpen] = useState(false);
   /** 润色前的原始输入（非空 = 当前草稿是润色产物，可撤销）。 */
   const [original, setOriginal] = useState<string | null>(null);
@@ -70,17 +73,9 @@ export function StopPanel({
     setPolishError(null);
   }, [stop, isNoStop]);
 
-  const options = stop?.stopType === "choice" ? (stop.options ?? []) : [];
-  const choosing = options.length > 0 && !freeOpen;
-  /** 从选项点进来的才给返回键；DSL 发的 free 停止点本来就没得选，返回无处可回。 */
-  const canBackOut = freeOpen && options.length > 0;
-
-  const backToChoices = (): void => {
-    setFreeOpen(false);
-    setDraft("");
-    setOriginal(null);
-    setPolishError(null);
-  };
+  const scripted = stop?.stopType === "choice" ? (stop.options ?? []) : [];
+  /** 有选项、或者剧本给的就是一个自由输入停止点：列表才摆出来。 */
+  const listing = scripted.length > 0 || stop?.stopType === "free";
 
   const submitFree = (): void => {
     const text = draft.trim();
@@ -89,6 +84,7 @@ export function StopPanel({
       setDraft("");
       setOriginal(null);
       setPolishError(null);
+      setFreeOpen(false);
     }
   };
 
@@ -116,9 +112,9 @@ export function StopPanel({
 
   return (
     <>
-      {choosing && (
+      {listing && !freeOpen && (
         <div className="choice-overlay" role="group" aria-label="选项" {...trap}>
-          {options.map((option, index) => (
+          {scripted.map((option, index) => (
             <button
               type="button"
               key={`${index}-${option.text}`}
@@ -139,38 +135,32 @@ export function StopPanel({
             className="choice ghost"
             disabled={disabled}
             onClick={() => setFreeOpen(true)}
-            title="不说选项，自己写一句"
+            title="不说选项，以主角口吻自己写一句"
           >
-            <span className="choice-text">自由发挥…</span>
+            <span className="choice-text">{FREE_CHOICE}</span>
           </button>
         </div>
       )}
 
-      {(stop?.stopType === "free" || freeOpen) && (
+      {/* 自由输入也是从那张卡点开的（纯 free 停止点只有它一张），所以这里必定有列表可回 */}
+      {freeOpen && (
         <Modal
-          title="自己写一句"
-          hint={
-            canBackOut
-              ? "不说选项，以主角口吻写一句。想回去选就点左下角。"
-              : "以主角口吻写一句，剧作家会照着往下演。"
-          }
+          title="自由输入"
+          hint="以主角口吻写一句。想回去选就点左下角，或直接关掉——「自由输入」这张卡还摆在那里。"
           width={560}
-          onClose={backToChoices}
-          dismissible={canBackOut}
+          onClose={() => setFreeOpen(false)}
           footer={
             <>
-              {canBackOut && (
-                <button
-                  type="button"
-                  className="ghost-btn free-back"
-                  onClick={backToChoices}
-                  disabled={disabled}
-                  title="不自己写了，回去选"
-                >
-                  <Icon name="prev" size={14} />
-                  返回选项
-                </button>
-              )}
+              <button
+                type="button"
+                className="ghost-btn free-back"
+                onClick={() => setFreeOpen(false)}
+                disabled={disabled}
+                title="不自己写了，回去选"
+              >
+                <Icon name="prev" size={14} />
+                返回选项
+              </button>
               {polishError && <span className="muted small">润色失败：{polishError}</span>}
               <button type="button" className="primary" onClick={submitFree} disabled={disabled || draft.trim() === ""}>
                 说
@@ -216,7 +206,7 @@ export function StopPanel({
           与翻下一句同一个动作，生成中沿用同一套 pending/streaming 反馈。 */}
       {/* 设置里打开「（继续）」卡时才摆：跟选肢用同一张卡片样式，不压黑舞台——
           引擎里不存在比轮更大的单位，界面也不该暗示有。 */}
-      {isNoStop && showContinue && !stop && !freeOpen && (
+      {isNoStop && showContinue && !stop && (
         <div className="choice-overlay" role="group" aria-label="继续" {...trap}>
           <div className="choices">
             <button type="button" className="choice" onClick={onContinue} disabled={disabled}>

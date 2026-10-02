@@ -143,6 +143,26 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
     expect(prompt).not.toContain("<stop");
   });
 
+  it("单轮长度是硬要求，且明说压得住创作口径里的「节奏/每拍」", () => {
+    const prompt = buildSystemPrompt({ play: PLAY });
+    expect(prompt).toContain("# 单轮该写多长（硬要求：默认写长）");
+    expect(prompt).toContain("10–25 句");
+    // 口径文件是用户可改的，长度规则不能只靠它：契约段里再钉一次
+    const withCraft = buildSystemPrompt({
+      play: PLAY,
+      memory: new PlayMemory({ craft: "# 创作口径\n\n节奏：两三句一转折。" }),
+    });
+    const contract = withCraft.slice(withCraft.indexOf("# 演出契约（引擎规则，不可改）"));
+    expect(contract).toContain("一轮至少 10 句");
+    expect(contract).toContain("不是长度上限");
+  });
+
+  it("内置默认口径不再把一轮钉死在 3~8 行（那是 #11 的病根）", () => {
+    const prompt = buildSystemPrompt({ play: PLAY });
+    expect(CRAFT_RULES).toContain("10~25 句");
+    expect(prompt).not.toContain("一轮 3~8 行台词为宜");
+  });
+
   it("输出纯净写在不可改的契约里，且指向 <comment> 这个出口", () => {
     const prompt = buildSystemPrompt({ play: PLAY });
     const contract = prompt.slice(prompt.indexOf("# 演出契约（引擎规则，不可改）"));

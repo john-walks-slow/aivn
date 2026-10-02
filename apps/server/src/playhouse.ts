@@ -66,6 +66,7 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
     idle: !runtime.orchestrator.isBusy,
     saveId: runtime.save.id,
     saveName: runtime.save.name,
+    readPos: runtime.orchestrator.readingPos ?? undefined,
   };
 }
 

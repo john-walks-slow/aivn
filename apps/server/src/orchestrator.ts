@@ -20,8 +20,12 @@ import {
   type StopPayload,
   type PromptQueueItem,
   type SpriteFraming,
+  type ReadPos,
+  type ParserWarning,
+  type ParserWarningType,
 } from "@stage-ai/core";
 import type { ServerMessage } from "@stage-ai/core";
+export type { ReadPos } from "@stage-ai/core";
 import { createAgentKit, type AgentKit } from "./agentkit/kit.js";
 import type { ModelStop } from "./agentkit/deps.js";
 import type { Exa } from "./exa.js";
@@ -48,6 +52,53 @@ import type { PendingJobs } from "./pendingJobs.js";
 
 /** 重建接力保留预算（token）：接住最近几轮就够，更早的细节走 archive 检索。 */
 const CARRY_OVER_TOKENS = 8000;
+
+/** 阅读位置落盘的最小间隔（毫秒）：位置随时更新，盘不用跟着逐字写。 */
+const READ_PERSIST_MS = 1500;
+
+/** 解析告警回灌的条数上限：再往上只是稀释真正的指令，而问题类型本来就那么几种。 */
+const MAX_FEEDBACK_WARNINGS = 8;
+
+/** 告警类型 → 模型看得懂的说法（英文枚举名对它没有诊断价值）。 */
+const WARNING_LABELS: Record<ParserWarningType, string> = {
+  orphan_text: "DSL 之外的散文",
+  unknown_tag: "不存在的标签",
+  malformed_tag: "写坏的标签",
+  mismatched_close: "对不上的闭合标签",
+  auto_closed: "没闭合就被自动收束",
+  nested_wrap: "嵌套的台词块",
+  legacy_tag: "已经改成工具调用的旧标签",
+};
+
+/** 解析告警去重限量后转成人话：一轮最多回灌这么多条。 */
+function describeBeatWarnings(warnings: readonly ParserWarning[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const { type, detail } of warnings) {
+    const line = `${WARNING_LABELS[type]}：${detail}`;
+    if (seen.has(line)) continue;
+    seen.add(line);
+    out.push(line);
+    if (out.length >= MAX_FEEDBACK_WARNINGS) break;
+  }
+  return out;
+}
+
+/**
+ * 自修正回灌块。
+ *
+ * 模型输出不合 DSL 时，解析器把不合法的部分丢了——但它不知道丢了什么，下一轮照旧
+ * 犯同样的错，演出就一直缺内容。这里把「上一轮哪里被丢了」讲清楚，让它自己改。
+ * 只讲位置和症状，不复述原文（复述会把上一轮的坏输出又塞回上下文一遍）。
+ */
+function renderBeatWarnings(warnings: readonly string[]): string {
+  return [
+    "【上一轮输出的问题】（下面是上一轮你的输出中被解析器丢弃或改写的地方）",
+    ...warnings.map((w) => `- ${w}`),
+    "这一轮请只输出符合 DSL 的标签内容，不要输出 DSL 之外的散文；" +
+      "已经演出的内容不要重写，只从断掉的地方接着写。",
+  ].join("\n");
+}
 
 export type PlayerAction =
   | { kind: "choice"; optionIndex: number }
@@ -156,6 +207,8 @@ export interface OrchestratorRuntimeState {
   lastStop: StopPayload | null;
   /** 事件缓冲代号（P6）：结构性操作会自增，客户端据此识别「缓冲已整段重放」。 */
   epoch: number;
+  /** 阅读位置：老档没有这个字段，缺省即从头读（跳到缓冲末尾的老行为）。 */
+  readPos?: ReadPos | null;
 }
 
 interface OpenLine {
@@ -206,6 +259,8 @@ export class PlaywrightOrchestrator {
   private beatEvents = 0;
   /** 本轮台词文本（archive 切片摘要来源）。 */
   private beatLines: string[] = [];
+  /** 上一轮 DSL 解析告警（已转成人话）：下一轮回灌给模型自修正，见 renderBeatWarnings。 */
+  private beatWarnings: string[] = [];
   /** 本 turn 调用了 beat_done → 轮在此收束（普通工具轮次不算边界，否则记忆查询会撕裂轮）。 */
   private beatClosed = false;
   /** always/state 活跃状态文件内容（谱系级，随快照走；write_memory 工具维护）。 */
@@ -222,6 +277,10 @@ export class PlaywrightOrchestrator {
   private unsubscribeAgent: (() => void) | null = null;
   /** 事件缓冲代号（P6）：分岔/跳转/编辑/重写后整段重放并自增，客户端据此丢弃旧 seq 认知。 */
   private epoch = 0;
+  /** 玩家读到哪儿（seq + 已显示字数）：随 session.json 落盘，刷新后据此回到原处。 */
+  private readPos: ReadPos | null = null;
+  /** 阅读位置的落盘节流：打字机逐字报位置，不能逐字写盘。 */
+  private readPersistTimer: ReturnType<typeof setTimeout> | null = null;
   /** 已写入 JSONL 的谱系事件数：直接改动树的操作（编辑/重写）在此增量补推。 */
   private loggedEvents = 0;
   /** 剧作家历史累积器（思考/原始 DSL/工具调用；随 session.json 落盘，只读对外）。 */
@@ -267,7 +326,12 @@ export class PlaywrightOrchestrator {
       ? new VoicePipeline({
           synth: opts.tts.synth,
           voiceOf: (charId) => opts.play.characters.find((c) => c.id === charId)?.voiceId,
-          emit: (ready) => this.send({ type: "audio_ready", ...ready }),
+          emit: (event) =>
+            this.send(
+              event.state === "ready" && event.url
+                ? { type: "audio_ready", seq: event.seq, phrase: event.phrase, url: event.url }
+                : { type: "audio_pending", seq: event.seq, phrase: event.phrase },
+            ),
           concurrency: opts.tts.concurrency,
           pending: opts.pending,
         })
@@ -279,6 +343,7 @@ export class PlaywrightOrchestrator {
       this.beatNo = opts.restored.beatNo;
       this.lastStop = opts.restored.lastStop;
       this.epoch = opts.restored.epoch ?? 0;
+      this.readPos = opts.restored.readPos ?? null;
       this.autostarted = true;
     }
   }
@@ -330,7 +395,25 @@ export class PlaywrightOrchestrator {
       beatNo: this.beatNo,
       lastStop: this.lastStop,
       epoch: this.epoch,
+      readPos: this.readPos,
     };
+  }
+
+  /** 玩家读到哪儿（hello 下发；null = 没记过）。 */
+  get readingPos(): ReadPos | null {
+    return this.readPos;
+  }
+
+  /**
+   * 记录阅读位置。播放头一动就报一次，落盘做节流——
+   * 打字机是逐字的，逐字落盘会把 session.json 写成一串 IO。
+   * 回退/分岔后 seq 不在新分支上也没关系：客户端只在恢复时用一次，对不上就退回末尾。
+   */
+  setReadPos(pos: ReadPos | null): void {
+    const prev = this.readPos;
+    if (prev?.seq === pos?.seq && prev?.len === pos?.len) return;
+    this.readPos = pos;
+    this.scheduleReadPersist();
   }
 
   /** 当前缓冲代号（hello/rebase 携带，客户端识别结构性操作）。 */
@@ -398,9 +481,22 @@ export class PlaywrightOrchestrator {
 
   /** 记下落盘任务（finishBeat/压缩后调用），whenIdle 据此等到磁盘落地。 */
   private persist(): void {
+    if (this.readPersistTimer) {
+      clearTimeout(this.readPersistTimer);
+      this.readPersistTimer = null;
+    }
     this.pendingPersist = Promise.resolve(this.opts.persist()).catch((error: unknown) => {
       console.warn(`[stage-ai] 会话落盘失败: ${error instanceof Error ? error.message : String(error)}`);
     });
+  }
+
+  /** 阅读位置专用节流落盘：一行读完再等一拍，避免把每轮落盘次数拉成百倍。 */
+  private scheduleReadPersist(): void {
+    if (this.readPersistTimer) return;
+    this.readPersistTimer = setTimeout(() => {
+      this.readPersistTimer = null;
+      this.persist();
+    }, READ_PERSIST_MS);
   }
 
   private flushIdleWaiters(): void {
@@ -872,9 +968,13 @@ export class PlaywrightOrchestrator {
   private renderPromptTurn(texts: readonly string[]): string {
     const inputs = [...this.trailingInputs, ...texts];
     this.trailingInputs = [];
+    // 上一轮的解析告警只在这里用一次：这一轮发出去就作废，免得旧问题反复骚扰
+    const warnings = this.beatWarnings;
+    this.beatWarnings = [];
     const sections = [
       `【状态】\n${renderStateSection(this.opts.engine, this.opts.scene, this.stateFiles)}`,
     ];
+    if (warnings.length > 0) sections.push(renderBeatWarnings(warnings));
     for (const text of inputs) sections.push(`【用户输入】\n${text}`);
     if (inputs.length > 0) {
       sections.push(
@@ -1053,6 +1153,8 @@ export class PlaywrightOrchestrator {
     this.busy = false;
     this.pendingBeatJob?.();
     this.pendingBeatJob = null;
+    // 告警要在 resetBeat 之前取走：解析器不替我们记，丢了就再也拼不出「上一轮哪里被丢了」
+    this.beatWarnings = describeBeatWarnings(this.parser.takeWarnings());
     this.parser.resetBeat();
     let stop = this.pendingStop;
     this.pendingStop = null;

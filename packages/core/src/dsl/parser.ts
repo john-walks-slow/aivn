@@ -99,6 +99,16 @@ export class StageDslParser {
     this.buffer = "";
   }
 
+  /**
+   * 取走并清空解析告警。
+   *
+   * 与 resetBeat 分开是刻意的：resetBeat 只复位解析状态，告警是一次性投递的信——
+   * 编排器在轮次收束处取走它，回灌给模型自修正；留在原地只会和下一轮的告警混成一堆。
+   */
+  takeWarnings(): ParserWarning[] {
+    return this.warnings.splice(0, this.warnings.length);
+  }
+
   private run(): void {
     for (;;) {
       const lt = this.buffer.indexOf("<");

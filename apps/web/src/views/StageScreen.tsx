@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReadPos } from "@stage-ai/core";
 import { api, type PlayDetail } from "../api.js";
 import { navigate } from "../router.jsx";
 import { useStageSocket, type WorkshopInbound } from "../stage/useStageSocket.js";
@@ -34,6 +35,9 @@ import { PromptQueuePanel } from "../stage/PromptQueuePanel.js";
 import { useVisualViewport } from "../stage/viewport.js";
 import { useEscape } from "../ui/escape.js";
 import { WorkshopPane } from "../workshop/WorkshopPane.js";
+
+/** 阅读位置上报的防抖窗口：打字机逐字推进，1s 内只发最后一次位置。 */
+const READ_REPORT_MS = 1000;
 
 /** 演出屏：舞台（视觉层+打字机+导演栏）/ 回顾 / 路线 / CG / 工坊五视图，共用侧栏外壳。 */
 export function StageScreen({ playId, search }: { playId: string; /** 路由上的 query：?view=workshop[&tab=…]（标题页直达工坊）。 */ search?: string }) {
@@ -103,6 +107,9 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   const generated = useGeneratedAssets();
   // 生图回调要在 socket 建连时就能摸到 playback，但 playback 声明在后面
   const playbackRef = useRef<ReturnType<typeof usePlayback> | null>(null);
+  // 阅读位置上报出口：播放层逐字报位置，这里防抖到 1s 一发，服务端再节流落盘
+  const readPosRef = useRef<((pos: ReadPos) => void) | null>(null);
+  const readPosTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 谱系只在这两个导演视图里拉取（打开/操作后/手动刷新），不做每轮广播
   const lineage = useLineage(playId, lineageNonce);
   // 工坊下行消息的订阅表：面板挂载时登记，卸载时注销（与舞台状态机解耦）
@@ -117,6 +124,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
 
   const stage = useStageSocket(playId, {
     onAudio: (ready) => director.handleAudio(ready),
+    onAudioPending: (pending) => director.markPending(pending.seq, pending.phrase),
     onBeatStart: () => {
       director.beatStarted();
       setLineageNonce((n) => n + 1); // 上一轮的玩家表态进谱系了，选肢的「已选过」要跟上
@@ -154,6 +162,13 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   // 渲染期回调绑定（N6：置于 stage 声明后，闭包引用才不踩未初始化的 TDZ）
   director.onNotify = () => setAudioTick((t) => t + 1);
   director.onControl = (state) => stage.sendTtsControl(state);
+
+  // 阅读位置出口（渲染期绑定）：打字机逐字推进，不必逐字过网——1s 内只发最后一次。
+  readPosRef.current = (pos: ReadPos) => {
+    const last = readPosTimer.current;
+    if (last) clearTimeout(last);
+    readPosTimer.current = setTimeout(() => stage.sendRead(pos), READ_REPORT_MS);
+  };
 
   // 导演出口（P6）：senders 在 useStageSocket 内 useCallback 稳定，仅重连后换引用
   const { sendFork: fork, sendJump: jump, sendEdit: edit } = stage;
@@ -194,6 +209,14 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     return () => director.dispose();
   }, [playId]);
 
+  // 阅读位置上报的待发定时器随连接一起走：连接没了就别补发那一帧
+  useEffect(
+    () => () => {
+      if (readPosTimer.current) clearTimeout(readPosTimer.current);
+    },
+    [],
+  );
+
   // 语音开关本地态 ↔ 服务端（连接建立/重连/切换时同步；关=停合成省配额）
   useEffect(() => {
     if (!stage.voiceAvailable) return;
@@ -233,8 +256,11 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     turbo,
     // D6 骨架兜底上界：服务端按生图配置下发，客户端不再自己猜生成要多久
     assetsTtlMs: stage.assetsTtlMs,
+    // #3 刷新后回到上次读到的那一句，而不是快进到本轮末尾
+    resumeAt: stage.readPos,
     onLineStart: (line) => director.lineStarted(line?.seq, line?.type === "say"),
     onFastForward: () => director.fastForward(),
+    onRead: (pos) => readPosRef.current?.(pos),
   });
   playbackRef.current = playback;
 
@@ -264,6 +290,34 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     stage.sendContinue();
   }, [stage.sendContinue]);
 
+  /**
+   * 玩家刚发出去的那一句：谱系是按需拉取的，最快也要等下一次轮询才把它收进回顾，
+   * 中间这几十秒对话框里什么都不换新——看着像「没点上」。先就地把它顶成一条消息。
+   *
+   * `afterKey` 是发话那一刻显示着的那一行：播放头一动就说明新一轮的台词进场了，
+   * 此时谱系迟早会补上这条输入，撤掉回声、交回真正的对话内容。手动点舞台也撤。
+   */
+  const [echo, setEcho] = useState<{ text: string; afterKey: string | null } | null>(null);
+  const echoText = echo && (playback.current?.key ?? null) === echo.afterKey ? echo.text : null;
+  const dismissEcho = useCallback((): void => setEcho(null), []);
+
+  const sendChoice = useCallback(
+    (index: number): void => {
+      const text = stage.stop?.options?.[index]?.text;
+      setEcho({ text: `（选择了：${text ?? `选项 ${index + 1}`}）`, afterKey: playbackRef.current?.current?.key ?? null });
+      stage.sendChoice(index);
+    },
+    [stage.stop, stage.sendChoice],
+  );
+
+  const sendFree = useCallback(
+    (text: string): void => {
+      setEcho({ text, afterKey: playbackRef.current?.current?.key ?? null });
+      stage.sendFree(text);
+    },
+    [stage.sendFree],
+  );
+
   // Esc 回到舞台（侧栏是常驻的，不需要「关掉」它）。走 ui/escape.ts 的浮层栈：
   // 输入模态窗开着的那一下归它，视图栏只在自己是栈顶时才认领。
   useEscape(() => goStage(), view !== "stage");
@@ -276,6 +330,15 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     const timer = setInterval(reloadLineage, 2500);
     return () => clearInterval(timer);
   }, [view, panelReady, reloadLineage]);
+
+  /**
+   * 这一轮刚演完、按钮刚解禁的那一刻立刻拉一次谱系，不等轮询的 2.5s。
+   * 导演栏的「改写 / 重新生成 / 分岔」全都靠谱系节点反查锚点，谱系没跟上就一直灰着——
+   * 玩家看到的是「这一轮演完了，但三个按钮都点不动」，而没有任何理由能解释。
+   */
+  useEffect(() => {
+    if (panelReady) reloadLineage();
+  }, [panelReady, reloadLineage]);
 
   // 轮是谱系行级日志上的区间，跟舞台行用同一个 seq 对尺：当前显示行反查回它的轮与台词节点，
   // 四原语就有着落点——不用跳到别的视图去找「刚才那一句」。
@@ -296,7 +359,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     [cards, lineage.view],
   );
 
-  const hasVoice = useCallback((seq: number | null): boolean => director.hasVoice(seq), [director]);
+  const voiceState = useCallback((seq: number | null) => director.voiceState(seq), [director]);
   const replay = useCallback(
     (seq: number): void => {
       void director.replay(seq);
@@ -453,7 +516,9 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
                 stage.send({ type: "generate_cg", ...(instruction ? { instruction } : {}) })
               }
               onReplay={replay}
-              hasVoice={hasVoice}
+              voiceState={voiceState}
+              playerEcho={echoText}
+              onEchoDismiss={dismissEcho}
               onUnlock={unlockVoice}
               onTurbo={setTurbo}
               canContinue={canContinue}
@@ -476,8 +541,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
                     showContinue={affordance.showContinueCard}
                     disabled={busy}
                     seenChoices={seenChoices}
-                    onChoice={stage.sendChoice}
-                    onFree={stage.sendFree}
+                    onChoice={sendChoice}
+                    onFree={sendFree}
                     onContinue={stage.sendContinue}
                     onPolish={(text) => api.polish(playId, text).then(({ text: polished }) => polished)}
                   />
@@ -496,7 +561,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
               headKey={playback.current?.key ?? null}
               busy={busy}
               voiceAvailable={stage.voiceAvailable}
-              hasVoice={hasVoice}
+              voiceState={voiceState}
               beatFor={beatFor}
               onSeek={(key) => {
                 playback.seek(key);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { SpriteFraming } from "@stage-ai/core";
-import { emptyDialogHint } from "./playbackState.js";
+import { dialogContent, emptyDialogHint } from "./playbackState.js";
 import { actorName } from "./script.js";
 import type { Playback, VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
@@ -38,7 +38,11 @@ interface StageTheaterProps {
   /** 导演生图：按当前这一幕出一张插图，指令可留空。 */
   onGenerateCg: (instruction: string) => void;
   onReplay: (seq: number) => void;
-  hasVoice: (seq: number | null) => boolean;
+  /** 这一行的语音处于哪一态：none=没配音色/不生成，pending=正在合成，ready=可重听。 */
+  voiceState: (seq: number | null) => VoiceState;
+  /** 玩家刚发出去的那一句（选项/自由输入）：谱系还没拉到，先在对话框里顶一句。 */
+  playerEcho: string | null;
+  onEchoDismiss: () => void;
   onUnlock: () => void;
   onView: (view: StageView) => void;
   /** 点舞台即开新轮：等到内容演完且存在 pause 停止点时成立（不再单列「继续」按钮）。 */
@@ -60,6 +64,57 @@ export interface DirectorTargets {
   lineText: string;
 }
 
+/** 一行的语音状态。pending=已发去合成、音频还没到；图标在这两态之间切换。 */
+export type VoiceState = "none" | "pending" | "ready";
+
+/**
+ * 导演栏的动作。分岔与重新生成共用同一个锚点，区别只在分岔之后等不等待落笔；
+ * 分段是「提示」面板里的岔路入口（打断当前轮并从这里续写），生图不进分支、直接落图。
+ */
+type DirectorAction = "prompt" | "edit" | "restart" | "fork" | "segment" | "cg";
+
+const ACTION_META: Record<
+  DirectorAction,
+  { title: string; hint: string; placeholder: string; submit: (draft: string) => string }
+> = {
+  prompt: {
+    title: "提示词",
+    hint: "写给剧作家的内容：角色的行动或台词、对这场戏的指示。演出中会排进待注入队列，在本轮收束后兑现。带 OOC：前缀 = 跳出角色直接下指令。",
+    placeholder: "想让这场戏接下来怎么走…",
+    submit: () => "发送",
+  },
+  edit: {
+    title: "改写这句台词",
+    hint: "就地改这一句，改完接着演，不重新生成。",
+    placeholder: "改写这句台词…",
+    submit: () => "改写",
+  },
+  restart: {
+    title: "重新生成这一轮",
+    hint: "从这一轮开头分岔并立刻续演，引擎自己换一种写法。留空 = 只重演；填了 = 顺带把意图给过去。",
+    placeholder: "想换什么方向？（可留空）",
+    submit: (d) => (d ? "重新生成 · 带着这句" : "重新生成"),
+  },
+  fork: {
+    title: "分岔",
+    hint: "退到这一轮开头开一条新分支，引擎停下来等你发话。留空 = 分岔后自己点舞台继续生成；填了 = 这句话直接进入新分支的第一轮。",
+    placeholder: "给新分支的第一句话（可留空）",
+    submit: (d) => (d ? "分岔 · 带着这句" : "分岔"),
+  },
+  segment: {
+    title: "打断当前轮并续写",
+    hint: "在这一轮这里切断，从这里起新分支继续演。留空 = 只打断；填了 = 带着这句进新轮",
+    placeholder: "想让这场戏接下来怎么走…",
+    submit: (d) => (d ? "打断并续写" : "打断当前轮"),
+  },
+  cg: {
+    title: "生成插图",
+    hint: "留空 = 照刚才演到的这一幕自己构图；填了 = 按你写的来。这一张就落在你按下这一刻的位置上",
+    placeholder: "想让这张图是什么样？（可留空）",
+    submit: () => "生成",
+  },
+};
+
 const POS_CLASS: Record<string, string> = { left: "pos-left", center: "pos-center", right: "pos-right" };
 
 /** 输入态：输入框里的按键是文字的，不能被舞台的快捷键与快进档抢走。 */
@@ -73,6 +128,9 @@ const OOC_PREFIX = "OOC：";
 /**
  * 立绘：表情差分之间交叉淡入。
  * 新图先在内存里解码好再叠上去，切换只是一层 opacity 过渡——不会出现白闪或半张脸。
+ *
+ * 加载失败（剧目里配的立绘文件已被删/改名）就地退场，不留浏览器那张裂图：
+ * 没有立绘的舞台本来就该是空的，一张裂图反而像是引擎坏了。
  */
 function Sprite({
   url,
@@ -105,11 +163,16 @@ function Sprite({
   }, [url, current]);
 
   if (!current) return null;
-  const cls = `theater-sprite framing-${framing} ${POS_CLASS[pos] ?? "pos-center"}`;
+const cls = `theater-sprite framing-${framing} ${POS_CLASS[pos] ?? "pos-center"}`;
+  // 加载失败就地退场（详见上方注释）：裂图比空舞台更像坏了。
+  const onError = (): void => {
+    setOutgoing(null);
+    setCurrent(null);
+  };
   return (
     <>
       {outgoing && <img className={`${cls} sprite-out`} src={outgoing} alt="" aria-hidden />}
-      <img className={cls} src={current} alt={name} />
+      <img className={cls} src={current} alt={name} onError={onError} />
     </>
   );
 }
@@ -130,7 +193,9 @@ export function StageTheater({
   onFork,
   onGenerateCg,
   onReplay,
-  hasVoice,
+voiceState,
+  playerEcho,
+  onEchoDismiss,
   voiceOn,
   onToggleVoice,
   onUnlock,
@@ -156,8 +221,8 @@ export function StageTheater({
       created.sfx.dispose();
     };
   }, []);
-  /** 导演栏的面板：几个动作的全部输入都在对话框里收，不跳视图。 */
-  const [action, setAction] = useState<"prompt" | "edit" | "restart" | "segment" | "cg" | null>(null);
+/** 导演栏的面板：几个动作的全部输入都在对话框里收，不跳视图。 */
+  const [action, setAction] = useState<DirectorAction | null>(null);
   const [draft, setDraft] = useState("");
   /** 净画面：藏掉压在画面上的台词条与导演栏，只剩背景/立绘/CG。点画面或按 H/空格/Esc 回来。 */
   const [hideUi, setHideUi] = useState(false);
@@ -165,6 +230,20 @@ export function StageTheater({
     playback;
   const shown = view ? view.text.slice(0, viewLength) : "";
   const lineDone = current !== null && shownLength >= current.text.length;
+  // 名牌与正文的归属交给纯函数判：这三者的优先级踩过一次坑，不在 JSX 里重排。
+  const dialog = dialogContent({
+    playerEcho,
+    viewName:
+      view && (view.type === "say" || view.type === "thought")
+        ? (view.nameOverride ?? (actorName(names, view.actorId) || "？"))
+        : null,
+    shown,
+    hasView: view !== null,
+    live,
+  });
+  // 空对话区的「还没开演」是第三种说法：dialogContent 只分「演出中 / 等玩家」两态，
+  // 树还空着时说「剧作家正在落笔…」是在撒谎。三层优先级不动，只在这一态换掉那句话。
+  const dialogBody = !playerEcho && !view && fresh ? emptyDialogHint(live, fresh) : dialog.text;
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→/空格 往回追。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
@@ -236,8 +315,8 @@ export function StageTheater({
   }, [onTurbo]);
 
   /**
-   * 舞台点击：回看中 → 往回追一句；等新内容时（pause 停止点）→ 直接开新轮。
-   * 「继续」不再单列按钮，翻下一句和继续演是同一个动作。
+   * 舞台点击：回看中 → 往回追一句；玩家刚发出去的那句还顶在对话框里 → 先把它收掉；
+   * 等新内容时（pause 停止点）→ 直接开新一轮。翻下一句和继续生成是同一个动作。
    */
   const onStageClick = (): void => {
     onUnlock();
@@ -246,7 +325,13 @@ export function StageTheater({
       return;
     }
     if (scrubbed) scrub(1);
-    else if (canContinue) onContinue();
+    else if (playerEcho) {
+      // 回声占着台词条时，这一下既是「我看过了」也是「往下走」——
+      // 否则玩家点两下才看得见自己那句话之后的内容。
+      onEchoDismiss();
+      if (canContinue) onContinue();
+      else advance();
+    } else if (canContinue) onContinue();
     else advance();
   };
 
@@ -317,14 +402,32 @@ export function StageTheater({
       if (text && targets.lineNodeId) onEdit(targets.lineNodeId, text);
       return;
     }
-    if (action === "restart" && targets.beatId) {
+    if (!targets.beatId) return;
+    if (action === "restart") {
       onFork(targets.beatId, { resume: true });
-      // 填了就当「插一句」紧跟着落进重演的那一轮里；留空就是纯粹重演。
+      // 填了就当「提示词」紧跟着落进重演的那一轮里；留空就是纯粹重演。
       if (text) onPrompt(text);
       return;
     }
-    if (action === "cg") onGenerateCg(text);
+    if (action === "cg") {
+      onGenerateCg(text);
+      return;
+    }
+    // 分岔：不 resume——新分支开出来后引擎停在等你开口。填了提示词就直接开新一轮。
+    onFork(targets.beatId);
+    if (text) onPrompt(text);
   };
+
+  /** 当前显示行的语音状态：合成中也占一个喇叭位（闪烁），别让「正在生成」看起来像「没有语音」。 */
+  const voice = voiceState(view?.seq ?? null);
+
+  /**
+   * 置灰只该因为「此刻确实做不了」。busy 优先于锚点缺失：演出进行中时锚点多半也是空的，
+   * 但那会显示成「这里没有台词可改」——玩家会以为是自己看错了，其实只是还没轮到他。
+   */
+  const editBlock = busy ? "演出进行中，暂时不能改写" : targets.lineNodeId ? null : "这里没有剧作家的台词可改";
+  const beatBlock = busy ? "演出进行中，暂时不能重来" : targets.beatId ? null : "这里还没有可退回去的一轮";
+  const forkBlock = busy ? "演出进行中，暂时不能分岔" : targets.beatId ? null : "这里还没有可分岔的一轮";
 
   return (
     <div
@@ -394,9 +497,9 @@ export function StageTheater({
         <button
           type="button"
           className={`dir-btn ${action === "edit" ? "on" : ""}`}
-          title={targets.lineNodeId ? "编辑当前这句台词" : "这里没有台词可改"}
+          title={editBlock ?? "编辑当前这句台词"}
           aria-label="改写当前这句台词"
-          disabled={!targets.lineNodeId}
+          disabled={editBlock !== null}
           onClick={(e) => {
             e.stopPropagation();
             setAction(action === "edit" ? null : "edit");
@@ -409,9 +512,9 @@ export function StageTheater({
         <button
           type="button"
           className={`dir-btn ${action === "restart" ? "on" : ""}`}
-          title={busy ? "剧作家正在写，暂时不能重来" : "重演这一轮（会分岔）"}
+          title={beatBlock ?? "重演这一轮（会分岔）"}
           aria-label="重演这一轮"
-          disabled={busy || !targets.beatId}
+          disabled={beatBlock !== null}
           onClick={(e) => {
             e.stopPropagation();
             setAction(action === "restart" ? null : "restart");
@@ -436,16 +539,31 @@ export function StageTheater({
           <Icon name="assets" size={17} />
           生图
         </button>
-        {voiceAvailable && hasVoice(view?.seq ?? null) && (
+        <button
+          type="button"
+          className={`dir-btn ${action === "fork" ? "on" : ""}`}
+          title={forkBlock ?? "分岔：从这一轮开头开新分支，停下来等你发话"}
+          aria-label="分岔"
+          disabled={forkBlock !== null}
+          onClick={(e) => {
+            e.stopPropagation();
+            setAction(action === "fork" ? null : "fork");
+            setDraft("");
+          }}
+        >
+          <Icon name="fork" size={17} />
+          分岔
+        </button>
+        {voiceAvailable && voice !== "none" && (
           <button
             type="button"
-            className="dir-btn"
-            title={!voiceOn ? "语音已关，先打开语音再重听" : "重听这句"}
-            aria-label="重听这句"
-            disabled={!voiceOn}
+            className={`dir-btn ${voice === "pending" ? "voice-pending" : ""}`}
+            title={voice === "pending" ? "语音合成中" : !voiceOn ? "语音已关，先打开语音再重听" : "重听这句"}
+            aria-label={voice === "pending" ? "语音合成中" : "重听这句"}
+            disabled={voice === "pending" || !voiceOn}
             onClick={(e) => {
               e.stopPropagation();
-              if (view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
+              if (voice === "ready" && view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
             }}
           >
             <Icon name="volume" size={17} />
@@ -455,13 +573,12 @@ export function StageTheater({
       </div>
 
       <div className="theater-dialog" role="text">
-        {view && (view.type === "say" || view.type === "thought") && (
-          <div className="dialog-name">{view.nameOverride ?? (actorName(names, view.actorId) || "？")}</div>
-        )}
-        <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
-          {shown ||
-            (view ? "" : emptyDialogHint(live, fresh))}
-          {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
+{dialog.name && <div className="dialog-name">{dialog.name}</div>}
+        {/* 回声期间台词条归它：玩家一按下就得看见自己说了什么，不能被上一句挡回去。
+            真台词一到（播放头换行）回声自动让位，见 StageScreen 的 echoText。 */}
+        <p className={`dialog-text ${!playerEcho && view?.type === "thought" ? "thought" : !playerEcho && view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
+          {dialogBody}
+          {view && !playerEcho && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
         </p>
         {/* 台词条底缘：左是状态提示（回看中 / 生成中），右是游戏选项 */}
         <div className="dialog-foot">
@@ -479,7 +596,7 @@ export function StageTheater({
                     ▼
                   </span>
                 )}
-                {canContinue && <span className="muted">点击舞台继续</span>}
+                {canContinue && <span className="muted">点击舞台继续生成</span>}
               </>
             )}
           </div>
@@ -543,28 +660,8 @@ export function StageTheater({
 
         {action && (
           <Modal
-            title={
-              action === "prompt"
-                ? "提示"
-                : action === "edit"
-                  ? "改写这句台词"
-                  : action === "restart"
-                    ? "重演这一轮"
-                    : action === "cg"
-                      ? "生成插图"
-                      : "打断当前轮并续写"
-            }
-            hint={
-              action === "prompt"
-                ? "可以是某个角色的行动或台词，也可以是给这场戏的指示。带 OOC：前缀 = 跳出角色，直接给剧作家下指令（他会照办，但不会跳出戏来跟你对话）"
-                : action === "edit"
-                  ? "就地改这一句，改完接着演，不重演"
-                  : action === "restart"
-                    ? "留空 = 只重演这一轮；填了 = 连意图一起给"
-                    : action === "cg"
-                      ? "留空 = 照刚才演到的这一幕自己构图；填了 = 按你写的来。这一张就落在你按下这一刻的位置上"
-                      : "在这一轮这里切断，从这里起新分支继续演。留空 = 只打断；填了 = 带着这句进新轮"
-            }
+            title={ACTION_META[action].title}
+            hint={ACTION_META[action].hint}
             onClose={() => setAction(null)}
             footer={
               <>
@@ -586,26 +683,14 @@ export function StageTheater({
                   className="primary"
                   onClick={submitAction}
                   disabled={
-                    action === "restart" || action === "segment"
-                      ? !targets.beatId
-                      : action === "edit"
-                        ? draft.trim() === ""
+                    action === "edit"
+                      ? draft.trim() === "" || !targets.lineNodeId
+                      : action === "restart" || action === "fork" || action === "segment"
+                        ? !targets.beatId
                         : false
                   }
                 >
-                  {action === "edit"
-                    ? "改写"
-                    : action === "restart"
-                      ? draft.trim()
-                        ? "重演这一轮 · 带着这句"
-                        : "重演这一轮"
-                      : action === "segment"
-                        ? draft.trim()
-                          ? "打断并续写"
-                          : "打断当前轮"
-                        : action === "cg"
-                          ? "生成"
-                          : "提示"}
+                  {ACTION_META[action].submit(draft.trim())}
                 </button>
                 <button type="button" className="ghost-btn" onClick={() => setAction(null)}>
                   取消
@@ -631,15 +716,7 @@ export function StageTheater({
               )}
               <input
                 value={draft}
-                placeholder={
-                  action === "edit"
-                    ? "改写这句台词…"
-                    : action === "restart"
-                      ? "想换什么方向？（可留空）"
-                      : action === "cg"
-                        ? "想让这张图是什么样？（可留空）"
-                        : "想让这场戏接下来怎么走…"
-                }
+                placeholder={ACTION_META[action].placeholder}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key !== "Enter") return;
@@ -669,7 +746,7 @@ export function BacklogView({
   headKey,
   busy,
   voiceAvailable,
-  hasVoice,
+  voiceState,
   beatFor,
   onSeek,
   onReplay,
@@ -681,7 +758,7 @@ export function BacklogView({
   headKey: string | null;
   busy: boolean;
   voiceAvailable: boolean;
-  hasVoice: (seq: number | null) => boolean;
+  voiceState: (seq: number | null) => VoiceState;
   /** 这一条落在哪一轮（重来的锚点）；玩家自己发来的话没有轮，返 null。 */
   beatFor: (entry: TranscriptEntry) => string | null;
   onSeek: (key: string) => void;
@@ -703,7 +780,7 @@ export function BacklogView({
           {entries.map((item) => {
             const beat = beatFor(item);
             const editable = item.kind === "line" && item.nodeId !== null;
-            const playable = item.type === "say" && voiceAvailable && hasVoice(item.seq);
+            const playable = item.type === "say" && voiceAvailable && voiceState(item.seq) === "ready";
             return (
               <li key={item.key} className={`bl-${item.kind}`}>
                 <div className={item.key === headKey ? "bl-text current" : "bl-text"}>
@@ -742,7 +819,7 @@ export function BacklogView({
                   </div>
                 ) : (
                   /* 动词带字样：几十像素的方块里分不出「重听」和「改写」，更看不出两个同义
-                     按钮的区别。「由此分岔」只留一个——重生成是分岔的副产品，不单列第二动词。 */
+                     按钮的区别。「分岔」只留一个——重新生成是分岔的副产品，不单列第二动词。 */
                   <div className="bl-tools">
                     <button
                       type="button"
@@ -781,12 +858,12 @@ export function BacklogView({
                     <button
                       type="button"
                       className="bl-tool"
-                      title={busy ? "剧作家正在写，暂时不能重来" : "重演这一轮（会分岔）"}
+                      title={busy ? "演出进行中，暂时不能重新生成" : "重新生成这一轮（从这一轮开头分岔并立刻续演）"}
                       disabled={busy || !beat}
                       onClick={() => beat && onFork(beat, { resume: true })}
                     >
                       <Icon name="rewrite" size={14} />
-                      重来
+                      重新生成
                     </button>
                   </div>
                 )}

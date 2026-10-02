@@ -54,14 +54,14 @@
   --link: #2f5d7c;
   --radius: 2px; /* 近直角：AVG 的窗与键都不圆 */
 
-  /* 字体：台词与标题走衬线（明朝气质），界面文字走无衬线 */
+/* 字体：台词与标题走衬线（明朝气质），界面文字走无衬线 */
   --font-ui:
     system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei",
     sans-serif;
   --font-serif:
     "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "Noto Serif JP", "MS Mincho", serif;
 
-  /* ② 画面 */
+  /* ② 画面（暗色为默认基线；亮/暗两套舞台变量由 useTheme 在运行时改写同一批键） */
   --stage-bg: #17130f; /* 舞台衬底（图片未到/加载中露出的底） */
   --dialog-bg: linear-gradient(178deg, rgb(28 24 25 / 0.9), rgb(17 15 17 / 0.94));
   --dialog-line: rgb(238 226 204 / 0.55);
@@ -76,6 +76,8 @@
   --nameplate-bg: #fffcf5;
   --nameplate-ink: #23201c;
   --nameplate-line: var(--accent);
+  /* 亮色舞台（useTheme 的 stageLight）把 --stage-bg 压到 #fdfdfd：剧本还没配景时
+     露出的是空白画布，不会被读成「画面加载不出来」。这里的默认基线走暗色。 */
   --sprite-dim: 0.55; /* 非发言人立绘压暗强度 */
   --choice-bg: rgb(24 21 23 / 0.92);
   --choice-line: rgb(238 226 204 / 0.4);
@@ -3857,13 +3859,12 @@ select:focus {
   color: var(--accent);
 }
 
-/* 窄屏抽屉关着时的唤出键：浮在内容左上角，换回全部导航。幽灵键同款（padding: 0 同理）。 */
 /* 侧栏唤出键：跟台词条同一块深色玻璃。画面上四角浮着的东西（唤出键 / 导演工具栏 /
-   排队面板）用同一套底色与圆角，才看得出是同一层界面浮在画面上，而不是三张卡片。 */
+   排队面板）用同一套底色与圆角，才看得出是同一层界面浮在画面上，而不是三张卡片。
+   z-index 要压过选肢层（6）与台词条（12）：选项摆着的时候导航还得能点开，
+   否则玩家被关在一张卡片前。 */
 .side-drawer-btn {
   position: absolute;
-  /* 舞台浮层会盖到它上面（选肢层 6、台词条 12），这里明确压在它们之上，
-     与 .theater-bar 同一档：导航是常驻 chrome，选项摆着的时候也得能点。 */
   z-index: 20;
   top: calc(8px + env(safe-area-inset-top));
   left: 8px;
@@ -3884,14 +3885,25 @@ select:focus {
   color: #fff;
 }
 
-/* 有视图栏时，唤出键进视图栏左边的空档（不是往下压到内容上）：
-   往下压 46px 正好落在工坊那排 tab 上——窄屏一格内容都不该被导航键盖住。 */
-.stage-main:has(.view-bar) .side-drawer-btn {
-  top: calc(8px + env(safe-area-inset-top));
-  left: 8px;
+/* 窄屏抽屉关着时的唤出键：舞台页浮在内容左上角，其余视图并进视图栏（见下）。
+   幽灵键同款（padding: 0 同理）。 */
+/* 非舞台视图：唤出键并进视图栏、落在标题左边，不再浮在内容上压住第一行。
+   同一个 .side-drawer-btn 在这里是常规流里的一枚，尺寸也收成和标题行同高。
+   （此前是 `.stage-main:has(.view-bar)` 给视图栏留 54px 左空档——键进了栏内之后
+   那个空档就只剩一块空白，已随这条布局一起删掉。） */
+.view-bar-lead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
-.stage-main:has(.view-bar) .view-bar {
-  padding-left: 54px;
+
+.view-bar-lead .side-drawer-btn {
+  position: static;
+  width: 30px;
+  height: 30px;
+  box-shadow: none;
+  background: none;
 }
 
 /* 窄屏：侧栏改成盖在内容上的抽屉，不再挤压内容区 */
@@ -4016,6 +4028,32 @@ select:focus {
   background: rgb(242 235 222 / 0.16);
   color: #fff;
 }
+
+/* 语音合成中：喇叭位留着但闪。音频还没到就消失，玩家只会以为这句没配音；
+   置灰又和「这句没有音色」长得一样。合成是不可点的等待态。 */
+.dir-btn.voice-pending {
+  color: var(--accent);
+  opacity: 1;
+  animation: voice-blink 1s ease-in-out infinite;
+}
+
+@keyframes voice-blink {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dir-btn.voice-pending {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 .dir-btn:disabled {
   opacity: 0.28;
   cursor: default;

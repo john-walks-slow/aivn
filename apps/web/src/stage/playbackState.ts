@@ -1,11 +1,12 @@
 /**
- * 对话区「此刻有没有话可说」的两个纯判断。
+ * 对话区「此刻有没有话可说」的几个纯判断。
  *
- * 抽出来是因为它们各自踩过一次坑，而两次都出在同一个毛病上——用间接状态反推，
+ * 抽出来是因为它们各自踩过一次坑，而出在同一个毛病上——用间接状态反推，
  * 而不是直接问「演出还在不在进行」：
  *  - 空对话区的文案曾经写成 `live && exhausted`，重演这一轮时新事件一到
  *    `exhausted` 就翻假，舞台当场退回「（点击开始）」；
- *  - 起播条件只看玩家点击，演出中的新内容于是永远等着被点一下才出现。
+ *  - 起播条件只看玩家点击，演出中的新内容于是永远等着被点一下才出现；
+ *  - 回声曾经排在「当前行」后面，而停止点上永远有当前行，回声等于没做。
  */
 
 import type { StopPayload } from "@stage-ai/core";
@@ -19,6 +20,34 @@ import type { StopPayload } from "@stage-ai/core";
 export function emptyDialogHint(live: boolean, fresh = false): string {
   if (fresh) return "还没开演——按画面上的「开演」开始。";
   return live ? "剧作家正在落笔…" : "（点击开始）";
+}
+
+export interface DialogInput {
+  /** 玩家刚发出去的那句话。非空时它占着台词条。 */
+  playerEcho: string | null;
+  /** 当前行的名牌（只有 say/thought 挂名牌）；没有行在显示时为 null。 */
+  viewName: string | null;
+  /** 当前行已经打出来的字。 */
+  shown: string;
+  /** 有没有行在显示。 */
+  hasView: boolean;
+  /** 一拍正在生成。 */
+  live: boolean;
+}
+
+/**
+ * 台词条此刻的名牌与正文。
+ *
+ * 回声优先级最高——这也是它踩过的坑：初版写成「有当前行就显示当前行，没有才轮到回声」，
+ * 而选肢停止点上上一句正是当前行，于是玩家在最常见的路径上根本看不到自己刚发的话。
+ * 回声是「按下之后立刻要看见的回执」，不是空对话区的占位符，谁都不该压在它上面。
+ *
+ * 真台词接管不靠这里的条件，靠 StageScreen 的 echoText——播放头一换行，回声自己就撤了。
+ */
+export function dialogContent(input: DialogInput): { name: string | null; text: string } {
+  if (input.playerEcho) return { name: "你", text: input.playerEcho };
+  if (input.hasView) return { name: input.viewName, text: input.shown };
+  return { name: null, text: emptyDialogHint(input.live) };
 }
 
 export interface AutoStartInput {

@@ -176,6 +176,9 @@ async function routeMessage(
       // 生图要穿过编排器落位置、穿过 PlayHouse 写提示词，两者都在这一层汇合
       await playhouse.requestCg(playId, msg.instruction);
       return;
+    case "read":
+      orchestrator.setReadPos({ seq: msg.seq, len: msg.len });
+      return;
     // —— 工坊（D9）：与演出同一连接、不同通道；工坊对话不阻塞演出 ——
     case "workshop_open":
       await runtime.workshop.snapshot();

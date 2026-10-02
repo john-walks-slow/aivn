@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReadPos } from "@stage-ai/core";
 import { shouldAutoStart } from "./playbackState.js";
 import type { Cue, ScriptLine } from "./script.js";
 import type { TranscriptEntry } from "./transcript.js";
+
+/** 找回「seq 属于哪条台词 cue」的下标；找不到返回 -1（换过分支的旧位置、老档的行）。 */
+export function lineCueIndexAt(cues: readonly Cue[], lines: readonly ScriptLine[], seq: number): number {
+  for (let i = 0; i < cues.length; i += 1) {
+    const cue = cues[i]!;
+    if (cue.kind !== "line") continue;
+    if (lines.find((l) => l.key === cue.lineKey)?.seq === seq) return i;
+  }
+  return -1;
+}
 
 /** 舞台视觉状态（视觉 cues 即时应用后的累积结果）。 */
 export interface VisualState {
@@ -163,6 +174,8 @@ export interface PlaybackHooks {
   onFastForward?: () => void;
   /** 自动模式 hold：true = 当前行语音仍在播，自动推进暂缓。 */
   hold?: boolean;
+  /** 播放头推进（逐字）：上报阅读位置，由外层防抖、服务端节流落盘。 */
+  onRead?: (pos: ReadPos) => void;
 }
 
 /**
@@ -182,6 +195,8 @@ export function usePlayback(
     resetToken?: number;
     /** 换代后是否快进到新分支末尾（false = 停住继续流式演出）。 */
     resumeAfterReset?: boolean;
+    /** 上次退出时读到的位置（hello.readPos）：首屏据此 seek 回那一句，而不是快进到本轮末尾。 */
+    resumeAt?: ReadPos | null;
     /** 按住 Ctrl 的快进档：当前行一次读完，行间不设停顿，一路追到缓冲末端。 */
     turbo?: boolean;
     /** 骨架占位的兜底上界（hello.assetsTtlMs）；缺省用保守默认值。 */
@@ -207,6 +222,12 @@ export function usePlayback(
   transcriptRef.current = transcript;
   const hooksRef = useRef<PlaybackHooks>({});
   hooksRef.current = { onLineStart: opts.onLineStart, onFastForward: opts.onFastForward };
+  /** 首屏 seek 目标：只在首次快进时消费一次，之后由 resetToken 换代清空（老分支的 seq 不能拿来 seek）。 */
+  const resumeAtRef = useRef<ReadPos | null>(opts.resumeAt ?? null);
+  // hello 比事件重放晚到还是早到不保证，用 effect 同步而不是只在首渲染取一次初值。
+  useEffect(() => {
+    if (opts.resumeAt) resumeAtRef.current = opts.resumeAt;
+  }, [opts.resumeAt]);
 
   const current = currentKey ? (linesRef.current.find((l) => l.key === currentKey) ?? null) : null;
   const turbo = opts.turbo ?? false;
@@ -376,6 +397,7 @@ export function usePlayback(
     // 一旦露出旧台词，玩家会以为这就是重来的结果。
     fastForwardedRef.current = false;
     showTailRef.current = opts.resumeAfterReset === true;
+    resumeAtRef.current = null;
   }, [opts.resetToken, opts.resumeAfterReset]);
 
   // cues 到达/重置检测：builder reset（fresh start）→ 播放归零
@@ -391,6 +413,22 @@ export function usePlayback(
     // resume 首次快进：视觉全应用 + 末行全文显示
     if (!fastForwardedRef.current && cues.length > 0) {
       fastForwardedRef.current = true;
+      const resumeAt = resumeAtRef.current;
+      resumeAtRef.current = null;
+      // 有阅读位置就 seek 回那一刻：视觉只补到那一行（后面的换景/退场属于还没读到的内容，
+      // 提前生效等于剧透），游标停在那行之后，字数接着上次显示到的位置续。
+      const resumeIndex = resumeAt ? lineCueIndexAt(cues, linesRef.current, resumeAt.seq) : -1;
+      if (resumeIndex >= 0) {
+        for (let i = 0; i <= resumeIndex; i += 1) applyVisual(cues[i]!);
+        const cue = cues[resumeIndex]!;
+        cursorRef.current = resumeIndex + 1;
+        if (cue.kind === "line") {
+          setCurrentKey(cue.lineKey);
+          const line = linesRef.current.find((l) => l.key === cue.lineKey);
+          setShownLength(Math.min(resumeAt!.len, line?.text.length ?? 0));
+        }
+        return;
+      }
       for (let i = 0; i < cues.length; i += 1) applyVisual(cues[i]!);
       cursorRef.current = cues.length;
       let lastLineKey: string | null = null;
@@ -402,6 +440,14 @@ export function usePlayback(
       }
     }
   }, [opts.revision, cues, applyVisual]);
+
+  // 阅读位置上报：刷新后要回到原处，位置得由播放头持续告诉服务端。
+  // 只认正在显示的行：回看（scrub）不改播放头，不该把回看位置存成「读到哪儿了」。
+  useEffect(() => {
+    const line = current;
+    if (!line || line.seq === undefined) return;
+    hooksRef.current.onRead?.({ seq: line.seq, len: shownLength });
+  }, [current, shownLength]);
 
   // 演出中「等新内容」的起播：此刻没有正在显示的台词，新的一句一到就起播，不必让玩家点一下。
   // 只在 current 为 null 时生效——正在读的句子不会被新到的内容抢走，阅读节奏仍归玩家；
