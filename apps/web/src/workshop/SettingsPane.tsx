@@ -111,7 +111,7 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
     }
     out.sort((a, b) => rankOf(a.key) - rankOf(b.key));
     return out;
-  }, [files]);
+  }, [files, draft]);
 
   if (!draft) return <div className="workshop-tab-pane">读取中…</div>;
 
