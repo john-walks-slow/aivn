@@ -31,21 +31,22 @@ plays/*/soak/
 # 素材管线的跑批产物（scripts/gen_*.py 的输出）不是仓库内容，跑一遍就有。
 # 前导斜杠必须留着：不锚在仓库根的话这条会连 plays/demo/assets/ 一起吃掉
 /assets/
-# 应用级素材库的媒体文件不进 git（2026-09-30 起）。
-# 理由：媒体是原文件本身，会随剧目包再分发，而 git 仓库不是分发渠道；且 700+ 个
-# 二进制把 .git 撑到 337MB，换台机器 clone 一次就是几百兆的网络与磁盘代价。
-# **meta.json 照旧进 git**——那是这次整理真正的产出：id、中文标题、适用场景、
-# 情绪/场景标签、许可与署名写法、原始出处 URL。媒体按 meta 里的 sourceUrl 重新
-# 抓即可复原，整理成果不会丢。
-# 判据只有一个：媒体（png/jpg/webp/mp3/ogg/wav/flac）不进，元数据进。
-library/**/*.png
-library/**/*.jpg
-library/**/*.jpeg
-library/**/*.webp
-library/**/*.mp3
-library/**/*.ogg
-library/**/*.wav
-library/**/*.flac
+# 应用级素材资源库整个不进 git（2026-10-02 起）。仓库默认带一个空库，本机配的
+# 条目属本地配置，不是仓库内容——新增、改名、删除都不该在 git 里留痕（否则一条
+# 本地目录的增删会变成一次待推送的提交，别人 clone 下来还会拿到一份自己用不上的库）。
+# 与 plays/*/ 同一口径：那也只是本机内容，仓库只留 plays/demo 一个样例。
+#
+# 2026-09-30 的旧口径是「媒体二进制不进、meta.json 照旧进 git」，理由是元数据是资源库
+# 整理的产出、媒体可按 sourceUrl 重抓。推翻的理由：那份台账已经写在
+# docs/features/260930-asset-library/ 下的 research.md 里（进 git），不必在库里再留
+# 一份；留着的代价是每台机器 clone 下来都背着一份自己用不上的库。
+#
+# 写 `/library/*` 而不是 `library/`：写成后者 git 根本不进这个目录，「保住空库本身」
+# 那条否定规则会跟着失效（已实测）。前者忽略的是库里的内容、目录本身留着，于是
+# `!/library/.gitkeep` 生效——仓库带着一个空库，而不是 clone 完连 library 都没有、
+# 用户得先自己 mkdir 才知道往哪放素材。
+/library/*
+!/library/.gitkeep
 # Python 字节码
 __pycache__/
 
