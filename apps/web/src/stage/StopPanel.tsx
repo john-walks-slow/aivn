@@ -146,7 +146,7 @@ export function StopPanel({
       {freeOpen && (
         <Modal
           title="自由输入"
-          hint="以主角口吻写一句。想回去选就点左下角，或直接关掉——「自由输入」这张卡还摆在那里。"
+          hint="以主角口吻写一句。"
           width={560}
           onClose={() => setFreeOpen(false)}
           footer={

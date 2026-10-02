@@ -247,7 +247,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(beatStartsBefore);
   });
 
-  it("插一句走【用户输入】区且谱系记录 prompt 行；越过停止点时明示玩家未作回应", async () => {
+  it("插一句（引导）走【用户输入】区且谱系记 prompt 行；停在停止点时只排队，不吞停止点", async () => {
     const contexts: { messages: { role: string }[] }[] = [];
     const { orchestrator, messages, tree } = setup(
       [
@@ -257,17 +257,131 @@ describe("PlaywrightOrchestrator 闭环", () => {
       { contexts },
     );
     await orchestrator.playerAction({ kind: "free", text: "开局" });
-    // 停在 choice 停止点（空闲态）：插一句直接开新轮，并声明玩家未作回应
-    await orchestrator.playerAction({
-      kind: "prompt",
-      text: "下一轮让澪提到天文社",
-    });
 
-    expect(tree.materialize().findLast((e) => e.kind === "prompt")?.payload?.input)
-      .toBe("下一轮让澪提到天文社");
+    // 停在 choice 停止点（空闲态）：引导只入队，选项照旧摆着，自己不开新一轮
+    await orchestrator.playerAction({ kind: "prompt", text: "让她先别说话" });
+    expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1);
+    expect(
+      tree.materialize().some((e) => e.kind === "prompt" && e.payload?.input === "让她先别说话"),
+    ).toBe(false);
+
+    // 玩家点了选项：引导与选项合成同一个用户轮
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(2);
+    const userText = lastUserText(contexts);
+    expect(userText).toContain("【用户输入】\n让她先别说话");
+    expect(userText).toContain("（选择了：道歉）");
+    expect(
+      tree.materialize()
+        .filter((e) => e.kind === "prompt")
+        .map((e) => e.payload?.input),
+    ).toEqual(["开局", "让她先别说话", "（选择了：道歉）"]);
+    // 玩家作过回应，这一轮不用再声明「未作回应」
+    expect(userText).not.toContain("未作回应");
+  });
+
+  it("引导排队中碰上无停止点的收尾：本轮收完直接兑现（那里没有选项可等）", async () => {
+    const contexts: { messages: { role: string }[] }[] = [];
+    // 第二轮闸门押后：模拟「玩家在这一轮还在演的时候插了一句」
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { orchestrator, messages } = setup(
+      [
+        { text: BEAT_1, beatDone: BEAT_1_STOP },
+        { text: BEAT_2, beatDone: true, gate },
+        { text: BEAT_2, beatDone: true },
+      ],
+      { contexts },
+    );
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+
+    // 玩家点选项 → 第二轮开跑（卡在闸门里）
+    const second = orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    await vi.waitFor(() => {
+      expect(orchestrator.isBusy).toBe(true);
+    });
+    await orchestrator.playerAction({ kind: "prompt", text: "下一轮让澪提到天文社" });
+    release();
+    await second;
+
+    // 第二轮演完没有停止点 → 排队的引导自己兑现，第三轮
+    await vi.waitFor(() => {
+      expect(contexts.length).toBe(3);
+    });
     expect(lastUserText(contexts)).toContain("【用户输入】\n下一轮让澪提到天文社");
-    expect(lastUserText(contexts)).toContain("未作回应");
+  });
+
+  it("轮内分岔 = 腰斩克隆：被掐断的那轮不写 beat_end，新分支从那一行接上", async () => {
+    // 正文先流、收尾押后，等于「剧作家正在写这一轮」；收到 abort 信号才收流，
+    // 与真实 provider 的行为同形（默认假流不认 abort，被 abort 后会空转到天荒地老）
+    const midBeat: StreamFn = (_model, _context, options) => {
+      const stream = createAssistantMessageEventStream();
+      const partial = { role: "assistant", content: [] } as AssistantMessage;
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial });
+        stream.push({ type: "text_start", contentIndex: 0, partial });
+        for (const delta of BEAT_1.match(/[\s\S]{1,7}/g) ?? []) {
+          stream.push({ type: "text_delta", contentIndex: 0, delta, partial });
+        }
+        stream.push({ type: "text_end", contentIndex: 0, content: BEAT_1, partial });
+        options?.signal?.addEventListener("abort", () => {
+          const message: AssistantMessage = {
+            role: "assistant",
+            content: [],
+            api: "openai-completions",
+            provider: "fake",
+            model: "fake-test",
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            },
+            stopReason: "error",
+            errorMessage: "AbortError: The operation was aborted",
+            timestamp: Date.now(),
+          };
+          stream.push({ type: "done", message });
+          stream.end(message);
+        });
+      });
+      return stream;
+    };
+    const { orchestrator, messages, tree } = setup([{ text: BEAT_1 }], { streamFn: midBeat });
+
+    const running = orchestrator.playerAction({ kind: "free", text: "我到了" });
+    // 台词行已落树（这一轮还在演）
+    await vi.waitFor(() => {
+      expect(tree.materialize().some((e) => e.kind === "say")).toBe(true);
+    });
+    const sayNode = tree.materialize().find((e) => e.kind === "say")!;
+    expect(orchestrator.isBusy).toBe(true);
+
+    // 轮中分岔：不等这一轮演完
+    await orchestrator.forkTo(sayNode.id);
+    await running;
+
+    expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(0);
+    expect(messages.some((m) => m.type === "rebase")).toBe(true);
+    expect(orchestrator.isBusy).toBe(false);
+    // 落点之后的原内容整段转兄弟分支，新分支停在那一行上等玩家开口
+    expect(tree.materialize().at(-1)).toMatchObject({ kind: "say", text: "……太慢了！" });
+    expect(tree.export().events.some((e) => e.kind === "fork")).toBe(true);
+  });
+
+  it("nodeIdAtSeq：舞台只给 seq，落点取该行（行未落树时取它前面那个节点）", async () => {
+    const { orchestrator, tree } = setup([{ text: BEAT_1, beatDone: BEAT_1_STOP }]);
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+
+    const sayNode = tree.materialize().find((e) => e.kind === "say")!;
+    // 落点按 seq 解析：台词行取它自己
+    expect(orchestrator.nodeIdAtSeq(sayNode.payload?.seq)).toBe(sayNode.id);
+    // 没有 seq（没在演任何东西）就没有落点
+    expect(orchestrator.nodeIdAtSeq(undefined)).toBeNull();
   });
 
   it("resume：seq 过滤重放", async () => {
@@ -692,14 +806,25 @@ describe("长会话装配", () => {
 
     releaseFirst();
     await first; // 轮 1 收敛
-    await orchestrator.whenIdle(); // 队列在收束后异步兑现，等它开完轮
+    await orchestrator.whenIdle();
 
+    // 轮 1 收在选择点上：引导不抢在选项前头兑现，它等玩家先表态
     expect(messages.filter((m) => m.type === "error")).toEqual([]);
+    expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1);
+    expect(call).toBe(1);
+    const heldQueue = messages.filter((m) => m.type === "prompt_queue").at(-1);
+    expect(heldQueue?.type === "prompt_queue" && heldQueue.items).toHaveLength(1);
+
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    await orchestrator.whenIdle();
+
+    // 玩家点了选项 → 引导与选项同一轮发出去
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(2);
     expect(call).toBe(2);
     expect(lastUserText(contexts)).toContain("【用户输入】\n节奏加快一点");
-    // 插话时轮一还在演，等到它落幕才呈现出一个选择点：玩家没点选项就说了别的，按未作回应处理
-    expect(lastUserText(contexts)).toContain("未作回应");
+    expect(lastUserText(contexts)).toContain("（选择了：道歉）");
+    // 玩家作过回应，这一轮不用再声明「未作回应」
+    expect(lastUserText(contexts)).not.toContain("未作回应");
     // 兑现完就把队列清空：面板标题写的是「接下来要说的话」，没有下一句就不该还挂着
     const settledQueue = messages.filter((m) => m.type === "prompt_queue").at(-1);
     expect(settledQueue?.type === "prompt_queue" && settledQueue.items).toEqual([]);

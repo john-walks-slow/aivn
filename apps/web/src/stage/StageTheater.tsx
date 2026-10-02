@@ -34,7 +34,8 @@ interface StageTheaterProps {
   /** 插一句：唯一的输入通道。空闲时立刻开新轮，演出中排进待注入队列。 */
   onPrompt: (text: string) => void;
   onEdit: (nodeId: string, text: string) => void;
-  onFork: (nodeId: string, opts?: { resume?: boolean }) => void;
+  /** 分岔锚点：字符串是谱系节点 id（回顾/路线），数字是舞台当前行的 seq。 */
+  onFork: (anchor: string | number, opts?: { resume?: boolean }) => void;
   /** 导演生图：按当前这一幕出一张插图，指令可留空。 */
   onGenerateCg: (instruction: string) => void;
   onReplay: (seq: number) => void;
@@ -61,6 +62,8 @@ interface StageTheaterProps {
 export interface DirectorTargets {
   beatId: string | null;
   lineNodeId: string | null;
+  /** 正在显示的这一行在事件缓冲里的 seq：分岔的落点就靠它（轮内谱系还没追上，id 靠不住）。 */
+  lineSeq: number | null;
   lineText: string;
 }
 
@@ -68,12 +71,12 @@ export interface DirectorTargets {
 export type VoiceState = "none" | "pending" | "ready";
 
 /**
- * 导演栏的动作。分岔与重新生成共用同一个锚点，区别只在分岔之后等不等待落笔；
+ * 导演栏的动作。分岔从「当前这一行」开（舞台传 seq），重新生成从整轮开头重演（传 beatId）；
  * 生图不进分支、直接落图。
  */
 type DirectorAction = "prompt" | "edit" | "restart" | "fork" | "cg";
 
-/** 「提示」面板里的两岔：顺着这一轮写下去（引导），还是先退开开新分支（分岔）。 */
+/** 「提示」面板里的两岔：跟着这一轮写下去（引导），还是从这一行退开（分岔）。 */
 type GuideMode = "guide" | "fork";
 
 const ACTION_META: Record<
@@ -81,35 +84,41 @@ const ACTION_META: Record<
   { title: string; hint: string; placeholder: string; submit: (draft: string) => string }
 > = {
   prompt: {
-    title: "提示词",
-    hint: "写给剧作家的内容：角色的行动或台词、对这场戏的指示。演出中会排进待注入队列，在本轮收束后兑现。带 OOC：前缀 = 跳出角色直接下指令。",
-    placeholder: "想让这场戏接下来怎么走…",
+    title: "提示",
+    hint: "",
+    placeholder: "写一句…",
     submit: () => "发送",
   },
   edit: {
-    title: "改写这句台词",
-    hint: "就地改这一句，改完接着演，不重新生成。",
-    placeholder: "改写这句台词…",
+    title: "改写这句",
+    hint: "只改这一句，剧情照旧往下走。",
+    placeholder: "改写这句…",
     submit: () => "改写",
   },
   restart: {
-    title: "重新生成这一轮",
-    hint: "从这一轮开头分岔并立刻续演，引擎自己换一种写法。留空 = 只重演；填了 = 顺带把意图给过去。",
+    title: "重新生成",
+    hint: "从这一轮开头重演。",
     placeholder: "想换什么方向？（可留空）",
     submit: (d) => (d ? "重新生成 · 带着这句" : "重新生成"),
   },
   fork: {
     title: "分岔",
-    hint: "退到这一轮开头开一条新分支，引擎停下来等你发话。留空 = 分岔后自己点舞台继续生成；填了 = 这句话直接进入新分支的第一轮。",
-    placeholder: "给新分支的第一句话（可留空）",
+    hint: "从这一行开新分支。",
+    placeholder: "新分支的第一句（可留空）",
     submit: (d) => (d ? "分岔 · 带着这句" : "分岔"),
   },
   cg: {
     title: "生成插图",
-    hint: "留空 = 照刚才演到的这一幕自己构图；填了 = 按你写的来。这一张就落在你按下这一刻的位置上",
-    placeholder: "想让这张图是什么样？（可留空）",
+    hint: "留空 = 按刚才这一幕构图。",
+    placeholder: "想画成什么样？（可留空）",
     submit: () => "生成",
   },
+};
+
+/** 「提示」面板两岔各自的一句话说明：说清这一句发出去会发生什么，不解释引擎。 */
+const GUIDE_HINT: Record<GuideMode, string> = {
+  guide: "跟这一轮一起发：话排进队列，等你点选项或输入时一起送到剧作家。",
+  fork: "从正在看的这一行开新分支；正在写的后半截就此腰斩。",
 };
 
 const POS_CLASS: Record<string, string> = { left: "pos-left", center: "pos-center", right: "pos-right" };
@@ -415,19 +424,22 @@ voiceState,
       if (text && targets.lineNodeId) onEdit(targets.lineNodeId, text);
       return;
     }
-    if (!targets.beatId) return;
+    if (act === "cg") {
+      onGenerateCg(text);
+      return;
+    }
     if (act === "restart") {
+      if (!targets.beatId) return;
       onFork(targets.beatId, { resume: true });
       // 填了就当「提示词」紧跟着落进重演的那一轮里；留空就是纯粹重演。
       if (text) onPrompt(text);
       return;
     }
-    if (act === "cg") {
-      onGenerateCg(text);
-      return;
-    }
-    // 分岔：不 resume——新分支开出来后引擎停在等你开口。填了提示词就直接开新一轮。
-    onFork(targets.beatId);
+    // 分岔：从**正在看的这一行**退开（传 seq，由服务端解析成落点），不是从整轮开头。
+    // 轮内分岔 = 腰斩：正在写的后半截就此作废，旧分支停在它演到的位置。
+    if (targets.lineSeq === null) return;
+    onFork(targets.lineSeq);
+    // 填了提示词就直接开新一轮；留空则新分支开出来后停在等你开口。
     if (text) onPrompt(text);
   };
 
@@ -440,9 +452,10 @@ voiceState,
    */
   const editBlock = busy ? "演出进行中，暂时不能改写" : targets.lineNodeId ? null : "这里没有剧作家的台词可改";
   const beatBlock = busy ? "演出进行中，暂时不能重来" : targets.beatId ? null : "这里还没有可退回去的一轮";
-  const forkBlock = busy ? "演出进行中，暂时不能分岔" : targets.beatId ? null : "这里还没有可分岔的一轮";
+  // 分岔不因 busy 置灰：玩家说「就到这里」随时成立，正在写的那半截就此腰斩。
+  const forkBlock = targets.lineSeq === null ? "这里还没有可分岔的位置" : null;
 
-  /** 弹窗的标题/提示/提交键按哪条岔走：只有「提示」面板有两种，其余动作单一。 */
+  /** 提交按哪条岔走：只有「提示」面板有两种（引导 / 分岔），其余动作单一。 */
   const modalAction: DirectorAction =
     action === "prompt" && guideMode === "fork" ? "fork" : (action ?? "prompt");
 
@@ -665,8 +678,8 @@ voiceState,
 
         {action && (
           <Modal
-            title={ACTION_META[modalAction].title}
-            hint={ACTION_META[modalAction].hint}
+            title={action === "prompt" ? "提示" : ACTION_META[action].title}
+            hint={action === "prompt" ? GUIDE_HINT[guideMode] : ACTION_META[action].hint}
             onClose={() => setAction(null)}
             footer={
               <>
@@ -691,14 +704,14 @@ voiceState,
             }
           >
             {/* 「提示」的两条岔：引导 = 顺着这一轮写（排进待注入队列，停止点不动），
-                分岔 = 先退到本轮开头开新分支再落笔。两件事同一处决定，别拆成两个键。 */}
+                分岔 = 从正在看的这一行退开再落笔。两件事同一处决定，别拆成两个键。 */}
             {action === "prompt" && (
               <div className="seg guide-seg">
                 <button
                   type="button"
                   className={`seg-btn ${guideMode === "guide" ? "active" : ""}`.trim()}
                   aria-pressed={guideMode === "guide"}
-                  title="顺着这一轮写：话排进待注入队列，本轮收束后兑现，不动分支也不吃掉停止点"
+                  title="跟着这一轮写，排进队列等你选。"
                   onClick={() => setGuideMode("guide")}
                 >
                   引导
@@ -707,7 +720,7 @@ voiceState,
                   type="button"
                   className={`seg-btn ${guideMode === "fork" ? "active" : ""}`.trim()}
                   aria-pressed={guideMode === "fork"}
-                  title={forkBlock ?? "先退到这一轮开头开新分支，停下来等你发话"}
+                  title={forkBlock ?? "从这一行开新分支，正在写的后半截腰斩。"}
                   disabled={forkBlock !== null}
                   onClick={() => setGuideMode("fork")}
                 >
@@ -720,7 +733,7 @@ voiceState,
                 <button
                   type="button"
                   className={`ooc-shortcut ${draft.startsWith(OOC_PREFIX) ? "on" : ""}`}
-                  title="以 OOC 开头 = 跳出角色，直接给剧作家下指令（他会照办，但不会跳出戏来跟你对话）"
+                  title="以 OOC 开头 = 跳出角色，直接下指令"
                   aria-label="以 OOC 前缀给剧作家下指令"
                   onClick={() =>
                     setDraft((prev) =>
@@ -733,7 +746,7 @@ voiceState,
               )}
               <input
                 value={draft}
-                placeholder={ACTION_META[action].placeholder}
+                placeholder={action === "prompt" ? ACTION_META[modalAction].placeholder : ACTION_META[action].placeholder}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key !== "Enter") return;

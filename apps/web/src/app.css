@@ -48,9 +48,9 @@
   --ink-soft: #5b5348;
   --ink-faint: #9a9081;
   --line: #ded5c4;
-  --accent: #9b3b4f; /* 臙脂 */
-  --accent-ink: #fff7f3;
-  --accent-soft: #f4e3e2;
+  --accent: #6f4e37; /* 咖啡 */
+  --accent-ink: #fdf8f3;
+  --accent-soft: #ecdfd2;
   --link: #2f5d7c;
   --radius: 2px; /* 近直角：AVG 的窗与键都不圆 */
 
@@ -83,7 +83,8 @@
   --stage-radius: 10px;
   --nameplate-bg: #fffcf5;
   --nameplate-ink: #23201c;
-  --nameplate-line: var(--accent);
+  /* 名牌永远白底，描边必须两套主题下都在白底上看得见，因此取固定的中性灰，不跟主色 */
+  --nameplate-line: rgb(90 80 68 / 0.45);
   /* 亮色舞台（useTheme 的 stageLight）把 --stage-bg 压到 #fdfdfd：剧本还没配景时
      露出的是空白画布，不会被读成「画面加载不出来」。这里的默认基线走暗色。 */
   --sprite-dim: 0.55; /* 非发言人立绘压暗强度 */
@@ -121,9 +122,9 @@ html[data-ui-theme="dark"] {
   --ink-soft: #b3a897;
   --ink-faint: #8a8073;
   --line: #3d362f;
-  --accent: #d98a7a; /* 臙脂在深底上要提亮，否则红压黑糊成一团 */
+  --accent: #c79a6d; /* 深底上的咖啡要提亮，否则棕压黑糊成一团 */
   --accent-ink: #1a1512;
-  --accent-soft: rgba(217, 138, 122, 0.18);
+  --accent-soft: rgba(199, 154, 109, 0.18);
   --link: #8fb8d4;
 }
 
@@ -146,7 +147,7 @@ html[data-stage-theme="light"] {
   --choice-bg: rgb(252 250 246 / 0.94);
   --choice-line: rgb(120 108 92 / 0.4);
   --choice-ink: #23201c;
-  --choice-active-bg: rgb(217 138 122 / 0.3);
+  --choice-active-bg: rgb(150 104 66 / 0.22);
   --choice-scrim: linear-gradient(180deg, transparent 24%, rgb(239 236 229 / 0.55));
 }
 
@@ -1155,7 +1156,8 @@ button.link-btn {
   margin: 0;
 }
 
-/* 说话人：白底 + 主题描边的小牌，骑在文本窗上沿——纯文字压在图上认不出谁在说 */
+/* 说话人：白底 + 中性描边的小牌，骑在文本窗上沿——纯文字压在图上认不出谁在说。
+   描边不跟主色：名牌每句都在，主色描边会把整条台词条钉成一个红框（现在是咖啡框）。 */
 .dialog-name {
   position: absolute;
   top: -13px;
@@ -1163,7 +1165,7 @@ button.link-btn {
   max-width: 62%;
   padding: 1px 14px;
   border: 1px solid var(--nameplate-line);
-  border-radius: 1px;
+  border-radius: 999px;
   background: var(--nameplate-bg);
   color: var(--nameplate-ink);
   font-family: var(--font-serif);
@@ -2975,10 +2977,10 @@ select:focus {
     font-size: 15.5px;
   }
 
-  /* 选肢层贴底排：竖屏画面本来就窄，居中一列卡片会把立绘从头到脚压在下面，
-     只剩头顶露出来。 */
+  /* 竖屏同样居中：这段画面上下各有一块浮层压着，卡片贴底排会紧贴台词条，
+     读起来像「压在对话框上」。放不下才滚。 */
   .choice-overlay {
-    justify-content: safe flex-end;
+    justify-content: safe center;
     gap: 8px;
     padding: 8px 12px;
   }

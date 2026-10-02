@@ -243,6 +243,8 @@ export class PlaywrightOrchestrator {
   private disposed = false;
   /** 一轮正在开（纪元压缩等前置步骤未完）：对外等同 busy，防止并发 beginBeat。 */
   private beatPending = false;
+  /** beginBeat 的代号：腰斩时自增作废那一轮，它醒来后不再收尾（见 cancelBeat）。 */
+  private beatToken = 0;
   /** 等待「编排器空闲」的挂起者（工坊写盘要在轮边界重建 runtime，不打断进行中的演出）。 */
   private idleWaiters: (() => void)[] = [];
   /** 最近一次会话落盘任务：重建 runtime 前必须等它落地，否则可能读到写了一半的 session.json。 */
@@ -573,23 +575,20 @@ export class PlaywrightOrchestrator {
 
   /** 玩家操作 → 下一轮。插一句在演出中排进待注入队列，其余动作必须 idle。 */
   async playerAction(action: PlayerAction): Promise<void> {
-    // 插一句是唯一支持演出中投递的输入：它在轮边界统一兑现，不打断进行中的这一轮。
-    // engaged 覆盖纪元压缩窗口（压缩期间 busy 仍为 false，但 Agent 随时可能被重建，
-    // 并发 beginBeat 会打架），此时也只排队——不投进即将被替换的实例。
+    // 插一句（引导）是唯一支持演出中投递的输入，而它**从不自己开新一轮**：
+    // 只排进队列，兑现时机交给玩家下一次动作——他在停止点上点哪个选项、敲哪句自由输入，
+    // steer 就跟那一句合成同一个用户轮发出去。停在停止点时立刻兑现等于把选项吞掉：
+    // 玩家还没选，剧作家已经先收到指令了，那停止点就成了摆设。
     if (action.kind === "prompt") {
       const text = action.text.trim();
       if (!text) return;
-      const item: PromptQueueItem = {
+      this.pending.push({
         id: `pq-${this.pendingSeq += 1}`,
         text,
         beatNo: this.beatNo,
         status: "pending",
-      };
-      this.pending.push(item);
+      });
       this.broadcastPromptQueue();
-      if (this.engaged) return;
-      this.beatPending = true; // 先占位：deliverPrompts 前的空档不放行 whenIdle
-      await this.deliverPrompts([item]);
       return;
     }
     if (this.engaged) {
@@ -618,19 +617,42 @@ export class PlaywrightOrchestrator {
     } else {
       resolved = action;
     }
+    // 排队的 steer 跟这次动作合成同一轮：「（选择了：X）」和那句引导一起进去，
+    // 剧作家拿到的是一次完整意图，不是两条互不相干的输入。
+    const steers = this.pending.filter((item) => item.status === "pending");
     if (!this.autostarted) {
       this.autostarted = true;
       // 开场这一句同样落谱系：否则它只活在对话体里，玩家在轮内分岔就再也找不回来
+      for (const item of steers) this.appendLineage("prompt", { payload: { input: item.text } });
       if (resolved) this.appendLineage("prompt", { payload: { input: resolved.text } });
-      const inputs = resolved ? [resolved.text] : [];
-      await this.beginBeat(`${this.opts.play.opening}\n\n${this.renderPromptTurn(inputs)}`);
+      this.markSent(steers);
+      const inputs = [...steers.map((item) => item.text), ...(resolved ? [resolved.text] : [])];
+      await this.beginBeat(
+        `${this.opts.play.opening}\n\n${this.renderPromptTurn(inputs, { answered: resolved !== null })}`,
+      );
       return;
     }
     if (!resolved) {
-      await this.beginBeat(this.renderPromptTurn([]));
+      for (const item of steers) this.appendLineage("prompt", { payload: { input: item.text } });
+      this.markSent(steers);
+      await this.beginBeat(this.renderPromptTurn(steers.map((item) => item.text)));
       return;
     }
-    await this.deliverPrompts([{ id: "", text: resolved.text, beatNo: this.beatNo, status: "pending" }]);
+    await this.deliverPrompts(
+      [...steers, { id: "", text: resolved.text, beatNo: this.beatNo, status: "pending" }],
+      { answered: true },
+    );
+  }
+
+  /** 兑现即落笔：出队并回执「已落笔」，面板上不再占位。 */
+  private markSent(items: readonly PromptQueueItem[]): void {
+    if (items.length === 0) return;
+    for (const item of items) {
+      item.status = "sent";
+      item.sentBeatNo = this.beatNo + 1;
+    }
+    this.pending = this.pending.filter((entry) => entry.status === "pending");
+    this.broadcastPromptQueue();
   }
 
   /**
@@ -641,7 +663,10 @@ export class PlaywrightOrchestrator {
    * 已落笔的旧批次在这里出列：它在面板上显示过「已落笔」，新一轮开始时就不该再占位。
    * 收束后的排队兑现由 beginBeat 的 onBeatSettled 统一接管，本方法不重复。
    */
-  private async deliverPrompts(items: readonly PromptQueueItem[]): Promise<void> {
+  private async deliverPrompts(
+    items: readonly PromptQueueItem[],
+    opts?: { answered?: boolean },
+  ): Promise<void> {
     this.pending = this.pending.filter((item) => item.status === "pending");
     for (const item of items) this.appendLineage("prompt", { payload: { input: item.text } });
     for (const item of items) {
@@ -649,14 +674,24 @@ export class PlaywrightOrchestrator {
       item.sentBeatNo = this.beatNo + 1;
     }
     this.broadcastPromptQueue();
-    await this.beginBeat(this.renderPromptTurn(items.map((item) => item.text)));
+    await this.beginBeat(this.renderPromptTurn(items.map((item) => item.text), opts));
   }
 
-  /** 本轮收束后的收尾：先兑现排队输入（保持 engaged），没有才放行 whenIdle。 */
+  /**
+   * 本轮收束后的收尾。
+   *
+   * 停在停止点就**不兑现**排队的 steer：引导不吃掉玩家的选择权，那句话留在面板里
+   * （可改可撤），等玩家点选项/敲输入时由 playerAction 合成同一轮发出去。
+   * 这一轮本来就没有停止点（no_stop）才自动开新一轮——那里没有选项可等。
+   */
   private onBeatSettled(): void {
     this.send({ type: "beat_settled" });
     // 只取还没落笔的：已注入的那批不能再来一遍，否则同一句话会进两次谱系
     const items = this.pending.filter((item) => item.status === "pending");
+    if (this.lastStop) {
+      this.flushIdleWaiters();
+      return;
+    }
     if (items.length === 0) {
       // 队列空了就把已落笔的那批也带走：面板写的是「接下来要说的话」，
       // 没有下一句时它就该消失，不能把上一轮的回执永远挂在右上角。
@@ -718,12 +753,20 @@ export class PlaywrightOrchestrator {
   /**
    * 分岔：从任意节点开新分支。
    *
-   * `resume: true` = 分岔后立刻续演（用户说的「重来」）：目标节点之后的内容整段截断，
+   * 正在演的那轮**腰斩克隆**：玩家说「就到这里，往后换一种写法」，被掐断的那一轮
+   * 在旧分支上就停在它演到的位置（beat_end / 引擎快照 / archive / 落盘一概不写），
+   * 新分支从锚点接下去。
+   *
+   * `resume: true` = 分岔后立刻续演（「重来」这一轮）：目标节点之后的内容整段截断，
    * 挂载点后紧接一个 fork 标记事件，续演内容挂它之下。中间不设停止点——等价于玩家在
    * 上一轮末尾按了「继续」，零点击。
    */
   async forkTo(nodeId: string, opts?: { resume?: boolean }): Promise<void> {
-    this.guardIdle();
+    // 重来照旧只在空闲时做：它顶的是「这一轮重头再来」，一轮正写到一半没什么可重来
+    if (this.engaged) {
+      if (!opts?.resume) this.cancelBeat();
+      else this.guardIdle();
+    }
     if (!opts?.resume) {
       this.rebaseAt(nodeId, "已从此处开新分支");
       return;
@@ -732,6 +775,49 @@ export class PlaywrightOrchestrator {
     // 整个 fork+续演是一步，中间没有让 engaged 掉下去的空档。
     this.rebaseAt(nodeId, "重演这一轮", { resume: true });
     await this.beginBeat(this.renderPromptTurn([]));
+  }
+
+  /**
+   * 腰斩：把正在演的那轮就地掐断，状态归零到「刚要开始新一轮」的那一刻。
+   *
+   * 顺序有讲究：**busy 先清零**。finishBeat 的入口是 `if (!this.busy) return`，被弃掉的
+   * 那一轮因此整段收尾都跳过——beat_end 不落、引擎快照不存、archive 不切、盘不落，
+   * 旧分支就停在你看到的那一行。
+   *
+   * beatToken 作废那一轮 beginBeat 的 finally：它 abort 后还会醒一次，若不拦，它会把
+   * beatPending 清掉、把排队里的 steer 兑现掉，甚至 finishBeat 掉新分支刚开的那轮。
+   */
+  private cancelBeat(): void {
+    this.busy = false;
+    this.beatPending = false;
+    this.beatToken += 1;
+    this.openLine = null; // 半句台词不算数，它还没落谱系
+    this.pendingStop = null;
+    this.parser.resetBeat();
+    this.beatWarnings = [];
+    this.beatLines = [];
+    this.beatError = null;
+    this.beatTimedOut = false;
+    this.agent.abort();
+  }
+
+  /**
+   * 舞台行的 seq → 谱系节点 id：分岔「从这一点」要的落点。
+   *
+   * 用 seq 而不是让客户端回传节点 id：行要等 say_end 才落树，前端的谱系是轮询的，
+   * 轮内分岔那一刻它多半还没看见刚说完的那句，回传 id 就会落在几十行之前。
+   * 这里取「当前分支上、seq 不大于它」的最后一个节点——正在打的那行还没落树时，
+   * 落点就是它前面那句，正如「读到哪儿算哪儿」。
+   */
+  nodeIdAtSeq(seq: number | undefined): string | null {
+    if (typeof seq !== "number" || !Number.isFinite(seq)) return null;
+    const chain = this.opts.tree.chainEvents(this.opts.tree.leafId);
+    let hit: string | null = null;
+    for (const event of chain) {
+      const at = (event.payload as { seq?: number } | undefined)?.seq;
+      if (typeof at === "number" && at <= seq) hit = event.id;
+    }
+    return hit;
   }
 
   /**
@@ -965,7 +1051,7 @@ export class PlaywrightOrchestrator {
    * 链尾悬空的用户输入（分岔落在一次表态上）排在本轮最前面：模型照旧看得见上一次
    * 说了什么，但不必造一条空 assistant 轮次。
    */
-  private renderPromptTurn(texts: readonly string[]): string {
+  private renderPromptTurn(texts: readonly string[], opts?: { answered?: boolean }): string {
     const inputs = [...this.trailingInputs, ...texts];
     this.trailingInputs = [];
     // 上一轮的解析告警只在这里用一次：这一轮发出去就作废，免得旧问题反复骚扰
@@ -983,8 +1069,9 @@ export class PlaywrightOrchestrator {
           "也可能是别人）的行动、话语或心理：照字面意思演成该角色的言行，涉及主角的" +
           "决定性动作时给出停止点。两种都不要在剧本中复述这段文字本身。）",
       );
-      // 引擎上次是不是在等玩家回答——与发消息的人是谁无关，选项答非所问也算
-      if (!this.busy && this.lastStop && this.lastStop.stopType !== "pause") {
+      // 引擎上次是不是在等玩家回答——与发消息的人是谁无关，选项答非所问也算。
+      // 玩家这一轮点了选项或敲了输入（answered）就不算「未作回应」，引导跟着一起来也不算
+      if (!opts?.answered && !this.busy && this.lastStop && this.lastStop.stopType !== "pause") {
         sections.push(
           "（用户是在未作回应的情况下直接发来上面这段的。若其中已包含某个角色的行动或" +
             "话语就直接演；否则继续演出，并在合适时机再给出回应机会。）",
@@ -995,6 +1082,7 @@ export class PlaywrightOrchestrator {
   }
 
   private async beginBeat(userText: string): Promise<void> {
+    const token = (this.beatToken += 1);
     this.beatPending = true;
     // 网关挂住是看不见的故障：provider 既不抛错也不收流，await 会永远挂着。
     // 到点直接 abort 这一轮，让 finishBeat 的空轮护栏收成一次可重试的失败。
@@ -1017,10 +1105,15 @@ export class PlaywrightOrchestrator {
       await this.agent.prompt(userText);
       await this.agent.waitForIdle();
     } catch (error) {
+      // 腰斩之后醒过来的旧轮：报错记在它自己身上，不写进新分支那轮的账
+      if (token !== this.beatToken) return;
       // prompt 抛错（网络/中断）：记入 beatError，由 finishBeat 的空轮护栏统一收束
       this.beatError = error instanceof Error ? error.message : String(error);
     } finally {
       if (timer) clearTimeout(timer);
+      // 已被腰斩的一轮整段作废：它不能再碰 beatPending（那属于新分支），
+      // 更不能 finishBeat 掉新分支刚开的那轮，也不能去兑现排队的 steer
+      if (token !== this.beatToken) return;
       // prompt 异常路径可能不发 agent_end：兜底收束（正常路径 busy 已被 finishBeat 清零）
       if (this.busy) this.finishBeat();
       this.beatPending = false;

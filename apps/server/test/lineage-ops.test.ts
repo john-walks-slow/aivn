@@ -254,7 +254,11 @@ describe("导演操作 · 编排器（分岔 / 编辑 / 插一句）", () => {
     const beatTwoFirst = beatTwoHead(tree);
 
     await orchestrator.forkTo(beatTwoFirst);
+    // 分岔后舞台停在那一行等玩家开口，引导先排队（它不抢在玩家前头自己开跑）
     await orchestrator.playerAction({ kind: "prompt", text: "这次让她先笑出来" });
+    expect(orchestrator.runtimeState.lastStop?.stopType).toBe("pause"); // 分岔后等玩家开口
+
+    await orchestrator.playerAction({ kind: "continue" });
 
     const view = orchestrator.lineageView();
     expect(view.nodes.some((n) => n.kind === "fork")).toBe(true);
@@ -271,12 +275,18 @@ describe("导演操作 · 编排器（分岔 / 编辑 / 插一句）", () => {
     const before = tree.materialize().filter((e) => e.kind === "prompt").length;
 
     await orchestrator.playerAction({ kind: "prompt", text: "直接拉她的手" });
+    // 引导永远只排队：不落节点、不自己开新一轮
+    expect(tree.materialize().filter((e) => e.kind === "prompt")).toHaveLength(before);
+
+    // 玩家下一次开口（这里没有选项可点，敲一句自由输入）→ 引导与它同一轮发出去
+    await orchestrator.playerAction({ kind: "free", text: "我追上去" });
 
     const prompts = tree.materialize().filter((e) => e.kind === "prompt");
-    expect(prompts).toHaveLength(before + 1);
-    expect(prompts.at(-1)?.payload?.input).toBe("直接拉她的手");
+    expect(prompts).toHaveLength(before + 2);
+    expect(prompts.at(-2)?.payload?.input).toBe("直接拉她的手");
     const lastUser = lastUserMessage(contexts);
     expect(lastUser).toContain("【用户输入】\n直接拉她的手");
+    expect(lastUser).toContain("我追上去");
     // 选中的选项与自由输入是同一种节点、同一种段标题
     expect(prompts[0]?.payload?.input).toBe("我到了");
     expect(prompts[1]?.payload?.input).toContain("选择了：道歉");
@@ -295,7 +305,7 @@ describe("导演操作 · 编排器（分岔 / 编辑 / 插一句）", () => {
     expect(lastUser).not.toContain("（继续）");
   });
 
-  it("演出进行中：结构操作被挡回，插一句进队列等这一轮收束", async () => {
+  it("演出进行中：改写被挡回，插一句进队列；分岔则是腰斩克隆，不挡", async () => {
     const { s, open, done } = busyStage();
     const { orchestrator, tree, messages } = s;
     // 演出中的轮还没收束，谱系里只有上一轮的叶尖
@@ -303,20 +313,25 @@ describe("导演操作 · 编排器（分岔 / 编辑 / 插一句）", () => {
 
     await orchestrator.playerAction({ kind: "free", text: "抢跑" }); // 同样被挡
     expect(() => orchestrator.editLine(anchor, "x")).toThrow(/演出进行中/);
-    await expect(orchestrator.forkTo(anchor)).rejects.toThrow(/演出进行中/);
     expect(messages.filter((m) => m.type === "error").map((m) => (m as { message: string }).message))
       .toContain("演出进行中，请等待当前轮结束");
 
-    // 插一句不挡：进队列，等这一轮收束后自动兑现
+    // 插一句不挡：进队列，等玩家下一个动作一起发
     await orchestrator.playerAction({ kind: "prompt", text: "别急着道歉" });
     expect(queuedItems(messages)[0]).toMatchObject({ text: "别急着道歉", status: "pending" });
     expect(orchestrator.runtimeState.events.some((e) => e.type === "beat_end")).toBe(false);
 
     open();
-    await done; // 轮 1 收束 → 队列兑现成轮 2
-    const settled = queuedItems(messages).at(-1)!;
-    expect(settled).toMatchObject({ text: "别急着道歉", status: "sent" });
-    expect(tree.materialize().findLast((e) => e.kind === "prompt")?.payload?.input).toBe("别急着道歉");
+    await done; // 轮 1 收在选择点上 → 引导继续等
+    expect(queuedItems(messages).at(-1)).toMatchObject({ text: "别急着道歉", status: "pending" });
+    expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1);
+
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 }); // 玩家点了选项
+    expect(queuedItems(messages)).toEqual([]);
+    // 落笔顺序与队列顺序一致：先排队的引导，再是这次点选项
+    const prompts = tree.materialize().filter((e) => e.kind === "prompt");
+    expect(prompts.at(-2)?.payload?.input).toBe("别急着道歉");
+    expect(prompts.at(-1)?.payload?.input).toContain("选择了：道歉");
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(2);
   });
 
@@ -337,7 +352,11 @@ describe("导演操作 · 编排器（分岔 / 编辑 / 插一句）", () => {
 
     open();
     await done;
-    expect(queuedItems(messages)[0]?.status).toBe("sent");
+    // 收在选择点上：引导还在队列里等玩家表态，落笔之后才不可改
+    expect(queuedItems(messages)[0]?.status).toBe("pending");
+    orchestrator.editPending(id, "x");
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    expect(queuedItems(messages)).toEqual([]);
     expect(() => orchestrator.editPending(id, "x")).toThrow(/不在队列里/);
     expect(() => orchestrator.deletePending(id)).toThrow(/不在队列里/);
   });

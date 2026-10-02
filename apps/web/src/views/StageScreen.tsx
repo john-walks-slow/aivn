@@ -344,10 +344,12 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   // 四原语就有着落点——不用跳到别的视图去找「刚才那一句」。
   const targets: DirectorTargets = useMemo(() => {
     const line = playback.view;
-    if (!lineage.view) return { beatId: null, lineNodeId: null, lineText: line?.text ?? "" };
+    const seq = line?.seq ?? null;
+    if (!lineage.view) return { beatId: null, lineNodeId: null, lineSeq: seq, lineText: line?.text ?? "" };
     return {
       beatId: beatAtLine(cards, line)?.id ?? null,
       lineNodeId: editableNodeAtLine(lineage.view, line)?.id ?? null,
+      lineSeq: seq,
       lineText: line?.text ?? "",
     };
   }, [cards, lineage.view, playback.view]);
@@ -411,7 +413,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
           aria-selected={rawHistory}
           className={`seg-btn ${rawHistory ? "active" : ""}`.trim()}
           onClick={() => setRawHistory(true)}
-          title="剧作家的 session 快照：注入原文、思考、原始 DSL 与工具调用"
+          title="剧作家的原始记录"
         >
           原始历史
         </button>

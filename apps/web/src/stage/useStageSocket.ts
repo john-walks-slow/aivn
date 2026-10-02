@@ -64,7 +64,8 @@ export interface StageSocket {
   sendRead: (pos: ReadPos) => void;
   // Director ops: jump moves the world line, fork opens a branch
   sendJump: (nodeId: string) => void;
-  sendFork: (nodeId: string, opts?: { resume?: boolean }) => void;
+  /** 分岔锚点二选一：nodeId（路线/回顾给的节点）或 seq（舞台正在看的那一行）。 */
+  sendFork: (anchor: string | number, opts?: { resume?: boolean }) => void;
   sendEdit: (nodeId: string, newText: string) => void;
   /** 工坊通道发送（面板自带消息构造）。 */
   send: (msg: ClientMessage) => void;
@@ -317,8 +318,12 @@ export function useStageSocket(
   const sendPromptDelete = useCallback((id: string) => send({ type: "prompt_delete", id }), [send]);
   const sendJump = useCallback((nodeId: string) => send({ type: "jump", nodeId }), [send]);
   const sendFork = useCallback(
-    (nodeId: string, opts?: { resume?: boolean }) =>
-      send({ type: "fork", nodeId, ...(opts?.resume ? { resume: true } : {}) }),
+    (anchor: string | number, opts?: { resume?: boolean }) =>
+      send(
+        typeof anchor === "number"
+          ? { type: "fork", seq: anchor, ...(opts?.resume ? { resume: true } : {}) }
+          : { type: "fork", nodeId: anchor, ...(opts?.resume ? { resume: true } : {}) },
+      ),
     [send],
   );
   const sendEdit = useCallback(

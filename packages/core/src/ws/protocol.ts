@@ -232,9 +232,12 @@ export type ClientMessage =
   | { type: "prompt_delete"; id: string }
   /** 语音控制（D5 背压）：enabled=总开关（关=停合成）；paused=暂停预取（快进态/缓冲积压）。 */
   | { type: "tts_control"; enabled?: boolean; paused?: boolean }
-  /** 分岔：世界线挂到 nodeId 并落一条 fork 标记，其后内容整段转兄弟分支。
+  /** 分岔：世界线挂到锚点并落一条 fork 标记，其后内容整段转兄弟分支。
+   *  正在演的那轮腰斩克隆：被掐断的那轮停在它演到的位置，不写 beat_end/快照。
+   *  锚点二选一：`nodeId`（路线视图/回顾给的节点）或 `seq`（舞台上正在看的那一行，
+   *  行要等收尾才落树，所以由服务端按「不大于该 seq 的最后一个节点」解析，见 nodeIdAtSeq）。
    *  resume=true = 「重演这一轮」：分岔后立刻续演，中间不设停止点。 */
-  | { type: "fork"; nodeId: string; resume?: boolean }
+  | { type: "fork"; nodeId?: string; seq?: number; resume?: boolean }
   | { type: "edit"; nodeId: string; newText: string }
   /** 导演生图：按当前这一刻的剧情（可带玩家指令）写提示词并出一张 CG。
    *  落点是**点下这一刻**在时间线上的位置，与剧作家的预发射同一套机制。 */

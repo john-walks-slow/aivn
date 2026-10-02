@@ -166,9 +166,16 @@ async function routeMessage(
     case "jump":
       await orchestrator.jumpTo(msg.nodeId);
       return;
-    case "fork":
-      await orchestrator.forkTo(msg.nodeId, { resume: msg.resume });
+    case "fork": {
+      // 锚点二选一：路线/回顾给的是节点 id，舞台给的是「我正在看的那一行」的 seq
+      const nodeId = msg.nodeId ?? orchestrator.nodeIdAtSeq(msg.seq);
+      if (!nodeId) {
+        sender({ type: "error", message: "这里还没有可分岔的位置", recoverable: true });
+        return;
+      }
+      await orchestrator.forkTo(nodeId, { resume: msg.resume });
       return;
+    }
     case "edit":
       orchestrator.editLine(msg.nodeId, msg.newText);
       return;
