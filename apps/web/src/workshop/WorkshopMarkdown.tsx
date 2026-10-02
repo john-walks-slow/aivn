@@ -1,12 +1,10 @@
 import type { ReactNode } from "react";
 import type { LightboxImage } from "../ui/ImageLightbox.js";
+import { compiler } from "markdown-to-jsx";
 
 /**
- * 工坊对话的极简 markdown：只认图片、粗体、行内代码、换行。
- *
- * 不引 markdown 库——工坊的回复面就这几种东西，为了渲染一段文字塞一整个解析器不值当。
- * 图片是重点：工坊 agent 会把 `generate_asset` 的素材 URL 写成 `![](...)` 贴出来，
- * 用户点一下开灯箱，这是**验收路径**（只报一句「已生成」等于让人凭空点头）。
+ * 工坊对话的markdown渲染：使用轻量库 markdown-to-jsx 实现常见markdown语法，
+ * 仅允许本地剧目素材图片点击打开灯箱，外部图片一律不渲染。
  */
 
 /** 只认同源的剧目素材路径，外链与 javascript: 一律当普通文本，不给模型往页面里塞任意 src 的机会。 */
@@ -16,26 +14,13 @@ function assetUrl(src: string): string | null {
   return url;
 }
 
-type Span = { kind: "text" | "bold" | "code"; value: string };
-
-/** 行内记号：**粗体** 与 `代码`。图片单独走段落级。 */
-function parseSpans(line: string): Span[] {
-  const spans: Span[] = [];
-  const pattern = /\*\*([^*]+)\*\*|`([^`]+)`/g;
-  let last = 0;
-  for (const m of line.matchAll(pattern)) {
-    const at = m.index ?? 0;
-    if (at > last) spans.push({ kind: "text", value: line.slice(last, at) });
-    if (m[1] !== undefined) spans.push({ kind: "bold", value: m[1] });
-    else if (m[2] !== undefined) spans.push({ kind: "code", value: m[2] });
-    last = at + m[0].length;
-  }
-  if (last < line.length) spans.push({ kind: "text", value: line.slice(last) });
-  return spans;
-}
-
-const IMAGE_LINE = /^\s*!\[([^\]]*)\]\(([^)]+)\)\s*$/;
-
+/**
+ * 将 markdown 文本转换为 React 元素，
+ * 图片组件会检查是否为本地素材图片：
+ * - 是：渲染为可点击的按钮，点击打开灯箱
+ * - 否：返回 null（不渲染）
+ * 强调（**文本**）和行内代码（`代码`）使用原生 HTML 标签。
+ */
 export function WorkshopMarkdown({
   text,
   onOpen,
@@ -43,57 +28,52 @@ export function WorkshopMarkdown({
   text: string;
   onOpen: (images: LightboxImage[], index: number) => void;
 }) {
-  const lines = text.split("\n");
-  const out: ReactNode[] = [];
+  // 收集所有本地素材图片，用于在点击时传递正确的索引
+  const imageRegex = /!\s*\[([^\]]*)\]\(([^)]+)\)/g;
   const gallery: LightboxImage[] = [];
-
-  const pushImage = (alt: string, url: string) => {
-    const index = gallery.length;
-    gallery.push({ url, caption: alt });
-    out.push(
-      <button key={`img-${index}`} className="md-image" onClick={() => onOpen(gallery, index)} title={alt}>
-        <img src={url} alt={alt} loading="lazy" />
-      </button>,
-    );
-  };
-
-  const buffer: Span[][] = [];
-  const flush = () => {
-    if (buffer.length === 0) return;
-    out.push(
-      <p key={`p-${out.length}`}>
-        {buffer.map((spans, i) => (
-          <span key={i}>
-            {i > 0 && <br />}
-            {spans.map((span, j) => renderSpan(span, `${i}-${j}`))}
-          </span>
-        ))}
-      </p>,
-    );
-    buffer.length = 0;
-  };
-
-  for (const line of lines) {
-    const image = IMAGE_LINE.exec(line);
-    const url = image ? assetUrl(image[2] ?? "") : null;
-    if (image && url) {
-      flush();
-      pushImage(image[1] || "剧目素材", url);
-      continue;
+  const seen = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = imageRegex.exec(text)) !== null) {
+    // 这两个捕获组在正则命中时一定存在
+    const m = match;
+    const alt = m[1] ?? "";
+    const src = m[2]!;
+    const url = assetUrl(src);
+    if (url && !seen.has(url)) {
+      seen.add(url);
+      gallery.push({ url, caption: alt || "剧目素材" });
     }
-    if (line.trim() === "") {
-      flush();
-      continue;
-    }
-    buffer.push(parseSpans(line));
   }
-  flush();
 
-  return <div className="md-body">{out}</div>;
-}
+  // 自定义组件：覆盖图片、强调、行内代码
+  const overrides = {
+    img: (props: { src?: string; alt?: string }) => {
+      const { src: imgSrc = "", alt: imgAlt = "" } = props;
+      const url = assetUrl(imgSrc);
+      if (!url) return null; // 外部图片不渲染
+      const index = gallery.findIndex((img) => img.url === url);
+      if (index === -1) {
+        return null;
+      }
+      return (
+        <button
+          key={`img-${index}`}
+          className="md-image"
+          onClick={() => onOpen(gallery, index)}
+          title={imgAlt}
+        >
+          <img src={url} alt={imgAlt} loading="lazy" />
+        </button>
+      );
+    },
+    strong: (props: { children?: ReactNode }) => <strong>{props.children}</strong>,
+    code: (props: { children?: ReactNode }) => <code>{props.children}</code>,
+  };
 
-function renderSpan(span: Span, key: string) {
-  if (span.kind === "bold") return <strong key={key}>{span.value}</strong>;
-  if (span.kind === "code") return <code key={key}>{span.value}</code>;
-  return <span key={key}>{span.value}</span>;
+  // 使用 markdown-to-jsx 的 compiler 渲染（v9 已移除 breaks 选项；.md-body p { white-space: pre-wrap } 已接管单换行）
+  const element = compiler(text, {
+    overrides,
+  });
+
+  return <div className="md-body">{element}</div>;
 }

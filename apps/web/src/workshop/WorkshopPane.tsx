@@ -129,6 +129,7 @@ export function WorkshopPane({
       {tab === "assets" && <AssetsPanel playId={playId} />}
 
       {tab === "memory" && <SettingsPane playId={playId} revision={state.writes.length} />}
+
       {tab === "characters" && <CharacterPane playId={playId} revision={state.writes.length} />}
 
       {tab === "agent" && <AgentPane playId={playId} />}
@@ -158,6 +159,8 @@ export function WorkshopPane({
               type="button"
               className="ghost-btn small-btn thread-new"
               onClick={() => {
+                // 先清空再标记：否则旧消息会挂在「新会话」标题下，直到第一条消息送达才被 history 换掉
+                workshop.clearState();
                 workshop.newThread();
                 setInput("");
                 setThreadsOpen(false);

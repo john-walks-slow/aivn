@@ -173,6 +173,19 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
   /** 开新会话：不立刻建（服务端没有「空会话」这个动作），只把下一条消息标记成新会话的第一句。 */
   const newThread = useCallback((): void => setFreshThread(true), []);
 
+  /** 清空聊天区（消息/流式/状态），保留线程列表与写盘撤销记录，避免切换新会话时整个会话层消失。 */
+  const clearState = useCallback((): void => {
+    setState((prev) => ({
+      ...prev,
+      messages: [],
+      streaming: "",
+      activity: null,
+      pendingAssets: [],
+      busy: false,
+      error: null,
+    }));
+  }, []);
+
   const activate = useCallback(
     (threadId: string): void => {
       setFreshThread(false);
@@ -207,6 +220,7 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
     onDisconnected,
     chat,
     newThread,
+    clearState,
     activate,
     setArchived,
     remove,
