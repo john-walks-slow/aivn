@@ -88,7 +88,7 @@
   --nameplate-line: rgb(238 226 204 / 0.4);
   /* 亮色舞台（useTheme 的 stageLight）把 --stage-bg 压到 #fdfdfd：剧本还没配景时
      露出的是空白画布，不会被读成「画面加载不出来」。这里的默认基线走暗色。 */
-  --sprite-dim: 0.55; /* 非发言人立绘压暗强度 */
+  --sprite-dim: 0.55; /* 预留：非发言人立绘压暗强度，当前没有任何规则用它 */
   --choice-bg: rgb(24 21 23 / 0.92);
   --choice-line: rgb(238 226 204 / 0.4);
   --choice-ink: #f2ebde;
@@ -1172,7 +1172,10 @@ button.link-btn {
   animation: var(--sprite-act) var(--act-ms) var(--move-ease) var(--act-nonce, 0s) 1;
 }
 
-/* 说话者：轻微呼吸常驻（gal 里几乎每场都是「说话的人亮着、轻轻动着」）。
+/* 说话者轻微呼吸——预留，当前不挂这个 class。
+   幅度是 scale 1.004（0.4%），肉眼不可辨：等于给每张立绘挂了一条永不结束的
+   动画却什么都没换来。要开的话，在 StageTheater 拼 cls 的地方按
+   `playback.view?.actorId === id` 补回 " speaking" 即可。
    与行为词共用 scale 通道，所以两者同时成立时以行为词为准——class 顺序保证
    .acting 的 animation 后写会覆盖。 */
 .theater-sprite.speaking {

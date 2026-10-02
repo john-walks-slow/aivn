@@ -159,7 +159,6 @@ function Sprite({
   leaving,
   action,
   actionSeq,
-  speaking,
 }: {
   url: string | null;
   pos: string;
@@ -172,7 +171,6 @@ function Sprite({
   action: ActorAction | null;
   /** 同一行为词要能连演（nod 之后又 nod），靠这个序号让 animation 重挂一次。 */
   actionSeq: number;
-  speaking: boolean;
 }): ReactNode {
   const [current, setCurrent] = useState<string | null>(url);
   const [outgoing, setOutgoing] = useState<string | null>(null);
@@ -214,9 +212,13 @@ function Sprite({
   if (!current) return null;
   // 站位类直接用 pos-*（CSS 里各自带 --x 偏移，见 app.css）。
   // shot/anchor 走行内 CSS 变量——它们是这一句台词的状态，不该在 CSS 里枚举出类名。
+  // .entering 常驻即可，不用挂一帧就摘：CSS 动画不会因重渲染重播，而 key 是角色
+  // id，组件只在这个人第一次进舞台时挂载（换表情走的是另一条淡出/淡入，不重挂载）。
+  // 所以「重新进场」天然就是一次新挂载，入场动画也就重播一次。
+  // 正在退场的那一瞬不挂：离场走 .leaving 的淡出，混上入场动画会打架。
   const cls = `theater-sprite framing-${framing} pos-${pos} anchor-${anchor}${
-    leaving ? " leaving" : ""
-  }${speaking ? " speaking" : ""}${acting ? " acting" : ""}`;
+    leaving ? " leaving" : " entering"
+  }${acting ? " acting" : ""}`;
   const style: CSSProperties = {
     "--scale": SHOT_SCALE[shot ?? "normal"],
     "--sprite-act": actionAnimation(action) ?? "none",
@@ -552,9 +554,7 @@ voiceState,
           />
         )}
 
-        {/* 当前说话人：旁白/独白没有 actorId（null），谁都不亮。 */}
         {Object.entries(visual.sprites).map(([id, slot]) => {
-          const speakingId = playback.view?.actorId ?? null;
           // state 与 expression 共用同一张 sprites[] 映射表（人写表情、物写状态），
           // 所以取图用 expression ?? state。写错时两者都没有，sprite() 会退回该角色第一张。
           const variant = slot.expression ?? slot.state;
@@ -570,9 +570,6 @@ voiceState,
               leaving={slot.leaving === true}
               action={slot.action}
               actionSeq={slot.actionSeq}
-              // 说话者呼吸：gal 里几乎每场都是「说这句的人亮着、轻轻动着」，
-              // 默认开——写进剧本要模型每句都记得标记，漏一句就断了。
-              speaking={id === speakingId}
             />
           );
         })}
