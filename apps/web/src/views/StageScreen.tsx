@@ -524,7 +524,9 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
               canContinue={canContinue}
               onContinue={continueBeat}
               overlay={
-                stage.fresh ? (
+                /* 回看中屏幕上摆的是历史台词，那一刻的决定早就做过了——
+                   选项摆出来会让人以为还能改，点了就是拿旧决定去覆盖新分支。 */
+                playback.scrubbed ? null : stage.fresh ? (
                   /* 空树：摆一个「开演」，等玩家按第一下。第一轮不在连接建立时自动开局。 */
                   <div className="choice-overlay" role="group" aria-label="开演">
                     <div className="choices">

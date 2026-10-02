@@ -69,9 +69,12 @@ export type VoiceState = "none" | "pending" | "ready";
 
 /**
  * 导演栏的动作。分岔与重新生成共用同一个锚点，区别只在分岔之后等不等待落笔；
- * 分段是「提示」面板里的岔路入口（打断当前轮并从这里续写），生图不进分支、直接落图。
+ * 生图不进分支、直接落图。
  */
-type DirectorAction = "prompt" | "edit" | "restart" | "fork" | "segment" | "cg";
+type DirectorAction = "prompt" | "edit" | "restart" | "fork" | "cg";
+
+/** 「提示」面板里的两岔：顺着这一轮写下去（引导），还是先退开开新分支（分岔）。 */
+type GuideMode = "guide" | "fork";
 
 const ACTION_META: Record<
   DirectorAction,
@@ -100,12 +103,6 @@ const ACTION_META: Record<
     hint: "退到这一轮开头开一条新分支，引擎停下来等你发话。留空 = 分岔后自己点舞台继续生成；填了 = 这句话直接进入新分支的第一轮。",
     placeholder: "给新分支的第一句话（可留空）",
     submit: (d) => (d ? "分岔 · 带着这句" : "分岔"),
-  },
-  segment: {
-    title: "打断当前轮并续写",
-    hint: "在这一轮这里切断，从这里起新分支继续演。留空 = 只打断；填了 = 带着这句进新轮",
-    placeholder: "想让这场戏接下来怎么走…",
-    submit: (d) => (d ? "打断并续写" : "打断当前轮"),
   },
   cg: {
     title: "生成插图",
@@ -224,6 +221,8 @@ voiceState,
 /** 导演栏的面板：几个动作的全部输入都在对话框里收，不跳视图。 */
   const [action, setAction] = useState<DirectorAction | null>(null);
   const [draft, setDraft] = useState("");
+  /** 「提示」面板走哪条岔：引导 = 排进待注入队列跟着这一轮写，分岔 = 先退开再落笔。 */
+  const [guideMode, setGuideMode] = useState<GuideMode>("guide");
   /** 净画面：藏掉压在画面上的台词条与导演栏，只剩背景/立绘/CG。点画面或按 H/空格/Esc 回来。 */
   const [hideUi, setHideUi] = useState(false);
   const { view, viewLength, current, shownLength, exhausted, advance, scrub, scrubbed, follow } =
@@ -247,6 +246,24 @@ voiceState,
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→/空格 往回追。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
+  /** 两块浮层的实测高度写回 CSS 变量：选肢层据此卡在它们中间那一段（见 .choice-overlay）。 */
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const directorRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const root = theaterRef.current;
+    const dialog = dialogRef.current;
+    const director = directorRef.current;
+    if (!root || !dialog || !director) return;
+    const measure = (): void => {
+      root.style.setProperty("--dialog-h", `${dialog.offsetHeight}px`);
+      root.style.setProperty("--dir-h", `${director.offsetHeight}px`);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(dialog);
+    ro.observe(director);
+    return () => ro.disconnect();
+  }, []);
   useEffect(() => {
     const el = theaterRef.current;
     if (!el) return;
@@ -386,30 +403,26 @@ voiceState,
 
   const submitAction = (): void => {
     const text = draft.trim();
+    const act: DirectorAction = action === "prompt" && guideMode === "fork" ? "fork" : (action ?? "prompt");
     setDraft("");
     setAction(null);
-    if (action === "prompt") {
+    if (act === "prompt") {
+      // 引导：只是排进待注入队列，不动分支也不吃掉停止点——选项还摆着，玩家照选不误。
       if (text) onPrompt(text);
       return;
     }
-    if (action === "segment" && targets.beatId) {
-      // 打断当前轮并立刻起新分支：效果等同于先 fork 再 prompt，但一步到位。
-      onFork(targets.beatId, { resume: true });
-      if (text) onPrompt(text);
-      return;
-    }
-    if (action === "edit") {
+    if (act === "edit") {
       if (text && targets.lineNodeId) onEdit(targets.lineNodeId, text);
       return;
     }
     if (!targets.beatId) return;
-    if (action === "restart") {
+    if (act === "restart") {
       onFork(targets.beatId, { resume: true });
       // 填了就当「提示词」紧跟着落进重演的那一轮里；留空就是纯粹重演。
       if (text) onPrompt(text);
       return;
     }
-    if (action === "cg") {
+    if (act === "cg") {
       onGenerateCg(text);
       return;
     }
@@ -428,6 +441,10 @@ voiceState,
   const editBlock = busy ? "演出进行中，暂时不能改写" : targets.lineNodeId ? null : "这里没有剧作家的台词可改";
   const beatBlock = busy ? "演出进行中，暂时不能重来" : targets.beatId ? null : "这里还没有可退回去的一轮";
   const forkBlock = busy ? "演出进行中，暂时不能分岔" : targets.beatId ? null : "这里还没有可分岔的一轮";
+
+  /** 弹窗的标题/提示/提交键按哪条岔走：只有「提示」面板有两种，其余动作单一。 */
+  const modalAction: DirectorAction =
+    action === "prompt" && guideMode === "fork" ? "fork" : (action ?? "prompt");
 
   return (
     <div
@@ -472,14 +489,17 @@ voiceState,
           </div>
         )}
 
-        {/* 停止点浮层只在画面区内：台词条与工具栏留在浮层之外，选肢期间照常可点可用。
-            这里仍然吃触摸事件——舞台监听着左右滑（翻句）与上滑（看回顾）。 */}
-        {overlay}
+        {/* 选肢层挂在 .theater 上（不在画面区里）：台词条是叠在画面上的，
+            「铺满画面区」等于铺到台词条底下，卡片会被盖住点不到。见 .choice-overlay。 */}
       </div>
 
-      {/* 导演工具栏（提示/改写/重来/重听）：舞台右上角浮层。点击动作 stopPropagation，
-           不劫持舞台的继续/回看手势。 */}
-      <div className="theater-director">
+      {/* 选肢层：导演栏与台词条之间那一段，画面层之上、台词条之下 */}
+      {overlay}
+
+      {/* 导演工具栏（提示/改写/重来/生图/重听）：舞台右上角浮层。点击动作 stopPropagation，
+           不劫持舞台的继续/回看手势。分岔不在这里——它是「提示」面板里的一条岔
+           （引导/分岔两选一），单独再挂一个键只是把同一个决定拆成两处。 */}
+      <div className="theater-director" ref={directorRef}>
         <button
           type="button"
           className={`dir-btn ${action === "prompt" ? "on" : ""}`}
@@ -539,21 +559,6 @@ voiceState,
           <Icon name="assets" size={17} />
           生图
         </button>
-        <button
-          type="button"
-          className={`dir-btn ${action === "fork" ? "on" : ""}`}
-          title={forkBlock ?? "分岔：从这一轮开头开新分支，停下来等你发话"}
-          aria-label="分岔"
-          disabled={forkBlock !== null}
-          onClick={(e) => {
-            e.stopPropagation();
-            setAction(action === "fork" ? null : "fork");
-            setDraft("");
-          }}
-        >
-          <Icon name="fork" size={17} />
-          分岔
-        </button>
         {voiceAvailable && voice !== "none" && (
           <button
             type="button"
@@ -572,7 +577,7 @@ voiceState,
         )}
       </div>
 
-      <div className="theater-dialog" role="text">
+      <div className="theater-dialog" role="text" ref={dialogRef}>
 {dialog.name && <div className="dialog-name">{dialog.name}</div>}
         {/* 回声期间台词条归它：玩家一按下就得看见自己说了什么，不能被上一句挡回去。
             真台词一到（播放头换行）回声自动让位，见 StageScreen 的 echoText。 */}
@@ -660,37 +665,24 @@ voiceState,
 
         {action && (
           <Modal
-            title={ACTION_META[action].title}
-            hint={ACTION_META[action].hint}
+            title={ACTION_META[modalAction].title}
+            hint={ACTION_META[modalAction].hint}
             onClose={() => setAction(null)}
             footer={
               <>
-                {action === "prompt" && (
-                  <button
-                    type="button"
-                    className="ghost-btn"
-                    disabled={!targets.beatId}
-                    title="打断当前轮并从这里起新分支（等同于先重来再提示，一步到位）"
-                    onClick={() => {
-                      setAction("segment");
-                    }}
-                  >
-                    分段
-                  </button>
-                )}
                 <button
                   type="button"
                   className="primary"
                   onClick={submitAction}
                   disabled={
-                    action === "edit"
+                    modalAction === "edit"
                       ? draft.trim() === "" || !targets.lineNodeId
-                      : action === "restart" || action === "fork" || action === "segment"
-                        ? !targets.beatId
-                        : false
+                      : modalAction === "fork"
+                        ? forkBlock !== null
+                        : draft.trim() === ""
                   }
                 >
-                  {ACTION_META[action].submit(draft.trim())}
+                  {ACTION_META[modalAction].submit(draft.trim())}
                 </button>
                 <button type="button" className="ghost-btn" onClick={() => setAction(null)}>
                   取消
@@ -698,6 +690,31 @@ voiceState,
               </>
             }
           >
+            {/* 「提示」的两条岔：引导 = 顺着这一轮写（排进待注入队列，停止点不动），
+                分岔 = 先退到本轮开头开新分支再落笔。两件事同一处决定，别拆成两个键。 */}
+            {action === "prompt" && (
+              <div className="seg guide-seg">
+                <button
+                  type="button"
+                  className={`seg-btn ${guideMode === "guide" ? "active" : ""}`.trim()}
+                  aria-pressed={guideMode === "guide"}
+                  title="顺着这一轮写：话排进待注入队列，本轮收束后兑现，不动分支也不吃掉停止点"
+                  onClick={() => setGuideMode("guide")}
+                >
+                  引导
+                </button>
+                <button
+                  type="button"
+                  className={`seg-btn ${guideMode === "fork" ? "active" : ""}`.trim()}
+                  aria-pressed={guideMode === "fork"}
+                  title={forkBlock ?? "先退到这一轮开头开新分支，停下来等你发话"}
+                  disabled={forkBlock !== null}
+                  onClick={() => setGuideMode("fork")}
+                >
+                  分岔
+                </button>
+              </div>
+            )}
             <div className="director-input">
               {action === "prompt" && (
                 <button

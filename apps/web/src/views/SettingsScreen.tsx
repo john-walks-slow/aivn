@@ -3,6 +3,21 @@ import { Icon } from "../ui/Icon.js";
 import { api, type GatewayModel, type Settings } from "../api.js";
 import { navigate } from "../router.jsx";
 import { ModelSelect, modelSourceHint } from "../ui/ModelSelect.js";
+import {
+  DEFAULT_STAGE_MODE,
+  DEFAULT_UI_MODE,
+  THEME_MODE_CHANGED,
+  setThemeMode,
+  type ThemeMode,
+} from "../hooks/useTheme.js";
+
+const UI_MODE_KEY = "stage-ai:ui-theme-mode";
+const STAGE_MODE_KEY = "stage-ai:stage-theme-mode";
+
+function storedMode(key: string, fallback: ThemeMode): ThemeMode {
+  const val = localStorage.getItem(key);
+  return val === "system" || val === "light" || val === "dark" ? val : fallback;
+}
 
 type Draft = {
   model: Settings["model"];
@@ -20,14 +35,10 @@ export function SettingsScreen() {
   const [modelError, setModelError] = useState<string | null>(null);
 
   // 主题模式状态（分别保存 UI 和 舞台）
-  const [uiMode, setUiMode] = useState<"system" | "light" | "dark">(() => {
-    const val = localStorage.getItem("stage-ai:ui-theme-mode");
-    return (val === "system" || val === "light" || val === "dark") ? val as any : "system";
-  });
-  const [stageMode, setStageMode] = useState<"system" | "light" | "dark">(() => {
-    const val = localStorage.getItem("stage-ai:stage-theme-mode");
-    return (val === "system" || val === "light" || val === "dark") ? val as any : "system";
-  });
+  const [uiMode, setUiMode] = useState<ThemeMode>(() => storedMode(UI_MODE_KEY, DEFAULT_UI_MODE));
+  const [stageMode, setStageMode] = useState<ThemeMode>(() =>
+    storedMode(STAGE_MODE_KEY, DEFAULT_STAGE_MODE),
+  );
 
   const loadModels = useCallback((refresh = false): void => {
     api
@@ -59,22 +70,17 @@ export function SettingsScreen() {
 
   // 监听存储变化，以便其他标签页的改动能同步 UI
   useEffect(() => {
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === "stage-ai:ui-theme-mode") {
-        const val = e.newValue;
-        if (val === "system" || val === "light" || val === "dark") {
-          setUiMode(val as any);
-        }
-      }
-      if (e.key === "stage-ai:stage-theme-mode") {
-        const val = e.newValue;
-        if (val === "system" || val === "light" || val === "dark") {
-          setStageMode(val as any);
-        }
-      }
+    const handleStorage = (e: Event): void => {
+      const key = (e as StorageEvent).key;
+      if (key === UI_MODE_KEY) setUiMode(storedMode(UI_MODE_KEY, DEFAULT_UI_MODE));
+      if (key === STAGE_MODE_KEY) setStageMode(storedMode(STAGE_MODE_KEY, DEFAULT_STAGE_MODE));
     };
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener(THEME_MODE_CHANGED, handleStorage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(THEME_MODE_CHANGED, handleStorage);
+    };
   }, []);
 
   const save = async (): Promise<void> => {
@@ -340,9 +346,9 @@ export function SettingsScreen() {
               <select
                 value={uiMode}
                 onChange={(e) => {
-                  const val = e.target.value as "system" | "light" | "dark";
+                  const val = e.target.value as ThemeMode;
                   setUiMode(val);
-                  localStorage.setItem("stage-ai:ui-theme-mode", val);
+                  setThemeMode(UI_MODE_KEY, val);
                 }}
               >
                 <option value="system">跟随系统</option>
@@ -354,9 +360,9 @@ export function SettingsScreen() {
               <select
                 value={stageMode}
                 onChange={(e) => {
-                  const val = e.target.value as "system" | "light" | "dark";
+                  const val = e.target.value as ThemeMode;
                   setStageMode(val);
-                  localStorage.setItem("stage-ai:stage-theme-mode", val);
+                  setThemeMode(STAGE_MODE_KEY, val);
                 }}
               >
                 <option value="system">跟随系统</option>

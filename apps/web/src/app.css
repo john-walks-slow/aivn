@@ -68,6 +68,14 @@
   --dialog-ink: #f2ebde;
   --dialog-ink-soft: #c6bba9; /* 旁白 */
   --dialog-ink-thought: #a9a6c4; /* 内心独白 */
+  --dialog-ink-faint: rgb(242 235 222 / 0.45); /* 次要提示：「回看中」「已选过」 */
+  /* 浮层上的字一律带一层压暗投影：深底玻璃上这是唯一让字脱开底的办法。
+     浅色舞台底本来就亮，再压一层黑阴影只会糊掉笔画——那边整个置 none。 */
+  --dialog-text-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
+  --dir-text-shadow: 0 1px 2px rgb(0 0 0 / 0.55);
+  /* 浮层键的悬停/点亮底：半透明白，深底上像擦亮一层 */
+  --dialog-hover: rgb(242 235 222 / 0.12);
+  --dialog-veil: rgb(242 235 222 / 0.07);
   --dialog-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
   /* 舞台浮层的圆角：台词条 + 画面上浮的那几块（导演工具栏 / 排队面板 / 侧栏唤出键）。
      全局 --radius 是 2px（近直角，给页面里的卡片与键），但这几块是压在画面上的
@@ -129,6 +137,11 @@ html[data-stage-theme="light"] {
   --dialog-ink: #23201c;
   --dialog-ink-soft: #4a443c;
   --dialog-ink-thought: #5a5468;
+  --dialog-ink-faint: rgb(35 32 28 / 0.5);
+  --dialog-text-shadow: none;
+  --dir-text-shadow: none;
+  --dialog-hover: rgb(120 108 92 / 0.12);
+  --dialog-veil: rgb(120 108 92 / 0.07);
   --dialog-shadow: 0 10px 30px rgb(60 48 32 / 0.18);
   --choice-bg: rgb(252 250 246 / 0.94);
   --choice-line: rgb(120 108 92 / 0.4);
@@ -911,6 +924,10 @@ button.link-btn {
   flex-direction: column;
   height: 100%;
   --safe-b: env(safe-area-inset-bottom, 0px);
+  /* 选肢带的上下两条边。默认值按「导演栏一行 + 台词条 min-height」起步，
+     真实高度由 StageTheater 的 ResizeObserver 写回（换行、长台词都不用手改数值）。 */
+  --dir-h: 46px;
+  --dialog-h: 168px;
 }
 
 /* 净画面：藏掉压在画面上的两块窗（台词条 + 右上角导演栏），只剩背景/立绘/CG。
@@ -1166,7 +1183,7 @@ button.link-btn {
   /* 恒定三行高：短台词不再让文本框忽高忽低（超过三行的长台词才自然长高） */
   min-height: 6em;
   color: var(--dialog-ink);
-  text-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
+  text-shadow: var(--dialog-text-shadow);
 }
 
 /* 旁白只弱色，不居中：居中是排版式的分型，一段话被居中之后每行起点都在变，
@@ -1199,7 +1216,7 @@ button.link-btn {
   height: 18px;
   font-size: 11.5px;
   letter-spacing: 0.08em;
-  color: rgb(242 235 222 / 0.55);
+  color: var(--dialog-ink-soft);
 }
 
 .dialog-hint .muted {
@@ -1235,7 +1252,7 @@ button.link-btn {
   background: none;
   border: 0;
   padding: 0;
-  color: rgb(242 235 222 / 0.6);
+  color: var(--dialog-ink-soft);
   font-size: 11.5px;
   letter-spacing: 0.08em;
   cursor: pointer;
@@ -1334,18 +1351,24 @@ button.link-btn {
 
 /* ── 停止点（浮在舞台上，不占底部条） ────────────── */
 
-/* 选肢：画面区中央悬浮卡片堆（脸的位置留空），点击区宽、序号可按。
-   只盖住背景与立绘——台词条、导演栏、侧栏都在它之外，照常可点可用；
-   这一层自己要吃掉触摸与点击：选项摆着的时候，点画面不能当成「继续」。 */
+/* 选肢：导演栏与台词条之间的那一段画面上，卡片垂直居中（放不下才滚）。
+   它挂在 .theater 上、不在画面区里：画面区（.theater-stage）盖不满——台词条是
+   absolute 叠在它上面的，「铺满画面区」就等于「铺到台词条底下」，卡片下半张被盖住、
+   点不到。上下两条边跟着两块浮层的实测高度走（--dir-h / --dialog-h 由
+   StageTheater 的 ResizeObserver 写入），换行或长台词都不用手改数值。 */
 .choice-overlay {
   position: absolute;
-  inset: 0;
-  z-index: 6;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  top: calc(var(--dir-h, 46px) + 14px + env(safe-area-inset-top, 0px));
+  bottom: calc(var(--dialog-h, 168px) + 3% + var(--safe-b, 0px));
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  /* safe：内容高于这一段时对齐退化成从上往下排，否则居中会把顶上一张顶出可视区。 */
+  justify-content: safe center;
   gap: 12px;
-  padding: 8% 0 4%;
+  padding: 8px 16px;
   overflow-y: auto;
   background: var(--choice-scrim);
   animation: choice-in 0.22s ease-out;
@@ -1397,14 +1420,14 @@ button.link-btn {
   font-family: var(--font-ui);
   font-size: 11px;
   letter-spacing: 0.1em;
-  color: rgb(242 235 222 / 0.45);
+  color: var(--dialog-ink-faint);
 }
 
 .choice:hover:not(:disabled) {
   background: var(--choice-active-bg);
   border-color: var(--accent);
   border-left-color: var(--accent);
-  color: #fff;
+  color: var(--choice-ink);
   transform: translateX(6px);
 }
 
@@ -1416,9 +1439,9 @@ button.link-btn {
 
 /* 「（继续）」那类无内容卡：走同一形制，只是不给主色标尺 */
 .choice.ghost {
-  color: rgb(242 235 222 / 0.7);
+  color: var(--dialog-ink-soft);
   font-size: 14px;
-  border-left-color: rgb(240 230 210 / 0.3);
+  border-left-color: var(--choice-line);
 }
 
 button {
@@ -2953,12 +2976,11 @@ select:focus {
   }
 
   /* 选肢层贴底排：竖屏画面本来就窄，居中一列卡片会把立绘从头到脚压在下面，
-     只剩头顶露出来。底部留出 200px 避开台词条——台词条是 absolute 叠在舞台上的
-     （z-index 12 > 选肢层 6），不留位置的话卡片会被台词条盖住下半张，点不到。 */
+     只剩头顶露出来。 */
   .choice-overlay {
-    justify-content: flex-end;
+    justify-content: safe flex-end;
     gap: 8px;
-    padding: 8% 10px 200px;
+    padding: 8px 12px;
   }
 
   .choice {
@@ -2968,7 +2990,7 @@ select:focus {
 
   /* 选肢时把立绘抬上去。竖屏的卡片列占了中段，不抬的话脸正好压在卡片下面，
      只剩发顶露在外面——玩家要选的恰恰是卡，不是脸，但脸也不该整个消失。 */
-  .theater-stage:has(.choice-overlay) .theater-sprite {
+  .theater:has(.choice-overlay) .theater-sprite {
     bottom: 46%;
     height: 58%;
   }
@@ -3881,8 +3903,8 @@ select:focus {
   cursor: pointer;
 }
 .side-drawer-btn:hover {
-  background: rgb(242 235 222 / 0.14);
-  color: #fff;
+  background: var(--dialog-hover);
+  color: var(--dialog-ink);
 }
 
 /* 窄屏抽屉关着时的唤出键：舞台页浮在内容左上角，其余视图并进视图栏（见下）。
@@ -3957,6 +3979,13 @@ select:focus {
   flex: 0 0 auto;
   margin: -6px -12px -8px 0;
 }
+/* 这排是英文游戏缩写（MANUAL / VOICE / BACK / HIDE），统一全大写。
+   台词条底缘本来就是 HUD 区，不跟界面里的中文小标签走。
+   必须落在 button 本身：浏览器默认样式给表单控件写了 `text-transform: none`，
+   那是 UA 级的不继承断点，写在容器上根本传不下去（span 能继承，button 不能）。 */
+.dialog-options .dir-btn {
+  text-transform: uppercase;
+}
 /* 导演工具栏：舞台右上角的一排导演动作（提示 / 改写 / 重来 / 重听）。
    「正在生成」面板排在这条的正下方（.prompt-queue 的 top 见下），两块同在右上角
    但上下错开、不重叠——之前两处都锚 top/right，整块叠上 211×42 看着像同一块面板。
@@ -3970,9 +3999,11 @@ select:focus {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 2px;
-  max-width: calc(100% - 20px);
-  padding: 0 4px;
+  gap: 0;
+  /* 左上角是侧栏唤出键（38px + 左右各 8px），这一排不能横过去盖住它。
+     宁可自己换行——换行是往下长，不会压别人的键。 */
+  max-width: calc(100% - 60px);
+  padding: 0 3px;
   border: 1px solid var(--dialog-line);
   border-radius: var(--stage-radius);
   background: var(--dialog-bg);
@@ -3982,11 +4013,11 @@ select:focus {
   color: var(--dialog-ink);
 }
 .theater-director .dir-btn:hover:not(:disabled) {
-  background: rgb(242 235 222 / 0.14);
+  background: var(--dialog-hover);
 }
 .theater-director .dir-btn.on {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 /* 图标 + 文字的键：无边框无底色，图标在前、短词在后。
    padding: 0 只在纵向收，横向留 10px 让图标不贴边。
@@ -3995,38 +4026,38 @@ select:focus {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: 42px;
-  padding: 0 10px;
+  gap: 4px;
+  min-height: 40px;
+  padding: 0 8px;
   border: none;
   border-radius: 1px;
   background: none;
-  color: rgb(242 235 222 / 0.72);
+  color: var(--dialog-ink-soft);
   font: inherit;
-  font-size: 12.5px;
-  letter-spacing: 0.1em;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.55);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-shadow: var(--dir-text-shadow);
   cursor: pointer;
   transition:
     color var(--hover-ms) ease,
     background-color var(--hover-ms) ease;
 }
 .dir-btn:hover:not(:disabled) {
-  background: rgb(242 235 222 / 0.12);
-  color: #fff;
+  background: var(--dialog-hover);
+  color: var(--dialog-ink);
 }
 /* 点亮态：动作面板开着时给一块主色底，与旁边未激活的区分开 */
 .dir-btn.on {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 /* 常开态（自动 / 语音）：只表示「开着」，不是主要行动点。
    .on 那块实心主色底是给「面板正开着」设计的——瞬时的、点两下就消失。
    常开状态会一直挂在屏幕上，用实心主色会被读成 CTA 或警示：
    一排三个键里它跳出来、另两个灰着，看起来像在报警而不是在自动播放。 */
 .dir-btn.tgl-on {
-  background: rgb(242 235 222 / 0.16);
-  color: #fff;
+  background: var(--dialog-hover);
+  color: var(--dialog-ink);
 }
 
 /* 语音合成中：喇叭位留着但闪。音频还没到就消失，玩家只会以为这句没配音；
@@ -4120,7 +4151,7 @@ select:focus {
   padding: 4px 6px;
   border-left: 2px solid var(--accent);
   border-radius: 6px;
-  background: rgb(242 235 222 / 0.07);
+  background: var(--dialog-veil);
 }
 .prompt-queue-row.sent {
   border-left-color: rgb(238 226 204 / 0.28);
