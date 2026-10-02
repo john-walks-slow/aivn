@@ -4,10 +4,16 @@ import { api, type GatewayModel, type Settings } from "../api.js";
 import { navigate } from "../router.jsx";
 import { ModelSelect, modelSourceHint } from "../ui/ModelSelect.js";
 import {
+  ACCENT_CHANGED,
+  ACCENT_PRESETS,
+  DEFAULT_ACCENT_CUSTOM,
   DEFAULT_STAGE_MODE,
   DEFAULT_UI_MODE,
   THEME_MODE_CHANGED,
+  readAccent,
+  setAccent,
   setThemeMode,
+  type AccentId,
   type ThemeMode,
 } from "../hooks/useTheme.js";
 
@@ -39,6 +45,7 @@ export function SettingsScreen() {
   const [stageMode, setStageMode] = useState<ThemeMode>(() =>
     storedMode(STAGE_MODE_KEY, DEFAULT_STAGE_MODE),
   );
+  const [accent, setAccentState] = useState<{ id: AccentId; custom: string }>(() => readAccent());
 
   const loadModels = useCallback((refresh = false): void => {
     api
@@ -74,12 +81,15 @@ export function SettingsScreen() {
       const key = (e as StorageEvent).key;
       if (key === UI_MODE_KEY) setUiMode(storedMode(UI_MODE_KEY, DEFAULT_UI_MODE));
       if (key === STAGE_MODE_KEY) setStageMode(storedMode(STAGE_MODE_KEY, DEFAULT_STAGE_MODE));
+      if (key === ACCENT_CHANGED) setAccentState(readAccent());
     };
     window.addEventListener("storage", handleStorage);
     window.addEventListener(THEME_MODE_CHANGED, handleStorage);
+    window.addEventListener(ACCENT_CHANGED, handleStorage);
     return () => {
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener(THEME_MODE_CHANGED, handleStorage);
+      window.removeEventListener(ACCENT_CHANGED, handleStorage);
     };
   }, []);
 
@@ -355,6 +365,51 @@ export function SettingsScreen() {
                 <option value="light">浅色</option>
                 <option value="dark">深色</option>
               </select>
+            </Field>
+            <Field label="主色" hint="按钮、选中项、高亮的颜色；舞台跟着一起换">
+              <div className="accent-picker">
+                {ACCENT_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`accent-swatch accent-${preset.id}${accent.id === preset.id ? " active" : ""}`}
+                    title={preset.label}
+                    aria-label={preset.label}
+                    aria-pressed={accent.id === preset.id}
+                    onClick={() => {
+                      setAccentState({ ...readAccent(), id: preset.id });
+                      setAccent(preset.id);
+                    }}
+                  />
+                ))}
+                <label
+                  className={`accent-custom${accent.id === "custom" ? " active" : ""}`}
+                  title="自己挑一个颜色"
+                >
+                  <input
+                    type="color"
+                    value={accent.custom}
+                    aria-label="自己挑一个颜色"
+                    onChange={(e) => {
+                      setAccentState({ id: "custom", custom: e.target.value });
+                      setAccent("custom", e.target.value);
+                    }}
+                  />
+                  <span>自由</span>
+                </label>
+                {accent.custom !== DEFAULT_ACCENT_CUSTOM && (
+                  <button
+                    type="button"
+                    className="ghost-btn accent-reset"
+                    onClick={() => {
+                      setAccentState({ ...readAccent(), custom: DEFAULT_ACCENT_CUSTOM });
+                      setAccent(readAccent().id, DEFAULT_ACCENT_CUSTOM);
+                    }}
+                  >
+                    恢复默认色
+                  </button>
+                )}
+              </div>
             </Field>
             <Field label="舞台主题" hint="舞台（画面/台词条/选肢卡等）的亮暗模式">
               <select

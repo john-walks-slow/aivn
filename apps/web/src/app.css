@@ -48,9 +48,9 @@
   --ink-soft: #5b5348;
   --ink-faint: #9a9081;
   --line: #ded5c4;
-  --accent: #6f4e37; /* 咖啡 */
-  --accent-ink: #fdf8f3;
-  --accent-soft: #ecdfd2;
+  --accent: #3f6b93; /* 冷蓝 */
+  --accent-ink: #f7fbff;
+  --accent-soft: #dde7f0;
   --link: #2f5d7c;
   --radius: 2px; /* 近直角：AVG 的窗与键都不圆 */
 
@@ -81,17 +81,18 @@
      全局 --radius 是 2px（近直角，给页面里的卡片与键），但这几块是压在画面上的
      「窗」，圆角大一点才跟画面脱开、读得出是浮在上面的一层。 */
   --stage-radius: 10px;
-  --nameplate-bg: #fffcf5;
-  --nameplate-ink: #23201c;
-  /* 名牌永远白底，描边必须两套主题下都在白底上看得见，因此取固定的中性灰，不跟主色 */
-  --nameplate-line: rgb(90 80 68 / 0.45);
+  /* 名牌跟着舞台深浅走：深底上是深牌浅字，浅底上是浅牌深字。压在背景图上时两种都得
+     自己带底，所以不取透明。描边两套主题都看得见，取固定的中性灰，不跟主色。 */
+  --nameplate-bg: rgb(24 21 23 / 0.92);
+  --nameplate-ink: #f2ebde;
+  --nameplate-line: rgb(238 226 204 / 0.4);
   /* 亮色舞台（useTheme 的 stageLight）把 --stage-bg 压到 #fdfdfd：剧本还没配景时
      露出的是空白画布，不会被读成「画面加载不出来」。这里的默认基线走暗色。 */
   --sprite-dim: 0.55; /* 非发言人立绘压暗强度 */
   --choice-bg: rgb(24 21 23 / 0.92);
   --choice-line: rgb(238 226 204 / 0.4);
   --choice-ink: #f2ebde;
-  --choice-active-bg: rgb(155 59 79 / 0.55);
+  --choice-active-bg: color-mix(in srgb, var(--accent) 40%, transparent);
   --choice-scrim: linear-gradient(180deg, transparent 24%, rgb(10 8 10 / 0.55));
   --shadow: 0 6px 18px rgb(34 24 16 / 0.16);
 
@@ -122,10 +123,54 @@ html[data-ui-theme="dark"] {
   --ink-soft: #b3a897;
   --ink-faint: #8a8073;
   --line: #3d362f;
-  --accent: #c79a6d; /* 深底上的咖啡要提亮，否则棕压黑糊成一团 */
-  --accent-ink: #1a1512;
-  --accent-soft: rgba(199, 154, 109, 0.18);
+  --accent: #8ab6dd; /* 深底上的主色要提亮，否则色相压黑糊成一团 */
+  --accent-ink: #101820;
+  --accent-soft: rgba(138, 182, 221, 0.18);
   --link: #8fb8d4;
+}
+
+/* 主色预设：设置页选哪一档就挂哪个 data-accent（useTheme.applyAccent）。
+   每个预设给浅底/深底两套值——同一色相在纸面上要压得住、在暖黑上要提得起。
+   custom 不在这里：那个色由 useTheme 写成内联 --accent。 */
+html[data-accent="teal"] {
+  --accent: #2f6f73;
+  --accent-ink: #f3fbfa;
+  --accent-soft: #d7e8e8;
+}
+html[data-accent="green"] {
+  --accent: #4a6f45;
+  --accent-ink: #f6faf2;
+  --accent-soft: #dfe9da;
+}
+html[data-accent="violet"] {
+  --accent: #6a5599;
+  --accent-ink: #faf7ff;
+  --accent-soft: #e5dff2;
+}
+html[data-accent="wine"] {
+  --accent: #9b3b4f;
+  --accent-ink: #fff7f3;
+  --accent-soft: #f4e3e2;
+}
+html[data-ui-theme="dark"][data-accent="teal"] {
+  --accent: #79b8bd;
+  --accent-ink: #0e1a1b;
+  --accent-soft: rgba(121, 184, 189, 0.18);
+}
+html[data-ui-theme="dark"][data-accent="green"] {
+  --accent: #9cbb92;
+  --accent-ink: #131a11;
+  --accent-soft: rgba(156, 187, 146, 0.18);
+}
+html[data-ui-theme="dark"][data-accent="violet"] {
+  --accent: #ab98d8;
+  --accent-ink: #16121f;
+  --accent-soft: rgba(171, 152, 216, 0.18);
+}
+html[data-ui-theme="dark"][data-accent="wine"] {
+  --accent: #d98a7a;
+  --accent-ink: #1a1512;
+  --accent-soft: rgba(217, 138, 122, 0.18);
 }
 
 /* 舞台浅色：台词条 / 选肢卡整套换成浅底深字。
@@ -147,8 +192,11 @@ html[data-stage-theme="light"] {
   --choice-bg: rgb(252 250 246 / 0.94);
   --choice-line: rgb(120 108 92 / 0.4);
   --choice-ink: #23201c;
-  --choice-active-bg: rgb(150 104 66 / 0.22);
+  --choice-active-bg: color-mix(in srgb, var(--accent) 22%, transparent);
   --choice-scrim: linear-gradient(180deg, transparent 24%, rgb(239 236 229 / 0.55));
+  --nameplate-bg: rgb(252 250 246 / 0.94);
+  --nameplate-ink: #23201c;
+  --nameplate-line: rgb(90 80 68 / 0.45);
 }
 
 html,
@@ -1156,23 +1204,25 @@ button.link-btn {
   margin: 0;
 }
 
-/* 说话人：白底 + 中性描边的小牌，骑在文本窗上沿——纯文字压在图上认不出谁在说。
-   描边不跟主色：名牌每句都在，主色描边会把整条台词条钉成一个红框（现在是咖啡框）。 */
+/* 说话人：白底 + 中性描边的小牌，整块坐在文本窗上方不压它——骑在上沿等于把名牌
+   切成两半（描边横穿名字）。描边也不跟主色：名牌每句都在，主色描边会把整条台词条钉成一个框。
+   底色字色取舞台那套（浅底浅牌 / 深底深牌），跟着舞台深浅走。 */
 .dialog-name {
   position: absolute;
-  top: -13px;
+  bottom: 100%;
   left: 22px;
+  margin-bottom: 8px;
   max-width: 62%;
-  padding: 1px 14px;
+  padding: 1px 13px;
   border: 1px solid var(--nameplate-line);
   border-radius: 999px;
   background: var(--nameplate-bg);
   color: var(--nameplate-ink);
   font-family: var(--font-serif);
   font-weight: 600;
-  font-size: 15px;
-  letter-spacing: 0.1em;
-  line-height: 1.6;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  line-height: 1.7;
 }
 
 .dialog-text {
@@ -1353,27 +1403,37 @@ button.link-btn {
 
 /* ── 停止点（浮在舞台上，不占底部条） ────────────── */
 
-/* 选肢：导演栏与台词条之间的那一段画面上，卡片垂直居中（放不下才滚）。
-   它挂在 .theater 上、不在画面区里：画面区（.theater-stage）盖不满——台词条是
-   absolute 叠在它上面的，「铺满画面区」就等于「铺到台词条底下」，卡片下半张被盖住、
-   点不到。上下两条边跟着两块浮层的实测高度走（--dir-h / --dialog-h 由
-   StageTheater 的 ResizeObserver 写入），换行或长台词都不用手改数值。 */
+/* 选肢：卡片摆在导演栏与台词条之间的那一段画面上（垂直居中，放不下才滚），
+   遮罩铺满整个舞台把下面那块压暗。遮罩不吃点击也不吃手势（pointer-events: none）：
+   「选项摆着的时候不许点继续」不是靠这层挡的——那一刻客户端根本不给「继续」这个出口
+   （stopAffordance：真停止点的出口是选项本身），编排器也拒收 continue。真要拦就拦在
+   逻辑里，靠一层盖布假装拦住等于换个地方还会漏。
+
+   卡片为什么不能跟着铺满：画面区（.theater-stage）盖不满——台词条是 absolute
+   叠在它上面的，「铺满画面区」就等于「铺到台词条底下」，卡片下半张被盖住、点不到。
+   所以上下留白按两块浮层的实测高度扣（--dir-h / --dialog-h 由 StageTheater 的
+   ResizeObserver 写入），换行或长台词都不用手改数值。 */
 .choice-overlay {
   position: absolute;
-  z-index: 30;
-  left: 0;
-  right: 0;
-  top: calc(var(--dir-h, 46px) + 14px + env(safe-area-inset-top, 0px));
-  bottom: calc(var(--dialog-h, 168px) + 3% + var(--safe-b, 0px));
+  z-index: 15;
+  inset: 0;
   display: flex;
   flex-direction: column;
   /* safe：内容高于这一段时对齐退化成从上往下排，否则居中会把顶上一张顶出可视区。 */
   justify-content: safe center;
   gap: 12px;
-  padding: 8px 16px;
+  padding-top: calc(var(--dir-h, 46px) + 14px + env(safe-area-inset-top, 0px));
+  padding-right: 16px;
+  padding-bottom: calc(var(--dialog-h, 168px) + 3% + var(--safe-b, 0px));
+  padding-left: 16px;
   overflow-y: auto;
   background: var(--choice-scrim);
   animation: choice-in 0.22s ease-out;
+  pointer-events: none;
+}
+
+.choice-overlay .choice {
+  pointer-events: auto;
 }
 
 .choice-text {
@@ -2894,6 +2954,79 @@ select:focus {
   justify-self: start;
 }
 
+/* 主色选择：一排色板 + 一个自由取色。色板自己带那一档的主色（--swatch 由下面的
+   data-accent 规则给），选中项靠外圈描边表示——页面自己的 --accent 此刻可能正被
+   改着，拿它画选中框会出现「换了个颜色就看不出选了哪个」。 */
+.accent-picker {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.accent-swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--swatch, var(--accent));
+  cursor: pointer;
+}
+
+.accent-swatch.active {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.accent-blue {
+  --swatch: #3f6b93;
+}
+.accent-teal {
+  --swatch: #2f6f73;
+}
+.accent-green {
+  --swatch: #4a6f45;
+}
+.accent-violet {
+  --swatch: #6a5599;
+}
+.accent-wine {
+  --swatch: #9b3b4f;
+}
+
+.accent-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.accent-custom.active {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.accent-custom input[type="color"] {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.accent-reset {
+  font-size: 13px;
+}
+
 .settings-label {
   color: var(--ink-soft);
   font-size: 13.5px;
@@ -2978,11 +3111,12 @@ select:focus {
   }
 
   /* 竖屏同样居中：这段画面上下各有一块浮层压着，卡片贴底排会紧贴台词条，
-     读起来像「压在对话框上」。放不下才滚。 */
+     读起来像「压在对话框上」。放不下才滚。上下留白仍按两块浮层的实测高度算，
+     这里只收间距与左右边距。 */
   .choice-overlay {
-    justify-content: safe center;
     gap: 8px;
-    padding: 8px 12px;
+    padding-right: 12px;
+    padding-left: 12px;
   }
 
   .choice {
@@ -3922,12 +4056,23 @@ select:focus {
   min-width: 0;
 }
 
+/* 视图栏里的唤出键跟右端那枚「×」是同一枚键：页面自己的墨色与描边，
+   不能沿用舞台那套深色玻璃的令牌——舞台默认深色，近白的字压在浅色横栏上
+   就成了一枚看着像置灰的键。 */
 .view-bar-lead .side-drawer-btn {
   position: static;
   width: 30px;
   height: 30px;
   box-shadow: none;
+  border: none;
+  border-radius: var(--radius);
   background: none;
+  color: var(--ink);
+}
+
+.view-bar-lead .side-drawer-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 /* 窄屏：侧栏改成盖在内容上的抽屉，不再挤压内容区 */

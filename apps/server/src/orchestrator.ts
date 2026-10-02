@@ -602,6 +602,16 @@ export class PlaywrightOrchestrator {
     // 「继续」不是玩家说的话：它不占【用户输入】段，也不落谱系节点（没有可分岔的锚点）
     let resolved: ResolvedAction | null = null;
     if (action.kind === "continue") {
+      // 有真停止点还没作答时，「继续」这件事不成立：照收等于替玩家把选项跳过去。
+      // pause 是编排器自造的重试口，不算没答完的停止点，照常放行。
+      if (this.lastStop && this.lastStop.stopType !== "pause") {
+        this.send({
+          type: "error",
+          message: "还有选择没作答",
+          recoverable: true,
+        });
+        return;
+      }
       resolved = null;
     } else if (action.kind === "choice") {
       const option = this.lastStop?.options?.[action.optionIndex];

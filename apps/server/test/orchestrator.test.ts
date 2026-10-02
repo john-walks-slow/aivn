@@ -494,10 +494,36 @@ describe("PlaywrightOrchestrator 闭环", () => {
     expect(replay?.type).toBe("beat_end");
     expect(replay?.stop?.stopType).toBe("choice");
     // 续演走第二轮而非 opening（beat_start 仅直播；事件缓冲见第二轮舞台事件）
-    await restored.playerAction({ kind: "continue" });
+    // 恢复出来的停止点摆着选项，玩家只能答选项——「继续」在这里不成立（见下一个用例）
+    await restored.playerAction({ kind: "choice", optionIndex: 0 });
     const seqAfter = restored.eventsAfter(total);
     expect(seqAfter.length).toBeGreaterThan(0);
     expect(seqAfter.some((e) => e.event.kind === "say_start")).toBe(true);
+  });
+
+  it("停止点还没作答时拒收「继续」：不许替玩家把选项跳过去", async () => {
+    const { orchestrator, messages } = setup([
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+    ]);
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+
+    await orchestrator.playerAction({ kind: "continue" });
+
+    expect(messages.filter((m) => m.type === "error").map((m) => (m as { message: string }).message))
+      .toContain("还有选择没作答");
+    // 没有新一轮：选项还摆着
+    expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1);
+    // pause 是编排器自造的重试口，不算没答完的停止点，照常放行
+    const forked = setup([
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+    ]);
+    await forked.orchestrator.playerAction({ kind: "free", text: "开局" });
+    await forked.orchestrator.forkTo(forked.tree.materialize().find((e) => e.kind === "say")!.id);
+    expect(forked.orchestrator.runtimeState.lastStop?.stopType).toBe("pause");
+    await forked.orchestrator.playerAction({ kind: "continue" });
+    expect(forked.messages.filter((m) => m.type === "beat_start")).toHaveLength(2);
   });
 
   it("幕末恢复：上一轮的停止点不复活（停在 no_stop 就是黑场 + 下一幕）", async () => {
