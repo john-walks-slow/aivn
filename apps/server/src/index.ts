@@ -20,9 +20,9 @@ export async function main(): Promise<void> {
   const library = new PlayLibrary(config.playsRoot);
   // 素材资源库：跨剧目复用的本地素材目录，用户在本地增删改，这里只读
   const assets = new AssetLibrary(config.libraryRoot);
-  const playhouse = new PlayHouse(library, config, assets);
-  const settings = settingsFileFor(config, repoRoot);
   const voices = new VoiceCatalogService(config, join(repoRoot, "media-cache/voices.json"));
+  const playhouse = new PlayHouse(library, config, assets, voices);
+  const settings = settingsFileFor(config, repoRoot);
   // 前端构建产物（pnpm -r build 之后存在）：同端口挂上，公网部署只需要一个入口。
   const webDist = join(repoRoot, "apps/web/dist");
 

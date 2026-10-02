@@ -10,6 +10,7 @@ import type {
 import type { Exa } from "./exa.js";
 import { PlayFiles } from "./playFiles.js";
 import type { AssetLibrary } from "./library.js";
+import type { VoiceCatalogService } from "./voiceCatalog.js";
 import type { PlaySaves } from "./saves.js";
 import type { PlayStore } from "./store.js";
 import {
@@ -49,6 +50,8 @@ export interface WorkshopSessionOptions {
   saveStore: (saveId: string) => PlayStore;
   /** 应用级素材资源库：工坊 agent 可浏览与导入（只读，库本身由用户在本地目录维护）。 */
   assetLibrary?: AssetLibrary;
+  /** 公共音色库客户端：list_voices 走它。没配 TTS 时为 undefined，工具不注册。 */
+  voices?: VoiceCatalogService;
   /** 联网检索客户端；未配置则 `web_search` 工具不注册、prompt 不提联网。 */
   exa?: Exa;
   /** 工坊 agent 的运行设置（play.json 的 agents.workshop）：思考档位与工具开关。 */
@@ -84,6 +87,7 @@ export class WorkshopSession {
       saves: opts.saves,
       saveStore: opts.saveStore,
       assetLibrary: opts.assetLibrary,
+      voices: opts.voices,
       exa: opts.exa,
     });
   }
@@ -270,6 +274,7 @@ export class WorkshopSession {
       canGenerate: this.kit.can.image,
       canSearch: this.kit.can.search,
       canBrowseLibrary: this.kit.can.library,
+      canVoices: this.kit.can.voice,
     });
   }
 }

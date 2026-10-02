@@ -40,6 +40,7 @@ export const ROLE_INSTALLABLE: Record<AgentRole, readonly string[]> = {
     "list_library",
     "import_asset",
     "web_search",
+    "list_voices",
   ],
 };
 

@@ -8,6 +8,7 @@ import { createGenerateImageTool } from "./imageTool.js";
 import { createLibraryTools } from "./libraryTool.js";
 import { createLineageTools } from "./lineageTool.js";
 import { createMemoryTools } from "./memoryTool.js";
+import { createVoiceTool } from "./voiceTool.js";
 import { createWebSearchTool } from "./searchTool.js";
 import { createReadSkillTool } from "./skillTool.js";
 
@@ -33,6 +34,7 @@ export const TOOL_GROUPS = {
   library: "素材资源库",
   lineage: "故事树",
   web: "联网检索",
+  voice: "音色库",
 } as const;
 
 export type ToolGroup = keyof typeof TOOL_GROUPS;
@@ -62,6 +64,7 @@ const TOOL_CATALOG: Record<string, { label: string; group: ToolGroup }> = {
   search_archive: { label: "检索历史往事", group: "memory" },
   generate_image: { label: "生成剧目素材", group: "image" },
   read_skill: { label: "读技能库", group: "skill" },
+  list_voices: { label: "查音色库", group: "voice" },
   web_search: { label: "联网检索", group: "web" },
   list_files: { label: "列出剧目文件", group: "files" },
   read_file: { label: "读剧目文件", group: "files" },
@@ -134,6 +137,8 @@ export interface AgentCapabilities {
   search: boolean;
   /** 素材资源库可用（配置了库目录）。 */
   library: boolean;
+  /** 音色库可用（配了 TTS key）。没配时 list_voices 不注册，提示词也不提。 */
+  voice: boolean;
 }
 
 export interface AgentKit {
@@ -158,6 +163,7 @@ export function createAgentKit(deps: AgentKitDeps & { thinking?: ThinkingLevel }
       image: has("generate_image"),
       search: has("web_search"),
       library: has("list_library"),
+      voice: has("list_voices"),
     },
     catalog: enabled.map((tool) => {
       const meta = TOOL_CATALOG[tool.name]!;
@@ -207,6 +213,8 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
     }),
     createReadSkillTool(),
     ...createLineageTools(deps),
+    // 没配 TTS 就不注册：查不出来的工具只会诱使模型空转
+    ...createVoiceTool(deps.voices),
     ...createLibraryTools({
       playId: deps.playId,
       store: deps.store,

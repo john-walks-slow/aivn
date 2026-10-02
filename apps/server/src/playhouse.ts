@@ -1,4 +1,5 @@
 import type { ServerMessage } from "@stage-ai/core";
+import type { VoiceCatalogService } from "./voiceCatalog.js";
 import { LineageTree, isVoiceId, parsePlayConfig, type EngineStateSnapshot, type SpriteFraming } from "@stage-ai/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
@@ -177,6 +178,8 @@ export class PlayHouse {
     private readonly library: PlayLibrary,
     private readonly config: ServerConfig,
     private readonly assetLibrary: AssetLibrary,
+    /** 公共音色库客户端（index.ts 构造时注入）：工坊的 list_voices 走它。没配 TTS 时可以是 undefined。 */
+    private readonly voices?: VoiceCatalogService,
   ) {
     ({ provider: this.provider, model: this.model } = createCpaProvider(config));
     this.tts = createTts(config);
@@ -896,6 +899,7 @@ export class PlayHouse {
       saves: this.library.saves(play.id),
       saveStore: (saveId) => this.library.saveStore(play.id, saveId),
       assetLibrary: this.assetLibrary,
+      voices: this.voices,
       exa: this.exa ?? undefined,
       agents: play.agents?.workshop,
     });

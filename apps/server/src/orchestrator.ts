@@ -31,6 +31,7 @@ import type { ModelStop } from "./agentkit/deps.js";
 import type { Exa } from "./exa.js";
 import type { PlayAssets } from "./playAssets.js";
 import type { AssetLibrary } from "./library.js";
+import type { VoiceCatalogService } from "./voiceCatalog.js";
 import type { PlayStore } from "./store.js";
 import { refFromActor, refFromCg, refFromSfx, refsFromScene, type AssetRefResolver } from "./assetRef.js";
 import { buildSystemPrompt, renderStateSection, type AssetManifest, type AssetNotes, type GeneratedNote } from "./prompt.js";
@@ -130,6 +131,8 @@ export interface OrchestratorOptions {
   store: PlayStore;
   /** 应用级素材资源库（给了才装 list_library / import_asset）。 */
   assetLibrary?: AssetLibrary;
+  /** 公共音色库客户端：工坊 list_voices 用。没配 TTS 时为 undefined，工具不注册。 */
+  voices?: VoiceCatalogService;
   /** 剧目记忆（D7 三层：always/index 注入 A 区，archive 供检索）。 */
   memory: PlayMemory;
   tree: LineageTree;
@@ -316,6 +319,7 @@ export class PlaywrightOrchestrator {
       enabled: enabledToolsFor("playwriter", opts.agents?.tools),
       store: opts.store,
       assetLibrary: opts.assetLibrary,
+      voices: opts.voices,
       thinking: opts.agents?.thinking,
       engine: opts.engine,
       characterIds: new Set(opts.play.characters.map((c) => c.id)),
@@ -742,6 +746,20 @@ export class PlaywrightOrchestrator {
     }
     this.pending = this.pending.filter((entry) => entry.id !== id);
     this.broadcastPromptQueue();
+  }
+
+  /**
+   * 交出还没兑现的排队输入（开演前插的那几句）。
+   *
+   * 「开演」那一刻无会话作用域的实例要被换到真树上，玩家在换之前插的提示
+   * 不跟着交接就会跟着旧实例一起蒸发——它只活在内存里，落不进任何存档。
+   */
+  takePendingPrompts(): string[] {
+    const texts = this.pending.filter((item) => item.status === "pending").map((item) => item.text);
+    if (texts.length === 0) return texts;
+    this.pending = [];
+    this.broadcastPromptQueue();
+    return texts;
   }
 
   private broadcastPromptQueue(): void {

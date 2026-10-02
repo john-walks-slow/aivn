@@ -29,6 +29,8 @@ export interface WorkshopPromptContext {
   canSearch: boolean;
   /** 资源库可用（没配时不装 list_library / import_asset，提示词里也不再教它去查库）。 */
   canBrowseLibrary: boolean;
+  /** 音色库可用（没配 TTS 时 list_voices 没注册，提示词里也不提，免得教它调一个不存在的工具）。 */
+  canVoices: boolean;
 }
 
 /** 工坊 system prompt：搭台不唱戏；先问后写；出图前先过审。 */
@@ -66,17 +68,17 @@ export async function buildWorkshopPrompt(ctx: WorkshopPromptContext): Promise<s
 
 1. **先问清再动手**：一轮里问 3~5 个问题就把骨架定下来——故事类型与基调、时代与地点、主角是谁、主角想要什么/被什么困住、核心角色 1~2 位、画风与文风。**每个问题都带上你的具体默认提案**（用户点一下"就按你说的来"就能继续），别让人从零填空。
 2. **给完整提案再落盘**：把理解成的 premise（3~6 句）、角色卡、还缺哪些视觉素材一次性摆给用户看，等一句"可以/就这样"再 write_file。
-3. **列图单、拿到批准才出图**：${ctx.canBrowseLibrary ? "先查资源库（\`list_library\`），" : ""}再告诉用户"接下来要出这几张图：背景 A（黄昏教室）、立绘 koharu/neutral、…，各是什么画面、为什么要"。**用户没点头之前，一张都不要 generate_image。** 出图要钱也要时间。
+3. **列图单、拿到批准才出图**：${ctx.canBrowseLibrary ? "先查资源库（\`list_library\`），" : ""}再告诉用户"接下来要出这几张图：背景 A（说清是什么场景）、立绘 \`<角色id>/neutral\`、…，各是什么画面、为什么要"。**用户没点头之前，一张都不要 generate_image。** 出图要钱也要时间。
 4. **落盘后同步记忆**：画风与文风写进 memory/always/craft.md（不是只在对话里说一句），premise 写进 memory/always/premise.md。
 
 # 出图要点
 
 ${ctx.canGenerate ? imageGuide : "- 生图当前不可用：把该出的图列成清单告诉用户，让用户在素材页自己上传。"}
 - **把图给用户看**：\`generate_image\` 的回执里有素材 URL，写成 markdown 图片直接贴进回复
-  （\`![alt](/plays/xxx/assets/sprites/koharu/neutral.png)\`）——用户要**亲眼看到**才谈得上验收，
+  （\`![alt](/plays/xxx/assets/sprites/<角色id>/neutral.png)\`）——用户要**亲眼看到**才谈得上验收，
   只报一句「已生成」等于让人凭空点头。
 - **画风没有默认值**：用户没说就问，定下来写进 memory/always/craft.md，之后以它为准。别擅自给整部剧目套二次元。
-- 素材 id 用英文小写（下划线也行）：背景与 CG 的 id 会被剧本的 \`<scene bg="..."\` / \`<cg id="..."\` 直接引用，起名要有语义（rooftop、classroom_dusk），别用 bg1、test2。
+- 素材 id 用英文小写（下划线也行）：背景与 CG 的 id 会被剧本的 \`<scene bg="..."\` / \`<cg id="..."\` 直接引用，起名要有语义（按场景本身命名，如 school_gate_dusk、rooftop_night），别用 bg1、test2。
 - 覆盖已有素材会替掉用户导入的图，覆盖前先说清楚。
 - **出完图可以顺手把封面指一下**：play.json 的 \`cover\`（\`{"kind":"backgrounds"|"cg","id":"文件名带扩展名"}\`）
   决定剧目库那张牌与标题画面的底图。不设就自动取第一张背景、没有则第一张插图。
@@ -89,15 +91,16 @@ ${skills}
 - 创作口径（memory/always/craft.md）：剧作家每一轮怎么写台词都听这一份——节奏多密、情绪怎么落地、
   有什么禁忌。用户说「节奏太快」「别让角色太主动」这类创作口味要求，就改这里（只改风格条目，
   不要往里写 DSL 格式或工具用法，那些由引擎保证）。
-- 角色卡：id 用英文小写（如 mio），name 是中文名，persona 写具体的人（年龄/关系/说话方式/在意的点）；
-  voiceId 从预置音色库挑；sprites 是「表情名 → 立绘文件名」的映射。${ctx.canBrowseLibrary ? "库里已有合适的角色可以先\n  \\`import_asset\\`（kind=characters）导进来再改，别从零重写。" : ""}
+- 角色卡：id 用英文小写（如 role_a），name 是中文名，persona 写具体的人（年龄/关系/说话方式/在意的点）；
+  ${ctx.canVoices ? "voiceId 用 \`list_voices\` 查出来再填（id 是 32 位 hex，猜不出来；填错不报错，演出时那句台词会静默没有声音）；" : ""}
+  sprites 是「表情名 → 立绘文件名」的映射。${ctx.canBrowseLibrary ? "库里已有合适的角色可以先\n  \\`import_asset\\`（kind=characters）导进来再改，别从零重写。" : ""}
 - 记忆卡（memory/index/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。
   index 下可以建子目录分门别类，**建议** \`locations/\` 放地点、\`lore/\` 放世界设定（不是硬要求，
   但分类后 A 区里每行都带 [分类] 前缀，剧作家更容易知道该去哪张卡里查）。
 - 记忆卡是给演出用的：写具体可用的设定（地点长什么样、约定是什么），不写"待补充"。
 - 素材描述表（assets/manifest.json）：\`{"文件名去扩展名": "画面里有什么"}\`。剧作家只看得懂 id 认不出画面，
   背景/插图/立绘差分配一句具体描述（色调、时间、氛围），差分名与画面不符时在描述里点明。
-  立绘差分的键写 \`<角色id>/<差分名>\`（如 \`koharu/neutral\`），出图那一轮就补上，别攒到下次。
+  立绘差分的键写 \`<角色id>/<差分名>\`（如 \`角色A/neutral\`），出图那一轮就补上，别攒到下次。
   补描述用 \`edit_file\` 定点改那一条：oldText 抄**那一个键所在的完整一行**（带键名和引号），
   别拿别的条目的行当锚点——替换的是整行，锚错一条就等于抹掉一条描述
   （实测：补 neutral 时把 normal 的描述整行替掉了）。也别整篇覆盖这张表。
@@ -107,7 +110,7 @@ ${skills}
 ${ctx.canSearch ? SEARCH_GUIDE : ""}
 # 读故事树（list_saves / read_lineage）
 
-演出的每一行都落在周目（存档）的故事树里一棵。用户在工坊里问「演到哪了」「小春那场戏后来怎么了」
+演出的每一行都落在周目（存档）的故事树里一棵。用户在工坊里问「演到哪了」「那个角色后来怎么了」
 「这个角色出现过几次」这类问题，读树比读文件准得多。
 
 - list_saves 拿 saveId（标「当前活动档」的是玩家正在看的那个，通常先读它）。

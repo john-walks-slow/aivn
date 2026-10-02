@@ -45,6 +45,7 @@ function workshop(over: Partial<WorkshopKitDeps> = {}, enabled?: string[]): Agen
     saves: {} as never,
     saveStore: () => ({}) as never,
     assetLibrary: { list: async () => [] } as never,
+    voices: { get: async () => ({ entries: [] }) } as never,
     ...over,
   });
 }
@@ -183,7 +184,7 @@ describe("agent kit：工具目录（设置页的数据源）", () => {
 
   it("设置页的目录必须等于工厂真实装出来的工具——否则卡上挂着一个勾了也没用的开关", () => {
     // 改依赖面时要改 role.ts 的 ROLE_INSTALLABLE 和 kit.ts 的角色工厂两处；这条是那两处之间的锁。
-    // 按依赖都配齐来比：web_search 卡在 Exa key 上，资源库两个卡在库目录上。
+    // 按依赖都配齐来比：web_search 卡在 Exa key 上，资源库两个卡在库目录上，list_voices 卡在 TTS 上。
     const exa = { search: async () => [] } as never;
     expect(agentToolCatalog("playwriter").map((t) => t.id).sort()).toEqual(
       names(playwriter({ exa }, ROLE_INSTALLABLE.playwriter)).sort(),

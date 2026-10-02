@@ -7,6 +7,7 @@ import type {
   StopType,
 } from "@stage-ai/core";
 import type { AssetLibrary } from "../library.js";
+import type { VoiceCatalogService } from "../voiceCatalog.js";
 import type { Exa } from "../exa.js";
 import type { AssetTarget, PlayAssets } from "../playAssets.js";
 import type { PlayFiles } from "../playFiles.js";
@@ -46,6 +47,8 @@ export interface KitCommonDeps {
   store: PlayStore;
   /** 应用级素材资源库（只读检索 + 导入）。未配置时不注册 list_library / import_asset。 */
   assetLibrary?: AssetLibrary;
+  /** Fish Audio 公共音色库客户端。未配置 TTS 时为 undefined，不注册 list_voices。 */
+  voices?: VoiceCatalogService;
 }
 
 /** 剧作家侧：演出进行中，工具要动的是引擎状态、记忆与舞台事件流。 */
