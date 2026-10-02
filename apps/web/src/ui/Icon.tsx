@@ -46,7 +46,7 @@ import {
  */
 const ICONS = {
   back: ArrowLeft,
-  /** 离开这场戏回封面：不是「上一层」，所以不给返回箭头。 */
+  /** 退出这场戏：不是「上一层」，所以不给返回箭头。 */
   exit: LogOut,
   forward: ArrowRight,
   plus: Plus,

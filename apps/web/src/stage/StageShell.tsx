@@ -33,7 +33,7 @@ function readWidth(): number {
 export interface StageShellProps {
   view: StageView;
   onView: (view: StageView) => void;
-  /** 回封面（离开这场戏，回标题画面）。侧栏里唯一的出口，不另配「关闭」键。 */
+  /** 退出这场戏（回封面）。侧栏里唯一的出口，不另配「关闭」键。 */
   onExit: () => void;
   title: string;
   saveName: string | null;
@@ -162,7 +162,7 @@ export function StageShell(props: StageShellProps) {
 
         {props.tools && <div className="stage-side-tools">{props.tools}</div>}
 
-        {/* 底栏：这场戏自己的两件事——当前周目、离开这场戏。出口不是视图，
+        {/* 底栏：这场戏自己的两件事——当前周目、退出。出口不是视图，
             放在导航里读起来像第六个视图，钉在最底下才对。 */}
         <footer className="stage-side-foot">
           {props.saveName && (
@@ -180,10 +180,10 @@ export function StageShell(props: StageShellProps) {
             type="button"
             className="side-foot-btn side-exit"
             onClick={onExit}
-            title={`回到封面：继续、开新周目（${props.title}）`}
+            title={`退出这场戏，回到封面（${props.title}）`}
           >
             <Icon name="exit" size={16} />
-            <span className="side-label">回封面</span>
+            <span className="side-label">退出</span>
           </button>
         </footer>
 
