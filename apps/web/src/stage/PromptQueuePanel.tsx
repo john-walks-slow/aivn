@@ -1,13 +1,26 @@
 import { useEffect, useState } from "react";
 import type { PendingJob, PromptQueueItem } from "@stage-ai/core";
-import { Icon } from "../ui/Icon.js";
+import { Icon, type IconName } from "../ui/Icon.js";
 
 /**
- * 待注入队列（右上角独立浮层）。
+ * 分类图标（收起时那枚徽标用）：bg 与 cg 同为出图，共用一个字形。
+ */
+const JOB_ICON: Record<PendingJob["kind"], IconName> = {
+  beat: "play",
+  bg: "assets",
+  cg: "assets",
+  sprite: "users",
+  voice: "mic",
+};
+
+/**
+ * 待注入队列 + 在生成的事（右上角浮层，默认收起成一枚徽标）。
  *
  * 演出进行中也能发话：话先落在这里，这一轮收束时才注入。行内可改可撤——
  * 改完的仍是原来那句话，注入时用的就是这一份。已注入的行留在面板里淡出，
  * 让玩家看见「这句进去了」，下一轮到来时退场。
+ *
+ * 默认收起：徽标只给「数字 + 在忙哪几类」，要看细节才点开。
  */
 export function PromptQueuePanel({
   items,
@@ -21,6 +34,7 @@ export function PromptQueuePanel({
   onEdit: (id: string, text: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   /** 展开了哪一条的提示词（生图才有，点一下开/合）。 */
@@ -41,7 +55,30 @@ export function PromptQueuePanel({
     }
   }, [editing, items]);
 
-  if (items.length === 0 && jobs.length === 0) return null;
+  const waiting = items.filter((item) => item.status === "pending");
+  const rows = jobs;
+
+  if (jobs.length === 0 && items.length === 0) return null;
+
+  if (!open) {
+    const icons = [...new Set(jobs.map((job) => JOB_ICON[job.kind]))];
+    if (waiting.length > 0) icons.push("chat");
+    return (
+      <button
+        type="button"
+        className="prompt-queue-badge"
+        onClick={() => setOpen(true)}
+        title="看看正在生成什么"
+      >
+        <span className="prompt-queue-badge-icons">
+          {icons.map((name) => (
+            <Icon key={name} name={name} />
+          ))}
+        </span>
+        <span>{rows.length + waiting.length}</span>
+      </button>
+    );
+  }
 
   const commit = (): void => {
     const text = draft.trim();
@@ -51,17 +88,26 @@ export function PromptQueuePanel({
 
   return (
     <aside className="prompt-queue" aria-label="正在生成的与待注入的话">
-      {jobs.length > 0 && (
+      {rows.length > 0 && (
         <>
-          <p className="prompt-queue-title">
-            {jobs.some((job) => job.state === "running") ? "正在生成" : "刚刚完成"}
+          <p className="prompt-queue-head">
+            <span>{jobs.some((job) => job.state === "running") ? "正在生成" : "刚刚完成"}</span>
+            <button
+              type="button"
+              className="prompt-queue-tool"
+              title="收起"
+              onClick={() => setOpen(false)}
+            >
+              <Icon name="up" />
+            </button>
           </p>
           <ul>
-            {jobs.map((job) => (
+            {rows.map((job) => (
               <li
                 key={job.id}
                 className={`prompt-queue-row pending-job${job.state === "done" ? " done" : ""}`}
               >
+                <Icon name={JOB_ICON[job.kind]} />
                 <span className="prompt-queue-text">{job.label}</span>
                 <span className="prompt-queue-meta">
                   {job.state === "done" ? "已完成" : elapsed(job.startedAt, now)}

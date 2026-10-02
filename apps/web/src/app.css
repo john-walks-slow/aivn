@@ -4284,6 +4284,44 @@ select:focus {
   color: var(--dialog-ink);
   font-size: 12.5px;
 }
+/* 收起态：同一锚点上的小徽标，一枚分类图标 + 个数。点开就是完整面板。 */
+.prompt-queue-badge {
+  position: absolute;
+  z-index: 40;
+  top: calc(60px + env(safe-area-inset-top, 0px));
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid var(--dialog-line);
+  border-radius: var(--stage-radius);
+  background: var(--dialog-bg);
+  box-shadow: var(--dialog-shadow);
+  color: var(--dialog-ink);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.prompt-queue-badge-icons {
+  display: flex;
+  gap: 5px;
+  color: var(--dialog-ink-soft);
+}
+/* 「正在生成」那行右侧的收起键：与标题同一行，margin 把它钉到行边。 */
+.prompt-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  color: var(--dialog-ink-soft);
+  font-size: 11px;
+}
+.prompt-queue-head .prompt-queue-tool {
+  margin: -4px -4px -4px 0;
+}
 .prompt-queue-title {
   margin: 0 0 6px;
   color: var(--dialog-ink-soft);
@@ -4734,6 +4772,12 @@ select:focus {
 .prompt-queue-row.pending-job {
   align-items: flex-start;
   flex-wrap: wrap;
+}
+/* 行首的分类图标：常驻在两行高的行里，要贴着第一行文字而不是飘在顶端。 */
+.prompt-queue-row.pending-job > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--dialog-ink-soft);
 }
 /* 收尾后还留着的那几秒：压暗，别和还在跑的抢注意力。 */
 .prompt-queue-row.pending-job.done .prompt-queue-text,

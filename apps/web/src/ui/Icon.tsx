@@ -17,6 +17,7 @@ import {
   Maximize2,
   MessageSquare,
   MessagesSquare,
+  Mic,
   PanelLeftClose,
   PanelLeftOpen,
   Pause,
@@ -82,6 +83,8 @@ const ICONS = {
   play: Play,
   pause: Pause,
   volume: Volume2,
+  /** 台词语音合成中：麦克风是「正在录/正在出声」的那一端，跟播放音量的 volume 分开。 */
+  mic: Mic,
   /** 与 volume 配对：总开关关掉的态。单靠一层浅底读不出开关，翻字形才不含糊。 */
   "volume-off": VolumeX,
   prev: ChevronLeft,
