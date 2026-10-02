@@ -1060,7 +1060,8 @@ button.link-btn {
 }
 
 /* 台词条：浮在画面上的窗，不是页面里的一块。深色玻璃压住背景图，白字才立得住。
-   一道亮描边 + 一道内发丝线 + 圆角——AVG 窗框的老办法，比只靠投影像游戏。 */
+   一道描边 + 圆角。窗框内侧原先还走一道细白线（想造玻璃厚度），深色下那道线
+   读起来是「窗里还有一圈框」，已删。 */
 .theater-dialog {
   position: absolute;
   z-index: 12;
@@ -1082,16 +1083,6 @@ button.link-btn {
   cursor: pointer;
   box-shadow: var(--dialog-shadow);
   backdrop-filter: blur(10px) saturate(1.05);
-}
-
-/* 内发丝线：窗框内侧再走一道细白线，制造玻璃的厚度 */
-.theater-dialog::before {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border: 1px solid rgb(240 230 210 / 0.13);
-  border-radius: 1px;
-  pointer-events: none;
 }
 
 .theater-bg {
