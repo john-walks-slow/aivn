@@ -44,48 +44,77 @@ export interface AgentToolEntry {
   group: ToolGroup;
   /** 分组的中文名（设置页的表头）：分组键是英文，界面上不能直接摆出来。 */
   groupLabel: string;
-  roles: AgentRole[];
 }
 
-/** 每个工具属于哪些角色：装配与设置页共用的唯一真相源。 */
-const TOOL_ROLES: Record<string, { label: string; group: ToolGroup; roles: AgentRole[] }> = {
-  beat_done: { label: "结束本轮", group: "beat", roles: ["playwriter"] },
-  update_state: { label: "提议状态更新", group: "memory", roles: ["playwriter"] },
-  write_memory: { label: "写记忆文件", group: "memory", roles: ["playwriter"] },
-  read_memory_detail: { label: "读记忆卡详情", group: "memory", roles: ["playwriter"] },
-  search_archive: { label: "检索历史往事", group: "memory", roles: ["playwriter"] },
-  generate_image: { label: "生成剧目素材", group: "image", roles: ["playwriter", "workshop"] },
-  read_skill: { label: "读技能库", group: "skill", roles: ["workshop"] },
-  web_search: { label: "联网检索", group: "web", roles: ["playwriter", "workshop"] },
-  list_files: { label: "列出剧目文件", group: "files", roles: ["workshop"] },
-  read_file: { label: "读剧目文件", group: "files", roles: ["workshop"] },
-  edit_file: { label: "编辑剧目文件", group: "files", roles: ["workshop"] },
-  write_file: { label: "写剧目文件", group: "files", roles: ["workshop"] },
-  delete_file: { label: "删除剧目文件", group: "files", roles: ["workshop"] },
-  get_readiness: { label: "检查开演条件", group: "files", roles: ["workshop"] },
-  inspect_asset: { label: "看剧目图片", group: "files", roles: ["workshop"] },
-  list_library: { label: "浏览素材资源库", group: "library", roles: ["workshop"] },
-  import_asset: { label: "从资源库导入素材", group: "library", roles: ["workshop"] },
-  list_saves: { label: "列出周目", group: "lineage", roles: ["workshop"] },
-  read_lineage: { label: "读故事树", group: "lineage", roles: ["workshop"] },
+/**
+ * 工具目录的**唯一真相源**：装不装、设置页列什么，都从这里出。
+ *
+ * 不再按角色切分——两个角色拿到同一份清单，能不能用只看用户勾没勾。
+ * 差异留在两处，都不是「工具归属」：
+ * - 装配时的依赖与等待策略（`generate_image` 的 sync / queued）；
+ * - 默认勾选哪些（`DEFAULT_ENABLED`）。
+ */
+const TOOL_CATALOG: Record<string, { label: string; group: ToolGroup }> = {
+  beat_done: { label: "结束本轮", group: "beat" },
+  update_state: { label: "提议状态更新", group: "memory" },
+  write_memory: { label: "写记忆文件", group: "memory" },
+  read_memory_detail: { label: "读记忆卡详情", group: "memory" },
+  search_archive: { label: "检索历史往事", group: "memory" },
+  generate_image: { label: "生成剧目素材", group: "image" },
+  read_skill: { label: "读技能库", group: "skill" },
+  web_search: { label: "联网检索", group: "web" },
+  list_files: { label: "列出剧目文件", group: "files" },
+  read_file: { label: "读剧目文件", group: "files" },
+  edit_file: { label: "编辑剧目文件", group: "files" },
+  write_file: { label: "写剧目文件", group: "files" },
+  delete_file: { label: "删除剧目文件", group: "files" },
+  get_readiness: { label: "检查开演条件", group: "files" },
+  inspect_asset: { label: "看剧目图片", group: "files" },
+  list_library: { label: "浏览素材资源库", group: "library" },
+  import_asset: { label: "从资源库导入", group: "library" },
+  list_saves: { label: "列出周目", group: "lineage" },
+  read_lineage: { label: "读故事树", group: "lineage" },
 };
 
-/** 全部工具目录（两个角色合起来），按分组排序——设置页直接渲染它。 */
+/**
+ * 各角色的默认启用集。play.json 的 `agents.<role>.tools` 给了就按它来。
+ *
+ * 剧作家默认不开生图与资源库：它一轮只有 240s，preload 不掉的一次调用就烧掉一轮预算；
+ * 资源库那边它是靠「在剧本里写 id、宿主自动导入」用的（见 assetRef.ts），不需要工具。
+ * 想让它自己出图或搜库，在 Agent 页勾上即可。
+ */
+const DEFAULT_ENABLED: Record<AgentRole, string[]> = {
+  playwriter: [
+    "beat_done",
+    "update_state",
+    "write_memory",
+    "read_memory_detail",
+    "search_archive",
+    "web_search",
+  ],
+  workshop: Object.keys(TOOL_CATALOG),
+};
+
+/** 全部工具目录，按分组排序——设置页直接渲染它。 */
 export function agentToolCatalog(): AgentToolEntry[] {
-  return Object.entries(TOOL_ROLES)
+  return Object.entries(TOOL_CATALOG)
     .map(([id, meta]) => ({
       id,
       label: meta.label,
       group: meta.group,
       groupLabel: TOOL_GROUPS[meta.group],
-      roles: meta.roles,
     }))
     .sort((a, b) => a.group.localeCompare(b.group) || a.id.localeCompare(b.id));
 }
 
-/** 某个角色能有的工具目录（不依赖运行时配置，设置页据此渲染开关）。 */
-export function catalogFor(role: AgentRole): AgentToolEntry[] {
-  return agentToolCatalog().filter((entry) => entry.roles.includes(role));
+/** 某个角色的默认启用集（设置页据此渲染开关的初始态，不依赖运行时配置）。 */
+export function defaultToolsFor(role: AgentRole): ReadonlySet<string> {
+  return new Set(DEFAULT_ENABLED[role]);
+}
+
+/** 用户配置解析后的最终启用集：play.json 给了就按它，没给走默认。 */
+export function enabledToolsFor(role: AgentRole, configured?: readonly string[]): ReadonlySet<string> {
+  return new Set(configured ?? DEFAULT_ENABLED[role]);
 }
 
 /** 能力位：提示词按它决定注不注某一章（装一个必然失败的能力只会教模型反复空转）。 */
@@ -111,7 +140,7 @@ export interface AgentKit {
 
 export function createAgentKit(deps: AgentKitDeps & { thinking?: ThinkingLevel }): AgentKit {
   const tools = deps.role === "playwriter" ? playwriterTools(deps) : workshopTools(deps);
-  const enabled = tools.filter((tool) => !deps.disabled.has(tool.name));
+  const enabled = tools.filter((tool) => deps.enabled.has(tool.name));
   const has = (name: string): boolean => enabled.some((tool) => tool.name === name);
   return {
     role: deps.role,
@@ -122,20 +151,24 @@ export function createAgentKit(deps: AgentKitDeps & { thinking?: ThinkingLevel }
       library: has("list_library"),
     },
     catalog: enabled.map((tool) => {
-      const meta = TOOL_ROLES[tool.name]!;
+      const meta = TOOL_CATALOG[tool.name]!;
       return {
         id: tool.name,
         label: meta.label,
         group: meta.group,
         groupLabel: TOOL_GROUPS[meta.group],
-        roles: meta.roles,
       };
     }),
     thinking: deps.thinking ?? "off",
   };
 }
 
-/** 剧作家的工具：轮收束 + 记忆 + 生图（后台排产）+ 联网。 */
+/**
+ * 剧作家的工具：轮收束 + 记忆 + 生图（后台排产）+ 资源库检索 + 联网。
+ *
+ * 少了 files 与 lineage：它们要 `PlayFiles` / `PlaySaves`，那是工坊那条线的依赖面。
+ * 清单是统一的，装不上的那部分不装——不是被切出去，是这条路上没有。
+ */
 function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
   return [
     createBeatDoneTool(deps),
@@ -146,14 +179,15 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
       emitPreload: deps.emitPreload,
       kick: deps.kick,
       kickSprite: deps.kickSprite,
-      statusOf: deps.statusOf,
-      hasStaticAsset: deps.hasStaticAsset,
+      existingAssetUrl: deps.existingAssetUrl,
     }),
+    // 剧作家这边没有对话流可挂，onWrite/onAsset 就不给：工具照常能用，只是没有撤销条
+    ...createLibraryTools({ playId: deps.playId, store: deps.store, library: deps.assetLibrary }),
     ...(deps.exa ? [createWebSearchTool(deps.exa)] : []),
   ];
 }
 
-/** 工坊的工具：剧目文件 + 生图（同步）+ 素材库 + 故事树 + 技能库 + 联网。 */
+/** 工坊的工具：剧目文件 + 生图（同步）+ 素材库检索 + 故事树 + 技能库 + 联网。 */
 function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
   return [
     ...createFilesTools(deps),
@@ -164,7 +198,13 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
     }),
     createReadSkillTool(),
     ...createLineageTools(deps),
-    ...createLibraryTools(deps),
+    ...createLibraryTools({
+      playId: deps.playId,
+      store: deps.store,
+      library: deps.assetLibrary,
+      onWrite: deps.onWrite,
+      onAsset: deps.onAsset,
+    }),
     ...(deps.exa ? [createWebSearchTool(deps.exa)] : []),
   ];
 }

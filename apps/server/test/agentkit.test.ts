@@ -1,19 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { PlayMemory } from "../src/memory.js";
 import { LineageTree } from "@stage-ai/core";
-import { agentToolCatalog, catalogFor, createAgentKit, type AgentKit } from "../src/agentkit/kit.js";
+import { agentToolCatalog, createAgentKit, defaultToolsFor, type AgentKit } from "../src/agentkit/kit.js";
 import type { PlaywriterKitDeps, WorkshopKitDeps } from "../src/agentkit/deps.js";
 
 /**
- * 统一基座的契约：**同一份工具实现与 schema，两个角色仅仅是暴露不同**。
+ * 统一基座的契约：**同一份工具实现与 schema，两个角色都能用同一份清单**。
  * 这些断言是那次重构的真正交付物——哪天有人给某个角色单独加一份工具，这里必须红。
  */
 
-function playwriter(over: Partial<PlaywriterKitDeps> = {}, disabled: string[] = []): AgentKit {
+/** 默认按角色的默认启用集装配；给了 enabled 就按它来（模拟用户在设置页勾过）。 */
+function playwriter(over: Partial<PlaywriterKitDeps> = {}, enabled?: string[]): AgentKit {
   return createAgentKit({
     role: "playwriter",
     playId: "test",
-    disabled: new Set(disabled),
+    enabled: new Set(enabled ?? defaultToolsFor("playwriter")),
     engine: { turn: 0, affinity: {}, flags: {} },
     characterIds: new Set(["mio"]),
     memory: new PlayMemory(),
@@ -24,23 +25,25 @@ function playwriter(over: Partial<PlaywriterKitDeps> = {}, disabled: string[] = 
     emitPreload: () => {},
     kick: () => {},
     kickSprite: () => {},
-    statusOf: () => "none",
-    hasStaticAsset: () => false,
+    existingAssetUrl: async () => null,
+    // 资源库没配就不注册 list_library（装一个必然查不出东西的工具只会空转）
+    assetLibrary: { list: async () => [] } as never,
     ...over,
   });
 }
 
-function workshop(over: Partial<WorkshopKitDeps> = {}, disabled: string[] = []): AgentKit {
+function workshop(over: Partial<WorkshopKitDeps> = {}, enabled?: string[]): AgentKit {
   return createAgentKit({
     role: "workshop",
     playId: "test",
-    disabled: new Set(disabled),
+    enabled: new Set(enabled ?? defaultToolsFor("workshop")),
     files: {} as never,
     store: {} as never,
     onWrite: () => {},
     onAsset: () => {},
     saves: {} as never,
     saveStore: () => ({}) as never,
+    assetLibrary: { list: async () => [] } as never,
     ...over,
   });
 }
@@ -50,9 +53,13 @@ const names = (kit: AgentKit): string[] => kit.tools.map((t) => t.name).sort();
 describe("agent kit：两个角色的暴露面", () => {
   it("剧作家拿轮收束与记忆，不拿剧目文件与故事树", () => {
     const kit = playwriter();
-    expect(names(kit)).toEqual(["beat_done", "generate_image", "read_memory_detail", "search_archive", "update_state", "write_memory"]);
+    expect(names(kit)).toEqual(["beat_done", "read_memory_detail", "search_archive", "update_state", "write_memory"]);
     expect(names(kit)).not.toContain("write_file");
     expect(names(kit)).not.toContain("read_lineage");
+    // 生图与资源库对剧作家默认关，勾上才装
+    expect(names(playwriter({}, [...defaultToolsFor("playwriter"), "generate_image", "list_library"]))).toEqual(
+      expect.arrayContaining(["generate_image", "list_library"]),
+    );
   });
 
   it("工坊拿剧目文件、故事树与技能库，不拿轮收束与演出记忆", () => {
@@ -66,26 +73,20 @@ describe("agent kit：两个角色的暴露面", () => {
     expect(names(kit)).not.toContain("update_state");
   });
 
-  it("generate_image 是同一个工具，只有描述分叉、schema 少两个工坊独占参数", () => {
-    const a = playwriter().tools.find((t) => t.name === "generate_image")!;
+  it("generate_image 是同一个工具：schema 一模一样，只有描述与等待策略分叉", () => {
+    const a = playwriter({}, [...defaultToolsFor("playwriter"), "generate_image"]).tools.find(
+      (t) => t.name === "generate_image",
+    )!;
     const b = workshop().tools.find((t) => t.name === "generate_image")!;
-    // 工坊独占：expression（立绘差分）与 referenceCharacters（CG/背景的参考立绘）。
-    // 剧作家的 bg/cg 走 media-cache 后台排产，那条链路不接垫图——参数层就不给，
-    // 也不写进共享的 PROMPT_RULES，免得它照着调一个 schema 里没有的参数。
-    const props = (t: typeof a) => JSON.stringify((t.parameters as { properties: Record<string, unknown> }).properties);
-    expect(props(a)).not.toContain("expression");
-    expect(props(b)).toContain("expression");
-    expect(props(a)).not.toContain("referenceCharacters");
-    expect(props(b)).toContain("referenceCharacters");
-    const { expression: _dropped, referenceCharacters: _dropped2, ...rest } = (b.parameters as {
-      properties: Record<string, unknown>;
-    }).properties;
-    expect(props(a)).toBe(JSON.stringify(rest));
+    // 垫图与差分两个角色都拿得到：参考立绘读的是 assets/sprites/，与谁调的无关
+    const props = (t: typeof a) => Object.keys((t.parameters as { properties: Record<string, unknown> }).properties);
+    for (const key of ["expression", "referenceCharacters"]) expect(props(a)).toContain(key);
+    expect(a.parameters).toBe(b.parameters);
     expect(a.description).not.toBe(b.description);
     expect(b.description).toContain("抠完觉得不干净"); // 工坊同步出图，教它看图重出
     expect(a.description).toContain("后台排产");
     expect(b.description).toContain("referenceCharacters");
-    expect(a.description).not.toContain("referenceCharacters");
+    expect(a.description).toContain("referenceCharacters");
   });
 
   it("写 prompt 的硬约束两个角色同一份（只写在工坊提示词里，等于剧作家那份没修）", () => {
@@ -95,13 +96,14 @@ describe("agent kit：两个角色的暴露面", () => {
       "由引擎自动拼在 prompt 末尾",
       "姿势、机位、景别都要显式写",
     ];
-    for (const role of [playwriter, workshop] as const) {
+    const withImage = playwriter({}, [...defaultToolsFor("playwriter"), "generate_image"]);
+    for (const role of [() => withImage, workshop] as const) {
       const desc = role().tools.find((t) => t.name === "generate_image")!.description;
       for (const rule of rules) expect(desc).toContain(rule);
     }
     // 流程与验收仍各归各的：工坊管看图与重出，剧作家管提前发起
     expect(workshop().tools.find((t) => t.name === "generate_image")!.description).toContain("inspect_asset");
-    expect(playwriter().tools.find((t) => t.name === "generate_image")!.description).toContain("提前 3–5 句发起");
+    expect(withImage.tools.find((t) => t.name === "generate_image")!.description).toContain("提前 3–5 句发起");
   });
 
   it("没配 Exa 就不注册 web_search，配了才装（且两个角色同一份实现）", () => {
@@ -112,8 +114,8 @@ describe("agent kit：两个角色的暴露面", () => {
     expect(names(workshop({ exa }))).toContain("web_search");
   });
 
-  it("disabledTools 最后一道过滤：装出来再摘掉，能力位跟着翻", () => {
-    const kit = workshop({}, ["generate_image", "list_library"]);
+  it("play.json 的启用集最后一道过滤：装出来再摘掉，能力位跟着翻", () => {
+    const kit = workshop({}, ["read_skill"]);
     expect(names(kit)).not.toContain("generate_image");
     expect(kit.can.image).toBe(false);
     expect(kit.can.library).toBe(false);
@@ -129,7 +131,7 @@ describe("agent kit：两个角色的暴露面", () => {
     const kit = createAgentKit({
       role: "workshop",
       playId: "test",
-      disabled: new Set(),
+      enabled: new Set(defaultToolsFor("workshop")),
       thinking: "high",
       files: {} as never,
       store: {} as never,
@@ -143,26 +145,49 @@ describe("agent kit：两个角色的暴露面", () => {
 });
 
 describe("agent kit：工具目录（设置页的数据源）", () => {
-  it("每个工具都有中文标签与分组，且至少属于一个角色", () => {
+  it("目录是两份角色合用的同一份全集，每条都有中文标签与分组", () => {
     const catalog = agentToolCatalog();
     expect(catalog.length).toBeGreaterThan(10);
     for (const entry of catalog) {
       expect(entry.label.length).toBeGreaterThan(0);
       expect(entry.group.length).toBeGreaterThan(0);
-      expect(entry.roles.length).toBeGreaterThan(0);
+      expect(entry.groupLabel.length).toBeGreaterThan(0);
     }
-    expect(catalog.find((t) => t.id === "beat_done")?.roles).toEqual(["playwriter"]);
-    expect(catalog.find((t) => t.id === "write_file")?.roles).toEqual(["workshop"]);
-    expect(catalog.find((t) => t.id === "generate_image")?.roles).toEqual(["playwriter", "workshop"]);
+    // 目录里不该再有「这个工具归谁」的字段：归属由默认启用集表达
+    expect(catalog[0]).not.toHaveProperty("roles");
   });
 
-  it("目录按角色切分：两边并集就是全集，工坊看不到 beat_done", () => {
-    const all = agentToolCatalog();
-    const play = catalogFor("playwriter");
-    const shop = catalogFor("workshop");
-    expect(new Set([...play, ...shop].map((t) => t.id))).toEqual(new Set(all.map((t) => t.id)));
-    expect(play.map((t) => t.id)).not.toContain("write_file");
-    expect(shop.map((t) => t.id)).not.toContain("beat_done");
+  it("剧作家默认不开生图与资源库，开工坊那一套；用户勾了就能开", () => {
+    const playDefault = defaultToolsFor("playwriter");
+    expect(playDefault).toContain("beat_done");
+    expect(playDefault).not.toContain("generate_image");
+    expect(playDefault).not.toContain("list_library");
+    expect(playDefault).not.toContain("write_file");
+
+    expect([...defaultToolsFor("workshop")].sort()).toEqual(agentToolCatalog().map((t) => t.id).sort());
+
+    // 用户在设置页勾上：play.json 的启用集直接生效，不再有第二道代码默认
+    const opened = playwriter({}, ["beat_done", "generate_image", "list_library"]);
+    expect(names(opened)).toEqual(["beat_done", "generate_image", "list_library"]);
+    expect(opened.can.image).toBe(true);
+    expect(opened.can.library).toBe(true);
+  });
+
+  it("导入工具还在清单里，但剧作家默认拿不到（引用即导入才是它的默认路径）", () => {
+    expect(agentToolCatalog().map((t) => t.id)).toContain("import_asset");
+    expect(names(playwriter())).not.toContain("import_asset");
+    expect(names(playwriter({}, [...defaultToolsFor("playwriter"), "import_asset"]))).toContain("import_asset");
+  });
+
+  it("两个角色的资源库工具是同一份实现（剧作家只是没有对话流可挂撤销条）", () => {
+    const a = playwriter({}, [...defaultToolsFor("playwriter"), "list_library", "import_asset"]);
+    const b = workshop();
+    for (const id of ["list_library", "import_asset"]) {
+      const ta = a.tools.find((t) => t.name === id)!;
+      const tb = b.tools.find((t) => t.name === id)!;
+      expect(ta.parameters).toBe(tb.parameters);
+      expect(ta.description).toBe(tb.description);
+    }
   });
 });
 

@@ -19,7 +19,7 @@ import {
   type WorkshopMessage,
   type WorkshopWrite,
 } from "./workshop.js";
-import { createAgentKit, type AgentKit } from "./agentkit/kit.js";
+import { createAgentKit, enabledToolsFor, type AgentKit } from "./agentkit/kit.js";
 import type { PlayAssets } from "./playAssets.js";
 import { WorkshopThreads, type WorkshopThread } from "./workshopThreads.js";
 
@@ -74,7 +74,7 @@ export class WorkshopSession {
     this.kit = createAgentKit({
       role: "workshop",
       playId: opts.playId,
-      disabled: new Set(opts.agents?.disabledTools ?? []),
+      enabled: enabledToolsFor("workshop", opts.agents?.tools),
       thinking: opts.agents?.thinking,
       files: this.files,
       store: opts.store,

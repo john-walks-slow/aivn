@@ -93,7 +93,6 @@ export interface AgentToolEntry {
   group: string;
   /** 分组的中文名（服务端 TOOL_GROUPS 的另一半），设置页表头直接用它。 */
   groupLabel: string;
-  roles: string[];
 }
 
 /**
@@ -258,7 +257,7 @@ export const api = {
     ),
 
   /** Agent 设置页的工具目录（两个角色共用的那一份真相源）。 */
-  agentTools: () => request<{ tools: AgentToolEntry[] }>("/api/agents/tools"),
+  agentTools: () => request<{ tools: AgentToolEntry[]; defaults: Record<string, string[]> }>("/api/agents/tools"),
 
   listAssets: (id: string) => request<Record<string, string[]>>(`/api/plays/${id}/assets`),
 

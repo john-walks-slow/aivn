@@ -4,7 +4,6 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CgEntry } from "@stage-ai/core";
-import type { ManifestEntry } from "../src/imageAssets.js";
 import { PlayLibrary } from "../src/store.js";
 import { handleHttp } from "../src/http.js";
 import type { PlayHouse } from "../src/playhouse.js";
@@ -102,13 +101,17 @@ describe("Agent 设置页的两个目录", () => {
       res as unknown as ServerResponse,
       new PlayLibrary("/tmp"),
       {
-        tools: () => [{ id: "beat_done", label: "结束本轮", group: "beat", roles: ["playwriter"] }],
+        tools: () => ({
+          tools: [{ id: "beat_done", label: "结束本轮", group: "beat", groupLabel: "时间线" }],
+          defaults: { playwriter: ["beat_done"], workshop: ["beat_done"] },
+        }),
       } as unknown as PlayHouse,
     );
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.payload).tools).toEqual([
-      { id: "beat_done", label: "结束本轮", group: "beat", roles: ["playwriter"] },
-    ]);
+    expect(JSON.parse(res.payload)).toEqual({
+      tools: [{ id: "beat_done", label: "结束本轮", group: "beat", groupLabel: "时间线" }],
+      defaults: { playwriter: ["beat_done"], workshop: ["beat_done"] },
+    });
   });
 });
 
@@ -121,20 +124,10 @@ describe("GET /api/plays/:id/cg：CG 页的台账", () => {
     library = new PlayLibrary(root);
     await library.createEmpty("p1", "黄昏");
     await mkdir(join(root, "p1", "assets", "cg"), { recursive: true });
-    await mkdir(join(root, "p1", "media-cache", "img"), { recursive: true });
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
-
-  /** 往生图 manifest 里写条目；文件名走真实存在（磁盘是权威，缺文件的条目会被跳过）。 */
-  const writeManifest = async (entries: ManifestEntry[]): Promise<void> => {
-    for (const entry of entries) await writeFile(join(root, "p1", "media-cache", "img", entry.file), "x");
-    await writeFile(
-      join(root, "p1", "media-cache", "img", "manifest.json"),
-      JSON.stringify(entries),
-    );
-  };
 
   /** 这一页只读盘，所以 PlayHouse 给一个「被调用即失败」的桩——它不该被牵动。 */
   const get = async () => {
@@ -154,15 +147,26 @@ describe("GET /api/plays/:id/cg：CG 页的台账", () => {
     return { status: res.statusCode, playhouseTouched, body: JSON.parse(res.payload) as { entries: CgEntry[] } };
   };
 
+  /** 往出图台账里写条目并落文件；磁盘是权威，缺文件的条目会被跳过。 */
+  const writeLedger = async (
+    entries: Record<string, { kind: "cg" | "background"; path: string; prompt: string }>,
+  ): Promise<void> => {
+    const table: Record<string, unknown> = {};
+    for (const [id, e] of Object.entries(entries)) {
+      await mkdir(join(root, "p1", ...e.path.split("/").slice(0, -1)), { recursive: true });
+      await writeFile(join(root, "p1", e.path), "x");
+      table[id] = { ...e, at: "2026-10-01T10:00:00.000Z" };
+    }
+    await writeFile(join(root, "p1", "assets", "generated.json"), JSON.stringify(table));
+  };
+
   it("静态素材带素材表描述，站内生成的图带 prompt", async () => {
     await writeFile(join(root, "p1", "assets", "cg", "cg_rooftop.jpg"), "x");
     await writeFile(
       join(root, "p1", "assets", "manifest.json"),
       JSON.stringify({ cg_rooftop: "晚霞天台的告白" }),
     );
-    await writeManifest([
-      { id: "cg_confession", type: "cg", file: "a.jpg", prompt: "two students at dusk" },
-    ]);
+    await writeLedger({ cg_confession: { kind: "cg", path: "assets/cg/cg_confession.jpg", prompt: "two students at dusk" } });
 
     const { status, playhouseTouched, body } = await get();
     expect(status).toBe(200);
@@ -170,8 +174,8 @@ describe("GET /api/plays/:id/cg：CG 页的台账", () => {
     expect(body.entries).toEqual([
       {
         id: "cg_confession",
-        url: "/plays/p1/media/img/a.jpg",
-        origin: "generated",
+        url: "/plays/p1/assets/cg/cg_confession.jpg",
+        origin: "asset",
         prompt: "two students at dusk",
       },
       {
@@ -185,9 +189,7 @@ describe("GET /api/plays/:id/cg：CG 页的台账", () => {
 
   it("同一 id 静态优先，但把生成记录的 prompt 捡回来", async () => {
     await writeFile(join(root, "p1", "assets", "cg", "cg_confession.png"), "x");
-    await writeManifest([
-      { id: "cg_confession", type: "cg", file: "a.jpg", prompt: "two students at dusk" },
-    ]);
+    await writeLedger({ cg_confession: { kind: "cg", path: "assets/cg/cg_confession.png", prompt: "two students at dusk" } });
     const { body } = await get();
     expect(body.entries).toHaveLength(1);
     expect(body.entries[0]).toMatchObject({
@@ -230,14 +232,14 @@ describe("GET /api/plays/:id/cg：CG 页的台账", () => {
   });
 
   it("背景类的生成图不进 CG 页", async () => {
-    await writeManifest([{ id: "bg_classroom", type: "bg", file: "b.jpg" }]);
+    await writeLedger({ bg_classroom: { kind: "background", path: "assets/backgrounds/bg_classroom.jpg", prompt: "p" } });
     expect((await get()).body.entries).toEqual([]);
   });
 
-  it("manifest 里的文件已被删掉 → 那条不算数（磁盘是权威）", async () => {
+  it("台账里的文件已被删掉 → 那条不算数（磁盘是权威）", async () => {
     await writeFile(
-      join(root, "p1", "media-cache", "img", "manifest.json"),
-      JSON.stringify([{ id: "cg_gone", type: "cg", file: "gone.jpg" }]),
+      join(root, "p1", "assets", "generated.json"),
+      JSON.stringify({ cg_gone: { id: "cg_gone", kind: "cg", path: "assets/cg/gone.jpg", prompt: "p", at: "x" } }),
     );
     expect((await get()).body.entries).toEqual([]);
   });

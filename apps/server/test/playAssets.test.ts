@@ -151,7 +151,8 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(calls.map((c) => c.aspectRatio)).toEqual(["16:9", "16:9", "9:16"]);
   });
 
-  it("立绘取景：framing 决定画幅与提示词里的景别，三档各出一档", async () => {
+  // 这条要在本机真编出 3 张不同画幅的图，慢机器上会顶穿默认的 5s
+  it("立绘取景：framing 决定画幅与提示词里的景别，三档各出一档", { timeout: 20000 }, async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);

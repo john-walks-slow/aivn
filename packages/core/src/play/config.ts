@@ -45,8 +45,14 @@ export interface AgentSettings {
   /** 网关上的模型 id（如 gemini-3.5-flash-lite）。缺省 = STAGE_MODEL_ID。 */
   model?: string;
   thinking?: ThinkingLevel;
-  /** 关掉的工具名（工具目录见 `GET /api/agents/tools`）。缺省/空 = 全开。 */
-  disabledTools?: string[];
+  /**
+   * 显式启用的工具名（工具目录见 `GET /api/agents/tools`）。缺省 = 该角色的默认集。
+   *
+   * 存的是**启用集**而不是禁用集：默认禁用的那几个（剧作家的生图与资源库）
+   * 写成黑名单时，「用户打开了它」与「它本来就开着」在文件里长得一样，
+   * 下次改默认值就会把用户的显式选择一起吞掉。
+   */
+  tools?: string[];
 }
 
 /**
@@ -161,9 +167,10 @@ function parseAgentConfig(raw: AgentConfig | undefined): AgentConfig | undefined
     if (source.thinking && (THINKING_LEVELS as readonly string[]).includes(source.thinking)) {
       settings.thinking = source.thinking;
     }
-    if (Array.isArray(source.disabledTools)) {
-      const names = source.disabledTools.filter((n): n is string => typeof n === "string" && n.trim() !== "");
-      if (names.length > 0) settings.disabledTools = names;
+    if (Array.isArray(source.tools)) {
+      const names = source.tools.filter((n): n is string => typeof n === "string" && n.trim() !== "");
+      // 空数组是「一个都不开」的显式选择，与「没写、走默认集」不同义，所以保留。
+      settings.tools = [...new Set(names)];
     }
     if (Object.keys(settings).length > 0) out[role] = settings;
   }

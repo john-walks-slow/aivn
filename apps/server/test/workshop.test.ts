@@ -16,7 +16,7 @@ import { WorkshopThreads } from "../src/workshopThreads.js";
 import { WorkshopSession } from "../src/workshopSession.js";
 import { buildWorkshopPrompt, deriveThreadTitle, type WorkshopPromptContext } from "../src/workshop.js";
 import type { WorkshopKitDeps } from "../src/agentkit/deps.js";
-import { createAgentKit } from "../src/agentkit/kit.js";
+import { createAgentKit, defaultToolsFor } from "../src/agentkit/kit.js";
 import { renderReadiness } from "../src/agentkit/readiness.js";
 import { Exa } from "../src/exa.js";
 import { createFakeStreamFn, BEAT_1, BEAT_2, PLAY } from "./helpers.js";
@@ -30,7 +30,7 @@ import { PlayMemory } from "../src/memory.js";
  */
 type WorkshopTestDeps = Omit<WorkshopKitDeps, "role" | "playId" | "disabled">;
 const createWorkshopTools = (deps: WorkshopTestDeps) =>
-  createAgentKit({ role: "workshop", playId: "test", disabled: new Set(), ...deps }).tools;
+  createAgentKit({ role: "workshop", playId: "test", enabled: new Set(defaultToolsFor("workshop")), ...deps }).tools;
 
 /** 造一个带最小剧目目录的 PlayStore：play.json + 记忆卡 + 会话日志（后者必须不可见）。 */
 async function makeStore(): Promise<PlayStore> {

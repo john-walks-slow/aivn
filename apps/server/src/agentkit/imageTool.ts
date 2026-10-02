@@ -1,54 +1,42 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import type { PreloadAssetAttrs, SpriteFraming } from "@stage-ai/core";
-import type { PlayAssets } from "../playAssets.js";
+import type { AssetTarget, PlayAssets } from "../playAssets.js";
 import { linesResult, reason, textResult } from "./result.js";
 
 /**
- * `generate_image`：两个 agent 共用的**同一份实现与 schema**，只有「描述 + 等待策略 + 依赖」不同。
+ * `generate_image`：两个 agent 共用的**同一份实现与 schema**。
  *
  * |  | 工坊（sync） | 剧作家（queued） |
  * |  | --- | --- | --- |
- * | 落点 | assets/（进 git，素材页可见） | bg/cg 落 media-cache 运行时缓存；立绘落 assets/ |
  * | 等待 | await，回执带 markdown 图片 | 发起即返回排产回执 |
  * | 立绘角色 | 必须在 play.json 里（成员校验） | 不在则用 characterName 自动注册 stub |
  * | 抠底参数 | 描述里教怎么用 | 不提（模型不该在拍内调抠底） |
+ *
+ * 落点两边一样：都进 `assets/`（工坊与剧作家共用同一个 PlayAssets）。
+ * 工具能力也**不分角色**——`expression` 与 `referenceCharacters` 两个角色都拿得到，
+ * 垫图链路读的是 `assets/sprites/`，与谁调的无关。要不要给剧作家开这个工具由设置页决定。
  *
  * 工坊出图是**同步**的：用户就站在对话框前等，回执必须把图贴给他看。
  * 剧作家是**后台预发射**：一轮只有 240s，立绘一张约 100s，等不起也不该等——
  * 它的契约是「提前 3–5 句发起，之后再引用」。
  */
-/**
- * 参数 schema 按角色裁剪：`expression`（立绘差分名）与 `referenceCharacters`（CG/背景的参考立绘）只有工坊有。
- *
- * 同一份实现、同一个工具名，但**剧作家拿不到这两个参数**：它的立绘只能是 neutral 定妆照，
- * 差分由工坊在用户眼前生成（垫图保一致性，见 SYNC_DESCRIPTION）；它的 bg/cg 走 media-cache 的
- * 后台排产链路（`ImageAssets`），那条链路不接垫图。参数层不给，比运行时回一句「不行」省掉
- * 一次白跑的往返——一轮只有 240s，浪费在拒绝上不划算。
- */
-function imageParams(withExpression: boolean) {
-  return Type.Object(
+const generateImageParams = Type.Object(
   {
     kind: Type.Union([Type.Literal("background"), Type.Literal("cg"), Type.Literal("sprite")]),
     /** 背景/CG 的素材 id，剧本里的 bg/cg id 就是它。 */
     name: Type.Optional(Type.String({ maxLength: 40 })),
     /** 立绘所属角色 id。 */
     characterId: Type.Optional(Type.String({ maxLength: 40 })),
-    /** 剧作家专用：角色不在角色表时用这个名字自动注册（临时角色）。工坊侧不给，按成员校验报错。 */
+    /** 角色不在角色表时用这个名字自动注册（临时角色）。剧作家的临时角色靠它；工坊侧按成员校验报错。 */
     characterName: Type.Optional(Type.String({ maxLength: 40 })),
-    /** 立绘差分名，如 neutral / smile（只有工坊有这个参数）。 */
-    ...(withExpression ? { expression: Type.Optional(Type.String({ maxLength: 40 })) } : {}),
+    /** 立绘差分名，如 neutral / smile。不给按 neutral。 */
+    expression: Type.Optional(Type.String({ maxLength: 40 })),
     /**
-     * 参考立绘（只有工坊有这个参数；只对 kind=background / cg 生效）：把列出的角色立绘垫给模型，
+     * 参考立绘（只对 kind=background / cg 生效）：把列出的角色立绘垫给模型，
      * **数组顺序就是提示词里「第一张图、第二张图」的顺序**，不能随意排。角色没有立绘会直接报错。
      */
-    ...(withExpression
-      ? {
-          referenceCharacters: Type.Optional(
-            Type.Array(Type.String({ maxLength: 40 }), { minItems: 1, maxItems: 6 }),
-          ),
-        }
-      : {}),
+    referenceCharacters: Type.Optional(Type.Array(Type.String({ maxLength: 40 }), { minItems: 1, maxItems: 6 })),
     /** 立绘取景（只对 kind=sprite 生效；不给则沿用该角色已声明的，默认全身）。 */
     framing: Type.Optional(
       Type.Union([
@@ -80,11 +68,8 @@ function imageParams(withExpression: boolean) {
     prompt: Type.String({ minLength: 1, maxLength: 4000, description: "英文出图提示词，描述画面本身（不含负面词）" }),
   },
   { additionalProperties: false },
-  );
-}
+);
 
-const generateImageParams = imageParams(true);
-const playwriterImageParams = imageParams(false);
 
 /**
  * 写 prompt 的硬约束，两个角色共享。
@@ -113,21 +98,16 @@ const PROMPT_RULES = [
   "重复也别改写它；背景与 CG 没有这层后缀，构图要求要自己写。",
 ].join("");
 
-/**
- * 只给工坊：`referenceCharacters` 是工坊独有的参数，写进共享的 PROMPT_RULES 会让剧作家
- * 照着去调一个它 schema 里根本没有的参数——一次注定被拒的往返，外加一轮 240s 的预算。
- */
-const REFERENCE_RULE = [
-  "背景与 CG 里**有人物时用 referenceCharacters 垫立绘**（数组顺序即提示词里的先后顺序，别随意排）：",
-  "画面里有人物却只靠文字描述，出来的脸和角色卡对不上；垫了图也不必省略 prompt 里的外貌描述——",
-  "垫图锁的是那张定妆照的脸与服装，画面里的动作、姿态、与他人的相对位置仍然要 prompt 说。",
-].join("");
+/** 垫图规则：两个角色都拿得到 `referenceCharacters`，所以它属于共享的工具契约。 */
+const REFERENCE_RULE =
+  "背景与 CG 里**有人物时用 referenceCharacters 垫立绘**（数组顺序即提示词里的先后顺序，别随意排）：" +
+  "画面里有人物却只靠文字描述，出来的脸和角色卡对不上；垫了图也不必省略 prompt 里的外貌描述——" +
+  "垫图锁的是那张定妆照的脸与服装，画面里的动作、姿态、与他人的相对位置仍然要 prompt 说。";
 
 const SYNC_DESCRIPTION = [
   "出一张剧目素材并落进 assets/：背景(kind=background) / CG(kind=cg) 给 name，",
-  "立绘(kind=sprite) 给 characterId + expression。立绘会自动抠底成透明 PNG（引擎要靠它叠在场景上）。",
+  "立绘(kind=sprite) 给 characterId + expression（不给按 neutral）。立绘会自动抠底成透明 PNG（引擎要靠它叠在场景上）。",
   "非 neutral 的立绘会自动拿该角色的 neutral 定妆照做垫图，所以同一个角色的差分是同一个人。",
-  "背景与 CG 里有人物时，用 referenceCharacters 列出要垫立绘的角色（顺序即提示词里的先后顺序）。",
   PROMPT_RULES,
   REFERENCE_RULE,
   "一次工具调用只出一张图；要出多个差分就在同一个批次里多次调用本工具，它们是并行的。",
@@ -136,15 +116,20 @@ const SYNC_DESCRIPTION = [
 
 const QUEUED_DESCRIPTION = [
   "出一张剧目素材并**后台排产**（发起即返回，不等图）：背景(kind=background) / CG(kind=cg) 给 name，",
-  "立绘(kind=sprite) 给 characterId，出的**只能是 neutral 定妆照**（差分由工坊在用户面前生成，别试也别写 expression）。" +
-  "角色不在角色表时再给 characterName，会自动建一个临时角色。",
+  "立绘(kind=sprite) 给 characterId + expression（不给按 neutral）。角色不在角色表时再给 characterName，会自动建一个临时角色。",
   "背景 16:9、CG 16:9、立绘竖构图（取景 full 用 9:16、half 3:4、square 1:1）；提示词写英文，只描述画面本身。",
   PROMPT_RULES,
-  "**提前 3–5 句发起**：图要一分多钟才到（实测 1k 档 70–80s、2k 档 110s 上下），" +
+  REFERENCE_RULE,
+  "**走函数调用**：本工具是函数调用，不是剧本里的文本标签。写成 <call:generate_image …/> 那样夹在台词之间，",
+  "引擎不认，那张图不会出现，也不会有人告诉你出错了。",
+  "背景与 CG 的 prompt 末尾自己加 \"anime visual novel background, no text\"；立绘的后缀引擎自动拼，别在 prompt 里重复。",
+  "**id 自取**：背景与 CG 给一个简短英文下划线 id（如 bg_rooftop_dusk、cg_rooftop_01），",
+  "到出场那一行再用 <scene bg=\"…\"> 或 <cg id=\"…\"> 一字不差地引用同一个 id。",
+  "**提前 3–5 句发起**：图要一分多钟才到（实测 1k 档 70–80s、2k 档 110s 上下），",
   "出席位置太早只会看到骨架占位，拿到回执后照常写台词，",
   "到出场的那一行再用 <scene bg=\"…\"> 或 <cg id=\"…\">、<actor expression=\"…\"> 引用同一个 id。",
-  "回执会告诉你这张是新建排产、已经在队列里，还是剧目里已经有同名素材（已有的直接引用，别重复发起）。",
-  "立绘会自动抠底成透明 PNG。**这个工具没有 expression 参数**：要别的表情就引用角色表里已有的差分，没有就先用 neutral。",
+  "回执会告诉你剧目里是不是已经有同名素材——有就直接引用，别重复发起。",
+  "立绘会自动抠底成透明 PNG。抠底微调（cutout 参数）留给工坊在用户面前调，你不要填。",
 ].join("");
 
 /** 工坊：同步出图，回执带图片给用户看。 */
@@ -161,8 +146,8 @@ export interface QueuedImageDeps {
   /** 生图预发射 → IR 事件（骨架占位出现在时间线上那个位置）。 */
   emitPreload: (attrs: PreloadAssetAttrs) => void;
   /** 后台发起 bg/cg（宿主负责到货广播 asset_ready / 失败 asset_failed）。 */
-  kick: (type: "bg" | "cg", prompt: string, id: string) => void;
-  /** 后台发起立绘（宿主负责失败广播）。 */
+  kick: (type: "bg" | "cg", prompt: string, id: string, referenceCharacters?: string[]) => void;
+  /** 后台发起立绘：同上的失败广播。 */
   kickSprite: (
     charId: string,
     expression: string,
@@ -170,10 +155,8 @@ export interface QueuedImageDeps {
     characterName?: string,
     framing?: SpriteFraming,
   ) => void;
-  /** 这个 id 在运行时缓存里是什么状态（决定要不要重复发起）。 */
-  statusOf: (id: string) => "ready" | "queued" | "none";
-  /** 这个 id 的背景/插图是不是已经在 assets/ 里（工坊导入的静态素材）——有就不烧配额。 */
-  hasStaticAsset: (type: "bg" | "cg", id: string) => boolean;
+  /** 这个目标在剧目里已有素材的静态 URL（用户导入的或之前生成的）——有就不烧配额。 */
+  existingAssetUrl: (target: AssetTarget) => Promise<string | null>;
 }
 
 export type ImageToolDeps = SyncImageDeps | QueuedImageDeps;
@@ -183,7 +166,7 @@ export function createGenerateImageTool(deps: ImageToolDeps): AgentTool<typeof g
     name: "generate_image",
     label: "生成剧目素材",
     description: deps.mode === "sync" ? SYNC_DESCRIPTION : QUEUED_DESCRIPTION,
-    parameters: deps.mode === "sync" ? generateImageParams : playwriterImageParams,
+    parameters: generateImageParams,
     execute: async (_toolCallId, params: Static<typeof generateImageParams>) => {
       if (!deps.playAssets && deps.mode === "queued") {
         return textResult(
@@ -240,34 +223,34 @@ async function runQueued(
   params: Static<typeof generateImageParams>,
 ): Promise<ReturnType<typeof linesResult>> {
   const assets = deps.playAssets!;
+  const references = Array.isArray(params.referenceCharacters)
+    ? params.referenceCharacters.filter((id): id is string => typeof id === "string")
+    : undefined;
   if (params.kind === "sprite") {
     const charId = params.characterId?.trim() ?? "";
     if (!charId) throw new Error("立绘必须给 characterId（角色 id）");
-    if (await assets.exists({ kind: "sprite", characterId: charId, expression: "neutral" })) {
-      return textResult(`${charId} 的 neutral 立绘剧目里已经有了，直接 <actor id="${charId}"> 引用，不用重出。`);
+    const expression = params.expression?.trim() || "neutral";
+    if (await assets.exists({ kind: "sprite", characterId: charId, expression })) {
+      return textResult(`${charId} 的 ${expression} 立绘剧目里已经有了，直接 <actor id="${charId}"> 引用，不用重出。`);
     }
-    deps.emitPreload({ type: "sprite", id: `${charId}:neutral`, prompt: params.prompt });
-    deps.kickSprite(charId, "neutral", params.prompt, params.characterName?.trim() || undefined, params.framing);
+    deps.emitPreload({ type: "sprite", id: `${charId}:${expression}`, prompt: params.prompt });
+    deps.kickSprite(charId, expression, params.prompt, params.characterName?.trim() || undefined, params.framing);
     return textResult(
-      `已排产：立绘 ${charId}/neutral（约一分多钟）。` +
-        "别在这一轮就让它上台，3–5 句之后再 <actor id=…>；角色表里还没有它时会自动建一个临时角色。" +
-        "这个工具不产差分：别的表情用角色表里已有的，没有就先用中性表情顶上。",
+      `已排产：立绘 ${charId}/${expression}（约一分多钟）。` +
+        "别在这一轮就让它上台，3–5 句之后再 <actor id=…>；角色表里还没有它时会自动建一个临时角色。",
     );
   }
   const id = params.name?.trim() ?? "";
   if (!id) throw new Error("背景/CG 必须给 name（素材 id，剧本里的 bg/cg id 就是它）");
   const type = params.kind === "background" ? "bg" : "cg";
-  // 骨架占位只在图**真的要来**的时候占位：已经在 assets/ 里或早就生成过的 id，
+  const label = type === "bg" ? "背景" : "插图";
+  // 骨架占位只在图**真的要来**的时候占位：剧目里已有同名素材（用户导入或之前生成的）时，
   // 占位等不到 asset_ready，只会白闪到超时。
-  if (deps.hasStaticAsset(type, id)) {
-    return textResult(`剧目里已经有同名${type === "bg" ? "背景" : "插图"}（assets/），跳过生成，直接引用 ${id}。`);
+  if (await deps.existingAssetUrl({ kind: params.kind, name: id })) {
+    return textResult(`剧目里已经有同名${label}，跳过生成，直接引用 ${id}。`);
   }
-  const status = deps.statusOf(id);
-  if (status === "ready") return textResult(`${id} 这张图之前已经生成过，直接引用，别再发起。`);
-  // 在飞/排队：图确实会来，占位是对的（tool 不等图，模型这一轮就往下写）
   deps.emitPreload({ type, id, prompt: params.prompt });
-  if (status === "queued") return textResult(`${id} 已经在生成队列里了（同一个 id 不会出两张图），照常在出场处引用。`);
-  deps.kick(type, params.prompt, id);
+  deps.kick(type, params.prompt, id, references);
   return textResult(
     `已排产：${id}（${type}，约一分多钟）。3–5 句之后用 ${type === "bg" ? `<scene bg="${id}">` : `<cg id="${id}">`} 引用它。`,
   );

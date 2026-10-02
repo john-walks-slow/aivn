@@ -26,11 +26,13 @@ import {
 } from "@stage-ai/core";
 import type { ServerMessage } from "@stage-ai/core";
 export type { ReadPos } from "@stage-ai/core";
-import { createAgentKit, type AgentKit } from "./agentkit/kit.js";
+import { createAgentKit, enabledToolsFor, type AgentKit } from "./agentkit/kit.js";
 import type { ModelStop } from "./agentkit/deps.js";
 import type { Exa } from "./exa.js";
-import type { ImageAssets } from "./imageAssets.js";
 import type { PlayAssets } from "./playAssets.js";
+import type { AssetLibrary } from "./library.js";
+import type { PlayStore } from "./store.js";
+import { refFromActor, refFromCg, refFromSfx, refsFromScene, type AssetRefResolver } from "./assetRef.js";
 import { buildSystemPrompt, renderStateSection, type AssetManifest, type AssetNotes, type GeneratedNote } from "./prompt.js";
 import { lineageToBeats, lineageToEvents, stopFromEvent, type RebuiltBeat } from "./rebuild.js";
 import {
@@ -124,6 +126,10 @@ export interface OrchestratorOptions {
   assetNotes?: AssetNotes;
   /** 已生成图清单（playwriter 自己 preload 出来的资产；避免换个 id 重画）。 */
   generatedAssets?: GeneratedNote[];
+  /** 剧目目录：素材类工具要往这里写。 */
+  store: PlayStore;
+  /** 应用级素材资源库（给了才装 list_library / import_asset）。 */
+  assetLibrary?: AssetLibrary;
   /** 剧目记忆（D7 三层：always/index 注入 A 区，archive 供检索）。 */
   memory: PlayMemory;
   tree: LineageTree;
@@ -145,11 +151,10 @@ export interface OrchestratorOptions {
   pending?: PendingJobs;
   /**
    * 生图能力（未启用时整段不给：工具回不可用，也不会往时间线上摆永远等不到的骨架）。
-   * bg/cg 落 media-cache 运行时缓存，立绘与临时角色落 assets/（与工坊同一个 PlayAssets）。
+   * 出图一律落 assets/（与工坊同一个 PlayAssets）：站内生成与用户导入在同一个命名空间里。
    */
   imageTools?: {
     playAssets?: PlayAssets;
-    images?: ImageAssets;
     /** 后台发起 bg/cg：宿主负责 asset_ready / asset_failed 广播（工具不等图）。 */
     kick: (type: "bg" | "cg", prompt: string, id: string) => void;
     /** 后台发起立绘：同上的失败广播。characterName 供角色表里还没有的角色自动建 stub。 */
@@ -160,11 +165,14 @@ export interface OrchestratorOptions {
       characterName?: string,
       framing?: SpriteFraming,
     ) => void;
-    /** 这个 id 的背景/插图是不是已经在 assets/ 里（工坊导入的静态素材）——有就不烧配额。 */
-    hasStaticAsset: (type: "bg" | "cg", id: string) => boolean;
     /** 联网检索（配了 key 才注册 web_search）。 */
     exa?: Exa;
   };
+  /**
+   * 引用即导入：剧本里写了一个剧目没有的 id，就去素材库里找同名条目补进来。
+   * 不给就不挂这条链路（没配资源库时剧本里的未知 id 仍然只是降级）。
+   */
+  assetRefs?: AssetRefResolver;
   /**
    * 写角色设定钩子：write_memory file="characters/<id>" 时调用。
    * 负责落盘 always/characters/<id>.md 并 upsert play.json stub。
@@ -305,7 +313,9 @@ export class PlaywrightOrchestrator {
     this.kit = createAgentKit({
       role: "playwriter",
       playId: opts.play.id,
-      disabled: new Set(opts.agents?.disabledTools ?? []),
+      enabled: enabledToolsFor("playwriter", opts.agents?.tools),
+      store: opts.store,
+      assetLibrary: opts.assetLibrary,
       thinking: opts.agents?.thinking,
       engine: opts.engine,
       characterIds: new Set(opts.play.characters.map((c) => c.id)),
@@ -319,8 +329,7 @@ export class PlaywrightOrchestrator {
       playAssets: opts.imageTools?.playAssets,
       kick: opts.imageTools?.kick ?? (() => {}),
       kickSprite: opts.imageTools?.kickSprite ?? (() => {}),
-      statusOf: (id) => opts.imageTools?.images?.statusOf(id) ?? "none",
-      hasStaticAsset: opts.imageTools?.hasStaticAsset ?? (() => false),
+      existingAssetUrl: async (target) => (await opts.imageTools?.playAssets?.existingUrl(target)) ?? null,
       exa: opts.imageTools?.exa,
     });
     this.agent = this.buildAgent(opts.seed ? withSeed(opts.seed.messages, opts.seed.note) : []);
@@ -1429,6 +1438,7 @@ export class PlaywrightOrchestrator {
       }
       case "scene": {
         if (event.bg) this.opts.scene = event.bg;
+        this.opts.assetRefs?.resolve(refsFromScene(event));
         const attrs = pick(event, ["bg", "bgm", "ambient", "transition", "bgm_volume", "ambient_volume"]);
         for (const key of Object.keys(attrs)) if (attrs[key] === "") delete attrs[key];
         // 音频属性的空串在流式里是「停」（director 的 STOP_AUDIO 认 ""），但谱系里空串会被
@@ -1441,6 +1451,7 @@ export class PlaywrightOrchestrator {
         return;
       }
       case "actor":
+        this.opts.assetRefs?.resolve([refFromActor(event.id)]);
         this.appendLineage("actor", {
           payload: {
             seq,
@@ -1452,6 +1463,7 @@ export class PlaywrightOrchestrator {
         });
         return;
       case "sfx":
+        this.opts.assetRefs?.resolve([refFromSfx(event.src)]);
         this.appendLineage("sfx", {
           payload: { seq, attrs: { src: event.src, ...(event.volume !== undefined ? { volume: String(event.volume) } : {}) } },
         });
@@ -1467,6 +1479,7 @@ export class PlaywrightOrchestrator {
         });
         return;
       case "cg":
+        this.opts.assetRefs?.resolve([refFromCg(event.id)]);
         this.appendLineage("cg", {
           payload: { seq, attrs: { id: event.id, ...pick(event, ["caption"]) } },
         });

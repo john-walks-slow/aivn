@@ -1,15 +1,21 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { describeAsset, isAssetKind, libraryEntryMatches, type WorkshopAssetView } from "@stage-ai/core";
+import { describeAsset, libraryEntryMatches, type AssetKind, type WorkshopAssetView } from "@stage-ai/core";
 import { type Static, Type } from "@earendil-works/pi-ai";
-import { importFromLibrary, type ImportResult } from "../assetImport.js";
-import type { WorkshopKitDeps } from "./deps.js";
-import { reason, textResult } from "./result.js";
+import type { AssetLibrary } from "../library.js";
+import { importFromLibrary } from "../assetImport.js";
+import type { PlayStore } from "../store.js";
+import type { ImportResult } from "../assetImport.js";
+import type { WorkshopWrite } from "./deps.js";
+import { textResult } from "./result.js";
 
 /**
- * 素材资源库工具组（仅工坊）：list_library / import_asset。
+ * 素材资源库的两个工具：`list_library`（只读浏览）与 `import_asset`（复制进剧目）。
  *
- * 先有资源再出图——库里有的背景/立绘/BGM 优先导入，别重复花钱出一张。
- * 剧作家不装这两个：导入会改 play.json 与 assets/，在拍进行中动它等于腰斩演出。
+ * 两个角色的依赖是**同一份**：`onWrite` / `onAsset` 往工坊对话流推撤销条与素材气泡，
+ * 剧作家那条线上没有对话流可挂，宿主给空实现——工具照常能用，只是没有撤销条可点。
+ *
+ * 剧作家的**默认**用法不是这两个工具：它在剧本里写个 id，宿主发现剧目里没有就去库里导入
+ * （见 `assetRef.ts`）。`import_asset` 在剧作家这边默认关闭；用户想让它自己动手再勾上。
  */
 
 /** 资源库类别：characters 是角色包（角色卡 + 可选立绘），其余是单文件条目。 */
@@ -20,6 +26,7 @@ const libraryKind = Type.Union([
   Type.Literal("bgm"),
   Type.Literal("sfx"),
 ]);
+
 const listLibraryParams = Type.Object(
   {
     kind: Type.Optional(libraryKind),
@@ -28,14 +35,15 @@ const listLibraryParams = Type.Object(
   },
   { additionalProperties: false },
 );
+
 const importAssetParams = Type.Object(
   {
     kind: libraryKind,
-    /** 资源库条目 id（list_library 给的那一列），导入后它就是剧本里的引用名。 */
+    /** 条目 id，也就是导入后的文件名主体（剧本里的 bg/cg id 就是它）。 */
     entryId: Type.String({ maxLength: 64 }),
-    /** 角色包只导这几条差分（缺省全导）。 */
-    expressions: Type.Optional(Type.Array(Type.String({ maxLength: 32 }), { maxItems: 40 })),
-    /** 给 "protagonist" 时写进 play.json 的主角卡而不是角色列表。 */
+    /** characters 条目只导这几条差分（缺省全导）。 */
+    expressions: Type.Optional(Type.Array(Type.String({ maxLength: 40 }), { maxItems: 24 })),
+    /** 落点为主角卡（覆盖 play.json 的 protagonist）而不是角色列表。 */
     target: Type.Optional(Type.Literal("protagonist")),
   },
   { additionalProperties: false },
@@ -44,20 +52,39 @@ const importAssetParams = Type.Object(
 /** 资源库罗列的截断：一次把整个库灌进上下文没有意义，够 agent 判断「有没有」就行。 */
 const LIST_LIMIT = 40;
 
-export function createLibraryTools(
-  deps: Pick<WorkshopKitDeps, "playId" | "store" | "assetLibrary" | "onWrite" | "onAsset">,
-): AgentTool<any>[] {
-  const library = deps.assetLibrary;
-  if (!library) return [];
+export interface LibraryToolDeps {
+  playId: string;
+  store: PlayStore;
+  /** 库没配就不注册这两个工具（装一个必然查不出东西的工具只会诱使模型空转）。 */
+  library?: AssetLibrary;
+  /** 写盘回调：推给工坊对话流（剧作家侧给空实现即可）。 */
+  onWrite?: (write: WorkshopWrite) => void;
+  /** 素材落盘回调：推给工坊对话流内联展示。 */
+  onAsset?: (asset: WorkshopAssetView, replaced?: boolean) => void;
+}
+
+export function createLibraryTools(deps?: LibraryToolDeps): AgentTool<any>[] {
+  const library = deps?.library;
+  if (!deps || !library) return [];
 
   const listLibrary: AgentTool<typeof listLibraryParams> = {
     name: "list_library",
     label: "浏览素材资源库",
     description:
-      "浏览应用级素材资源库（跨剧目复用的本地素材目录，用户在本地维护）。" +
-      "可给 kind 过滤类别（backgrounds/cg/characters/bgm/sfx），可给 query 按关键词搜描述与标签。" +
-      "每行是：id | 类别 | 标题 | 描述（角色包还会列出可用差分名与是否标了主角）。" +
-      "找现成素材一律先来这里，库里有的就别再 generate_image 出一张。",
+      "浏览应用级素材资源库（跨剧目复用的本地素材目录，由用户在本地维护，你只读不写）。\n" +
+      "**要素材先查库**。用户说「弄张黄昏教室的图」「配首忧伤的音乐」「来个门响的音效」「找个角色」，先用本工具" +
+      "（可以带 kind 或 query 关键词）看有没有现成的，有就 import_asset 导入。库里有就**不要**再 generate_image。\n" +
+      "可给 kind 过滤类别（backgrounds/cg/characters/bgm/sfx），可给 query 按关键词搜描述与标签。\n" +
+      "每行是：id | 类别 | 标题 | 描述（角色包还会列出可用差分名与是否标了主角）。\n" +
+      "**kind=characters 是角色包**：条目里的角色卡会写进 play.json（配 target=protagonist 则写主角卡），" +
+      "条目里带立绘就一并复制并登记差分映射。库里有设定、但立绘还空着的角色很正常——先导卡、图后面再画。\n" +
+      "库里的角色 id 就是立绘目录名，导入后 `<actor id=\"…\">` 直接可用。\n" +
+      "**库和剧目各存一份**：import_asset 是把文件复制进本剧目的 assets/，删库不影响剧目；但资源库里的" +
+      "素材不会自动出现在别的剧目里，要用就得各导一次。\n" +
+      "导入素材的元数据（描述、标签、音乐的情绪/适用场景/时长/是否可循环）会一并写进剧目素材表，" +
+      "剧作家据此选曲选图——所以库里的描述写得准不准，直接影响演出效果。\n" +
+      "**BGM 与音效资源库里没有就别硬凑**：告诉用户「库里没有音乐，需要你放几首进 library/bgm/」，" +
+      "别拿不相关的曲子顶上。",
     parameters: listLibraryParams,
     execute: async (_id, params: Static<typeof listLibraryParams>) => {
       const all = await library.list();
@@ -92,35 +119,30 @@ export function createLibraryTools(
 
   const importAsset: AgentTool<typeof importAssetParams> = {
     name: "import_asset",
-    label: "从资源库导入素材",
+    label: "从资源库导入",
     description:
-      "把资源库里的一个素材复制进本剧目（kind + entryId 来自 list_library），并把元数据写进剧目的素材描述表，" +
-      "让剧作家看得懂它是什么、能按情绪选曲。kind=characters 时把角色卡写进 play.json（配 target=protagonist " +
-      "则写主角卡），有条目里的立绘就一并复制并登记差分映射。回执里带引用写法，可以直接转述给用户。",
+      "把资源库里的一个条目复制进本剧目（写进 assets/ 与角色表）。" +
+      "kind 是类别（backgrounds/cg/characters/bgm/sfx），entryId 是条目 id。" +
+      "characters 条目会把角色卡写进 play.json，带 target=protagonist 则写主角卡；" +
+      "条目里的立绘会一并复制并登记差分映射。导完这个 id 就能在剧本里直接引用。" +
+      "重复导入同一 id 会**覆盖**剧目里的同名素材。",
     parameters: importAssetParams,
     execute: async (_id, params: Static<typeof importAssetParams>) => {
-      if (!isAssetKind(params.kind)) return textResult(`未知素材类别: ${params.kind}`);
       try {
         const result = await importFromLibrary(library, deps.store, {
-          kind: params.kind,
+          kind: params.kind as AssetKind,
           entryId: params.entryId,
-          ...(params.expressions && params.expressions.length > 0
-            ? { expressions: params.expressions }
-            : {}),
-          ...(params.target ? { target: params.target } : {}),
+          expressions: params.expressions,
+          target: params.target,
         });
         for (const path of result.files) {
-          deps.onAsset({
-            kind: viewKind(params.kind),
-            path,
-            url: `/plays/${deps.playId}/assets/${path.replace(/^assets\//, "")}`,
-          });
+          deps.onAsset?.({ kind: viewKind(params.kind), path, url: `/plays/${deps.playId}/${path}` });
         }
         // 素材表与角色卡的改动要进撤销条——导入改了剧目配置，用户得能反悔
-        for (const write of result.writes) deps.onWrite(write);
+        for (const write of result.writes) deps.onWrite?.(write);
         return textResult(renderImportResult(params.kind, result));
       } catch (error) {
-        return textResult(`导入失败：${reason(error)}`);
+        return textResult(`导入失败：${error instanceof Error ? error.message : String(error)}`);
       }
     },
   };
@@ -159,11 +181,16 @@ function renderImportResult(kind: string, result: ImportResult): string {
   }
   // 角色包里卡与图是两件独立的事（可能只有卡没有图），回执要分别说清落了什么
   if (result.protagonist) {
-    return [`已导入角色卡 ${result.id} → play.json 的主角卡`, "主角没有立绘位（舞台只画角色），所以这次没有复制图片。"].join("\n");
+    return [
+      `已导入角色卡 ${result.id} → play.json 的主角卡`,
+      "主角没有立绘位（舞台只画角色），所以这次没有复制图片。",
+    ].join("\n");
   }
   const sprites = result.files.length
     ? `，立绘 ${result.files.length} 张落在 ${result.files[0]!.replace(/\/[^/]+$/, "")}/`
     : "（这个条目没有立绘，只导了角色卡）";
-  const card = `play.json 已写入角色卡 ${result.characters.join("、")}${result.files.length ? " 与差分映射，剧作家可以直接 <actor id=\"…\" expression=\"…\"> 上台" : ""}`;
+  const card =
+    `play.json 已写入角色卡 ${result.characters.join("、")}` +
+    (result.files.length ? " 与差分映射，剧作家可以直接 <actor id=\"…\" expression=\"…\"> 上台" : "");
   return [`已导入角色 ${result.id}${sprites}`, card].join("\n");
 }

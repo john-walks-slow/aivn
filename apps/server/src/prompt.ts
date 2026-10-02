@@ -260,19 +260,15 @@ ${ctx.canSearch ? SEARCH_GUIDE : ""}
 
     write_memory("characters/xiaoyu", "# 小雨\\n咖啡店打工的少女，说话温柔，常用省略号。")
 
-- 路径格式：characters/<id>（id 只含字母/数字/下划线/连字符，最长 40 字符）
-- 文件首行 "# 名字"，引擎据此在角色表注册 id 与显示名
-- 下一轮边界角色即可见于 A 区角色表
+- 路径与文件格式看 write_memory 的工具说明。建档后到下一轮边界，角色就出现在 A 区角色表里。
 
 **2. 生立绘（generate_image kind="sprite"）**，后台出图，不阻塞台词：
 
-    generate_image(kind="sprite", characterId="xiaoyu", characterName="小雨", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view, plain white background")
+    generate_image(kind="sprite", characterId="xiaoyu", characterName="小雨", expression="neutral", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view, plain white background")
 
-- **这个工具没有 expression 参数，你只能出 neutral 定妆照**。差分（表情差分）由搭台助手在用户面前生成，
-  垫图保角色一致性，你既做不到也不该在拍内等它
-- 要别的表情就去用角色表里**已有**的差分（\`<actor id="xiaoyu" expression="smile">\`），
-  没有就用 neutral 顶上——不要为了凑表情去生成
-- 立绘要一分多钟才出（实测 70–110s）：不要在这一轮就让它上台，3–5 句之后再 \`<actor id="xiaoyu">\`
+- 要表情就带 expression（不给按 neutral）：非 neutral 的会自动垫该角色的 neutral 定妆照，所以是同一个人
+- 角色表里**已有**的差分直接用 \`<actor id="xiaoyu" expression="smile">\`，不要为了凑表情去生成
+- 立绘要一分多钟才出：不要在这一轮就让它上台，3–5 句之后再 \`<actor id="xiaoyu">\`
 
 **3. 临时角色（一次性 NPC）**：只出声不出图也行，直接在 say 上写 name 属性：
 
@@ -314,16 +310,11 @@ function imageChapter(can: boolean): string {
     …3–5 句台词…
     <scene bg="bg_classroom_dusk" .../>
 
-规则：
-- **走函数调用**：generate_image 是一个工具，照上面的写法**发起调用**；把它当成剧本里的文本标签来写
-  （形如 <call:generate_image …/> 那样夹在台词之间）引擎不认，那张图不会出现，也不会有人告诉你出错了；
-- **提前 3–5 句发起**：图要一分多钟才到，引用太早只会看到骨架占位；
-- **id 自取**：用简短英文下划线 id（如 bg_rooftop_dusk、cg_rooftop_01），引用时一字不差；
-- **prompt 写英文**，写清主体/环境/光线/视角/画风，末尾加 "anime visual novel background, no text"；
+调用的写法（id 怎么起名、prompt 怎么写、要提前几句发起）看 generate_image 的工具说明。
+
 - **不要凭空造 id**：可用清单与「已生成的图」里已有的背景和插图直接引用，别重复生成；
-  工具回执说「已经生成过 / 已经在队列里 / 剧目里已有」时就更不要再发一次；
 - **按描述选素材**：清单里带括号说明的是画面内容（差分的名字未必与画面相符），先看说明再挑 id。
-- **立绘差分**：用 generate_image(kind="sprite") 出，落在剧目素材里，角色表里还没有的角色会先建一个。
+- **立绘差分**用 generate_image(kind="sprite") 出，落在剧目素材里，角色表里还没有的角色会先建一个。
   某角色一张立绘都没有、又还没来得及出图时，别让 ta 上台——改用旁白/台词交代，或只写有立绘的角色。`;
 }
 

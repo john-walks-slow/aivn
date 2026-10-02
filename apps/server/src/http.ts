@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { withPlayConfigLock, type PlayLibrary } from "./store.js";
 import type { AssetLibrary } from "./library.js";
 import { importFromLibrary } from "./assetImport.js";
-import { readGeneratedEntries, readPlayLedgerEntries } from "./imageAssets.js";
+import { readPlayLedgerEntries } from "./generatedLedger.js";
 import type { PlayHouse } from "./playhouse.js";
 import type { SettingsFile } from "./configApi.js";
 import {
@@ -155,17 +155,6 @@ export async function handleHttp(
       return;
     }
 
-    // —— 生图产物静态服务：/plays/:id/media/img/<hash>.jpg（D6 预发射缓存） ——
-    if (parts[0] === "plays" && parts[1] && parts[2] === "media" && parts[3] === "img" && method === "GET") {
-      const [, playId, , , file] = parts;
-      if (!/^[\w-]+$/.test(playId) || !/^[\w]+\.jpg$/.test(file ?? "")) return fail(res, 404, "未找到");
-      const path = library.store(playId).imagePath(file!);
-      if (!existsSync(path)) return fail(res, 404, "未找到");
-      res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "public, max-age=86400" });
-      res.end(await readFile(path));
-      return;
-    }
-
     // —— 素材静态服务：/plays/:id/assets/<kind>/<...> ——
     if (parts[0] === "plays" && parts[1] && parts[2] === "assets" && method === "GET") {
       const [, playId, , ...segments] = parts;
@@ -248,7 +237,7 @@ export async function handleHttp(
         const { models, defaultModel } = await playhouse.gatewayModels(url.searchParams.get("refresh") === "1");
         return json(res, 200, { models, defaultModel });
       }
-      if (parts[2] === "tools") return json(res, 200, { tools: playhouse.tools() });
+      if (parts[2] === "tools") return json(res, 200, playhouse.tools());
     }
 
     // —— 设置面板（P6）：.env 全部 GUI 可改，不要求用户碰配置文件 ——
@@ -470,17 +459,15 @@ export async function handleHttp(
     }
     if (sub === "cg" && parts.length === 4) {
       // CG 页的台账：静态素材（assets/cg，带素材表描述）+ 站内生成的图（带生图 prompt）。
-      // 两份生成台账并进来：剧作家预发射落在 media-cache/img/manifest.json，工坊与剧作家的
-      // generate_image 落在 assets/generated.json（进 git，跟着静态素材走）。
+      // 生成台账只有一份 assets/generated.json —— 工坊与剧作家的 generate_image 都写它。
       // 只读盘上已有的东西：不建 runtime、不触发生图——这一页只为看图，不该牵动演出那条线。
       if (method !== "GET") return fail(res, 405, "不支持的方法");
-      const [meta, assets, generated, ledger] = await Promise.all([
+      const [meta, assets, ledger] = await Promise.all([
         store.assetMeta(),
         store.listAssets(),
-        readGeneratedEntries(playId, store),
         readPlayLedgerEntries(playId, store),
       ]);
-      return json(res, 200, { entries: cgCatalog(playId, assets.cg ?? [], meta, [...generated, ...ledger]) });
+      return json(res, 200, { entries: cgCatalog(playId, assets.cg ?? [], meta, ledger) });
     }
     if (sub === "tts-preview" && parts.length === 4) {
       if (method !== "POST") return fail(res, 405, "不支持的方法");

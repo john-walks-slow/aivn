@@ -164,12 +164,27 @@ export class PlayAssets {
 
   /** 目标是否已有图（工坊/剧作家跳过重复出图用）。 */
   async exists(target: AssetTarget): Promise<boolean> {
+    return (await this.existingUrl(target)) !== null;
+  }
+
+  /**
+   * 目标已有图的静态服务 URL，没有则 null。
+   *
+   * `exists()` 只回答「有没有」，但「跳过重复出图」的那条路还需要一个能直接发给客户端的
+   * URL：素材名不带扩展名，真实文件名要按 .jpg/.png/.webp 逐个试出来（用户手传的可能是 png）。
+   */
+  async existingUrl(target: AssetTarget): Promise<string | null> {
+    const path = await this.existingTargetPath(target);
+    return path ? `/plays/${this.playId}/${path}` : null;
+  }
+
+  private async existingTargetPath(target: AssetTarget): Promise<string | null> {
     if (target.kind === "sprite") {
-      if (!target.characterId || !target.expression) return false;
-      return (await this.existingPath(`sprites/${target.characterId}`, target.expression)) !== null;
+      if (!target.characterId || !target.expression) return null;
+      return this.existingPath(`sprites/${target.characterId}`, target.expression);
     }
-    if (!target.name) return false;
-    return (await this.existingPath(target.kind === "background" ? "backgrounds" : "cg", target.name)) !== null;
+    if (!target.name) return null;
+    return this.existingPath(target.kind === "background" ? "backgrounds" : "cg", target.name);
   }
 
   /** 返回的数组可能第一项是自动补的定妆照——那是真金白银出的图，必须一起交给上层广播。 */

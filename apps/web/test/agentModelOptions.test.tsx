@@ -34,7 +34,7 @@ async function modelSelects(): Promise<HTMLSelectElement[]> {
 describe("Agent 页模型下拉：play.json 里已有的模型不能因为清单收窄而消失", () => {
   beforeEach(() => {
     apiMock.playDetail.mockResolvedValue({ play: PLAY });
-    apiMock.agentTools.mockResolvedValue({ tools: [] });
+    apiMock.agentTools.mockResolvedValue({ tools: [], defaults: { playwriter: [], workshop: [] } });
     apiMock.agentModels.mockResolvedValue({
       models: [{ id: "low", name: "low" }],
       defaultModel: "medium",

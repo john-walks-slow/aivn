@@ -9,7 +9,7 @@ import {
   restoreLineEndings,
   stripBom,
 } from "../src/agentkit/editText.js";
-import { createAgentKit } from "../src/agentkit/kit.js";
+import { createAgentKit, defaultToolsFor } from "../src/agentkit/kit.js";
 import type { WorkshopKitDeps } from "../src/agentkit/deps.js";
 import { PlayFiles } from "../src/playFiles.js";
 
@@ -84,7 +84,7 @@ function editTool(dir: string, writes: { before: string | null; after: string }[
   const deps = {
     role: "workshop",
     playId: "t",
-    disabled: new Set<string>(),
+    enabled: new Set(defaultToolsFor("workshop")),
     files: new PlayFiles({ dir } as never),
     store: {} as never,
     onWrite: (w: { before: string | null; after: string }) => writes.push(w),

@@ -40,6 +40,8 @@ export function AgentPane({ playId }: { playId: string }) {
   const [models, setModels] = useState<GatewayModel[] | null>(null);
   const [defaultModel, setDefaultModel] = useState("");
   const [tools, setTools] = useState<AgentToolEntry[]>([]);
+  /** 各角色的默认启用集（服务端给的）：play.json 没写 tools 时就是这个。 */
+  const [toolDefaults, setToolDefaults] = useState<Record<string, string[]>>({});
   const [modelError, setModelError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -71,7 +73,10 @@ export function AgentPane({ playId }: { playId: string }) {
       .catch((e: Error) => setError(e.message));
     api
       .agentTools()
-      .then((r) => setTools(r.tools))
+      .then((r) => {
+        setTools(r.tools);
+        setToolDefaults(r.defaults ?? {});
+      })
       .catch((e: Error) => setError(e.message));
     loadModels();
   }, [playId, loadModels]);
@@ -112,9 +117,9 @@ export function AgentPane({ playId }: { playId: string }) {
 
       {ROLES.map((role) => {
         const settings = draft.agents?.[role.id] ?? {};
-        const roleTools = tools.filter((t) => t.roles.includes(role.id));
-        const groups = [...new Set(roleTools.map((t) => t.group))];
-        const disabled = new Set(settings.disabledTools ?? []);
+        const groups = [...new Set(tools.map((t) => t.group))];
+        // play.json 没写 tools = 走服务端默认；写了就是用户的显式选择，两者在界面上是同一个开关
+        const enabled = new Set(settings.tools ?? toolDefaults[role.id] ?? []);
         return (
           <section className="settings-group agent-card" key={role.id}>
             <h3>{role.name}</h3>
@@ -156,16 +161,18 @@ export function AgentPane({ playId }: { playId: string }) {
               {groups.length === 0 && <p className="muted small">工具目录读取中…</p>}
               {groups.map((group) => (
                 <div className="agent-tool-group" key={group}>
-                  <h4>{roleTools.find((t) => t.group === group)?.groupLabel ?? group}</h4>
-                  {roleTools
+                  <h4>{tools.find((t) => t.group === group)?.groupLabel ?? group}</h4>
+                  {tools
                     .filter((t) => t.group === group)
                     .map((tool) => (
                       <label className="switch-row" key={tool.id}>
                         <input
                           type="checkbox"
-                          checked={!disabled.has(tool.id)}
+                          checked={enabled.has(tool.id)}
                           onChange={(e) =>
-                            patch(role.id, (s) => setToolEnabled(s, tool.id, e.target.checked))
+                            patch(role.id, (s) =>
+                              setToolEnabled(s, tool.id, e.target.checked, toolDefaults[role.id] ?? []),
+                            )
                           }
                         />
                         <span>
@@ -178,6 +185,7 @@ export function AgentPane({ playId }: { playId: string }) {
               ))}
               <p className="muted small">
                 关掉的工具下一轮就装不进去（模型看不见它，提示词里对应的章节也一起收掉）。改完从下一轮生效。
+                没勾的会写进 play.json，与默认集无关——默认只是初始态。
               </p>
             </div>
           </section>
@@ -205,10 +213,14 @@ function setOrClear<K extends "model" | "thinking">(
   else settings[key] = value as AgentSettings[K];
 }
 
-function setToolEnabled(settings: AgentSettings, toolId: string, enabled: boolean): void {
-  const disabled = new Set(settings.disabledTools ?? []);
-  if (enabled) disabled.delete(toolId);
-  else disabled.add(toolId);
-  if (disabled.size === 0) delete settings.disabledTools;
-  else settings.disabledTools = [...disabled].sort();
+function setToolEnabled(
+  settings: AgentSettings,
+  toolId: string,
+  enabled: boolean,
+  defaults: readonly string[],
+): void {
+  const set = new Set(settings.tools ?? defaults);
+  if (enabled) set.add(toolId);
+  else set.delete(toolId);
+  settings.tools = [...set].sort();
 }

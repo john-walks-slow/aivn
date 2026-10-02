@@ -97,7 +97,9 @@ export function createMemoryTools(
       "写记忆文件。\n" +
       "- file=\"scene\"：当前场景/在场人物/时间（一两行），每轮有实质变化时更新，全文下轮注入【状态】区。\n" +
       "- file=\"threads\"：活跃剧情线与悬念（要点列表），每轮有实质变化时更新，全文下轮注入【状态】区。\n" +
-      "- file=\"characters/<id>\"：建立/更新角色设定（persona、台词风格）。首行建议写 `# 名字`，引擎据此在角色表注册 id 和显示名。下一轮边界角色出现在 A 区【角色表】。",
+      "- file=\"characters/<id>\"：建立/更新角色设定（persona、台词风格）。" +
+      "id 只含字母/数字/下划线/连字符，最长 40 字符；**文件首行必须写 \"# 名字\"**，引擎据此在角色表注册 id 与显示名。" +
+      "建档后到下一轮边界，角色出现在系统提示词的 A 区角色表里。",
     parameters: writeMemoryParams,
     execute: async (_toolCallId, params: Static<typeof writeMemoryParams>) => {
       const { file, content } = params;

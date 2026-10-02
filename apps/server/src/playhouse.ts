@@ -3,6 +3,7 @@ import { LineageTree, isVoiceId, parsePlayConfig, type EngineStateSnapshot, type
 import type { PlayLibrary, PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
 import type { AssetLibrary } from "./library.js";
+import { AssetRefResolver, characterIdsOf } from "./assetRef.js";
 import { PlaywrightOrchestrator, type CarryOver, type OrchestratorRuntimeState } from "./orchestrator.js";
 import type { SaveInfo } from "./saves.js";
 import type { PlayConfig } from "@stage-ai/core";
@@ -13,11 +14,12 @@ import { createTts } from "./tts.js";
 import { createImageBackend } from "./imageFactory.js";
 import type { ImageBackend } from "./imageBackend.js";
 import { createExa, type Exa } from "./exa.js";
-import { ImageAssets } from "./imageAssets.js";
+import { readPlayLedgerEntries, type GeneratedLedgerEntry } from "./generatedLedger.js";
 import { PlayAssets } from "./playAssets.js";
 import { PendingJobs } from "./pendingJobs.js";
 import { PlayFiles } from "./playFiles.js";
-import { agentToolCatalog } from "./agentkit/kit.js";
+import { agentToolCatalog, defaultToolsFor } from "./agentkit/kit.js";
+import { AGENT_ROLES } from "./agentkit/role.js";
 import { Limiter } from "./limiter.js";
 import { Translator } from "./translate.js";
 import { PlayMemory } from "./memory.js";
@@ -41,8 +43,8 @@ export interface PlayRuntime {
   voice: boolean;
   /** 语音合成闭包（含语音语言翻译）：ttsPreview 复用同路径。 */
   synth?: (text: string, voiceId: string) => Promise<{ url: string }>;
-  /** 生图资产层（D6）：预发射/manifest；未启用生图则为 undefined。 */
-  images?: ImageAssets;
+  /** 本剧目已生成的 bg/cg（读 assets/generated.json）：重连即恢复可见，不必等下一次预发射。 */
+  generated: GeneratedLedgerEntry[];
   /** 在生成的事（每剧目一份，跨 runtime 重建存活）：面板的快照从这里取。 */
   pending: PendingJobs;
   /** 骨架占位的兜底上界（毫秒）：由生图配置算出，随 hello 下发（见 imagePendingTtlMs）。 */
@@ -58,7 +60,7 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
     fresh: runtime.orchestrator.fresh,
     cast: runtime.cast,
     voice: runtime.voice,
-    assets: runtime.images?.snapshot(),
+    assets: runtime.generated,
     // 重连即恢复「正在生成」面板：hello 之后不再补发第二条，客户端只认这一份起点
     pendingJobs: runtime.pending.snapshot(),
     assetsTtlMs: runtime.assetsTtlMs,
@@ -398,25 +400,36 @@ export class PlayHouse {
   /**
    * 生图预发射（D6）：后台发起，就绪后广播 asset_ready；失败广播 asset_failed 由客户端降级。
    * 编排器不 await——预发射绝不能卡住播放。
+   *
+   * 落点与工坊同一个 PlayAssets：`assets/backgrounds/<id>.jpg` / `assets/cg/<id>.jpg`，
+   * 出图 prompt 记进 assets/generated.json。剧目里已有的同名素材不重出（用户导入的图优先）。
    */
   private async preloadAsset(
     playId: string,
+    store: PlayStore,
     type: "bg" | "cg",
     prompt: string,
     id: string,
   ): Promise<void> {
-    const runtime = this.runtimes.get(playId);
     const sender = (msg: ServerMessage) => {
       for (const send of this.clientsFor(playId)) send(msg);
     };
+    const assets = this.playAssetsFor(playId, store);
     // 生图未启用：显式说一声，让客户端摘掉骨架占位（静默返回会让占位永久停留）
-    if (!runtime?.images) {
+    if (!assets) {
       sender({ type: "asset_failed", id, message: "生图未启用" });
       return;
     }
+    const target = { kind: type === "bg" ? "background" : "cg", name: id } as const;
+    const existing = await assets.existingUrl(target);
+    if (existing) {
+      sender({ type: "asset_ready", asset: { id, type, url: existing } });
+      return;
+    }
     try {
-      const asset = await runtime.images.preload(type, prompt, id);
-      sender({ type: "asset_ready", asset });
+      const [asset] = await assets.generate(target, prompt, undefined, undefined, { notify: "silent" });
+      if (!asset) return;
+      sender({ type: "asset_ready", asset: { id, type, url: asset.url } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[stage-ai] 生图失败 ${id}: ${message}`);
@@ -574,6 +587,38 @@ export class PlayHouse {
    * 与工坊写盘的区别只有触发时机——都在节拍边界换编排器。必须排队：一轮里出三张立绘就是三次调用，
    * 齐步走会连着重装三份 runtime。
    */
+  /**
+   * 引用即导入的挂载点。资源库没配就不挂：剧本里未知的 id 仍然只是降级。
+   *
+   * 角色导入要改 play.json，而拍进行中改 play.json 得排到轮边界——与剧作家给临时角色
+   * 生立绘时走的是同一条延迟重建，不另开一条。
+   */
+  private assetRefResolver(playId: string, store: PlayStore, play: PlayConfig): AssetRefResolver | undefined {
+    return new AssetRefResolver({
+      playId,
+      store,
+      library: this.assetLibrary,
+      characters: () => characterIdsOf(play),
+      onImported: (result) => {
+        if (result.kind === "characters") {
+          this.rebuildAtBeatBoundary(playId, `剧作家引用了资源库角色 ${result.id}，已导入`);
+          return; // 立绘文件已落盘，角色卡要等轮边界重建才进 cast
+        }
+        // 图像类别才走 asset_ready：客户端那张表只认 bg/cg，音频由 listAssets 的刷新负责
+        if (result.kind !== "backgrounds" && result.kind !== "cg") return;
+        const file = result.files[0];
+        if (!file) return;
+        for (const send of this.clientsFor(playId)) {
+          send({
+            type: "asset_ready",
+            asset: { id: result.id, type: result.kind === "cg" ? "cg" : "bg", url: `/plays/${playId}/${file}` },
+          });
+        }
+      },
+      warn: (message) => console.warn(`[stage-ai] ${message}`),
+    });
+  }
+
   private rebuildAtBeatBoundary(playId: string, note: string): void {
     const previous = this.pendingRebuilds.get(playId) ?? Promise.resolve();
     const next = previous
@@ -610,8 +655,12 @@ export class PlayHouse {
   }
 
   /** 工具目录（Agent 设置页的开关清单）。与装配用的是同一份定义。 */
-  tools(): ReturnType<typeof agentToolCatalog> {
-    return agentToolCatalog();
+  tools(): { tools: ReturnType<typeof agentToolCatalog>; defaults: Record<string, string[]> } {
+    return {
+      tools: agentToolCatalog(),
+      // 设置页要按「默认勾选什么」渲染初始态：play.json 没写 tools 时走的就是这份
+      defaults: Object.fromEntries(AGENT_ROLES.map((role) => [role, [...defaultToolsFor(role)]])),
+    };
   }
 
   /** 广播到剧目客户端组。 */
@@ -666,7 +715,7 @@ export class PlayHouse {
    */
   async requestCg(playId: string, instruction?: string): Promise<void> {
     const runtime = await this.stage(playId);
-    if (!runtime.images) {
+    if (!this.imageBackend) {
       throw new Error("生图未启用（STAGE_IMAGE_ENABLED=false 或后端缺凭据）");
     }
     const play = await runtime.store.loadPlay();
@@ -686,7 +735,7 @@ export class PlayHouse {
     }
     const id = `cg_${Date.now().toString(36)}`;
     runtime.orchestrator.directorCg(id);
-    void this.preloadAsset(playId, "cg", prompt, id);
+    void this.preloadAsset(playId, runtime.store, "cg", prompt, id);
   }
 
   /** 「这一幕演到哪儿了」+ 玩家指令 → 一句英文出图提示词。模型用剧目里剧作家的那个。 */
@@ -769,15 +818,11 @@ export class PlayHouse {
           return { url: `/plays/${play.id}/media/tts/${file}` };
         }
       : undefined;
-    // 生图资产层（D6）：manifest 载入既有资产，预发射复用不重生成。
-    // 必须在编排器之前就绪——已生成图的 id/prompt 要进 A 区，否则剧作家忘掉自己造过什么。
-    const images = this.imageBackend
-      ? new ImageAssets(play.id, store, this.imageBackend, this.limiterFor(play.id), this.pendingFor(play.id))
-      : undefined;
-    if (images) await images.load();
-    // 剧目级素材层：工坊与剧作家共用同一个（跨角色在飞去重只烧一份配额）
+    // 剧目级素材层：工坊与剧作家共用同一个（跨角色在飞去重只烧一份配额）。
+    // 站内生成的 bg/cg 也走它，落 assets/——生成图与手传素材在同一个命名空间里。
     const playAssets = this.playAssetsFor(play.id, store);
     const staticAssets = await store.listAssets();
+    const generated: GeneratedLedgerEntry[] = await readPlayLedgerEntries(play.id, store);
     const orchestrator = new PlaywrightOrchestrator({
       streamFn: this.streamFn,
       model,
@@ -785,7 +830,7 @@ export class PlayHouse {
       play,
       assets: staticAssets,
       assetNotes: await store.assetMeta(),
-      generatedAssets: images?.notes(),
+      generatedAssets: generated,
       memory,
       tree,
       engine,
@@ -796,18 +841,15 @@ export class PlayHouse {
       imageTools: playAssets
         ? {
             playAssets,
-            images,
-            kick: (type, prompt, id) => void this.preloadAsset(play.id, type, prompt, id),
+            kick: (type, prompt, id) => void this.preloadAsset(play.id, store, type, prompt, id),
             kickSprite: (charId, expression, prompt, characterName, framing) =>
               void this.preloadSprite(play.id, store, charId, expression, prompt, characterName, framing),
-            // 素材清单的键是目录名（backgrounds/cg），与 DSL 的 type（bg/cg）不同名
-            hasStaticAsset: (type, id) =>
-              (staticAssets[type === "bg" ? "backgrounds" : "cg"] ?? []).some(
-                (file) => file.replace(/\.\w+$/, "") === id,
-              ),
             exa: this.exa ?? undefined,
           }
         : undefined,
+      store,
+      assetLibrary: this.assetLibrary,
+      assetRefs: this.assetRefResolver(play.id, store, play),
       onWriteCharacter: (charId, content) => this.writeCharacter(store, charId, content),
       compaction: {
         contextWindow: this.config.contextWindow,
@@ -856,7 +898,7 @@ export class PlayHouse {
       cast: play.characters.map(({ id, name }) => ({ id, name })),
       voice: !!synth,
       synth,
-      images,
+      generated,
       pending: this.pendingFor(play.id),
       assetsTtlMs: imagePendingTtlMs(this.config.image),
     };

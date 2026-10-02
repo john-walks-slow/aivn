@@ -8,7 +8,7 @@ import type {
 } from "@stage-ai/core";
 import type { AssetLibrary } from "../library.js";
 import type { Exa } from "../exa.js";
-import type { PlayAssets } from "../playAssets.js";
+import type { AssetTarget, PlayAssets } from "../playAssets.js";
 import type { PlayFiles } from "../playFiles.js";
 import type { PlaySaves } from "../saves.js";
 import type { PlayStore } from "../store.js";
@@ -40,8 +40,12 @@ export interface WorkshopWrite {
 export interface KitCommonDeps {
   role: AgentRole;
   playId: string;
-  /** 关掉的工具名（play.json 的 agents 段；缺省为空 = 全开）。 */
-  disabled: ReadonlySet<string>;
+  /** 启用的工具名（play.json 的 agents 段；缺省 = 该角色的默认集，见 kit.ts 的 DEFAULT_ENABLED）。 */
+  enabled: ReadonlySet<string>;
+  /** 剧目目录：素材类工具要往这里写。 */
+  store: PlayStore;
+  /** 应用级素材资源库（只读检索 + 导入）。未配置时不注册 list_library / import_asset。 */
+  assetLibrary?: AssetLibrary;
 }
 
 /** 剧作家侧：演出进行中，工具要动的是引擎状态、记忆与舞台事件流。 */
@@ -62,10 +66,10 @@ export interface PlaywriterKitDeps extends KitCommonDeps {
   emitStop: (stop: ModelStop) => void;
   /** 生图预发射 → IR 事件（骨架占位出现在时间线上那个位置）。 */
   emitPreload: (attrs: PreloadAssetAttrs) => void;
-  /** 静态素材层（assets/，进 git）：立绘与临时角色都走它。未启用生图时为 undefined。 */
+  /** 静态素材层（assets/，进 git）：立绘、背景、CG 都走它。未启用生图时为 undefined。 */
   playAssets?: PlayAssets;
   /** 后台发起 bg/cg：宿主负责到货广播 asset_ready / 失败 asset_failed（工具不等图）。 */
-  kick: (type: "bg" | "cg", prompt: string, id: string) => void;
+  kick: (type: "bg" | "cg", prompt: string, id: string, referenceCharacters?: string[]) => void;
   /** 后台发起立绘：同上的失败广播。 */
   kickSprite: (
     charId: string,
@@ -74,10 +78,8 @@ export interface PlaywriterKitDeps extends KitCommonDeps {
     characterName?: string,
     framing?: SpriteFraming,
   ) => void;
-  /** 这个 id 在运行时缓存里是什么状态（决定要不要重复发起）。 */
-  statusOf: (id: string) => "ready" | "queued" | "none";
-  /** 这个 id 的背景/插图是不是已经在 assets/ 里（工坊导入的静态素材）——有就不烧配额。 */
-  hasStaticAsset: (type: "bg" | "cg", id: string) => boolean;
+  /** 这个目标在剧目里已有素材的静态 URL——有就不烧配额，直接引用。 */
+  existingAssetUrl: (target: AssetTarget) => Promise<string | null>;
   /** 联网检索（未配置 key 时不注册，提示词也不提）。 */
   exa?: Exa;
 }

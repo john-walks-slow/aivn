@@ -197,4 +197,24 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
     expect(opens.length).toBeGreaterThan(0);
     expect(closes.length).toBe(opens.length);
   });
+
+  it("工具契约只写在工具描述里，系统提示词不再复述一遍", () => {
+    // 同一个规则写两遍，两处就会各自漂移——生图那几条已经漂移过一次了。
+    const prompt = buildSystemPrompt({ play: PLAY, canImage: true });
+    expect(prompt).not.toContain("<call:generate_image");
+    expect(prompt).toContain("看 generate_image 的工具说明");
+  });
+
+  it("schema 统一后，剧作家的引入新角色章不再说它没有 expression 参数", () => {
+    // generate_image 两个角色同一份 schema，这句话曾经是对的，现在是有害的假信息
+    const prompt = buildSystemPrompt({ play: PLAY, canImage: true });
+    expect(prompt).not.toContain("这个工具没有 expression 参数");
+    expect(prompt).toContain("expression=\"neutral\"");
+  });
+
+  it("生图关掉时不出工具调用示范，只留一句降级说明", () => {
+    const prompt = buildSystemPrompt({ play: PLAY, canImage: false });
+    expect(prompt).toContain("本剧目没有开启生图");
+    expect(prompt).not.toContain("generate_image(kind=\"background\"");
+  });
 });

@@ -224,7 +224,7 @@ export class PlayStore {
     return join(this.dir, "assets", ...kindPath.split("/"));
   }
 
-  /** TTS 音频缓存目录（media-cache/tts，运行时不进 git）。 */
+  /** TTS 音频缓存目录（media-cache/tts，按内容寻址可重建，运行时不进 git）。 */
   mediaDir(): string {
     return join(this.dir, "media-cache", "tts");
   }
@@ -269,16 +269,6 @@ export class PlayStore {
   /** TTS 音频绝对路径（静态服务；file 已白名单校验）。 */
   mediaPath(file: string): string {
     return join(this.dir, "media-cache", "tts", file);
-  }
-
-  /** 生图缓存目录（media-cache/img，运行时不进 git；内容寻址，同 prompt 只生成一次）。 */
-  imageDir(): string {
-    return join(this.dir, "media-cache", "img");
-  }
-
-  /** 生图产物绝对路径（静态服务；file 只由内容哈希产生，白名单式安全）。 */
-  imagePath(file: string): string {
-    return join(this.dir, "media-cache", "img", file);
   }
 
   /** 素材写入（上传）。kind ∈ sprites/<charId> | backgrounds | cg | sfx | bgm。 */

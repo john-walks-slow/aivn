@@ -27,7 +27,7 @@ export interface WorkshopPromptContext {
   canGenerate: boolean;
   /** 联网检索可用（无 key 时工具没注册，prompt 里也不提，免得教它调一个不存在的工具）。 */
   canSearch: boolean;
-  /** 资源库可用（决定 libraryGuide 章节注入与否）。 */
+  /** 资源库可用（没配时不装 list_library / import_asset，提示词里也不再教它去查库）。 */
   canBrowseLibrary: boolean;
 }
 
@@ -66,7 +66,7 @@ export async function buildWorkshopPrompt(ctx: WorkshopPromptContext): Promise<s
 
 1. **先问清再动手**：一轮里问 3~5 个问题就把骨架定下来——故事类型与基调、时代与地点、主角是谁、主角想要什么/被什么困住、核心角色 1~2 位、画风与文风。**每个问题都带上你的具体默认提案**（用户点一下"就按你说的来"就能继续），别让人从零填空。
 2. **给完整提案再落盘**：把理解成的 premise（3~6 句）、角色卡、还缺哪些视觉素材一次性摆给用户看，等一句"可以/就这样"再 write_file。
-3. **列图单、拿到批准才出图**：先查资源库（\`list_library\`），再告诉用户"接下来要出这几张图：背景 A（黄昏教室）、立绘 koharu/neutral、…，各是什么画面、为什么要"。**用户没点头之前，一张都不要 generate_image。** 出图要钱也要时间。
+3. **列图单、拿到批准才出图**：${ctx.canBrowseLibrary ? "先查资源库（\`list_library\`），" : ""}再告诉用户"接下来要出这几张图：背景 A（黄昏教室）、立绘 koharu/neutral、…，各是什么画面、为什么要"。**用户没点头之前，一张都不要 generate_image。** 出图要钱也要时间。
 4. **落盘后同步记忆**：画风与文风写进 memory/always/craft.md（不是只在对话里说一句），premise 写进 memory/always/premise.md。
 
 # 出图要点
@@ -83,7 +83,6 @@ ${ctx.canGenerate ? imageGuide : "- 生图当前不可用：把该出的图列�
   用户说「拿这张当封面」时写进去；换图后记得跟着改，被删掉的图会自动回落到自动挑选。
 
 ${skills}
-${ctx.canBrowseLibrary ? libraryGuide : ""}
 # 剧目写作要点
 
 - premise：3~6 句，交代世界、主角处境、核心张力；不要写成大纲列表。
@@ -91,8 +90,7 @@ ${ctx.canBrowseLibrary ? libraryGuide : ""}
   有什么禁忌。用户说「节奏太快」「别让角色太主动」这类创作口味要求，就改这里（只改风格条目，
   不要往里写 DSL 格式或工具用法，那些由引擎保证）。
 - 角色卡：id 用英文小写（如 mio），name 是中文名，persona 写具体的人（年龄/关系/说话方式/在意的点）；
-  voiceId 从预置音色库挑；sprites 是「表情名 → 立绘文件名」的映射。库里已有合适的角色可以先
-  \`import_asset\`（kind=characters）导进来再改，别从零重写。
+  voiceId 从预置音色库挑；sprites 是「表情名 → 立绘文件名」的映射。${ctx.canBrowseLibrary ? "库里已有合适的角色可以先\n  \\`import_asset\\`（kind=characters）导进来再改，别从零重写。" : ""}
 - 记忆卡（memory/index/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。
   index 下可以建子目录分门别类，**建议** \`locations/\` 放地点、\`lore/\` 放世界设定（不是硬要求，
   但分类后 A 区里每行都带 [分类] 前缀，剧作家更容易知道该去哪张卡里查）。
@@ -126,23 +124,6 @@ ${ctx.files || "（空）"}
 
 ${renderReadiness(ctx.readiness)}`;
 }
-
-/** 资源库章节（仅在库可用时拼进 system prompt）：先找现成的，再谈出图。 */
-const libraryGuide = `# 素材资源库（list_library / import_asset）
-
-服务器上有一份跨剧目复用的本地素材目录（背景 / CG / 角色 / BGM / 音效），由用户在本地目录里维护，你只读不写。
-
-- **要素材先查库**。用户说"弄张黄昏教室的图""配首忧伤的音乐""来个门响的音效""找个角色"，先用 \`list_library\`
-  （可以带 kind 或 query 关键词）看有没有现成的，有就 \`import_asset\` 导入。库里有就**不要**再 generate_image。
-- **kind=characters 是角色包**：条目里的角色卡会写进 play.json（配 target=protagonist 则写主角卡），
-  条目里带立绘就一并复制并登记差分映射。库里有设定、但立绘还空着的角色很正常——先导卡、图后面再画。
-  库里的角色 id 就是立绘目录名，导入后 \`<actor id="…">\` 直接可用。
-- **库和剧目各存一份**：import_asset 是把文件复制进本剧目的 assets/，删库不影响剧目；但资源库里的
-  素材不会自动出现在别的剧目里，要用就得各导一次。
-- 导入素材的元数据（描述、标签、音乐的情绪/适用场景/时长/是否可循环）会一并写进剧目素材表，
-  剧作家据此选曲选图——所以库里的描述写得准不准，直接影响演出效果。
-- BGM 与音效资源库里没有就别硬凑：告诉用户"库里没有音乐，需要你放几首进 library/bgm/"，
-  别拿不相关的曲子顶上。`;
 
 /** 出图章节（仅在生图可用时拼进 system prompt）：只留"必须知道"的硬规则，展开的画风/构图/差分知识在 skill 里。 */
 const imageGuide = `- 调 generate_image 出图，prompt 用英文，只描述画面本身；画风短语放 style 参数（可选）。
