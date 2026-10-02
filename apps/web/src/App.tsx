@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useRoute } from "./router.jsx";
 import { applyPlayTheme, reloadPlayTheme, THEME_CHANGED } from "./theme.js";
+import { useTheme } from "./hooks/useTheme.js";
 import { LibraryView } from "./views/LibraryView.js";
 import { TitleView } from "./views/TitleView.js";
 import { StageScreen } from "./views/StageScreen.js";
@@ -29,6 +30,9 @@ export function App() {
     window.addEventListener(THEME_CHANGED, onReload);
     return () => window.removeEventListener(THEME_CHANGED, onReload);
   }, []);
+
+  // UI 与舞台各自的亮暗：偏好存 localStorage，实际值在 app.css 里由 data-* 属性查表。
+  useTheme();
 
   if (head === "settings") return <SettingsScreen />;
   if (head === "play" && playId && sub === "stage") {

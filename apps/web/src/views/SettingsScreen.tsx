@@ -9,6 +9,13 @@ import { Icon } from "../ui/Icon.js";
 import { api, type GatewayModel, type Settings } from "../api.js";
 import { navigate } from "../router.jsx";
 import { ModelSelect, modelSourceHint } from "../ui/ModelSelect.js";
+import {
+  readThemeMode,
+  writeThemeMode,
+  type ThemeMode,
+  STAGE_THEME_KEY,
+  UI_THEME_KEY,
+} from "../hooks/useTheme.js";
 
 type Draft = {
   model: Settings["model"];
@@ -24,6 +31,10 @@ export function SettingsScreen() {
   const [saved, setSaved] = useState<string[] | null>(null);
   const [models, setModels] = useState<GatewayModel[] | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
+
+  // 主题偏好走 useTheme 那套读写（localStorage 键名只此一处定义）
+  const [uiMode, setUiMode] = useState<ThemeMode>(() => readThemeMode(UI_THEME_KEY));
+  const [stageMode, setStageMode] = useState<ThemeMode>(() => readThemeMode(STAGE_THEME_KEY));
 
   const loadModels = useCallback((refresh = false): void => {
     api
@@ -52,6 +63,16 @@ export function SettingsScreen() {
   }, [loadModels]);
 
   useEffect(load, [load]);
+
+  // 别的标签页改了偏好，本页的下拉要跟着变，否则两处显示不一致
+  useEffect(() => {
+    const onStorage = (e: StorageEvent): void => {
+      if (e.key === UI_THEME_KEY) setUiMode(readThemeMode(UI_THEME_KEY));
+      if (e.key === STAGE_THEME_KEY) setStageMode(readThemeMode(STAGE_THEME_KEY));
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   const save = async (): Promise<void> => {
     if (!draft) return;
@@ -308,6 +329,37 @@ export function SettingsScreen() {
               masked={settings.exa.masked}
               onChange={(keys) => setDraft({ ...draft, exa: { ...draft.exa, keys } })}
             />
+          </Group>
+
+          <Group title="主题">
+            <Field label="界面主题" hint="剧目库 / 标题 / 周目 / 工坊 / 设置这一层的亮暗">
+              <select
+                value={uiMode}
+                onChange={(e) => {
+                  const mode = e.target.value as ThemeMode;
+                  setUiMode(mode);
+                  writeThemeMode(UI_THEME_KEY, mode);
+                }}
+              >
+                <option value="system">跟随系统</option>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+              </select>
+            </Field>
+            <Field label="舞台主题" hint="画面 / 台词条 / 选肢卡这一层的亮暗，与界面互不影响">
+              <select
+                value={stageMode}
+                onChange={(e) => {
+                  const mode = e.target.value as ThemeMode;
+                  setStageMode(mode);
+                  writeThemeMode(STAGE_THEME_KEY, mode);
+                }}
+              >
+                <option value="system">跟随系统</option>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+              </select>
+            </Field>
           </Group>
 
           <div className="row">

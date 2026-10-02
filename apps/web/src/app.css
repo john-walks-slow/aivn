@@ -78,6 +78,42 @@
   }
 }
 
+/* 主题切换：UI（纸面）与舞台（画面）各自一套，由 <html> 上的 data-* 属性驱动。
+   用属性选择器而不是内联 style 写 :root —— 剧目定制主题（plays/<id>/theme.css）
+   挂的是 :root 变量，内联 style 优先级更高会把它整张压掉，用户换的皮就没了。
+   属性选择器只覆盖下面这几个令牌，剧目主题没碰到的部分照旧生效。 */
+html[data-ui-theme="dark"] {
+  --bg: #14110f; /* 和紙反过来：暖调的黑，不是纯 #000 —— 纯黑配暖白字会发蓝 */
+  --panel: #201c19;
+  --panel-2: #2b2622;
+  --ink: #ece4d8;
+  --ink-soft: #b3a897;
+  --ink-faint: #8a8073;
+  --line: #3d362f;
+  --accent: #d98a7a; /* 臙脂在深底上要提亮，否则红压黑糊成一团 */
+  --accent-ink: #1a1512;
+  --accent-soft: rgba(217, 138, 122, 0.18);
+  --link: #8fb8d4;
+}
+
+/* 舞台浅色：台词条 / 选肢卡整套换成浅底深字。
+   这套的取舍和深色相反——深色模式靠「玻璃压住画面」，浅色没有压的余地，
+   所以底色必须实（0.88 起步）而不是半透明，否则背景图的亮部会透上来吃掉字。 */
+html[data-stage-theme="light"] {
+  --stage-bg: #efece5;
+  --dialog-bg: linear-gradient(178deg, rgb(252 250 246 / 0.94), rgb(240 236 228 / 0.96));
+  --dialog-line: rgb(120 108 92 / 0.45);
+  --dialog-ink: #23201c;
+  --dialog-ink-soft: #4a443c;
+  --dialog-ink-thought: #5a5468;
+  --dialog-shadow: 0 10px 30px rgb(60 48 32 / 0.18);
+  --choice-bg: rgb(252 250 246 / 0.94);
+  --choice-line: rgb(120 108 92 / 0.4);
+  --choice-ink: #23201c;
+  --choice-active-bg: rgb(217 138 122 / 0.3);
+  --choice-scrim: linear-gradient(180deg, transparent 24%, rgb(239 236 229 / 0.55));
+}
+
 html,
 body,
 #root {
