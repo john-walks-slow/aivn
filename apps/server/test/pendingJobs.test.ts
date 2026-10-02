@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PendingJob } from "@stage-ai/core";
-import { PendingJobs, jobIdForImage } from "../src/pendingJobs.js";
+import { PendingJobs, errorText, jobIdForImage } from "../src/pendingJobs.js";
 
 /** 记账用例一律关掉停留：它们测的是「谁在表里」，不是「在表里待多久」。 */
 function tracker(emit: (jobs: PendingJob[]) => void = () => {}): PendingJobs {
@@ -97,5 +97,71 @@ describe("PendingJobs 完成态", () => {
     vi.advanceTimersByTime(10_000);
     expect(pushes.length).toBe(after);
     expect(jobs.snapshot()).toEqual([]);
+  });
+});
+
+describe("PendingJobs 失败态", () => {
+  it("给了错因就是失败：留在表里带 error，计时器再久也不收走", () => {
+    vi.useFakeTimers();
+    const jobs = new PendingJobs(() => {}, 3000);
+    const done = jobs.begin({ id: jobIdForImage("cg", "cg_x"), kind: "cg", label: "CG cg_x" });
+
+    done("上游 503：额度耗尽");
+
+    const [entry] = jobs.snapshot();
+    expect(entry.state).toBe("failed");
+    expect(entry.error).toBe("上游 503：额度耗尽");
+    // 完成态那 3 秒过了也不该动它：失败项不排退场计时
+    vi.advanceTimersByTime(60_000);
+    expect(jobs.snapshot()).toEqual([entry]);
+  });
+
+  it("失败项同名重新起一遍会顶掉旧的（重试过一次就不该留两条同名的失败）", () => {
+    const jobs = tracker();
+    const first = jobs.begin({ id: jobIdForImage("cg", "same"), kind: "cg", label: "CG same" });
+    first("第一次挂了");
+    expect(jobs.snapshot()[0]?.error).toBe("第一次挂了");
+
+    const retry = jobs.begin({ id: jobIdForImage("cg", "same"), kind: "cg", label: "CG same" });
+    expect(jobs.snapshot()).toHaveLength(1);
+    expect(jobs.snapshot()[0]?.state).toBe("running");
+
+    // 旧那一遍的收尾再补一刀也不许把新活改成失败
+    first("迟到的错因");
+    expect(jobs.snapshot()[0]?.state).toBe("running");
+    retry();
+  });
+
+  it("dismiss 清掉一条失败项并广播；清一条不存在的 id 不广播", () => {
+    const pushes: number[] = [];
+    const jobs = new PendingJobs((snap) => pushes.push(snap.length));
+    jobs.begin({ id: jobIdForImage("bg", "rooftop"), kind: "bg", label: "背景 rooftop" })("挂了");
+    const afterSetup = pushes.length;
+    expect(pushes.at(-1)).toBe(1);
+
+    jobs.dismiss("不存在的条目");
+    expect(pushes.length).toBe(afterSetup);
+
+    jobs.dismiss(jobIdForImage("bg", "rooftop"));
+    expect(jobs.snapshot()).toEqual([]);
+    expect(pushes.at(-1)).toBe(0);
+  });
+
+  it("dismiss 掉还在跑的条目：那件活儿后来收尾时对不上号，自行退出且不再广播", () => {
+    const pushes: number[] = [];
+    const jobs = new PendingJobs((snap) => pushes.push(snap.length));
+    const done = jobs.begin({ id: jobIdForImage("sprite", "小夜/smile"), kind: "sprite", label: "立绘" });
+
+    jobs.dismiss(jobIdForImage("sprite", "小夜/smile"));
+    const after = pushes.length;
+
+    done();
+    expect(pushes.length).toBe(after);
+    expect(jobs.snapshot()).toEqual([]);
+  });
+
+  it("errorText 把异常拍平成一句话（非 Error 也不丢）", () => {
+    expect(errorText(new Error("上游 503"))).toBe("上游 503");
+    expect(errorText("字符串错因")).toBe("字符串错因");
   });
 });

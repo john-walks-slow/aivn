@@ -50,7 +50,7 @@ import { HistoryRecorder, type HistoryBeat } from "./history.js";
 import type { AgentSettings, PlayConfig } from "@stage-ai/core";
 import type { PlayMemory } from "./memory.js";
 import { VoicePipeline, type TtsSynthFn } from "./voice.js";
-import type { PendingJobs } from "./pendingJobs.js";
+import type { PendingJobFinish, PendingJobs } from "./pendingJobs.js";
 
 /** 重建接力保留预算（token）：接住最近几轮就够，更早的细节走 archive 检索。 */
 const CARRY_OVER_TOKENS = 8000;
@@ -279,8 +279,8 @@ export class PlaywrightOrchestrator {
   private arcIds: string[] = [];
   /** 待注入的插一句（演出中收到，等这一轮收束再兑现）。不落盘：重启后队列不复活。 */
   private pending: PromptQueueItem[] = [];
-  /** 本轮在 pending 面板上的那一条（收束时销掉）：剧作家正在写的那一轮。 */
-  private pendingBeatJob: (() => void) | null = null;
+  /** 本轮在 pending 面板上的那一条（收束时销掉）：剧作家正在写的那一轮。失败常驻不销。 */
+  private pendingBeatJob: PendingJobFinish | null = null;
   private pendingSeq = 0;
   /** 链尾悬空的用户输入（分岔落在一次表态上时截下来的）：并进下一轮，不造空 assistant 轮次。 */
   private trailingInputs: string[] = [];
@@ -742,6 +742,20 @@ export class PlaywrightOrchestrator {
     }
     this.pending = this.pending.filter((entry) => entry.id !== id);
     this.broadcastPromptQueue();
+  }
+
+  /**
+   * 交出还没兑现的排队输入（开演前插的那几句）。
+   *
+   * 「开演」那一刻无会话作用域的实例要被换到真树上，玩家在换之前插的提示
+   * 不跟着交接就会跟着旧实例一起蒸发——它只活在内存里，落不进任何存档。
+   */
+  takePendingPrompts(): string[] {
+    const texts = this.pending.filter((item) => item.status === "pending").map((item) => item.text);
+    if (texts.length === 0) return texts;
+    this.pending = [];
+    this.broadcastPromptQueue();
+    return texts;
   }
 
   private broadcastPromptQueue(): void {
@@ -1266,8 +1280,6 @@ export class PlaywrightOrchestrator {
   private finishBeat(): void {
     if (!this.busy) return;
     this.busy = false;
-    this.pendingBeatJob?.();
-    this.pendingBeatJob = null;
     // 告警要在 resetBeat 之前取走：解析器不替我们记，丢了就再也拼不出「上一轮哪里被丢了」
     this.beatWarnings = describeBeatWarnings(this.parser.takeWarnings());
     this.parser.resetBeat();
@@ -1275,20 +1287,19 @@ export class PlaywrightOrchestrator {
     this.pendingStop = null;
     // 空轮护栏：生成失败/零产出不得静默伪装成正常收束——显式 error + pause 停止点给玩家重试入口
     // （这一轮没有自然收尾，给不了出口，只能让玩家按「继续」重开一轮）
+    let beatFailure: string | undefined;
     if (this.beatEvents === 0 && !stop) {
-      this.send({
-        type: "error",
-        message: `本轮生成失败：${this.beatError ?? "模型未产出任何剧本内容"}`,
-        recoverable: true,
-      });
+      beatFailure = this.beatError ?? "模型未产出任何剧本内容";
+      this.send({ type: "error", message: `本轮生成失败：${beatFailure}`, recoverable: true });
       stop = { stopType: "pause" };
     } else if (this.beatError) {
-      this.send({
-        type: "error",
-        message: `本轮生成中断：${this.beatError}`,
-        recoverable: true,
-      });
+      beatFailure = this.beatError;
+      this.send({ type: "error", message: `本轮生成中断：${this.beatError}`, recoverable: true });
     }
+    // 面板那一行得等「这一轮到底成没成」定下来才能收：成了留一会儿退场，
+    // 挂了记下原因常驻面板——自动收掉的失败等于没报过。
+    this.pendingBeatJob?.(beatFailure);
+    this.pendingBeatJob = null;
     this.beatError = null;
     this.lastStop = stop;
     this.appendLineage("beat_end", {

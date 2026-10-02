@@ -613,6 +613,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
             jobs={stage.pendingJobs}
             onEdit={(id, text) => stage.sendPromptEdit(id, text)}
             onDelete={(id) => stage.sendPromptDelete(id)}
+            onDismissJob={(jobId) => stage.sendPendingDismiss(jobId)}
           />
         )}
       </StageShell>

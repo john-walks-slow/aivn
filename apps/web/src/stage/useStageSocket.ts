@@ -60,6 +60,8 @@ export interface StageSocket {
   /** 排队面板：改一句 / 撤一句（都已注入的不认，服务端回 error）。 */
   sendPromptEdit: (id: string, text: string) => void;
   sendPromptDelete: (id: string) => void;
+  /** 手动清掉一条失败项（失败项不自动消失，面板上的删除键走这里）。 */
+  sendPendingDismiss: (jobId: string) => void;
   sendTtsControl: (state: { enabled?: boolean; paused?: boolean }) => void;
   /** 上报阅读位置（播放头推进时防抖调用）：服务端节流落盘，刷新后回到原处。 */
   sendRead: (pos: ReadPos) => void;
@@ -325,6 +327,10 @@ export function useStageSocket(
     [send],
   );
   const sendPromptDelete = useCallback((id: string) => send({ type: "prompt_delete", id }), [send]);
+  const sendPendingDismiss = useCallback(
+    (jobId: string) => send({ type: "pending_dismiss", jobId }),
+    [send],
+  );
   const sendJump = useCallback((nodeId: string) => send({ type: "jump", nodeId }), [send]);
   const sendFork = useCallback(
     (anchor: string | number, opts?: { resume?: boolean }) =>
@@ -374,6 +380,7 @@ export function useStageSocket(
     sendPrompt,
     sendPromptEdit,
     sendPromptDelete,
+    sendPendingDismiss,
     sendTtsControl: (ttsState) => send({ type: "tts_control", ...ttsState }),
     sendRead,
     sendJump,

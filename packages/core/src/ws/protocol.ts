@@ -60,10 +60,14 @@ export interface PendingJob {
   /** 入列时刻（毫秒）：面板上算「已经等了 40 秒」。 */
   startedAt: number;
   /**
-   * running = 还在跑；done = 已经收尾，面板上再留一会儿才消失。
+   * running = 还在跑；done = 已经收尾，面板上再留一会儿才消失；failed = 挂了。
    * 收尾即删的话那一行只能凭空蒸发，玩家看不见「它刚才完成了」。
+   * 失败态与 done 反着来：**不自动消失**，不亲手删就一直挂在面板上——失败了还悄悄
+   * 蒸发的话，那行既没让人看出出了事，也留不下可以回看的错因。
    */
-  state: "running" | "done";
+  state: "running" | "done" | "failed";
+  /** 失败态的原因（后端报错原文）。面板上展开这一行看的就是它。 */
+  error?: string;
 }
 
 /** 工坊线程（D9 meta-chat 多会话）在协议层的投影。 */
@@ -230,6 +234,8 @@ export type ClientMessage =
   | { type: "prompt_edit"; id: string; text: string }
   /** 撤掉队列里还没落笔的一句。 */
   | { type: "prompt_delete"; id: string }
+  /** 从 pending 面板上手动清掉一条失败项（失败项不会自动消失，只能这样收摊）。 */
+  | { type: "pending_dismiss"; jobId: string }
   /** 语音控制（D5 背压）：enabled=总开关（关=停合成）；paused=暂停预取（快进态/缓冲积压）。 */
   | { type: "tts_control"; enabled?: boolean; paused?: boolean }
   /** 分岔：世界线挂到锚点并落一条 fork 标记，其后内容整段转兄弟分支。

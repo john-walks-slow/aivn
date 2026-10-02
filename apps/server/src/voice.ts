@@ -1,5 +1,5 @@
 import { PhraseChunker } from "@stage-ai/core";
-import type { PendingJobs } from "./pendingJobs.js";
+import { errorText, type PendingJobs } from "./pendingJobs.js";
 
 /** 合成函数（FishTts + 剧目 URL 前缀绑定；测试注入 fake）。 */
 export type TtsSynthFn = (text: string, voiceId: string) => Promise<{ url: string }>;
@@ -115,15 +115,16 @@ export class VoicePipeline {
           if (!this.disposed && this.enabled) {
             this.opts.emit({ seq: job.seq, phrase: job.phrase, state: "ready", url });
           }
+          done?.();
         })
         .catch((error: unknown) => {
-          // 音频失败不阻塞演出：告警后丢弃该句（客户端的喇叭就此熄灭）
-          console.warn(
-            `[stage-ai] TTS 失败（跳过）: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          const reason = errorText(error);
+          // 音频失败不阻塞演出：告警后丢弃该句（客户端的喇叭就此熄灭）。
+          // 面板上那一条留成失败态记下错因：合成挂了得有人看见，不该跟着这句一起蒸发。
+          console.warn(`[stage-ai] TTS 失败（跳过）: ${reason}`);
+          done?.(reason);
         })
         .finally(() => {
-          done?.();
           this.inFlight -= 1;
           this.pump();
         });

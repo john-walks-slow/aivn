@@ -69,6 +69,9 @@
   --dialog-ink-soft: #c6bba9; /* 旁白 */
   --dialog-ink-thought: #a9a6c4; /* 内心独白 */
   --dialog-ink-faint: rgb(242 235 222 / 0.45); /* 次要提示：「回看中」「已选过」 */
+  /* 失败态的色：pending 面板上的失败行与收起徽标。深底上要够亮才认得出是警号，
+     不用 --ink-faint 那类压暗灰——那一档是「刚完成」，与「挂了」不能混。 */
+  --dialog-bad: #e8917f;
   /* 浮层上的字一律带一层压暗投影：深底玻璃上这是唯一让字脱开底的办法。
      浅色舞台底本来就亮，再压一层黑阴影只会糊掉笔画——那边整个置 none。 */
   --dialog-text-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
@@ -191,6 +194,7 @@ html[data-stage-theme="light"] {
   --dialog-ink-soft: #4a443c;
   --dialog-ink-thought: #5a5468;
   --dialog-ink-faint: rgb(35 32 28 / 0.5);
+  --dialog-bad: #b3372f;
   --dialog-text-shadow: none;
   --dir-text-shadow: none;
   --dialog-hover: rgb(120 108 92 / 0.12);
@@ -5096,6 +5100,15 @@ select:focus {
 .prompt-queue-row.pending-job.done .prompt-queue-meta {
   color: var(--ink-faint);
 }
+/* 失败行：留在面板上等人处理的那一类，跟 done 的「刚完成」反过来——
+   左边框与图标都上警示色，展开的那段错因也用它，让一行从头到尾都在说同一件事。 */
+.prompt-queue-row.pending-job.failed {
+  border-left-color: var(--dialog-bad);
+}
+.prompt-queue-row.pending-job.failed > svg,
+.prompt-queue-row.pending-job.failed .prompt-queue-meta {
+  color: var(--dialog-bad);
+}
 .pending-job-prompt {
   flex: 1 0 100%;
   margin: 2px 0 0;
@@ -5105,4 +5118,15 @@ select:focus {
   font-size: 11px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+/* 展开的错因：比提示词更该显眼——提示词是好奇才看，错因是排查要读。 */
+.pending-job-prompt.failed {
+  color: var(--dialog-bad);
+}
+/* 收起态徽标：有失败项时整枚徽标按警号读，不只靠那一个图标。 */
+.prompt-queue-badge.failed {
+  border-color: var(--dialog-bad);
+}
+.prompt-queue-badge.failed .prompt-queue-badge-icons {
+  color: var(--dialog-bad);
 }

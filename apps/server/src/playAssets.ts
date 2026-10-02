@@ -11,7 +11,7 @@ import {
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
 import type { Limiter } from "./limiter.js";
-import { jobIdForImage, type PendingJobs } from "./pendingJobs.js";
+import { errorText, jobIdForImage, type PendingJobs } from "./pendingJobs.js";
 import type { PlayFiles } from "./playFiles.js";
 import type { PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
@@ -226,9 +226,12 @@ export class PlayAssets {
           }),
         "normal",
       ));
-    } finally {
-      done?.();
+    } catch (error) {
+      // 面板上那一行留成失败态记下错因：出图挂了不该悄悄从面板上消失
+      done?.(errorText(error));
+      throw error;
     }
+    done?.();
     this.assertCanvas(spec, data);
     const tuning = resolveTuning(cutoutTuning);
     const bytes = spec.kind === "sprite" ? (await cutout(data, tuning)).data : data;

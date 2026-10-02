@@ -678,6 +678,16 @@ export class PlayHouse {
     if (clients) for (const send of clients) send(msg);
   }
 
+  /**
+   * 从 pending 面板上手动清掉一条（失败项唯一的出路：它们不自动消失）。
+   *
+   * 不经 runtime 取记账表：表按剧目缓存在这层，与 runtime 生命周期无关——
+   * runtime 重建换了实例，玩家面板上那些失败项照样得能删。
+   */
+  dismissPending(playId: string, jobId: string): void {
+    this.pendingFor(playId).dismiss(jobId);
+  }
+
   /** 音色试听（素材管理页）：经 runtime.synth（含语音语言翻译）合成固定样本。 */
   async ttsPreview(playId: string, voiceId: string): Promise<string> {
     if (!this.tts) throw new Error("服务端未启用语音（缺少 fish-audio key）");

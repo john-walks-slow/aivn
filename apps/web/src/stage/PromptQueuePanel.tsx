@@ -20,6 +20,9 @@ const JOB_ICON: Record<PendingJob["kind"], IconName> = {
  * 改完的仍是原来那句话，注入时用的就是这一份。已注入的行留在面板里淡出，
  * 让玩家看见「这句进去了」，下一轮到来时退场。
  *
+ * 失败项是第三种状态：既不跑也不退场，就挂在面板上等人看。展开看错因，
+ * 收摊只能按行尾的删除键——自动清掉的失败等于没报过。
+ *
  * 默认收起：徽标只给「数字 + 在忙哪几类」，要看细节才点开。
  */
 export function PromptQueuePanel({
@@ -27,18 +30,21 @@ export function PromptQueuePanel({
   jobs,
   onEdit,
   onDelete,
+  onDismissJob,
 }: {
   items: readonly PromptQueueItem[];
   /** 正在生成的事（剧作家的轮次 / 背景 / CG / 立绘 / 语音）；空数组 = 这会儿没在生成。 */
   jobs: readonly PendingJob[];
   onEdit: (id: string, text: string) => void;
   onDelete: (id: string) => void;
+  /** 手动清掉一条失败项（失败项不自动消失，只走这条路）。 */
+  onDismissJob: (jobId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  /** 展开了哪一条的提示词（生图才有，点一下开/合）。 */
-  const [showPrompt, setShowPrompt] = useState<string | null>(null);
+  /** 展开了哪一条的详情（失败项展开错因，生图展开提示词）。 */
+  const [showDetail, setShowDetail] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   // 「等了多久」得自己走：这一列是玩家判断还要等多久的唯一依据，静止的数字等于没有。
@@ -61,14 +67,20 @@ export function PromptQueuePanel({
   if (jobs.length === 0 && items.length === 0) return null;
 
   if (!open) {
-    const icons = [...new Set(jobs.map((job) => JOB_ICON[job.kind]))];
+    // 收起态的徽标：分类图标照旧，有失败就压一枚 alert 在最前——收起时是唯一能看出
+    // 「出事了」的地方，那一行不会自己退场，徽标也不该若无其事地报个数。
+    const failed = jobs.some((job) => job.state === "failed");
+    const icons = [
+      ...new Set(jobs.filter((job) => job.state !== "failed").map((job) => JOB_ICON[job.kind])),
+    ];
+    if (failed) icons.unshift("alert");
     if (waiting.length > 0) icons.push("chat");
     return (
       <button
         type="button"
-        className="prompt-queue-badge"
+        className={`prompt-queue-badge${failed ? " failed" : ""}`}
         onClick={() => setOpen(true)}
-        title="看看正在生成什么"
+        title={failed ? "有生成项失败了，点开看" : "看看正在生成什么"}
       >
         <span className="prompt-queue-badge-icons">
           {icons.map((name) => (
@@ -91,7 +103,7 @@ export function PromptQueuePanel({
       {rows.length > 0 && (
         <>
           <p className="prompt-queue-head">
-            <span>{jobs.some((job) => job.state === "running") ? "正在生成" : "刚刚完成"}</span>
+            <span>{headLabel(jobs)}</span>
             <button
               type="button"
               className="prompt-queue-tool"
@@ -103,29 +115,14 @@ export function PromptQueuePanel({
           </p>
           <ul>
             {rows.map((job) => (
-              <li
+              <PendingJobRow
                 key={job.id}
-                className={`prompt-queue-row pending-job${job.state === "done" ? " done" : ""}`}
-              >
-                <Icon name={JOB_ICON[job.kind]} />
-                <span className="prompt-queue-text">{job.label}</span>
-                <span className="prompt-queue-meta">
-                  {job.state === "done" ? "已完成" : elapsed(job.startedAt, now)}
-                </span>
-                {job.prompt && (
-                  <button
-                    type="button"
-                    className="prompt-queue-tool"
-                    title={showPrompt === job.id ? "收起提示词" : "看提示词"}
-                    onClick={() => setShowPrompt(showPrompt === job.id ? null : job.id)}
-                  >
-                    <Icon name={showPrompt === job.id ? "close" : "zoomIn"} />
-                  </button>
-                )}
-                {showPrompt === job.id && job.prompt && (
-                  <p className="pending-job-prompt">{job.prompt}</p>
-                )}
-              </li>
+                job={job}
+                now={now}
+                expanded={showDetail === job.id}
+                onToggle={() => setShowDetail(showDetail === job.id ? null : job.id)}
+                onDismiss={() => onDismissJob(job.id)}
+              />
             ))}
           </ul>
         </>
@@ -200,4 +197,70 @@ function elapsed(startedAt: number, now: number): string {
   if (sec < 60) return `${sec} 秒`;
   const min = Math.floor(sec / 60);
   return `${min} 分 ${sec % 60} 秒`;
+}
+
+/**
+ * 面板顶上那行：在跑的说在跑，挂了的说挂了几条，两样都没发生才叫「刚刚完成」。
+ * 失败项常驻不消，所以这一行的价值就是随时报出还剩几条没人收拾的。
+ */
+function headLabel(jobs: readonly PendingJob[]): string {
+  const parts: string[] = [];
+  if (jobs.some((job) => job.state === "running")) parts.push("正在生成");
+  const failed = jobs.filter((job) => job.state === "failed").length;
+  if (failed > 0) parts.push(`${failed} 项失败`);
+  return parts.length > 0 ? parts.join(" · ") : "刚刚完成";
+}
+
+/**
+ * 「在生成的事」的一行。展开的那块内容按状态分：失败展开错因，生图展开提示词。
+ * 失败行多一把删除键——它是唯一能让这一行退场的动作。
+ */
+function PendingJobRow({
+  job,
+  now,
+  expanded,
+  onToggle,
+  onDismiss,
+}: {
+  job: PendingJob;
+  now: number;
+  expanded: boolean;
+  onToggle: () => void;
+  onDismiss: () => void;
+}) {
+  const failed = job.state === "failed";
+  // 错因总在，生图提示词未必在；失败行即便没有 prompt 也要有展开键（展开的是 error）
+  const detail = failed ? (job.error ?? "（没留下原因）") : job.prompt;
+  return (
+    <li className={`prompt-queue-row pending-job ${job.state}`}>
+      <Icon name={failed ? "alert" : JOB_ICON[job.kind]} />
+      <span className="prompt-queue-text">{job.label}</span>
+      <span className="prompt-queue-meta">
+        {job.state === "running" ? elapsed(job.startedAt, now) : failed ? "失败" : "已完成"}
+      </span>
+      {detail && (
+        <button
+          type="button"
+          className="prompt-queue-tool"
+          title={expanded ? "收起" : failed ? "看失败原因" : "看提示词"}
+          onClick={onToggle}
+        >
+          <Icon name={expanded ? "close" : "zoomIn"} />
+        </button>
+      )}
+      {failed && (
+        <button
+          type="button"
+          className="prompt-queue-tool"
+          title="清掉这条"
+          onClick={onDismiss}
+        >
+          <Icon name="close" />
+        </button>
+      )}
+      {expanded && detail && (
+        <p className={`pending-job-prompt${failed ? " failed" : ""}`}>{detail}</p>
+      )}
+    </li>
+  );
 }

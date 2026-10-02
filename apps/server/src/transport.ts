@@ -76,15 +76,15 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage
   ws.on("error", drop);
 
   void (async () => {
-    // 舞台连上 = 玩家要看戏，runtime 必须挂在真实的故事树上（没有就先建一棵）；
-    // 工坊连接只是逛，不该凭空多出一个周目。
+    // 舞台与工坊拿的是同一份 runtime：都只读活动档，读不到就落在无会话作用域上。
+    // 周目是玩家按「开演」时才建的（playhouse.begin），连上来看一眼不该凭空多出一档。
     // 剧目不存在时 loadPlay 会抛 ENOENT —— 这个 promise 没人接，整进程会被 unhandled
     // rejection 带走。残留的旧连接就能把整个 API 弄崩，所以在这里就地收场：
     // 先把观众计数还回去（drop 只在 close 时跑，那时已经把 dropped 置上、计数已还过），
     // 再回一帧不可恢复的错误并关闭连接。
     let runtime: PlayRuntime;
     try {
-      runtime = await (stage ? playhouse.stage(playId) : playhouse.get(playId));
+      runtime = await playhouse.get(playId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[stage-ai] WS 连接失败 play=${playId}: ${message}`);
@@ -110,7 +110,7 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage
 
   async function dispatch(msg: ClientMessage): Promise<void> {
     // 每次现查：runtime 重建（配置保存 reload / 切档 switchSave）后自动路由到新实例
-    const current = await (stage ? playhouse.stage(playId) : playhouse.get(playId));
+    const current = await playhouse.get(playId);
     await routeMessage(playhouse, playId, current, sender, msg);
   }
 }
@@ -137,7 +137,12 @@ async function routeMessage(
       return;
     }
     case "start":
-      orchestrator.start();
+      // 开演这一刻才建周目：连上舞台读到的可能还是无会话作用域那份，写不了盘，
+      // 必须先换到真树上再开局。
+      {
+        const tree = await playhouse.begin(playId);
+        tree.orchestrator.start();
+      }
       return;
     case "player_choice":
       await orchestrator.playerAction({ kind: "choice", optionIndex: msg.optionIndex });
@@ -156,6 +161,10 @@ async function routeMessage(
       return;
     case "prompt_delete":
       orchestrator.deletePending(msg.id);
+      return;
+    // 失败项不会自动消失，面板上按删除键走这条路收摊（改表即整表广播，无需回执）
+    case "pending_dismiss":
+      playhouse.dismissPending(playId, msg.jobId);
       return;
     case "tts_control":
       orchestrator.setTtsState({ enabled: msg.enabled, paused: msg.paused });
