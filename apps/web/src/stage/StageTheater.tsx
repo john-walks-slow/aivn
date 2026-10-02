@@ -117,8 +117,8 @@ const ACTION_META: Record<
 
 /** 「提示」面板两岔各自的一句话说明：说清这一句发出去会发生什么，不解释引擎。 */
 const GUIDE_HINT: Record<GuideMode, string> = {
-  guide: "跟这一轮一起发：话排进队列，等你点选项或输入时一起送到剧作家。",
-  fork: "从正在看的这一行开新分支；正在写的后半截就此腰斩。",
+  guide: "跟下一轮一起发：话排进队列，等你点选项或输入时一起送到剧作家。",
+  fork: "从正在看的这一行开新分支。",
 };
 
 const POS_CLASS: Record<string, string> = { left: "pos-left", center: "pos-center", right: "pos-right" };
@@ -459,6 +459,24 @@ voiceState,
   const modalAction: DirectorAction =
     action === "prompt" && guideMode === "fork" ? "fork" : (action ?? "prompt");
 
+  /**
+   * 送不出去的四种情形，没有第五种：
+   *  - 改写必须真写一句（没内容就无从改起）
+   *  - 引导必须有话可排（空句进队列等于没排）
+   *  - 分岔/重来要有落点（还没演到任何一行）
+   *  - 生图没有门槛：留空就是按刚才这一幕构图
+   */
+  const submitDisabled: boolean =
+    modalAction === "edit"
+      ? draft.trim() === "" || !targets.lineNodeId
+      : modalAction === "prompt"
+        ? draft.trim() === ""
+        : modalAction === "fork"
+          ? forkBlock !== null
+          : modalAction === "restart"
+            ? targets.beatId === null
+            : false;
+
   return (
     <div
       className={`theater ${hideUi ? "bare" : ""}`}
@@ -687,13 +705,7 @@ voiceState,
                   type="button"
                   className="primary"
                   onClick={submitAction}
-                  disabled={
-                    modalAction === "edit"
-                      ? draft.trim() === "" || !targets.lineNodeId
-                      : modalAction === "fork"
-                        ? forkBlock !== null
-                        : draft.trim() === ""
-                  }
+                  disabled={submitDisabled}
                 >
                   {ACTION_META[modalAction].submit(draft.trim())}
                 </button>
@@ -711,7 +723,7 @@ voiceState,
                   type="button"
                   className={`seg-btn ${guideMode === "guide" ? "active" : ""}`.trim()}
                   aria-pressed={guideMode === "guide"}
-                  title="跟着这一轮写，排进队列等你选。"
+                  title="跟着下一轮写，排进队列等你选。"
                   onClick={() => setGuideMode("guide")}
                 >
                   引导
@@ -720,7 +732,7 @@ voiceState,
                   type="button"
                   className={`seg-btn ${guideMode === "fork" ? "active" : ""}`.trim()}
                   aria-pressed={guideMode === "fork"}
-                  title={forkBlock ?? "从这一行开新分支，正在写的后半截腰斩。"}
+                  title={forkBlock ?? "从这一行开新分支。"}
                   disabled={forkBlock !== null}
                   onClick={() => setGuideMode("fork")}
                 >
