@@ -1073,9 +1073,7 @@ button.link-btn {
   background: var(--dialog-bg);
   border: 1px solid var(--dialog-line);
   border-radius: var(--stage-radius);
-  /* 名牌要出血到对话框的左边缘（见 .dialog-name），所以这份内边距得有个名字 */
-  --dialog-pad-x: 30px;
-  padding: 22px var(--dialog-pad-x) 14px;
+  padding: 22px 30px 14px;
   /* 预留三行（见 .dialog-text 的 min-height）：1~3 行的台词来回换时高度恒定，画面不再顶一下沉一下 */
   min-height: 168px;
   display: flex;
@@ -1206,21 +1204,24 @@ button.link-btn {
   margin: 0;
 }
 
-/* 说话人：台词条底缘左端的一小块牌，直角、贴着窗的下缘（出血到左边缘与下边缘，
-   所以它跟这块窗是连着的，不是一个浮在上面的小圆片）。底色字色取舞台那套令牌：
-   深底深牌浅字、浅底浅牌深字。描边不跟主色——名牌每句都在，主色描边会把整条台词条
-   钉成一个框。 */
+/* 说话人：台词条上方、跟窗连着的一块牌。它不是贴纸，是窗的一部分——所以
+   底色、描边、字色全都取台词条自己那套（--dialog-*），只把上缘两个角留圆、
+   下缘开口不描边：上圆下方 + 左侧描边，看起来就是从这块窗上长出来的一截。
+   骑在窗沿上会把名字切成两半，所以是「贴着」，不是「压着」。 */
 .dialog-name {
-  align-self: flex-end;
-  margin: 4px 0 -8px calc(-1 * var(--dialog-pad-x));
-  padding: 3px 16px 4px;
-  border: none;
-  border-radius: 0;
-  background: var(--nameplate-bg);
-  color: var(--nameplate-ink);
+  position: absolute;
+  bottom: 100%;
+  left: 10px;
+  padding: 4px 16px 5px;
+  border: 1px solid var(--dialog-line);
+  border-bottom: none;
+  border-radius: var(--stage-radius) var(--stage-radius) 0 0;
+  background: var(--dialog-bg);
+  color: var(--dialog-ink);
+  backdrop-filter: blur(10px) saturate(1.05);
   font-family: var(--font-serif);
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: 13px;
   letter-spacing: 0.14em;
   line-height: 1.7;
   white-space: nowrap;
