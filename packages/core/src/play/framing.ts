@@ -17,7 +17,14 @@ export function isSpriteFraming(value: unknown): value is SpriteFraming {
   return typeof value === "string" && (SPRITE_FRAMINGS as readonly string[]).includes(value);
 }
 
-/** 取景的显示名（资源库浏览、角色卡编辑器、演出层下拉共用）。 */
+/**
+ * 取景的显示名（资源库浏览、角色卡编辑器、演出层下拉共用）。
+ *
+ * 取景目前只在**舞台摆位**上真正生效，出图一律按全身来：
+ * 半身、胸像靠镜头放大实现（后续再做），所以日常开发与验证都只跑 `full`。
+ * 这两个取值留着不删——play.json 里已有的声明、资源库里已入库的条目都指着它，
+ * 删字段等于让存量数据读不出来。
+ */
 export const SPRITE_FRAMING_LABELS: Record<SpriteFraming, string> = {
   bust: "胸像",
   half: "半身",
@@ -28,11 +35,16 @@ export const SPRITE_FRAMING_LABELS: Record<SpriteFraming, string> = {
  * 取景 → 出图提示词里的景别措辞 + 立绘画幅。
  *
  * 画幅跟着取景走：胸像半身脸占画幅近一半，仍用 9:16 竖长画，人物会被拉成一张窄条。
- * 只取 Gemini 与 OpenAI 都收的取值（见 `imageBackend.ts` 的画幅白名单）。
+ *
+ * 三个画幅必须落在**上游真正支持的取值**内。走 flow2api 时，Google Flow 只有 5 档：
+ * 1:1 / 9:16 / 16:9 / 4:3 / 3:4（枚举与编号见 flow2api 的 `flow_frontend.py`）。
+ * 2:3、3:2、4:5、5:4、21:9 这些 Gemini 官方取值 Flow **一个都没有**——发过去不报错，
+ * 静默退回 16:9，出图直接变成一张横的。原先半身用的 2:3 就是这么废掉的。
+ * 三档按「越半身越方」排：9:16 → 3:4 → 1:1，也都在 Gemini 与 OpenAI 都收的白名单里。
  */
 export const SPRITE_FRAMING_ASPECT: Record<SpriteFraming, string> = {
-  bust: "3:4",
-  half: "2:3",
+  bust: "1:1",
+  half: "3:4",
   full: "9:16",
 };
 

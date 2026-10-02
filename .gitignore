@@ -54,3 +54,7 @@ __pycache__/
 # .mcp.json（两者都被读时 legacy 会被 shadow），且它存的是 exa 密钥明文——不进 git。
 # 密钥改从 api-vault 取，见 .mcp.json 里 `!` 前缀的命令式取值。
 .pi/
+
+# 出图验证用的临时素材（同 plays/* 与 library/ 的口径：生成的图不进 git）
+/test-assets/*
+!/test-assets/.gitkeep

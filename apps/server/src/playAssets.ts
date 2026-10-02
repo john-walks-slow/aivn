@@ -579,7 +579,11 @@ const NEUTRAL_TAIL =
   "so the silhouette is clearly separated, clear empty white space between the arms and the body and " +
   "between the hair and the arms. Japanese anime style 2D character illustration, flat cel shading with " +
   "clean crisp lineart, NOT a 3D render, no 3D CGI look. Plain solid pure white background, no text, no " +
-  "shadow, no gradient, no vignette, vertical portrait composition.";
+  "shadow, no gradient, no vignette, vertical portrait composition" +
+  // 舞台按统一的头顶留白摆位（见 app.css 的 .theater-sprite），人物矮的那一头空间本来就该空得多，
+  // 不点明的话模型会把所有角色都顶到画幅上沿，矮个子的头顶就直接贴边了。
+  ". Shorter characters may leave more empty space above the head, and taller characters may leave less, " +
+  "so every character keeps some space above the head rather than touching the top edge of the frame.";
 
 function neutralSuffix(framing: SpriteFraming | undefined): string {
   return SPRITE_FRAMING_SHOT[framing ?? DEFAULT_SPRITE_FRAMING] + NEUTRAL_TAIL;

@@ -136,7 +136,7 @@ const QUEUED_DESCRIPTION = [
   "出一张剧目素材并**后台排产**（发起即返回，不等图）：背景(kind=background) / CG(kind=cg) 给 name，",
   "立绘(kind=sprite) 给 characterId，出的**只能是 neutral 定妆照**（差分由工坊在用户面前生成，别试也别写 expression）。" +
   "角色不在角色表时再给 characterName，会自动建一个临时角色。",
-  "背景 16:9、CG 16:9、立绘竖构图（取景 full 用 9:16、half 2:3、bust 3:4）；提示词写英文，只描述画面本身。",
+  "背景 16:9、CG 16:9、立绘竖构图（取景 full 用 9:16、half 3:4、bust 1:1）；提示词写英文，只描述画面本身。",
   PROMPT_RULES,
   "**提前 3–5 句发起**：图要一分多钟才到（实测 1k 档 70–80s、2k 档 110s 上下），" +
   "出席位置太早只会看到骨架占位，拿到回执后照常写台词，",

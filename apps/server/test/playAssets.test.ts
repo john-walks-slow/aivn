@@ -162,7 +162,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     await assets.generate({ kind: "sprite", characterId: "mio", expression: "a", framing: "half" }, "p");
     await assets.generate({ kind: "sprite", characterId: "mio", expression: "b", framing: "bust" }, "p");
     await assets.generate({ kind: "sprite", characterId: "mio", expression: "c", framing: "full" }, "p");
-    expect(calls.map((c) => c.aspectRatio)).toEqual(["2:3", "3:4", "9:16"]);
+    expect(calls.map((c) => c.aspectRatio)).toEqual(["3:4", "1:1", "9:16"]);
     expect(calls[0]!.prompt).toMatch(/medium shot, waist-up/);
     expect(calls[1]!.prompt).toMatch(/head and shoulders bust shot/);
     expect(calls[2]!.prompt).toMatch(/full body, head to toe/);
@@ -177,7 +177,7 @@ describe("PlayAssets：工坊素材落盘", () => {
       characters: [{ id: "mio", name: "澪", persona: "", framing: "half" }],
     });
     await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "p");
-    expect(calls[0]!.aspectRatio).toBe("2:3");
+    expect(calls[0]!.aspectRatio).toBe("3:4");
   });
 
   it("立绘取景：差分上的覆盖优先于角色声明，出图后回写 play.json", async () => {
@@ -191,7 +191,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     await assets.generate({ kind: "sprite", characterId: "mio", expression: "wow" }, "p");
     // 第 0 次调用是自动补的定妆照：它按**角色级**取景出，不按这条差分的胸像
     expect(calls[0]!.aspectRatio).toBe("9:16");
-    expect(calls[1]!.aspectRatio).toBe("3:4");
+    expect(calls[1]!.aspectRatio).toBe("1:1");
     const play = JSON.parse(await files.read("play.json")) as {
       characters: { framing?: string; spriteFraming?: Record<string, string> }[];
     };
