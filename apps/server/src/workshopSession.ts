@@ -275,6 +275,9 @@ export class WorkshopSession {
       canSearch: this.kit.can.search,
       canBrowseLibrary: this.kit.can.library,
       canVoices: this.kit.can.voice,
+      // 从当轮现读的 play.json 取，不吃构造时的快照：用户刚在 Agent 页改完就发下一轮消息，
+      // 那条就该带新提示词（模型/工具开关走 opts.agents，改动会重建 runtime 才生效）。
+      customPrompt: play.agents?.workshop?.prompt,
     });
   }
 }

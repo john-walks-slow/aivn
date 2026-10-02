@@ -102,9 +102,12 @@ describe("agent kit：两个角色的暴露面", () => {
       const desc = role().tools.find((t) => t.name === "generate_image")!.description;
       for (const rule of rules) expect(desc).toContain(rule);
     }
-    // 流程与验收仍各归各的：工坊管抠底重抠，剧作家管提前发起
+    // 流程与验收仍各归各的：工坊管抠底重抠，剧作家多一句「图还没到时先上骨架」
     expect(workshop().tools.find((t) => t.name === "generate_image")!.description).toContain("recut_sprite");
-    expect(withImage.tools.find((t) => t.name === "generate_image")!.description).toContain("提前 3–5 句发起");
+    const queued = withImage.tools.find((t) => t.name === "generate_image")!.description;
+    expect(queued).toContain("骨架");
+    // 「提前 3–5 句」是拍脑袋的经验值（流式下只给图 3–5 秒头，真要一分多钟），已随风格一起撤掉
+    expect(queued).not.toContain("3–5 句");
   });
 
   it("没配 Exa 就不注册 web_search，配了才装（且两个角色同一份实现）", () => {

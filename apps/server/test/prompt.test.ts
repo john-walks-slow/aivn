@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSystemPrompt, CRAFT_RULES } from "../src/prompt.js";
+import { buildSystemPrompt } from "../src/prompt.js";
 import { PlayMemory } from "../src/memory.js";
 import { PLAY } from "./helpers.js";
 
@@ -106,24 +106,40 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
 });
 
 describe("buildSystemPrompt：创作口径与演出契约", () => {
-  it("内置口径始终在（craft.md 是补充，不是替代）", () => {
-    const prompt = buildSystemPrompt({ play: PLAY });
-    expect(prompt).toContain(CRAFT_RULES);
-  });
+  it("引擎不再自带任何创作口径：craft.md 是唯一来源，有内容才注入", () => {
+    const empty = buildSystemPrompt({ play: PLAY });
+    expect(empty).not.toContain("# 台词怎么写");
 
-  it("craft.md 有内容就与内置口径一起注入", () => {
-    const prompt = buildSystemPrompt({
+    const withCraft = buildSystemPrompt({
       play: PLAY,
-      memory: new PlayMemory({ craft: "每轮只写一句。" }),
+      memory: new PlayMemory({ craft: "# 创作口径\n\n- 每轮 6~10 句。\n- 选项给三条。" }),
     });
-    expect(prompt).toContain("每轮只写一句。");
-    expect(prompt).toContain(CRAFT_RULES);
+    expect(withCraft).toContain("每轮 6~10 句。");
+    expect(withCraft).toContain("选项给三条。");
   });
 
   it("craft.md 为空时不注入任何剧目口径（新剧目的默认状态）", () => {
     const prompt = buildSystemPrompt({ play: PLAY, memory: new PlayMemory({ craft: "   " }) });
-    expect(prompt).toContain(CRAFT_RULES);
     expect(prompt).not.toContain("# 创作口径");
+  });
+
+  it("每轮多长、选项几条、多久交还主导权都不写死在提示词里——全归剧目的创作口径", () => {
+    // 2026-10-03：这三条从系统提示词撤走，改由搭台助手与用户对齐后写进 craft.md。
+    // 撤掉之后提示词不能再偷偷留一份默认，否则剧目自己的口径永远压不过引擎的。
+    const prompt = buildSystemPrompt({
+      play: PLAY,
+      memory: new PlayMemory({ craft: "每轮写长一点。" }),
+    });
+    for (const hardcoded of ["10–25 句", "500–1500 字", "至少 10 句", "2~4", "# 单轮该写多长"]) {
+      expect(prompt).not.toContain(hardcoded);
+    }
+  });
+
+  it("选项给几条交给创作口径，但工具的三种收尾方式仍是硬契约", () => {
+    const prompt = buildSystemPrompt({ play: PLAY });
+    expect(prompt).toContain("给几条互斥的选项照创作口径来");
+    expect(prompt).toContain("beat_done(placeholder=");
+    expect(prompt).toContain("beat_done()，两个参数都不给");
   });
 
   it("演出契约单列为引擎规则，与可改的创作口径分开", () => {
@@ -143,34 +159,14 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
     expect(prompt).not.toContain("<stop");
   });
 
-  it("单轮长度是硬要求，且明说压得住创作口径里的「节奏/每拍」", () => {
-    const prompt = buildSystemPrompt({ play: PLAY });
-    expect(prompt).toContain("# 单轮该写多长（硬要求：默认写长）");
-    expect(prompt).toContain("10–25 句");
-    // 口径文件是用户可改的，长度规则不能只靠它：契约段里再钉一次
-    const withCraft = buildSystemPrompt({
-      play: PLAY,
-      memory: new PlayMemory({ craft: "# 创作口径\n\n节奏：两三句一转折。" }),
-    });
-    const contract = withCraft.slice(withCraft.indexOf("# 演出契约（引擎规则，不可改）"));
-    expect(contract).toContain("一轮至少 10 句");
-    expect(contract).toContain("不是长度上限");
-  });
-
-  it("内置默认口径不再把一轮钉死在 3~8 行（那是 #11 的病根）", () => {
-    const prompt = buildSystemPrompt({ play: PLAY });
-    expect(CRAFT_RULES).toContain("10~25 句");
-    expect(prompt).not.toContain("一轮 3~8 行台词为宜");
-  });
-
-  it("输出纯净写在不可改的契约里，且指向 <comment> 这个出口", () => {
+  it("输出纯净写在不可改的契约里，且不再拿 <comment> 当出口来邀请", () => {
     const prompt = buildSystemPrompt({ play: PLAY });
     const contract = prompt.slice(prompt.indexOf("# 演出契约（引擎规则，不可改）"));
     expect(contract).toContain("你是剧本引擎，不是助手");
     expect(contract).toContain("不聊天、不寒暄");
-    expect(contract).toContain("<comment>");
-    // 注释标签要在格式段里教会，否则模型不知道有这个出口
-    expect(prompt).toContain("## 注释（不是剧本，写给自己）");
+    // 注释是兜底出口，不是功能位：提示词里除格式章那一次示范外，不再劝模型去用它
+    expect(contract).not.toContain("<comment>");
+    expect(prompt.match(/<comment>/g) ?? []).toHaveLength(1);
   });
 
   it("输出纯净不再依赖可被用户删掉的口径文件", () => {
@@ -190,7 +186,6 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
 
   it("格式段示范的 <comment> 开闭标签必须配平——模型照抄不闭合的示范就写坏了", () => {
     const prompt = buildSystemPrompt({ play: PLAY });
-    // 只查格式段：契约里的「放进 <comment>」是提及，不是示范，不该被算进去
     const section = prompt.slice(prompt.indexOf("## 注释"), prompt.indexOf("## 结束轮（beat_done）"));
     const opens = section.match(/<comment>/g) ?? [];
     const closes = section.match(/<\/comment>/g) ?? [];

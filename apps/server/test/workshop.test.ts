@@ -828,3 +828,40 @@ describe("whenIdle：工坊热改等轮边界", () => {
     orchestrator.dispose();
   });
 });
+
+describe("工坊：创作口径的交接与自定义提示词", () => {
+  const ctx = (over: Partial<WorkshopPromptContext> = {}): WorkshopPromptContext => ({
+    title: "测试剧目",
+    files: "- play.json",
+    readiness: { ready: true, premise: true, characterSprites: false, background: false, saves: 0 },
+    canGenerate: true,
+    canSearch: false,
+    canBrowseLibrary: false,
+    canVoices: false,
+    ...over,
+  });
+
+  it("教搭台助手：口径归 craft.md，且要写清四个维度", async () => {
+    const prompt = await buildWorkshopPrompt(ctx());
+    expect(prompt).toContain("唯一听这一份");
+    expect(prompt).toContain("每轮多长");
+    expect(prompt).toContain("选项给几条");
+    expect(prompt).toContain("交还主导权的密度");
+    expect(prompt).toContain("文风与禁忌");
+    // 引擎侧的默认已经撤干净，工坊得知道自己在补这个空
+    expect(prompt).toContain("都不再写死在剧作家的系统提示词里");
+  });
+
+  it("自定义提示词原样追加在固定段之后", async () => {
+    const prompt = await buildWorkshopPrompt(ctx({ customPrompt: "这部作品不说日语。" }));
+    expect(prompt).toContain("# 本剧目的补充要求");
+    expect(prompt).toContain("这部作品不说日语。");
+    expect(prompt.indexOf("本剧目的补充要求")).toBeGreaterThan(prompt.indexOf("# 当前状态"));
+  });
+
+  it("没配自定义段时一点痕迹都不留", async () => {
+    const prompt = await buildWorkshopPrompt(ctx());
+    expect(prompt).not.toContain("# 本剧目的补充要求");
+    expect(await buildWorkshopPrompt(ctx({ customPrompt: "   " }))).not.toContain("# 本剧目的补充要求");
+  });
+});

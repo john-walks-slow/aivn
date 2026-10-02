@@ -49,6 +49,14 @@ export interface AgentSettings {
   model?: string;
   thinking?: ThinkingLevel;
   /**
+   * 追加到系统提示词末尾的自定义段（**只有工坊装它**）。
+   *
+   * 引擎自带的提示词不可编辑也不该可编辑——它写的是引擎契约与能力边界，改了必然漂。
+   * 用户真正想逐剧目调的是「这个剧目的搭台助手该怎么做事」，落在这里。
+   * 存原文，注入时原样拼在固定提示词之后。
+   */
+  prompt?: string;
+  /**
    * 显式启用的工具名（工具目录见 `GET /api/agents/tools`）。缺省 = 该角色的默认集。
    *
    * 存的是**启用集**而不是禁用集：默认禁用的那几个（剧作家的生图与资源库）
@@ -158,6 +166,9 @@ function parseCharacter(card: CharacterCard): CharacterCard {
 /**
  * agents 段归一化：整段是可选的，逐字段丢弃非法值而不是让整份 play.json 读不出来。
  * 一条手滑的 thinking 档位不该让整部剧目打不开——那比退回默认值糟得多。
+ *
+ * `prompt` 只给工坊留：剧作家那边读了也没人用，留着只会让手写 play.json 的人
+ * 以为「这段生效了」。剧作家要怎么写走 `memory/always/craft.md`。
  */
 function parseAgentConfig(raw: AgentConfig | undefined): AgentConfig | undefined {
   if (!raw || typeof raw !== "object") return undefined;
@@ -169,6 +180,9 @@ function parseAgentConfig(raw: AgentConfig | undefined): AgentConfig | undefined
     if (typeof source.model === "string" && source.model.trim() !== "") settings.model = source.model.trim();
     if (source.thinking && (THINKING_LEVELS as readonly string[]).includes(source.thinking)) {
       settings.thinking = source.thinking;
+    }
+    if (role === "workshop" && typeof source.prompt === "string" && source.prompt.trim() !== "") {
+      settings.prompt = source.prompt;
     }
     if (Array.isArray(source.tools)) {
       const names = source.tools.filter((n): n is string => typeof n === "string" && n.trim() !== "");

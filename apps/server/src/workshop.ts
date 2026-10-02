@@ -31,6 +31,8 @@ export interface WorkshopPromptContext {
   canBrowseLibrary: boolean;
   /** 音色库可用（没配 TTS 时 list_voices 没注册，提示词里也不提，免得教它调一个不存在的工具）。 */
   canVoices: boolean;
+  /** 逐剧目的自定义段（play.json 的 agents.workshop.prompt）：原样拼在固定提示词之后。 */
+  customPrompt?: string;
 }
 
 /** 工坊 system prompt：搭台不唱戏；先问后写；出图前先过审。 */
@@ -66,10 +68,10 @@ export async function buildWorkshopPrompt(ctx: WorkshopPromptContext): Promise<s
 
 用户要开新剧目、或要改现有剧目的设定时，按下面四步走，**不要跳步**：
 
-1. **先问清再动手**：一轮里问 3~5 个问题就把骨架定下来——故事类型与基调、时代与地点、主角是谁、主角想要什么/被什么困住、核心角色 1~2 位、画风与文风。**每个问题都带上你的具体默认提案**（用户点一下"就按你说的来"就能继续），别让人从零填空。
-2. **给完整提案再落盘**：把理解成的 premise（3~6 句）、角色卡、还缺哪些视觉素材一次性摆给用户看，等一句"可以/就这样"再 write_file。
+1. **先问清再动手**：一轮里问 3~5 个问题就把骨架定下来——故事类型与基调、时代与地点、主角是谁、主角想要什么/被什么困住、核心角色 1~2 位、画风与文风、**节奏（想让人物一口气演一段，还是每轮都给玩家选择）**。**每个问题都带上你的具体默认提案**（用户点一下"就按你说的来"就能继续），别让人从零填空。
+2. **给完整提案再落盘**：把理解成的 premise（3~6 句）、角色卡、创作口径、还缺哪些视觉素材一次性摆给用户看，等一句"可以/就这样"再 write_file。
 3. **列图单、拿到批准才出图**：${ctx.canBrowseLibrary ? "先查资源库（\`list_library\`），" : ""}再告诉用户"接下来要出这几张图：背景 A（说清是什么场景）、立绘 \`<角色id>/neutral\`、…，各是什么画面、为什么要"。**用户没点头之前，一张都不要 generate_image。** 出图要钱也要时间。
-4. **落盘后同步记忆**：画风与文风写进 memory/always/craft.md（不是只在对话里说一句），premise 写进 memory/always/premise.md。
+4. **落盘后同步记忆**：premise 写进 memory/always/premise.md，**创作口径写进 memory/always/craft.md**（下面「剧目写作要点」里说清那份文件该写什么；不是只在对话里说一句）。
 
 # 出图要点
 
@@ -88,9 +90,13 @@ ${skills}
 # 剧目写作要点
 
 - premise：3~6 句，交代世界、主角处境、核心张力；不要写成大纲列表。
-- 创作口径（memory/always/craft.md）：剧作家每一轮怎么写台词都听这一份——节奏多密、情绪怎么落地、
-  有什么禁忌。用户说「节奏太快」「别让角色太主动」这类创作口味要求，就改这里（只改风格条目，
-  不要往里写 DSL 格式或工具用法，那些由引擎保证）。
+- 创作口径（memory/always/craft.md）：**剧作家每一轮怎么写，唯一听这一份**。引擎自带的口径已经删干净了
+  ——一轮该写多长、选项给几条、多久把主导权交回玩家、什么文风，都不再写死在剧作家的系统提示词里；
+  这个文件空着，剧作家就真的没有口径可听。所以每次跟用户对齐完写法，都要把结果落进这个文件，
+  不要只在对话里说一句「知道了」。至少写清四件事：**每轮多长**（一段戏演多久、到哪里换画面）、
+  **选项给几条**、**交还主导权的密度**（每轮都停，还是连着推几轮才停一次）、**文风与禁忌**。
+  只写风格条目，不要往里写 DSL 格式或工具用法，那些由引擎保证。
+  用户改主意时（「节奏太快」「别让角色太主动」「选项给太多」「每段写短点」）改的就是这个文件。
 - 角色卡：id 用英文小写（如 role_a），name 是中文名，persona 写具体的人（年龄/关系/说话方式/在意的点）；
   ${ctx.canVoices ? "voiceId 用 \`list_voices\` 查出来再填（id 是 32 位 hex，猜不出来；填错不报错，演出时那句台词会静默没有声音）；" : ""}
   sprites 是「表情名 → 立绘文件名」的映射。${ctx.canBrowseLibrary ? "库里已有合适的角色可以先\n  \\`import_asset\\`（kind=characters）导进来再改，别从零重写。" : ""}
@@ -125,7 +131,19 @@ ${ctx.canSearch ? SEARCH_GUIDE : ""}
 剧目文件：
 ${ctx.files || "（空）"}
 
-${renderReadiness(ctx.readiness)}`;
+${renderReadiness(ctx.readiness)}${customSection(ctx.customPrompt)}`;
+}
+
+/**
+ * 用户自定义段（play.json 的 agents.workshop.prompt）：原样拼在最后。
+ *
+ * 放最后而不是放开头——固定段讲的是引擎契约与能力边界，自定义段讲的是这个剧目额外的做事要求，
+ * 冲突时后者才是用户的本意。
+ */
+function customSection(custom: string | undefined): string {
+  const text = custom?.trim();
+  if (!text) return "";
+  return `\n\n# 本剧目的补充要求\n\n${text}`;
 }
 
 /** 出图章节（仅在生图可用时拼进 system prompt）：只留"必须知道"的硬规则，展开的画风/构图/差分知识在 skill 里。 */

@@ -190,6 +190,23 @@ export function AgentPane({ playId }: { playId: string }) {
                 没勾的会写进 play.json，与默认集无关——默认只是初始态。
               </p>
             </div>
+
+            {role.id === "workshop" && (
+              <label className="field">
+                <span>补充要求</span>
+                <textarea
+                  rows={6}
+                  value={settings.prompt ?? ""}
+                  placeholder={"例：这部作品是慢热悬疑，每轮别写太长；\n涉及凶案的情节先问我一句再写。"}
+                  onChange={(e) => patch(role.id, (s) => setOrClear(s, "prompt", e.target.value))}
+                />
+                <p className="muted small">
+                  这段原样追加到搭台助手的系统提示词末尾，下一轮对话生效。
+                  引擎自带的那部分（职责边界、工具用法、出图规矩）不在这里，改不了。
+                  想调剧作家怎么写，改的是「记忆」页里的创作口径（craft.md）。
+                </p>
+              </label>
+            )}
           </section>
         );
       })}
@@ -205,13 +222,15 @@ export function AgentPane({ playId }: { playId: string }) {
 }
 
 /** 值等于默认（或空）时把键删掉，别在 play.json 里留一堆等价于缺省的字段。 */
-function setOrClear<K extends "model" | "thinking">(
+function setOrClear<K extends "model" | "thinking" | "prompt">(
   settings: AgentSettings,
   key: K,
   value: string,
   blank?: string,
 ): void {
-  if (value === "" || value === blank) delete settings[key];
+  // 提示词是长文本，清空后多半只剩几个换行：只判空串会把它当成「用户真的写了内容」存进 play.json，
+  // 服务端读回时又因 trim 为空丢掉——文件里留了一段永不生效的文本。
+  if (value.trim() === "" || value === blank) delete settings[key];
   else settings[key] = value as AgentSettings[K];
 }
 

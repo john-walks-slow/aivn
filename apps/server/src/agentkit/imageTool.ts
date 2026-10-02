@@ -21,7 +21,7 @@ import { linesResult, reason, textResult } from "./result.js";
  *
  * 工坊出图是**同步**的：用户就站在对话框前等，回执必须把图贴给他看。
  * 剧作家是**后台预发射**：一轮只有 240s，立绘一张约 100s，等不起也不该等——
- * 它的契约是「提前 3–5 句发起，之后再引用」。
+ * 它拿到回执就接着写台词，引用的位置早于图到货时舞台先上骨架占位（到货后自动淡入）。
  */
 const generateImageParams = Type.Object(
   {
@@ -108,10 +108,9 @@ const QUEUED_DESCRIPTION = [
   "引擎不认，那张图不会出现，也不会有人告诉你出错了。",
   "背景与 CG 的 prompt 末尾自己加 \"anime visual novel background, no text\"；立绘的后缀引擎自动拼，别在 prompt 里重复。",
   "**id 自取**：背景与 CG 给一个简短英文下划线 id（如 bg_rooftop_dusk、cg_rooftop_01），",
-  "到出场那一行再用 <scene bg=\"…\"> 或 <cg id=\"…\"> 一字不差地引用同一个 id。",
-  "**提前 3–5 句发起**：图要一分多钟才到（实测 1k 档 70–80s、2k 档 110s 上下），",
-  "出席位置太早只会看到骨架占位，拿到回执后照常写台词，",
-  "到出场的那一行再用 <scene bg=\"…\"> 或 <cg id=\"…\">、<actor expression=\"…\"> 引用同一个 id。",
+  "之后在剧本里一字不差地引用同一个 id：<scene bg=\"…\">、<cg id=\"…\">、<actor expression=\"…\">。",
+  "**图到货要一分多钟**（实测 1k 档 70–80s、2k 档 110s 上下）：这一轮就引用到它，舞台会先上骨架占位，",
+  "台词照常演、图到货后自动淡入——照常写就行，不用为了等图停下来。",
   "回执会告诉你剧目里是不是已经有同名素材——有就直接引用，别重复发起。",
 ].join("");
 
@@ -218,8 +217,8 @@ async function runQueued(
     deps.emitPreload({ type: "sprite", id: `${charId}:${expression}`, prompt: params.prompt });
     deps.kickSprite(charId, expression, params.prompt, params.characterName?.trim() || undefined, params.framing);
     return textResult(
-      `已排产：立绘 ${charId}/${expression}（约一分多钟）。` +
-        "别在这一轮就让它上台，3–5 句之后再 <actor id=…>；角色表里还没有它时会自动建一个临时角色。",
+      `已排产：立绘 ${charId}/${expression}（约一分多钟，到货后自动淡入）。` +
+        "角色表里还没有它时会自动建一个临时角色。",
     );
   }
   const id = params.name?.trim() ?? "";
@@ -234,6 +233,6 @@ async function runQueued(
   deps.emitPreload({ type, id, prompt: params.prompt });
   deps.kick(type, params.prompt, id, references);
   return textResult(
-    `已排产：${id}（${type}，约一分多钟）。3–5 句之后用 ${type === "bg" ? `<scene bg="${id}">` : `<cg id="${id}">`} 引用它。`,
+    `已排产：${id}（${type}，约一分多钟，到货后自动淡入）。用 ${type === "bg" ? `<scene bg="${id}">` : `<cg id="${id}">`} 引用它。`,
   );
 }
