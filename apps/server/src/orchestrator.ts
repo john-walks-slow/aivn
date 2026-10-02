@@ -19,6 +19,7 @@ import {
   type StageEvent,
   type StopPayload,
   type PromptQueueItem,
+  type SpriteFraming,
 } from "@stage-ai/core";
 import type { ServerMessage } from "@stage-ai/core";
 import { createAgentKit, type AgentKit } from "./agentkit/kit.js";
@@ -106,6 +107,7 @@ export interface OrchestratorOptions {
       expression: string,
       prompt: string,
       characterName?: string,
+      framing?: SpriteFraming,
     ) => void;
     /** 这个 id 的背景/插图是不是已经在 assets/ 里（工坊导入的静态素材）——有就不烧配额。 */
     hasStaticAsset: (type: "bg" | "cg", id: string) => boolean;

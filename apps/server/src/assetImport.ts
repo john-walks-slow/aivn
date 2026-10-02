@@ -9,6 +9,7 @@ import {
   type CharacterCard,
   type LibraryEntry,
   type LibraryFile,
+  type SpriteFraming,
 } from "@stage-ai/core";
 import type { AssetLibrary } from "./library.js";
 import { PlayFiles } from "./playFiles.js";
@@ -139,6 +140,8 @@ export async function importFromLibrary(
   // ── 文件复制在锁外：整包图片几十兆，进锁会把整条剧目配置队列堵住 ──
   const manifest: [string, AssetMeta][] = [];
   const spriteMap: Record<string, string> = {};
+  // 差分级取景：只有条目差分显式声明才搬，角色级 framing 留给 applyCharacter 写单值
+  const spriteFraming: Record<string, SpriteFraming> = {};
   // 主角卡没有立绘位（舞台只画 characters，protagonist 只供音色与润色），
   // 复制过去就是没人引用的孤儿文件——只导卡，不导图
   const copyMedia = isCharacter && req.target !== "protagonist";
@@ -159,6 +162,8 @@ export async function importFromLibrary(
         }),
       ]);
       spriteMap[expression] = `${expression}${ext}`;
+      const expressionFraming = entry.meta.expressions?.[expression]?.framing;
+      if (expressionFraming) spriteFraming[expression] = expressionFraming;
     }
   } else if (!isCharacter) {
     // 单文件类别：背景 / CG / BGM / 音效
@@ -195,7 +200,7 @@ export async function importFromLibrary(
     const before = await files.read("play.json").catch(() => null);
     const play = before ? parsePlayConfig(JSON.parse(before)) : null;
     if (!play) throw new Error("剧目 play.json 不可读，角色卡没能写进去");
-    applyCharacter(play, entry.id, card ?? {}, spriteMap, req.target === "protagonist");
+    applyCharacter(play, entry.id, card ?? {}, spriteMap, spriteFraming, entry.meta.framing, req.target === "protagonist");
     result.protagonist = req.target === "protagonist";
     if (!result.protagonist) result.characters.push(entry.id);
     // 不带尾换行：与 savePlay / playAssets 的写法一致，别让撤销后的文本对不上
@@ -215,6 +220,8 @@ function applyCharacter(
   id: string,
   card: AssetCharacter,
   spriteMap: Record<string, string>,
+  spriteFraming: Record<string, SpriteFraming>,
+  framing: SpriteFraming | undefined,
   toProtagonist: boolean,
 ): void {
   if (toProtagonist) {
@@ -237,5 +244,11 @@ function applyCharacter(
   }
   if (Object.keys(spriteMap).length > 0) {
     character.sprites = { ...(character.sprites ?? {}), ...spriteMap };
+  }
+  // 取景同上：库里没写就不动剧目侧的值。差分级覆盖是合并而非替换——
+  // 只导一条 smile 不该把同角色其它差分（可能带 closeup 取景）的声明抹掉。
+  if (framing) character.framing = framing;
+  if (Object.keys(spriteFraming).length > 0) {
+    character.spriteFraming = { ...(character.spriteFraming ?? {}), ...spriteFraming };
   }
 }

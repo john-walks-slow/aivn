@@ -9,6 +9,8 @@
  * 所以「描述」比标题重要，标签/情绪/时长是让它**按情境选**的辅助。
  */
 
+import { framingOf, type SpriteFraming } from "./framing.js";
+
 /** 素材类别：characters 是角色包（角色卡 + 可选立绘），其余是单文件条目。 */
 export const ASSET_KINDS = ["backgrounds", "cg", "characters", "bgm", "sfx"] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
@@ -26,6 +28,8 @@ export interface SpriteExpression {
   /** 差分文件名（条目录内相对路径）。 */
   file: string;
   description?: string;
+  /** 这条差分的取景：条目级 framing 不够用时按差分覆盖（如一整套里另有一张 closeup）。 */
+  framing?: SpriteFraming;
 }
 
 export interface AssetCharacter {
@@ -59,6 +63,8 @@ export interface AssetMeta {
   character?: AssetCharacter;
   /** 立绘差分表：表情名 → 文件与画面说明。 */
   expressions?: Record<string, SpriteExpression>;
+  /** 角色包立绘的取景（导入时落 play.json 的角色卡，舞台按它套站位预设）。 */
+  framing?: SpriteFraming;
 }
 
 /**
@@ -158,13 +164,21 @@ export function parseAssetMeta(raw: unknown): AssetMeta {
     const expressions: Record<string, SpriteExpression> = {};
     for (const [name, value] of Object.entries(data.expressions as Record<string, unknown>)) {
       if (!text(name) || !value || typeof value !== "object") continue;
-      const file = text((value as Record<string, unknown>).file);
+      const row = value as Record<string, unknown>;
+      const file = text(row.file);
       if (!file) continue;
-      const description = text((value as Record<string, unknown>).description);
-      expressions[name.trim()] = description ? { file, description } : { file };
+      const description = text(row.description);
+      const framing = framingOf(row.framing);
+      expressions[name.trim()] = {
+        file,
+        ...(description ? { description } : {}),
+        ...(framing ? { framing } : {}),
+      };
     }
     if (Object.keys(expressions).length > 0) meta.expressions = expressions;
   }
+  const framing = framingOf(data.framing);
+  if (framing) meta.framing = framing;
   return meta;
 }
 

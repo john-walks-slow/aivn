@@ -198,6 +198,43 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     expect(manifest["mio/smile"]).toMatchObject({ description: "笑" });
   });
 
+  it("立绘取景：条目级 framing 与差分覆盖都进角色卡", async () => {
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "closeup.png": "c" }, {
+      character: { name: "澪", persona: "" },
+      framing: "half",
+      expressions: {
+        neutral: { file: "neutral.png" },
+        closeup: { file: "closeup.png", framing: "bust" },
+      },
+    });
+    await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
+    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
+    expect(play.characters[0]).toMatchObject({ framing: "half", spriteFraming: { closeup: "bust" } });
+  });
+
+  it("立绘取景：只导一条差分不该把该角色其它差分的取景覆盖抹掉", async () => {
+    const store = plays.store("p1");
+    await writeFile(
+      join(playsRoot, "p1", "play.json"),
+      JSON.stringify({
+        id: "p1",
+        title: "保留",
+        characters: [{ id: "mio", name: "澪", persona: "", framing: "full", spriteFraming: { angry: "bust" } }],
+        opening: "（开始）",
+        initialScene: "s",
+      }),
+    );
+    await makeEntry(libRoot, "characters", "mio", { "smile.png": "s" }, {
+      character: { name: "澪", persona: "" },
+      expressions: { smile: { file: "smile.png" } },
+    });
+    await importFromLibrary(library, store, { kind: "characters", entryId: "mio" });
+    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
+    // 条目没声明 framing：剧目侧的值原样留着（含别的差分的覆盖），导入不许顺手清掉
+    expect(play.characters[0].framing).toBe("full");
+    expect(play.characters[0].spriteFraming).toEqual({ angry: "bust" });
+  });
+
   it("纯角色卡：没有立绘也能导入（先定人设、图后面再画）", async () => {
     await makeEntry(libRoot, "characters", "yuzuki", {}, {
       character: { name: "柚月", persona: "沉默的转学生", voice: "短句", voiceId: "a".repeat(32) },

@@ -1,6 +1,13 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
-import { parsePlayConfig, type WorkshopAssetView } from "@stage-ai/core";
+import {
+  DEFAULT_SPRITE_FRAMING,
+  parsePlayConfig,
+  SPRITE_FRAMING_ASPECT,
+  SPRITE_FRAMING_SHOT,
+  type SpriteFraming,
+  type WorkshopAssetView,
+} from "@stage-ai/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
 import type { Limiter } from "./limiter.js";
@@ -47,6 +54,8 @@ export interface AssetTarget {
   characterId?: string;
   /** 立绘差分名（neutral / smile / ...）。 */
   expression?: string;
+  /** 立绘取景（bust/half/full）：决定出图景别与画幅，缺省全身。不给就沿用 play.json 里该角色已有的声明。 */
+  framing?: SpriteFraming;
 }
 
 export interface GenerateOptions {
@@ -79,6 +88,11 @@ interface AssetSpec {
   aspect: ImageAspect;
   characterId?: string;
   expression?: string;
+  /** 立绘取景；背景/CG 不带。 */
+  framing?: SpriteFraming;
+  /** 角色级取景（不含差分覆盖）：自动补的定妆照按它出，不按当前差分那档。
+   *  定妆照是所有差分的垫图基准，一个「全身角色 + 一条 closeup 差分」不该把基准也变成胸像。 */
+  baseFraming?: SpriteFraming;
   /** 角色不在 play.json 时自动补的 stub（null = 不自动注册，缺失即报错）。 */
   stubName?: string;
 }
@@ -298,13 +312,23 @@ export class PlayAssets {
       }
       stubName = name;
     }
+    // 取景优先级：调用方显式给 > play.json 里该角色这条差分的声明 > 角色级声明 > 全身。
+    // 不给就沿用已有声明，是为了让「先给角色定过取景、之后每次出图都跟着它」成立。
+    const character = play.characters.find((c) => c.id === characterId);
+    const framing =
+      target.framing ??
+      (expression ? character?.spriteFraming?.[expression] : undefined) ??
+      character?.framing ??
+      DEFAULT_SPRITE_FRAMING;
     return {
       kind: "sprite",
       kindPath: `sprites/${characterId}`,
       stem: expression,
-      aspect: "9:16",
+      aspect: SPRITE_FRAMING_ASPECT[framing] as ImageAspect,
       characterId,
       expression,
+      framing,
+      baseFraming: character?.framing ?? DEFAULT_SPRITE_FRAMING,
       ...(stubName ? { stubName } : {}),
     };
   }
@@ -332,10 +356,12 @@ export class PlayAssets {
       );
     }
     // prompt 是"角色描述 + 本次表情"，直接拿去出定妆照会变成「哭得很凶但表情中性」的自相矛盾指令。
-    // 压一条前置的中性描述盖住表情词，角色外观描述留在后面。
+    // 压一条前置的中性描述盖住表情词，角色外观描述留在后面。取景与姿势措辞按**角色级**取景走，
+    // 不按当前这条差分：对胸像/半身说 standing 会把画拉回全身，景别后缀与它当场打架。
+    const neutralFraming = spec.baseFraming ?? DEFAULT_SPRITE_FRAMING;
     const [auto] = await this.generate(
-      { kind: "sprite", characterId: spec.characterId, expression: NEUTRAL },
-      `a calm neutral-expression front-facing standing portrait. ${prompt}`,
+      { kind: "sprite", characterId: spec.characterId, expression: NEUTRAL, framing: neutralFraming },
+      `a calm neutral-expression front-facing ${neutralFraming === "bust" ? "bust" : "standing"} portrait. ${prompt}`,
       undefined,
       undefined,
       { notify, ...(spec.stubName ? { characterName: spec.stubName } : {}) },
@@ -376,6 +402,12 @@ export class PlayAssets {
         : [...config.characters, { id: spec.characterId!, name: spec.stubName!, persona: "" }];
       const target = existing ?? characters[characters.length - 1]!;
       const next = { ...target, sprites: { ...(target.sprites ?? {}), [spec.expression!]: file } };
+      // 取景跟着这张图一起落进角色卡：出图是唯一知道画幅与景别的时刻，
+      // 不记下来的话舞台只能拿缺省全身去套一张半身图（下次出图也会退回 9:16 全身）。
+      if (spec.framing) {
+        if (spec.expression === NEUTRAL) next.framing = spec.framing;
+        next.spriteFraming = { ...(target.spriteFraming ?? {}), [spec.expression!]: spec.framing };
+      }
       const content = JSON.stringify(
         { ...config, characters: characters.map((c) => (c.id === spec.characterId ? next : c)) },
         null,
@@ -414,7 +446,9 @@ function labelFor(spec: AssetSpec): string {
 
 function suffixFor(spec: AssetSpec, prompt: string): string {
   if (spec.kind !== "sprite") return prompt;
-  return spec.expression === NEUTRAL ? `${prompt}, ${NEUTRAL_SUFFIX}` : `${prompt}. ${IDENTITY_SUFFIX}`;
+  return spec.expression === NEUTRAL
+    ? `${prompt}, ${neutralSuffix(spec.framing)}`
+    : `${prompt}. ${identitySuffix(spec.framing)}`;
 }
 
 /** 读回的文件头嗅探 mimeType（扩展名可能与实际字节不符，垫图塞错类型会被网关拒）。 */
@@ -426,7 +460,7 @@ function sniffMime(data: Buffer): string {
 }
 
 /**
- * 立绘身份锚：正脸站姿，差分都从它派生。竖构图提示词里也点明，配合 9:16 画布。
+ * 立绘身份锚：正脸站姿，差分都从它派生。竖构图提示词里也点明，配合竖画布。
  *
  * 后半段不是修饰词是硬约束：`src/cutout.ts` 的全局色键抠底要求 2D 平涂 + 纯白纯色底，
  * 3D 渲染的白衣离底色只有几格色差，抠底会连人带和服一起啃掉；剪影连成一片就没法分割人物与底色。
@@ -434,15 +468,34 @@ function sniffMime(data: Buffer): string {
  * 后缀只规定构图，不描述任何人物特征——它每个词都会被当成设定印进图里。早先这里写的是
  * 「between the twin tails」（为了发梢与身体之间留纯白），等于给所有角色定了个双马尾：
  * 实测 prompt 里明写 pink long straight hair，出来的仍是双马尾。要什么发型由角色卡的锚点说。
+ *
+ * 开头的景别随 `spec.framing` 换（`SPRITE_FRAMING_SHOT`）：写死 "full body" 时，
+ * 取景是半身的角色照样会被画成全身——出图与舞台声明对不上，站位又得重新量。
  */
-const NEUTRAL_SUFFIX =
-  "full body, front-facing standing pose, neutral expression, both arms held slightly away from the body " +
+const NEUTRAL_TAIL =
+  ", front-facing standing pose, neutral expression, both arms held slightly away from the body " +
   "so the silhouette is clearly separated, clear empty white space between the arms and the body and " +
   "between the hair and the arms. Japanese anime style 2D character illustration, flat cel shading with " +
   "clean crisp lineart, NOT a 3D render, no 3D CGI look. Plain solid pure white background, no text, no " +
   "shadow, no gradient, no vignette, vertical portrait composition.";
+
+function neutralSuffix(framing: SpriteFraming | undefined): string {
+  return SPRITE_FRAMING_SHOT[framing ?? DEFAULT_SPRITE_FRAMING] + NEUTRAL_TAIL;
+}
 /** 差分：只改表情，身份特征一律锁死——垫图之外的第二道保险。画风要求与定妆照一字不差，否则两个人。 */
-const IDENTITY_SUFFIX =
-  "Same character as the reference image: identical hairstyle, hair color, eye color, outfit and body type. " +
+const IDENTITY_TAIL =
   "Change only the facial expression. Same 2D flat cel-shaded anime illustration style, NOT a 3D render, " +
   "same plain solid pure white background, no text, no shadow, no gradient.";
+
+/**
+ * 差分也要点明景别：垫图（neutral 定妆照）是全身时，模型很容易照着垫图把一条
+ * closeup 也画成全身。不点明的代价是图出来了取景对不上，舞台按半身摆却是张全身像。
+ */
+function identitySuffix(framing: SpriteFraming | undefined): string {
+  const shot = SPRITE_FRAMING_SHOT[framing ?? DEFAULT_SPRITE_FRAMING];
+  return (
+    "Same character as the reference image: identical hairstyle, hair color, eye color, outfit and body type. " +
+    `${shot}. ` +
+    IDENTITY_TAIL
+  );
+}

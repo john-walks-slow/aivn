@@ -2,6 +2,7 @@ import type {
   EngineStateSnapshot,
   LineageTree,
   PreloadAssetAttrs,
+  SpriteFraming,
   StopOption,
   StopType,
 } from "@stage-ai/core";
@@ -66,7 +67,13 @@ export interface PlaywriterKitDeps extends KitCommonDeps {
   /** 后台发起 bg/cg：宿主负责到货广播 asset_ready / 失败 asset_failed（工具不等图）。 */
   kick: (type: "bg" | "cg", prompt: string, id: string) => void;
   /** 后台发起立绘：同上的失败广播。 */
-  kickSprite: (charId: string, expression: string, prompt: string, characterName?: string) => void;
+  kickSprite: (
+    charId: string,
+    expression: string,
+    prompt: string,
+    characterName?: string,
+    framing?: SpriteFraming,
+  ) => void;
   /** 这个 id 在运行时缓存里是什么状态（决定要不要重复发起）。 */
   statusOf: (id: string) => "ready" | "queued" | "none";
   /** 这个 id 的背景/插图是不是已经在 assets/ 里（工坊导入的静态素材）——有就不烧配额。 */

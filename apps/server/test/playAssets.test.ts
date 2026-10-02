@@ -25,10 +25,13 @@ function png(width: number, height: number): Buffer {
 
 /**
  * 真图：浅色纯底 + 深色人形。立绘要过抠底（sharp 真解码），所以桩不能是假字节头。
- * 尺寸取网关实际会回的量级（16:9 → 1365x768，9:16 → 768x1365）。
+ * 尺寸按**请求的画幅**推（16:9 → 1365x768，9:16 → 768x1365，3:4/2:3 同理）——
+ * `assertCanvas` 会拿实际尺寸与请求画幅对拍，桩回一个别的尺寸等于自己造一张回执不符的图。
  */
 async function realImage(aspect: ImageAspect, mimeType: string): Promise<Buffer> {
-  const [width, height] = aspect === "9:16" ? [768, 1365] : [1365, 768];
+  const [ratioW, ratioH] = aspect.split(":").map(Number);
+  const height = 1365;
+  const width = Math.round((height * ratioW!) / ratioH!);
   const figure = await sharp({
     create: {
       width: Math.round(width * 0.5),
@@ -146,6 +149,78 @@ describe("PlayAssets：工坊素材落盘", () => {
     await assets.generate({ kind: "cg", name: "b" }, "p");
     await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "p");
     expect(calls.map((c) => c.aspectRatio)).toEqual(["16:9", "16:9", "9:16"]);
+  });
+
+  it("立绘取景：framing 决定画幅与提示词里的景别，三档各出一档", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    // 先定妆照：没有它时每条差分都会先自动补一张，把调用序号顶掉一位
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "full" }, "p");
+    calls.length = 0;
+    // 半身/胸像用竖长画幅出：人脸占画幅近一半，仍按 9:16 出会被拉成窄条
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "a", framing: "half" }, "p");
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "b", framing: "bust" }, "p");
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "c", framing: "full" }, "p");
+    expect(calls.map((c) => c.aspectRatio)).toEqual(["2:3", "3:4", "9:16"]);
+    expect(calls[0]!.prompt).toMatch(/medium shot, waist-up/);
+    expect(calls[1]!.prompt).toMatch(/head and shoulders bust shot/);
+    expect(calls[2]!.prompt).toMatch(/full body, head to toe/);
+  });
+
+  it("立绘取景：play.json 角色上声明的取景会被沿用，不必每次都传", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await store.savePlay({
+      ...(await store.loadPlay()),
+      characters: [{ id: "mio", name: "澪", persona: "", framing: "half" }],
+    });
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "p");
+    expect(calls[0]!.aspectRatio).toBe("2:3");
+  });
+
+  it("立绘取景：差分上的覆盖优先于角色声明，出图后回写 play.json", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await store.savePlay({
+      ...(await store.loadPlay()),
+      characters: [{ id: "mio", name: "澪", persona: "", framing: "full", spriteFraming: { wow: "bust" } }],
+    });
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "wow" }, "p");
+    // 第 0 次调用是自动补的定妆照：它按**角色级**取景出，不按这条差分的胸像
+    expect(calls[0]!.aspectRatio).toBe("9:16");
+    expect(calls[1]!.aspectRatio).toBe("3:4");
+    const play = JSON.parse(await files.read("play.json")) as {
+      characters: { framing?: string; spriteFraming?: Record<string, string> }[];
+    };
+    expect(play.characters[0]!.spriteFraming).toEqual({ neutral: "full", wow: "bust" });
+    // 差分覆盖只是覆盖，角色级声明不能被一张差分带走
+    expect(play.characters[0]!.framing).toBe("full");
+  });
+
+  it("立绘取景：中性定妆照同时立角色级默认，取景随之落进角色卡", async () => {
+    const store = await makeStore();
+    const { backend } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "half" }, "p");
+    const play = JSON.parse(await files.read("play.json")) as {
+      characters: { framing?: string; spriteFraming?: Record<string, string> }[];
+    };
+    expect(play.characters[0]!.framing).toBe("half");
+    expect(play.characters[0]!.spriteFraming).toEqual({ neutral: "half" });
+  });
+
+  it("立绘取景：差分的提示词也带景别，否则垫图（全身）会把 closeup 拖回全身", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "full" }, "p");
+    await assets.generate({ kind: "sprite", characterId: "mio", expression: "closeup", framing: "bust" }, "p");
+    expect(calls[1]!.references.length).toBe(1);
+    expect(calls[1]!.prompt).toMatch(/Same character as the reference image/);
+    expect(calls[1]!.prompt).toMatch(/head and shoulders bust shot/);
   });
 
   it("画幅回执：模型回的画幅不对就报错，一个字节都不落盘", async () => {

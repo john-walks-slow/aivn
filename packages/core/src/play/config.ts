@@ -1,4 +1,5 @@
 import type { EngineStateSnapshot } from "../lineage/model.js";
+import { framingOf, isSpriteFraming, type SpriteFraming } from "./framing.js";
 
 /**
  * 剧目配置（plays/<id>/play.json）——server 与 web 共享的跨端契约。
@@ -17,6 +18,10 @@ export interface CharacterCard {
   voiceId?: string;
   /** 立绘差分映射：expression id → assets/sprites/<char>/ 文件名（P2 演出层用）。 */
   sprites?: Record<string, string>;
+  /** 立绘取景（bust/half/full）：舞台按它套缩放与落位预设，缺省 = 全身（见 play/framing.ts）。 */
+  framing?: SpriteFraming;
+  /** 逐差分的取景覆盖：expression id → 取景。同一角色里混入特写差分时用（如 closeup = bust）。 */
+  spriteFraming?: Record<string, SpriteFraming>;
 }
 
 /** 主角（玩家）角色卡：输入润色的口吻依据（工坊/素材配置页设置）。 */
@@ -103,7 +108,7 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
   return {
     id: data.id,
     title: data.title,
-    characters: data.characters,
+    characters: data.characters.map(parseCharacter),
     ...(cover ? { cover } : {}),
     ...(protagonist ? { protagonist } : {}),
     ...(data.voiceLanguage?.trim() ? { voiceLanguage: data.voiceLanguage.trim() } : {}),
@@ -112,6 +117,27 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
     initialScene: data.initialScene ?? "未定",
     ...(agents ? { agents } : {}),
   };
+}
+
+/**
+ * 角色卡归一化：取景逐字段校验后丢弃非法值，其余字段原样透传。
+ *
+ * 取景是**声明**出来的（见 play/framing.ts），手滑写个 "半身" 只能当没写：
+ * 让它掉回缺省全身，远好过在舞台上按一个查不到的档位去找 CSS 类。
+ */
+function parseCharacter(card: CharacterCard): CharacterCard {
+  const framing = framingOf(card.framing);
+  const overrides: Record<string, SpriteFraming> = {};
+  for (const [expression, value] of Object.entries(card.spriteFraming ?? {})) {
+    if (expression.trim() === "" || !isSpriteFraming(value)) continue;
+    overrides[expression] = value;
+  }
+  const out: CharacterCard = { ...card };
+  if (framing) out.framing = framing;
+  else delete out.framing;
+  if (Object.keys(overrides).length > 0) out.spriteFraming = overrides;
+  else delete out.spriteFraming;
+  return out;
 }
 
 /**

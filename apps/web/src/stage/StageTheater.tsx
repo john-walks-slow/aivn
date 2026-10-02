@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import type { SpriteFraming } from "@stage-ai/core";
 import { emptyDialogHint } from "./playbackState.js";
 import { actorName } from "./script.js";
 import type { Playback, VisualState } from "./director.js";
@@ -73,7 +74,17 @@ const OOC_PREFIX = "OOC：";
  * 立绘：表情差分之间交叉淡入。
  * 新图先在内存里解码好再叠上去，切换只是一层 opacity 过渡——不会出现白闪或半张脸。
  */
-function Sprite({ url, pos, name }: { url: string | null; pos: string; name: string }): ReactNode {
+function Sprite({
+  url,
+  pos,
+  name,
+  framing,
+}: {
+  url: string | null;
+  pos: string;
+  name: string;
+  framing: SpriteFraming;
+}): ReactNode {
   const [current, setCurrent] = useState<string | null>(url);
   const [outgoing, setOutgoing] = useState<string | null>(null);
 
@@ -94,7 +105,7 @@ function Sprite({ url, pos, name }: { url: string | null; pos: string; name: str
   }, [url, current]);
 
   if (!current) return null;
-  const cls = `theater-sprite ${POS_CLASS[pos] ?? "pos-center"}`;
+  const cls = `theater-sprite framing-${framing} ${POS_CLASS[pos] ?? "pos-center"}`;
   return (
     <>
       {outgoing && <img className={`${cls} sprite-out`} src={outgoing} alt="" aria-hidden />}
@@ -325,6 +336,7 @@ export function StageTheater({
             url={index.sprite(id, slot.expression)}
             pos={slot.pos ?? "center"}
             name={actorName(names, id)}
+            framing={index.spriteFraming(id, slot.expression)}
           />
         ))}
 

@@ -48,6 +48,33 @@ describe("parseAssetMeta：库里人手写的 meta.json", () => {
     expect(parseAssetMeta([1, 2])).toEqual({});
     expect(parseAssetMeta({ expressions: { a: { file: "" } } }).expressions).toBeUndefined();
   });
+
+  it("取景：只认三档，人手写错的值当没写（退回全身由演出层负责）", () => {
+    expect(parseAssetMeta({ framing: "half" }).framing).toBe("half");
+    expect(parseAssetMeta({ framing: "bust" }).framing).toBe("bust");
+    expect(parseAssetMeta({ framing: "full" }).framing).toBe("full");
+    expect(parseAssetMeta({ framing: "半身" }).framing).toBeUndefined();
+    expect(parseAssetMeta({ framing: "FULL" }).framing).toBeUndefined();
+    expect(parseAssetMeta({ framing: 1 }).framing).toBeUndefined();
+    expect(parseAssetMeta({}).framing).toBeUndefined();
+  });
+
+  it("取景：差分可以覆盖条目级声明，写错的那条丢掉、好的那条照留", () => {
+    const meta = parseAssetMeta({
+      framing: "full",
+      expressions: {
+        smile: { file: "a.png", framing: "bust" },
+        angry: { file: "b.png", framing: "上半身" },
+        cry: { file: "c.png", description: "哭" },
+      },
+    });
+    expect(meta.framing).toBe("full");
+    expect(meta.expressions).toEqual({
+      smile: { file: "a.png", framing: "bust" },
+      angry: { file: "b.png" },
+      cry: { file: "c.png", description: "哭" },
+    });
+  });
 });
 
 describe("parsePlayAssetManifest：新旧两种素材表都收", () => {

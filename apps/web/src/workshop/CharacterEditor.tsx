@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { CharacterCard } from "@stage-ai/core";
+import type { CharacterCard, SpriteFraming } from "@stage-ai/core";
+import { SPRITE_FRAMINGS, SPRITE_FRAMING_LABELS } from "@stage-ai/core";
 import { api } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import type { VoiceCatalogState } from "../voice/useVoiceCatalog.js";
@@ -8,6 +9,7 @@ interface SpriteRow {
   id: number;
   expression: string;
   file: string;
+  framing: SpriteFraming | "";
 }
 
 /** 角色卡：名字 / persona / 音色 / 立绘差分映射。 */
@@ -40,6 +42,7 @@ export function CharacterEditor({
       id: nextId.current++,
       expression,
       file,
+      framing: char.spriteFraming?.[expression] ?? "",
     })),
   );
 
@@ -67,7 +70,22 @@ export function CharacterEditor({
       c.sprites = Object.fromEntries(
         source.filter((r) => r.expression.trim() !== "").map((r) => [r.expression.trim(), r.file]),
       );
+      // 逐差分的取景覆盖：没选的那条就不写，落角色级的 framing 上。
+      // 清空一条覆盖不该连带删掉别的差分，只把这一条从表里摘掉。
+      const overrides = Object.fromEntries(
+        source
+          .filter((r) => r.expression.trim() !== "" && r.framing !== "")
+          .map((r) => [r.expression.trim(), r.framing as SpriteFraming]),
+      );
+      if (Object.keys(overrides).length > 0) c.spriteFraming = overrides;
+      else delete c.spriteFraming;
     });
+  };
+
+  const setFraming = (id: number, framing: SpriteFraming | ""): void => {
+    const next = rows.map((r) => (r.id === id ? { ...r, framing } : r));
+    setRows(next);
+    commit(next);
   };
 
   const setFile = (id: number, file: string): void => {
@@ -83,7 +101,7 @@ export function CharacterEditor({
   };
 
   const addRow = (): void => {
-    setRows((prev) => [...prev, { id: nextId.current++, expression: "", file: files[0] ?? "" }]);
+    setRows((prev) => [...prev, { id: nextId.current++, expression: "", file: files[0] ?? "", framing: "" }]);
   };
 
   return (
@@ -126,6 +144,27 @@ export function CharacterEditor({
         </button>
       </div>
       <p className="muted small">立绘差分映射（表情 → 立绘）</p>
+      <div className="row small">
+        <span className="muted small">取景</span>
+        <select
+          value={char.framing ?? ""}
+          onChange={(e) =>
+            onChange((c) => {
+              const value = e.target.value as SpriteFraming | "";
+              if (value) c.framing = value;
+              else delete c.framing;
+            })
+          }
+        >
+          {/* 空项 = 不声明，舞台与出图都退回全身（存量角色卡就是这样，不要逼用户为老条目选一次） */}
+          <option value="">未声明（全身）</option>
+          {SPRITE_FRAMINGS.map((f) => (
+            <option key={f} value={f}>
+              {SPRITE_FRAMING_LABELS[f]}
+            </option>
+          ))}
+        </select>
+      </div>
       {rows.map((row) => (
         <div key={row.id} className="row small">
           <input
@@ -141,6 +180,18 @@ export function CharacterEditor({
             {files.map((f) => (
               <option key={f} value={f}>
                 {f}
+              </option>
+            ))}
+          </select>
+          <select
+            value={row.framing}
+            onChange={(e) => setFraming(row.id, e.target.value as SpriteFraming | "")}
+            title="这条差分的取景；留空跟随上面的角色取景"
+          >
+            <option value="">跟随角色</option>
+            {SPRITE_FRAMINGS.map((f) => (
+              <option key={f} value={f}>
+                {SPRITE_FRAMING_LABELS[f]}
               </option>
             ))}
           </select>

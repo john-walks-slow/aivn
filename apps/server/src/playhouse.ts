@@ -1,5 +1,5 @@
 import type { ServerMessage } from "@stage-ai/core";
-import { LineageTree, isVoiceId, parsePlayConfig, type EngineStateSnapshot } from "@stage-ai/core";
+import { LineageTree, isVoiceId, parsePlayConfig, type EngineStateSnapshot, type SpriteFraming } from "@stage-ai/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
 import type { AssetLibrary } from "./library.js";
@@ -436,6 +436,7 @@ export class PlayHouse {
     expression: string,
     prompt: string,
     characterName?: string,
+    framing?: SpriteFraming,
   ): Promise<void> {
     const spriteId = `${charId}:${expression}`;
     const assets = this.playAssetsFor(playId, store);
@@ -447,7 +448,7 @@ export class PlayHouse {
     }
     try {
       await assets.generate(
-        { kind: "sprite", characterId: charId, expression },
+        { kind: "sprite", characterId: charId, expression, framing },
         prompt,
         undefined,
         undefined,
@@ -796,8 +797,8 @@ export class PlayHouse {
             playAssets,
             images,
             kick: (type, prompt, id) => void this.preloadAsset(play.id, type, prompt, id),
-            kickSprite: (charId, expression, prompt, characterName) =>
-              void this.preloadSprite(play.id, store, charId, expression, prompt, characterName),
+            kickSprite: (charId, expression, prompt, characterName, framing) =>
+              void this.preloadSprite(play.id, store, charId, expression, prompt, characterName, framing),
             // 素材清单的键是目录名（backgrounds/cg），与 DSL 的 type（bg/cg）不同名
             hasStaticAsset: (type, id) =>
               (staticAssets[type === "bg" ? "backgrounds" : "cg"] ?? []).some(
