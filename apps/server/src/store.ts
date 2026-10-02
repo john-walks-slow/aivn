@@ -10,6 +10,7 @@ import {
 } from "@stage-ai/core";
 import { parsePlayConfig, parsePlayAssetManifest, type AssetMeta, type PlayConfig } from "@stage-ai/core";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
+import { loadCharacterCards } from "./memory.js";
 import { parseHistory, type HistoryBeat } from "./history.js";
 import { countSaves, readSaveMeta, saveDirOf, writeSaveMeta, assertSaveId, PlaySaves, type SaveMeta } from "./saves.js";
 
@@ -200,11 +201,14 @@ export class PlayStore {
     } catch {
       return { premise: false, characterSprites: false, background: false, saves: 0 };
     }
+    // 立绘齐备：差分映射在角色卡 frontmatter 里（sprites: expression → 文件名）
     const spritesDir = join(this.dir, "assets/sprites");
+    const cards = await loadCharacterCards(join(this.dir, "memory/always/characters"));
     const characterSprites =
-      play.characters.some((c) => {
-        if (!c.sprites || Object.keys(c.sprites).length === 0) return false;
-        return Object.values(c.sprites).every((file) => existsSync(join(spritesDir, c.id, file)));
+      cards.some((c) => {
+        const sprites = c.sprites;
+        if (!sprites || Object.keys(sprites).length === 0) return false;
+        return Object.values(sprites).every((file) => existsSync(join(spritesDir, c.id ?? "", file)));
       }) ?? false;
     const bgDir = join(this.dir, "assets/backgrounds");
     const background = existsSync(bgDir) && (await readdir(bgDir)).some((f) => /\.(png|jpe?g|webp)$/i.test(f));
@@ -219,7 +223,7 @@ export class PlayStore {
     };
   }
 
-  /** 素材绝对路径（静态服务；kindPath 已白名单校验，如 "sprites/mio/neutral.png"）。 */
+  /** 素材绝对路径（静态服务；kindPath 已白名单校验，如 "sprites/角色id/neutral.png"）。 */
   assetPath(kindPath: string): string {
     return join(this.dir, "assets", ...kindPath.split("/"));
   }
@@ -232,6 +236,19 @@ export class PlayStore {
   /** 剧目记忆目录（D7：always/index 剧目级进 git；arcs 与 archive 运行时不进）。 */
   memoryDir(...segments: string[]): string {
     return join(this.dir, "memory", ...segments);
+  }
+
+  /**
+   * 立绘留底原片目录（media-cache/sprite-sources/<角色id>/）：抠底前那一张原片。
+   * 只为原地重抠（`PlayAssets.recut`）留着，是跑批产物不是剧目内容，不进 git。
+   */
+  spriteSourceDir(...segments: string[]): string {
+    return join(this.dir, "media-cache", "sprite-sources", ...segments);
+  }
+
+  /** 网络图缓存目录（media-cache/web-images）：`view_image` 下载的外部图片，按 URL 摘要落名。 */
+  webImageDir(): string {
+    return join(this.dir, "media-cache", "web-images");
   }
 
   /**

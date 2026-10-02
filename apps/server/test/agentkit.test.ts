@@ -55,7 +55,14 @@ const names = (kit: AgentKit): string[] => kit.tools.map((t) => t.name).sort();
 describe("agent kit：两个角色的暴露面", () => {
   it("剧作家拿轮收束与记忆，不拿剧目文件与故事树", () => {
     const kit = playwriter();
-    expect(names(kit)).toEqual(["beat_done", "list_library", "read_memory_detail", "search_archive", "update_state", "write_memory"]);
+    expect(names(kit)).toEqual([
+      "beat_done",
+      "create_character",
+      "list_library",
+      "read_memory_detail",
+      "search_archive",
+      "update_state",
+    ]);
     expect(names(kit)).not.toContain("write_file");
     expect(names(kit)).not.toContain("read_lineage");
     // 生图对剧作家默认关，勾上才装
@@ -84,7 +91,7 @@ describe("agent kit：两个角色的暴露面", () => {
     for (const key of ["expression", "referenceCharacters"]) expect(props(a)).toContain(key);
     expect(a.parameters).toBe(b.parameters);
     expect(a.description).not.toBe(b.description);
-    expect(b.description).toContain("抠完觉得不干净"); // 工坊同步出图，教它看图重出
+    expect(b.description).toContain("recut_sprite"); // 工坊同步出图：抠底脏了原地重抠，不重新出图
     expect(a.description).toContain("后台排产");
     expect(b.description).toContain("referenceCharacters");
     expect(a.description).toContain("referenceCharacters");
@@ -102,8 +109,8 @@ describe("agent kit：两个角色的暴露面", () => {
       const desc = role().tools.find((t) => t.name === "generate_image")!.description;
       for (const rule of rules) expect(desc).toContain(rule);
     }
-    // 流程与验收仍各归各的：工坊管看图与重出，剧作家管提前发起
-    expect(workshop().tools.find((t) => t.name === "generate_image")!.description).toContain("inspect_asset");
+    // 流程与验收仍各归各的：工坊管抠底重抠，剧作家管提前发起
+    expect(workshop().tools.find((t) => t.name === "generate_image")!.description).toContain("recut_sprite");
     expect(withImage.tools.find((t) => t.name === "generate_image")!.description).toContain("提前 3–5 句发起");
   });
 

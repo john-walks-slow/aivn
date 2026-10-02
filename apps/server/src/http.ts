@@ -17,6 +17,7 @@ import {
   type CgEntry,
   type GeneratedImageEntry,
 } from "@stage-ai/core";
+import { loadCharacterCards } from "./memory.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
 
 const BODY_LIMIT = 64 * 1024 * 1024;
@@ -281,7 +282,20 @@ export async function handleHttp(
       if (method === "GET") {
         const play = await store.loadPlay();
         // premise 不在 play.json 里（A 区注入用的那份），详情页要显示就现取
-        return json(res, 200, { play, premise: await store.premise(), readiness: await store.readiness() });
+        // cast = 角色卡目录，角色的真相源。play.characters 那份是纯元数据，前端不读它。
+        const cards = await loadCharacterCards(store.memoryDir("always", "characters"));
+        return json(res, 200, {
+          play,
+          premise: await store.premise(),
+          readiness: await store.readiness(),
+          cast: cards.map((c) => ({
+            id: c.id,
+            name: c.name,
+            framing: c.framing,
+            sprites: c.sprites,
+            spriteFraming: c.spriteFraming,
+          })),
+        });
       }
       if (method === "DELETE") {
         await playhouse.deletePlay(playId);

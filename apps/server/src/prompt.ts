@@ -86,18 +86,18 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     const detail = describeAsset(metaOf(name, charId));
     return detail ? `${name}（${detail}）` : name;
   };
-  const characters = play.characters
-    .map((c) => {
-      // 设定优先读 memory/always/characters/<id>.md，fallback 到 play.json 的 persona 字段
-      const personaText = ctx.memory?.characters.get(c.id) ?? c.persona;
-      // 差分列表优先取角色卡 sprites 键名（前端按它解析立绘）；未配置映射时回退磁盘文件 stem
+  // 角色表 = 角色卡目录，与 play.json 无关。每张卡都是一份完整设定：
+  // 正文是人设，frontmatter 存名字/音色/立绘差分映射与取景。
+  const characters = [...(ctx.memory?.characters ?? [])]
+    .map(([id, card]) => {
+      // 差分优先取卡片里配的 sprites 键名（前端按它解析立绘）；没配就回退磁盘文件 stem
       const expressions =
-        c.sprites && Object.keys(c.sprites).length > 0
-          ? Object.keys(c.sprites)
-          : (ctx.assets?.[`sprites/${c.id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
-      return `### ${c.name}（id: ${c.id}）\n${personaText}${c.voice ? `\n音色：${c.voice}` : ""}${
+        card.sprites && Object.keys(card.sprites).length > 0
+          ? Object.keys(card.sprites)
+          : (ctx.assets?.[`sprites/${id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
+      return `### ${card.name ?? id}（id: ${id}）\n${card.body}${card.voice ? `\n音色：${card.voice}` : ""}${
         expressions.length > 0
-          ? `\n立绘差分 expression：${expressions.map((e) => label(e, c.id)).join(" | ")}`
+          ? `\n立绘差分 expression：${expressions.map((e) => label(e, id)).join(" | ")}`
           : ""
       }`;
     })
@@ -246,7 +246,7 @@ center（居中悬空）、top（从上垂下）。
 - 想给一个自由回答的口子 → beat_done(placeholder="想对他说什么？")。
 - 这一段自然演完（还在往前推剧情）→ beat_done()，两个参数都不给。
 
-beat_done 必须**独占一次工具调用**——不与 write_memory、update_state 等其他工具放在同一批里。
+beat_done 必须**独占一次工具调用**——不与 create_character、update_state 等其他工具放在同一批里。
 调完之后本轮就结束了：不要再输出任何内容（没有停止点时也不要写收尾交代或过场说明），
 想说点什么写进 <comment>。轮与轮之间由引擎接续。
 
@@ -256,11 +256,11 @@ ${ctx.canSearch ? SEARCH_GUIDE : ""}
 
 需要引入角色表里没有的新角色时，按以下步骤：
 
-**1. 先建档（write_memory）**，声明角色设定：
+**1. 先建档（create_character）**，声明角色设定：
 
-    write_memory("characters/xiaoyu", "# 小雨\\n咖啡店打工的少女，说话温柔，常用省略号。")
+    create_character("characters/xiaoyu", "---\\nname: 小雨\\n---\\n咖啡店打工的少女，说话温柔，常用省略号。")
 
-- 路径与文件格式看 write_memory 的工具说明。建档后到下一轮边界，角色就出现在 A 区角色表里。
+- 卡片格式（frontmatter 头部 + 正文）看 create_character 的工具说明。建档后到下一轮边界，角色就出现在 A 区角色表里。
 
 **2. 生立绘（generate_image kind="sprite"）**，后台出图，不阻塞台词：
 

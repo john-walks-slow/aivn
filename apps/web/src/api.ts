@@ -1,4 +1,5 @@
 import type {
+  SpriteFraming,
   AssetMeta,
   CgEntry,
   LibraryEntry,
@@ -78,6 +79,19 @@ export interface PlayDetail {
   /** 世界观前提全文（memory/always/premise.md）——A 区注入的同一份，标题页显示与设置页编辑都走它。 */
   premise: string;
   readiness: Readiness;
+  /**
+   * 角色表（来自 memory/always/characters/*.md）——角色的真相源。
+   * play.json 的 `characters` 是纯元数据，任何界面都不该从那里取角色。
+   */
+  cast: PlayDetailCast[];
+}
+
+export interface PlayDetailCast {
+  id?: string;
+  name?: string;
+  framing?: SpriteFraming;
+  sprites?: Record<string, string>;
+  spriteFraming?: Record<string, SpriteFraming>;
 }
 
 /** 网关模型清单的一行（Agent 设置页的模型下拉）。 */

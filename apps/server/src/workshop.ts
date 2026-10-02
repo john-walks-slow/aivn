@@ -2,6 +2,8 @@ import type { AgentEvent, AgentMessage, AgentTool, StreamFn } from "@earendil-wo
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ThinkingLevel, WorkshopAssetView } from "@stage-ai/core";
+import { capDigest, renderTranscriptAs, splitSummary, calibrateTokenScale, type EpochSummary } from "./compaction.js";
+import { completeText, type OneShotOptions } from "./llm.js";
 import { skillsPrompt } from "./skills.js";
 import { SEARCH_GUIDE } from "./agentkit/searchTool.js";
 import { renderReadiness } from "./agentkit/readiness.js";
@@ -31,6 +33,8 @@ export interface WorkshopPromptContext {
   canBrowseLibrary: boolean;
   /** 音色库可用（没配 TTS 时 list_voices 没注册，提示词里也不提，免得教它调一个不存在的工具）。 */
   canVoices: boolean;
+  /** 早期对话已压成的摘要（A 区回注）：非空即本线程发生过压缩。 */
+  digest?: string;
 }
 
 /** 工坊 system prompt：搭台不唱戏；先问后写；出图前先过审。 */
@@ -91,9 +95,10 @@ ${skills}
 - 创作口径（memory/always/craft.md）：剧作家每一轮怎么写台词都听这一份——节奏多密、情绪怎么落地、
   有什么禁忌。用户说「节奏太快」「别让角色太主动」这类创作口味要求，就改这里（只改风格条目，
   不要往里写 DSL 格式或工具用法，那些由引擎保证）。
-- 角色卡：id 用英文小写（如 role_a），name 是中文名，persona 写具体的人（年龄/关系/说话方式/在意的点）；
+- 角色卡（\`memory/always/characters/<id>.md\`，角色的一切都在这张卡里，play.json 不再存角色数据）：
+  头部 frontmatter 放机器字段（id / name / voice / voiceId / framing / sprites），正文写具体的人（年龄/关系/说话方式/在意的点）。
   ${ctx.canVoices ? "voiceId 用 \`list_voices\` 查出来再填（id 是 32 位 hex，猜不出来；填错不报错，演出时那句台词会静默没有声音）；" : ""}
-  sprites 是「表情名 → 立绘文件名」的映射。${ctx.canBrowseLibrary ? "库里已有合适的角色可以先\n  \\`import_asset\\`（kind=characters）导进来再改，别从零重写。" : ""}
+  ${ctx.canBrowseLibrary ? "库里已有合适的角色可以先\n  \\`import_asset\\`（kind=characters）导进来再改，别从零重写。" : ""}
 - 记忆卡（memory/index/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。
   index 下可以建子目录分门别类，**建议** \`locations/\` 放地点、\`lore/\` 放世界设定（不是硬要求，
   但分类后 A 区里每行都带 [分类] 前缀，剧作家更容易知道该去哪张卡里查）。
@@ -125,7 +130,13 @@ ${ctx.canSearch ? SEARCH_GUIDE : ""}
 剧目文件：
 ${ctx.files || "（空）"}
 
-${renderReadiness(ctx.readiness)}`;
+${renderReadiness(ctx.readiness)}${digestSection(ctx.digest)}`;
+}
+
+/** 压缩摘要的 A 区回注段：告诉搭台者「这些早前就定了」，否则它会重问一遍已经答过的问题。 */
+function digestSection(digest: string | undefined): string {
+  if (!digest || digest.trim() === "") return "";
+  return `\n\n# 本会话已确定（早期对话已压缩）\n\n${digest.trim()}\n\n以上是本会话早前已确定的事项，不要重新提问、不要推翻；要改就基于它往下改。`;
 }
 
 /** 出图章节（仅在生图可用时拼进 system prompt）：只留"必须知道"的硬规则，展开的画风/构图/差分知识在 skill 里。 */
@@ -139,16 +150,62 @@ const imageGuide = `- 调 generate_image 出图，prompt 用英文，只描述�
   不这么做的话新图和旧差分不是同一个人，演出中会静默换脸。
 - **neutral 与其它差分名是两个名字**：出 neutral 不会覆盖 normal，两张文件两张人并存，play.json 里
   会多一个 neutral 键。要改 normal 就再出一次 normal 差分，别指望出新图顺手把旧的换掉。
-- **立绘出完逐条核对再汇报**：用 inspect_asset 把刚落盘的图读回来，对着角色卡把发色 / 发型 / 瞳色 /
-  脸上记号 / 上衣 / 领巾 / 裙 / 袜 / 鞋 / 手持物 / 表情 / 画风（2D 平涂不是 3D 渲染）逐条核，
-  抠底也看一眼（透明底、无白边毛刺、手脚完整），真抠坏了带 cutout 参数重出。
-  哪条对不上就说哪条错、重出，别只回一句「已严格按设定完成」——用户是照这张图验收的。
 - **出图失败把接口原话带给用户**：回执里带 503 / token / 额度 / 模型名 / 被拒的尺寸，照抄给用户。
   「生图服务暂时不可用」等于什么都没说，用户没法判断是自己的额度还是网关挂了。
 - 立绘出图是同步等待用户的操作（一张约 100 秒起），别在没批准时开跑。`;
 
 /** 单轮工坊对话上限：网关挂死不解除会永久锁住面板（running 无法复位）。一轮里可能要连出几张图，7 分钟。 */
 const TURN_TIMEOUT_MS = 420_000;
+
+/**
+ * 工坊线程的摘要指令（与演出侧的 EPOCH_SUMMARY_SYSTEM 不是一回事）：
+ * 那边压的是「剧情」，这边压的是「搭台过程」——落盘了什么、用户拍板了什么、还欠什么。
+ */
+const WORKSHOP_DIGEST_SYSTEM = [
+  "你是剧目搭建会话的长期上下文整理员。下面是用户与搭台助手（工坊）多轮对话的原文记录（按时间顺序）。",
+  "请压缩成一份「本会话已确定事项」，供搭台助手在后续对话里无缝继续。",
+  "",
+  "输出格式（严格遵守）：",
+  "第一行：一句话概括这一段确定了什么（不超过 60 字，不要加 markdown 标题符号）。",
+  "空一行后，从「## 已确定」开始分节正文。",
+  "",
+  "要求：",
+  "- 只复述原文已有的事实，绝不新增设定、需求或结论",
+  "- 写结论不写叙事：不要复述「用户问…助手答…」的过程，直接写定下来的东西",
+  "- 已落盘的文件逐条列出（路径 + 改成了什么样）",
+  "- 用户明确表达过的偏好与禁忌单独一节，照原话口径记",
+  "- 已出图 / 已导入的素材连 id 一起记（id 后面还要被剧本引用）",
+  "- 用户提过但还没做完的事单列「待办」",
+  "- 用户否掉的方案也要记（「不要这样做」比「要这样做」更容易被忘）",
+].join("\n");
+
+/**
+ * 把工坊线程的早期轮次压成一张摘要卡。
+ * prevDigest 非空时一并给出，让模型在旧定稿上重写成一份完整文档（而不是把两段叠起来——
+ * 叠起来的摘要每压缩一轮就厚一层，几轮之后进 A 区的全是历史噪音）。
+ */
+export async function summarizeThread(
+  opts: OneShotOptions,
+  head: readonly WorkshopMessage[],
+  prevDigest: string,
+): Promise<EpochSummary> {
+  const transcript = renderTranscriptAs(historyToMessages([...head]), {
+    user: "【用户】",
+    assistant: "【搭台助手】",
+  });
+  const previous =
+    prevDigest.trim() === ""
+      ? ""
+      : `以下是本会话此前已压缩的摘要（已确定事项）。请把它与下面的新增原文合并成一份完整定稿：\n\n${prevDigest.trim()}\n\n---\n\n以下是新增原文：\n\n`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TURN_TIMEOUT_MS);
+  try {
+    const text = await completeText({ ...opts, signal: controller.signal }, WORKSHOP_DIGEST_SYSTEM, `${previous}${transcript}`);
+    return splitSummary(text);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** 单条工坊消息（持久化 + 回放）。 */
 export interface WorkshopMessage {
@@ -157,6 +214,12 @@ export interface WorkshopMessage {
   at: number;
   /** 本条附带的素材图（工坊生成的图随消息存，翻历史仍看得见）。 */
   images?: WorkshopAssetView[];
+}
+
+/** 一轮工坊对话的产物：回复正文 + 由本轮 usage 标定出的 token 系数（拿不到为 null）。 */
+export interface WorkshopTurnResult {
+  text: string;
+  scale: number | null;
 }
 
 export interface WorkshopTurnHandlers {
@@ -181,13 +244,15 @@ export interface WorkshopAgentOptions {
  * 跑一轮工坊对话：每轮新建 Agent（systemPrompt 里带当前文件清单与就绪状态，跑完即弃）。
  * 历史以 user/assistant 文本回灌——工坊是短对话，工具调用历史的重放价值低于其复杂度；
  * 模型想知道文件现状随时可以 read_file。
+ *
+ * 回传 scale：这一轮的 provider 实测 usage ÷ 本地估算，写回线程供下一轮开跑前计量。
  */
 export async function runWorkshopTurn(
   opts: WorkshopAgentOptions,
   history: WorkshopMessage[],
   userText: string,
   handlers: WorkshopTurnHandlers,
-): Promise<string> {
+): Promise<WorkshopTurnResult> {
   const agent = new Agent({
     streamFn: opts.streamFn,
     getApiKey: opts.getApiKey,
@@ -225,10 +290,10 @@ export async function runWorkshopTurn(
   }
   const text = (last?.text ?? streamed).trim();
   if (text === "") throw new Error("工坊请求失败（模型返回空内容）");
-  return text;
+  return { text, scale: calibrateTokenScale(opts.systemPrompt, agent.state.messages) };
 }
 
-function historyToMessages(history: WorkshopMessage[]): AgentMessage[] {
+export function historyToMessages(history: readonly WorkshopMessage[]): AgentMessage[] {
   return history.map((m) =>
     m.role === "user"
       ? { role: "user" as const, content: m.text, timestamp: m.at }

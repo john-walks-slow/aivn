@@ -11,10 +11,18 @@ import { framingOf, isSpriteFraming, type SpriteFraming } from "./framing.js";
 export interface CharacterCard {
   id: string;
   name: string;
-  persona: string;
-  /** 台词风格描述（playwriter 提示词用：口癖/句长/语速）。 */
+  /**
+   * 人设正文。真相源是角色卡 `memory/always/characters/<id>.md` 的正文，
+   * 这份是存量数据的兜底——工坊存过卡之后就不再写这里。
+   */
+  persona?: string;
+  /** 台词风格描述（playwriter 提示词用：口癖/句长/语速）。真相源同样是角色卡。 */
   voice?: string;
-  /** TTS 音色 id（fish-audio reference_id，32 位 hex；从 Fish 公共音色库选取，目录见 /api/voices）。 */
+  /**
+   * TTS 音色 id（fish-audio reference_id，32 位 hex；从 Fish 公共音色库选取，目录见 /api/voices）。
+   * 真相源是角色卡的 frontmatter `voiceId`——工坊改不写 play.json 的单个字段，
+   * 这份是存量兜底（导入资源库建的角色一度只有它）。
+   */
   voiceId?: string;
   /** 立绘差分映射：expression id → assets/sprites/<char>/ 文件名（P2 演出层用）。 */
   sprites?: Record<string, string>;
@@ -73,7 +81,15 @@ export interface PlayCover {
 export interface PlayConfig {
   id: string;
   title: string;
-  characters: CharacterCard[];
+  /**
+   * 角色清单——**纯元数据，没有任何运行时逻辑读它**。
+   *
+   * 角色的真相源是 `memory/always/characters/<id>.md`（见 play/characterCard.ts）：
+   * 名字、人设、音色、voiceId、立绘差分映射与取景全在那里。角色表就是那个目录的
+   * 文件列表。这份留着是因为它读着像「主要角色表」，删了会让 play.json 的角色部分
+   * 对用户完全隐形，而它本来也不影响任何东西。
+   */
+  characters?: CharacterCard[];
   /** 剧目卡与标题画面的封面图。缺省按「第一张背景 → 第一张插图」自动取。 */
   cover?: PlayCover;
   /** 主角（玩家）角色卡：无则输入润色走通用模式。 */
@@ -96,8 +112,8 @@ export interface AgentConfig {
 
 export function parsePlayConfig(raw: unknown): PlayConfig {
   const data = raw as Partial<PlayConfig>;
-  if (!data.id || !data.title || !Array.isArray(data.characters)) {
-    throw new Error("play.json 缺少必填字段（id/title/characters）");
+  if (!data.id || !data.title) {
+    throw new Error("play.json 缺少必填字段（id/title）");
   }
   const protagonist =
     data.protagonist && (data.protagonist.name.trim() !== "" || data.protagonist.persona.trim() !== "")
@@ -117,7 +133,7 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
   return {
     id: data.id,
     title: data.title,
-    characters: data.characters.map(parseCharacter),
+    characters: Array.isArray(data.characters) ? data.characters.map(parseCharacter) : undefined,
     ...(cover ? { cover } : {}),
     ...(protagonist ? { protagonist } : {}),
     ...(data.voiceLanguage?.trim() ? { voiceLanguage: data.voiceLanguage.trim() } : {}),

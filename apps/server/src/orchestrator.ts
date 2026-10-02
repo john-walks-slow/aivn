@@ -177,7 +177,7 @@ export interface OrchestratorOptions {
    */
   assetRefs?: AssetRefResolver;
   /**
-   * 写角色设定钩子：write_memory file="characters/<id>" 时调用。
+   * 写角色设定钩子：create_character file="characters/<id>" 时调用。
    * 负责落盘 always/characters/<id>.md 并 upsert play.json stub。
    */
   onWriteCharacter?: (charId: string, content: string) => Promise<void>;
@@ -276,7 +276,7 @@ export class PlaywrightOrchestrator {
   private beatWarnings: string[] = [];
   /** 本 turn 调用了 beat_done → 轮在此收束（普通工具轮次不算边界，否则记忆查询会撕裂轮）。 */
   private beatClosed = false;
-  /** always/state 活跃状态文件内容（谱系级，随快照走；write_memory 工具维护）。 */
+  /** always/state 活跃状态文件内容（谱系级，随快照走；update_state 工具维护）。 */
   private stateFiles: Record<string, string> = {};
   /** 当前分支已走过的纪元摘要 id（谱系级，随快照走；纪元压缩时追加）。 */
   private arcIds: string[] = [];
@@ -301,6 +301,11 @@ export class PlaywrightOrchestrator {
   /** 统一基座装好的工具（一次构造，纪元压缩重建 Agent 时复用同一份）。 */
   private readonly kit: AgentKit;
 
+  /** 角色卡（persona/voice/voiceId 的真相源）。宿主侧渲染角色相关文案时读它。 */
+  get memory(): PlayMemory {
+    return this.opts.memory;
+  }
+
   constructor(opts: OrchestratorOptions) {
     this.opts = opts;
     this.historyRecorder = new HistoryRecorder(opts.restoredHistory);
@@ -322,7 +327,8 @@ export class PlaywrightOrchestrator {
       voices: opts.voices,
       thinking: opts.agents?.thinking,
       engine: opts.engine,
-      characterIds: new Set(opts.play.characters.map((c) => c.id)),
+      // 角色清单来自角色卡目录，不是 play.json 那份元数据
+      characterIds: new Set(opts.memory.characters.keys()),
       memory: opts.memory,
       tree: opts.tree,
       stateFiles: this.stateFiles,
@@ -340,7 +346,9 @@ export class PlaywrightOrchestrator {
     this.voice = opts.tts
       ? new VoicePipeline({
           synth: opts.tts.synth,
-          voiceOf: (charId) => opts.play.characters.find((c) => c.id === charId)?.voiceId,
+          // 角色卡是真相源，play.json 是存量兜底：导入资源库建的角色一度只有后者，
+          // 那时音色配置在 play.json 里。工坊存过卡之后这里就走卡。
+          voiceOf: (charId) => opts.memory.characters.get(charId)?.voiceId,
           emit: (event) =>
             this.send(
               event.state === "ready" && event.url
@@ -993,7 +1001,7 @@ export class PlaywrightOrchestrator {
     engine.turn = state.engine.turn;
     engine.affinity = { ...state.engine.affinity };
     engine.flags = { ...state.engine.flags };
-    // 原地换内容而不是换对象：write_memory 工具闭包持有的是这个对象，
+    // 原地换内容而不是换对象：状态工具闭包持有的是这个对象，
     // 换引用的话分岔之后记忆工具会写到一个没人再读的对象上去（状态区再也不更新）。
     for (const key of Object.keys(this.stateFiles)) delete this.stateFiles[key];
     Object.assign(this.stateFiles, state.stateFiles);
@@ -1036,7 +1044,7 @@ export class PlaywrightOrchestrator {
     trailingInputs: string[];
   } {
     const names: Record<string, string> = {};
-    for (const character of this.opts.play.characters) names[character.id] = character.name;
+    for (const [id, card] of this.opts.memory.characters) names[id] = card.name ?? id;
     return lineageToBeats(chain, names, this.opts.play.opening);
   }
 

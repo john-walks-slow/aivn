@@ -9,6 +9,7 @@ import type {
 import type { AssetLibrary } from "../library.js";
 import type { VoiceCatalogService } from "../voiceCatalog.js";
 import type { Exa } from "../exa.js";
+import type { WebImageFetcher } from "../webImage.js";
 import type { AssetTarget, PlayAssets } from "../playAssets.js";
 import type { PlayFiles } from "../playFiles.js";
 import type { PlaySaves } from "../saves.js";
@@ -55,11 +56,11 @@ export interface KitCommonDeps {
 export interface PlaywriterKitDeps extends KitCommonDeps {
   role: "playwriter";
   engine: EngineStateSnapshot;
-  /** 角色 id 集合：update_state 的好感度与 write_memory 的角色登记都按它做成员校验。 */
+  /** 角色 id 集合（来自角色卡目录）：update_state 的好感度按它做成员校验。 */
   characterIds: ReadonlySet<string>;
   memory: PlayMemory;
   tree: LineageTree;
-  /** 引擎状态真值在这里，write_memory 的 scene/threads 直接改它（谱系级，随快照走）。 */
+  /** 引擎状态真值在这里，update_state 的 scene/threads 直接改它（谱系级，随快照走）。 */
   stateFiles: Record<string, string>;
   /** 当前分支已走过的纪元（分岔回旧分支不得读到后世的章节摘要）。 */
   arcIds: () => readonly string[];
@@ -106,6 +107,8 @@ export interface WorkshopKitDeps extends KitCommonDeps {
   assetLibrary?: AssetLibrary;
   /** 联网检索（未配置 key 时为 undefined：工具不注册，prompt 里也不提联网）。 */
   exa?: Exa;
+  /** 网络图下载（`view_image` 的网址分支）。没有它工具只认本地路径。 */
+  webImage?: WebImageFetcher;
 }
 
 export type AgentKitDeps = PlaywriterKitDeps | WorkshopKitDeps;
