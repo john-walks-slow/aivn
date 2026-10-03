@@ -15,13 +15,13 @@
  *   node scripts/build-exe.mjs --skip-build --skip-zip  # 只重跑打包（调试构建链时用）
  */
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import { zipSync } from "fflate";
+import { writeChecksum } from "./packaging/checksum.mjs";
 
 const require = createRequire(import.meta.url);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -154,7 +154,7 @@ if (!flag("skip-zip")) {
   if (existsSync(license)) files[`${folder}/LICENSE`] = new Uint8Array(readFileSync(license));
   const zip = zipSync(files, { level: 6 });
   writeFileSync(zipPath, zip);
-  const digest = createHash("sha256").update(zip).digest("hex");
-  step(`${zipPath}（${(zip.length / 1024 / 1024).toFixed(1)} MB）`);
+  const { digest, megabytes } = writeChecksum(zipPath);
+  step(`${zipPath}（${megabytes} MB）`);
   console.log(`[build-exe] sha256  ${digest}`);
 }

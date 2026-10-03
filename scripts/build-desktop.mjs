@@ -19,10 +19,10 @@
  *   node scripts/build-desktop.mjs --skip-build     # 复用已有的 apps/*\/dist（调试打包链时用）
  */
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeChecksum } from "./packaging/checksum.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const desktopDir = join(repoRoot, "apps/desktop");
@@ -76,11 +76,8 @@ unlinkSync(sidecar);
 
 for (const file of [destination, join(buildDir, `aivn-${rootPkg.version}-win-x64.zip`)]) {
   if (!existsSync(file)) continue;
-  const bytes = readFileSync(file);
-  console.log(
-    `[build-desktop] ${file}（${(bytes.length / 1024 / 1024).toFixed(1)} MB）\n` +
-      `[build-desktop] sha256  ${createHash("sha256").update(bytes).digest("hex")}`,
-  );
+  const { digest, megabytes } = writeChecksum(file);
+  console.log(`[build-desktop] ${file}（${megabytes} MB）\n[build-desktop] sha256  ${digest}`);
 }
 
 /**
