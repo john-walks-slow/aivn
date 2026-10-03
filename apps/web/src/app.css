@@ -1230,6 +1230,20 @@ button.link-btn {
   }
 }
 
+/* 回看（滚轮翻历史台词）时舞台上放的是「那一刻的画面」，不是一次新的演出：
+   换景不淡入、立绘不登场、行为词不重演、站位不补间。少了这一条，滚轮每翻一句
+   就是一次全场闪烁。松手回到播放头时这些规则不再命中，画面按平时的过渡归位。 */
+.theater-stage.rewinding .theater-bg,
+.theater-stage.rewinding .theater-bg-in,
+.theater-stage.rewinding .theater-cg-in,
+.theater-stage.rewinding .theater-sprite {
+  animation: none;
+}
+
+.theater-stage.rewinding .theater-sprite {
+  transition: none;
+}
+
 /* 机位：偏移量是「离画面中心的百分比」，不是 left 的绝对值。--x 写在行内 style 上
    （见 StageTheater 的 slotStyle），这里只给 7 个具名档位。负数在左、正数在右。 */
 .pos-left {

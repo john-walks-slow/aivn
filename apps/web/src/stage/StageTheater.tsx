@@ -543,7 +543,7 @@ voiceState,
     >
       {/* 顶栏（游戏 HUD 式的 exit/log/branch/studio）在 StageScreen 里，浮于三个视图之上 */}
 
-      <div className="theater-stage">
+      <div className={`theater-stage${scrubbed ? " rewinding" : ""}`}>
         {bgUrl ? (
           <img key={bgUrl} className="theater-bg theater-bg-in" src={bgUrl} alt="" />
         ) : (
