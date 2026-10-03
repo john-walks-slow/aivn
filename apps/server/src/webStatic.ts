@@ -1,5 +1,5 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { join, normalize, resolve } from "node:path";
+import { isAbsolute, join, normalize, relative, resolve } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /**
@@ -73,11 +73,14 @@ export async function serveWebBundle(
 }
 
 /** 把 URL 路径拼到目录里，且必须留在目录内（`/../../etc/passwd` 这类要在这里就掐掉）。 */
-function safeJoin(dir: string, pathname: string): string | null {
+export function safeJoin(dir: string, pathname: string): string | null {
   // pathname 是绝对路径（`/assets/app.js`），直接 resolve 会以它为准、把 dir 顶掉，
   // 所以先去掉开头的斜杠再拼。
-  const relative = normalize(pathname).replace(/^[/\\]+/, "");
-  const joined = resolve(dir, relative);
+  const asked = normalize(pathname).replace(/^[/\\]+/, "");
   const root = resolve(dir);
-  return joined.startsWith(`${root}/`) ? joined : null;
+  const joined = resolve(root, asked);
+  // 包含关系交给 `relative` 判，不要自己拼分隔符：Windows 上 `resolve` 产出的是 `\`，
+  // 拿 `${root}/` 去 startsWith 永远不等，构建产物会被判成越界、一路回退到 index.html。
+  const inside = relative(root, joined);
+  return inside !== "" && !inside.startsWith("..") && !isAbsolute(inside) ? joined : null;
 }
