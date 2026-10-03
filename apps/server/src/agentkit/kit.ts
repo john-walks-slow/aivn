@@ -8,6 +8,8 @@ import { createGenerateImageTool } from "./imageTool.js";
 import { createLibraryTools } from "./libraryTool.js";
 import { createLineageTools } from "./lineageTool.js";
 import { createMemoryTools } from "./memoryTool.js";
+import { createRecutSpriteTool } from "./recutTool.js";
+import { createViewImageTool } from "./viewTool.js";
 import { createVoiceTool } from "./voiceTool.js";
 import { createWebSearchTool } from "./searchTool.js";
 import { createReadSkillTool } from "./skillTool.js";
@@ -59,10 +61,11 @@ export interface AgentToolEntry {
 const TOOL_CATALOG: Record<string, { label: string; group: ToolGroup }> = {
   beat_done: { label: "结束本轮", group: "beat" },
   update_state: { label: "提议状态更新", group: "memory" },
-  write_memory: { label: "写记忆文件", group: "memory" },
+  create_character: { label: "建角色卡", group: "memory" },
   read_memory_detail: { label: "读记忆卡详情", group: "memory" },
   search_archive: { label: "检索历史往事", group: "memory" },
   generate_image: { label: "生成剧目素材", group: "image" },
+  recut_sprite: { label: "重抠立绘底", group: "image" },
   read_skill: { label: "读技能库", group: "skill" },
   list_voices: { label: "查音色库", group: "voice" },
   web_search: { label: "联网检索", group: "web" },
@@ -72,7 +75,7 @@ const TOOL_CATALOG: Record<string, { label: string; group: ToolGroup }> = {
   write_file: { label: "写剧目文件", group: "files" },
   delete_file: { label: "删除剧目文件", group: "files" },
   get_readiness: { label: "检查开演条件", group: "files" },
-  inspect_asset: { label: "看剧目图片", group: "files" },
+  view_image: { label: "看图", group: "files" },
   list_library: { label: "浏览素材资源库", group: "library" },
   import_asset: { label: "从资源库导入", group: "library" },
   list_saves: { label: "列出周目", group: "lineage" },
@@ -90,7 +93,7 @@ const DEFAULT_ENABLED: Record<AgentRole, string[]> = {
   playwriter: [
     "beat_done",
     "update_state",
-    "write_memory",
+    "create_character",
     "read_memory_detail",
     "search_archive",
     // 只读浏览：宿主的引用即导入只认同名 id，不知道库里有什么就等于瞎猜。
@@ -206,8 +209,18 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
 function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
   return [
     ...createFilesTools(deps),
+    // 看图始终装（本地素材不依赖网络）；网址分支没有下载器时工具自己回「未启用」
+    createViewImageTool({
+      pathOf: (path) => deps.files.pathOf(path, "read"),
+      cacheDir: () => deps.store.webImageDir(),
+      fetchImage: deps.webImage,
+    }),
     createGenerateImageTool({
       mode: "sync",
+      playAssets: deps.playAssets,
+      onAsset: (path, url, kind, replaced) => deps.onAsset({ kind, path, url }, replaced),
+    }),
+    createRecutSpriteTool({
       playAssets: deps.playAssets,
       onAsset: (path, url, kind, replaced) => deps.onAsset({ kind, path, url }, replaced),
     }),

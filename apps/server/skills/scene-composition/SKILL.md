@@ -38,4 +38,4 @@ CG 是剧情高光的定格，不是风景。
 CG   confrontation   —— 天台上两人对峙，风吹起头发，低角度仰拍
 ```
 
-用户点头之后再 `generate_asset`。
+用户点头之后再 `generate_image`。

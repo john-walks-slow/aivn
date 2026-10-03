@@ -2,7 +2,7 @@
  * 生图后端契约：把「出一张图」从协议细节里抽出来。
  *
  * 两条调用方共用它——playwriter 的 `preload_asset` 预发射（落 media-cache）与
- * 工坊的 `generate_asset`（落静态素材）。协议差异（Gemini 原生 / OpenAI 兼容）收敛在
+ * 工坊的 `generate_image`（落静态素材）。协议差异（Gemini 原生 / OpenAI 兼容）收敛在
  * `geminiImage.ts` 与 `openaiImage.ts` 两个实现里，调用方只描述「要一张什么图」。
  */
 

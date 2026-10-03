@@ -188,9 +188,7 @@ export class PlayHouse {
     this.tts = createTts(config);
     this.imageBackend = createImageBackend(config);
     this.exa = createExa(config);
-    // 出网代理与超时共用 Exa 那份：两边都是墙外资源，再开一套只会有一边忘了配。
-    // 设成空串（面板上清空 STAGE_EXA_PROXY）即直连，给没有代理的内网部署留门。
-    this.webImage = new WebImageFetcherImpl({ proxy: config.exa.proxy, timeoutMs: config.exa.timeoutMs }).fetchImage;
+    this.webImage = new WebImageFetcherImpl().fetchImage;
     // StreamFn 契约是 SimpleStreamOptions（reasoning 字段）——须接 streamSimple 做换算；
     // 错接完整版 stream 会丢弃 reasoning，thinking 档位全部失效
     this.streamFn = (m, context, options) =>
