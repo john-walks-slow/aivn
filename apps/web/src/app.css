@@ -3195,10 +3195,17 @@ select:focus {
   cursor: default;
 }
 
-/* 左上角是这一轮落笔的墙上时刻：日期 + 分钟，扫树时按时间认段。 */
-.route-node-stamp {
+/* 左上角是这一轮落笔的墙上时刻 + 右侧这一轮是谁在说：日期 + 分钟，扫树时按时间认段。 */
+.route-node-head {
   position: relative;
   z-index: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.route-node-stamp {
   font-size: 11px;
   line-height: 1.2;
   font-weight: 700;
@@ -3218,12 +3225,13 @@ select:focus {
   color: var(--ink);
 }
 
-/* 底行：左下角是谁说的，右下角是这一段的两个动词。 */
+/* 底行：右下角是这一段能做的三个动词（回到选项 / 从头重读 / 重演本轮）。 */
 .route-node-foot {
   position: relative;
   z-index: 1;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   margin-top: auto;
   font-size: 11px;
@@ -3235,6 +3243,8 @@ select:focus {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--ink-faint);
 }
 
 /* 空态/加载态：画布不在，剩一句话占住中间 */

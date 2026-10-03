@@ -114,12 +114,16 @@ export interface GeneratedAsset {
   type: "bg" | "cg";
 }
 
-/** 玩家读到哪儿：正在显示的那一行的 seq 与已显示字数。刷新后据此回到原处，而不是跳到本轮末尾。 */
+/** 玩家读到哪儿：正在显示的台词节点 ID 与字数偏移（0 为刚开始本句）。基于稳定 nodeId 寻址，跨 rebase 与刷新保真。 */
 export interface ReadPos {
-  /** ScriptLine.seq：say_start / narrate_start / thought_start 事件的序号，跨 rebase 稳定。 */
-  seq: number;
-  /** 该行已打出的字数（打字机中途刷新也不丢进度）。 */
-  len: number;
+  /** 正在阅读的行级台词/叙述/心声节点 ID（LineageNode.id） */
+  nodeId: string;
+  /** 当前行已打字显示的字符数（0 表示刚开始播放本行） */
+  offset: number;
+  /** 兼容老档或旧通信的序号（可选） */
+  seq?: number;
+  /** 兼容老档的字数（可选） */
+  len?: number;
 }
 
 export type ServerMessage =
@@ -195,6 +199,10 @@ export type ServerMessage =
       resuming?: boolean;
       /** 本次操作的人类可读说明（前端提示条）。 */
       note?: string;
+      /** 跳转带来的播放头预期：start=从头播放本轮，end=直接落到末尾展现选项。 */
+      playFrom?: "start" | "end";
+      /** playFrom 配套的播放头落点（start 时为该轮首句，offset=0）。 */
+      resumeAt?: ReadPos;
     }
   /** 一行台词/旁白被原地改写：客户端按 seq 就地替换该行文字，不重放全量事件。 */
   | { type: "line_edited"; nodeId: string; text: string; seq?: number }
@@ -258,10 +266,11 @@ export type ClientMessage =
   /** 导演生图：按当前这一刻的剧情（可带玩家指令）写提示词并出一张 CG。
    *  落点是**点下这一刻**在时间线上的位置，与剧作家的预发射同一套机制。 */
   | { type: "generate_cg"; instruction?: string }
-  /** 跳转：世界线挂到 nodeId，不生成内容。活节点上往前走，废弃节点上回到那条线。 */
-  | { type: "jump"; nodeId: string }
-  /** 阅读位置上报：打字机推进时防抖发送，服务端落盘（刷新后回到原处而不是本轮末尾）。 */
-  | { type: "read"; seq: number; len: number }
+  /** 跳转：世界线挂到 nodeId，不生成内容。活节点上往前走，废弃节点上回到那条线。
+   *  playFrom: 目标轮次播放头朝向，start=从该轮开头重读，end=直接展露末尾选项（默认）。 */
+  | { type: "jump"; nodeId: string; playFrom?: "start" | "end" }
+  /** 阅读位置上报：基于稳定 nodeId 寻址，打字机推进时防抖发送，服务端落盘（刷新后回到原处而不是本轮末尾）。 */
+  | { type: "read"; nodeId: string; offset: number; seq?: number; len?: number }
   // —— 工坊（D9）：线程管理 + 对话 + 文件编辑；与演出共用一条连接，服务端按 type 分流 ——
   /** 打开面板：回线程列表与当前现场。 */
   | { type: "workshop_open" }

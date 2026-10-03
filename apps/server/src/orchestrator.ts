@@ -10,6 +10,7 @@ import { type Api, type Model, type Static, type TSchema, Type } from "@earendil
 import {
   LineageTree,
   StageDslParser,
+  nextId,
   type EngineStateSnapshot,
   type LineageEvent,
   type LineageView,
@@ -218,6 +219,7 @@ export interface OrchestratorRuntimeState {
 
 interface OpenLine {
   kind: "say" | "narrate" | "thought";
+  nodeId?: string;
   id?: string;
   text: string;
   attrs: Record<string, string>;
@@ -431,7 +433,7 @@ export class PlaywrightOrchestrator {
    */
   setReadPos(pos: ReadPos | null): void {
     const prev = this.readPos;
-    if (prev?.seq === pos?.seq && prev?.len === pos?.len) return;
+    if (prev?.nodeId === pos?.nodeId && prev?.offset === pos?.offset) return;
     this.readPos = pos;
     this.scheduleReadPersist();
   }
@@ -787,9 +789,9 @@ export class PlaywrightOrchestrator {
    * 跳转：世界线挂到目标节点并重建上下文。活的、废弃的都走这一条——废弃节点也跳得进去，
    * 只是跳过去意味着当前剧情作废（历史全部保留）。不重新生成，玩家落到哪就从哪继续。
    */
-  async jumpTo(nodeId: string): Promise<void> {
+  async jumpTo(nodeId: string, opts?: { playFrom?: "start" | "end" }): Promise<void> {
     this.guardIdle();
-    this.rebaseAt(nodeId, "已跳到这里", { mark: false });
+    this.rebaseAt(nodeId, "已跳到这里", { mark: false, playFrom: opts?.playFrom });
   }
 
   /**
@@ -930,7 +932,11 @@ export class PlaywrightOrchestrator {
    * `resume: true` 时不停在这个停止点：挂载点落在轮中的节点也照样续演——
    * 轮首锚点由客户端算出（见计划 §7.2），服务端不需要知道「轮边界」这件事。
    */
-  private rebaseAt(nodeId: string, note: string, opts?: { resume?: boolean; mark?: boolean }): void {
+  private rebaseAt(
+    nodeId: string,
+    note: string,
+    opts?: { resume?: boolean; mark?: boolean; playFrom?: "start" | "end" },
+  ): void {
     this.guardIdle();
     const tree = this.opts.tree;
     const chain = tree.materialize(nodeId);
@@ -954,6 +960,26 @@ export class PlaywrightOrchestrator {
     this.pendingStop = null;
     this.restoreStopPoint(chain, opts?.resume === true);
     this.buildAgent(this.renderBeats(beats));
+
+    // 阅读位置校正与定位预期
+    const chainNodeIds = new Set(chain.map((c) => c.id));
+    if (this.readPos && !chainNodeIds.has(this.readPos.nodeId)) {
+      this.readPos = { nodeId, offset: 0 };
+    }
+    if (opts?.playFrom === "start") {
+      const lastBeatEnd = chain.slice(0, -1).findLastIndex((e) => e.kind === "beat_end");
+      const currentBeatNodes = chain.slice(lastBeatEnd + 1);
+      const startSpoken = currentBeatNodes.find(
+        (n) => n.kind === "say" || n.kind === "narrate" || n.kind === "thought",
+      );
+      const startNode = startSpoken ?? currentBeatNodes[0];
+      if (startNode) {
+        this.readPos = { nodeId: startNode.id, offset: 0 };
+      }
+    } else if (opts?.playFrom === "end") {
+      this.readPos = { nodeId, offset: 0 };
+    }
+
     this.epoch += 1;
     this.send({
       type: "rebase",
@@ -965,6 +991,8 @@ export class PlaywrightOrchestrator {
       // resume=true 的重建（重演这一轮）后面紧跟着一轮新内容，不能说成「已演完」
       ...(opts?.resume ? { resuming: true } : {}),
       note,
+      ...(opts?.playFrom ? { playFrom: opts.playFrom } : {}),
+      ...(opts?.playFrom && this.readPos ? { resumeAt: this.readPos } : {}),
     });
     this.persist();
   }
@@ -1357,7 +1385,7 @@ export class PlaywrightOrchestrator {
 
   private appendLineage(
     kind: LineageEvent["kind"],
-    opts: { text?: string; payload?: LineageEvent["payload"] },
+    opts: { id?: string; text?: string; payload?: LineageEvent["payload"] },
   ): LineageEvent {
     const event = this.opts.tree.append(kind, opts);
     this.opts.onLineageEvent?.(event);
@@ -1373,6 +1401,12 @@ export class PlaywrightOrchestrator {
   }
 
   private onStageEvent(event: StageEvent): void {
+    if (
+      (event.kind === "say_start" || event.kind === "narrate_start" || event.kind === "thought_start") &&
+      !event.nodeId
+    ) {
+      event.nodeId = nextId();
+    }
     this.seq += 1;
     this.beatEvents += 1;
     const sequenced: SequencedEvent = { seq: this.seq, event };
@@ -1422,6 +1456,7 @@ export class PlaywrightOrchestrator {
       case "say_start":
         this.openLine = {
           kind: "say",
+          nodeId: event.nodeId,
           id: event.id,
           text: "",
           attrs: { id: event.id, ...(event.mood ? { mood: event.mood } : {}), ...(event.name ? { name: event.name } : {}) },
@@ -1429,11 +1464,12 @@ export class PlaywrightOrchestrator {
         };
         return;
       case "narrate_start":
-        this.openLine = { kind: "narrate", text: "", attrs: {}, seq };
+        this.openLine = { kind: "narrate", nodeId: event.nodeId, text: "", attrs: {}, seq };
         return;
       case "thought_start":
         this.openLine = {
           kind: "thought",
+          nodeId: event.nodeId,
           id: event.id,
           text: "",
           attrs: { id: event.id },
@@ -1452,6 +1488,7 @@ export class PlaywrightOrchestrator {
         this.openLine = null;
         if (line) {
           this.appendLineage(line.kind, {
+            id: line.nodeId,
             text: line.text,
             payload: { attrs: line.attrs, seq: line.seq },
           });

@@ -123,7 +123,7 @@ export interface LineageStore {
 }
 
 let nextIdCounter = 0;
-function nextId(): string {
+export function nextId(): string {
   nextIdCounter += 1;
   return `e${Date.now().toString(36)}-${nextIdCounter.toString(36)}`;
 }
@@ -153,9 +153,9 @@ export class LineageTree {
     return this.leaf;
   }
 
-  append(kind: LineageEventKind, opts: { text?: string; payload?: LineagePayload } = {}): LineageEvent {
+  append(kind: LineageEventKind, opts: { id?: string; text?: string; payload?: LineagePayload } = {}): LineageEvent {
     return this.attach({
-      id: nextId(),
+      id: opts.id ?? nextId(),
       parentId: this.leaf,
       kind,
       turn: this.nextTurn(),

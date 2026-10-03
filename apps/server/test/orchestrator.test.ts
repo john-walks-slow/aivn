@@ -1111,9 +1111,9 @@ describe("阅读位置落盘（#3：刷新回到读到的那一句）", () => {
     const { orchestrator } = setup([{ text: BEAT_1, beatDone: true }]);
     expect(orchestrator.readingPos).toBeNull();
 
-    orchestrator.setReadPos({ seq: 42, len: 7 });
-    expect(orchestrator.readingPos).toEqual({ seq: 42, len: 7 });
-    expect(orchestrator.runtimeState.readPos).toEqual({ seq: 42, len: 7 });
+    orchestrator.setReadPos({ nodeId: "n_42", offset: 7, seq: 42, len: 7 });
+    expect(orchestrator.readingPos).toEqual({ nodeId: "n_42", offset: 7, seq: 42, len: 7 });
+    expect(orchestrator.runtimeState.readPos).toEqual({ nodeId: "n_42", offset: 7, seq: 42, len: 7 });
   });
 
   it("重复上报同一位置不排第二次落盘（打字机逐字报位置会打爆 session.json）", async () => {
@@ -1123,10 +1123,10 @@ describe("阅读位置落盘（#3：刷新回到读到的那一句）", () => {
       persists += 1;
     };
 
-    orchestrator.setReadPos({ seq: 1, len: 1 });
-    orchestrator.setReadPos({ seq: 1, len: 1 });
-    orchestrator.setReadPos({ seq: 1, len: 2 });
-    orchestrator.setReadPos({ seq: 1, len: 2 });
+    orchestrator.setReadPos({ nodeId: "n_1", offset: 1 });
+    orchestrator.setReadPos({ nodeId: "n_1", offset: 1 });
+    orchestrator.setReadPos({ nodeId: "n_1", offset: 2 });
+    orchestrator.setReadPos({ nodeId: "n_1", offset: 2 });
     expect(persists).toBe(0); // 只排队，定时器未到
   });
 
@@ -1146,5 +1146,101 @@ describe("阅读位置落盘（#3：刷新回到读到的那一句）", () => {
       restored: { ...first.orchestrator.runtimeState, readPos: undefined },
     });
     expect(restored.readingPos).toBeNull();
+  });
+});
+
+describe("跳转的播放头语义（playFrom）", () => {
+  /** 走完两拍：第一拍停在选项上，选了第一条把第二拍演完（无停止点收尾）。 */
+  async function twoBeats() {
+    let calls = 0;
+    const base = createFakeStreamFn([
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+    ]);
+    const built = setup([], {
+      streamFn: (model, context, options) => {
+        calls += 1;
+        return base(model, context, options);
+      },
+    });
+    await built.orchestrator.playerAction({ kind: "free", text: "我到了" });
+    await built.orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    return { ...built, callCount: () => calls };
+  }
+
+  it("回到选项：playFrom=end 把播放头放在这一轮末尾，不再合成 pause 去叫剧作家", async () => {
+    const { orchestrator, messages, tree, callCount } = await twoBeats();
+    const target = tree.materialize().at(-1)!;
+    expect(target.kind).toBe("beat_end");
+    const callsBefore = callCount();
+
+    messages.length = 0;
+    await orchestrator.jumpTo(target.id, { playFrom: "end" });
+
+    expect(callCount()).toBe(callsBefore);
+    const rebase = messages.at(-1)!;
+    expect(rebase.type).toBe("rebase");
+    if (rebase.type !== "rebase") return;
+    expect(rebase.playFrom).toBe("end");
+    expect(rebase.resumeAt).toEqual({ nodeId: target.id, offset: 0 });
+    // 这一轮本来就没有停止点 → 重建后是一个普通的「继续」，不是自造的 pause
+    expect(rebase.reason).toBe("no_stop");
+    expect(rebase.stop).toBeUndefined();
+  });
+
+  it("从头重读：playFrom=start 不产出一个字，播放头落在本轮第一句", async () => {
+    const { orchestrator, messages, tree, callCount } = await twoBeats();
+    const chain = tree.materialize();
+    const target = chain.at(-1)!;
+    const firstLine = chain.find((e) => e.text === "……算了。")!;
+    const callsBefore = callCount();
+
+    messages.length = 0;
+    await orchestrator.jumpTo(target.id, { playFrom: "start" });
+
+    expect(callCount()).toBe(callsBefore); // 一个字都没生成
+    expect(orchestrator.isBusy).toBe(false);
+    expect(messages.some((m) => m.type === "beat_end")).toBe(false);
+    const rebase = messages.at(-1)!;
+    if (rebase.type !== "rebase") throw new Error("跳转必须广播 rebase");
+    expect(rebase.playFrom).toBe("start");
+    // 轮首的换景/立绘不算「第一句」，播放头落在第一句台词上
+    expect(rebase.resumeAt).toEqual({ nodeId: firstLine.id, offset: 0 });
+    expect(orchestrator.readingPos).toEqual({ nodeId: firstLine.id, offset: 0 });
+  });
+
+  it("回到旧轮末尾选另一个选项：新内容挂在那个轮末，旧分支整段留成兄弟", async () => {
+    const { orchestrator, messages, tree } = await twoBeats();
+    const beatEnds = tree.materialize().filter((e) => e.kind === "beat_end");
+    expect(beatEnds).toHaveLength(2);
+    const firstBeatEnd = beatEnds[0]!;
+    const oldBranchSay = tree.materialize().find((e) => e.text === "……算了。")!;
+    const oldBranchNarrate = tree.materialize().find((e) => e.text === "风停了。")!;
+
+    messages.length = 0;
+    await orchestrator.jumpTo(firstBeatEnd.id, { playFrom: "end" });
+
+    // 跳回去之后选项原样回到面板上——玩家才可能改选
+    const rebase = messages.at(-1)!;
+    if (rebase.type !== "rebase") throw new Error("跳转必须广播 rebase");
+    expect(rebase.stop).toMatchObject({ stopType: "choice", options: [{ text: "道歉" }, { text: "装傻" }] });
+
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 1 });
+
+    // 新分支的第一条节点（这次选择的输入）认分岔源为父——绝不能挂到旧叶子上
+    const prompt = tree.materialize().find((e) => e.payload?.input === "（选择了：装傻）")!;
+    expect(tree.get(prompt.id)?.parentId).toBe(firstBeatEnd.id);
+    const newSay = tree.materialize().find((e) => e.text === "……算了。")!;
+    expect(newSay.id).not.toBe(oldBranchSay.id);
+    expect(tree.get(newSay.id)?.parentId).toBe(prompt.id);
+
+    // 旧分支没被改写也没被删：它退成兄弟，仍在树里，但不在当前世界线上
+    expect(tree.get(oldBranchSay.id)).toBeTruthy();
+    expect(tree.get(oldBranchNarrate.id)).toBeTruthy();
+    expect(tree.materialize().some((e) => e.id === oldBranchNarrate.id)).toBe(false);
+    // 新分支确实把这一轮演完了
+    const newNarrate = tree.materialize().find((e) => e.text === "风停了。")!;
+    expect(newNarrate.id).not.toBe(oldBranchNarrate.id);
+    expect(tree.materialize().at(-1)?.kind).toBe("beat_end");
   });
 });

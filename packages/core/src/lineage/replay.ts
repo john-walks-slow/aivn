@@ -113,7 +113,7 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
       case "say":
         pushLine(
           base,
-          { kind: "say_start", id: attrs.id ?? "", ...(attrs.mood ? { mood: attrs.mood } : {}) },
+          { kind: "say_start", id: attrs.id ?? "", ...(attrs.mood ? { mood: attrs.mood } : {}), nodeId: node.id },
           { kind: "say_text", delta: delta() },
           { kind: "say_end" },
           delta(),
@@ -122,7 +122,7 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
       case "narrate":
         pushLine(
           base,
-          { kind: "narrate_start" },
+          { kind: "narrate_start", nodeId: node.id },
           { kind: "narrate_text", delta: delta() },
           { kind: "narrate_end" },
           delta(),
@@ -131,7 +131,7 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
       case "thought":
         pushLine(
           base,
-          { kind: "thought_start", id: attrs.id ?? "" },
+          { kind: "thought_start", id: attrs.id ?? "", nodeId: node.id },
           { kind: "thought_text", delta: delta() },
           { kind: "thought_end" },
           delta(),

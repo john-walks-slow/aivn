@@ -11,6 +11,14 @@ export interface ForkOrigin {
 export interface BeatCard {
   /** 代表事件 id = 该轮首个事件 id（分岔/重来锚点用它）。 */
   id: string;
+  /** 轮首第一个有意义的台词/叙述/场景节点（从此处重读的落点）。 */
+  startNodeId: string;
+  /** 该轮演完那一刻的最后一个节点（通常是 beat_end 或分支末梢，回到选项落点）。 */
+  endNodeId: string;
+  /** 该轮的停止点节点（若存在 stop 事件）。 */
+  stopNodeId?: string;
+  /** 「重演本轮」的分岔锚点：本轮之前的那一点（首个节点的父），第一轮退回首节点自身。 */
+  forkFromId: string;
   turn: number;
   nodes: LineageNodeView[];
   /** 摘要：轮内首句台词/narration，≤32 字。整轮只有布景就是空串。 */
@@ -25,6 +33,8 @@ export interface BeatCard {
   stopType: StopType | null;
   /** 本轮首个剧本事件的 seq：回看/定位到该轮首行。全无 seq（老档/纯插一句轮）时为 null。 */
   startSeq: number | null;
+  /** 本轮末尾剧本事件的 seq。 */
+  endSeq: number | null;
   onPath: boolean;
   isLeaf: boolean;
   isAbandoned: boolean;
@@ -35,51 +45,113 @@ export interface BeatCard {
 }
 
 /**
- * 切轮规则：换场景不切；分岔口、fork 标记之后、beat_end 之后各开新轮。
- * 定位用每个剧本事件自带的 seq（编排器写入 payload.seq，与客户端 ScriptLine.seq 同尺），
- * 所以分岔/废弃分支的卡片也能各自对到自己的那一行。
+ * 切轮规则：基于树拓扑自顶向下聚类。
+ * 换场景不切轮；遇到 beat_end、fork 标记或多分支分岔口切轮。
+ * 每个卡片的父卡片严格由其起始节点（或 fork 锚点）的拓扑父节点所属卡片决定。
  */
 export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): BeatCard[] {
+  if (!view.nodes.length) return [];
   const ordered = [...view.nodes].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   const byId = new Map(ordered.map((node) => [node.id, node]));
-  const cards: BeatCard[] = [];
-  const cardOfNode = new Map<string, BeatCard>();
-  let current: BeatCard | null = null;
-  let closed = true;
-  // 链上前一个进卡的事件（preload/fork 也在链上，比对分岔口时不能拿它们当邻居）
-  let prevInChain: string | null = null;
-  // 最近的 fork 标记：下一个开出来的卡就是被重演的那一轮顶出来的
-  let pendingFork: LineageNodeView | null = null;
+  const childrenOf = new Map<string, LineageNodeView[]>();
 
   for (const node of ordered) {
-    // fork 是世界线断裂标记不是剧情：挂回被分岔的那张卡，新轮是它的兄弟，不是无根的新枝
-    if (node.kind === "preload") {
-      prevInChain = node.id;
-      continue;
+    if (node.parentId && byId.has(node.parentId)) {
+      const list = childrenOf.get(node.parentId);
+      if (list) list.push(node);
+      else childrenOf.set(node.parentId, [node]);
     }
-    if (node.kind === "fork") {
-      if (current) cardOfNode.set(node.id, current);
-      prevInChain = node.id;
-      closed = true;
-      pendingFork = node;
-      continue;
+  }
+
+  const cards: BeatCard[] = [];
+  const cardOfNode = new Map<string, BeatCard>();
+  const visited = new Set<string>();
+
+  function traceBeat(
+    startNode: LineageNodeView,
+    parentCard: BeatCard | null,
+    forkedFrom: ForkOrigin | null,
+  ): void {
+    if (visited.has(startNode.id)) return;
+
+    if (startNode.kind === "fork") {
+      visited.add(startNode.id);
+      if (parentCard) cardOfNode.set(startNode.id, parentCard);
+      const anchor = startNode.parentId ? byId.get(startNode.parentId) : null;
+      const origin: ForkOrigin | null = anchor ? { nodeId: anchor.id, turn: anchor.turn } : null;
+      const forkKids = childrenOf.get(startNode.id) ?? [];
+      for (const fk of forkKids) {
+        traceBeat(fk, parentCard, origin);
+      }
+      return;
     }
 
-    // 轮内事件逐个直挂上一个；一旦挂回更早的祖先，就是分岔口，开新卡
-    const atFork = prevInChain !== null && node.parentId !== prevInChain;
-    if (!current || closed || atFork) {
-      const parent = atFork ? cardOfNode.get(node.parentId ?? "") ?? null : current;
-      // fork 标记的父就是被分岔的那个节点（轮首），从那儿继承轮号做徽标文案
-      const anchor = pendingFork?.parentId ? byId.get(pendingFork.parentId) ?? null : null;
-      current = newCard(node, parent, pendingFork && anchor ? { nodeId: anchor.id, turn: anchor.turn } : null);
-      pendingFork = null;
-      cards.push(current);
-      closed = false;
+    const card = newCard(startNode, parentCard, forkedFrom);
+    cards.push(card);
+
+    let curr: LineageNodeView = startNode;
+    while (curr) {
+      visited.add(curr.id);
+      card.nodes.push(curr);
+      cardOfNode.set(curr.id, card);
+
+      if (curr.kind === "beat_end") {
+        const kids = childrenOf.get(curr.id) ?? [];
+        for (const child of kids) {
+          traceBeat(child, card, null);
+        }
+        break;
+      }
+
+      const kids = childrenOf.get(curr.id) ?? [];
+      if (kids.length === 0) {
+        break;
+      }
+      if (kids.length === 1) {
+        const next = kids[0]!;
+        if (next.kind === "fork") {
+          visited.add(next.id);
+          cardOfNode.set(next.id, card);
+          const anchor = next.parentId ? byId.get(next.parentId) : null;
+          const origin: ForkOrigin | null = anchor ? { nodeId: anchor.id, turn: anchor.turn } : null;
+          const forkKids = childrenOf.get(next.id) ?? [];
+          for (const fk of forkKids) {
+            traceBeat(fk, card, origin);
+          }
+          break;
+        }
+        curr = next;
+      } else {
+        for (const child of kids) {
+          if (child.kind === "fork") {
+            visited.add(child.id);
+            cardOfNode.set(child.id, card);
+            const anchor = child.parentId ? byId.get(child.parentId) : null;
+            const origin: ForkOrigin | null = anchor ? { nodeId: anchor.id, turn: anchor.turn } : null;
+            const forkKids = childrenOf.get(child.id) ?? [];
+            for (const fk of forkKids) {
+              traceBeat(fk, card, origin);
+            }
+          } else {
+            traceBeat(child, card, null);
+          }
+        }
+        break;
+      }
     }
-    current.nodes.push(node);
-    cardOfNode.set(node.id, current);
-    prevInChain = node.id;
-    if (node.kind === "beat_end") closed = true;
+  }
+
+  const roots = ordered.filter((n) => !n.parentId || !byId.has(n.parentId));
+  for (const root of roots) {
+    traceBeat(root, null, null);
+  }
+
+  // 兜底孤儿与未访问节点
+  for (const node of ordered) {
+    if (!visited.has(node.id) && node.kind !== "fork") {
+      const parentCard = node.parentId ? cardOfNode.get(node.parentId) ?? null : null;
+      traceBeat(node, parentCard, null);
+    }
   }
 
   // 场景是持续状态：换了一次就一直有效到下一次换。轮里没有 scene 事件的，继承上一轮的景。
@@ -88,6 +160,7 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
     card.onPath = card.nodes.some((n) => n.onPath);
     card.isAbandoned = !card.onPath;
     card.startSeq = card.nodes.find((n) => n.seq !== undefined)?.seq ?? null;
+    card.endSeq = card.nodes.slice().reverse().find((n) => n.seq !== undefined)?.seq ?? null;
     collect(card);
     currentBg = card.sceneBg ?? currentBg;
     card.sceneBg = currentBg;
@@ -197,6 +270,10 @@ export function editableNodeAtLine(
 function newCard(first: LineageNodeView, parent: BeatCard | null, forkedFrom: ForkOrigin | null): BeatCard {
   return {
     id: first.id,
+    startNodeId: first.id,
+    endNodeId: first.id,
+    stopNodeId: undefined,
+    forkFromId: first.id,
     turn: first.turn,
     nodes: [],
     preview: "",
@@ -206,6 +283,7 @@ function newCard(first: LineageNodeView, parent: BeatCard | null, forkedFrom: Fo
     sceneBg: null,
     stopType: null,
     startSeq: null,
+    endSeq: null,
     onPath: false,
     isLeaf: false,
     isAbandoned: false,
@@ -220,13 +298,26 @@ function collect(card: BeatCard): void {
     if (node.kind === "scene" && node.attrs.bg) card.sceneBg = node.attrs.bg;
     // 同一轮多张 CG 时取最后一张：那是这一幕结束前屏幕上停着的那张
     if (node.kind === "cg" && node.attrs.id) card.cgId = node.attrs.id;
-    if (node.kind === "stop") card.stopType = stopTypeOf(node.attrs);
+    if (node.kind === "stop") {
+      card.stopType = stopTypeOf(node.attrs);
+      card.stopNodeId = node.id;
+    }
     if (node.kind === "say" || node.kind === "thought") {
       const who = node.attrs.id ?? "";
       if (who && !card.speakers.includes(who)) card.speakers.push(who);
     }
   }
+
+  // startNodeId: 优先选台词/心声/旁白节点，次选场景/演员/CG，最后退回卡片首节点
   const spoken = card.nodes.find((n) => n.kind === "say" || n.kind === "narrate" || n.kind === "thought");
+  const dramatic = card.nodes.find((n) => n.kind !== "preload" && n.kind !== "fork");
+  card.startNodeId = spoken?.id ?? dramatic?.id ?? card.nodes[0]?.id ?? card.id;
+
+  // endNodeId: 取本轮最后一个有效节点
+  card.endNodeId = card.nodes[card.nodes.length - 1]?.id ?? card.id;
+  // 重演本轮：从本轮之前的那一点开新分支重新生成；第一轮没有前驱就退回首节点
+  card.forkFromId = card.nodes[0]?.parentId ?? card.nodes[0]?.id ?? card.id;
+
   setPreview(card, spoken?.text ?? "");
 }
 

@@ -5,7 +5,21 @@ import { shouldAutoStart } from "./playbackState.js";
 import type { Cue, ScriptLine } from "./script.js";
 import type { TranscriptEntry } from "./transcript.js";
 
-/** 找回「seq 属于哪条台词 cue」的下标；找不到返回 -1（换过分支的旧位置、老档的行）。 */
+/** 找回「nodeId 属于哪条台词 cue」的下标；找不到返回 -1（换过分支的旧位置、老档的行）。 */
+export function lineCueIndexByNodeId(
+  cues: readonly Cue[],
+  lines: readonly ScriptLine[],
+  nodeId: string,
+): number {
+  for (let i = 0; i < cues.length; i += 1) {
+    const cue = cues[i]!;
+    if (cue.kind !== "line") continue;
+    if (lines.find((l) => l.key === cue.lineKey)?.nodeId === nodeId) return i;
+  }
+  return -1;
+}
+
+/** 老档兼容：按 seq 找回台词 cue 下标；找不到返回 -1。 */
 export function lineCueIndexAt(cues: readonly Cue[], lines: readonly ScriptLine[], seq: number): number {
   for (let i = 0; i < cues.length; i += 1) {
     const cue = cues[i]!;
@@ -13,6 +27,38 @@ export function lineCueIndexAt(cues: readonly Cue[], lines: readonly ScriptLine[
     if (lines.find((l) => l.key === cue.lineKey)?.seq === seq) return i;
   }
   return -1;
+}
+
+/** 刷新恢复的落点：停在哪条 cue 上、那行已经显示到第几个字。 */
+export interface ResumeSeek {
+  /** cue 下标；-1 = 这条世界线上找不到（换过分支的旧位置），交给调用方快进到末尾。 */
+  cueIndex: number;
+  /** 该行打字机要一次性补到第几个字（行内刷新就是靠它回到读到的那一个字）。 */
+  shownLength: number;
+}
+
+/**
+ * 刷新后「我在哪个节点读到第几个字」的唯一解算点。
+ *
+ * 优先按稳定 nodeId 寻址（跨刷新、跨分支切换都成立），老档没有 nodeId 时才退回 seq；
+ * offset 超出行长就补到行尾——宁可多显示一个字，也不能让进度看起来倒退。
+ */
+export function resolveResumeSeek(
+  cues: readonly Cue[],
+  lines: readonly ScriptLine[],
+  resumeAt: ReadPos,
+): ResumeSeek {
+  const cueIndex = resumeAt.nodeId
+    ? lineCueIndexByNodeId(cues, lines, resumeAt.nodeId)
+    : typeof resumeAt.seq === "number"
+      ? lineCueIndexAt(cues, lines, resumeAt.seq)
+      : -1;
+  if (cueIndex < 0) return { cueIndex: -1, shownLength: 0 };
+  const cue = cues[cueIndex]!;
+  if (cue.kind !== "line") return { cueIndex, shownLength: 0 };
+  const line = lines.find((l) => l.key === cue.lineKey);
+  const want = resumeAt.offset ?? resumeAt.len ?? 0;
+  return { cueIndex, shownLength: Math.min(want, line?.text.length ?? 0) };
 }
 
 /**
@@ -294,6 +340,11 @@ export function usePlayback(
     resumeAfterReset?: boolean;
     /** 上次退出时读到的位置（hello.readPos）：首屏据此 seek 回那一句，而不是快进到本轮末尾。 */
     resumeAt?: ReadPos | null;
+    /**
+     * 结构性操作（跳转重读）配套的播放头落点：resetToken 换代后从这个位置起读
+     * （offset=0 即该句从头打字），而不是按 resumeAfterReset 快进到本轮末尾。
+     */
+    seekTo?: ReadPos | null;
     /** 按住 Ctrl 的快进档：当前行一次读完，行间不设停顿，一路追到缓冲末端。 */
     turbo?: boolean;
     /** 骨架占位的兜底上界（hello.assetsTtlMs）；缺省用保守默认值。 */
@@ -480,8 +531,9 @@ export function usePlayback(
     // 一旦露出旧台词，玩家会以为这就是重来的结果。
     fastForwardedRef.current = false;
     showTailRef.current = opts.resumeAfterReset === true;
-    resumeAtRef.current = null;
-  }, [opts.resetToken, opts.resumeAfterReset]);
+    // 跳转重读：换代后从这个落点起读，而不是快进到本轮末尾
+    resumeAtRef.current = opts.seekTo ?? null;
+  }, [opts.resetToken, opts.resumeAfterReset, opts.seekTo]);
 
   // cues 到达/重置检测：builder reset（fresh start）→ 播放归零
   useEffect(() => {
@@ -500,15 +552,15 @@ export function usePlayback(
       resumeAtRef.current = null;
       // 有阅读位置就 seek 回那一刻：视觉只补到那一行（后面的换景/退场属于还没读到的内容，
       // 提前生效等于剧透），游标停在那行之后，字数接着上次显示到的位置续。
-      const resumeIndex = resumeAt ? lineCueIndexAt(cues, linesRef.current, resumeAt.seq) : -1;
-      if (resumeIndex >= 0) {
+      const seek = resumeAt ? resolveResumeSeek(cues, linesRef.current, resumeAt) : null;
+      const resumeIndex = seek?.cueIndex ?? -1;
+      if (seek && resumeIndex >= 0) {
         for (let i = 0; i <= resumeIndex; i += 1) applyVisual(cues[i]!);
         const cue = cues[resumeIndex]!;
         cursorRef.current = resumeIndex + 1;
         if (cue.kind === "line") {
           setCurrentKey(cue.lineKey);
-          const line = linesRef.current.find((l) => l.key === cue.lineKey);
-          setShownLength(Math.min(resumeAt!.len, line?.text.length ?? 0));
+          setShownLength(seek.shownLength);
         }
         return;
       }
@@ -526,10 +578,16 @@ export function usePlayback(
 
   // 阅读位置上报：刷新后要回到原处，位置得由播放头持续告诉服务端。
   // 只认正在显示的行：回看（scrub）不改播放头，不该把回看位置存成「读到哪儿了」。
+  // 首帧立即上报（切到新行 offset=0），行内打字推进由 StageScreen 侧节流。
   useEffect(() => {
     const line = current;
-    if (!line || line.seq === undefined) return;
-    hooksRef.current.onRead?.({ seq: line.seq, len: shownLength });
+    if (!line || (line.nodeId === undefined && line.seq === undefined)) return;
+    hooksRef.current.onRead?.({
+      nodeId: line.nodeId ?? "",
+      offset: shownLength,
+      ...(line.seq !== undefined ? { seq: line.seq } : {}),
+      len: shownLength,
+    });
   }, [current, shownLength]);
 
   // 演出中「等新内容」的起播：此刻没有正在显示的台词，新的一句一到就起播，不必让玩家点一下。
