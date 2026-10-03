@@ -268,6 +268,25 @@ export const api = {
     "/api/agents/tools",
   ),
 
+  /** 手动生图（工坊）：POST /api/plays/:id/images 发起异步生成 */
+  generateImage: (
+    id: string,
+    req: {
+      kind: "sprite" | "background" | "cg";
+      name?: string;
+      characterId?: string;
+      expression?: string;
+      framing?: string;
+      referenceCharacters?: string[];
+      instruction?: string;
+    },
+  ) =>
+    request<{ target: string; path: string; prompt: string }>(`/api/plays/${id}/images`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(req),
+    }),
+
   listAssets: (id: string) => request<Record<string, string[]>>(`/api/plays/${id}/assets`),
 
   /** 素材元数据表：stem → 描述/标签/情绪（素材页副标题与剧作家提示词同一份）。 */

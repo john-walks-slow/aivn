@@ -37,7 +37,10 @@ interface StageTheaterProps {
   /** 分岔锚点：字符串是谱系节点 id（回顾/路线），数字是舞台当前行的 seq。 */
   onFork: (anchor: string | number, opts?: { resume?: boolean }) => void;
   /** 导演生图：按当前这一幕出一张插图，指令可留空。 */
-  onGenerateCg: (instruction: string) => void;
+  onGenerateCg: (
+    instruction: string,
+    opts?: { referenceCharacters?: string[]; useHistory?: boolean },
+  ) => void;
   onReplay: (seq: number) => void;
   /** 这一行的语音处于哪一态：none=没配音色/不生成，pending=正在合成，ready=可重听。 */
   voiceState: (seq: number | null) => VoiceState;
@@ -74,6 +77,9 @@ export type VoiceState = "none" | "pending" | "ready";
  * 导演栏的动作。分岔从「当前这一行」开（舞台传 seq），重新生成从整轮开头重演（传 beatId）；
  * 生图不进分支、直接落图。
  */
+import { RefCharacterPicker, type RefCandidate } from "../ui/RefCharacterPicker.js";
+import { cgCanSubmit, toggleReference } from "./cgOptions.js";
+
 type DirectorAction = "prompt" | "edit" | "restart" | "fork" | "cg";
 
 /** 「提示」面板里的两岔：跟着这一轮写下去（引导），还是从这一行退开（分岔）。 */
@@ -283,9 +289,12 @@ voiceState,
       created.sfx.dispose();
     };
   }, []);
-/** 导演栏的面板：几个动作的全部输入都在对话框里收，不跳视图。 */
+  /** 导演栏的面板：几个动作的全部输入都在对话框里收，不跳视图。 */
   const [action, setAction] = useState<DirectorAction | null>(null);
   const [draft, setDraft] = useState("");
+  /** 生图选项：参考角色立绘（多选有序）与是否基于历史（默认勾上） */
+  const [selectedRefs, setSelectedRefs] = useState<string[]>([]);
+  const [useHistory, setUseHistory] = useState(true);
   /** 「提示」面板走哪条岔：引导 = 排进待注入队列跟着这一轮写，分岔 = 先退开再落笔。 */
   const [guideMode, setGuideMode] = useState<GuideMode>("guide");
   /** 净画面：藏掉压在画面上的台词条与导演栏，只剩背景/立绘/CG。点画面或按 H/空格/Esc 回来。 */
@@ -481,7 +490,10 @@ voiceState,
       return;
     }
     if (act === "cg") {
-      onGenerateCg(text);
+      onGenerateCg(text, {
+        referenceCharacters: selectedRefs.length > 0 ? selectedRefs : undefined,
+        useHistory,
+      });
       return;
     }
     if (act === "restart") {
@@ -516,11 +528,11 @@ voiceState,
     action === "prompt" && guideMode === "fork" ? "fork" : (action ?? "prompt");
 
   /**
-   * 送不出去的四种情形，没有第五种：
+   * 送不出去的五种情形，没有第六种：
    *  - 改写必须真写一句（没内容就无从改起）
    *  - 引导必须有话可排（空句进队列等于没排）
    *  - 分岔/重来要有落点（还没演到任何一行）
-   *  - 生图没有门槛：留空就是按刚才这一幕构图
+   *  - 生图：勾了历史可留空，未勾历史必须填指令（见 cgCanSubmit）
    */
   const submitDisabled: boolean =
     modalAction === "edit"
@@ -531,7 +543,9 @@ voiceState,
           ? forkBlock !== null
           : modalAction === "restart"
             ? targets.beatId === null
-            : false;
+            : modalAction === "cg"
+              ? !cgCanSubmit(draft, useHistory)
+              : false;
 
   return (
     <div
@@ -649,8 +663,14 @@ voiceState,
           disabled={fresh}
           onClick={(e) => {
             e.stopPropagation();
-            setAction(action === "cg" ? null : "cg");
-            setDraft("");
+            if (action === "cg") {
+              setAction(null);
+            } else {
+              setAction("cg");
+              setDraft("");
+              setSelectedRefs([]);
+              setUseHistory(true);
+            }
           }}
         >
           <Icon name="assets" size={17} />
@@ -807,6 +827,33 @@ voiceState,
                   分岔
                 </button>
               </div>
+            )}
+            {/* 生图选项：参考角色立绘（多选有序）+ 基于历史开关 */}
+            {action === "cg" && (
+              <>
+                <div className="image-gen-field">
+                  <span className="image-gen-label">参考角色立绘（按点选顺序垫图）：</span>
+                  <RefCharacterPicker
+                    candidates={Object.entries(names)
+                      .map(([id, name]) => ({
+                        id,
+                        name,
+                        spriteUrl: index.sprite(id, null),
+                      }))
+                      .filter((c): c is RefCandidate => Boolean(c.spriteUrl))}
+                    selected={selectedRefs}
+                    onToggle={(id) => setSelectedRefs((prev) => toggleReference(prev, id))}
+                  />
+                </div>
+                <label className="image-gen-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={useHistory}
+                    onChange={(e) => setUseHistory(e.target.checked)}
+                  />
+                  <span>基于刚才演到的剧情与场景</span>
+                </label>
+              </>
             )}
             <div className="director-input">
               {action === "prompt" && (

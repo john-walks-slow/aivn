@@ -1964,6 +1964,124 @@ button.primary:hover:not(:disabled) {
   flex: 1;
 }
 
+/* ── 参考立绘选择器与手动生图 ────────────────────────── */
+
+.ref-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.ref-picker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.ref-picker-chip:hover {
+  background: var(--panel-hover, rgba(0, 0, 0, 0.04));
+}
+
+.ref-picker-chip.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.ref-chip-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.ref-chip-blank {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+}
+
+.ref-chip-name {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ref-chip-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.ref-picker-empty {
+  padding: 6px 0;
+}
+
+.image-gen-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.image-gen-label {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.image-gen-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+}
+
+.image-gen-result-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--panel-tint, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.image-gen-result-card img {
+  max-width: 100%;
+  max-height: 260px;
+  border-radius: var(--radius);
+  object-fit: contain;
+}
+
 /* ── 输入与遮罩 ────────────────────────── */
 
 input,

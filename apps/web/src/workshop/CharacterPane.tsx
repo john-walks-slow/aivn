@@ -5,6 +5,7 @@ import { api, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { CharacterEditor } from "./CharacterEditor.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
+import { ImageGenDialog, type ImageGenTarget } from "./ImageGenDialog.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";
 import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
 
@@ -28,7 +29,15 @@ function rolesOf(detail: PlayDetail): Role[] {
  * 角色：主角卡与全部角色卡。角色的真相源是 `memory/always/characters/<id>.md`，
  * 主角卡例外——玩家不上台，它的 persona 走 play.json 的 `protagonist` 字段。
  */
-export function CharacterPane({ playId, revision }: { playId: string; revision: number }) {
+export function CharacterPane({
+  playId,
+  revision,
+  subscribeImageResult,
+}: {
+  playId: string;
+  revision: number;
+  subscribeImageResult?: (handler: (res: any) => void) => () => void;
+}) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [draft, setDraft] = useState<PlayConfig | null>(null);
   const [roles, setRoles] = useState<Role[] | null>(null);
@@ -40,6 +49,7 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
   const [open, setOpen] = useState<string | null>(PROTAGONIST_KEY);
   const [libraryInto, setLibraryInto] = useState<string | null>(null);
   const [voiceFor, setVoiceFor] = useState<string | null>(null);
+  const [genTarget, setGenTarget] = useState<ImageGenTarget | null>(null);
   const voices = useVoiceCatalog();
 
   const reload = useCallback((): void => {
@@ -228,6 +238,16 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
                 .then(reload)
                 .catch((e: Error) => setError(e.message))
             }
+            onGenerateSprite={(opts) =>
+              setGenTarget({
+                kind: "sprite",
+                characterId: activeRole.id,
+                characterName: activeRole.name ?? activeRole.id,
+                initialExpression: opts.expression,
+                initialFraming: opts.framing,
+                fixedExpression: opts.fixed,
+              })
+            }
             onDocChange={(fn) => patchRole(activeRole.id, fn)}
             onRemove={() => removeRole(activeRole.id)}
           />
@@ -276,6 +296,15 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
             });
             setVoiceFor(null);
           }}
+        />
+      )}
+      {genTarget !== null && (
+        <ImageGenDialog
+          playId={playId}
+          target={genTarget}
+          subscribeImageResult={subscribeImageResult}
+          onClose={() => setGenTarget(null)}
+          onDone={reload}
         />
       )}
     </div>
