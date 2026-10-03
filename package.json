@@ -11,7 +11,10 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "soak": "node scripts/soak.mjs"
+    "soak": "node scripts/soak.mjs",
+    "exe": "node scripts/build-exe.mjs",
+    "desktop": "node scripts/build-desktop.mjs",
+    "icon": "node scripts/make-app-icon.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.87.1",
