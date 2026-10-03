@@ -31,4 +31,17 @@ if [ ! -e .env ]; then
   fi
 fi
 
+# plays：把主仓库里除了 demo 之外的本地剧目（如 stub、test2 等）软链到本 worktree，
+# 预览时开箱即有现成周目、立绘与选项可测，无需重新搭台跑模型。
+mkdir -p plays
+for p in "$MAIN_ROOT"/plays/*; do
+  [ -d "$p" ] || continue
+  name="$(basename "$p")"
+  [ "$name" = "demo" ] && continue
+  if [ ! -e "plays/$name" ]; then
+    ln -s "$p" "plays/$name"
+    echo "→ plays/$name → $p"
+  fi
+done
+
 echo "✓ 就绪：./scripts/dev-worktree.sh 启动本 worktree 的 server + web"

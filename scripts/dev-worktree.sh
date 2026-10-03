@@ -42,6 +42,20 @@ fi
 
 [ -e .env ] || { echo "!! 缺少 .env，先跑 ./scripts/init-worktree.sh"; exit 1; }
 
+# 确保预览实例开箱即有测试剧目（如 stub、test2）：若主仓库存在则按需软链
+MAIN_ROOT="$(cd "$WT_ROOT" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | xargs dirname 2>/dev/null || true)"
+if [ -n "$MAIN_ROOT" ] && [ -d "$MAIN_ROOT/plays" ]; then
+  mkdir -p plays
+  for p in "$MAIN_ROOT"/plays/*; do
+    [ -d "$p" ] || continue
+    name="$(basename "$p")"
+    [ "$name" = "demo" ] && continue
+    if [ ! -e "plays/$name" ]; then
+      ln -s "$p" "plays/$name" 2>/dev/null || true
+    fi
+  done
+fi
+
 pids=()
 
 # 公网入口走 [[dev-tunnel]] 的 quick tunnel（免登录、URL 随机、进程关了即失效）。
