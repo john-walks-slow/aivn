@@ -35,6 +35,12 @@ describe("入口视图解析", () => {
     expect(stageTabFromQuery("tab=assets")).toBe<WorkshopTab>("assets");
   });
 
+  it("工坊 tab：剧目页与记忆页直达（两个页签拆开之后各自有 URL）", () => {
+    expect(stageTabFromQuery("tab=play")).toBe<WorkshopTab>("play");
+    expect(stageTabFromQuery("tab=memory")).toBe<WorkshopTab>("memory");
+    expect(stageTabFromQuery("tab=characters")).toBe<WorkshopTab>("characters");
+  });
+
   it("tab 认不出就回对话页", () => {
     expect(stageTabFromQuery("tab=nope")).toBe<WorkshopTab>("chat");
     expect(stageTabFromQuery("")).toBe<WorkshopTab>("chat");

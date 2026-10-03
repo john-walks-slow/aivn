@@ -8,6 +8,7 @@ import type { PlayStore } from "./store.js";
 /**
  * 剧目记忆（D7 三层）：always（每轮注入）/ index（标题列表注入 + 详情按需读）/ archive（只可检索命中）。
  * 剧目级内容（craft/premise/index 卡）读自 memory/ 目录，随 runtime 重建即时生效；
+ * 角色卡读自顶层 `characters/`（角色不是记忆的一层），见 store.characterDir()。
  * 谱系级内容（state 文件、arcs 引用）走 LineageTree 快照，archive 切片落 events.jsonl。
  *
  * `index/` 下可以有任意子目录（`locations/` 放地点、`lore/` 放设定只是惯例，不是约束），
@@ -23,7 +24,7 @@ export class PlayMemory {
   /** always/premise.md（世界观前提，缺文件即缺——就绪门与 A 区注入的唯一来源）。 */
   readonly premise: string;
   /**
-   * always/characters/<id>.md — 角色卡；id → 解析后的头部 + 正文。
+   * `<剧目>/characters/<id>.md` — 角色卡；id → 解析后的头部 + 正文。
    *
    * 结构化而不是留全文：voiceId 这类机器字段要参与合成与生图，塞在一坨 markdown 里
    * 就得每次现场正则抠。纪元内冻结，工坊热改走 reload。
@@ -65,7 +66,7 @@ export class PlayMemory {
       readText(store.memoryDir("always", "craft.md")),
       readText(store.memoryDir("always", "nsfw.md")),
       readText(store.memoryDir("always", "premise.md")),
-      loadCharacters(store.memoryDir("always", "characters")),
+      loadCharacters(store.characterDir()),
       loadCards(store),
       loadArcs(store),
       loadArchive(store.memoryDir("archive", "events.jsonl")),
@@ -282,7 +283,6 @@ async function loadArchive(path: string): Promise<ArchiveSlice[]> {
   return slices;
 }
 
-/** 扫描 always/characters/ 目录，返回 id → 全文 Map（文件名去 .md 即 id）。 */
 /** 角色卡目录的原文读取（id → 原始 markdown），供 store 的齐备判断等只需扫一眼的地方用。 */
 export async function loadCharacterCards(dir: string): Promise<CharacterDocument[]> {
   const result: CharacterDocument[] = [];

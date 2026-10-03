@@ -209,7 +209,7 @@ describe("导演生图：前置守卫（都不该碰生图后端）", () => {
     house = await houseWithImages(true);
     const store = library.store("p1");
     // 写一张角色卡
-    const charDir = store.memoryDir("always", "characters");
+    const charDir = store.characterDir();
     await mkdir(charDir, { recursive: true });
     await writeFile(join(charDir, "koharu.md"), "---\nname: 小春\n---\n粉发少女", "utf8");
 

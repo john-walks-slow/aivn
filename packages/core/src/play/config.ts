@@ -12,7 +12,7 @@ export interface CharacterCard {
   id: string;
   name: string;
   /**
-   * 人设正文。真相源是角色卡 `memory/always/characters/<id>.md` 的正文，
+   * 人设正文。真相源是角色卡 `characters/<id>.md` 的正文，
    * 这份是存量数据的兜底——工坊存过卡之后就不再写这里。
    */
   persona?: string;
@@ -33,12 +33,6 @@ export interface CharacterCard {
    * （如 shout = full、sigh = half）。bust 已废，写了会降级到 half。
    */
   spriteFraming?: Record<string, SpriteFraming>;
-}
-
-/** 主角（玩家）角色卡：输入润色的口吻依据（工坊/素材配置页设置）。 */
-export interface ProtagonistCard {
-  name: string;
-  persona: string;
 }
 
 /** 思考档位（pi 的 thinkingLevel）。剧作家与工坊各自独立。 */
@@ -98,7 +92,7 @@ export interface PlayConfig {
   /**
    * 角色清单——**纯元数据，没有任何运行时逻辑读它**。
    *
-   * 角色的真相源是 `memory/always/characters/<id>.md`（见 play/characterCard.ts）：
+   * 角色的真相源是 `characters/<id>.md`（见 play/characterCard.ts）：
    * 名字、人设、音色、voiceId、立绘差分映射与取景全在那里。角色表就是那个目录的
    * 文件列表。这份留着是因为它读着像「主要角色表」，删了会让 play.json 的角色部分
    * 对用户完全隐形，而它本来也不影响任何东西。
@@ -106,8 +100,6 @@ export interface PlayConfig {
   characters?: CharacterCard[];
   /** 剧目卡与标题画面的封面图。缺省按「第一张背景 → 第一张插图」自动取。 */
   cover?: PlayCover;
-  /** 主角（玩家）角色卡：无则输入润色走通用模式。 */
-  protagonist?: ProtagonistCard;
   /** 语音语言（ISO 639-1，如 "ja"）：与剧本语言不同时 say 文本先译成该语言再送 TTS；缺省跟随剧本语言。 */
   voiceLanguage?: string;
   /**
@@ -137,10 +129,6 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
   if (!data.id || !data.title) {
     throw new Error("play.json 缺少必填字段（id/title）");
   }
-  const protagonist =
-    data.protagonist && (data.protagonist.name.trim() !== "" || data.protagonist.persona.trim() !== "")
-      ? { name: data.protagonist.name.trim(), persona: data.protagonist.persona.trim() }
-      : undefined;
   // 封面：只认剧目自己已有的两张图，指错了就当没设（自动取第一张），不该让剧目打不开
   const coverRaw = (data as { cover?: unknown }).cover as
     | { kind?: unknown; id?: unknown }
@@ -157,7 +145,6 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
     title: data.title,
     characters: Array.isArray(data.characters) ? data.characters.map(parseCharacter) : undefined,
     ...(cover ? { cover } : {}),
-    ...(protagonist ? { protagonist } : {}),
     ...(data.voiceLanguage?.trim() ? { voiceLanguage: data.voiceLanguage.trim() } : {}),
     ...(typeof data.defaultVoiceId === "string" && /^[0-9a-f]{32}$/i.test(data.defaultVoiceId.trim())
       ? { defaultVoiceId: data.defaultVoiceId.trim() }

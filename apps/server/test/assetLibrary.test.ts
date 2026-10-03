@@ -34,14 +34,14 @@ async function makeEntry(root: string, kind: string, id: string, files: Record<s
   if (meta !== undefined) await writeFile(join(dir, "meta.json"), typeof meta === "string" ? meta : JSON.stringify(meta));
 }
 
-/** 角色卡（memory/always/characters/<id>.md）：角色的唯一真相源，导入写它而不是 play.json。 */
+/** 角色卡（characters/<id>.md）：角色的唯一真相源，导入写它而不是 play.json。 */
 async function readCard(playsRoot: string, playId: string, charId: string) {
-  const text = await readFile(join(playsRoot, playId, "memory/always/characters", `${charId}.md`), "utf8");
+  const text = await readFile(join(playsRoot, playId, "characters", `${charId}.md`), "utf8");
   return parseCharacterCard(text);
 }
 
 async function writeCard(playsRoot: string, playId: string, charId: string, text: string): Promise<void> {
-  const dir = join(playsRoot, playId, "memory/always/characters");
+  const dir = join(playsRoot, playId, "characters");
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${charId}.md`), text, "utf8");
 }
@@ -282,30 +282,27 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     });
   });
 
-  it("target=protagonist 写主角卡，不动角色列表", async () => {
-    await makeEntry(libRoot, "characters", "rio", {}, { character: { name: "理央", persona: "玩家扮演" } });
+  it("target=protagonist 写固定 id 的主角卡：卡与立绘都落在 protagonist 名下，play.json 一个字节不动", async () => {
+    await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n" }, {
+      character: { name: "理央", persona: "玩家扮演" },
+      expressions: { neutral: { file: "neutral.png" } },
+    });
     const store = plays.store("p1");
     await writeFile(
       join(playsRoot, "p1", "play.json"),
       JSON.stringify({ id: "p1", title: "T", characters: [], opening: "（开始）", initialScene: "s" }),
     );
-    const result = await importFromLibrary(library, store, { kind: "characters", entryId: "rio", target: "protagonist" });
-    expect(result.protagonist).toBe(true);
-    expect(result.characters).toEqual([]);
-    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
-    expect(play.protagonist).toEqual({ name: "理央", persona: "玩家扮演" });
-    expect(play.characters).toEqual([]);
-  });
+    const before = await readFile(join(playsRoot, "p1", "play.json"), "utf8");
 
-  it("target=protagonist 不复制立绘：主角在舞台上没有立绘位，复制过去就是没人引用的孤儿文件", async () => {
-    await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n", "smile.png": "s" }, {
-      character: { name: "理央", persona: "玩家扮演" },
-      expressions: { neutral: { file: "neutral.png" }, smile: { file: "smile.png" } },
-    });
-    const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "rio", target: "protagonist" });
-    expect(result.files).toEqual([]);
-    expect(result.manifestKeys).toEqual([]);
-    expect(existsSync(join(playsRoot, "p1", "assets", "sprites", "rio"))).toBe(false);
+    const result = await importFromLibrary(library, store, { kind: "characters", entryId: "rio", target: "protagonist" });
+
+    expect(result.protagonist).toBe(true);
+    expect(result.characters).toEqual(["protagonist"]);
+    expect(await readCard(playsRoot, "p1", "protagonist")).toMatchObject({ name: "理央", body: "玩家扮演" });
+    // 主角和别的角色一样能上台，所以立绘照导——落在 sprites/protagonist/，差分映射挂它的卡
+    expect(result.files).toEqual(["assets/sprites/protagonist/neutral.png"]);
+    expect(existsSync(join(playsRoot, "p1", "assets", "sprites", "protagonist", "neutral.png"))).toBe(true);
+    expect(await readFile(join(playsRoot, "p1", "play.json"), "utf8")).toBe(before);
   });
 
   it("只导选中的差分，且不冲掉角色卡里已有的其它差分", async () => {
@@ -422,7 +419,7 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
     await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" });
     const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
     const paths = result.writes.map((w) => w.path).sort();
-    expect(paths).toEqual(["assets/manifest.json", "memory/always/characters/mio.md"]);
+    expect(paths).toEqual(["assets/manifest.json", "characters/mio.md"]);
     for (const w of result.writes) {
       // before 是写盘前的原样内容，撤销条靠它回滚
       expect(w.after.length).toBeGreaterThan(0);
@@ -431,6 +428,6 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
     // 素材表本来不存在 → before 为 null，撤销就是删掉整个文件
     expect(result.writes.find((w) => w.path === "assets/manifest.json")!.before).toBeNull();
     // 角色卡同理：本来没有这张卡，撤销即删除
-    expect(result.writes.find((w) => w.path.startsWith("memory/"))!.before).toBeNull();
+    expect(result.writes.find((w) => w.path.startsWith("characters/"))!.before).toBeNull();
   });
 });

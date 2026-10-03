@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { CharacterDocument, SpriteFraming } from "@stage-ai/core";
-import { SPRITE_FRAMINGS, SPRITE_FRAMING_LABELS } from "@stage-ai/core";
+import { characterCardPath, SPRITE_FRAMINGS, SPRITE_FRAMING_LABELS } from "@stage-ai/core";
 import { api } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import type { VoiceCatalogState } from "../voice/useVoiceCatalog.js";
@@ -13,8 +13,11 @@ interface SpriteRow {
 }
 
 /**
- * 角色卡编辑器：名字 / persona / 音色 / 立绘差分映射，全部写角色卡
- * （`memory/always/characters/<id>.md`）。play.json 的 `characters` 是纯元数据，不经这里。
+ * 角色卡编辑器：名字 / persona / 音色 / 立绘差分映射，全部写角色卡（`characters/<id>.md`）。
+ * play.json 的 `characters` 是纯元数据，不经这里。
+ *
+ * 主角与普通角色共用它——两者是同一种东西。主角不高亮某个字段、也不锁某个字段，
+ * 唯一的不同是宿主不给 `onRemove`（主角卡是剧目的一部分，删了就没人可演）。
  */
 export function CharacterEditor({
   playId,
@@ -41,7 +44,8 @@ export function CharacterEditor({
   /** 点击「生成立绘」或行内「重生成」时唤起手动生图对话框 */
   onGenerateSprite?: (target: { expression?: string; framing?: SpriteFraming; fixed?: boolean }) => void;
   onDocChange: (fn: (doc: CharacterDocument) => void) => void;
-  onRemove: () => void;
+  /** 不给就没有「移除角色」这一项（主角卡不给）。 */
+  onRemove?: () => void;
 }) {
   const nextId = useRef(0);
   const [previewing, setPreviewing] = useState(false);
@@ -123,15 +127,17 @@ export function CharacterEditor({
         <button
           className="ghost-btn"
           onClick={onBrowseLibrary}
-          title={`从资源库导入一个角色的角色卡与立绘（按条目的 id 新建或覆盖同 id 的角色，不是填这张卡）`}
+          title="从资源库导入一个角色的角色卡与立绘（落在条目对应的角色卡上，不是填这一张）"
         >
           <span className="btn-icon">
             <Icon name="download" size={13} /> 从资源库导入
           </span>
         </button>
-        <button className="link-btn" onClick={onRemove}>
-          移除角色
-        </button>
+        {onRemove && (
+          <button className="link-btn" onClick={onRemove}>
+            移除角色
+          </button>
+        )}
       </div>
       <textarea
         rows={2}
@@ -272,7 +278,7 @@ export function CharacterEditor({
         </button>
       </div>
       <p className="muted small">
-        角色卡：<code>memory/always/characters/{charId}.md</code>
+        角色卡：<code>{characterCardPath(charId)}</code>
       </p>
     </div>
   );

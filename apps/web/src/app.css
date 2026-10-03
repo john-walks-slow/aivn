@@ -4050,7 +4050,7 @@ select:focus {
   color: var(--accent);
 }
 
-/* ── 设定与记忆页：一行卡片 + 展开编辑 ─────────────── */
+/* ── 记忆页：一行卡片 + 展开编辑 ─────────────── */
 
 .setting-cards {
   display: grid;

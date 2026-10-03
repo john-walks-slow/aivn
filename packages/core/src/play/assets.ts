@@ -39,7 +39,7 @@ export interface AssetCharacter {
   voice?: string;
   /** TTS 音色 id（play.json 的 voiceId）。 */
   voiceId?: string;
-  /** 玩家扮演的角色：导入时落 play.json 的 protagonist 而不是 characters 数组。 */
+  /** 玩家扮演的角色：导入时写 `characters/protagonist.md` 而不是新建一张普通卡。 */
   protagonist?: boolean;
 }
 
@@ -59,11 +59,11 @@ export interface AssetMeta {
   loop?: boolean;
   /** 建议默认音量（0–1）。 */
   volume?: number;
-  /** 角色包的角色卡原料：导入时按它建卡或更新同 id 的角色（protagonist 则落主角卡）。 */
+  /** 角色包的角色卡原料：导入时按它建卡或更新同 id 的角色（protagonist 则更新主角卡）。 */
   character?: AssetCharacter;
   /** 立绘差分表：表情名 → 文件与画面说明。 */
   expressions?: Record<string, SpriteExpression>;
-  /** 角色包立绘的取景（导入时落 play.json 的角色卡，舞台按它套站位预设）。 */
+  /** 角色包立绘的取景（导入时落角色卡的 framing，舞台按它套站位预设）。 */
   framing?: SpriteFraming;
 }
 

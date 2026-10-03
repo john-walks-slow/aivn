@@ -164,21 +164,23 @@ function writingPoints(ctx: WorkshopPromptContext): string {
   这个文件空着，剧作家就真的没有口径可听。所以每次跟用户对齐完写法，都要把结果落进这个文件，
   不要只在对话里说一句「知道了」。至少写清五件事：**每轮多长**（一段戏演多久、到哪里换画面）、
   **选项给几条**、**交还主导权的密度**（每轮都停，还是连着推几轮才停一次）、**文风与禁忌**、
-  **素材来源**（哪些自己画、哪些从资源库里找，见下面「素材来源」那条）。
+  **素材来源**（哪些自己画、哪些从资源库里找，见下面「素材来源」那条）、
+  **主角的呈现**（主角是藏在台后，还是也上台露面、也有立绘与配音）。
   只写风格条目，不要往里写 DSL 格式或工具用法，那些由引擎保证。
   用户改主意时（「节奏太快」「别让角色太主动」「选项给太多」「每段写短点」「背景别自己画」）改的就是这个文件。
 ${assetSourceGuidance(ctx)}
-- 角色卡（\`memory/always/characters/<id>.md\`，角色的一切都在这张卡里，play.json 不再存角色数据）：
+- 角色卡（\`characters/<id>.md\`，角色的一切都在这张卡里，play.json 不再存角色数据）：
   头部 frontmatter 放机器字段（id / name / voice / voiceId / framing / sprites），正文写具体的人（年龄/关系/说话方式/在意的点）。
   ${voicePickHint(ctx)}
   ${ctx.can.library ? "库里已有合适的角色可以先 \`import_asset\`（kind=characters）导进来再改，别从零重写。" : ""}
-- play.json（剧目配置，「设定」页改的也是它）就这些字段：
+  玩家扮演的主角也是一张普通角色卡，id 固定 \`protagonist\`（\`characters/protagonist.md\`）：要改主角设定就改这张，别另建。
+- play.json（剧目配置，「剧目」页改的也是它）就这些字段：
   \`title\`、\`opening\`（开局指令）、\`voiceLanguage\`（语音语言，ISO 639-1 如 "ja"；不写 = 台词按剧本原文配音）、
-  \`defaultVoiceId\`（无名角色、临时角色的兜底音色，32 位 hex）、\`protagonist\`（主角卡 name / persona）、
+  \`defaultVoiceId\`（无名角色、临时角色的兜底音色，32 位 hex）、
   \`cover\`（封面图，写法见「出图要点」）、\`initialState\` / \`initialScene\`（开局状态）、
   \`agents\`（两个 agent 的 model / thinking / tools）。
   除 \`id\` / \`title\` 外全是可选字段：缺一个不报错，只是那份效果静默消失（缺 \`defaultVoiceId\` 无名角色没声音、
-  缺 \`agents\` 工具开关回默认、缺 \`protagonist\` 输入润色就没了）。**改它只用 \`edit\` 改点名的字段，不要整篇 \`write\` 覆盖。**
+  缺 \`agents\` 工具开关回默认）。**改它只用 \`edit\` 改点名的字段，不要整篇 \`write\` 覆盖。**
 - 记忆卡（memory/index/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。
   index 下可以建子目录分门别类，**建议** \`locations/\` 放地点、\`lore/\` 放世界设定（不是硬要求，
   但分类后 A 区里每行都带 [分类] 前缀，剧作家更容易知道该去哪张卡里查）。

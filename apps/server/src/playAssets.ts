@@ -166,7 +166,7 @@ export interface PlayAssetsDeps {
   /** 素材到货（工坊侧挂到对话气泡里）。 */
   onAsset?: (asset: WorkshopAssetView, replaced: boolean, notify: AssetNotify) => void;
   /**
-   * **角色卡**（`memory/always/characters/<id>.md`）被这一层改过：补写差分映射与取景都落它头上，
+   * **角色卡**（`characters/<id>.md`）被这一层改过：补写差分映射与取景都落它头上，
    * 宿主据此决定要不要重建 runtime（角色表来自角色卡，不重建就取不到新差分）。
    * 工坊侧一轮收束时自己会重建，这里收到 "workshop" 无需动作；剧作家侧在拍内不能腰斩演出，
    * 收到 "silent" 得排到轮边界。
@@ -457,7 +457,7 @@ export class PlayAssets {
   }
 
   /**
-   * 角色卡（`memory/always/characters/*.md`）：角色配置的唯一真相源。
+   * 角色卡（`characters/*.md`）：角色配置的唯一真相源。
    *
    * 走 `PlayMemory.load` 而不是自己 readdir：角色卡的解析规则只有 `parseCharacterCard` 一处，
    * 这里再抄一遍就等于开了第二条真相源。出图一次几十秒，多读一个 memory 目录不占成本。
@@ -534,7 +534,7 @@ export class PlayAssets {
       const autoName = target.characterName?.trim();
       if (!autoName) {
         throw new Error(
-          `角色卡里没有角色「${characterId}」（memory/always/characters/${characterId}.md）。` +
+          `角色卡里没有角色「${characterId}」（characters/${characterId}.md）。` +
             `可选：${[...cast.keys()].join(" / ")}。` +
             "要在戏里引入一个新角色（路人、临时店员），带 characterName=显示名 重新发起，会自动建卡。",
         );
@@ -696,7 +696,7 @@ export class PlayAssets {
    */
   private mapSprite(spec: AssetSpec, file: string, notify: AssetNotify): Promise<void> {
     return withPlayConfigLock(this.deps.store.dir, async () => {
-      const path = `memory/always/characters/${spec.characterId}.md`;
+      const path = `characters/${spec.characterId}.md`;
       const raw = await this.deps.files.read(path).catch(() => null);
       if (raw === null) return;
       const card = parseCharacterCard(raw);

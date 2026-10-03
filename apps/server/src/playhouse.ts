@@ -1,6 +1,6 @@
 import type { ServerMessage } from "@stage-ai/core";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
-import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, type EngineStateSnapshot, type SpriteFraming } from "@stage-ai/core";
+import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, characterCardPath, PROTAGONIST_ID, type EngineStateSnapshot, type SpriteFraming } from "@stage-ai/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
 import type { AssetLibrary } from "./library.js";
@@ -491,7 +491,7 @@ export class PlayHouse {
   }
 
   /**
-   * 写角色卡（always/characters/<id>.md）。create_character file="characters/<id>" 时由编排器触发。
+   * 写角色卡（characters/<id>.md）。create_character file="characters/<id>" 时由编排器触发。
    *
    * 只写这一个文件——play.json 的 `characters` 早就是纯元数据，没有任何逻辑读它，
    * 往里塞 stub 是白写一遍再留一份会漂移的副本。
@@ -511,9 +511,8 @@ export class PlayHouse {
     const known = this.knownCharacters.get(store) ?? new Set<string>();
     known.add(charId);
     this.knownCharacters.set(store, known);
-    const charDir = store.memoryDir("always", "characters");
-    const charFile = join(charDir, `${charId}.md`);
-    await mkdir(dirname(charDir), { recursive: true });
+    const charFile = join(store.dir, characterCardPath(charId));
+    await mkdir(dirname(charFile), { recursive: true });
     await writeFile(charFile, content, "utf8");
   }
 
@@ -713,8 +712,11 @@ export class PlayHouse {
   /** 玩家输入润色（P4）：按主角角色卡口吻改写，保意不加戏。 */
   async polish(playId: string, text: string): Promise<string> {
     const store = this.library.store(playId);
-    const play = await store.loadPlay();
-    const protagonist = play.protagonist;
+    // 主角就是一张普通角色卡（id 固定）。只读这一张，不装载整个剧目记忆。
+    const cardText = await readFile(join(store.dir, characterCardPath(PROTAGONIST_ID)), "utf8").catch(() => "");
+    const card = cardText.trim() ? parseCharacterCard(cardText) : null;
+    const name = card?.name?.trim() ?? "";
+    const persona = card?.body.trim() ?? "";
     const system = [
       "你是视觉小说的玩家输入润色器，把玩家的原始输入改写成主角会说/会做的那一行。",
       "- 保留原意与全部关键信息，不添加新的动作、剧情或决定",
@@ -723,8 +725,8 @@ export class PlayHouse {
       "- 原文里的动作、神态、旁白都要保留，不要因为「只输出台词」而丢掉它们",
       "- 保持原文语言与大致长度，口语自然",
       "- 只输出改写后的那一行本身，不加引号或任何解释",
-      protagonist && (protagonist.name || protagonist.persona)
-        ? `\n主角设定：${protagonist.name || "（未命名）"}\n${protagonist.persona}`
+      name || persona
+        ? `\n主角设定：${name || "（未命名）"}\n${persona}`
         : "\n（未设置主角卡：保留玩家原声，只修顺语句）",
     ].join("\n");
     return completeText(

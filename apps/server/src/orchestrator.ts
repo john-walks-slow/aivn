@@ -242,7 +242,7 @@ export interface OrchestratorOptions {
   assetRefs?: AssetRefResolver;
   /**
    * 写角色设定钩子：create_character file="characters/<id>" 时调用。
-   * 负责落盘 always/characters/<id>.md——角色配置的唯一入口。
+   * 负责落盘 characters/<id>.md——角色配置的唯一入口。
    */
   onWriteCharacter?: (charId: string, content: string) => Promise<void>;
   /** 纪元压缩阈值（窗口占比）与保留预算；不传则只增不减到模型自己报错。 */
@@ -467,8 +467,6 @@ export class PlaywrightOrchestrator {
     this.voice = opts.tts
       ? new VoicePipeline({
           synth: opts.tts.synth,
-          // 角色卡是真相源，play.json 是存量兜底：导入资源库建的角色一度只有后者，
-          // 那时音色配置在 play.json 里。工坊存过卡之后这里就走卡。
           // 角色卡是真相源；卡上没有音色的（一次性路人、自动注册出来的临时角色）
           // 落到剧目级兜底，别让这类角色永远不出声。
           voiceOf: (charId) => opts.memory.characters.get(charId)?.voiceId ?? opts.play.defaultVoiceId,

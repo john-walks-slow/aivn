@@ -1,7 +1,7 @@
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
-import { parsePlayConfig } from "@stage-ai/core";
+import { parsePlayConfig, CHARACTER_DIR } from "@stage-ai/core";
 import type { PlayStore } from "./store.js";
 
 /**
@@ -18,7 +18,7 @@ const READONLY_PREFIXES = ["assets/"];
 /** 素材描述表（stem → 画面说明，注入剧作家提示词）——assets/ 里唯一可写的文本文件。 */
 const ASSET_MANIFEST = "assets/manifest.json";
 /** 允许下钻的顶层目录（其余目录整棵跳过，不进 readdir）。 */
-const DIR_ROOTS = ["memory", "assets"];
+const DIR_ROOTS = ["memory", "assets", CHARACTER_DIR];
 /** 二进制可写面：仅图像素材（工坊生图落盘）。 */
 const BINARY_WRITE_PREFIXES = ["assets/backgrounds/", "assets/cg/", "assets/sprites/"];
 /** 单图上限 16MB：2K 图 1–3MB，留足余量又挡得住写歪的产物。 */
@@ -81,10 +81,10 @@ function assertPlayConfig(rel: string, text: string): void {
   }
 }
 
-/** 可写面：根层 play.json + theme.css + 素材描述表 + memory/** 文本文件。 */
+/** 可写面：根层 play.json + theme.css + 素材描述表 + memory/** 与 characters/** 文本文件。 */
 function isEditable(rel: string): boolean {
   if (rel === PLAY_CONFIG || rel === "theme.css" || rel === ASSET_MANIFEST) return true;
-  if (!rel.startsWith("memory/")) return false;
+  if (!rel.startsWith("memory/") && !rel.startsWith(`${CHARACTER_DIR}/`)) return false;
   return EDITABLE_EXT.has(extOf(rel));
 }
 
@@ -208,7 +208,7 @@ export class PlayFiles {
     return abs;
   }
 
-  /** 删除（仅 memory/** 与 theme.css；play.json 是剧目定义，删掉=剧目损坏，任何入口都不许删）。 */
+  /** 删除（仅 memory/**、characters/** 与 theme.css；play.json 是剧目定义，删掉=剧目损坏，任何入口都不许删）。 */
   async remove(rel: string): Promise<void> {
     const abs = this.pathOf(rel, "write");
     if (abs === join(this.root, PLAY_CONFIG)) throw new Error("play.json 不可删除");

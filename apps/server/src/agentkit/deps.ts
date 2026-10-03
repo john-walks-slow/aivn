@@ -64,7 +64,7 @@ export interface PlaywriterKitDeps extends KitCommonDeps {
   stateFiles: Record<string, string>;
   /** 当前分支已走过的纪元（分岔回旧分支不得读到后世的章节摘要）。 */
   arcIds: () => readonly string[];
-  /** 写 always/characters/<id>.md 并 upsert play.json stub；不传则角色卡工具只回提示。 */
+  /** 写 characters/<id>.md（play.json 只留剧目元数据）；不传则角色卡工具只回提示。 */
   writeCharacter?: (id: string, content: string) => Promise<void>;
   /** 停止点载荷 → IR 事件（加 seq → 广播 → 落谱系，与解析器产出的事件同一条管道）。 */
   emitStop: (stop: ModelStop) => void;

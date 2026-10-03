@@ -43,7 +43,7 @@ const importAssetParams = Type.Object(
     entryId: Type.String({ maxLength: 64 }),
     /** characters 条目只导这几条差分（缺省全导）。 */
     expressions: Type.Optional(Type.Array(Type.String({ maxLength: 40 }), { maxItems: 24 })),
-    /** 落点为主角卡（覆盖 play.json 的 protagonist）而不是角色列表。 */
+    /** 落点为固定 id 的主角卡（characters/protagonist.md），而不是以条目 id 命名的新卡。 */
     target: Type.Optional(Type.Literal("protagonist")),
   },
   { additionalProperties: false },
@@ -181,16 +181,16 @@ function renderImportResult(kind: string, result: ImportResult): string {
   }
   // 角色包里卡与图是两件独立的事（可能只有卡没有图），回执要分别说清落了什么
   if (result.protagonist) {
-    return [
-      `已导入角色卡 ${result.id} → play.json 的主角卡`,
-      "主角没有立绘位（舞台只画角色），所以这次没有复制图片。",
-    ].join("\n");
+    const sprites = result.files.length
+      ? `，立绘 ${result.files.length} 张落在 ${result.files[0]!.replace(/\/[^/]+$/, "")}/`
+      : "（这个条目没有立绘，只导了卡）";
+    return `已导入主角卡 → characters/protagonist.md${sprites}。主角与别的角色同权：要不要上台、用不用立绘与配音，照剧目创作口径（memory/always/craft.md）来。`;
   }
   const sprites = result.files.length
     ? `，立绘 ${result.files.length} 张落在 ${result.files[0]!.replace(/\/[^/]+$/, "")}/`
     : "（这个条目没有立绘，只导了角色卡）";
   const card =
-    `角色卡已写入 memory/always/characters/${result.characters.join("、")}.md` +
+    `角色卡已写入 characters/${result.characters.join("、")}.md` +
     (result.files.length ? " 与差分映射，剧作家可以直接 <actor id=\"…\" expression=\"…\"> 上台" : "");
   return [`已导入角色 ${result.id}${sprites}`, card].join("\n");
 }

@@ -15,7 +15,7 @@
 - **同名工具调用并发**：create_character 的落盘与 generate_image 的成员校验原本实时读盘，同批发出时谁先完成不定，会偶发扑空。
 - `playhouse.writeCharacter` 落盘的同时把 id 登记进 `knownCharacters`（WeakMap<PlayStore>），`characterIdsOf` 那个回调读实时盘 ∪ 它，竞态就没了。
 - **无名角色音色**：`<say id="passerby" name="路人甲">` 这种一次性角色没有角色卡、而音色挂在角色卡的 voiceId 上，于是永远没声音。
-- `play.defaultVoiceId`（工坊「设定」页挑）在 `voiceOf` 里兜底，有卡的角色仍然各用各的。
+- `play.defaultVoiceId`（工坊「剧目」页挑）在 `voiceOf` 里兜底，有卡的角色仍然各用各的。
 - **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `recut_sprite`——立绘落盘前把抠底前的原片留一份到 `media-cache/sprite-sources/<角色id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
 - 没有留底的（更早出的图、用户上传的）直接报错，只能重新出图。
 - `import_asset` 仍在清单里，但**对剧作家默认关闭**——它的默认导入路径是引用即导入（见下），用户想让它自己动手再勾上。
@@ -32,7 +32,7 @@
 - 工坊模型可以和剧作家不同，阈值因此另有一套 `STAGE_WORKSHOP_*` env（缺省逐项沿用全局），生效值再与模型自带窗口取 min。
 - 摘要回注 A 区（工坊 A 区本就每轮重建，没有前缀缓存约束），多轮是**拿旧定稿重写成一份完整文档**而不是叠加（`capDigest` 封顶 6000 字）。
 - 工坊的 read / write / edit / bash 全部是 **pi 的内建工具**（`agentkit/piTools.ts` 只做 `AgentHarnessTool → AgentTool` 的适配，把 `onUpdate`/`toolContext`/`invocation`/`context` 补齐，`context` 用 `withAbortSignal(signal, BACKGROUND_CONTEXT)` 把工坊单轮的 7 分钟超时传下去）。
-- 路径白名单与 `play.json` 结构校验收在 `playFiles.ts` 的 `PlayFiles` 上——它是**所有文本写口的收口**（工坊 agent 的 write / edit、文件页、引用即导入的主角卡都从 `write` 过），校验不过就不落盘、盘上那份一个字节不动。撤销条在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，早拒白名单 + 记撤销条，落盘委派 `PlayFiles.write`）。
+- 路径白名单与 `play.json` 结构校验收在 `playFiles.ts` 的 `PlayFiles` 上——它是**所有文本写口的收口**（工坊 agent 的 write / edit、文件页、角色卡都从 `write` 过；可写目录是 `memory/**` 与 `characters/**`），校验不过就不落盘、盘上那份一个字节不动。撤销条在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，早拒白名单 + 记撤销条，落盘委派 `PlayFiles.write`）。
 - pi 的 `withFileMutationQueue` 顶掉了原来的 `fileLocks`（WeakMap<env> + canonicalPath，同一 `PlayEnv` 实例内自动串行）。
 - **bash 不走这一层**：它继承 `NodeExecutionEnv.exec`，cwd 就是剧目目录，以服务进程的权限跑、改文件不进撤销条，所以 `DEFAULT_ENABLED` 里默认关，`can.shell` 决定提示词注不注「命令行」那章（讲的是边界与后果，不是用法——cwd/截断/超时都在 pi 的 bash 描述里）。
 - `workshopSession` 订阅 `tool_execution_end`，跑过 bash 就置脏。**置脏只有 `markChanged()` 一个入口**（agent 写盘、素材到货、bash、文件页手改四条路都从这儿过），**收束只有 `applyChanges()` 一个出口**：真有改动才重建——回合内攒着、收束时重建一次，文件页保存没有收束可等、就地兑现。
@@ -91,7 +91,7 @@
 
 - **引用即导入**（`assetRef.ts` 的 `AssetRefResolver`）：剧本里写了剧目没有的 id，宿主就去库里找同名条目导入（`scene bg`→backgrounds、`cg id`→cg、`actor id`→characters、`scene bgm`→bgm、`ambient`→sfx 再 bgm、`sfx src`→sfx）。
 - 解析管道不 await，事件先广播按缺素材降级，到货后广播 `asset_ready` 复用现有的到货淡入。
-- 角色导入改 play.json 走 `rebuildAtBeatBoundary`（与剧作家给临时角色生立绘同一条延迟重建）。
+- 角色导入写角色卡 `characters/<id>.md`（不再动 `play.json`）走 `rebuildAtBeatBoundary`（与剧作家给临时角色生立绘同一条延迟重建）。
 - 库里没有就静默降级**不回话给模型**。
 - 这条链路是剧作家的**默认**导入路径，不需要开任何工具——但**剧作家提示词里要写这条契约**（`prompt.ts` 的 `LIBRARY_REF`，按 `can.library` 注入）：不告诉它，它就只剩「缺素材就自己画」这一条路，把本该从库里拿的背景全烧成配额。
 - 库里也没有的那一段尤其要写明「静默降级、不回话给模型」，否则它会换个 id 反复重写同一个引用。
@@ -124,6 +124,13 @@
 
 - 技能库（仓库 `skills/<name>/SKILL.md` + frontmatter）只装**跨剧目的通用做法速查**，只给工坊（`read_skill`，角色标记 `workshop`）——这部剧自己的画风锚点与创作口径一律留在剧目记忆里（`memory/always/craft.md` 与设定卡，每轮本来就注入），不给剧作家开技能通道：教模型调一个装不进去的工具，它只会反复空转烧 token。
 - **新剧目的 premise 与 craft 落盘就是空文件**（`createEmpty` 不再写模板），通用创作准则改由 `prompt.ts` 的 `CRAFT_RULES` 常驻系统提示词、引导文案搬进前端输入框 placeholder——模板正文写进文件会让人以为「已经填过了」，还会让就绪门把一份空模板判成前提已就位。
+
+## 角色卡（characters/）
+
+- **角色卡目录是剧目根下的顶层 `characters/`**（`packages/core/src/play/characterCard.ts` 的 `CHARACTER_DIR` / `characterCardPath(id)`）：**角色表就是这个目录的文件列表**，`play.json` 不再承载任何角色数据（`characters` 字段留着只是剧目元数据，没有运行时逻辑读它）。角色是剧目的一等公民、不是记忆的一层，所以不放在 `memory/` 下。
+- **主角是一张普通卡**，id 固定 `protagonist`（`PROTAGONIST_ID = "protagonist"`）：`store.createEmpty` 建目录时就写一张（正文「（玩家扮演的角色。还没有写设定。）」——**空文件会被 `loadCharacters` 跳过**，只建目录不写卡的话角色表里根本没有主角）。它不靠 frontmatter 标记来认：`characters/` 的不变式「角色表 = 文件列表 + 固定文件名」天然排除两个主角或零个主角。
+- 主角与别的卡**能力完全一致**（上台、立绘、音色、从资源库导入都照常），只有两处特殊：A 区角色表标注「，玩家扮演」（`prompt.ts` 读 `isProtagonist`）、工坊角色页不给删。是否上台、是否配音是**创作口径**（`memory/always/craft.md` 的事），引擎不预设。
+- 路径一律从 `characterCardPath(id)` 拼，别各自抄字符串：`store.characterDir()` 供 `loadCharacters` / `loadCharacterCards` / `PlayFiles` 白名单（`DIR_ROOTS` 含 `characters`）与 `assetImport` 共用；`playhouse.writeCharacter`、`playhouse.polish`（读主角卡拼「主角设定：」）也走它。
 
 ## 创作口径与剧目记忆
 

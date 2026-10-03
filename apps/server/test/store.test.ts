@@ -62,7 +62,7 @@ describe("PlayLibrary 剧目包导入与删除", () => {
     ).rejects.toThrow("非法剧目 id");
   });
 
-  it("createEmpty 落两份空设定；remove 整目录删除", async () => {
+  it("createEmpty 落两份空设定 + 一张主角卡；remove 整目录删除", async () => {
     await library.createEmpty("blank", "空白");
     const store = library.store("blank");
     // 两份设定默认就是空的：引导写在输入框的 placeholder 里，写进文件只会让人
@@ -70,6 +70,9 @@ describe("PlayLibrary 剧目包导入与删除", () => {
     expect((await store.premise()).trim()).toBe("");
     expect((await store.readiness()).premise).toBe(false);
     expect((await readFile(join(root, "blank", "memory/always/craft.md"), "utf8")).trim()).toBe("");
+    // 主角卡在顶层 characters/，一建剧目就有：id 固定，空文件会让它从角色表里消失
+    const protagonist = await readFile(join(root, "blank", "characters/protagonist.md"), "utf8");
+    expect(protagonist).toContain("name: 你");
     await library.remove("blank");
     expect(existsSync(join(root, "blank"))).toBe(false);
   });

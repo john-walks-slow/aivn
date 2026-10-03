@@ -2,9 +2,10 @@ import { copyFile, mkdir, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import {
+  characterCardPath,
   parseCharacterCard,
-  parsePlayConfig,
   serializeCharacterCard,
+  PROTAGONIST_ID,
   type AssetCharacter,
   type AssetKind,
   type AssetMeta,
@@ -29,20 +30,15 @@ import type { WorkshopWrite } from "./workshop.js";
  * 所以剧目侧手写的补充说明不会被一份缺字段的库 meta 冲掉。
  *
  * 导入同时把元数据搬进剧目的 `assets/manifest.json`（立绘另加角色卡
- * `memory/always/characters/<id>.md`）——这才是「剧作家能按情绪选曲、认出这是谁的哪个表情」的落点。
+ * `characters/<id>.md`）——这才是「剧作家能按情绪选曲、认出这是谁的哪个表情」的落点。
  */
-
-/** 角色卡在剧目内的相对路径：frontmatter 收机器字段，正文是人设。角色的一切都在这张卡上。 */
-function characterCardPath(id: string): string {
-  return `memory/always/characters/${id}.md`;
-}
 
 export interface ImportRequest {
   kind: AssetKind;
   entryId: string;
   /** characters 条目只导这几条差分（缺省全导）。 */
   expressions?: string[];
-  /** 落点为主角卡（覆盖 play.json 的 protagonist）而不是角色列表。 */
+  /** 落点为固定 id 的主角卡（`characters/protagonist.md`）而不是以条目 id 命名的新卡。 */
   target?: "protagonist";
 }
 
@@ -53,7 +49,7 @@ export interface ImportResult {
   files: string[];
   /** 写进/更新了哪些角色卡 id。 */
   characters: string[];
-  /** 这次写的是主角卡（角色列表为空）。 */
+  /** 这次写的是那张固定的主角卡（而不是新建一张以条目 id 命名的卡）。 */
   protagonist: boolean;
   /** 剧目素材表新增/更新的键。 */
   manifestKeys: string[];
@@ -134,6 +130,8 @@ export async function importFromLibrary(
   if (!entry) throw new Error(`资源库里没有 ${req.kind}/${req.entryId}`);
   const files = new PlayFiles(store);
   const isCharacter = entry.kind === "characters";
+  // 角色 id 决定卡落在哪、立绘放哪个目录——主角固定 id，其余用条目 id
+  const characterId = req.target === "protagonist" ? PROTAGONIST_ID : entry.id;
   const result: ImportResult = {
     kind: entry.kind,
     id: entry.id,
@@ -149,21 +147,21 @@ export async function importFromLibrary(
   const spriteMap: Record<string, string> = {};
   // 差分级取景：只有条目差分显式声明才搬，角色级 framing 留给 applyCharacter 写单值
   const spriteFraming: Record<string, SpriteFraming> = {};
-  // 主角卡没有立绘位（舞台只画 characters，protagonist 只供音色与润色），
-  // 复制过去就是没人引用的孤儿文件——只导卡，不导图
-  const copyMedia = isCharacter && req.target !== "protagonist";
+  // 主角和别的角色一样可以上台：立绘照导，落在 assets/sprites/protagonist/。
+  // 要不要用它、用不用它的立绘是创作口径（craft.md）的事，导入这一层不替剧目做决定。
+  const copyMedia = isCharacter;
   if (copyMedia) {
     for (const expression of pickedExpressions(entry, req.expressions)) {
       const source = fileForExpression(entry, expression);
       if (!source) throw new Error(`差分 ${expression} 在资源库条目里没有对应文件`);
       const ext = extname(source.name).toLowerCase();
-      const kindPath = `sprites/${entry.id}`;
+      const kindPath = `sprites/${characterId}`;
       await removeStaleSiblings(store, kindPath, expression, `${expression}${ext}`);
       await copyInto(await library.filePath(entry.kind, entry.id, source.name), store.assetPath(`${kindPath}/${expression}${ext}`));
       result.files.push(`assets/${kindPath}/${expression}${ext}`);
       // 键带角色前缀：多角色剧目里光写 smile 会被另一个角色的同名差分覆盖
       manifest.push([
-        `${entry.id}/${expression}`,
+        `${characterId}/${expression}`,
         mergeMeta(undefined, entry.meta, {
           description: entry.meta.expressions?.[expression]?.description ?? entry.meta.description,
         }),
@@ -202,35 +200,23 @@ export async function importFromLibrary(
     }
 
     const card = entry.meta.character;
+    result.protagonist = req.target === "protagonist";
     // 立绘必须有角色可挂：只声明了图就按目录名建一张空壳卡，否则差分映射无处安放
     if (!card && Object.keys(spriteMap).length === 0) return;
-    result.protagonist = req.target === "protagonist";
-    if (result.protagonist) {
-      // 主角卡不是角色卡：没有 id、没有立绘位，仍是 play.json 里那一格
-      const before = await files.read("play.json").catch(() => null);
-      const play = before ? parsePlayConfig(JSON.parse(before)) : null;
-      if (!play) throw new Error("剧目 play.json 不可读，主角卡没能写进去");
-      applyProtagonist(play, entry.id, card ?? {});
-      // 不带尾换行：与 savePlay / playAssets 的写法一致，别让撤销后的文本对不上
-      const after = JSON.stringify(parsePlayConfig(play), null, 2);
-      await files.write("play.json", after);
-      if (before !== after) result.writes.push({ path: "play.json", before, after });
-      return;
-    }
-    const write = await applyCharacterCard(files, entry.id, {
+    const write = await applyCharacterCard(files, characterId, {
       card: card ?? {},
       sprites: spriteMap,
       spriteFraming,
       framing: entry.meta.framing,
     });
-    result.characters.push(entry.id);
+    result.characters.push(characterId);
     if (write) result.writes.push(write);
   });
   return result;
 }
 
 /**
- * 把角色卡原料落进 `memory/always/characters/<id>.md`：库里没写的字段一律不动，
+ * 把角色卡原料落进 `characters/<id>.md`：库里没写的字段一律不动，
  * 剧目侧手改过的补充说明要留住。没变化就不写盘，也不记撤销条（空操作会误导用户）。
  */
 async function applyCharacterCard(
@@ -267,12 +253,4 @@ async function applyCharacterCard(
   if (after === before) return null;
   await files.write(path, after);
   return { path, before, after };
-}
-
-/** 主角卡：只有 name/persona 两个字段，台词风格与音色是角色的事，主角用不到。 */
-function applyProtagonist(play: ReturnType<typeof parsePlayConfig>, id: string, card: AssetCharacter): void {
-  play.protagonist = {
-    name: card.name || play.protagonist?.name || id,
-    persona: card.persona || play.protagonist?.persona || "",
-  };
 }

@@ -282,8 +282,8 @@ export async function handleHttp(
       if (method === "GET") {
         const play = await store.loadPlay();
         // premise 不在 play.json 里（A 区注入用的那份），详情页要显示就现取
-        // cast = 角色卡目录，角色的真相源。play.characters 那份是纯元数据，前端不读它。
-        const cards = await loadCharacterCards(store.memoryDir("always", "characters"));
+        // cast = 角色卡目录，角色的真相源（含固定 id 的主角卡）。play.characters 那份是纯元数据，前端不读它。
+        const cards = await loadCharacterCards(store.characterDir());
         return json(res, 200, {
           play,
           premise: await store.premise(),

@@ -57,7 +57,7 @@ async function makeStore(): Promise<PlayStore> {
   const dir = await mkdtemp(join(tmpdir(), "stage-wassets-"));
   await mkdir(join(dir, "memory", "always"), { recursive: true });
   // play.json 不再承载角色配置（那份 characters 是纯元数据，没有任何逻辑读它）：
-  // 角色表就是 memory/always/characters/ 下的文件。
+  // 角色表就是顶层 characters/ 下的文件。
   await writeFile(
     join(dir, "play.json"),
     JSON.stringify({
@@ -78,14 +78,14 @@ async function makeStore(): Promise<PlayStore> {
 
 /** 落一张角色卡（角色配置的唯一落点）。 */
 async function writeCard(dir: string, id: string, doc: CharacterDocument): Promise<void> {
-  const path = join(dir, "memory", "always", "characters");
+  const path = join(dir, "characters");
   await mkdir(path, { recursive: true });
   await writeFile(join(path, `${id}.md`), serializeCharacterCard({ ...doc, id }), "utf8");
 }
 
 /** 读回一张角色卡：出图补写的差分映射与取景都断言它。 */
 async function readCard(files: PlayFiles, id: string): Promise<CharacterDocument> {
-  return parseCharacterCard(await files.read(`memory/always/characters/${id}.md`));
+  return parseCharacterCard(await files.read(`characters/${id}.md`));
 }
 
 /** 记录每次出图请求的假后端：按请求画幅回真图，用来验画幅、抠底与换扩展名清旧。 */
@@ -126,7 +126,7 @@ function makeAssets(
       onWrite: (w) => writes.push(w),
       // 自动注册临时角色走这条；用例不接时就是「当前环境不能自动建卡」
       writeCharacter: async (charId, content) => {
-        const dir = store.memoryDir("always", "characters");
+        const dir = join(store.dir, "characters");
         await mkdir(dir, { recursive: true });
         await writeFile(join(dir, `${charId}.md`), content, "utf8");
       },
@@ -626,7 +626,7 @@ describe("PlayAssets：工坊素材落盘", () => {
         assets.generate({ kind: "sprite", characterId: "ran", expression: "neutral" }, "p", undefined, {
           ...(notify ? { notify } : {}),
         }),
-      ).rejects.toThrow(/角色卡里没有角色「ran」（memory\/always\/characters\/ran.md）/);
+      ).rejects.toThrow(/角色卡里没有角色「ran」（characters\/ran.md）/);
     }
     // 报错文案要能指导下一步：把现有角色列出来（目录扫描顺序不定，别钉死顺序）
     await expect(
@@ -677,7 +677,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect((await readCard(files, "mio")).sprites).toEqual({ neutral: "neutral.png", smile: "smile.png" });
     // 立绘映射补写要可撤销
     expect(writes).toHaveLength(2);
-    expect(writes[0]!.path).toBe("memory/always/characters/mio.md");
+    expect(writes[0]!.path).toBe("characters/mio.md");
     expect(writes[0]!.before).toContain("测试角色");
     // play.json 一个字节都不动：角色配置不再是它的职责
     expect(await files.read("play.json")).not.toContain("smile.png");
@@ -701,7 +701,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     const bothArrived = new Promise<void>((r) => (release = r));
     const timeout = setTimeout(release, 150);
     files.read = async (path: string) => {
-      if (path === "memory/always/characters/mio.md" && ++arrivals <= 2) {
+      if (path === "characters/mio.md" && ++arrivals <= 2) {
         await bothArrived;
         if (arrivals >= 2) release();
       }
@@ -872,7 +872,7 @@ describe("PlayAssets：自动注册临时角色", () => {
       "a passerby, front view, plain white background",
     );
 
-    const card = await readFile(join(store.memoryDir("always", "characters"), "passerby.md"), "utf8");
+    const card = await readFile(join(store.characterDir(), "passerby.md"), "utf8");
     expect(card).toContain("name: 路人甲");
     // 人设留白会让工坊以为「作者写过了，就是没写」——必须显式说它没写
     expect(card).toContain("设定未补");
@@ -889,7 +889,7 @@ describe("PlayAssets：自动注册临时角色", () => {
     // 一个字节都不许落
     expect(calls).toHaveLength(0);
     await expect(
-      readFile(join(store.memoryDir("always", "characters"), "ghost.md"), "utf8"),
+      readFile(join(store.characterDir(), "ghost.md"), "utf8"),
     ).rejects.toThrow();
   });
 
@@ -901,7 +901,7 @@ describe("PlayAssets：自动注册临时角色", () => {
 
     await assets.generate({ kind: "sprite", characterId: "mio", characterName: "路人甲", expression: "neutral" }, "p");
 
-    const card = await readFile(join(store.memoryDir("always", "characters"), "mio.md"), "utf8");
+    const card = await readFile(join(store.characterDir(), "mio.md"), "utf8");
     expect(card).toContain("name: 美绪");
     expect(card).toContain("店员，寡言。");
   });

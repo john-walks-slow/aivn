@@ -80,7 +80,7 @@ export interface PlayDetail {
   premise: string;
   readiness: Readiness;
   /**
-   * 角色表（memory/always/characters/*.md 的解析结果）——角色的真相源。
+   * 角色表（`characters/*.md` 的解析结果，含 id 固定为 protagonist 的主角卡）——角色的真相源。
    * play.json 的 `characters` 是纯元数据，任何界面都不该从那里取角色。
    */
   cast: CharacterDocument[];
@@ -311,7 +311,7 @@ export const api = {
       `/api/library?kind=${encodeURIComponent(kind ?? "")}&q=${encodeURIComponent(q ?? "")}`,
     ),
 
-  /** 从资源库导入到本剧目（复制文件 + 写素材表/角色卡），保存即生效。target=protagonist 落主角卡。 */
+  /** 从资源库导入到本剧目（复制文件 + 写素材表/角色卡），保存即生效。target=protagonist 落主角卡（连立绘）。 */
   importLibraryAsset: (
     id: string,
     req: { kind: string; entryId: string; expressions?: string[]; target?: "protagonist" },

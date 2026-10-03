@@ -1,4 +1,4 @@
-import { describeAsset, type AssetMeta, type EngineStateSnapshot } from "@stage-ai/core";
+import { describeAsset, isProtagonist, type AssetMeta, type EngineStateSnapshot } from "@stage-ai/core";
 import type { PlayConfig } from "@stage-ai/core";
 import type { AgentCapabilities } from "./agentkit/kit.js";
 import { SEARCH_GUIDE } from "./agentkit/searchTool.js";
@@ -205,10 +205,13 @@ const CONTRACT_RULES = `# 演出契约（引擎规则，不可改）
 4. 【用户输入】以「OOC」开头 = 导演指示，据此调整接下来的演出方向，但不要复述它、不要跳出戏外回应它；
    否则 = 其中某个角色（可能就是主角，也可能是别人）的行动、话语或心理，照字面意思演成该角色的言行。
    两种都不要在剧本里复述这段文字本身。
-5. 标注「未作回应」时：不要替玩家编造台词或行动，让角色自然接戏并在合适时机再给回应机会。`;
+5. 标注「未作回应」时：不要替玩家编造台词或行动，让角色自然接戏并在合适时机再给回应机会。
+6. 角色表里标着「玩家扮演」的那张卡（id 固定为 protagonist）就是玩家本人。它和别的角色完全同权：
+   有立绘、有音色、能上台被 <actor> 调用——但是否让主角露面、是否给主角配音，照剧目的创作口径，
+   引擎没有默认。`;
 
 export function buildSystemPrompt(ctx: PromptContext): string {
-  const { play, memory, generated = [] } = ctx;
+  const { memory, generated = [] } = ctx;
   const notes = ctx.notes ?? {};
   /**
    * 素材元数据查找：立绘差分按「角色id/差分名」找（多角色剧目里光写 smile 会撞车），
@@ -231,7 +234,9 @@ export function buildSystemPrompt(ctx: PromptContext): string {
         card.sprites && Object.keys(card.sprites).length > 0
           ? Object.keys(card.sprites)
           : (ctx.assets?.[`sprites/${id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
-      return `### ${card.name ?? id}（id: ${id}）\n${card.body}${card.voice ? `\n音色：${card.voice}` : ""}${
+      return `### ${card.name ?? id}（id: ${id}${isProtagonist(id) ? "，玩家扮演" : ""}）\n${card.body}${
+        card.voice ? `\n音色：${card.voice}` : ""
+      }${
         expressions.length > 0
           ? `\n立绘差分 expression：${expressions.map((e) => label(e, id)).join(" | ")}`
           : ""

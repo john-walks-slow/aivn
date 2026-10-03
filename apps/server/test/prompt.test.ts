@@ -56,6 +56,23 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
     expect(prompt).toContain("expression：pout（鼓腮嗔怒）");
   });
 
+  it("主角卡在角色表里标出「玩家扮演」，契约点明它与别的角色同权", () => {
+    const prompt = build({
+      play: PLAY,
+      memory: new PlayMemory({
+        characters: new Map([
+          ["protagonist", { id: "protagonist", name: "你", body: "高二学生，话不多。" }],
+          ["mio", { id: "mio", name: "澪", body: "p" }],
+        ]),
+      }),
+    });
+    // 主角就是一张普通卡，只在标题里多一个标注——上台、立绘、配音都由创作口径决定
+    expect(prompt).toContain("### 你（id: protagonist，玩家扮演）");
+    expect(prompt).toContain("### 澪（id: mio）");
+    expect(prompt).not.toContain("### 澪（id: mio，玩家扮演）");
+    expect(prompt).toContain("id 固定为 protagonist");
+  });
+
   it("立绘差分的两套键约定合并取字段：规范键只有 prompt 时别把裸键的描述挡掉", () => {
     // 引擎记 prompt 走 <角色id>/<差分名>，手写与工坊补的描述常是裸差分名：两套并存是现实
     const prompt = build({

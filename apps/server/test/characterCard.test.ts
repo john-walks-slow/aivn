@@ -20,8 +20,8 @@ async function storeWith(card: string | null, play = "{}"): Promise<PlayStore> {
   const root = await mkdtemp(join(tmpdir(), "stage-card-"));
   const store = new PlayStore(root);
   if (card !== null) {
-    await mkdir(store.memoryDir("always", "characters"), { recursive: true });
-    await writeFile(join(store.memoryDir("always", "characters"), "mio.md"), card, "utf8");
+    await mkdir(store.characterDir(), { recursive: true });
+    await writeFile(join(store.characterDir(), "mio.md"), card, "utf8");
   }
   await writeFile(join(root, "play.json"), play, "utf8");
   return store;

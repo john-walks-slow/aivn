@@ -170,8 +170,8 @@ export function refFromSfx(src: string): AssetRef {
 }
 
 /**
- * 剧目里已注册的角色 id（`memory/always/characters/*.md` 的文件名主体）——角色表就是那个目录。
- * 主角不在表里：它没有 id，`<actor>` 引不到它。
+ * 剧目里已注册的角色 id（`characters/*.md` 的文件名主体）——角色表就是那个目录。
+ * 主角也在表里（id 固定为 `protagonist`），它是一张和别人一样的卡。
  */
 export async function characterIdsOf(store: PlayStore): Promise<string[]> {
   return [...(await PlayMemory.load(store)).characters.keys()];

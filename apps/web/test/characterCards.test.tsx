@@ -7,7 +7,6 @@ const { apiMock } = vi.hoisted(() => ({
   apiMock: {
     playDetail: vi.fn(),
     listAssets: vi.fn(),
-    savePlay: vi.fn(),
     saveFile: vi.fn(),
     deleteFile: vi.fn(),
     voiceCatalog: vi.fn(),
@@ -28,8 +27,9 @@ const PLAY = {
   initialScene: "未定",
 } as unknown as PlayConfig;
 
-/** cast 是服务端解析好的整份角色卡（memory/always/characters/*.md），play.json 那份不参与。 */
+/** cast 是服务端解析好的整份角色卡（characters/*.md），play.json 那份不参与。 */
 const CAST = [
+  { id: "protagonist", name: "你", body: "玩家扮演的角色。" },
   {
     id: "mio",
     name: "ミオ",
@@ -49,7 +49,6 @@ describe("角色页：真相源是角色卡", () => {
   beforeEach(() => {
     apiMock.playDetail.mockResolvedValue({ play: PLAY, premise: "", readiness: {}, cast: CAST });
     apiMock.listAssets.mockResolvedValue({});
-    apiMock.savePlay.mockResolvedValue({});
     apiMock.saveFile.mockResolvedValue({ ok: true });
     apiMock.deleteFile.mockResolvedValue({ ok: true });
     apiMock.voiceCatalog.mockResolvedValue({ entries: [] });
@@ -60,10 +59,13 @@ describe("角色页：真相源是角色卡", () => {
     vi.clearAllMocks();
   });
 
-  it("角色表就是 cast，play.json 那份纯元数据不参与", async () => {
+  it("角色表就是 cast（主角卡也在其中），play.json 那份纯元数据不参与", async () => {
     render(<CharacterPane playId="p1" revision={0} />);
     await waitFor(() => expect(cardTitles()).toContain("ミオ"));
+    expect(cardTitles()).toContain("你");
     expect(cardTitles()).not.toContain("play.json 里的旧名");
+    // 主角卡与角色卡同权：同一个编辑器、同一份正文
+    expect(screen.getByText("玩家扮演")).toBeTruthy();
     // 角色卡的正文与头部一次到位，不必再逐个 readFile
     expect(apiMock.readFile).toBeUndefined();
   });
@@ -82,12 +84,28 @@ describe("角色页：真相源是角色卡", () => {
     await waitFor(() => expect(apiMock.saveFile).toHaveBeenCalledTimes(1));
     const [playId, path, content] = apiMock.saveFile.mock.calls[0] as [string, string, string];
     expect(playId).toBe("p1");
-    expect(path).toBe("memory/always/characters/mio.md");
+    expect(path).toBe("characters/mio.md");
     expect(content).toContain("name: ミオ");
     expect(content).toContain("framing: half");
     expect(content).toContain("neutral: mio_neutral.png");
     expect(content).toContain("改过的人设");
-    expect(apiMock.savePlay).toHaveBeenCalledTimes(1);
+  });
+
+  it("主角卡与角色卡同用一个编辑器，只是不给移除", async () => {
+    render(<CharacterPane playId="p1" revision={0} />);
+    await waitFor(() => expect(cardTitles()).toContain("你"));
+    fireEvent.click(screen.getByText("你"));
+
+    const textarea = await screen.findByPlaceholderText("persona（性格与背景）");
+    expect((textarea as HTMLTextAreaElement).value).toBe("玩家扮演的角色。");
+    // 主角能配立绘与音色（和别的角色一样），所以编辑器整份都在，唯独没有删除
+    expect(screen.getByRole("button", { name: "从资源库导入" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "移除角色" })).toBeNull();
+
+    fireEvent.change(textarea, { target: { value: "高二学生，话不多。" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(apiMock.saveFile).toHaveBeenCalledTimes(1));
+    expect(apiMock.saveFile.mock.calls[0]![1]).toBe("characters/protagonist.md");
   });
 
   it("移除角色就是删那张卡", async () => {
@@ -96,25 +114,47 @@ describe("角色页：真相源是角色卡", () => {
     fireEvent.click(screen.getByText("ミオ"));
     fireEvent.click(await screen.findByRole("button", { name: "移除角色" }));
 
-    expect(apiMock.deleteFile).toHaveBeenCalledWith("p1", "memory/always/characters/mio.md");
+    expect(apiMock.deleteFile).toHaveBeenCalledWith("p1", "characters/mio.md");
     await waitFor(() => expect(cardTitles()).not.toContain("ミオ"));
   });
 
-  it("新建角色只落角色卡，play.json 的 characters 不再被动", async () => {
+  it("主角卡不在 cast 里（没迁移的老剧目）也要有入口，编辑后落在主角卡路径", async () => {
+    apiMock.playDetail.mockResolvedValue({
+      play: PLAY,
+      premise: "",
+      readiness: {},
+      cast: CAST.filter((c) => c.id !== "protagonist"),
+    });
+
+    render(<CharacterPane playId="p1" revision={0} />);
+    await waitFor(() => expect(cardTitles()).toContain("ミオ"));
+    // 兜底补上的主角卡：名字回落成「你」，否则用户在这一页无处编辑、也无处导入
+    expect(cardTitles()).toContain("你");
+
+    fireEvent.click(screen.getByText("你"));
+    const textarea = await screen.findByPlaceholderText("persona（性格与背景）");
+    expect((textarea as HTMLTextAreaElement).value).toBe("");
+    fireEvent.change(textarea, { target: { value: "高二学生，话不多。" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(apiMock.saveFile).toHaveBeenCalledTimes(1));
+    expect(apiMock.saveFile.mock.calls[0]![1]).toBe("characters/protagonist.md");
+  });
+
+  it("新建角色只落角色卡，play.json 不参与", async () => {
     render(<CharacterPane playId="p1" revision={0} />);
     await waitFor(() => expect(cardTitles()).toContain("ミオ"));
     fireEvent.click(screen.getByRole("button", { name: /新建角色/ }));
     await screen.findByPlaceholderText("persona（性格与背景）");
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
-    await waitFor(() => expect(apiMock.savePlay).toHaveBeenCalled());
-    const draft = apiMock.savePlay.mock.calls[0]![0] as PlayConfig;
-    expect(draft.characters?.map((c) => c.id)).toEqual(["mio"]);
-    // 卡本身照写：新角色落成 memory/always/characters/charN.md
+    await waitFor(() => expect(apiMock.saveFile).toHaveBeenCalled());
     expect(apiMock.saveFile).toHaveBeenCalledWith(
       "p1",
-      expect.stringMatching(/^memory\/always\/characters\/char\d+\.md$/),
+      expect.stringMatching(/^characters\/char\d+\.md$/),
       expect.stringContaining("name: 新角色"),
     );
+    // 这一页根本不碰 play.json
+    expect(apiMock.savePlay).toBeUndefined();
   });
 });

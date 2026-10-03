@@ -105,7 +105,7 @@ export function createMemoryTools(
     name: "create_character",
     label: "建角色卡",
     description:
-      "建立/更新一张角色卡（memory/always/characters/<id>.md）。角色的一切配置都在这张卡里，play.json 不再存角色数据。\n\n" +
+      "建立/更新一张角色卡（characters/<id>.md）。角色的一切配置都在这张卡里，play.json 不再存角色数据。\n\n" +
       "content 是完整的文件内容——frontmatter 头部 + 正文，格式：\n\n" +
       "---\nid: xiaoyu            # 与 file 的 id 一致，引擎以文件名为准，这里写错会被忽略\n" +
       "name: 小雨             # 显示名\n" +
@@ -117,7 +117,8 @@ export function createMemoryTools(
       "  neutral: xiaoyu_neutral.png\n" +
       "---\n\n" +
       "正文是人设：年龄、关系、说话方式、在意的点（正文 = 剧作家看到的 persona）。\n\n" +
-      "建档后到下一轮边界，角色出现在 A 区角色表里。工坊那边写同一个文件用 write。",
+      "建档后到下一轮边界，角色出现在 A 区角色表里。工坊那边写同一个文件用 write。\n\n" +
+      "玩家扮演的主角也是一张普通角色卡，id 固定为 protagonist（characters/protagonist.md）：要改主角设定就写它，别另建一张卡。",
     parameters: createCharacterParams,
     execute: async (_toolCallId, params: Static<typeof createCharacterParams>) => {
       const { file, content } = params;

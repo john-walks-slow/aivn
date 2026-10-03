@@ -8,7 +8,16 @@ import {
   type LineageEvent,
   type LineageStore,
 } from "@stage-ai/core";
-import { parsePlayConfig, parsePlayAssetManifest, type AssetMeta, type PlayConfig } from "@stage-ai/core";
+import {
+  parsePlayConfig,
+  parsePlayAssetManifest,
+  characterCardPath,
+  serializeCharacterCard,
+  CHARACTER_DIR,
+  PROTAGONIST_ID,
+  type AssetMeta,
+  type PlayConfig,
+} from "@stage-ai/core";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
 import { loadCharacterCards } from "./memory.js";
 import { parseHistory, type HistoryBeat } from "./history.js";
@@ -203,7 +212,7 @@ export class PlayStore {
     }
     // 立绘齐备：差分映射在角色卡 frontmatter 里（sprites: expression → 文件名）
     const spritesDir = join(this.dir, "assets/sprites");
-    const cards = await loadCharacterCards(join(this.dir, "memory/always/characters"));
+    const cards = await loadCharacterCards(this.characterDir());
     const characterSprites =
       cards.some((c) => {
         const sprites = c.sprites;
@@ -236,6 +245,14 @@ export class PlayStore {
   /** 剧目记忆目录（D7：always/index 剧目级进 git；arcs 与 archive 运行时不进）。 */
   memoryDir(...segments: string[]): string {
     return join(this.dir, "memory", ...segments);
+  }
+
+  /**
+   * 角色卡目录（顶层 `characters/`，不进 memory/）：**角色表就是这个目录的文件列表**，
+   * 与记忆的分层无关——角色是剧目的一等公民，不是「记忆」的一种。
+   */
+  characterDir(): string {
+    return join(this.dir, CHARACTER_DIR);
   }
 
   /**
@@ -484,6 +501,13 @@ export class PlayLibrary {
     await mkdir(join(dir, "assets", "backgrounds"), { recursive: true });
     await mkdir(join(dir, "assets", "sprites"), { recursive: true });
     await mkdir(join(dir, "memory", "always"), { recursive: true });
+    await mkdir(join(dir, CHARACTER_DIR), { recursive: true });
+    // 主角卡：id 固定，剧目一建出来就该在角色表里占一行，用户进来就能改名写设定。
+    // 留空文件会让它从角色表里消失（空文本的卡不加载），所以给一个最小可读的默认名。
+    await writeFile(
+      join(dir, characterCardPath(PROTAGONIST_ID)),
+      serializeCharacterCard({ name: "你", body: "（玩家扮演的角色。还没有写设定。）" }),
+    );
     await writeFile(
       join(dir, "play.json"),
       JSON.stringify(

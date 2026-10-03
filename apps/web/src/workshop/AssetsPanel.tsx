@@ -12,7 +12,7 @@ const KINDS = ["backgrounds", "cg", "sfx", "bgm"] as const;
 /** 文件名去掉扩展名：素材表与文件名对不上时，仍能按 stem 找到描述。 */
 const stemOf = (name: string): string => name.replace(/\.\w+$/, "");
 
-/** 素材：背景、CG、音效、配乐的上传与从资源库导入。剧目字段与角色卡在「设定与记忆」页。 */
+/** 素材：背景、CG、音效、配乐的上传与从资源库导入。剧目字段在「剧目」页，角色卡在「角色」页。 */
 export function AssetsPanel({
   playId,
   subscribeImageResult,

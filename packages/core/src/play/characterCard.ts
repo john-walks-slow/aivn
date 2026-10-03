@@ -1,7 +1,7 @@
 /**
  * 角色卡：markdown 正文 + frontmatter 头部。
  *
- * 角色配置散在两处的历史：人设写进 `memory/always/characters/<id>.md`，
+ * 角色配置散在两处的历史：人设写进 `characters/<id>.md`，
  * 音色与差分映射写进 play.json 的 `characters[]`。于是 `persona` 有 markdown 兜底、
  * `voiceId` 没有——工坊建了卡也配不上音色，因为那半边它写不进去。
  *
@@ -33,6 +33,32 @@
 import { SPRITE_FRAMINGS, type SpriteFraming } from "./framing.js";
 
 const FENCE = "---";
+
+/**
+ * 角色卡目录：剧目根下的顶层目录。**角色表就是这个目录的文件列表**——
+ * 名字、人设、音色、立绘差分映射与取景全在卡上，play.json 不再承载角色数据。
+ */
+export const CHARACTER_DIR = "characters";
+
+/**
+ * 玩家扮演的角色：固定 id 的一张普通角色卡（`characters/protagonist.md`）。
+ *
+ * 不靠 frontmatter 标记来认主角——`characters/` 的不变式是「角色表 = 目录的文件列表」，
+ * 固定文件名让「谁是主角」不需要第二处声明，也不会出现两个主角或零个主角。
+ * 它与别的卡能力完全一致（台上有立绘、台词有音色）；是否上台、是否配音是创作口径，
+ * 写在剧目自己的 craft.md 里，引擎不预设。
+ */
+export const PROTAGONIST_ID = "protagonist";
+
+/** 角色卡在剧目内的相对路径。角色的读写口都从这里拼，别各自抄一份。 */
+export function characterCardPath(id: string): string {
+  return `${CHARACTER_DIR}/${id}.md`;
+}
+
+/** 是不是玩家扮演的那张卡（只有 A 区标注与输入润色关心这件事）。 */
+export function isProtagonist(id: string): boolean {
+  return id === PROTAGONIST_ID;
+}
 
 /** 角色卡的机器字段。play.json 的 `CharacterCard` 是这份的超集（多素材元数据）。 */
 export interface CharacterHead {

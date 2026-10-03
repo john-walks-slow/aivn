@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { serializeCharacterCard } from "@stage-ai/core";
-import type { CharacterDocument, PlayConfig } from "@stage-ai/core";
+import { characterCardPath, isProtagonist, PROTAGONIST_ID, serializeCharacterCard } from "@stage-ai/core";
+import type { CharacterDocument } from "@stage-ai/core";
 import { api, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { CharacterEditor } from "./CharacterEditor.js";
@@ -9,25 +9,27 @@ import { ImageGenDialog, type ImageGenTarget } from "./ImageGenDialog.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";
 import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
 
-const PROTAGONIST_KEY = "protagonist";
-const CHARACTER_DIR = "memory/always/characters/";
-
-/** 角色卡的路径（工坊这边拼的唯一一份，与服务端 memory.ts 读同一处）。 */
-function characterCardPath(id: string): string {
-  return `${CHARACTER_DIR}${id}.md`;
-}
-
 /** cast 里每个角色都有 id（服务端按文件名取的），这里只是把可选字段收成必填。 */
 type Role = CharacterDocument & { id: string };
 
 /** cast 是服务端解析好的整份角色卡，没有 id 的条目（理论上不存在）直接丢掉。 */
 function rolesOf(detail: PlayDetail): Role[] {
-  return detail.cast.filter((doc): doc is Role => Boolean(doc.id));
+  const roles = detail.cast.filter((doc): doc is Role => Boolean(doc.id));
+  // 主角卡理应恒在（新建剧目就写好了一张）。真不在——没跑迁移脚本的老剧目、卡被清空——
+  // 就补一张空卡：少了它，角色页连「主角」这个入口都没有，用户无处编辑、也无处导入，
+  // 剧作家的角色表里则会少掉玩家。
+  if (!roles.some((role) => isProtagonist(role.id))) {
+    roles.unshift({ id: PROTAGONIST_ID, name: "你", body: "" });
+  }
+  return roles;
 }
 
 /**
- * 角色：主角卡与全部角色卡。角色的真相源是 `memory/always/characters/<id>.md`，
- * 主角卡例外——玩家不上台，它的 persona 走 play.json 的 `protagonist` 字段。
+ * 角色：主角卡与全部角色卡，同一个编辑器、同一份保存路径。
+ *
+ * 角色的真相源是 `characters/<id>.md`；主角只是 id 固定为 `protagonist` 的那一张，
+ * 它不是一类特殊角色——能上台、有立绘、有音色，只是不给删（删了剧目就没有玩家了）。
+ * play.json 在这条路径上一个字节都不参与。
  */
 export function CharacterPane({
   playId,
@@ -39,14 +41,13 @@ export function CharacterPane({
   subscribeImageResult?: (handler: (res: any) => void) => () => void;
 }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
-  const [draft, setDraft] = useState<PlayConfig | null>(null);
   const [roles, setRoles] = useState<Role[] | null>(null);
   /** 改过的角色卡：保存时只写这些，没动过的卡不必为刷新 mtime 而重写一遍。 */
   const [dirtyRoles, setDirtyRoles] = useState<Set<string>>(new Set());
   const [assets, setAssets] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [open, setOpen] = useState<string | null>(PROTAGONIST_KEY);
+  const [open, setOpen] = useState<string>(PROTAGONIST_ID);
   const [libraryInto, setLibraryInto] = useState<string | null>(null);
   const [voiceFor, setVoiceFor] = useState<string | null>(null);
   const [genTarget, setGenTarget] = useState<ImageGenTarget | null>(null);
@@ -57,21 +58,12 @@ export function CharacterPane({
       .playDetail(playId)
       .then((d) => {
         setDetail(d);
-        setDraft(d.play);
         setRoles(rolesOf(d));
       })
       .catch((e: Error) => setError(e.message));
     api.listAssets(playId).then(setAssets).catch(() => {});
   }, [playId]);
   useEffect(reload, [reload, revision]);
-
-  const patch = (fn: (play: PlayConfig) => void): void => {
-    if (!draft) return;
-    const next = structuredClone(draft);
-    fn(next);
-    setDraft(next);
-    setSaved(false);
-  };
 
   /** 角色卡的编辑走这里：只改内存，保存时才落盘。 */
   const patchRole = (id: string, fn: (doc: Role) => void): void => {
@@ -88,14 +80,14 @@ export function CharacterPane({
     setSaved(false);
   };
 
-  const savePlay = (): void => {
-    if (!draft || !roles) return;
-    // 角色卡与 play.json 在同一个保存动作里落盘；卡片写失败整体报错、脏标记留着可重试
-    const cardWrites = [...dirtyRoles]
+  const saveCards = (): void => {
+    if (!roles) return;
+    // 角色卡按脏标记逐个落盘；写失败整体报错、脏标记留着可重试
+    const writes = [...dirtyRoles]
       .map((id) => roles.find((r) => r.id === id))
       .filter((r): r is Role => r !== undefined)
       .map((r) => api.saveFile(playId, characterCardPath(r.id), serializeCharacterCard(r)));
-    Promise.all([api.savePlay(draft), ...cardWrites])
+    Promise.all(writes)
       .then(() => {
         setDirtyRoles(new Set());
         setSaved(true);
@@ -119,7 +111,7 @@ export function CharacterPane({
     // 角色表就是角色卡目录：新建只进 state，保存时才落成那一张 md（play.json 不再参与）
     setRoles([...roles, { id, name: "新角色", body: "" }]);
     setDirtyRoles((prev) => new Set(prev).add(id));
-    setOpen(`char:${id}`);
+    setOpen(id);
   };
 
   /** 移除角色 = 删那张角色卡，角色本身就在卡里，没有第二处要同步。 */
@@ -131,14 +123,14 @@ export function CharacterPane({
       next.delete(id);
       return next;
     });
-    setOpen(PROTAGONIST_KEY);
+    setOpen(PROTAGONIST_ID);
   };
 
-  if (!draft || !roles) return <div className="workshop-tab-pane">读取中…</div>;
+  if (!roles) return <div className="workshop-tab-pane">读取中…</div>;
 
-  const active = open === PROTAGONIST_KEY ? PROTAGONIST_KEY : open?.replace(/^char:/, "") ?? "";
-  const activeIndex = roles.findIndex((r) => r.id === active);
-  const activeRole = activeIndex >= 0 ? (roles[activeIndex] as Role) : null;
+  // 选中的那张一定在（主角卡在上面兜过底），兜底的 `roles[0]` 只防空卡目录
+  const activeRole = roles.find((r) => r.id === open) ?? roles[0] ?? null;
+  const dirty = dirtyRoles.size > 0;
 
   return (
     <div className="workshop-tab-pane setting-cards-pane">
@@ -149,27 +141,18 @@ export function CharacterPane({
       )}
 
       <div className="setting-cards">
-        <button
-          type="button"
-          className={`setting-card${open === PROTAGONIST_KEY ? " active" : ""}`}
-          onClick={() => setOpen(PROTAGONIST_KEY)}
-        >
-          <Icon name="users" size={14} />
-          <span className="setting-card-title">主角</span>
-          <span className="setting-card-summary">
-            {draft.protagonist?.name || "（玩家，上台的是别人）"}
-          </span>
-        </button>
         {roles.map((role) => (
           <button
             key={role.id}
             type="button"
-            className={`setting-card${open === `char:${role.id}` ? " active" : ""}`}
-            onClick={() => setOpen(`char:${role.id}`)}
+            className={`setting-card${activeRole?.id === role.id ? " active" : ""}`}
+            onClick={() => setOpen(role.id)}
           >
             <Icon name="users" size={14} />
             <span className="setting-card-title">{role.name || role.id}</span>
-            <span className="setting-card-summary">{role.body || "（还没写性格）"}</span>
+            <span className="setting-card-summary">
+              {isProtagonist(role.id) ? "玩家扮演" : role.body || "（还没写性格）"}
+            </span>
           </button>
         ))}
         {/* 加人也是这个网格里的一件事：入口摆在人旁边，而不是滚到底部那个角落 */}
@@ -190,40 +173,9 @@ export function CharacterPane({
         </button>
       </div>
 
-      {active === PROTAGONIST_KEY ? (
+      {activeRole && (
         <section className="panel">
-          <h3>主角卡（玩家）</h3>
-          <p className="muted small">玩家自己，不上台，没有立绘和音色。</p>
-          <div className="char-card">
-            <div className="row">
-              <input
-                placeholder="主角名（如：你 / 转学生）"
-                value={draft.protagonist?.name ?? ""}
-                onChange={(e) =>
-                  patch((p) => (p.protagonist = { name: e.target.value, persona: p.protagonist?.persona ?? "" }))
-                }
-              />
-            </div>
-            <div className="row small">
-              <button className="ghost-btn" onClick={() => setLibraryInto(PROTAGONIST_KEY)}>
-                <span className="btn-icon">
-                  <Icon name="download" size={13} /> 从资源库导入主角卡
-                </span>
-              </button>
-            </div>
-            <textarea
-              rows={4}
-              placeholder="persona（性格与说话风格——输入润色的口吻依据）"
-              value={draft.protagonist?.persona ?? ""}
-              onChange={(e) =>
-                patch((p) => (p.protagonist = { name: p.protagonist?.name ?? "", persona: e.target.value }))
-              }
-            />
-          </div>
-        </section>
-      ) : activeRole ? (
-        <section className="panel">
-          <h3>角色卡</h3>
+          <h3>{isProtagonist(activeRole.id) ? "主角卡（玩家扮演）" : "角色卡"}</h3>
           <CharacterEditor
             playId={playId}
             charId={activeRole.id}
@@ -231,7 +183,10 @@ export function CharacterPane({
             files={assets[`sprites/${activeRole.id}`] ?? []}
             voices={voices}
             onPickVoice={() => setVoiceFor(activeRole.id)}
-            onBrowseLibrary={() => setLibraryInto(activeRole.id)}
+            // 主角那份导入落固定 id 的卡（连立绘一起），普通角色按条目 id 建卡
+            onBrowseLibrary={() =>
+              setLibraryInto(isProtagonist(activeRole.id) ? PROTAGONIST_ID : activeRole.id)
+            }
             onUploadSprite={(file) =>
               api
                 .uploadAsset(playId, `sprites/${activeRole.id}`, file.name, file)
@@ -249,17 +204,17 @@ export function CharacterPane({
               })
             }
             onDocChange={(fn) => patchRole(activeRole.id, fn)}
-            onRemove={() => removeRole(activeRole.id)}
+            {...(isProtagonist(activeRole.id) ? {} : { onRemove: () => removeRole(activeRole.id) })}
           />
         </section>
-      ) : null}
+      )}
 
-      {detail && (active === PROTAGONIST_KEY || activeRole) && (
+      {activeRole && (
         <p className="row">
-          <button className="primary" onClick={savePlay}>
+          <button className="primary" onClick={saveCards} disabled={!dirty}>
             保存
           </button>
-          {saved && <span className="muted small">已保存</span>}
+          {saved && !dirty && <span className="muted small">已保存</span>}
         </p>
       )}
       {libraryInto !== null && detail && (
@@ -267,14 +222,14 @@ export function CharacterPane({
           playId={playId}
           imported={(kind, id) =>
             kind === "characters"
-              ? libraryInto === PROTAGONIST_KEY
-                ? Boolean(detail.play.protagonist?.name || detail.play.protagonist?.persona)
+              ? libraryInto === PROTAGONIST_ID
+                ? roles.some((r) => isProtagonist(r.id))
                 : roles.some((r) => r.id === id)
               : false
           }
           onClose={() => setLibraryInto(null)}
-          onImported={(r) => focus(r.protagonist ? PROTAGONIST_KEY : `char:${r.characters[0] ?? libraryInto}`)}
-          {...(libraryInto === PROTAGONIST_KEY
+          onImported={(r) => focus(r.characters[0] ?? libraryInto)}
+          {...(libraryInto === PROTAGONIST_ID
             ? {
                 target: "protagonist" as const,
                 title: "从资源库导入主角卡",
@@ -283,7 +238,7 @@ export function CharacterPane({
           only="characters"
         />
       )}
-      {voiceFor !== null && draft && (
+      {voiceFor !== null && (
         <VoiceLibrary
           playId={playId}
           voices={voices}
