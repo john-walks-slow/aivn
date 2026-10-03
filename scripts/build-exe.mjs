@@ -119,7 +119,9 @@ const npmArgs = ["install", "--no-save", "--no-audit", "--no-fund", `sharp@${sha
 if (targetOs !== (process.platform === "win32" ? "win" : process.platform) || targetCpu !== process.arch) {
   npmArgs.push(`--os=${targetOs === "win" ? "win32" : targetOs}`, `--cpu=${targetCpu}`, "--force");
 }
-execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", npmArgs, { cwd: stageDir, stdio: "inherit" });
+// Windows 上 npm 是 npm.cmd，Node 从 20 起不允许不带 shell 直接 spawn 批处理（会 EINVAL）
+const onWindows = process.platform === "win32";
+execFileSync(onWindows ? "npm.cmd" : "npm", npmArgs, { cwd: stageDir, stdio: "inherit", shell: onWindows });
 
 step("pkg 产出单文件 exe");
 const pkgManifest = require("@yao-pkg/pkg/package.json");
