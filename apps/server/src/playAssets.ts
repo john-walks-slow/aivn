@@ -793,24 +793,10 @@ function referenceSuffix(characters: ReferenceCharacter[]): string {
 
 
 /**
- * 立绘身份锚：正脸站姿，差分都从它派生。竖构图提示词里也点明，配合竖画布。
- *
- * 后半段不是修饰词是硬约束：`src/cutout.ts` 的全局色键抠底要求 2D 平涂 + 纯白纯色底，
- * 3D 渲染的白衣离底色只有几格色差，抠底会连人带和服一起啃掉；剪影连成一片就没法分割人物与底色。
- *
- * 后缀只规定构图，不描述任何人物特征——它每个词都会被当成设定印进图里。早先这里写的是
- * 「between the twin tails」（为了发梢与身体之间留纯白），等于给所有角色定了个双马尾：
- * 实测 prompt 里明写 pink long straight hair，出来的仍是双马尾。要什么发型由角色卡的锚点说。
- *
- * 开头的景别随 `spec.framing` 换（`SPRITE_FRAMING_SHOT`）：写死 "full body" 时，
- * 取景是半身的角色照样会被画成全身——出图与舞台声明对不上，站位又得重新量。
- */
-/**
  * 立绘后缀：**只写与主体是人还是物无关的构图与画风约束**。
  *
- * 姿势词（standing / arms held away / above the head）是人形专属的——给猫或道具
- * 套上「双臂离开身体以分离轮廓」，模型会给你一只人形猫。所以姿势那一段由
- * `POSE_TAIL` 单独提供，只在人形取景时拼；非人走 `square`，不碰它。
+ * 人形专属的那一小段（手臂留白、头顶留白）由 `POSE_TAIL` 单独提供，只在人形取景时拼；
+ * 非人走 `square`，不碰它——给猫套上「手臂与躯干不能留窄缝」只会得到一只人形猫。
  *
  * 这一段留白给抠底：后半段不是修饰词是硬约束，`src/cutout.ts` 的全局色键抠底要求
  * 2D 平涂 + 纯白纯色底，3D 渲染的白衣离底色只有几格色差，抠底会连人带和服一起啃掉；
@@ -824,18 +810,27 @@ const COMMON_TAIL =
   ". Japanese anime style 2D illustration, flat cel shading with clean crisp lineart, NOT a 3D render, " +
   "no 3D CGI look. Plain solid pure white background, no text, no shadow, no gradient, no vignette.";
 
-/** 姿势与留白：人形专属。抠底要轮廓分得开，舞台按统一头顶留白摆位（见 app.css 的 .theater-sprite）。 */
+/**
+ * 留白约束：人形专属。舞台按统一头顶留白摆位（见 app.css 的 .theater-sprite）。
+ *
+ * **姿势不在这里规定。** 早先这一段写死 `front-facing standing pose, both arms held slightly away
+ * from the body`，于是每个角色、每张定妆照都是同一个正面对称站桩；而定妆照是所有差分的垫图基准，
+ * 姿势就此终身固定。站姿还是坐姿、什么机位，属于角色气质，由调用方写（`imageTool.ts` 的
+ * PROMPT_RULES 已经要求「姿势、机位、景别都要显式写」），引擎不覆盖。
+ *
+ * 留在这里的是抠底真要的那条：手臂与躯干之间**不能留窄白缝**——窄缝面积小于 `cutout.ts` 的
+ * `minHole`，会被当成眼白那样的高光填回前景，剪影里多一块白。要么贴住，要么彻底分开。
+ */
 const POSE_TAIL =
-  ", front-facing standing pose, neutral expression, both arms held slightly away from the body " +
-  "so the silhouette is clearly separated, clear empty white space between the arms and the body and " +
-  "between the hair and the arms" +
+  ", arms either resting against the body or clearly separated from it, never with a narrow white gap " +
+  "between an arm and the torso" +
   // 人物矮的那一头空间本来就该空得多，不点明的话模型会把所有角色都顶到画幅上沿，
   // 矮个子的头顶就直接贴边了。
   ". Shorter characters may leave more empty space above the head, and taller characters may leave less, " +
   "so every character keeps some space above the head rather than touching the top edge of the frame";
 
 /**
- * 主体为人（full/half）时的立绘后缀：景别措辞 + 姿势 + 通用约束。
+ * 主体为人（full/half）时的立绘后缀：景别措辞 + 人形留白 + 通用约束。
  *
  * 开头换的是 `SPRITE_FRAMING_SHOT` 而不是写死的 "full body"：写死时取景是半身的角色
  * 照样会被画成全身，出图与舞台声明对不上，站位又得重新量。
@@ -866,14 +861,17 @@ function neutralSuffix(framing: SpriteFraming | undefined): string {
 /**
  * 定妆照的前置中性描述：压住角色卡里的表情词（那一条只对当前差分有效）。
  *
- * **按取景取词，不是一句通吃**：给非人主体（`square`）说 standing portrait 会得到
- * 「猫的肖像照」——standing 与 portrait 都是人形概念，套到猫/道具身上语义不通，
- * 模型要么给你一只坐着的人形猫，要么干脆画个人。`square` 用「完整入画、中性状态」，
- * 不提姿势也不提表情，人形主体那边由 NEUTRAL_TAIL 的 standing pose 兜住。
+ * **只说表情与气质，不说姿势**：姿势归调用方。这里写死站姿时，调用方写在 prompt 里的任何姿势
+ * 都会被压掉——定妆照要能当这个角色的基本立绘用，姿势本身就得是表达气质的一部分。
+ *
+ * **按取景取词，不是一句通吃**：给非人主体（`square`）说 portrait 会得到「猫的肖像照」——
+ * portrait 是人形概念，套到猫/道具身上语义不通，模型要么给你一只坐着的人形猫，要么干脆画个人。
+ * `square` 用「完整入画、中性状态」，不提姿势也不提表情。
  */
 const NEUTRAL_LEAD: Record<SpriteFraming, string> = {
-  full: "a calm neutral-expression front-facing standing portrait.",
-  half: "a calm neutral-expression front-facing standing portrait, waist up.",
+  full: "a calm neutral-expression portrait of the character, in a natural pose that expresses their personality.",
+  half:
+    "a calm neutral-expression portrait of the character, in a natural pose that expresses their personality, waist up.",
   square: "the subject shown whole, in a neutral state.",
 };
 

@@ -299,14 +299,22 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(prompt).toMatch(/pure white background/i);
   });
 
-  it("full/half（人）保留人形姿势词：抠底要轮廓分得开", async () => {
+  it("full/half（人）：姿势由调用方写，引擎只补抠底要的留白", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "full" }, "a girl");
+    await assets.generate(
+      { kind: "sprite", characterId: "mio", expression: "neutral", framing: "full" },
+      "a girl leaning on a windowsill, three-quarter view",
+    );
     const prompt = calls[0]!.prompt;
-    expect(prompt).toMatch(/standing pose/i);
-    expect(prompt).toMatch(/arms held slightly away/i);
+    // 引擎后缀不曾覆盖调用方的姿势：早先这里固定拼 "front-facing standing pose, both arms held
+    // slightly away from the body"，每个角色都成了同一个正面对称站桩，而这张图是所有差分的垫图基准。
+    expect(prompt).not.toMatch(/front-facing/i);
+    expect(prompt).not.toMatch(/standing pose/i);
+    expect(prompt).toContain("leaning on a windowsill, three-quarter view");
+    // 抠底要的那条留着：手臂与躯干之间的窄白缝会被当成高光填回前景
+    expect(prompt).toMatch(/narrow white gap/i);
     expect(prompt).toMatch(/above the head/i);
   });
 
@@ -480,9 +488,9 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.references).toHaveLength(1);
     expect(calls[0]!.references![0]!.mimeType).toBe("image/png");
-    // prompt 中拼装了定妆照垫图引导，且包含白底留白与姿势约束
+    // prompt 中拼装了定妆照垫图引导，且包含白底留白与抠底留白约束
     expect(calls[0]!.prompt).toMatch(/Based on the attached reference image/);
-    expect(calls[0]!.prompt).toMatch(/front-facing standing pose/);
+    expect(calls[0]!.prompt).toMatch(/narrow white gap/i);
     expect(calls[0]!.prompt).toMatch(/pure white background/);
     expect(existsSync(files.absoluteOf("assets/sprites/mio/neutral.png"))).toBe(true);
   });
@@ -656,7 +664,8 @@ describe("PlayAssets：工坊素材落盘", () => {
     // 先 neutral 后差分，两次出图
     expect(calls).toHaveLength(2);
     expect(calls[0]!.references).toEqual([]);
-    expect(calls[0]!.prompt).toContain("neutral expression");
+    // 自动补的定妆照前置了一条中性描述，压住差分那条 prompt 里的表情词
+    expect(calls[0]!.prompt).toMatch(/neutral-expression/i);
     // 垫图就是盘上那张抠过底的定妆照
     expect(calls[1]!.references).toHaveLength(1);
     expect(calls[1]!.references![0]!.mimeType).toBe("image/png");
@@ -846,7 +855,7 @@ describe("PlayAssets：出图留痕", () => {
     // 后缀里的每个词都会被当成设定印进图里：这里曾写着「between the twin tails」，
     // 于是所有角色都长出双马尾——prompt 明写 long straight hair 也救不回来。
     const sent = calls[0]!.prompt;
-    expect(sent).toContain("clear empty white space between the arms and the body");
+    expect(sent).toContain("never with a narrow white gap between an arm and the torso");
     expect(sent.toLowerCase()).not.toMatch(/twin|tail|braid|ponytail/);
   });
 });
