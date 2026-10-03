@@ -407,7 +407,7 @@ export async function handleHttp(
       if (method === "PUT") {
         const body = JSON.parse((await readBody(req)).toString("utf8")) as { content?: string };
         if (typeof body.content !== "string") return fail(res, 400, "缺少 content");
-        // 走工坊的 writeFile：它已经把「写盘 → 撤销条 → 等节拍边界再重建 runtime」串好了
+        // 走工坊的 writeFile：落盘 + 走置脏与重建收束那条通道（人手改的不记撤销条）
         await runtime.workshop.writeFile(PREMISE_PATH, body.content);
         return json(res, 200, { ok: true });
       }

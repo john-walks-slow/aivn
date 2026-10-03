@@ -7,8 +7,8 @@
 ## agentkit：两个 agent 的共用基座
 
 - **两个 agent 共用一套基座**：`src/agentkit/` 是唯一工具实现面（`kit.ts` 按 `role: "playwriter" | "workshop"` 装配，`deps.ts` 用判别联合收窄依赖），同一工具**同一份 schema 与实现，只有 description + 等待策略 + 注入依赖不同**（`generate_image`：工坊 sync 等图并回 markdown 图片、剧作家 queued 后台排产只占时间线位置）。
-- **工具清单不再按角色切分**：`kit.ts` 的 `TOOL_CATALOG` 是两个角色合用的同一份全集（`agentToolCatalog()` 是设置页与装配共用的唯一真相源），play.json 的 `agents.<role>.tools` 存**启用集**（白名单，不是禁用集）过滤，缺省走 `DEFAULT_ENABLED`（搭台除 `bash` 外全开——命令行按剧目手动勾；剧作家开着轮收束/记忆/联网/生图/**只读**查库，`import_asset` 仍默认关——素材策略是创作决策，工具不给它那条策略就是空话）。
-- `can` 位（image/search/library/voice/shell）反过来决定提示词注不注某一章。
+- **工具清单只有一份**：`kit.ts` 的 `TOOL_CATALOG` 收了全部工具的元数据，**角色可见性是每一项自己的 `roles`**（不再有第二份 id 清单；`installableTools(role)` / `agentToolCatalog(role)` 由它投影，是设置页与装配共用的唯一真相源；`agentToolEntry(id)` 碰到未登记的 id 直接抛错），play.json 的 `agents.<role>.tools` 存**启用集**（白名单，不是禁用集）过滤，缺省走 `DEFAULT_ENABLED`（搭台除 `bash` 外全开——命令行按剧目手动勾；剧作家开着轮收束/记忆/联网/生图/**只读**查库，`import_asset` 仍默认关——素材策略是创作决策，工具不给它那条策略就是空话）。
+- `can` 位（image/search/library/voice/shell）反过来决定提示词注不注某一章。**一位对应一个授权它的工具**（`CAPABILITY_TOOLS` 表），`kit.can` 由 `capabilitiesOf(装上的工具)` 现算——两个角色的提示词读同一个对象，不会各算各的。
 - `generate_image` 的两个角色**同一份 schema**（`expression` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只差 description 与等待策略。**垫图入口只有一个 `references`**（每项可以是角色 id、剧目内相对路径或 http(s) 网址，1–6 张；`referenceCharacters` 保留为只吃角色 id 的兼容别名，两者在工具层合并去重）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该角色的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
 - **自动注册临时角色**：`generate_image` 的 `characterName` 参数带上了、而 `characterId` 不在角色卡目录里时，`playAssets.resolveSprite` 就地写一张最小卡再出图（卡里只有 id/name，正文写「（演出中临时引入，设定未补。）」——留空会让工坊以为「作者写过了，就是没写」），并打 `autoRegistered` 让宿主走同一条 `onPlayConfigChanged` 轮边界重建：工坊与用户此刻不在场，等他们想起建卡，这一轮早演过去了。
 - 已有卡时这个参数不作数（不覆盖人设）。
@@ -32,11 +32,11 @@
 - 工坊模型可以和剧作家不同，阈值因此另有一套 `STAGE_WORKSHOP_*` env（缺省逐项沿用全局），生效值再与模型自带窗口取 min。
 - 摘要回注 A 区（工坊 A 区本就每轮重建，没有前缀缓存约束），多轮是**拿旧定稿重写成一份完整文档**而不是叠加（`capDigest` 封顶 6000 字）。
 - 工坊的 read / write / edit / bash 全部是 **pi 的内建工具**（`agentkit/piTools.ts` 只做 `AgentHarnessTool → AgentTool` 的适配，把 `onUpdate`/`toolContext`/`invocation`/`context` 补齐，`context` 用 `withAbortSignal(signal, BACKGROUND_CONTEXT)` 把工坊单轮的 7 分钟超时传下去）。
-- 路径白名单、`play.json` 结构校验与撤销条收在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——它是**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，白名单 + `parsePlayConfig` + `onWrite`）。
+- 路径白名单与 `play.json` 结构校验收在 `playFiles.ts` 的 `PlayFiles` 上——它是**所有文本写口的收口**（工坊 agent 的 write / edit、文件页、引用即导入的主角卡都从 `write` 过），校验不过就不落盘、盘上那份一个字节不动。撤销条在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，早拒白名单 + 记撤销条，落盘委派 `PlayFiles.write`）。
 - pi 的 `withFileMutationQueue` 顶掉了原来的 `fileLocks`（WeakMap<env> + canonicalPath，同一 `PlayEnv` 实例内自动串行）。
 - **bash 不走这一层**：它继承 `NodeExecutionEnv.exec`，cwd 就是剧目目录，以服务进程的权限跑、改文件不进撤销条，所以 `DEFAULT_ENABLED` 里默认关，`can.shell` 决定提示词注不注「命令行」那章（讲的是边界与后果，不是用法——cwd/截断/超时都在 pi 的 bash 描述里）。
-- `workshopSession` 订阅 `tool_execution_end`，跑过 bash 就置脏。
-- 收束前若 `play.json` 已解析不了，**跳过这次 runtime 重建并广播 `workshop_error`**（带着坏配置去 rebuild 只会抛在 `void` 的 promise 里，用户看到的是「面板不刷新了」而不是「哪里坏了」）。
+- `workshopSession` 订阅 `tool_execution_end`，跑过 bash 就置脏。**置脏只有 `markChanged()` 一个入口**（agent 写盘、素材到货、bash、文件页手改四条路都从这儿过），**收束只有 `applyChanges()` 一个出口**：真有改动才重建——回合内攒着、收束时重建一次，文件页保存没有收束可等、就地兑现。
+- bash 绕开了 `PlayFiles` 的结构校验，所以 `applyChanges` 在重建前补一次读盘检查：`play.json` 已解析不了就**跳过这次 runtime 重建并广播 `workshop_error`**（带着坏配置去 rebuild 只会抛在 `void` 的 promise 里，用户看到的是「面板不刷新了」而不是「哪里坏了」）。
 - play.json 校验失败的消息只有走 `write` 才原样回给模型——pi 的 `edit` 把它包成「Could not edit file: …. Error code: invalid.」，原因只留在 cause 上，不为消息粒度再造第二套错误面。
 
 ## 素材、出图与台账
@@ -90,7 +90,7 @@
 - 解析管道不 await，事件先广播按缺素材降级，到货后广播 `asset_ready` 复用现有的到货淡入。
 - 角色导入改 play.json 走 `rebuildAtBeatBoundary`（与剧作家给临时角色生立绘同一条延迟重建）。
 - 库里没有就静默降级**不回话给模型**。
-- 这条链路是剧作家的**默认**导入路径，不需要开任何工具——但**剧作家提示词里要写这条契约**（`prompt.ts` 的 `LIBRARY_REF`，按 `canLibrary` 注入）：不告诉它，它就只剩「缺素材就自己画」这一条路，把本该从库里拿的背景全烧成配额。
+- 这条链路是剧作家的**默认**导入路径，不需要开任何工具——但**剧作家提示词里要写这条契约**（`prompt.ts` 的 `LIBRARY_REF`，按 `can.library` 注入）：不告诉它，它就只剩「缺素材就自己画」这一条路，把本该从库里拿的背景全烧成配额。
 - 库里也没有的那一段尤其要写明「静默降级、不回话给模型」，否则它会换个 id 反复重写同一个引用。
 - 垫图让单张从 69s 变 138s 而像素一样（`STAGE_IMAGE_REFERENCE=none` 可掐掉，默认保一致性）。
 

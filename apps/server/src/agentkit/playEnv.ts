@@ -7,7 +7,6 @@ import {
   type Result,
 } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
-import { parsePlayConfig } from "@stage-ai/core";
 import type { PlayFiles } from "../playFiles.js";
 import type { WorkshopWrite } from "./deps.js";
 import { reason } from "./result.js";
@@ -21,7 +20,8 @@ import { reason } from "./result.js";
  * bash 只用 `cwd` 与 `exec`。所以白名单只要卡住两个口子：
  *
  * - `absolutePath` —— 读面，read / write / edit 都得先从这儿过；
- * - `writeFile` —— 写面，唯一的写出口（白名单 + play.json 结构校验 + 撤销条三件事都在这）。
+ * - `writeFile` —— 写面，早拒一次（错误消息说得准些）并记一条撤销条；真正落盘走
+ *   `PlayFiles.write`，路径白名单与 play.json 结构校验都收在那个口子上。
  *
  * **bash 不经过这一层**：它继承 `NodeExecutionEnv.exec`，跑在同一台机器、同一个用户下。
  * 白名单管的是 read / write / edit 这三个结构化工具（它们要过校验、要挂撤销条），
@@ -54,16 +54,6 @@ export class PlayEnv extends NodeExecutionEnv {
 
     const clean = relative(this.files.root, abs.value);
     const text = typeof content === "string" ? content : Buffer.from(content).toString("utf8");
-    if (clean === "play.json") {
-      try {
-        parsePlayConfig(JSON.parse(text));
-      } catch (error) {
-        // 这条消息只有走 `write` 才原样回给模型：pi 的 edit 会把这里的失败包成
-        // 「Could not edit file: …. Error code: invalid.」，具体原因只留在 cause 上。
-        // 拦得住才是这一层的目的，不为消息粒度再造第二套错误面。
-        return err(new FileError("invalid", `play.json 结构校验不过，未落盘：${reason(error)}`, abs.value));
-      }
-    }
 
     let before: string | null = null;
     try {
@@ -74,7 +64,12 @@ export class PlayEnv extends NodeExecutionEnv {
     try {
       await this.files.write(clean, text);
     } catch (error) {
-      return err(new FileError("permission_denied", reason(error), abs.value));
+      // play.json 的结构校验失败与真实 I/O 失败共用这一条消息通道。
+      // 只有走 `write` 才原样回给模型：pi 的 `edit` 会把它包成
+      // 「Could not edit file: …. Error code: invalid.」，具体原因只留在 cause 上——
+      // 拦得住才是这一层的目的，不为消息粒度再造第二套错误面。
+      const code = clean === "play.json" ? "invalid" : "permission_denied";
+      return err(new FileError(code, reason(error), abs.value));
     }
     this.onWrite({ path: clean, before, after: text });
     return ok<void, FileError>(undefined);
