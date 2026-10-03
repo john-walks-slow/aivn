@@ -418,7 +418,7 @@ export interface Playback {
   sfx: { key: string; src: string; volume?: number } | null;
   /** 舞台点击：打字中 → 瞬显全文；已完 → 消费下一条。 */
   advance: () => void;
-  /** 回看游标：-1 上滚/↑ 往回翻，+1 下滚/空格 往回追（追到播放头即恢复跟随）。 */
+  /** 回看游标：-1 上滚/↑ 往回翻，+1 下滚/↓/←/→ 往回追（追到播放头即恢复跟随）。 */
   scrub: (delta: number) => void;
   /** 是否正停在历史条目上（不等于播放头）。 */
   scrubbed: boolean;
