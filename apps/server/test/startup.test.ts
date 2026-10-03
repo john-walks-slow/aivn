@@ -46,7 +46,8 @@ describe("启动参数", () => {
   });
 
   it("端口不合法或缺值直接报错，不静默退回默认端口", () => {
-    expect(() => parseLaunchArgs(["--port", "0"])).toThrow(UsageError);
+    expect(parseLaunchArgs(["--port", "0"]).port).toBe(0); // 0 = 自动挑一个空闲端口
+    expect(() => parseLaunchArgs(["--port", "-1"])).toThrow(UsageError);
     expect(() => parseLaunchArgs(["--port", "abc"])).toThrow(UsageError);
     expect(() => parseLaunchArgs(["--port"])).toThrow(/缺一个值/);
     expect(() => parseLaunchArgs(["--nope"])).toThrow(/不认识的选项/);
@@ -65,6 +66,14 @@ describe("端口占用时自动换口", () => {
     const port = await listenWithFallback(server, busy, "127.0.0.1", 5);
     expect(port).not.toBe(busy);
     expect(server.listening).toBe(true);
+  });
+
+  it("传 0 就是交给系统挑，返回值必须是系统挑的那个（不是入参 0）", async () => {
+    const server = createServer();
+    servers.push(server);
+    const port = await listenWithFallback(server, 0, "127.0.0.1");
+    expect(port).toBe((server.address() as { port: number }).port);
+    expect(port).toBeGreaterThan(0);
   });
 });
 

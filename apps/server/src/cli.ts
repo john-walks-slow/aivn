@@ -22,7 +22,7 @@ export interface LaunchOptions {
 
 export const USAGE = `用法：stage-ai.exe [选项]
 
-  -p, --port <端口>      监听端口（默认 8787，被占用时自动往后找）
+  -p, --port <端口>      监听端口（默认 8787，被占用时自动往后找；0 = 随便挑一个空闲的）
       --host <地址>      监听地址（默认 0.0.0.0，即同一局域网都能访问）
       --data-dir <目录>  数据目录（默认 exe 同级的 data/）
       --open             启动后打开默认浏览器（打包版默认打开）
@@ -53,8 +53,8 @@ export function parseLaunchArgs(argv: string[]): LaunchOptions {
       case "--port": {
         const value = next();
         const port = Number(value);
-        if (!Number.isInteger(port) || port < 1 || port > 65535) {
-          throw new UsageError(`端口 "${value}" 不合法，应该是 1–65535 的整数`);
+        if (!Number.isInteger(port) || port < 0 || port > 65535) {
+          throw new UsageError(`端口 "${value}" 不合法，应该是 0–65535 的整数（0 = 自动挑一个空闲的）`);
         }
         options.port = port;
         break;

@@ -13,6 +13,9 @@ import { networkInterfaces } from "node:os";
  *
  * 双击 exe 的用户没法改端口也不该被迫懂端口：默认端口被别的程序占了就往后让一位，
  * 并让调用方把「实际用的是哪个口」打出来——静默换口才是真的坑。
+ *
+ * `port` 传 0 就是「随便挑一个空闲的」（桌面壳用它避免与开发服务器抢 8787）；
+ * 返回的一律是**实际**监听的端口，别拿入参当结果。
  */
 export async function listenWithFallback(server: Server, port: number, host: string, span = 20): Promise<number> {
   for (let candidate = port; candidate < port + span; candidate++) {
@@ -30,7 +33,8 @@ export async function listenWithFallback(server: Server, port: number, host: str
         server.once("listening", onListening);
         server.listen(candidate, host);
       });
-      return candidate;
+      const address = server.address();
+      return typeof address === "object" && address ? address.port : candidate;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
     }
@@ -44,7 +48,8 @@ export function lanAddresses(): string[] {
   const others: string[] = [];
   for (const list of Object.values(networkInterfaces())) {
     for (const info of list ?? []) {
-      if (info.internal || info.family !== "IPv4") continue;
+      // 169.254/16 是「没拿到 DHCP」时的自配地址，别的设备根本连不上，别报给用户
+      if (info.internal || info.family !== "IPv4" || info.address.startsWith("169.254.")) continue;
       (isPrivateV4(info.address) ? privateFirst : others).push(info.address);
     }
   }

@@ -86,7 +86,9 @@ export async function main(): Promise<void> {
   });
 
   const port = await listenWithFallback(server, bootstrap.port, bootstrap.host);
-  if (port !== bootstrap.port) console.log(`[stage-ai] 端口 ${bootstrap.port} 被占用，改用 ${port}`);
+  if (bootstrap.port !== 0 && port !== bootstrap.port) {
+    console.log(`[stage-ai] 端口 ${bootstrap.port} 被占用，改用 ${port}`);
+  }
 
   const local = `http://127.0.0.1:${port}`;
   console.log(`[stage-ai] 就绪  ${local}  (REST /api/plays, WS /ws?play=<id>)`);
