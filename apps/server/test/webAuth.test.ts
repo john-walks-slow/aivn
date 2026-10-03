@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { createServer, request as httpRequest, type Server } from "node:http";
 import { WebGate } from "../src/webAuth.js";
+import type { ServerConfig } from "../src/config.js";
 import { serveWebBundle } from "../src/webStatic.js";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+/** 只喂密码的设置源：闸门只关心这一个字段。 */
+function gateFor(password: string): WebGate {
+  return new WebGate({ get: () => ({ password }) as ServerConfig });
+}
 
 function basic(password: string, user = "me"): string {
   return `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`;
@@ -28,11 +34,11 @@ function stubRes(): { res: Record<string, unknown>; headers: () => Record<string
 
 describe("公网入口的密码闸门", () => {
   it("没配密码就全放行（本机直连不弹框）", () => {
-    expect(new WebGate("").allow({ headers: {} } as never)).toBe(true);
+    expect(gateFor("").allow({ headers: {} } as never)).toBe(true);
   });
 
   it("密码对就过，错的 / 没带的 / 坏编码的 / 非 Basic 的一律不过", () => {
-    const gate = new WebGate("test-key");
+    const gate = gateFor("test-key");
     const req = (auth?: string) => ({ headers: auth === undefined ? {} : { authorization: auth } }) as never;
     expect(gate.allow(req(basic("test-key")))).toBe(true);
     expect(gate.allow(req(basic("wrong")))).toBe(false);
@@ -43,13 +49,13 @@ describe("公网入口的密码闸门", () => {
   });
 
   it("用户名随意，只有密码算数", () => {
-    expect(new WebGate("test-key").allow({ headers: { authorization: basic("test-key", "anyone") } } as never)).toBe(
+    expect(gateFor("test-key").allow({ headers: { authorization: basic("test-key", "anyone") } } as never)).toBe(
       true,
     );
   });
 
   it("401 带上 WWW-Authenticate，浏览器才会弹框", () => {
-    const gate = new WebGate("test-key");
+    const gate = gateFor("test-key");
     const { res, headers } = stubRes();
     gate.challenge(res);
     expect(headers().status).toBe("401");
@@ -57,7 +63,7 @@ describe("公网入口的密码闸门", () => {
   });
 
   it("Basic 通过后种会话 cookie，之后不带凭据也能过（WS 握手就靠这条）", () => {
-    const gate = new WebGate("test-key");
+    const gate = gateFor("test-key");
     const { res, headers } = stubRes();
     expect(gate.allow({ headers: { authorization: basic("test-key") } } as never, res)).toBe(true);
     const cookie = String(headers()["set-cookie"]);
@@ -70,11 +76,11 @@ describe("公网入口的密码闸门", () => {
   });
 
   it("过期会话不认", () => {
-    const gate = new WebGate("test-key");
+    const gate = gateFor("test-key");
     const { res, headers } = stubRes();
     gate.allow({ headers: { authorization: basic("test-key") } } as never, res);
     const token = String(headers()["set-cookie"]).split(";")[0]!.split("=")[1]!;
-    const stale = new WebGate("test-key");
+    const stale = gateFor("test-key");
     // 新 gate 的 token 表是空的（同进程重启 = 都要重输密码）
     expect(stale.allow({ headers: { cookie: `stage_session=${token}` } } as never)).toBe(false);
   });
@@ -122,7 +128,7 @@ describe("闸门 + 静态 + API 同端口", () => {
   it("匿名先弹框，带对密码拿到页面并换到会话 cookie", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stage-web-"));
     await writeFile(join(dir, "index.html"), "<div id=root>");
-    const gate = new WebGate("test-key");
+    const gate = gateFor("test-key");
     const server: Server = createServer((req, res) => {
       if (!gate.allow(req, res)) {
         gate.challenge(res);
@@ -156,7 +162,7 @@ describe("闸门 + 静态 + API 同端口", () => {
   // WS 握手走 index.ts 里的同一条判断，只是没有响应头可种 cookie，
   // 所以它只能认已有会话。101 那段握手是 node 的事，不在这里模拟。
   it("WS 握手：匿名不过，带会话 cookie 的过（浏览器不会在握手里重放 Basic 凭据）", () => {
-    const gate = new WebGate("test-key");
+    const gate = gateFor("test-key");
     const { res, headers } = stubRes();
     gate.allow({ headers: { authorization: basic("test-key") } } as never, res);
     const cookie = String(headers()["set-cookie"]).split(";")[0]!;

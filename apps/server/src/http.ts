@@ -7,7 +7,7 @@ import type { AssetLibrary } from "./library.js";
 import { importFromLibrary } from "./assetImport.js";
 import { readPlayLedgerEntries } from "./generatedLedger.js";
 import type { PlayHouse } from "./playhouse.js";
-import type { SettingsFile } from "./configApi.js";
+import type { SettingsApi } from "./configApi.js";
 import {
   parsePlayConfig,
   libraryEntryMatches,
@@ -136,7 +136,7 @@ export async function handleHttp(
   res: ServerResponse,
   library: PlayLibrary,
   playhouse: PlayHouse,
-  settings?: SettingsFile,
+  settings?: SettingsApi,
   assets?: AssetLibrary,
   voices?: VoiceCatalogService,
 ): Promise<void> {
@@ -241,14 +241,16 @@ export async function handleHttp(
       if (parts[2] === "tools") return json(res, 200, playhouse.tools());
     }
 
-    // —— 设置面板（P6）：.env 全部 GUI 可改，不要求用户碰配置文件 ——
+    // —— 设置面板：全部 GUI 可改，改完**立即生效**，既不要求碰配置文件也不要求重启 ——
     // 只有一个 PUT：凭据与普通配置走同一条写入路径，面板上也只有「保存设置 / 放弃改动」两个出口。
+    // 回传 settings 是因为凭据只回掩码——改完 key 之后面板要拿到新的掩码才能显示「已存」。
     if (parts[0] === "api" && parts[1] === "config" && parts.length === 2) {
       if (!settings) return fail(res, 404, "设置面板未启用");
       if (method === "GET") return json(res, 200, settings.read());
       if (method === "PUT") {
         const patch = JSON.parse((await readBody(req)).toString("utf8"));
-        return json(res, 200, { changed: settings.write(patch) });
+        const changed = settings.write(patch);
+        return json(res, 200, { changed, settings: settings.read() });
       }
       return fail(res, 405, "不支持的方法");
     }

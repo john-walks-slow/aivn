@@ -14,6 +14,9 @@ plays/*
 plays/*/saves/
 plays/*/active.json
 media-cache/
+# 运行期设置与数据目录（开发时设置文件落在仓库根，打包后在 exe 同级的 data/）
+settings.json
+data/
 # 剧目记忆运行时层（D7：always/index 手工层进 git，纪元产物与切片不进）
 plays/*/memory/index/arcs/
 plays/*/memory/archive/

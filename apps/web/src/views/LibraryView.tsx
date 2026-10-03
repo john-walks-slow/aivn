@@ -15,6 +15,15 @@ export function LibraryView() {
   const [creating, setCreating] = useState(false);
   const [newId, setNewId] = useState("");
   const [newTitle, setNewTitle] = useState("");
+  /** 首启引导：网关没配好就直说，别等用户开了一部剧才发现什么都跑不起来。 */
+  const [setupIssue, setSetupIssue] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .agentModels()
+      .then(() => setSetupIssue(null))
+      .catch((e: Error) => setSetupIssue(e.message));
+  }, []);
 
   const reload = (): void => {
     api
@@ -61,6 +70,15 @@ export function LibraryView() {
       {error && (
         <div className="error-banner" role="alert">
           {error}
+        </div>
+      )}
+
+      {setupIssue && (
+        <div className="warn-banner" role="status">
+          还没配好模型网关：{setupIssue}{" "}
+          <button className="ghost-btn" onClick={() => navigate("/settings")}>
+            去设置
+          </button>
         </div>
       )}
 

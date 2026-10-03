@@ -1,16 +1,13 @@
 /**
- * 设置面板后端（P6）：把 `.env` 当作可写配置面——用户不该被迫手动改配置文件。
+ * 设置面板的传输面：把 `SettingsStore` 里的运行期设置映射成「前端能显示、能提交」的形状。
  *
- * 读写都按「解析成有序键值对 → 只改被改的键 → 逐行重写」执行，保留注释与未涉及的键。
- * 凭据（API Key / 多把 key 的列表）只回掩码，前端留空即视为「不改」——
+ * 这一层只做两件事——**凭据掩码**与**提交形态归一**；校验与落盘全在 store 里。
  * 面板只有一个保存入口，任何凭据都不许有绕过它单独落盘的通道。
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { parseKeyList, type ServerConfig } from "./config.js";
-import { imageSizeText, parseImageSize } from "./imageBackend.js";
+import { parseModelList, type BootstrapConfig, type ServerConfig, type SettingsPatch } from "./config.js";
+import type { SettingsStore } from "./settingsStore.js";
 
-/** 多 key 凭据字段（`STAGE_TTS_KEYS` / `STAGE_EXA_KEYS`）的传输面。 */
+/** 多 key 凭据字段（语音 / 联网）的传输面。 */
 export interface KeyListView {
   /**
    * 逗号分隔的明文。**读侧恒为空串**——输入框留空即「保持不变」，
@@ -22,14 +19,20 @@ export interface KeyListView {
   keyCount: number;
 }
 
-/** 设置面板的传输面：配置形态 + 凭据存在位（不回传明文）。 */
+/** 设置面板的读视图：配置形态 + 凭据存在位（不回传明文）。 */
 export interface SettingsView {
-  port: number;
-  playsRoot: string;
+  /**
+   * 只读的启动参数：进程起来时读一次，改了要重启。
+   *
+   * 它们留在环境变量里是刻意的——端口与数据目录属于「装在哪、怎么起」，
+   * 不属于用户在设置页里反复调的偏好；但界面上要**显示**出来（很多人排查问题时
+   * 第一句就是「你到底写在哪个目录」）。
+   */
+  bootstrap: { port: number; host: string; dataRoot: string };
   model: {
     modelId: string;
     modelBase: string;
-    /** `STAGE_MODELS` 原文（逗号分隔）：文本即传输形态，面板上输入什么就存什么，解析在启动时做。 */
+    /** 支持清单的文本形态（逗号分隔）：面板上输入什么就显示什么。 */
     models: string;
     baseUrl: string;
     apiKey: string;
@@ -38,11 +41,18 @@ export interface SettingsView {
     contextWindow: number;
     compactRatio: number;
     keepRecentTokens: number;
-    /** 限制级（NSFW）专用模型 id；缺省 = 空串 = 沿用 modelId。 */
+    /** 限制级（NSFW）专用模型 id；空串 = 沿用 modelId。 */
     nsfwModelId: string;
     /** 限制级（NSFW）专属系统提示词扩展。 */
     nsfwPrompt: string;
   };
+  /** 工坊线程压缩参数（工坊模型可与剧作家不同，阈值因此另有一套）。 */
+  workshopContext: { contextWindow: number; compactRatio: number; keepRecentTokens: number };
+  /** 单轮超时（毫秒）。 */
+  beatTimeoutMs: number;
+  /** 公网入口密码：留空 = 不设防；掩码回传 = 不改。 */
+  password: string;
+  passwordSet: boolean;
   /** 生图（格式 + 连接 + 档位）：key 只回掩码。 */
   image: ServerConfig["image"] & { apiKeySet: boolean };
   tts: Omit<ServerConfig["tts"], "keys"> & KeyListView;
@@ -50,181 +60,96 @@ export interface SettingsView {
   exa: Omit<ServerConfig["exa"], "keys"> & KeyListView;
 }
 
-export class SettingsFile {
+/** 设置面板的写形态：只带被改过的字段，嵌套块各自可部分提交。 */
+export interface SettingsViewPatch {
+  password?: string;
+  model?: Partial<SettingsView["model"]>;
+  workshopContext?: Partial<SettingsView["workshopContext"]>;
+  beatTimeoutMs?: number;
+  image?: Partial<SettingsView["image"]>;
+  tts?: Partial<SettingsView["tts"]>;
+  exa?: Partial<SettingsView["exa"]>;
+}
+
+export class SettingsApi {
   constructor(
-    private readonly envPath: string,
-    private readonly config: ServerConfig,
+    private readonly store: SettingsStore,
+    private readonly bootstrap: BootstrapConfig,
   ) {}
 
-  /**
-   * 读当前配置面：**以 `.env` 磁盘值为准**，缺失的键回落启动时的配置（默认值）。
-   *
-   * 磁盘优先是刻意的：面板的语义是「改完重启生效」，那它就该显示「重启后会被读到的值」，
-   * 否则保存后立刻回读会把刚写的值又显示成旧值（看起来像没保存成功）。
-   */
+  /** 读当前设置：仍然是那一份内存镜像——它此刻就是磁盘上的值（写是即时的）。 */
   read(): SettingsView {
-    const env = readEnv(this.envPath);
-    const text = (key: string, fallback: string): string => env.get(key) ?? fallback;
-    const num = (key: string, fallback: number): number => {
-      const parsed = Number(env.get(key));
-      return env.get(key) !== undefined && Number.isFinite(parsed) ? parsed : fallback;
-    };
-    const bool = (key: string, fallback: boolean): boolean => {
-      const raw = env.get(key);
-      if (raw === undefined) return fallback;
-      return raw !== "false" && raw !== "0";
-    };
-    const apiKey = text("STAGE_API_KEY", this.config.apiKey);
-    const imageKey = text("STAGE_IMAGE_API_KEY", this.config.image.apiKey);
+    const config = this.store.get();
     return {
-      port: num("STAGE_PORT", this.config.port),
-      playsRoot: text("STAGE_PLAYS_ROOT", this.config.playsRoot),
+      bootstrap: { ...this.bootstrap },
       model: {
-        modelId: text("STAGE_MODEL_ID", this.config.modelId),
-        modelBase: text("STAGE_MODEL_BASE", this.config.modelBase),
-        models: text("STAGE_MODELS", this.config.models.join(",")),
-        baseUrl: text("STAGE_BASE_URL", this.config.baseUrl),
-        apiKey: mask(apiKey),
-        apiKeySet: apiKey.length > 0,
-        maxTokens: num("STAGE_MAX_TOKENS", this.config.maxTokens),
-        contextWindow: num("STAGE_CONTEXT_WINDOW", this.config.contextWindow),
-        compactRatio: num("STAGE_COMPACT_RATIO", this.config.compactRatio),
-        keepRecentTokens: num("STAGE_KEEP_RECENT_TOKENS", this.config.keepRecentTokens),
-        nsfwModelId: text("STAGE_NSFW_MODEL_ID", this.config.nsfwModelId ?? ""),
-        nsfwPrompt: text("STAGE_NSFW_PROMPT", this.config.nsfwPrompt ?? ""),
+        modelId: config.modelId,
+        modelBase: config.modelBase,
+        models: config.models.join(", "),
+        baseUrl: config.baseUrl,
+        apiKey: mask(config.apiKey),
+        apiKeySet: config.apiKey !== "",
+        maxTokens: config.maxTokens,
+        contextWindow: config.contextWindow,
+        compactRatio: config.compactRatio,
+        keepRecentTokens: config.keepRecentTokens,
+        nsfwModelId: config.nsfwModelId,
+        nsfwPrompt: config.nsfwPrompt,
       },
-      image: {
-        enabled: bool("STAGE_IMAGE_ENABLED", this.config.image.enabled),
-        format: text("STAGE_IMAGE_FORMAT", this.config.image.format) as ServerConfig["image"]["format"],
-        baseUrl: text("STAGE_IMAGE_BASE_URL", this.config.image.baseUrl),
-        apiKey: mask(imageKey),
-        apiKeySet: imageKey.length > 0,
-        model: text("STAGE_IMAGE_MODEL", this.config.image.model),
-        size: text("STAGE_IMAGE_SIZE", this.config.image.size) as ServerConfig["image"]["size"],
-        concurrency: num("STAGE_IMAGE_CONCURRENCY", this.config.image.concurrency),
-        timeoutMs: num("STAGE_IMAGE_TIMEOUT_MS", this.config.image.timeoutMs),
-        reference: text("STAGE_IMAGE_REFERENCE", this.config.image.reference) as ServerConfig["image"]["reference"],
-      },
-      tts: {
-        enabled: bool("STAGE_TTS_ENABLED", this.config.tts.enabled),
-        proxy: text("STAGE_TTS_PROXY", this.config.tts.proxy),
-        baseUrl: text("STAGE_TTS_BASE_URL", this.config.tts.baseUrl),
-        concurrency: num("STAGE_TTS_CONCURRENCY", this.config.tts.concurrency),
-        ...keyListView(parseKeyList(text("STAGE_TTS_KEYS", ""))),
-      },
-      exa: {
-        enabled: bool("STAGE_EXA_ENABLED", this.config.exa.enabled),
-        baseUrl: text("STAGE_EXA_BASE_URL", this.config.exa.baseUrl),
-        proxy: text("STAGE_EXA_PROXY", this.config.exa.proxy),
-        timeoutMs: num("STAGE_EXA_TIMEOUT_MS", this.config.exa.timeoutMs),
-        ...keyListView(parseKeyList(text("STAGE_EXA_KEYS", ""))),
-      },
+      workshopContext: { ...config.workshopContext },
+      beatTimeoutMs: config.beatTimeoutMs,
+      password: mask(config.password),
+      passwordSet: config.password !== "",
+      image: { ...config.image, apiKey: mask(config.image.apiKey), apiKeySet: config.image.apiKey !== "" },
+      tts: { ...withoutKeys(config.tts), ...keyListView(config.tts.keys) },
+      exa: { ...withoutKeys(config.exa), ...keyListView(config.exa.keys) },
     };
   }
 
-  /** 写回 `.env`：只落改动过的键，掩码/空的凭据视为「保持不变」。 */
-  write(patch: Partial<SettingsView>): string[] {
-    const changed: string[] = [];
+  /** 提交改动，返回真的变了的字段（面板据此提示「已即时生效」）。 */
+  write(patch: SettingsViewPatch): string[] {
+    const config = this.store.get();
+    const next: SettingsPatch = {};
     const model = patch.model;
     if (model) {
-      if (model.modelId !== undefined) set(this.envPath, "STAGE_MODEL_ID", model.modelId, changed);
-      if (model.modelBase !== undefined) set(this.envPath, "STAGE_MODEL_BASE", model.modelBase, changed);
-      if (model.models !== undefined) set(this.envPath, "STAGE_MODELS", model.models, changed);
-      if (model.baseUrl !== undefined) set(this.envPath, "STAGE_BASE_URL", model.baseUrl, changed);
-      if (model.maxTokens !== undefined) {
-        set(this.envPath, "STAGE_MAX_TOKENS", String(int(model.maxTokens, "输出上限")), changed);
-      }
-      if (model.contextWindow !== undefined) {
-        set(this.envPath, "STAGE_CONTEXT_WINDOW", String(int(model.contextWindow, "上下文窗口")), changed);
-      }
-      if (model.compactRatio !== undefined) {
-        set(this.envPath, "STAGE_COMPACT_RATIO", String(ratio(model.compactRatio)), changed);
-      }
-      if (model.keepRecentTokens !== undefined) {
-        set(
-          this.envPath,
-          "STAGE_KEEP_RECENT_TOKENS",
-          String(int(model.keepRecentTokens, "保留上下文")),
-          changed,
-        );
-      }
-      if (model.nsfwModelId !== undefined) {
-        set(this.envPath, "STAGE_NSFW_MODEL_ID", model.nsfwModelId, changed);
-      }
-      if (model.nsfwPrompt !== undefined) {
-        set(this.envPath, "STAGE_NSFW_PROMPT", model.nsfwPrompt, changed);
-      }
+      next.modelId = model.modelId;
+      next.modelBase = model.modelBase;
+      if (model.models !== undefined) next.models = parseModelList(model.models);
+      next.baseUrl = model.baseUrl;
+      next.maxTokens = model.maxTokens;
+      next.contextWindow = model.contextWindow;
+      next.compactRatio = model.compactRatio;
+      next.keepRecentTokens = model.keepRecentTokens;
+      next.nsfwModelId = model.nsfwModelId;
+      next.nsfwPrompt = model.nsfwPrompt;
       // 掩码回传 = 不改；清空输入框 = 显式清除凭据（表单未触碰时会带掩码，不会误清）
-      if (model.apiKey !== undefined && model.apiKey !== mask(this.read().model.apiKey)) {
-        set(this.envPath, "STAGE_API_KEY", model.apiKey, changed);
-      }
+      if (model.apiKey !== undefined && model.apiKey !== mask(config.apiKey)) next.apiKey = model.apiKey;
     }
+    if (patch.workshopContext) next.workshopContext = { ...patch.workshopContext };
+    if (patch.beatTimeoutMs !== undefined) next.beatTimeoutMs = patch.beatTimeoutMs;
+    if (patch.password !== undefined && patch.password !== mask(config.password)) next.password = patch.password;
     const image = patch.image;
     if (image) {
-      if (image.enabled !== undefined) {
-        set(this.envPath, "STAGE_IMAGE_ENABLED", String(image.enabled), changed);
-      }
-      if (image.format !== undefined) set(this.envPath, "STAGE_IMAGE_FORMAT", image.format, changed);
-      if (image.baseUrl !== undefined) set(this.envPath, "STAGE_IMAGE_BASE_URL", image.baseUrl, changed);
-      if (image.model !== undefined) set(this.envPath, "STAGE_IMAGE_MODEL", image.model, changed);
-      if (image.size !== undefined) {
-        set(this.envPath, "STAGE_IMAGE_SIZE", imageSizeText(parseImageSize(image.size)), changed);
-      }
-      if (image.concurrency !== undefined) {
-        set(this.envPath, "STAGE_IMAGE_CONCURRENCY", String(int(image.concurrency, "出图并发")), changed);
-      }
-      if (image.timeoutMs !== undefined) {
-        set(
-          this.envPath,
-          "STAGE_IMAGE_TIMEOUT_MS",
-          String(int(image.timeoutMs, "出图超时")),
-          changed,
-        );
-      }
-      if (image.reference !== undefined) {
-        set(this.envPath, "STAGE_IMAGE_REFERENCE", image.reference, changed);
-      }
-      if (image.apiKey !== undefined && image.apiKey !== mask(this.read().image.apiKey)) {
-        set(this.envPath, "STAGE_IMAGE_API_KEY", image.apiKey, changed);
-      }
+      next.image = { ...image };
+      // 掩码是显示值，不该被当作新密钥写回去
+      if (image.apiKey === undefined || image.apiKey === mask(config.image.apiKey)) delete next.image.apiKey;
     }
-    const tts = patch.tts;
-    if (tts) {
-      if (tts.enabled !== undefined) set(this.envPath, "STAGE_TTS_ENABLED", String(tts.enabled), changed);
-      if (tts.proxy !== undefined) set(this.envPath, "STAGE_TTS_PROXY", tts.proxy, changed);
-      if (tts.baseUrl !== undefined) set(this.envPath, "STAGE_TTS_BASE_URL", tts.baseUrl, changed);
-      if (tts.concurrency !== undefined) {
-        set(this.envPath, "STAGE_TTS_CONCURRENCY", String(int(tts.concurrency, "语音并发")), changed);
-      }
-      writeKeyList(this.envPath, "STAGE_TTS_KEYS", tts.keys, "语音密钥", changed);
+    if (patch.tts) {
+      const { keys: keyText, ...rest } = patch.tts;
+      const block: NonNullable<SettingsPatch["tts"]> = { ...rest };
+      const keys = mergeKeyList(keyText);
+      if (keys) block.keys = keys;
+      next.tts = block;
     }
-    const exa = patch.exa;
-    if (exa) {
-      if (exa.enabled !== undefined) set(this.envPath, "STAGE_EXA_ENABLED", String(exa.enabled), changed);
-      if (exa.baseUrl !== undefined) set(this.envPath, "STAGE_EXA_BASE_URL", exa.baseUrl, changed);
-      if (exa.proxy !== undefined) set(this.envPath, "STAGE_EXA_PROXY", exa.proxy, changed);
-      if (exa.timeoutMs !== undefined) {
-        set(this.envPath, "STAGE_EXA_TIMEOUT_MS", String(int(exa.timeoutMs, "检索超时")), changed);
-      }
-      writeKeyList(this.envPath, "STAGE_EXA_KEYS", exa.keys, "检索密钥", changed);
+    if (patch.exa) {
+      const { keys: keyText, ...rest } = patch.exa;
+      const block: NonNullable<SettingsPatch["exa"]> = { ...rest };
+      const keys = mergeKeyList(keyText);
+      if (keys) block.keys = keys;
+      next.exa = block;
     }
-    return changed;
+    return this.store.patch(next);
   }
-}
-
-export function settingsFileFor(config: ServerConfig, repoRoot: string): SettingsFile {
-  return new SettingsFile(join(repoRoot, ".env"), config);
-}
-
-/** 凭据掩码：只露头尾，够用户认是自己那把钥匙。 */
-export function mask(secret: string): string {
-  if (secret.length <= 8) return secret ? "••••" : "";
-  return `${secret.slice(0, 4)}••••${secret.slice(-4)}`;
-}
-
-/** 多 key 字段的读侧视图：明文不回传，只给掩码与条数。 */
-function keyListView(keys: string[]): KeyListView {
-  return { keys: "", masked: keys.map(mask), keyCount: keys.length };
 }
 
 /**
@@ -233,50 +158,24 @@ function keyListView(keys: string[]): KeyListView {
  * 「清空」不是可表达的意图——想停用语音/联网有各自的启用开关，
  * 而「不小心清空」是真的发生过（粘贴一把新 key 顺手抹掉另外两把）。
  */
-function writeKeyList(path: string, name: string, raw: string | undefined, label: string, changed: string[]): void {
-  if (raw === undefined || raw.trim() === "") return;
-  const list = parseKeyList(raw);
-  if (list.length === 0) throw new Error(`${label}没有解析出任何 key`);
-  set(path, name, list.join(","), changed);
+function mergeKeyList(raw: string | undefined): string[] | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const keys = parseModelList(raw);
+  if (keys.length === 0) throw new Error("没有解析出任何 key");
+  return keys;
 }
 
-function int(value: number, label: string): number {
-  if (!Number.isInteger(value) || value < 1) throw new Error(`${label}必须是正整数`);
-  return value;
+/** 凭据掩码：只露头尾，够用户认是自己那把钥匙。 */
+export function mask(secret: string): string {
+  if (secret.length <= 8) return secret ? "••••" : "";
+  return `${secret.slice(0, 4)}••••${secret.slice(-4)}`;
 }
 
-function ratio(value: number): number {
-  if (!Number.isFinite(value) || value <= 0 || value > 1) throw new Error("压缩阈值必须是 0 到 1 之间的小数");
-  return value;
+function keyListView(keys: string[]): KeyListView {
+  return { keys: "", masked: keys.map(mask), keyCount: keys.length };
 }
 
-/** 单键落盘：原文件里有就替换那一行，没有就追加到末尾（文件始终以换行收尾）。 */
-function set(path: string, key: string, raw: string, changed: string[]): void {
-  const value = raw.replace(/[\r\n]/g, "");
-  const lines = existsSync(path) ? readFileSync(path, "utf8").split("\n") : [];
-  const prefix = `${key}=`;
-  const index = lines.findIndex((line) => line.trimStart().startsWith(prefix));
-  if (index >= 0) {
-    if (lines[index]!.trim() === `${prefix}${value}`) return;
-    lines[index] = `${prefix}${value}`;
-  } else {
-    while (lines.length > 0 && lines.at(-1)!.trim() === "") lines.pop();
-    lines.push(`${prefix}${value}`);
-  }
-  writeFileSync(path, `${lines.join("\n")}\n`, "utf8");
-  changed.push(key);
-}
-
-/** 解析 `.env`（`KEY=VALUE`，忽略注释与空行；只认本面板关心的 STAGE_ 键）。 */
-function readEnv(path: string): Map<string, string> {
-  const out = new Map<string, string>();
-  if (!existsSync(path)) return out;
-  for (const line of readFileSync(path, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("STAGE_") || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq < 0) continue;
-    out.set(trimmed.slice(0, eq).trim(), trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, ""));
-  }
-  return out;
+function withoutKeys<T extends { keys: string[] }>(block: T): Omit<T, "keys"> {
+  const { keys: _keys, ...rest } = block;
+  return rest;
 }

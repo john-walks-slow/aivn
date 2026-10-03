@@ -35,7 +35,7 @@ const opts: GeminiImageOptions = {
 
 describe("GeminiImageGen：Gemini 原生生图", () => {
   it("非法画幅尺寸构造期就拦下；字面像素尺寸本接口没有这个入参", () => {
-    expect(() => new GeminiImageGen({ ...opts, size: "8K" as never })).toThrow(/STAGE_IMAGE_SIZE/);
+    expect(() => new GeminiImageGen({ ...opts, size: "8K" as never })).toThrow(/生图尺寸/);
     expect(() => new GeminiImageGen({ ...opts, size: "1536x1024" })).toThrow(/Gemini 格式的档位只认/);
   });
 

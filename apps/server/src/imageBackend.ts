@@ -44,7 +44,7 @@ export const IMAGE_SIZES = ["1K", "2K", "4K"] as const;
 export type ImageSize = (typeof IMAGE_SIZES)[number];
 
 /**
- * `STAGE_IMAGE_SIZE` 的两种写法：档位（Gemini 的词汇）或字面像素（OpenAI `size` 的词汇）。
+ * 生图尺寸（设置页「生图」那一栏）的两种写法：档位（Gemini 的词汇）或字面像素（OpenAI `size` 的词汇）。
  * 两款格式各取所需——Gemini 只认档位，OpenAI 只认 `WxH`。
  */
 export type ImageSizeSpec =
@@ -61,7 +61,7 @@ export function parseImageSize(raw: string): ImageSizeSpec {
   const pixels = PIXEL_SIZE.exec(value);
   if (pixels) return { kind: "px", width: Number(pixels[1]), height: Number(pixels[2]) };
   throw new Error(
-    `STAGE_IMAGE_SIZE（${raw}）非法，可填档位 ${IMAGE_SIZES.join(" / ")}（K 大写）或字面像素 1536x1024`,
+    `生图尺寸「${raw}」非法，可填档位 ${IMAGE_SIZES.join(" / ")}（K 大写）或字面像素 1536x1024`,
   );
 }
 

@@ -26,11 +26,27 @@ function storedMode(key: string, fallback: ThemeMode): ThemeMode {
 }
 
 type Draft = {
+  password: string;
   model: Settings["model"];
+  workshopContext: Settings["workshopContext"];
+  beatTimeoutMs: number;
   image: Settings["image"];
   tts: Omit<Settings["tts"], "keys"> & { keys: string };
   exa: Omit<Settings["exa"], "keys"> & { keys: string };
 };
+
+/** 读视图 → 可编辑草稿（凭据输入框一律留空：留空 = 不改）。 */
+function draftOf(next: Settings): Draft {
+  return {
+    password: "",
+    model: { ...next.model, apiKey: "" },
+    workshopContext: { ...next.workshopContext },
+    beatTimeoutMs: next.beatTimeoutMs,
+    image: { ...next.image, apiKey: "" },
+    tts: { ...next.tts, keys: "" },
+    exa: { ...next.exa, keys: "" },
+  };
+}
 
 export function SettingsScreen() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -62,12 +78,7 @@ export function SettingsScreen() {
       .settings()
       .then((next) => {
         setSettings(next);
-        setDraft({
-          model: { ...next.model },
-          image: { ...next.image },
-          tts: { ...next.tts, keys: "" },
-          exa: { ...next.exa, keys: "" },
-        });
+        setDraft(draftOf(next));
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
     loadModels();
@@ -96,10 +107,12 @@ export function SettingsScreen() {
   const save = async (): Promise<void> => {
     if (!draft) return;
     try {
-      const { changed } = await api.saveSettings(draft);
+      const { changed, settings: fresh } = await api.saveSettings(draft);
       setSaved(changed);
       setError(null);
-      load();
+      // 服务端已经就地生效，回传的读视图直接当新基准（凭据掩码也跟着更新）
+      setSettings(fresh);
+      setDraft(draftOf(fresh));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -114,7 +127,7 @@ export function SettingsScreen() {
           </span>
         </button>
         <h2>设置</h2>
-        <span className="muted">改动写回服务端 .env，重启服务端后生效</span>
+        <span className="muted">保存后立即生效（正在演的剧目会在本轮结束时换用新设置）</span>
       </header>
 
       {error && (
@@ -124,7 +137,7 @@ export function SettingsScreen() {
       )}
       {saved && (
         <div className="warn-banner" role="status" onClick={() => setSaved(null)}>
-          已写入 {saved.length} 项：{saved.join("、")}（重启服务端生效）
+          已立即生效 {saved.length} 项：{saved.join("、")}
         </div>
       )}
       {!draft || !settings ? (
@@ -207,6 +220,45 @@ export function SettingsScreen() {
                 hint="必须小于压缩阈值"
                 value={draft.model.keepRecentTokens}
                 onChange={(v) => setDraft({ ...draft, model: { ...draft.model, keepRecentTokens: v } })}
+              />
+              <NumField
+                label="单轮超时 ms"
+                hint="一轮多久没写完就当失败"
+                step={1000}
+                value={draft.beatTimeoutMs}
+                onChange={(v) => setDraft({ ...draft, beatTimeoutMs: v })}
+              />
+            </div>
+          </Group>
+
+          <Group title="工坊线程">
+            <p className="settings-hint">
+              工坊可以和剧作家用不同的模型，压缩阈值因此另有一套；缺省与上面一致。
+            </p>
+            <div className="settings-grid">
+              <NumField
+                label="工坊上下文窗口"
+                value={draft.workshopContext.contextWindow}
+                onChange={(v) =>
+                  setDraft({ ...draft, workshopContext: { ...draft.workshopContext, contextWindow: v } })
+                }
+              />
+              <NumField
+                label="工坊压缩阈值"
+                hint="占窗口比例 0–1"
+                step={0.05}
+                value={draft.workshopContext.compactRatio}
+                onChange={(v) =>
+                  setDraft({ ...draft, workshopContext: { ...draft.workshopContext, compactRatio: v } })
+                }
+              />
+              <NumField
+                label="工坊保留上下文"
+                hint="必须小于压缩阈值"
+                value={draft.workshopContext.keepRecentTokens}
+                onChange={(v) =>
+                  setDraft({ ...draft, workshopContext: { ...draft.workshopContext, keepRecentTokens: v } })
+                }
               />
             </div>
           </Group>
@@ -347,6 +399,41 @@ export function SettingsScreen() {
             />
           </Group>
 
+          <Group title="访问与启动">
+            <Field
+              label="访问密码"
+              hint={
+                settings.passwordSet
+                  ? "已开启（HTTP Basic）——留空即不改；清空并保存 = 关闭设防"
+                  : "当前没有设防。挂到公网前务必设一个（局域网自用可以不设）"
+              }
+            >
+              <input
+                type="password"
+                placeholder={settings.password || "未设置"}
+                value={draft.password}
+                onChange={(e) => setDraft({ ...draft, password: e.target.value })}
+              />
+            </Field>
+            <p className="settings-hint">
+              改密码会立即生效：此前发出的会话全部作废，刷新页面重新输一次即可。
+            </p>
+            <div className="settings-grid">
+              <Field label="监听地址（只读）" hint="局域网访问靠它；改它要写 .env 再重启">
+                <input value={settings.bootstrap.host} readOnly />
+              </Field>
+              <Field label="端口（只读）" hint="改它要写 .env 再重启">
+                <input value={String(settings.bootstrap.port)} readOnly />
+              </Field>
+            </div>
+            <Field
+              label="数据目录（只读）"
+              hint="剧目、素材库、缓存与设置文件都在这里；换目录在 .env 里写 STAGE_DATA_DIR"
+            >
+              <input value={settings.bootstrap.dataRoot} readOnly />
+            </Field>
+          </Group>
+
           {/* 主题设置 */}
           <Group title="主题设置">
             <Field label="界面主题">
@@ -431,7 +518,9 @@ export function SettingsScreen() {
             <button className="ghost-btn" onClick={load}>
               放弃改动
             </button>
-            <span className="muted">剧目库：{settings.playsRoot}　服务端口：{settings.port}</span>
+            <span className="muted">
+              数据目录：{settings.bootstrap.dataRoot}　监听：{settings.bootstrap.host}:{settings.bootstrap.port}
+            </span>
           </div>
         </div>
       )}

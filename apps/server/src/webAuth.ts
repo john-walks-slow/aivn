@@ -1,5 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { SettingsSource } from "./settingsStore.js";
 
 /**
  * 公网入口的密码闸门（HTTP Basic + 会话 cookie）。
@@ -35,12 +36,32 @@ function cookiesOf(req: IncomingMessage): string {
 
 export class WebGate {
   private readonly tokens = new Map<string, number>();
+  /** 上一次生效的密码：设置页一改就在下一次请求前换掉，不需要重启。 */
+  private password: string;
 
-  constructor(private readonly password: string) {}
+  constructor(private readonly settings: SettingsSource) {
+    this.password = settings.get().password;
+  }
 
   /** 没配密码 = 不设防（本地直连的开发场景）。 */
   get open(): boolean {
     return this.password === "";
+  }
+
+  /**
+   * 密码改了就地换（每请求一次比对，成本是一次字符串比较）。
+   *
+   * 换密码时**清空已发出的会话**：不然拿旧密码换来的 cookie 在改密之后照样通行，
+   * 改密码这件事就等于没发生。
+   */
+  private syncPassword(): void {
+    const next = this.settings.get().password;
+    if (next === this.password) return;
+    this.password = next;
+    this.tokens.clear();
+    console.log(
+      next === "" ? "[stage-ai] 访问密码已关闭（入口不再设防）" : "[stage-ai] 访问密码已更新，此前发出的会话全部作废",
+    );
   }
 
   /** cookie 里的会话还有效吗。过期顺手清掉，免得 Map 无限长。 */
@@ -65,6 +86,7 @@ export class WebGate {
    * WS 握手没有响应体可写头，靠 Basic 那一路走不通，所以它只能靠已有 cookie（或浏览器自动补 Basic）。
    */
   allow(req: IncomingMessage, res?: ServerResponse): boolean {
+    this.syncPassword();
     if (this.open) return true;
     if (this.sessionOk(req)) return true;
     if (!this.hasBasic(req)) return false;

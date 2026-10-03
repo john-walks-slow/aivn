@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { VoiceCatalogService, type VoiceFetcher } from "../src/voiceCatalog.js";
-import { loadConfig } from "../src/config.js";
+import { settingsFromEnv } from "../src/config.js";
+import { settingsStoreFor } from "./helpers.js";
 
 /** 假 fish 目录：第 1~2 页有数据，第 3 页起空。 */
 function fakePages(counts: { title: string; languages: string[]; likes: number; trained?: boolean }[][]) {
@@ -30,8 +31,8 @@ function fakePages(counts: { title: string; languages: string[]; likes: number; 
 async function service(counts: Parameters<typeof fakePages>[0]) {
   const dir = await mkdtemp(join(tmpdir(), "voices-"));
   const { fetchJson, calls } = fakePages(counts);
-  const config = loadConfig({ STAGE_TTS_PROXY: "" }, "/repo");
-  return { svc: new VoiceCatalogService(config, join(dir, "voices.json"), fetchJson), calls, dir };
+  const config = settingsFromEnv({ STAGE_TTS_PROXY: "" });
+  return { svc: new VoiceCatalogService(settingsStoreFor(config), join(dir, "voices.json"), fetchJson), calls, dir };
 }
 
 describe("VoiceCatalogService", () => {
@@ -48,10 +49,10 @@ describe("VoiceCatalogService", () => {
 
   it("分页是并发打的：一次刷新只花一轮往返（串行要三十多秒）", async () => {
     const dir = await mkdtemp(join(tmpdir(), "voices-"));
-    const config = loadConfig({ STAGE_TTS_PROXY: "" }, "/repo");
+    const config = settingsFromEnv({ STAGE_TTS_PROXY: "" });
     let inFlight = 0;
     let peak = 0;
-    const svc = new VoiceCatalogService(config, join(dir, "voices.json"), async <T>(path: string): Promise<T> => {
+    const svc = new VoiceCatalogService(settingsStoreFor(config), join(dir, "voices.json"), async <T>(path: string): Promise<T> => {
       inFlight += 1;
       peak = Math.max(peak, inFlight);
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -84,8 +85,8 @@ describe("VoiceCatalogService", () => {
 
   it("抓取失败且无快照时抛错（不静默返回空目录）", async () => {
     const dir = await mkdtemp(join(tmpdir(), "voices-"));
-    const config = loadConfig({ STAGE_TTS_PROXY: "" }, "/repo");
-    const svc = new VoiceCatalogService(config, join(dir, "voices.json"), async () => {
+    const config = settingsFromEnv({ STAGE_TTS_PROXY: "" });
+    const svc = new VoiceCatalogService(settingsStoreFor(config), join(dir, "voices.json"), async () => {
       throw new Error("代理不通");
     });
     await expect(svc.get()).rejects.toThrow("代理不通");
@@ -104,8 +105,8 @@ describe("VoiceCatalogService", () => {
       }),
     );
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const config = loadConfig({ STAGE_TTS_PROXY: "" }, "/repo");
-    const svc = new VoiceCatalogService(config, cacheFile, async () => {
+    const config = settingsFromEnv({ STAGE_TTS_PROXY: "" });
+    const svc = new VoiceCatalogService(settingsStoreFor(config), cacheFile, async () => {
       throw new Error("代理不通");
     });
     const catalog = await svc.get();
@@ -128,9 +129,9 @@ describe("VoiceCatalogService", () => {
       }),
     );
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const config = loadConfig({ STAGE_TTS_PROXY: "" }, "/repo");
+    const config = settingsFromEnv({ STAGE_TTS_PROXY: "" });
     let calls = 0;
-    const svc = new VoiceCatalogService(config, cacheFile, async () => {
+    const svc = new VoiceCatalogService(settingsStoreFor(config), cacheFile, async () => {
       calls += 1;
       throw new Error("代理不通");
     });
@@ -153,8 +154,8 @@ describe("VoiceCatalogService", () => {
 
   it("按 id 解析目录外音色（demo 剧目的 voiceId 不在热门 1000 内）", async () => {
     const dir = await mkdtemp(join(tmpdir(), "voices-"));
-    const config = loadConfig({ STAGE_TTS_PROXY: "" }, "/repo");
-    const svc = new VoiceCatalogService(config, join(dir, "voices.json"), async () => ({
+    const config = settingsFromEnv({ STAGE_TTS_PROXY: "" });
+    const svc = new VoiceCatalogService(settingsStoreFor(config), join(dir, "voices.json"), async () => ({
       _id: "f82e3885ac22468eb6c773b96f2c5752",
       state: "trained",
       title: "萝莉萌妹",
