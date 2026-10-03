@@ -62,6 +62,12 @@ const READ_PERSIST_MS = 1500;
 /** 解析告警回灌的条数上限：再往上只是稀释真正的指令，而问题类型本来就那么几种。 */
 const MAX_FEEDBACK_WARNINGS = 8;
 
+/**
+ * 判废后的自动重试次数（1 = 首跑判废就原样重演一轮，共两轮）。
+ * 只重试一次：同一段输入、同一个上下文，第三轮还写不出来就是写不出来。
+ */
+const BEAT_RETRY_LIMIT = 1;
+
 /** 告警类型 → 模型看得懂的说法（英文枚举名对它没有诊断价值）。 */
 const WARNING_LABELS: Record<ParserWarningType, string> = {
   orphan_text: "DSL 之外的散文",
@@ -225,6 +231,13 @@ interface OpenLine {
   seq: number;
 }
 
+/** 一轮判废的结论：写不出来的原因、还能不能重演、是不是已经重演过一轮。 */
+interface BeatFailure {
+  reason: string;
+  retry: boolean;
+  retried: boolean;
+}
+
 /**
  * Playwriter 编排器：pi Agent 流式输出 → StageDslParser → IR 事件（seq）→ 广播；
  * 谱系行级聚合 + 快照；beat 生命周期（start → 流式 → stop/no_stop 收束）。
@@ -262,10 +275,20 @@ export class PlaywrightOrchestrator {
   private beatError: string | null = null;
   /** 这一轮是被我们自己的超时掐断的：provider 随之报的是 AbortError，不是根因。 */
   private beatTimedOut = false;
-  /** 本轮内产出的舞台事件数（空轮检测）。 */
-  private beatEvents = 0;
-  /** 本轮台词文本（archive 切片摘要来源）。 */
+  /** 本轮台词文本（archive 切片摘要来源；也是「这一轮有没有写出东西」的唯一判据）。 */
   private beatLines: string[] = [];
+  /** 本轮是第几跑（0 = 首跑，1 = 判废后的重演）：判废时据此决定还能不能重试。 */
+  private beatAttempt = 0;
+  /** 本轮锚点：这一轮开始前挂载点在哪（判废后从这里原样重演同一段输入）。 */
+  private beatAnchorId: string | null = null;
+  /** 本轮输入节点落树**之前**的挂载点（判废退回时退到它，上一轮的停止点原位复原）。 */
+  private beatTailId: string | null = null;
+  /** 本轮输入锚点记过没有（记过 = 这一轮有输入节点；没记 = 开场/重演这一轮）。 */
+  private beatTailRecorded = false;
+  /** 判废结论：judgeBeatFailure 判出后留在这里，由 beginBeat 消费（回滚/重演/失败态）。 */
+  private beatVerdict: BeatFailure | null = null;
+  /** 本轮注入的插一句：判废退回时原样还给队列（还是那几条，改过撤过都算数）。 */
+  private beatSteers: PromptQueueItem[] = [];
   /** 上一轮 DSL 解析告警（已转成人话）：下一轮回灌给模型自修正，见 renderBeatWarnings。 */
   private beatWarnings: string[] = [];
   /** 本 turn 调用了 beat_done → 轮在此收束（普通工具轮次不算边界，否则记忆查询会撕裂轮）。 */
@@ -302,6 +325,8 @@ export class PlaywrightOrchestrator {
 
   constructor(opts: OrchestratorOptions) {
     this.opts = opts;
+    // 输入锚点从当前叶起算：恢复会话时它就是上一轮收束的地方（空树上是 null = 无处可退）
+    this.beatTailId = opts.tree.leafId;
     this.historyRecorder = new HistoryRecorder(opts.restoredHistory);
     this.parser = new StageDslParser((event) => this.onStageEvent(event));
     if (opts.restored) {
@@ -651,6 +676,7 @@ export class PlaywrightOrchestrator {
     if (!this.autostarted) {
       this.autostarted = true;
       // 开场这一句同样落谱系：否则它只活在对话体里，玩家在轮内分岔就再也找不回来
+      this.noteBeatInputs(steers);
       for (const item of steers) this.appendLineage("prompt", { payload: { input: item.text } });
       if (resolved) this.appendLineage("prompt", { payload: { input: resolved.text } });
       this.markSent(steers);
@@ -660,16 +686,12 @@ export class PlaywrightOrchestrator {
       );
       return;
     }
+    // 没有选到什么（「继续」或自由输入）：注入的就是队列里那几句引导，交给同一处入账
     if (!resolved) {
-      for (const item of steers) this.appendLineage("prompt", { payload: { input: item.text } });
-      this.markSent(steers);
-      await this.beginBeat(this.renderPromptTurn(steers.map((item) => item.text)));
+      await this.deliverPrompts(steers, null);
       return;
     }
-    await this.deliverPrompts(
-      [...steers, { id: "", text: resolved.text, beatNo: this.beatNo, status: "pending" }],
-      { answered: true },
-    );
+    await this.deliverPrompts(steers, resolved, { answered: true });
   }
 
   /** 兑现即落笔：出队并回执「已落笔」，面板上不再占位。 */
@@ -684,6 +706,18 @@ export class PlaywrightOrchestrator {
   }
 
   /**
+   * 本轮输入入账：在 prompt 节点落树**之前**记下「这段输入还没发出去」时的挂载点。
+   *
+   * 判废退回要退到它——退到输入节点之后，那次选择与那几句引导就跟着一起退不掉了。
+   * 没走这里的轮次（开场、重演这一轮、光点「继续」）没有输入节点，输入锚点即本轮锚点自己。
+   */
+  private noteBeatInputs(steers: readonly PromptQueueItem[]): void {
+    this.beatTailId = this.opts.tree.leafId;
+    this.beatTailRecorded = true;
+    this.beatSteers = [...steers];
+  }
+
+  /**
    * 兑现一批插一句：落谱系 → 开始新一轮。
    *
    * 谱系节点在**注入时**才落（排队期间玩家还能改还能撤），且挂在开新一轮之前——
@@ -692,10 +726,17 @@ export class PlaywrightOrchestrator {
    * 收束后的排队兑现由 beginBeat 的 onBeatSettled 统一接管，本方法不重复。
    */
   private async deliverPrompts(
-    items: readonly PromptQueueItem[],
+    steers: readonly PromptQueueItem[],
+    resolved: ResolvedAction | null,
     opts?: { answered?: boolean },
   ): Promise<void> {
     this.pending = this.pending.filter((item) => item.status === "pending");
+    // 选择不是玩家自由说的话，但它在时间线上与插一句同性质：都是「他说了什么」，都得留下
+    const choice: PromptQueueItem | null = resolved
+      ? { id: "", text: resolved.text, beatNo: this.beatNo, status: "pending" }
+      : null;
+    const items = choice ? [...steers, choice] : [...steers];
+    this.noteBeatInputs(steers);
     for (const item of items) this.appendLineage("prompt", { payload: { input: item.text } });
     for (const item of items) {
       item.status = "sent";
@@ -731,7 +772,7 @@ export class PlaywrightOrchestrator {
       return;
     }
     this.beatPending = true; // 先占位再放行：engaged 不能在「这一轮完了但下一轮没开」的缝里掉下去
-    void this.deliverPrompts(items);
+    void this.deliverPrompts(items, null);
   }
 
   /** 改一条还没落笔的排队输入。找不到就是客户端状态过期——回错，不静默吞。 */
@@ -840,6 +881,8 @@ export class PlaywrightOrchestrator {
     this.beatLines = [];
     this.beatError = null;
     this.beatTimedOut = false;
+    this.beatVerdict = null;
+    this.beatTailRecorded = false;
     this.agent.abort();
   }
 
@@ -917,21 +960,40 @@ export class PlaywrightOrchestrator {
   }
 
   /**
+   * 结构操作（跳转 / 分岔 / 重演这一轮）的入口：挂载点是玩家在动，必须等演出空闲。
+   * 世界线重建本身收在 rebuildBranchAt，判废回滚走的是同一个出口（见 rewindFailedBeat）。
+   */
+  private rebaseAt(nodeId: string, note: string, opts?: { resume?: boolean; mark?: boolean }): void {
+    this.guardIdle();
+    this.rebuildBranchAt(nodeId, note, opts);
+    // 玩家的结构操作把挂载点挪走了：下一轮的输入锚点跟着挪到新落点
+    this.beatTailRecorded = false;
+  }
+
+  /**
    * 上下文重建（P6 transformContext 的执行点）：调用方已把挂载点摆好，这里只管按
    * 目标节点重放出「引擎状态 + 记忆快照 + 客户端事件缓冲 + LLM 对话轮次」，
    * 一次突变完成即回到 append-only 稳态。
    *
-   * 动词只负责「树该长什么样」（jumpTo / recordEdit / recordFork），世界线重建是同一件事，
-   * 所以收在这里，不再各自传 nodeId。
+   * 动词只负责「树该长什么样」（jumpTo / recordFork / recordEdit），世界线重建是同一件事，
+   * 所以收在这里，不再各自传 nodeId；判废回滚（rewindFailedBeat）也走这里——
+   * 「按某个节点重放世界线」只有一份实现，玩家的分岔与引擎的自动作废不会各退各的。
    *
    * 保持同刻铁律：旧分支的活跃状态、剧情线引用与 archive 检索范围一并回退，
    * 兄弟/废弃分支的往事不可召回（防剧透）。
    *
    * `resume: true` 时不停在这个停止点：挂载点落在轮中的节点也照样续演——
    * 轮首锚点由客户端算出（见计划 §7.2），服务端不需要知道「轮边界」这件事。
+   *
+   * `failureExit` 是判废退回专用的：退回的那一处本来就没有停止点（无停止点收尾的一轮）
+   * 时补一个 pause 出口。没有出口 + 队列里还压着刚退回去的引导 = 引擎自己原地重开一轮，
+   * 失败于是能自我循环——出口是这条环的断点，不是装饰。
    */
-  private rebaseAt(nodeId: string, note: string, opts?: { resume?: boolean; mark?: boolean }): void {
-    this.guardIdle();
+  private rebuildBranchAt(
+    nodeId: string,
+    note: string,
+    opts?: { resume?: boolean; mark?: boolean; failureExit?: boolean },
+  ): void {
     const tree = this.opts.tree;
     const chain = tree.materialize(nodeId);
     const { beats, trailingInputs } = this.rebuildBeats(chain);
@@ -953,6 +1015,8 @@ export class PlaywrightOrchestrator {
     this.openLine = null;
     this.pendingStop = null;
     this.restoreStopPoint(chain, opts?.resume === true);
+    // 判废退回时上一处没有停止点：补一个 pause 出口，别让引擎自己接上下一次失败
+    if (opts?.failureExit && !this.lastStop) this.lastStop = { stopType: "pause" };
     this.buildAgent(this.renderBeats(beats));
     this.epoch += 1;
     this.send({
@@ -1126,11 +1190,60 @@ export class PlaywrightOrchestrator {
     return sections.join("\n\n");
   }
 
+  /**
+   * 开一轮，并把它跑成「不必再跑」。
+   *
+   * 判废（这一轮没写出任何台词）时 finishBeat 不写收尾，只把结论留在这里：
+   * 回滚到本轮锚点、**把同一段输入原样重发一次**。同一段输入、同一个上下文重跑，
+   * 而不是发一条缩水的【状态】轮——后者既没让模型重做那个选择，也甩不掉它自己那次拒答。
+   */
   private async beginBeat(userText: string): Promise<void> {
     const token = (this.beatToken += 1);
     this.beatPending = true;
+    this.beatAnchorId = this.opts.tree.leafId;
+    // 这一轮没有输入节点（开场 / 重演这一轮 / 光点「继续」）：输入锚点就是锚点自己，
+    // 也没有引导要还——上一轮那批已经兑现过，再退回队列等于同一句进两次谱系
+    if (!this.beatTailRecorded) {
+      this.beatTailId = this.beatAnchorId;
+      this.beatSteers = [];
+    }
+    this.beatTailRecorded = false;
+    try {
+      for (let attempt = 0; ; attempt += 1) {
+        this.beatAttempt = attempt;
+        await this.runBeatTurn(userText, token);
+        if (this.disposed || token !== this.beatToken) return;
+        const verdict = this.beatVerdict;
+        if (!verdict) return; // 正常收束，或已经就地收成失败态
+        this.beatVerdict = null;
+        // 判废回滚到本轮锚点，同一段输入原样重演（不是发一条缩水的【状态】轮）。
+        // 回滚本身就重建了 Agent：拒答那条 assistant 消息不留在上下文里，重演才有意义。
+        if (verdict.retry && this.rewindFailedBeat(verdict, true)) continue;
+        // 退不回锚点（空树上的第一轮），或重演也用完了：退回「这段输入还没发出去」的那一刻
+        if (this.rewindFailedBeat(verdict, false)) return;
+        // 退不掉（空树上的第一轮，锚点还不存在）：就地收成一个带 pause 出口的空轮
+        this.lastStop = { stopType: "pause" };
+        this.send({
+          type: "error",
+          message: `本轮生成失败：${verdict.reason}`,
+          recoverable: true,
+        });
+        this.closeBeat(this.lastStop);
+        return;
+      }
+    } finally {
+      // 已被腰斩的一轮整段作废：它不能再碰 beatPending（那属于新分支），
+      // 也不能去兑现排队的 steer
+      if (token !== this.beatToken) return;
+      this.beatPending = false;
+      if (!this.busy) this.onBeatSettled();
+    }
+  }
+
+  /** 一轮（或一次重演）的执行：超时闸门 + 注入 + 等它收束。判废由 finishBeat 判定。 */
+  private async runBeatTurn(userText: string, token: number): Promise<void> {
     // 网关挂住是看不见的故障：provider 既不抛错也不收流，await 会永远挂着。
-    // 到点直接 abort 这一轮，让 finishBeat 的空轮护栏收成一次可重试的失败。
+    // 到点直接 abort 这一轮，让 finishBeat 的护栏收成一次可重试的失败。
     const deadline = this.opts.beatTimeoutMs;
     const timer =
       deadline && deadline > 0
@@ -1152,18 +1265,77 @@ export class PlaywrightOrchestrator {
     } catch (error) {
       // 腰斩之后醒过来的旧轮：报错记在它自己身上，不写进新分支那轮的账
       if (token !== this.beatToken) return;
-      // prompt 抛错（网络/中断）：记入 beatError，由 finishBeat 的空轮护栏统一收束
+      // prompt 抛错（网络/中断）：记入 beatError，由 finishBeat 的护栏统一收束
       this.beatError = error instanceof Error ? error.message : String(error);
     } finally {
       if (timer) clearTimeout(timer);
-      // 已被腰斩的一轮整段作废：它不能再碰 beatPending（那属于新分支），
-      // 更不能 finishBeat 掉新分支刚开的那轮，也不能去兑现排队的 steer
       if (token !== this.beatToken) return;
       // prompt 异常路径可能不发 agent_end：兜底收束（正常路径 busy 已被 finishBeat 清零）
       if (this.busy) this.finishBeat();
-      this.beatPending = false;
-      if (!this.busy) this.onBeatSettled();
     }
+  }
+
+  /**
+   * 判废回滚：这一轮整段作废，回到「这段输入还没发出去」的那一刻。
+   *
+   * 复用上下文重建那一套（引擎状态 / 场景 / 活跃状态文件 / arcs / 事件缓冲 / 对话体 / 历史
+   * 一起退，见 rebuildBranchAt），但不落 fork 标记——这不是玩家开的新分支，是这一轮不存在。
+   * 客户端整段重放（epoch+1），所以判废前流出去的那半截（改了一半的背景、只发起的一张图）
+   * 也从台上一并消失。
+   *
+   * @param verdict 判废结论（原因 + 是不是已经重演过一轮）：重演与否、报错怎么说都看它。
+   * @param retry   true = 接着原样重演这一段输入（锚点停在输入节点上，停止点先清空）；
+   *                false = 这一轮到此为止（退到输入之前，上一轮的停止点连同选项原位复原）。
+   * @returns 退成功没有。空树上的第一轮没有可退的锚点，只能由调用方就地收尾。
+   */
+  private rewindFailedBeat(verdict: BeatFailure, retry: boolean): boolean {
+    // 终态退回落回本轮锚点只有一种情形：空树上的第一轮自由输入（没有更早的落点可退，
+    // 输入节点就是锚点）——退到它，由 failureExit 的 pause 出口接住，不会退到空树上去
+    const anchor = retry ? this.beatAnchorId : (this.beatTailId ?? this.beatAnchorId);
+    if (!anchor) return false;
+    // 重演把舞台整个倒回去重放一遍，不给个说法看着就是「舞台自己抽了一下」
+    this.rebuildBranchAt(anchor, retry ? "本轮没有写出内容，已退回本轮开头原样重演一次" : "", {
+      resume: retry,
+      mark: false,
+      // 退回上一处若没有停止点，得补一个 pause 出口：队列里还压着刚退回去的引导，
+      // 没有出口时 onBeatSettled 会立刻自己开下一轮，失败就转成了无限循环
+      failureExit: !retry,
+    });
+    if (retry) {
+      // 这段输入马上原样重发，不能再被当成「链尾悬空的表态」并进再下一轮
+      this.trailingInputs = [];
+    }
+    // 作废那一轮的解析告警不属于任何一轮：回灌只会把「不肯写」当「格式错」推它继续写
+    this.beatWarnings = [];
+    if (!retry) {
+      // 引导还没兑现过，还给玩家：重新排进队列（可改可撤），下一次动作时合成同一轮发出去
+      this.returnBeatSteers();
+      this.send({
+        type: "error",
+        message:
+          `本轮生成失败：${verdict.reason}` +
+          (verdict.retried ? "（已自动重演一次，仍未写出内容）" : ""),
+        recoverable: true,
+      });
+    }
+    return true;
+  }
+
+  /**
+   * 判废退回时把手上的引导还回队列：还是那几条，id 不变、改过的文本不变。
+   *
+   * 放回队首：它们是最早排上的，判废那一轮期间新排的句子排在它们后面。
+   */
+  private returnBeatSteers(): void {
+    if (this.beatSteers.length === 0) return;
+    const restored = this.beatSteers;
+    this.beatSteers = [];
+    for (const item of restored) {
+      item.status = "pending";
+      item.sentBeatNo = undefined;
+    }
+    this.pending = [...restored, ...this.pending.filter((item) => !restored.includes(item))];
+    this.broadcastPromptQueue();
   }
 
   /**
@@ -1241,7 +1413,6 @@ export class PlaywrightOrchestrator {
     this.beatNo += 1;
     this.beatError = null;
     this.beatTimedOut = false;
-    this.beatEvents = 0;
     this.beatLines = [];
     this.beatClosed = false;
     this.opts.engine.turn = this.beatNo;
@@ -1294,18 +1465,20 @@ export class PlaywrightOrchestrator {
     // 告警要在 resetBeat 之前取走：解析器不替我们记，丢了就再也拼不出「上一轮哪里被丢了」
     this.beatWarnings = describeBeatWarnings(this.parser.takeWarnings());
     this.parser.resetBeat();
-    let stop = this.pendingStop;
+    const stop = this.pendingStop;
     this.pendingStop = null;
-    // 空轮护栏：生成失败/零产出不得静默伪装成正常收束——显式 error + pause 停止点给玩家重试入口
-    // （这一轮没有自然收尾，给不了出口，只能让玩家按「继续」重开一轮）
-    if (this.beatEvents === 0 && !stop) {
-      this.send({
-        type: "error",
-        message: `本轮生成失败：${this.beatError ?? "模型未产出任何剧本内容"}`,
-        recoverable: true,
-      });
-      stop = { stopType: "pause" };
-    } else if (this.beatError) {
+    // 判废护栏：这一轮没有写出任何可演的台词，也没有交出停止点。
+    // 不静默伪装成正常收束，也不在谱系里留下一拍——结论留给 beginBeat 去回滚（见 rewindFailedBeat）。
+    if (!stop && !this.beatHasLines) {
+      this.beatVerdict = {
+        reason: this.beatError ?? "模型未产出任何剧本内容",
+        // 超时不重演：网关挂住是「路不通」，再来一次只是让玩家再等一个超时
+        retry: this.beatAttempt < BEAT_RETRY_LIMIT && !this.beatTimedOut,
+        retried: this.beatAttempt > 0,
+      };
+      return;
+    }
+    if (this.beatError) {
       this.send({
         type: "error",
         message: `本轮生成中断：${this.beatError}`,
@@ -1314,6 +1487,25 @@ export class PlaywrightOrchestrator {
     }
     this.beatError = null;
     this.lastStop = stop;
+    this.closeBeat(stop);
+  }
+
+  /**
+   * 这一轮有没有写出可演的东西：say/narrate/thought 一条非空的都没落下来。
+   *
+   * 控制指令（scene/actor/sfx/cg/preload）不算内容——只换了个背景、只发起一张图，
+   * 舞台上仍然什么都没有，而旧的判据（事件数）恰恰在这里漏掉一整类空轮。
+   */
+  private get beatHasLines(): boolean {
+    return this.beatLines.some((line) => line.trim() !== "");
+  }
+
+  /**
+   * 收束这一轮：落 beat_end、存快照、切 archive、广播、落盘。
+   *
+   * 判废的轮不走这里：它没有产出，不该在档里留下一拍（回滚会把这一轮整个抹掉）。
+   */
+  private closeBeat(stop: StopPayload | null): void {
     this.appendLineage("beat_end", {
       // seq 锚点：前端按它把行级事件切成一轮一张卡，且能精确跳到轮首行
       payload: { reason: stop ? "stop" : "no_stop", seq: this.seq },
@@ -1374,7 +1566,6 @@ export class PlaywrightOrchestrator {
 
   private onStageEvent(event: StageEvent): void {
     this.seq += 1;
-    this.beatEvents += 1;
     const sequenced: SequencedEvent = { seq: this.seq, event };
     this.events.push(sequenced);
     this.send({ type: "events", events: [sequenced] });
