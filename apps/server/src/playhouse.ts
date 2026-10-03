@@ -17,7 +17,7 @@ import type { ImageBackend } from "./imageBackend.js";
 import { createExa, type Exa } from "./exa.js";
 import { WebImageFetcherImpl, type WebImageFetcher } from "./webImage.js";
 import { readPlayLedgerEntries, type GeneratedLedgerEntry } from "./generatedLedger.js";
-import { PlayAssets } from "./playAssets.js";
+import { PlayAssets, assertAssetStem } from "./playAssets.js";
 import { PendingJobs } from "./pendingJobs.js";
 import { PlayFiles } from "./playFiles.js";
 import { agentToolCatalog, defaultToolsFor } from "./agentkit/kit.js";
@@ -28,6 +28,12 @@ import { PlayMemory } from "./memory.js";
 import { WorkshopSession } from "./workshopSession.js";
 import { completeText } from "./llm.js";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
+import {
+  composeImagePrompt,
+  MIN_IMAGE_PROMPT_WORDS,
+  type ImagePromptKind,
+} from "./imagePrompt.js";
+import type { AssetTarget } from "./playAssets.js";
 import type { Model } from "@earendil-works/pi-ai";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -79,19 +85,6 @@ const GATEWAY_MODELS_TTL_MS = 5 * 60_000;
 
 /** 音色试听固定样本文案（素材管理页「试听」按钮）。 */
 const TTS_SAMPLE_TEXT = "你好呀！这就是我的声音，以后请多多指教哦。";
-
-/** 导演生图：把当前这一幕写成一句英文出图提示词的提示词。 */
-const CG_PROMPT_SYSTEM = [
-  "你是视觉小说的插图提示词写手：把「这一幕演到哪儿了」写成一句英文出图提示词，供 AI 出图模型使用。",
-  "- 只输出提示词本身：英文、逗号分隔的画面要素；不加引号、不加解释、不写负面词",
-  "- 画面落在当前这一幕上：谁在场、什么动作与表情、什么场景、什么光线与气氛",
-  "- 不要出现任何文字、字幕、对话框、分镜格、漫画式的描述",
-  "- 有【玩家要求】时以它为准，其余要素都为它服务；没有就照剧情自己构图",
-  "- 长度控制在 60 词上下，句首大写",
-].join("\n");
-
-/** 出图提示词的最短词数：低于它基本是被截断的半句，不是模型认真写的短提示词。 */
-const MIN_CG_PROMPT_WORDS = 15;
 
 /** 工坊改了剧目文件（创作口径/premise/记忆卡）后的接力说明。 */
 const SETTINGS_UPDATED = [
@@ -436,7 +429,12 @@ export class PlayHouse {
       sender({ type: "asset_failed", id, message: "生图未启用" });
       return;
     }
-    const target = { kind: type === "bg" ? "background" : "cg", name: id, references } as const;
+    const target: AssetTarget = {
+      kind: type === "bg" ? "background" : "cg",
+      name: id,
+      references,
+      referenceCharacters: references,
+    };
     const existing = await assets.existingUrl(target);
     if (existing) {
       sender({ type: "asset_ready", asset: { id, type, url: existing } });
@@ -732,70 +730,243 @@ export class PlayHouse {
 
   /**
    * 导演生图：玩家在舞台上点名要一张插图，玩家指令可留空。
+   * 支持 referenceCharacters 参考立绘与 useHistory 选项。
    *
-   * 顺序是「先写提示词，再落位置，最后发起」——提示词写不出来就什么都没发生，
-   * 不会在时间线上留下一个等不到图的空节点。
+   * 顺序是「先验参考角色，再写提示词，再落位置，最后发起」——任一步失败就抛错，
+   * 错误通过 error 帧直达玩家，不会在时间线上留下一个等不到图的空节点。
    */
-  async requestCg(playId: string, instruction?: string): Promise<void> {
+  async requestCg(
+    playId: string,
+    instruction?: string,
+    opts?: { referenceCharacters?: string[]; useHistory?: boolean },
+  ): Promise<void> {
     const runtime = await this.get(playId);
     if (!this.imageBackend) {
       throw new Error("生图未启用（STAGE_IMAGE_ENABLED=false 或后端缺凭据）");
     }
+    const assets = this.playAssetsFor(playId, runtime.store);
+    if (!assets) {
+      throw new Error("生图未启用");
+    }
+
+    // 1. 前置校验参考角色立绘（若有）
+    const refIds = opts?.referenceCharacters?.filter(Boolean) ?? [];
+    if (refIds.length > 0) {
+      await assets.assertReferences(refIds);
+    }
+
     const play = await runtime.store.loadPlay();
     const wanted = instruction?.trim() ?? "";
-    const { lines, scene } = runtime.orchestrator.recentScript();
-    if (lines.length === 0 && !wanted) {
+    const useHistory = opts?.useHistory !== false;
+    const { lines, scene } = useHistory
+      ? runtime.orchestrator.recentScript()
+      : { lines: [], scene: "" };
+
+    if (!useHistory && !wanted) {
+      throw new Error("不基于剧情时必须写下想要什么样的图");
+    }
+    if (useHistory && lines.length === 0 && !wanted) {
       throw new Error("还没有剧情可画：先演一会儿，或者直接写下想要什么样的图");
     }
-    const craft = await readFileOrEmpty(runtime.store.memoryDir("always", "craft.md"));
-    const prompt = await this.composeCgPrompt(play, { lines, scene, wanted, craft, characters: runtime.orchestrator.memory });
-    // 网关偶尔把单发流掐在半路，而且仍然报 finish_reason=stop（实测：78 字符停在 "wearing"，
-    // 还有一次只给了 6 字符）。半句提示词出图会整个跑偏，却看起来一切正常——按系统提示里
-    // 「60 词上下」的约定验一下长度，不达标就当没写成，让玩家再点一次，
-    // 而不是烧一张配额换一张废图。
-    if (prompt.split(/\s+/).length < MIN_CG_PROMPT_WORDS) {
-      throw new Error("写出来的出图提示词只有半句（模型响应被截断），请再点一次生图");
-    }
-    const id = `cg_${Date.now().toString(36)}`;
-    runtime.orchestrator.directorCg(id);
-    void this.preloadAsset(playId, runtime.store, "cg", prompt, id);
-  }
 
-  /** 「这一幕演到哪儿了」+ 玩家指令 → 一句英文出图提示词。模型用剧目里剧作家的那个。 */
-  private async composeCgPrompt(
-    play: PlayConfig,
-    ctx: { lines: readonly string[]; scene: string; wanted: string; craft: string; characters?: PlayMemory },
-  ): Promise<string> {
-    const user = [
-      `【当前场景】${ctx.scene}`,
-      // 角色卡是真相源（play.json 那份 characters 是纯元数据，没人读），出图提示词要按真的人设写
-      `【角色】\n${[...(ctx.characters?.characters ?? [])]
-        .map(([id, card]) => `- ${card.name ?? id}${card.body ? `：${card.body.slice(0, 120)}` : ""}`)
-        .join("\n")}`,
-      ctx.craft ? `【创作口径】\n${ctx.craft.slice(0, 800)}` : "",
-      ctx.lines.length > 0
-        ? `【刚才演到的（最新在最后）】\n${ctx.lines.join("\n")}`
-        : "【刚才演到的】（还没有台词）",
-      ctx.wanted ? `【玩家要求】${ctx.wanted}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-    const text = await completeText(
+    const craft = await readFileOrEmpty(runtime.store.memoryDir("always", "craft.md"));
+    const memory = await PlayMemory.load(runtime.store);
+
+    // 准备角色数据：若指定了参考图则把对应的角色卡提取出来
+    const refChars = refIds.map((id) => ({
+      id,
+      name: memory.characters.get(id)?.name ?? id,
+      body: memory.characters.get(id)?.body,
+    }));
+    const allChars = [...memory.characters].map(([id, card]) => ({
+      id,
+      name: card.name ?? id,
+      body: card.body,
+    }));
+
+    const prompt = await composeImagePrompt(
       {
         streamFn: this.streamFn,
         model: this.modelFor(play.agents?.playwriter?.model),
         getApiKey: () => this.config.apiKey,
       },
-      CG_PROMPT_SYSTEM,
-      user,
+      "cg",
+      {
+        instruction: wanted,
+        craft,
+        lines: useHistory ? lines : undefined,
+        scene: useHistory ? scene : undefined,
+        useHistory,
+        referenceCharacters: refChars.length > 0 ? refChars : undefined,
+        allCharacters: refChars.length === 0 ? allChars : undefined,
+      },
     );
-    const prompt = text
-      .trim()
-      .replace(/^```[a-z]*\n?/i, "")
-      .replace(/\n?```$/, "")
-      .trim();
-    if (!prompt) throw new Error("写不出出图提示词（模型没有返回内容）");
-    return prompt;
+
+    if (prompt.split(/\s+/).length < MIN_IMAGE_PROMPT_WORDS) {
+      throw new Error("写出来的出图提示词只有半句（模型响应被截断），请再点一次生图");
+    }
+
+    const id = `cg_${Date.now().toString(36)}`;
+    runtime.orchestrator.directorCg(id);
+    void this.preloadAsset(playId, runtime.store, "cg", prompt, id, refIds.length > 0 ? refIds : undefined);
+  }
+
+  /**
+   * 工坊手动生图（REST 请求）：
+   * 同步完成参数校验与提示词组装，返回生成的路径与提示词，后台异步出图。
+   * 完成或失败通过 image_result 广播给客户端对话框。
+   */
+  async generateImage(
+    playId: string,
+    req: {
+      kind: ImagePromptKind;
+      name?: string;
+      characterId?: string;
+      expression?: string;
+      framing?: SpriteFraming;
+      referenceCharacters?: string[];
+      instruction?: string;
+    },
+  ): Promise<{ target: string; path: string; prompt: string }> {
+    const runtime = await this.get(playId);
+    if (!this.imageBackend) {
+      throw new Error("生图未启用（STAGE_IMAGE_ENABLED=false 或后端缺凭据）");
+    }
+    const assets = this.playAssetsFor(playId, runtime.store);
+    if (!assets) {
+      throw new Error("生图未启用");
+    }
+
+    const play = await runtime.store.loadPlay();
+    const memory = await PlayMemory.load(runtime.store);
+    const craft = await readFileOrEmpty(runtime.store.memoryDir("always", "craft.md"));
+
+    let targetKey: string;
+    let targetPath: string;
+    let targetSpec: AssetTarget;
+    let prompt: string;
+
+    if (req.kind === "sprite") {
+      const charId = req.characterId?.trim();
+      if (!charId) throw new Error("立绘生成必须指定 characterId");
+      const expression = assertAssetStem(req.expression ?? "", "差分名");
+      const card = memory.characters.get(charId);
+      if (!card) {
+        throw new Error(`角色卡里没有角色「${charId}」`);
+      }
+      targetKey = `sprites/${charId}/${expression}`;
+      targetPath = `assets/sprites/${charId}/${expression}.png`;
+      targetSpec = {
+        kind: "sprite",
+        characterId: charId,
+        expression,
+        framing: req.framing,
+      };
+
+      prompt = await composeImagePrompt(
+        {
+          streamFn: this.streamFn,
+          model: this.modelFor(play.agents?.workshop?.model ?? play.agents?.playwriter?.model),
+          getApiKey: () => this.config.apiKey,
+        },
+        "sprite",
+        {
+          instruction: req.instruction,
+          craft,
+          targetCharacter: {
+            id: charId,
+            name: card.name ?? charId,
+            body: card.body,
+          },
+          expression,
+        },
+      );
+    } else {
+      // background 或 cg
+      const name = assertAssetStem(req.name ?? "", "素材名");
+      targetKey = `${req.kind === "background" ? "backgrounds" : "cg"}/${name}`;
+      targetPath = `assets/${req.kind === "background" ? "backgrounds" : "cg"}/${name}.jpg`;
+
+      const refIds = req.referenceCharacters?.filter(Boolean) ?? [];
+      if (refIds.length > 0) {
+        await assets.assertReferences(refIds);
+      }
+
+      const refChars = refIds.map((id) => ({
+        id,
+        name: memory.characters.get(id)?.name ?? id,
+        body: memory.characters.get(id)?.body,
+      }));
+      const allChars = [...memory.characters].map(([id, card]) => ({
+        id,
+        name: card.name ?? id,
+        body: card.body,
+      }));
+
+      targetSpec = {
+        kind: req.kind,
+        name,
+        referenceCharacters: refIds.length > 0 ? refIds : undefined,
+      };
+
+      prompt = await composeImagePrompt(
+        {
+          streamFn: this.streamFn,
+          model: this.modelFor(play.agents?.workshop?.model ?? play.agents?.playwriter?.model),
+          getApiKey: () => this.config.apiKey,
+        },
+        req.kind,
+        {
+          instruction: req.instruction,
+          craft,
+          useHistory: false,
+          referenceCharacters: refChars.length > 0 ? refChars : undefined,
+          allCharacters: refChars.length === 0 ? allChars : undefined,
+        },
+      );
+    }
+
+    if (prompt.split(/\s+/).length < MIN_IMAGE_PROMPT_WORDS) {
+      throw new Error("写出来的出图提示词只有半句（模型响应被截断），请再试一次");
+    }
+
+    // 异步 kick 出图：notify: "manual"（不产生对话流气泡，也不自动触发多余重建）
+    void (async () => {
+      try {
+        const generated = await assets.generate(targetSpec, prompt, undefined, { notify: "manual" });
+        const last = generated[generated.length - 1];
+        if (last) {
+          // 先广播完成消息给客户端对话框
+          this.broadcast(playId, {
+            type: "image_result",
+            target: targetKey,
+            ok: true,
+            url: last.url,
+            path: last.path,
+          });
+        } else {
+          this.broadcast(playId, {
+            type: "image_result",
+            target: targetKey,
+            ok: false,
+            message: "出图未产生有效文件",
+          });
+        }
+        // 重建 runtime 刷新 cast 与 assets 清单
+        await this.reloadAfterWorkshopWrite(playId, "手动生成了素材");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`[stage-ai] 手动出图失败 ${targetKey}: ${message}`);
+        this.broadcast(playId, {
+          type: "image_result",
+          target: targetKey,
+          ok: false,
+          message,
+        });
+      }
+    })();
+
+    return { target: targetKey, path: targetPath, prompt };
   }
 
   private async createRuntime(
@@ -811,6 +982,8 @@ export class PlayHouse {
     // 两个 agent 各按剧目配置解析模型（Agent 页签改的就是 play.json 的 agents 段）；
     // 缺省即服务端默认模型。润色/翻译旁路跟剧作家走——同一段文字两种口吻最怪。
     const model = this.modelFor(play.agents?.playwriter?.model);
+    const nsfwModelId = play.agents?.playwriter?.nsfwModel || this.config.nsfwModelId;
+    const nsfwModel = nsfwModelId ? this.modelFor(nsfwModelId) : model;
     const workshopModel = this.modelFor(play.agents?.workshop?.model);
     const tts = this.tts;
     // 剧目记忆（D7 三层）：craft/premise/index 随 runtime 重建读入（工坊热改走 reload 即时生效）
@@ -864,6 +1037,9 @@ export class PlayHouse {
       tts: synth ? { synth, concurrency: this.config.tts.concurrency } : undefined,
       pending: this.pendingFor(play.id),
       agents: play.agents?.playwriter,
+      nsfwModel,
+      nsfwThinking: play.agents?.playwriter?.nsfwThinking,
+      nsfwPrompt: play.agents?.playwriter?.nsfwPrompt || this.config.nsfwPrompt,
       imageTools: playAssets
         ? {
             playAssets,

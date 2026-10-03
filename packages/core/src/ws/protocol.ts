@@ -231,6 +231,20 @@ export type ServerMessage =
     }
   | { type: "workshop_done"; threadId: string; text: string; images?: WorkshopAssetView[] }
   | { type: "workshop_error"; threadId: string | null; message: string; images?: WorkshopAssetView[] }
+  /** 手动生图完成/失败（工坊面板）：target 为目标素材 key，按 play 广播给对话框收口。 */
+  | {
+      type: "image_result";
+      target: string;
+      ok: true;
+      url: string;
+      path: string;
+    }
+  | {
+      type: "image_result";
+      target: string;
+      ok: false;
+      message: string;
+    }
   | { type: "error"; message: string; recoverable: boolean };
 
 export type ClientMessage =
@@ -256,8 +270,15 @@ export type ClientMessage =
   | { type: "fork"; nodeId?: string; seq?: number; resume?: boolean }
   | { type: "edit"; nodeId: string; newText: string }
   /** 导演生图：按当前这一刻的剧情（可带玩家指令）写提示词并出一张 CG。
-   *  落点是**点下这一刻**在时间线上的位置，与剧作家的预发射同一套机制。 */
-  | { type: "generate_cg"; instruction?: string }
+   *  落点是**点下这一刻**在时间线上的位置，与剧作家的预发射同一套机制。
+   *  referenceCharacters: 选定的参考角色 id（有序多选，编号与提示词对齐）。
+   *  useHistory: 是否参考最近剧情与场景，默认 true。 */
+  | {
+      type: "generate_cg";
+      instruction?: string;
+      referenceCharacters?: string[];
+      useHistory?: boolean;
+    }
   /** 跳转：世界线挂到 nodeId，不生成内容。活节点上往前走，废弃节点上回到那条线。 */
   | { type: "jump"; nodeId: string }
   /** 阅读位置上报：打字机推进时防抖发送，服务端落盘（刷新后回到原处而不是本轮末尾）。 */

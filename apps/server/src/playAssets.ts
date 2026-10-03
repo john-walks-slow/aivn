@@ -42,14 +42,29 @@ import type { WebImageFetcher } from "./webImage.js";
 /** 立绘差分名 = 文件名主体，故用素材名的字符集；角色 id 不受此限（角色卡里可能叫 Koharu）。 */
 const STEM = /^[a-z][a-z0-9_]{0,39}$/;
 
+/**
+ * 素材名 / 差分名的合法性：小写字母开头，a-z、数字、下划线，最长 40。
+ *
+ * 单独导出是因为它必须在**两个时刻**都判：REST 入口同步拒（否则 200 已返回一个非法
+ * path，用户要等一分多钟才在 WS 上收到失败），出图前再判一次（工具与预埋 CG 走不到入口）。
+ */
+export function assertAssetStem(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error(`${label}不能为空`);
+  if (!STEM.test(trimmed)) {
+    throw new Error(`${label}「${trimmed}」非法：只允许小写字母开头的 a-z/数字/下划线，最长 40 字符`);
+  }
+  return trimmed;
+}
+
 /** 角色卡 `sprites[expression]` 的值：只当文件名用，带路径分隔符的一律不认。 */
 const BARE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.(png|jpe?g|webp)$/i;
 
 const NEUTRAL = "neutral";
 
 
-/** 谁触发的这次出图。工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产。 */
-export type AssetNotify = "workshop" | "silent";
+/** 谁触发的这次出图。工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产。manual 为用户从工坊面板手动触发（不产生对话流气泡，也不排队自动重建）。 */
+export type AssetNotify = "workshop" | "silent" | "manual";
 
 export type AssetKind = "background" | "cg" | "sprite";
 
@@ -427,9 +442,7 @@ export class PlayAssets {
     }
     const name = target.name?.trim() ?? "";
     if (!name) throw new Error("背景/CG 必须给 name（素材 id，剧本里的 bg/cg id 就是它）");
-    if (!STEM.test(name)) {
-      throw new Error(`素材名「${name}」非法：只允许小写字母开头的 a-z/数字/下划线，最长 40 字符`);
-    }
+    assertAssetStem(name, "素材名");
     return {
       kind: target.kind,
       kindPath: target.kind === "background" ? "backgrounds" : "cg",
@@ -509,9 +522,7 @@ export class PlayAssets {
     if (!characterId) throw new Error("立绘必须给 characterId（角色卡的文件名主体）");
     const expression = target.expression?.trim() ?? "";
     if (!expression) throw new Error("立绘必须给 expression（差分名，如 neutral / smile）");
-    if (!STEM.test(expression)) {
-      throw new Error(`差分名「${expression}」非法：只允许小写字母开头的 a-z/数字/下划线，最长 40 字符`);
-    }
+    assertAssetStem(expression, "差分名");
     const cast = await this.cast();
     let card = cast.get(characterId);
     // 没有角色卡：这个角色要么是笔误，要么是戏里临时冒出来的人。后者带 characterName 重新发起，
@@ -617,7 +628,15 @@ export class PlayAssets {
     return refs;
   }
 
-  /** 一张给定的立绘：优先 neutral（身份基准），否则退回该角色盘上任意一张差分。 */
+  /**
+   * 前置校验参考立绘的角色表与盘上文件是否存在。
+   * 供舞台 WS `generate_cg` 与工坊手动出图在落节点/发请求前守卫。
+   */
+  async assertReferences(ids: string[]): Promise<ResolvedReference[]> {
+    return this.resolveReferences(ids);
+  }
+
+  /** 一张给定的立绘：优先 neutral（身份基准），其次盘上映射差分，最后兜底目录任意文件（与舞台 index.sprite 对齐）。 */
   private async referenceSpriteOf(character: ReferenceCharacter): Promise<string> {
     const card = (await this.cast()).get(character.id);
     const dir = `sprites/${character.id}`;
@@ -633,6 +652,12 @@ export class PlayAssets {
       }
       const byStem = await this.existingPath(dir, expression);
       if (byStem) return byStem;
+    }
+    // 兜底：目录里有任意图像文件（例如用户刚上传立绘尚未绑定差分映射，舞台端 index.sprite 也会取 files[0]）
+    const stems = await this.spriteStems(character.id);
+    for (const stem of stems) {
+      const p = await this.existingPath(dir, stem);
+      if (p) return p;
     }
     throw new Error(
       `角色「${character.name}」（${character.id}）还没有立绘，不能当参考图：` +

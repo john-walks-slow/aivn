@@ -7,6 +7,7 @@ import type {
   WorkshopChatMessage,
   WorkshopThreadInfo,
 } from "@stage-ai/core";
+import { parsePlayConfig } from "@stage-ai/core";
 import type { Exa } from "./exa.js";
 import type { WebImageFetcher } from "./webImage.js";
 import { PlayFiles } from "./playFiles.js";
@@ -85,6 +86,8 @@ export class WorkshopSession {
   private running = false;
   /** 本轮是否改过盘（文本或素材）：收束时统一触发一次 runtime 重建，避免多次腰斩演出。 */
   private changedDuringTurn = false;
+  /** 本轮跑过 bash：它的写绕开 `PlayEnv`，play.json 那三道校验一道都没过。 */
+  private bashDuringTurn = false;
   /** 本轮生成的素材：到达先攒着，收束时挂到最终那条 assistant 消息上（不落一半在气泡里）。 */
   private pendingAssets: WorkshopAssetView[] = [];
 
@@ -152,6 +155,7 @@ export class WorkshopSession {
     // （摘要要走一次模型请求，空档能到秒级）。
     this.running = true;
     this.changedDuringTurn = false;
+    this.bashDuringTurn = false;
     this.pendingAssets = [];
     try {
       let thread: WorkshopThread | undefined;
@@ -184,6 +188,14 @@ export class WorkshopSession {
         {
           onDelta: (delta) => this.opts.emit({ type: "workshop_chunk", threadId: active.id, delta }),
           onTool: (name) => this.opts.emit({ type: "workshop_tool", threadId: active.id, name }),
+          // bash 的改动不经过 onWrite（它不走 PlayEnv.writeFile），只能在这里记账。
+          // 不置脏的话，模型用 sed / mv 改完文件，宿主以为什么都没变、不会重建 runtime。
+          onToolDone: (name) => {
+            if (name === "bash") {
+              this.changedDuringTurn = true;
+              this.bashDuringTurn = true;
+            }
+          },
         },
       );
       if (turn.scale !== null) {
@@ -214,8 +226,31 @@ export class WorkshopSession {
     } finally {
       this.running = false;
       // 一轮里可能写了好几个文件、出了好几张图：收束后只重建一次（保存即生效）
-      if (this.changedDuringTurn) this.opts.onFilesChanged();
+      if (this.changedDuringTurn) {
+        const broken = await this.playConfigBrokenByBash();
+        if (broken) {
+          // 不触发重建：带着一份坏 play.json 去 rebuild 只会抛在 void 的 promise 里，
+          // 用户看到的是「面板不刷新了」而不是「哪里坏了」。
+          this.opts.emit({ type: "workshop_error", threadId: this.activeId, message: broken });
+        } else {
+          this.opts.onFilesChanged();
+        }
+      }
       await this.snapshot();
+    }
+  }
+
+  /**
+   * bash 绕开 `PlayEnv`，它写的 play.json 不过结构校验。收束前补一次读盘检查：
+   * 坏了就说清楚（只告警不回滚，也不重建 runtime）。没跑 bash 就跳过，读盘都省了。
+   */
+  private async playConfigBrokenByBash(): Promise<string | null> {
+    if (!this.bashDuringTurn) return null;
+    try {
+      parsePlayConfig(JSON.parse(await this.files.read("play.json")));
+      return null;
+    } catch (error) {
+      return `play.json 现在解析不了，已跳过这次的运行时重建：${error instanceof Error ? error.message : String(error)}。直接在「文件」页改回来，或让搭台助手重写一份。`;
     }
   }
 
@@ -370,10 +405,7 @@ export class WorkshopSession {
       title: play.title,
       files: listing,
       readiness,
-      canGenerate: this.kit.can.image,
-      canSearch: this.kit.can.search,
-      canBrowseLibrary: this.kit.can.library,
-      canVoices: this.kit.can.voice,
+      can: this.kit.can,
       digest,
       // 从当轮现读的 play.json 取，不吃构造时的快照：用户刚在 Agent 页改完就发下一轮消息，
       // 那条就该带新提示词（模型/工具开关走 opts.agents，改动会重建 runtime 才生效）。

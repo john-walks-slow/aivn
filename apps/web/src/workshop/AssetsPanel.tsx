@@ -4,6 +4,8 @@ import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { ImageLightbox } from "../ui/ImageLightbox.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
+import { ImageGenDialog, type ImageGenTarget } from "./ImageGenDialog.js";
+import type { RefCandidate } from "../ui/RefCharacterPicker.js";
 
 const KINDS = ["backgrounds", "cg", "sfx", "bgm"] as const;
 
@@ -11,7 +13,13 @@ const KINDS = ["backgrounds", "cg", "sfx", "bgm"] as const;
 const stemOf = (name: string): string => name.replace(/\.\w+$/, "");
 
 /** 素材：背景、CG、音效、配乐的上传与从资源库导入。剧目字段与角色卡在「设定与记忆」页。 */
-export function AssetsPanel({ playId }: { playId: string }) {
+export function AssetsPanel({
+  playId,
+  subscribeImageResult,
+}: {
+  playId: string;
+  subscribeImageResult?: (handler: (res: any) => void) => () => void;
+}) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [assets, setAssets] = useState<Record<string, string[]>>({});
   const [assetMeta, setAssetMeta] = useState<Record<string, AssetMeta>>({});
@@ -19,6 +27,7 @@ export function AssetsPanel({ playId }: { playId: string }) {
   const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null);
   /** 资源库导入的落点：null = 面板关闭，"" = 素材（无落点）。 */
   const [libraryInto, setLibraryInto] = useState<string | null>(null);
+  const [genTarget, setGenTarget] = useState<ImageGenTarget | null>(null);
 
   const reload = useCallback((): void => {
     api
@@ -105,17 +114,34 @@ export function AssetsPanel({ playId }: { playId: string }) {
           {KINDS.map((kind) => (
             <div key={kind} className="upload-cell">
               <strong>{kind}</strong>
-              <label className="btn-as-label small">
-                上传
-                <input
-                  type="file"
-                  hidden
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) upload(kind, file);
-                  }}
-                />
-              </label>
+              <div className="row small" style={{ margin: "4px 0" }}>
+                {(kind === "backgrounds" || kind === "cg") && (
+                  <button
+                    type="button"
+                    className="ghost-btn small"
+                    onClick={() =>
+                      setGenTarget({
+                        kind: kind === "backgrounds" ? "background" : "cg",
+                      })
+                    }
+                  >
+                    <span className="btn-icon">
+                      <Icon name="sparkles" size={13} /> 生成
+                    </span>
+                  </button>
+                )}
+                <label className="btn-as-label small">
+                  上传
+                  <input
+                    type="file"
+                    hidden
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) upload(kind, file);
+                    }}
+                  />
+                </label>
+              </div>
               <ul className="asset-list">
                 {(assets[kind] ?? []).map((name) => (
                   <AssetRow
@@ -148,6 +174,31 @@ export function AssetsPanel({ playId }: { playId: string }) {
           imported={isImported}
           onClose={() => setLibraryInto(null)}
           onImported={reload}
+        />
+      )}
+      {genTarget !== null && (
+        <ImageGenDialog
+          playId={playId}
+          target={genTarget}
+          refCandidates={
+            detail?.cast
+              ? detail.cast
+                  .filter((c): c is typeof c & { id: string } => Boolean(c.id))
+                  .map((c) => {
+                    const spriteFiles = assets[`sprites/${c.id}`] ?? [];
+                    const mapped = c.sprites?.neutral ?? Object.values(c.sprites ?? {})[0] ?? spriteFiles[0];
+                    return {
+                      id: c.id,
+                      name: c.name ?? c.id,
+                      spriteUrl: mapped ? assetUrl(playId, `sprites/${c.id}`, mapped) : null,
+                    };
+                  })
+                  .filter((c): c is RefCandidate => Boolean(c.spriteUrl))
+              : []
+          }
+          subscribeImageResult={subscribeImageResult}
+          onClose={() => setGenTarget(null)}
+          onDone={reload}
         />
       )}
     </div>

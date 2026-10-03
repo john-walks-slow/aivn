@@ -120,6 +120,17 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
       workshopHandlers.current.delete(handler);
     };
   }, []);
+  // 手动生图结果监听（工坊手动生图对话框用）
+  type ImageResult =
+    | { target: string; ok: true; url: string; path: string }
+    | { target: string; ok: false; message: string };
+  const imageResultHandlers = useRef(new Set<(res: ImageResult) => void>());
+  const subscribeImageResult = useCallback((handler: (res: ImageResult) => void) => {
+    imageResultHandlers.current.add(handler);
+    return () => {
+      imageResultHandlers.current.delete(handler);
+    };
+  }, []);
   const { push: pushToast } = toast;
 
   const stage = useStageSocket(playId, {
@@ -156,6 +167,9 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     },
     onWorkshop: (msg) => {
       for (const handler of workshopHandlers.current) handler(msg);
+    },
+    onImageResult: (res) => {
+      for (const handler of imageResultHandlers.current) handler(res);
     },
   }, { workshopOnly: workshopEntry });
 
@@ -514,8 +528,13 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
               onPrompt={stage.sendPrompt}
               onFork={fork}
               onEdit={edit}
-              onGenerateCg={(instruction) =>
-                stage.send({ type: "generate_cg", ...(instruction ? { instruction } : {}) })
+              onGenerateCg={(instruction, opts) =>
+                stage.send({
+                  type: "generate_cg",
+                  ...(instruction ? { instruction } : {}),
+                  ...(opts?.referenceCharacters?.length ? { referenceCharacters: opts.referenceCharacters } : {}),
+                  ...(opts?.useHistory !== undefined ? { useHistory: opts.useHistory } : {}),
+                })
               }
               onReplay={replay}
               voiceState={voiceState}
@@ -596,6 +615,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
             tab={workshopTab}
             onTab={setWorkshopTab}
             subscribe={subscribeWorkshop}
+            subscribeImageResult={subscribeImageResult}
             send={stage.send}
             connected={stage.connected}
             voice={{ on: voiceOn, available: stage.voiceAvailable, onToggle: toggleVoice }}

@@ -86,7 +86,7 @@ export function TitleView({ playId }: { playId: string }) {
                 剧作家会自由发挥——想让它自由发挥就什么都别写。 */}
             {missing.length > 0 && (
               <p className="title-note">
-                还没有{missing.join("、")}——现在开演，剧作家会自己发挥。想要一个确定的世界，去
+                还没有{missing.join("、")}。现在开演，剧作家会自己发挥；想要一个确定的世界，去
                 <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "memory"))}>
                   工坊的「设定与记忆」
                 </button>
@@ -95,16 +95,15 @@ export function TitleView({ playId }: { playId: string }) {
             )}
             {advice.length > 0 && (
               <p className="title-note">
-                还没有 {advice.join("、")}——可以开演（舞台落氛围底色、没有立绘的角色不上台），
-                也可到
+                还没有 {advice.join("、")}。可以就这样开演（舞台只有氛围底色，没有立绘的角色不上台），也可以先去
                 <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "assets"))}>
                   工坊
                 </button>
-                让 AI 先把底图和定妆照生成出来。
+                生成底图和定妆照。
               </p>
             )}
             {saves.length === 0 && (
-              <p className="title-note">还没有周目。开始新周目，这张剧目的第一棵故事树就在那里。</p>
+              <p className="title-note">还没有周目。开一个新周目，就有第一棵故事树了。</p>
             )}
           </div>
 

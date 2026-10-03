@@ -39,6 +39,7 @@ export function WorkshopPane({
   tab,
   onTab,
   subscribe,
+  subscribeImageResult,
   send,
   connected,
   voice,
@@ -49,6 +50,14 @@ export function WorkshopPane({
   onTab: (tab: WorkshopTab) => void;
   /** 注册工坊下行消息回调（返回取消订阅）。 */
   subscribe: (handler: (msg: WorkshopInbound) => void) => () => void;
+  /** 注册手动出图结果回调（返回取消订阅）。 */
+  subscribeImageResult?: (
+    handler: (
+      res:
+        | { target: string; ok: true; url: string; path: string }
+        | { target: string; ok: false; message: string },
+    ) => void,
+  ) => () => void;
   send: (msg: ClientMessage) => void;
   /** WS 连通性：断线要解锁本轮、重连要重新报到。 */
   connected?: boolean;
@@ -133,11 +142,19 @@ export function WorkshopPane({
         <FileBrowser playId={playId} revision={state.writes.length} onSaved={() => undefined} />
       )}
 
-      {tab === "assets" && <AssetsPanel playId={playId} />}
+      {tab === "assets" && (
+        <AssetsPanel playId={playId} subscribeImageResult={subscribeImageResult} />
+      )}
 
       {tab === "memory" && <SettingsPane playId={playId} revision={state.writes.length} />}
 
-      {tab === "characters" && <CharacterPane playId={playId} revision={state.writes.length} />}
+      {tab === "characters" && (
+        <CharacterPane
+          playId={playId}
+          revision={state.writes.length}
+          subscribeImageResult={subscribeImageResult}
+        />
+      )}
 
       {tab === "agent" && <AgentPane playId={playId} />}
 
@@ -222,7 +239,7 @@ export function WorkshopPane({
           <div className="workshop-chat" ref={scrollRef}>
             {state.messages.length === 0 && !state.streaming && (
               <div className="workshop-empty">
-                <p>和工坊一起把这部剧搭起来。</p>
+                <p>说出你想要的世界、角色或改动。</p>
                 <p className="muted small">
                   例如：「我想要一个赛博朋克侦探故事，主角是个记不住人脸的女高中生」
                 </p>
