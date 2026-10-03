@@ -94,6 +94,16 @@ export interface WorkshopChatMessage {
   images?: WorkshopAssetView[];
 }
 
+/** 工坊线程的压缩记录（面板在对话流里画一条分隔用）。 */
+export interface WorkshopCompactionView {
+  /** 前 cutAt 条消息已压成摘要（仍在 messages 里，只是不再进 agent 上下文）。 */
+  cutAt: number;
+  /** 最近一次的一句话摘要。 */
+  oneLiner: string;
+  /** 摘要正文（点开分隔看全文）。 */
+  body: string;
+}
+
 /** 生成资产（D6 生图管线）：剧作家 preload_asset 预发射、后台生成后落 media-cache。 */
 export interface GeneratedAsset {
   /** 剧作家给的资源 id，与 `<cg id>` / `<scene bg>` 同一命名空间。 */
@@ -197,7 +207,13 @@ export type ServerMessage =
   | { type: "pending_jobs"; jobs: PendingJob[] }
   // —— 工坊（D9）：与演出并行的一条独立 agent 通道，消息都带 threadId 以便前端分流 ——
   | { type: "workshop_threads"; threads: WorkshopThreadInfo[]; activeId: string | null }
-  | { type: "workshop_history"; threadId: string; messages: WorkshopChatMessage[] }
+  | {
+      type: "workshop_history";
+      threadId: string;
+      messages: WorkshopChatMessage[];
+      /** 早期对话已压缩（未压缩为 null）：cutAt 条之前的内容已不进 agent 上下文，原文仍在 messages 里。 */
+      compaction: WorkshopCompactionView | null;
+    }
   /** 工坊流式增量。 */
   | { type: "workshop_chunk"; threadId: string; delta: string }
   /** 工坊 agent 正在调用某工具（前端显示活动指示）。 */

@@ -225,7 +225,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   }, [stage.voiceAvailable, stage.state, voiceOn]);
 
   const index: AssetIndex | null = useMemo(
-    () => (detail ? buildAssetIndex(playId, detail.play, assets, generated.images) : null),
+    () => (detail ? buildAssetIndex(playId, detail.cast, assets, generated.images) : null),
     [detail, assets, playId, generated.images],
   );
 

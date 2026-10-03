@@ -10,7 +10,7 @@ import { linesResult, reason, textResult } from "./result.js";
  * |  | 工坊（sync） | 剧作家（queued） |
  * |  | --- | --- | --- |
  * | 等待 | await，回执带 markdown 图片 | 发起即返回排产回执 |
- * | 立绘角色 | 必须在 play.json 里（成员校验） | 不在则用 characterName 自动注册 stub |
+< * | 立绘角色 | 必须在角色卡目录里（成员校验） | 同左：先用 create_character 建卡再出图 |
  *
  * 抠底参数不在这里：填它得先看过成图，而出图那一刻没人看过图。改抠底是工坊在用户面前
  * 看到脏边之后的事，走单独的 `recut_sprite`（原地重抠，不重新出图）。
@@ -28,10 +28,8 @@ const generateImageParams = Type.Object(
     kind: Type.Union([Type.Literal("background"), Type.Literal("cg"), Type.Literal("sprite")]),
     /** 背景/CG 的素材 id，剧本里的 bg/cg id 就是它。 */
     name: Type.Optional(Type.String({ maxLength: 40 })),
-    /** 立绘所属角色 id。 */
+    /** 立绘所属角色 id（角色卡的文件名主体）。没有这张卡就先 create_character 建一张。 */
     characterId: Type.Optional(Type.String({ maxLength: 40 })),
-    /** 角色不在角色表时用这个名字自动注册（临时角色）。剧作家的临时角色靠它；工坊侧按成员校验报错。 */
-    characterName: Type.Optional(Type.String({ maxLength: 40 })),
     /** 立绘差分名，如 neutral / smile。不给按 neutral。 */
     expression: Type.Optional(Type.String({ maxLength: 40 })),
     /**
@@ -100,7 +98,8 @@ const SYNC_DESCRIPTION = [
 
 const QUEUED_DESCRIPTION = [
   "出一张剧目素材并**后台排产**（发起即返回，不等图）：背景(kind=background) / CG(kind=cg) 给 name，",
-  "立绘(kind=sprite) 给 characterId + expression（不给按 neutral）。角色不在角色表时再给 characterName，会自动建一个临时角色。",
+  "立绘(kind=sprite) 给 characterId + expression（不给按 neutral）。characterId 必须是已有角色卡的角色，",
+  "临时角色先用 create_character 建卡再出图。",
   "背景 16:9、CG 16:9、立绘竖构图（取景 full 用 9:16、half 3:4、square 1:1）；提示词写英文，只描述画面本身。",
   PROMPT_RULES,
   REFERENCE_RULE,
@@ -130,13 +129,7 @@ export interface QueuedImageDeps {
   /** 后台发起 bg/cg（宿主负责到货广播 asset_ready / 失败 asset_failed）。 */
   kick: (type: "bg" | "cg", prompt: string, id: string, referenceCharacters?: string[]) => void;
   /** 后台发起立绘：同上的失败广播。 */
-  kickSprite: (
-    charId: string,
-    expression: string,
-    prompt: string,
-    characterName?: string,
-    framing?: SpriteFraming,
-  ) => void;
+  kickSprite: (charId: string, expression: string, prompt: string, framing?: SpriteFraming) => void;
   /** 这个目标在剧目里已有素材的静态 URL（用户导入的或之前生成的）——有就不烧配额。 */
   existingAssetUrl: (target: AssetTarget) => Promise<string | null>;
 }
@@ -215,10 +208,10 @@ async function runQueued(
       return textResult(`${charId} 的 ${expression} 立绘剧目里已经有了，直接 <actor id="${charId}"> 引用，不用重出。`);
     }
     deps.emitPreload({ type: "sprite", id: `${charId}:${expression}`, prompt: params.prompt });
-    deps.kickSprite(charId, expression, params.prompt, params.characterName?.trim() || undefined, params.framing);
+    deps.kickSprite(charId, expression, params.prompt, params.framing);
     return textResult(
       `已排产：立绘 ${charId}/${expression}（约一分多钟，到货后自动淡入）。` +
-        "角色表里还没有它时会自动建一个临时角色。",
+        "这一轮就让它上台的话，舞台先上骨架占位，到货后自动淡入。",
     );
   }
   const id = params.name?.trim() ?? "";

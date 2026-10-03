@@ -1,4 +1,4 @@
-import { DEFAULT_SPRITE_FRAMING, type PlayConfig, type SpriteFraming } from "@stage-ai/core";
+import { DEFAULT_SPRITE_FRAMING, type CharacterDocument, type SpriteFraming } from "@stage-ai/core";
 import type { GeneratedImage } from "./generatedAssets.js";
 
 /** 素材名 → URL 解析（stem 无扩展名时按目录清单补全；缺素材返回 null 走降级）。 */
@@ -25,7 +25,7 @@ function stemMap(files: string[] | undefined): Map<string, string> {
 
 export function buildAssetIndex(
   playId: string,
-  play: PlayConfig,
+  cast: CharacterDocument[],
   assets: Record<string, string[]>,
   generated: Record<string, GeneratedImage> = {},
 ): AssetIndex {
@@ -49,14 +49,14 @@ export function buildAssetIndex(
     sfx: byStem(sfx, "sfx"),
     ambient: (stem) => byStem(sfx, "sfx")(stem) ?? byStem(bgm, "bgm")(stem),
     sprite: (charId, expression) => {
-      const character = play.characters.find((c) => c.id === charId);
+      const character = cast.find((c) => c.id === charId);
       const mapped = expression ? character?.sprites?.[expression] : undefined;
       if (mapped) return url(`sprites/${charId}`, mapped);
       const files = assets[`sprites/${charId}`] ?? [];
       return files[0] ? url(`sprites/${charId}`, files[0]!) : null;
     },
     spriteFraming: (charId, expression) => {
-      const character = play.characters.find((c) => c.id === charId);
+      const character = cast.find((c) => c.id === charId);
       return (
         (expression ? character?.spriteFraming?.[expression] : undefined) ??
         character?.framing ??

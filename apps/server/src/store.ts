@@ -10,6 +10,7 @@ import {
 } from "@stage-ai/core";
 import { parsePlayConfig, parsePlayAssetManifest, type AssetMeta, type PlayConfig } from "@stage-ai/core";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
+import { loadCharacterCards } from "./memory.js";
 import { parseHistory, type HistoryBeat } from "./history.js";
 import { countSaves, readSaveMeta, saveDirOf, writeSaveMeta, assertSaveId, PlaySaves, type SaveMeta } from "./saves.js";
 
@@ -200,11 +201,14 @@ export class PlayStore {
     } catch {
       return { premise: false, characterSprites: false, background: false, saves: 0 };
     }
+    // 立绘齐备：差分映射在角色卡 frontmatter 里（sprites: expression → 文件名）
     const spritesDir = join(this.dir, "assets/sprites");
+    const cards = await loadCharacterCards(join(this.dir, "memory/always/characters"));
     const characterSprites =
-      play.characters.some((c) => {
-        if (!c.sprites || Object.keys(c.sprites).length === 0) return false;
-        return Object.values(c.sprites).every((file) => existsSync(join(spritesDir, c.id, file)));
+      cards.some((c) => {
+        const sprites = c.sprites;
+        if (!sprites || Object.keys(sprites).length === 0) return false;
+        return Object.values(sprites).every((file) => existsSync(join(spritesDir, c.id ?? "", file)));
       }) ?? false;
     const bgDir = join(this.dir, "assets/backgrounds");
     const background = existsSync(bgDir) && (await readdir(bgDir)).some((f) => /\.(png|jpe?g|webp)$/i.test(f));
@@ -241,6 +245,12 @@ export class PlayStore {
   spriteSourceDir(...segments: string[]): string {
     return join(this.dir, "media-cache", "sprite-sources", ...segments);
   }
+
+  /** 网络图缓存目录（media-cache/web-images）：`view_image` 下载的外部图片，按 URL 摘要落名。 */
+  webImageDir(): string {
+    return join(this.dir, "media-cache", "web-images");
+  }
+
 
   /**
    * 世界观前提（memory/always/premise.md）：A 区注入、就绪门、剧目卡简介的唯一真相源。

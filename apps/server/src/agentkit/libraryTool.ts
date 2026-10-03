@@ -190,7 +190,7 @@ function renderImportResult(kind: string, result: ImportResult): string {
     ? `，立绘 ${result.files.length} 张落在 ${result.files[0]!.replace(/\/[^/]+$/, "")}/`
     : "（这个条目没有立绘，只导了角色卡）";
   const card =
-    `play.json 已写入角色卡 ${result.characters.join("、")}` +
+    `角色卡已写入 memory/always/characters/${result.characters.join("、")}.md` +
     (result.files.length ? " 与差分映射，剧作家可以直接 <actor id=\"…\" expression=\"…\"> 上台" : "");
   return [`已导入角色 ${result.id}${sprites}`, card].join("\n");
 }

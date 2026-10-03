@@ -55,7 +55,7 @@ describe("AssetRefResolver：剧本里的 id 缺了就从库里补", () => {
       playId: "p1",
       store,
       library,
-      characters: () => extra.characters ?? [],
+      characters: async () => extra.characters ?? [],
       onImported: (result) => imported.push(result),
       warn: (message) => console.warn(message),
     });

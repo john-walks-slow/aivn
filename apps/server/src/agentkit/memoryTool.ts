@@ -1,3 +1,4 @@
+import { parseCharacterCard } from "@stage-ai/core";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { textResult } from "./result.js";
@@ -13,19 +14,19 @@ const updateStateParams = Type.Object(
     flags: Type.Optional(
       Type.Record(Type.String(), Type.Union([Type.String(), Type.Number(), Type.Boolean()])),
     ),
+    /** 当前场景：地点 / 在场的人 / 时间。全文下轮注入【状态】区。 */
+    scene: Type.Optional(Type.String({ maxLength: 2000 })),
+    /** 活跃剧情线与悬念（要点列表）。全文下轮注入【状态】区。 */
+    threads: Type.Optional(Type.String({ maxLength: 2000 })),
   },
   { additionalProperties: false },
 );
 
-const writeMemoryParams = Type.Object(
+const createCharacterParams = Type.Object(
   {
-    file: Type.Union([
-      Type.Literal("scene"),
-      Type.Literal("threads"),
-      // characters/<id>：建立/更新角色设定（persona/台词风格），同时在 play.json 注册 stub
-      Type.String({ pattern: "^characters/[a-zA-Z][a-zA-Z0-9_-]{0,39}$" }),
-    ]),
-    content: Type.String({ maxLength: 4000 }),
+    // characters/<id> —— 文件名主体就是角色 id，建档后下一轮边界进 A 区角色表
+    file: Type.String({ pattern: "^characters/[a-zA-Z][a-zA-Z0-9_-]{0,39}$" }),
+    content: Type.String({ maxLength: 8000 }),
   },
   { additionalProperties: false },
 );
@@ -54,10 +55,15 @@ export function createMemoryTools(
     name: "update_state",
     label: "提议状态更新",
     description:
-      "提议更新引擎状态（好感度增量/旗标）。好感度传增量（如 \`<角色id>\`: 2 表示 +2，单次 |增量|≤5，值域 0~100）；旗标传目标值。引擎校验后才生效，【状态】区下轮反映。剧情有实质推进时才调用，不要每轮都调。",
+      "写状态文件——本剧目状态的两个写者就是这一个（scene/threads/好感度/旗标）。\n" +
+      "- scene：当前场景的地点、在场的人、时间（一两行）。\n" +
+      "- threads：活跃剧情线与悬念（要点列表）。\n" +
+      "- affinity：好感度**增量**（如 koharu: 2 表示 +2，单次 |增量|≤5，值域 0~100），不是目标值。\n" +
+      "- flags：旗标传目标值。\n" +
+      "只传要改的那几项，不传的不动。全文下轮注入【状态】区。剧情有实质推进时才调用，不要每轮都调。",
     parameters: updateStateParams,
     execute: async (_toolCallId, params: Static<typeof updateStateParams>) => {
-      const { affinity, flags } = params;
+      const { affinity, flags, scene, threads } = params;
       const applied: string[] = [];
       const rejected: string[] = [];
       for (const [charId, delta] of Object.entries(affinity ?? {})) {
@@ -78,6 +84,11 @@ export function createMemoryTools(
         deps.engine.flags[key] = value;
         applied.push(`旗标 ${key}=${String(value)}`);
       }
+      for (const [key, value] of [["scene", scene], ["threads", threads]] as const) {
+        if (value === undefined) continue;
+        deps.stateFiles[key] = value.trim();
+        applied.push(`${key}.md 已重写`);
+      }
       if (applied.length === 0 && rejected.length === 0) return textResult("未提供任何更新。");
       return textResult(
         [
@@ -90,33 +101,36 @@ export function createMemoryTools(
     },
   };
 
-  const writeMemory: AgentTool<typeof writeMemoryParams> = {
-    name: "write_memory",
-    label: "写记忆文件",
+  const createCharacter: AgentTool<typeof createCharacterParams> = {
+    name: "create_character",
+    label: "建角色卡",
     description:
-      "写记忆文件。\n" +
-      "- file=\"scene\"：当前场景/在场人物/时间（一两行），每轮有实质变化时更新，全文下轮注入【状态】区。\n" +
-      "- file=\"threads\"：活跃剧情线与悬念（要点列表），每轮有实质变化时更新，全文下轮注入【状态】区。\n" +
-      "- file=\"characters/<id>\"：建立/更新角色设定（persona、台词风格）。" +
-      "id 只含字母/数字/下划线/连字符，最长 40 字符；**文件首行必须写 \"# 名字\"**，引擎据此在角色表注册 id 与显示名。" +
-      "建档后到下一轮边界，角色出现在系统提示词的 A 区角色表里。",
-    parameters: writeMemoryParams,
-    execute: async (_toolCallId, params: Static<typeof writeMemoryParams>) => {
+      "建立/更新一张角色卡（memory/always/characters/<id>.md）。角色的一切配置都在这张卡里，play.json 不再存角色数据。\n\n" +
+      "content 是完整的文件内容——frontmatter 头部 + 正文，格式：\n\n" +
+      "---\nid: xiaoyu            # 与 file 的 id 一致，引擎以文件名为准，这里写错会被忽略\n" +
+      "name: 小雨             # 显示名\n" +
+      "voice: 温柔少女声      # 音色的���话描述，可省\n" +
+      "voiceId: <32位hex>     # 先用 list_voices 查出来再填；填错不报错，演出时那句台词会静默没有声音\n" +
+      "framing: half          # 立绘取景 full/half/square，省略按 full（见 play/framing.ts）\n" +
+      "sprites:               # 表情名 → assets/sprites/<id>/ 下的文件名，可省\n" +
+      "  neutral: xiaoyu_neutral.png\n" +
+      "---\n\n" +
+      "正文是人设：年龄、关系、说话方式、在意的点（正文 = 剧作家看到的 persona）。\n\n" +
+      "建档后到下一轮边界，角色出现在 A 区角色表里。工坊那边写同一个文件用 write_file。",
+    parameters: createCharacterParams,
+    execute: async (_toolCallId, params: Static<typeof createCharacterParams>) => {
       const { file, content } = params;
-      if (file === "scene" || file === "threads") {
-        deps.stateFiles[file] = content.trim();
-        return textResult(`已更新 ${file}.md。`);
-      }
-      // characters/<id> 分支：落盘 + upsert play.json stub
       if (!deps.writeCharacter) {
-        return textResult("（当前运行环境不支持写角色设定，请通过工坊完成。）");
+        return textResult("（当前运行环境不支持建角色卡，请通过工坊完成。）");
       }
       const charId = file.replace(/^characters\//, "");
       await deps.writeCharacter(charId, content.trim());
-      // 从内容首行解析名字（# 名字）
-      const nameMatch = /^#\s+(.+)$/m.exec(content);
-      const name = nameMatch?.[1]?.trim() ?? charId;
-      return textResult(`已写入 ${file}.md，角色「${name}」（id: ${charId}）将在下一拍边界出现在角色表。`);
+      const name = parseCharacterCard(content).name;
+      return textResult(
+        name
+          ? `已写入角色卡 ${charId}.md（显示名「${name}」），下一拍边界出现在角色表里。`
+          : `已写入角色卡 ${charId}.md。下一次建卡记得在 frontmatter 里写 name，否则 A 区只能显示 id。`,
+      );
     },
   };
 
@@ -158,5 +172,5 @@ export function createMemoryTools(
     },
   };
 
-  return [updateState, writeMemory, readMemoryDetail, searchArchive];
+  return [updateState, createCharacter, readMemoryDetail, searchArchive];
 }

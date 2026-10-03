@@ -55,7 +55,14 @@ const names = (kit: AgentKit): string[] => kit.tools.map((t) => t.name).sort();
 describe("agent kit：两个角色的暴露面", () => {
   it("剧作家拿轮收束与记忆，不拿剧目文件与故事树", () => {
     const kit = playwriter();
-    expect(names(kit)).toEqual(["beat_done", "list_library", "read_memory_detail", "search_archive", "update_state", "write_memory"]);
+    expect(names(kit)).toEqual([
+      "beat_done",
+      "create_character",
+      "list_library",
+      "read_memory_detail",
+      "search_archive",
+      "update_state",
+    ]);
     expect(names(kit)).not.toContain("write_file");
     expect(names(kit)).not.toContain("read_lineage");
     // 生图对剧作家默认关，勾上才装

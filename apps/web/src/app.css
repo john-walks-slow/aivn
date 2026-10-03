@@ -2572,6 +2572,44 @@ select:focus {
   font-style: italic;
 }
 
+/* 线程压缩分隔：早期对话仍在上面（原文没删），只是不再进 agent 上下文 */
+.chat-divider {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 92%;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.chat-divider::before,
+.chat-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/* 一句话摘要最长 60 字：窄屏下必须单行截断，否则把两端的分隔线挤没了 */
+.chat-divider > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-digest {
+  align-self: center;
+  width: 92%;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
 /* —— 工坊出图：对话内联缩略图 + 灯箱 —— */
 
 .asset-strip {

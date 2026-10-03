@@ -1,6 +1,6 @@
 import type { ServerMessage } from "@stage-ai/core";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
-import { LineageTree, isVoiceId, parsePlayConfig, type EngineStateSnapshot, type SpriteFraming } from "@stage-ai/core";
+import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, type EngineStateSnapshot, type SpriteFraming } from "@stage-ai/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
 import type { AssetLibrary } from "./library.js";
@@ -15,6 +15,7 @@ import { createTts } from "./tts.js";
 import { createImageBackend } from "./imageFactory.js";
 import type { ImageBackend } from "./imageBackend.js";
 import { createExa, type Exa } from "./exa.js";
+import { WebImageFetcherImpl, type WebImageFetcher } from "./webImage.js";
 import { readPlayLedgerEntries, type GeneratedLedgerEntry } from "./generatedLedger.js";
 import { PlayAssets } from "./playAssets.js";
 import { PendingJobs } from "./pendingJobs.js";
@@ -149,6 +150,8 @@ export class PlayHouse {
   private readonly imageBackend: ImageBackend | null;
   /** 工坊联网检索（无 key 为 null：工坊少一个工具）。与 TTS 一样是进程级客户端，不随 runtime 重建。 */
   private readonly exa: Exa | null;
+  /** 网络图下载器（`view_image` 的网址分支）。进程级：无状态，按剧目给的缓存目录不同。 */
+  private readonly webImage: WebImageFetcher;
   /**
    * 生图并发闸门，按剧目缓存。
    * 必须挂 PlayHouse 而不是 runtime：reload 只换编排器、复用同一个 WorkshopSession，
@@ -185,6 +188,9 @@ export class PlayHouse {
     this.tts = createTts(config);
     this.imageBackend = createImageBackend(config);
     this.exa = createExa(config);
+    // 出网代理与超时共用 Exa 那份：两边都是墙外资源，再开一套只会有一边忘了配。
+    // 设成空串（面板上清空 STAGE_EXA_PROXY）即直连，给没有代理的内网部署留门。
+    this.webImage = new WebImageFetcherImpl({ proxy: config.exa.proxy, timeoutMs: config.exa.timeoutMs }).fetchImage;
     // StreamFn 契约是 SimpleStreamOptions（reasoning 字段）——须接 streamSimple 做换算；
     // 错接完整版 stream 会丢弃 reasoning，thinking 档位全部失效
     this.streamFn = (m, context, options) =>
@@ -447,8 +453,8 @@ export class PlayHouse {
 
   /**
    * 立绘预发射：generate_image kind="sprite" 后台发起。
-   * 走与工坊同一个 PlayAssets（neutral 垫图 + 抠底 + 差分映射补写 + 临时角色注册）。
-   * play.json 的改动由 PlayAssets 的 onPlayConfigChanged 排到轮边界重建——拍进行中直接 reload
+   * 走与工坊同一个 PlayAssets（neutral 垫图 + 抠底 + 差分映射补写）。
+   * 角色卡的改动由 PlayAssets 的 onPlayConfigChanged 排到轮边界重建——拍进行中直接 reload
    * 会把正在进行的这一轮腰斩掉。
    */
   private async preloadSprite(
@@ -457,7 +463,6 @@ export class PlayHouse {
     charId: string,
     expression: string,
     prompt: string,
-    characterName?: string,
     framing?: SpriteFraming,
   ): Promise<void> {
     const spriteId = `${charId}:${expression}`;
@@ -473,7 +478,7 @@ export class PlayHouse {
         { kind: "sprite", characterId: charId, expression, framing },
         prompt,
         undefined,
-        { notify: "silent", characterName },
+        { notify: "silent" },
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -485,28 +490,16 @@ export class PlayHouse {
   }
 
   /**
-   * 写角色设定文件（always/characters/<id>.md）并 upsert play.json stub。
-   * write_memory file="characters/<id>" 时由编排器触发。
+   * 写角色卡（always/characters/<id>.md）。create_character file="characters/<id>" 时由编排器触发。
+   *
+   * 只写这一个文件——play.json 的 `characters` 早就是纯元数据，没有任何逻辑读它，
+   * 往里塞 stub 是白写一遍再留一份会漂移的副本。
    */
   private async writeCharacter(store: PlayStore, charId: string, content: string): Promise<void> {
-    // 1. 写 always/characters/<id>.md
     const charDir = store.memoryDir("always", "characters");
     const charFile = join(charDir, `${charId}.md`);
-    await mkdir(dirname(charFile), { recursive: true });
+    await mkdir(dirname(charDir), { recursive: true });
     await writeFile(charFile, content, "utf8");
-
-    // 2. upsert play.json stub（id + name），已存在则不覆盖
-    const nameMatch = /^#\s+(.+)$/m.exec(content);
-    const name = nameMatch?.[1]?.trim() ?? charId;
-    await withPlayConfigLock(store.dir, async () => {
-      const config = await store.loadPlay();
-      if (config.characters.some((c) => c.id === charId)) return;
-      const updated: PlayConfig = {
-        ...config,
-        characters: [...config.characters, { id: charId, name, persona: "" }],
-      };
-      await writeFile(join(store.dir, "play.json"), JSON.stringify(updated, null, 2), "utf8");
-    });
   }
 
   /** 「开始新周目」：建一棵空树并切过去。旧档原封不动——不删任何事件日志。 */
@@ -589,23 +582,17 @@ export class PlayHouse {
   }
 
   /**
-   * 排到轮边界重建 runtime：剧作家侧改 play.json（给临时角色生立绘补写差分映射）时用。
-   *
-   * 与工坊写盘的区别只有触发时机——都在节拍边界换编排器。必须排队：一轮里出三张立绘就是三次调用，
-   * 齐步走会连着重装三份 runtime。
-   */
-  /**
    * 引用即导入的挂载点。资源库没配就不挂：剧本里未知的 id 仍然只是降级。
    *
-   * 角色导入要改 play.json，而拍进行中改 play.json 得排到轮边界——与剧作家给临时角色
+   * 角色导入要写角色卡，而拍进行中改角色配置得排到轮边界——与剧作家给临时角色
    * 生立绘时走的是同一条延迟重建，不另开一条。
    */
-  private assetRefResolver(playId: string, store: PlayStore, play: PlayConfig): AssetRefResolver | undefined {
+  private assetRefResolver(playId: string, store: PlayStore): AssetRefResolver | undefined {
     return new AssetRefResolver({
       playId,
       store,
       library: this.assetLibrary,
-      characters: () => characterIdsOf(play),
+      characters: () => characterIdsOf(store),
       onImported: (result) => {
         if (result.kind === "characters") {
           this.rebuildAtBeatBoundary(playId, `剧作家引用了资源库角色 ${result.id}，已导入`);
@@ -626,6 +613,12 @@ export class PlayHouse {
     });
   }
 
+  /**
+   * 排到轮边界重建 runtime：剧作家侧写角色卡（给临时角色生立绘补写差分映射）时用。
+   *
+   * 与工坊写盘的区别只有触发时机——都在节拍边界换编排器。必须排队：一轮里出三张立绘就是三次调用，
+   * 齐步走会连着重装三份 runtime。
+   */
   private rebuildAtBeatBoundary(playId: string, note: string): void {
     const previous = this.pendingRebuilds.get(playId) ?? Promise.resolve();
     const next = previous
@@ -736,7 +729,7 @@ export class PlayHouse {
       throw new Error("还没有剧情可画：先演一会儿，或者直接写下想要什么样的图");
     }
     const craft = await readFileOrEmpty(runtime.store.memoryDir("always", "craft.md"));
-    const prompt = await this.composeCgPrompt(play, { lines, scene, wanted, craft });
+    const prompt = await this.composeCgPrompt(play, { lines, scene, wanted, craft, characters: runtime.orchestrator.memory });
     // 网关偶尔把单发流掐在半路，而且仍然报 finish_reason=stop（实测：78 字符停在 "wearing"，
     // 还有一次只给了 6 字符）。半句提示词出图会整个跑偏，却看起来一切正常——按系统提示里
     // 「60 词上下」的约定验一下长度，不达标就当没写成，让玩家再点一次，
@@ -752,11 +745,14 @@ export class PlayHouse {
   /** 「这一幕演到哪儿了」+ 玩家指令 → 一句英文出图提示词。模型用剧目里剧作家的那个。 */
   private async composeCgPrompt(
     play: PlayConfig,
-    ctx: { lines: readonly string[]; scene: string; wanted: string; craft: string },
+    ctx: { lines: readonly string[]; scene: string; wanted: string; craft: string; characters?: PlayMemory },
   ): Promise<string> {
     const user = [
       `【当前场景】${ctx.scene}`,
-      `【角色】\n${play.characters.map((c) => `- ${c.name}${c.persona ? `：${c.persona.slice(0, 120)}` : ""}`).join("\n")}`,
+      // 角色卡是真相源（play.json 那份 characters 是纯元数据，没人读），出图提示词要按真的人设写
+      `【角色】\n${[...(ctx.characters?.characters ?? [])]
+        .map(([id, card]) => `- ${card.name ?? id}${card.body ? `：${card.body.slice(0, 120)}` : ""}`)
+        .join("\n")}`,
       ctx.craft ? `【创作口径】\n${ctx.craft.slice(0, 800)}` : "",
       ctx.lines.length > 0
         ? `【刚才演到的（最新在最后）】\n${ctx.lines.join("\n")}`
@@ -853,14 +849,14 @@ export class PlayHouse {
         ? {
             playAssets,
             kick: (type, prompt, id) => void this.preloadAsset(play.id, store, type, prompt, id),
-            kickSprite: (charId, expression, prompt, characterName, framing) =>
-              void this.preloadSprite(play.id, store, charId, expression, prompt, characterName, framing),
+            kickSprite: (charId, expression, prompt, framing) =>
+              void this.preloadSprite(play.id, store, charId, expression, prompt, framing),
             exa: this.exa ?? undefined,
           }
         : undefined,
       store,
       assetLibrary: this.assetLibrary,
-      assetRefs: this.assetRefResolver(play.id, store, play),
+      assetRefs: this.assetRefResolver(play.id, store),
       onWriteCharacter: (charId, content) => this.writeCharacter(store, charId, content),
       compaction: {
         contextWindow: this.config.contextWindow,
@@ -894,12 +890,23 @@ export class PlayHouse {
       getApiKey: () => this.config.apiKey,
       emit: (msg) => this.broadcast(play.id, msg),
       onFilesChanged: () => void this.reloadAfterWorkshopWrite(play.id),
+      // 线程压缩：工坊可用自己那组 env（缺省沿用全局），再与工坊模型自带的窗口取小——
+      // 模型元数据不可信，但只用来收紧预算不会更糟。
+      compaction: {
+        contextWindow: Math.min(
+          this.config.workshopContext.contextWindow,
+          workshopModel.contextWindow ?? Infinity,
+        ),
+        triggerRatio: this.config.workshopContext.compactRatio,
+        keepRecentTokens: this.config.workshopContext.keepRecentTokens,
+      },
       playAssets,
       saves: this.library.saves(play.id),
       saveStore: (saveId) => this.library.saveStore(play.id, saveId),
       assetLibrary: this.assetLibrary,
       voices: this.voices,
       exa: this.exa ?? undefined,
+      webImage: this.webImage,
       agents: play.agents?.workshop,
     });
     return {
@@ -907,7 +914,8 @@ export class PlayHouse {
       workshop,
       store,
       save,
-      cast: play.characters.map(({ id, name }) => ({ id, name })),
+      // 角色表 = 角色卡目录，不是 play.json 那份元数据
+      cast: [...memory.characters].map(([id, card]) => ({ id, name: card.name ?? id })),
       voice: !!synth,
       synth,
       generated,

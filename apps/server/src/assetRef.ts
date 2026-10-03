@@ -1,8 +1,8 @@
 import type { AssetKind } from "@stage-ai/core";
 import type { AssetLibrary } from "./library.js";
 import { importFromLibrary, type ImportResult } from "./assetImport.js";
+import { PlayMemory } from "./memory.js";
 import type { PlayStore } from "./store.js";
-import type { PlayConfig } from "@stage-ai/core";
 
 /**
  * 引用即导入：剧本里写了一个 id，剧目里没有，宿主就去素材资源库里找同名条目并导入。
@@ -28,10 +28,10 @@ export interface AssetRefResolverDeps {
   store: PlayStore;
   library: AssetLibrary;
   /** 剧目当前的角色表：actor 引用先看这里，没有再问库。 */
-  characters: () => readonly string[];
+  characters: () => Promise<readonly string[]>;
   /**
    * 导入完成：宿主广播，客户端把新素材并进索引。
-   * 角色导入还会改 play.json，宿主要把重建排到轮边界——由它自己决定。
+   * 角色导入还会写角色卡，宿主要把重建排到轮边界——由它自己决定。
    * 传的是 `ImportResult` 而不是 (kind, id)：落盘文件名由库条目决定（有扩展名），
    * 宿主要拿真实路径去拼 URL，猜一个 `/assets/<kind>/<id>` 是拼不出来的。
    */
@@ -46,6 +46,8 @@ export class AssetRefResolver {
   private readonly inflight = new Map<string, Promise<void>>();
   /** 剧目里已有的素材（目录扫描一次，够这张表的大小）。 */
   private known: Set<string> | null = null;
+  /** 角色表缓存：一次对话里几十个 actor 引用，逐个重读角色卡目录没有意义。 */
+  private cast: Set<string> | null = null;
 
   constructor(private readonly deps: AssetRefResolverDeps) {}
 
@@ -62,7 +64,7 @@ export class AssetRefResolver {
   private async resolveOne(ref: AssetRef): Promise<void> {
     const id = ref.id.trim();
     if (!id || isStopToken(id)) return;
-    if (ref.candidates.includes("characters") && this.deps.characters().includes(id)) return;
+    if (ref.candidates.includes("characters") && (await this.haveLocally("characters", id))) return;
     for (const kind of ref.candidates) {
       if (this.done.has(`${kind}/${id}`)) return;
       const key = `${kind}/${id}`;
@@ -104,9 +106,12 @@ export class AssetRefResolver {
     }
   }
 
-  /** 剧目里已经有的素材：背景/CG 查目录，音频同理，角色查 play.json。 */
+  /** 剧目里已经有的素材：背景/CG 查目录，音频同理，角色查角色卡目录。 */
   private async haveLocally(kind: AssetKind, id: string): Promise<boolean> {
-    if (kind === "characters") return this.deps.characters().includes(id);
+    if (kind === "characters") {
+      if (!this.cast) this.cast = new Set(await this.deps.characters());
+      return this.cast.has(id);
+    }
     if (!this.known) this.known = await this.scanAssets();
     return this.known.has(`${kind}/${id}`);
   }
@@ -132,6 +137,7 @@ export class AssetRefResolver {
 
   private async invalidate(): Promise<void> {
     this.known = null;
+    this.cast = null;
   }
 }
 
@@ -163,7 +169,10 @@ export function refFromSfx(src: string): AssetRef {
   return { attr: "sfx src", id: src, candidates: ["sfx"] };
 }
 
-/** 剧目里已注册的角色 id（`play.json` 的角色表）。主角不在表里——它没有 id，`<actor>` 引不到它。 */
-export function characterIdsOf(play: PlayConfig): string[] {
-  return play.characters.map((c) => c.id);
+/**
+ * 剧目里已注册的角色 id（`memory/always/characters/*.md` 的文件名主体）——角色表就是那个目录。
+ * 主角不在表里：它没有 id，`<actor>` 引不到它。
+ */
+export async function characterIdsOf(store: PlayStore): Promise<string[]> {
+  return [...(await PlayMemory.load(store)).characters.keys()];
 }

@@ -15,8 +15,26 @@ export interface WorkshopThread {
   createdAt: number;
   updatedAt: number;
   archived: boolean;
-  /** 一句话概要（归档时生成，列表展示用；未生成为 null）。 */
+  /** 一句话概要（最近一次压缩生成的，列表展示用；未压缩为 null）。 */
   summary: string | null;
+  /** 早期对话已压缩（可选字段：老线程没这个键，按「没压过」处理）。 */
+  compaction?: ThreadCompaction | null;
+  /** provider 实测 usage ÷ 本地估算标出的 token 系数（可选：缺失按 1 算）。 */
+  tokenScale?: number | null;
+}
+
+/** 线程压缩记录：消息文件一条不删，只把前 cutAt 条移出 agent 上下文。 */
+export interface ThreadCompaction {
+  /** 压缩时刻。 */
+  at: number;
+  /** 前 cutAt 条消息已压成摘要（原文仍在 <id>.json 里，用户照常看得到）。 */
+  cutAt: number;
+  /** 最近一次的一句话摘要。 */
+  oneLiner: string;
+  /** 摘要正文（A 区回注的定稿，多轮重写不叠加）。 */
+  body: string;
+  /** 压缩次数。 */
+  epochs: number;
 }
 
 const INDEX_FILE = "threads.json";

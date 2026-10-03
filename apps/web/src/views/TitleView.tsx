@@ -79,7 +79,7 @@ export function TitleView({ playId }: { playId: string }) {
             <h1 className="title-name">{detail.play.title}</h1>
             <p className="title-premise">{detail.premise || "（故事前提待补）"}</p>
             <p className="title-chars">
-              {detail.play.characters.map((c) => c.name).join(" · ") || "（无角色）"}
+              {detail.cast.map((c) => c.name ?? c.id).filter(Boolean).join(" · ") || "（无角色）"}
             </p>
 
             {/* 缺什么都不是门槛，只是「还没有」。没写故事前提照样能开演，

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { CharacterDocument } from "@stage-ai/core";
 import { buildSystemPrompt } from "../src/prompt.js";
+
+function card(id: string, head: Partial<CharacterDocument>): Map<string, CharacterDocument> {
+  return new Map([[id, { id, body: "p", ...head }]]);
+}
 import { PlayMemory } from "../src/memory.js";
 import { PLAY } from "./helpers.js";
 
@@ -35,24 +40,25 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
     const prompt = buildSystemPrompt({
       play: {
         ...PLAY,
-        characters: [{ id: "mio", name: "澪", persona: "p", sprites: { pout: "pout.png" } }],
       },
+      memory: new PlayMemory({ characters: card("mio", { name: "澪", sprites: { pout: "pout.png" } }) }),
       notes: { "mio/pout": { description: "鼓腮嗔怒" } },
     });
     expect(prompt).toContain("expression：pout（鼓腮嗔怒）");
   });
 
   it("立绘差分的两套键约定合并取字段：规范键只有 prompt 时别把裸键的描述挡掉", () => {
-    const play = { ...PLAY, characters: [{ id: "mio", name: "澪", persona: "p", sprites: { neutral: "n.png" } }] };
     // 引擎记 prompt 走 <角色id>/<差分名>，手写与工坊补的描述常是裸差分名：两套并存是现实
     const prompt = buildSystemPrompt({
-      play,
+      play: PLAY,
+      memory: new PlayMemory({ characters: card("mio", { name: "澪", sprites: { neutral: "n.png" } }) }),
       notes: { "mio/neutral": { prompt: "a girl with pink hair" }, neutral: { description: "粉发定妆照" } },
     });
     expect(prompt).toContain("expression：neutral（粉发定妆照）");
     // 规范键自己的字段仍然赢
     const both = buildSystemPrompt({
-      play,
+      play: PLAY,
+      memory: new PlayMemory({ characters: card("mio", { name: "澪", sprites: { neutral: "n.png" } }) }),
       notes: { "mio/neutral": { description: "规范键的描述" }, neutral: { description: "裸键的描述" } },
     });
     expect(both).toContain("expression：neutral（规范键的描述）");
