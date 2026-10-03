@@ -13,7 +13,7 @@ import {
 } from "@stage-ai/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
-import { IMAGE_EXTS, sniffImageMime } from "./imageMime.js";
+import { IMAGE_EXTS, mimeForExt, sniffImageMime } from "./imageMime.js";
 import type { Limiter } from "./limiter.js";
 import { PlayMemory } from "./memory.js";
 import { jobIdForImage, type PendingJobs } from "./pendingJobs.js";
@@ -21,6 +21,7 @@ import type { PlayFiles } from "./playFiles.js";
 import type { PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
 import type { WorkshopWrite } from "./agentkit/deps.js";
+import type { WebImageFetcher } from "./webImage.js";
 
 /**
  * 剧目素材生成层：**工坊与剧作家共用的唯一出图实现**（两个 agent 的 `generate_image` 工具都走这里）。
@@ -41,14 +42,29 @@ import type { WorkshopWrite } from "./agentkit/deps.js";
 /** 立绘差分名 = 文件名主体，故用素材名的字符集；角色 id 不受此限（角色卡里可能叫 Koharu）。 */
 const STEM = /^[a-z][a-z0-9_]{0,39}$/;
 
+/**
+ * 素材名 / 差分名的合法性：小写字母开头，a-z、数字、下划线，最长 40。
+ *
+ * 单独导出是因为它必须在**两个时刻**都判：REST 入口同步拒（否则 200 已返回一个非法
+ * path，用户要等一分多钟才在 WS 上收到失败），出图前再判一次（工具与预埋 CG 走不到入口）。
+ */
+export function assertAssetStem(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error(`${label}不能为空`);
+  if (!STEM.test(trimmed)) {
+    throw new Error(`${label}「${trimmed}」非法：只允许小写字母开头的 a-z/数字/下划线，最长 40 字符`);
+  }
+  return trimmed;
+}
+
 /** 角色卡 `sprites[expression]` 的值：只当文件名用，带路径分隔符的一律不认。 */
 const BARE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.(png|jpe?g|webp)$/i;
 
 const NEUTRAL = "neutral";
 
 
-/** 谁触发的这次出图。工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产。 */
-export type AssetNotify = "workshop" | "silent";
+/** 谁触发的这次出图。工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产。manual 为用户从工坊面板手动触发（不产生对话流气泡，也不排队自动重建）。 */
+export type AssetNotify = "workshop" | "silent" | "manual";
 
 export type AssetKind = "background" | "cg" | "sprite";
 
@@ -69,8 +85,11 @@ export interface AssetTarget {
   /** 立绘取景（full/half/square）：决定出图景别与画幅，缺省全身。不给就沿用角色卡里该角色已有的声明。 */
   framing?: SpriteFraming;
   /**
-   * 参考立绘（只对 background/cg 生效）：按给定顺序把这些角色的立绘垫给模型，
-   * 顺序即「提示词里第几张图是谁」。立绘本身不给（它垫的是该角色的 neutral 定妆照）。
+   * 参考图列表（通用垫图）：可填角色 id（自动引用其立绘）、剧目内相对路径或 http(s) URL。
+   */
+  references?: string[];
+  /**
+   * 兼容别名：等同于 references（主要用于只填角色 id 的历史调用）。
    */
   referenceCharacters?: string[];
 }
@@ -92,10 +111,14 @@ export interface GeneratedPlayAsset {
   autoNeutral: boolean;
 }
 
-/** 一张要垫进背景/CG 的角色立绘：id 用于排引用顺序，name 进提示词标注「这张图是谁」。 */
-interface ReferenceCharacter {
-  id: string;
-  name: string;
+/** 一张要垫给模型的参考图规格：可能是剧目内角色立绘，也可能是指定路径或网络图片。 */
+export interface ResolvedReference {
+  /** 显示名或角色名（用于在 prompt 里标注「第几张是谁」）；若无法识别则为 null。 */
+  name: string | null;
+  /** 角色 id（若来自角色立绘）。 */
+  characterId?: string;
+  /** 来源：剧目内相对路径或 http(s) 网址。 */
+  source: string;
 }
 
 interface AssetSpec {
@@ -111,10 +134,18 @@ interface AssetSpec {
   /** 角色级取景（不含差分覆盖）：自动补的定妆照按它出，不按当前差分那档。
    *  定妆照是所有差分的垫图基准，一个「全身角色 + 一条 closeup 差分」不该把基准也变成胸像。 */
   baseFraming?: SpriteFraming;
-  /** 背景/CG 的参考立绘（立绘本身不带）。 */
+  /** 解析后的显式参考图列表（按传入顺序）。 */
+  explicitReferences?: ResolvedReference[];
+  /** 兼容旧代码引用的角色列表（如果参考图中有角色）。 */
   referenceCharacters?: ReferenceCharacter[];
   /** 本次出图顺带建了一张角色卡（角色表变了，宿主要排轮边界重建）。 */
   autoRegistered?: boolean;
+}
+
+/** 一张要垫进背景/CG 的角色立绘：id 用于排引用顺序，name 进提示词标注「这张图是谁」。 */
+interface ReferenceCharacter {
+  id: string;
+  name: string;
 }
 
 export interface PlayAssetsDeps {
@@ -126,6 +157,8 @@ export interface PlayAssetsDeps {
   reference?: "none" | "neutral";
   /** 在生成的事（面板上那一行）：出图期间让玩家看得见在忙什么、等了多久。 */
   pending?: PendingJobs;
+  /** 网络图下载（可选，外部 URL 参考图需要它）。 */
+  fetchImage?: WebImageFetcher;
   /** 写一张角色卡（自动注册临时角色用）；没有这条能力就不自动建卡，直接报错。 */
   writeCharacter?: (charId: string, content: string) => Promise<void>;
   /** 角色卡立绘映射补写要进撤销条（二进制本身不进）。 */
@@ -393,20 +426,30 @@ export class PlayAssets {
    * 角色 id 不做正则——`parseCharacterCard` 不约束它的大小写，`Koharu` 这类 id 完全合法。
    */
   private async resolve(target: AssetTarget): Promise<AssetSpec> {
-    if (target.kind === "sprite") return this.resolveSprite(target);
+    const rawRefs = target.references?.length ? target.references : target.referenceCharacters;
+    const explicitReferences = rawRefs?.length ? await this.resolveReferences(rawRefs) : undefined;
+    const referenceCharacters = explicitReferences
+      ?.filter((r): r is ResolvedReference & { characterId: string; name: string } => !!r.characterId && !!r.name)
+      .map((r) => ({ id: r.characterId, name: r.name }));
+
+    if (target.kind === "sprite") {
+      const spriteSpec = await this.resolveSprite(target);
+      return {
+        ...spriteSpec,
+        explicitReferences,
+        referenceCharacters,
+      };
+    }
     const name = target.name?.trim() ?? "";
     if (!name) throw new Error("背景/CG 必须给 name（素材 id，剧本里的 bg/cg id 就是它）");
-    if (!STEM.test(name)) {
-      throw new Error(`素材名「${name}」非法：只允许小写字母开头的 a-z/数字/下划线，最长 40 字符`);
-    }
+    assertAssetStem(name, "素材名");
     return {
       kind: target.kind,
       kindPath: target.kind === "background" ? "backgrounds" : "cg",
       stem: name,
       aspect: "16:9",
-      ...(target.referenceCharacters?.length
-        ? { referenceCharacters: await this.resolveReferences(target.referenceCharacters) }
-        : {}),
+      explicitReferences,
+      referenceCharacters,
     };
   }
 
@@ -421,19 +464,57 @@ export class PlayAssets {
   }
 
   /**
-   * 参考立绘的角色表校验。**不做静默丢弃**：调用方点名了要参考某个角色，那个角色没有立绘时
-   * 悄悄出一张少个人的 CG，比直接报错坏得多——图看着是出来了，演出里才发现人对不上。
+   * 参考图解析：每个输入项可以是：
+   * 1. 角色 id（如 "alice"）——自动解析为其立绘文件；
+   * 2. 剧目内相对路径（如 "assets/backgrounds/ref.png"）；
+   * 3. http(s) URL。
+   *
+   * 解析不合法的项时显式报错，避免静默漏垫图导致生成结果偏差。
    */
-  private async resolveReferences(ids: string[]): Promise<ReferenceCharacter[]> {
+  private async resolveReferences(items: string[]): Promise<ResolvedReference[]> {
     const cast = await this.cast();
-    const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
-    const missing = unique.filter((id) => !cast.has(id));
-    if (missing.length > 0) {
+    const unique = [...new Set(items.map((it) => it.trim()).filter(Boolean))];
+
+    // 先检查是否看起来像角色 id：如果不含路径分隔符也不是 URL 且角色表里没有，直接按角色卡报错
+    const missingChars = unique.filter(
+      (it) => !/^https?:\/\//i.test(it) && !it.includes("/") && !cast.has(it),
+    );
+    if (missingChars.length > 0) {
       throw new Error(
-        `角色卡里没有角色「${missing.join("、")}」。可选：${[...cast.keys()].join(" / ") || "（角色表是空的）"}`,
+        `角色卡里没有角色「${missingChars.join("、")}」。可选：${[...cast.keys()].join(" / ") || "（角色表是空的）"}`,
       );
     }
-    return unique.map((id) => ({ id, name: cast.get(id)!.name ?? id }));
+
+    const resolved: ResolvedReference[] = [];
+
+    for (const item of unique) {
+      if (/^https?:\/\//i.test(item)) {
+        resolved.push({ name: null, source: item });
+        continue;
+      }
+      if (cast.has(item)) {
+        const char = cast.get(item)!;
+        const spriteRel = await this.referenceSpriteOf({ id: item, name: char.name ?? item });
+        resolved.push({ name: char.name ?? item, characterId: item, source: spriteRel });
+        continue;
+      }
+      // 路径形式的参考图：容错前导斜杠（agent 常常直接复制 `/plays/<id>/assets/...` 这种静态 URL），
+      // 兼容 `plays/<playId>/` 前缀，再校验文件存在性。
+      const pathLike = item.replace(/^\/+/, "");
+      if (pathLike.startsWith("assets/") || pathLike.startsWith("plays/")) {
+        const norm = pathLike.startsWith("plays/") ? pathLike.replace(/^plays\/[^/]+\//, "") : pathLike;
+        const abs = this.deps.files.absoluteOf(norm);
+        if (existsSync(abs)) {
+          resolved.push({ name: null, source: norm });
+          continue;
+        }
+      }
+      throw new Error(
+        `未知的参考图「${item}」：既不是已知角色（可选：${[...cast.keys()].join(" / ") || "无"}），` +
+          "也不是存在的剧目内路径或 http(s) 网址。",
+      );
+    }
+    return resolved;
   }
 
   private async resolveSprite(target: AssetTarget): Promise<AssetSpec> {
@@ -441,9 +522,7 @@ export class PlayAssets {
     if (!characterId) throw new Error("立绘必须给 characterId（角色卡的文件名主体）");
     const expression = target.expression?.trim() ?? "";
     if (!expression) throw new Error("立绘必须给 expression（差分名，如 neutral / smile）");
-    if (!STEM.test(expression)) {
-      throw new Error(`差分名「${expression}」非法：只允许小写字母开头的 a-z/数字/下划线，最长 40 字符`);
-    }
+    assertAssetStem(expression, "差分名");
     const cast = await this.cast();
     let card = cast.get(characterId);
     // 没有角色卡：这个角色要么是笔误，要么是戏里临时冒出来的人。后者带 characterName 重新发起，
@@ -517,27 +596,47 @@ export class PlayAssets {
   }
 
   /**
-   * 垫图（参考图）。默认给（与 `config.image.reference` 的默认值一致）：差分靠它才是同一个人，
-   * 代价是单张从 69s 变 138s（实测），像素一模一样。`STAGE_IMAGE_REFERENCE=none` 可以掐掉这条省钱，
-   * 它是全局开关——显式点名要的 CG 参考立绘同样归它管，否则这个开关形同虚设。
+   * 垫图（参考图）的唯一装配点。
+   *
+   * - **立绘差分（非 neutral）恒以该角色的 neutral 定妆照为身份基准**：这是「同一个角色的所有
+   *   差分是同一个人」的底层约定，不接受调用方拿别的图顶掉它（顶掉会静默换脸）。要换基准就把
+   *   neutral 重出一遍，那一次可以带 references。
+   * - **neutral 定妆照**：带 references 就按它垫图出图（首次定妆走这条，用户给的既有角色图从这里进来）；
+   *   不带就是纯文生图。
+   * - **背景 / CG**：按 references 垫图（角色立绘、剧目内路径、网络图都行）。
+   *
+   * `STAGE_IMAGE_REFERENCE=none` 是全局开关，显式指定的参考图同样归它管，否则这个开关形同虚设。
    */
   private async referencesFor(spec: AssetSpec) {
     if (this.deps.reference === "none") return [];
-    if (spec.kind === "sprite") {
-      if (spec.expression === NEUTRAL) return [];
+    const explicit = spec.explicitReferences ?? [];
+
+    if (spec.kind === "sprite" && spec.expression !== NEUTRAL) {
+      if (explicit.length > 0) {
+        throw new Error(
+          `立绘差分「${spec.characterId}/${spec.expression}」不能自带参考图：` +
+            `差分的身份基准恒为该角色的 neutral 定妆照，换基准会与既有差分不是同一个人。` +
+            "要换基准就重新出一次 neutral（那一次可以带 references），再派生差分。",
+        );
+      }
       const neutral = await this.existingPath(spec.kindPath, NEUTRAL);
-      if (!neutral) return [];
-      return [await this.loadReference(neutral)];
+      return neutral ? [await this.loadReference(neutral)] : [];
     }
-    const characters = spec.referenceCharacters ?? [];
+
     const refs = [];
-    for (const character of characters) {
-      refs.push(await this.loadReference(await this.referenceSpriteOf(character)));
-    }
+    for (const ref of explicit) refs.push(await this.loadReference(ref.source));
     return refs;
   }
 
-  /** 一张给定的立绘：优先 neutral（身份基准），否则退回该角色盘上任意一张差分。 */
+  /**
+   * 前置校验参考立绘的角色表与盘上文件是否存在。
+   * 供舞台 WS `generate_cg` 与工坊手动出图在落节点/发请求前守卫。
+   */
+  async assertReferences(ids: string[]): Promise<ResolvedReference[]> {
+    return this.resolveReferences(ids);
+  }
+
+  /** 一张给定的立绘：优先 neutral（身份基准），其次盘上映射差分，最后兜底目录任意文件（与舞台 index.sprite 对齐）。 */
   private async referenceSpriteOf(character: ReferenceCharacter): Promise<string> {
     const card = (await this.cast()).get(character.id);
     const dir = `sprites/${character.id}`;
@@ -554,15 +653,31 @@ export class PlayAssets {
       const byStem = await this.existingPath(dir, expression);
       if (byStem) return byStem;
     }
+    // 兜底：目录里有任意图像文件（例如用户刚上传立绘尚未绑定差分映射，舞台端 index.sprite 也会取 files[0]）
+    const stems = await this.spriteStems(character.id);
+    for (const stem of stems) {
+      const p = await this.existingPath(dir, stem);
+      if (p) return p;
+    }
     throw new Error(
       `角色「${character.name}」（${character.id}）还没有立绘，不能当参考图：` +
         `先 generate_image(kind="sprite") 出一张 ${character.id}/neutral 再来。`,
     );
   }
 
-  private async loadReference(rel: string) {
-    const data = await readFile(this.deps.files.absoluteOf(rel));
-    return { mimeType: sniffImageMime(data) ?? "image/jpeg", data };
+  private async loadReference(source: string) {
+    if (/^https?:\/\//i.test(source)) {
+      if (!this.deps.fetchImage) {
+        throw new Error("外部网络参考图下载未配置（fetchImage 缺失），无法加载 URL 图片。");
+      }
+      const img = await this.deps.fetchImage(source);
+      return { mimeType: img.mimeType, data: img.data };
+    }
+    const data = await readFile(this.deps.files.absoluteOf(source));
+    // 参考图必须是真图：字节头认不出来时不能冒充 image/jpeg 发给后端（那只会换来一句难懂的模型报错）
+    const mimeType = sniffImageMime(data);
+    if (!mimeType) throw new Error(`参考图「${source}」不是 png/jpeg/webp/gif 图片，垫不进去。`);
+    return { mimeType, data };
   }
 
   /**
@@ -627,13 +742,60 @@ function labelFor(spec: AssetSpec): string {
 
 function suffixFor(spec: AssetSpec, prompt: string, sentReferences: number): string {
   if (spec.kind !== "sprite") {
-    return spec.referenceCharacters?.length && sentReferences > 0
-      ? `${prompt}. ${referenceSuffix(spec.referenceCharacters)}`
-      : prompt;
+    if (sentReferences <= 0) return prompt;
+    // 如果全部为具名角色
+    if (spec.referenceCharacters?.length && spec.referenceCharacters.length === sentReferences) {
+      return `${prompt}. ${referenceSuffix(spec.referenceCharacters)}`;
+    }
+    // 包含通用参考图或混合参考
+    return `${prompt}. ${genericReferenceSuffix(spec.explicitReferences ?? [])}`;
   }
-  return spec.expression === NEUTRAL
-    ? `${prompt}, ${neutralSuffix(spec.framing)}`
-    : `${prompt}. ${identitySuffix(spec.framing)}`;
+  if (spec.expression === NEUTRAL) {
+    // 定妆照垫图：先给白底抠底的构图约束，再点明这是哪张参考图的同一个人。
+    // 顺序不能反——参考图会带背景与景别，构图约束压后面才盖得住它。
+    return sentReferences > 0
+      ? `${prompt}, ${neutralSuffix(spec.framing)} ${neutralReferenceTail(spec.framing)}`
+      : `${prompt}, ${neutralSuffix(spec.framing)}`;
+  }
+  return `${prompt}. ${identitySuffix(spec.framing)}`;
+}
+
+/**
+ * 通用参考图后缀：用于背景、CG 或未全具名角色的垫图场景。
+ */
+function genericReferenceSuffix(refs: ResolvedReference[]): string {
+  const named = refs.filter((r) => !!r.name);
+  if (named.length > 0) {
+    const roster = refs
+      .map((r, i) => `${i + 1}) ${r.name ? r.name : "reference image"}`)
+      .join(", ");
+    return (
+      `The attached reference images are, in this exact order: ${roster}. ` +
+      "Maintain consistent visual appearance, character identity, hairstyle, facial features, and design elements " +
+      "as depicted in the corresponding reference images while adapting them to the scene."
+    );
+  }
+  return (
+    "Follow the attached reference image(s) for visual appearance, design details, " +
+    "color palette and overall aesthetic while rendering the described scene."
+  );
+}
+
+/**
+ * 定妆照的参考图尾注：拼在构图后缀**之后**，点明这一张要长得像参考图里的那个人。
+ *
+ * 与 `identitySuffix`（差分那条）分工不同——差分垫的是自家 neutral，说的是「只改表情」；
+ * 这里垫的是外部图（用户给的既有角色图、原画），要的是「把那个人的样子搬到这张定妆照上」。
+ * 姿势、白底、画风仍由 `neutralSuffix` 管，这一段只补身份。
+ */
+function neutralReferenceTail(framing: SpriteFraming | undefined): string {
+  if ((framing ?? DEFAULT_SPRITE_FRAMING) === "square") {
+    return "Based on the attached reference image: the same subject with identical colors, markings and features.";
+  }
+  return (
+    "Based on the attached reference image: the same character — identical face, hairstyle, hair color, " +
+    "eye color and outfit — redrawn in the pose and framing described above."
+  );
 }
 
 /**
@@ -656,24 +818,10 @@ function referenceSuffix(characters: ReferenceCharacter[]): string {
 
 
 /**
- * 立绘身份锚：正脸站姿，差分都从它派生。竖构图提示词里也点明，配合竖画布。
- *
- * 后半段不是修饰词是硬约束：`src/cutout.ts` 的全局色键抠底要求 2D 平涂 + 纯白纯色底，
- * 3D 渲染的白衣离底色只有几格色差，抠底会连人带和服一起啃掉；剪影连成一片就没法分割人物与底色。
- *
- * 后缀只规定构图，不描述任何人物特征——它每个词都会被当成设定印进图里。早先这里写的是
- * 「between the twin tails」（为了发梢与身体之间留纯白），等于给所有角色定了个双马尾：
- * 实测 prompt 里明写 pink long straight hair，出来的仍是双马尾。要什么发型由角色卡的锚点说。
- *
- * 开头的景别随 `spec.framing` 换（`SPRITE_FRAMING_SHOT`）：写死 "full body" 时，
- * 取景是半身的角色照样会被画成全身——出图与舞台声明对不上，站位又得重新量。
- */
-/**
  * 立绘后缀：**只写与主体是人还是物无关的构图与画风约束**。
  *
- * 姿势词（standing / arms held away / above the head）是人形专属的——给猫或道具
- * 套上「双臂离开身体以分离轮廓」，模型会给你一只人形猫。所以姿势那一段由
- * `POSE_TAIL` 单独提供，只在人形取景时拼；非人走 `square`，不碰它。
+ * 人形专属的那一小段（手臂留白、头顶留白）由 `POSE_TAIL` 单独提供，只在人形取景时拼；
+ * 非人走 `square`，不碰它——给猫套上「手臂与躯干不能留窄缝」只会得到一只人形猫。
  *
  * 这一段留白给抠底：后半段不是修饰词是硬约束，`src/cutout.ts` 的全局色键抠底要求
  * 2D 平涂 + 纯白纯色底，3D 渲染的白衣离底色只有几格色差，抠底会连人带和服一起啃掉；
@@ -687,18 +835,27 @@ const COMMON_TAIL =
   ". Japanese anime style 2D illustration, flat cel shading with clean crisp lineart, NOT a 3D render, " +
   "no 3D CGI look. Plain solid pure white background, no text, no shadow, no gradient, no vignette.";
 
-/** 姿势与留白：人形专属。抠底要轮廓分得开，舞台按统一头顶留白摆位（见 app.css 的 .theater-sprite）。 */
+/**
+ * 留白约束：人形专属。舞台按统一头顶留白摆位（见 app.css 的 .theater-sprite）。
+ *
+ * **姿势不在这里规定。** 早先这一段写死 `front-facing standing pose, both arms held slightly away
+ * from the body`，于是每个角色、每张定妆照都是同一个正面对称站桩；而定妆照是所有差分的垫图基准，
+ * 姿势就此终身固定。站姿还是坐姿、什么机位，属于角色气质，由调用方写（`imageTool.ts` 的
+ * PROMPT_RULES 已经要求「姿势、机位、景别都要显式写」），引擎不覆盖。
+ *
+ * 留在这里的是抠底真要的那条：手臂与躯干之间**不能留窄白缝**——窄缝面积小于 `cutout.ts` 的
+ * `minHole`，会被当成眼白那样的高光填回前景，剪影里多一块白。要么贴住，要么彻底分开。
+ */
 const POSE_TAIL =
-  ", front-facing standing pose, neutral expression, both arms held slightly away from the body " +
-  "so the silhouette is clearly separated, clear empty white space between the arms and the body and " +
-  "between the hair and the arms" +
+  ", arms either resting against the body or clearly separated from it, never with a narrow white gap " +
+  "between an arm and the torso" +
   // 人物矮的那一头空间本来就该空得多，不点明的话模型会把所有角色都顶到画幅上沿，
   // 矮个子的头顶就直接贴边了。
   ". Shorter characters may leave more empty space above the head, and taller characters may leave less, " +
   "so every character keeps some space above the head rather than touching the top edge of the frame";
 
 /**
- * 主体为人（full/half）时的立绘后缀：景别措辞 + 姿势 + 通用约束。
+ * 主体为人（full/half）时的立绘后缀：景别措辞 + 人形留白 + 通用约束。
  *
  * 开头换的是 `SPRITE_FRAMING_SHOT` 而不是写死的 "full body"：写死时取景是半身的角色
  * 照样会被画成全身，出图与舞台声明对不上，站位又得重新量。
@@ -729,14 +886,17 @@ function neutralSuffix(framing: SpriteFraming | undefined): string {
 /**
  * 定妆照的前置中性描述：压住角色卡里的表情词（那一条只对当前差分有效）。
  *
- * **按取景取词，不是一句通吃**：给非人主体（`square`）说 standing portrait 会得到
- * 「猫的肖像照」——standing 与 portrait 都是人形概念，套到猫/道具身上语义不通，
- * 模型要么给你一只坐着的人形猫，要么干脆画个人。`square` 用「完整入画、中性状态」，
- * 不提姿势也不提表情，人形主体那边由 NEUTRAL_TAIL 的 standing pose 兜住。
+ * **只说表情与气质，不说姿势**：姿势归调用方。这里写死站姿时，调用方写在 prompt 里的任何姿势
+ * 都会被压掉——定妆照要能当这个角色的基本立绘用，姿势本身就得是表达气质的一部分。
+ *
+ * **按取景取词，不是一句通吃**：给非人主体（`square`）说 portrait 会得到「猫的肖像照」——
+ * portrait 是人形概念，套到猫/道具身上语义不通，模型要么给你一只坐着的人形猫，要么干脆画个人。
+ * `square` 用「完整入画、中性状态」，不提姿势也不提表情。
  */
 const NEUTRAL_LEAD: Record<SpriteFraming, string> = {
-  full: "a calm neutral-expression front-facing standing portrait.",
-  half: "a calm neutral-expression front-facing standing portrait, waist up.",
+  full: "a calm neutral-expression portrait of the character, in a natural pose that expresses their personality.",
+  half:
+    "a calm neutral-expression portrait of the character, in a natural pose that expresses their personality, waist up.",
   square: "the subject shown whole, in a neutral state.",
 };
 

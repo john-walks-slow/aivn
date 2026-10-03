@@ -51,6 +51,9 @@ export const SPRITE_FRAMING_LABELS: Record<SpriteFraming, string> = {
  * 2:3、3:2、4:5、5:4、21:9 这些 Gemini 官方取值 Flow **一个都没有**——发过去不报错，
  * 静默退回 16:9，出图直接变成一张横的。原先半身用的 2:3 就是这么废掉的，重试也没用。
  * 三档都在 Gemini 与 OpenAI 都收的白名单里，越方形越接近「主体占满画布」。
+ *
+ * `half` 用的 3:4 曾被网关接反（发 3:4 回横图），2026-10-04 已在本机 flow2api 修正——
+ * 那是网关的出口换算，**这层照语义写就行**，不要为了绕开它把 `half` 改成 4:3。
  */
 export const SPRITE_FRAMING_ASPECT: Record<SpriteFraming, string> = {
   full: "9:16",

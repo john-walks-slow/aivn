@@ -25,6 +25,7 @@ export function CharacterEditor({
   onPickVoice,
   onBrowseLibrary,
   onUploadSprite,
+  onGenerateSprite,
   onDocChange,
   onRemove,
 }: {
@@ -37,6 +38,8 @@ export function CharacterEditor({
   onPickVoice: () => void;
   onBrowseLibrary: () => void;
   onUploadSprite: (file: File) => void;
+  /** 点击「生成立绘」或行内「重生成」时唤起手动生图对话框 */
+  onGenerateSprite?: (target: { expression?: string; framing?: SpriteFraming; fixed?: boolean }) => void;
   onDocChange: (fn: (doc: CharacterDocument) => void) => void;
   onRemove: () => void;
 }) {
@@ -210,12 +213,45 @@ export function CharacterEditor({
               </option>
             ))}
           </select>
+          {onGenerateSprite && row.expression.trim() && (
+            <button
+              type="button"
+              className="ghost-btn icon-only small"
+              title={`重新生成「${row.expression}」差分`}
+              onClick={() =>
+                onGenerateSprite({
+                  expression: row.expression.trim(),
+                  framing: (row.framing as SpriteFraming) || doc.framing,
+                  fixed: true,
+                })
+              }
+            >
+              <Icon name="sparkles" size={13} />
+            </button>
+          )}
           <button className="link-btn" onClick={() => dropRow(row.id)}>
             删
           </button>
         </div>
       ))}
       <div className="row small">
+        {onGenerateSprite && (
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={() =>
+              onGenerateSprite({
+                expression: rows.length === 0 ? "neutral" : "",
+                framing: doc.framing,
+                fixed: false,
+              })
+            }
+          >
+            <span className="btn-icon">
+              <Icon name="sparkles" size={13} /> 生成立绘
+            </span>
+          </button>
+        )}
         <label className="btn-as-label small">
           上传立绘
           <input

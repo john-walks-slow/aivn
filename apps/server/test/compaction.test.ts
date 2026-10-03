@@ -22,7 +22,7 @@ import { PlayMemory } from "../src/memory.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { buildSystemPrompt } from "../src/prompt.js";
 import type { ServerMessage } from "@stage-ai/core";
-import { createFakeStreamFn, PLAY, BEAT_1, BEAT_2, type FakeResponse } from "./helpers.js";
+import { caps, createFakeStreamFn, PLAY, BEAT_1, BEAT_2, type FakeResponse } from "./helpers.js";
 
 function user(text: string): AgentMessage {
   return { role: "user", content: [{ type: "text", text }], timestamp: 0 };
@@ -273,9 +273,9 @@ describe("编排器纪元压缩", () => {
     // 重建后的 A 区带上了这条纪元（纪元内冻结）
     const systems = (contexts.at(-1) as { messages: { role: string }[] }).messages;
     expect(JSON.stringify(systems[0])).toContain("澪甩开了主角的手");
-    expect(buildSystemPrompt({ play: PLAY, assets: {}, memory, arcIds: [arcs[0]!.file] })).toContain(
-      "澪甩开了主角的手",
-    );
+    expect(
+      buildSystemPrompt({ play: PLAY, assets: {}, memory, arcIds: [arcs[0]!.file], can: caps() }),
+    ).toContain("澪甩开了主角的手");
     // 对话体：seed 摘要打头 + 保留的最近轮次（第一轮原文已不在）
     const rendered = JSON.stringify(systems);
     expect(rendered).toContain("【前情提要·纪元 1】");

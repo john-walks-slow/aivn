@@ -116,7 +116,7 @@ export function createMemoryTools(
       "  neutral: xiaoyu_neutral.png\n" +
       "---\n\n" +
       "正文是人设：年龄、关系、说话方式、在意的点（正文 = 剧作家看到的 persona）。\n\n" +
-      "建档后到下一轮边界，角色出现在 A 区角色表里。工坊那边写同一个文件用 write_file。",
+      "建档后到下一轮边界，角色出现在 A 区角色表里。工坊那边写同一个文件用 write。",
     parameters: createCharacterParams,
     execute: async (_toolCallId, params: Static<typeof createCharacterParams>) => {
       const { file, content } = params;

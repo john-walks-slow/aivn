@@ -186,7 +186,10 @@ async function routeMessage(
       return;
     case "generate_cg":
       // 生图要穿过编排器落位置、穿过 PlayHouse 写提示词，两者都在这一层汇合
-      await playhouse.requestCg(playId, msg.instruction);
+      await playhouse.requestCg(playId, msg.instruction, {
+        referenceCharacters: msg.referenceCharacters,
+        useHistory: msg.useHistory,
+      });
       return;
     case "read":
       orchestrator.setReadPos({

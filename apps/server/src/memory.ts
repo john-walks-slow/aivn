@@ -18,6 +18,8 @@ import type { PlayStore } from "./store.js";
 export class PlayMemory {
   /** always/craft.md（剧艺守则，可空——空则用系统提示词内置准则）。 */
   readonly craft: string;
+  /** always/nsfw.md（限制级剧情创作守则，可空）。 */
+  readonly nsfw: string;
   /** always/premise.md（世界观前提，缺文件即缺——就绪门与 A 区注入的唯一来源）。 */
   readonly premise: string;
   /**
@@ -39,6 +41,7 @@ export class PlayMemory {
   constructor(
     opts: {
       craft?: string;
+      nsfw?: string;
       premise?: string;
       characters?: Map<string, CharacterDocument>;
       cards?: IndexCard[];
@@ -48,6 +51,7 @@ export class PlayMemory {
     } = {},
   ) {
     this.craft = opts.craft ?? "";
+    this.nsfw = opts.nsfw ?? "";
     this.premise = opts.premise ?? "";
     this.characters = opts.characters ?? new Map();
     this.cards = opts.cards ?? [];
@@ -57,8 +61,9 @@ export class PlayMemory {
   }
 
   static async load(store: PlayStore): Promise<PlayMemory> {
-    const [craft, premise, characters, indexCards, arcCards, slices] = await Promise.all([
+    const [craft, nsfw, premise, characters, indexCards, arcCards, slices] = await Promise.all([
       readText(store.memoryDir("always", "craft.md")),
+      readText(store.memoryDir("always", "nsfw.md")),
       readText(store.memoryDir("always", "premise.md")),
       loadCharacters(store.memoryDir("always", "characters")),
       loadCards(store),
@@ -67,6 +72,7 @@ export class PlayMemory {
     ]);
     return new PlayMemory({
       craft,
+      nsfw,
       premise,
       characters,
       cards: [...indexCards, ...arcCards],

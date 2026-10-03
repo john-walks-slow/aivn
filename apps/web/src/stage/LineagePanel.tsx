@@ -78,7 +78,7 @@ export function RouteTree(
       {props.error && <div className="error-banner">{props.error}</div>}
       {!props.view || cards.length === 0 ? (
         <div className="route-blank">
-          <div className="overlay">{props.view ? "还没有剧情——演过一阵之后，这里会长出路线树。" : "读取路线…"}</div>
+          <div className="overlay">{props.view ? "还没有剧情。演过之后这里才有可回看的分支。" : "读取路线…"}</div>
         </div>
       ) : (
         <RouteCanvas

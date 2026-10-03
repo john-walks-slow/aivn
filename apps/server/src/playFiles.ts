@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
+import { parsePlayConfig } from "@stage-ai/core";
 import type { PlayStore } from "./store.js";
 
 /**
@@ -58,9 +59,31 @@ function normalizePath(rel: string): string | null {
   return segments.join("/");
 }
 
+/** 剧目定义：唯一一份要过结构校验的文件。 */
+const PLAY_CONFIG = "play.json";
+
+/**
+ * play.json 的结构校验：**所有文本写口的唯一收口**。
+ *
+ * 文件页手写、工坊 agent 的 write / edit、引用即导入的主角卡，落盘都得从 `write` 过，
+ * 谁也别想把一份解析不了的 play.json 留在盘上——留下了，下一次 runtime 重建就会炸在
+ * `void` 的 promise 里，用户看到的是「面板不刷新了」而不是「哪里坏了」。
+ * bash 是唯一绕得开的写口（它不走这一层），收束时补一次读盘检查来兜。
+ */
+function assertPlayConfig(rel: string, text: string): void {
+  if (rel !== PLAY_CONFIG) return;
+  try {
+    parsePlayConfig(JSON.parse(text));
+  } catch (error) {
+    throw new Error(
+      `play.json 结构校验不过，未落盘：${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 /** 可写面：根层 play.json + theme.css + 素材描述表 + memory/** 文本文件。 */
 function isEditable(rel: string): boolean {
-  if (rel === "play.json" || rel === "theme.css" || rel === ASSET_MANIFEST) return true;
+  if (rel === PLAY_CONFIG || rel === "theme.css" || rel === ASSET_MANIFEST) return true;
   if (!rel.startsWith("memory/")) return false;
   return EDITABLE_EXT.has(extOf(rel));
 }
@@ -82,7 +105,8 @@ function extOf(rel: string): string {
 
 /** 剧目文件层：路径解析到剧目目录内，越界即抛错。 */
 export class PlayFiles {
-  private readonly root: string;
+  /** 剧目目录绝对路径（工坊 bash 的 cwd，也是这一层所有白名单判定的根）。 */
+  readonly root: string;
 
   constructor(store: PlayStore) {
     this.root = resolve(store.dir);
@@ -143,9 +167,11 @@ export class PlayFiles {
   /** 写盘（工坊 agent 与浏览器共用）；返回规范化后的相对路径。 */
   async write(rel: string, content: string): Promise<string> {
     const abs = this.pathOf(rel, "write");
+    const clean = normalizePath(rel)!;
+    assertPlayConfig(clean, content);
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, content, "utf8");
-    return normalizePath(rel)!;
+    return clean;
   }
 
   /**
@@ -185,7 +211,7 @@ export class PlayFiles {
   /** 删除（仅 memory/** 与 theme.css；play.json 是剧目定义，删掉=剧目损坏，任何入口都不许删）。 */
   async remove(rel: string): Promise<void> {
     const abs = this.pathOf(rel, "write");
-    if (abs === join(this.root, "play.json")) throw new Error("play.json 不可删除");
+    if (abs === join(this.root, PLAY_CONFIG)) throw new Error("play.json 不可删除");
     await rm(abs, { force: true });
   }
 

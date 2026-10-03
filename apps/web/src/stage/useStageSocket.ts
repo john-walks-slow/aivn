@@ -97,6 +97,12 @@ export interface StageSocketHandlers {
   onAssetFailed?: (id: string, message: string) => void;
   /** 一行台词被原地改写：谱系视图跟着换新文本（缓冲由 socket 自己就地替换）。 */
   onLineEdited?: (nodeId: string, text: string) => void;
+  /** 手动生图完成/失败通知（工坊对话框监听）。 */
+  onImageResult?: (
+    result:
+      | { target: string; ok: true; url: string; path: string }
+      | { target: string; ok: false; message: string },
+  ) => void;
 }
 
 export function useStageSocket(
@@ -288,6 +294,9 @@ export function useStageSocket(
           }
           case "error":
             setError(msg.message);
+            return;
+          case "image_result":
+            handlersRef.current.onImageResult?.(msg);
             return;
           default:
             // 工坊通道（workshop_*）：与演出状态机无关，整包外发
