@@ -1,7 +1,6 @@
 import { BACKGROUND_CONTEXT, formatSkillsForSystemPrompt, loadSkills, type Skill } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { workshopSkillsDirOf } from "./paths.js";
 
 /**
  * 工坊的出图知识以 skill 形式挂给 agent（agentskills.io 约定：`skills/<name>/SKILL.md` + frontmatter）。
@@ -16,7 +15,7 @@ import { dirname, join } from "node:path";
  * （PlayFiles 只管剧目目录，工坊的文本工具看不到仓库里任何东西）。
  */
 
-const SKILLS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "skills");
+const SKILLS_DIR = workshopSkillsDirOf(import.meta.url);
 
 /** 技能是仓库里的静态文件：进程内只加载一次，system prompt 每轮重建也不用重读盘。 */
 let cache: Map<string, Skill> | null = null;

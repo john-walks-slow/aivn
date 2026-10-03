@@ -36,6 +36,18 @@ export function envFileDir(execPath: string, resourceRoot: string, packaged = is
 }
 
 /**
+ * 工坊技能库（`read_skill` 读的那些 `SKILL.md`）。
+ *
+ * 开发时入口是 `<repo>/apps/server/dist/skills.js`，往回一层就是同模块的 `apps/server/skills`；
+ * 打包后入口在 `<快照>/dist/index.cjs`，得从快照根接上仓库里的相对路径。
+ */
+export function workshopSkillsDirOf(metaUrl: string, packaged = isPackaged()): string {
+  return packaged
+    ? join(resourceRootOf(metaUrl, true), "apps", "server", "skills")
+    : join(dirname(fileURLToPath(metaUrl)), "..", "skills");
+}
+
+/**
  * 读一份 `.env`，读不到就当没有。
  *
  * 开发脚本用 `node --env-file=../../.env` 做同一件事；exe 没有命令行前缀可用，于是自己读一次——

@@ -188,12 +188,17 @@ export function settingsFromEnv(env: NodeJS.ProcessEnv): ServerConfig {
  * 启动期参数：端口、监听地址、数据目录。
  *
  * 数据目录没在环境里给就从 `fallbackDataRoot` 取（开发时是仓库根，打包后是 exe 同级的 `data/`）。
+ * `overrides` 是命令行给的，优先级最高：双击 exe 的人改不了环境变量，但可以带参数启动。
  */
-export function loadBootstrap(env: NodeJS.ProcessEnv, fallbackDataRoot: string): BootstrapConfig {
+export function loadBootstrap(
+  env: NodeJS.ProcessEnv,
+  fallbackDataRoot: string,
+  overrides: { port?: number; host?: string; dataRoot?: string } = {},
+): BootstrapConfig {
   return {
-    port: parsePositiveInt("STAGE_PORT", env.STAGE_PORT, 8787),
-    host: env.STAGE_HOST?.trim() || "0.0.0.0",
-    dataRoot: resolve(env.STAGE_DATA_DIR?.trim() || fallbackDataRoot),
+    port: overrides.port ?? parsePositiveInt("STAGE_PORT", env.STAGE_PORT, 8787),
+    host: overrides.host?.trim() || env.STAGE_HOST?.trim() || "0.0.0.0",
+    dataRoot: resolve(overrides.dataRoot?.trim() || env.STAGE_DATA_DIR?.trim() || fallbackDataRoot),
   };
 }
 

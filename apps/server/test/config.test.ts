@@ -32,6 +32,15 @@ describe("启动期参数（只有它认环境变量）", () => {
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it("命令行参数压过环境变量（双击 exe 的人改不了环境变量，但能带参数）", () => {
+    const boot = loadBootstrap(
+      { STAGE_PORT: "9000", STAGE_HOST: "127.0.0.1", STAGE_DATA_DIR: "/data/stage" },
+      "/repo",
+      { port: 8123, dataRoot: "/data/other" },
+    );
+    expect(boot).toEqual({ port: 8123, host: "127.0.0.1", dataRoot: "/data/other" });
+  });
 });
 
 describe("新装默认值", () => {

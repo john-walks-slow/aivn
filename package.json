@@ -17,5 +17,10 @@
     "@earendil-works/pi-agent-core": "^0.87.1",
     "@earendil-works/pi-ai": "^0.87.1",
     "markdown-to-jsx": "^9.10.3"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.23.0",
+    "esbuild": "^0.28.2",
+    "fflate": "^0.8.3"
   }
 }
