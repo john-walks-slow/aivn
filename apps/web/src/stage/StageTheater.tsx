@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { actionAnimation, type ActorAction, type ActorAnchor, type ActorShot, type SpriteFraming } from "@stage-ai/core";
 import { dialogContent, emptyDialogHint } from "./playbackState.js";
 import { actorName } from "./script.js";
-import type { Playback, VisualState } from "./director.js";
+import { speakerFocusId, type Playback, type VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
 import { LoopChannel, SfxPlayer } from "./loopAudio.js";
 import type { TranscriptEntry } from "./transcript.js";
@@ -159,6 +159,7 @@ function Sprite({
   leaving,
   action,
   actionSeq,
+  dim,
 }: {
   url: string | null;
   pos: string;
@@ -171,6 +172,8 @@ function Sprite({
   action: ActorAction | null;
   /** 同一行为词要能连演（nod 之后又 nod），靠这个序号让 animation 重挂一次。 */
   actionSeq: number;
+  /** 非当前说话人：压暗到 --sprite-dim，把注意力留给说话的那个。 */
+  dim: boolean;
 }): ReactNode {
   const [current, setCurrent] = useState<string | null>(url);
   const [outgoing, setOutgoing] = useState<string | null>(null);
@@ -218,7 +221,7 @@ function Sprite({
   // 正在退场的那一瞬不挂：离场走 .leaving 的淡出，混上入场动画会打架。
   const cls = `theater-sprite framing-${framing} pos-${pos} anchor-${anchor}${
     leaving ? " leaving" : " entering"
-  }${acting ? " acting" : ""}`;
+  }${acting ? " acting" : ""}${dim ? " dim" : ""}`;
   const style: CSSProperties = {
     "--scale": SHOT_SCALE[shot ?? "normal"],
     "--sprite-act": actionAnimation(action) ?? "none",
@@ -308,6 +311,8 @@ voiceState,
   // 空对话区的「还没开演」是第三种说法：dialogContent 只分「演出中 / 等玩家」两态，
   // 树还空着时说「剧作家正在落笔…」是在撒谎。三层优先级不动，只在这一态换掉那句话。
   const dialogBody = !playerEcho && !view && fresh ? emptyDialogHint(live, fresh) : dialog.text;
+  // 说话者聚焦：当前这句台词的人保持原亮度，同框的其余人压暗。规则见 speakerFocusId。
+  const focusId = speakerFocusId(view, visual.sprites);
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→/空格 往回追。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
@@ -570,6 +575,7 @@ voiceState,
               leaving={slot.leaving === true}
               action={slot.action}
               actionSeq={slot.actionSeq}
+              dim={focusId !== null && focusId !== id}
             />
           );
         })}

@@ -90,7 +90,7 @@
   --nameplate-line: rgb(238 226 204 / 0.4);
   /* 亮色舞台（useTheme 的 stageLight）把 --stage-bg 压到 #fdfdfd：剧本还没配景时
      露出的是空白画布，不会被读成「画面加载不出来」。这里的默认基线走暗色。 */
-  --sprite-dim: 0.55; /* 预留：非发言人立绘压暗强度，当前没有任何规则用它 */
+  --sprite-dim: 0.55; /* 非发言人立绘压暗强度（.theater-sprite.dim 用） */
   --choice-bg: rgb(24 21 23 / 0.92);
   --choice-line: rgb(238 226 204 / 0.4);
   --choice-ink: #f2ebde;
@@ -1162,7 +1162,17 @@ button.link-btn {
      呼吸与行为词走 animation 不走 transition，所以不列在这里（列了两边会互相等）。 */
   transition:
     opacity var(--fade-ms) ease,
+    filter var(--fade-ms) ease,
     transform var(--move-ms) var(--move-ease);
+}
+
+/* 非说话人压暗：说话的那个保持原亮度，同框的其余人降到 --sprite-dim。
+   走 filter: brightness 而不是 opacity——压暗是「这块像素变暗」，透明会让背景
+   从人身上透出来，读起来是半透明的鬼影。brightness 只动像素、不动 alpha，
+   与 .leaving / .sprite-out 的 opacity 通道互不覆盖。
+   没有焦点时（旁白、玩家输入、说话的人不在台上）不加这个 class，整台原亮度。 */
+.theater-sprite.dim {
+  filter: brightness(var(--sprite-dim));
 }
 
 /* 正在演行为词：这一刻运镜让位。行为词自己的 translate/scale/rotate 与运镜的

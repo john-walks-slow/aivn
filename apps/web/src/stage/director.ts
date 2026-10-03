@@ -130,6 +130,25 @@ export function applyActorCue(
 }
 
 /**
+ * 说话者聚焦：返回该保持原亮度的那个人（其余同框立绘压暗）；没有就返回 null。
+ *
+ * 只有「当前这句台词的发言人确实站在台上」才算焦点：
+ * - 旁白 / 空舞台没有发言人（actorId 为 null）；
+ * - 玩家输入挂的是 "player"，没有对应立绘；
+ * - 一次性路人（`<say id="passerby">`）或还没登场的角色也没立绘。
+ *
+ * 这几种情况返回 null，整台回到原亮度——不把上一句的焦点留到下一句，
+ * 否则旁白一来画面就跳一下、说话的人退场后焦点还挂在一个不在台上的人身上。
+ */
+export function speakerFocusId(
+  view: TranscriptEntry | null,
+  sprites: Record<string, SpriteSlot>,
+): string | null {
+  const id = view?.actorId;
+  return id && sprites[id] ? id : null;
+}
+
+/**
  * 骨架占位上限（D6 铁律：骨架禁止永久停留）。到货/失败都会立刻摘掉占位，
  * 但重连重放历史 preload、或瞬态通知恰好丢在断线窗口里时没人来摘——超时兜底。
  *
