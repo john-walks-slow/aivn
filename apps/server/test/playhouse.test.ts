@@ -19,7 +19,7 @@ const PLAY_JSON = JSON.stringify({
 
 const engine = { flags: {}, sceneDetails: {}, activeThreads: [] };
 
-describe("PlayHouse 周目作用域：逛不建，看戏才建", () => {
+describe("PlayHouse 周目作用域：逛不建、连舞台也不建，开演才建", () => {
   let root: string;
   let library: PlayLibrary;
   let house: PlayHouse;
@@ -43,7 +43,7 @@ describe("PlayHouse 周目作用域：逛不建，看戏才建", () => {
   const saveIds = (): Promise<string[]> => library.saves("p1").list().then((s) => s.map((x) => x.id));
 
   it("hello 带上骨架兜底上界：客户端不知道生图要多久，这个数只能服务端给", async () => {
-    const runtime = await house.stage("p1");
+    const runtime = await house.get("p1");
     expect(helloPayload("p1", runtime).type).toBe("hello");
     const hello = helloPayload("p1", runtime) as { assetsTtlMs?: number };
     expect(hello.assetsTtlMs).toBe(540_000);
@@ -57,17 +57,17 @@ describe("PlayHouse 周目作用域：逛不建，看戏才建", () => {
     await expect(runtime.store.saveSession(new LineageTree(), engine, "s")).rejects.toThrow();
   });
 
-  it("stage() 才建周目，并发的两个舞台连接共用同一个 runtime", async () => {
-    const [a, b] = await Promise.all([house.stage("p1"), house.stage("p1")]);
+  it("begin() 才建周目，并发的两个「开演」共用同一个 runtime", async () => {
+    const [a, b] = await Promise.all([house.begin("p1"), house.begin("p1")]);
     expect(a.save.id).not.toBe("");
     expect(a).toBe(b);
     expect(a.store.saveId).toBe(b.store.saveId);
     expect(await saveIds()).toEqual([a.save.id]);
   });
 
-  it("逛过工坊再连舞台：无会话那份被换掉，工坊现场留着", async () => {
+  it("逛过工坊再开演：无会话那份被换掉，工坊现场留着", async () => {
     const browsing = await house.get("p1");
-    const staged = await house.stage("p1");
+    const staged = await house.begin("p1");
     expect(browsing).not.toBe(staged);
     expect(browsing.store).not.toBe(staged.store);
     expect(staged.workshop).toBe(browsing.workshop); // 工坊对话现场不能被打断
@@ -75,19 +75,19 @@ describe("PlayHouse 周目作用域：逛不建，看戏才建", () => {
     expect(await saveIds()).toEqual([staged.save.id]);
   });
 
-  it("删掉最后一棵周目后回到无会话作用域，下次连舞台再新建一棵", async () => {
-    const staged = await house.stage("p1");
+  it("删掉最后一棵周目后回到无会话作用域，下次开演再新建一棵", async () => {
+    const staged = await house.begin("p1");
     await house.deleteSave("p1", staged.save.id);
     expect(await saveIds()).toEqual([]);
 
-    const again = await house.stage("p1");
+    const again = await house.begin("p1");
     expect(again.save.id).not.toBe("");
     expect(await saveIds()).toEqual([again.save.id]);
   });
 
-  it("已有活动周目时 stage() 挂上去，不另建", async () => {
+  it("已有活动周目时 begin() 挂上去，不另建", async () => {
     const created = await library.saves("p1").create();
-    const staged = await house.stage("p1");
+    const staged = await house.begin("p1");
     expect(staged.save.id).toBe(created.id);
     expect(staged.save.name).toBe(created.name);
     expect(await saveIds()).toEqual([created.id]);
@@ -100,11 +100,19 @@ describe("PlayHouse 周目作用域：逛不建，看戏才建", () => {
 
   it("装配完成后不再留住在飞记录：runtime 被换掉后装得出新的那一份", async () => {
     const browsing = await house.get("p1");
-    const staged = await house.stage("p1");
+    const staged = await house.begin("p1");
     await house.deleteSave("p1", staged.save.id);
     // 在飞表里若还留着 browsing 这条已兑现的 promise，这里拿回的就是它——
-    // 那份 runtime 早已被 stage() 换掉、orchestrator 已 dispose，拿到就是死的
+    // 那份 runtime 早已被 begin() 换掉、orchestrator 已 dispose，拿到就是死的
     expect(await house.get("p1")).not.toBe(browsing);
+  });
+
+  it("开演前插的提示跟着换树交接过去，不跟着旧实例蒸发", async () => {
+    const browsing = await house.get("p1");
+    await browsing.orchestrator.playerAction({ kind: "prompt", text: "让她先别说话" });
+    const staged = await house.begin("p1");
+    const queued = (staged.orchestrator as unknown as { pending: { text: string }[] }).pending;
+    expect(queued.map((item) => item.text)).toEqual(["让她先别说话"]);
   });
 
   it("模型下拉 = 网关清单 ∩ 支持清单：只给点名的几个，顺序照配置", async () => {

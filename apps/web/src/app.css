@@ -44,6 +44,8 @@
   --bg: #f5f1e8; /* 和紙 */
   --panel: #fffcf5;
   --panel-2: #ede7da;
+  /* 纸面左上角那片斜光：浅色下是暖白，和纸感就来自它 */
+  --paper-glow: rgb(255 252 245 / 0.9);
   --ink: #23201c;
   --ink-soft: #5b5348;
   --ink-faint: #9a9081;
@@ -126,6 +128,8 @@ html[data-ui-theme="dark"] {
   --bg: #14110f; /* 和紙反过来：暖调的黑，不是纯 #000 —— 纯黑配暖白字会发蓝 */
   --panel: #201c19;
   --panel-2: #2b2622;
+  /* 深底不能留暖白那片光（读成一块光斑），改成一层压得住的暖提亮 */
+  --paper-glow: rgb(116 104 88 / 0.2);
   --ink: #ece4d8;
   --ink-soft: #b3a897;
   --ink-faint: #8a8073;
@@ -719,9 +723,9 @@ button.link-btn {
 .title-screen {
   justify-content: flex-start;
   position: relative;
-  /* 没有底图时走主题色的和纸渐变：斜向的一片暖白，不是一片死白 */
+  /* 没有底图时走主题色的和纸渐变：斜向的一片暖白，不是一片死白（深色下是 --paper-glow 压过的暖提亮） */
   background:
-    radial-gradient(120% 90% at 12% 8%, rgb(255 252 245 / 0.9), transparent 62%),
+    radial-gradient(120% 90% at 12% 8%, var(--paper-glow), transparent 62%),
     linear-gradient(152deg, var(--panel) 0%, var(--bg) 48%, var(--panel-2) 100%);
 }
 
@@ -2548,15 +2552,16 @@ select:focus {
   max-width: 88%;
 }
 
+/* 气泡底一律走纸面令牌，色随主题；写死浅色值会在深色下变成一块「白底白字」 */
 .chat-user {
   align-self: flex-end;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 
 .chat-assistant {
   align-self: flex-start;
-  background: #f4f3ef;
+  background: var(--panel-2);
   color: var(--ink);
 }
 
@@ -2771,15 +2776,14 @@ select:focus {
   color: var(--ink);
 }
 
-/* 写盘记录条 */
-
+/* 待确认写盘条：紧贴输入框上沿（写在下面时它被输入框压在最底下，读盘记录比输入框还低一等） */
 .workshop-writes {
   border-top: 1px solid var(--line);
   padding: 6px 12px 8px;
   flex-shrink: 0;
   max-height: 132px;
   overflow-y: auto;
-  background: #fbfaf6;
+  background: var(--panel);
 }
 
 .write-row {

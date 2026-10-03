@@ -158,7 +158,7 @@ STAGE_IMAGE_SIZE=1K                         # gpt-image-1 系列只认标准尺�
 > （`…-landscape-2k`），放大失败时静默退回 1K、`4K` 直接要 Ult 账号。cpa 走真 Gemini，
 > `2K` 就是实打实的 2752x1536（141.7s）。
 
-立绘抠底调参（默认值对 2D 平涂纯白底是对得上的，一般**不用改**；工坊 agent 出完图自己看过觉得不对时，会在 `generate_image` 调用上临时改这三个值）：
+抠底调参（五个 `STAGE_CUTOUT_*` 默认对 2D 平涂纯白底是对得上的，一般**不用改**）：
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
@@ -168,7 +168,13 @@ STAGE_IMAGE_SIZE=1K                         # gpt-image-1 系列只认标准尺�
 | `STAGE_CUTOUT_KEY_SMOOTH` | `0.8` | 掩膜降噪的高斯半径（0–8，0 = 关闭）。源图是 JPEG，8x8 块噪声会把掩膜沿轮廓咬出成片缺口、白发被挖成全透明。做法是**色键跑在一份模糊副本上，alpha 仍从原图像素解**。**调大能填回缺口**（实测 0.8/带4 相对不降噪：头部缺口 −31%），代价是边缘略毛、零散半透明点约翻倍。成片缺口肉眼明显时才往上加，并配合 `STAGE_CUTOUT_WEAK` 调小 1~2 |
 | `STAGE_CUTOUT_EDGE_BAND` | `4` | 反解带宽（1–32）。边缘 alpha 走闭式解 `a=(B−I)/(B−F)`，只有落在「离掩膜边界 ≥ 这个带宽」的像素才配当 F 的锚点，带**内**的像素则反解成真实覆盖率。**带宽必须盖得住源图的抗锯齿渐变带**（银发上实测 5px 宽），不够宽时带外那些渐变像素只能退回距离斜坡、被钉成实心，深色舞台底上就是一圈白块和「头发左右上角被挖走一块」。调大过头会反过来把浅色内区当成半透明，洞变多 |
 
-抠不出干净结果会直接报错、让工坊重出，**不会落一张半坏的图**。想单独跑真机出图 e2e（平时测试全用 stub，不烧配额）：`STAGE_E2E_LIVE=1 pnpm --filter @stage-ai/server exec vitest run test/e2e-live-senren.test.ts`，`.env` 里的 `STAGE_IMAGE_*` 一组照常读。
+**抠得不干净怎么修**（表里那五个值由 `.env` 决定，进程级；逐张图的重抠走工具）：
+
+- 出图时工程会把**抠底前的原片**留在 `plays/<id>/media-cache/sprite-sources/<角色id>/<差分名>.jpg`（跑批产物，不进 git）。
+- 工坊对话里说「这张抠得不干净」就行：agent 调 `recut_sprite`（`characterId` + `expression` + 抠底参数）拿那张留底本地重跑一遍，覆盖 `assets/sprites/` 里那张透明 PNG —— **画面一个像素不变、几秒出结果、不烧配额**。
+- 没有留底的（留底机制之前出的图、用户自己上传的立绘）会直接报错，那种只能重新出图。
+
+抠不出干净结果会直接报错、**不会落一张半坏的图**（重抠失败时原来那张透明 PNG 原封不动）。想单独跑真机出图 e2e（平时测试全用 stub，不烧配额）：`STAGE_E2E_LIVE=1 pnpm --filter @stage-ai/server exec vitest run test/e2e-live-senren.test.ts`，`.env` 里的 `STAGE_IMAGE_*` 一组照常读。
 
 行为要点：
 
