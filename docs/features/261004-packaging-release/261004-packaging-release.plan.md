@@ -221,7 +221,7 @@ aivn-<version>-<platform>-<arch>.zip
 - **踩到的坑**：
   - Windows 上 `spawn("npm")` 必须带 `shell: true`（`.cmd` 不是可执行文件）。
   - pnpm 11 默认拒绝跑依赖的构建脚本 → `pnpm.onlyBuiltDependencies` 显式批准 sharp 等三个，否则安装"成功"但原生模块是空的。
-- **真机验证（Windows PC）**：`aivn.exe --selftest` 全过；双击启动后手机 `curl --noproxy '*' http://192.0.2.10:8901/` → 200，局域网访问通。
+- **真机验证（Windows PC）**：`aivn.exe --selftest` 全过；双击启动后手机 `curl --noproxy '*' http://<局域网IP>:8901/` → 200，局域网访问通（`<局域网IP>` 是本机在 `192.168.0.0/16` 里的地址）。
 
 ## 10. P3 实施记录（已落地）
 

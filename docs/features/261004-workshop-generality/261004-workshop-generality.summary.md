@@ -3,7 +3,7 @@
 - 计划：`261004-workshop-generality.plan.md`（本目录）
 - 检视：`261004-workshop-generality.review.md`（结论：准入）
 - 用户验证：`261004-workshop-generality.validation.md`
-- 分支：`feat/workshop-shell`，worktree `./.worktrees/workshop-shell`，基线 `main@db735bd`
+- 分支：`feat/workshop-shell`，worktree `.worktrees/workshop-shell`，基线 `main@db735bd`
 
 ## 一句话
 

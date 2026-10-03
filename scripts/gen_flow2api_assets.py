@@ -190,7 +190,8 @@ def generate_single_outfit(char_key: str, outfit_key: str, outfit_desc: str, cha
 
 
 def main():
-    base_dir = Path("./.worktrees/galgame-assets/assets")
+    # 产物落仓库根的 assets/（历史遗留目录名，与 dataRoot 无关）：</n    #   AIVN_ASSETS_DIR 可覆盖
+    base_dir = Path(os.environ.get("AIVN_ASSETS_DIR", Path(__file__).resolve().parent.parent / "assets"))
     pillow_sprites_dir = base_dir / "sprites" / "pillow_chars"
     audio_dir = base_dir / "audio" / "tracks"
     pillow_sprites_dir.mkdir(parents=True, exist_ok=True)

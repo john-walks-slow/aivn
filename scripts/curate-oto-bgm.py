@@ -4,8 +4,11 @@
 import json, re, subprocess, sys
 from pathlib import Path
 
+# 目标库按仓库位置算，别写死某台机器的绝对路径
+LIBRARY = Path(__file__).resolve().parent.parent / "library"
+
 SRC = Path("/tmp/itd/oto/bgm_extracted")
-DST = Path("./library/bgm")
+DST = LIBRARY / "bgm"
 
 SOURCE = "OtoLogic(https://otologic.jp) / CC BY 4.0"
 TERMS = "https://otologic.jp/free/license.html"

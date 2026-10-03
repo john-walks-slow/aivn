@@ -1,13 +1,13 @@
 # 验证：导航与工坊界面一轮收口
 
-> 环境：worktree + `.env` 软链到 `./.env`；server `127.0.0.1:25005`、web `127.0.0.1:25007`；camoufox，窄屏 430x900 与宽屏 1200x900 两档。演示剧目 `plays/demo`（周目「第 1 周目」，验收前新建）。
+> 环境：worktree + `.env` 软链到 `.env`；server `127.0.0.1:25005`、web `127.0.0.1:25007`；camoufox，窄屏 430x900 与宽屏 1200x900 两档。演示剧目 `plays/demo`（周目「第 1 周目」，验收前新建）。
 
 ## 自动检查
 
 | 项 | 命令 | 结果 |
 | --- | --- | --- |
-| 纯函数（视图解析 + 记忆分组） | `pnpm --filter @stage-ai/web test` | 65 passed（9 文件） |
-| 类型 | `pnpm --filter @stage-ai/web exec tsc --noEmit` | 通过 |
+| 纯函数（视图解析 + 记忆分组） | `pnpm --filter @aivn/web test` | 65 passed（9 文件） |
+| 类型 | `pnpm --filter @aivn/web exec tsc --noEmit` | 通过 |
 
 ## 11 条逐条实测
 

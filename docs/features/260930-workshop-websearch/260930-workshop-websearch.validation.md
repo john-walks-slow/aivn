@@ -68,7 +68,7 @@ Exa 命中的页面以日文为主，模型跟着把地点卡正文整段写成�
 ## 复现方式
 
 ```bash
-cd . && pnpm --filter @stage-ai/server build
+cd <仓库根> && pnpm --filter @aivn/server build
 STAGE_IMAGE_ENABLED=false node --env-file=.env apps/server/dist/index.js &
 node --env-file=.env apps/server/zz-workshop-live.mjs jk-live '["我想做一个 JK 后宫题材的剧目。","就按你说的来。另外先上网查一下 90 年代日本乡村高中的日常细节…"]'
 ```

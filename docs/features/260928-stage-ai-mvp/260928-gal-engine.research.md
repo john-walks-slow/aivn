@@ -6,7 +6,7 @@
 **文档标识**：`260928-gal-engine.research`  
 **调研日期**：2026-09-28  
 **作者**：Deep Researcher (Stage-AI)  
-**目标输出文件**：`./docs/features/260928-stage-ai-mvp/260928-gal-engine.research.md`
+**目标输出文件**：`docs/features/260928-stage-ai-mvp/260928-gal-engine.research.md`
 
 ---
 

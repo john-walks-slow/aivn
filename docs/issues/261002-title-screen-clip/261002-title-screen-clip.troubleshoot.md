@@ -37,7 +37,7 @@ Playwright 实测 `.title-name` 的视口内位置（`nameTop < 0` 即被切）�
 | 780×360（横屏） | — | 7 |
 | 1280×800（桌面） | 191 | 191 |
 
-公网站点 `https://stage.example.com/#/play/mh` 复测一致。360×640 滚到底，六个菜单项与页脚都在。桌面 1280×800 内容不高，`.title-body` 不出现滚动条（`scrollHeight === clientHeight`），版面与修复前一致。
+公网站点（自建命名隧道，见 `named-cf-tunnel` 技能）复测一致。360×640 滚到底，六个菜单项与页脚都在。桌面 1280×800 内容不高，`.title-body` 不出现滚动条（`scrollHeight === clientHeight`），版面与修复前一致。
 
 ## 备注
 
