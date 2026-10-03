@@ -82,7 +82,8 @@ function extOf(rel: string): string {
 
 /** 剧目文件层：路径解析到剧目目录内，越界即抛错。 */
 export class PlayFiles {
-  private readonly root: string;
+  /** 剧目目录绝对路径（工坊 bash 的 cwd，也是这一层所有白名单判定的根）。 */
+  readonly root: string;
 
   constructor(store: PlayStore) {
     this.root = resolve(store.dir);

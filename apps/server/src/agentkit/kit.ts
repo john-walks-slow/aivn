@@ -4,7 +4,9 @@ import { createBeatDoneTool } from "./beatTool.js";
 import { createNsfwTools } from "./nsfwTool.js";
 import { AGENT_ROLES, ROLE_INSTALLABLE, type AgentRole } from "./role.js";
 import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "./deps.js";
-import { createFilesTools } from "./filesTool.js";
+import { createPiBashTool, createPiFileTools } from "./piTools.js";
+import { PlayEnv } from "./playEnv.js";
+import { createReadinessTool } from "./readinessTool.js";
 import { createGenerateImageTool } from "./imageTool.js";
 import { createLibraryTools } from "./libraryTool.js";
 import { createLineageTools } from "./lineageTool.js";
@@ -34,6 +36,7 @@ export const TOOL_GROUPS = {
   image: "生图",
   skill: "技能库",
   files: "剧目文件",
+  shell: "命令行",
   library: "素材资源库",
   lineage: "故事树",
   web: "联网检索",
@@ -72,11 +75,11 @@ const TOOL_CATALOG: Record<string, { label: string; group: ToolGroup }> = {
   read_skill: { label: "读技能库", group: "skill" },
   list_voices: { label: "查音色库", group: "voice" },
   web_search: { label: "联网检索", group: "web" },
-  list_files: { label: "列出剧目文件", group: "files" },
-  read_file: { label: "读剧目文件", group: "files" },
-  edit_file: { label: "编辑剧目文件", group: "files" },
-  write_file: { label: "写剧目文件", group: "files" },
-  delete_file: { label: "删除剧目文件", group: "files" },
+  // read / write / edit / bash 是 pi 的内建工具，不走 filesTool——路径白名单在 PlayEnv 里收口。
+  read: { label: "读文件", group: "files" },
+  write: { label: "写文件", group: "files" },
+  edit: { label: "编辑文件", group: "files" },
+  bash: { label: "命令行", group: "shell" },
   get_readiness: { label: "检查开演条件", group: "files" },
   view_image: { label: "看图", group: "files" },
   list_library: { label: "浏览素材资源库", group: "library" },
@@ -108,7 +111,9 @@ const DEFAULT_ENABLED: Record<AgentRole, string[]> = {
     "list_library",
     "web_search",
   ],
-  workshop: [...ROLE_INSTALLABLE.workshop],
+  // 搭台的缺省是**全开，除了 bash**：命令行以服务进程的权限跑（这台机器上就是 root），
+  // 不是随手该开的东西，按剧目在 Agent 页手动勾。其余工具开着一个也不会烧钱。
+  workshop: ROLE_INSTALLABLE.workshop.filter((id) => id !== "bash"),
 };
 
 
@@ -149,6 +154,8 @@ export interface AgentCapabilities {
   library: boolean;
   /** 音色库可用（配了 TTS key）。没配时 list_voices 不注册，提示词也不提。 */
   voice: boolean;
+  /** 命令行可用。默认关，用户在 Agent 页勾上才有；没勾时提示词不提工作区。 */
+  shell: boolean;
 }
 
 export interface AgentKit {
@@ -174,6 +181,7 @@ export function createAgentKit(deps: AgentKitDeps & { thinking?: ThinkingLevel }
       search: has("web_search"),
       library: has("list_library"),
       voice: has("list_voices"),
+      shell: has("bash"),
     },
     catalog: enabled.map((tool) => {
       const meta = TOOL_CATALOG[tool.name]!;
@@ -213,10 +221,18 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
   ];
 }
 
-/** 工坊的工具：剧目文件 + 生图（同步）+ 素材库检索 + 故事树 + 技能库 + 联网。 */
+/**
+ * 工坊的工具：pi 的文件与命令行工具 + 生图（同步）+ 素材库检索 + 故事树 + 技能库 + 联网。
+ *
+ * read / write / edit / bash 全部来自 pi，我们只提供 `PlayEnv` 这一个 `ExecutionEnv`：
+ * 白名单、play.json 校验与撤销条都在它里面（见 `playEnv.ts`）。
+ */
 function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
+  const env = new PlayEnv(deps.files, deps.onWrite);
   return [
-    ...createFilesTools(deps),
+    ...createPiFileTools(env),
+    createPiBashTool(env),
+    createReadinessTool(deps),
     // 看图始终装（本地素材不依赖网络）；网址分支没有下载器时工具自己回「未启用」
     createViewImageTool({
       pathOf: (path) => deps.files.pathOf(path, "read"),

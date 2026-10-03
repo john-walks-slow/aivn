@@ -69,7 +69,8 @@ describe("agent kit：两个角色的暴露面", () => {
       "search_archive",
       "update_state",
     ]);
-    expect(names(kit)).not.toContain("write_file");
+    expect(names(kit)).not.toContain("write");
+    expect(names(kit)).not.toContain("bash");
     expect(names(kit)).not.toContain("read_lineage");
     // 用户在 Agent 页关掉生图，下一轮就装不进去（策略随之失效）
     expect(names(playwriter({}, [...defaultToolsFor("playwriter")].filter((n) => n !== "generate_image")))).not.toContain(
@@ -79,13 +80,18 @@ describe("agent kit：两个角色的暴露面", () => {
 
   it("工坊拿剧目文件、故事树与技能库，不拿轮收束与演出记忆", () => {
     const kit = workshop();
-    expect(names(kit)).toContain("write_file");
-    expect(names(kit)).toContain("edit_file");
+    // read / write / edit 是 pi 的内建工具，工坊这一侧的路径白名单在 PlayEnv 里收口
+    expect(names(kit)).toContain("read");
+    expect(names(kit)).toContain("write");
+    expect(names(kit)).toContain("edit");
     expect(names(kit)).toContain("read_lineage");
     expect(names(kit)).toContain("generate_image");
     expect(names(kit)).toContain("read_skill");
     expect(names(kit)).not.toContain("beat_done");
     expect(names(kit)).not.toContain("update_state");
+    // bash 默认关：它以服务进程的权限跑，不是随手开的东西
+    expect(names(kit)).not.toContain("bash");
+    expect(kit.can.shell).toBe(false);
   });
 
   it("generate_image 是同一个工具：schema 一模一样，只有描述与等待策略分叉", () => {
@@ -142,6 +148,16 @@ describe("agent kit：两个角色的暴露面", () => {
     expect(kit.catalog.map((t) => t.id)).not.toContain("generate_image");
   });
 
+  it("勾上 bash 才装命令行，能力位跟着翻", () => {
+    const without = workshop();
+    expect(without.can.shell).toBe(false);
+    expect(names(without)).not.toContain("bash");
+
+    const withBash = workshop({}, [...defaultToolsFor("workshop"), "bash"]);
+    expect(withBash.can.shell).toBe(true);
+    expect(names(withBash)).toContain("bash");
+  });
+
   it("思考档位缺省 off，给了就透出", () => {
     expect(playwriter().thinking).toBe("off");
     expect(workshop().thinking).toBe("off");
@@ -183,9 +199,19 @@ describe("agent kit：工具目录（设置页的数据源）", () => {
     expect(playDefault).toContain("generate_image");
     expect(playDefault).toContain("list_library");
     expect(playDefault).not.toContain("import_asset");
-    expect(playDefault).not.toContain("write_file");
+    expect(playDefault).not.toContain("write");
+    expect(playDefault).not.toContain("bash");
 
-    expect([...defaultToolsFor("workshop")].sort()).toEqual(agentToolCatalog("workshop").map((t) => t.id).sort());
+    // 搭台的缺省是**全开，除了 bash**：命令行按剧目在 Agent 页手动勾
+    const workshopDefault = defaultToolsFor("workshop");
+    expect([...workshopDefault].sort()).toEqual(
+      agentToolCatalog("workshop")
+        .map((t) => t.id)
+        .filter((id) => id !== "bash")
+        .sort(),
+    );
+    expect(workshopDefault).not.toContain("bash");
+    expect(agentToolCatalog("workshop").map((t) => t.id)).toContain("bash");
 
     // 用户在设置页勾上：play.json 的启用集直接生效，不再有第二道代码默认
     const opened = playwriter({}, ["beat_done", "generate_image", "list_library"]);

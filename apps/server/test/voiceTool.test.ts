@@ -98,11 +98,17 @@ describe("工坊提示词：音色知识不在这里重复", () => {
   const base = { title: "T", files: "x", readiness: { ready: true, missing: [] } as never };
 
   it("配了 TTS 才教它去查音色库", async () => {
-    const on = await buildWorkshopPrompt({ ...base, canGenerate: true, canSearch: true, canBrowseLibrary: true, canVoices: true });
+    const on = await buildWorkshopPrompt({
+      ...base,
+      can: { image: true, search: true, library: true, voice: true, shell: false },
+    });
     expect(on).toContain("list_voices");
     expect(on).toContain("32 位 hex");
 
-    const off = await buildWorkshopPrompt({ ...base, canGenerate: true, canSearch: true, canBrowseLibrary: true, canVoices: false });
+    const off = await buildWorkshopPrompt({
+      ...base,
+      can: { image: true, search: true, library: true, voice: false, shell: false },
+    });
     expect(off).not.toContain("list_voices");
   });
 });
