@@ -33,6 +33,25 @@ const createCharacterParams = Type.Object(
 
 const readMemoryDetailParams = Type.Object({ name: Type.String() }, { additionalProperties: false });
 
+const writeMemoryParams = Type.Object(
+  {
+    // 相对 memory/index/ 的路径（不含扩展名），如 lore/旧校舍拆除、locations/天文台
+    file: Type.String({ maxLength: 200 }),
+    content: Type.String({ maxLength: 8000 }),
+  },
+  { additionalProperties: false },
+);
+
+/** write_memory 的路径守卫：只认 index/ 内的干净相对路径，机器产物与每轮注入层不可写。 */
+export function sanitizeMemoryCardPath(file: string): string | null {
+  const cleaned = file.replace(/\.md$/i, "").trim();
+  if (!cleaned || cleaned.startsWith("/") || cleaned.includes("..") || cleaned.includes("\\")) return null;
+  const segments = cleaned.split("/");
+  if (segments.some((s) => s === "" || s === "." || s.startsWith("."))) return null;
+  if (/^(always|arcs|archive)(\/|$)/i.test(cleaned)) return null;
+  return cleaned;
+}
+
 const searchArchiveParams = Type.Object(
   {
     query: Type.String({ maxLength: 200 }),
@@ -48,7 +67,7 @@ const searchArchiveParams = Type.Object(
 export function createMemoryTools(
   deps: Pick<
     PlaywriterKitDeps,
-    "engine" | "memory" | "tree" | "stateFiles" | "arcIds" | "writeCharacter"
+    "engine" | "memory" | "tree" | "stateFiles" | "arcIds" | "writeCharacter" | "writeMemoryCard"
   > & { characterIds: ReadonlySet<string> },
 ): AgentTool<any>[] {
   const updateState: AgentTool<typeof updateStateParams> = {
@@ -156,6 +175,31 @@ export function createMemoryTools(
     },
   };
 
+  const writeMemory: AgentTool<typeof writeMemoryParams> = {
+    name: "write_memory",
+    label: "写记忆卡",
+    description:
+      "写一张用户设定卡（memory/index/<路径>.md）：世界设定、地点、组织、伏笔，首行 `# 标题`、次行一句话摘要。\n" +
+      "file 是相对 index/ 的路径（不含扩展名），如 lore/旧校舍拆除；同路径重复写即更新那张卡。\n" +
+      "写完当轮可用 read_memory_detail 读，下一轮进 A 区索引。只写设定——角色走 create_character，状态走 update_state；\n" +
+      "always/（每轮注入层）与 arcs/、archive/（机器产物）不可写。",
+    parameters: writeMemoryParams,
+    execute: async (_toolCallId, params: Static<typeof writeMemoryParams>) => {
+      const { file, content } = params;
+      const rel = sanitizeMemoryCardPath(file);
+      if (!rel) {
+        return textResult(
+          "路径非法：file 须是 index/ 内的相对路径（如 lore/旧校舍拆除），不许 ..、绝对路径、隐藏文件，always/arcs/archive 不可写。",
+        );
+      }
+      if (!deps.writeMemoryCard) {
+        return textResult("（当前运行环境不支持写记忆卡，请通过工坊完成。）");
+      }
+      await deps.writeMemoryCard(rel, content.trim());
+      return textResult(`已写入记忆卡 ${rel}.md，本轮可用 read_memory_detail 读，下一轮进 A 区索引。`);
+    },
+  };
+
   const searchArchive: AgentTool<typeof searchArchiveParams> = {
     name: "search_archive",
     label: "检索历史往事",
@@ -174,5 +218,5 @@ export function createMemoryTools(
     },
   };
 
-  return [updateState, createCharacter, readMemoryDetail, searchArchive];
+  return [updateState, createCharacter, writeMemory, readMemoryDetail, searchArchive];
 }

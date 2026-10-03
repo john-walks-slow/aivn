@@ -150,6 +150,13 @@
 - 素材来源的能力降级在 `craftParams.ts` 里做：`can.image` / `can.library` 决定那几行怎么写（没生图就说「用旁白交代」，没配库就不提清单），**工具没装时提示词不教它调**。文风与禁忌一律留在 `craft.md`，不参数化。
 - 剧本语言 `scriptLanguage`（play.json）与语音语言 `voiceLanguage` 是两件事：前者决定正文/旁白/选项用什么语言写（不设 = 跟随玩家输入），后者是 TTS 的翻译目标。两份提示词都读它（剧作家那段在 `prompt.ts`，工坊那段在 `workshop.ts` 的 `playLanguageNote`）。
 - `memory/always/craft.md` **空着剧作家就少一层口径可听**（写作参数照旧生效），所以工坊「设定流程」第 4 步仍硬性要求把对齐结果落盘——但落的是哪一份要看内容：文风进 craft.md，节奏与素材来源用 `set_craft`。
+- **D7 三层记忆只有 index 层对剧作家可写**：`write_memory`（2026-10-04 补的，只装剧作家）写 `memory/index/<路径>.md`，同路径重复写即更新。`always/` 是每轮注入层、`arcs/` 是压缩产物、`archive/` 是逐轮切片——三层都不是设定卡，守卫一律拒（`sanitizeMemoryCardPath`，正则带 `i` 标志）。
+- **写卡即时进内存、排一次轮边界重建才进 A 区**：`PlayMemory.appendCard` 先落 `cards`（当轮 `read_memory_detail` 可读），`playhouse.writeMemoryCard` 再 `rebuildAtBeatBoundary`——A 区在纪元内冻结，不排重建的话回执承诺的「下一轮进 A 区索引」是空话。
+- **卡片行序即提示词前缀**：`loadCards` + `loadArcs` 建立的不变量是「用户卡在前、按 file localeCompare、arcs 卡在后」，`appendCard` 新增后必须 `sortUserCards` 重排——行序一漂前缀缓存全废。arcs 段**不能**一起排：它是码位序（`epoch-x-10` 会排到 `epoch-x-2` 前）。两个分区要 filter 出来分别处理再拼回，只重排「第一个 arc 之前」那段会把新卡漏在 arcs 后面。
+- **A 区角色分级（roster 一行制）**：角色数 ≥ `CAST_GRADING_MIN_SIZE`(5) 且给了 `activeCast` 时，在场角色全卡全文、最近没出场的只注一行摘要（截 `CAST_SUMMARY_CHARS`）。在场表来自 `orchestrator.recentCast()`——**按事件条数窗口倒扫**（`CAST_SCAN_EVENTS`），不是按去重后的角色数：后者在常驻角色少的剧目会一路扫穿全历史，等于全员标记在场、分级从不生效。不给 `activeCast` = 不分级（小剧目行序抖动伤缓存，不值）。
+- **构造函数里 `restored` 的回填必须赶在 `buildAgent` 之前**（events/seq/beatNo/epoch/readPos/autostarted 整块）：A 区角色分级读 events 算在场，回填放在后面就是冷启动全员折叠——恢复出来的一轮比热启动少一整层设定。
+- **轮边界重建同剧目只挂一个待办**（`pendingRebuilds` + `pendingRebuildNotes`）：一轮里建三张卡、出三张立绘是三次调用，全排下去就是连着重装三份 runtime；对话尾的 note 取首次触发的原因。
+- **session.json 走 tmp+rename 原子写**（与 `saves.ts` 的 `writeSaveMeta` 同一写法）：崩在写一半上时旧档原样保住。临时名带 `randomUUID()`——同一剧目并发落盘不共用一个 tmp（共用会互相覆盖出坏 JSON）。`loadSession` 的 catch→null 语义不变：原子写已经让坏文件成了罕见情况，不叠第二层。
 
 ## 设置面板与配置面
 

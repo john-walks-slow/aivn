@@ -56,7 +56,10 @@ export interface KitCommonDeps {
 export interface PlaywriterKitDeps extends KitCommonDeps {
   role: "playwriter";
   engine: EngineStateSnapshot;
-  /** 角色 id 集合（来自角色卡目录）：update_state 的好感度按它做成员校验。 */
+  /**
+   * 角色 id 集合（来自角色卡目录）：update_state 的好感度按它做成员校验。
+   * 纪元内只增不减——同轮 create_character 建卡后由编排器 add，新角色当轮就能写好感。
+   */
   characterIds: ReadonlySet<string>;
   memory: PlayMemory;
   tree: LineageTree;
@@ -66,6 +69,8 @@ export interface PlaywriterKitDeps extends KitCommonDeps {
   arcIds: () => readonly string[];
   /** 写 characters/<id>.md（play.json 只留剧目元数据）；不传则角色卡工具只回提示。 */
   writeCharacter?: (id: string, content: string) => Promise<void>;
+  /** 写 memory/index/<file>.md 用户设定卡；不传则写记忆卡工具只回提示。 */
+  writeMemoryCard?: (rel: string, content: string) => Promise<void>;
   /** 停止点载荷 → IR 事件（加 seq → 广播 → 落谱系，与解析器产出的事件同一条管道）。 */
   emitStop: (stop: ModelStop) => void;
   /** 生图预发射 → IR 事件（骨架占位出现在时间线上那个位置）。 */

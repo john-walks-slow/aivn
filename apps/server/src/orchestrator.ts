@@ -37,7 +37,7 @@ import type { AssetLibrary } from "./library.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
 import type { PlayStore } from "./store.js";
 import { refFromActor, refFromCg, refFromSfx, refsFromScene, type AssetRefResolver } from "./assetRef.js";
-import { buildSystemPrompt, renderStateSection, type AssetManifest, type AssetNotes, type GeneratedNote } from "./prompt.js";
+import { CAST_SCAN_EVENTS, buildSystemPrompt, renderStateSection, type AssetManifest, type AssetNotes, type GeneratedNote } from "./prompt.js";
 import { lineageToBeats, lineageToEvents, stopFromEvent, type RebuiltBeat } from "./rebuild.js";
 import {
   EPOCH_SUMMARY_SYSTEM,
@@ -246,6 +246,11 @@ export interface OrchestratorOptions {
    * 负责落盘 characters/<id>.md——角色配置的唯一入口。
    */
   onWriteCharacter?: (charId: string, content: string) => Promise<void>;
+  /**
+   * 写用户设定卡钩子：write_memory file="<index/ 内路径>" 时调用。
+   * 负责即时进内存 cards + 落盘 memory/index/<file>.md——用户设定卡的唯一入口。
+   */
+  onWriteMemoryCard?: (rel: string, content: string) => Promise<void>;
   /** 纪元压缩阈值（窗口占比）与保留预算；不传则只增不减到模型自己报错。 */
   compaction?: {
     contextWindow: number;
@@ -423,6 +428,53 @@ export class PlaywrightOrchestrator {
     return this.opts.memory;
   }
 
+  /**
+   * 本纪元内存活的角色 id 集（update_state 好感度成员校验用）。
+   * 构造时从角色卡目录装一份，之后只增：同轮 create_character 建卡即 add。
+   */
+  private readonly liveCharacterIdsValue = new Set<string>();
+
+  /** 装配 kit 用的角色集：先装快照，再把 onWriteCharacter 包一层建卡即 add。 */
+  private liveCharacterIds(opts: OrchestratorOptions): Set<string> {
+    for (const id of opts.memory.characters.keys()) this.liveCharacterIdsValue.add(id);
+    const write = opts.onWriteCharacter;
+    if (write) {
+      opts.onWriteCharacter = async (charId, content) => {
+        await write(charId, content);
+        this.liveCharacterIdsValue.add(charId);
+      };
+    } else {
+      opts.onWriteCharacter = async (charId) => {
+        this.liveCharacterIdsValue.add(charId);
+      };
+    }
+    return this.liveCharacterIdsValue;
+  }
+
+  /**
+   * 最近在场角色（A 区角色分级用）：从事件缓冲尾部倒扫最近 CAST_SCAN_EVENTS 条
+   * say/thought/actor 事件，去重即在场表。只读内存，不读盘。
+   *
+   * 窗口按**事件条数**算而不是去重后的角色数：按角色数算的话，常驻角色不到 N 个的剧目
+   * 会一路扫穿全部历史，等于全员标记在场、分级从不生效。
+   */
+  private recentCast(limit = CAST_SCAN_EVENTS): string[] {
+    const seen: string[] = [];
+    const has = new Set<string>();
+    for (let i = this.events.length - 1; i >= 0 && i >= this.events.length - limit; i -= 1) {
+      const event = this.events[i]?.event;
+      const id =
+        event?.kind === "say_start" || event?.kind === "thought_start" || event?.kind === "actor"
+          ? event.id
+          : undefined;
+      if (typeof id === "string" && id !== "" && !has.has(id)) {
+        has.add(id);
+        seen.push(id);
+      }
+    }
+    return seen;
+  }
+
   constructor(opts: OrchestratorOptions) {
     this.opts = opts;
     // 输入锚点从当前叶起算：恢复会话时它就是上一轮收束的地方（空树上是 null = 无处可退）
@@ -440,6 +492,18 @@ export class PlaywrightOrchestrator {
         this.nsfwActive = opts.restored.nsfw.active;
         this.nsfwStartBeatNo = opts.restored.nsfw.startBeatNo ?? null;
       }
+      // 事件缓冲与轮状态必须赶在 buildAgent 之前回填：A 区角色分级读 events 算在场，
+      // 放到后面就是冷启动时 events 空、除主角全员折叠——恢复出来的一轮比热启动少一整层设定。
+      this.events.push(...opts.restored.events);
+      this.seq = this.events.at(-1)?.seq ?? 0;
+      this.beatNo = opts.restored.beatNo;
+      this.lastStop = opts.restored.lastStop;
+      this.epoch = opts.restored.epoch ?? 0;
+      this.readPos = opts.restored.readPos ?? null;
+      // 老档没有这个字段、或它指向的节点已经不在了（被删的枝）：一律按「无偏好」处理
+      const prev = opts.restored.prevLeafId ?? null;
+      this.prevLeafId = prev !== null && opts.tree.get(prev) ? prev : null;
+      this.autostarted = true;
     }
     this.kit = createAgentKit({
       role: "playwriter",
@@ -450,13 +514,16 @@ export class PlaywrightOrchestrator {
       voices: opts.voices,
       thinking: opts.agents?.thinking,
       engine: opts.engine,
-      // 角色清单来自角色卡目录，不是 play.json 那份元数据
-      characterIds: new Set(opts.memory.characters.keys()),
+      // 角色清单来自角色卡目录，不是 play.json 那份元数据。
+      // 可变集合：同轮 create_character 建卡后即 add，update_state 当轮就能写新角色的好感
+      //（A 区全文仍等轮边界重建，纪元内冻结不变）。
+      characterIds: this.liveCharacterIds(opts),
       memory: opts.memory,
       tree: opts.tree,
       stateFiles: this.stateFiles,
       arcIds: () => this.arcIds,
       writeCharacter: opts.onWriteCharacter,
+      writeMemoryCard: opts.onWriteMemoryCard,
       emitStop: (stop) => this.emitStop(stop),
       emitPreload: (attrs) => this.onStageEvent({ kind: "preload_asset", ...attrs }),
       playAssets: opts.imageTools?.playAssets,
@@ -490,19 +557,6 @@ export class PlaywrightOrchestrator {
           pending: opts.pending,
         })
       : null;
-    if (opts.restored) {
-      // 恢复会话：回填事件缓冲与轮状态，autostart 视为已完成（续演不重开开场）
-      this.events.push(...opts.restored.events);
-      this.seq = this.events.at(-1)?.seq ?? 0;
-      this.beatNo = opts.restored.beatNo;
-      this.lastStop = opts.restored.lastStop;
-      this.epoch = opts.restored.epoch ?? 0;
-      this.readPos = opts.restored.readPos ?? null;
-      // 老档没有这个字段、或它指向的节点已经不在了（被删的枝）：一律按「无偏好」处理
-      const prev = opts.restored.prevLeafId ?? null;
-      this.prevLeafId = prev !== null && this.opts.tree.get(prev) ? prev : null;
-      this.autostarted = true;
-    }
   }
 
   /**
@@ -532,6 +586,7 @@ export class PlaywrightOrchestrator {
           can: this.kit.can,
           nsfwMode: isNsfw,
           nsfwPrompt: opts.nsfwPrompt,
+          activeCast: this.recentCast(),
         }),
         model,
         thinkingLevel,

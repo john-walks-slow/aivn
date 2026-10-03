@@ -1,4 +1,5 @@
-import { appendFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join, resolve, sep, dirname } from "node:path";
 import { unzipSync, zipSync } from "fflate";
@@ -153,6 +154,8 @@ export class PlayStore {
   /**
    * 会话全量（beat 收束时写；谱系树 + 引擎状态 + 场景 + 编排器运行态 + 剧作家历史）。
    * 顺带更新档元信息（轮数 / 最后一句），让周目列表不必读会话文件。
+   *
+   * tmp + rename 原子写（照抄 writeSaveMeta）：崩在写一半上只留旧文件，不留半截 JSON。
    */
   async saveSession(
     tree: LineageTree,
@@ -173,7 +176,10 @@ export class PlayStore {
       history: history ?? [],
       savedAt: Date.now(),
     };
-    await writeFile(join(dir, "session.json"), JSON.stringify(payload));
+    // 临时名带随机后缀：同一剧目并发落盘时不共用一个 tmp（共用会互相覆盖出坏 JSON）
+    const tmp = join(dir, `session.json.${randomUUID()}.tmp`);
+    await writeFile(tmp, JSON.stringify(payload));
+    await rename(tmp, join(dir, "session.json"));
     await this.touchMeta(tree);
   }
 

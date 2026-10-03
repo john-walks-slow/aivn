@@ -910,6 +910,109 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
     expect(create.description).not.toContain("list_voices");
     expect(create.description).toContain("搭台助手");
   });
+
+  it("write_memory：路径守卫 + 即时进 cards", async () => {
+    const { tools, memory } = makeTools({ turn: 1, affinity: {}, flags: {} });
+    const written: [string, string][] = [];
+    // makeTools 没传 writeMemoryCard 时工具只回提示；这里补一条验证写链路
+    const toolsWithWrite = createMemoryTools({
+      engine: { turn: 1, affinity: {}, flags: {} },
+      characterIds: new Set(["mio"]),
+      memory,
+      tree: new LineageTree(),
+      stateFiles: {},
+      arcIds: () => [],
+      writeMemoryCard: async (rel, content) => {
+        written.push([rel, content]);
+        await memory.appendCard(rel, content);
+      },
+    });
+    const write = toolsWithWrite.find((t) => t.name === "write_memory")!;
+
+    const ok = await write.execute("t1", {
+      file: "lore/新设定",
+      content: "# 新设定\n一句话摘要。\n",
+    });
+    expect(textOf(ok)).toContain("lore/新设定.md");
+    expect(written).toHaveLength(1);
+    expect(memory.readCard("新设定")).toContain("一句话摘要");
+
+    // 路径守卫：always/arcs/archive 与 .. 一律拒绝，不碰 deps
+    for (const bad of ["always/craft", "arcs/e1", "archive/x", "../escape", "/abs", ".hidden"]) {
+      const rejected = await write.execute("t-bad", { file: bad, content: "x" });
+      expect(textOf(rejected)).toContain("路径非法");
+    }
+    expect(written).toHaveLength(1);
+
+    // 没传 writeMemoryCard 时只回提示
+    const noWrite = tools.find((t) => t.name === "write_memory")!;
+    expect(textOf(await noWrite.execute("t2", { file: "lore/x", content: "x" }))).toContain("工坊");
+  });
+
+  it("同轮 create_character 建卡后，update_state 可写新角色好感（liveCharacterIds 即 add）", async () => {
+    // 编排器把构造时快照换成了可变集：建卡回调包一层 add。这里直接验证工具层语义——
+    // 同一个 characterIds Set 在建卡后 add，新角色即放行。
+    const ids = new Set(["mio"]);
+    const engine = { turn: 1, affinity: {}, flags: {} };
+    const tree = new LineageTree();
+    const stateFiles: Record<string, string> = {};
+    const memory = new PlayMemory({ cards: [] });
+    const tools = createMemoryTools({
+      engine,
+      characterIds: ids,
+      memory,
+      tree,
+      stateFiles,
+      arcIds: () => [],
+    });
+    const update = tools.find((t) => t.name === "update_state")!;
+    const before = await update.execute("t1", { affinity: { newcomer: 2 } });
+    expect(textOf(before)).toContain("不是本剧角色");
+    ids.add("newcomer"); // = 编排器 liveCharacterIds 包的那层 add
+    const after = await update.execute("t2", { affinity: { newcomer: 2 } });
+    expect(textOf(after)).toContain("newcomer +2");
+    expect(engine.affinity.newcomer).toBe(2);
+  });
+});
+
+describe("A 区角色分级：冷启动与热启动一致", () => {
+  const bigCast = new Map<string, CharacterDocument>([
+    ["protagonist", { id: "protagonist", name: "你", body: "主角人设。" }],
+    ["mio", { id: "mio", name: "澪", body: "澪的完整人设，天文社社长。" }],
+    ["koharu", { id: "koharu", name: "小春", body: "小春的完整人设，后辈。" }],
+    ["rin", { id: "rin", name: "凛", body: "凛的完整人设，老师。" }],
+    ["sora", { id: "sora", name: "空", body: "空的完整人设，转学生。" }],
+    ["yuki", { id: "yuki", name: "雪", body: "雪的完整人设，神秘少女。" }],
+  ]);
+
+  it("从存档恢复：事件缓冲先回填，重建出的 A 区已按在场角色分级", async () => {
+    const contexts: { messages: { role: string }[] }[] = [];
+    // 先跑一轮热启动拿到真实事件缓冲与 seq
+    const warm = setup([{ text: BEAT_1, beatDone: BEAT_1_STOP }], {
+      contexts,
+      memory: new PlayMemory({ characters: bigCast, cards: [] }),
+    });
+    await warm.orchestrator.playerAction({ kind: "free", text: "开局" });
+    const runtimeState = warm.orchestrator.runtimeState;
+    expect(runtimeState.events.length).toBeGreaterThan(0);
+
+    // 用它冷启动（服务器重启续演）：A 区必须和热启动一样认出澪在场
+    const coldContexts: { messages: { role: string }[] }[] = [];
+    const cold = setup([{ text: BEAT_2, beatDone: true }], {
+      contexts: coldContexts,
+      memory: new PlayMemory({ characters: bigCast, cards: [] }),
+      restored: runtimeState,
+    });
+    await cold.orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    const coldSystem = JSON.stringify(coldContexts.at(-1)?.messages[0]);
+    // 澪在第一轮说过话 → 在场 → 全卡人设必须在
+    expect(coldSystem).toContain("澪的完整人设");
+    // 从未出场的角色折叠成一行（没有 ### 全卡头）
+    expect(coldSystem).not.toContain("### 雪（id: yuki）");
+    expect(coldSystem).toContain("- 雪（id: yuki）：");
+    expect(coldSystem).toContain("上面最后几行是最近没出场的人物");
+  });
 });
 
 describe("长会话装配", () => {

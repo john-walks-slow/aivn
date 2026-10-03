@@ -165,6 +165,8 @@ export class PlayHouse {
   private readonly pendingJobs = new Map<string, PendingJobs>();
   /** 排到轮边界的 runtime 重建（剧作家立绘落盘后 play.json 变了）；同剧目串行，避免连着重装。 */
   private readonly pendingRebuilds = new Map<string, Promise<void>>();
+  /** 待办重建的原因（写进对话尾的 note）；与 pendingRebuilds 同生命周期。 */
+  private readonly pendingRebuildNotes = new Map<string, string>();
   /** 网关模型清单缓存（网关上加了模型要能刷出来，故留了 TTL 而不是永久缓存）。 */
   private gatewayModelsCache: { models: GatewayModel[]; at: number } | null = null;
   /** 正在建的周目（key=playId）：同剧目并发的「开演」共用一棵树，不会各建一棵。 */
@@ -548,6 +550,30 @@ export class PlayHouse {
     await writeFile(charFile, content, "utf8");
   }
 
+  /**
+   * 写用户设定卡（memory/index/<rel>.md）：write_memory 工具后端。
+   * 只写这一个文件——always/（每轮注入层）与 arcs/、archive/（机器产物）不在此口。
+   * 写完即时进内存 cards（当轮 read_memory_detail 可读），并排一次轮边界重建，
+   * 让下一轮 A 区的记忆索引就带上这张卡——否则回执承诺的「下一轮进 A 区」是空话。
+   */
+  private async writeMemoryCard(
+    playId: string,
+    store: PlayStore,
+    rel: string,
+    content: string,
+  ): Promise<void> {
+    const runtime = this.runtimes.get(playId);
+    if (!runtime) {
+      // 无 runtime（测试/离线）：只落盘，内存侧由下次 load 补上
+      const path = join(store.memoryDir("index"), `${rel}.md`);
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, content, "utf8");
+      return;
+    }
+    await runtime.orchestrator.memory.appendCard(rel, content);
+    this.rebuildAtBeatBoundary(playId, `剧作家写入了记忆卡 ${rel}`);
+  }
+
   /** 「开始新周目」：建一棵空树并切过去。旧档原封不动——不删任何事件日志。 */
   async createSave(playId: string, name?: string): Promise<SaveInfo> {
     const created = await this.library.saves(playId).create(name);
@@ -662,22 +688,31 @@ export class PlayHouse {
   }
 
   /**
-   * 排到轮边界重建 runtime：剧作家侧写角色卡（给临时角色生立绘补写差分映射）时用。
+   * 排到轮边界重建 runtime：剧作家侧写角色卡 / 写记忆卡（给临时角色生立绘补写差分映射）时用。
    *
-   * 与工坊写盘的区别只有触发时机——都在节拍边界换编排器。必须排队：一轮里出三张立绘就是三次调用，
-   * 齐步走会连着重装三份 runtime。
+   * 与工坊写盘的区别只有触发时机——都在节拍边界换编排器。
+   *
+   * 同剧目同时只挂一个待办：一轮里建三张卡、出三张立绘是三次调用，全排下去就是连着重装三份
+   * runtime。待办在飞时后续触发直接忽略——对话尾的 note 取首次触发的原因。
    */
   private rebuildAtBeatBoundary(playId: string, note: string): void {
-    const previous = this.pendingRebuilds.get(playId) ?? Promise.resolve();
-    const next = previous
-      .then(() => this.reloadAfterWorkshopWrite(playId, note))
+    if (this.pendingRebuilds.has(playId)) {
+      // 待办已在飞：不再叠一个
+      return;
+    }
+    this.pendingRebuildNotes.set(playId, note);
+    const next = Promise.resolve()
+      .then(() => this.reloadAfterWorkshopWrite(playId, this.pendingRebuildNotes.get(playId) ?? note))
       .catch((error: unknown) =>
         console.warn(
           `[aivn] 轮边界重建 runtime 失败: ${error instanceof Error ? error.message : String(error)}`,
         ),
       )
       .finally(() => {
-        if (this.pendingRebuilds.get(playId) === next) this.pendingRebuilds.delete(playId);
+        if (this.pendingRebuilds.get(playId) === next) {
+          this.pendingRebuilds.delete(playId);
+          this.pendingRebuildNotes.delete(playId);
+        }
       });
     this.pendingRebuilds.set(playId, next);
   }
@@ -1097,7 +1132,14 @@ export class PlayHouse {
       store,
       assetLibrary: this.assetLibrary,
       assetRefs: this.assetRefResolver(play.id, store),
-      onWriteCharacter: (charId, content) => this.writeCharacter(store, charId, content),
+      onWriteCharacter: async (charId, content) => {
+        await this.writeCharacter(store, charId, content);
+        // 建卡即排轮边界重建（回执"下一拍边界出现在角色表里"的兑现）：
+        // 与 assetRef 角色导入同一条路。不进 writeCharacter 内部——PlayAssets
+        // 自动注册路已有自己的 silent 重建，进共享函数会一轮排两次。
+        this.rebuildAtBeatBoundary(play.id, `剧作家新建了角色 ${charId}`);
+      },
+      onWriteMemoryCard: (rel, content) => this.writeMemoryCard(play.id, store, rel, content),
       compaction: {
         contextWindow: this.config.contextWindow,
         triggerRatio: this.config.compactRatio,

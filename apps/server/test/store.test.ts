@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zipSync } from "fflate";
-import { PlayLibrary } from "../src/store.js";
+import { LineageTree } from "@aivn/core";
+import { PlayLibrary, type PlayStore } from "../src/store.js";
 
 function zipOf(files: Record<string, string | Uint8Array>): Buffer {
   return Buffer.from(
@@ -167,5 +168,76 @@ describe("PlayStore.assetMeta：素材描述表", () => {
     expect(await library.store("blank").assetMeta()).toEqual({});
     await writeFile(join(root, "p1", "assets", "manifest.json"), "{ 坏 json");
     expect(await library.store("p1").assetMeta()).toEqual({});
+  });
+});
+
+describe("PlayStore.saveSession 原子写", () => {
+  let root: string;
+  let library: PlayLibrary;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "stageai-session-"));
+    library = new PlayLibrary(root);
+    await library.createEmpty("p1", "剧目");
+    // create 自己会建目录并激活，返回带 id 的 SaveInfo
+    await library.saves("p1").create("第一周目");
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const saveDir = async (): Promise<string> => {
+    const id = await library.saves("p1").readActive();
+    return join(root, "p1", "saves", id!);
+  };
+  /** 会话面必须落在某一棵树上：按档取 store（剧目级 store 无 saveId）。 */
+  const sessionStore = async (): Promise<PlayStore> =>
+    library.saveStore("p1", (await library.saves("p1").readActive())!);
+
+  const treeWithBeat = (): LineageTree => {
+    const tree = new LineageTree();
+    tree.append("say", { text: "第一轮", payload: { seq: 1 } });
+    tree.append("beat_end", { text: "", payload: { reason: "pause" } });
+    return tree;
+  };
+
+  it("落盘后可 loadSession 读回，且不留 tmp 残留", async () => {
+    const store = await sessionStore();
+    const tree = treeWithBeat();
+    await store.saveSession(tree, { turn: 1, affinity: { mio: 10 }, flags: {} }, "走廊", undefined, []);
+
+    const loaded = await store.loadSession();
+    expect(loaded?.scene).toBe("走廊");
+    expect(loaded?.engine.affinity.mio).toBe(10);
+
+    const files = await readdir(await saveDir());
+    expect(files.filter((f) => f.includes(".tmp"))).toEqual([]);
+    // 写两次内容不同，旧档被整体替换而不是追加
+    await store.saveSession(tree, { turn: 2, affinity: {}, flags: {} }, "天台", undefined, []);
+    expect((await store.loadSession())?.scene).toBe("天台");
+  });
+
+  it("崩在写一半上：旧 session.json 原样保住（tmp + rename 的意义）", async () => {
+    const store = await sessionStore();
+    const tree = treeWithBeat();
+    await store.saveSession(tree, { turn: 1, affinity: {}, flags: {} }, "走廊");
+    const before = await readFile(join(await saveDir(), "session.json"), "utf8");
+
+    // 序列化阶段炸（history 里塞了不可序列化的东西）：崩在写 tmp 之前，
+    // 盘上那份 session.json 一个字节都不该被动——这是这条不变式要保的东西。
+    const poisoned = {
+      type: "assistant",
+      content: [{ type: "toolCall", id: "c1", name: "beat_done", arguments: BigInt(1) }],
+    } as never;
+    await expect(
+      store.saveSession(tree, { turn: 9, affinity: {}, flags: {} }, "毒档", undefined, [poisoned]),
+    ).rejects.toThrow();
+
+    const after = await readFile(join(await saveDir(), "session.json"), "utf8");
+    expect(after).toBe(before);
+    expect((await store.loadSession())?.scene).toBe("走廊");
+    // 崩在 rename 之前，tmp 不该留在盘上
+    const files = await readdir(await saveDir());
+    expect(files.filter((f) => f.includes(".tmp"))).toEqual([]);
   });
 });

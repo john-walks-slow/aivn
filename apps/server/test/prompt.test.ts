@@ -17,6 +17,44 @@ function build(ctx: Omit<PromptContext, "can"> & { can?: Partial<AgentCapabiliti
   return buildSystemPrompt({ ...ctx, can: { ...caps(), ...ctx.can } });
 }
 
+describe("buildSystemPrompt：角色分级（roster 一行制 + 全卡按需）", () => {
+  const bigCast = new Map<string, CharacterDocument>([
+    ["protagonist", { id: "protagonist", name: "你", body: "玩家本人的长篇人设，正文很长很长。" }],
+    ["mio", { id: "mio", name: "澪", body: "天文社社长，性格直率。\n第二行人设。" }],
+    ["koharu", { id: "koharu", name: "小春", body: "后辈，温柔。" }],
+    ["rin", { id: "rin", name: "凛", body: "老师。" }],
+    ["sora", { id: "sora", name: "空", body: "转学生。" }],
+    ["yuki", { id: "yuki", name: "雪", body: "神秘少女。" }],
+  ]);
+  const mem = (characters: Map<string, CharacterDocument>) =>
+    new PlayMemory({ characters, cards: [] });
+
+  it("5+ 角色 + 给 activeCast：在场全卡全文，不在场只一行", () => {
+    const prompt = build({ play: PLAY, memory: mem(bigCast), activeCast: ["mio"] });
+    // 在场：全文（含第二行人设）
+    expect(prompt).toContain("第二行人设");
+    // 主角恒在场：全文
+    expect(prompt).toContain("玩家本人的长篇人设");
+    // 不在场：只一行摘要，不带 ### 全卡头
+    expect(prompt).toContain("- 小春（id: koharu）：后辈，温柔。");
+    expect(prompt).not.toContain("### 小春");
+    expect(prompt).toContain("上面最后几行是最近没出场的人物");
+  });
+
+  it("≤4 角色不分级：全注全文（小剧目行序稳定）", () => {
+    const small = new Map([...bigCast].slice(0, 4));
+    const prompt = build({ play: PLAY, memory: mem(small), activeCast: ["mio"] });
+    expect(prompt).toContain("### 凛");
+    expect(prompt).not.toContain("上面最后几行是最近没出场的人物");
+  });
+
+  it("不给 activeCast = 不分级（老行为）", () => {
+    const prompt = build({ play: PLAY, memory: mem(bigCast) });
+    expect(prompt).toContain("### 雪");
+    expect(prompt).not.toContain("上面最后几行是最近没出场的人物");
+  });
+});
+
 describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
   it("描述挂在对应 id 后面，没描述的只留 id", () => {
     const prompt = build({

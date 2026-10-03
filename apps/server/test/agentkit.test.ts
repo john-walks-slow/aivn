@@ -82,6 +82,7 @@ describe("agent kit：两个角色的暴露面", () => {
       "read_memory_detail",
       "search_archive",
       "update_state",
+      "write_memory",
     ]);
     expect(names(kit)).not.toContain("write");
     expect(names(kit)).not.toContain("bash");

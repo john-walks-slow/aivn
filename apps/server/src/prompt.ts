@@ -83,7 +83,20 @@ export interface PromptContext {
   nsfwMode?: boolean;
   /** 限制级（NSFW）系统提示词自定义扩展。 */
   nsfwPrompt?: string;
+  /**
+   * 本轮在场角色 id（含主角）：角色表按它分级——在场全卡全文，不在场只注一行。
+   * 不传 = 不分级（小剧目/测试走这条）。
+   */
+  activeCast?: readonly string[];
 }
+
+/**
+ * 角色分级的两处阈值：小剧目不分（行序抖动伤缓存，不值）；摘要行截正文首行 100 字。
+ * 回溯窗口（事件条数）也收在这里——按角色数算会让常驻角色少的剧目一路扫穿全历史。
+ */
+export const CAST_GRADING_MIN_SIZE = 5;
+export const CAST_SUMMARY_CHARS = 100;
+export const CAST_SCAN_EVENTS = 120;
 
 /**
  * Playwriter 系统提示词 = 三区装配的 A 区（固定前部，KV cache 前缀稳定）。
@@ -252,22 +265,45 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   };
   // 角色表 = 角色卡目录，与 play.json 无关。每张卡都是一份完整设定：
   // 正文是人设，frontmatter 存名字/音色/立绘差分映射与取景。
-  const characters = [...(ctx.memory?.characters ?? [])]
-    .map(([id, card]) => {
-      // 差分优先取卡片里配的 sprites 键名（前端按它解析立绘）；没配就回退磁盘文件 stem
-      const expressions =
-        card.sprites && Object.keys(card.sprites).length > 0
-          ? Object.keys(card.sprites)
-          : (ctx.assets?.[`sprites/${id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
-      return `### ${card.name ?? id}（id: ${id}${isProtagonist(id) ? "，玩家扮演" : ""}）\n${card.body}${
-        card.voice ? `\n音色：${card.voice}` : ""
-      }${
+  // 分级（角色数 ≥ CAST_GRADING_MIN_SIZE 且给了 activeCast）：在场全卡全文，不在场只注一行
+  // （SOTA 的 roster 一行制——不在场角色只留索引行，人设按需读盘/建卡）。
+  const entries = [...(ctx.memory?.characters ?? [])];
+  const grading = ctx.activeCast && entries.length >= CAST_GRADING_MIN_SIZE;
+  const active = grading ? new Set(ctx.activeCast) : null;
+  active?.add("protagonist"); // 主角恒算在场：玩家本人的人设不能被折叠
+  const fullCards: string[] = [];
+  const roster: string[] = [];
+  for (const [id, card] of entries) {
+    // 差分优先取卡片里配的 sprites 键名（前端按它解析立绘）；没配就回退磁盘文件 stem
+    const expressions =
+      card.sprites && Object.keys(card.sprites).length > 0
+        ? Object.keys(card.sprites)
+        : (ctx.assets?.[`sprites/${id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
+    const title = `${card.name ?? id}（id: ${id}${isProtagonist(id) ? "，玩家扮演" : ""}）`;
+    if (active && !active.has(id)) {
+      const firstLine = card.body.split("\n").map((l) => l.trim()).find((l) => l !== "") ?? "";
+      roster.push(
+        `- ${title}：${firstLine.length > CAST_SUMMARY_CHARS ? `${firstLine.slice(0, CAST_SUMMARY_CHARS)}…` : firstLine}`,
+      );
+      continue;
+    }
+    fullCards.push(
+      `### ${title}\n${card.body}${card.voice ? `\n音色：${card.voice}` : ""}${
         expressions.length > 0
           ? `\n立绘差分 expression：${expressions.map((e) => label(e, id)).join(" | ")}`
           : ""
-      }`;
-    })
-    .join("\n\n");
+      }`,
+    );
+  }
+  // 在场全卡在前、折叠名册在后：两类形状不同，混排一段读起来是碎的。
+  const characters = [...fullCards, ...(roster.length > 0 ? [roster.join("\n")] : [])].join("\n\n");
+  // A 区在纪元内冻结：不因「谁上场了」重建——所以这里只讲事实：
+  // 折叠行对已经退场的老角色够用（那是它们上一段戏的存档），
+  // 新角色按《引入新角色》建档，轮边界重建后会自动带全卡。
+  const castHint =
+    roster.length > 0
+      ? `\n\n（上面最后几行是最近没出场的人物，只注了一行摘要，照它写即可；要它的完整人设出场就走《引入新角色》建档，那会自动带上全卡。）\n`
+      : "";
 
   const stems = (key: string): string[] => (ctx.assets?.[key] ?? []).map((f) => f.replace(/\.\w+$/, ""));
   const section = (heading: string, kind: string, tail = ""): string => {
@@ -326,7 +362,7 @@ ${premise}
 
 # 角色表
 
-${characters}
+${characters}${castHint}
 ${assetSection}${craftParamsSection}${craftSection}${nsfwGuidance}${indexSection}
 ${FORMAT_RULES}
 
