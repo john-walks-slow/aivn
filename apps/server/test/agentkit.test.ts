@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { PlayMemory } from "../src/memory.js";
 import { LineageTree } from "@stage-ai/core";
-import { agentToolCatalog, createAgentKit, defaultToolsFor, type AgentKit } from "../src/agentkit/kit.js";
-import { ROLE_INSTALLABLE } from "../src/agentkit/role.js";
-import type { PlaywriterKitDeps, WorkshopKitDeps } from "../src/agentkit/deps.js";
+import { agentToolCatalog, agentToolEntry, createAgentKit, defaultToolsFor, roleTools, type AgentKit } from "../src/agentkit/kit.js";
+import { AGENT_ROLES } from "../src/agentkit/role.js";
+import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "../src/agentkit/deps.js";
 
 /**
  * 统一基座的契约：**同一份工具实现与 schema，两个角色都能用同一份清单**。
  * 这些断言是那次重构的真正交付物——哪天有人给某个角色单独加一份工具，这里必须红。
  */
 
-/** 默认按角色的默认启用集装配；给了 enabled 就按它来（模拟用户在设置页勾过）。 */
-function playwriter(over: Partial<PlaywriterKitDeps> = {}, enabled?: string[]): AgentKit {
-  return createAgentKit({
+/** 剧作家的依赖面（enabled 留空：要比的是工厂的原样产物时用得上）。 */
+function playwriterDeps(over: Partial<PlaywriterKitDeps> = {}): PlaywriterKitDeps {
+  return {
     role: "playwriter",
     playId: "test",
-    enabled: new Set(enabled ?? defaultToolsFor("playwriter")),
+    enabled: new Set<string>(),
     engine: { turn: 0, affinity: {}, flags: {} },
     characterIds: new Set(["mio"]),
     memory: new PlayMemory(),
@@ -33,14 +33,14 @@ function playwriter(over: Partial<PlaywriterKitDeps> = {}, enabled?: string[]): 
     // 资源库没配就不注册 list_library（装一个必然查不出东西的工具只会空转）
     assetLibrary: { list: async () => [] } as never,
     ...over,
-  });
+  };
 }
 
-function workshop(over: Partial<WorkshopKitDeps> = {}, enabled?: string[]): AgentKit {
-  return createAgentKit({
+function workshopDeps(over: Partial<WorkshopKitDeps> = {}): WorkshopKitDeps {
+  return {
     role: "workshop",
     playId: "test",
-    enabled: new Set(enabled ?? defaultToolsFor("workshop")),
+    enabled: new Set<string>(),
     files: {} as never,
     store: {} as never,
     onWrite: () => {},
@@ -50,7 +50,21 @@ function workshop(over: Partial<WorkshopKitDeps> = {}, enabled?: string[]): Agen
     assetLibrary: { list: async () => [] } as never,
     voices: { get: async () => ({ entries: [] }) } as never,
     ...over,
-  });
+  };
+}
+
+/** 默认按角色的默认启用集装配；给了 enabled 就按它来（模拟用户在设置页勾过）。 */
+function playwriter(over: Partial<PlaywriterKitDeps> = {}, enabled?: string[]): AgentKit {
+  return createAgentKit({ ...playwriterDeps(over), enabled: new Set(enabled ?? defaultToolsFor("playwriter")) });
+}
+
+function workshop(over: Partial<WorkshopKitDeps> = {}, enabled?: string[]): AgentKit {
+  return createAgentKit({ ...workshopDeps(over), enabled: new Set(enabled ?? defaultToolsFor("workshop")) });
+}
+
+/** 工厂的原样产物（没过用户启用集那道过滤）。 */
+function roleToolNames(deps: AgentKitDeps): string[] {
+  return roleTools(deps).map((t) => t.name).sort();
 }
 
 const names = (kit: AgentKit): string[] => kit.tools.map((t) => t.name).sort();
@@ -187,7 +201,7 @@ describe("agent kit：工具目录（设置页的数据源）", () => {
       expect(entry.group.length).toBeGreaterThan(0);
       expect(entry.groupLabel.length).toBeGreaterThan(0);
     }
-    // 目录里不该再有「这个工具归谁」的字段：归属由默认启用集表达
+    // 目录项不带角色字段：归属在组装时就按角色收窄过了，界面不必再判一次
     expect(catalog[0]).not.toHaveProperty("roles");
   });
 
@@ -226,16 +240,18 @@ describe("agent kit：工具目录（设置页的数据源）", () => {
     expect(names(playwriter({}, [...defaultToolsFor("playwriter"), "import_asset"]))).toContain("import_asset");
   });
 
-  it("设置页的目录必须等于工厂真实装出来的工具——否则卡上挂着一个勾了也没用的开关", () => {
-    // 改依赖面时要改 role.ts 的 ROLE_INSTALLABLE 和 kit.ts 的角色工厂两处；这条是那两处之间的锁。
-    // 按依赖都配齐来比：web_search 卡在 Exa key 上，资源库两个卡在库目录上，list_voices 卡在 TTS 上。
+  it("工厂装出来的工具与目录登记的角色逐项对上——新增工具忘了标角色，这条必红", () => {
+    // 比的是工厂原样产物（`roleTools`），不是过滤后的结果：拿启用集和自己比，多装一个也看不出来。
+    // 依赖都配齐来比：web_search 卡在 Exa key 上，资源库两个卡在库目录上，list_voices 卡在 TTS 上。
     const exa = { search: async () => [] } as never;
-    expect(agentToolCatalog("playwriter").map((t) => t.id).sort()).toEqual(
-      names(playwriter({ exa }, ROLE_INSTALLABLE.playwriter)).sort(),
-    );
-    expect(agentToolCatalog("workshop").map((t) => t.id).sort()).toEqual(
-      names(workshop({ exa }, ROLE_INSTALLABLE.workshop)).sort(),
-    );
+    const deps = { playwriter: playwriterDeps({ exa }), workshop: workshopDeps({ exa }) };
+    for (const role of AGENT_ROLES) {
+      expect(roleToolNames(deps[role]), role).toEqual(agentToolCatalog(role).map((t) => t.id).sort());
+    }
+  });
+
+  it("目录是唯一真相源：装配遇到没登记的工具直接报错，不静默漏掉", () => {
+    expect(() => agentToolEntry("no_such_tool")).toThrow(/不在工具目录里/);
   });
 
   it("beat_done 只列给剧作家：搭台那张卡上挂个勾了也没用的开关是骗人", () => {

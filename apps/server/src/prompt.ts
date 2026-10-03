@@ -1,5 +1,6 @@
 import { describeAsset, type AssetMeta, type EngineStateSnapshot } from "@stage-ai/core";
 import type { PlayConfig } from "@stage-ai/core";
+import type { AgentCapabilities } from "./agentkit/kit.js";
 import { SEARCH_GUIDE } from "./agentkit/searchTool.js";
 import type { PlayMemory } from "./memory.js";
 
@@ -63,12 +64,13 @@ export interface PromptContext {
   generated?: GeneratedNote[];
   memory?: PlayMemory;
   arcIds?: readonly string[];
-  /** 生图工具在位（工具被关掉时整章不注入——教它调一个不存在的工具只会空转）。 */
-  canImage?: boolean;
-  /** 联网检索在位（同上）。 */
-  canSearch?: boolean;
-  /** 素材资源库在位（没配库目录时引用即导入无处可查，提示词里不提，免得它照着一条不存在的链路找）。 */
-  canLibrary?: boolean;
+  /**
+   * 能力位（`kit.can`，与搭台助手同一份形状、同一个对象）：按它决定注不注某一章——
+   * 生图工具被关掉时整章不注入、教它调一个不存在的工具只会空转；没配库目录时引用即导入
+   * 无处可查，提示词里也不提那条链路。剧作家只读 image / search / library 三位
+   * （voice / shell 的工具它装不上，恒为 false）。
+   */
+  can: AgentCapabilities;
   /** 当前处于限制级（NSFW）剧情通道中。 */
   nsfwMode?: boolean;
   /** 限制级（NSFW）系统提示词自定义扩展。 */
@@ -258,7 +260,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     audioRule,
     section("已有插图 cg", "cg"),
     generatedSection,
-    ctx.canLibrary ? LIBRARY_REF : "",
+    ctx.can.library ? LIBRARY_REF : "",
   ].join("");
 
   // 世界观前提的唯一真相源是 memory/always/premise.md：没有它就没有 A 区，剧作家无从下手
@@ -295,8 +297,8 @@ ${characters}
 ${assetSection}${craftSection}${nsfwGuidance}${indexSection}
 ${FORMAT_RULES}
 
-${imageChapter(ctx.canImage !== false)}
-${ctx.canSearch ? SEARCH_GUIDE : ""}
+${imageChapter(ctx.can.image)}
+${ctx.can.search ? SEARCH_GUIDE : ""}
 ${NEW_CHARACTER_RULES}
 
 ${CONTRACT_RULES}`;

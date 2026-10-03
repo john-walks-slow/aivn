@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createNsfwTools } from "../src/agentkit/nsfwTool.js";
-import { createAgentKit, defaultToolsFor } from "../src/agentkit/kit.js";
-import { ROLE_INSTALLABLE } from "../src/agentkit/role.js";
+import { agentToolCatalog, defaultToolsFor } from "../src/agentkit/kit.js";
 import { NSFW_PRE_TURNS } from "../src/orchestrator.js";
 import { PlayMemory } from "../src/memory.js";
 import { LineageTree } from "@stage-ai/core";
@@ -70,9 +69,10 @@ describe("nsfwTool：限制级剧情工具契约", () => {
     const defaults = defaultToolsFor("playwriter");
     expect(defaults.has("enter_nsfw")).toBe(true);
     expect(defaults.has("exit_nsfw")).toBe(true);
-    expect(ROLE_INSTALLABLE.playwriter).toContain("enter_nsfw");
-    expect(ROLE_INSTALLABLE.playwriter).toContain("exit_nsfw");
-    expect(ROLE_INSTALLABLE.workshop).not.toContain("enter_nsfw");
+    const playwriterTools = agentToolCatalog("playwriter").map((t) => t.id);
+    expect(playwriterTools).toContain("enter_nsfw");
+    expect(playwriterTools).toContain("exit_nsfw");
+    expect(agentToolCatalog("workshop").map((t) => t.id)).not.toContain("enter_nsfw");
   });
 
   it("NSFW 前置合规轮次包含 20 岁以上声明与虚构确认", () => {
