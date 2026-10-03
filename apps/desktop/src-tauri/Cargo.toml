@@ -11,10 +11,10 @@ edition = "2024"
 rust-version = "1.90"
 
 [build-dependencies]
-tauri-build = { version = "2.7.1" }
+tauri-build = { version = "2.7.1", features = [] }
 
 [dependencies]
-tauri = { version = "2.12.1" }
+tauri = { version = "2.12.1", features = [] }
 # 第二次双击不再起第二个实例：两个进程会去写同一份 data/，剧目与设置互相盖。
 tauri-plugin-single-instance = "2.5.2"
 serde_json = "1"
