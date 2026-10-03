@@ -36,7 +36,7 @@
 ## 验证
 
 - `pnpm -r typecheck`：三个包全过。
-- 测试：core 139 / server 541（40 文件，排除 `test/e2e-live-*`）/ web 154，全绿。新增 `apps/server/test/craftParams.test.ts`、`apps/server/test/craftTool.test.ts`；core 补 `craft`/`scriptLanguage`/`image`/`imageApproval`/`resolveCraft` 用例；改写了三处「引擎不自带任何口径」的旧护栏与两处「素材来源维度」的旧用例。
+- 测试（分支上）：core 139 / server 541（40 文件，排除 `test/e2e-live-*`）/ web 154，全绿。新增 `apps/server/test/craftParams.test.ts`、`apps/server/test/craftTool.test.ts`；core 补 `craft`/`scriptLanguage`/`image`/`imageApproval`/`resolveCraft` 用例；改写了三处「引擎不自带任何口径」的旧护栏与两处「素材来源维度」的旧用例。合入主干后用例集随角色卡重构变动，最终数为 core 137 / server 541 / web 169，见下节。
 - 未跑真图 / 真 LLM 的 `e2e-live-*`；未做浏览器验证（本轮是后端 + 一个设置表单，按用户既有偏好不代跑 UI）。
 
 ## 检视与处理
@@ -50,6 +50,10 @@
 - `SettingsPane.tsx` 已在主干删除（拆成 PlayPane / CharacterPane / MemoryPane），写作参数与生图字段一并落到 **PlayPane**，不再新造一张卡；`craft.md` 的占位符改在 MemoryPane 里。
 - `writingPoints` 里「角色卡在 `characters/<id>.md`」「主角也是一张普通卡」等主干新说法保留，写作参数那条插在创作口径之前；play.json 字段表补 `scriptLanguage` / `craft` / `image`，并去掉已迁走的 `protagonist`。
 - `play.json` 的 `scriptLanguage` 与 demo 的写作参数示例保留；`protagonist` 段随主干迁走。
+
+合入后 `main` = `6e5b8f6`（ff-only，未 push），分支 worktree 保留未删。合入后在 main 工作区重建并重跑：`pnpm -r build` 通过，core 137 / server 541（40 文件，排除 `test/e2e-live-*`）/ web 169 全绿。
+
+> **构建产物陈旧会假失败**：合并当时 main 工作区的 `packages/core/dist` 停留在 `128b67c` 之前（03:28，早于该提交的 05:27），`isProtagonist` / `characterCardPath` / `DEFAULT_CRAFT` / `resolveCraft` 一个都不在其中，web 的 `characterCards`（6 条，渲染卡在「读取中…」）与 `playPane`（2 条，`DEFAULT_CRAFT` 为 undefined）共 8 条用例因此失败。`pnpm -r build` 后即 169/169 全绿——不是代码缺陷。跑 dev（`node --watch dist/index.js`）的实例同样要重建后才看得到本次改动。
 
 ## 与计划的偏差
 
