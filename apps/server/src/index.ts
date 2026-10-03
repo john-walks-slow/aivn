@@ -8,7 +8,7 @@ import { SettingsApi } from "./configApi.js";
 import { defaultDataRoot, envFileDir, isPackaged, loadEnvFile, resourceRootOf } from "./paths.js";
 import { seedDemoPlays } from "./seed.js";
 import { selfTest } from "./selftest.js";
-import { lanAddresses, listenWithFallback, openBrowser } from "./startup.js";
+import { exitWhenStdinCloses, lanAddresses, listenWithFallback, openBrowser } from "./startup.js";
 import { PlayLibrary } from "./store.js";
 import { AssetLibrary } from "./library.js";
 import { PlayHouse } from "./playhouse.js";
@@ -101,6 +101,16 @@ export async function main(): Promise<void> {
     `[aivn] 访问密码 ${gate.open ? "未设置" : "已开启（HTTP Basic + 会话 cookie）"}` +
       `${gate.open ? "——挂到公网前请在设置页里设一个" : ""}`,
   );
+
+  // 桌面壳拉起的实例：壳子一走（哪怕被强杀）stdin 管道就断，这里跟着收摊，
+  // 不留一个后台服务占着端口、下次启动又和新的自己抢同一份 data/。
+  if (options.exitOnStdinClose) {
+    exitWhenStdinCloses(process.stdin, () => {
+      console.log("[aivn] 父进程已退出，收工");
+      server.close();
+      process.exit(0);
+    });
+  }
 
   // 打包版默认开浏览器（双击 exe 的人期待的就是「打开就能玩」）；开发态不抢焦点，--open 可显式打开
   if (options.open ?? packaged) openBrowser(local);

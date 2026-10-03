@@ -14,8 +14,7 @@ import { networkInterfaces } from "node:os";
  * 双击 exe 的用户没法改端口也不该被迫懂端口：默认端口被别的程序占了就往后让一位，
  * 并让调用方把「实际用的是哪个口」打出来——静默换口才是真的坑。
  *
- * `port` 传 0 就是「随便挑一个空闲的」（桌面壳用它避免与开发服务器抢 8787）；
- * 返回的一律是**实际**监听的端口，别拿入参当结果。
+ * `port` 传 0 就是「随便挑一个空闲的」——返回的一律是**实际**监听的端口，别拿入参当结果。
  */
 export async function listenWithFallback(server: Server, port: number, host: string, span = 20): Promise<number> {
   for (let candidate = port; candidate < port + span; candidate++) {
@@ -60,6 +59,19 @@ export function lanAddresses(): string[] {
 function isPrivateV4(address: string): boolean {
   const [a = 0, b = 0] = address.split(".").map(Number);
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+/**
+ * 桌面壳用：stdin 读到 EOF 时回调（通常就是退出服务）。
+ *
+ * 壳子把 stdin 的写端攥在手里但一个字节都不写，管道断开只可能是壳子没了——
+ * 连任务管理器强杀都算，因为管道由内核回收。比让壳子在退出路径里 kill 一遍可靠：
+ * 那条路在壳子崩掉时根本不会被执行，留下的服务会一直占着端口和数据目录。
+ */
+export function exitWhenStdinCloses(stdin: NodeJS.ReadableStream, onEof: () => void): void {
+  stdin.on("end", onEof);
+  // 只挂监听不 resume 的话流停在 paused，'end' 永远不会来
+  stdin.resume();
 }
 
 /**

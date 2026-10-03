@@ -2,11 +2,12 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { PassThrough } from "node:stream";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { UsageError, parseLaunchArgs } from "../src/cli.js";
 import { workshopSkillsDirOf } from "../src/paths.js";
 import { seedDemoPlays } from "../src/seed.js";
-import { listenWithFallback } from "../src/startup.js";
+import { exitWhenStdinCloses, listenWithFallback } from "../src/startup.js";
 
 const servers: Server[] = [];
 afterEach(async () => {
@@ -19,7 +20,7 @@ function tmp(prefix: string): string {
 
 describe("启动参数", () => {
   it("不给参数就是什么都不覆盖（默认值由 loadBootstrap 决定）", () => {
-    expect(parseLaunchArgs([])).toEqual({ help: false, selftest: false });
+    expect(parseLaunchArgs([])).toEqual({ help: false, selftest: false, exitOnStdinClose: false });
   });
 
   it("认得端口、地址、数据目录与开浏览器开关", () => {
@@ -35,6 +36,7 @@ describe("启动参数", () => {
     expect(options).toEqual({
       help: false,
       selftest: false,
+      exitOnStdinClose: false,
       port: 9000,
       host: "127.0.0.1",
       dataDir: "/tmp/x",
@@ -43,6 +45,7 @@ describe("启动参数", () => {
     expect(parseLaunchArgs(["-p", "1", "--open"]).open).toBe(true);
     expect(parseLaunchArgs(["-h"]).help).toBe(true);
     expect(parseLaunchArgs(["--selftest"]).selftest).toBe(true);
+    expect(parseLaunchArgs(["--exit-on-stdin-close"]).exitOnStdinClose).toBe(true);
   });
 
   it("端口不合法或缺值直接报错，不静默退回默认端口", () => {
@@ -74,6 +77,23 @@ describe("端口占用时自动换口", () => {
     const port = await listenWithFallback(server, 0, "127.0.0.1");
     expect(port).toBe((server.address() as { port: number }).port);
     expect(port).toBeGreaterThan(0);
+  });
+});
+
+describe("桌面壳的回收信号", () => {
+  it("stdin 读到 EOF 就回调（壳子关掉管道 = 它没了）", async () => {
+    const stdin = new PassThrough();
+    const closed = vi.fn();
+    exitWhenStdinCloses(stdin, closed);
+    expect(closed).not.toHaveBeenCalled(); // 壳子还活着时不能误伤
+    stdin.end();
+    await vi.waitFor(() => expect(closed).toHaveBeenCalledOnce());
+  });
+
+  it("不停在 paused：只挂监听不 resume 的话 EOF 事件永远不来", () => {
+    const stdin = new PassThrough();
+    exitWhenStdinCloses(stdin, () => {});
+    expect(stdin.isPaused()).toBe(false);
   });
 });
 

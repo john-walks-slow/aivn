@@ -18,6 +18,14 @@ export interface LaunchOptions {
   open?: boolean;
   /** 只做启动自检（资源、技能库、sharp、数据目录可写）然后退出，不起服务。 */
   selftest: boolean;
+  /**
+   * 桌面壳用：父进程一死就跟着退出。
+   *
+   * 壳子拿 stdin 的写端当「我还活着」的信号——它对服务端一个字节都不写，只把管道攥在手里。
+   * 壳子退出（哪怕是任务管理器强杀）时管道由内核关闭，这边读到 EOF 就自己收摊；
+   * 否则被留在后台的服务会一直占着端口，并在下次启动时和新的自己抢同一份 data/。
+   */
+  exitOnStdinClose: boolean;
 }
 
 export const USAGE = `用法：aivn.exe [选项]
@@ -28,6 +36,8 @@ export const USAGE = `用法：aivn.exe [选项]
       --open             启动后打开默认浏览器（打包版默认打开）
       --no-open          启动后不打开浏览器
       --selftest         体检打包后的资源与依赖（sharp 等），然后退出
+      --exit-on-stdin-close
+                         父进程关掉 stdin 时跟着退出（桌面壳用它回收自己拉起的服务）
   -h, --help             显示这段说明
 
 端口、数据目录也可以在 exe 旁边放一个 .env（STAGE_PORT / STAGE_DATA_DIR / STAGE_HOST）。
@@ -36,7 +46,7 @@ export const USAGE = `用法：aivn.exe [选项]
 export class UsageError extends Error {}
 
 export function parseLaunchArgs(argv: string[]): LaunchOptions {
-  const options: LaunchOptions = { help: false, selftest: false };
+  const options: LaunchOptions = { help: false, selftest: false, exitOnStdinClose: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = (): string => {
@@ -67,6 +77,9 @@ export function parseLaunchArgs(argv: string[]): LaunchOptions {
         break;
       case "--selftest":
         options.selftest = true;
+        break;
+      case "--exit-on-stdin-close":
+        options.exitOnStdinClose = true;
         break;
       case "--open":
         options.open = true;
