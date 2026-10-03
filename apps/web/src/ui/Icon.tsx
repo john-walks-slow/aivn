@@ -30,6 +30,7 @@ import {
   RotateCw,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   TriangleAlert,
   Users,
   Undo2,
@@ -81,6 +82,8 @@ const ICONS = {
   pencil: Pencil,
   undo: Undo2,
   rewrite: RotateCcw,
+  /** 剪掉这一段及其全部后代：垃圾桶。 */
+  remove: Trash2,
   fork: GitBranch,
   sparkles: Sparkles,
   play: Play,

@@ -7,25 +7,26 @@ import { RouteCanvas, type RouteControls } from "./RouteCanvas.js";
 import type { ScriptLine } from "./script.js";
 
 /**
- * 路线视图只留树上才有的世界线写操作。
- * 插一句 / 改台词 / 重演这一轮都在对话框底部的导演栏（锚点由当前行 seq 反查），剧本视图已删——
+ * 路线卡上的三个动词——这就是树上能做的全部世界线写操作。
+ * 插一句 / 改台词在对话框底部的导演栏（锚点由当前行 seq 反查）；剧本视图已删——
  * 逐行铺开的那份视图不值得再维护一份渲染。
- * 跳转（jump）与分岔（branch）是其中两个正交动词：前者把世界线挂到已有节点、
- * 不生成内容；后者退到该段之前重写并重新生成。
  */
 export interface LineageOps {
   /**
-   * Jump: move the world line onto that node; generates nothing.
-   * `playFrom: "end"`（默认）= 落到该轮末尾，停止点/选项立刻可见；
-   * `playFrom: "start"` = 播放头钉在该轮首句，从头重读一遍。
+   * 跳转：世界线挂到该节点，**不生成内容**。`playFrom: "start"` = 回到这一段的开头
+   * 从头演一遍（卡片上的「跳转」）；`"end"` = 直接落到末尾，选项立刻可见（默认）。
    */
   jump: (nodeId: string, opts?: { playFrom?: "start" | "end" }) => void;
   /**
-   * Fork: open a new branch from that node. `resume: true` = continue playing right after
-   * the fork (the director bar's "redo this beat" takes this path); the tree's fork button
-   * takes the bare fork - it only moves the world line and leaves the next move to the player.
+   * 重写：退到这一段之前，让剧作家**重新生成**这一段（原有内容整段留作旧枝）。
+   *
+   * `replaced` 是被顶掉的那一拍的首节点（卡片自己知道），新的 fork 标记继承它的来源标签；
+   * `instruction` 是可选的一句交代，留空就是纯重写——填了的话它排在重写那一轮开跑之后，
+   * 生效于下一次开口（与舞台导演栏的「重写」同一条路）。
    */
-  fork: (nodeId: string, opts?: { resume?: boolean }) => void;
+  rewrite: (forkFromId: string, opts?: { replaced?: string; instruction?: string }) => void;
+  /** 删除：剪掉这一段及其全部后代。确认弹窗在卡片那一层（见 RouteCanvas）。 */
+  remove: (nodeId: string) => void;
 }
 
 /** 谱系拉取：打开视图与每次操作后刷新（树不随轮广播，避免每轮搬运全量节点）。 */

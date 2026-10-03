@@ -20,6 +20,9 @@ export interface PlacedCard {
 
 export interface PlacedEdge {
   id: string;
+  /** 两端卡片 id：选中高亮要按「这条线在不在选中范围里」上色，不解析 id 字符串。 */
+  from: string;
+  to: string;
   /** 贝塞尔路径 d：横向树是父右中 → 子左中，纵向树是父下中 → 子上中。 */
   d: string;
   live: boolean;
@@ -108,6 +111,8 @@ export function layoutRoute(cards: readonly BeatCard[], dir: RouteDir = "horizon
     if (!parent) continue;
     edges.push({
       id: `${parent.card.id}->${entry.card.id}`,
+      from: parent.card.id,
+      to: entry.card.id,
       d: edgePath(parent, entry, dir),
       live: parent.card.onPath && entry.card.onPath,
       dead: !parent.card.onPath && !entry.card.onPath,

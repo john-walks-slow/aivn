@@ -11,6 +11,7 @@ import {
   LineageTree,
   StageDslParser,
   nextId,
+  originOfBeat,
   type EngineStateSnapshot,
   type LineageEvent,
   type LineageView,
@@ -295,6 +296,12 @@ export interface OrchestratorRuntimeState {
     active: boolean;
     startBeatNo?: number;
   };
+  /**
+   * 「我上一次走的是哪条枝」：上一次显式结构操作（跳转/分岔/删除）之前世界线所在的节点。
+   * 玩家回到旧轮重选同一个动作时，用它从同来源的多条枝里挑出最后去过的那条。
+   * 老档没有这个字段，当作「无偏好」。
+   */
+  prevLeafId?: string | null;
 }
 
 interface OpenLine {
@@ -385,6 +392,9 @@ export class PlaywrightOrchestrator {
   private epoch = 0;
   /** 玩家读到哪儿（seq + 已显示字数）：随 session.json 落盘，刷新后据此回到原处。 */
   private readPos: ReadPos | null = null;
+
+  /** 「上一次走的是哪条枝」（见 OrchestratorRuntimeState.prevLeafId）。 */
+  private prevLeafId: string | null = null;
   /** 阅读位置的落盘节流：打字机逐字报位置，不能逐字写盘。 */
   private readPersistTimer: ReturnType<typeof setTimeout> | null = null;
   /** 已写入 JSONL 的谱系事件数：直接改动树的操作（编辑/重写）在此增量补推。 */
@@ -488,6 +498,9 @@ export class PlaywrightOrchestrator {
       this.lastStop = opts.restored.lastStop;
       this.epoch = opts.restored.epoch ?? 0;
       this.readPos = opts.restored.readPos ?? null;
+      // 老档没有这个字段、或它指向的节点已经不在了（被删的枝）：一律按「无偏好」处理
+      const prev = opts.restored.prevLeafId ?? null;
+      this.prevLeafId = prev !== null && this.opts.tree.get(prev) ? prev : null;
       this.autostarted = true;
     }
   }
@@ -547,6 +560,7 @@ export class PlaywrightOrchestrator {
       lastStop: this.lastStop,
       epoch: this.epoch,
       readPos: this.readPos,
+      prevLeafId: this.prevLeafId,
       nsfw: {
         active: this.nsfwActive,
         ...(this.nsfwStartBeatNo !== null ? { startBeatNo: this.nsfwStartBeatNo } : {}),
@@ -804,12 +818,71 @@ export class PlaywrightOrchestrator {
       );
       return;
     }
+    // 回到旧轮之后走原路：先查树上有没有现成的下一拍，有就走进去（不生成）。
+    // 排在开场之后、生成之前——开场那一轮树上没有旧路可认。
+    if (steers.length === 0 && this.revisitOldPath(resolved)) return;
     // 没有选到什么（「继续」或自由输入）：注入的就是队列里那几句引导，交给同一处入账
     if (!resolved) {
       await this.deliverPrompts(steers, null);
       return;
     }
     await this.deliverPrompts(steers, resolved, { answered: true });
+  }
+
+  /**
+   * 走回原路：当前挂载点下若已经有一条**同来源**的下一拍，就把世界线接进去，不生成新内容。
+   *
+   * 判据见计划 §一：只在轮边界（挂载点是 beat_end）上认；候选要来源标签相同、且
+   * 得是一条「有内容的一拍」（`beatEndFrom` 解得出来——被剪空的枝不算）；
+   * 多条同来源的枝里挑最后去过的那条。
+   *
+   * 接的方式是**一拍拍接**（挂到这一拍的末节点、播放头钉在这一拍开头），不是一口气
+   * 跳到这条枝的末梢：轮与轮之间的停止点因此重新摆出来，玩家可以在任何一拍改选别的选项
+   * 就地分岔——「除非选了不同选项」正是指这个。
+   *
+   * 返回 true = 已经接进旧路，调用方不要再生成。
+   */
+  private revisitOldPath(resolved: ResolvedAction | null): boolean {
+    const tree = this.opts.tree;
+    const anchorId = tree.leafId;
+    if (anchorId === null) return false;
+    const anchor = tree.get(anchorId);
+    // 轮中被锚定（jump 到某一句、轮内分岔的 pause 出口）时不认：那时子节点是本轮的下一句，
+    // 认了会把「继续」接回自己这一轮的后半截
+    if (!anchor || anchor.kind !== "beat_end") return false;
+    const key = resolved ? `input:${resolved.text}` : "continue";
+    const candidates = tree
+      .childrenOf(anchorId)
+      .filter((child) => originOfBeat(child) === key)
+      .map((child) => ({ child, endId: tree.beatEndFrom(child.id) }))
+      .filter((entry): entry is { child: LineageEvent; endId: string } => entry.endId !== null);
+    if (candidates.length === 0) return false;
+    const hit = this.lastVisited(candidates.map((entry) => entry.child));
+    const endId = candidates.find((entry) => entry.child.id === hit.id)!.endId;
+    this.rebaseAt(endId, "顺着原路继续", { mark: false, playFrom: "start" });
+    return true;
+  }
+
+  /** 同来源的多条枝里挑「最后去过的那条」：含 prevLeafId 的优先，否则整棵子树落笔最新的。 */
+  private lastVisited(candidates: readonly LineageEvent[]): LineageEvent {
+    const prev = this.prevLeafId;
+    if (prev) {
+      // 候选互为兄弟、子树互不相交，所以最多命中一条
+      const visited = candidates.find((child) => child.id === prev || this.opts.tree.isAncestor(child.id, prev));
+      if (visited) return visited;
+    }
+    return candidates.reduce((best, child) =>
+      this.subtreeStamp(child.id) > this.subtreeStamp(best.id) ? child : best,
+    );
+  }
+
+  /** 一棵子树里最后一次落笔的时刻（不是首节点那一刻：这条枝最近还被人走过才算数）。 */
+  private subtreeStamp(nodeId: string): number {
+    let latest = this.opts.tree.get(nodeId)?.createdAt ?? 0;
+    for (const child of this.opts.tree.childrenOf(nodeId)) {
+      latest = Math.max(latest, this.subtreeStamp(child.id));
+    }
+    return latest;
   }
 
   /** 兑现即落笔：出队并回执「已落笔」，面板上不再占位。 */
@@ -948,6 +1021,7 @@ export class PlaywrightOrchestrator {
    */
   async jumpTo(nodeId: string, opts?: { playFrom?: "start" | "end" }): Promise<void> {
     this.guardIdle();
+    this.prevLeafId = this.opts.tree.leafId;
     this.rebaseAt(nodeId, "已跳到这里", { mark: false, playFrom: opts?.playFrom });
   }
 
@@ -958,24 +1032,74 @@ export class PlaywrightOrchestrator {
    * 在旧分支上就停在它演到的位置（beat_end / 引擎快照 / archive / 落盘一概不写），
    * 新分支从锚点接下去。
    *
-   * `resume: true` = 分岔后立刻续演（「重来」这一轮）：目标节点之后的内容整段截断，
+   * `resume: true` = 分岔后立刻续演（「重写」这一段）：目标节点之后的内容整段截断，
    * 挂载点后紧接一个 fork 标记事件，续演内容挂它之下。中间不设停止点——等价于玩家在
    * 上一轮末尾按了「继续」，零点击。
+   *
+   * `replaced` 是客户端点名的「被这次重写顶掉的那一拍的首节点」：新 fork 标记继承它的
+   * 来源标签，玩家回到同一锚点重选同一个动作时才认得出这条枝是刚重写出来的那条。
    */
-  async forkTo(nodeId: string, opts?: { resume?: boolean }): Promise<void> {
+  async forkTo(nodeId: string, opts?: { resume?: boolean; replaced?: string }): Promise<void> {
     // 重来照旧只在空闲时做：它顶的是「这一轮重头再来」，一轮正写到一半没什么可重来
     if (this.engaged) {
       if (!opts?.resume) this.cancelBeat();
       else this.guardIdle();
     }
     if (!opts?.resume) {
+      this.prevLeafId = this.opts.tree.leafId;
       this.rebaseAt(nodeId, "已从此处开新分支");
       return;
     }
+    // 来源必须在改写 prevLeafId 之前算：它读的是「上一次结构操作前我在哪儿」
+    const origin = this.replacedOrigin(nodeId, opts.replaced);
+    this.prevLeafId = this.opts.tree.leafId;
     // rebaseAt 同步完成（含 recordFork），beginBeat 同步置 beatPending：
     // 整个 fork+续演是一步，中间没有让 engaged 掉下去的空档。
-    this.rebaseAt(nodeId, "重演这一轮", { resume: true });
+    this.rebaseAt(nodeId, "重写这一段", { resume: true, origin });
     await this.beginBeat(this.renderPromptTurn([]));
+  }
+
+  /**
+   * 这次重写顶掉的那一拍的来源标签。
+   *
+   * 优先用客户端点名的 `replaced`——路线卡片知道自己是哪一张，最准；世界线若正停在锚点上
+   * （先跳回来再点重写），光看 `leafId` 是推不出来的。没点名时才退回「世界线在锚点之下」的
+   * 那条路径：那时锚点的下一个孩子就是被顶掉的那一拍（舞台导演栏的「重写」走这条）。
+   * 都不成立就不写来源（读成 continue）。
+   */
+  private replacedOrigin(nodeId: string, replaced?: string): string | undefined {
+    const tree = this.opts.tree;
+    const named = replaced ? tree.get(replaced) : undefined;
+    if (named) return originOfBeat(named);
+    const before = tree.leafId;
+    if (!before || !tree.isAncestor(nodeId, before)) return undefined;
+    const chain = tree.ancestorChain(before);
+    const childId = chain[chain.indexOf(nodeId) + 1];
+    const child = childId ? tree.get(childId) : undefined;
+    return child ? originOfBeat(child) : undefined;
+  }
+
+  /**
+   * 删除：剪掉这一段及其全部后代（这一段之后长出来的东西一次剪干净）。
+   *
+   * 世界线重挂到删除之后它所在的地方：删的正是玩家脚下这条枝时，它落到第一个活着的祖先
+   * （通常是上一轮末尾，选项重新摆出来就地重选）；删的是别的枝时世界线没动，重建是幂等的，
+   * 玩家的位置不会被这一剪拽走。开场那一轮不能删——删了就没有「从头开始」了。
+   *
+   * 留在路线视图（`keepView`）：树上少一张卡就是反馈，把玩家拽回舞台等于打断他正在做的事。
+   * `lineage.jsonl` 是只增的审计流，删除只落 session.json（读档也只读它）。
+   */
+  deleteBranch(nodeId: string): void {
+    this.guardIdle();
+    const node = this.opts.tree.get(nodeId);
+    if (!node) throw new Error(`谱系节点不存在: ${nodeId}`);
+    const parentId = node.parentId;
+    if (parentId === null) throw new Error("开场那一轮不能删");
+    this.prevLeafId = this.opts.tree.leafId;
+    const removed = this.opts.tree.removeSubtree(nodeId);
+    // 删掉的枝里含「上一次走过的那条」：引用已经悬空，跟着世界线落到删除后的落脚处
+    if (this.prevLeafId && removed.includes(this.prevLeafId)) this.prevLeafId = this.opts.tree.leafId;
+    this.rebaseAt(this.opts.tree.leafId ?? parentId, "剪掉这一段", { mark: false, keepView: true });
   }
 
   /**
@@ -1086,7 +1210,15 @@ export class PlaywrightOrchestrator {
   private rebaseAt(
     nodeId: string,
     note: string,
-    opts?: { resume?: boolean; mark?: boolean; playFrom?: "start" | "end" },
+    opts?: {
+      resume?: boolean;
+      mark?: boolean;
+      playFrom?: "start" | "end";
+      /** 新 fork 标记继承的来源标签（重写专用）。 */
+      origin?: string;
+      /** 客户端留在原地别切回舞台（删除专用）。 */
+      keepView?: boolean;
+    },
   ): void {
     this.guardIdle();
     this.rebuildBranchAt(nodeId, note, opts);
@@ -1116,7 +1248,14 @@ export class PlaywrightOrchestrator {
   private rebuildBranchAt(
     nodeId: string,
     note: string,
-    opts?: { resume?: boolean; mark?: boolean; failureExit?: boolean; playFrom?: "start" | "end" },
+    opts?: {
+      resume?: boolean;
+      mark?: boolean;
+      failureExit?: boolean;
+      playFrom?: "start" | "end";
+      origin?: string;
+      keepView?: boolean;
+    },
   ): void {
     const tree = this.opts.tree;
     const chain = tree.materialize(nodeId);
@@ -1124,7 +1263,7 @@ export class PlaywrightOrchestrator {
     this.restoreBranchState(nodeId);
     // 分岔必落标记：分岔不留痕等于没发生过。跳转反过来——它只挪世界线，不宣称这条线岔过。
     if (opts?.mark === false) tree.jumpTo(nodeId);
-    else tree.recordFork(nodeId);
+    else tree.recordFork(nodeId, opts?.origin ? { origin: opts.origin } : {});
     // 分岔/跳转不经过 append，但谱系日志得立刻跟上：标记漏写，档里的历史分支就看不出
     // 曾经岔过（下次全量补推前，lineage.jsonl 会一直缺这一条）
     this.flushLineageLog();
@@ -1174,6 +1313,7 @@ export class PlaywrightOrchestrator {
       note,
       ...(opts?.playFrom ? { playFrom: opts.playFrom } : {}),
       ...(opts?.playFrom && this.readPos ? { resumeAt: this.readPos } : {}),
+      ...(opts?.keepView ? { keepView: true } : {}),
     });
     this.persist();
   }

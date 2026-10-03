@@ -29,7 +29,7 @@ interface StageTheaterProps {
   onToggleVoice: () => void;
   /** 结构性操作会腰斩正在演的这一轮，busy 时 ✎/↺ 置灰（插一句仍可用，它排进待注入队列）。 */
   busy: boolean;
-  /** 由当前显示行 seq 反查出的锚点：编辑绑行，重来绑整轮。 */
+  /** 由当前显示行 seq 反查出的锚点：编辑绑行，重写绑整轮。 */
   targets: DirectorTargets;
   /** 插一句：唯一的输入通道。空闲时立刻开新轮，演出中排进待注入队列。 */
   onPrompt: (text: string) => void;
@@ -74,7 +74,7 @@ export interface DirectorTargets {
 export type VoiceState = "none" | "pending" | "ready";
 
 /**
- * 导演栏的动作。分岔从「当前这一行」开（舞台传 seq），重新生成从整轮开头重演（传 beatId）；
+ * 导演栏的动作。分岔从「当前这一行」开（舞台传 seq），重新生成从整轮开头重写（传 beatId）；
  * 生图不进分支、直接落图。
  */
 import { RefCharacterPicker, type RefCandidate } from "../ui/RefCharacterPicker.js";
@@ -103,7 +103,7 @@ const ACTION_META: Record<
   },
   restart: {
     title: "重新生成",
-    hint: "从这一轮开头重演。",
+    hint: "从这一轮开头重写：原有内容整段留作旧枝，可以交代一句要求（留空就是纯重写）。",
     placeholder: "想换什么方向？（可留空）",
     submit: (d) => (d ? "重新生成 · 带着这句" : "重新生成"),
   },
@@ -509,7 +509,7 @@ voiceState,
     if (act === "restart") {
       if (!targets.beatId) return;
       onFork(targets.beatId, { resume: true });
-      // 填了就当「提示词」紧跟着落进重演的那一轮里；留空就是纯粹重演。
+      // 填了就把那句交代排进队列（生效于重写之后的下一次开口）；留空就是纯重写。
       if (text) onPrompt(text);
       return;
     }
@@ -529,7 +529,7 @@ voiceState,
    * 但那会显示成「这里没有台词可改」——玩家会以为是自己看错了，其实只是还没轮到他。
    */
   const editBlock = busy ? "演出进行中，暂时不能改写" : targets.lineNodeId ? null : "这里没有剧作家的台词可改";
-  const beatBlock = busy ? "演出进行中，暂时不能重来" : targets.beatId ? null : "这里还没有可退回去的一轮";
+  const beatBlock = busy ? "演出进行中，暂时不能重写" : targets.beatId ? null : "这里还没有可退回去的一轮";
   // 分岔不因 busy 置灰：玩家说「就到这里」随时成立，正在写的那半截就此腰斩。
   const forkBlock = targets.lineSeq === null ? "这里还没有可分岔的位置" : null;
 
@@ -541,7 +541,7 @@ voiceState,
    * 送不出去的五种情形，没有第六种：
    *  - 改写必须真写一句（没内容就无从改起）
    *  - 引导必须有话可排（空句进队列等于没排）
-   *  - 分岔/重来要有落点（还没演到任何一行）
+   *  - 分岔/重写要有落点（还没演到任何一行）
    *  - 生图：勾了历史可留空，未勾历史必须填指令（见 cgCanSubmit）
    */
   const submitDisabled: boolean =
@@ -618,7 +618,7 @@ voiceState,
       {/* 选肢层：导演栏与台词条之间那一段，画面层之上、台词条之下 */}
       {overlay}
 
-      {/* 导演工具栏（提示/改写/重来/生图/重听）：舞台右上角浮层。点击动作 stopPropagation，
+      {/* 导演工具栏（提示/改写/重写/生图/重听）：舞台右上角浮层。点击动作 stopPropagation，
            不劫持舞台的继续/回看手势。分岔不在这里——它是「提示」面板里的一条岔
            （引导/分岔两选一），单独再挂一个键只是把同一个决定拆成两处。 */}
       <div className="theater-director" ref={directorRef}>
@@ -654,8 +654,8 @@ voiceState,
         <button
           type="button"
           className={`dir-btn ${action === "restart" ? "on" : ""}`}
-          title={beatBlock ?? "重演这一轮（会分岔）"}
-          aria-label="重演这一轮"
+          title={beatBlock ?? "重写：退到这一轮之前，让剧作家重新写一遍（原有内容留作旧枝）"}
+          aria-label="重写这一轮"
           disabled={beatBlock !== null}
           onClick={(e) => {
             e.stopPropagation();
@@ -664,7 +664,7 @@ voiceState,
           }}
         >
           <Icon name="rewrite" size={17} />
-          重来
+          重写
         </button>
         <button
           type="button"
@@ -927,12 +927,12 @@ export function BacklogView({
   busy: boolean;
   voiceAvailable: boolean;
   voiceState: (seq: number | null) => VoiceState;
-  /** 这一条落在哪一轮（重来的锚点）；玩家自己发来的话没有轮，返 null。 */
+  /** 这一条落在哪一轮（重写的锚点）；玩家自己发来的话没有轮，返 null。 */
   beatFor: (entry: TranscriptEntry) => string | null;
   onSeek: (key: string) => void;
   onReplay: (seq: number) => void;
   onEdit: (nodeId: string, text: string) => void;
-  /** 重来：退到这一轮之前重演，会分出一条新线。 */
+  /** 重写：退到这一轮之前重演，会分出一条新线。 */
   onFork: (nodeId: string, opts?: { resume?: boolean }) => void;
 }) {
   /** 改写就地改：点开编辑框在回顾里完成，不跳视图。 */

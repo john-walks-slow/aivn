@@ -3209,30 +3209,38 @@ select:focus {
   pointer-events: none;
 }
 
+/* 连线是这个视图的骨架：太细太淡就分不出「这条枝通到哪」。底宽提到 2，
+   圆头收尾（斜插出来的分岔线因此不会在端点削出尖角），废弃枝只压透明度不改形状。 */
 .route-edge {
   fill: none;
   stroke: var(--line);
-  stroke-width: 1.5;
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
 .route-edge.live {
   stroke: var(--accent);
-  stroke-width: 2;
+  stroke-width: 2.75;
 }
 
 .route-edge.dead {
-  stroke-dasharray: 4 4;
-  opacity: 0.5;
+  stroke-dasharray: 6 5;
+  opacity: 0.72;
 }
 
 /* 分岔出来的线：走向的旁支，不该和主干长得一模一样 */
 .route-edge.fork {
-  stroke: var(--accent-soft);
-  stroke-dasharray: 2 3;
+  stroke: color-mix(in srgb, var(--accent) 55%, transparent);
+  stroke-width: 2;
+  stroke-dasharray: 3 4;
 }
 
+/* 端点圆点落在连线的子节点端（卡片左边框中点 / 顶边框中点），描一圈卡底色，
+   免得半个圆压进卡片边缘之后糊成一块。 */
 .route-dot {
   fill: var(--accent);
+  stroke: var(--panel);
+  stroke-width: 1;
 }
 
 /* 卡片自己就是定位盒子：背景图、纱与两个动词都长在它里面。 */
@@ -3307,6 +3315,39 @@ select:focus {
 
 .route-node.dead:hover {
   opacity: 1;
+}
+
+/* 选中：这一段 + 它的来路（kin）+ 它的去路（doomed）。
+   去路就是「删除会没掉多少」——同一次子树遍历算出来，动手之前先看见代价。
+   与既有三态分层：live 只染左边框、here 是 accent 实描边、selected 再加一圈外环、
+   doomed 走危险色虚线、kin 只把描边往 accent 提一档，互不覆盖同一个属性。 */
+.route-node.kin {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.route-node.doomed {
+  border-color: #b3261e;
+  border-style: dashed;
+  border-left-style: solid;
+  background: color-mix(in srgb, #b3261e 7%, var(--panel));
+}
+
+.route-node.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent), var(--shadow);
+  z-index: 2;
+  /* 废弃枝上的卡本来是半透明的，选中就得把它整个提起来——不然「点了有反应」被那层灰吃掉 */
+  opacity: 1;
+}
+
+.route-edge.kin {
+  stroke: color-mix(in srgb, var(--accent) 70%, var(--line));
+}
+
+.route-edge.doomed {
+  stroke: #b3261e;
+  stroke-dasharray: 6 5;
+  opacity: 0.85;
 }
 
 /* 卡里的动词行：跟舞台导演栏同一套按钮——无边框、悬停浮出浅底。
@@ -3394,6 +3435,34 @@ select:focus {
   text-overflow: ellipsis;
   font-size: 11px;
   color: var(--ink-faint);
+}
+
+/* 路线卡的两个弹窗：重写交代一句（输入框）、删除确认（说清会没掉多少） */
+.route-modal-input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.route-modal-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.route-modal-note {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.route-modal-note b {
+  color: var(--ink);
+  font-weight: 700;
 }
 
 /* 空态/加载态：画布不在，剩一句话占住中间 */

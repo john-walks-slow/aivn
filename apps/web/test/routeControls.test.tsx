@@ -26,7 +26,7 @@ function card(id: string, parentId: string | null, turn: number): BeatCard {
   };
 }
 
-const ops: LineageOps = { jump: () => {}, fork: () => {} };
+const ops: LineageOps = { jump: () => {}, rewrite: () => {}, remove: () => {} };
 
 // jsdom 没有 ResizeObserver；画布靠它跟着视口重新取景，这里给一个永不回调的空壳。
 class NoopResizeObserver {

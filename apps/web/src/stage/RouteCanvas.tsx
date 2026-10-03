@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEscape } from "../ui/escape.js";
 import { Icon } from "../ui/Icon.js";
+import { Modal } from "../ui/Modal.js";
 import { stamp } from "../ui/stamp.js";
 import type { AssetIndex } from "./assets.js";
 import type { BeatCard } from "./beats.js";
@@ -55,6 +57,28 @@ interface Drag {
   armed: boolean;
 }
 
+/** 正在弹窗的那张卡：重写要交代一句，删除要先看清楚会没掉多少。 */
+type Asking = { kind: "rewrite" | "remove"; card: BeatCard };
+
+/**
+ * 一张卡及其全部后代（含自己）。
+ *
+ * 「后代」就是删除会波及的范围——选中时照出来，玩家在动手之前就看得见代价。
+ */
+function subtreeOf(cards: readonly BeatCard[], rootId: string): Set<string> {
+  const doomed = new Set<string>([rootId]);
+  const stack = [rootId];
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    for (const card of cards) {
+      if (card.parentId !== id || doomed.has(card.id)) continue;
+      doomed.add(card.id);
+      stack.push(card.id);
+    }
+  }
+  return doomed;
+}
+
 export function RouteCanvas({ cards, ops, busy, names, index, onControls }: CanvasProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<Drag | null>(null);
@@ -65,11 +89,43 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
   const [pinned, setPinned] = useState<RouteDir | null>(null);
   const [auto, setAuto] = useState<RouteDir>("horizontal");
   const dir = pinned ?? auto;
+  /** 选中的卡：读树时「这条枝通到哪、删掉会没掉多少」的落点。 */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [asking, setAsking] = useState<Asking | null>(null);
+  const [draft, setDraft] = useState("");
   // 布局必须 memo：placed 的对象身份是下面那条「把手柄交给外层」effect 的地基。
   // 每次渲染都重排一次 → focusCard/jumpToLatest/controls 全换身份 → effect 重跑
   // → 外层 setRouteControls 收到新对象再渲染一圈，闭成 Maximum update depth exceeded。
   const layout = useMemo(() => layoutRoute(cards, dir), [cards, dir]);
   const { placed, edges, width, height } = layout;
+
+  // 选中关系：祖先链（这一段从哪儿来）+ 子树（删掉会没掉哪些）。
+  const relation = useMemo(() => {
+    const selected = selectedId ? cards.find((card) => card.id === selectedId) : undefined;
+    if (!selected) return null;
+    const byId = new Map(cards.map((card) => [card.id, card]));
+    const kin = new Set<string>();
+    let cursor = selected.parentId;
+    while (cursor) {
+      const parent = byId.get(cursor);
+      if (!parent) break;
+      kin.add(parent.id);
+      cursor = parent.parentId;
+    }
+    const doomed = subtreeOf(cards, selected.id);
+    // 去路不含自己：自己那份由 selected 描边负责，两种描边叠在一张卡上读不出边界
+    doomed.delete(selected.id);
+    return { selectedId: selected.id, kin, path: new Set([...kin, selected.id]), doomed };
+  }, [cards, selectedId]);
+
+  // 点空白取消选中。Esc 走 useEscape 的栈：选中时它占住栈顶，这一下只清选中，
+  // 不会顺带把路线视图也关掉（各挂各的 window 监听时，一次 Esc 会连关两层）。
+  useEscape(() => setSelectedId(null), selectedId !== null);
+
+  const onViewportClick = (e: React.MouseEvent): void => {
+    if ((e.target as HTMLElement).closest(".route-node")) return;
+    setSelectedId(null);
+  };
 
   // 方向看窗口：宽屏横着读时间、竖屏从上往下。玩家点名过就不再抢。
   useEffect(() => {
@@ -143,7 +199,7 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
   }, []);
 
   // 拖动阈值：手指/指针走过它才算拖动。
-  // 低于阈值就松手的那一下必须留给 click —— 卡片里的「回到这里」「由此分岔」和
+  // 低于阈值就松手的那一下必须留给 click —— 卡片里的三个动词、卡面的选中和
   // 侧栏浮层上的按键都在这块画布里，pointerdown 就抢走捕获会把它们的 click 一起吃掉。
   const onPointerDown = (e: React.PointerEvent): void => {
     if (e.button !== 0) return;
@@ -236,6 +292,40 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
   );
   useEffect(() => onControls(controls), [onControls, controls]);
 
+  const openRewrite = useCallback((card: BeatCard) => {
+    setDraft("");
+    setAsking({ kind: "rewrite", card });
+  }, []);
+  const openRemove = useCallback((card: BeatCard) => setAsking({ kind: "remove", card }), []);
+
+  const submitRewrite = (): void => {
+    if (!asking) return;
+    const instruction = draft.trim();
+    setAsking(null);
+    ops.rewrite(asking.card.forkFromId, {
+      ...(asking.card.nodes[0] ? { replaced: asking.card.nodes[0].id } : {}),
+      ...(instruction ? { instruction } : {}),
+    });
+  };
+
+  const confirmRemove = (): void => {
+    if (!asking) return;
+    const nodeId = asking.card.nodes[0]?.id;
+    setAsking(null);
+    if (nodeId) ops.remove(nodeId);
+  };
+
+  // 删除的代价：改动的这一张卡、以及它之后长出来的全部内容。说清「几轮 / 几个节点」，
+  // 光说「以及它之后的所有内容」玩家判断不了值不值。
+  const cost = useMemo(() => {
+    if (asking?.kind !== "remove") return null;
+    const doomed = subtreeOf(cards, asking.card.id);
+    const nodes = cards
+      .filter((card) => doomed.has(card.id))
+      .reduce((sum, card) => sum + card.nodes.length, 0);
+    return { rounds: doomed.size, nodes };
+  }, [asking, cards]);
+
   return (
     <div className="route-frame">
       <div
@@ -246,6 +336,7 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        onClick={onViewportClick}
       >
         <div
           className="route-scene"
@@ -256,7 +347,16 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
               <path
                 key={edge.id}
                 d={edge.d}
-                className={`route-edge${edge.live ? " live" : ""}${edge.dead ? " dead" : ""}${edge.fork ? " fork" : ""}`}
+                className={[
+                  "route-edge",
+                  edge.live ? "live" : "",
+                  edge.dead ? "dead" : "",
+                  edge.fork ? "fork" : "",
+                  relation && relation.path.has(edge.from) && relation.path.has(edge.to) ? "kin" : "",
+                  relation && relation.doomed.has(edge.to) ? "doomed" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               />
             ))}
             {placed.map((p) =>
@@ -265,7 +365,7 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
                   key={`dot-${p.card.id}`}
                   cx={dir === "horizontal" ? p.x : p.x + NODE_W / 2}
                   cy={dir === "horizontal" ? p.y + NODE_H / 2 : p.y}
-                  r={3}
+                  r={3.5}
                   className="route-dot"
                 />
               ) : null,
@@ -279,18 +379,79 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
               index={index}
               ops={ops}
               busy={busy}
+              selected={relation?.selectedId === p.card.id}
+              kin={relation?.kin.has(p.card.id) ?? false}
+              doomed={relation?.doomed.has(p.card.id) ?? false}
+              onSelect={setSelectedId}
+              onRewrite={openRewrite}
+              onRemove={openRemove}
             />
           ))}
         </div>
       </div>
+
+      {asking?.kind === "rewrite" && (
+        <Modal
+          title="重写这一段"
+          hint="退到这一段之前，让剧作家重新写一遍这一段；原有内容整段留作旧枝。可以交代一句要求，留空就是纯重写。"
+          onClose={() => setAsking(null)}
+          footer={
+            <>
+              <button type="button" className="primary" onClick={submitRewrite}>
+                重写
+              </button>
+              <button type="button" className="ghost-btn" onClick={() => setAsking(null)}>
+                取消
+              </button>
+            </>
+          }
+        >
+          <input
+            className="route-modal-input"
+            value={draft}
+            placeholder="（可留空）例如：让她的反应更冷淡一点"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitRewrite();
+            }}
+          />
+        </Modal>
+      )}
+
+      {asking?.kind === "remove" && cost && (
+        <Modal
+          title="删除这一段"
+          hint="删除不能撤销：谱系里不留墓碑，这一段说过的话就此消失。"
+          onClose={() => setAsking(null)}
+          footer={
+            <>
+              <button type="button" className="ghost-btn danger-btn" onClick={confirmRemove}>
+                删除
+              </button>
+              <button type="button" className="ghost-btn" onClick={() => setAsking(null)}>
+                取消
+              </button>
+            </>
+          }
+        >
+          <p className="route-modal-note">
+            将删除 <b>{cost.rounds}</b> 轮 / <b>{cost.nodes}</b> 个节点：这一段，以及它之后长出来的全部内容。
+          </p>
+        </Modal>
+      )}
     </div>
   );
 }
 
 /**
- * 一张卡 = 这一轮：左上角落笔时刻、正文、左下角是谁说的，两个动词（回到这里 / 由此分岔）长在卡里的右下角。
- * 没有检视栏：想对哪一段动手指，就在那一段自己的卡上动手，不用先去点开它。
- * 回到这里 = 把世界线挂到这张卡上，不生成内容；由此分岔 = 退到这张卡之前重写并重新生成。
+ * 一张卡 = 这一轮：左上角落笔时刻、正文、左下角是谁说的，三个动词（跳转 / 重写 / 删除）长在卡里的右下角。
+ *
+ * 点卡片即选中：选中时把这一段的来路（祖先链）与去路（它和它的全部后代）一起照出来——
+ * 后者正是「删除会没掉多少」。没有检视栏：想对哪一段动手指，就在那一段自己的卡上动手。
+ *
+ * 三个动词的语义全写在 title 里（卡面只此一处解释），差别只在「生不生成」：
+ * 跳转 = 回到这一段开头重演一遍，不重新生成；重写 = 退到这一段之前让剧作家重新写；
+ * 删除 = 连这一段带它后面的全部剪掉。
  */
 function Node({
   placed,
@@ -298,12 +459,24 @@ function Node({
   index,
   ops,
   busy,
+  selected,
+  kin,
+  doomed,
+  onSelect,
+  onRewrite,
+  onRemove,
 }: {
   placed: PlacedCard;
   names: Readonly<Record<string, string>>;
   index: AssetIndex | null;
   ops: LineageOps;
   busy: boolean;
+  selected: boolean;
+  kin: boolean;
+  doomed: boolean;
+  onSelect: (id: string) => void;
+  onRewrite: (card: BeatCard) => void;
+  onRemove: (card: BeatCard) => void;
 }) {
   const { card } = placed;
   const cls = [
@@ -311,6 +484,9 @@ function Node({
     card.isAbandoned ? "dead" : "",
     card.onPath ? "live" : "",
     card.isLeaf ? "here" : "",
+    kin ? "kin" : "",
+    doomed ? "doomed" : "",
+    selected ? "selected" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -322,7 +498,11 @@ function Node({
   const hint = busy ? "剧作家正在写，暂时不能动这一段" : "";
 
   return (
-    <div className={cls} style={{ left: placed.x, top: placed.y, width: NODE_W, height: NODE_H }}>
+    <div
+      className={cls}
+      style={{ left: placed.x, top: placed.y, width: NODE_W, height: NODE_H }}
+      onClick={() => onSelect(card.id)}
+    >
       {bg && <img className="route-node-bg" src={bg} alt="" aria-hidden />}
       <span className="route-node-head">
         <span className="route-node-stamp">{stamp(card.at)}</span>
@@ -335,31 +515,31 @@ function Node({
             type="button"
             className="route-node-tool"
             disabled={busy}
-            title={hint || "回到选项：落到这一段演完那一刻，选项就在眼前；选别的选项自然开出新分支"}
-            onClick={() => ops.jump(card.endNodeId, { playFrom: "end" })}
-          >
-            <Icon name="return" />
-            回到选项
-          </button>
-          <button
-            type="button"
-            className="route-node-tool"
-            disabled={busy}
-            title={hint || "从头重读：回到这一段的第一句，从头再演一遍，读到末尾才露出选项"}
+            title={hint || "跳转：回到这一段的开头，从头演一遍。不重新生成，选项照旧。"}
             onClick={() => ops.jump(card.endNodeId, { playFrom: "start" })}
           >
-            <Icon name="rewrite" />
-            从头重读
+            <Icon name="return" />
+            跳转
           </button>
           <button
             type="button"
             className="route-node-tool"
             disabled={busy}
-            title={hint || "重演本轮：退到这一段之前，请剧作家重新写一遍（原有内容留作旧分支）"}
-            onClick={() => ops.fork(card.forkFromId, { resume: true })}
+            title={hint || "重写：退到这一段之前，让剧作家重新写一遍这一段（原有内容留作旧枝）。可以交代一句要求。"}
+            onClick={() => onRewrite(card)}
           >
-            <Icon name="fork" />
-            重演本轮
+            <Icon name="rewrite" />
+            重写
+          </button>
+          <button
+            type="button"
+            className="route-node-tool"
+            disabled={busy}
+            title={hint || "删除：剪掉这一段，以及它之后长出来的全部内容。会先让你确认。"}
+            onClick={() => onRemove(card)}
+          >
+            <Icon name="remove" />
+            删除
           </button>
         </span>
       </span>

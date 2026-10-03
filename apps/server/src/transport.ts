@@ -182,9 +182,13 @@ async function routeMessage(
         sender({ type: "error", message: "这里还没有可分岔的位置", recoverable: true });
         return;
       }
-      await orchestrator.forkTo(nodeId, { resume: msg.resume });
+      await orchestrator.forkTo(nodeId, { resume: msg.resume, replaced: msg.replaced });
       return;
     }
+    case "delete_branch":
+      // 剪枝只动谱系与世界线，不生成内容；客户端留在路线视图（rebase 带 keepView）
+      orchestrator.deleteBranch(msg.nodeId);
+      return;
     case "edit":
       orchestrator.editLine(msg.nodeId, msg.newText);
       return;

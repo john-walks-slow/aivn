@@ -25,6 +25,14 @@
 - **DSL 是时间线、工具是副作用**：`beat_done`（轮收束 + 停止点载荷，`options` 若干条 / `placeholder` / 都不给；schema 只兜「至少两条非空」这个无效载荷，**给几条、何时给归剧目的写作参数**，见下）与 `generate_image` 产出 `stop` / `preload_asset` 两个 IR 事件，经 `emitStageEvent` 与解析器产出的事件走同一条路（加 seq → 广播 → 落谱系），client 侧一行不用改。
 - 文本形式的 `<stop>`/`<option>`/`<preload_asset>` 已从 DSL 摘除，遇到只静默降级并记 `legacy_tag` 警告（照读会把标签念到舞台上）。
 
+## 谱系原语（跳转 / 分岔 / 重写 / 删除）
+
+- **回到旧轮走原路**：`playerAction` 在生成之前先查树上有没有现成的下一拍——挂载点必须停在 `beat_end`（轮中锚定不认），本次动作的**来源标签**（`originOfBeat`：prompt 是那次输入原话、fork 继承被顶掉那一拍的来源、其余是 `continue`）与 `leafId` 某个子节点相同就走进去，`beatEndFrom` 取那一拍的末节点后 `rebaseAt(endId, …, {mark:false, playFrom:"start"})`，**一拍拍接**：跨轮的停止点重新摆出来，玩家随时能改选别的选项就地分岔。候选必须是「有内容的一拍」（`beatEndFrom` 解得出来），排队里有待注入的引导时不认旧路。
+- **`prevLeafId` 是复用规则的唯一偏好依据**，字面定义是「上一次显式结构操作（`jumpTo` / `forkTo` / `deleteBranch`）之前世界线所在的那个节点」——够用的前提是「想回到旧轮就必先做一次结构操作」。只在动词进入时写一次，`rebuildBranchAt` 里**不写**（逐拍回退会把它冲掉）；删除时悬空要回落，读档时缺字段或指向已删节点一律按「无偏好」。
+- **重写的来源继承**：新 fork 标记必须带上被顶掉那一拍的 `origin`，否则玩家回到同一锚点重选同一选项时认不出这条重写枝。优先取客户端点名的 `replaced`（路线卡片首节点），其次取「世界线在锚点之下」时路径上的那个孩子。
+- **删除是剪整条子树**（协议 `delete_branch`，`nodeId` = 该段首节点）：`removeSubtree` 删节点与后代、清快照与改写旁注、**上溯清空壳 fork 标记**（fork 是卡片首节点的父、不进卡片，只删卡片会留下一个带来源标签的空节点）。世界线本来就不在这条枝上时它不会被动，重建因此是幂等的。`rebase` 消息带 `keepView`，删除后客户端留在路线视图。
+- **`lineage.jsonl` 只增不改**，读档只读 `session.json`——删除的持久性靠它。已知边界：若将来改成从 `lineage.jsonl` 重建，已删内容会复活。
+
 ## 工坊线程（压缩、消息文件与文件工具）
 
 - **工坊线程也有纪元压缩**：`workshopSession.ts` 的 `maybeCompact` 每轮开跑前判定（与演出侧同一时刻、同一套 `compaction.ts` 计量与切点），但产物落线程的 `compaction` 字段而不是 `memory/arcs`——工坊会话是搭台过程、不是剧目事实，进 arcs 会污染剧作家每轮注入的 A 区。

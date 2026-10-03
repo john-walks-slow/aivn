@@ -65,10 +65,16 @@ export interface StageSocket {
   sendTtsControl: (state: { enabled?: boolean; paused?: boolean }) => void;
   /** 上报阅读位置（播放头推进时防抖调用）：服务端节流落盘，刷新后回到原处。 */
   sendRead: (pos: ReadPos) => void;
-  // Director ops: jump moves the world line, fork opens a branch
+  // Director ops: jump moves the world line, fork opens a branch, delete prunes one
   sendJump: (nodeId: string, opts?: { playFrom?: "start" | "end" }) => void;
-  /** 分岔锚点二选一：nodeId（路线/回顾给的节点）或 seq（舞台正在看的那一行）。 */
-  sendFork: (anchor: string | number, opts?: { resume?: boolean }) => void;
+  /** 分岔锚点二选一：nodeId（路线/回顾给的节点）或 seq（舞台正在看的那一行）。
+   *  `replaced` = 被这次重写顶掉的那一拍的首节点（路线卡片点名），新 fork 标记继承它的来源标签。 */
+  sendFork: (
+    anchor: string | number,
+    opts?: { resume?: boolean; replaced?: string },
+  ) => void;
+  /** 删除：剪掉该节点及其全部后代。 */
+  sendDelete: (nodeId: string) => void;
   sendEdit: (nodeId: string, newText: string) => void;
   /** 工坊通道发送（面板自带消息构造）。 */
   send: (msg: ClientMessage) => void;
@@ -92,6 +98,8 @@ export interface StageSocketHandlers {
     playFrom?: "start" | "end";
     resumeAt?: ReadPos;
     busy: boolean;
+    /** 这次重建不要切回舞台（删除是「在路线里整理分支」的动作）。 */
+    keepView?: boolean;
   }) => void;
   /** 生图就绪（D6）：预解码后就地淡入。 */
   onAssetReady?: (asset: GeneratedAsset) => void;
@@ -291,6 +299,7 @@ export function useStageSocket(
               ...(msg.resumeAt ? { resumeAt: msg.resumeAt } : {}),
               // 停在新分支的停止点 = 等玩家继续；停在轮中 = 接下来还会有事件流
               busy: streaming,
+              ...(msg.keepView ? { keepView: true } : {}),
             });
             return;
           }
@@ -354,14 +363,20 @@ export function useStageSocket(
     [send],
   );
   const sendFork = useCallback(
-    (anchor: string | number, opts?: { resume?: boolean }) =>
+    (anchor: string | number, opts?: { resume?: boolean; replaced?: string }) =>
       send(
         typeof anchor === "number"
           ? { type: "fork", seq: anchor, ...(opts?.resume ? { resume: true } : {}) }
-          : { type: "fork", nodeId: anchor, ...(opts?.resume ? { resume: true } : {}) },
+          : {
+              type: "fork",
+              nodeId: anchor,
+              ...(opts?.resume ? { resume: true } : {}),
+              ...(opts?.replaced ? { replaced: opts.replaced } : {}),
+            },
       ),
     [send],
   );
+  const sendDelete = useCallback((nodeId: string) => send({ type: "delete_branch", nodeId }), [send]);
   const sendEdit = useCallback(
     (nodeId: string, newText: string) => send({ type: "edit", nodeId, newText }),
     [send],
@@ -413,6 +428,7 @@ export function useStageSocket(
     sendRead,
     sendJump,
     sendFork,
+    sendDelete,
     sendEdit,
     send,
   };

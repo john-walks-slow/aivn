@@ -38,6 +38,8 @@ export interface LineagePayload {
   input?: string;
   /** 选项选择记录。 */
   choice?: { index: number; text: string; value?: string };
+  /** 仅 kind=fork：这条重写枝继承的来源标签（见 originOfBeat）。 */
+  origin?: string;
   [key: string]: unknown;
 }
 
@@ -117,6 +119,25 @@ export interface LineageView {
 
 const EDITABLE_KINDS: ReadonlySet<string> = new Set(["say", "narrate", "thought"]);
 
+/**
+ * 一拍的**来源标签**：这一拍是被玩家的哪个动作顶出来的。
+ *
+ * 回到旧轮时靠它认出「同一个选项 / 同一句自由输入 / 同样是继续」长出来的那一拍，
+ * 从而把世界线接回原路，而不是让剧作家凭空再写一遍。
+ *
+ * - `prompt` 节点 → 那次输入的原话（选项落谱系时就是「（选择了：X）」文本）；
+ * - `fork` 节点 → 继承被它顶掉那一拍的来源（重写不是新走向，是同一条走向的另一次书写）；
+ * - 其余（say/narrate/scene/…） → `continue`：「继续」不落 prompt 节点，这就是它的身份。
+ */
+export function originOfBeat(event: LineageEvent): string {
+  if (event.kind === "prompt") return `input:${event.payload?.input ?? ""}`;
+  if (event.kind === "fork") {
+    const origin = event.payload?.origin;
+    return typeof origin === "string" ? origin : "continue";
+  }
+  return "continue";
+}
+
 /** 持久化结构：事件日志（真相源）+ 会话运行态（leafId）+ 分岔事实快照。 */
 export interface LineageStore {
   events: LineageEvent[];
@@ -187,9 +208,86 @@ export class LineageTree {
    * 目标节点之后原有的内容整段转为兄弟分支（轮中分岔即截断）。fork 事件自身不产内容，
    * 它的存在只为让「这条线是从哪儿岔出来的」在日志里可查——分岔不留痕等于没发生。
    */
-  recordFork(nodeId: string): LineageEvent {
+  recordFork(nodeId: string, opts: { origin?: string } = {}): LineageEvent {
     this.jumpTo(nodeId);
-    return this.append("fork");
+    return this.append("fork", opts.origin ? { payload: { origin: opts.origin } } : {});
+  }
+
+  /**
+   * 剪枝：删掉 nodeId 及其全部后代，返回被删的 id 列表。
+   *
+   * 挂载点若落在删除集里就回落到**第一个活着的祖先**（通常是 `nodeId.parentId`）——
+   * 世界线不能悬在一个不存在的节点上。快照与改写旁注跟着删（它们属于被删的那条枝）。
+   *
+   * 收尾要**上溯清空壳**：fork 标记不属于任何卡片（它是卡片首节点的父），只删卡片节点
+   * 会留下一个没有子节点、却带着来源标签的 fork——下次回到同一锚点重选同一个动作正好命中它，
+   * 世界线被接进一片空白。空壳一律连带删掉，一级一级往上看。
+   */
+  removeSubtree(nodeId: string): string[] {
+    const node = this.requireNode(nodeId);
+    const removed: string[] = [];
+    const stack = [nodeId];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (!this.events.has(id)) continue;
+      removed.push(id);
+      for (const child of this.childrenOf(id)) stack.push(child.id);
+    }
+    for (const id of removed) {
+      this.events.delete(id);
+      this.snapshotsByNode.delete(id);
+      this.edits.delete(id);
+    }
+    // fork 标记只作为「来源标签的载体」存在：子节点被删光，它自己也没有意义了。
+    // 上溯可能在链上删掉好几级，所以落点记在循环结束时的 cursor 上——它才是第一个活着的祖先。
+    let cursor = node.parentId;
+    while (cursor !== null) {
+      const ancestor = this.events.get(cursor);
+      if (!ancestor || ancestor.kind !== "fork" || this.childrenOf(cursor).length > 0) break;
+      this.events.delete(cursor);
+      this.snapshotsByNode.delete(cursor);
+      this.edits.delete(cursor);
+      removed.push(cursor);
+      cursor = ancestor.parentId;
+    }
+    if (this.leaf !== null && removed.includes(this.leaf)) this.leaf = cursor;
+    return removed;
+  }
+
+  /** 直接子节点（按落笔顺序）。 */
+  childrenOf(nodeId: string): LineageEvent[] {
+    const children: LineageEvent[] = [];
+    for (const event of this.events.values()) {
+      if (event.parentId === nodeId) children.push(event);
+    }
+    return children.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  }
+
+  /**
+   * 这一拍的末节点：从首节点沿唯一子节点往下走，与前端切轮规则同构
+   * （`apps/web/src/stage/beats.ts` 的 traceBeat）。
+   *
+   * 三种停法：踩到 `beat_end`；下一个是 `fork` 标记（分岔标记属于下一段，不在本轮内）；
+   * 子节点不唯一（轮中被截断）或没有子节点（这一拍就到此为止）——都停在当前节点。
+   *
+   * 唯一无解的情形：`headId` 自己是 fork 标记，而它的子节点不是恰好一个
+   * （没有子节点 = 空壳，多个孩子 = 一个岔口）。这时返回 `null`，调用方必须处理。
+   */
+  beatEndFrom(headId: string): string | null {
+    let current = this.requireNode(headId);
+    if (current.kind === "fork") {
+      const kids = this.childrenOf(current.id);
+      if (kids.length !== 1) return null;
+      current = kids[0]!;
+    }
+    for (;;) {
+      if (current.kind === "beat_end") return current.id;
+      const kids = this.childrenOf(current.id);
+      if (kids.length !== 1) return current.id;
+      const next = kids[0]!;
+      if (next.kind === "fork") return current.id;
+      current = next;
+    }
   }
 
   /**

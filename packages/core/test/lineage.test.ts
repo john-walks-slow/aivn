@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LineageTree, type LineageEvent } from "../src/index.js";
+import { LineageTree, originOfBeat, type LineageEvent } from "../src/index.js";
 
 /** 物化后取有台词的行（prompt/fork 等无文本节点不进剧本）。 */
 function spoken(tree: LineageTree, fromLeaf?: string): (string | undefined)[] {
@@ -274,5 +274,192 @@ describe("路径集合（检索防剧透）", () => {
     expect(path.has(say1.id)).toBe(true);
     expect(path.has(say2.id)).toBe(false);
     expect(path.has(abandoned.id)).toBe(false);
+  });
+});
+
+/** 一轮的骨架：输入节点 → 若干台词 → beat_end。返回这几个锚点。 */
+function buildBeat(
+  tree: LineageTree,
+  input: string,
+  text: string,
+): { prompt: LineageEvent; say: LineageEvent; end: LineageEvent } {
+  const prompt = tree.append("prompt", { payload: { input } });
+  const say = tree.append("say", { text });
+  const end = tree.append("beat_end", { payload: { reason: "stop" } });
+  return { prompt, say, end };
+}
+
+describe("来源标签（回到旧轮时认出同一拍）", () => {
+  it("prompt 节点是那次输入的原话，其余是 continue", () => {
+    const tree = new LineageTree();
+    const prompt = tree.append("prompt", { payload: { input: "（选择了：道歉）" } });
+    const say = tree.append("say", { text: "算了。" });
+    const end = tree.append("beat_end", { payload: { reason: "stop" } });
+
+    expect(originOfBeat(prompt)).toBe("input:（选择了：道歉）");
+    // 「继续」不落 prompt 节点，它的身份就是「没有输入」
+    expect(originOfBeat(say)).toBe("continue");
+    expect(originOfBeat(end)).toBe("continue");
+  });
+
+  it("fork 继承被顶掉那一拍的来源；没带就退回 continue", () => {
+    const tree = new LineageTree();
+    const anchor = tree.append("beat_end", { payload: { reason: "stop" } });
+
+    const inherited = tree.recordFork(anchor.id, { origin: "input:（选择了：道歉）" });
+    expect(inherited.payload?.origin).toBe("input:（选择了：道歉）");
+    expect(originOfBeat(inherited)).toBe("input:（选择了：道歉）");
+
+    const bare = tree.recordFork(anchor.id);
+    expect(originOfBeat(bare)).toBe("continue");
+  });
+});
+
+describe("childrenOf / beatEndFrom（一拍的末节点）", () => {
+  it("childrenOf 按落笔顺序给出直接子节点", () => {
+    const tree = new LineageTree();
+    const anchor = tree.append("beat_end", { payload: { reason: "stop" } });
+    const first = tree.append("prompt", { payload: { input: "a" } });
+    tree.jumpTo(anchor.id);
+    const second = tree.append("prompt", { payload: { input: "b" } });
+    // 两个兄弟之外，first 自己还有一个孩子，不该混进来
+    tree.jumpTo(first.id);
+    tree.append("say", { text: "x" });
+
+    expect(tree.childrenOf(anchor.id).map((e) => e.id)).toEqual([first.id, second.id]);
+  });
+
+  it("沿唯一子节点走到 beat_end", () => {
+    const tree = new LineageTree();
+    tree.append("scene", { payload: { attrs: { bg: "hall" } } });
+    const { prompt, end } = buildBeat(tree, "（选择了：X）", "那就这样吧。");
+    expect(tree.beatEndFrom(prompt.id)).toBe(end.id);
+  });
+
+  it("分岔标记属于下一段：走到 fork 前就停", () => {
+    const tree = new LineageTree();
+    const head = tree.append("say", { text: "第一句" });
+    tree.recordFork(head.id);
+    tree.append("say", { text: "重写出来的那句" });
+
+    expect(tree.beatEndFrom(head.id)).toBe(head.id);
+  });
+
+  it("轮中被截断（子节点不唯一）就停在截断处", () => {
+    const tree = new LineageTree();
+    const head = tree.append("say", { text: "分岔点" });
+    tree.append("say", { text: "旧的后半截" });
+    tree.jumpTo(head.id);
+    tree.append("say", { text: "新的后半截" });
+
+    expect(tree.beatEndFrom(head.id)).toBe(head.id);
+  });
+
+  it("没有子节点就是这一拍的末尾", () => {
+    const tree = new LineageTree();
+    tree.append("beat_end", { payload: { reason: "no_stop" } });
+    const tail = tree.append("say", { text: "写到一半" });
+    expect(tree.beatEndFrom(tail.id)).toBe(tail.id);
+  });
+
+  it("首节点是 fork 且恰好一个孩子：照样走到底", () => {
+    const tree = new LineageTree();
+    const anchor = tree.append("beat_end", { payload: { reason: "stop" } });
+    const fork = tree.recordFork(anchor.id, { origin: "input:X" });
+    const { end } = buildBeat(tree, "（选择了：X）", "重写的一拍。");
+
+    expect(tree.beatEndFrom(fork.id)).toBe(end.id);
+  });
+
+  it("空壳 fork 与岔口 fork 都无解（返回 null），调用方必须处理", () => {
+    const tree = new LineageTree();
+    const anchor = tree.append("beat_end", { payload: { reason: "stop" } });
+
+    // 空壳：子树被剪光之后剩下的那个标记
+    const shell = tree.recordFork(anchor.id, { origin: "input:X" });
+    expect(tree.beatEndFrom(shell.id)).toBeNull();
+
+    // 岔口：一个 fork 底下长出两条枝，没有「唯一的一拍」
+    tree.jumpTo(shell.id);
+    tree.append("say", { text: "第一版" });
+    tree.jumpTo(shell.id);
+    tree.append("say", { text: "第二版" });
+    expect(tree.beatEndFrom(shell.id)).toBeNull();
+  });
+});
+
+describe("剪枝（删除一段及其后代）", () => {
+  it("连根删：挂载点在删除集里就回落到父节点", () => {
+    const tree = new LineageTree();
+    const root = tree.append("say", { text: "开场" });
+    const mid = tree.append("say", { text: "中段" });
+    const tail = tree.append("say", { text: "末句" });
+
+    const removed = tree.removeSubtree(mid.id);
+
+    expect(removed).toEqual([mid.id, tail.id]);
+    expect(tree.get(mid.id)).toBeUndefined();
+    expect(tree.leafId).toBe(root.id);
+  });
+
+  it("删别的枝不动世界线", () => {
+    const tree = new LineageTree();
+    tree.append("say", { text: "开场" });
+    const anchor = tree.append("beat_end", { payload: { reason: "stop" } });
+    const b1 = tree.append("prompt", { payload: { input: "（选择了：X）" } });
+    tree.append("say", { text: "X 枝" });
+    tree.jumpTo(anchor.id);
+    const c1 = tree.append("prompt", { payload: { input: "（选择了：Y）" } });
+    const c2 = tree.append("say", { text: "Y 枝" });
+
+    tree.removeSubtree(b1.id);
+
+    expect(tree.get(b1.id)).toBeUndefined();
+    expect(tree.get(c1.id)).toBeDefined();
+    expect(tree.leafId).toBe(c2.id);
+  });
+
+  it("快照与改写旁注跟着被删的枝一起清掉", () => {
+    const tree = new LineageTree();
+    tree.append("say", { text: "开场" });
+    const target = tree.append("say", { text: "会被剪掉的一句" });
+    tree.saveSnapshot({ turn: 1, affinity: {}, flags: {} }, { state: {}, arcs: [] });
+    tree.recordEdit(target.id, "改过的一句");
+
+    tree.removeSubtree(target.id);
+
+    expect(tree.export().snapshots).toHaveLength(0);
+    expect(tree.export().events.some((e) => e.kind === "edit")).toBe(false);
+  });
+
+  it("剪完把空壳 fork 一并清掉：下次回到同一锚点不会命中一片空白", () => {
+    const tree = new LineageTree();
+    tree.append("say", { text: "开场" });
+    const anchor = tree.append("beat_end", { payload: { reason: "stop" } });
+    const fork = tree.recordFork(anchor.id, { origin: "input:（选择了：X）" });
+    const head = tree.append("prompt", { payload: { input: "（选择了：X）" } });
+    const end = tree.append("beat_end", { payload: { reason: "stop" } });
+
+    const removed = tree.removeSubtree(head.id);
+
+    expect(removed).toEqual([head.id, end.id, fork.id]);
+    expect(tree.get(fork.id)).toBeUndefined();
+    expect(tree.childrenOf(anchor.id)).toHaveLength(0);
+    expect(tree.leafId).toBe(anchor.id);
+  });
+
+  it("空壳会一级一级往上清（fork 叠 fork）", () => {
+    const tree = new LineageTree();
+    tree.append("say", { text: "开场" });
+    const anchor = tree.append("beat_end", { payload: { reason: "stop" } });
+    const outer = tree.recordFork(anchor.id, { origin: "input:X" });
+    const inner = tree.recordFork(outer.id, { origin: "input:X" });
+    const say = tree.append("say", { text: "最后一句" });
+
+    const removed = tree.removeSubtree(say.id);
+
+    expect(removed).toEqual([say.id, inner.id, outer.id]);
+    expect(tree.childrenOf(anchor.id)).toHaveLength(0);
+    expect(tree.leafId).toBe(anchor.id);
   });
 });

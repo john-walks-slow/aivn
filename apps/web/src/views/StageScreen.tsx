@@ -154,7 +154,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     // 原地改写：缓冲已就地换字，谱系刷新把剧本/路线的标签换成新文本
     onLineEdited: () => setLineageNonce((n) => n + 1),
     // P6 上下文重建：新分支整段到达——播放层复位，谱系视图跟着换
-    onRebase: ({ note, playFrom, resumeAt, busy: streaming }) => {
+    onRebase: ({ note, playFrom, resumeAt, busy: streaming, keepView }) => {
       director.reset();
       setRebase((cur) => ({
         token: cur.token + 1,
@@ -164,7 +164,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
       }));
       setLineageNonce((n) => n + 1);
       if (note) pushToast(note, "warn");
-      goStage(); // 结构操作后回舞台看结果
+      // 删除是在路线里整理分支：树上少一张卡就是反馈，不把玩家拽回舞台
+      if (!keepView) goStage();
     },
     // D6 生图：到货即登记（预解码后淡入），失败只提示——舞台视觉不因图卡住
     onAssets: (list) => generated.add(list),
@@ -220,12 +221,18 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   };
 
   // 导演出口（P6）：senders 在 useStageSocket 内 useCallback 稳定，仅重连后换引用
-  const { sendFork: fork, sendJump: jump, sendEdit: edit } = stage;
+  const { sendFork: fork, sendJump: jump, sendEdit: edit, sendPrompt: queuePrompt, sendDelete: drop } = stage;
 
   /**
-   * 路线页上的结构操作做完就回舞台。跳转没有新内容可演、留在原地的话树上的高亮会跟着
-   * 挂载点动，玩家只会看到「点了没反应」；分岔也只在舞台上看得见结果。
-   * 舞台导演栏不切视图——它本来就在舞台上。
+   * 路线页上的三个动词。
+   *
+   * 跳转与重写做完就回舞台：跳转没有新内容可演、留在原地的话树上的高亮会跟着挂载点动，
+   * 玩家只会看到「点了没反应」；重写的新内容也只在舞台上看得见。
+   * 删除反过来——留在路线视图（树上少一张卡就是反馈），服务端那条重建带 `keepView` 把
+   * 舞台的 rebase 回调拦下，不把正在整理分支的玩家拽走。
+   *
+   * 重写的指令与舞台导演栏同一条路：先把这一段顶掉重开一轮，再把这句交代排进队列，
+   * 因此它生效于**下一次开口**（下一轮，或与玩家的下一次选择合并），不是立刻改写这一轮。
    */
   const routeOps: LineageOps = useMemo(
     () => ({
@@ -233,12 +240,14 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
         jump(nodeId, opts);
         goStage();
       },
-      fork: (nodeId: string, opts?: { resume?: boolean }) => {
-        fork(nodeId, opts);
+      rewrite: (forkFromId: string, opts?: { replaced?: string; instruction?: string }) => {
+        fork(forkFromId, { resume: true, ...(opts?.replaced ? { replaced: opts.replaced } : {}) });
+        if (opts?.instruction) queuePrompt(opts.instruction);
         goStage();
       },
+      remove: (nodeId: string) => drop(nodeId),
     }),
-    [jump, fork, goStage],
+    [jump, fork, queuePrompt, drop, goStage],
   );
 
 

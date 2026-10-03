@@ -33,7 +33,7 @@
 - `src/stage/`：
   - ScriptBuilder 带 cues 轨道与行 seq。
   - usePlayback 打字机+二段式点击+自动模式+**按住 Ctrl 的快进档**（整行一次读完、行间不设停顿，只追缓冲里已有的内容；回看中不推进；输入框里不劫持）+语音钩子。
-  - StageTheater 舞台视觉层+解锁遮罩+三按钮导演栏（插一句 / 编辑当前这句台词 / 重来这一轮，输入都走 Modal）。
+  - StageTheater 舞台视觉层+解锁遮罩+三按钮导演栏（插一句 / 编辑当前这句台词 / **重写**这一轮，输入都走 Modal；「重写」实际是「分岔 + 把指令排队」，指令生效于重写之后的下一次开口，不是写进正在重写的那一轮）。
   - StageShell 外壳（侧栏五视图 + 视图栏 `×` + `Esc` + 折叠/拖宽/窄屏抽屉 + 底栏两行：当前周目在最上、`exit` 图标的「退出」压在最下，两者间一条线）。
   - `stage/view.ts` 的 `stageViewFromQuery`/`workshopUrl`/`workshopConnectionFromQuery`。
   - `ui/Modal.tsx` 居中模态窗（portal body，触摸捕获，Esc 只关最上层）。
@@ -42,7 +42,7 @@
   - StopPanel 停止点操作含自由输入 ✨润色/撤销（P4 增量，润色恒基于原文不叠加）。
   - 选肢层是 `.theater-stage` 的子元素（只盖画面，不压台词条/导演栏/侧栏）。
   - useStageSocket 含 audio_ready 转发。
-  - `src/stage/RouteCanvas.tsx` + `routeTree.ts`（路线视图：一张卡 = 谱系一个节点，卡内左上角落笔时刻（`MM-DD HH:mm`）+ 正文（本轮首句台词，scene/sfx/cg 这些控制指令不当摘要）+ 左下角角色名，卡片背景优先取这一幕出过的 CG、没有才用场景背景、只从卡片右半边横向淡入，正文压在一层不透明纱上，右下角两个**带字样**的动词按钮「回到这里」`return` / 「分岔」`fork`（与舞台导演栏同一套手感：无边框、悬停浮出浅底——二十几像素的方块里分不出跳转和重生成，动词必须写出来）；已无检视栏、卡面不可点，操作只在卡内按钮上；`routeTree.ts` 是布局唯一真相源，`NODE_W`/`NODE_H` 同时决定两轴步长、连线端点与画布边界）。
+  - `src/stage/RouteCanvas.tsx` + `routeTree.ts`（路线视图：一张卡 = 谱系一个节点，卡内左上角落笔时刻（`MM-DD HH:mm`）+ 正文（本轮首句台词，scene/sfx/cg 这些控制指令不当摘要）+ 左下角角色名，卡片背景优先取这一幕出过的 CG、没有才用场景背景、只从卡片右半边横向淡入，正文压在一层不透明纱上，右下角三个**带字样**的动词按钮「跳转」`return` / 「重写」`rewrite` / 「删除」`remove`（与舞台导演栏同一套手感：无边框、悬停浮出浅底——二十几像素的方块里分不出跳转和重生成，动词必须写出来；title 里写死「生不生成」，卡面只此一处解释）；「重写」弹一个可留空的输入框（指令排队，与舞台同一条路），「删除」弹确认框并写出「将删除 N 轮 / M 个节点」；**卡面可点即选中**——选中后同一次子树遍历标出来路（`.kin`）与「删掉会没掉的范围」（`.doomed`），点空白或 `Esc` 取消；已无检视栏，操作只在卡内按钮上；`routeTree.ts` 是布局唯一真相源，`NODE_W`/`NODE_H` 同时决定两轴步长、连线端点与画布边界）。
   - VoiceDirector 语音导演 `src/stage/audio.ts`：单一共享 AudioContext、gapless 链式调度、快进淡出、背压滞回。
   - `src/stage/loopAudio.ts` BGM/ambient 播放层（`LoopChannel` 双通道交叉淡入淡出 FADE_MS=1200、50ms 步进调 volume、dispose 停干净；`SfxPlayer` 一次性音效 MAX_SFX=6 挤掉最老）——**舞台不再直接持有 `<audio loop>`**，两条常驻通道都走 LoopChannel。
   - `director.ts` 的纯函数 `resolveAudio(current, cue)` 是「缺省=保持、`none`/`""`/大写 NONE=停止」的唯一真相源。

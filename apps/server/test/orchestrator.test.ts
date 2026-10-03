@@ -1558,3 +1558,265 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     expect(hasPreTurn).toBe(false);
   });
 });
+
+/** 数模型调用次数：走回旧路的核心判据就是「这一拍没有让剧作家再写一遍」。 */
+function countingSetup(responses: FakeResponse[]): {
+  orchestrator: PlaywrightOrchestrator;
+  messages: ServerMessage[];
+  tree: LineageTree;
+  calls: { n: number };
+} {
+  const calls = { n: 0 };
+  const base = createFakeStreamFn(responses);
+  const streamFn: StreamFn = (model, context, options) => {
+    calls.n += 1;
+    return base(model, context, options);
+  };
+  return { ...setup(responses, { streamFn }), calls };
+}
+
+/** 演两拍：开场（停在选项）→ 选「道歉」演第二拍。返回两拍的 beat_end 与第二拍的输入节点。 */
+async function playTwoBeats(
+  orchestrator: PlaywrightOrchestrator,
+  tree: LineageTree,
+): Promise<{ beat1End: string; beat2End: string; beat2Prompt: string }> {
+  orchestrator.start();
+  await orchestrator.whenIdle();
+  await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+  await orchestrator.whenIdle();
+  const chain = tree.ancestorChain(tree.leafId).map((id) => tree.get(id)!);
+  const ends = chain.filter((e) => e.kind === "beat_end");
+  return {
+    beat1End: ends[0]!.id,
+    beat2End: ends[1]!.id,
+    beat2Prompt: chain.find((e) => e.kind === "prompt")!.id,
+  };
+}
+
+/** 最近一条 rebase 消息的说明与播放头朝向。 */
+function lastRebase(messages: readonly ServerMessage[]): { note?: string; playFrom?: string; keepView?: boolean } {
+  return messages.filter((m) => m.type === "rebase").at(-1) as {
+    note?: string;
+    playFrom?: string;
+    keepView?: boolean;
+  };
+}
+
+describe("回到旧轮走原路（同一个动作不重写一遍）", () => {
+  it("重选同一个选项：不调模型，世界线接回旧那一拍", async () => {
+    const responses: FakeResponse[] = [
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+      { text: BEAT_2, beatDone: true },
+    ];
+    const { orchestrator, messages, tree, calls } = countingSetup(responses);
+    const { beat1End, beat2End } = await playTwoBeats(orchestrator, tree);
+    const called = calls.n;
+
+    await orchestrator.jumpTo(beat1End, { playFrom: "start" });
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    expect(calls.n).toBe(called);
+    expect(tree.leafId).toBe(beat2End);
+    expect(lastRebase(messages).note).toBe("顺着原路继续");
+    // 从头重读这一拍：播放头钉在这一拍的开头，不是直接摊开末尾
+    expect(lastRebase(messages).playFrom).toBe("start");
+    // 旧枝没有被复制出一条：锚点之下仍然只有那一拍
+    expect(tree.childrenOf(beat1End)).toHaveLength(1);
+  });
+
+  it("改选别的选项：照旧生成新枝", async () => {
+    const responses: FakeResponse[] = [
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+      { text: '<say id="mio">……也行。</say>', beatDone: true },
+    ];
+    const { orchestrator, tree, calls } = countingSetup(responses);
+    const { beat1End, beat2End, beat2Prompt } = await playTwoBeats(orchestrator, tree);
+    const called = calls.n;
+
+    await orchestrator.jumpTo(beat1End, { playFrom: "start" });
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 1 });
+    await orchestrator.whenIdle();
+
+    expect(calls.n).toBe(called + 1);
+    expect(tree.childrenOf(beat1End).map((e) => e.payload?.input)).toEqual([
+      "（选择了：道歉）",
+      "（选择了：装傻）",
+    ]);
+    expect(tree.get(beat2Prompt)).toBeDefined();
+    expect(tree.get(beat2End)).toBeDefined();
+  });
+
+  it("排了引导就不认旧路：玩家排了话就是要新的走向", async () => {
+    const responses: FakeResponse[] = [
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+      { text: '<say id="mio">……换个说法。</say>', beatDone: true },
+    ];
+    const { orchestrator, tree, calls } = countingSetup(responses);
+    const { beat1End, beat2End } = await playTwoBeats(orchestrator, tree);
+    const called = calls.n;
+
+    await orchestrator.jumpTo(beat1End, { playFrom: "start" });
+    await orchestrator.playerAction({ kind: "prompt", text: "让气氛冷一点" });
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    await orchestrator.whenIdle();
+
+    expect(calls.n).toBe(called + 1);
+    expect(tree.leafId).not.toBe(beat2End);
+  });
+
+  it("轮中被锚定时「继续」不认旧路：子节点是本轮的下一句，接回去等于接回自己后半截", async () => {
+    const responses: FakeResponse[] = [
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+    ];
+    const { orchestrator, tree, calls } = countingSetup(responses);
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    const spoken = tree
+      .ancestorChain(tree.leafId)
+      .map((id) => tree.get(id)!)
+      .find((e) => e.kind === "say")!;
+
+    await orchestrator.jumpTo(spoken.id, { playFrom: "start" });
+    const called = calls.n;
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+
+    expect(calls.n).toBe(called + 1);
+  });
+
+  it("子树被剪空的 fork 不参选：不把世界线接进一片空白", async () => {
+    const responses: FakeResponse[] = [
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+      { text: BEAT_2, beatDone: true },
+    ];
+    const { orchestrator, tree, calls } = countingSetup(responses);
+    const { beat1End, beat2End } = await playTwoBeats(orchestrator, tree);
+    // 一个来源标签相同、却没有孩子的空壳（删枝之后可能剩下的那种）
+    tree.recordFork(beat1End, { origin: "input:（选择了：道歉）" });
+
+    await orchestrator.jumpTo(beat1End, { playFrom: "start" });
+    const called = calls.n;
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    expect(calls.n).toBe(called);
+    expect(tree.leafId).toBe(beat2End);
+  });
+});
+
+describe("重写继承来源（同选项认得出刚重写的那条枝）", () => {
+  const rewritten = '<say id="mio">……算了，走吧。</say>';
+
+  it("路线卡片点名 replaced：新枝带同样的来源标签，回同一锚点重选走重写那条", async () => {
+    const responses: FakeResponse[] = [
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+      { text: rewritten, beatDone: true },
+    ];
+    const { orchestrator, tree, calls } = countingSetup(responses);
+    const { beat1End, beat2End, beat2Prompt } = await playTwoBeats(orchestrator, tree);
+
+    await orchestrator.forkTo(beat1End, { resume: true, replaced: beat2Prompt });
+    await orchestrator.whenIdle();
+    const rewrittenEnd = tree.leafId!;
+    expect(rewrittenEnd).not.toBe(beat2End);
+
+    await orchestrator.jumpTo(beat1End, { playFrom: "start" });
+    const called = calls.n;
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    expect(calls.n).toBe(called);
+    // 「最后去过的那条枝」= 刚重写出来的那条，而不是原来那条
+    expect(tree.leafId).toBe(rewrittenEnd);
+  });
+
+  it("没点名 replaced 时看世界线落在哪：舞台导演栏的重写走这条", async () => {
+    const responses: FakeResponse[] = [
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+      { text: rewritten, beatDone: true },
+    ];
+    const { orchestrator, tree, calls } = countingSetup(responses);
+    const { beat1End } = await playTwoBeats(orchestrator, tree);
+
+    // 世界线还在第二拍末梢：锚点之下路径上的那个孩子就是被顶掉的那一拍
+    await orchestrator.forkTo(beat1End, { resume: true });
+    await orchestrator.whenIdle();
+    const rewrittenEnd = tree.leafId!;
+
+    await orchestrator.jumpTo(beat1End, { playFrom: "start" });
+    const called = calls.n;
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    expect(calls.n).toBe(called);
+    expect(tree.leafId).toBe(rewrittenEnd);
+  });
+
+  it("prevLeafId 记的是结构操作之前世界线所在的位置；旧档缺字段或悬空都按无偏好", async () => {
+    const { orchestrator, tree } = countingSetup([
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+    ]);
+    const { beat1End, beat2End } = await playTwoBeats(orchestrator, tree);
+
+    await orchestrator.jumpTo(beat1End);
+    expect(orchestrator.runtimeState.prevLeafId).toBe(beat2End);
+
+    const base: OrchestratorRuntimeState = { events: [], beatNo: 0, lastStop: null, epoch: 0 };
+    expect(setup([], { restored: base }).orchestrator.runtimeState.prevLeafId).toBeNull();
+    expect(
+      setup([], { restored: { ...base, prevLeafId: "e-nope" } }).orchestrator.runtimeState.prevLeafId,
+    ).toBeNull();
+  });
+});
+
+describe("删除一段及其后代", () => {
+  it("剪掉这一段：节点与后代消失、世界线回到上一轮末尾、客户端留在路线视图", async () => {
+    const { orchestrator, messages, tree } = countingSetup([
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+    ]);
+    const { beat1End, beat2End, beat2Prompt } = await playTwoBeats(orchestrator, tree);
+
+    orchestrator.deleteBranch(beat2Prompt);
+
+    expect(tree.get(beat2Prompt)).toBeUndefined();
+    expect(tree.get(beat2End)).toBeUndefined();
+    expect(tree.leafId).toBe(beat1End);
+    expect(lastRebase(messages).note).toBe("剪掉这一段");
+    expect(lastRebase(messages).keepView).toBe(true);
+    expect(orchestrator.runtimeState.prevLeafId).toBe(beat1End);
+  });
+
+  it("开场那一轮不能删", async () => {
+    const { orchestrator, tree } = countingSetup([{ text: BEAT_1, beatDone: BEAT_1_STOP }]);
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    const root = tree.ancestorChain(tree.leafId)[0]!;
+
+    expect(() => orchestrator.deleteBranch(root)).toThrow(/开场那一轮不能删/);
+    expect(tree.get(root)).toBeDefined();
+  });
+
+  it("删别的枝不动世界线：玩家在另一条枝上的位置不被这一剪拽走", async () => {
+    const { orchestrator, tree } = countingSetup([
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+      { text: '<say id="mio">……也行。</say>', beatDone: true },
+    ]);
+    const { beat1End, beat2Prompt } = await playTwoBeats(orchestrator, tree);
+    await orchestrator.jumpTo(beat1End, { playFrom: "start" });
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 1 });
+    await orchestrator.whenIdle();
+    const other = tree.leafId!;
+
+    orchestrator.deleteBranch(beat2Prompt);
+
+    expect(tree.get(beat2Prompt)).toBeUndefined();
+    expect(tree.leafId).toBe(other);
+  });
+});

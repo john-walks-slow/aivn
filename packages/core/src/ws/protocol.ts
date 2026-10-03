@@ -207,6 +207,11 @@ export type ServerMessage =
       playFrom?: "start" | "end";
       /** playFrom 配套的播放头落点（start 时为该轮首句，offset=0）。 */
       resumeAt?: ReadPos;
+      /**
+       * 这次重建不要切回舞台：删除是「在路线里整理分支」的动作，树上少一张卡就是反馈，
+       * 把玩家拽回舞台等于打断他正在做的事。
+       */
+      keepView?: boolean;
     }
   /** 一行台词/旁白被原地改写：客户端按 seq 就地替换该行文字，不重放全量事件。 */
   | { type: "line_edited"; nodeId: string; text: string; seq?: number }
@@ -280,8 +285,13 @@ export type ClientMessage =
    *  正在演的那轮腰斩克隆：被掐断的那轮停在它演到的位置，不写 beat_end/快照。
    *  锚点二选一：`nodeId`（路线视图/回顾给的节点）或 `seq`（舞台上正在看的那一行，
    *  行要等收尾才落树，所以由服务端按「不大于该 seq 的最后一个节点」解析，见 nodeIdAtSeq）。
-   *  resume=true = 「重演这一轮」：分岔后立刻续演，中间不设停止点。 */
-  | { type: "fork"; nodeId?: string; seq?: number; resume?: boolean }
+   *  resume=true = 「重演这一轮」：分岔后立刻续演，中间不设停止点。
+   *  replaced = 被这一岔顶掉的那一拍的首节点（路线卡片知道自己是哪一张，直接点名）。
+   *  新的 fork 标记继承它的来源标签，玩家回到同一锚点重选同一个动作时才认得出这条枝。 */
+  | { type: "fork"; nodeId?: string; seq?: number; resume?: boolean; replaced?: string }
+  /** 删除：剪掉 nodeId 及其全部后代（路线卡片传该段首节点）。
+   *  删完世界线重挂到第一个活着的祖先；只落 session.json，lineage.jsonl 是只增审计流。 */
+  | { type: "delete_branch"; nodeId: string }
   | { type: "edit"; nodeId: string; newText: string }
   /** 导演生图：按当前这一刻的剧情（可带玩家指令）写提示词并出一张 CG。
    *  落点是**点下这一刻**在时间线上的位置，与剧作家的预发射同一套机制。
