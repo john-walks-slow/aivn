@@ -1,6 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel } from "@stage-ai/core";
 import { createBeatDoneTool } from "./beatTool.js";
+import { createNsfwTools } from "./nsfwTool.js";
 import { AGENT_ROLES, ROLE_INSTALLABLE, type AgentRole } from "./role.js";
 import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "./deps.js";
 import { createFilesTools } from "./filesTool.js";
@@ -60,6 +61,8 @@ export interface AgentToolEntry {
  */
 const TOOL_CATALOG: Record<string, { label: string; group: ToolGroup }> = {
   beat_done: { label: "结束本轮", group: "beat" },
+  enter_nsfw: { label: "进入限制级剧情", group: "beat" },
+  exit_nsfw: { label: "退出限制级剧情", group: "beat" },
   update_state: { label: "提议状态更新", group: "memory" },
   create_character: { label: "建角色卡", group: "memory" },
   read_memory_detail: { label: "读记忆卡详情", group: "memory" },
@@ -93,6 +96,8 @@ const TOOL_CATALOG: Record<string, { label: string; group: ToolGroup }> = {
 const DEFAULT_ENABLED: Record<AgentRole, string[]> = {
   playwriter: [
     "beat_done",
+    "enter_nsfw",
+    "exit_nsfw",
     "update_state",
     "create_character",
     "read_memory_detail",
@@ -192,6 +197,7 @@ export function createAgentKit(deps: AgentKitDeps & { thinking?: ThinkingLevel }
 function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
   return [
     createBeatDoneTool(deps),
+    ...createNsfwTools(deps),
     ...createMemoryTools(deps),
     createGenerateImageTool({
       mode: "queued",

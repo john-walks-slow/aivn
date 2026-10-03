@@ -1148,3 +1148,119 @@ describe("阅读位置落盘（#3：刷新回到读到的那一句）", () => {
     expect(restored.readingPos).toBeNull();
   });
 });
+
+describe("限制级（NSFW）模式切换与上下文隔离", () => {
+  it("调用 enter_nsfw 后下一轮注入 NSFW 前置合规轮次，调用 exit_nsfw 后切回 SFW 摘要", async () => {
+    const contexts: CapturedContext[] = [];
+    const responses: FakeResponse[] = [
+      // 第 1 轮：日常铺垫，并在本轮调用 enter_nsfw
+      {
+        text: '<say id="mio">来我房间吧……</say>',
+        beatDone: true,
+        toolCalls: [{ name: "enter_nsfw", args: { reason: "进入房间亲密接触" } }],
+      },
+      // 第 2 轮：限制级描写，并在本轮同时调用 exit_nsfw + beat_done
+      {
+        text: '<say id="mio">笨蛋……轻一点……</say>',
+        beatDone: true,
+        toolCalls: [{ name: "exit_nsfw", args: { summary: "两人在房间内度过了温存亲密的一夜。" } }],
+      },
+      // 摘要生成阶段的 LLM 补全响应
+      {
+        text: "两人在房间内互诉心意，度过了温存亲密的一夜，彼此关系有了重大突破。",
+      },
+      // 第 3 轮：切回主模型日常
+      {
+        text: '<scene bg="morning_room"/><say id="mio">早啊……昨晚睡得好吗？</say>',
+        beatDone: true,
+      },
+    ];
+
+    const { orchestrator } = setup(responses, { contexts });
+    orchestrator.start();
+    await orchestrator.whenIdle();
+
+    // 第 1 轮演完，已请求 enter_nsfw
+    expect(orchestrator.runtimeState.beatNo).toBe(1);
+
+    // 触发第 2 轮（进入 NSFW 模式）
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+
+    // 验证第 2 轮的上下文中包含了 NSFW 前置合规轮次
+    const nsfwContext = contexts[1]!;
+    const hasPreTurn = nsfwContext.messages.some(
+      (m) => typeof m.content === "string" && m.content.includes("20 周岁以上"),
+    );
+    expect(hasPreTurn).toBe(true);
+
+    // 触发第 3 轮（已切回 SFW 主模型）
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+
+    expect(orchestrator.runtimeState.beatNo).toBe(3);
+    // 验证第 3 轮上下文：NSFW 前置合规轮次已被剥离，且包含了 SFW 摘要前情提要
+    const sfwContext = contexts[3]!;
+    const stillHasPreTurn = sfwContext.messages.some(
+      (m) => typeof m.content === "string" && m.content.includes("20 周岁以上"),
+    );
+    expect(stillHasPreTurn).toBe(false);
+
+    // 验证第 3 轮的 user 消息中包含了 SFW 摘要内容
+    const userMessages = sfwContext.messages.filter((m) => m.role === "user");
+    const combinedUserText = userMessages.map((m) => String(m.content)).join("\n");
+    expect(combinedUserText).toContain("【前情提要·日常接续】");
+    expect(combinedUserText).toContain("温存亲密的一夜");
+    // 露骨台词不应在主模型消息中出现
+    expect(combinedUserText).not.toContain("轻一点");
+  });
+
+  it("从限制级分支跳转或分岔回日常节点时，NSFW 状态重置为 false，不会滞留限制级模式", async () => {
+    const contexts: CapturedContext[] = [];
+    const responses: FakeResponse[] = [
+      // 第 1 轮：日常
+      {
+        text: '<say id="mio">今天天气真好。</say>',
+        beatDone: true,
+      },
+      // 第 2 轮：进入限制级
+      {
+        text: '<say id="mio">来吧……</say>',
+        beatDone: true,
+        toolCalls: [{ name: "enter_nsfw", args: {} }],
+      },
+      // 第 3 轮：限制级
+      {
+        text: '<say id="mio">亲爱的……</say>',
+        beatDone: true,
+      },
+    ];
+
+    const { orchestrator, tree } = setup(responses, { contexts });
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    const beat1NodeId = tree.leafId!;
+
+    // 演第 2 轮
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+
+    // 演第 3 轮（NSFW 中）
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+    expect(orchestrator.runtimeState.nsfw?.active).toBe(true);
+
+    // 跳转回第 1 轮节点
+    await orchestrator.jumpTo(beat1NodeId);
+    expect(orchestrator.runtimeState.nsfw?.active).toBe(false);
+
+    // 验证当前 agent messages 中无 NSFW 前置合规轮次
+    const currentAgentMessages = (orchestrator as unknown as { agent: { state: { messages: unknown[] } } })
+      .agent.state.messages;
+    const hasPreTurn = currentAgentMessages.some(
+      (m: unknown) => typeof (m as { content?: string }).content === "string" && (m as { content: string }).content.includes("20 周岁以上"),
+    );
+    expect(hasPreTurn).toBe(false);
+  });
+});
+

@@ -69,6 +69,10 @@ export interface PromptContext {
   canSearch?: boolean;
   /** 素材资源库在位（没配库目录时引用即导入无处可查，提示词里不提，免得它照着一条不存在的链路找）。 */
   canLibrary?: boolean;
+  /** 当前处于限制级（NSFW）剧情通道中。 */
+  nsfwMode?: boolean;
+  /** 限制级（NSFW）系统提示词自定义扩展。 */
+  nsfwPrompt?: string;
 }
 
 /**
@@ -140,6 +144,12 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   // （每轮多长、给几个选项、多久交一次主导权都归剧目定），由搭台助手与用户对齐后写进这份文件。
   const craft = memory?.craft.trim() ?? "";
   const craftSection = craft ? `\n${craft}\n` : "";
+  const nsfwGuidance =
+    ctx.nsfwMode
+      ? `\n# 限制级（NSFW）创作指引\n\n你当前正处于限制级剧情通道。\n- 专注于亲密接触中的情感张力、双方的心理起伏、生理与感官细节反应的细腻刻画；\n- 保持角色一贯的性格与说话风格，将人设融入亲密互动中；\n- 结合 Stage DSL：合理使用 <actor action="..." expression="..."> 配合肢体反应与微表情，用 <sfx> 辅助营造氛围；\n- 当这段亲密情节告一段落、即将回归正常日常时，调用 exit_nsfw 退出限制级模式。exit_nsfw 可以与 beat_done 在同一批次工具调用中一同发出。\n${
+          memory?.nsfw?.trim() ? `\n## 剧目限制级专属口径\n${memory.nsfw.trim()}\n` : ""
+        }${ctx.nsfwPrompt?.trim() ? `\n## 补充限制级提示词\n${ctx.nsfwPrompt.trim()}\n` : ""}`
+      : `\n## 亲密/限制级剧情入口（enter_nsfw）\n\n当剧情推进至即将发生亲密、成人或限制级（NSFW）接触时，不要在当前模型下直接描写露骨细节。\n调用 \`enter_nsfw\` 开启限制级剧情通道。调用后完成本轮收束并调用 \`beat_done\`，下一轮起将由限制级专用模型和专属提示词接管展开细腻描写；亦可与 \`beat_done\` 在同一批次工具调用中一同发出。\n`;
   const cards = memory?.visibleContext(ctx.arcIds ?? []) ?? [];
   const indexSection =
     cards.length > 0
@@ -168,7 +178,7 @@ ${premise}
 # 角色表
 
 ${characters}
-${assetSection}${craftSection}${indexSection}
+${assetSection}${craftSection}${nsfwGuidance}${indexSection}
 # 剧本格式（Stage DSL，必须严格遵守）
 
 你输出的每一行都是剧本。指令用 XML 标签，台词是标签外的原生文本。
@@ -232,7 +242,7 @@ center（居中悬空）、top（从上垂下）。
 - 想给一个自由回答的口子 → beat_done(placeholder="想对他说什么？")。
 - 这一段自然演完 → beat_done()，两个参数都不给。
 
-beat_done 必须**独占一次工具调用**——不与 create_character、update_state 等其他工具放在同一批里。
+beat_done 通常**独占一次工具调用**（除 enter_nsfw / exit_nsfw 等模式切换工具可同批发出外，不与 create_character、update_state 等其他工具放在同一批里）。
 调完之后本轮就结束了：不要再输出任何内容（没有停止点时也不要写收尾交代或过场说明）。
 轮与轮之间由引擎接续。
 

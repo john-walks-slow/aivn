@@ -66,6 +66,8 @@ export interface MemorySnapshot {
   state: Record<string, string>;
   /** arcs 摘要 id 列表（引用，内容在剧目记忆目录）。 */
   arcs: string[];
+  /** 限制级（NSFW）剧情通道是否激活。 */
+  nsfw?: boolean;
 }
 
 export interface LineageSnapshot {

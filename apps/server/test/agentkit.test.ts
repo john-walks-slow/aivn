@@ -27,6 +27,9 @@ function playwriter(over: Partial<PlaywriterKitDeps> = {}, enabled?: string[]): 
     kick: () => {},
     kickSprite: () => {},
     existingAssetUrl: async () => null,
+    onEnterNsfw: () => {},
+    onExitNsfw: () => {},
+    isNsfw: () => false,
     // 资源库没配就不注册 list_library（装一个必然查不出东西的工具只会空转）
     assetLibrary: { list: async () => [] } as never,
     ...over,
@@ -58,6 +61,8 @@ describe("agent kit：两个角色的暴露面", () => {
     expect(names(kit)).toEqual([
       "beat_done",
       "create_character",
+      "enter_nsfw",
+      "exit_nsfw",
       "generate_image",
       "list_library",
       "read_memory_detail",
