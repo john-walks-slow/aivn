@@ -61,7 +61,7 @@ export function parseImageSize(raw: string): ImageSizeSpec {
   const pixels = PIXEL_SIZE.exec(value);
   if (pixels) return { kind: "px", width: Number(pixels[1]), height: Number(pixels[2]) };
   throw new Error(
-    `STAGE_IMAGE_SIZE（${raw}）非法，可填档位 ${IMAGE_SIZES.join(" / ")}（K 大写）或字面像素 1536x1024`,
+    `生图尺寸（${raw}）非法，可填档位 ${IMAGE_SIZES.join(" / ")}（K 大写）或字面像素 1536x1024`,
   );
 }
 
@@ -76,6 +76,15 @@ export function tierArea(tier: ImageSize): number {
 
 export interface ImageRequest {
   prompt: string;
+  /**
+   * 本次出图用哪个模型 / 什么尺寸：覆盖部署级的 `STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`。
+   *
+   * 来自剧目的 `play.json`（`image` 段），由调用方现读现传——一部剧的立绘要 2K 抠底、
+   * 另一部的小剧场插图 1K 就够，或者一部走 flow2api 的别名模型、另一部走官方。
+   * 不传 = 跟部署配置；格式不认这个值时报错，不静默退回全局（用户改了设置却出成老样子最难查）。
+   */
+  model?: string;
+  size?: string;
   /** 画幅：背景/CG 用 16:9，立绘用 9:16。不给则由实现自取默认。 */
   aspectRatio?: ImageAspect;
   /** 参考图（垫图）：角色一致性的唯一可靠手段，prompt 措辞锁不住脸。 */

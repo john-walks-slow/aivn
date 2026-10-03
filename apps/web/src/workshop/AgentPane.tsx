@@ -206,6 +206,23 @@ export function AgentPane({ playId }: { playId: string }) {
 
             {role.id === "workshop" && (
               <label className="field">
+                <span>出图审批</span>
+                <select
+                  value={settings.imageApproval ?? "ask"}
+                  onChange={(e) => patch(role.id, (s) => setOrClear(s, "imageApproval", e.target.value, "ask"))}
+                >
+                  <option value="ask">先问我（默认）</option>
+                  <option value="auto">直接出图</option>
+                </select>
+                <p className="muted small">
+                  工坊一次对话可能连着出好几张图，还要等一两分钟。「先问我」时它列完图单、等用户点头才开跑；
+                  选「直接出图」就跳过这一步——出图要钱，只在你放心的剧目上开。
+                </p>
+              </label>
+            )}
+
+            {role.id === "workshop" && (
+              <label className="field">
                 <span>补充要求</span>
                 <textarea
                   rows={6}
@@ -230,7 +247,16 @@ export function AgentPane({ playId }: { playId: string }) {
 }
 
 /** 值等于默认（或空）时把键删掉，别在 play.json 里留一堆等价于缺省的字段。 */
-function setOrClear<K extends "model" | "thinking" | "prompt" | "nsfwModel" | "nsfwThinking" | "nsfwPrompt">(
+function setOrClear<
+  K extends
+    | "model"
+    | "thinking"
+    | "prompt"
+    | "nsfwModel"
+    | "nsfwThinking"
+    | "nsfwPrompt"
+    | "imageApproval",
+>(
   settings: AgentSettings,
   key: K,
   value: string,

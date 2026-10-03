@@ -8,7 +8,7 @@
 
 - **两个 agent 共用一套基座**：`src/agentkit/` 是唯一工具实现面（`kit.ts` 按 `role: "playwriter" | "workshop"` 装配，`deps.ts` 用判别联合收窄依赖），同一工具**同一份 schema 与实现，只有 description + 等待策略 + 注入依赖不同**（`generate_image`：工坊 sync 等图并回 markdown 图片、剧作家 queued 后台排产只占时间线位置）。
 - **工具清单只有一份**：`kit.ts` 的 `TOOL_CATALOG` 收了全部工具的元数据，**角色可见性是每一项自己的 `roles`**（不再有第二份 id 清单；`installableTools(role)` / `agentToolCatalog(role)` 由它投影，是设置页与装配共用的唯一真相源；`agentToolEntry(id)` 碰到未登记的 id 直接抛错），play.json 的 `agents.<role>.tools` 存**启用集**（白名单，不是禁用集）过滤，缺省走 `DEFAULT_ENABLED`（搭台除 `bash` 外全开——命令行按剧目手动勾；剧作家开着轮收束/记忆/联网/生图/**只读**查库，`import_asset` 仍默认关——素材策略是创作决策，工具不给它那条策略就是空话）。
-- `can` 位（image/search/library/voice/shell）反过来决定提示词注不注某一章。**一位对应一个授权它的工具**（`CAPABILITY_TOOLS` 表），`kit.can` 由 `capabilitiesOf(装上的工具)` 现算——两个角色的提示词读同一个对象，不会各算各的。
+- `can` 位（image/search/library/voice/shell/nsfw）反过来决定提示词注不注某一章。**一位对应一个授权它的工具**（`CAPABILITY_TOOLS` 表），`kit.can` 由 `capabilitiesOf(装上的工具)` 现算——两个角色的提示词读同一个对象，不会各算各的。
 - `generate_image` 的两个角色**同一份 schema**（`expression` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只差 description 与等待策略。**垫图入口只有一个 `references`**（每项可以是角色 id、剧目内相对路径或 http(s) 网址，1–6 张；`referenceCharacters` 保留为只吃角色 id 的兼容别名，两者在工具层合并去重）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该角色的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
 - **自动注册临时角色**：`generate_image` 的 `characterName` 参数带上了、而 `characterId` 不在角色卡目录里时，`playAssets.resolveSprite` 就地写一张最小卡再出图（卡里只有 id/name，正文写「（演出中临时引入，设定未补。）」——留空会让工坊以为「作者写过了，就是没写」），并打 `autoRegistered` 让宿主走同一条 `onPlayConfigChanged` 轮边界重建：工坊与用户此刻不在场，等他们想起建卡，这一轮早演过去了。
 - 已有卡时这个参数不作数（不覆盖人设）。
@@ -22,7 +22,7 @@
 
 ## DSL、轮收束与 IR 事件
 
-- **DSL 是时间线、工具是副作用**：`beat_done`（轮收束 + 停止点载荷，`options` 若干条 / `placeholder` / 都不给；schema 只兜「至少两条非空」这个无效载荷，**给几条、何时给归剧目的创作口径**，见下）与 `generate_image` 产出 `stop` / `preload_asset` 两个 IR 事件，经 `emitStageEvent` 与解析器产出的事件走同一条路（加 seq → 广播 → 落谱系），client 侧一行不用改。
+- **DSL 是时间线、工具是副作用**：`beat_done`（轮收束 + 停止点载荷，`options` 若干条 / `placeholder` / 都不给；schema 只兜「至少两条非空」这个无效载荷，**给几条、何时给归剧目的写作参数**，见下）与 `generate_image` 产出 `stop` / `preload_asset` 两个 IR 事件，经 `emitStageEvent` 与解析器产出的事件走同一条路（加 seq → 广播 → 落谱系），client 侧一行不用改。
 - 文本形式的 `<stop>`/`<option>`/`<preload_asset>` 已从 DSL 摘除，遇到只静默降级并记 `legacy_tag` 警告（照读会把标签念到舞台上）。
 
 ## 工坊线程（压缩、消息文件与文件工具）
@@ -66,7 +66,7 @@
 
 - **工具知识只写在工具描述里，系统提示词不复述**（同一规则写两处必然漂移——生图那几条已经漂移过一次）。
 - `prompt.ts` 的 `imageChapter` 只留工具本身与后果（发起即返回、这一轮就引用到它则先上骨架占位），调用写法（走函数调用不是文本标签、id 命名、prompt 后缀串）全在 `QUEUED_DESCRIPTION`。
-- **什么时候该画一张不再由引擎决定**——早先那句「清单里没有就自己画一张背景」替所有剧目做了同一个决定，已撤掉，改成指向剧目的创作口径。
+- **什么时候该画一张不再由引擎决定**——早先那句「清单里没有就自己画一张背景」替所有剧目做了同一个决定，已撤掉，改成指向写作参数的素材来源（`renderCraftParams` 按 `can.image` / `can.library` 渲染那几行）。
 - 原先那句「提前 3–5 句发起」已删——流式播放下 3–5 句只给图 3–5 秒的头，而真图要一分多钟，这个数推导不出来。
 - 现在只留事实：这一轮就引用到它，舞台先上骨架占位、到货后淡入。
 - `workshop.ts` 的资源库章节整段删掉，内容进了 `list_library` 的描述。
@@ -77,6 +77,7 @@
 - **`play.json` 的字段表写在工坊 `writingPoints`**：除 `id`/`title` 外全是可选字段，缺省字段不在文件里、read 也读不出来，字段名猜错会被 `parsePlayConfig` 静默丢弃——所以 schema 必须写进提示词，并要求定点 `edit` 而不是整篇覆盖。
 - 工具的可见性错配要当 bug 治：`create_character` 只装给剧作家、`list_voices` 只装给工坊，描述里不能提对方才有的工具（2026-10-04 修：曾教剧作家去调它没有的 `list_voices`）。
 - 两份提示词的正文按章抽成模块常量（剧作家 `ROLE_INTRO` / `HOW_I_WORK` / `FORMAT_RULES` / `NEW_CHARACTER_RULES` / `CONTRACT_RULES`，搭台 `RESPONSIBILITY_RULES` / `TALK_RULES` / `IMAGE_BASICS` / `NO_IMAGE_GUIDE` / `LINEAGE_GUIDE`），带能力位的章走 `imageChapter` / `setupFlow` / `writingPoints`，装配模板只留顺序与开关——改一章不必在几百行里找位置。
+- 写作参数段（`renderCraftParams`）在 A 区里紧挨 `craftSection` **之前**、且**永远注入**（全默认值时也注入）：缺省口径不说出来，模型面对的就是「没人告诉它一轮写多长」，而它每轮都在做这个决定。
 - `beat_done` 的三种停法只在「## 结束轮」与 `beatTool.ts` 的 `BEAT_DONE_DESCRIPTION` 各写一遍（契约 vs 工具说明），`# 你怎么工作` 不再复述第三遍。
 - 搭台提示词里**不写死 UI 入口清单**（曾列出「玩家能打字的五处界面」，界面一改即成假信息），只说清要改什么、让用户自己找入口。
 
@@ -110,6 +111,7 @@
 
 - **生图配置按接口格式而不是按产品名**：`STAGE_IMAGE_FORMAT=gemini|openai` 选协议形状（`geminiImage.ts` = `/v1beta/models/{model}:generateContent`，垫图走 `inlineData`；`openaiImage.ts` = `/v1/images/generations`，接口没有参考图入参、带垫图直接报错），地址/模型/尺寸统一读 `STAGE_IMAGE_BASE_URL` / `STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`——后者说的是两种官方词汇：`1K`/`2K`/`4K` 是 Gemini `imageConfig.imageSize` 的原词（**K 必须大写，官方拒小写**；语义是总像素量级 1K≈1024²），gemini 侧原样透传。
 - openai 侧的 `size` 是字面 `WxH`，所以档位由 `canvasFor` 按画幅换算（16:9 的 `1K` → `1360x768`），也可以直接写字面尺寸 `1536x1024` 喂只认标准尺寸的老模型。
+- **逐剧目覆盖**：`play.json` 的 `image`（`model` / `size`）覆盖部署级的 `STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`。`ImageRequest` 带可选的 `model?` / `size?`，两个实现取 `req.x ?? this.x`；`PlayAssets` **每次出图现读 play.json**（不是构造时取快照——`PlayAssets` 按剧目缓存、进程内不重建，快照会让「设置页改了模型，出图还是老模型」）。格式不认这个值就直接报错，不静默退回全局。
 - 画幅白名单取两款接口的交集（Gemini 官方 14 个取值，减去 OpenAI 不收的 1:4/4:1/1:8/8:1）——换一家 Gemini 或 OpenAI 生图只改地址与模型名，不动代码。
 
 ## 服务入口、端点与记账
@@ -123,7 +125,7 @@
 ## 技能库与新剧目初始状态
 
 - 技能库（仓库 `skills/<name>/SKILL.md` + frontmatter）只装**跨剧目的通用做法速查**，只给工坊（`read_skill`，角色标记 `workshop`）——这部剧自己的画风锚点与创作口径一律留在剧目记忆里（`memory/always/craft.md` 与设定卡，每轮本来就注入），不给剧作家开技能通道：教模型调一个装不进去的工具，它只会反复空转烧 token。
-- **新剧目的 premise 与 craft 落盘就是空文件**（`createEmpty` 不再写模板），通用创作准则改由 `prompt.ts` 的 `CRAFT_RULES` 常驻系统提示词、引导文案搬进前端输入框 placeholder——模板正文写进文件会让人以为「已经填过了」，还会让就绪门把一份空模板判成前提已就位。
+- **新剧目的 premise 与 craft 落盘就是空文件**（`createEmpty` 不再写模板）：premise 空着开不了演（就绪门），craft.md 空着只是少一层口径（节奏与素材来源走 `DEFAULT_CRAFT`）。引导文案只放在前端输入框 placeholder 里——模板正文写进文件会让人以为「已经填过了」，还会让就绪门把一份空模板判成前提已就位。
 
 ## 角色卡（characters/）
 
@@ -134,7 +136,12 @@
 
 ## 创作口径与剧目记忆
 
-- **2026-10-03 起引擎不再自带任何创作口径**：`CRAFT_RULES` 与「单轮该写多长」整节已从 `prompt.ts` 删除，一轮多长、选项给几条、多久交还主导权、什么文风、**素材来源**（哪些自己画、哪些从资源库里找）全部由剧目的 `memory/always/craft.md` 承载（每轮原样注入），由搭台助手与用户对齐后写进去（写法指导见 `workshop.ts` 的「素材来源」一条，工具名按 `can.image` / `can.library` 收条件）——文件空着剧作家就真的没有口径可听，所以工坊「设定流程」第 4 步硬性要求落盘。
+- **写作参数与创作口径分开**（2026-10-04）：`play.json` 的 `craft` 段承载**有确定取值**的三件事——每轮篇幅（short/medium/long）、停止点选项数（two/three/four/free）、素材来源（背景/插图/立绘/音效逐类），类型与 `DEFAULT_CRAFT` 在 core 的 `play/config.ts`，渲染与合并全部收在 `apps/server/src/craftParams.ts`（`renderCraftParams` 给剧作家、`describeCraftParams` 给工坊与回执、`mergeCraftParams` 给工具）。`memory/always/craft.md` 只剩**只能拿话说的**（文风、禁忌、称呼、视角），每轮原样注入。
+- 引擎**自带默认值**（`DEFAULT_CRAFT`：medium / 三条 / 背景库优先、插图与立绘出图、音效取库）。这推翻了 2026-10-03 的「引擎不自带任何创作口径」：新剧目看不到也改不动任何东西，而「每轮多长」本来就该有个能一眼看见的答案。`play.json` 只存与默认不同的字段——卡片里选「默认」= 那一行从文件里消失。
+- `set_craft`（`agentkit/craftTool.ts`，只装工坊）改 `craft` 段：省略字段 = 不变、`null` = 恢复默认；读-合并-写整体包在 `withPlayConfigLock` 里（与引用即导入、文件页共用一条队列）。写回用**原始对象只换 `craft` 一个键**，不整篇 `parsePlayConfig` + 序列化（那会顺手丢掉引擎不认识的手写字段）。
+- 素材来源的能力降级在 `craftParams.ts` 里做：`can.image` / `can.library` 决定那几行怎么写（没生图就说「用旁白交代」，没配库就不提清单），**工具没装时提示词不教它调**。文风与禁忌一律留在 `craft.md`，不参数化。
+- 剧本语言 `scriptLanguage`（play.json）与语音语言 `voiceLanguage` 是两件事：前者决定正文/旁白/选项用什么语言写（不设 = 跟随玩家输入），后者是 TTS 的翻译目标。两份提示词都读它（剧作家那段在 `prompt.ts`，工坊那段在 `workshop.ts` 的 `playLanguageNote`）。
+- `memory/always/craft.md` **空着剧作家就少一层口径可听**（写作参数照旧生效），所以工坊「设定流程」第 4 步仍硬性要求把对齐结果落盘——但落的是哪一份要看内容：文风进 craft.md，节奏与素材来源用 `set_craft`。
 
 ## 设置面板与配置面
 
@@ -145,6 +152,7 @@
 
 ## 限制级（NSFW）通道
 
+- **入口由工具开关控制**：`can.nsfw` 位（`CAPABILITY_TOOLS.nsfw = "enter_nsfw"`）决定 `prompt.ts` 注不注那两段（进/退指引）。2026-10-04 之前它是**恒注入**的——用户在 Agent 页把 `enter_nsfw`/`exit_nsfw` 摘掉，提示词还在教它去调，只有空转。关掉这两项 = 本剧目不要限制级通道。
 - **限制级（NSFW）剧情通道**：剧作家主动调 `enter_nsfw` 开启限制级通道（切换至限制级专用模型、注入 20 岁以上虚拟合规轮次与 `memory/always/nsfw.md`），退出时调 `exit_nsfw`（推荐与 `beat_done` 同批发出）。
 - 退出时自动提取 1-3 句全年龄 SFW 摘要并在进入前历史末尾追加过渡轮次，主模型只看到含蓄前情提要，前台演出与谱系事件完整保留。
 - 谱系快照（MemorySnapshot）存 nsfw 状态，分支跳转自动复位模式。

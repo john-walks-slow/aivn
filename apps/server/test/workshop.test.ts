@@ -14,6 +14,7 @@ import { PlayAssets } from "../src/playAssets.js";
 import type { GeneratedPlayAsset } from "../src/playAssets.js";
 import { WorkshopThreads } from "../src/workshopThreads.js";
 import { WorkshopSession } from "../src/workshopSession.js";
+import { DEFAULT_CRAFT, resolveCraft } from "@stage-ai/core";
 import { buildWorkshopPrompt, deriveThreadTitle, type WorkshopPromptContext } from "../src/workshop.js";
 import type { WorkshopKitDeps } from "../src/agentkit/deps.js";
 import { createAgentKit, defaultToolsFor, type AgentCapabilities } from "../src/agentkit/kit.js";
@@ -168,6 +169,7 @@ describe("工坊 prompt 与工具", () => {
     title: "测试剧目",
     files: "- play.json",
     readiness: { ready: true, premise: true, characterSprites: false, background: false, saves: 0 },
+    craft: DEFAULT_CRAFT,
     can: caps(),
     ...over,
   });
@@ -1046,24 +1048,45 @@ describe("whenIdle：工坊热改等轮边界", () => {
   });
 });
 
-describe("工坊：创作口径的交接与自定义提示词", () => {
+describe("工坊：写作参数与创作口径的交接，以及自定义提示词", () => {
   const ctx = (over: Partial<WorkshopPromptContext> = {}): WorkshopPromptContext => ({
     title: "测试剧目",
     files: "- play.json",
     readiness: { ready: true, premise: true, characterSprites: false, background: false, saves: 0 },
-    can: { image: true, search: false, library: false, voice: false, shell: false },
+    craft: DEFAULT_CRAFT,
+    can: { image: true, search: false, library: false, voice: false, shell: false, nsfw: true },
     ...over,
   });
 
-  it("教搭台助手：口径归 craft.md，且要写清四个维度", async () => {
+  it("教搭台助手：节奏与素材来源走 set_craft，craft.md 只留能拿话说的", async () => {
     const prompt = await buildWorkshopPrompt(ctx());
-    expect(prompt).toContain("唯一听这一份");
-    expect(prompt).toContain("每轮多长");
-    expect(prompt).toContain("选项给几条");
-    expect(prompt).toContain("交还主导权的密度");
+    expect(prompt).toContain("set_craft");
     expect(prompt).toContain("文风与禁忌");
-    // 引擎侧的默认已经撤干净，工坊得知道自己在补这个空
-    expect(prompt).toContain("都不再写死在剧作家的系统提示词里");
+    // 现值摆在提示词里，工坊回答「现在是什么节奏」不用去读 play.json
+    expect(prompt).toContain("每轮篇幅：中等");
+    expect(prompt).toContain("素材来源：背景 资源库优先");
+    // 别再让它把节奏写进 craft.md——写两处必然打架
+    expect(prompt).toContain("不要写在这里");
+  });
+
+  it("写作参数现值跟着 play.json 走，报的是生效值不是默认值", async () => {
+    const prompt = await buildWorkshopPrompt(ctx({ craft: resolveCraft({ beatLength: "short", assets: { cg: "off" } }) }));
+    expect(prompt).toContain("每轮篇幅：短");
+    expect(prompt).toContain("插图 不用插图");
+  });
+
+  it("剧本语言设死了就告诉工坊用它写设定；不设则不注入", async () => {
+    expect(await buildWorkshopPrompt(ctx())).not.toContain("本剧的剧本语言是");
+    const ja = await buildWorkshopPrompt(ctx({ scriptLanguage: "ja" }));
+    expect(ja).toContain("本剧的剧本语言是");
+    expect(ja).toContain("日本語 / 日语");
+  });
+
+  it("出图审批默认先问，设成 auto 就改成免审批", async () => {
+    expect(await buildWorkshopPrompt(ctx())).toContain("用户没点头之前一张都不要开跑");
+    const auto = await buildWorkshopPrompt(ctx({ imageApproval: "auto" }));
+    expect(auto).toContain("本剧目免审批出图");
+    expect(auto).not.toContain("用户没点头之前一张都不要开跑");
   });
 
   it("自定义提示词原样追加在固定段之后", async () => {

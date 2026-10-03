@@ -137,39 +137,51 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
   });
 });
 
-describe("buildSystemPrompt：创作口径与演出契约", () => {
-  it("引擎不再自带任何创作口径：craft.md 是唯一来源，有内容才注入", () => {
+describe("buildSystemPrompt：写作参数与创作口径", () => {
+  it("craft.md 有内容才注入，原样进 A 区", () => {
     const empty = build({ play: PLAY });
     expect(empty).not.toContain("# 台词怎么写");
 
     const withCraft = build({
       play: PLAY,
-      memory: new PlayMemory({ craft: "# 创作口径\n\n- 每轮 6~10 句。\n- 选项给三条。" }),
+      memory: new PlayMemory({ craft: "# 创作口径\n\n- 称呼一律用「前辈」。\n- 不用感叹号。" }),
     });
-    expect(withCraft).toContain("每轮 6~10 句。");
-    expect(withCraft).toContain("选项给三条。");
+    expect(withCraft).toContain("称呼一律用「前辈」。");
+    expect(withCraft).toContain("不用感叹号。");
   });
 
-  it("craft.md 为空时不注入任何剧目口径（新剧目的默认状态）", () => {
+  it("craft.md 为空也照给写作参数段——缺省口径不说出来，模型就不知道自己照着什么写", () => {
+    // 2026-10-04 推翻 2026-10-03 的「引擎不自带任何创作口径」：默认值也是口径，得报出来。
     const prompt = build({ play: PLAY, memory: new PlayMemory({ craft: "   " }) });
-    expect(prompt).not.toContain("# 创作口径");
+    expect(prompt).toContain("# 写作参数（本剧目设定，照它写）");
+    expect(prompt).toContain("一轮 8~15 句");
+    expect(prompt).toContain("beat_done(options=["); 
   });
 
-  it("每轮多长、选项几条、多久交还主导权都不写死在提示词里——全归剧目的创作口径", () => {
-    // 2026-10-03：这三条从系统提示词撤走，改由搭台助手与用户对齐后写进 craft.md。
-    // 撤掉之后提示词不能再偷偷留一份默认，否则剧目自己的口径永远压不过引擎的。
-    const prompt = build({
-      play: PLAY,
-      memory: new PlayMemory({ craft: "每轮写长一点。" }),
-    });
-    for (const hardcoded of ["10–25 句", "500–1500 字", "至少 10 句", "2~4", "# 单轮该写多长"]) {
-      expect(prompt).not.toContain(hardcoded);
-    }
+  it("play.craft 改了就照改的渲染，不把默认值抄一遍", () => {
+    const prompt = build({ play: { ...PLAY, craft: { beatLength: "long", stopOptions: "free" } } });
+    expect(prompt).toContain("一轮 20~30 句");
+    expect(prompt).toContain('beat_done(placeholder="…")');
+    expect(prompt).not.toContain("一轮 8~15 句");
   });
 
-  it("选项给几条交给创作口径，但工具的三种收尾方式仍是硬契约", () => {
+  it("写作参数段排在 craft.md 之前：先给能取确定值的，再读散文", () => {
+    const prompt = build({ play: PLAY, memory: new PlayMemory({ craft: "# 我的口径\n\n- 冷一点。" }) });
+    expect(prompt.indexOf("# 写作参数")).toBeGreaterThan(-1);
+    expect(prompt.indexOf("# 写作参数")).toBeLessThan(prompt.indexOf("# 我的口径"));
+  });
+
+  it("剧本语言设死了就写进提示词；不设则一个字不提（跟随玩家输入）", () => {
+    expect(build({ play: PLAY })).not.toContain("# 剧本语言");
+    const ja = build({ play: { ...PLAY, scriptLanguage: "ja" } });
+    expect(ja).toContain("# 剧本语言");
+    expect(ja).toContain("日本語 / 日语");
+    expect(ja).toContain("不要跟随玩家的输入语言");
+  });
+
+  it("选项给几条交给写作参数，但工具的三种收尾方式仍是硬契约", () => {
     const prompt = build({ play: PLAY });
-    expect(prompt).toContain("给几条互斥的选项照创作口径来");
+    expect(prompt).toContain("给几条互斥的选项照《写作参数》");
     expect(prompt).toContain("beat_done(placeholder=");
     expect(prompt).toContain("beat_done()，两个参数都不给");
   });
@@ -207,6 +219,28 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
       memory: new PlayMemory({ craft: "只写一句。" }),
     });
     expect(prompt).toContain("你是剧本引擎，不是助手");
+  });
+
+  it("限制级通道跟着工具开关收口：enter_nsfw 摘掉就整段不注入", () => {
+    // 2026-10-04 修：这两段原本是恒注入的——用户在 Agent 页摘掉工具，提示词还在教它去调。
+    const idle = build({ play: PLAY });
+    expect(idle).toContain("## 亲密/限制级剧情入口（enter_nsfw）");
+
+    const off = build({ play: PLAY, can: { nsfw: false } });
+    expect(off).not.toContain("enter_nsfw");
+    expect(off).not.toContain("exit_nsfw");
+    expect(off).not.toContain("限制级");
+  });
+
+  it("通道开着时才按当前模式切换：进入指引 / 通道内指引 + 剧目专属口径", () => {
+    const on = build({
+      play: PLAY,
+      nsfwMode: true,
+      nsfwPrompt: "这一部不要写得太直白。",
+    });
+    expect(on).toContain("# 限制级（NSFW）创作指引");
+    expect(on).toContain("这一部不要写得太直白。");
+    expect(on).not.toContain("## 亲密/限制级剧情入口（enter_nsfw）");
   });
 
   it("剧作家 prompt 不再出现技能清单：它没有 read_skill 这个工具", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createVoiceTool } from "../src/agentkit/voiceTool.js";
 import type { VoiceCatalogService } from "../src/voiceCatalog.js";
+import { DEFAULT_CRAFT } from "@stage-ai/core";
 import { buildWorkshopPrompt } from "../src/workshop.js";
 
 /**
@@ -102,25 +103,30 @@ describe("list_voices", () => {
 });
 
 describe("工坊提示词：音色知识不在这里重复", () => {
-  const base = { title: "T", files: "x", readiness: { ready: true, missing: [] } as never };
+  const base = {
+    title: "T",
+    files: "x",
+    readiness: { ready: true, missing: [] } as never,
+    craft: DEFAULT_CRAFT,
+  };
 
   it("配了 TTS 才教它去查音色库", async () => {
     const on = await buildWorkshopPrompt({
       ...base,
-      can: { image: true, search: true, library: true, voice: true, shell: false },
+      can: { image: true, search: true, library: true, voice: true, shell: false, nsfw: true },
     });
     expect(on).toContain("list_voices");
     expect(on).toContain("32 位 hex");
 
     const off = await buildWorkshopPrompt({
       ...base,
-      can: { image: true, search: true, library: true, voice: false, shell: false },
+      can: { image: true, search: true, library: true, voice: false, shell: false, nsfw: true },
     });
     expect(off).not.toContain("list_voices");
   });
 
   it("挑音色的语言跟着剧目的语音语言走，不是跟着系统语言", async () => {
-    const caps = { image: true, search: true, library: true, voice: true, shell: false };
+    const caps = { image: true, search: true, library: true, voice: true, shell: false, nsfw: true };
     const ja = await buildWorkshopPrompt({ ...base, can: caps, voiceLanguage: "ja" });
     expect(ja).toContain('language="ja"');
     expect(ja).toContain("台词先译成它再配音");

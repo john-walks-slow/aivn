@@ -221,6 +221,26 @@ async function opaquePixelDiff(a: string, b: string): Promise<number> {
   return diff;
 }
 
+describe("PlayAssets：逐剧目生图配置", () => {
+  it("每次出图现读 play.json 的 image 段，改了立刻生效（map 缓存不失效也不会拿旧值）", async () => {
+    // playAssets 按剧目缓存、进程内不重建：构造时取快照会让「设置页改了模型，出图还是老模型」。
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { files, assets } = makeAssets(store, backend);
+
+    await assets.generate({ kind: "background", name: "a" }, "p");
+    expect(calls[0]!.model).toBeUndefined();
+
+    const raw = JSON.parse(await readFile(join(store.dir, "play.json"), "utf8")) as Record<string, unknown>;
+    raw.image = { model: "gemini-3-pro-image", size: "4K" };
+    await files.write("play.json", JSON.stringify(raw, null, 2));
+
+    await assets.generate({ kind: "background", name: "b" }, "p");
+    expect(calls[1]!.model).toBe("gemini-3-pro-image");
+    expect(calls[1]!.size).toBe("4K");
+  });
+});
+
 describe("PlayAssets：工坊素材落盘", () => {
   it("背景落 assets/backgrounds/ 16:9，同名再生成算覆盖并清掉旧扩展名", async () => {
     const store = await makeStore();

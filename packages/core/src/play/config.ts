@@ -35,6 +35,94 @@ export interface CharacterCard {
   spriteFraming?: Record<string, SpriteFraming>;
 }
 
+/**
+ * 创作口径的**可调参数**（play.json 的 `craft` 段）。
+ *
+ * 与 `memory/always/craft.md` 的分工：craft.md 写「这个剧目是什么味儿」——文风、禁忌、
+ * 称呼习惯，诸如此类只能拿自然语言描述的东西；这里写「每轮多长、给几个选项、素材从哪来」
+ * 这三件**有确定取值**的事。前者是散文，后者是配置：模型的自由度在散文里，引擎的确定性
+ * 在配置里，混在一份 md 里两头都做不好。
+ *
+ * 三个字段全部可选，缺省走 `DEFAULT_CRAFT`（引擎自带的口径，见下）。写盘时只写与默认
+ * 不同的字段——`DEFAULT_CRAFT` 改了，没显式写过的剧目跟着一起改，这才是「默认」的意思。
+ */
+export interface CraftParams {
+  beatLength?: CraftBeatLength;
+  stopOptions?: CraftStopOptions;
+  assets?: CraftAssetSources;
+}
+
+/** 每轮篇幅：一轮 = 两个停止点之间的一段戏。 */
+export const CRAFT_BEAT_LENGTHS = ["short", "medium", "long"] as const;
+export type CraftBeatLength = (typeof CRAFT_BEAT_LENGTHS)[number];
+
+/** 停止点给几条选项。`free` = 固定停在自由输入框（不给选项面板）。 */
+export const CRAFT_STOP_OPTIONS = ["two", "three", "four", "free"] as const;
+export type CraftStopOptions = (typeof CRAFT_STOP_OPTIONS)[number];
+
+/**
+ * 素材来源逐类声明，不做全集枚举。
+ *
+ * 背景 / CG / 立绘 / 音频四类的现实选择并不一样：背景常常「库里有就用、没有才画」，
+ * CG 几乎总是现画，立绘只能画（库里没有可用的差分），音频只能取库（引擎不生音频）。
+ * 一套 `library-first` / `generate-all` 的全局口径表达不了「背景先用库、CG 直接画」。
+ */
+export const CRAFT_BACKGROUND_SOURCES = ["library-first", "library", "generate"] as const;
+export const CRAFT_CG_SOURCES = ["library", "generate", "off"] as const;
+export const CRAFT_SPRITE_SOURCES = ["generate", "off"] as const;
+export const CRAFT_AUDIO_SOURCES = ["library", "off"] as const;
+export type CraftBackgroundSource = (typeof CRAFT_BACKGROUND_SOURCES)[number];
+export type CraftCgSource = (typeof CRAFT_CG_SOURCES)[number];
+export type CraftSpriteSource = (typeof CRAFT_SPRITE_SOURCES)[number];
+export type CraftAudioSource = (typeof CRAFT_AUDIO_SOURCES)[number];
+
+export interface CraftAssetSources {
+  /** 库里有就用库里的，没有才出图（缺省）。 */
+  background?: CraftBackgroundSource;
+  cg?: CraftCgSource;
+  sprite?: CraftSpriteSource;
+  audio?: CraftAudioSource;
+}
+
+/** 与默认值合成之后的创作口径：逐字段都有值，渲染与判分支只读它。 */
+export interface EffectiveCraft {
+  beatLength: CraftBeatLength;
+  stopOptions: CraftStopOptions;
+  assets: {
+    background: CraftBackgroundSource;
+    cg: CraftCgSource;
+    sprite: CraftSpriteSource;
+    audio: CraftAudioSource;
+  };
+}
+
+/**
+ * 引擎默认口径：不写 `craft` 的剧目按这一份走。
+ *
+ * 2026-10-03 定过一条「引擎不自带任何创作口径，一律由 craft.md 定义」，2026-10-04 推翻：
+ * 用户开一部新剧时看不到也改不动任何东西（craft.md 是句自然语言，工坊写它、引擎不解释它），
+ * 而「每轮多长」这种问题本来就该有个能一眼看见、能直接改的答案。craft.md 保留文风与禁忌。
+ */
+export const DEFAULT_CRAFT: EffectiveCraft = {
+  beatLength: "medium",
+  stopOptions: "three",
+  assets: { background: "library-first", cg: "generate", sprite: "generate", audio: "library" },
+};
+
+/** 逐字段与默认值合成。`craft` 里被 parse 丢掉过的非法值到不了这里。 */
+export function resolveCraft(craft?: CraftParams): EffectiveCraft {
+  const assets = craft?.assets;
+  return {
+    beatLength: craft?.beatLength ?? DEFAULT_CRAFT.beatLength,
+    stopOptions: craft?.stopOptions ?? DEFAULT_CRAFT.stopOptions,
+    assets: {
+      background: assets?.background ?? DEFAULT_CRAFT.assets.background,
+      cg: assets?.cg ?? DEFAULT_CRAFT.assets.cg,
+      sprite: assets?.sprite ?? DEFAULT_CRAFT.assets.sprite,
+      audio: assets?.audio ?? DEFAULT_CRAFT.assets.audio,
+    },
+  };
+}
 /** 思考档位（pi 的 thinkingLevel）。剧作家与工坊各自独立。 */
 export const THINKING_LEVELS = ["off", "low", "medium", "high"] as const;
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
@@ -72,6 +160,31 @@ export interface AgentSettings {
   nsfwThinking?: ThinkingLevel;
   /** 限制级（NSFW）剧情通道专属系统提示词扩展。 */
   nsfwPrompt?: string;
+  /**
+   * 出图要不要先问过玩家（**只有工坊装它**，缺省 `ask`）。
+   *
+   * 问的是「这张图要不要花钱」：工坊一次对话可能连着出四五张，玩家离开一会儿回来发现
+   * 账单上是自己没点过头的图，比多问一句烦人得多。改成 `auto` 就是「这个剧目的图我放心，
+   * 别拦着」。剧作家那条线不走这里——它出的图进预发射缓存，玩家看不见也拦不住。
+   */
+  imageApproval?: ImageApproval;
+}
+
+/** 工坊出图审批：`ask` 每次出图前等玩家点头，`auto` 直接出。 */
+export const IMAGE_APPROVALS = ["ask", "auto"] as const;
+export type ImageApproval = (typeof IMAGE_APPROVALS)[number];
+
+/**
+ * 逐剧目的生图设置：覆盖服务端全局的出图模型与档位（`STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`）。
+ *
+ * 全局配置是「这台机器默认怎么出图」，但一部剧的立绘要 2K 抠底、另一部的小剧场插图
+ * 1K 就够，或者一部用 flow2api 的别名模型、另一部走官方——这些是剧目自己的事。
+ * 留空即跟随全局；两个字段都只覆盖自己那一个，不整份替换。
+ */
+export interface PlayImageConfig {
+  model?: string;
+  /** `1K` / `2K` / `4K`，或字面像素 `1536x1024`（openai 格式）；合法性由生图层在用时判定。 */
+  size?: string;
 }
 
 /**
@@ -103,6 +216,14 @@ export interface PlayConfig {
   /** 语音语言（ISO 639-1，如 "ja"）：与剧本语言不同时 say 文本先译成该语言再送 TTS；缺省跟随剧本语言。 */
   voiceLanguage?: string;
   /**
+   * 剧本语言（ISO 639-1，如 "zh" / "ja"）：正文、选项与旁白用什么语言写。
+   *
+   * 缺省跟随玩家输入——玩家用中文说话，剧本就用中文。显式写死是为了两类剧目：
+   * 玩家用什么语言提问都要求日语原文演出的（训练/翻译类），以及正文语言与
+   * `voiceLanguage` 不同（写中文剧本、配日语语音）的那一类。
+   */
+  scriptLanguage?: string;
+  /**
    * 没有角色卡的角色用哪个音色（剧目级兜底）。
    *
    * 一次性路人走 `<say id="passerby" name="路人甲">`——不建卡就不在角色表里，
@@ -114,6 +235,10 @@ export interface PlayConfig {
   opening: string;
   initialState: EngineStateSnapshot;
   initialScene: string;
+  /** 每轮篇幅、停止点选项数、素材来源。整个对象可缺省（缺省 = `DEFAULT_CRAFT`）。 */
+  craft?: CraftParams;
+  /** 逐剧目的生图模型与档位覆盖，缺省 = 服务端全局配置。 */
+  image?: PlayImageConfig;
   /** 两个 agent 的运行设置（工坊「Agent」页签）。整个对象可缺省。 */
   agents?: AgentConfig;
 }
@@ -140,20 +265,74 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
         : undefined
       : undefined;
   const agents = parseAgentConfig(data.agents);
+  const craft = parseCraft(data.craft);
+  const image = parseImageConfig(data.image);
   return {
     id: data.id,
     title: data.title,
     characters: Array.isArray(data.characters) ? data.characters.map(parseCharacter) : undefined,
     ...(cover ? { cover } : {}),
     ...(data.voiceLanguage?.trim() ? { voiceLanguage: data.voiceLanguage.trim() } : {}),
+    ...(data.scriptLanguage?.trim() ? { scriptLanguage: data.scriptLanguage.trim() } : {}),
     ...(typeof data.defaultVoiceId === "string" && /^[0-9a-f]{32}$/i.test(data.defaultVoiceId.trim())
       ? { defaultVoiceId: data.defaultVoiceId.trim() }
       : {}),
     opening: data.opening ?? "（游戏开始，请演出第一轮）",
     initialState: data.initialState ?? { turn: 0, affinity: {}, flags: {} },
     initialScene: data.initialScene ?? "未定",
+    ...(craft ? { craft } : {}),
+    ...(image ? { image } : {}),
     ...(agents ? { agents } : {}),
   };
+}
+
+/** 白名单取值：不在表里的当没写（手滑写 "mediumm" 只能退回默认，不该让剧目打不开）。 */
+function oneOf<T extends string>(allowed: readonly T[], value: unknown): T | undefined {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : undefined;
+}
+
+/** craft 段归一化：逐字段丢非法值，整段没剩东西就当没写。 */
+function parseCraft(raw: CraftParams | undefined): CraftParams | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: CraftParams = {};
+  const beatLength = oneOf(CRAFT_BEAT_LENGTHS, raw.beatLength);
+  if (beatLength) out.beatLength = beatLength;
+  const stopOptions = oneOf(CRAFT_STOP_OPTIONS, raw.stopOptions);
+  if (stopOptions) out.stopOptions = stopOptions;
+  const assets = parseAssetSources(raw.assets);
+  if (assets) out.assets = assets;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function parseAssetSources(raw: CraftAssetSources | undefined): CraftAssetSources | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: CraftAssetSources = {};
+  const background = oneOf(CRAFT_BACKGROUND_SOURCES, raw.background);
+  if (background) out.background = background;
+  const cg = oneOf(CRAFT_CG_SOURCES, raw.cg);
+  if (cg) out.cg = cg;
+  const sprite = oneOf(CRAFT_SPRITE_SOURCES, raw.sprite);
+  if (sprite) out.sprite = sprite;
+  const audio = oneOf(CRAFT_AUDIO_SOURCES, raw.audio);
+  if (audio) out.audio = audio;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * image 段归一化：只做非空字符串这一层，档位的合法性留给生图层。
+ *
+ * `1K` 与 `1536x1024` 两种写法分属两个后端，词表在 server 的 `imageBackend.ts` 里；
+ * 在这里复刻一份只会有两个真相源，不如让它在真正用的时候报错——那时错误消息带着
+ * 是哪部剧目、哪个字段，比解析期一句「非法」更好定位。
+ */
+function parseImageConfig(raw: PlayImageConfig | undefined): PlayImageConfig | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: PlayImageConfig = {};
+  if (typeof raw.model === "string" && raw.model.trim() !== "") out.model = raw.model.trim();
+  if (typeof raw.size === "string" && raw.size.trim() !== "") out.size = raw.size.trim();
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /**
@@ -204,6 +383,8 @@ function parseAgentConfig(raw: AgentConfig | undefined): AgentConfig | undefined
     if (role === "workshop" && typeof source.prompt === "string" && source.prompt.trim() !== "") {
       settings.prompt = source.prompt;
     }
+    const imageApproval = oneOf(IMAGE_APPROVALS, source.imageApproval);
+    if (role === "workshop" && imageApproval) settings.imageApproval = imageApproval;
     if (role === "playwriter") {
       if (typeof source.nsfwModel === "string" && source.nsfwModel.trim() !== "") {
         settings.nsfwModel = source.nsfwModel.trim();

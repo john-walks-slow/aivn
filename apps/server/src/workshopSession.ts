@@ -7,7 +7,7 @@ import type {
   WorkshopChatMessage,
   WorkshopThreadInfo,
 } from "@stage-ai/core";
-import { parsePlayConfig } from "@stage-ai/core";
+import { parsePlayConfig, resolveCraft } from "@stage-ai/core";
 import type { Exa } from "./exa.js";
 import type { WebImageFetcher } from "./webImage.js";
 import { PlayFiles } from "./playFiles.js";
@@ -426,6 +426,10 @@ export class WorkshopSession {
       readiness,
       // 同样现读：用户刚在设定页换完语音语言，下一轮挑音色就该按新值筛
       voiceLanguage: play.voiceLanguage,
+      scriptLanguage: play.scriptLanguage,
+      // 写作参数与出图审批也现读：用户刚在「写作参数」卡里改完，下一轮说话就该按新口径
+      craft: resolveCraft(play.craft),
+      imageApproval: play.agents?.workshop?.imageApproval,
       can: this.kit.can,
       digest,
       // 从当轮现读的 play.json 取，不吃构造时的快照：用户刚在 Agent 页改完就发下一轮消息，

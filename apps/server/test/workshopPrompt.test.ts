@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_CRAFT } from "@stage-ai/core";
 import { buildWorkshopPrompt } from "../src/workshop.js";
 import type { AgentCapabilities } from "../src/agentkit/kit.js";
 
@@ -13,6 +14,7 @@ const CTX = {
   title: "T",
   files: "可写 plays/T/memory/always/craft.md (12B)",
   readiness: { ready: true, missing: [] } as never,
+  craft: DEFAULT_CRAFT,
 };
 
 const caps = (over: Partial<AgentCapabilities> = {}): AgentCapabilities => ({
@@ -21,6 +23,7 @@ const caps = (over: Partial<AgentCapabilities> = {}): AgentCapabilities => ({
   library: true,
   voice: false,
   shell: false,
+  nsfw: true,
   ...over,
 });
 
@@ -46,30 +49,25 @@ describe("工坊提示词：工具知识不在这里重复", () => {
   });
 });
 
-describe("工坊提示词：素材来源这一维的写法指导", () => {
-  it("能力齐全时三类素材各给一条来路，并指向 craft.md", async () => {
+describe("工坊提示词：写作参数这一维的写法指导", () => {
+  it("现值摆在提示词里，并明确「这些走 set_craft，不写进 craft.md」", async () => {
     const prompt = await buildWorkshopPrompt({ ...CTX, can: caps() });
-    expect(prompt).toContain("素材来源");
-    expect(prompt).toContain("references");
-    expect(prompt).toContain("先出 neutral 定妆照");
-    expect(prompt).toContain("从资源库里找");
-    // 这一维由剧目的创作口径承载，提示词只教怎么写，不自己定规矩
-    expect(prompt).toContain("craft.md");
+    expect(prompt).toContain("写作参数");
+    expect(prompt).toContain("set_craft");
+    expect(prompt).toContain("每轮篇幅：中等");
+    expect(prompt).toContain("素材来源：背景 资源库优先");
+    expect(prompt).toContain("文风与禁忌");
   });
 
-  it("没有库就不教 list_library（那条链路不存在），改说只用清单里已有的", async () => {
+  it("生图能力关掉：出图那一章换成降级说明，不再教 neutral 定妆照那套", async () => {
+    const prompt = await buildWorkshopPrompt({ ...CTX, can: caps({ image: false }) });
+    expect(prompt).toContain("生图当前不可用");
+    expect(prompt).not.toContain("先出 neutral 定妆照");
+  });
+
+  it("没有库就不教 list_library（那条链路不存在）", async () => {
     const prompt = await buildWorkshopPrompt({ ...CTX, can: caps({ library: false }) });
     expect(prompt).not.toContain("list_library");
-    expect(prompt).toContain("只用素材清单里已有的那些");
-  });
-
-  it("没有生图就不教那套出图做法", async () => {
-    const prompt = await buildWorkshopPrompt({ ...CTX, can: caps({ image: false }) });
-    // 只盯素材来源这一行：职责边界里「出图必须真的调用 generate_image」是既有文案，与能力位无关
-    const line = prompt.split("\n").find((l) => l.startsWith("- 素材来源"))!;
-    expect(line).toContain("生图当前不可用");
-    expect(line).not.toContain("references");
-    expect(line).not.toContain("neutral 定妆照");
   });
 });
 

@@ -7,6 +7,7 @@ import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "./deps.js
 import { createPiBashTool, createPiFileTools } from "./piTools.js";
 import { PlayEnv } from "./playEnv.js";
 import { createReadinessTool } from "./readinessTool.js";
+import { createSetCraftTool } from "./craftTool.js";
 import { createGenerateImageTool } from "./imageTool.js";
 import { createLibraryTools } from "./libraryTool.js";
 import { createLineageTools } from "./lineageTool.js";
@@ -82,6 +83,7 @@ const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   generate_image: { label: "生成剧目素材", group: "image", roles: ["playwriter", "workshop"] },
   recut_sprite: { label: "重抠立绘底", group: "image", roles: ["workshop"] },
   read_skill: { label: "读技能库", group: "skill", roles: ["workshop"] },
+  set_craft: { label: "设置写作参数", group: "files", roles: ["workshop"] },
   list_voices: { label: "查音色库", group: "voice", roles: ["workshop"] },
   web_search: { label: "联网检索", group: "web", roles: ["playwriter", "workshop"] },
   // read / write / edit / bash 是 pi 的内建工具，不走 filesTool——路径白名单在 PlayEnv 里收口。
@@ -112,7 +114,7 @@ function installableTools(role: AgentRole): string[] {
  * 各角色的默认启用集。play.json 的 `agents.<role>.tools` 给了就按它来。
  *
  * 剧作家默认开着生图与资源库查询：素材来路是**创作决策**（哪些自己画、哪些从库里找），
- * 由搭台助手与用户对齐后写进剧目的 craft.md（见 workshop.ts 的「素材来源」那条）。
+ * 由搭台助手与用户对齐后写进 play.json 的 `craft.assets`（工坊的 `set_craft` 工具）。
  * 工具不给它，这条策略就是空话——它会照着策略说「背景该去库里找」，却连库有什么都看不见。
  * 不想让它烧配额，在 Agent 页把这两个关掉即可，策略随之失效。
  */
@@ -184,6 +186,12 @@ export const CAPABILITY_TOOLS = {
   voice: "list_voices",
   /** 命令行可用。默认关，用户在 Agent 页勾上才有；没勾时提示词不提工作区。 */
   shell: "bash",
+  /**
+   * 限制级（NSFW）通道可用：这一位由 `enter_nsfw` 授权（进得去才有得聊），`exit_nsfw`
+   * 与它默认同开同关。工具摘掉之后还教模型去调它，它只会反复空转——用户把这两项
+   * 一起取消勾选，就是本剧目不要限制级通道。
+   */
+  nsfw: "enter_nsfw",
 } as const;
 
 export type CapabilityKey = keyof typeof CAPABILITY_TOOLS;
@@ -285,6 +293,7 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
       onAsset: (path, url, kind, replaced) => deps.onAsset({ kind, path, url }, replaced),
     }),
     createReadSkillTool(),
+    createSetCraftTool(deps),
     ...createLineageTools(deps),
     // 没配 TTS 就不注册：查不出来的工具只会诱使模型空转
     ...createVoiceTool(deps.voices),

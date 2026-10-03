@@ -188,6 +188,20 @@ function stubCharacterCard(characterId: string, name: string): string {
 }
 
 export class PlayAssets {
+  /**
+   * 逐剧目的生图模型 / 档位覆盖（play.json 的 `image` 段）。
+   *
+   * 现读现用而不是构造时取一次：`PlayAssets` 按剧目缓存、进程内不重建，构造时取的快照
+   * 在用户改完设置之后还是老值——「设置页改了模型，出图还是老模型」是最难查的那类。
+   */
+  private async imageOverride(): Promise<{ model?: string; size?: string }> {
+    const image = (await this.deps.store.loadPlay()).image;
+    return {
+      ...(image?.model ? { model: image.model } : {}),
+      ...(image?.size ? { size: image.size } : {}),
+    };
+  }
+
   /** 同一目标的在飞生成：同批次两次调用打同一路径会烧两份配额、竞态写、覆盖标记说不清。 */
   private readonly inflight = new Map<string, Promise<GeneratedPlayAsset[]>>();
 
@@ -283,6 +297,7 @@ export class PlayAssets {
   ): Promise<GeneratedPlayAsset[]> {
     const auto = spec.kind === "sprite" ? await this.ensureNeutral(spec, prompt, notify) : null;
     const references = await this.referencesFor(spec);
+    const image = await this.imageOverride();
     // 后缀跟着**真正发出去的图**走：STAGE_IMAGE_REFERENCE=none 时一张都没发，
     // 提示词里却还留着「第几张是谁」，等于凭空给模型指了三张不存在的图。
     const fullPrompt = suffixFor(
@@ -309,6 +324,7 @@ export class PlayAssets {
             references,
             // 立绘要抠底，源图分辨率是唯一能压住轮廓锯齿的手段；背景与 CG 不挑这个。
             minTier: spec.kind === "sprite" ? "2K" : undefined,
+            ...image,
           }),
         "normal",
       ));

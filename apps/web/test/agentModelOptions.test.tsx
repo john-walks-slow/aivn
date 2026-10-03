@@ -24,9 +24,12 @@ const PLAY = {
   initialScene: "s",
 } as unknown as PlayConfig;
 
-/** 剧作家/搭台各一张卡，每张卡上「模型」是第一个下拉。 */
+/**
+ * 剧作家卡四个下拉（模型 / 思考 / 限制级模型 / 限制级思考），
+ * 搭台卡三个（模型 / 思考 / 出图审批）；两张卡的「模型」分别是第 0 与第 4 个。
+ */
 async function modelSelects(): Promise<HTMLSelectElement[]> {
-  await waitFor(() => expect(screen.getAllByRole("combobox").length).toBe(6));
+  await waitFor(() => expect(screen.getAllByRole("combobox").length).toBe(7));
   const all = screen.getAllByRole("combobox") as HTMLSelectElement[];
   return [all[0]!, all[4]!];
 }

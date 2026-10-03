@@ -1,12 +1,14 @@
 import type { AgentEvent, AgentMessage, AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ThinkingLevel, WorkshopAssetView } from "@stage-ai/core";
+import { languageLabel } from "@stage-ai/core";
+import type { EffectiveCraft, ImageApproval, ThinkingLevel, WorkshopAssetView } from "@stage-ai/core";
 import { capDigest, renderTranscriptAs, splitSummary, calibrateTokenScale, type EpochSummary } from "./compaction.js";
 import { completeText, type OneShotOptions } from "./llm.js";
 import { skillsPrompt } from "./skills.js";
 import { SEARCH_GUIDE } from "./agentkit/searchTool.js";
 import { renderReadiness } from "./agentkit/readiness.js";
+import { describeCraftParams } from "./craftParams.js";
 import type { AgentCapabilities } from "./agentkit/kit.js";
 import type { Readiness } from "./store.js";
 
@@ -36,6 +38,12 @@ export interface WorkshopPromptContext {
    * 不设 = 台词按剧本原文配音。
    */
   voiceLanguage?: string;
+  /** 剧本语言（play.json 的 scriptLanguage）：写进提示词，免得工坊写 premise 时与剧本语言分家。 */
+  scriptLanguage?: string;
+  /** 当前生效的写作参数（已与默认值合成）：提示词里报现值，工坊据此回答「现在是什么」。 */
+  craft: EffectiveCraft;
+  /** 出图审批模式（play.json 的 agents.workshop.imageApproval）：照它决定要不要先问用户。 */
+  imageApproval?: ImageApproval;
   /** 早期对话已压成的摘要（A 区回注）：非空即本线程发生过压缩。 */
   digest?: string;
   /** 逐剧目的自定义段（play.json 的 agents.workshop.prompt）：原样拼在固定提示词之后。 */
@@ -98,16 +106,17 @@ const LINEAGE_GUIDE = `# 读故事树（list_saves / read_lineage）
 export async function buildWorkshopPrompt(ctx: WorkshopPromptContext): Promise<string> {
   const skills = await skillsPrompt();
   return `你是这部剧目（《${ctx.title}》）的**搭台者**——负责剧目设定、角色卡与视觉素材的创建与维护。你不写剧本、不参与演出。
+${playLanguageNote(ctx)}
 
 ${RESPONSIBILITY_RULES}
 
 ${talkRules(ctx)}
 
-${setupFlow(ctx.can.library)}
+${setupFlow(ctx)}
 
 # 出图要点
 
-${ctx.can.image ? imageGuide : NO_IMAGE_GUIDE}
+${ctx.can.image ? imageGuide(ctx) : NO_IMAGE_GUIDE}
 ${IMAGE_BASICS}
 
 ${skills}
@@ -124,16 +133,31 @@ ${ctx.files || "（空）"}
 ${renderReadiness(ctx.readiness)}${digestSection(ctx.digest)}${customSection(ctx.customPrompt)}`;
 }
 
-/** 设定流程：第 3 步查资源库那句按库是否可用收条件（工具没注册就别在提示词里教它调）。 */
-function setupFlow(canLibrary: boolean): string {
+/**
+ * 剧本语言提示（play.json 的 `scriptLanguage`）：不设就什么都不说，工坊按中文习惯写设定。
+ *
+ * 只在设了的时候说——写日语剧本的剧目，premise 与角色卡也得是日语，否则剧作家读中文设定、
+ * 写日语台词，人物说话的语感与设定分家。
+ */
+function playLanguageNote(ctx: WorkshopPromptContext): string {
+  if (!ctx.scriptLanguage) return "";
+  return `\n本剧的剧本语言是${languageLabel(ctx.scriptLanguage)}：premise、角色卡、记忆卡这些**给演出看的内容**都用它写，与用户的对话仍然是中文。\n`;
+}
+
+/**
+ * 设定流程：第 3 步查资源库那句按库是否可用收条件（工具没注册就别在提示词里教它调），
+ * 第 3 步的「拿到批准」与第 4 步的落盘去处都按本剧目的设置分叉。
+ */
+function setupFlow(ctx: WorkshopPromptContext): string {
+  const approval = ctx.imageApproval === "auto" ? "（本剧目免审批，列完直接出）" : "**用户没点头之前，一张都不要 generate_image。**";
   return `# 设定流程（这是你的工作方式，不是可选建议）
 
 用户要开新剧目、或要改现有剧目的设定时，按下面四步走，**不要跳步**：
 
 1. **先问清再动手**：一轮里问 3~5 个问题就把骨架定下来——故事类型与基调、时代与地点、主角是谁、主角想要什么/被什么困住、核心角色 1~2 位、画风与文风、**节奏（想让人物一口气演一段，还是每轮都给玩家选择）**。**每个问题都带上你的具体默认提案**（用户点一下"就按你说的来"就能继续），别让人从零填空。
-2. **给完整提案再落盘**：把理解成的 premise（3~6 句）、角色卡、创作口径、还缺哪些视觉素材一次性摆给用户看，等一句"可以/就这样"再 write。
-3. **列图单、拿到批准才出图**：${canLibrary ? "先查资源库（\`list_library\`），" : ""}再告诉用户"接下来要出这几张图：背景 A（说清是什么场景）、立绘 \`<角色id>/neutral\`、…，各是什么画面、为什么要"。**用户没点头之前，一张都不要 generate_image。** 出图要钱也要时间。
-4. **落盘后同步记忆**：premise 写进 memory/always/premise.md，**创作口径写进 memory/always/craft.md**（下面「剧目写作要点」里说清那份文件该写什么；不是只在对话里说一句）。`;
+2. **给完整提案再落盘**：把理解成的 premise（3~6 句）、角色卡、创作口径、写作参数、还缺哪些视觉素材一次性摆给用户看，等一句"可以/就这样"再落盘。
+3. **${ctx.imageApproval === "auto" ? "列图单、免审批出图" : "列图单、拿到批准才出图"}**：${ctx.can.library ? "先查资源库（\`list_library\`），" : ""}再告诉用户"接下来要出这几张图：背景 A（说清是什么场景）、立绘 \`<角色id>/neutral\`、…，各是什么画面、为什么要"。${approval}出图要钱也要时间。
+4. **落盘后同步记忆**：premise 写进 memory/always/premise.md，**创作口径写进 memory/always/craft.md**、**写作参数用 \`set_craft\`**（下面「剧目写作要点」里说清两者分别装什么；不是只在对话里说一句）。`;
 }
 
 /**
@@ -159,28 +183,32 @@ function writingPoints(ctx: WorkshopPromptContext): string {
   return `# 剧目写作要点
 
 - premise：3~6 句，交代世界、主角处境、核心张力；不要写成大纲列表。
-- 创作口径（memory/always/craft.md）：**剧作家每一轮怎么写，唯一听这一份**。引擎自带的口径已经删干净了
-  ——一轮该写多长、选项给几条、多久把主导权交回玩家、什么文风、素材从哪来，都不再写死在剧作家的系统提示词里；
-  这个文件空着，剧作家就真的没有口径可听。所以每次跟用户对齐完写法，都要把结果落进这个文件，
-  不要只在对话里说一句「知道了」。至少写清五件事：**每轮多长**（一段戏演多久、到哪里换画面）、
-  **选项给几条**、**交还主导权的密度**（每轮都停，还是连着推几轮才停一次）、**文风与禁忌**、
-  **素材来源**（哪些自己画、哪些从资源库里找，见下面「素材来源」那条）、
+- 写作参数（play.json 的 \`craft\` 段，**用 \`set_craft\` 工具改**）：**每轮篇幅**、**停止点给几条选项**、
+  **素材来源**（背景/插图/立绘/音效逐类）——这三件有确定取值的事。改完立刻生效，用户也能在「剧目」页
+  看到同一份值，所以别手写 play.json，也别在 craft.md 里再写一遍。当前生效值：
+${craftNow(ctx)}
+- 创作口径（memory/always/craft.md）：**剧作家每一轮怎么写，听这一份**，但它只装**拿话说的那部分**——
+  文风与禁忌、称呼与口癖、叙述视角与节奏感、场景转换的偏好、
   **主角的呈现**（主角是藏在台后，还是也上台露面、也有立绘与配音）。
+  **每轮多长、选项几条、素材从哪来不要写在这里**（那是写作参数，写两处必然打架）。
+  这个文件空着，剧作家就少一层口径可听；跟用户对齐完文风就落进去，不要只在对话里说一句「知道了」。
   只写风格条目，不要往里写 DSL 格式或工具用法，那些由引擎保证。
-  用户改主意时（「节奏太快」「别让角色太主动」「选项给太多」「每段写短点」「背景别自己画」）改的就是这个文件。
-${assetSourceGuidance(ctx)}
+  用户改主意时——「文风再冷一点」改这个文件，「节奏太快」「选项给太多」「每段写短点」「背景别自己画」用 \`set_craft\`。
 - 角色卡（\`characters/<id>.md\`，角色的一切都在这张卡里，play.json 不再存角色数据）：
   头部 frontmatter 放机器字段（id / name / voice / voiceId / framing / sprites），正文写具体的人（年龄/关系/说话方式/在意的点）。
   ${voicePickHint(ctx)}
   ${ctx.can.library ? "库里已有合适的角色可以先 \`import_asset\`（kind=characters）导进来再改，别从零重写。" : ""}
   玩家扮演的主角也是一张普通角色卡，id 固定 \`protagonist\`（\`characters/protagonist.md\`）：要改主角设定就改这张，别另建。
 - play.json（剧目配置，「剧目」页改的也是它）就这些字段：
-  \`title\`、\`opening\`（开局指令）、\`voiceLanguage\`（语音语言，ISO 639-1 如 "ja"；不写 = 台词按剧本原文配音）、
+  \`title\`、\`opening\`（开局指令）、\`scriptLanguage\`（剧本语言，ISO 639-1 如 "ja"；不写 = 跟随玩家输入）、
+  \`voiceLanguage\`（语音语言，ISO 639-1 如 "ja"；不写 = 台词按剧本原文配音）、
   \`defaultVoiceId\`（无名角色、临时角色的兜底音色，32 位 hex）、
   \`cover\`（封面图，写法见「出图要点」）、\`initialState\` / \`initialScene\`（开局状态）、
-  \`agents\`（两个 agent 的 model / thinking / tools）。
+  \`craft\`（写作参数，用 \`set_craft\` 改，不要手写）、\`image\`（逐剧目的生图 model / size，不写跟服务端全局）、
+  \`agents\`（两个 agent 的 model / thinking / tools / imageApproval）。
   除 \`id\` / \`title\` 外全是可选字段：缺一个不报错，只是那份效果静默消失（缺 \`defaultVoiceId\` 无名角色没声音、
-  缺 \`agents\` 工具开关回默认）。**改它只用 \`edit\` 改点名的字段，不要整篇 \`write\` 覆盖。**
+  缺 \`scriptLanguage\` 跟随玩家输入、缺 \`craft\` 走引擎默认、缺 \`agents\` 工具开关回默认）。
+  **改它只用 \`edit\` 改点名的字段，不要整篇 \`write\` 覆盖。**
 - 记忆卡（memory/index/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。
   index 下可以建子目录分门别类，**建议** \`locations/\` 放地点、\`lore/\` 放世界设定（不是硬要求，
   但分类后 A 区里每行都带 [分类] 前缀，剧作家更容易知道该去哪张卡里查）。
@@ -202,19 +230,14 @@ function digestSection(digest: string | undefined): string {
 }
 
 /**
- * 素材来源这一维的写法指导：告诉搭台者「哪些自己画、哪些从库里找」该怎么写进 craft.md。
- *
- * 两个工具名都按注册与否收条件，同「剧目写作要点」里那些 `can.voice` / `can.library` 一样：
- * 没配资源库时教它调 `list_library`，它只会对着一个不存在的工具反复空转。
+ * 当前生效的写作参数（缩进成子列表）：工坊回答「现在是什么节奏/素材从哪来」时照它说，
+ * 不用去读 play.json——读到的也是同一个值，还得自己补默认。
  */
-function assetSourceGuidance(ctx: WorkshopPromptContext): string {
-  const draw = ctx.can.image
-    ? "**插图与立绘差分**用 `generate_image` 自己画（插图里有角色时带 `references` 垫立绘——给角色 id、剧目内路径或图片网址都行，脸才对得上）；**立绘先出 neutral 定妆照**，其余差分都由它垫底（差分不用自己给参考图，也不该给）"
-    : "生图当前不可用，你列的图单剧作家用不上——缺画面的地方只能靠旁白和台词交代";
-  const reuse = ctx.can.library
-    ? "**背景、配乐、音效从资源库里找**——先用 `list_library` 查清有哪些 id 再写进剧本，不要凭空画背景、不要凭记忆猜 id"
-    : "**背景、配乐、音效**只用素材清单里已有的那些；没有的不要凭空造 id，用旁白交代画面";
-  return `- 素材来源（craft.md 里的一节，剧作家据此决定什么该自己画、什么该用现成的）：把每类素材的来路写清楚——${draw}；${reuse}。常用到的 id 直接列进这一节，剧作家每一轮都读得到它。`;
+function craftNow(ctx: WorkshopPromptContext): string {
+  return describeCraftParams(ctx.craft)
+    .split("\n")
+    .map((line) => `  - ${line}`)
+    .join("\n");
 }
 
 /**
@@ -256,10 +279,17 @@ function workspaceSection(ctx: WorkshopPromptContext): string {
  * 这里曾把它们抄了一遍，于是 framing 改成三档之后这行还写着「立绘 9:16 竖构图全身」，
  * 一句抄错的画幅直接指挥模型按错误构图出图。
  */
-const imageGuide = `- 调 generate_image 出图。出什么、什么时候出由你判断，但**用户没点头之前一张都不要开跑**——出图要钱，立绘一张要等 100 秒起。
+function imageGuide(ctx: WorkshopPromptContext): string {
+  const approval =
+    ctx.imageApproval === "auto"
+      ? `- **本剧目免审批出图**（Agent 页里设的「出图审批」= 自动）：不用等用户点头，该出就出——
+  但仍然**一次只出真正需要的那几张**，出完把图贴给他看。`
+      : `- 调 generate_image 出图。出什么、什么时候出由你判断，但**用户没点头之前一张都不要开跑**——出图要钱，立绘一张要等 100 秒起。`;
+  return `${approval}
 - **同一角色先出 neutral 定妆照给用户看**，他认了再出其余差分。
 - **出图失败把接口原话带给用户**：回执里带 503 / 额度 / 模型名 / 被拒的尺寸，照抄。
   「生图服务暂时不可用」等于什么都没说，用户没法判断是自己的额度还是网关挂了。`;
+}
 
 /** 单轮工坊对话上限：网关挂死不解除会永久锁住面板（running 无法复位）。一轮里可能要连出几张图，7 分钟。 */
 const TURN_TIMEOUT_MS = 420_000;

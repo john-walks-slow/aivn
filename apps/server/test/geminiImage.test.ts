@@ -35,7 +35,7 @@ const opts: GeminiImageOptions = {
 
 describe("GeminiImageGen：Gemini 原生生图", () => {
   it("非法画幅尺寸构造期就拦下；字面像素尺寸本接口没有这个入参", () => {
-    expect(() => new GeminiImageGen({ ...opts, size: "8K" as never })).toThrow(/STAGE_IMAGE_SIZE/);
+    expect(() => new GeminiImageGen({ ...opts, size: "8K" as never })).toThrow(/生图尺寸（8K）非法/);
     expect(() => new GeminiImageGen({ ...opts, size: "1536x1024" })).toThrow(/Gemini 格式的档位只认/);
   });
 
@@ -68,6 +68,24 @@ describe("GeminiImageGen：Gemini 原生生图", () => {
     expect(await at("1K", "2K")).toBe("2K"); // 立绘抠底：1K 抬到 2K
     expect(await at("4K", "2K")).toBe("4K"); // 配置更高时不动
     expect(await at("1K")).toBe("1K"); // 背景与 CG 不声明，跟着配置
+  });
+
+  it("逐剧目覆盖：请求里带了 model / size 就压过构造期那份配置", async () => {
+    // 设置页改的是 play.json 的 image 段，构造期的 opts 来自 .env，优先级看的是请求。
+    const { fetchImpl, calls } = fakeFetch(() => inlineResponse());
+    const gen = new GeminiImageGen(opts, fetchImpl as never);
+    await gen.generate({ prompt: "x", model: "gemini-3-pro-image", size: "4K", aspectRatio: "3:4" });
+
+    expect(calls[0]!.url).toContain("/models/gemini-3-pro-image:generateContent");
+    const config = (calls[0]!.body.generationConfig as { imageConfig: Record<string, string> }).imageConfig;
+    expect(config.imageSize).toBe("4K");
+  });
+
+  it("逐剧目覆盖也走同一套校验：字面像素尺寸在请求级照样报错", async () => {
+    const { fetchImpl } = fakeFetch(() => inlineResponse());
+    await expect(
+      new GeminiImageGen(opts, fetchImpl as never).generate({ prompt: "x", size: "1536x1024" }),
+    ).rejects.toThrow(/Gemini 格式的档位只认/);
   });
 
   it("垫图走 inlineData，且排在提示词之后", async () => {

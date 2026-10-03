@@ -1,5 +1,13 @@
-import { describeAsset, isProtagonist, type AssetMeta, type EngineStateSnapshot } from "@stage-ai/core";
+import {
+  describeAsset,
+  isProtagonist,
+  languageLabel,
+  resolveCraft,
+  type AssetMeta,
+  type EngineStateSnapshot,
+} from "@stage-ai/core";
 import type { PlayConfig } from "@stage-ai/core";
+import { renderCraftParams } from "./craftParams.js";
 import type { AgentCapabilities } from "./agentkit/kit.js";
 import { SEARCH_GUIDE } from "./agentkit/searchTool.js";
 import type { PlayMemory } from "./memory.js";
@@ -42,7 +50,7 @@ const LIBRARY_REF = `
 库里也没有就静默跳过：那一行照常演，只是没有画面，**不会有任何回执告诉你**。换个 id 反复重写
 同一个引用没有用，库确实没有那张图。想知道库里有什么，用 \`list_library\` 查。
 
-哪些素材该自己画、哪些用现成的，照剧目的创作口径。
+哪些素材该自己画、哪些用现成的，照《写作参数》里的素材来源。
 `;
 
 /** 素材元数据：stem（无扩展名的文件名）→ 元数据。来源 plays/<id>/assets/manifest.json。 */
@@ -91,10 +99,27 @@ const ROLE_INTRO = `你是一部视觉小说的剧作家（playwriter），实�
 const HOW_I_WORK = `# 你怎么工作
 
 一轮一轮地写：写完这一轮 → 调 beat_done 收束（参数就是这一轮的停止点）→ 拿到玩家的回应、
-或引擎接上的下一轮 → 接着写。一轮该写多长、多久给一次停止点，都照剧目的创作口径。
+或引擎接上的下一轮 → 接着写。一轮该写多长、给几条选项，都照本提示词的《写作参数》；
+文风、禁忌、称呼习惯照剧目的创作口径。
 
 停止点是这一轮的出口，不是故事的终点——玩家回应之后，故事继续由你往下写。
 世界线、存档、重演、跳转是引擎和玩家的事，不用你操心，也写不进剧本。`;
+
+/**
+ * 剧本语言（`play.json` 的 `scriptLanguage`）：不设就什么都不说，跟随玩家输入。
+ *
+ * 显式写死是为了两类剧目：玩家用什么语言提问都要求日语原文演出的，以及正文语言与
+ * `voiceLanguage`（TTS 读什么）不同的——两件事分开之后，「写中文剧本配日语语音」才表达得出来。
+ */
+function scriptLanguageSection(scriptLanguage: string | undefined): string {
+  if (!scriptLanguage) return "";
+  return `
+# 剧本语言
+
+正文、旁白、选项，以及 create_character 写的角色设定，一律用${languageLabel(scriptLanguage)}写，
+**不要跟随玩家的输入语言**。角色 id、素材 id、DSL 标签名保持原样（英文/拼音）。
+`;
+}
 
 /** Stage DSL 的渲染契约：指令怎么写，行为词/运镜/锚点有哪些取值。 */
 const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
@@ -155,12 +180,12 @@ center（居中悬空）、top（从上垂下）。
 
 一轮到边界时你只做一个动作：**调用 beat_done 工具**，参数就是这一轮的出口。
 
-- 给玩家选项 → beat_done(options=["…","…"])，给几条互斥的选项照创作口径来；
+- 给玩家选项 → beat_done(options=["…","…"])，给几条互斥的选项照《写作参数》；
   选项文本就是玩家面板上那一行，要短、要像玩家会说的话。
 - 想给一个自由回答的口子 → beat_done(placeholder="想对他说什么？")。
 - 这一段自然演完 → beat_done()，两个参数都不给。
 
-beat_done 通常**独占一次工具调用**（除 enter_nsfw / exit_nsfw 等模式切换工具可同批发出外，不与 create_character、update_state 等其他工具放在同一批里）。
+beat_done 通常**独占一次工具调用**（模式切换类的工具可以同批发出，不与 create_character、update_state 等其他工具放在同一批里）。
 调完之后本轮就结束，不要再输出任何内容（没有停止点时也不要写收尾交代或过场说明）。
 轮与轮之间由引擎接续。`;
 
@@ -193,7 +218,7 @@ name 只覆盖本句名牌，不写入角色表。只想出声、不上台的路
 
 两种临时角色都没有专属音色（音色挂在角色卡上）——剧目配了兜底音色的就用那个。`;
 
-/** 演出契约：引擎认的硬规则，用户不可改（创作口径在剧目自己的 craft.md 里）。 */
+/** 演出契约：引擎认的硬规则，用户不可改（节奏与素材来源见《写作参数》，文风与禁忌见剧目 craft.md）。 */
 const CONTRACT_RULES = `# 演出契约（引擎规则，不可改）
 
 你是剧本引擎，不是助手：输出里只有剧本本身。不聊天、不寒暄、不称呼玩家本人、不解释自己在做什么、
@@ -211,7 +236,7 @@ const CONTRACT_RULES = `# 演出契约（引擎规则，不可改）
    引擎没有默认。`;
 
 export function buildSystemPrompt(ctx: PromptContext): string {
-  const { memory, generated = [] } = ctx;
+  const { play, memory, generated = [] } = ctx;
   const notes = ctx.notes ?? {};
   /**
    * 素材元数据查找：立绘差分按「角色id/差分名」找（多角色剧目里光写 smile 会撞车），
@@ -272,12 +297,15 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const premise = memory?.premise.trim() ?? "";
   // 剧目自己的创作口径：外置到 memory/always/craft.md（工坊与用户共编），默认为空。
   // 原样注入——文件自带什么标题就带什么标题，不再套一层壳。
-  // 2026-10-03 起这里是**创作口径的唯一来源**：引擎不再自带任何台词/节奏/风格默认
-  // （每轮多长、给几个选项、多久交一次主导权都归剧目定），由搭台助手与用户对齐后写进这份文件。
+  // 它承载**只能拿话说的那部分**（文风、禁忌、称呼习惯）；能取确定值的三件事
+  // （每轮多长、停止点给几条、素材来源）在 play.json 的 craft 段里，由 `renderCraftParams` 注入，
+  // 紧挨这份文件之前——先给参数，再读散文。
   const craft = memory?.craft.trim() ?? "";
   const craftSection = craft ? `\n${craft}\n` : "";
-  const nsfwGuidance =
-    ctx.nsfwMode
+  const craftParamsSection = renderCraftParams(resolveCraft(play.craft), ctx.can);
+  const nsfwGuidance = !ctx.can.nsfw
+    ? ""
+    : ctx.nsfwMode
       ? `\n# 限制级（NSFW）创作指引\n\n你当前正处于限制级剧情通道。\n- 专注于亲密接触中的情感张力、双方的心理起伏、生理与感官细节反应的细腻刻画；\n- 保持角色一贯的性格与说话风格，将人设融入亲密互动中；\n- 结合 Stage DSL：合理使用 <actor action="..." expression="..."> 配合肢体反应与微表情，用 <sfx> 辅助营造氛围；\n- 当这段亲密情节告一段落、即将回归正常日常时，调用 exit_nsfw 退出限制级模式。exit_nsfw 可以与 beat_done 在同一批次工具调用中一同发出。\n${
           memory?.nsfw?.trim() ? `\n## 剧目限制级专属口径\n${memory.nsfw.trim()}\n` : ""
         }${ctx.nsfwPrompt?.trim() ? `\n## 补充限制级提示词\n${ctx.nsfwPrompt.trim()}\n` : ""}`
@@ -289,7 +317,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       : "";
 
   return `${ROLE_INTRO}
-
+${scriptLanguageSection(play.scriptLanguage)}
 ${HOW_I_WORK}
 
 # 剧目设定
@@ -299,7 +327,7 @@ ${premise}
 # 角色表
 
 ${characters}
-${assetSection}${craftSection}${nsfwGuidance}${indexSection}
+${assetSection}${craftParamsSection}${craftSection}${nsfwGuidance}${indexSection}
 ${FORMAT_RULES}
 
 ${imageChapter(ctx.can.image)}

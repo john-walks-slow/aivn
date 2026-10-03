@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import type { PlayConfig, PlayCover } from "@stage-ai/core";
-import { languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
+import type {
+  CraftAssetSources,
+  CraftAudioSource,
+  CraftBackgroundSource,
+  CraftBeatLength,
+  CraftCgSource,
+  CraftParams,
+  CraftSpriteSource,
+  CraftStopOptions,
+  PlayConfig,
+  PlayCover,
+  PlayImageConfig,
+} from "@stage-ai/core";
+import { DEFAULT_CRAFT, languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
 import { api, assetUrl } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";
@@ -75,6 +87,23 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
           />
         </label>
         <label className="field">
+          <span>剧本语言（正文、旁白与选项用什么语言写）</span>
+          <select
+            value={draft.scriptLanguage ?? ""}
+            onChange={(e) => patch((p) => (p.scriptLanguage = e.target.value || undefined))}
+          >
+            <option value="">跟随玩家输入</option>
+            {Object.keys(LANGUAGE_LABELS)
+              .sort()
+              .map((code) => (
+                <option key={code} value={code}>
+                  {languageLabel(code)}（{code}）
+                </option>
+              ))}
+          </select>
+          <p className="muted small">不设 = 玩家用中文问就写中文；设死了则无论玩家说什么都用它写。</p>
+        </label>
+        <label className="field">
           <span>语音语言（say 台词翻译后再送 TTS）</span>
           <select
             value={draft.voiceLanguage ?? ""}
@@ -112,6 +141,22 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
             没有角色卡的一次性角色（<code>{'<say id="passerby">'}</code>）默认不出声，这里挑一个兜底。
           </p>
         </div>
+        <label className="field">
+          <span>生图模型（这本剧目专用的，留空跟服务端全局）</span>
+          <input
+            value={draft.image?.model ?? ""}
+            placeholder="跟服务端全局"
+            onChange={(e) => patch((p) => setImage(p, "model", e.target.value))}
+          />
+        </label>
+        <label className="field">
+          <span>生图档位（1K / 2K / 4K，openai 侧也可写字面尺寸）</span>
+          <input
+            value={draft.image?.size ?? ""}
+            placeholder="跟服务端全局"
+            onChange={(e) => patch((p) => setImage(p, "size", e.target.value))}
+          />
+        </label>
         <CoverPicker
           playId={playId}
           assets={assets}
@@ -120,13 +165,58 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
           onClear={() => patch((p) => delete p.cover)}
         />
 
-        <p className="row">
-          <button className="primary" onClick={savePlay}>
-            保存
-          </button>
-          {saved && <span className="muted small">已保存</span>}
-        </p>
       </section>
+
+      <section className="panel">
+        <h3>写作参数</h3>
+        <p className="muted small">
+          这部剧每轮怎么写。选「默认」= 这一项从 play.json 里消失、跟着引擎默认走；
+          文风与禁忌那类只能拿话说的事在「记忆」页的 craft.md 里。
+        </p>
+        <CraftSelect
+          label="每轮篇幅"
+          value={draft.craft?.beatLength ?? ""}
+          options={CRAFT_OPTIONS.beatLength}
+          onChange={(v) => patch((p) => editCraft(p, "beatLength", v))}
+        />
+        <CraftSelect
+          label="停止点选项"
+          value={draft.craft?.stopOptions ?? ""}
+          options={CRAFT_OPTIONS.stopOptions}
+          onChange={(v) => patch((p) => editCraft(p, "stopOptions", v))}
+        />
+        <CraftSelect
+          label="素材来源：背景"
+          value={draft.craft?.assets?.background ?? ""}
+          options={CRAFT_OPTIONS.background}
+          onChange={(v) => patch((p) => editCraft(p, "background", v))}
+        />
+        <CraftSelect
+          label="素材来源：插图（CG）"
+          value={draft.craft?.assets?.cg ?? ""}
+          options={CRAFT_OPTIONS.cg}
+          onChange={(v) => patch((p) => editCraft(p, "cg", v))}
+        />
+        <CraftSelect
+          label="素材来源：立绘"
+          value={draft.craft?.assets?.sprite ?? ""}
+          options={CRAFT_OPTIONS.sprite}
+          onChange={(v) => patch((p) => editCraft(p, "sprite", v))}
+        />
+        <CraftSelect
+          label="素材来源：音乐与音效"
+          value={draft.craft?.assets?.audio ?? ""}
+          options={CRAFT_OPTIONS.audio}
+          onChange={(v) => patch((p) => editCraft(p, "audio", v))}
+        />
+      </section>
+
+      <p className="row">
+        <button className="primary" onClick={savePlay}>
+          保存
+        </button>
+        {saved && <span className="muted small">已保存</span>}
+      </p>
 
       {pickingVoice && (
         <VoiceLibrary
@@ -198,4 +288,122 @@ function CoverPicker({
       )}
     </div>
   );
+}
+
+/**
+ * 写作参数的六项下拉：第一项恒为「默认」，选中它 = 那一行从 play.json 里消失。
+ *
+ * **与默认值同义的那一项不列出来**：选了它 `editCraft` 照样会把字段删掉，于是下拉会立刻弹回
+ * 「默认（…）」，看着像没选上。默认值只在第一项的括注里报一次。
+ */
+const CRAFT_OPTIONS: Record<CraftField, readonly (readonly [string, string])[]> = {
+  beatLength: [
+    ["", "默认（中等：8~15 句）"],
+    ["short", "短：3~6 句，一个来回就收"],
+    ["long", "长：20~30 句，能演完一整场戏"],
+  ],
+  stopOptions: [
+    ["", "默认（每次 3 条）"],
+    ["two", "每次 2 条"],
+    ["four", "每次 4 条"],
+    ["free", "固定停在自由输入框"],
+  ],
+  background: [
+    ["", "默认（素材资源库里优先，没有再出图）"],
+    ["library", "只用素材资源库里现成的"],
+    ["generate", "直接出图，不去库里找"],
+  ],
+  cg: [
+    ["", "默认（直接出图）"],
+    ["library", "只用素材资源库里现成的"],
+    ["off", "不用插图"],
+  ],
+  sprite: [
+    ["", "默认（出图）"],
+    ["off", "不出立绘"],
+  ],
+  audio: [
+    ["", "默认（只用素材资源库里现成的）"],
+    ["off", "不用音乐音效"],
+  ],
+};
+
+/** 写作参数的一个下拉（六项共用一套壳）。 */
+function CraftSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly (readonly [string, string])[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map(([optionValue, text]) => (
+          <option key={optionValue} value={optionValue}>
+            {text}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+type CraftField = "beatLength" | "stopOptions" | "background" | "cg" | "sprite" | "audio";
+
+/**
+ * 写作参数的就地修改：值与默认相同（或选了「默认」）就把那个字段删掉。
+ *
+ * play.json 里「没写」就是「走引擎默认」——写一个与默认相同的值，日后引擎默认改了它不跟着改；
+ * 用户也就永远看不到「这项现在是默认的」。与 Agent 页的 `setOrClear` 同一条规矩。
+ */
+function editCraft(play: PlayConfig, field: CraftField, value: string): void {
+  const craft: CraftParams = { ...(play.craft ?? {}) };
+  const assets: CraftAssetSources = { ...(craft.assets ?? {}) };
+  const blank = (fallback: string): boolean => value === "" || value === fallback;
+  switch (field) {
+    case "beatLength":
+      if (blank(DEFAULT_CRAFT.beatLength)) delete craft.beatLength;
+      else craft.beatLength = value as CraftBeatLength;
+      break;
+    case "stopOptions":
+      if (blank(DEFAULT_CRAFT.stopOptions)) delete craft.stopOptions;
+      else craft.stopOptions = value as CraftStopOptions;
+      break;
+    case "background":
+      if (blank(DEFAULT_CRAFT.assets.background)) delete assets.background;
+      else assets.background = value as CraftBackgroundSource;
+      break;
+    case "cg":
+      if (blank(DEFAULT_CRAFT.assets.cg)) delete assets.cg;
+      else assets.cg = value as CraftCgSource;
+      break;
+    case "sprite":
+      if (blank(DEFAULT_CRAFT.assets.sprite)) delete assets.sprite;
+      else assets.sprite = value as CraftSpriteSource;
+      break;
+    case "audio":
+      if (blank(DEFAULT_CRAFT.assets.audio)) delete assets.audio;
+      else assets.audio = value as CraftAudioSource;
+      break;
+  }
+  if (Object.keys(assets).length > 0) craft.assets = assets;
+  else delete craft.assets;
+  if (Object.keys(craft).length > 0) play.craft = craft;
+  else delete play.craft;
+}
+
+/** 逐剧目的生图模型 / 档位：两个字段都留空就把整个 `image` 段删掉。 */
+function setImage(play: PlayConfig, key: "model" | "size", value: string): void {
+  const image: PlayImageConfig = { ...(play.image ?? {}) };
+  const text = value.trim();
+  if (text === "") delete image[key];
+  else image[key] = text;
+  if (Object.keys(image).length > 0) play.image = image;
+  else delete play.image;
 }

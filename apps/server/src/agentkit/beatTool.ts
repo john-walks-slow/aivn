@@ -11,13 +11,13 @@ import type { PlaywriterKitDeps } from "./deps.js";
  * - `options` 的 minItems=2 由 pi 的参数校验兜住——只写一个选项会拿到校验错误回执并重试，
  *   编排器那条「choice 无选项降级 free」的护栏随之删除。
  *
- * schema 只兜「无效载荷」（至少两条、每条非空），**不表达风格**：一条轮该写多长、
- * 给几个选项、多久交一次主导权，全由剧目的创作口径（memory/always/craft.md）定，
- * 引擎不自带默认——maxItems 放宽到 8 只是防止模型一次甩出二十条把选项面板撑爆。
+ * schema 只兜「无效载荷」（至少两条、每条非空），**不表达风格**：一轮该写多长、给几个选项，
+ * 由剧目的写作参数（play.json 的 `craft` 段，引擎默认 medium + 3 条）定，提示词那一侧照它渲染；
+ * maxItems 放宽到 8 只是防止模型一次甩出二十条把选项面板撑爆——写作参数最多要求 4 条。
  */
 const beatDoneParams = Type.Object(
   {
-    /** 若干互斥选项 = 这一轮停在选项面板（player 选一条继续）。给几条照创作口径来；只给一个会被校验拒绝。 */
+    /** 若干互斥选项 = 这一轮停在选项面板（player 选一条继续）。给几条照《写作参数》；只给一个会被校验拒绝。 */
     options: Type.Optional(
       Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { minItems: 2, maxItems: 8 }),
     ),
@@ -30,7 +30,7 @@ const beatDoneParams = Type.Object(
 const BEAT_DONE_DESCRIPTION = [
   "本轮演出内容写完时调用，**不与其他工具同批调用**。",
   "本轮停在哪里由参数决定：",
-  "- options = 停在选项面板，玩家点一条继续（给几条互斥的选项照创作口径来）；",
+  "- options = 停在选项面板，玩家点一条继续（给几条互斥的选项照《写作参数》）；",
   "- 只给 placeholder = 停在自由输入框，placeholder 是提示语；",
   "- 两个都不给 = 本轮自然演完，玩家点「继续」接下一轮。",
 ].join("\n");

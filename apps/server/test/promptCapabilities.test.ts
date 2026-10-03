@@ -8,6 +8,7 @@ import {
   type AgentCapabilities,
 } from "../src/agentkit/kit.js";
 import { AGENT_ROLES } from "../src/agentkit/role.js";
+import { DEFAULT_CRAFT } from "@stage-ai/core";
 import { caps, PLAY } from "./helpers.js";
 
 /**
@@ -22,6 +23,7 @@ const workshopCtx = (can: AgentCapabilities): WorkshopPromptContext => ({
   title: "T",
   files: "- play.json",
   readiness: { ready: true, missing: [] } as never,
+  craft: DEFAULT_CRAFT,
   can,
 });
 
@@ -41,8 +43,9 @@ describe("能力位：一位对应一个工具", () => {
   it("capabilitiesOf：表里有几位就出几位，装了才为 true", () => {
     expect(Object.keys(capabilitiesOf([])).sort()).toEqual(Object.keys(CAPABILITY_TOOLS).sort());
     expect(Object.values(capabilitiesOf([]))).toEqual(Object.keys(CAPABILITY_TOOLS).map(() => false));
+    // bash 在、enter_nsfw 不在：nsfw 这一位就该是 false
     expect(capabilitiesOf([{ name: "generate_image" }, { name: "bash" }]))
-      .toEqual({ ...caps({ image: true, shell: true }) });
+      .toEqual({ ...caps({ image: true, shell: true, nsfw: false }) });
   });
 });
 

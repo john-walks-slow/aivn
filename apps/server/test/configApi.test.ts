@@ -164,7 +164,7 @@ describe("设置面板后端", () => {
     expect(readFileSync(envPath, "utf8")).toContain("STAGE_IMAGE_SIZE=4K");
     expect(file.write({ image: { size: "1536x1024" } as never })).toEqual(["STAGE_IMAGE_SIZE"]);
     expect(readFileSync(envPath, "utf8")).toContain("STAGE_IMAGE_SIZE=1536x1024");
-    expect(() => file.write({ image: { size: "huge" } as never })).toThrow(/STAGE_IMAGE_SIZE/);
+    expect(() => file.write({ image: { size: "huge" } as never })).toThrow(/生图尺寸（huge）非法/);
     expect(file.write({ image: { format: "openai" } as never })).toEqual(["STAGE_IMAGE_FORMAT"]);
     expect(file.write({ image: { apiKey: "brand-new-image-key" } as never })).toEqual(["STAGE_IMAGE_API_KEY"]);
     expect(readFileSync(envPath, "utf8")).toContain("STAGE_IMAGE_API_KEY=brand-new-image-key");

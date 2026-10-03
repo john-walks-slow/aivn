@@ -72,9 +72,13 @@ export class GeminiImageGen implements ImageBackend {
     this.tier = spec.tier;
   }
 
-  /** 档位 = 配置与本次请求下限里更高的那个（立绘要 2K 抠底，背景/CG 跟配置）。 */
+  /**
+   * 档位 = 本次请求的尺寸（剧目覆盖或部署配置）与本次请求下限里更高的那个
+   * （立绘要 2K 抠底，背景/CG 跟配置）。
+   */
   private tierOf(req: ImageRequest): string {
-    return req.minTier ? higherTier(this.tier as ImageSize, req.minTier) : this.tier;
+    const base = req.size ? geminiTier(req.size) : (this.tier as ImageSize);
+    return req.minTier ? higherTier(base, req.minTier) : base;
   }
 
   async generate(req: ImageRequest): Promise<GeneratedImage> {
@@ -83,7 +87,7 @@ export class GeminiImageGen implements ImageBackend {
       throw new Error(`画幅（${aspectRatio}）不受支持。可用：${IMAGE_ASPECTS.join(" / ")}`);
     }
     const res = await this.fetchImpl(
-      `${this.opts.baseUrl.replace(/\/+$/, "")}/v1beta/models/${encodeURIComponent(this.opts.model)}:generateContent`,
+      `${this.opts.baseUrl.replace(/\/+$/, "")}/v1beta/models/${encodeURIComponent(req.model ?? this.opts.model)}:generateContent`,
       {
         method: "POST",
         headers: { "x-goog-api-key": this.opts.apiKey, "content-type": "application/json" },
@@ -103,6 +107,18 @@ export class GeminiImageGen implements ImageBackend {
     }
     return parseImage(await res.json().catch(() => null));
   }
+}
+
+/** 剧目覆盖的尺寸也必须是档位：Gemini 这一侧没有「指定 WxH」这个入参。 */
+function geminiTier(raw: string): ImageSize {
+  const spec = parseImageSize(raw);
+  if (spec.kind !== "tier") {
+    throw new Error(
+      `Gemini 格式的档位只认 ${IMAGE_SIZES.join(" / ")}，像素尺寸由 aspectRatio × imageSize 决定，` +
+        `填不了 ${imageSizeText(spec)}。要按像素出图请把 STAGE_IMAGE_FORMAT 换成 openai。`,
+    );
+  }
+  return spec.tier;
 }
 
 /** 提示词在前、垫图在后——垫图的顺序决定它对提示词的约束强度。 */

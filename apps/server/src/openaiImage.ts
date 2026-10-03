@@ -76,9 +76,9 @@ export class OpenAiImageGen implements ImageBackend {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: this.opts.model,
+        model: req.model ?? this.opts.model,
         prompt: req.prompt,
-        size: sizeFor(aspectRatio, this.spec),
+        size: sizeFor(aspectRatio, req.size ? parseImageSize(req.size) : this.spec),
         n: 1,
       }),
       signal: AbortSignal.timeout(this.opts.timeoutMs),
