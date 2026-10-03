@@ -3484,13 +3484,6 @@ select:focus {
     padding: 10px 12px;
   }
 
-  /* 选肢时把立绘抬上去。竖屏的卡片列占了中段，不抬的话脸正好压在卡片下面，
-     只剩发顶露在外面——玩家要选的恰恰是卡，不是脸，但脸也不该整个消失。 */
-  .theater:has(.choice-overlay) .theater-sprite {
-    bottom: 46%;
-    height: 58%;
-  }
-
   .settings-field {
     grid-template-columns: 1fr;
   }
