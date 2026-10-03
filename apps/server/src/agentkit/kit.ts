@@ -9,6 +9,7 @@ import { createLibraryTools } from "./libraryTool.js";
 import { createLineageTools } from "./lineageTool.js";
 import { createMemoryTools } from "./memoryTool.js";
 import { createRecutSpriteTool } from "./recutTool.js";
+import { createViewImageTool } from "./viewTool.js";
 import { createVoiceTool } from "./voiceTool.js";
 import { createWebSearchTool } from "./searchTool.js";
 import { createReadSkillTool } from "./skillTool.js";
@@ -60,7 +61,7 @@ export interface AgentToolEntry {
 const TOOL_CATALOG: Record<string, { label: string; group: ToolGroup }> = {
   beat_done: { label: "结束本轮", group: "beat" },
   update_state: { label: "提议状态更新", group: "memory" },
-  write_memory: { label: "写记忆文件", group: "memory" },
+  create_character: { label: "建角色卡", group: "memory" },
   read_memory_detail: { label: "读记忆卡详情", group: "memory" },
   search_archive: { label: "检索历史往事", group: "memory" },
   generate_image: { label: "生成剧目素材", group: "image" },
@@ -74,7 +75,7 @@ const TOOL_CATALOG: Record<string, { label: string; group: ToolGroup }> = {
   write_file: { label: "写剧目文件", group: "files" },
   delete_file: { label: "删除剧目文件", group: "files" },
   get_readiness: { label: "检查开演条件", group: "files" },
-  inspect_asset: { label: "看剧目图片", group: "files" },
+  view_image: { label: "看图", group: "files" },
   list_library: { label: "浏览素材资源库", group: "library" },
   import_asset: { label: "从资源库导入", group: "library" },
   list_saves: { label: "列出周目", group: "lineage" },
@@ -84,17 +85,19 @@ const TOOL_CATALOG: Record<string, { label: string; group: ToolGroup }> = {
 /**
  * 各角色的默认启用集。play.json 的 `agents.<role>.tools` 给了就按它来。
  *
- * 剧作家默认不开生图与资源库：它一轮只有 240s，preload 不掉的一次调用就烧掉一轮预算；
- * 资源库那边它是靠「在剧本里写 id、宿主自动导入」用的（见 assetRef.ts），不需要工具。
- * 想让它自己出图或搜库，在 Agent 页勾上即可。
+ * 剧作家默认开着生图与资源库查询：素材来路是**创作决策**（哪些自己画、哪些从库里找），
+ * 由搭台助手与用户对齐后写进剧目的 craft.md（见 workshop.ts 的「素材来源」那条）。
+ * 工具不给它，这条策略就是空话——它会照着策略说「背景该去库里找」，却连库有什么都看不见。
+ * 不想让它烧配额，在 Agent 页把这两个关掉即可，策略随之失效。
  */
 const DEFAULT_ENABLED: Record<AgentRole, string[]> = {
   playwriter: [
     "beat_done",
     "update_state",
-    "write_memory",
+    "create_character",
     "read_memory_detail",
     "search_archive",
+    "generate_image",
     // 只读浏览：宿主的引用即导入只认同名 id，不知道库里有什么就等于瞎猜。
     // import_asset 不开——导入走 DSL 引用，模型自己动手抄一遍 id 没有额外收益。
     "list_library",
@@ -208,6 +211,12 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
 function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
   return [
     ...createFilesTools(deps),
+    // 看图始终装（本地素材不依赖网络）；网址分支没有下载器时工具自己回「未启用」
+    createViewImageTool({
+      pathOf: (path) => deps.files.pathOf(path, "read"),
+      cacheDir: () => deps.store.webImageDir(),
+      fetchImage: deps.webImage,
+    }),
     createGenerateImageTool({
       mode: "sync",
       playAssets: deps.playAssets,

@@ -17,7 +17,7 @@ export const ROLE_INSTALLABLE: Record<AgentRole, readonly string[]> = {
   playwriter: [
     "beat_done",
     "update_state",
-    "write_memory",
+    "create_character",
     "read_memory_detail",
     "search_archive",
     "generate_image",
@@ -32,7 +32,7 @@ export const ROLE_INSTALLABLE: Record<AgentRole, readonly string[]> = {
     "write_file",
     "delete_file",
     "get_readiness",
-    "inspect_asset",
+    "view_image",
     "generate_image",
     "recut_sprite",
     "read_skill",

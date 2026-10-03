@@ -1,4 +1,3 @@
-import { readFile as readFileBytes } from "node:fs/promises";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { parsePlayConfig } from "@stage-ai/core";
 import { type Static, Type } from "@earendil-works/pi-ai";
@@ -8,7 +7,8 @@ import { reason, textResult } from "./result.js";
 import { renderReadiness } from "./readiness.js";
 
 /**
- * 剧目文件工具组（仅工坊）：list_files / read_file / write_file / edit_file / delete_file / get_readiness / inspect_asset。
+ * 剧目文件工具组（仅工坊）：list_files / read_file / write_file / edit_file / delete_file / get_readiness。
+ * 看图不在这一组：`view_image` 自成一个工具，它还能读网络地址（见 viewTool.ts）。
  *
  * 白名单是 PlayFiles 给的（play.json、memory/**、assets/**），agent 拿不到会话日志、谱系与 TTS 缓存。
  * 写盘（write_file 与 edit_file）对 play.json 走 parsePlayConfig 校验——模型手写 JSON 出错时不落盘、把错误回给模型重试。
@@ -20,7 +20,6 @@ const writeFileParams = Type.Object(
   { path: Type.String({ maxLength: 300 }), content: Type.String({ maxLength: 200_000 }) },
   { additionalProperties: false },
 );
-const inspectAssetParams = Type.Object({ path: Type.String({ maxLength: 300 }) }, { additionalProperties: false });
 
 const replaceEditParams = Type.Object(
   {
@@ -235,44 +234,5 @@ export function createFilesTools(
     execute: async () => textResult(renderReadiness(await deps.store.readiness())),
   };
 
-  /**
-   * 看图：立绘抠底的质量只有眼睛能判。返回图片 attachment 让模型自己看，
-   * 它是唯一能看到成图的 agent 侧通道——用户那边的预览是独立的。
-   * 只放 assets/ 下的图像，和 read_file 同一套白名单。
-   */
-  const inspectAsset: AgentTool<typeof inspectAssetParams> = {
-    name: "inspect_asset",
-    label: "看剧目图片",
-    description:
-      "把 assets/ 下的一张图读进来给你自己看（真的看图，不是返回文件路径）。" +
-      "立绘抠底只干净不干净、画风对不对、是不是同一个人——都靠它判断。path 用相对路径，如 assets/sprites/角色id/neutral.png。",
-    parameters: inspectAssetParams,
-    execute: async (_id, params: Static<typeof inspectAssetParams>) => {
-      try {
-        const bytes = await readFileBytes(deps.files.pathOf(params.path, "read"));
-        const mimeType = sniffImageMime(bytes);
-        if (!mimeType) return textResult(`${params.path} 不是可看的图片（只支持 png/jpeg/webp/gif）`);
-        return {
-          content: [
-            { type: "text" as const, text: `${params.path}（${mimeType}，${bytes.length}B）` },
-            { type: "image" as const, data: bytes.toString("base64"), mimeType },
-          ],
-          details: undefined,
-        };
-      } catch (error) {
-        return textResult(`读图失败：${reason(error)}`);
-      }
-    },
-  };
-
-  return [listFiles, readFile, editFile, writeFile, deleteFile, readiness, inspectAsset];
-}
-
-/** 文件头嗅探（扩展名可能与实际字节不符，垫图塞错类型会被网关拒）。 */
-export function sniffImageMime(bytes: Buffer): string | null {
-  if (bytes.length > 8 && bytes.subarray(1, 4).toString("latin1") === "PNG") return "image/png";
-  if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
-  if (bytes.length > 12 && bytes.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
-  if (bytes.length > 6 && bytes.subarray(0, 6).toString("latin1").startsWith("GIF8")) return "image/gif";
-  return null;
+  return [listFiles, readFile, editFile, writeFile, deleteFile, readiness];
 }

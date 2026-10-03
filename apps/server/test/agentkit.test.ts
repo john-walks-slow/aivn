@@ -58,6 +58,7 @@ describe("agent kit：两个角色的暴露面", () => {
     expect(names(kit)).toEqual([
       "beat_done",
       "create_character",
+      "generate_image",
       "list_library",
       "read_memory_detail",
       "search_archive",
@@ -65,9 +66,10 @@ describe("agent kit：两个角色的暴露面", () => {
     ]);
     expect(names(kit)).not.toContain("write_file");
     expect(names(kit)).not.toContain("read_lineage");
-    // 生图对剧作家默认关，勾上才装
-    expect(names(playwriter())).not.toContain("generate_image");
-    expect(names(playwriter({}, [...defaultToolsFor("playwriter"), "generate_image"]))).toContain("generate_image");
+    // 用户在 Agent 页关掉生图，下一轮就装不进去（策略随之失效）
+    expect(names(playwriter({}, [...defaultToolsFor("playwriter")].filter((n) => n !== "generate_image")))).not.toContain(
+      "generate_image",
+    );
   });
 
   it("工坊拿剧目文件、故事树与技能库，不拿轮收束与演出记忆", () => {
@@ -168,11 +170,12 @@ describe("agent kit：工具目录（设置页的数据源）", () => {
     expect(catalog[0]).not.toHaveProperty("roles");
   });
 
-  it("剧作家默认不开生图、开只读查库；用户勾了就能开", () => {
+  it("剧作家默认开着生图与只读查库；用户关掉就能收", () => {
     const playDefault = defaultToolsFor("playwriter");
     expect(playDefault).toContain("beat_done");
-    expect(playDefault).not.toContain("generate_image");
-    // 查库开着：宿主的引用即导入只认同名 id，看不见库里有什么就等于瞎猜
+    // 素材来路是创作决策（哪些自己画、哪些从库里找），写进剧目的 craft.md；
+    // 工具不给它，那条策略就是空话，所以两个默认都开着。
+    expect(playDefault).toContain("generate_image");
     expect(playDefault).toContain("list_library");
     expect(playDefault).not.toContain("import_asset");
     expect(playDefault).not.toContain("write_file");

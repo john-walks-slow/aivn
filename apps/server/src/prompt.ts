@@ -25,6 +25,25 @@ const AUDIO_RULES = `
 - 按描述和情绪选：清单里带情绪、适用场景、时长的条目，挑与这一拍情绪对得上的那条。
 `;
 
+/**
+ * 引用即导入的契约（引擎事实，不是创作口径）。
+ *
+ * 剧作家写一个剧目里没有的 id，宿主会自动去资源库找同名条目导入——这条链路它一个工具都不用调。
+ * 不告诉它，它就只剩「缺素材就自己画」这一条路，把本该从库里拿的背景全烧成配额。
+ * 有这个库才注：没配库目录时这条链路不存在，教它去查等于教它对着空气找。
+ */
+const LIBRARY_REF = `
+# 引用一个剧目里还没有的 id
+
+背景、插图、角色、音乐、音效都走这一条：剧本里写了某个 id，剧目里还没有，宿主会自动去素材资源库
+找同名条目导入，到货后画面自己补上——**不用你重写这一行，也不用先自己画一张**。
+
+库里也没有就静默跳过：那一行照常演，只是没有画面，**不会有任何回执告诉你**。换个 id 反复重写
+同一个引用没有用，库确实没有那张图。想知道库里有什么，用 \`list_library\` 查。
+
+哪些素材该自己画、哪些用现成的，照剧目的创作口径。
+`;
+
 /** 素材元数据：stem（无扩展名的文件名）→ 元数据。来源 plays/<id>/assets/manifest.json。 */
 export type AssetNotes = Record<string, AssetMeta>;
 
@@ -48,6 +67,8 @@ export interface PromptContext {
   canImage?: boolean;
   /** 联网检索在位（同上）。 */
   canSearch?: boolean;
+  /** 素材资源库在位（没配库目录时引用即导入无处可查，提示词里不提，免得它照着一条不存在的链路找）。 */
+  canLibrary?: boolean;
 }
 
 /**
@@ -101,7 +122,6 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   // 配乐/音效的编排规则：清单给了元数据之后，怎么用还是得讲清楚——
   // 「缺省保持」这条尤其重要，模型换景时顺手重写 bgm 是最常见的失误。
   const audioRule = stems("bgm").length > 0 || stems("sfx").length > 0 ? AUDIO_RULES : "";
-  const noImages = stems("backgrounds").length === 0 && stems("cg").length === 0;
   const assetSection = [
     section("可用背景 bg", "backgrounds", "\nscene 的 bg 优先取这些 id。"),
     section("可用音乐 bgm", "bgm"),
@@ -109,10 +129,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     audioRule,
     section("已有插图 cg", "cg"),
     generatedSection,
-    // 清单全空时上面几段拼成空串，这段就没人看得见——而此时正是最该让剧作家自己画图的时候
-    noImages && ctx.canImage !== false
-      ? `\n# 没有任何背景与插图\n\n剧目还没有一张图。每写到一个新场景，先用 generate_image 排一张背景，再照常引用它的 id。\n`
-      : "",
+    ctx.canLibrary ? LIBRARY_REF : "",
   ].join("");
 
   // 世界观前提的唯一真相源是 memory/always/premise.md：没有它就没有 A 区，剧作家无从下手
@@ -242,8 +259,12 @@ ${ctx.canSearch ? SEARCH_GUIDE : ""}
 
     <say id="passerby" name="路人甲">你好啊。</say>
 
-name 只覆盖本句名牌，不写入角色表，无 TTS 音色。这类角色想有立绘也行：
-先 create_character 给它建一张卡（正文留空即可，name 写上名牌），再照上面的 generate_image 出图。
+name 只覆盖本句名牌，不写入角色表。只想出声、不上台的路人用这条就够了。
+
+这类角色想上台（要立绘）也有两条路：戏里临时冒出来的（路人甲、店员），出图时带 characterName
+一起给，会自动建一张最小角色卡；戏份多、要配音色或人设的，先 create_character 建一张完整卡再出图。
+
+两种临时角色都没有专属音色（音色挂在角色卡上）——剧目配了兜底音色的就用那个。
 
 # 演出契约（引擎规则，不可改）
 
@@ -259,28 +280,34 @@ name 只覆盖本句名牌，不写入角色表，无 TTS 音色。这类角色�
 5. 标注「未作回应」时：不要替玩家编造台词或行动，让角色自然接戏并在合适时机再给回应机会。`;
 }
 
-/** 出图章节（生图工具不可用时换成一句「没有生图」的话，不教它调一个不存在的工具）。 */
+/**
+ * 出图章节（生图工具不可用时换成一句「没有生图」的话，不教它调一个不存在的工具）。
+ *
+ * 只讲工具本身与它的后果，**不讲什么时候该画**——那是剧目的创作口径。
+ * 早先那句「清单里没有就自己画一张背景」撤掉了：它替所有剧目做了同一个决定，
+ * 而背景该从库里拿还是该现画，是逐剧目的事。
+ */
 function imageChapter(can: boolean): string {
   if (!can) {
     return `## 生图
 
 本剧目没有开启生图：不要在剧本里引用清单之外的背景/插图/立绘差分，用旁白和台词交代画面。`;
   }
-  return `## 缺素材时自己画（generate_image）
+  return `## 自己出图（generate_image）
 
-可用清单里没有、但剧情需要的背景或插图，用 generate_image 排一张（后台出图，发起即返回），
-然后在它出场的位置照常引用同一个 id：
+哪些素材该出图、出哪几张，照剧目的创作口径。这里只讲这个工具：排一张**发起即返回**，不等它出完；
+这一轮就引用到它，舞台先上骨架占位，到货后自动淡入。
 
     generate_image(kind="background", name="bg_classroom_dusk", prompt="abandoned classroom at dusk, warm sunset light through dusty windows, anime visual novel background, no text")
     …若干句台词…
     <scene bg="bg_classroom_dusk" .../>
 
-调用的写法（id 怎么起名、prompt 怎么写）看 generate_image 的工具说明。
+调用的写法（id 怎么起名、prompt 怎么写、画面里有角色时怎么垫立绘）看 generate_image 的工具说明。
 
 - **不要凭空造 id**：可用清单与「已生成的图」里已有的背景和插图直接引用，别重复生成；
 - **按描述选素材**：清单里带括号说明的是画面内容（差分的名字未必与画面相符），先看说明再挑 id。
-- **立绘差分**用 generate_image(kind="sprite") 出，落在剧目素材里，角色表里还没有的角色会先建一个。
-  某角色一张立绘都没有、又还没来得及出图时，别让 ta 上台——改用旁白/台词交代，或只写有立绘的角色。`;
+- **立绘差分**用 generate_image(kind="sprite") 出。某角色一张立绘都没有、又还没来得及出图时，
+  别让 ta 上台——改用旁白/台词交代，或只写有立绘的角色。`;
 }
 
 /** user 消息【状态】区（B 区，每轮变化但 append-only）。stateFiles = always/state 谱系级内容（D7）。 */

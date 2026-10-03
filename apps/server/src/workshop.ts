@@ -102,11 +102,7 @@ ${skills}
   **素材来源**（哪些自己画、哪些从资源库里找，见下面「素材来源」那条）。
   只写风格条目，不要往里写 DSL 格式或工具用法，那些由引擎保证。
   用户改主意时（「节奏太快」「别让角色太主动」「选项给太多」「每段写短点」「背景别自己画」）改的就是这个文件。
-- 素材来源（同一份 craft.md 里的一节，剧作家据此决定什么该自己画、什么该用现成的）：
-  写清楚每类素材的来路——**插图与立绘差分**用 \`generate_image\` 自己画（插图里有角色时带
-  \`referenceCharacters\` 垫立绘，脸才对得上）；**立绘先出 neutral 定妆照**，其余差分都由它垫底；
-  **背景、配乐、音效从资源库里找**——先用 \`list_library\` 查清 id 再写进剧本，不要凭空画背景、
-  不要凭记忆猜 id。常用到的 id 直接列进这一节，剧作家每轮都看得到它。
+${assetSourceGuidance(ctx)}
 - 角色卡（\`memory/always/characters/<id>.md\`，角色的一切都在这张卡里，play.json 不再存角色数据）：
   头部 frontmatter 放机器字段（id / name / voice / voiceId / framing / sprites），正文写具体的人（年龄/关系/说话方式/在意的点）。
   ${ctx.canVoices ? "voiceId 用 \`list_voices\` 查出来再填（id 是 32 位 hex，猜不出来；填错不报错，演出时那句台词会静默没有声音）；" : ""}
@@ -149,6 +145,22 @@ ${renderReadiness(ctx.readiness)}${digestSection(ctx.digest)}${customSection(ctx
 function digestSection(digest: string | undefined): string {
   if (!digest || digest.trim() === "") return "";
   return `\n\n# 本会话已确定（早期对话已压缩）\n\n${digest.trim()}\n\n以上是本会话早前已确定的事项，不要重新提问、不要推翻；要改就基于它往下改。`;
+}
+
+/**
+ * 素材来源这一维的写法指导：告诉搭台者「哪些自己画、哪些从库里找」该怎么写进 craft.md。
+ *
+ * 两个工具名都按注册与否收条件，同「剧目写作要点」里那些 `canVoices` / `canBrowseLibrary` 一样：
+ * 没配资源库时教它调 `list_library`，它只会对着一个不存在的工具反复空转。
+ */
+function assetSourceGuidance(ctx: WorkshopPromptContext): string {
+  const draw = ctx.canGenerate
+    ? "**插图与立绘差分**用 `generate_image` 自己画（插图里有角色时带 `referenceCharacters` 垫立绘，脸才对得上）；**立绘先出 neutral 定妆照**，其余差分都由它垫底"
+    : "生图当前不可用，你列的图单剧作家用不上——缺画面的地方只能靠旁白和台词交代";
+  const reuse = ctx.canBrowseLibrary
+    ? "**背景、配乐、音效从资源库里找**——先用 `list_library` 查清有哪些 id 再写进剧本，不要凭空画背景、不要凭记忆猜 id"
+    : "**背景、配乐、音效**只用素材清单里已有的那些；没有的不要凭空造 id，用旁白交代画面";
+  return `- 素材来源（craft.md 里的一节，剧作家据此决定什么该自己画、什么该用现成的）：把每类素材的来路写清楚——${draw}；${reuse}。常用到的 id 直接列进这一节，剧作家每一轮都读得到它。`;
 }
 
 /**

@@ -219,3 +219,32 @@ describe("buildSystemPrompt：创作口径与演出契约", () => {
     expect(prompt).not.toContain("generate_image(kind=\"background\"");
   });
 });
+
+describe("buildSystemPrompt：素材从哪来", () => {
+  it("有资源库时讲清引用即导入这条契约（引擎事实，不是创作口径）", () => {
+    const prompt = buildSystemPrompt({ play: PLAY, assets: { backgrounds: ["bg_dusk.jpg"] }, canLibrary: true });
+    expect(prompt).toContain("宿主会自动去素材资源库");
+    expect(prompt).toContain("不用你重写这一行");
+    // 库里没有是静默降级——必须把「不会有人告诉你」写出来，否则它会换个 id 反复重试
+    expect(prompt).toContain("不会有任何回执告诉你");
+    expect(prompt).toContain("list_library");
+  });
+
+  it("没配库就不注这段——那条链路不存在，教它去查是教它对着空气找", () => {
+    const prompt = buildSystemPrompt({ play: PLAY, assets: { backgrounds: ["bg_dusk.jpg"] }, canLibrary: false });
+    expect(prompt).not.toContain("引用一个剧目里还没有的 id");
+    expect(prompt).not.toContain("list_library");
+  });
+
+  it("素材清单全空时不再教「每写到一个新场景先生成一张背景」", () => {
+    const prompt = buildSystemPrompt({ play: PLAY, assets: {}, canImage: true, canLibrary: true });
+    expect(prompt).not.toContain("没有任何背景与插图");
+    expect(prompt).not.toContain("先用 generate_image 排一张背景");
+  });
+
+  it("出图章节只讲工具与后果，不替所有剧目决定背景该怎么来", () => {
+    const prompt = buildSystemPrompt({ play: PLAY, canImage: true });
+    expect(prompt).toContain("哪些素材该出图、出哪几张，照剧目的创作口径");
+    expect(prompt).not.toContain("缺素材时自己画");
+  });
+});

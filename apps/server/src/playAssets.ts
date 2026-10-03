@@ -58,6 +58,12 @@ export interface AssetTarget {
   name?: string;
   /** 立绘所属角色 id（默认对角色卡做成员校验）。 */
   characterId?: string;
+  /**
+   * 角色表里没有 characterId 时的显示名——带了它就自动建一张最小角色卡。
+   * 戏里临时冒出来的人（路人、只在两轮里出现的店员）走这条路：立绘要出，
+   * 而工坊与用户此刻不在场，没人来得及先建卡。
+   */
+  characterName?: string;
   /** 立绘差分名（neutral / smile / ...）。 */
   expression?: string;
   /** 立绘取景（full/half/square）：决定出图景别与画幅，缺省全身。不给就沿用角色卡里该角色已有的声明。 */
@@ -107,6 +113,8 @@ interface AssetSpec {
   baseFraming?: SpriteFraming;
   /** 背景/CG 的参考立绘（立绘本身不带）。 */
   referenceCharacters?: ReferenceCharacter[];
+  /** 本次出图顺带建了一张角色卡（角色表变了，宿主要排轮边界重建）。 */
+  autoRegistered?: boolean;
 }
 
 export interface PlayAssetsDeps {
@@ -118,6 +126,8 @@ export interface PlayAssetsDeps {
   reference?: "none" | "neutral";
   /** 在生成的事（面板上那一行）：出图期间让玩家看得见在忙什么、等了多久。 */
   pending?: PendingJobs;
+  /** 写一张角色卡（自动注册临时角色用）；没有这条能力就不自动建卡，直接报错。 */
+  writeCharacter?: (charId: string, content: string) => Promise<void>;
   /** 角色卡立绘映射补写要进撤销条（二进制本身不进）。 */
   onWrite: (write: WorkshopWrite, notify: AssetNotify) => void;
   /** 素材到货（工坊侧挂到对话气泡里）。 */
@@ -132,6 +142,16 @@ export interface PlayAssetsDeps {
    * 回调的形状与触发时机都没变，改名只会逼着范围外的调用方一起动。
    */
   onPlayConfigChanged?: (notify: AssetNotify) => void;
+}
+
+/**
+ * 自动注册出来的最小角色卡：只声明「戏里有这么个人」。
+ *
+ * 人设（正文）故意留成一句「设定未补」而不是空白——空白在 A 区里读起来像是
+ * 「作者写过了，就是没写」，而工坊后面看到这张卡时也不会知道该去补。
+ */
+function stubCharacterCard(characterId: string, name: string): string {
+  return `---\nid: ${characterId}\nname: ${name}\n---\n\n（演出中临时引入，设定未补。）`;
 }
 
 export class PlayAssets {
@@ -151,6 +171,9 @@ export class PlayAssets {
   ): Promise<GeneratedPlayAsset[]> {
     const notify = options?.notify ?? "workshop";
     const spec = await this.resolve(target);
+    // 自动建的角色卡也是角色表的改动：拍进行中同样得排到轮边界重建，否则本轮之后
+    // 这个角色进不了 A 区，剧作家下一轮会当成不认识他。
+    if (spec.autoRegistered) this.deps.onPlayConfigChanged?.(notify);
     const key = `${spec.kindPath}/${spec.stem}`;
     const running = this.inflight.get(key);
     if (running) return running;
@@ -422,14 +445,24 @@ export class PlayAssets {
       throw new Error(`差分名「${expression}」非法：只允许小写字母开头的 a-z/数字/下划线，最长 40 字符`);
     }
     const cast = await this.cast();
-    const card = cast.get(characterId);
-    // 没有角色卡就没有这个角色：角色表是用户与工坊的账，不该被一次出图悄悄塞进陌生人。
-    // 剧作家要的临时角色先用 create_character 建卡，不在这里凭空造。
+    let card = cast.get(characterId);
+    // 没有角色卡：这个角色要么是笔误，要么是戏里临时冒出来的人。后者带 characterName 重新发起，
+    // 就地建一张最小卡——工坊与用户此刻不在场，等他们想起建卡，这一轮早就演过去了。
     if (!card) {
-      throw new Error(
-        `角色卡里没有角色「${characterId}」（memory/always/characters/${characterId}.md）。` +
-          `可选：${[...cast.keys()].join(" / ")}`,
-      );
+      const autoName = target.characterName?.trim();
+      if (!autoName) {
+        throw new Error(
+          `角色卡里没有角色「${characterId}」（memory/always/characters/${characterId}.md）。` +
+            `可选：${[...cast.keys()].join(" / ")}。` +
+            "要在戏里引入一个新角色（路人、临时店员），带 characterName=显示名 重新发起，会自动建卡。",
+        );
+      }
+      if (!this.deps.writeCharacter) {
+        throw new Error(`角色卡里没有角色「${characterId}」，当前环境也不能自动建卡。先 create_character 建一张。`);
+      }
+      await this.deps.writeCharacter(characterId, stubCharacterCard(characterId, autoName));
+      card = (await this.cast()).get(characterId);
+      if (!card) throw new Error(`角色卡「${characterId}.md」写完却读不出来，检查该目录的读写权限。`);
     }
     // 取景优先级：调用方显式给 > 角色卡里该角色这条差分的声明 > 角色级声明 > 全身。
     // 不给就沿用已有声明，是为了让「先给角色定过取景、之后每次出图都跟着它」成立。
@@ -444,6 +477,7 @@ export class PlayAssets {
       expression,
       framing,
       baseFraming: card.framing ?? DEFAULT_SPRITE_FRAMING,
+      ...(cast.has(characterId) ? {} : { autoRegistered: true }),
     };
   }
 

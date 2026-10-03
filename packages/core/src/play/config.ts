@@ -104,6 +104,14 @@ export interface PlayConfig {
   protagonist?: ProtagonistCard;
   /** 语音语言（ISO 639-1，如 "ja"）：与剧本语言不同时 say 文本先译成该语言再送 TTS；缺省跟随剧本语言。 */
   voiceLanguage?: string;
+  /**
+   * 没有角色卡的角色用哪个音色（剧目级兜底）。
+   *
+   * 一次性路人走 `<say id="passerby" name="路人甲">`——不建卡就不在角色表里，
+   * 而音色挂在角色卡的 voiceId 上，于是这类角色永远没声音。给剧目兜一个，
+   * 路人就有声音了，而每个有名有姓的角色仍然各用各的音色。
+   */
+  defaultVoiceId?: string;
   /** 开局 user 消息中的起始指令。 */
   opening: string;
   initialState: EngineStateSnapshot;
@@ -145,6 +153,9 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
     ...(cover ? { cover } : {}),
     ...(protagonist ? { protagonist } : {}),
     ...(data.voiceLanguage?.trim() ? { voiceLanguage: data.voiceLanguage.trim() } : {}),
+    ...(typeof data.defaultVoiceId === "string" && /^[0-9a-f]{32}$/i.test(data.defaultVoiceId.trim())
+      ? { defaultVoiceId: data.defaultVoiceId.trim() }
+      : {}),
     opening: data.opening ?? "（游戏开始，请演出第一轮）",
     initialState: data.initialState ?? { turn: 0, affinity: {}, flags: {} },
     initialScene: data.initialScene ?? "未定",

@@ -1,6 +1,6 @@
 ---
 name: style-anchors
-description: 用户要定画风、或要给 generate_asset 传 style 时读这个。含常用画风锚点（赛璐珞动画 / 厚涂写实 / 摄影写实 / 水彩手绘）与「先问用户再定画风」的流程。
+description: 用户要定画风、或要给 generate_image 传 style 时读这个。含常用画风锚点（赛璐珞动画 / 厚涂写实 / 摄影写实 / 水彩手绘）与「先问用户再定画风」的流程。
 ---
 
 # 画风锚点
@@ -27,9 +27,9 @@ description: 用户要定画风、或要给 generate_asset 传 style 时读这�
 | 水彩手绘 | `watercolor illustration, soft washes, paper texture, delicate linework` | 治愈、回忆、散文 |
 | 复古胶片 | `retro film aesthetic, muted palette, grain, 1980s photography` | 昭和、复古、悬疑怀旧 |
 
-## 怎么把画风传给 generate_asset
+## 怎么把画风传给 generate_image
 
-`generate_asset` 有个可选的 `style` 参数，就是上面这些短语，**英文短句，不要整段**。
+`generate_image` 有个可选的 `style` 参数，就是上面这些短语，**英文短句，不要整段**。
 完整的画面描述放 `prompt`，风格词放 `style`，两者不要互相重复。
 
 ## 画风与角色描述的一致性

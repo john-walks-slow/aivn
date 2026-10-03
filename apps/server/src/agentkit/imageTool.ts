@@ -10,7 +10,7 @@ import { linesResult, reason, textResult } from "./result.js";
  * |  | 工坊（sync） | 剧作家（queued） |
  * |  | --- | --- | --- |
  * | 等待 | await，回执带 markdown 图片 | 发起即返回排产回执 |
-< * | 立绘角色 | 必须在角色卡目录里（成员校验） | 同左：先用 create_character 建卡再出图 |
+< * | 立绘角色 | 必须在角色卡目录里，或带 characterName 自动建最小卡 | 同左 |
  *
  * 抠底参数不在这里：填它得先看过成图，而出图那一刻没人看过图。改抠底是工坊在用户面前
  * 看到脏边之后的事，走单独的 `recut_sprite`（原地重抠，不重新出图）。
@@ -28,8 +28,14 @@ const generateImageParams = Type.Object(
     kind: Type.Union([Type.Literal("background"), Type.Literal("cg"), Type.Literal("sprite")]),
     /** 背景/CG 的素材 id，剧本里的 bg/cg id 就是它。 */
     name: Type.Optional(Type.String({ maxLength: 40 })),
-    /** 立绘所属角色 id（角色卡的文件名主体）。没有这张卡就先 create_character 建一张。 */
+    /** 立绘所属角色 id（角色卡的文件名主体）。 */
     characterId: Type.Optional(Type.String({ maxLength: 40 })),
+    /**
+     * 角色表里还没有 characterId 时的显示名：带上它就自动建一张最小角色卡。
+     * 戏里临时冒出来的人（路人、店员）走这条——工坊与用户此刻不在场，等他们想起建卡，
+     * 这一轮早演过去了。给一个有卡的角色带这个参数没有额外作用（不会覆盖已有的人设）。
+     */
+    characterName: Type.Optional(Type.String({ maxLength: 40 })),
     /** 立绘差分名，如 neutral / smile。不给按 neutral。 */
     expression: Type.Optional(Type.String({ maxLength: 40 })),
     /**
@@ -98,8 +104,9 @@ const SYNC_DESCRIPTION = [
 
 const QUEUED_DESCRIPTION = [
   "出一张剧目素材并**后台排产**（发起即返回，不等图）：背景(kind=background) / CG(kind=cg) 给 name，",
-  "立绘(kind=sprite) 给 characterId + expression（不给按 neutral）。characterId 必须是已有角色卡的角色，",
-  "临时角色先用 create_character 建卡再出图。",
+  "立绘(kind=sprite) 给 characterId + expression（不给按 neutral）。characterId 是已有角色卡的角色；",
+  "**戏里临时冒出来的人**（路人、店员）带 characterName=显示名 一起给，会自动建一张最小角色卡——",
+  "工坊与用户此刻不在场，等他们想起建卡，这一轮早演过去了；有卡的角色别带这个参数，人设不会被覆盖。",
   "背景 16:9、CG 16:9、立绘竖构图（取景 full 用 9:16、half 3:4、square 1:1）；提示词写英文，只描述画面本身。",
   PROMPT_RULES,
   REFERENCE_RULE,
@@ -173,6 +180,7 @@ async function runSync(
       kind: params.kind,
       name: params.name,
       characterId: params.characterId,
+      characterName: typeof params.characterName === "string" ? params.characterName : undefined,
       expression: typeof params.expression === "string" ? params.expression : undefined,
       framing: params.framing,
       referenceCharacters: Array.isArray(params.referenceCharacters)

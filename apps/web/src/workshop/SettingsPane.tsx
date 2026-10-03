@@ -3,6 +3,8 @@ import type { PlayConfig, PlayCover } from "@stage-ai/core";
 import { languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
 import { api, assetUrl, type PlayFile } from "../api.js";
 import { Icon, type IconName } from "../ui/Icon.js";
+import { VoiceLibrary } from "../voice/VoiceLibrary.js";
+import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
 
 const CRAFT_PATH = "memory/always/craft.md";
 const PREMISE_PATH = "memory/always/premise.md";
@@ -29,6 +31,9 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   /** 可当封面的图：剧目自己的背景与插图。 */
   const [assets, setAssets] = useState<Record<string, string[]>>({});
+  /** 音色库面板开着时为 true；剧目级兜底音色只在这一处选。 */
+  const [pickingVoice, setPickingVoice] = useState(false);
+  const voices = useVoiceCatalog();
 
   const reload = useCallback((): void => {
     api
@@ -175,6 +180,29 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
               </select>
               <p className="muted small">翻译由 LLM 完成，任何小语种都能用——前提是所选音色支持该语言。</p>
             </label>
+            <div className="field">
+              <span>无名角色音色（路人、临时角色）</span>
+              <div className="row">
+                <button type="button" className="btn-icon" onClick={() => setPickingVoice(true)}>
+                  <Icon name="volume" />
+                  {draft.defaultVoiceId ? "换一个音色" : "挑一个音色"}
+                </button>
+                {draft.defaultVoiceId && (
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    onClick={() => patch((p) => delete p.defaultVoiceId)}
+                  >
+                    清空
+                  </button>
+                )}
+              </div>
+              <p className="muted small">
+                剧本里写成 <code>{'<say id="passerby" name="路人甲">…</say>'}</code> 的一次性角色没有角色卡，
+                音色挂在角色卡上，于是默认不出声。这里挑一个兜底，他们就用这个声音。
+                每个有角色卡的仍然用各自的音色。
+              </p>
+            </div>
             <CoverPicker
               playId={playId}
               assets={assets}
@@ -214,6 +242,17 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
 
       </section>
 
+      {pickingVoice && (
+        <VoiceLibrary
+          playId={playId}
+          voices={voices}
+          onClose={() => setPickingVoice(false)}
+          onPick={(entry) => {
+            patch((p) => (p.defaultVoiceId = entry.id));
+            setPickingVoice(false);
+          }}
+        />
+      )}
     </div>
   );
 }

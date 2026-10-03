@@ -117,6 +117,12 @@ function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2, re
       limiter: new Limiter(concurrency),
       ...(reference ? { reference } : {}),
       onWrite: (w) => writes.push(w),
+      // 自动注册临时角色走这条；用例不接时就是「当前环境不能自动建卡」
+      writeCharacter: async (charId, content) => {
+        const dir = store.memoryDir("always", "characters");
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, `${charId}.md`), content, "utf8");
+      },
     }),
   };
 }
@@ -722,5 +728,52 @@ describe("PlayAssets：出图留痕", () => {
     const sent = calls[0]!.prompt;
     expect(sent).toContain("clear empty white space between the arms and the body");
     expect(sent.toLowerCase()).not.toMatch(/twin|tail|braid|ponytail/);
+  });
+});
+
+
+describe("PlayAssets：自动注册临时角色", () => {
+  it("带 characterName 就地建一张最小卡并出图，卡里写明设定未补", async () => {
+    const store = await makeStore();
+    const { backend } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+
+    await assets.generate(
+      { kind: "sprite", characterId: "passerby", characterName: "路人甲", expression: "neutral" },
+      "a passerby, front view, plain white background",
+    );
+
+    const card = await readFile(join(store.memoryDir("always", "characters"), "passerby.md"), "utf8");
+    expect(card).toContain("name: 路人甲");
+    // 人设留白会让工坊以为「作者写过了，就是没写」——必须显式说它没写
+    expect(card).toContain("设定未补");
+  });
+
+  it("不带 characterName 仍然报错，并把「带 characterName」写进下一步指引", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+
+    await expect(assets.generate({ kind: "sprite", characterId: "ghost", expression: "neutral" }, "p")).rejects.toThrow(
+      /带 characterName=显示名 重新发起/,
+    );
+    // 一个字节都不许落
+    expect(calls).toHaveLength(0);
+    await expect(
+      readFile(join(store.memoryDir("always", "characters"), "ghost.md"), "utf8"),
+    ).rejects.toThrow();
+  });
+
+  it("已有角色卡时 characterName 不作数：人设不会被覆盖", async () => {
+    const store = await makeStore();
+    await writeCard(store.dir, "mio", { id: "mio", name: "美绪", body: "店员，寡言。" });
+    const { backend } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+
+    await assets.generate({ kind: "sprite", characterId: "mio", characterName: "路人甲", expression: "neutral" }, "p");
+
+    const card = await readFile(join(store.memoryDir("always", "characters"), "mio.md"), "utf8");
+    expect(card).toContain("name: 美绪");
+    expect(card).toContain("店员，寡言。");
   });
 });

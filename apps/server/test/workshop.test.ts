@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServerMessage } from "@stage-ai/core";
@@ -333,9 +333,11 @@ describe("工坊 prompt 与工具", () => {
     expect(prompt).toContain("看 generate_image 的工具说明");
     // neutral 不覆盖 normal：agent 曾宣称「会覆盖 normal.png」，实际多出一个键、两个人并存
     expect(prompt).toContain("neutral 与其它差分名是两个名字");
-    // 自查要逐条结论：inspect_asset 看过仍汇报「已严格按设定完成」，被单独追问才承认图不对
-    expect(prompt).toContain("逐条核对再汇报");
-    expect(prompt).toContain("已严格按设定完成");
+    // 看图不是流程的一环：出图章节不再规定「出完看一遍、逐条核对」——
+    // 每张图都看一遍只是白烧一轮，看不看得由模型自己按需要决定。
+    expect(prompt).not.toContain("逐条核对再汇报");
+    expect(prompt).not.toContain("view_image");
+    expect(prompt).not.toContain("inspect_asset");
     // 失败要把接口原话带给用户：「生图服务暂时不可用」让人无法判断是额度还是网关挂了
     expect(prompt).toContain("出图失败把接口原话带给用户");
     // 描述表：立绘差分的键与剧作家查表一致；补描述只许定点改，别拿别的条目当锚点（实测抹掉过一条）
@@ -420,7 +422,7 @@ describe("工坊工具：generate_image", () => {
     expect(existsSync(join(store.dir, "assets/backgrounds/rooftop.jpg"))).toBe(true);
   });
 
-  it("inspect_asset：把图以 image attachment 交给模型（抠底质量只有眼睛能判）", async () => {
+  it("view_image：剧目内的图以 image attachment 交给模型（抠底质量只有眼睛能判）", async () => {
     await setup();
     await mkdir(join(store.dir, "assets", "sprites", "mio"), { recursive: true });
     const png = await sharp({
@@ -431,25 +433,60 @@ describe("工坊工具：generate_image", () => {
     await writeFile(join(store.dir, "assets", "sprites", "mio", "neutral.png"), png);
 
     const tools = createWorkshopTools(deps());
-    const inspect = tools.find((t) => t.name === "inspect_asset")!;
-    const result = await inspect.execute("c1", { path: "assets/sprites/mio/neutral.png" });
+    const view = tools.find((t) => t.name === "view_image")!;
+    const result = await view.execute("c1", { source: "assets/sprites/mio/neutral.png" });
     const image = result.content.find((c) => c.type === "image");
     expect(image).toBeDefined();
     expect(image!.type === "image" && image!.mimeType).toBe("image/png");
     const data = image!.type === "image" ? Buffer.from(image!.data, "base64") : Buffer.alloc(0);
     expect(data.equals(png)).toBe(true);
 
-    const missing = await inspect.execute("c2", { path: "assets/sprites/mio/nope.png" });
+    const missing = await view.execute("c2", { source: "assets/sprites/mio/nope.png" });
     expect(JSON.stringify(missing)).toContain("读图失败");
   });
 
-  it("inspect_asset：非图片字节不塞进模型，省得白烧一轮", async () => {
+  it("view_image：非图片字节不塞进模型，省得白烧一轮", async () => {
     await setup();
     const tools = createWorkshopTools(deps());
-    const inspect = tools.find((t) => t.name === "inspect_asset")!;
-    const out = await inspect.execute("c1", { path: "play.json" });
+    const view = tools.find((t) => t.name === "view_image")!;
+    const out = await view.execute("c1", { source: "play.json" });
     expect(out.content.some((c) => c.type === "image")).toBe(false);
-    expect(JSON.stringify(out)).toContain("不是可看的图片");
+    expect(JSON.stringify(out)).toContain("不是一张能看的图");
+  });
+
+  it("view_image：网址分支下载后读进来，并缓存到剧目的 media-cache", async () => {
+    await setup();
+    const jpeg = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#3366aa" } })
+      .jpeg()
+      .toBuffer();
+    const asked: string[] = [];
+    const tools = createWorkshopTools(
+      deps({ webImage: async (url: string) => (asked.push(url), { data: jpeg, mimeType: "image/jpeg" }) }),
+    );
+    const view = tools.find((t) => t.name === "view_image")!;
+    const url = "https://example.com/ref/hero.jpg";
+    const result = await view.execute("c1", { source: url });
+    expect(asked).toEqual([url]);
+    const image = result.content.find((c) => c.type === "image");
+    expect(image!.type === "image" && image!.mimeType).toBe("image/jpeg");
+    expect(Buffer.from(image!.type === "image" ? image!.data : "", "base64").equals(jpeg)).toBe(true);
+    // 回执里带网址：模型要能引用用户给的链接
+    expect(JSON.stringify(result)).toContain(url);
+    // 落在剧目的 media-cache 下，不进 assets/（外部图不是剧目素材）
+    const cached = readdirSync(store.webImageDir());
+    expect(cached).toHaveLength(1);
+    expect(cached[0]).toMatch(/\.jpg$/);
+
+    // 再看一次同一个网址不再重新下载
+    await view.execute("c2", { source: url });
+    expect(asked).toHaveLength(1);
+  });
+
+  it("view_image：没有下载器时只认本地路径（不装一个必然失败的能力）", async () => {
+    await setup();
+    const view = createWorkshopTools(deps()).find((t) => t.name === "view_image")!;
+    const out = await view.execute("c1", { source: "https://example.com/ref.jpg" });
+    expect(JSON.stringify(out)).toContain("看网络图未启用");
   });
 
   it("抠底参数不在 generate_image 上（出图时没人看过图，填了也是默认值）", async () => {

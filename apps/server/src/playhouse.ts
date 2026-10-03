@@ -188,9 +188,7 @@ export class PlayHouse {
     this.tts = createTts(config);
     this.imageBackend = createImageBackend(config);
     this.exa = createExa(config);
-    // 出网代理与超时共用 Exa 那份：两边都是墙外资源，再开一套只会有一边忘了配。
-    // 设成空串（面板上清空 STAGE_EXA_PROXY）即直连，给没有代理的内网部署留门。
-    this.webImage = new WebImageFetcherImpl({ proxy: config.exa.proxy, timeoutMs: config.exa.timeoutMs }).fetchImage;
+    this.webImage = new WebImageFetcherImpl().fetchImage;
     // StreamFn 契约是 SimpleStreamOptions（reasoning 字段）——须接 streamSimple 做换算；
     // 错接完整版 stream 会丢弃 reasoning，thinking 档位全部失效
     this.streamFn = (m, context, options) =>
@@ -360,6 +358,8 @@ export class PlayHouse {
         if (notify !== "workshop") return;
         this.runtimes.get(playId)?.workshop.pushAsset(asset);
       },
+      // 自动注册临时角色：出图时顺手建一张最小角色卡
+      writeCharacter: (charId, content) => this.writeCharacter(store, charId, content),
       // 剧作家给临时角色生立绘会改 play.json：拍进行中不能腰斩演出，排到轮边界再重建
       onPlayConfigChanged: (notify) => {
         if (notify === "silent") this.rebuildAtBeatBoundary(playId, "剧作家新增了立绘素材");
@@ -495,7 +495,21 @@ export class PlayHouse {
    * 只写这一个文件——play.json 的 `characters` 早就是纯元数据，没有任何逻辑读它，
    * 往里塞 stub 是白写一遍再留一份会漂移的副本。
    */
+  /**
+   * 本进程内「刚写过的角色」：落盘的同时登记，出图的角色成员校验读实时盘 ∪ 它。
+   *
+   * 只为消掉一个竞态：同一批工具调用里 create_character 的落盘与 generate_image
+   * 的校验是并发的，谁先完成不定，于是「先建卡再出图」同批发出去会偶发扑空。
+   * 登记与落盘在同一个函数里顺序完成，校验那边就不用再赌一次磁盘的时序。
+   * 登记只增不减：里面每个 id 都真的写过磁盘，最坏是用户后来删了卡，
+   * 那时 A 区照样读不到它，不会有副作用。
+   */
+  private readonly knownCharacters = new WeakMap<PlayStore, Set<string>>();
+
   private async writeCharacter(store: PlayStore, charId: string, content: string): Promise<void> {
+    const known = this.knownCharacters.get(store) ?? new Set<string>();
+    known.add(charId);
+    this.knownCharacters.set(store, known);
     const charDir = store.memoryDir("always", "characters");
     const charFile = join(charDir, `${charId}.md`);
     await mkdir(dirname(charDir), { recursive: true });
@@ -592,7 +606,9 @@ export class PlayHouse {
       playId,
       store,
       library: this.assetLibrary,
-      characters: () => characterIdsOf(store),
+      characters: async () => [
+        ...new Set([...(await characterIdsOf(store)), ...(this.knownCharacters.get(store) ?? [])]),
+      ],
       onImported: (result) => {
         if (result.kind === "characters") {
           this.rebuildAtBeatBoundary(playId, `剧作家引用了资源库角色 ${result.id}，已导入`);

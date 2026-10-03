@@ -342,7 +342,9 @@ export class PlaywrightOrchestrator {
           synth: opts.tts.synth,
           // 角色卡是真相源，play.json 是存量兜底：导入资源库建的角色一度只有后者，
           // 那时音色配置在 play.json 里。工坊存过卡之后这里就走卡。
-          voiceOf: (charId) => opts.memory.characters.get(charId)?.voiceId,
+          // 角色卡是真相源；卡上没有音色的（一次性路人、自动注册出来的临时角色）
+          // 落到剧目级兜底，别让这类角色永远不出声。
+          voiceOf: (charId) => opts.memory.characters.get(charId)?.voiceId ?? opts.play.defaultVoiceId,
           emit: (event) =>
             this.send(
               event.state === "ready" && event.url
@@ -385,6 +387,7 @@ export class PlaywrightOrchestrator {
           arcIds: this.arcIds,
           canImage: this.kit.can.image,
           canSearch: this.kit.can.search,
+          canLibrary: this.kit.can.library,
         }),
         model: opts.model,
         thinkingLevel: this.kit.thinking,
