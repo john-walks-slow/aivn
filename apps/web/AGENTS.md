@@ -14,7 +14,8 @@
 - `src/voice/`（VoiceLibrary 全屏音色库面板——顶部搜索 + 语言下拉（无「全部语言」项，默认跟随 `navigator.language`）+ 卡片网格逐个试听/选用 + 右上角固定「×」关闭键、分页 60 条防 1000 张图卡顿、useVoiceCatalog 目录状态 + 目录外 voiceId 按 id 解析）。
 - `src/workshop/`：
   - WorkshopPane 六 tab 对话/素材/文件/记忆/Agent/设置。
-  - AgentPane 单剧目 agent 设置（剧作家/搭台助手各一张卡：模型下拉走 `GET /api/agents/models`（网关清单 ∩ `STAGE_MODELS` 支持清单；读不到就显式报错，不静默退化成默认；清单外的旧值补一项「不在支持清单里」显示，不静默改写 play.json）、思考档位、按 `groupLabel` 分组的工具开关；保存即写 play.json 的 `agents` 段）。
+  - AgentPane 单剧目 agent 设置（剧作家/搭台助手各一张卡：模型下拉走 `GET /api/agents/models`（网关清单 ∩ 设置里「支持的模型」清单；读不到就显式报错，不静默退化成默认；清单外的旧值补一项「不在支持清单里」显示，不静默改写 play.json）、思考档位、按 `groupLabel` 分组的工具开关；保存即写 play.json 的 `agents` 段）。
+  - SettingsScreen（服务端设置页 `#/settings`：模型网关 / 长会话与压缩 / 生图 / 语音 / 联网检索 / 访问密码 / 界面主题，外加启动参数只读回显。**保存即落盘 `settings.json` 并立即生效**，没有「重启后生效」这一步；凭据以掩码回显、输入框留空 = 不改）。
   - MemoryPanel 记忆页（`memoryFiles.ts` 按 always/characters/index/arcs 分组，arcs+archive 只读）。
   - WorkshopSettings（演出侧两个开关）。
   - useWorkshop 状态机。

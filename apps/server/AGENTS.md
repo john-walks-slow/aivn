@@ -29,7 +29,7 @@
 
 - **工坊线程也有纪元压缩**：`workshopSession.ts` 的 `maybeCompact` 每轮开跑前判定（与演出侧同一时刻、同一套 `compaction.ts` 计量与切点），但产物落线程的 `compaction` 字段而不是 `memory/arcs`——工坊会话是搭台过程、不是剧目事实，进 arcs 会污染剧作家每轮注入的 A 区。
 - **消息文件一条不删**：只有前 `cutAt` 条移出 agent 上下文，面板照常显示（旧对话照常在，只是中间多一条可点开的分隔）。
-- 工坊模型可以和剧作家不同，阈值因此另有一套 `STAGE_WORKSHOP_*` env（缺省逐项沿用全局），生效值再与模型自带窗口取 min。
+- 工坊模型可以和剧作家不同，阈值因此另有一套（`settings.json` 的 `workshopContext`，缺省逐项沿用全局），生效值再与模型自带窗口取 min。
 - 摘要回注 A 区（工坊 A 区本就每轮重建，没有前缀缓存约束），多轮是**拿旧定稿重写成一份完整文档**而不是叠加（`capDigest` 封顶 6000 字）。
 - 工坊的 read / write / edit / bash 全部是 **pi 的内建工具**（`agentkit/piTools.ts` 只做 `AgentHarnessTool → AgentTool` 的适配，把 `onUpdate`/`toolContext`/`invocation`/`context` 补齐，`context` 用 `withAbortSignal(signal, BACKGROUND_CONTEXT)` 把工坊单轮的 7 分钟超时传下去）。
 - 路径白名单与 `play.json` 结构校验收在 `playFiles.ts` 的 `PlayFiles` 上——它是**所有文本写口的收口**（工坊 agent 的 write / edit、文件页、引用即导入的主角卡都从 `write` 过），校验不过就不落盘、盘上那份一个字节不动。撤销条在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，早拒白名单 + 记撤销条，落盘委派 `PlayFiles.write`）。
@@ -59,8 +59,8 @@
 
 ## 生图后端
 
-- 生图后端本机默认走 flow2api（`STAGE_IMAGE_BASE_URL=http://127.0.0.1:38000`，账号 credits 计费、额度 988 起）：cpa 网关的 `gemini-3.1-flash-image` 几分钟就撞一次 429 额度耗尽，做不了连续出图与对照实验。
-- 两套后端的协议形状一样，换回去只改 `.env`。
+- 生图后端本机默认走 flow2api（「生图地址」填 `http://127.0.0.1:38000`，账号 credits 计费、额度 988 起）：cpa 网关的 `gemini-3.1-flash-image` 几分钟就撞一次 429 额度耗尽，做不了连续出图与对照实验。
+- 两套后端的协议形状一样，换回去只改设置页里那几项。
 
 ## 提示词装配
 
@@ -95,7 +95,7 @@
 - 库里没有就静默降级**不回话给模型**。
 - 这条链路是剧作家的**默认**导入路径，不需要开任何工具——但**剧作家提示词里要写这条契约**（`prompt.ts` 的 `LIBRARY_REF`，按 `can.library` 注入）：不告诉它，它就只剩「缺素材就自己画」这一条路，把本该从库里拿的背景全烧成配额。
 - 库里也没有的那一段尤其要写明「静默降级、不回话给模型」，否则它会换个 id 反复重写同一个引用。
-- 垫图让单张从 69s 变 138s 而像素一样（`STAGE_IMAGE_REFERENCE=none` 可掐掉，默认保一致性）。
+- 垫图让单张从 69s 变 138s 而像素一样（「垫图策略」设 `none` 可掐掉，默认保一致性）。
 
 ## 出图内核与手动生图
 
@@ -108,17 +108,17 @@
 
 ## 生图配置（接口格式、画幅与尺寸）
 
-- **生图配置按接口格式而不是按产品名**：`STAGE_IMAGE_FORMAT=gemini|openai` 选协议形状（`geminiImage.ts` = `/v1beta/models/{model}:generateContent`，垫图走 `inlineData`；`openaiImage.ts` = `/v1/images/generations`，接口没有参考图入参、带垫图直接报错），地址/模型/尺寸统一读 `STAGE_IMAGE_BASE_URL` / `STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`——后者说的是两种官方词汇：`1K`/`2K`/`4K` 是 Gemini `imageConfig.imageSize` 的原词（**K 必须大写，官方拒小写**；语义是总像素量级 1K≈1024²），gemini 侧原样透传。
+- **生图配置按接口格式而不是按产品名**：`image.format` 选 `gemini|openai` 两种协议形状（`geminiImage.ts` = `/v1beta/models/{model}:generateContent`，垫图走 `inlineData`；`openaiImage.ts` = `/v1/images/generations`，接口没有参考图入参、带垫图直接报错），地址/模型/尺寸统一读 `image.baseUrl` / `image.model` / `image.size`——后者说的是两种官方词汇：`1K`/`2K`/`4K` 是 Gemini `imageConfig.imageSize` 的原词（**K 必须大写，官方拒小写**；语义是总像素量级 1K≈1024²），gemini 侧原样透传。
 - openai 侧的 `size` 是字面 `WxH`，所以档位由 `canvasFor` 按画幅换算（16:9 的 `1K` → `1360x768`），也可以直接写字面尺寸 `1536x1024` 喂只认标准尺寸的老模型。
 - 画幅白名单取两款接口的交集（Gemini 官方 14 个取值，减去 OpenAI 不收的 1:4/4:1/1:8/8:1）——换一家 Gemini 或 OpenAI 生图只改地址与模型名，不动代码。
 
 ## 服务入口、端点与记账
 
-- **公网入口是同端口的**：`index.ts` 先过 `webAuth.ts` 的密码闸门（`STAGE_PASSWORD`，HTTP Basic，HTTP 与 `/ws` 升级同一个判断——只挡 HTTP 等于没挡），再由 `webStatic.ts` 把 `apps/web/dist` 挂上，API 路径（`api`/`plays`/`library`）不碰前端目录，其余路径按 hash 路由回 index.html。
+- **公网入口是同端口的**：`index.ts` 先过 `webAuth.ts` 的密码闸门（`settings.json` 的 `password`，HTTP Basic，HTTP 与 `/ws` 升级同一个判断——只挡 HTTP 等于没挡），再由 `webStatic.ts` 把 `apps/web/dist` 挂上，API 路径（`api`/`plays`/`library`）不碰前端目录，其余路径按 hash 路由回 index.html。
 - 所以 `pnpm -r build` 之后一个端口就是整站，公网部署只指向这一个。
 - 开发时仍是 vite + server 两个端口。
 - 在生成的事由 `pendingJobs.ts` 统一记账（剧作家的轮次 / 背景 / CG / 立绘 / 语音），一改整表广播 `pending_jobs`，与排队面板共用一块浮层，重连时随 hello 的 `pendingJobs` 恢复。
-- 新增端点：`GET /api/agents/models`（网关 `/v1/models` 清单 ∩ `STAGE_MODELS` 支持清单，收窄在 `provider.ts` 的 `supportedModels`：按配置顺序排、清单里的 id 网关没有即报错点名；读不到网关即 400 不降级）、`GET /api/agents/tools`（工具目录）。
+- 新增端点：`GET /api/agents/models`（网关 `/v1/models` 清单 ∩ 设置里「支持的模型」清单，收窄在 `provider.ts` 的 `supportedModels`：按配置顺序排、清单里的 id 网关没有即报错点名；读不到网关即 400 不降级）、`GET /api/agents/tools`（工具目录）。
 
 ## 技能库与新剧目初始状态
 
@@ -131,10 +131,12 @@
 
 ## 设置面板与配置面
 
-- **设置面板只有一个保存入口**：`configApi.ts` 把 `.env` 当可写配置面，`GET/PUT /api/config` 一把梭（`SettingsFile.read/write`，`set()` 只落改动过的键、掩码与空值视为保持不变）。
-- 多把 key 不走独立文件也不走独立接口：`STAGE_TTS_KEYS` / `STAGE_EXA_KEYS` 都是逗号分隔的字符串（`config.ts` 的 `parseKeyList`），传输面统一是 `KeyListView {keys, masked, keyCount}`——读侧 `keys` 恒空、只给掩码，写侧留空=不改、填入=整组替换（`writeKeyList`）。
+- **唯一真相源是 `<dataRoot>/settings.json`**：`settingsStore.ts` 持有内存镜像，`patch()` 校验 → 原子落盘（临时文件 + rename，0600）→ 通知订阅者。整份文件当补丁叠在 `freshSettings()` 上解析，所以手写的文件可以只写关心的几项，每项仍过同一套校验；`fs.watch` 盯**目录**（落盘是改名，盯文件本身的 watcher 第一次保存之后就收不到事件了）+ 200ms 去抖。
+- **只有一个保存入口**：`GET/PUT /api/config` 一把梭（`configApi.ts` 的读视图/写映射，掩码回传 = 不改、清空 = 显式清除）。面板上任何凭据都不许有绕过它单独落盘的通道。
+- 多把 key 不走独立文件也不走独立接口：`keystore` 存的是数组（`config.ts` 的 `parseKeyList` 负责文本形态），传输面统一是 `KeyListView {keys, masked, keyCount}`——读侧 `keys` 恒空、只给掩码，写侧留空 = 不改、填入 = 整组替换（`mergeKeyList`）。
 - 2026-10-02 拆掉了 `PUT/GET /api/config/tts-keys` 与 `~/.config/fish-audio/keys.json` 这条旁路：密钥与其余配置走两条路，用户会只改一半然后发现没生效。
 - 模型 ID 两处（全局设置、剧目「Agent」页）复用 `ui/ModelSelect.tsx` 的同一个下拉，清单取 `GET /api/agents/models`，读不到就显式报错给重试、绝不退化成文本框。
+- **新增一个设置项要同时动四处**：`config.ts` 的 `ServerConfig` + `freshSettings` + 校验、`configApi.ts` 的读视图与写映射、设置页表单、README 的「设置页字段总表」。少任何一处，用户就会看见一个「有配置项但改不了」或「改不了又没写」的窟窿（2026-10-04 补：`nsfwPrompt` 与 `image.reference` 就曾长期只有接口没有入口）。
 
 ## 限制级（NSFW）通道
 

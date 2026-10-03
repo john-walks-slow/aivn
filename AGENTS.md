@@ -8,13 +8,42 @@
 
 - `apps/web/` —— 舞台演出层（React 19 + vite）与工坊界面。见 [`apps/web/AGENTS.md`](apps/web/AGENTS.md)。
 
-- `library/` —— 应用级素材资源库，**整个目录不进 git**，放不了模块级指引；说明见下方「素材资源库」一节。
+- `apps/desktop/` —— 桌面壳（Tauri 2）：一层窗口 + 一个由它拉起的服务端 sidecar。见 [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md)。
 
-- 其他：`packages/core` —— Stage DSL 规范、流式解析器、IR 事件、WS 协议与谱系数据模型；`plays/` —— 剧目数据，只有 `plays/demo` 这个样例进 git；`scripts/` —— 开发脚本；`skills/` —— 跨剧目的通用做法速查（只给工坊的 `read_skill`）；`docs/` —— 需求、问题与规范记录。
+- 数据目录（打包态 = exe 同级 `data/`，开发态 = 仓库根）—— `plays/` 剧目、`library/` 素材库、`media-cache/` 可重建缓存、`settings.json` 运行期设置。**整个数据目录不进 git**（`plays/demo` 这个样例除外）。
+
+- 其他：`packages/core` —— Stage DSL 规范、流式解析器、IR 事件、WS 协议与谱系数据模型；`scripts/` —— 开发与打包脚本；`skills/` —— 跨剧目的通用做法速查（只给工坊的 `read_skill`，随包只读）；`docs/` —— 需求、问题与规范记录。
+
+## 开发与调试
+
+```bash
+pnpm -r build          # core 改动后 web/server 走 workspace dist 类型，必须重建
+pnpm typecheck
+pnpm test
+pnpm --filter @aivn/server start    # 起后端（顺带把 apps/web/dist 挂在同一个端口）
+pnpm --filter @aivn/web dev         # 开发态前端 :5180，代理到 8787
+```
+
+打包（**只能在 Windows 上跑**，Tauri 不支持交叉编译到 Windows）：
+
+```bash
+pnpm exe               # 服务端单文件 exe + 免安装 zip → build/
+pnpm desktop           # 上面那份 exe 当 sidecar，再出 NSIS 安装包 → build/
+pnpm icon              # 改了 apps/desktop/icon.svg 之后重生成图标全套
+```
+
+版本号有四处必须一起改：根 `package.json`、`apps/desktop/package.json`、`apps/desktop/src-tauri/tauri.conf.json`、`apps/desktop/src-tauri/Cargo.toml`（`pnpm desktop` 会核对，漂了直接报错）。
+
+## 配置面
+
+- 运行期设置的唯一真相源是 **`<数据目录>/settings.json`**，`apps/server/src/settingsStore.ts` 持有它的内存镜像并监听手改。设置页只是它的编辑器。
+- 改设置**必须就地生效**：持有者每次使用时从 store 现取，不要在构造时把字段拷进局部变量——那正是「改完要重启」的来源。需要重建的订阅 `store.subscribe`，且只在**轮边界**重建，不腰斩演出。
+- 留在环境变量里的只有启动参数（`STAGE_PORT` / `STAGE_HOST` / `STAGE_DATA_DIR`）与出口代理（`HTTP_PROXY` / `HTTPS_PROXY`），以及不进 UI 的抠底调参 `STAGE_CUTOUT_*`。
+- 新增一个设置项要同时动四处：`config.ts` 的 `ServerConfig` + `freshSettings` + 校验、`configApi.ts` 的读视图与写映射、设置页表单、README 的「设置页字段总表」。
 
 ## 素材资源库（library/）
 
-- `library` —— 应用级素材资源库（`STAGE_LIBRARY_ROOT`，**整个不进 git**）：`<kind>/<id>/{meta.json, 素材文件}`，kind ∈ `backgrounds`/`cg`/`characters`/`bgm`/`sfx`，**目录名即素材 id**。
+- `library` —— 应用级素材资源库（数据目录下的 `library/`，**整个不进 git**）：`<kind>/<id>/{meta.json, 素材文件}`，kind ∈ `backgrounds`/`cg`/`characters`/`bgm`/`sfx`，**目录名即素材 id**。
 - 服务端只读（增删改由用户在本地目录做，UI 不管这块）。
 - `characters/` 是唯一可以零媒体的类别——`meta.character` 就是一张角色卡，立绘是它的可选附件。
 - 种子的出处与逐条许可见 `docs/features/260930-asset-library/seed-sources.research.md`。
