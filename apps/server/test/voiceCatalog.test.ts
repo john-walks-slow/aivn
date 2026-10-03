@@ -43,7 +43,27 @@ describe("VoiceCatalogService", () => {
     const catalog = await svc.get();
     expect(catalog.entries.map((e) => e.title)).toEqual(["B", "A"]);
     expect(catalog.totalAvailable).toBe(1000);
-    expect(calls).toHaveLength(3); // 2 页数据 + 1 页空页探到边界；真实 API 满 10 页时由 MAX_PAGES 收口
+    expect(calls).toHaveLength(10); // 10 页一次并发打完，由 MAX_PAGES 收口
+  });
+
+  it("分页是并发打的：一次刷新只花一轮往返（串行要三十多秒）", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "voices-"));
+    const config = loadConfig({ STAGE_TTS_PROXY: "" }, "/repo");
+    let inFlight = 0;
+    let peak = 0;
+    const svc = new VoiceCatalogService(config, join(dir, "voices.json"), async <T>(path: string): Promise<T> => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      const page = Number(new URL(path, "http://x").searchParams.get("page_number"));
+      return {
+        total: 1000,
+        items: [{ _id: `${page}`.padEnd(32, "0"), state: "trained", title: `p${page}`, like_count: page }],
+      } as T;
+    });
+    await svc.get();
+    expect(peak).toBe(10);
   });
 
   it("丢弃未训练完的音色（进目录只会让用户选到合成失败的音色）", async () => {
@@ -92,6 +112,42 @@ describe("VoiceCatalogService", () => {
     expect(catalog.stale).toBe(true);
     expect(catalog.entries[0]?.title).toBe("旧音色");
     expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("抓取失败后进入静默期：后续查询直接用旧快照，不再重打上游", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "voices-"));
+    const cacheFile = join(dir, "voices.json");
+    await writeFile(
+      cacheFile,
+      JSON.stringify({
+        entries: [{ id: "a".repeat(32), title: "旧音色", description: "", languages: ["zh"], tags: [], likes: 1, cover: "" }],
+        fetchedAt: 0, // 过期，逼下一次走抓取
+        totalAvailable: 1000,
+        stale: false,
+      }),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const config = loadConfig({ STAGE_TTS_PROXY: "" }, "/repo");
+    let calls = 0;
+    const svc = new VoiceCatalogService(config, cacheFile, async () => {
+      calls += 1;
+      throw new Error("代理不通");
+    });
+
+    // 失败不推进 fetchedAt（推进了就把旧快照谎称成新的），所以没有静默期的话
+    // 后面每次查询都会重付一遍完整抓取的代价——上游一坏就变成「每次都卡」。
+    expect((await svc.get()).stale).toBe(true);
+    const afterFirst = calls;
+    expect(afterFirst).toBeGreaterThan(0);
+
+    expect((await svc.get()).entries[0]?.title).toBe("旧音色");
+    expect(calls).toBe(afterFirst);
+
+    // 用户显式点刷新要能穿透静默期，否则那个按钮按下去没反应
+    // （强制刷新本来就不带 fallback，拉不到就如实抛错）
+    await expect(svc.get(true)).rejects.toThrow("代理不通");
+    expect(calls).toBeGreaterThan(afterFirst);
     warn.mockRestore();
   });
 
