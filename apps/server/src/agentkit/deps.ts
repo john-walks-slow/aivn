@@ -80,6 +80,12 @@ export interface PlaywriterKitDeps extends KitCommonDeps {
   existingAssetUrl: (target: AssetTarget) => Promise<string | null>;
   /** 联网检索（未配置 key 时不注册，提示词也不提）。 */
   exa?: Exa;
+  /** 请求进入限制级（NSFW）剧情。 */
+  onEnterNsfw: (reason?: string) => void;
+  /** 请求退出限制级（NSFW）剧情。 */
+  onExitNsfw: (summary?: string) => void;
+  /** 当前是否在限制级（NSFW）剧情中。 */
+  isNsfw: () => boolean;
 }
 
 /** 工坊侧：搭台，工具动的是剧目文件、素材与故事树（只读）。 */

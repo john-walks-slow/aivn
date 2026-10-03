@@ -38,6 +38,10 @@ export interface SettingsView {
     contextWindow: number;
     compactRatio: number;
     keepRecentTokens: number;
+    /** 限制级（NSFW）专用模型 id；缺省 = 空串 = 沿用 modelId。 */
+    nsfwModelId: string;
+    /** 限制级（NSFW）专属系统提示词扩展。 */
+    nsfwPrompt: string;
   };
   /** 生图（格式 + 连接 + 档位）：key 只回掩码。 */
   image: ServerConfig["image"] & { apiKeySet: boolean };
@@ -86,6 +90,8 @@ export class SettingsFile {
         contextWindow: num("STAGE_CONTEXT_WINDOW", this.config.contextWindow),
         compactRatio: num("STAGE_COMPACT_RATIO", this.config.compactRatio),
         keepRecentTokens: num("STAGE_KEEP_RECENT_TOKENS", this.config.keepRecentTokens),
+        nsfwModelId: text("STAGE_NSFW_MODEL_ID", this.config.nsfwModelId ?? ""),
+        nsfwPrompt: text("STAGE_NSFW_PROMPT", this.config.nsfwPrompt ?? ""),
       },
       image: {
         enabled: bool("STAGE_IMAGE_ENABLED", this.config.image.enabled),
@@ -141,6 +147,12 @@ export class SettingsFile {
           String(int(model.keepRecentTokens, "保留上下文")),
           changed,
         );
+      }
+      if (model.nsfwModelId !== undefined) {
+        set(this.envPath, "STAGE_NSFW_MODEL_ID", model.nsfwModelId, changed);
+      }
+      if (model.nsfwPrompt !== undefined) {
+        set(this.envPath, "STAGE_NSFW_PROMPT", model.nsfwPrompt, changed);
       }
       // 掩码回传 = 不改；清空输入框 = 显式清除凭据（表单未触碰时会带掩码，不会误清）
       if (model.apiKey !== undefined && model.apiKey !== mask(this.read().model.apiKey)) {

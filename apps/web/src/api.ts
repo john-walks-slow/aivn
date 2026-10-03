@@ -141,6 +141,8 @@ export interface Settings {
     contextWindow: number;
     compactRatio: number;
     keepRecentTokens: number;
+    nsfwModelId?: string;
+    nsfwPrompt?: string;
   };
   image: {
     enabled: boolean;

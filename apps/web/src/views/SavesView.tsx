@@ -95,7 +95,7 @@ export function SavesView({ playId }: { playId: string }) {
 
 
       <p className="muted small saves-hint">
-        每个周目是一棵独立的故事树。开始新周目只新建一棵，旧的原封不动；改名只改标签，不动故事。
+        每个周目是一棵独立的故事树；新周目只新建一棵，改名只改标签。
       </p>
 
       {saves === null && <p className="muted small">载入中…</p>}

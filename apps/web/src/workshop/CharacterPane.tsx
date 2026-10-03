@@ -177,7 +177,7 @@ export function CharacterPane({
           type="button"
           className="setting-card add"
           onClick={() => setLibraryInto("")}
-          title="从应用级资源库挑角色卡与立绘复制进本剧目（按条目的 id 建角色，同 id 则覆盖）"
+          title="从资源库导入角色卡与立绘"
         >
           <Icon name="download" size={14} />
           <span className="setting-card-title">从资源库导入</span>
@@ -193,7 +193,7 @@ export function CharacterPane({
       {active === PROTAGONIST_KEY ? (
         <section className="panel">
           <h3>主角卡（玩家）</h3>
-          <p className="muted small">玩家自己。不上台，也没有立绘和音色。人设留在 play.json，不进角色卡。</p>
+          <p className="muted small">玩家自己，不上台，没有立绘和音色。</p>
           <div className="char-card">
             <div className="row">
               <input

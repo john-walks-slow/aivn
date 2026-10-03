@@ -43,12 +43,12 @@ export interface StageShellProps {
   children: ReactNode;
 }
 
-const NAV: { id: StageView; label: string; icon: IconName; hint: string }[] = [
-  { id: "stage", label: "舞台", icon: "play", hint: "正在演的内容" },
-  { id: "backlog", label: "回顾", icon: "backlog", hint: "回顾：这一场说过的话" },
-  { id: "route", label: "路线", icon: "fork", hint: "路线：岔出去的世界线" },
-  { id: "cg", label: "CG", icon: "assets", hint: "CG：这一场出过的插图与它们的提示词" },
-  { id: "workshop", label: "工坊", icon: "workshop", hint: "工坊：改设定与剧目文件" },
+const NAV: { id: StageView; label: string; icon: IconName }[] = [
+  { id: "stage", label: "舞台", icon: "play" },
+  { id: "backlog", label: "回顾", icon: "backlog" },
+  { id: "route", label: "路线", icon: "fork" },
+  { id: "cg", label: "CG", icon: "assets" },
+  { id: "workshop", label: "工坊", icon: "workshop" },
 ];
 
 export function StageShell(props: StageShellProps) {
@@ -151,7 +151,6 @@ export function StageShell(props: StageShellProps) {
                 onView(item.id);
                 if (narrow) setOpenAndRemember(false);
               }}
-              title={item.hint}
               aria-current={view === item.id ? "page" : undefined}
             >
               <Icon name={item.icon} size={16} />

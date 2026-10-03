@@ -95,7 +95,10 @@ const REFERENCE_RULE =
 const SYNC_DESCRIPTION = [
   "出一张剧目素材并落进 assets/：背景(kind=background) / CG(kind=cg) 给 name，",
   "立绘(kind=sprite) 给 characterId + expression（不给按 neutral）。立绘会自动抠底成透明 PNG（引擎要靠它叠在场景上）。",
-  "非 neutral 的立绘会自动拿该角色的 neutral 定妆照做垫图，所以同一个角色的差分是同一个人。",
+  "背景与 CG 一律 16:9 横构图；立绘的画幅跟着 framing 参数走，不用为了构图去改画幅。",
+  "非 neutral 的立绘会自动拿该角色的 neutral 定妆照做垫图，所以同一个角色的差分是同一个人；",
+  "**该角色还没有 neutral 时就出别的差分会被直接拒绝**——先把 neutral 出了。",
+  "neutral 与 normal 是两个名字：出 neutral 不会覆盖 normal，两张文件两张人并存。",
   PROMPT_RULES,
   REFERENCE_RULE,
   "一次工具调用只出一张图；要出多个差分就在同一个批次里多次调用本工具，它们是并行的。",

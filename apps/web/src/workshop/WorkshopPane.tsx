@@ -239,7 +239,7 @@ export function WorkshopPane({
           <div className="workshop-chat" ref={scrollRef}>
             {state.messages.length === 0 && !state.streaming && (
               <div className="workshop-empty">
-                <p>和工坊一起把这部剧搭起来。</p>
+                <p>说出你想要的世界、角色或改动。</p>
                 <p className="muted small">
                   例如：「我想要一个赛博朋克侦探故事，主角是个记不住人脸的女高中生」
                 </p>

@@ -419,26 +419,36 @@ describe("PlaywrightOrchestrator 闭环", () => {
     if (beatEnd.type === "beat_end") expect(beatEnd.reason).toBe("no_stop");
   });
 
-  it("空轮护栏：零产出 → 显式 error + pause 重试入口，不静默伪装 no_stop（P0）", async () => {
-    const { orchestrator, messages } = setup([{ text: "", beatDone: true }]);
+  it("判废：零产出 → 回滚并原样重演一次，仍写不出来就退回输入之前报错（不静默伪装 no_stop，P0）", async () => {
+    const contexts: unknown[] = [];
+    const { orchestrator, messages } = setup([{ text: "", beatDone: true }], { contexts });
+
     await orchestrator.playerAction({ kind: "free", text: "开局" });
 
-    const error = messages.find((m) => m.type === "error");
-    expect(error?.type).toBe("error");
-    if (error?.type === "error") expect(error.message).toContain("生成失败");
-    const beatEnd = lastBeatEnd(messages);
-    expect(beatEnd.type).toBe("beat_end");
-    if (beatEnd.type === "beat_end") {
-      // 这一轮没有自然收尾，不能拿幕末的「下一幕」冒充正常结束
-      expect(beatEnd.reason).toBe("stop");
-      expect(beatEnd.stop?.stopType).toBe("pause");
-    }
+    // 两跑：首跑判废 → 回滚 → 同一段输入原样重演（发出去的是那段原文，不是缩水的【状态】轮）
+    expect(contexts).toHaveLength(2);
+    expect(lastUserText(contexts as CapturedContext[])).toContain("开局");
+    const rebases = messages.filter((m) => m.type === "rebase");
+    expect(rebases).toHaveLength(2);
+    // 重演那一跑：客户端进等待态，不该把旧台词摆成终局；舞台整段倒回去重放，得给个说法
+    expect(rebases[0]).toMatchObject({ resuming: true });
+    if (rebases[0].type === "rebase") expect(rebases[0].note).toContain("原样重演");
+    // 第二跑还是零产出：退回「这段输入还没发出去」的那一刻，给玩家一个 pause 出口
+    expect(rebases[1]).toMatchObject({ reason: "stop", stop: { stopType: "pause" } });
+    // 判废的轮不落 beat_end：它没有产出，不该在谱系里留下一拍
+    expect(messages.some((m) => m.type === "beat_end")).toBe(false);
+    const errors = messages.filter((m) => m.type === "error");
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as { message: string }).message).toContain("生成失败");
+    expect(orchestrator.isBusy).toBe(false);
   });
 
-  it("空轮护栏：provider 抛错（网关 429/断网）→ error 携带原因 + pause 可重试", async () => {
+  it("判废：provider 抛错（网关 429/断网）→ 也重演一次，仍失败就连原因一起报出来", async () => {
     const messages: ServerMessage[] = [];
+    let calls = 0;
     const orchestrator = new PlaywrightOrchestrator({
       streamFn: () => {
+        calls += 1;
         throw new Error("insufficient balance");
       },
       model: {} as never,
@@ -453,14 +463,13 @@ describe("PlaywrightOrchestrator 闭环", () => {
     });
     await orchestrator.playerAction({ kind: "free", text: "开局" });
 
+    // 一次性的硬故障值得再试一次（超时那一类才不试，见下一条）
+    expect(calls).toBe(2);
     const error = messages.find((m) => m.type === "error");
     expect(error?.type).toBe("error");
-    if (error?.type === "error") expect(error.message).toContain("insufficient balance");
-    const beatEnd = lastBeatEnd(messages);
-    expect(beatEnd.type).toBe("beat_end");
-    if (beatEnd.type === "beat_end") {
-      expect(beatEnd.reason).toBe("stop");
-      expect(beatEnd.stop?.stopType).toBe("pause");
+    if (error?.type === "error") {
+      expect(error.message).toContain("insufficient balance");
+      expect(error.message).toContain("已自动重演一次");
     }
     // 玩家可经「继续」重开一轮
     expect(orchestrator.isBusy).toBe(false);
@@ -559,7 +568,9 @@ describe("PlaywrightOrchestrator 闭环", () => {
     // 舞台会一直停在「剧作家正在落笔…」。这里用一个只在 abort 时才收束的流复现：
     // abort 之后真实 fetch 以 AbortError 结束，对外表现为一条带 errorMessage 的
     // assistant 消息、零剧本产出——正是下面断言的那个形状。
+    let calls = 0;
     const hung: StreamFn = (_model, _context, options) => {
+      calls += 1;
       const stream = createAssistantMessageEventStream();
       const partial = { role: "assistant", content: [] } as AssistantMessage;
       queueMicrotask(() => {
@@ -597,8 +608,189 @@ describe("PlaywrightOrchestrator 闭环", () => {
     expect(errors).toHaveLength(1);
     // 我们主动 abort 的，报错要说人话而不是把 AbortError 原样丢给玩家
     expect((errors[0] as { message: string }).message).toContain("没有动静");
+    // 超时不重演：网关挂住是「路不通」，再来一次只是让玩家再等一个超时
+    expect(calls).toBe(1);
+    // 判废退回输入之前：没有产出的轮不该在档里留下一拍，轮号也跟着退回去
+    expect(orchestrator.runtimeState.beatNo).toBe(0);
     // 收束后必须回到空闲：下一轮还能开，否则是卡死而不是超时
+    expect(orchestrator.isBusy).toBe(false);
+  });
+});
+
+/** 先流出一句台词、再以 provider 故障收束的一轮：内容已经出去了，故障是后话。 */
+function lineThenError(text: string, errorMessage: string): StreamFn {
+  return () => {
+    const stream = createAssistantMessageEventStream();
+    const partial = { role: "assistant", content: [] } as AssistantMessage;
+    queueMicrotask(() => {
+      stream.push({ type: "start", partial });
+      stream.push({ type: "text_start", contentIndex: 0, partial });
+      stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial });
+      stream.push({ type: "text_end", contentIndex: 0, content: text, partial });
+      const message: AssistantMessage = {
+        role: "assistant",
+        content: [{ type: "text", text }],
+        api: "openai-completions",
+        provider: "fake",
+        model: "fake-test",
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+        stopReason: "error",
+        errorMessage,
+        timestamp: Date.now(),
+      };
+      stream.push({ type: "done", message });
+      stream.end(message);
+    });
+    return stream;
+  };
+}
+
+describe("判废与重演（零台词的轮当没发生过）", () => {
+  it("判据只看台词：换了场景但一句台词没写出来，一样判废重演", async () => {
+    const contexts: unknown[] = [];
+    const { orchestrator, messages, tree } = setup(
+      [
+        // 首跑：改了背景 + 一段被解析器丢弃的裸散文 → 有事件、零台词
+        { text: '<scene bg="rooftop_dusk" bgm="melancholy" transition="fade"/>\n抱歉，我无法继续这个场景。' },
+        { text: BEAT_2, beatDone: true },
+      ],
+      { contexts },
+    );
+
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+
+    expect(contexts).toHaveLength(2);
+    // 首跑那一整段进了废弃分支（谱系留痕、但不在当前世界线上）：
+    // 当前路径上没有它的场景指令，「改了一半的背景」也一起退回去了
+    const kinds = tree.materialize(tree.leafId).map((node) => node.kind);
+    expect(kinds.filter((kind) => kind === "scene")).toHaveLength(0);
+    expect(tree.export().events.some((event) => event.kind === "scene")).toBe(true);
+    expect(orchestrator.currentScene).toBe(PLAY.initialScene);
+    // 胜出的是重演那一跑：一次 resuming 重建 + 一次正常收束，中间不报错
+    expect(messages.filter((m) => m.type === "rebase")).toHaveLength(1);
+    expect(messages.filter((m) => m.type === "error")).toHaveLength(0);
+    expect(lastBeatEnd(messages)).toMatchObject({ reason: "no_stop" });
+    // 拒答原文不进剧作家历史：作废那一轮的记录随回滚一起退掉
+    const history = JSON.stringify(orchestrator.history);
+    expect(history).toContain("风停了");
+    expect(history).not.toContain("抱歉");
+  });
+
+  it("有台词就是有产出：中途报错的轮不回滚、不重演", async () => {
+    let calls = 0;
+    const base = lineThenError('<say id="mio" mood="annoyed">……太慢了！</say>', "gateway exploded");
+    const { orchestrator, messages } = setup([], {
+      streamFn: (model, context, options) => {
+        calls += 1;
+        return base(model, context, options);
+      },
+    });
+
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+
+    // 玩家已经看见的内容不抽走：报错归报错，这一轮照常收束
+    expect(calls).toBe(1);
+    expect(messages.filter((m) => m.type === "rebase")).toHaveLength(0);
+    const error = messages.find((m) => m.type === "error");
+    if (error?.type === "error") expect(error.message).toContain("gateway exploded");
+    expect(lastBeatEnd(messages)).toMatchObject({ reason: "no_stop" });
+    expect(orchestrator.history.length).toBe(1);
+  });
+
+  it("交出停止点就是有产出：纯选择轮（零台词）不判废", async () => {
+    const { orchestrator, messages } = setup([
+      { text: '<scene bg="rooftop_dusk"/>', beatDone: { options: ["下去看看", "留在天台"] } },
+    ]);
+
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+
+    expect(messages.filter((m) => m.type === "rebase")).toHaveLength(0);
+    expect(messages.filter((m) => m.type === "error")).toHaveLength(0);
+    const beatEnd = lastBeatEnd(messages);
+    expect(beatEnd).toMatchObject({ reason: "stop" });
+    if (beatEnd.type === "beat_end") expect(beatEnd.stop?.options).toHaveLength(2);
+  });
+
+  it("重演也用完：退回上一处——选项复原、引导回队列、错误在重建之后发出", async () => {
+    const { orchestrator, messages } = setup([
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: "" },
+      { text: "" },
+    ]);
+
+    // 开局停在选项上
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+    expect(lastBeatEnd(messages)).toMatchObject({ reason: "stop" });
+    // 排队一句引导，再选一个选项：两句合成同一轮（这一轮连写两跑都写不出来）
+    await orchestrator.playerAction({ kind: "prompt", text: "别太凶" });
+    const before = messages.length;
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    const since = messages.slice(before);
+    expect(since.filter((m) => m.type === "beat_end")).toHaveLength(0);
+    const rebase = since.filter((m) => m.type === "rebase").at(-1);
+    // 上一轮的停止点原样回到面板：选项还是那两条
+    expect(rebase).toMatchObject({ reason: "stop", stop: { stopType: "choice" } });
+    if (rebase?.type === "rebase") expect(rebase.stop?.options?.map((o) => o.text)).toEqual(["道歉", "装傻"]);
+    // 没兑现的那句引导还给玩家：还在队列里，可改可撤
+    const queue = since.filter((m) => m.type === "prompt_queue").at(-1);
+    if (queue?.type === "prompt_queue") {
+      expect(queue.items.filter((item) => item.status === "pending")).toMatchObject([
+        { text: "别太凶" },
+      ]);
+    }
+    // 报错在重建之后：客户端的 rebase 处理会把已有的 error 状态清空
+    expect(since.map((m) => m.type).indexOf("error")).toBeGreaterThan(
+      since.map((m) => m.type).lastIndexOf("rebase"),
+    );
+    // 这一轮整个退掉了：轮号、谱系、停止点都回到选完之前
     expect(orchestrator.runtimeState.beatNo).toBe(1);
+    expect(orchestrator.stoppedReplay?.stop?.options?.map((o) => o.text)).toEqual(["道歉", "装傻"]);
+  });
+
+  it("退回上一处没有停止点时补一个 pause 出口：退回来的引导不会把引擎拖进无限循环", async () => {
+    let calls = 0;
+    const base = createFakeStreamFn([{ text: BEAT_2, beatDone: true }, { text: "" }]);
+    const { orchestrator, messages } = setup([], {
+      streamFn: (model, context, options) => {
+        calls += 1;
+        return base(model, context, options);
+      },
+    });
+
+    // 第一轮正常演完，但**没有**交出停止点（自然演完那种收尾）
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+    await orchestrator.playerAction({ kind: "prompt", text: "别太凶" });
+    expect(calls).toBe(1);
+    const before = messages.length;
+    await orchestrator.playerAction({ kind: "continue" });
+
+    // 连写两跑都写不出来 → 退回「这句引导还没发出去」的那一刻
+    const since = messages.slice(before);
+    const rebase = since.filter((m) => m.type === "rebase").at(-1);
+    // 上一处本来没有停止点，退回时必须补一个 pause 出口：没有出口时 onBeatSettled
+    // 会立刻把刚退回来的引导合成下一轮，于是失败自我循环（真机验证时实测到的）
+    expect(rebase).toMatchObject({ reason: "stop", stop: { stopType: "pause" } });
+    expect(since.filter((m) => m.type === "error")).toHaveLength(1);
+
+    // 收束之后不许自己再开一轮：这一轮就是「首跑 + 重演」两跑（共 3 次流），
+    // 再往下多出来的每一次都是引擎自己接上的下一次失败
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(calls).toBe(3);
+    expect(orchestrator.isBusy).toBe(false);
+    const queue = since.filter((m) => m.type === "prompt_queue").at(-1);
+    if (queue?.type === "prompt_queue") {
+      expect(queue.items.filter((item) => item.status === "pending")).toMatchObject([
+        { text: "别太凶" },
+      ]);
+    }
   });
 });
 
@@ -922,7 +1114,7 @@ describe("长会话装配", () => {
     if (beatEnd.type === "beat_end") expect(beatEnd.stop?.stopType).toBe("choice");
   });
 
-  it("只调记忆工具就结束（零剧本产出）→ 空轮护栏显式报错、给 pause 重试入口", async () => {
+  it("只调记忆工具就结束（零剧本产出）→ 判废退回输入之前，报错并给 pause 重试入口", async () => {
     const { orchestrator, messages } = setup(
       [
         {
@@ -937,11 +1129,10 @@ describe("长会话装配", () => {
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
 
     expect(messages.filter((m) => m.type === "error")).toHaveLength(1);
-    const beatEnd = lastBeatEnd(messages);
-    if (beatEnd.type === "beat_end") {
-      expect(beatEnd.reason).toBe("stop");
-      expect(beatEnd.stop?.stopType).toBe("pause");
-    }
+    // 控制指令与工具调用都不算「写出了东西」：退回输入之前，一轮都没留下
+    expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(0);
+    const rebase = messages.filter((m) => m.type === "rebase").at(-1);
+    expect(rebase).toMatchObject({ reason: "stop", stop: { stopType: "pause" } });
   });
 
   it("beat_done 与记忆工具同批 → finishTurn 兜底收束（terminate 不被 batch 吞掉）", async () => {
@@ -1148,3 +1339,119 @@ describe("阅读位置落盘（#3：刷新回到读到的那一句）", () => {
     expect(restored.readingPos).toBeNull();
   });
 });
+
+describe("限制级（NSFW）模式切换与上下文隔离", () => {
+  it("调用 enter_nsfw 后下一轮注入 NSFW 前置合规轮次，调用 exit_nsfw 后切回 SFW 摘要", async () => {
+    const contexts: CapturedContext[] = [];
+    const responses: FakeResponse[] = [
+      // 第 1 轮：日常铺垫，并在本轮调用 enter_nsfw
+      {
+        text: '<say id="mio">来我房间吧……</say>',
+        beatDone: true,
+        toolCalls: [{ name: "enter_nsfw", args: { reason: "进入房间亲密接触" } }],
+      },
+      // 第 2 轮：限制级描写，并在本轮同时调用 exit_nsfw + beat_done
+      {
+        text: '<say id="mio">笨蛋……轻一点……</say>',
+        beatDone: true,
+        toolCalls: [{ name: "exit_nsfw", args: { summary: "两人在房间内度过了温存亲密的一夜。" } }],
+      },
+      // 摘要生成阶段的 LLM 补全响应
+      {
+        text: "两人在房间内互诉心意，度过了温存亲密的一夜，彼此关系有了重大突破。",
+      },
+      // 第 3 轮：切回主模型日常
+      {
+        text: '<scene bg="morning_room"/><say id="mio">早啊……昨晚睡得好吗？</say>',
+        beatDone: true,
+      },
+    ];
+
+    const { orchestrator } = setup(responses, { contexts });
+    orchestrator.start();
+    await orchestrator.whenIdle();
+
+    // 第 1 轮演完，已请求 enter_nsfw
+    expect(orchestrator.runtimeState.beatNo).toBe(1);
+
+    // 触发第 2 轮（进入 NSFW 模式）
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+
+    // 验证第 2 轮的上下文中包含了 NSFW 前置合规轮次
+    const nsfwContext = contexts[1]!;
+    const hasPreTurn = nsfwContext.messages.some(
+      (m) => typeof m.content === "string" && m.content.includes("20 周岁以上"),
+    );
+    expect(hasPreTurn).toBe(true);
+
+    // 触发第 3 轮（已切回 SFW 主模型）
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+
+    expect(orchestrator.runtimeState.beatNo).toBe(3);
+    // 验证第 3 轮上下文：NSFW 前置合规轮次已被剥离，且包含了 SFW 摘要前情提要
+    const sfwContext = contexts[3]!;
+    const stillHasPreTurn = sfwContext.messages.some(
+      (m) => typeof m.content === "string" && m.content.includes("20 周岁以上"),
+    );
+    expect(stillHasPreTurn).toBe(false);
+
+    // 验证第 3 轮的 user 消息中包含了 SFW 摘要内容
+    const userMessages = sfwContext.messages.filter((m) => m.role === "user");
+    const combinedUserText = userMessages.map((m) => String(m.content)).join("\n");
+    expect(combinedUserText).toContain("【前情提要·日常接续】");
+    expect(combinedUserText).toContain("温存亲密的一夜");
+    // 露骨台词不应在主模型消息中出现
+    expect(combinedUserText).not.toContain("轻一点");
+  });
+
+  it("从限制级分支跳转或分岔回日常节点时，NSFW 状态重置为 false，不会滞留限制级模式", async () => {
+    const contexts: CapturedContext[] = [];
+    const responses: FakeResponse[] = [
+      // 第 1 轮：日常
+      {
+        text: '<say id="mio">今天天气真好。</say>',
+        beatDone: true,
+      },
+      // 第 2 轮：进入限制级
+      {
+        text: '<say id="mio">来吧……</say>',
+        beatDone: true,
+        toolCalls: [{ name: "enter_nsfw", args: {} }],
+      },
+      // 第 3 轮：限制级
+      {
+        text: '<say id="mio">亲爱的……</say>',
+        beatDone: true,
+      },
+    ];
+
+    const { orchestrator, tree } = setup(responses, { contexts });
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    const beat1NodeId = tree.leafId!;
+
+    // 演第 2 轮
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+
+    // 演第 3 轮（NSFW 中）
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+    expect(orchestrator.runtimeState.nsfw?.active).toBe(true);
+
+    // 跳转回第 1 轮节点
+    await orchestrator.jumpTo(beat1NodeId);
+    expect(orchestrator.runtimeState.nsfw?.active).toBe(false);
+
+    // 验证当前 agent messages 中无 NSFW 前置合规轮次
+    const currentAgentMessages = (orchestrator as unknown as { agent: { state: { messages: unknown[] } } })
+      .agent.state.messages;
+    const hasPreTurn = currentAgentMessages.some(
+      (m: unknown) => typeof (m as { content?: string }).content === "string" && (m as { content: string }).content.includes("20 周岁以上"),
+    );
+    expect(hasPreTurn).toBe(false);
+  });
+});
+
