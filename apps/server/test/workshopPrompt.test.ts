@@ -72,3 +72,15 @@ describe("工坊提示词：素材来源这一维的写法指导", () => {
     expect(line).not.toContain("neutral 定妆照");
   });
 });
+
+describe("工坊提示词：play.json 的字段面", () => {
+  it("列出会被静默降级的字段，并要求定点改而不是整篇覆盖", async () => {
+    const prompt = await buildWorkshopPrompt({ ...CTX, can: caps(), voiceLanguage: "ja" });
+    expect(prompt).toContain("play.json");
+    expect(prompt).toContain("defaultVoiceId");
+    expect(prompt).toContain("voiceLanguage");
+    expect(prompt).toContain("不要整篇 `write` 覆盖");
+    // 缺省字段不在文件里，read 也读不出来——代价得写在提示词里
+    expect(prompt).toContain("静默消失");
+  });
+});

@@ -92,6 +92,13 @@ describe("list_voices", () => {
     expect(out).toContain("机械音");
     expect(out).toContain("换个词");
   });
+
+  it("描述先立语言这一维：不匹配的后果写清楚", () => {
+    const [tool] = createVoiceTool(service());
+    // 后果不写，「♥1200 的二次元嗓子」永远赢过「能不能念这门语言」
+    expect(tool.description).toContain("先按剧目的语音语言筛");
+    expect(tool.description).toContain("口音");
+  });
 });
 
 describe("工坊提示词：音色知识不在这里重复", () => {
@@ -110,5 +117,17 @@ describe("工坊提示词：音色知识不在这里重复", () => {
       can: { image: true, search: true, library: true, voice: false, shell: false },
     });
     expect(off).not.toContain("list_voices");
+  });
+
+  it("挑音色的语言跟着剧目的语音语言走，不是跟着系统语言", async () => {
+    const caps = { image: true, search: true, library: true, voice: true, shell: false };
+    const ja = await buildWorkshopPrompt({ ...base, can: caps, voiceLanguage: "ja" });
+    expect(ja).toContain('language="ja"');
+    expect(ja).toContain("台词先译成它再配音");
+
+    // 未设 = 台词按剧本原文配音，按剧本的书写语言筛（中文剧本 → zh）
+    const unset = await buildWorkshopPrompt({ ...base, can: caps });
+    expect(unset).toContain('language="zh"');
+    expect(unset).toContain("未设");
   });
 });

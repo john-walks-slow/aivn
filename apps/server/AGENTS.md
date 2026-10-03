@@ -73,6 +73,9 @@
 - 反过来也有搬不动的两类：DSL 渲染契约（`action` 八词、`shot` 四档、anchor 三档）是引擎认的字符串，工具描述里没有位置放。
 - 「按描述选素材」这类引用 A 区清单的规则，工具描述里也没有「清单」可指。
 - 工坊提示词里每个工具名出现的地方都按 `can.library` 收了条件——工具没注册就别在提示词里教它调。
+- 挑音色的语言跟着剧目的 `voiceLanguage` 走（`WorkshopPromptContext.voiceLanguage` 现读注入；未设 = 台词按剧本原文配音，按剧本语言筛），不匹配的后果写在 `list_voices` 的描述里。
+- **`play.json` 的字段表写在工坊 `writingPoints`**：除 `id`/`title` 外全是可选字段，缺省字段不在文件里、read 也读不出来，字段名猜错会被 `parsePlayConfig` 静默丢弃——所以 schema 必须写进提示词，并要求定点 `edit` 而不是整篇覆盖。
+- 工具的可见性错配要当 bug 治：`create_character` 只装给剧作家、`list_voices` 只装给工坊，描述里不能提对方才有的工具（2026-10-04 修：曾教剧作家去调它没有的 `list_voices`）。
 - 两份提示词的正文按章抽成模块常量（剧作家 `ROLE_INTRO` / `HOW_I_WORK` / `FORMAT_RULES` / `NEW_CHARACTER_RULES` / `CONTRACT_RULES`，搭台 `RESPONSIBILITY_RULES` / `TALK_RULES` / `IMAGE_BASICS` / `NO_IMAGE_GUIDE` / `LINEAGE_GUIDE`），带能力位的章走 `imageChapter` / `setupFlow` / `writingPoints`，装配模板只留顺序与开关——改一章不必在几百行里找位置。
 - `beat_done` 的三种停法只在「## 结束轮」与 `beatTool.ts` 的 `BEAT_DONE_DESCRIPTION` 各写一遍（契约 vs 工具说明），`# 你怎么工作` 不再复述第三遍。
 - 搭台提示词里**不写死 UI 入口清单**（曾列出「玩家能打字的五处界面」，界面一改即成假信息），只说清要改什么、让用户自己找入口。

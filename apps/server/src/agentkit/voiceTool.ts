@@ -45,7 +45,9 @@ export function createVoiceTool(voices?: VoiceCatalogService): AgentTool<any>[] 
       "从公共音色库里挑一个给角色配 voiceId（Fish Audio 公共库，免费档可达前 1000 条，已全量落盘在本机）。\n" +
       "**建角色卡时必须先查这里**：voiceId 是 32 位 hex，猜不出来；填错不报错，演出时那句台词会静默没有声音。\n" +
       "按 `query`（匹配 id / 名称 / 描述 / 标签）、`language`（ja / en / zh…）、`gender`（male / female）、" +
-      "`tag`（narration / energetic / cute…）筛。筛选后从返回结果里挑一条，把它的 id 写进角色卡的 `voiceId`。\n" +
+      "`tag`（narration / energetic / cute…）筛。**先按剧目的语音语言筛 `language`，再按人设挑**：" +
+      "台词会译成那个语言再送 TTS（未设语音语言时就是剧本原文），选一个不支持它的嗓子，" +
+      "整段台词会带着那个音色的口音念出来。筛选后从返回结果里挑一条，把它的 id 写进角色卡的 `voiceId`。\n" +
       "每行是：id | 名称 | 语言 | 标签 | 收藏数 | 描述。收藏数是热度，同条件下优先挑高的。\n" +
       "**按角色人设挑**，不是按名字挑：description 写的是这个嗓子听起来什么样（年龄感、语气、语速），" +
       "挑和 persona 说得通的那条。",

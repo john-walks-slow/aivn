@@ -424,6 +424,8 @@ export class WorkshopSession {
       title: play.title,
       files: listing,
       readiness,
+      // 同样现读：用户刚在设定页换完语音语言，下一轮挑音色就该按新值筛
+      voiceLanguage: play.voiceLanguage,
       can: this.kit.can,
       digest,
       // 从当轮现读的 play.json 取，不吃构造时的快照：用户刚在 Agent 页改完就发下一轮消息，

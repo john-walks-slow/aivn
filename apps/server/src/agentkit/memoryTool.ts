@@ -109,8 +109,9 @@ export function createMemoryTools(
       "content 是完整的文件内容——frontmatter 头部 + 正文，格式：\n\n" +
       "---\nid: xiaoyu            # 与 file 的 id 一致，引擎以文件名为准，这里写错会被忽略\n" +
       "name: 小雨             # 显示名\n" +
-      "voice: 温柔少女声      # 音色的���话描述，可省\n" +
-      "voiceId: <32位hex>     # 先用 list_voices 查出来再填；填错不报错，演出时那句台词会静默没有声音\n" +
+      "voice: 温柔少女声      # 音色的口语描述，可省\n" +
+      "voiceId: <32位hex>     # 可省；音色由搭台助手在工坊配（你这条路上没有音色库工具）。\n" +
+      "                       # 留空就用剧目的兜底音色，兜底也没配那句台词会静默没有声音\n" +
       "framing: half          # 立绘取景 full/half/square，省略按 full（见 play/framing.ts）\n" +
       "sprites:               # 表情名 → assets/sprites/<id>/ 下的文件名，可省\n" +
       "  neutral: xiaoyu_neutral.png\n" +

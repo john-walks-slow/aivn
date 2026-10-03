@@ -902,6 +902,14 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
     const miss = await search.execute("t2", { query: "完全无关的词" });
     expect(textOf(miss)).toContain("无命中");
   });
+
+  it("create_character 不教剧作家调它没有的工具：音色归搭台助手", () => {
+    const { tools } = makeTools({ turn: 1, affinity: {}, flags: {} });
+    const create = tools.find((t) => t.name === "create_character")!;
+    // list_voices 只装给工坊（kit.ts 的 roles）；剧作家照抄这句只会去猜一个 32 位 hex
+    expect(create.description).not.toContain("list_voices");
+    expect(create.description).toContain("搭台助手");
+  });
 });
 
 describe("长会话装配", () => {
