@@ -1061,12 +1061,14 @@ button.link-btn {
 }
 
 /* 舞台占满工具条以下的全部高度，台词条浮在它上面——台词长短不改变舞台高度，
-   背景与立绘因此不会被对话框挤压变形。 */
+   背景与立绘因此不会被对话框挤压变形。
+   声明 container-type 建立容器上下文，立绘等元素可基于 cqw 换算舞台宽度。 */
 .theater-stage {
   position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  container-type: inline-size;
   background: var(--stage-bg);
 }
 
@@ -1147,9 +1149,10 @@ button.link-btn {
      rotate    → 行为词的倾身
    全部锚在 transform-origin: top center（头顶），所以人是「原地动」而不是整张图在飘。 */
 .theater-sprite {
-  --x: 0%;
+  --x: 0cqw;
   --scale: 1;
   position: absolute;
+  left: 50%;
   top: 10%;
   height: 90%;
   transform-origin: top center;
@@ -1230,36 +1233,36 @@ button.link-btn {
   }
 }
 
-/* 机位：偏移量是「离画面中心的百分比」，不是 left 的绝对值。--x 写在行内 style 上
-   （见 StageTheater 的 slotStyle），这里只给 7 个具名档位。负数在左、正数在右。 */
+/* 机位：偏移量是「离画面中心的百分比（相对于舞台宽度的 cqw）」，不是 left 的绝对值。
+   通过 left: 50% 将原点对准舞台中心，--x 驱动左右平移。负数在左、正数在右。 */
 .pos-left {
-  --x: -32%;
+  --x: -28cqw;
 }
 
 .pos-center {
-  --x: 0%;
+  --x: 0cqw;
 }
 
 .pos-right {
-  --x: 32%;
+  --x: 28cqw;
 }
 
 /* 2 人同框：贴到画面两侧，留出中间说话的空（越靠边人越小越远，这是舞台惯例）。 */
 .pos-far-left {
-  --x: -44%;
+  --x: -36cqw;
 }
 
 .pos-far-right {
-  --x: 44%;
+  --x: 36cqw;
 }
 
 /* 3 人以上用：比 far 更靠外。 */
 .pos-edge-left {
-  --x: -55%;
+  --x: -42cqw;
 }
 
 .pos-edge-right {
-  --x: 55%;
+  --x: 42cqw;
 }
 
 /* 行为词 → 动画配方（core 的 spriteAction.ts 是行为词的唯一真相源）。
@@ -1462,11 +1465,11 @@ button.link-btn {
 
 /* 贴边档：用于「在最角落」或非人小物件（猫/道具）的默认落点。 */
 .pos-bleed-left {
-  --x: -64%;
+  --x: -46cqw;
 }
 
 .pos-bleed-right {
-  --x: 64%;
+  --x: 46cqw;
 }
 
 /* 对齐基准：图的那条边锚在 stage 上。

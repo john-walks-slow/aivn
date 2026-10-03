@@ -10,6 +10,7 @@ const { apiMock } = vi.hoisted(() => ({
     listAssets: vi.fn(),
     readFile: vi.fn(),
     craft: vi.fn(),
+    voiceCatalog: vi.fn(),
     savePlay: vi.fn(),
     saveFile: vi.fn(),
   },
@@ -55,6 +56,7 @@ describe("设定与记忆页：两份请求无论谁先回来都要出卡", () =
     apiMock.listAssets.mockResolvedValue({});
     apiMock.readFile.mockResolvedValue({ path: "memory/always/premise.md", content: "" });
     apiMock.craft.mockResolvedValue({ content: "" });
+    apiMock.voiceCatalog.mockResolvedValue({ entries: [] });
   });
 
   afterEach(() => {
