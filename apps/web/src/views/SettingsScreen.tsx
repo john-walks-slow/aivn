@@ -164,6 +164,16 @@ export function SettingsScreen() {
                 onRetry={() => loadModels(true)}
               />
             </Field>
+            <Field
+              label="限制级专属提示词"
+              hint="进入限制级通道时追加到系统提示词末尾；留空则不加任何额外要求。与剧目自己的口径（memory/always/craft.md）无关"
+            >
+              <textarea
+                rows={3}
+                value={draft.model.nsfwPrompt ?? ""}
+                onChange={(e) => setDraft({ ...draft, model: { ...draft.model, nsfwPrompt: e.target.value } })}
+              />
+            </Field>
             <Field label="支持的模型">
               <input
                 value={draft.model.models}
@@ -310,6 +320,23 @@ export function SettingsScreen() {
                 value={draft.image.model}
                 onChange={(e) => setDraft({ ...draft, image: { ...draft.image, model: e.target.value } })}
               />
+            </Field>
+            <Field
+              label="垫图策略"
+              hint="派生立绘差分时是否拿 neutral 定妆照当参考图。关掉差分与定妆照就不是同一个人了；仅 gemini 格式有效"
+            >
+              <select
+                value={draft.image.reference}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    image: { ...draft.image, reference: e.target.value as Settings["image"]["reference"] },
+                  })
+                }
+              >
+                <option value="neutral">neutral（保一致性）</option>
+                <option value="none">none（只文生图，更快）</option>
+              </select>
             </Field>
             <div className="settings-grid">
               <Field label="出图档位" hint="1K / 2K / 4K 或字面尺寸（如 1536x1024）">
