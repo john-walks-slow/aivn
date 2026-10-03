@@ -1,4 +1,4 @@
-/* Stage-AI 视觉 2.0：界面就是一张铺满视口的纸面，没有框住它的画框。
+/* AIVN 视觉 2.0：界面就是一张铺满视口的纸面，没有框住它的画框。
  *
  * 两层结构（对应两段配色）：
  *   ① 纸面 —— 库/标题/周目/工坊/设置这些不上画的界面。浅色日常系，暖白纸底。
@@ -56,12 +56,11 @@
   --link: #2f5d7c;
   --radius: 2px; /* 近直角：AVG 的窗与键都不圆 */
 
-/* 字体：台词与标题走衬线（明朝气质），界面文字走无衬线 */
+/* 字体：全站一套无衬线。曾经台词与标题走衬线（明朝气质），但衬线字体栈依赖
+     本机装有 Noto Serif CJK / 宋体，缺了会掉到浏览器默认的 serif，笔画细、屏上发虚。 */
   --font-ui:
     system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei",
     sans-serif;
-  --font-serif:
-    "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "Noto Serif JP", "MS Mincho", serif;
 
   /* ② 画面（暗色为默认基线；亮/暗两套舞台变量由 useTheme 在运行时改写同一批键） */
   --stage-bg: #17130f; /* 舞台衬底（图片未到/加载中露出的底） */
@@ -414,7 +413,7 @@ button.link-btn {
 }
 
 .wordmark {
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 17px;
   font-weight: 600;
   letter-spacing: 0.34em;
@@ -528,7 +527,7 @@ button.link-btn {
 }
 
 .card-name {
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 18px;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -540,7 +539,7 @@ button.link-btn {
 
 .card-premise {
   color: var(--ink-soft);
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 13px;
   line-height: 1.75;
   display: -webkit-box;
@@ -645,7 +644,7 @@ button.link-btn {
 }
 
 .save-no {
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 12px;
   letter-spacing: 0.2em;
   color: var(--ink-faint);
@@ -657,7 +656,7 @@ button.link-btn {
 }
 
 .save-name {
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 16.5px;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -669,7 +668,7 @@ button.link-btn {
 
 .save-rename {
   font: inherit;
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 16.5px;
   font-weight: 600;
   padding: 1px 6px;
@@ -690,7 +689,7 @@ button.link-btn {
   padding-top: 8px;
   border-top: 1px solid var(--line);
   color: var(--ink-soft);
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 13px;
   line-height: 1.75;
   flex: 1 1 auto;
@@ -834,7 +833,7 @@ button.link-btn {
 
 .title-name {
   margin: 0;
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: clamp(34px, 4.6vw, 52px);
   font-weight: 600;
   letter-spacing: 0.12em;
@@ -844,7 +843,7 @@ button.link-btn {
 
 .title-premise {
   margin: 18px 0 0;
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 14.5px;
   line-height: 1.95;
   letter-spacing: 0.02em;
@@ -914,7 +913,7 @@ button.link-btn {
 }
 
 .title-item.main {
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 21px;
   font-weight: 600;
   letter-spacing: 0.16em;
@@ -1557,7 +1556,7 @@ button.link-btn {
   background: var(--dialog-bg);
   color: var(--dialog-ink);
   backdrop-filter: blur(10px) saturate(1.05);
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-weight: 600;
   font-size: 13px;
   letter-spacing: 0.14em;
@@ -1567,7 +1566,7 @@ button.link-btn {
 
 .dialog-text {
   margin: 0;
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 17px;
   line-height: 2;
   letter-spacing: 0.03em;
@@ -1811,7 +1810,7 @@ button.link-btn {
   margin: 0 auto;
   padding: 12px 18px 12px 20px;
   text-align: left;
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 16px;
   line-height: 1.7;
   letter-spacing: 0.03em;
@@ -2220,7 +2219,7 @@ select:focus {
   margin: 0 0 2px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--line);
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 14.5px;
   font-weight: 600;
   letter-spacing: 0.12em;
@@ -4096,7 +4095,7 @@ select:focus {
 }
 .setting-card-title {
   grid-area: title;
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 14px;
   color: var(--ink);
 }
@@ -4112,7 +4111,7 @@ select:focus {
 
 .file-body {
   width: 100%;
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.8;
 }
@@ -4257,7 +4256,7 @@ select:focus {
   padding: 6px 8px;
   min-width: 0;
   overflow: visible;
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-weight: 600;
   font-size: 15px;
   letter-spacing: 0.08em;
@@ -4506,7 +4505,7 @@ select:focus {
 
 .view-bar-title {
   margin: 0;
-  font-family: var(--font-serif);
+  font-family: var(--font-ui);
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.18em;
