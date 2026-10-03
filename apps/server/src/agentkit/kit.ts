@@ -167,18 +167,36 @@ export function enabledToolsFor(role: AgentRole, configured?: readonly string[])
   return new Set(configured ?? DEFAULT_ENABLED[role]);
 }
 
-/** 能力位：提示词按它决定注不注某一章（装一个必然失败的能力只会教模型反复空转）。 */
-export interface AgentCapabilities {
+/**
+ * 能力位与授权它的工具：**一位一个工具**，模型调得动才有这一位。
+ *
+ * 表在这里而不散在各处：加一位只改这一行，`AgentCapabilities` 跟着长一位——
+ * 两个角色的 system prompt 读的是同一个 `kit.can`，不存在「只改一边」的余地。
+ */
+export const CAPABILITY_TOOLS = {
   /** 生图可用。 */
-  image: boolean;
+  image: "generate_image",
   /** 联网检索可用（配了 Exa key）。 */
-  search: boolean;
+  search: "web_search",
   /** 素材资源库可用（配置了库目录）。 */
-  library: boolean;
+  library: "list_library",
   /** 音色库可用（配了 TTS key）。没配时 list_voices 不注册，提示词也不提。 */
-  voice: boolean;
+  voice: "list_voices",
   /** 命令行可用。默认关，用户在 Agent 页勾上才有；没勾时提示词不提工作区。 */
-  shell: boolean;
+  shell: "bash",
+} as const;
+
+export type CapabilityKey = keyof typeof CAPABILITY_TOOLS;
+
+/** 当前真正可用的能力（`kit.can`）：提示词按它决定注不注某一章，装一个必然失败的能力只会教模型反复空转。 */
+export type AgentCapabilities = Record<CapabilityKey, boolean>;
+
+/** 从实际装上的工具算能力位——判定只有这一份，装配与两个角色的提示词不会各算各的。 */
+export function capabilitiesOf(tools: readonly { name: string }[]): AgentCapabilities {
+  const installed = new Set(tools.map((tool) => tool.name));
+  return Object.fromEntries(
+    Object.entries(CAPABILITY_TOOLS).map(([key, tool]) => [key, installed.has(tool)]),
+  ) as AgentCapabilities;
 }
 
 export interface AgentKit {
@@ -205,17 +223,10 @@ export function roleTools(deps: AgentKitDeps): AgentTool<any>[] {
 export function createAgentKit(deps: AgentKitDeps & { thinking?: ThinkingLevel }): AgentKit {
   const tools = roleTools(deps);
   const enabled = tools.filter((tool) => deps.enabled.has(tool.name));
-  const has = (name: string): boolean => enabled.some((tool) => tool.name === name);
   return {
     role: deps.role,
     tools: enabled,
-    can: {
-      image: has("generate_image"),
-      search: has("web_search"),
-      library: has("list_library"),
-      voice: has("list_voices"),
-      shell: has("bash"),
-    },
+    can: capabilitiesOf(enabled),
     catalog: enabled.map((tool) => agentToolEntry(tool.name)),
     thinking: deps.thinking ?? "off",
   };
