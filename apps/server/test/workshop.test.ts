@@ -109,6 +109,21 @@ describe("PlayFiles：剧目文件白名单", () => {
     expect(await readFile(join(store.dir, "memory/index/locations/旧校舍.md"), "utf8")).toContain("# 旧校舍");
   });
 
+  it("play.json 的结构校验长在唯一的文本写口上（文件页手写也绕不过）", async () => {
+    const store = await makeStore();
+    const files = new PlayFiles(store);
+    const before = await readFile(join(store.dir, "play.json"), "utf8");
+
+    await expect(files.write("play.json", "{ 不是 JSON")).rejects.toThrow("play.json 结构校验不过，未落盘");
+    // 合法 JSON 但不合剧目契约（缺 title），同样拦在落盘前
+    await expect(files.write("play.json", JSON.stringify({ id: "test" }))).rejects.toThrow("缺少必填字段");
+    expect(await readFile(join(store.dir, "play.json"), "utf8")).toBe(before);
+
+    // 结构契约只加在 play.json 上，其它文本文件照写
+    await files.write("memory/index/lore/随手写.md", "随便什么\n");
+    expect(await readFile(join(store.dir, "memory/index/lore/随手写.md"), "utf8")).toBe("随便什么\n");
+  });
+
   it("二进制通道只开图像素材目录，文本工具写不了图片、图像通道也写不了文本", async () => {
     const store = await makeStore();
     const files = new PlayFiles(store);
