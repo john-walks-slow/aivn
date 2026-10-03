@@ -141,22 +141,19 @@ export function SettingsScreen() {
                 onRetry={() => loadModels(true)}
               />
             </Field>
-            <Field
-              label="支持的模型"
-              hint="逗号分隔，上面那个下拉与剧目「Agent」页的下拉都只给这几个；留空 = 网关有什么给什么"
-            >
+            <Field label="支持的模型">
               <input
                 value={draft.model.models}
                 onChange={(e) => setDraft({ ...draft, model: { ...draft.model, models: e.target.value } })}
               />
             </Field>
-            <Field label="元数据基座" hint="决定上下文/价格估算的假模型，必须与网关实际能力匹配">
+            <Field label="元数据基座">
               <input
                 value={draft.model.modelBase}
                 onChange={(e) => setDraft({ ...draft, model: { ...draft.model, modelBase: e.target.value } })}
               />
             </Field>
-            <Field label="网关地址" hint="OpenAI 兼容端点">
+            <Field label="网关地址">
               <input
                 value={draft.model.baseUrl}
                 onChange={(e) => setDraft({ ...draft, model: { ...draft.model, baseUrl: e.target.value } })}
@@ -185,7 +182,6 @@ export function SettingsScreen() {
               />
               <NumField
                 label="上下文窗口"
-                hint="按网关实际限制填"
                 value={draft.model.contextWindow}
                 onChange={(v) => setDraft({ ...draft, model: { ...draft.model, contextWindow: v } })}
               />
@@ -206,17 +202,14 @@ export function SettingsScreen() {
           </Group>
 
           <Group title="出图">
-            <Field label="启用生图" hint="关闭后场景只走氛围底色，不占出图配额">
+            <Field label="启用生图">
               <input
                 type="checkbox"
                 checked={draft.image.enabled}
                 onChange={(e) => setDraft({ ...draft, image: { ...draft.image, enabled: e.target.checked } })}
               />
             </Field>
-            <Field
-              label="接口格式"
-              hint="gemini = /v1beta 原生端点，垫图走这里（工坊立绘差分靠它保角色一致性）；openai = /v1/images/generations，不吃垫图"
-            >
+            <Field label="接口格式" hint="gemini 支持垫图，openai 不支持">
               <select
                 value={draft.image.format}
                 onChange={(e) =>
@@ -244,26 +237,20 @@ export function SettingsScreen() {
                 onChange={(e) => setDraft({ ...draft, image: { ...draft.image, apiKey: e.target.value } })}
               />
             </Field>
-            <Field
-              label="生图地址"
-              hint="服务根地址，别带 /v1 或 /v1beta（版本段按格式自己拼）。本机 flow2api = http://127.0.0.1:38000，cpa = http://127.0.0.1:9999"
-            >
+            <Field label="生图地址" hint="服务根地址，不要带 /v1 或 /v1beta">
               <input
                 value={draft.image.baseUrl}
                 onChange={(e) => setDraft({ ...draft, image: { ...draft.image, baseUrl: e.target.value } })}
               />
             </Field>
-            <Field
-              label="出图模型"
-              hint="按格式填。flow2api 必须把画幅档位写进别名（gemini-3.1-flash-image-landscape-2k 这种），填裸模型名画幅会被静默忽略"
-            >
+            <Field label="出图模型" hint="flow2api 需把画幅档位写进别名，否则画幅被忽略">
               <input
                 value={draft.image.model}
                 onChange={(e) => setDraft({ ...draft, image: { ...draft.image, model: e.target.value } })}
               />
             </Field>
             <div className="settings-grid">
-              <Field label="出图档位" hint="1K / 2K / 4K = 总像素量级（K 大写），openai 格式按画幅换算成 WxH；也可直接写字面尺寸如 1536x1024">
+              <Field label="出图档位" hint="1K / 2K / 4K 或字面尺寸（如 1536x1024）">
                 <input
                   value={draft.image.size}
                   onChange={(e) => setDraft({ ...draft, image: { ...draft.image, size: e.target.value } })}
@@ -283,7 +270,7 @@ export function SettingsScreen() {
           </Group>
 
           <Group title="语音">
-            <Field label="启用语音" hint="关掉不合成也不占配额；文字永远先行，语音不阻塞剧情">
+            <Field label="启用语音" hint="关掉只影响合成，文字照常">
               <input
                 type="checkbox"
                 checked={draft.tts.enabled}
@@ -296,7 +283,7 @@ export function SettingsScreen() {
                 onChange={(e) => setDraft({ ...draft, tts: { ...draft.tts, baseUrl: e.target.value } })}
               />
             </Field>
-            <Field label="代理" hint="本机走 代理 混合端口，如 http://127.0.0.1:7890">
+            <Field label="代理" hint="如 http://127.0.0.1:7890">
               <input
                 value={draft.tts.proxy}
                 onChange={(e) => setDraft({ ...draft, tts: { ...draft.tts, proxy: e.target.value } })}
@@ -317,7 +304,7 @@ export function SettingsScreen() {
           </Group>
 
           <Group title="联网检索（Exa）">
-            <Field label="启用检索" hint="工坊 agent 唯一的联网口子；关掉就只剩离线工具">
+            <Field label="启用检索" hint="关掉后工坊只剩离线工具">
               <input
                 type="checkbox"
                 checked={draft.exa.enabled}
@@ -330,7 +317,7 @@ export function SettingsScreen() {
                 onChange={(e) => setDraft({ ...draft, exa: { ...draft.exa, baseUrl: e.target.value } })}
               />
             </Field>
-            <Field label="代理" hint="本机走 代理 混合端口，如 http://127.0.0.1:7890">
+            <Field label="代理" hint="如 http://127.0.0.1:7890">
               <input
                 value={draft.exa.proxy}
                 onChange={(e) => setDraft({ ...draft, exa: { ...draft.exa, proxy: e.target.value } })}
@@ -352,7 +339,7 @@ export function SettingsScreen() {
 
           {/* 主题设置 */}
           <Group title="主题设置">
-            <Field label="界面主题" hint="界面（剧目库/标题/设置/工坊等）的亮暗模式">
+            <Field label="界面主题">
               <select
                 value={uiMode}
                 onChange={(e) => {
@@ -366,7 +353,7 @@ export function SettingsScreen() {
                 <option value="dark">深色</option>
               </select>
             </Field>
-            <Field label="主色" hint="按钮、选中项、高亮的颜色；舞台跟着一起换">
+            <Field label="主色">
               <div className="accent-picker">
                 {ACCENT_PRESETS.map((preset) => (
                   <button
@@ -411,7 +398,7 @@ export function SettingsScreen() {
                 )}
               </div>
             </Field>
-            <Field label="舞台主题" hint="舞台（画面/台词条/选肢卡等）的亮暗模式">
+            <Field label="舞台主题">
               <select
                 value={stageMode}
                 onChange={(e) => {

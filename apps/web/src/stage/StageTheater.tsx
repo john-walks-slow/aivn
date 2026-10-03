@@ -115,9 +115,9 @@ const ACTION_META: Record<
   },
 };
 
-/** 「提示」面板两岔各自的一句话说明：说清这一句发出去会发生什么，不解释引擎。 */
+/** 「提示」面板两岔各自的一句话说明：说清这一句发出去会发生什么。 */
 const GUIDE_HINT: Record<GuideMode, string> = {
-  guide: "跟下一轮一起发：话排进队列，等你点选项或输入时一起送到剧作家。",
+  guide: "排进队列，随下一轮一起发送。",
   fork: "从正在看的这一行开新分支。",
 };
 /** 输入态：输入框里的按键是文字的，不能被舞台的快捷键与快进档抢走。 */
@@ -600,7 +600,7 @@ voiceState,
         <button
           type="button"
           className={`dir-btn ${action === "prompt" ? "on" : ""}`}
-          title="提示：可以是角色的行动或台词，也可以是给这场戏的指示"
+          title="输入角色的行动、台词，或给这场戏的指示"
           aria-label="提示"
           onClick={(e) => {
             e.stopPropagation();
@@ -791,7 +791,7 @@ voiceState,
                   type="button"
                   className={`seg-btn ${guideMode === "guide" ? "active" : ""}`.trim()}
                   aria-pressed={guideMode === "guide"}
-                  title="跟着下一轮写，排进队列等你选。"
+                  title="跟下一轮一起发"
                   onClick={() => setGuideMode("guide")}
                 >
                   引导
