@@ -2,7 +2,7 @@
 """
 scripts/make_transparent.py - Galgame Character Sprite Alpha Matting Tool
 ========================================================================
-Stage-AI Asset Pipeline component for converting solid/white background
+AIVN Asset Pipeline component for converting solid/white background
 character renders into production-ready RGBA transparent PNGs.
 
 Key Features:

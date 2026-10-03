@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage, type Message } from "@earendil-works/pi-ai";
-import { LineageTree, type PlayConfig, type ServerMessage } from "@stage-ai/core";
+import { LineageTree, type PlayConfig, type ServerMessage } from "@aivn/core";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { PlayMemory } from "../src/memory.js";
 import type { TtsSynthFn } from "../src/voice.js";

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/preview_server.py - Stage-AI Galgame Asset Studio Preview Server
+scripts/preview_server.py - AIVN Galgame Asset Studio Preview Server
 ========================================================================
 Lightweight web dashboard for inspecting generated sprites, transparent PNGs,
 16:9 backgrounds & Event CGs, and auditioning BGM tracks & audio loop specs.
@@ -22,7 +22,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stage-AI Galgame 资产工作台与画廊 (Asset Studio)</title>
+  <title>AIVN Galgame 资产工作台与画廊 (Asset Studio)</title>
   <style>
     :root {
       --primary: #e85d75;
@@ -218,7 +218,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <body>
   <header>
     <div class="brand">
-      <h1>Stage-AI 资产工坊 <span class="badge">Pipeline Studio</span></h1>
+      <h1>AIVN 资产工坊 <span class="badge">Pipeline Studio</span></h1>
       <p>面向 AI Galgame 引擎的高一致性立绘、16:9 场景 CG 与无缝循环 BGM 工作流</p>
     </div>
     <div class="tabs">
@@ -531,14 +531,14 @@ class AssetStudioHandler(SimpleHTTPRequestHandler):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Stage-AI Asset Studio Web Preview Server")
+    parser = argparse.ArgumentParser(description="AIVN Asset Studio Web Preview Server")
     parser.add_argument("--port", type=int, default=8000, help="Port to listen on")
     parser.add_argument("--host", default="0.0.0.0", help="Host interface to bind")
     args = parser.parse_args()
 
     server_address = (args.host, args.port)
     httpd = HTTPServer(server_address, AssetStudioHandler)
-    print(f"Stage-AI Galgame Asset Studio preview server running at http://127.0.0.1:{args.port}/")
+    print(f"AIVN Galgame Asset Studio preview server running at http://127.0.0.1:{args.port}/")
     print(f"Serving assets from: {WORKTREE_ROOT}")
     try:
         httpd.serve_forever()

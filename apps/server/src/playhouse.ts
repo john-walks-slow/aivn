@@ -1,13 +1,13 @@
-import type { ServerMessage } from "@stage-ai/core";
+import type { ServerMessage } from "@aivn/core";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
-import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, type EngineStateSnapshot, type SpriteFraming } from "@stage-ai/core";
+import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, type EngineStateSnapshot, type SpriteFraming } from "@aivn/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
 import type { AssetLibrary } from "./library.js";
 import { AssetRefResolver, characterIdsOf } from "./assetRef.js";
 import { PlaywrightOrchestrator, type CarryOver, type OrchestratorRuntimeState } from "./orchestrator.js";
 import type { SaveInfo } from "./saves.js";
-import type { PlayConfig } from "@stage-ai/core";
+import type { PlayConfig } from "@aivn/core";
 import type { ServerConfig } from "./config.js";
 import { imagePendingTtlMs } from "./config.js";
 import type { SettingsStore } from "./settingsStore.js";
@@ -217,7 +217,7 @@ export class PlayHouse {
     this.modelCache.clear();
     this.gatewayModelsCache = null;
     for (const playId of this.runtimes.keys()) this.rebuildAtBeatBoundary(playId, CONFIG_UPDATED);
-    console.log("[stage-ai] 运行期设置已更新（已加载的剧目将在下一个轮边界换用新设置）");
+    console.log("[aivn] 运行期设置已更新（已加载的剧目将在下一个轮边界换用新设置）");
   }
 
   /**
@@ -478,7 +478,7 @@ export class PlayHouse {
       sender({ type: "asset_ready", asset: { id, type, url: asset.url } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[stage-ai] 生图失败 ${id}: ${message}`);
+      console.warn(`[aivn] 生图失败 ${id}: ${message}`);
       sender({ type: "asset_failed", id, message });
     }
   }
@@ -515,7 +515,7 @@ export class PlayHouse {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[stage-ai] 立绘生图失败 ${spriteId}: ${message}`);
+      console.warn(`[aivn] 立绘生图失败 ${spriteId}: ${message}`);
       for (const send of this.clientsFor(playId)) {
         send({ type: "asset_failed", id: spriteId, message });
       }
@@ -658,7 +658,7 @@ export class PlayHouse {
           });
         }
       },
-      warn: (message) => console.warn(`[stage-ai] ${message}`),
+      warn: (message) => console.warn(`[aivn] ${message}`),
     });
   }
 
@@ -674,7 +674,7 @@ export class PlayHouse {
       .then(() => this.reloadAfterWorkshopWrite(playId, note))
       .catch((error: unknown) =>
         console.warn(
-          `[stage-ai] 轮边界重建 runtime 失败: ${error instanceof Error ? error.message : String(error)}`,
+          `[aivn] 轮边界重建 runtime 失败: ${error instanceof Error ? error.message : String(error)}`,
         ),
       )
       .finally(() => {
@@ -998,7 +998,7 @@ export class PlayHouse {
         await this.reloadAfterWorkshopWrite(playId, "手动生成了素材");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.warn(`[stage-ai] 手动出图失败 ${targetKey}: ${message}`);
+        console.warn(`[aivn] 手动出图失败 ${targetKey}: ${message}`);
         this.broadcast(playId, {
           type: "image_result",
           target: targetKey,
@@ -1051,7 +1051,7 @@ export class PlayHouse {
               spoken = await translator.translate(text);
             } catch (error) {
               console.warn(
-                `[stage-ai] 台词翻译失败（回退原文）: ${error instanceof Error ? error.message : String(error)}`,
+                `[aivn] 台词翻译失败（回退原文）: ${error instanceof Error ? error.message : String(error)}`,
               );
             }
           }

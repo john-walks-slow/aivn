@@ -9,7 +9,7 @@
  *  - 回声曾经排在「当前行」后面，而停止点上永远有当前行，回声等于没做。
  */
 
-import type { StopPayload } from "@stage-ai/core";
+import type { StopPayload } from "@aivn/core";
 
 /**
  * 空对话区该显示什么。

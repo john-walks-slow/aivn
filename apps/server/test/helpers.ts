@@ -1,6 +1,6 @@
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import type { PlayConfig } from "@stage-ai/core";
+import type { PlayConfig } from "@aivn/core";
 import type { AgentCapabilities } from "../src/agentkit/kit.js";
 import type { IndexCard } from "../src/memory.js";
 import { randomUUID } from "node:crypto";

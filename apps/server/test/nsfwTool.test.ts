@@ -3,7 +3,7 @@ import { createNsfwTools } from "../src/agentkit/nsfwTool.js";
 import { agentToolCatalog, defaultToolsFor } from "../src/agentkit/kit.js";
 import { NSFW_PRE_TURNS } from "../src/orchestrator.js";
 import { PlayMemory } from "../src/memory.js";
-import { LineageTree } from "@stage-ai/core";
+import { LineageTree } from "@aivn/core";
 
 describe("nsfwTool：限制级剧情工具契约", () => {
   it("工具定义具有正确的名称与描述", () => {

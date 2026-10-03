@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { StopPayload } from "@stage-ai/core";
+import type { StopPayload } from "@aivn/core";
 import { Icon } from "../ui/Icon.js";
 import { Modal } from "../ui/Modal.js";
 

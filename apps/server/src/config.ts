@@ -326,7 +326,7 @@ export function applyPatch(base: ServerConfig, patch: SettingsPatch): { next: Se
   ] as const) {
     if (block.keepRecentTokens >= block.contextWindow * block.compactRatio) {
       console.warn(
-        `[stage-ai] ${name}保留上下文（${block.keepRecentTokens}）≥ 触发阈值（${Math.floor(
+        `[aivn] ${name}保留上下文（${block.keepRecentTokens}）≥ 触发阈值（${Math.floor(
           block.contextWindow * block.compactRatio,
         )}），纪元压缩将无法切出可压段`,
       );
@@ -359,7 +359,7 @@ function parsePositiveInt(name: string, raw: string | undefined, fallback: numbe
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1) {
     if (raw !== undefined && raw !== "") {
-      console.warn(`[stage-ai] ${name} 非法（${raw}），回退默认 ${fallback}`);
+      console.warn(`[aivn] ${name} 非法（${raw}），回退默认 ${fallback}`);
     }
     return fallback;
   }
@@ -371,7 +371,7 @@ function parseRatio(name: string, raw: string | undefined, fallback: number): nu
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0 || n > 1) {
     if (raw !== undefined && raw !== "") {
-      console.warn(`[stage-ai] ${name} 非法（${raw}），回退默认 ${fallback}`);
+      console.warn(`[aivn] ${name} 非法（${raw}），回退默认 ${fallback}`);
     }
     return fallback;
   }

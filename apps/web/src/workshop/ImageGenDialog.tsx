@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { SpriteFraming } from "@stage-ai/core";
-import { SPRITE_FRAMINGS, SPRITE_FRAMING_LABELS } from "@stage-ai/core";
+import type { SpriteFraming } from "@aivn/core";
+import { SPRITE_FRAMINGS, SPRITE_FRAMING_LABELS } from "@aivn/core";
 import { api } from "../api.js";
 import { Modal } from "../ui/Modal.js";
 import { RefCharacterPicker, type RefCandidate } from "../ui/RefCharacterPicker.js";

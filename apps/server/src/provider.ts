@@ -83,7 +83,7 @@ export function resolveCpaModel(
   const builtin = findBuiltin(id) ?? (base ? findBuiltin(base) : undefined);
   if (builtin) return buildModel(config, id, builtin);
   console.warn(
-    `[stage-ai] 模型「${id}」不在 pi-ai 内置目录：沿用 ${config.modelId} 的元数据（思考档位与输出上限可能不准）`,
+    `[aivn] 模型「${id}」不在 pi-ai 内置目录：沿用 ${config.modelId} 的元数据（思考档位与输出上限可能不准）`,
   );
   return buildModel(config, id, baseModelOf(config));
 }

@@ -3,7 +3,7 @@
  * 打包成单文件 exe（`@yao-pkg/pkg`）。
  *
  * 为什么要 esbuild 先过一道：pkg 打包的是 CommonJS 入口，而我们的服务是 ESM 源码（`type: module`、
- * 工作区包 `@stage-ai/core` 直接 import TS 构建产物）。esbuild 把整张依赖图（含工作区包）收成一个
+ * 工作区包 `@aivn/core` 直接 import TS 构建产物）。esbuild 把整张依赖图（含工作区包）收成一个
  * CJS 文件，pkg 只需要面对一个入口 + 一个真的要动态加载的原生模块（sharp）。
  *
  * 快照里的目录结构按仓库布局摆放（`apps/web/dist`、`apps/server/skills`、`plays/demo`），

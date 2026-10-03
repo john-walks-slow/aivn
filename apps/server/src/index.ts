@@ -41,7 +41,7 @@ export async function main(): Promise<void> {
 
   // 双击 exe 的人打开就是一座空剧场，所以第一次启动先把随包的样例剧目解开
   const seeded = seedDemoPlays(bootstrap.dataRoot, resourceRoot);
-  if (seeded) console.log(`[stage-ai] 已把随包样例剧目解到 ${seeded}`);
+  if (seeded) console.log(`[aivn] 已把随包样例剧目解到 ${seeded}`);
 
   // 设置：第一次启动把旧 .env 迁成 data/settings.json，此后它就是运行期设置的唯一真相源
   const store = SettingsStore.open(bootstrap.dataRoot, process.env);
@@ -73,7 +73,7 @@ export async function main(): Promise<void> {
     // 闸门要先于路径判断：只挡 HTTP 不挡 upgrade，剧目内容照样从 /ws 全推出去。
     // 握手没有响应头可种 cookie，所以这一路只认已有会话（或浏览器自动补的 Basic）。
     if (!gate.allow(req)) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm="stage-ai"\r\n\r\n');
+      socket.write('HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm="aivn"\r\n\r\n');
       socket.destroy();
       return;
     }
@@ -87,18 +87,18 @@ export async function main(): Promise<void> {
 
   const port = await listenWithFallback(server, bootstrap.port, bootstrap.host);
   if (bootstrap.port !== 0 && port !== bootstrap.port) {
-    console.log(`[stage-ai] 端口 ${bootstrap.port} 被占用，改用 ${port}`);
+    console.log(`[aivn] 端口 ${bootstrap.port} 被占用，改用 ${port}`);
   }
 
   const local = `http://127.0.0.1:${port}`;
-  console.log(`[stage-ai] 就绪  ${local}  (REST /api/plays, WS /ws?play=<id>)`);
+  console.log(`[aivn] 就绪  ${local}  (REST /api/plays, WS /ws?play=<id>)`);
   if (bootstrap.host === "0.0.0.0") {
-    for (const address of lanAddresses()) console.log(`[stage-ai] 局域网  http://${address}:${port}`);
+    for (const address of lanAddresses()) console.log(`[aivn] 局域网  http://${address}:${port}`);
   }
-  console.log(`[stage-ai] 数据目录  ${bootstrap.dataRoot}`);
-  console.log(`[stage-ai] 设置文件  ${settingsPath(bootstrap.dataRoot)}（也可以在设置页里改）`);
+  console.log(`[aivn] 数据目录  ${bootstrap.dataRoot}`);
+  console.log(`[aivn] 设置文件  ${settingsPath(bootstrap.dataRoot)}（也可以在设置页里改）`);
   console.log(
-    `[stage-ai] 访问密码 ${gate.open ? "未设置" : "已开启（HTTP Basic + 会话 cookie）"}` +
+    `[aivn] 访问密码 ${gate.open ? "未设置" : "已开启（HTTP Basic + 会话 cookie）"}` +
       `${gate.open ? "——挂到公网前请在设置页里设一个" : ""}`,
   );
 
@@ -108,9 +108,9 @@ export async function main(): Promise<void> {
 
 main().catch((error) => {
   if (error instanceof UsageError) {
-    console.error(`[stage-ai] ${error.message}\n\n${USAGE}`);
+    console.error(`[aivn] ${error.message}\n\n${USAGE}`);
     process.exit(2);
   }
-  console.error("[stage-ai] 启动失败:", error);
+  console.error("[aivn] 启动失败:", error);
   process.exit(1);
 });

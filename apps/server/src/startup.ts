@@ -76,9 +76,9 @@ export function openBrowser(url: string): void {
         : ["xdg-open", [url]];
   try {
     const child = spawn(command, args, { detached: true, stdio: "ignore" });
-    child.on("error", (error) => console.warn(`[stage-ai] 没打开浏览器（${error.message}），请手动访问 ${url}`));
+    child.on("error", (error) => console.warn(`[aivn] 没打开浏览器（${error.message}），请手动访问 ${url}`));
     child.unref();
   } catch (error) {
-    console.warn(`[stage-ai] 没打开浏览器（${String(error)}），请手动访问 ${url}`);
+    console.warn(`[aivn] 没打开浏览器（${String(error)}），请手动访问 ${url}`);
   }
 }

@@ -62,7 +62,7 @@ export function loadEnvFile(dir: string): string | null {
     return file;
   } catch (error) {
     console.warn(
-      `[stage-ai] ${file} 读取失败（${error instanceof Error ? error.message : String(error)}），继续用当前环境变量`,
+      `[aivn] ${file} 读取失败（${error instanceof Error ? error.message : String(error)}），继续用当前环境变量`,
     );
     return null;
   }

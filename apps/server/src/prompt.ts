@@ -1,5 +1,5 @@
-import { describeAsset, type AssetMeta, type EngineStateSnapshot } from "@stage-ai/core";
-import type { PlayConfig } from "@stage-ai/core";
+import { describeAsset, type AssetMeta, type EngineStateSnapshot } from "@aivn/core";
+import type { PlayConfig } from "@aivn/core";
 import type { AgentCapabilities } from "./agentkit/kit.js";
 import { SEARCH_GUIDE } from "./agentkit/searchTool.js";
 import type { PlayMemory } from "./memory.js";

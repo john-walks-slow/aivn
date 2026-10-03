@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { describeAsset, type AssetKind, type LibraryEntry } from "@stage-ai/core";
+import { describeAsset, type AssetKind, type LibraryEntry } from "@aivn/core";
 import { api, libraryFileUrl, type ImportResult } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { useEscape } from "../ui/escape.js";

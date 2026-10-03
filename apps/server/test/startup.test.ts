@@ -107,8 +107,8 @@ describe("工坊技能库路径", () => {
   it("开发态取 apps/server/skills，打包态从快照根接同一段路径", () => {
     const metaUrl = "file:///tmp/repo/apps/server/dist/skills.js";
     expect(workshopSkillsDirOf(metaUrl, false)).toBe("/tmp/repo/apps/server/skills");
-    expect(workshopSkillsDirOf("file:///snapshot/stage-ai/dist/index.cjs", true)).toBe(
-      "/snapshot/stage-ai/apps/server/skills",
+    expect(workshopSkillsDirOf("file:///snapshot/aivn/dist/index.cjs", true)).toBe(
+      "/snapshot/aivn/apps/server/skills",
     );
   });
 });

@@ -1,4 +1,4 @@
-import type { ActorAnchor, ActorShot, StageEvent } from "@stage-ai/core";
+import type { ActorAnchor, ActorShot, StageEvent } from "@aivn/core";
 
 /** 前端剧本行模型：StageEvent 流 → 渲染行（log 视图与舞台台词共用）。 */
 export interface ScriptLine {

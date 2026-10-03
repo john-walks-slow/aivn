@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AssetKind, AssetMeta } from "@stage-ai/core";
+import type { AssetKind, AssetMeta } from "@aivn/core";
 import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { ImageLightbox } from "../ui/ImageLightbox.js";

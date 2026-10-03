@@ -17,8 +17,8 @@ import {
   type ThemeMode,
 } from "../hooks/useTheme.js";
 
-const UI_MODE_KEY = "stage-ai:ui-theme-mode";
-const STAGE_MODE_KEY = "stage-ai:stage-theme-mode";
+const UI_MODE_KEY = "aivn:ui-theme-mode";
+const STAGE_MODE_KEY = "aivn:stage-theme-mode";
 
 function storedMode(key: string, fallback: ThemeMode): ThemeMode {
   const val = localStorage.getItem(key);

@@ -1,8 +1,8 @@
 {
-  "name": "stage-ai",
+  "name": "aivn",
   "private": true,
   "version": "0.0.1",
-  "description": "AI galgame engine: LLM playwriter streams an incremental script, the stage renders it like streaming video",
+  "description": "AIVN — AI visual novel engine: an LLM playwriter streams an incremental Stage DSL script and the browser renders it like streaming video",
   "packageManager": "pnpm@11.24.0",
   "engines": {
     "node": ">=22.19.0"

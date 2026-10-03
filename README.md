@@ -1,4 +1,4 @@
-# stage-ai
+# AIVN
 
 AI galgame 引擎：LLM 剧作家（playwriter）流式输出 Stage DSL 增量剧本，服务端解析为 IR 事件经 WS 下发，前端像流式视频一样边生成边演出。玩家兼具演员（插一句）与导演（跳转/分岔/改台词/重演这一轮）双重身份。
 
@@ -14,10 +14,10 @@ pnpm -r build          # core 改动后 web/server 走 workspace dist 类型
 cp /dev/null .env      # 然后按下方配置项填写
 
 # 2) 起服务端（REST :8787 + WS）
-pnpm --filter @stage-ai/server start
+pnpm --filter @aivn/server start
 
 # 3) 起 Web（:5180，/api /plays /ws 代理到 8787）
-pnpm --filter @stage-ai/web dev
+pnpm --filter @aivn/web dev
 ```
 
 打开 http://127.0.0.1:5180 即可。
@@ -29,7 +29,7 @@ pnpm --filter @stage-ai/web dev
 
 ```bash
 pnpm -r build
-STAGE_PORT=8787 STAGE_PASSWORD=你的密码 pnpm --filter @stage-ai/server start
+STAGE_PORT=8787 STAGE_PASSWORD=你的密码 pnpm --filter @aivn/server start
 # 浏览器打开 http://127.0.0.1:8787
 ```
 
@@ -176,7 +176,7 @@ STAGE_IMAGE_SIZE=1K                         # gpt-image-1 系列只认标准尺�
 - 工坊对话里说「这张抠得不干净」就行：agent 调 `recut_sprite`（`characterId` + `expression` + 抠底参数）拿那张留底本地重跑一遍，覆盖 `assets/sprites/` 里那张透明 PNG —— **画面一个像素不变、几秒出结果、不烧配额**。
 - 没有留底的（留底机制之前出的图、用户自己上传的立绘）会直接报错，那种只能重新出图。
 
-抠不出干净结果会直接报错、**不会落一张半坏的图**（重抠失败时原来那张透明 PNG 原封不动）。想单独跑真机出图 e2e（平时测试全用 stub，不烧配额）：`STAGE_E2E_LIVE=1 pnpm --filter @stage-ai/server exec vitest run test/e2e-live-senren.test.ts`，`.env` 里的 `STAGE_IMAGE_*` 一组照常读。
+抠不出干净结果会直接报错、**不会落一张半坏的图**（重抠失败时原来那张透明 PNG 原封不动）。想单独跑真机出图 e2e（平时测试全用 stub，不烧配额）：`STAGE_E2E_LIVE=1 pnpm --filter @aivn/server exec vitest run test/e2e-live-senren.test.ts`，`.env` 里的 `STAGE_IMAGE_*` 一组照常读。
 
 行为要点：
 

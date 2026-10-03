@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fetch as undiciFetch, ProxyAgent } from "undici";
-import type { VoiceCatalog, VoiceEntry } from "@stage-ai/core";
+import type { VoiceCatalog, VoiceEntry } from "@aivn/core";
 import type { ServerConfig } from "./config.js";
 import type { SettingsSource } from "./settingsStore.js";
 
@@ -140,7 +140,7 @@ export class VoiceCatalogService {
     return this.inflight.catch((error: unknown) => {
       if (!fallback) throw error;
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[stage-ai] 音色库抓取失败（沿用磁盘快照）: ${message}`);
+      console.warn(`[aivn] 音色库抓取失败（沿用磁盘快照）: ${message}`);
       return { ...fallback, stale: true };
     });
   }
@@ -172,7 +172,7 @@ export class VoiceCatalogService {
       stale: false,
     };
     await this.writeCache(catalog);
-    console.log(`[stage-ai] 音色库已更新: ${catalog.entries.length} 条 / 全库 ${total}`);
+    console.log(`[aivn] 音色库已更新: ${catalog.entries.length} 条 / 全库 ${total}`);
     return catalog;
   }
 
@@ -226,7 +226,7 @@ export class VoiceCatalogService {
       await writeFile(tmp, JSON.stringify(catalog));
       await rename(tmp, this.cacheFile);
     } catch (error) {
-      console.warn(`[stage-ai] 音色库快照落盘失败（不影响本次使用）: ${String(error)}`);
+      console.warn(`[aivn] 音色库快照落盘失败（不影响本次使用）: ${String(error)}`);
     }
   }
 }

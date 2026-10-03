@@ -75,12 +75,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # core 的 dist 不随 pnpm store 共享，web/server 都吃它 → 每个 worktree 自己建一次
-pnpm --filter @stage-ai/core build
+pnpm --filter @aivn/core build
 
 if [ "$WANT_SERVER" = 1 ]; then
-  pnpm --filter @stage-ai/server build
+  pnpm --filter @aivn/server build
   # config.ts 读 env.STAGE_PORT
-  STAGE_PORT="$STAGE_PORT" pnpm --filter @stage-ai/server start &
+  STAGE_PORT="$STAGE_PORT" pnpm --filter @aivn/server start &
   pids+=($!)
   echo "api:  http://127.0.0.1:$STAGE_PORT"
 fi
@@ -98,7 +98,7 @@ if [ "$WANT_WEB" = 1 ]; then
   STAGE_WEB_PORT="$STAGE_WEB_PORT" \
     STAGE_PORT="${STAGE_PORT:-}" \
     STAGE_SERVER="http://127.0.0.1:${STAGE_PORT:-8787}" \
-    pnpm --filter @stage-ai/web exec vite --port "$STAGE_WEB_PORT" --strictPort &
+    pnpm --filter @aivn/web exec vite --port "$STAGE_WEB_PORT" --strictPort &
   pids+=($!)
   echo "web:  http://127.0.0.1:$STAGE_WEB_PORT"
 fi

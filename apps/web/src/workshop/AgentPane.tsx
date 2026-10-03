@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import type { AgentConfig, AgentSettings, PlayConfig, ThinkingLevel } from "@stage-ai/core";
-import { THINKING_LEVELS } from "@stage-ai/core";
+import type { AgentConfig, AgentSettings, PlayConfig, ThinkingLevel } from "@aivn/core";
+import { THINKING_LEVELS } from "@aivn/core";
 import { api, type AgentToolEntry, type GatewayModel } from "../api.js";
 import { ModelSelect } from "../ui/ModelSelect.js";
 

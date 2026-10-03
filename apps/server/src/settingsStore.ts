@@ -58,8 +58,8 @@ export class SettingsStore implements SettingsSource {
     store.persist();
     console.log(
       legacy
-        ? `[stage-ai] 已把 .env 里的设置迁移到 ${file}（此后 .env 不再参与运行期配置）`
-        : `[stage-ai] 已生成默认设置 ${file}（网关、生图、语音都还没配，可在设置页填）`,
+        ? `[aivn] 已把 .env 里的设置迁移到 ${file}（此后 .env 不再参与运行期配置）`
+        : `[aivn] 已生成默认设置 ${file}（网关、生图、语音都还没配，可在设置页填）`,
     );
     store.watchFile();
     return store;
@@ -107,7 +107,7 @@ export class SettingsStore implements SettingsSource {
       try {
         listener(this.current);
       } catch (error) {
-        console.warn(`[stage-ai] 设置变化处理失败: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`[aivn] 设置变化处理失败: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }
@@ -125,7 +125,7 @@ export class SettingsStore implements SettingsSource {
       });
     } catch (error) {
       console.warn(
-        `[stage-ai] 无法监视 ${this.file}（手改这个文件不会即时生效）: ${
+        `[aivn] 无法监视 ${this.file}（手改这个文件不会即时生效）: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -140,7 +140,7 @@ export class SettingsStore implements SettingsSource {
       parsed = parseSettings(raw, this.file);
     } catch (error) {
       console.warn(
-        `[stage-ai] settings.json 手改后读不动，已忽略这次改动: ${
+        `[aivn] settings.json 手改后读不动，已忽略这次改动: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -148,7 +148,7 @@ export class SettingsStore implements SettingsSource {
     }
     this.current = parsed;
     this.lastWritten = raw;
-    console.log("[stage-ai] settings.json 已改动，就地生效");
+    console.log("[aivn] settings.json 已改动，就地生效");
     this.notify();
   }
 }
@@ -173,7 +173,7 @@ function parseSettings(raw: string, file: string): ServerConfig {
   }
   const known = new Set(Object.keys(freshSettings()));
   for (const key of Object.keys(data)) {
-    if (!known.has(key)) console.warn(`[stage-ai] settings.json 里的 ${key} 不是已知设置项，已忽略`);
+    if (!known.has(key)) console.warn(`[aivn] settings.json 里的 ${key} 不是已知设置项，已忽略`);
   }
   return applyPatch(freshSettings(), data as SettingsPatch).next;
 }

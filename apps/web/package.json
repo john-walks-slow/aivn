@@ -1,5 +1,5 @@
 {
-  "name": "@stage-ai/web",
+  "name": "@aivn/web",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@stage-ai/core": "workspace:*",
+    "@aivn/core": "workspace:*",
     "lucide-react": "^1.48.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"

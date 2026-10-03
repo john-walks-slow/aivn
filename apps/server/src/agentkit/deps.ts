@@ -5,7 +5,7 @@ import type {
   SpriteFraming,
   StopOption,
   StopType,
-} from "@stage-ai/core";
+} from "@aivn/core";
 import type { AssetLibrary } from "../library.js";
 import type { VoiceCatalogService } from "../voiceCatalog.js";
 import type { Exa } from "../exa.js";
@@ -15,7 +15,7 @@ import type { PlayFiles } from "../playFiles.js";
 import type { PlaySaves } from "../saves.js";
 import type { PlayStore } from "../store.js";
 import type { PlayMemory } from "../memory.js";
-import type { WorkshopAssetView } from "@stage-ai/core";
+import type { WorkshopAssetView } from "@aivn/core";
 import type { AgentRole } from "./role.js";
 
 /**

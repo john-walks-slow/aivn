@@ -5,7 +5,7 @@ import type {
   WorkshopChatMessage,
   WorkshopCompactionView,
   WorkshopThreadInfo,
-} from "@stage-ai/core";
+} from "@aivn/core";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
 
 /** 工坊面板的一次写盘记录（可一键撤销）。 */

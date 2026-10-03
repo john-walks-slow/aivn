@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把 OtoLogic 下载的 SE zip 整理成 stage-ai 资源库条目（一条一目录 + meta.json）。
+"""把 OtoLogic 下载的 SE zip 整理成 AIVN 资源库条目（一条一目录 + meta.json）。
 
 OtoLogic 每个「素材名」一个 zip，里面是该音的 MP3（可能带 -1/-2 变体）。
 """

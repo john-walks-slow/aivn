@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { LineageView } from "@stage-ai/core";
+import type { LineageView } from "@aivn/core";
 import { api } from "../api.js";
 import type { AssetIndex } from "./assets.js";
 import { buildBeats } from "./beats.js";

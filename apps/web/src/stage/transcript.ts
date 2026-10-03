@@ -1,4 +1,4 @@
-import type { LineageNodeView, LineageView } from "@stage-ai/core";
+import type { LineageNodeView, LineageView } from "@aivn/core";
 import type { ScriptLine } from "./script.js";
 
 /** 会话记录里的一条：角色台词，或玩家发来的一句话。 */

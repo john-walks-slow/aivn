@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { PlayConfig, PlayCover } from "@stage-ai/core";
-import { languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
+import type { PlayConfig, PlayCover } from "@aivn/core";
+import { languageLabel, LANGUAGE_LABELS } from "@aivn/core";
 import { api, assetUrl, type PlayFile } from "../api.js";
 import { Icon, type IconName } from "../ui/Icon.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";

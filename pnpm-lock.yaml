@@ -30,15 +30,15 @@ importers:
 
   apps/server:
     dependencies:
+      '@aivn/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@earendil-works/pi-agent-core':
         specifier: ^0.87.1
         version: 0.87.1(ws@8.22.0)
       '@earendil-works/pi-ai':
         specifier: ^0.87.1
         version: 0.87.1(ws@8.22.0)
-      '@stage-ai/core':
-        specifier: workspace:*
-        version: link:../../packages/core
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
@@ -70,7 +70,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@stage-ai/core':
+      '@aivn/core':
         specifier: workspace:*
         version: link:../../packages/core
       lucide-react:

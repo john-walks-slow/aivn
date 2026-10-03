@@ -25,9 +25,9 @@ import {
   type ParserWarning,
   type ParserWarningType,
   type ThinkingLevel,
-} from "@stage-ai/core";
-import type { ServerMessage } from "@stage-ai/core";
-export type { ReadPos } from "@stage-ai/core";
+} from "@aivn/core";
+import type { ServerMessage } from "@aivn/core";
+export type { ReadPos } from "@aivn/core";
 import { createAgentKit, enabledToolsFor, type AgentKit } from "./agentkit/kit.js";
 import type { ModelStop } from "./agentkit/deps.js";
 import type { Exa } from "./exa.js";
@@ -50,7 +50,7 @@ import {
 } from "./compaction.js";
 import { completeText } from "./llm.js";
 import { HistoryRecorder, type HistoryBeat } from "./history.js";
-import type { AgentSettings, PlayConfig } from "@stage-ai/core";
+import type { AgentSettings, PlayConfig } from "@aivn/core";
 import type { PlayMemory } from "./memory.js";
 import { VoicePipeline, type TtsSynthFn } from "./voice.js";
 import type { PendingJobFinish, PendingJobs } from "./pendingJobs.js";
@@ -648,7 +648,7 @@ export class PlaywrightOrchestrator {
       this.readPersistTimer = null;
     }
     this.pendingPersist = Promise.resolve(this.opts.persist()).catch((error: unknown) => {
-      console.warn(`[stage-ai] 会话落盘失败: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[aivn] 会话落盘失败: ${error instanceof Error ? error.message : String(error)}`);
     });
   }
 
@@ -1547,7 +1547,7 @@ export class PlaywrightOrchestrator {
       });
     } catch (error) {
       console.warn(
-        `[stage-ai] 纪元压缩跳过（摘要落盘失败）: ${error instanceof Error ? error.message : String(error)}`,
+        `[aivn] 纪元压缩跳过（摘要落盘失败）: ${error instanceof Error ? error.message : String(error)}`,
       );
       return;
     }
@@ -1555,7 +1555,7 @@ export class PlaywrightOrchestrator {
     this.arcIds = [...this.arcIds, arcId];
     this.buildAgent(withSeed(tail, renderSeed(epochNo, this.beatNo, body)));
     console.log(
-      `[stage-ai] 纪元 ${epochNo} 压缩完成：${used} tok → 保留 ${tail.length}/${messages.length} 条消息，arc=${arcId}`,
+      `[aivn] 纪元 ${epochNo} 压缩完成：${used} tok → 保留 ${tail.length}/${messages.length} 条消息，arc=${arcId}`,
     );
     this.persist();
   }
@@ -1576,7 +1576,7 @@ export class PlaywrightOrchestrator {
       return splitSummary(summary);
     } catch (error) {
       console.warn(
-        `[stage-ai] 纪元压缩跳过（摘要生成失败）: ${error instanceof Error ? error.message : String(error)}`,
+        `[aivn] 纪元压缩跳过（摘要生成失败）: ${error instanceof Error ? error.message : String(error)}`,
       );
       return null;
     }
@@ -1715,7 +1715,7 @@ export class PlaywrightOrchestrator {
       })
       .catch((error: unknown) =>
         console.warn(
-          `[stage-ai] archive 切片写入失败: ${error instanceof Error ? error.message : String(error)}`,
+          `[aivn] archive 切片写入失败: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
     this.send({
@@ -1780,7 +1780,7 @@ export class PlaywrightOrchestrator {
     })()
       .catch((error: unknown) => {
         console.warn(
-          `[stage-ai] 退出限制级模式并生成 SFW 摘要失败: ${error instanceof Error ? error.message : String(error)}`,
+          `[aivn] 退出限制级模式并生成 SFW 摘要失败: ${error instanceof Error ? error.message : String(error)}`,
         );
         if (!this.disposed) {
           const fallbackSeed =
@@ -1846,7 +1846,7 @@ export class PlaywrightOrchestrator {
       return trimmed || (suggested ?? "两人互诉心意，度过了温存亲密的一刻，彼此关系有了重大突破。");
     } catch (error) {
       console.warn(
-        `[stage-ai] SFW 摘要生成失败，使用回退摘要: ${error instanceof Error ? error.message : String(error)}`,
+        `[aivn] SFW 摘要生成失败，使用回退摘要: ${error instanceof Error ? error.message : String(error)}`,
       );
       return suggested ?? "两人互诉心意，度过了温存亲密的一刻，彼此关系有了重大突破。";
     }

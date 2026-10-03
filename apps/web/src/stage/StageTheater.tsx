@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { actionAnimation, type ActorAction, type ActorAnchor, type ActorShot, type SpriteFraming } from "@stage-ai/core";
+import { actionAnimation, type ActorAction, type ActorAnchor, type ActorShot, type SpriteFraming } from "@aivn/core";
 import { dialogContent, emptyDialogHint } from "./playbackState.js";
 import { actorName } from "./script.js";
 import { speakerFocusId, type Playback, type VisualState } from "./director.js";

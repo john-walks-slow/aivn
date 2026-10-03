@@ -10,7 +10,7 @@ import {
   type CharacterDocument,
   type SpriteFraming,
   type WorkshopAssetView,
-} from "@stage-ai/core";
+} from "@aivn/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
 import { IMAGE_EXTS, mimeForExt, sniffImageMime } from "./imageMime.js";
@@ -357,7 +357,7 @@ export class PlayAssets {
       );
     } catch (error) {
       console.warn(
-        `[stage-ai] 立绘 ${spec.characterId}/${spec.stem} 的留底原片没写成（之后没法原地重抠）：` +
+        `[aivn] 立绘 ${spec.characterId}/${spec.stem} 的留底原片没写成（之后没法原地重抠）：` +
           `${error instanceof Error ? error.message : String(error)}`,
       );
     }
@@ -398,7 +398,7 @@ export class PlayAssets {
     } catch (error) {
       // 图已经落盘了，为一条记账把一次成功的出图报成失败更糟；这里出声，图与 prompt 对不上时能查到。
       console.warn(
-        `[stage-ai] 出图 prompt 未记进 assets/generated.json（${id}）: ${error instanceof Error ? error.message : String(error)}`,
+        `[aivn] 出图 prompt 未记进 assets/generated.json（${id}）: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -413,7 +413,7 @@ export class PlayAssets {
     if (!size) {
       // 读不出尺寸的图后面还要过一遍解码（sprite 走 cutout），真坏了会在这里炸；
       // 但格式没识别属于我们没覆盖到的情况，留个痕好排查
-      console.warn(`[stage-ai] 读不出 ${spec.stem} 的图片尺寸，跳过画幅校验（${data.length}B）`);
+      console.warn(`[aivn] 读不出 ${spec.stem} 的图片尺寸，跳过画幅校验（${data.length}B）`);
       return;
     }
     if (aspectMatches(size, spec.aspect)) return;

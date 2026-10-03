@@ -1,4 +1,4 @@
-import type { PendingJob } from "@stage-ai/core";
+import type { PendingJob } from "@aivn/core";
 
 /** 开一件活儿时给的最小信息；startedAt 与 state 由 tracker 自己定，免得各处传时钟与标志。 */
 export type PendingJobStart = Omit<PendingJob, "startedAt" | "state">;

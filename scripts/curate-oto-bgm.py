@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把 OtoLogic 下载的 BGM 整理成 stage-ai 资源库条目。
+"""把 OtoLogic 下载的 BGM 整理成 AIVN 资源库条目。
 """
 import json, re, subprocess, sys
 from pathlib import Path

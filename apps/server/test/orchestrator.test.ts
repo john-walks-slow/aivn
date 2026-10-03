@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import { LineageTree, type ServerMessage } from "@stage-ai/core";
+import { LineageTree, type ServerMessage } from "@aivn/core";
 import { PlaywrightOrchestrator, type OrchestratorRuntimeState } from "../src/orchestrator.js";
 import { createMemoryTools } from "../src/agentkit/memoryTool.js";
 import { PlayMemory } from "../src/memory.js";

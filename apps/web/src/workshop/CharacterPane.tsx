@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { serializeCharacterCard } from "@stage-ai/core";
-import type { CharacterDocument, PlayConfig } from "@stage-ai/core";
+import { serializeCharacterCard } from "@aivn/core";
+import type { CharacterDocument, PlayConfig } from "@aivn/core";
 import { api, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { CharacterEditor } from "./CharacterEditor.js";

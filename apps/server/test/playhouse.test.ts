@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineageTree } from "@stage-ai/core";
+import { LineageTree } from "@aivn/core";
 import { PlayHouse, helloPayload } from "../src/playhouse.js";
 import { PlayLibrary } from "../src/store.js";
 import { AssetLibrary } from "../src/library.js";
@@ -27,7 +27,7 @@ describe("PlayHouse 周目作用域：逛不建、连舞台也不建，开演才
   let config: ReturnType<typeof settingsFromEnv>;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "stageai-playhouse-"));
+    root = await mkdtemp(join(tmpdir(), "aivn-playhouse-"));
     const playDir = join(root, "p1");
     await mkdir(playDir, { recursive: true });
     await writeFile(join(playDir, "play.json"), PLAY_JSON);
@@ -156,7 +156,7 @@ describe("导演生图：前置守卫（都不该碰生图后端）", () => {
   }
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "stageai-cg-"));
+    root = await mkdtemp(join(tmpdir(), "aivn-cg-"));
     const playDir = join(root, "p1");
     await mkdir(playDir, { recursive: true });
     await writeFile(join(playDir, "play.json"), PLAY_JSON);

@@ -1,4 +1,4 @@
-import type { AssetKind } from "@stage-ai/core";
+import type { AssetKind } from "@aivn/core";
 import type { AssetLibrary } from "./library.js";
 import { importFromLibrary, type ImportResult } from "./assetImport.js";
 import { PlayMemory } from "./memory.js";

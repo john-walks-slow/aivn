@@ -19,7 +19,7 @@ fi
 
 # pnpm 的 node_modules 是共享 store + 每包软链，构建产物（dist）不共享 → 每个 worktree 自己建一次
 echo "→ build core"
-pnpm --filter @stage-ai/core build
+pnpm --filter @aivn/core build
 
 # .env：凭据只留主仓库一份，worktree 用软链，避免第二份密钥副本
 if [ ! -e .env ]; then

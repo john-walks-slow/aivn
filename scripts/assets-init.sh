@@ -2,7 +2,7 @@
 set -euo pipefail
 
 WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-echo "=== [Stage-AI Galgame Assets] Initializing Worktree Environment ==="
+echo "=== [AIVN Galgame Assets] Initializing Worktree Environment ==="
 echo "Worktree Root: ${WORKTREE_ROOT}"
 
 # 1. Check Python 3 and core imaging libraries

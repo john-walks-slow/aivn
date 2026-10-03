@@ -25,7 +25,7 @@ async function load(): Promise<Map<string, Skill>> {
   const env = new NodeExecutionEnv({ cwd: SKILLS_DIR });
   const { skills, diagnostics } = await loadSkills(env, SKILLS_DIR, BACKGROUND_CONTEXT);
   for (const d of diagnostics) {
-    console.warn(`[stage-ai] 工坊 skill 加载告警 ${d.code}：${d.path} — ${d.message}`);
+    console.warn(`[aivn] 工坊 skill 加载告警 ${d.code}：${d.path} — ${d.message}`);
   }
   cache = new Map(skills.map((s) => [s.name, s]));
   return cache;

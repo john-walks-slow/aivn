@@ -67,12 +67,12 @@ describe("公网入口的密码闸门", () => {
     const { res, headers } = stubRes();
     expect(gate.allow({ headers: { authorization: basic("test-key") } } as never, res)).toBe(true);
     const cookie = String(headers()["set-cookie"]);
-    expect(cookie).toMatch(/^stage_session=\S+; Path=\/; HttpOnly/);
+    expect(cookie).toMatch(/^aivn_session=\S+; Path=\/; HttpOnly/);
     const token = cookie.split(";")[0]!.split("=")[1]!;
     // 没有 Authorization 头，只有 cookie
-    expect(gate.allow({ headers: { cookie: `stage_session=${token}` } } as never)).toBe(true);
+    expect(gate.allow({ headers: { cookie: `aivn_session=${token}` } } as never)).toBe(true);
     // 换个进程发的 token 不认
-    expect(gate.allow({ headers: { cookie: "stage_session=别人的" } } as never)).toBe(false);
+    expect(gate.allow({ headers: { cookie: "aivn_session=别人的" } } as never)).toBe(false);
   });
 
   it("过期会话不认", () => {
@@ -82,7 +82,7 @@ describe("公网入口的密码闸门", () => {
     const token = String(headers()["set-cookie"]).split(";")[0]!.split("=")[1]!;
     const stale = gateFor("test-key");
     // 新 gate 的 token 表是空的（同进程重启 = 都要重输密码）
-    expect(stale.allow({ headers: { cookie: `stage_session=${token}` } } as never)).toBe(false);
+    expect(stale.allow({ headers: { cookie: `aivn_session=${token}` } } as never)).toBe(false);
   });
 });
 
@@ -151,7 +151,7 @@ describe("闸门 + 静态 + API 同端口", () => {
     expect(ok.status).toBe(200);
     expect(await ok.text()).toBe("<div id=root>");
     const session = ok.headers.get("set-cookie");
-    expect(session).toMatch(/^stage_session=/);
+    expect(session).toMatch(/^aivn_session=/);
 
     const api = await fetch(`http://127.0.0.1:${port}/api/plays`, { headers: { authorization: basic("test-key") } });
     expect(await api.text()).toBe('{"ok":true}');

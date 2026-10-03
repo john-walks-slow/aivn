@@ -2,8 +2,8 @@ import {
   lineageToEvents as coreLineageToEvents,
   stopFromNode,
   toNodeView,
-} from "@stage-ai/core";
-import type { LineageEvent, SequencedEvent, StopPayload } from "@stage-ai/core";
+} from "@aivn/core";
+import type { LineageEvent, SequencedEvent, StopPayload } from "@aivn/core";
 
 /**
  * 上下文重建（P6 transformContext 的纯函数层）：谱系事件日志是唯一真相源，

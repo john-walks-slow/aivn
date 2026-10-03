@@ -8,7 +8,7 @@ import {
   type AssetKind,
   type LibraryEntry,
   type LibraryFile,
-} from "@stage-ai/core";
+} from "@aivn/core";
 
 /**
  * 应用级素材资源库（`STAGE_LIBRARY_ROOT`，默认仓库根 `library/`）。

@@ -1,5 +1,5 @@
 {
-  "name": "@stage-ai/core",
+  "name": "@aivn/core",
   "version": "0.0.1",
   "description": "Stage DSL spec, streaming parser, IR events, WS protocol, lineage data model",
   "type": "module",

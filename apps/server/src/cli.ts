@@ -20,7 +20,7 @@ export interface LaunchOptions {
   selftest: boolean;
 }
 
-export const USAGE = `用法：stage-ai.exe [选项]
+export const USAGE = `用法：aivn.exe [选项]
 
   -p, --port <端口>      监听端口（默认 8787，被占用时自动往后找；0 = 随便挑一个空闲的）
       --host <地址>      监听地址（默认 0.0.0.0，即同一局域网都能访问）

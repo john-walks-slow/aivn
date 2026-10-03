@@ -16,7 +16,7 @@ import {
   type AssetMeta,
   type CgEntry,
   type GeneratedImageEntry,
-} from "@stage-ai/core";
+} from "@aivn/core";
 import { loadCharacterCards } from "./memory.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
 

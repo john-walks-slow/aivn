@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把 Uncle Mugen 免费背景包拆成 stage-ai 资源库的条目（每条一个目录）。
+"""把 Uncle Mugen 免费背景包拆成 AIVN 资源库的条目（每条一个目录）。
 
 来源与许可：https://alte.itch.io/uncle-mugens-backgrounds
 作者在 Lemma Soft 帖子里的自然语言许可（非标准 CC），原文见 TERMS_URL：

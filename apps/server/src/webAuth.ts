@@ -5,7 +5,7 @@ import type { SettingsSource } from "./settingsStore.js";
 /**
  * 公网入口的密码闸门（HTTP Basic + 会话 cookie）。
  *
- * 为什么是 Basic 而不是登录页：stage-ai 没有用户体系，多剧目共用一台服务器，
+ * 为什么是 Basic 而不是登录页：AIVN 没有用户体系，多剧目共用一台服务器，
  * 公开隧道前面唯一要挡的是「陌生人打开首页」。Basic 由浏览器自己弹框、凭据随请求走，
  * 不需要用户表和登出状态。
  *
@@ -19,7 +19,7 @@ import type { SettingsSource } from "./settingsStore.js";
  */
 
 /** 会话 cookie 名。带 HttpOnly：JS 读不到，XSS 也偷不走。 */
-const COOKIE = "stage_session";
+const COOKIE = "aivn_session";
 /** 会话有效期 7 天。过期或进程重启后要重新输密码——本地个人部署不需要更长。 */
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -60,7 +60,7 @@ export class WebGate {
     this.password = next;
     this.tokens.clear();
     console.log(
-      next === "" ? "[stage-ai] 访问密码已关闭（入口不再设防）" : "[stage-ai] 访问密码已更新，此前发出的会话全部作废",
+      next === "" ? "[aivn] 访问密码已关闭（入口不再设防）" : "[aivn] 访问密码已更新，此前发出的会话全部作废",
     );
   }
 
@@ -102,7 +102,7 @@ export class WebGate {
   /** 未授权时回 401 + `WWW-Authenticate`——没有这行浏览器不弹框，直接给空白页。 */
   challenge(res: ServerResponse): void {
     res.writeHead(401, {
-      "www-authenticate": 'Basic realm="stage-ai", charset="UTF-8"',
+      "www-authenticate": 'Basic realm="aivn", charset="UTF-8"',
       "content-type": "text/plain; charset=utf-8",
     });
     res.end("需要密码");

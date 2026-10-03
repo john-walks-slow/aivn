@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PlayMemory } from "../src/memory.js";
-import { LineageTree } from "@stage-ai/core";
+import { LineageTree } from "@aivn/core";
 import { agentToolCatalog, agentToolEntry, createAgentKit, defaultToolsFor, roleTools, type AgentKit } from "../src/agentkit/kit.js";
 import { AGENT_ROLES } from "../src/agentkit/role.js";
 import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "../src/agentkit/deps.js";

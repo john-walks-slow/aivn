@@ -2,14 +2,14 @@
 """
 scripts/gen_cg.py - Galgame Scene Background & Event CG Generator
 ================================================================
-Stage-AI Asset Pipeline component for generating 16:9 cinematic visual novel
+AIVN Asset Pipeline component for generating 16:9 cinematic visual novel
 backgrounds and emotional Event CGs.
 
 Features:
 - 10 battle-tested classic Galgame scene & event presets (8 Backgrounds + 2 Event CGs).
 - Style anchoring for Japanese anime aesthetics (Makoto Shinkai / Kyoto Animation / Light Novel).
 - Automated 16:9 aspect ratio cropping/scaling to standard FHD (1920x1080).
-- Metadata manifest export for Stage-AI engine integration.
+- Metadata manifest export for AIVN engine integration.
 """
 
 import os
@@ -330,7 +330,7 @@ def generate_scene(
 
 def list_presets():
     """Prints all 10 presets cleanly."""
-    print("\n=== Stage-AI Galgame 10 Classic Background & Event CG Presets ===")
+    print("\n=== AIVN Galgame 10 Classic Background & Event CG Presets ===")
     print("\n--- Category A: Scene Backgrounds (无人物舞台背景) ---")
     for pid, p in PRESETS.items():
         if p["type"] == "bg":
@@ -360,7 +360,7 @@ def write_manifest(worktree_root: Path):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Stage-AI Galgame Scene Background & Event CG Generator"
+        description="AIVN Galgame Scene Background & Event CG Generator"
     )
     parser.add_argument("--list", action="store_true", help="List all 10 classic presets and exit")
     parser.add_argument(

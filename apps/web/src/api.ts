@@ -8,7 +8,7 @@ import type {
   PlayCover,
   VoiceCatalog,
   VoiceEntry,
-} from "@stage-ai/core";
+} from "@aivn/core";
 
 /** 资源库导入回执（服务端 assetImport 的结果原样）。 */
 export interface ImportResult {
