@@ -1,3 +1,13 @@
 packages:
   - "packages/*"
   - "apps/*"
+
+# pnpm 11 默认不让依赖跑构建脚本（供应链防护），没批准的包会让 `pnpm install` 以
+# ERR_PNPM_IGNORED_BUILDS 直接失败——连 `pnpm -r build` 都跑不起来（它每次都先做依赖状态检查）。
+# 这三个是安装链路真正会碰到的：esbuild 的 postinstall 校验平台二进制，另外两个是
+# pi-agent-core 的传递依赖。其余的（sharp 等）都靠预编译的可选依赖，没有脚本，不必列。
+allowBuilds:
+  esbuild: true
+  protobufjs: true
+  "@google/genai": true
+
