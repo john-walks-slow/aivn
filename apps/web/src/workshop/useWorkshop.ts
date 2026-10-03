@@ -50,11 +50,12 @@ const EMPTY: WorkshopState = {
   error: null,
 };
 
+// read / write / edit / bash 是 pi 的内建工具，名字直接就是英文动词
 const TOOL_LABEL: Record<string, string> = {
-  list_files: "查看文件清单",
-  read_file: "读取文件",
-  write_file: "写入文件",
-  delete_file: "删除文件",
+  read: "读取文件",
+  write: "写入文件",
+  edit: "定点编辑",
+  bash: "跑命令",
   get_readiness: "检查就绪条件",
   generate_image: "出图中（几十秒，别急着发下一条）",
   recut_sprite: "重抠立绘底",

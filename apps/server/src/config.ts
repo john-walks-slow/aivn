@@ -21,6 +21,10 @@ export interface ServerConfig {
    * 空 = 不限制，沿用「网关 `/v1/models` 有什么给什么」。顺序按配置里写的来。
    */
   models: string[];
+  /** 限制级（NSFW）专用模型 id（`STAGE_NSFW_MODEL_ID`）。缺省为空，回退到 modelId。 */
+  nsfwModelId?: string;
+  /** 限制级（NSFW）专属系统提示词扩展（`STAGE_NSFW_PROMPT`）。 */
+  nsfwPrompt?: string;
   baseUrl: string;
   apiKey: string;
   /** 单请求输出上限（max_tokens）：钳住捐赠元数据的虚高 maxTokens——streamSimple 不传时以 model.maxTokens 填充发出，超网关限制即 400。 */
@@ -158,6 +162,8 @@ export function loadConfig(
     modelId: env.STAGE_MODEL_ID ?? "ms/deepseek-ai/DeepSeek-V4.1-Flash",
     modelBase: env.STAGE_MODEL_BASE ?? "deepseek/deepseek-flash",
     models: parseModelList(env.STAGE_MODELS),
+    nsfwModelId: env.STAGE_NSFW_MODEL_ID?.trim() || undefined,
+    nsfwPrompt: env.STAGE_NSFW_PROMPT?.trim() || undefined,
     baseUrl: env.STAGE_BASE_URL ?? "http://127.0.0.1:9999/v1",
     apiKey: env.STAGE_API_KEY ?? "sk-1234",
     maxTokens: parsePositiveInt("STAGE_MAX_TOKENS", env.STAGE_MAX_TOKENS, 32768),

@@ -141,6 +141,40 @@ export function AgentPane({ playId }: { playId: string }) {
               </select>
             </label>
 
+            {role.id === "playwriter" && (
+              <>
+                <label className="field">
+                  <span>限制级（NSFW）专用模型</span>
+                  <ModelSelect
+                    value={settings.nsfwModel ?? ""}
+                    models={models}
+                    error={modelError}
+                    emptyLabel={`跟随剧作家主模型${settings.model ? `（${settings.model}）` : ""}`}
+                    onChange={(id) => patch(role.id, (s) => setOrClear(s, "nsfwModel", id, ""))}
+                    onRetry={() => loadModels(true)}
+                  />
+                  <p className="muted small">
+                    当剧作家调用 enter_nsfw 进入亲密/限制级剧情时切换为此模型执笔。退出时切回主模型并注入 SFW 摘要。
+                  </p>
+                </label>
+
+                <label className="field">
+                  <span>限制级（NSFW）思考档位</span>
+                  <select
+                    value={settings.nsfwThinking ?? "off"}
+                    onChange={(e) => patch(role.id, (s) => setOrClear(s, "nsfwThinking", e.target.value, "off"))}
+                  >
+                    {THINKING_LEVELS.map((level) => (
+                      <option key={level} value={level}>
+                        {THINKING_LABEL[level]}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="muted small">限制级剧情通道下的独立思考档位。默认不思考。</p>
+                </label>
+              </>
+            )}
+
             <div className="field">
               <span>工具</span>
               {groups.length === 0 && <p className="muted small">工具目录读取中…</p>}
@@ -196,7 +230,7 @@ export function AgentPane({ playId }: { playId: string }) {
 }
 
 /** 值等于默认（或空）时把键删掉，别在 play.json 里留一堆等价于缺省的字段。 */
-function setOrClear<K extends "model" | "thinking" | "prompt">(
+function setOrClear<K extends "model" | "thinking" | "prompt" | "nsfwModel" | "nsfwThinking" | "nsfwPrompt">(
   settings: AgentSettings,
   key: K,
   value: string,

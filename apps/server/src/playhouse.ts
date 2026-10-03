@@ -808,6 +808,8 @@ export class PlayHouse {
     // 两个 agent 各按剧目配置解析模型（Agent 页签改的就是 play.json 的 agents 段）；
     // 缺省即服务端默认模型。润色/翻译旁路跟剧作家走——同一段文字两种口吻最怪。
     const model = this.modelFor(play.agents?.playwriter?.model);
+    const nsfwModelId = play.agents?.playwriter?.nsfwModel || this.config.nsfwModelId;
+    const nsfwModel = nsfwModelId ? this.modelFor(nsfwModelId) : model;
     const workshopModel = this.modelFor(play.agents?.workshop?.model);
     const tts = this.tts;
     // 剧目记忆（D7 三层）：craft/premise/index 随 runtime 重建读入（工坊热改走 reload 即时生效）
@@ -861,6 +863,9 @@ export class PlayHouse {
       tts: synth ? { synth, concurrency: this.config.tts.concurrency } : undefined,
       pending: this.pendingFor(play.id),
       agents: play.agents?.playwriter,
+      nsfwModel,
+      nsfwThinking: play.agents?.playwriter?.nsfwThinking,
+      nsfwPrompt: play.agents?.playwriter?.nsfwPrompt || this.config.nsfwPrompt,
       imageTools: playAssets
         ? {
             playAssets,

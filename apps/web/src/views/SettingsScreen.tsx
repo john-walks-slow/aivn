@@ -141,6 +141,16 @@ export function SettingsScreen() {
                 onRetry={() => loadModels(true)}
               />
             </Field>
+            <Field label="限制级（NSFW）专用模型" hint="当剧作家调用 enter_nsfw 时切换至此模型。留空跟随主模型。">
+              <ModelSelect
+                value={draft.model.nsfwModelId ?? ""}
+                models={models}
+                error={modelError}
+                emptyLabel={`跟随主模型（${draft.model.modelId}）`}
+                onChange={(id) => setDraft({ ...draft, model: { ...draft.model, nsfwModelId: id } })}
+                onRetry={() => loadModels(true)}
+              />
+            </Field>
             <Field label="支持的模型">
               <input
                 value={draft.model.models}

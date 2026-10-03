@@ -16,6 +16,8 @@ export type AgentRole = (typeof AGENT_ROLES)[number];
 export const ROLE_INSTALLABLE: Record<AgentRole, readonly string[]> = {
   playwriter: [
     "beat_done",
+    "enter_nsfw",
+    "exit_nsfw",
     "update_state",
     "create_character",
     "read_memory_detail",
@@ -26,11 +28,10 @@ export const ROLE_INSTALLABLE: Record<AgentRole, readonly string[]> = {
     "web_search",
   ],
   workshop: [
-    "list_files",
-    "read_file",
-    "edit_file",
-    "write_file",
-    "delete_file",
+    "read",
+    "write",
+    "edit",
+    "bash",
     "get_readiness",
     "view_image",
     "generate_image",
