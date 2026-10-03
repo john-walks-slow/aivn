@@ -1,5 +1,6 @@
 import { describeAsset, type AssetMeta, type EngineStateSnapshot } from "@stage-ai/core";
 import type { PlayConfig } from "@stage-ai/core";
+import type { AgentCapabilities } from "./agentkit/kit.js";
 import { SEARCH_GUIDE } from "./agentkit/searchTool.js";
 import type { PlayMemory } from "./memory.js";
 
@@ -18,7 +19,7 @@ const AUDIO_RULES = `
   只有情绪或地点真的变了才换 id；每拍都重写一遍 bgm 是最常见的毛病。
 - 想停：<scene bgm="none"/>，ambient 同理（静默场面、回忆结束、进入字幕）。
 - 音量自己给：<scene bgm_volume="0.4"/>、<scene ambient_volume="0.3"/>、<sfx src="…" volume="0.6"/>。
-  台词是主角，音乐与音效都该让位——拿不准就往下调。
+  音乐与音效都给台词让位——拿不准就把音量调小。
 - 换曲与停乐会自动交叉淡入淡出，不用自己写淡出。
 - ambient 是持续的环境底噪（雨、风、人声、车流），比 bgm 轻，一场戏给一次就够。
 - sfx 放在动作发生的那一行之前：开门、转身、翻书、东西落地，一个动作一条，别连着堆。
@@ -63,12 +64,17 @@ export interface PromptContext {
   generated?: GeneratedNote[];
   memory?: PlayMemory;
   arcIds?: readonly string[];
-  /** 生图工具在位（工具被关掉时整章不注入——教它调一个不存在的工具只会空转）。 */
-  canImage?: boolean;
-  /** 联网检索在位（同上）。 */
-  canSearch?: boolean;
-  /** 素材资源库在位（没配库目录时引用即导入无处可查，提示词里不提，免得它照着一条不存在的链路找）。 */
-  canLibrary?: boolean;
+  /**
+   * 能力位（`kit.can`，与搭台助手同一份形状、同一个对象）：按它决定注不注某一章——
+   * 生图工具被关掉时整章不注入、教它调一个不存在的工具只会空转；没配库目录时引用即导入
+   * 无处可查，提示词里也不提那条链路。剧作家只读 image / search / library 三位
+   * （voice / shell 的工具它装不上，恒为 false）。
+   */
+  can: AgentCapabilities;
+  /** 当前处于限制级（NSFW）剧情通道中。 */
+  nsfwMode?: boolean;
+  /** 限制级（NSFW）系统提示词自定义扩展。 */
+  nsfwPrompt?: string;
 }
 
 /**
@@ -76,100 +82,22 @@ export interface PromptContext {
  * 每轮变化的状态走 user 消息【状态】区（B 区 append-only），见 orchestrator。
  * 记忆层（D7）：craft/premise/index 标题列表在 runtime 构建时读入——纪元内冻结，工坊热改走 reload。
  */
-export function buildSystemPrompt(ctx: PromptContext): string {
-  const { play, memory, generated = [] } = ctx;
-  const notes = ctx.notes ?? {};
-  /**
-   * 素材元数据查找：立绘差分按「角色id/差分名」找（多角色剧目里光写 smile 会撞车），
-   * 裸差分名那张老表并进来兜底——两套键约定会并存（引擎记 prompt 用规范键，
-   * 手写/工坊早期写的描述多是裸名），按字段合并，谁有值用谁的，别让一条把另一条挡掉。
-   */
-  const metaOf = (id: string, charId?: string): AssetMeta =>
-    charId ? { ...notes[id], ...notes[`${charId}/${id}`] } : (notes[id] ?? {});
-  /** 清单项渲染：把描述、标签、情绪、时长都摆出来，让剧作家按画面/情境选而不是猜文件名。 */
-  const label = (name: string, charId?: string): string => {
-    const detail = describeAsset(metaOf(name, charId));
-    return detail ? `${name}（${detail}）` : name;
-  };
-  // 角色表 = 角色卡目录，与 play.json 无关。每张卡都是一份完整设定：
-  // 正文是人设，frontmatter 存名字/音色/立绘差分映射与取景。
-  const characters = [...(ctx.memory?.characters ?? [])]
-    .map(([id, card]) => {
-      // 差分优先取卡片里配的 sprites 键名（前端按它解析立绘）；没配就回退磁盘文件 stem
-      const expressions =
-        card.sprites && Object.keys(card.sprites).length > 0
-          ? Object.keys(card.sprites)
-          : (ctx.assets?.[`sprites/${id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
-      return `### ${card.name ?? id}（id: ${id}）\n${card.body}${card.voice ? `\n音色：${card.voice}` : ""}${
-        expressions.length > 0
-          ? `\n立绘差分 expression：${expressions.map((e) => label(e, id)).join(" | ")}`
-          : ""
-      }`;
-    })
-    .join("\n\n");
-
-  const stems = (key: string): string[] => (ctx.assets?.[key] ?? []).map((f) => f.replace(/\.\w+$/, ""));
-  const section = (heading: string, kind: string, tail = ""): string => {
-    const list = stems(kind);
-    return list.length > 0 ? `\n# ${heading}\n\n${list.map((id) => `- ${label(id)}`).join("\n")}${tail}\n` : "";
-  };
-  const generatedSection =
-    generated.length > 0
-      ? `\n# 已生成的图（早已存在，直接引用 id，不要再 generate_image）\n\n${generated
-          .map((g) => `${g.id}（${g.type}）—— ${g.prompt}`)
-          .join("\n")}\n`
-      : "";
-  // 配乐/音效的编排规则：清单给了元数据之后，怎么用还是得讲清楚——
-  // 「缺省保持」这条尤其重要，模型换景时顺手重写 bgm 是最常见的失误。
-  const audioRule = stems("bgm").length > 0 || stems("sfx").length > 0 ? AUDIO_RULES : "";
-  const assetSection = [
-    section("可用背景 bg", "backgrounds", "\nscene 的 bg 优先取这些 id。"),
-    section("可用音乐 bgm", "bgm"),
-    section("可用音效 sfx", "sfx"),
-    audioRule,
-    section("已有插图 cg", "cg"),
-    generatedSection,
-    ctx.canLibrary ? LIBRARY_REF : "",
-  ].join("");
-
-  // 世界观前提的唯一真相源是 memory/always/premise.md：没有它就没有 A 区，剧作家无从下手
-  const premise = memory?.premise.trim() ?? "";
-  // 剧目自己的创作口径：外置到 memory/always/craft.md（工坊与用户共编），默认为空。
-  // 原样注入——文件自带什么标题就带什么标题，不再套一层壳。
-  // 2026-10-03 起这里是**创作口径的唯一来源**：引擎不再自带任何台词/节奏/风格默认
-  // （每轮多长、给几个选项、多久交一次主导权都归剧目定），由搭台助手与用户对齐后写进这份文件。
-  const craft = memory?.craft.trim() ?? "";
-  const craftSection = craft ? `\n${craft}\n` : "";
-  const cards = memory?.visibleContext(ctx.arcIds ?? []) ?? [];
-  const indexSection =
-    cards.length > 0
-      ? `\n# 记忆索引（按需查详情）\n\n${cards.map((c) => `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}：${c.summary}`).join("\n")}\n\n需要某条完整内容时调用 read_memory_detail 工具（传名称）。历史往事用 search_archive 检索。\n`
-      : "";
-
-  return `你是一部视觉小说的剧作家（playwriter），实时为一部正在"直播"的游戏写剧本。
+/** 开场：这份提示词服务的角色，以及【用户输入】的两种含义。 */
+const ROLE_INTRO = `你是一部视觉小说的剧作家（playwriter），实时为一部正在"直播"的游戏写剧本。
 玩家是主角，也是导演。他发来的每一条【用户输入】都是同一个东西：要么是他在戏里说的话/做的选择，
-要么是他以「OOC」开头的导演指示。两种都由你照着演。
+要么是他以「OOC」开头的导演指示。两种都由你照着演。`;
 
-# 你怎么工作
+/** 工作循环：写完一轮就收束、拿回输入再接着写；停止点不是故事的终点。 */
+const HOW_I_WORK = `# 你怎么工作
 
-一轮一轮地写：写完这一轮 → 调 beat_done 收束（顺便交出这一轮的停止点）→ 拿到玩家的回应、
+一轮一轮地写：写完这一轮 → 调 beat_done 收束（参数就是这一轮的停止点）→ 拿到玩家的回应、
 或引擎接上的下一轮 → 接着写。一轮该写多长、多久给一次停止点，都照剧目的创作口径。
 
-beat_done 的参数决定这一轮停在哪里：给 options 就是把主导权交给玩家选；
-只给 placeholder 就是停在自由输入框；两个都不给就是本轮自然演完、玩家点「继续」接下一轮。
-
 停止点是这一轮的出口，不是故事的终点——玩家回应之后，故事继续由你往下写。
-世界线、存档、重演、跳转是引擎和玩家的事，不用你操心，也写不进剧本。
+世界线、存档、重演、跳转是引擎和玩家的事，不用你操心，也写不进剧本。`;
 
-# 剧目设定
-
-${premise}
-
-# 角色表
-
-${characters}
-${assetSection}${craftSection}${indexSection}
-# 剧本格式（Stage DSL，必须严格遵守）
+/** Stage DSL 的渲染契约：指令怎么写，行为词/运镜/锚点有哪些取值。 */
+const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
 
 你输出的每一行都是剧本。指令用 XML 标签，台词是标签外的原生文本。
 
@@ -232,13 +160,12 @@ center（居中悬空）、top（从上垂下）。
 - 想给一个自由回答的口子 → beat_done(placeholder="想对他说什么？")。
 - 这一段自然演完 → beat_done()，两个参数都不给。
 
-beat_done 必须**独占一次工具调用**——不与 create_character、update_state 等其他工具放在同一批里。
-调完之后本轮就结束了：不要再输出任何内容（没有停止点时也不要写收尾交代或过场说明）。
-轮与轮之间由引擎接续。
+beat_done 通常**独占一次工具调用**（除 enter_nsfw / exit_nsfw 等模式切换工具可同批发出外，不与 create_character、update_state 等其他工具放在同一批里）。
+调完之后本轮就结束，不要再输出任何内容（没有停止点时也不要写收尾交代或过场说明）。
+轮与轮之间由引擎接续。`;
 
-${imageChapter(ctx.canImage !== false)}
-${ctx.canSearch ? SEARCH_GUIDE : ""}
-## 引入新角色
+/** 引入角色表里没有的角色时的三条路（建档 / 出立绘 / 临时角色）。 */
+const NEW_CHARACTER_RULES = `## 引入新角色
 
 需要引入角色表里没有的新角色时，按以下步骤：
 
@@ -264,9 +191,10 @@ name 只覆盖本句名牌，不写入角色表。只想出声、不上台的路
 这类角色想上台（要立绘）也有两条路：戏里临时冒出来的（路人甲、店员），出图时带 characterName
 一起给，会自动建一张最小角色卡；戏份多、要配音色或人设的，先 create_character 建一张完整卡再出图。
 
-两种临时角色都没有专属音色（音色挂在角色卡上）——剧目配了兜底音色的就用那个。
+两种临时角色都没有专属音色（音色挂在角色卡上）——剧目配了兜底音色的就用那个。`;
 
-# 演出契约（引擎规则，不可改）
+/** 演出契约：引擎认的硬规则，用户不可改（创作口径在剧目自己的 craft.md 里）。 */
+const CONTRACT_RULES = `# 演出契约（引擎规则，不可改）
 
 你是剧本引擎，不是助手：输出里只有剧本本身。不聊天、不寒暄、不称呼玩家本人、不解释自己在做什么、
 不报告剧本或引擎的状态、不在结尾提问或提议下一步。
@@ -278,6 +206,102 @@ name 只覆盖本句名牌，不写入角色表。只想出声、不上台的路
    否则 = 其中某个角色（可能就是主角，也可能是别人）的行动、话语或心理，照字面意思演成该角色的言行。
    两种都不要在剧本里复述这段文字本身。
 5. 标注「未作回应」时：不要替玩家编造台词或行动，让角色自然接戏并在合适时机再给回应机会。`;
+
+export function buildSystemPrompt(ctx: PromptContext): string {
+  const { play, memory, generated = [] } = ctx;
+  const notes = ctx.notes ?? {};
+  /**
+   * 素材元数据查找：立绘差分按「角色id/差分名」找（多角色剧目里光写 smile 会撞车），
+   * 裸差分名那张老表并进来兜底——两套键约定会并存（引擎记 prompt 用规范键，
+   * 手写/工坊早期写的描述多是裸名），按字段合并，谁有值用谁的，别让一条把另一条挡掉。
+   */
+  const metaOf = (id: string, charId?: string): AssetMeta =>
+    charId ? { ...notes[id], ...notes[`${charId}/${id}`] } : (notes[id] ?? {});
+  /** 清单项渲染：把描述、标签、情绪、时长都摆出来，让剧作家按画面/情境选而不是猜文件名。 */
+  const label = (name: string, charId?: string): string => {
+    const detail = describeAsset(metaOf(name, charId));
+    return detail ? `${name}（${detail}）` : name;
+  };
+  // 角色表 = 角色卡目录，与 play.json 无关。每张卡都是一份完整设定：
+  // 正文是人设，frontmatter 存名字/音色/立绘差分映射与取景。
+  const characters = [...(ctx.memory?.characters ?? [])]
+    .map(([id, card]) => {
+      // 差分优先取卡片里配的 sprites 键名（前端按它解析立绘）；没配就回退磁盘文件 stem
+      const expressions =
+        card.sprites && Object.keys(card.sprites).length > 0
+          ? Object.keys(card.sprites)
+          : (ctx.assets?.[`sprites/${id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
+      return `### ${card.name ?? id}（id: ${id}）\n${card.body}${card.voice ? `\n音色：${card.voice}` : ""}${
+        expressions.length > 0
+          ? `\n立绘差分 expression：${expressions.map((e) => label(e, id)).join(" | ")}`
+          : ""
+      }`;
+    })
+    .join("\n\n");
+
+  const stems = (key: string): string[] => (ctx.assets?.[key] ?? []).map((f) => f.replace(/\.\w+$/, ""));
+  const section = (heading: string, kind: string, tail = ""): string => {
+    const list = stems(kind);
+    return list.length > 0 ? `\n# ${heading}\n\n${list.map((id) => `- ${label(id)}`).join("\n")}${tail}\n` : "";
+  };
+  const generatedSection =
+    generated.length > 0
+      ? `\n# 已生成的图（早已存在，直接引用 id，不要再 generate_image）\n\n${generated
+          .map((g) => `${g.id}（${g.type}）—— ${g.prompt}`)
+          .join("\n")}\n`
+      : "";
+  // 配乐/音效的编排规则：清单给了元数据之后，怎么用还是得讲清楚——
+  // 「缺省保持」这条尤其重要，模型换景时顺手重写 bgm 是最常见的失误。
+  const audioRule = stems("bgm").length > 0 || stems("sfx").length > 0 ? AUDIO_RULES : "";
+  const assetSection = [
+    section("可用背景 bg", "backgrounds", "\nscene 的 bg 优先取这些 id。"),
+    section("可用音乐 bgm", "bgm"),
+    section("可用音效 sfx", "sfx"),
+    audioRule,
+    section("已有插图 cg", "cg"),
+    generatedSection,
+    ctx.can.library ? LIBRARY_REF : "",
+  ].join("");
+
+  // 世界观前提的唯一真相源是 memory/always/premise.md：没有它就没有 A 区，剧作家无从下手
+  const premise = memory?.premise.trim() ?? "";
+  // 剧目自己的创作口径：外置到 memory/always/craft.md（工坊与用户共编），默认为空。
+  // 原样注入——文件自带什么标题就带什么标题，不再套一层壳。
+  // 2026-10-03 起这里是**创作口径的唯一来源**：引擎不再自带任何台词/节奏/风格默认
+  // （每轮多长、给几个选项、多久交一次主导权都归剧目定），由搭台助手与用户对齐后写进这份文件。
+  const craft = memory?.craft.trim() ?? "";
+  const craftSection = craft ? `\n${craft}\n` : "";
+  const nsfwGuidance =
+    ctx.nsfwMode
+      ? `\n# 限制级（NSFW）创作指引\n\n你当前正处于限制级剧情通道。\n- 专注于亲密接触中的情感张力、双方的心理起伏、生理与感官细节反应的细腻刻画；\n- 保持角色一贯的性格与说话风格，将人设融入亲密互动中；\n- 结合 Stage DSL：合理使用 <actor action="..." expression="..."> 配合肢体反应与微表情，用 <sfx> 辅助营造氛围；\n- 当这段亲密情节告一段落、即将回归正常日常时，调用 exit_nsfw 退出限制级模式。exit_nsfw 可以与 beat_done 在同一批次工具调用中一同发出。\n${
+          memory?.nsfw?.trim() ? `\n## 剧目限制级专属口径\n${memory.nsfw.trim()}\n` : ""
+        }${ctx.nsfwPrompt?.trim() ? `\n## 补充限制级提示词\n${ctx.nsfwPrompt.trim()}\n` : ""}`
+      : `\n## 亲密/限制级剧情入口（enter_nsfw）\n\n当剧情推进至即将发生亲密、成人或限制级（NSFW）接触时，不要在当前模型下直接描写露骨细节。\n调用 \`enter_nsfw\` 开启限制级剧情通道。调用后完成本轮收束并调用 \`beat_done\`，下一轮起将由限制级专用模型和专属提示词接管展开细腻描写；亦可与 \`beat_done\` 在同一批次工具调用中一同发出。\n`;
+  const cards = memory?.visibleContext(ctx.arcIds ?? []) ?? [];
+  const indexSection =
+    cards.length > 0
+      ? `\n# 记忆索引（按需查详情）\n\n${cards.map((c) => `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}：${c.summary}`).join("\n")}\n\n需要某条完整内容时调用 read_memory_detail 工具（传名称）。历史往事用 search_archive 检索。\n`
+      : "";
+
+  return `${ROLE_INTRO}
+
+${HOW_I_WORK}
+
+# 剧目设定
+
+${premise}
+
+# 角色表
+
+${characters}
+${assetSection}${craftSection}${nsfwGuidance}${indexSection}
+${FORMAT_RULES}
+
+${imageChapter(ctx.can.image)}
+${ctx.can.search ? SEARCH_GUIDE : ""}
+${NEW_CHARACTER_RULES}
+
+${CONTRACT_RULES}`;
 }
 
 /**

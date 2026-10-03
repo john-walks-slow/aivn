@@ -11,6 +11,8 @@ export interface ScriptLine {
   text: string;
   /** say/narrate/thought 行起始事件的 seq（audio_ready 语音关联键）。 */
   seq?: number;
+  /** 行级台词节点 ID（LineageNode.id，阅读位置寻址与原地改写用）。 */
+  nodeId?: string;
 }
 
 /**
@@ -130,6 +132,7 @@ export class ScriptBuilder {
           ...(event.mood ? { mood: event.mood } : {}),
           ...(event.name ? { nameOverride: event.name } : {}),
           seq,
+          nodeId: event.nodeId,
           text: "",
         };
         this.lines.push(line);
@@ -138,7 +141,7 @@ export class ScriptBuilder {
         return;
       }
       case "narrate_start": {
-        const line: ScriptLine = { key: key(), type: "narrate", seq, text: "" };
+        const line: ScriptLine = { key: key(), type: "narrate", seq, nodeId: event.nodeId, text: "" };
         this.lines.push(line);
         this.cues.push({ key: key(), kind: "line", lineKey: line.key });
         this.openKey = line.key;
@@ -150,6 +153,7 @@ export class ScriptBuilder {
           type: "thought",
           actorId: event.id,
           seq,
+          nodeId: event.nodeId,
           text: "",
         };
         this.lines.push(line);

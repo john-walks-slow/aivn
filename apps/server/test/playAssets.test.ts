@@ -100,7 +100,13 @@ function stubBackend(mimeType = "image/jpeg"): { backend: ImageBackend; calls: I
   return { backend, calls };
 }
 
-function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2, reference?: "none" | "neutral"): {
+function makeAssets(
+  store: PlayStore,
+  backend: ImageBackend,
+  concurrency = 2,
+  reference?: "none" | "neutral",
+  fetchImage?: (url: string) => Promise<{ data: Buffer; mimeType: string }>,
+): {
   assets: PlayAssets;
   files: PlayFiles;
   writes: WorkshopWrite[];
@@ -116,6 +122,7 @@ function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2, re
       backend,
       limiter: new Limiter(concurrency),
       ...(reference ? { reference } : {}),
+      ...(fetchImage ? { fetchImage } : {}),
       onWrite: (w) => writes.push(w),
       // 自动注册临时角色走这条；用例不接时就是「当前环境不能自动建卡」
       writeCharacter: async (charId, content) => {
@@ -292,14 +299,22 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(prompt).toMatch(/pure white background/i);
   });
 
-  it("full/half（人）保留人形姿势词：抠底要轮廓分得开", async () => {
+  it("full/half（人）：姿势由调用方写，引擎只补抠底要的留白", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "full" }, "a girl");
+    await assets.generate(
+      { kind: "sprite", characterId: "mio", expression: "neutral", framing: "full" },
+      "a girl leaning on a windowsill, three-quarter view",
+    );
     const prompt = calls[0]!.prompt;
-    expect(prompt).toMatch(/standing pose/i);
-    expect(prompt).toMatch(/arms held slightly away/i);
+    // 引擎后缀不曾覆盖调用方的姿势：早先这里固定拼 "front-facing standing pose, both arms held
+    // slightly away from the body"，每个角色都成了同一个正面对称站桩，而这张图是所有差分的垫图基准。
+    expect(prompt).not.toMatch(/front-facing/i);
+    expect(prompt).not.toMatch(/standing pose/i);
+    expect(prompt).toContain("leaning on a windowsill, three-quarter view");
+    // 抠底要的那条留着：手臂与躯干之间的窄白缝会被当成高光填回前景
+    expect(prompt).toMatch(/narrow white gap/i);
     expect(prompt).toMatch(/above the head/i);
   });
 
@@ -453,6 +468,119 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(calls[0]!.prompt).not.toMatch(/in this exact order/);
   });
 
+  it("通用参考图：出 neutral 定妆照时带 references 垫图", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await mkdir(files.absoluteOf("assets/backgrounds"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/backgrounds/ref_char.png"), await realImage("9:16", "image/png"));
+
+    await assets.generate(
+      {
+        kind: "sprite",
+        characterId: "mio",
+        expression: "neutral",
+        references: ["assets/backgrounds/ref_char.png"],
+      },
+      "a girl with ribbon",
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.references).toHaveLength(1);
+    expect(calls[0]!.references![0]!.mimeType).toBe("image/png");
+    // prompt 中拼装了定妆照垫图引导，且包含白底留白与抠底留白约束
+    expect(calls[0]!.prompt).toMatch(/Based on the attached reference image/);
+    expect(calls[0]!.prompt).toMatch(/narrow white gap/i);
+    expect(calls[0]!.prompt).toMatch(/pure white background/);
+    expect(existsSync(files.absoluteOf("assets/sprites/mio/neutral.png"))).toBe(true);
+  });
+
+  it("通用参考图：支持外部网络图片 URL 并正确加载", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const mockFetch = async (url: string) => {
+      expect(url).toBe("https://example.com/character.jpg");
+      return { data: await realImage("9:16", "image/jpeg"), mimeType: "image/jpeg" };
+    };
+    const { assets } = makeAssets(store, backend, 2, undefined, mockFetch);
+
+    await assets.generate(
+      {
+        kind: "sprite",
+        characterId: "mio",
+        expression: "neutral",
+        references: ["https://example.com/character.jpg"],
+      },
+      "a girl",
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.references).toHaveLength(1);
+    expect(calls[0]!.references![0]!.mimeType).toBe("image/jpeg");
+    expect(calls[0]!.prompt).toMatch(/Based on the attached reference image/);
+  });
+
+  it("通用参考图：立绘差分不吃 references，恒以该角色 neutral 为基准（顶掉会静默换脸）", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await mkdir(files.absoluteOf("assets/sprites/mio"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/sprites/mio/neutral.png"), await realImage("9:16", "image/png"));
+    await mkdir(files.absoluteOf("assets/backgrounds"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/backgrounds/ref.png"), await realImage("16:9", "image/png"));
+    calls.length = 0;
+
+    await expect(
+      assets.generate(
+        {
+          kind: "sprite",
+          characterId: "mio",
+          expression: "smile",
+          references: ["assets/backgrounds/ref.png"],
+        },
+        "p",
+      ),
+    ).rejects.toThrow(/不能自带参考图/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("通用参考图：从界面复制来的静态 URL（带前导斜杠与 plays 前缀）也认", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await mkdir(files.absoluteOf("assets/backgrounds"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/backgrounds/scene_ref.jpg"), await realImage("16:9", "image/jpeg"));
+
+    await assets.generate(
+      { kind: "cg", name: "copied_ref", references: ["/plays/test/assets/backgrounds/scene_ref.jpg"] },
+      "p",
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.references).toHaveLength(1);
+  });
+
+  it("通用参考图：背景/CG 使用通用参考图并注入 genericReferenceSuffix", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await mkdir(files.absoluteOf("assets/backgrounds"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/backgrounds/scene_ref.jpg"), await realImage("16:9", "image/jpeg"));
+
+    await assets.generate(
+      {
+        kind: "cg",
+        name: "rooftop_sunset",
+        references: ["assets/backgrounds/scene_ref.jpg"],
+      },
+      "rooftop sunset view",
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.references).toHaveLength(1);
+    expect(calls[0]!.prompt).toMatch(/Follow the attached reference image\(s\) for visual appearance/);
+  });
+
   it("画幅回执：模型回的画幅不对就报错，一个字节都不落盘", async () => {
     const store = await makeStore();
     // 实测 flow2api 对 3:4/4:3 静默出 1200x896 横图——立绘拿到横图等于站位崩
@@ -536,7 +664,8 @@ describe("PlayAssets：工坊素材落盘", () => {
     // 先 neutral 后差分，两次出图
     expect(calls).toHaveLength(2);
     expect(calls[0]!.references).toEqual([]);
-    expect(calls[0]!.prompt).toContain("neutral expression");
+    // 自动补的定妆照前置了一条中性描述，压住差分那条 prompt 里的表情词
+    expect(calls[0]!.prompt).toMatch(/neutral-expression/i);
     // 垫图就是盘上那张抠过底的定妆照
     expect(calls[1]!.references).toHaveLength(1);
     expect(calls[1]!.references![0]!.mimeType).toBe("image/png");
@@ -726,7 +855,7 @@ describe("PlayAssets：出图留痕", () => {
     // 后缀里的每个词都会被当成设定印进图里：这里曾写着「between the twin tails」，
     // 于是所有角色都长出双马尾——prompt 明写 long straight hair 也救不回来。
     const sent = calls[0]!.prompt;
-    expect(sent).toContain("clear empty white space between the arms and the body");
+    expect(sent).toContain("never with a narrow white gap between an arm and the torso");
     expect(sent.toLowerCase()).not.toMatch(/twin|tail|braid|ponytail/);
   });
 });

@@ -72,6 +72,12 @@ export interface AgentSettings {
    * 下次改默认值就会把用户的显式选择一起吞掉。
    */
   tools?: string[];
+  /** 限制级（NSFW）剧情通道专用模型 id（仅剧作家用）。缺省回退到 STAGE_NSFW_MODEL_ID 或 model。 */
+  nsfwModel?: string;
+  /** 限制级（NSFW）剧情通道专用思考档位（仅剧作家用）。缺省回退到 thinking。 */
+  nsfwThinking?: ThinkingLevel;
+  /** 限制级（NSFW）剧情通道专属系统提示词扩展。 */
+  nsfwPrompt?: string;
 }
 
 /**
@@ -210,6 +216,17 @@ function parseAgentConfig(raw: AgentConfig | undefined): AgentConfig | undefined
     }
     if (role === "workshop" && typeof source.prompt === "string" && source.prompt.trim() !== "") {
       settings.prompt = source.prompt;
+    }
+    if (role === "playwriter") {
+      if (typeof source.nsfwModel === "string" && source.nsfwModel.trim() !== "") {
+        settings.nsfwModel = source.nsfwModel.trim();
+      }
+      if (source.nsfwThinking && (THINKING_LEVELS as readonly string[]).includes(source.nsfwThinking)) {
+        settings.nsfwThinking = source.nsfwThinking;
+      }
+      if (typeof source.nsfwPrompt === "string" && source.nsfwPrompt.trim() !== "") {
+        settings.nsfwPrompt = source.nsfwPrompt.trim();
+      }
     }
     if (Array.isArray(source.tools)) {
       const names = source.tools.filter((n): n is string => typeof n === "string" && n.trim() !== "");

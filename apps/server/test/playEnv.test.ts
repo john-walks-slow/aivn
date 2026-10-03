@@ -1,0 +1,176 @@
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { createAgentKit, defaultToolsFor } from "../src/agentkit/kit.js";
+import type { WorkshopKitDeps, WorkshopWrite } from "../src/agentkit/deps.js";
+import { PlayFiles } from "../src/playFiles.js";
+
+/**
+ * `PlayEnv` 是 pi 内建工具（read / write / edit / bash）与剧目文件之间唯一的那层装饰。
+ *
+ * 它管三件事，这里逐个钉住：**路径白名单**（read / write / edit 走它，bash 不走）、
+ * **play.json 的结构校验**、**撤销条**（before/after 交给前端）。pi 那边的匹配语义
+ * （精确→模糊、唯一性、BOM/行尾）是 pi 自己的事，不在这里重测。
+ */
+
+const PLAY_CONFIG = {
+  id: "test",
+  title: "测试剧目",
+  premise: "测试 premise",
+  characters: [{ id: "mio", name: "澪", persona: "测试角色" }],
+  opening: "（开始）",
+  initialState: { turn: 0, affinity: {}, flags: {} },
+  initialScene: "走廊",
+};
+
+async function tempPlay(): Promise<{ dir: string; writes: WorkshopWrite[]; config: string }> {
+  const dir = await mkdtemp(join(tmpdir(), "stage-play-env-"));
+  const config = JSON.stringify(PLAY_CONFIG, null, 2);
+  await mkdir(join(dir, "memory", "always"), { recursive: true });
+  await writeFile(join(dir, "play.json"), config, "utf8");
+  await writeFile(join(dir, "memory", "always", "craft.md"), "# 画风\n柔和的夏日色调。\n", "utf8");
+  await writeFile(join(dir, "session.json"), "{}", "utf8");
+  return { dir, writes: [], config };
+}
+
+/** 真装配出来的一套工具（含 bash）——测的是 agent 实际拿到的那份。 */
+function toolset(dir: string, writes: WorkshopWrite[]) {
+  const deps = {
+    role: "workshop",
+    playId: "test",
+    enabled: new Set([...defaultToolsFor("workshop"), "bash"]),
+    files: new PlayFiles({ dir } as never),
+    store: {} as never,
+    onWrite: (w: WorkshopWrite) => writes.push(w),
+    onAsset: () => {},
+    saves: {} as never,
+    saveStore: () => ({}) as never,
+  } as unknown as WorkshopKitDeps;
+  const tools = createAgentKit(deps).tools;
+  return {
+    read: tools.find((t) => t.name === "read")!,
+    write: tools.find((t) => t.name === "write")!,
+    edit: tools.find((t) => t.name === "edit")!,
+    bash: tools.find((t) => t.name === "bash")!,
+  };
+}
+
+const call = (tool: { execute: (...args: never[]) => Promise<unknown> }, args: unknown): Promise<unknown> =>
+  tool.execute("c1" as never, args as never);
+
+describe("PlayEnv：read / write / edit 的路径白名单", () => {
+  it("读得到剧目内的文件，读不到白名单外与越界的路径", async () => {
+    const { dir, writes } = await tempPlay();
+    const { read } = toolset(dir, writes);
+
+    const ok = (await call(read, { path: "play.json" })) as { content: { text: string }[] };
+    expect(ok.content[0]!.text).toContain("测试剧目");
+
+    // session.json 是演出状态，工坊看不见（它有 list_saves / read_lineage 走另一条路）
+    await expect(call(read, { path: "session.json" })).rejects.toThrow(/不在工坊可读范围/);
+    await expect(call(read, { path: "../../etc/passwd" })).rejects.toThrow(/不在剧目目录内|不在工坊可读范围/);
+    expect(writes).toEqual([]);
+  });
+
+  it("写得动剧目内可写的文件，写不动只读面", async () => {
+    const { dir, writes } = await tempPlay();
+    const { write } = toolset(dir, writes);
+
+    await call(write, { path: "memory/index/lore/新设定.md", content: "# 新设定\n" });
+    expect(await readFile(join(dir, "memory/index/lore/新设定.md"), "utf8")).toBe("# 新设定\n");
+    expect(writes).toEqual([{ path: "memory/index/lore/新设定.md", before: null, after: "# 新设定\n" }]);
+
+    // assets/ 读得到、写不了（唯一的例外是素材描述表 assets/manifest.json）
+    await expect(call(write, { path: "assets/backgrounds/新背景.png", content: "x" })).rejects.toThrow(
+      /不在工坊可写范围/,
+    );
+    // session.json 连读面都不过，于是更早一步被拦下
+    await expect(call(write, { path: "session.json", content: "{}" })).rejects.toThrow(/不在工坊可读范围/);
+    expect(writes).toHaveLength(1);
+  });
+});
+
+describe("PlayEnv：play.json 的结构校验", () => {
+  it("write 结构不过就不落盘，并把原因原话回给模型", async () => {
+    const { dir, writes, config } = await tempPlay();
+    const { write } = toolset(dir, writes);
+
+    // characters 少了 id：parsePlayConfig 会拒
+    await expect(call(write, { path: "play.json", content: '{"id":"test"}' })).rejects.toThrow(
+      /play.json 结构校验不过/,
+    );
+    expect(await readFile(join(dir, "play.json"), "utf8")).toBe(config);
+    expect(writes).toEqual([]);
+  });
+
+  it("edit 改坏了结构同样拦得住（但 pi 的 edit 会把原因吞成错误码）", async () => {
+    const { dir, writes, config } = await tempPlay();
+    const { edit } = toolset(dir, writes);
+
+    // pi 的 edit 把 `writeFile` 的失败包成 `Could not edit file: <path>. Error code: <code>.`，
+    // 具体原因（这里就是「结构校验不过」）只挂在 cause 上，不随工具结果回给模型。
+    // 拦得住才是我们要的；消息粒度是 pi 的契约，不在这里造第二套错误面。
+    await expect(
+      call(edit, { path: "play.json", edits: [{ oldText: '"characters"', newText: '"characters' }] }),
+    ).rejects.toThrow(/Could not edit file: play\.json/);
+    expect(await readFile(join(dir, "play.json"), "utf8")).toBe(config);
+    expect(writes).toEqual([]);
+  });
+});
+
+describe("PlayEnv：撤销条（before / after）", () => {
+  it("edit 定点替换后落盘，并把改前改后交给撤销条", async () => {
+    const { dir, writes } = await tempPlay();
+    const { edit } = toolset(dir, writes);
+
+    await call(edit, {
+      path: "memory/always/craft.md",
+      edits: [{ oldText: "柔和的夏日色调。", newText: "柔和的夏日色调，线稿偏细。" }],
+    });
+    expect(await readFile(join(dir, "memory/always/craft.md"), "utf8")).toBe("# 画风\n柔和的夏日色调，线稿偏细。\n");
+    expect(writes).toEqual([
+      {
+        path: "memory/always/craft.md",
+        before: "# 画风\n柔和的夏日色调。\n",
+        after: "# 画风\n柔和的夏日色调，线稿偏细。\n",
+      },
+    ]);
+  });
+
+  it("play.json 改对了照样过校验并落盘", async () => {
+    const { dir, writes } = await tempPlay();
+    const { edit } = toolset(dir, writes);
+
+    await call(edit, { path: "play.json", edits: [{ oldText: '"title": "测试剧目"', newText: '"title": "改过的标题"' }] });
+    expect(JSON.parse(await readFile(join(dir, "play.json"), "utf8")).title).toBe("改过的标题");
+    expect(writes.map((w) => w.path)).toEqual(["play.json"]);
+  });
+});
+
+describe("PlayEnv：bash 是另一条路", () => {
+  it("工作目录就是剧目目录，能跑 grep / jq 这类命令", async () => {
+    const { dir, writes } = await tempPlay();
+    const { bash } = toolset(dir, writes);
+
+    const out = (await call(bash, { command: "pwd && grep -rn 夏日 memory/" })) as { content: { text: string }[] };
+    expect(out.content[0]!.text).toContain(dir);
+    expect(out.content[0]!.text).toContain("夏日");
+  });
+
+  it("非零退出码会抛错，把输出一起带回来", async () => {
+    const { dir, writes } = await tempPlay();
+    const { bash } = toolset(dir, writes);
+
+    await expect(call(bash, { command: "echo 找不到; exit 3" })).rejects.toThrow(/Command exited with code 3/);
+  });
+
+  it("bash 绕开文件白名单——这正是提示词要讲清的那条边界", async () => {
+    const { dir, writes } = await tempPlay();
+    const { bash } = toolset(dir, writes);
+
+    const out = (await call(bash, { command: "cat session.json" })) as { content: { text: string }[] };
+    expect(out.content[0]!.text).toContain("{}");
+    expect(writes).toEqual([]); // 也不进撤销条
+  });
+});

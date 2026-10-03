@@ -1,0 +1,47 @@
+# apps/web AGENTS.md
+
+## 职责
+
+- `apps/web` —— 舞台演出层（P2/P3 已落地）：React 19 + vite；hash 路由（`src/router.tsx`）+ REST 客户端（`src/api.ts`，ttsPreview/polish）。
+
+## 地图与界面约定
+
+- `src/stage/generatedAssets.ts`（生成资产台账 + 预解码，到货才淡入）。
+- `src/views/`（剧目库/Title 就绪门含「有周目则「继续（档名）」在前 / 开始新周目」/周目页 SavesView `enter/重命名/删除`/舞台外壳 StageScreen：持连接与作品集状态，视图选择是 `useState` 初始值 —— URL 上的 `?view=`/`?tab=`/`?workshop=1` 走 `stage/view.ts` 的纯函数解析）。
+- **封面是 play.json 的 `cover: {kind, id}`（只认 backgrounds/cg），没有设置入口就自动取第一张背景、其次第一张插图，解析只有 `api.ts` 的 `coverUrl` 一处（剧目库与标题画面共用，指向的图被删了自动回落）；设置入口在工坊「设定与记忆」的剧目卡里，点一张即设、可恢复自动挑选**。
+- `src/ui/Icon.tsx`（lucide 图标 registry，全站交互 chrome 统一走它，`btn-icon` 图标+文字行内排；舞台侧栏底栏「退出」的出口用 `exit`（LogOut）而不是 `back`）。
+- **界面铺满视口、没有画框**（`app.css` 里 `--frame`/`--frame-pad` 那层「桌面上的 16:9 窗口」已整层删掉：宽屏四周露出的深色底读起来就是一圈黑边）。
+- `src/voice/`（VoiceLibrary 全屏音色库面板——顶部搜索 + 语言下拉（无「全部语言」项，默认跟随 `navigator.language`）+ 卡片网格逐个试听/选用 + 右上角固定「×」关闭键、分页 60 条防 1000 张图卡顿、useVoiceCatalog 目录状态 + 目录外 voiceId 按 id 解析）。
+- `src/workshop/`：
+  - WorkshopPane 六 tab 对话/素材/文件/记忆/Agent/设置。
+  - AgentPane 单剧目 agent 设置（剧作家/搭台助手各一张卡：模型下拉走 `GET /api/agents/models`（网关清单 ∩ `STAGE_MODELS` 支持清单；读不到就显式报错，不静默退化成默认；清单外的旧值补一项「不在支持清单里」显示，不静默改写 play.json）、思考档位、按 `groupLabel` 分组的工具开关；保存即写 play.json 的 `agents` 段）。
+  - MemoryPanel 记忆页（`memoryFiles.ts` 按 always/characters/index/arcs 分组，arcs+archive 只读）。
+  - WorkshopSettings（演出侧两个开关）。
+  - useWorkshop 状态机。
+  - FileBrowser 剧目文件树/编辑器/预览。
+  - AssetsPanel 素材库（角色卡与主角卡各带一个「从资源库导入」入口 + 角色卡内管立绘上传与差分映射，角色卡「音色：…」开全屏音色库面板 + 试听，素材行带描述副标题）。
+  - **手动生图**（`ImageGenDialog` 是素材页 backgrounds/cg 的「✨ 生成」与角色卡底栏「生成立绘」/逐行「重生成」共用的那个对话框：`kind` 决定出哪些字段、立绘锁差分名；发起后 REST 立刻返回、对话框停在「生成中」，完成经 WS `image_result` 按 `target` 匹配亮图。`ui/RefCharacterPicker.tsx` 是有序多选的角色立绘 chip，序号即提示词里的「第几张」；`src/stage/cgOptions.ts` 是勾选序与提交门槛的纯函数）。
+  - LibraryBrowser 资源库浏览面板（防抖搜索 + 网格卡 + 图片灯箱/音频试听 + 导入/覆盖态 + `target`，素材页与角色/主角卡入口共用一个组件；**素材页的分类 tab 里没有「角色」**——角色卡不是素材，只能从角色页进；角色/主角卡入口传 `only="characters"`，锁死类别且不渲染 tab，**两类卡都能导入库里任意角色**（主角只是不带走立绘与音色，`assetImport` 按 target 裁），不再有 `filter`）。
+  - ImageLightbox 灯箱。
+  - **工坊恒全屏且复用舞台那条连接**（`useStageSocket.onWorkshop`），不再有独立路由页与独立连接。
+
+## 舞台（src/stage/）
+
+- `src/stage/CgView.tsx`（CG 视图：`GET /api/plays/<id>/cg` 的只读台账 —— `assets/cg` 静态素材与站内生成图共用一张卡，`origin` 分角标，站内生成那张把生图 prompt 原文摊开；开着这一页时 `asset_ready` 里的 cg 自增 nonce 补进网格。服务端那一路 `generatedLedger.ts` 的 `readPlayLedgerEntries()` 直接读 `assets/generated.json`，不建 runtime、不触发生图）。
+- `src/stage/`：
+  - ScriptBuilder 带 cues 轨道与行 seq。
+  - usePlayback 打字机+二段式点击+自动模式+**按住 Ctrl 的快进档**（整行一次读完、行间不设停顿，只追缓冲里已有的内容；回看中不推进；输入框里不劫持）+语音钩子。
+  - StageTheater 舞台视觉层+解锁遮罩+三按钮导演栏（插一句 / 编辑当前这句台词 / 重来这一轮，输入都走 Modal）。
+  - StageShell 外壳（侧栏五视图 + 视图栏 `×` + `Esc` + 折叠/拖宽/窄屏抽屉 + 底栏两行：当前周目在最上、`exit` 图标的「退出」压在最下，两者间一条线）。
+  - `stage/view.ts` 的 `stageViewFromQuery`/`workshopUrl`/`workshopConnectionFromQuery`。
+  - `ui/Modal.tsx` 居中模态窗（portal body，触摸捕获，Esc 只关最上层）。
+  - PromptQueuePanel 排队面板（待注入的句子可改可撤）。
+  - `src/stage/settings.ts`（localStorage 布尔开关，读写收 storage 参数以便 node 下测）与 `playbackState.ts` 的 `stopAffordance`（本轮写完的出口是摆卡片还是点舞台，二选一；默认关即点舞台）。
+  - StopPanel 停止点操作含自由输入 ✨润色/撤销（P4 增量，润色恒基于原文不叠加）。
+  - 选肢层是 `.theater-stage` 的子元素（只盖画面，不压台词条/导演栏/侧栏）。
+  - useStageSocket 含 audio_ready 转发。
+  - `src/stage/RouteCanvas.tsx` + `routeTree.ts`（路线视图：一张卡 = 谱系一个节点，卡内左上角落笔时刻（`MM-DD HH:mm`）+ 正文（本轮首句台词，scene/sfx/cg 这些控制指令不当摘要）+ 左下角角色名，卡片背景优先取这一幕出过的 CG、没有才用场景背景、只从卡片右半边横向淡入，正文压在一层不透明纱上，右下角两个**带字样**的动词按钮「回到这里」`return` / 「分岔」`fork`（与舞台导演栏同一套手感：无边框、悬停浮出浅底——二十几像素的方块里分不出跳转和重生成，动词必须写出来）；已无检视栏、卡面不可点，操作只在卡内按钮上；`routeTree.ts` 是布局唯一真相源，`NODE_W`/`NODE_H` 同时决定两轴步长、连线端点与画布边界）。
+  - VoiceDirector 语音导演 `src/stage/audio.ts`：单一共享 AudioContext、gapless 链式调度、快进淡出、背压滞回。
+  - `src/stage/loopAudio.ts` BGM/ambient 播放层（`LoopChannel` 双通道交叉淡入淡出 FADE_MS=1200、50ms 步进调 volume、dispose 停干净；`SfxPlayer` 一次性音效 MAX_SFX=6 挤掉最老）——**舞台不再直接持有 `<audio loop>`**，两条常驻通道都走 LoopChannel。
+  - `director.ts` 的纯函数 `resolveAudio(current, cue)` 是「缺省=保持、`none`/`""`/大写 NONE=停止」的唯一真相源。
+  - P1 文字视图复用为 log。

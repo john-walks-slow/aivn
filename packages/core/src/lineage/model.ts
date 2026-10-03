@@ -66,6 +66,8 @@ export interface MemorySnapshot {
   state: Record<string, string>;
   /** arcs 摘要 id 列表（引用，内容在剧目记忆目录）。 */
   arcs: string[];
+  /** 限制级（NSFW）剧情通道是否激活。 */
+  nsfw?: boolean;
 }
 
 export interface LineageSnapshot {
@@ -123,7 +125,7 @@ export interface LineageStore {
 }
 
 let nextIdCounter = 0;
-function nextId(): string {
+export function nextId(): string {
   nextIdCounter += 1;
   return `e${Date.now().toString(36)}-${nextIdCounter.toString(36)}`;
 }
@@ -153,9 +155,9 @@ export class LineageTree {
     return this.leaf;
   }
 
-  append(kind: LineageEventKind, opts: { text?: string; payload?: LineagePayload } = {}): LineageEvent {
+  append(kind: LineageEventKind, opts: { id?: string; text?: string; payload?: LineagePayload } = {}): LineageEvent {
     return this.attach({
-      id: nextId(),
+      id: opts.id ?? nextId(),
       parentId: this.leaf,
       kind,
       turn: this.nextTurn(),

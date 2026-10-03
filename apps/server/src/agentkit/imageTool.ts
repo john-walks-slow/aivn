@@ -8,16 +8,16 @@ import { linesResult, reason, textResult } from "./result.js";
  * `generate_image`：两个 agent 共用的**同一份实现与 schema**。
  *
  * |  | 工坊（sync） | 剧作家（queued） |
- * |  | --- | --- | --- |
+ * | --- | --- | --- |
  * | 等待 | await，回执带 markdown 图片 | 发起即返回排产回执 |
-< * | 立绘角色 | 必须在角色卡目录里，或带 characterName 自动建最小卡 | 同左 |
+ * | 立绘角色 | 必须在角色卡目录里，或带 characterName 自动建最小卡 | 同左 |
  *
  * 抠底参数不在这里：填它得先看过成图，而出图那一刻没人看过图。改抠底是工坊在用户面前
  * 看到脏边之后的事，走单独的 `recut_sprite`（原地重抠，不重新出图）。
  *
  * 落点两边一样：都进 `assets/`（工坊与剧作家共用同一个 PlayAssets）。
- * 工具能力也**不分角色**——`expression` 与 `referenceCharacters` 两个角色都拿得到，
- * 垫图链路读的是 `assets/sprites/`，与谁调的无关。要不要给剧作家开这个工具由设置页决定。
+ * 工具能力也**不分角色**——`expression` 与 `references` 两个角色都拿得到，
+ * 垫图可以是角色立绘、剧目内路径或网络图，与谁调的无关。要不要给剧作家开这个工具由设置页决定。
  *
  * 工坊出图是**同步**的：用户就站在对话框前等，回执必须把图贴给他看。
  * 剧作家是**后台预发射**：一轮只有 240s，立绘一张约 100s，等不起也不该等——
@@ -39,8 +39,16 @@ const generateImageParams = Type.Object(
     /** 立绘差分名，如 neutral / smile。不给按 neutral。 */
     expression: Type.Optional(Type.String({ maxLength: 40 })),
     /**
-     * 参考立绘（只对 kind=background / cg 生效）：把列出的角色立绘垫给模型，
-     * **数组顺序就是提示词里「第一张图、第二张图」的顺序**，不能随意排。角色没有立绘会直接报错。
+     * 参考图（垫图）：可给角色 id（自动引用其立绘）、剧目内路径（如 assets/backgrounds/ref.png）或 http(s) URL。
+     * - 出定妆照(neutral)时传它，垫图生成该角色的初始形象；
+     * - 出 CG/背景时传它，垫出指定角色或画面的参考；
+     * - 数组顺序即提示词里「第一张、第二张」的顺序。
+     */
+    references: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), { minItems: 1, maxItems: 6 }),
+    ),
+    /**
+     * 兼容别名：等同于 references 中传入角色 id 列表。
      */
     referenceCharacters: Type.Optional(Type.Array(Type.String({ maxLength: 40 }), { minItems: 1, maxItems: 6 })),
     /** 立绘取景（只对 kind=sprite 生效；不给则沿用该角色已声明的，默认全身）。 */
@@ -86,16 +94,21 @@ const PROMPT_RULES = [
   "重复也别改写它；背景与 CG 没有这层后缀，构图要求要自己写。",
 ].join("");
 
-/** 垫图规则：两个角色都拿得到 `referenceCharacters`，所以它属于共享的工具契约。 */
+/** 垫图规则：两个角色都拿得到 `references` 与 `referenceCharacters`，所以它属于共享的工具契约。 */
 const REFERENCE_RULE =
-  "背景与 CG 里**有人物时用 referenceCharacters 垫立绘**（数组顺序即提示词里的先后顺序，别随意排）：" +
-  "画面里有人物却只靠文字描述，出来的脸和角色卡对不上；垫了图也不必省略 prompt 里的外貌描述——" +
-  "垫图锁的是那张定妆照的脸与服装，画面里的动作、姿态、与他人的相对位置仍然要 prompt 说。";
+  "画面里需要依据既有形象或素材时用 **references**（或兼容易懂的 referenceCharacters）垫图（可给角色 id、剧目内相对路径或 http(s) 网址；数组顺序即提示词里的先后顺序）：" +
+  "出 **neutral 定妆照**时传 references，以给定参考图为基准生成角色初始立绘；" +
+  "背景与 CG 里有人物时传入对应角色立绘或参考图，出来的脸和设定才对得上。" +
+  "**非 neutral 的立绘差分不吃 references**——它的身份基准恒为该角色的 neutral 定妆照，要换基准就把 neutral 重出一遍。" +
+  "垫了图也不必省略 prompt 里的外貌描述——垫图锁的是脸与核心特征，画面里的动作、姿态、相对位置仍然要 prompt 说。";
 
 const SYNC_DESCRIPTION = [
   "出一张剧目素材并落进 assets/：背景(kind=background) / CG(kind=cg) 给 name，",
   "立绘(kind=sprite) 给 characterId + expression（不给按 neutral）。立绘会自动抠底成透明 PNG（引擎要靠它叠在场景上）。",
-  "非 neutral 的立绘会自动拿该角色的 neutral 定妆照做垫图，所以同一个角色的差分是同一个人。",
+  "背景与 CG 一律 16:9 横构图；立绘的画幅跟着 framing 参数走，不用为了构图去改画幅。",
+  "非 neutral 的立绘会自动拿该角色的 neutral 定妆照做垫图，所以同一个角色的差分是同一个人；",
+  "**该角色还没有 neutral 时就出别的差分会被直接拒绝**——先把 neutral 出了。",
+  "neutral 与 normal 是两个名字：出 neutral 不会覆盖 normal，两张文件两张人并存。",
   PROMPT_RULES,
   REFERENCE_RULE,
   "一次工具调用只出一张图；要出多个差分就在同一个批次里多次调用本工具，它们是并行的。",
@@ -134,9 +147,9 @@ export interface QueuedImageDeps {
   /** 生图预发射 → IR 事件（骨架占位出现在时间线上那个位置）。 */
   emitPreload: (attrs: PreloadAssetAttrs) => void;
   /** 后台发起 bg/cg（宿主负责到货广播 asset_ready / 失败 asset_failed）。 */
-  kick: (type: "bg" | "cg", prompt: string, id: string, referenceCharacters?: string[]) => void;
-  /** 后台发起立绘：同上的失败广播。 */
-  kickSprite: (charId: string, expression: string, prompt: string, framing?: SpriteFraming) => void;
+  kick: (type: "bg" | "cg", prompt: string, id: string, references?: string[]) => void;
+  /** 后台发起立绘：同上的失败广播。references 只在出 neutral 定妆照时有意义。 */
+  kickSprite: (charId: string, expression: string, prompt: string, framing?: SpriteFraming, references?: string[]) => void;
   /** 这个目标在剧目里已有素材的静态 URL（用户导入的或之前生成的）——有就不烧配额。 */
   existingAssetUrl: (target: AssetTarget) => Promise<string | null>;
 }
@@ -169,12 +182,30 @@ export function createGenerateImageTool(deps: ImageToolDeps): AgentTool<typeof g
   };
 }
 
+/**
+ * 合并两个参考图参数（`references` 与兼容别名 `referenceCharacters`）成一份有序列表。
+ * 去重与封顶 6 张都在这里做：两个字段各自合法时合并起来可能超出生图后端的入参上限。
+ */
+function resolveRefs(params: Static<typeof generateImageParams>): string[] | undefined {
+  const merged: string[] = [];
+  for (const field of [params.references, params.referenceCharacters]) {
+    if (!Array.isArray(field)) continue;
+    for (const item of field) {
+      if (typeof item !== "string") continue;
+      const value = item.trim();
+      if (value && !merged.includes(value)) merged.push(value);
+    }
+  }
+  return merged.length > 0 ? merged.slice(0, 6) : undefined;
+}
+
 /** 工坊：等图出完，回执里贴 markdown 图片。 */
 async function runSync(
   deps: SyncImageDeps,
   params: Static<typeof generateImageParams>,
 ): Promise<ReturnType<typeof linesResult>> {
   const assets = deps.playAssets!;
+  const references = resolveRefs(params);
   const generated = await assets.generate(
     {
       kind: params.kind,
@@ -183,9 +214,8 @@ async function runSync(
       characterName: typeof params.characterName === "string" ? params.characterName : undefined,
       expression: typeof params.expression === "string" ? params.expression : undefined,
       framing: params.framing,
-      referenceCharacters: Array.isArray(params.referenceCharacters)
-        ? params.referenceCharacters.filter((id): id is string => typeof id === "string")
-        : undefined,
+      references,
+      referenceCharacters: references,
     },
     params.prompt,
     params.style,
@@ -205,9 +235,7 @@ async function runQueued(
   params: Static<typeof generateImageParams>,
 ): Promise<ReturnType<typeof linesResult>> {
   const assets = deps.playAssets!;
-  const references = Array.isArray(params.referenceCharacters)
-    ? params.referenceCharacters.filter((id): id is string => typeof id === "string")
-    : undefined;
+  const references = resolveRefs(params);
   if (params.kind === "sprite") {
     const charId = params.characterId?.trim() ?? "";
     if (!charId) throw new Error("立绘必须给 characterId（角色 id）");
@@ -216,7 +244,7 @@ async function runQueued(
       return textResult(`${charId} 的 ${expression} 立绘剧目里已经有了，直接 <actor id="${charId}"> 引用，不用重出。`);
     }
     deps.emitPreload({ type: "sprite", id: `${charId}:${expression}`, prompt: params.prompt });
-    deps.kickSprite(charId, expression, params.prompt, params.framing);
+    deps.kickSprite(charId, expression, params.prompt, params.framing, references);
     return textResult(
       `已排产：立绘 ${charId}/${expression}（约一分多钟，到货后自动淡入）。` +
         "这一轮就让它上台的话，舞台先上骨架占位，到货后自动淡入。",

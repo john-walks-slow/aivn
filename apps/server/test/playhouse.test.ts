@@ -180,8 +180,87 @@ describe("导演生图：前置守卫（都不该碰生图后端）", () => {
   it("模型只吐半句：当作没写成，不拿它去烧一张图", async () => {
     house = await houseWithImages(true);
     // 网关把流掐在半路、仍报 stop 时，提示词会停在 "…wearing" 这种半句上。
-    const half = house as unknown as { composeCgPrompt: () => Promise<string> };
-    half.composeCgPrompt = async () => "17-year-old girl with long straight pink hair, wearing";
+    (house as any).streamFn = async () => ({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "text_delta", delta: "17-year-old girl with long straight pink hair, wearing" };
+        yield { type: "done", reason: "stop" };
+      },
+    });
     await expect(house.requestCg("p1", "黄昏窗边")).rejects.toThrow(/半句/);
+  });
+
+  it("参考角色无立绘时前置校验报错，不执行出图", async () => {
+    house = await houseWithImages(true);
+    await expect(
+      house.requestCg("p1", "雨中漫步", {
+        referenceCharacters: ["non_existent_char"],
+      }),
+    ).rejects.toThrow(/角色卡/);
+  });
+
+  it("未勾选基于历史且无指令时拒绝出图", async () => {
+    house = await houseWithImages(true);
+    await expect(
+      house.requestCg("p1", undefined, { useHistory: false }),
+    ).rejects.toThrow(/不基于剧情时/);
+  });
+
+  it("generateImage 手动出图端点：参数校验与目标生成", async () => {
+    house = await houseWithImages(true);
+    const store = library.store("p1");
+    // 写一张角色卡
+    const charDir = store.memoryDir("always", "characters");
+    await mkdir(charDir, { recursive: true });
+    await writeFile(join(charDir, "koharu.md"), "---\nname: 小春\n---\n粉发少女", "utf8");
+
+    // Mock playAssets.generate（先装配进缓存，generateImage 会取到同一份）
+    const assets = (house as any).playAssetsFor("p1", store);
+    assets.generate = async (opts: any) => {
+      return [
+        {
+          id: "koharu_smile",
+          type: "sprite",
+          url: "/api/plays/p1/assets/sprites/koharu/smile.png",
+          path: "assets/sprites/koharu/smile.png",
+          prompt: opts.prompt,
+        },
+      ];
+    };
+
+    // 捕获广播
+    const messages: any[] = [];
+    (house as any).broadcast = (_playId: string, msg: any) => {
+      messages.push(msg);
+    };
+
+    // 模拟 streamFn 返回完整立绘提示词
+    (house as any).streamFn = async () => ({
+      async *[Symbol.asyncIterator]() {
+        yield {
+          type: "text_delta",
+          delta: "A beautiful anime girl with pink hair smiling brightly, school uniform, detailed illustration, soft lighting",
+        };
+        yield { type: "done", reason: "stop" };
+      },
+    });
+
+    const res = await house.generateImage("p1", {
+      kind: "sprite",
+      characterId: "koharu",
+      expression: "smile",
+    });
+
+    expect(res.target).toBe("sprites/koharu/smile");
+    expect(res.path).toBe("assets/sprites/koharu/smile.png");
+
+    // 等待异步 kick 结算
+    await new Promise((r) => setTimeout(r, 50));
+    expect(messages).toContainEqual({
+      type: "image_result",
+      target: "sprites/koharu/smile",
+      ok: true,
+      url: "/api/plays/p1/assets/sprites/koharu/smile.png",
+      path: "assets/sprites/koharu/smile.png",
+    });
   });
 });

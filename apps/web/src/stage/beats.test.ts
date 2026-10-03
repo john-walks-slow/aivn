@@ -275,4 +275,93 @@ describe("buildBeats 一轮一卡", () => {
     );
     expect(cards[0]!.cgId).toBe("cg-b");
   });
+
+  it("明确划分 startNodeId 与 endNodeId，开场 scene+say 不会切出无台词卡", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["n_scene", "scene", 1, undefined, true, { bg: "bg-hall" }],
+          ["n_say1", "say", 2, "你好！"],
+          ["n_say2", "say", 3, "很高兴见到你。"],
+          ["n_stop", "stop", 4, undefined, true, { stopType: "choice" }],
+          ["n_end", "beat_end"],
+        ],
+        "n_end",
+      ),
+      [],
+    );
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.startNodeId).toBe("n_say1"); // 优先选台词首句作为重读入口
+    expect(cards[0]!.endNodeId).toBe("n_end"); // 轮末收束点作为回到选项入口
+    expect(cards[0]!.stopNodeId).toBe("n_stop");
+    expect(cards[0]!.preview).toBe("你好！");
+  });
+
+  it("在历史旧轮分岔时，新卡片严格认分岔源为父，绝不可认旧叶子为父", () => {
+    // 构造真实树：
+    // Round 1: r1_say -> r1_end
+    // Round 2: r2_say -> r2_end
+    // Round 3 (旧叶子): r3_say -> r3_end
+    // 此时从 Round 1 分岔: fork(parentId=r1_end) -> r1b_say -> r1b_end
+    const node = (
+      id: string,
+      parentId: string | null,
+      turn: number,
+      kind: LineageNodeView["kind"],
+      text: string,
+      createdAt: number,
+      onPath: boolean,
+      children: number,
+      seq?: number,
+    ): LineageNodeView => ({
+      id,
+      parentId,
+      turn,
+      kind,
+      text,
+      attrs: {},
+      createdAt,
+      onPath,
+      children,
+      editedText: null,
+      editCount: 0,
+      editedAt: undefined,
+      seq,
+    });
+    const nodes: LineageNodeView[] = [
+      node("r1_say", null, 1, "say", "第1轮", 100, true, 1, 1),
+      node("r1_end", "r1_say", 1, "beat_end", "", 101, true, 2),
+      // 旧分支（Round 2 & 3）
+      node("r2_say", "r1_end", 2, "say", "第2轮旧", 200, false, 1, 4),
+      node("r2_end", "r2_say", 2, "beat_end", "", 201, false, 1),
+      node("r3_say", "r2_end", 3, "say", "第3轮旧叶子", 300, false, 1, 7),
+      node("r3_end", "r3_say", 3, "beat_end", "", 301, false, 0),
+      // 新分支从 r1_end 分岔出来，时间在最后
+      node("fork_mark", "r1_end", 4, "fork", "", 400, true, 1),
+      node("r1b_say", "fork_mark", 4, "say", "新第2轮", 401, true, 1, 10),
+      node("r1b_end", "r1b_say", 4, "beat_end", "", 402, true, 0),
+    ];
+    const treeView: LineageView = {
+      nodes,
+      leafId: "r1b_end",
+      pathIds: ["r1_say", "r1_end", "fork_mark", "r1b_say", "r1b_end"],
+    };
+    const cards = buildBeats(treeView, []);
+    expect(cards).toHaveLength(4);
+    const cardR1 = cards.find((c) => c.id === "r1_say")!;
+    const cardR2 = cards.find((c) => c.id === "r2_say")!;
+    const cardR3 = cards.find((c) => c.id === "r3_say")!;
+    const cardR1B = cards.find((c) => c.id === "r1b_say")!;
+
+    expect(cardR1.parentId).toBeNull();
+    expect(cardR2.parentId).toBe(cardR1.id);
+    expect(cardR3.parentId).toBe(cardR2.id);
+
+    // 关键断言：新分岔卡片 r1b 的 parentId 必须是 cardR1，绝不可被错认为 cardR3（旧叶子）！
+    expect(cardR1B.parentId).toBe(cardR1.id);
+    expect(cardR1B.forkedFrom?.nodeId).toBe("r1_end");
+    expect(cardR1B.onPath).toBe(true);
+    expect(cardR1B.isLeaf).toBe(true);
+    expect(cardR3.isAbandoned).toBe(true);
+  });
 });

@@ -24,11 +24,11 @@ const PLAY = {
   initialScene: "s",
 } as unknown as PlayConfig;
 
-/** 剧作家/搭台各一张卡，每张卡上「模型」是第一个下拉（后面紧跟思考档位）。 */
+/** 剧作家/搭台各一张卡，每张卡上「模型」是第一个下拉。 */
 async function modelSelects(): Promise<HTMLSelectElement[]> {
-  await waitFor(() => expect(screen.getAllByRole("combobox").length).toBe(4));
+  await waitFor(() => expect(screen.getAllByRole("combobox").length).toBe(6));
   const all = screen.getAllByRole("combobox") as HTMLSelectElement[];
-  return [all[0]!, all[2]!];
+  return [all[0]!, all[4]!];
 }
 
 describe("Agent 页模型下拉：play.json 里已有的模型不能因为清单收窄而消失", () => {

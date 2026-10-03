@@ -1243,6 +1243,20 @@ button.link-btn {
   }
 }
 
+/* 回看（滚轮翻历史台词）时舞台上放的是「那一刻的画面」，不是一次新的演出：
+   换景不淡入、立绘不登场、行为词不重演、站位不补间。少了这一条，滚轮每翻一句
+   就是一次全场闪烁。松手回到播放头时这些规则不再命中，画面按平时的过渡归位。 */
+.theater-stage.rewinding .theater-bg,
+.theater-stage.rewinding .theater-bg-in,
+.theater-stage.rewinding .theater-cg-in,
+.theater-stage.rewinding .theater-sprite {
+  animation: none;
+}
+
+.theater-stage.rewinding .theater-sprite {
+  transition: none;
+}
+
 /* 机位：偏移量是「离画面中心的百分比（相对于舞台宽度的 cqw）」，不是 left 的绝对值。
    通过 left: 50% 将原点对准舞台中心，--x 驱动左右平移。负数在左、正数在右。 */
 .pos-left {
@@ -1975,6 +1989,124 @@ button.primary:hover:not(:disabled) {
 
 .free-box input {
   flex: 1;
+}
+
+/* ── 参考立绘选择器与手动生图 ────────────────────────── */
+
+.ref-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.ref-picker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.ref-picker-chip:hover {
+  background: var(--panel-hover, rgba(0, 0, 0, 0.04));
+}
+
+.ref-picker-chip.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.ref-chip-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.ref-chip-blank {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+}
+
+.ref-chip-name {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ref-chip-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.ref-picker-empty {
+  padding: 6px 0;
+}
+
+.image-gen-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.image-gen-label {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.image-gen-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+}
+
+.image-gen-result-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--panel-tint, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.image-gen-result-card img {
+  max-width: 100%;
+  max-height: 260px;
+  border-radius: var(--radius);
+  object-fit: contain;
 }
 
 /* ── 输入与遮罩 ────────────────────────── */
@@ -3208,10 +3340,17 @@ select:focus {
   cursor: default;
 }
 
-/* 左上角是这一轮落笔的墙上时刻：日期 + 分钟，扫树时按时间认段。 */
-.route-node-stamp {
+/* 左上角是这一轮落笔的墙上时刻 + 右侧这一轮是谁在说：日期 + 分钟，扫树时按时间认段。 */
+.route-node-head {
   position: relative;
   z-index: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.route-node-stamp {
   font-size: 11px;
   line-height: 1.2;
   font-weight: 700;
@@ -3231,12 +3370,13 @@ select:focus {
   color: var(--ink);
 }
 
-/* 底行：左下角是谁说的，右下角是这一段的两个动词。 */
+/* 底行：右下角是这一段能做的三个动词（回到选项 / 从头重读 / 重演本轮）。 */
 .route-node-foot {
   position: relative;
   z-index: 1;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   margin-top: auto;
   font-size: 11px;
@@ -3248,6 +3388,8 @@ select:focus {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--ink-faint);
 }
 
 /* 空态/加载态：画布不在，剩一句话占住中间 */

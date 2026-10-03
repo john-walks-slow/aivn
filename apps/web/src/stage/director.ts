@@ -5,7 +5,21 @@ import { shouldAutoStart } from "./playbackState.js";
 import type { Cue, ScriptLine } from "./script.js";
 import type { TranscriptEntry } from "./transcript.js";
 
-/** 找回「seq 属于哪条台词 cue」的下标；找不到返回 -1（换过分支的旧位置、老档的行）。 */
+/** 找回「nodeId 属于哪条台词 cue」的下标；找不到返回 -1（换过分支的旧位置、老档的行）。 */
+export function lineCueIndexByNodeId(
+  cues: readonly Cue[],
+  lines: readonly ScriptLine[],
+  nodeId: string,
+): number {
+  for (let i = 0; i < cues.length; i += 1) {
+    const cue = cues[i]!;
+    if (cue.kind !== "line") continue;
+    if (lines.find((l) => l.key === cue.lineKey)?.nodeId === nodeId) return i;
+  }
+  return -1;
+}
+
+/** 老档兼容：按 seq 找回台词 cue 下标；找不到返回 -1。 */
 export function lineCueIndexAt(cues: readonly Cue[], lines: readonly ScriptLine[], seq: number): number {
   for (let i = 0; i < cues.length; i += 1) {
     const cue = cues[i]!;
@@ -13,6 +27,38 @@ export function lineCueIndexAt(cues: readonly Cue[], lines: readonly ScriptLine[
     if (lines.find((l) => l.key === cue.lineKey)?.seq === seq) return i;
   }
   return -1;
+}
+
+/** 刷新恢复的落点：停在哪条 cue 上、那行已经显示到第几个字。 */
+export interface ResumeSeek {
+  /** cue 下标；-1 = 这条世界线上找不到（换过分支的旧位置），交给调用方快进到末尾。 */
+  cueIndex: number;
+  /** 该行打字机要一次性补到第几个字（行内刷新就是靠它回到读到的那一个字）。 */
+  shownLength: number;
+}
+
+/**
+ * 刷新后「我在哪个节点读到第几个字」的唯一解算点。
+ *
+ * 优先按稳定 nodeId 寻址（跨刷新、跨分支切换都成立），老档没有 nodeId 时才退回 seq；
+ * offset 超出行长就补到行尾——宁可多显示一个字，也不能让进度看起来倒退。
+ */
+export function resolveResumeSeek(
+  cues: readonly Cue[],
+  lines: readonly ScriptLine[],
+  resumeAt: ReadPos,
+): ResumeSeek {
+  const cueIndex = resumeAt.nodeId
+    ? lineCueIndexByNodeId(cues, lines, resumeAt.nodeId)
+    : typeof resumeAt.seq === "number"
+      ? lineCueIndexAt(cues, lines, resumeAt.seq)
+      : -1;
+  if (cueIndex < 0) return { cueIndex: -1, shownLength: 0 };
+  const cue = cues[cueIndex]!;
+  if (cue.kind !== "line") return { cueIndex, shownLength: 0 };
+  const line = lines.find((l) => l.key === cue.lineKey);
+  const want = resumeAt.offset ?? resumeAt.len ?? 0;
+  return { cueIndex, shownLength: Math.min(want, line?.text.length ?? 0) };
 }
 
 /**
@@ -188,6 +234,109 @@ export function resolveAudio(current: string | null, cue: string | undefined): s
   return STOP_AUDIO.has(cue.trim().toLowerCase()) ? null : cue;
 }
 
+/**
+ * 一条 cue 对**画面**的改动：背景 / CG / 立绘在场表。
+ *
+ * 音频与骨架占位刻意不在其中——那两件事只属于「此刻」：音乐是当下的氛围（跟着回看
+ * 倒退，滚轮就成了打碟机），骨架讲的是「图还在路上」（历史画面不该显示占位）。
+ * 回看重算（`visualAt`）折的就是这一条。
+ */
+export function applyVisualCue(visual: VisualState, cue: Cue): VisualState {
+  switch (cue.kind) {
+    case "scene":
+      return {
+        ...visual,
+        bg: cue.bg ?? visual.bg,
+        transition: cue.transition ?? "fade",
+        // 换景即从上一张插画里出来：CG 是「这一刻的画面」，不跨景延续
+        cg: cue.bg ? null : visual.cg,
+      };
+    case "cg":
+      return { ...visual, cg: { id: cue.id, caption: cue.caption } };
+    case "actor":
+      return { ...visual, cg: null, sprites: applyActorCue(visual.sprites, cue) };
+    default:
+      return visual;
+  }
+}
+
+/** 一条 cue 对舞台的全部改动 = 画面 + 音频 + 骨架占位。播放头往前走时走这条。 */
+export function applyCue(visual: VisualState, cue: Cue): VisualState {
+  const next = applyVisualCue(visual, cue);
+  switch (cue.kind) {
+    case "scene":
+      // 音频属性缺省 = 保持（换景不换乐）；显式 none/空串才停。见 resolveAudio。
+      return {
+        ...next,
+        bgm: resolveAudio(next.bgm, cue.bgm),
+        ambient: resolveAudio(next.ambient, cue.ambient),
+        bgmVolume: cue.bgmVolume ?? next.bgmVolume,
+        ambientVolume: cue.ambientVolume ?? next.ambientVolume,
+      };
+    case "preload":
+      if (cue.type === "sprite") return next;
+      return { ...next, pending: { ...next.pending, [cue.id]: { type: cue.type, at: Date.now() } } };
+    default:
+      return next;
+  }
+}
+
+/** 台上还站着的人：退场中的不算（他们留在表里只为把淡出播完）。 */
+function standingSprites(sprites: Record<string, SpriteSlot>): Record<string, SpriteSlot> {
+  const out: Record<string, SpriteSlot> = {};
+  for (const [id, slot] of Object.entries(sprites)) if (!slot.leaving) out[id] = slot;
+  return out;
+}
+
+/**
+ * 回看：把舞台画面折回「第 `upto` 条 cue 之前」的那一刻。
+ *
+ * 从空场起折，所以早于立绘入场的那一刻台上就没有这个人——这正是「回到那一刻」
+ * 该有的样子。一次性音效不重放、骨架占位不重现（都不在画面里），音乐不回退
+ * （调用方把现场那条音频贴回来）。
+ */
+export function visualAt(cues: readonly Cue[], upto: number): VisualState {
+  let visual = EMPTY_VISUAL;
+  for (let i = 0; i < upto; i += 1) visual = applyVisualCue(visual, cues[i]!);
+  return { ...visual, sprites: standingSprites(visual.sprites) };
+}
+
+/**
+ * 回看游标（会话记录下标）→ cue 水位线：折到这一条之前，舞台就是「它刚出现」的样子。
+ *
+ * 台词条目找它那条 line cue；玩家输入在缓冲里没有 cue，落到下一条台词之前
+ * （即上一句演完之后）。找不到返回 null——谱系比缓冲快、或换过分支时，宁可不回退
+ * 画面，也不能拿一个错的水位线把舞台折成另一个时刻。
+ */
+export function cueWatermarkForEntry(
+  cues: readonly Cue[],
+  transcript: readonly TranscriptEntry[],
+  index: number,
+): number | null {
+  const cueIndexAt = (key: string): number => {
+    for (let i = 0; i < cues.length; i += 1) {
+      const cue = cues[i]!;
+      if (cue.kind === "line" && cue.lineKey === key) return i;
+    }
+    return -1;
+  };
+  const entry = transcript[index];
+  if (!entry) return null;
+  if (entry.kind === "line") {
+    const at = cueIndexAt(entry.key);
+    return at < 0 ? null : at;
+  }
+  // 玩家输入：它后面紧跟着的那句台词之前，就是这句话说完时的舞台
+  for (let i = index + 1; i < transcript.length; i += 1) {
+    const next = transcript[i]!;
+    if (next.kind !== "line") continue;
+    const at = cueIndexAt(next.key);
+    return at < 0 ? null : at;
+  }
+  // 它是最后一条：整条缓冲都演完了，就是现场
+  return cues.length;
+}
+
 /** 记录下标：同一 key 可能出现多次（编辑后重放），播放头取最后一次。 */
 function lastIndexOfKey(entries: readonly TranscriptEntry[], key: string): number {
   for (let i = entries.length - 1; i >= 0; i -= 1) if (entries[i]!.key === key) return i;
@@ -313,6 +462,11 @@ export function usePlayback(
     resumeAfterReset?: boolean;
     /** 上次退出时读到的位置（hello.readPos）：首屏据此 seek 回那一句，而不是快进到本轮末尾。 */
     resumeAt?: ReadPos | null;
+    /**
+     * 结构性操作（跳转重读）配套的播放头落点：resetToken 换代后从这个位置起读
+     * （offset=0 即该句从头打字），而不是按 resumeAfterReset 快进到本轮末尾。
+     */
+    seekTo?: ReadPos | null;
     /** 按住 Ctrl 的快进档：当前行一次读完，行间不设停顿，一路追到缓冲末端。 */
     turbo?: boolean;
     /** 骨架占位的兜底上界（hello.assetsTtlMs）；缺省用保守默认值。 */
@@ -325,7 +479,7 @@ export function usePlayback(
   const [auto, setAuto] = useState(false);
   /** 最近消费的音效（key 变化触发播放）。 */
   const [sfx, setSfx] = useState<{ key: string; src: string; volume?: number } | null>(null);
-  /** 回看游标（脚本行下标）：null = 跟随播放头。非 null 时只回看台词，舞台视觉不动。 */
+  /** 回看游标（脚本行下标）：null = 跟随播放头。非 null 时台词与舞台画面都回到那一刻（见 rewindVisual）。 */
   const [scrubIndex, setScrubIndex] = useState<number | null>(null);
   const cursorRef = useRef(0);
   const fastForwardedRef = useRef(!opts.resume);
@@ -363,7 +517,7 @@ export function usePlayback(
   const headIndexRef = useRef(headIndex);
   headIndexRef.current = headIndex;
 
-  /** 往回/往前翻一条；翻到播放头即交还跟随。舞台视觉不随回看变动。 */
+  /** 往回/往前翻一条；翻到播放头即交还跟随。舞台画面随游标折回那一刻（见 rewindVisual）。 */
   const scrub = useCallback((delta: number): void => {
     setScrubIndex((prev) => {
       const list = transcriptRef.current;
@@ -374,32 +528,7 @@ export function usePlayback(
   }, []);
 
   const applyVisual = useCallback((cue: Cue): void => {
-    setVisual((prev) => {
-      switch (cue.kind) {
-        case "scene":
-          // 音频属性缺省 = 保持（换景不换乐）；显式 none/空串才停。见 nextAudio。
-          return {
-            ...prev,
-            bg: cue.bg ?? prev.bg,
-            bgm: resolveAudio(prev.bgm, cue.bgm),
-            ambient: resolveAudio(prev.ambient, cue.ambient),
-            bgmVolume: cue.bgmVolume ?? prev.bgmVolume,
-            ambientVolume: cue.ambientVolume ?? prev.ambientVolume,
-            transition: cue.transition ?? "fade",
-            cg: cue.bg ? null : prev.cg,
-          };
-        case "cg":
-          return { ...prev, cg: { id: cue.id, caption: cue.caption } };
-        case "preload": {
-          if (cue.type === "sprite") return prev;
-          return { ...prev, pending: { ...prev.pending, [cue.id]: { type: cue.type, at: Date.now() } } };
-        }
-        case "actor":
-          return { ...prev, cg: null, sprites: applyActorCue(prev.sprites, cue) };
-        default:
-          return prev;
-      }
-    });
+    setVisual((prev) => applyCue(prev, cue));
   }, []);
 
   /** 消费队列直到下一句台词（视觉提示连续应用）。 */
@@ -499,8 +628,9 @@ export function usePlayback(
     // 一旦露出旧台词，玩家会以为这就是重来的结果。
     fastForwardedRef.current = false;
     showTailRef.current = opts.resumeAfterReset === true;
-    resumeAtRef.current = null;
-  }, [opts.resetToken, opts.resumeAfterReset]);
+    // 跳转重读：换代后从这个落点起读，而不是快进到本轮末尾
+    resumeAtRef.current = opts.seekTo ?? null;
+  }, [opts.resetToken, opts.resumeAfterReset, opts.seekTo]);
 
   // cues 到达/重置检测：builder reset（fresh start）→ 播放归零
   useEffect(() => {
@@ -519,15 +649,15 @@ export function usePlayback(
       resumeAtRef.current = null;
       // 有阅读位置就 seek 回那一刻：视觉只补到那一行（后面的换景/退场属于还没读到的内容，
       // 提前生效等于剧透），游标停在那行之后，字数接着上次显示到的位置续。
-      const resumeIndex = resumeAt ? lineCueIndexAt(cues, linesRef.current, resumeAt.seq) : -1;
-      if (resumeIndex >= 0) {
+      const seek = resumeAt ? resolveResumeSeek(cues, linesRef.current, resumeAt) : null;
+      const resumeIndex = seek?.cueIndex ?? -1;
+      if (seek && resumeIndex >= 0) {
         for (let i = 0; i <= resumeIndex; i += 1) applyVisual(cues[i]!);
         const cue = cues[resumeIndex]!;
         cursorRef.current = resumeIndex + 1;
         if (cue.kind === "line") {
           setCurrentKey(cue.lineKey);
-          const line = linesRef.current.find((l) => l.key === cue.lineKey);
-          setShownLength(Math.min(resumeAt!.len, line?.text.length ?? 0));
+          setShownLength(seek.shownLength);
         }
         return;
       }
@@ -545,10 +675,16 @@ export function usePlayback(
 
   // 阅读位置上报：刷新后要回到原处，位置得由播放头持续告诉服务端。
   // 只认正在显示的行：回看（scrub）不改播放头，不该把回看位置存成「读到哪儿了」。
+  // 首帧立即上报（切到新行 offset=0），行内打字推进由 StageScreen 侧节流。
   useEffect(() => {
     const line = current;
-    if (!line || line.seq === undefined) return;
-    hooksRef.current.onRead?.({ seq: line.seq, len: shownLength });
+    if (!line || (line.nodeId === undefined && line.seq === undefined)) return;
+    hooksRef.current.onRead?.({
+      nodeId: line.nodeId ?? "",
+      offset: shownLength,
+      ...(line.seq !== undefined ? { seq: line.seq } : {}),
+      len: shownLength,
+    });
   }, [current, shownLength]);
 
   // 演出中「等新内容」的起播：此刻没有正在显示的台词，新的一句一到就起播，不必让玩家点一下。
@@ -604,6 +740,28 @@ export function usePlayback(
     [transcript, headIndex],
   );
 
+  /**
+   * 回看时给舞台换一张「当时的画面」：背景、CG、立绘（含站位/表情/差分/在场与否）
+   * 都折回那一句刚开始的那一刻。现场那个 `visual` 一个字节都不动——滚回播放头就是
+   * 无缝回现场，不必做任何还原。
+   *
+   * 音频与骨架占位取自现场：音乐是此刻的氛围，不随回看倒退；占位讲的是「图还在路上」，
+   * 回看到的历史画面不该是骨架。水位线找不到（谱系比缓冲快、换过分支）就整段退回现场。
+   */
+  const rewindVisual = useMemo(() => {
+    if (scrubIndex === null) return null;
+    const upto = cueWatermarkForEntry(cues, transcript, scrubIndex);
+    if (upto === null) return null;
+    return {
+      ...visualAt(cues, upto),
+      bgm: visual.bgm,
+      ambient: visual.ambient,
+      bgmVolume: visual.bgmVolume,
+      ambientVolume: visual.ambientVolume,
+      pending: visual.pending,
+    };
+  }, [scrubIndex, cues, transcript, visual.bgm, visual.ambient, visual.bgmVolume, visual.ambientVolume, visual.pending]);
+
   /** 跳到指定历史条目——与 scrub 同一个游标，Esc 或再点回到播放头。 */
   const seek = useCallback((key: string): void => {
     const at = lastIndexOfKey(transcriptRef.current, key);
@@ -616,7 +774,7 @@ export function usePlayback(
   }, []);
 
   return {
-    visual,
+    visual: rewindVisual ?? visual,
     current,
     view,
     viewLength: scrubbed ? (view?.text.length ?? 0) : shownLength,

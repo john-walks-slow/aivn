@@ -7,6 +7,7 @@ import type {
   WorkshopChatMessage,
   WorkshopThreadInfo,
 } from "@stage-ai/core";
+import { parsePlayConfig } from "@stage-ai/core";
 import type { Exa } from "./exa.js";
 import type { WebImageFetcher } from "./webImage.js";
 import { PlayFiles } from "./playFiles.js";
@@ -83,8 +84,10 @@ export class WorkshopSession {
   private activeId: string | null = null;
   /** 一轮对话在飞：拒绝并发发问（工坊对话是串行的）。 */
   private running = false;
-  /** 本轮是否改过盘（文本或素材）：收束时统一触发一次 runtime 重建，避免多次腰斩演出。 */
+  /** 剧目被改动过（agent 写盘、素材到货、bash 跑过、文件页手改）：置脏只走 `markChanged`。 */
   private changedDuringTurn = false;
+  /** 攒下的改动里有 bash：它的写绕开 `PlayFiles`，play.json 的结构校验一道都没过。 */
+  private bashDuringTurn = false;
   /** 本轮生成的素材：到达先攒着，收束时挂到最终那条 assistant 消息上（不落一半在气泡里）。 */
   private pendingAssets: WorkshopAssetView[] = [];
 
@@ -152,6 +155,7 @@ export class WorkshopSession {
     // （摘要要走一次模型请求，空档能到秒级）。
     this.running = true;
     this.changedDuringTurn = false;
+    this.bashDuringTurn = false;
     this.pendingAssets = [];
     try {
       let thread: WorkshopThread | undefined;
@@ -184,6 +188,14 @@ export class WorkshopSession {
         {
           onDelta: (delta) => this.opts.emit({ type: "workshop_chunk", threadId: active.id, delta }),
           onTool: (name) => this.opts.emit({ type: "workshop_tool", threadId: active.id, name }),
+          // bash 的改动不经过 onWrite（它不走 PlayEnv.writeFile），只能在这里记账。
+          // 不置脏的话，模型用 sed / mv 改完文件，宿主以为什么都没变、不会重建 runtime。
+          onToolDone: (name) => {
+            if (name === "bash") {
+              this.bashDuringTurn = true;
+              this.markChanged();
+            }
+          },
         },
       );
       if (turn.scale !== null) {
@@ -214,30 +226,72 @@ export class WorkshopSession {
     } finally {
       this.running = false;
       // 一轮里可能写了好几个文件、出了好几张图：收束后只重建一次（保存即生效）
-      if (this.changedDuringTurn) this.opts.onFilesChanged();
+      await this.applyChanges();
       await this.snapshot();
     }
   }
 
   /**
-   * 文件浏览器改动（REST）：只落盘 + 触发 reload。
+   * 记一笔：剧目被改动了。**唯一的置脏入口**——agent 写盘、素材到货、bash 跑过、
+   * 文件页手改，四条路都从这儿过，不再各置各的旗。
+   */
+  private markChanged(): void {
+    this.changedDuringTurn = true;
+  }
+
+  /**
+   * 把攒下的改动兑现：真有改动才校验、才重建。**唯一的收束出口**。
+   *
+   * 回合内攒着，收束时重建一次——一轮写十个文件也只 rebuild 一次；回合外的文件页保存
+   * 没有收束可等，就地兑现。坏 play.json 只告警不重建：带着一份解析不了的配置去 rebuild
+   * 只会抛在 `void` 的 promise 里，用户看到的是「面板不刷新了」而不是「哪里坏了」。
+   */
+  private async applyChanges(): Promise<void> {
+    if (!this.changedDuringTurn) return;
+    this.changedDuringTurn = false;
+    // 只有 bash 绕得开 PlayFiles 的结构校验；本轮没跑过就不必读盘
+    if (this.bashDuringTurn) {
+      this.bashDuringTurn = false;
+      const broken = await this.playConfigBrokenReason();
+      if (broken) {
+        this.opts.emit({ type: "workshop_error", threadId: this.activeId, message: broken });
+        return;
+      }
+    }
+    this.opts.onFilesChanged();
+  }
+
+  /** bash 写的 play.json 不过结构校验：收束前补一次读盘检查，坏了就说清楚（只告警不回滚）。 */
+  private async playConfigBrokenReason(): Promise<string | null> {
+    try {
+      parsePlayConfig(JSON.parse(await this.files.read("play.json")));
+      return null;
+    } catch (error) {
+      return `play.json 现在解析不了，已跳过这次的运行时重建：${error instanceof Error ? error.message : String(error)}。直接在「文件」页改回来，或让搭台助手重写一份。`;
+    }
+  }
+
+  /**
+   * 文件浏览器改动（REST）：落盘 + 就地兑现。
    * 不产生 `workshop_write` 撤销记录——那是「agent 改了什么」的账，人手改的自己在编辑器里看得见，
    * 否则点一次撤销就多一条记录，套娃到停不下来。
    */
   async writeFile(path: string, content: string): Promise<void> {
     await this.files.write(path, content);
-    this.opts.onFilesChanged();
+    this.markChanged();
+    await this.applyChanges();
   }
 
-  /** 文件浏览器删除（REST）：与 writeFile 同理，只落盘 + 触发 reload。 */
+  /** 文件浏览器删除（REST）：与 writeFile 同理，只落盘 + 就地兑现。 */
   async removeFile(path: string): Promise<void> {
     await this.files.remove(path);
-    this.opts.onFilesChanged();
+    this.markChanged();
+    await this.applyChanges();
   }
 
-  /** 写盘事件广播（可见 + 可撤销）；runtime 重建由本轮收束统一触发。 */
+  /** 写盘事件广播（可见 + 可撤销）；runtime 重建由 `applyChanges` 统一收束。 */
   private broadcastWrite(write: WorkshopWrite): void {
-    this.changedDuringTurn = true;
+    this.markChanged();
     this.opts.emit({
       type: "workshop_write",
       threadId: this.activeId ?? "",
@@ -261,7 +315,7 @@ export class WorkshopSession {
 
   /** 素材到货：先瞬态播报（对话流立刻可见），同时挂到本轮收束的那条消息上。 */
   private broadcastAsset(asset: WorkshopAssetView, replaced = false): void {
-    this.changedDuringTurn = true;
+    this.markChanged();
     this.pendingAssets.push(asset);
     this.opts.emit({
       type: "workshop_asset",
@@ -370,10 +424,7 @@ export class WorkshopSession {
       title: play.title,
       files: listing,
       readiness,
-      canGenerate: this.kit.can.image,
-      canSearch: this.kit.can.search,
-      canBrowseLibrary: this.kit.can.library,
-      canVoices: this.kit.can.voice,
+      can: this.kit.can,
       digest,
       // 从当轮现读的 play.json 取，不吃构造时的快照：用户刚在 Agent 页改完就发下一轮消息，
       // 那条就该带新提示词（模型/工具开关走 opts.agents，改动会重建 runtime 才生效）。

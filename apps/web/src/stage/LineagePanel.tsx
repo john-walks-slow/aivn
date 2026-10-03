@@ -14,8 +14,12 @@ import type { ScriptLine } from "./script.js";
  * 不生成内容；后者退到该段之前重写并重新生成。
  */
 export interface LineageOps {
-  /** Jump: move the world line onto that node; generates nothing. */
-  jump: (nodeId: string) => void;
+  /**
+   * Jump: move the world line onto that node; generates nothing.
+   * `playFrom: "end"`（默认）= 落到该轮末尾，停止点/选项立刻可见；
+   * `playFrom: "start"` = 播放头钉在该轮首句，从头重读一遍。
+   */
+  jump: (nodeId: string, opts?: { playFrom?: "start" | "end" }) => void;
   /**
    * Fork: open a new branch from that node. `resume: true` = continue playing right after
    * the fork (the director bar's "redo this beat" takes this path); the tree's fork button
@@ -74,7 +78,7 @@ export function RouteTree(
       {props.error && <div className="error-banner">{props.error}</div>}
       {!props.view || cards.length === 0 ? (
         <div className="route-blank">
-          <div className="overlay">{props.view ? "还没有剧情——演过一阵之后，这里会长出路线树。" : "读取路线…"}</div>
+          <div className="overlay">{props.view ? "还没有剧情。演过之后这里才有可回看的分支。" : "读取路线…"}</div>
         </div>
       ) : (
         <RouteCanvas
