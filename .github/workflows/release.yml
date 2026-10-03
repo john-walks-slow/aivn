@@ -1,0 +1,76 @@
+name: release
+
+# 打一个 `v<版本>` 的 tag 就出一份带安装包与免安装 zip 的 Release。
+# 版本号来自 tag，与仓库里那四处（根 package.json / apps/desktop/package.json /
+# tauri.conf.json / Cargo.toml）不一致时构建会失败——先改版本再打 tag。
+on:
+  push:
+    tags:
+      - "v*"
+  # 允许在 Actions 页面手动跑一次（默认不发布，只验证构建链）
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 同时创建 Release
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Tauri 的 Rust 侧依赖编译很慢，缓存能省掉绝大部分时间
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: 校验 tag 与仓库里的版本号一致
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag 是 v$tag，仓库里是 $pkg。先改版本号（根 package.json、apps/desktop/package.json、tauri.conf.json、Cargo.toml）再打 tag。"
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+
+      # 一条命令出三个产物：安装包、免安装 zip、服务端单文件 exe
+      - run: node scripts/build-desktop.mjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aivn-windows
+          path: |
+            build/*-setup.exe
+            build/*-setup.exe.sha256
+            build/*-win-x64.zip
+            build/*-win-x64.zip.sha256
+          if-no-files-found: error
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+        with:
+          files: |
+            build/*-setup.exe
+            build/*-setup.exe.sha256
+            build/*-win-x64.zip
+            build/*-win-x64.zip.sha256
+          draft: false
+          generate_release_notes: true
