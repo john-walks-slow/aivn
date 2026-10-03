@@ -17,23 +17,45 @@ describe("STAGE_MODELS 支持清单", () => {
 describe("ServerConfig 纪元压缩参数", () => {
   it("默认窗口/阈值/保留预算", () => {
     const config = loadConfig({}, "/repo");
-    expect(config.contextWindow).toBe(131072);
+    expect(config.contextWindow).toBe(262144);
     expect(config.compactRatio).toBe(0.6);
     expect(config.keepRecentTokens).toBe(20000);
+    // 工坊缺省逐项沿用全局，两个 agent 默认同一份 256K 窗口。
+    expect(config.workshopContext).toEqual({
+      contextWindow: 262144,
+      compactRatio: 0.6,
+      keepRecentTokens: 20000,
+    });
+  });
+
+  it("工坊三项各自覆盖全局（工坊能换窗口不同的模型）", () => {
+    const config = loadConfig(
+      {
+        STAGE_CONTEXT_WINDOW: "262144",
+        STAGE_WORKSHOP_CONTEXT_WINDOW: "131072",
+        STAGE_WORKSHOP_KEEP_RECENT_TOKENS: "8000",
+      },
+      "/repo",
+    );
+    expect(config.contextWindow).toBe(262144);
+    expect(config.workshopContext.contextWindow).toBe(131072);
+    expect(config.workshopContext.keepRecentTokens).toBe(8000);
+    // 没写的那项仍回落全局
+    expect(config.workshopContext.compactRatio).toBe(config.compactRatio);
   });
 
   it("非法值回退默认并告警（越界比例会让压缩永不触发或每轮都触发）", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(loadConfig({ STAGE_COMPACT_RATIO: "3" }, "/repo").compactRatio).toBe(0.6);
     expect(loadConfig({ STAGE_COMPACT_RATIO: "0" }, "/repo").compactRatio).toBe(0.6);
-    expect(loadConfig({ STAGE_CONTEXT_WINDOW: "abc" }, "/repo").contextWindow).toBe(131072);
+    expect(loadConfig({ STAGE_CONTEXT_WINDOW: "abc" }, "/repo").contextWindow).toBe(262144);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
 
   it("保留预算 ≥ 触发阈值：告警（否则每轮判超标却永远切不出可压段）", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    loadConfig({ STAGE_KEEP_RECENT_TOKENS: "100000" }, "/repo");
+    loadConfig({ STAGE_KEEP_RECENT_TOKENS: "200000" }, "/repo");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("纪元压缩将无法切出可压段"));
     warn.mockRestore();
   });

@@ -142,7 +142,8 @@ export function loadConfig(
   repoRoot = process.cwd(),
 ): ServerConfig {
   // 纪元压缩的三个全局值先落局部：工坊那组要拿它们当缺省。
-  const contextWindow = parsePositiveInt("STAGE_CONTEXT_WINDOW", env.STAGE_CONTEXT_WINDOW, 131072);
+  // 256K：两个 agent 的默认窗口。低于它的部署要显式写小，否则触发阈值会高过网关真实上限。
+  const contextWindow = parsePositiveInt("STAGE_CONTEXT_WINDOW", env.STAGE_CONTEXT_WINDOW, 262144);
   const compactRatio = parseRatio("STAGE_COMPACT_RATIO", env.STAGE_COMPACT_RATIO, 0.6);
   const keepRecentTokens = parsePositiveInt(
     "STAGE_KEEP_RECENT_TOKENS",

@@ -62,14 +62,14 @@ STAGE_PORT=8787 STAGE_PASSWORD=你的密码 pnpm --filter @stage-ai/server start
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `STAGE_CONTEXT_WINDOW` | `131072` | 模型真实上下文窗口。**必须按网关实际限制定**：pi-ai 内置元数据的窗口可能虚高（例如标称 1M 而网关只给 128K） |
+| `STAGE_CONTEXT_WINDOW` | `262144` | 模型真实上下文窗口（剧作家与工坊的共同缺省值）。**必须按网关实际限制定**：pi-ai 内置元数据的窗口可能虚高（例如标称 1M 而网关只给 128K） |
 | `STAGE_COMPACT_RATIO` | `0.6` | 触发压缩的窗口占比。越小压得越勤（摘要调用更频繁），越大越省调用但单轮 prompt 更贵 |
 | `STAGE_KEEP_RECENT_TOKENS` | `20000` | 压缩后保留的最近上下文预算（token）。最近这几轮的原文不进摘要，保留原样 |
 | `STAGE_WORKSHOP_CONTEXT_WINDOW` | 同 `STAGE_CONTEXT_WINDOW` | 只给工坊用。工坊可以在剧目的「Agent」页换模型，换了窗口不同的就单独定一份 |
 | `STAGE_WORKSHOP_COMPACT_RATIO` | 同 `STAGE_COMPACT_RATIO` | 同上 |
 | `STAGE_WORKSHOP_KEEP_RECENT_TOKENS` | 同 `STAGE_KEEP_RECENT_TOKENS` | 同上 |
 
-约束：`STAGE_KEEP_RECENT_TOKENS` 必须明显小于 `STAGE_CONTEXT_WINDOW × STAGE_COMPACT_RATIO`，否则每轮都判定超标却永远切不出可压段（启动时会告警，工坊那组同样会）。例：窗口 128K 的网关配 `STAGE_CONTEXT_WINDOW=131072`（默认即可）。
+约束：`STAGE_KEEP_RECENT_TOKENS` 必须明显小于 `STAGE_CONTEXT_WINDOW × STAGE_COMPACT_RATIO`，否则每轮都判定超标却永远切不出可压段（启动时会告警，工坊那组同样会）。例：网关真给 256K 就用默认；只有 128K 的网关要显式写 `STAGE_CONTEXT_WINDOW=131072`，否则触发阈值会高过网关上限撞 400。
 
 压缩失败（网关报错、返回空文本、磁盘写不进去）只打警告并跳过，本节照常演出——长会话压缩是省钱的优化，不是演出的前提。
 
