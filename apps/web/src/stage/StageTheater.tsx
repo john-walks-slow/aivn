@@ -323,7 +323,29 @@ voiceState,
   // 说话者聚焦：当前这句台词的人保持原亮度，同框的其余人压暗。规则见 speakerFocusId。
   const focusId = speakerFocusId(view, visual.sprites);
 
-  // 回看：滚轮/↑ 往回翻，下滚/↓/←/→/空格 往回追。输入框内不劫持按键。
+  /**
+   * 舞台点击：回看中 → 往回追一句；玩家刚发出去的那句还顶在对话框里 → 先把它收掉；
+   * 等新内容时（pause 停止点）→ 直接开新一轮。翻下一句和继续生成是同一个动作。
+   * 空格共用这一套——点不动画面时（桌面键盘），那一下也得有着落。
+   */
+  const onStageClick = useCallback((): void => {
+    onUnlock();
+    if (hideUi) {
+      setHideUi(false);
+      return;
+    }
+    if (scrubbed) scrub(1);
+    else if (playerEcho) {
+      // 回声占着台词条时，这一下既是「我看过了」也是「往下走」——
+      // 否则玩家点两下才看得见自己那句话之后的内容。
+      onEchoDismiss();
+      if (canContinue) onContinue();
+      else advance();
+    } else if (canContinue) onContinue();
+    else advance();
+  }, [onUnlock, hideUi, scrubbed, scrub, playerEcho, onEchoDismiss, canContinue, onContinue, advance]);
+
+  // 回看：滚轮/↑ 往回翻，下滚/↓/←/→ 往回追；空格 = 点舞台。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
   /** 两块浮层的实测高度写回 CSS 变量：选肢层据此卡在它们中间那一段（见 .choice-overlay）。 */
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -371,8 +393,12 @@ voiceState,
       if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
         scrub(-1);
         e.preventDefault();
-      } else if (e.key === "ArrowDown" || e.key === "ArrowRight" || e.key === " ") {
+      } else if (e.key === "ArrowDown" || e.key === "ArrowRight") {
         scrub(1);
+        e.preventDefault();
+      } else if (e.key === " ") {
+        // 空格与点舞台同一个动作（翻下一句 / 继续生成）。导演输入面板开着时不越层操作。
+        if (!action) onStageClick();
         e.preventDefault();
       } else if (e.key === "Escape" && scrubbed) {
         scrub(1);
@@ -388,7 +414,7 @@ voiceState,
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [scrub, scrubbed, action, onView, hideUi]);
+  }, [scrub, scrubbed, action, onView, hideUi, onStageClick]);
 
   // 快进档：按住 Ctrl 追到缓冲末端，松开立刻回到原节奏。
   // 失焦也撤档——切出去时 Ctrl 可能停在按下状态，回来就变成永远在快进。
@@ -409,27 +435,6 @@ voiceState,
       window.removeEventListener("blur", blur);
     };
   }, [onTurbo]);
-
-  /**
-   * 舞台点击：回看中 → 往回追一句；玩家刚发出去的那句还顶在对话框里 → 先把它收掉；
-   * 等新内容时（pause 停止点）→ 直接开新一轮。翻下一句和继续生成是同一个动作。
-   */
-  const onStageClick = (): void => {
-    onUnlock();
-    if (hideUi) {
-      setHideUi(false);
-      return;
-    }
-    if (scrubbed) scrub(1);
-    else if (playerEcho) {
-      // 回声占着台词条时，这一下既是「我看过了」也是「往下走」——
-      // 否则玩家点两下才看得见自己那句话之后的内容。
-      onEchoDismiss();
-      if (canContinue) onContinue();
-      else advance();
-    } else if (canContinue) onContinue();
-    else advance();
-  };
 
   // 触屏手势：左右滑 = 桌面方向键（scrub 回看/追进），上滑 = 回顾。
   // 没有下滑：它跟浏览器下拉刷新撞车，两边都按不准。横向本来也该给系统，但方向键语义更常用，这里接管。

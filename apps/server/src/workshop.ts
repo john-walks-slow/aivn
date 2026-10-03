@@ -31,7 +31,12 @@ export interface WorkshopPromptContext {
    * 逐个布尔摆在这一层等于把 `kit.can` 的字段名抄一遍，加一位就要改三处（kit / 会话 / 这里）。
    */
   can: AgentCapabilities;
-/** 早期对话已压成的摘要（A 区回注）：非空即本线程发生过压缩。 */
+  /**
+   * 剧目语音语言（play.json 的 voiceLanguage）：设了的话台词先译成它再配音，挑音色的语言就得跟着它走；
+   * 不设 = 台词按剧本原文配音。
+   */
+  voiceLanguage?: string;
+  /** 早期对话已压成的摘要（A 区回注）：非空即本线程发生过压缩。 */
   digest?: string;
   /** 逐剧目的自定义段（play.json 的 agents.workshop.prompt）：原样拼在固定提示词之后。 */
   customPrompt?: string;
@@ -131,6 +136,24 @@ function setupFlow(canLibrary: boolean): string {
 4. **落盘后同步记忆**：premise 写进 memory/always/premise.md，**创作口径写进 memory/always/craft.md**（下面「剧目写作要点」里说清那份文件该写什么；不是只在对话里说一句）。`;
 }
 
+/**
+ * 「音色怎么配」那半句：按能力位与剧目语音语言收条件。
+ *
+ * 语音语言是翻译目标（`playhouse.ts` 只在该字段非空时才建 Translator），所以音色得跟它同语言：
+ * 日语音色配中文原文，念出来就是带日语口音的中文。提示词这边给剧目的值，后果写在工具描述里。
+ */
+function voicePickHint(ctx: WorkshopPromptContext): string {
+  if (!ctx.can.voice) return "";
+  const language = ctx.voiceLanguage?.trim();
+  const scope = language
+    ? `本剧语音语言是 \`${language}\`（台词先译成它再配音），先按 \`language="${language}"\` 筛`
+    : `本剧语音语言未设（台词按剧本原文配音），先按剧本的书写语言筛（中文剧本用 \`language="zh"\`）`;
+  return (
+    `voiceId 用 \`list_voices\` 查出来再填（id 是 32 位 hex，猜不出来；填错不报错，演出时那句台词会静默没有声音）；` +
+    `${scope}。`
+  );
+}
+
 /** 剧目写作要点：正文里的音色 / 资源库导入两句按能力位收条件，其余与能力无关。 */
 function writingPoints(ctx: WorkshopPromptContext): string {
   return `# 剧目写作要点
@@ -147,8 +170,15 @@ function writingPoints(ctx: WorkshopPromptContext): string {
 ${assetSourceGuidance(ctx)}
 - 角色卡（\`memory/always/characters/<id>.md\`，角色的一切都在这张卡里，play.json 不再存角色数据）：
   头部 frontmatter 放机器字段（id / name / voice / voiceId / framing / sprites），正文写具体的人（年龄/关系/说话方式/在意的点）。
-  ${ctx.can.voice ? "voiceId 用 \`list_voices\` 查出来再填（id 是 32 位 hex，猜不出来；填错不报错，演出时那句台词会静默没有声音）；" : ""}
+  ${voicePickHint(ctx)}
   ${ctx.can.library ? "库里已有合适的角色可以先 \`import_asset\`（kind=characters）导进来再改，别从零重写。" : ""}
+- play.json（剧目配置，「设定」页改的也是它）就这些字段：
+  \`title\`、\`opening\`（开局指令）、\`voiceLanguage\`（语音语言，ISO 639-1 如 "ja"；不写 = 台词按剧本原文配音）、
+  \`defaultVoiceId\`（无名角色、临时角色的兜底音色，32 位 hex）、\`protagonist\`（主角卡 name / persona）、
+  \`cover\`（封面图，写法见「出图要点」）、\`initialState\` / \`initialScene\`（开局状态）、
+  \`agents\`（两个 agent 的 model / thinking / tools）。
+  除 \`id\` / \`title\` 外全是可选字段：缺一个不报错，只是那份效果静默消失（缺 \`defaultVoiceId\` 无名角色没声音、
+  缺 \`agents\` 工具开关回默认、缺 \`protagonist\` 输入润色就没了）。**改它只用 \`edit\` 改点名的字段，不要整篇 \`write\` 覆盖。**
 - 记忆卡（memory/index/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。
   index 下可以建子目录分门别类，**建议** \`locations/\` 放地点、\`lore/\` 放世界设定（不是硬要求，
   但分类后 A 区里每行都带 [分类] 前缀，剧作家更容易知道该去哪张卡里查）。
