@@ -453,8 +453,8 @@ export class PlayHouse {
 
   /**
    * 立绘预发射：generate_image kind="sprite" 后台发起。
-   * 走与工坊同一个 PlayAssets（neutral 垫图 + 抠底 + 差分映射补写 + 临时角色注册）。
-   * play.json 的改动由 PlayAssets 的 onPlayConfigChanged 排到轮边界重建——拍进行中直接 reload
+   * 走与工坊同一个 PlayAssets（neutral 垫图 + 抠底 + 差分映射补写）。
+   * 角色卡的改动由 PlayAssets 的 onPlayConfigChanged 排到轮边界重建——拍进行中直接 reload
    * 会把正在进行的这一轮腰斩掉。
    */
   private async preloadSprite(
@@ -463,7 +463,6 @@ export class PlayHouse {
     charId: string,
     expression: string,
     prompt: string,
-    characterName?: string,
     framing?: SpriteFraming,
   ): Promise<void> {
     const spriteId = `${charId}:${expression}`;
@@ -479,7 +478,7 @@ export class PlayHouse {
         { kind: "sprite", characterId: charId, expression, framing },
         prompt,
         undefined,
-        { notify: "silent", characterName },
+        { notify: "silent" },
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -583,23 +582,17 @@ export class PlayHouse {
   }
 
   /**
-   * 排到轮边界重建 runtime：剧作家侧改 play.json（给临时角色生立绘补写差分映射）时用。
-   *
-   * 与工坊写盘的区别只有触发时机——都在节拍边界换编排器。必须排队：一轮里出三张立绘就是三次调用，
-   * 齐步走会连着重装三份 runtime。
-   */
-  /**
    * 引用即导入的挂载点。资源库没配就不挂：剧本里未知的 id 仍然只是降级。
    *
-   * 角色导入要改 play.json，而拍进行中改 play.json 得排到轮边界——与剧作家给临时角色
+   * 角色导入要写角色卡，而拍进行中改角色配置得排到轮边界——与剧作家给临时角色
    * 生立绘时走的是同一条延迟重建，不另开一条。
    */
-  private assetRefResolver(playId: string, store: PlayStore, play: PlayConfig): AssetRefResolver | undefined {
+  private assetRefResolver(playId: string, store: PlayStore): AssetRefResolver | undefined {
     return new AssetRefResolver({
       playId,
       store,
       library: this.assetLibrary,
-      characters: () => characterIdsOf(play),
+      characters: () => characterIdsOf(store),
       onImported: (result) => {
         if (result.kind === "characters") {
           this.rebuildAtBeatBoundary(playId, `剧作家引用了资源库角色 ${result.id}，已导入`);
@@ -620,6 +613,12 @@ export class PlayHouse {
     });
   }
 
+  /**
+   * 排到轮边界重建 runtime：剧作家侧写角色卡（给临时角色生立绘补写差分映射）时用。
+   *
+   * 与工坊写盘的区别只有触发时机——都在节拍边界换编排器。必须排队：一轮里出三张立绘就是三次调用，
+   * 齐步走会连着重装三份 runtime。
+   */
   private rebuildAtBeatBoundary(playId: string, note: string): void {
     const previous = this.pendingRebuilds.get(playId) ?? Promise.resolve();
     const next = previous
@@ -750,7 +749,7 @@ export class PlayHouse {
   ): Promise<string> {
     const user = [
       `【当前场景】${ctx.scene}`,
-      // 角色卡是真相源（play.json 那几个字段是存量兜底），出图提示词要按真的人设写
+      // 角色卡是真相源（play.json 那份 characters 是纯元数据，没人读），出图提示词要按真的人设写
       `【角色】\n${[...(ctx.characters?.characters ?? [])]
         .map(([id, card]) => `- ${card.name ?? id}${card.body ? `：${card.body.slice(0, 120)}` : ""}`)
         .join("\n")}`,
@@ -850,14 +849,14 @@ export class PlayHouse {
         ? {
             playAssets,
             kick: (type, prompt, id) => void this.preloadAsset(play.id, store, type, prompt, id),
-            kickSprite: (charId, expression, prompt, characterName, framing) =>
-              void this.preloadSprite(play.id, store, charId, expression, prompt, characterName, framing),
+            kickSprite: (charId, expression, prompt, framing) =>
+              void this.preloadSprite(play.id, store, charId, expression, prompt, framing),
             exa: this.exa ?? undefined,
           }
         : undefined,
       store,
       assetLibrary: this.assetLibrary,
-      assetRefs: this.assetRefResolver(play.id, store, play),
+      assetRefs: this.assetRefResolver(play.id, store),
       onWriteCharacter: (charId, content) => this.writeCharacter(store, charId, content),
       compaction: {
         contextWindow: this.config.contextWindow,

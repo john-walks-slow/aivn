@@ -75,13 +75,7 @@ export interface PlaywriterKitDeps extends KitCommonDeps {
   /** 后台发起 bg/cg：宿主负责到货广播 asset_ready / 失败 asset_failed（工具不等图）。 */
   kick: (type: "bg" | "cg", prompt: string, id: string, referenceCharacters?: string[]) => void;
   /** 后台发起立绘：同上的失败广播。 */
-  kickSprite: (
-    charId: string,
-    expression: string,
-    prompt: string,
-    characterName?: string,
-    framing?: SpriteFraming,
-  ) => void;
+  kickSprite: (charId: string, expression: string, prompt: string, framing?: SpriteFraming) => void;
   /** 这个目标在剧目里已有素材的静态 URL——有就不烧配额，直接引用。 */
   existingAssetUrl: (target: AssetTarget) => Promise<string | null>;
   /** 联网检索（未配置 key 时不注册，提示词也不提）。 */

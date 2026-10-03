@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { CharacterCard, SpriteFraming } from "@stage-ai/core";
+import type { CharacterDocument, SpriteFraming } from "@stage-ai/core";
 import { SPRITE_FRAMINGS, SPRITE_FRAMING_LABELS } from "@stage-ai/core";
 import { api } from "../api.js";
 import { Icon } from "../ui/Icon.js";
@@ -12,46 +12,52 @@ interface SpriteRow {
   framing: SpriteFraming | "";
 }
 
-/** 角色卡：名字 / persona / 音色 / 立绘差分映射。 */
+/**
+ * 角色卡编辑器：名字 / persona / 音色 / 立绘差分映射，全部写角色卡
+ * （`memory/always/characters/<id>.md`）。play.json 的 `characters` 是纯元数据，不经这里。
+ */
 export function CharacterEditor({
   playId,
-  char,
+  charId,
+  doc,
   files,
   voices,
   onPickVoice,
   onBrowseLibrary,
   onUploadSprite,
-  onChange,
+  onDocChange,
   onRemove,
 }: {
   playId: string;
-  char: CharacterCard;
+  charId: string;
+  /** 角色卡 markdown 的解析结果。编辑进这里，保存时才落盘。 */
+  doc: CharacterDocument;
   files: string[];
   voices: VoiceCatalogState;
   onPickVoice: () => void;
   onBrowseLibrary: () => void;
   onUploadSprite: (file: File) => void;
-  onChange: (fn: (char: CharacterCard) => void) => void;
+  onDocChange: (fn: (doc: CharacterDocument) => void) => void;
   onRemove: () => void;
 }) {
   const nextId = useRef(0);
   const [previewing, setPreviewing] = useState(false);
   // 行状态挂载时从角色卡初始化；编辑期以本地行为准，blur/离散操作时提交回角色卡
   const [rows, setRows] = useState<SpriteRow[]>(() =>
-    Object.entries(char.sprites ?? {}).map(([expression, file]) => ({
+    Object.entries(doc.sprites ?? {}).map(([expression, file]) => ({
       id: nextId.current++,
       expression,
       file,
-      framing: char.spriteFraming?.[expression] ?? "",
+      framing: doc.spriteFraming?.[expression] ?? "",
     })),
   );
 
   /** 音色试听：服务端合成固定样本 → 播放（Fish 公共库音色，目录内目录外都能试）。 */
   const previewVoice = (): void => {
-    if (!char.voiceId || previewing) return;
+    if (!doc.voiceId || previewing) return;
     setPreviewing(true);
     api
-      .ttsPreview(playId, char.voiceId)
+      .ttsPreview(playId, doc.voiceId)
       .then(({ url }) => {
         void new Audio(url).play().catch(() => {});
       })
@@ -62,12 +68,12 @@ export function CharacterEditor({
   // 目录外的 voiceId（demo 剧目的萝莉萌妹等）按 id 单条解析出名字，不装作"未设置"
   const { resolve: resolveVoice } = voices;
   useEffect(() => {
-    resolveVoice(char.voiceId);
-  }, [resolveVoice, char.voiceId]);
+    resolveVoice(doc.voiceId);
+  }, [resolveVoice, doc.voiceId]);
 
   const commit = (source: SpriteRow[]): void => {
-    onChange((c) => {
-      c.sprites = Object.fromEntries(
+    onDocChange((d) => {
+      d.sprites = Object.fromEntries(
         source.filter((r) => r.expression.trim() !== "").map((r) => [r.expression.trim(), r.file]),
       );
       // 逐差分的取景覆盖：没选的那条就不写，落角色级的 framing 上。
@@ -77,8 +83,8 @@ export function CharacterEditor({
           .filter((r) => r.expression.trim() !== "" && r.framing !== "")
           .map((r) => [r.expression.trim(), r.framing as SpriteFraming]),
       );
-      if (Object.keys(overrides).length > 0) c.spriteFraming = overrides;
-      else delete c.spriteFraming;
+      if (Object.keys(overrides).length > 0) d.spriteFraming = overrides;
+      else delete d.spriteFraming;
     });
   };
 
@@ -107,7 +113,7 @@ export function CharacterEditor({
   return (
     <div className="char-card">
       <div className="row">
-        <input value={char.name} onChange={(e) => onChange((c) => (c.name = e.target.value))} />
+        <input value={doc.name ?? ""} onChange={(e) => onDocChange((d) => (d.name = e.target.value))} />
       </div>
       {/* 导入入口紧跟名字：埋在立绘差分区下面的话，没人会往下翻 */}
       <div className="row small">
@@ -127,19 +133,28 @@ export function CharacterEditor({
       <textarea
         rows={2}
         placeholder="persona（性格与背景）"
-        value={char.persona}
-        onChange={(e) => onChange((c) => (c.persona = e.target.value))}
+        value={doc.body}
+        onChange={(e) => onDocChange((d) => (d.body = e.target.value))}
       />
       <div className="voice-row">
         <button className="ghost-btn voice-picker" onClick={onPickVoice}>
-          音色：{voices.nameOf(char.voiceId)}
+          {/* 卡里的 voice 是人话描述；没写就退回按 voiceId 现查目录 */}
+          音色：{doc.voice ?? voices.nameOf(doc.voiceId)}
         </button>
-        {char.voiceId && (
-          <button className="ghost-btn" onClick={() => onChange((c) => (c.voiceId = undefined))}>
+        {doc.voiceId && (
+          <button
+            className="ghost-btn"
+            onClick={() =>
+              onDocChange((d) => {
+                d.voiceId = undefined;
+                d.voice = undefined;
+              })
+            }
+          >
             清除
           </button>
         )}
-        <button className="ghost-btn" disabled={!char.voiceId || previewing} onClick={previewVoice}>
+        <button className="ghost-btn" disabled={!doc.voiceId || previewing} onClick={previewVoice}>
           {previewing ? "合成中…" : "试听"}
         </button>
       </div>
@@ -147,12 +162,12 @@ export function CharacterEditor({
       <div className="row small">
         <span className="muted small">取景</span>
         <select
-          value={char.framing ?? ""}
+          value={doc.framing ?? ""}
           onChange={(e) =>
-            onChange((c) => {
+            onDocChange((d) => {
               const value = e.target.value as SpriteFraming | "";
-              if (value) c.framing = value;
-              else delete c.framing;
+              if (value) d.framing = value;
+              else delete d.framing;
             })
           }
         >
@@ -220,6 +235,9 @@ export function CharacterEditor({
           </span>
         </button>
       </div>
+      <p className="muted small">
+        角色卡：<code>memory/always/characters/{charId}.md</code>
+      </p>
     </div>
   );
 }

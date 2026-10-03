@@ -1,16 +1,21 @@
 import { existsSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   DEFAULT_SPRITE_FRAMING,
-  parsePlayConfig,
+  parseCharacterCard,
+  serializeCharacterCard,
   SPRITE_FRAMING_ASPECT,
   SPRITE_FRAMING_SHOT,
+  type CharacterDocument,
   type SpriteFraming,
   type WorkshopAssetView,
 } from "@stage-ai/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
+import { IMAGE_EXTS, sniffImageMime } from "./imageMime.js";
 import type { Limiter } from "./limiter.js";
+import { PlayMemory } from "./memory.js";
 import { jobIdForImage, type PendingJobs } from "./pendingJobs.js";
 import type { PlayFiles } from "./playFiles.js";
 import type { PlayStore } from "./store.js";
@@ -33,16 +38,14 @@ import type { WorkshopWrite } from "./agentkit/deps.js";
  * 在飞去重只烧一次配额（`inflight` 表按目标路径，跨角色共享）。
  */
 
-/** 立绘差分名 = 文件名主体，故用素材名的字符集；角色 id 不受此限（play.json 里可能叫 Koharu）。 */
+/** 立绘差分名 = 文件名主体，故用素材名的字符集；角色 id 不受此限（角色卡里可能叫 Koharu）。 */
 const STEM = /^[a-z][a-z0-9_]{0,39}$/;
 
-/** 自动注册的临时角色 id：它会成为 play.json 条目与 assets/sprites/ 目录名，与 write_memory 同一套白名单。 */
-const CHAR_ID = /^[A-Za-z][A-Za-z0-9_-]{0,39}$/;
-
-/** play.json 里 `sprites[expression]` 的值：只当文件名用，带路径分隔符的一律不认。 */
+/** 角色卡 `sprites[expression]` 的值：只当文件名用，带路径分隔符的一律不认。 */
 const BARE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.(png|jpe?g|webp)$/i;
 
 const NEUTRAL = "neutral";
+
 
 /** 谁触发的这次出图。工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产。 */
 export type AssetNotify = "workshop" | "silent";
@@ -53,11 +56,11 @@ export interface AssetTarget {
   kind: AssetKind;
   /** 背景/CG 的素材 id（同时是文件名主体）。 */
   name?: string;
-  /** 立绘所属角色 id（默认对 play.json 角色做成员校验）。 */
+  /** 立绘所属角色 id（默认对角色卡做成员校验）。 */
   characterId?: string;
   /** 立绘差分名（neutral / smile / ...）。 */
   expression?: string;
-  /** 立绘取景（full/half/square）：决定出图景别与画幅，缺省全身。不给就沿用 play.json 里该角色已有的声明。 */
+  /** 立绘取景（full/half/square）：决定出图景别与画幅，缺省全身。不给就沿用角色卡里该角色已有的声明。 */
   framing?: SpriteFraming;
   /**
    * 参考立绘（只对 background/cg 生效）：按给定顺序把这些角色的立绘垫给模型，
@@ -69,11 +72,6 @@ export interface AssetTarget {
 export interface GenerateOptions {
   /** 事件去向：工坊要撤销条与素材气泡，剧作家的后台预发射一律静默。 */
   notify?: AssetNotify;
-  /**
-   * 角色不在 play.json 时自动注册一个 stub（剧作家的临时角色生图）。
-   * 给了就建，不给仍按成员校验报错——工坊侧的角色表是用户与工坊的账，不该被一次出图悄悄塞进陌生人。
-   */
-  characterName?: string;
 }
 
 export interface GeneratedPlayAsset {
@@ -107,8 +105,6 @@ interface AssetSpec {
   /** 角色级取景（不含差分覆盖）：自动补的定妆照按它出，不按当前差分那档。
    *  定妆照是所有差分的垫图基准，一个「全身角色 + 一条 closeup 差分」不该把基准也变成胸像。 */
   baseFraming?: SpriteFraming;
-  /** 角色不在 play.json 时自动补的 stub（null = 不自动注册，缺失即报错）。 */
-  stubName?: string;
   /** 背景/CG 的参考立绘（立绘本身不带）。 */
   referenceCharacters?: ReferenceCharacter[];
 }
@@ -122,14 +118,18 @@ export interface PlayAssetsDeps {
   reference?: "none" | "neutral";
   /** 在生成的事（面板上那一行）：出图期间让玩家看得见在忙什么、等了多久。 */
   pending?: PendingJobs;
-  /** play.json 立绘映射补写要进撤销条（二进制本身不进）。 */
+  /** 角色卡立绘映射补写要进撤销条（二进制本身不进）。 */
   onWrite: (write: WorkshopWrite, notify: AssetNotify) => void;
   /** 素材到货（工坊侧挂到对话气泡里）。 */
   onAsset?: (asset: WorkshopAssetView, replaced: boolean, notify: AssetNotify) => void;
   /**
-   * play.json 被这一层改过（补写差分映射 / 注册临时角色 stub）：宿主据此决定要不要重建 runtime。
+   * **角色卡**（`memory/always/characters/<id>.md`）被这一层改过：补写差分映射与取景都落它头上，
+   * 宿主据此决定要不要重建 runtime（角色表来自角色卡，不重建就取不到新差分）。
    * 工坊侧一轮收束时自己会重建，这里收到 "workshop" 无需动作；剧作家侧在拍内不能腰斩演出，
    * 收到 "silent" 得排到轮边界。
+   *
+   * 名字仍叫 `onPlayConfigChanged`：play.json 是剧目配置文件，角色卡是它的配置项之一，
+   * 回调的形状与触发时机都没变，改名只会逼着范围外的调用方一起动。
    */
   onPlayConfigChanged?: (notify: AssetNotify) => void;
 }
@@ -147,19 +147,50 @@ export class PlayAssets {
     target: AssetTarget,
     prompt: string,
     style?: string,
-    cutoutTuning?: Partial<CutoutTuning>,
     options?: GenerateOptions,
   ): Promise<GeneratedPlayAsset[]> {
     const notify = options?.notify ?? "workshop";
-    const spec = await this.resolve(target, notify, options?.characterName);
+    const spec = await this.resolve(target);
     const key = `${spec.kindPath}/${spec.stem}`;
     const running = this.inflight.get(key);
     if (running) return running;
-    const job = this.run(spec, prompt, style, cutoutTuning, notify).finally(() => {
+    const job = this.run(spec, prompt, style, notify).finally(() => {
       if (this.inflight.get(key) === job) this.inflight.delete(key);
     });
     this.inflight.set(key, job);
     return job;
+  }
+
+  /**
+   * 原地重抠立绘：拿抠底前留的原片重跑一遍抠底，覆盖 assets/ 里那张透明 PNG。
+   *
+   * 只为「图挺好、抠得脏」而存在：这种没法靠重新出图解决（重画出来是另一张图，
+   * 用户刚点头的那张会被顶掉，还白烧一次配额）。留了底就是本地几秒的事，画面一个像素不变。
+   */
+  async recut(target: AssetTarget, tuning?: Partial<CutoutTuning>): Promise<GeneratedPlayAsset> {
+    const spec = await this.resolve(target);
+    if (spec.kind !== "sprite") throw new Error("只有立绘需要抠底");
+    const key = `${spec.kindPath}/${spec.stem}`;
+    // 同一张图正在出（一张约 100s）就先等它出完：留底是出图途中写的，
+    // 抢在它前面读到的要么是旧原片要么读不到。
+    await this.inflight.get(key);
+    if (!(await this.existingPath(spec.kindPath, spec.stem))) {
+      throw new Error(`${spec.characterId}/${spec.stem} 还没有抠底图，先 generate_image 出图再来重抠。`);
+    }
+    const { data } = await cutout(await this.readSpriteSource(spec), resolveTuning(tuning));
+    return { ...(await this.persist(spec, data, ".png")), autoNeutral: false };
+  }
+
+  private async readSpriteSource(spec: AssetSpec): Promise<Buffer> {
+    const dir = this.deps.store.spriteSourceDir(spec.characterId!);
+    for (const ext of IMAGE_EXTS) {
+      const file = join(dir, `${spec.stem}${ext}`);
+      if (existsSync(file)) return readFile(file);
+    }
+    throw new Error(
+      `${spec.characterId}/${spec.stem} 没有留底原片（抠底前那一张），没法原地重抠。` +
+        "留底是出图时顺手写的：更早出的图、用户自己上传的立绘都没有——那种只能重新出图。",
+    );
   }
 
   /** 目标是否已有图（工坊/剧作家跳过重复出图用）。 */
@@ -192,7 +223,6 @@ export class PlayAssets {
     spec: AssetSpec,
     prompt: string,
     style?: string,
-    cutoutTuning?: Partial<CutoutTuning>,
     notify: AssetNotify = "workshop",
   ): Promise<GeneratedPlayAsset[]> {
     const auto = spec.kind === "sprite" ? await this.ensureNeutral(spec, prompt, notify) : null;
@@ -230,13 +260,48 @@ export class PlayAssets {
       done?.();
     }
     this.assertCanvas(spec, data);
-    const tuning = resolveTuning(cutoutTuning);
-    const bytes = spec.kind === "sprite" ? (await cutout(data, tuning)).data : data;
+    const bytes = spec.kind === "sprite" ? await this.cutSprite(spec, data, mimeType) : data;
     const ext = spec.kind === "sprite" ? ".png" : extOf(mimeType);
     const written = await this.persist(spec, bytes, ext);
     if (spec.kind === "sprite") await this.mapSprite(spec, `${spec.stem}${ext}`, notify);
     await this.recordPrompt(spec, written.path, fullPrompt);
     return auto ? [auto, { ...written, autoNeutral: true }] : [{ ...written, autoNeutral: false }];
+  }
+
+  /**
+   * 立绘落盘前的最后一步：抠底成透明 PNG，并把**抠底前的原片**留一份。
+   *
+   * 留底是抠底参数唯一的后悔药：透明 PNG 一落盘底色就没了，之后想改抠底只剩「重新出图」——
+   * 而重新出图出来的是另一张画，用户刚点头的那张会被顶掉，还白烧一份配额。
+   * 留了底，「图挺好、抠得脏」就是本地重跑一遍的事（见 `recut`）。
+   *
+   * 留底写在 media-cache/（跑批产物，不进 git）：换机器后老图没法重抠，这是有意的取舍——
+   * 原片是中间物，不是剧目内容。写失败只记一条告警，不把一次成功的出图报成失败。
+   */
+  private async cutSprite(spec: AssetSpec, data: Buffer, mimeType: string): Promise<Buffer> {
+    const { data: png } = await cutout(data, resolveTuning());
+    await this.keepSpriteSource(spec, data, mimeType);
+    return png;
+  }
+
+  private async keepSpriteSource(spec: AssetSpec, data: Buffer, mimeType: string): Promise<void> {
+    if (!spec.characterId) return;
+    const dir = this.deps.store.spriteSourceDir(spec.characterId);
+    const ext = extOf(mimeType);
+    try {
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, `${spec.stem}${ext}`), data);
+      // 换后端后同一张图可能从 jpg 变成 png：留着旧的那份，readSpriteSource 会一直命中它，
+      // 重抠出来的是上一张画。与 persist() 清 assets 旧扩展名是同一条理由。
+      await Promise.all(
+        IMAGE_EXTS.filter((other) => other !== ext).map((other) => rm(join(dir, `${spec.stem}${other}`), { force: true })),
+      );
+    } catch (error) {
+      console.warn(
+        `[stage-ai] 立绘 ${spec.characterId}/${spec.stem} 的留底原片没写成（之后没法原地重抠）：` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   /** 落盘 + 清掉同 stem 的旧扩展名。抠底输出恒为 PNG，扩展名变了旧的 .jpg 必须清掉。 */
@@ -301,12 +366,11 @@ export class PlayAssets {
   }
 
   /**
-   * 校验目标：素材名走文件名白名单，角色 id 走 play.json 成员校验。
-   * 角色 id 不做正则——`parsePlayConfig` 不约束它的大小写，`Koharu` 这类 id 完全合法。
-   * 例外是「自动注册 stub」这条路：那时角色还不存在，id 会直接变成目录名，必须过白名单。
+   * 校验目标：素材名走文件名白名单，角色 id 走角色卡成员校验。
+   * 角色 id 不做正则——`parseCharacterCard` 不约束它的大小写，`Koharu` 这类 id 完全合法。
    */
-  private async resolve(target: AssetTarget, notify: AssetNotify, characterName?: string): Promise<AssetSpec> {
-    if (target.kind === "sprite") return this.resolveSprite(target, notify, characterName);
+  private async resolve(target: AssetTarget): Promise<AssetSpec> {
+    if (target.kind === "sprite") return this.resolveSprite(target);
     const name = target.name?.trim() ?? "";
     if (!name) throw new Error("背景/CG 必须给 name（素材 id，剧本里的 bg/cg id 就是它）");
     if (!STEM.test(name)) {
@@ -324,60 +388,53 @@ export class PlayAssets {
   }
 
   /**
+   * 角色卡（`memory/always/characters/*.md`）：角色配置的唯一真相源。
+   *
+   * 走 `PlayMemory.load` 而不是自己 readdir：角色卡的解析规则只有 `parseCharacterCard` 一处，
+   * 这里再抄一遍就等于开了第二条真相源。出图一次几十秒，多读一个 memory 目录不占成本。
+   */
+  private async cast(): Promise<ReadonlyMap<string, CharacterDocument>> {
+    return (await PlayMemory.load(this.deps.store)).characters;
+  }
+
+  /**
    * 参考立绘的角色表校验。**不做静默丢弃**：调用方点名了要参考某个角色，那个角色没有立绘时
    * 悄悄出一张少个人的 CG，比直接报错坏得多——图看着是出来了，演出里才发现人对不上。
    */
   private async resolveReferences(ids: string[]): Promise<ReferenceCharacter[]> {
-    const play = await this.deps.store.loadPlay();
-    const known = play.characters.map((c) => c.id);
+    const cast = await this.cast();
     const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
-    const missing = unique.filter((id) => !known.includes(id));
+    const missing = unique.filter((id) => !cast.has(id));
     if (missing.length > 0) {
-      throw new Error(`play.json 里没有角色「${missing.join("、")}」。可选：${known.join(" / ") || "（角色表是空的）"}`);
+      throw new Error(
+        `角色卡里没有角色「${missing.join("、")}」。可选：${[...cast.keys()].join(" / ") || "（角色表是空的）"}`,
+      );
     }
-    return unique.map((id) => {
-      const character = play.characters.find((c) => c.id === id)!;
-      return { id, name: character.name };
-    });
+    return unique.map((id) => ({ id, name: cast.get(id)!.name ?? id }));
   }
 
-  private async resolveSprite(
-    target: AssetTarget,
-    notify: AssetNotify,
-    characterName?: string,
-  ): Promise<AssetSpec> {
+  private async resolveSprite(target: AssetTarget): Promise<AssetSpec> {
     const characterId = target.characterId?.trim() ?? "";
-    if (!characterId) throw new Error("立绘必须给 characterId（play.json 里的角色 id）");
+    if (!characterId) throw new Error("立绘必须给 characterId（角色卡的文件名主体）");
     const expression = target.expression?.trim() ?? "";
     if (!expression) throw new Error("立绘必须给 expression（差分名，如 neutral / smile）");
     if (!STEM.test(expression)) {
       throw new Error(`差分名「${expression}」非法：只允许小写字母开头的 a-z/数字/下划线，最长 40 字符`);
     }
-    const play = await this.deps.store.loadPlay();
-    const ids = play.characters.map((c) => c.id);
-    let stubName: string | undefined;
-    if (!ids.includes(characterId)) {
-      // 自动注册只认「调用方明确给了显示名」的那条路：给不出名字就说明它不知道自己在给谁画，
-      // 宁可报错让模型把 name 补上，也不要在角色表里落一个 id 当名字的条目。
-      const name = characterName?.trim() ?? "";
-      if (notify !== "silent" || !name) {
-        throw new Error(`play.json 里没有角色「${characterId}」。可选：${ids.join(" / ")}`);
-      }
-      if (!CHAR_ID.test(characterId)) {
-        throw new Error(
-          `角色 id「${characterId}」不能自动注册：只允许字母开头的字母/数字/下划线/连字符，最长 40 字符`,
-        );
-      }
-      stubName = name;
+    const cast = await this.cast();
+    const card = cast.get(characterId);
+    // 没有角色卡就没有这个角色：角色表是用户与工坊的账，不该被一次出图悄悄塞进陌生人。
+    // 剧作家要的临时角色先用 create_character 建卡，不在这里凭空造。
+    if (!card) {
+      throw new Error(
+        `角色卡里没有角色「${characterId}」（memory/always/characters/${characterId}.md）。` +
+          `可选：${[...cast.keys()].join(" / ")}`,
+      );
     }
-    // 取景优先级：调用方显式给 > play.json 里该角色这条差分的声明 > 角色级声明 > 全身。
+    // 取景优先级：调用方显式给 > 角色卡里该角色这条差分的声明 > 角色级声明 > 全身。
     // 不给就沿用已有声明，是为了让「先给角色定过取景、之后每次出图都跟着它」成立。
-    const character = play.characters.find((c) => c.id === characterId);
     const framing =
-      target.framing ??
-      (expression ? character?.spriteFraming?.[expression] : undefined) ??
-      character?.framing ??
-      DEFAULT_SPRITE_FRAMING;
+      target.framing ?? card.spriteFraming?.[expression] ?? card.framing ?? DEFAULT_SPRITE_FRAMING;
     return {
       kind: "sprite",
       kindPath: `sprites/${characterId}`,
@@ -386,8 +443,7 @@ export class PlayAssets {
       characterId,
       expression,
       framing,
-      baseFraming: character?.framing ?? DEFAULT_SPRITE_FRAMING,
-      ...(stubName ? { stubName } : {}),
+      baseFraming: card.framing ?? DEFAULT_SPRITE_FRAMING,
     };
   }
 
@@ -421,8 +477,7 @@ export class PlayAssets {
       { kind: "sprite", characterId: spec.characterId, expression: NEUTRAL, framing: neutralFraming },
       `${NEUTRAL_LEAD[neutralFraming]} ${prompt}`,
       undefined,
-      undefined,
-      { notify, ...(spec.stubName ? { characterName: spec.stubName } : {}) },
+      { notify },
     );
     return auto ?? null;
   }
@@ -450,8 +505,7 @@ export class PlayAssets {
 
   /** 一张给定的立绘：优先 neutral（身份基准），否则退回该角色盘上任意一张差分。 */
   private async referenceSpriteOf(character: ReferenceCharacter): Promise<string> {
-    const play = await this.deps.store.loadPlay();
-    const card = play.characters.find((c) => c.id === character.id);
+    const card = (await this.cast()).get(character.id);
     const dir = `sprites/${character.id}`;
     const expressions = [NEUTRAL, ...Object.keys(card?.sprites ?? {}).filter((e) => e !== NEUTRAL)];
     for (const expression of expressions) {
@@ -474,49 +528,47 @@ export class PlayAssets {
 
   private async loadReference(rel: string) {
     const data = await readFile(this.deps.files.absoluteOf(rel));
-    return { mimeType: sniffMime(data), data };
+    return { mimeType: sniffImageMime(data) ?? "image/jpeg", data };
   }
 
   /**
-   * 立绘映射补写：文件在盘上但 play.json 没映射，剧作家与编排器都取不到，等于没生成。
-   * 临时角色（剧作家给的 stub）也在这一步一并注册进角色表。
+   * 立绘映射补写：文件在盘上但角色卡没映射，剧作家与编排器都取不到，等于没生成。
+   *
+   * 落点是角色卡的 frontmatter（`serializeCharacterCard`），不是 play.json——角色的一切都在那张卡上。
+   * 没有角色卡就什么都不写：角色表是用户与工坊的账，出图无权凭空造一个角色。
    *
    * 排队锁不可省：一次对话里模型可以并发调两次 generate_image，也会和立绘包导入撞上，
-   * 三个 read-modify-write 各自读到旧 play.json，后写的会把先写的差分映射整个冲掉
+   * 三个 read-modify-write 各自读到旧角色卡，后写的会把先写的差分映射整个冲掉
    * （用户看到的现象是「刚出的表情在角色卡里消失了」）。锁按剧目目录发（`store.dir`），
-   * 与资源库导入共用同一条——两条路径改的是同一份 play.json。
+   * 与资源库导入共用同一条——两条路径改的是同一张角色卡。
    */
   private mapSprite(spec: AssetSpec, file: string, notify: AssetNotify): Promise<void> {
     return withPlayConfigLock(this.deps.store.dir, async () => {
-      const raw = await this.deps.files.read("play.json");
-      const config = parsePlayConfig(JSON.parse(raw));
-      const existing = config.characters.find((c) => c.id === spec.characterId);
-      if (!existing && !spec.stubName) return;
-      const characters = existing
-        ? config.characters
-        : [...config.characters, { id: spec.characterId!, name: spec.stubName!, persona: "" }];
-      const target = existing ?? characters[characters.length - 1]!;
-      const next = { ...target, sprites: { ...(target.sprites ?? {}), [spec.expression!]: file } };
+      const path = `memory/always/characters/${spec.characterId}.md`;
+      const raw = await this.deps.files.read(path).catch(() => null);
+      if (raw === null) return;
+      const card = parseCharacterCard(raw);
+      const next: CharacterDocument = {
+        ...card,
+        sprites: { ...(card.sprites ?? {}), [spec.expression!]: file },
+      };
       // 取景跟着这张图一起落进角色卡：出图是唯一知道画幅与景别的时刻，
       // 不记下来的话舞台只能拿缺省全身去套一张半身图（下次出图也会退回 9:16 全身）。
       if (spec.framing) {
         if (spec.expression === NEUTRAL) next.framing = spec.framing;
-        next.spriteFraming = { ...(target.spriteFraming ?? {}), [spec.expression!]: spec.framing };
+        next.spriteFraming = { ...(card.spriteFraming ?? {}), [spec.expression!]: spec.framing };
       }
-      const content = JSON.stringify(
-        { ...config, characters: characters.map((c) => (c.id === spec.characterId ? next : c)) },
-        null,
-        2,
-      );
-      await this.deps.files.write("play.json", content);
-      this.deps.onWrite({ path: "play.json", before: raw, after: content }, notify);
+      const content = serializeCharacterCard(next);
+      if (content === raw) return;
+      await this.deps.files.write(path, content);
+      this.deps.onWrite({ path, before: raw, after: content }, notify);
       this.deps.onPlayConfigChanged?.(notify);
     });
   }
 
   /** 同一 stem 下已有的图像（任一扩展名）：用于覆盖判定与清旧。 */
   private async existingPath(kindPath: string, stem: string): Promise<string | null> {
-    for (const ext of [".jpg", ".jpeg", ".png", ".webp"]) {
+    for (const ext of IMAGE_EXTS) {
       const rel = `assets/${kindPath}/${stem}${ext}`;
       if (existsSync(this.deps.files.absoluteOf(rel))) return rel;
     }
@@ -557,7 +609,7 @@ function suffixFor(spec: AssetSpec, prompt: string, sentReferences: number): str
  * 图片本身没有名字，模型只看到「第一张、第二张……」。不点明谁是谁，多人 CG 就会各画各的，
  * 而且是**看起来完全正常**地画错——不会报错，图也好看，只是七濑长成了澪。
  *
- * 编号从 1 起、顺序与 references 数组严格一致；名字取 play.json 的 `name`（角色卡上是同一个人）。
+ * 编号从 1 起、顺序与 references 数组严格一致；名字取角色卡的 `name`（没写就退回 id）。
  */
 function referenceSuffix(characters: ReferenceCharacter[]): string {
   const roster = characters.map((c, i) => `${i + 1}) ${c.name}`).join(", ");
@@ -568,13 +620,6 @@ function referenceSuffix(characters: ReferenceCharacter[]): string {
   );
 }
 
-/** 读回的文件头嗅探 mimeType（扩展名可能与实际字节不符，垫图塞错类型会被网关拒）。 */
-function sniffMime(data: Buffer): string {
-  if (data.length > 8 && data.subarray(1, 4).toString("latin1") === "PNG") return "image/png";
-  if (data.length > 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return "image/jpeg";
-  if (data.length > 12 && data.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
-  return "image/jpeg";
-}
 
 /**
  * 立绘身份锚：正脸站姿，差分都从它派生。竖构图提示词里也点明，配合竖画布。

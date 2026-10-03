@@ -2,6 +2,7 @@ import { appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promise
 import { existsSync } from "node:fs";
 import { dirname, extname, join, relative } from "node:path";
 import MiniSearch from "minisearch";
+import { parseCharacterCard, type CharacterDocument } from "@stage-ai/core";
 import type { PlayStore } from "./store.js";
 
 /**
@@ -19,8 +20,13 @@ export class PlayMemory {
   readonly craft: string;
   /** always/premise.md（世界观前提，缺文件即缺——就绪门与 A 区注入的唯一来源）。 */
   readonly premise: string;
-  /** always/characters/<id>.md — 角色设定（persona/台词风格）；id → 全文。纪元内冻结，工坊热改走 reload。 */
-  readonly characters: ReadonlyMap<string, string>;
+  /**
+   * always/characters/<id>.md — 角色卡；id → 解析后的头部 + 正文。
+   *
+   * 结构化而不是留全文：voiceId 这类机器字段要参与合成与生图，塞在一坨 markdown 里
+   * 就得每次现场正则抠。纪元内冻结，工坊热改走 reload。
+   */
+  readonly characters: ReadonlyMap<string, CharacterDocument>;
   /** index 卡（用户设定卡 + 纪元 arcs 卡，标题+一句话摘要注入 A 区）。 */
   readonly cards: IndexCard[];
   /** archive 切片文件（空 = 不落盘，纯内存检索——测试/无归档剧目）。 */
@@ -34,7 +40,7 @@ export class PlayMemory {
     opts: {
       craft?: string;
       premise?: string;
-      characters?: Map<string, string>;
+      characters?: Map<string, CharacterDocument>;
       cards?: IndexCard[];
       archiveFile?: string | null;
       arcsDir?: string | null;
@@ -271,14 +277,27 @@ async function loadArchive(path: string): Promise<ArchiveSlice[]> {
 }
 
 /** 扫描 always/characters/ 目录，返回 id → 全文 Map（文件名去 .md 即 id）。 */
-async function loadCharacters(dir: string): Promise<Map<string, string>> {
-  const result = new Map<string, string>();
+/** 角色卡目录的原文读取（id → 原始 markdown），供 store 的齐备判断等只需扫一眼的地方用。 */
+export async function loadCharacterCards(dir: string): Promise<CharacterDocument[]> {
+  const result: CharacterDocument[] = [];
+  if (!existsSync(dir)) return result;
+  for (const entry of (await readdir(dir)).sort()) {
+    if (!entry.endsWith(".md")) continue;
+    const text = await readText(join(dir, entry));
+    if (text) result.push({ ...parseCharacterCard(text), id: entry.replace(/\.md$/, "") });
+  }
+  return result;
+}
+
+async function loadCharacters(dir: string): Promise<Map<string, CharacterDocument>> {
+  const result = new Map<string, CharacterDocument>();
   if (!existsSync(dir)) return result;
   for (const entry of (await readdir(dir)).sort()) {
     if (!entry.endsWith(".md")) continue;
     const id = entry.replace(/\.md$/, "");
     const text = await readText(join(dir, entry));
-    if (text) result.set(id, text);
+    // 文件名是 id 的真相：frontmatter 里的 id 写错时以路径为准，否则 actor id 与卡对不上
+    if (text) result.set(id, { ...parseCharacterCard(text), id });
   }
   return result;
 }

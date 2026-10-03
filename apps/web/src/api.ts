@@ -1,5 +1,5 @@
 import type {
-  SpriteFraming,
+  CharacterDocument,
   AssetMeta,
   CgEntry,
   LibraryEntry,
@@ -80,18 +80,10 @@ export interface PlayDetail {
   premise: string;
   readiness: Readiness;
   /**
-   * 角色表（来自 memory/always/characters/*.md）——角色的真相源。
+   * 角色表（memory/always/characters/*.md 的解析结果）——角色的真相源。
    * play.json 的 `characters` 是纯元数据，任何界面都不该从那里取角色。
    */
-  cast: PlayDetailCast[];
-}
-
-export interface PlayDetailCast {
-  id?: string;
-  name?: string;
-  framing?: SpriteFraming;
-  sprites?: Record<string, string>;
-  spriteFraming?: Record<string, SpriteFraming>;
+  cast: CharacterDocument[];
 }
 
 /** 网关模型清单的一行（Agent 设置页的模型下拉）。 */

@@ -10,8 +10,10 @@ import { linesResult, reason, textResult } from "./result.js";
  * |  | 工坊（sync） | 剧作家（queued） |
  * |  | --- | --- | --- |
  * | 等待 | await，回执带 markdown 图片 | 发起即返回排产回执 |
- * | 立绘角色 | 必须在 play.json 里（成员校验） | 不在则用 characterName 自动注册 stub |
- * | 抠底参数 | 描述里教怎么用 | 不提（模型不该在拍内调抠底） |
+ * | 立绘角色 | 必须在角色卡目录里（成员校验） | 同左：先用 create_character 建卡再出图 |
+ *
+ * 抠底参数不在这里：填它得先看过成图，而出图那一刻没人看过图。改抠底是工坊在用户面前
+ * 看到脏边之后的事，走单独的 `recut_sprite`（原地重抠，不重新出图）。
  *
  * 落点两边一样：都进 `assets/`（工坊与剧作家共用同一个 PlayAssets）。
  * 工具能力也**不分角色**——`expression` 与 `referenceCharacters` 两个角色都拿得到，
@@ -26,10 +28,8 @@ const generateImageParams = Type.Object(
     kind: Type.Union([Type.Literal("background"), Type.Literal("cg"), Type.Literal("sprite")]),
     /** 背景/CG 的素材 id，剧本里的 bg/cg id 就是它。 */
     name: Type.Optional(Type.String({ maxLength: 40 })),
-    /** 立绘所属角色 id。 */
+    /** 立绘所属角色 id（角色卡的文件名主体）。没有这张卡就先 create_character 建一张。 */
     characterId: Type.Optional(Type.String({ maxLength: 40 })),
-    /** 角色不在角色表时用这个名字自动注册（临时角色）。剧作家的临时角色靠它；工坊侧按成员校验报错。 */
-    characterName: Type.Optional(Type.String({ maxLength: 40 })),
     /** 立绘差分名，如 neutral / smile。不给按 neutral。 */
     expression: Type.Optional(Type.String({ maxLength: 40 })),
     /**
@@ -47,24 +47,6 @@ const generateImageParams = Type.Object(
     ),
     /** 画风锚点（可选），如「厚涂写实电影感」「赛璐珞动画」。不给就不预设风格，按角色描述走。 */
     style: Type.Optional(Type.String({ maxLength: 200 })),
-    /** 立绘抠底微调（可选，只对 kind=sprite 生效）。用 inspect_asset 看图觉得抠得不干净时才填（工坊侧）。 */
-    cutout: Type.Optional(
-      Type.Object(
-        {
-          /** 强阈值 0–32：确定是底色的种子。调大=保守少抠。默认 1。 */
-          strong: Type.Optional(Type.Integer({ minimum: 0, maximum: 32 })),
-          /** 弱阈值 0–64：种子沿轮廓的漫延范围。调大=顺着轮廓多啃几像素、毛边更干净。默认 8。 */
-          weak: Type.Optional(Type.Integer({ minimum: 0, maximum: 64 })),
-          /** 背景洞面积下限 0–10000：小于它的封闭背景块会填回人物（护眼白）。调小=抠得更狠。默认 200。 */
-          minHole: Type.Optional(Type.Integer({ minimum: 0, maximum: 10000 })),
-          /** 掩膜降噪 0–8：色键跑在一张高斯模糊副本上（alpha 仍从原图解），专治 JPEG 环纹把轮廓咬出缺口。调大抗缺口、代价是边缘略毛。默认 0.8。 */
-          keySmooth: Type.Optional(Type.Number({ minimum: 0, maximum: 8 })),
-          /** 反解带宽 1–32：源图抗锯齿过渡带有多宽就得设多宽；不够宽会把渐变像素钉成实心，深色底上是一圈白块。默认 4。 */
-          edgeBand: Type.Optional(Type.Integer({ minimum: 1, maximum: 32 })),
-        },
-        { additionalProperties: false },
-      ),
-    ),
     prompt: Type.String({ minLength: 1, maxLength: 4000, description: "英文出图提示词，描述画面本身（不含负面词）" }),
   },
   { additionalProperties: false },
@@ -111,12 +93,13 @@ const SYNC_DESCRIPTION = [
   PROMPT_RULES,
   REFERENCE_RULE,
   "一次工具调用只出一张图；要出多个差分就在同一个批次里多次调用本工具，它们是并行的。",
-  "抠完觉得不干净（白边、剪纸毛刺）时，用 inspect_asset 看图，再带 cutout 参数重出。",
+  "抠底不用你管：引擎自动抠，用户看了成图说抠得不干净时用 recut_sprite 原地重抠，别重新出图。",
 ].join("");
 
 const QUEUED_DESCRIPTION = [
   "出一张剧目素材并**后台排产**（发起即返回，不等图）：背景(kind=background) / CG(kind=cg) 给 name，",
-  "立绘(kind=sprite) 给 characterId + expression（不给按 neutral）。角色不在角色表时再给 characterName，会自动建一个临时角色。",
+  "立绘(kind=sprite) 给 characterId + expression（不给按 neutral）。characterId 必须是已有角色卡的角色，",
+  "临时角色先用 create_character 建卡再出图。",
   "背景 16:9、CG 16:9、立绘竖构图（取景 full 用 9:16、half 3:4、square 1:1）；提示词写英文，只描述画面本身。",
   PROMPT_RULES,
   REFERENCE_RULE,
@@ -129,7 +112,6 @@ const QUEUED_DESCRIPTION = [
   "出席位置太早只会看到骨架占位，拿到回执后照常写台词，",
   "到出场的那一行再用 <scene bg=\"…\"> 或 <cg id=\"…\">、<actor expression=\"…\"> 引用同一个 id。",
   "回执会告诉你剧目里是不是已经有同名素材——有就直接引用，别重复发起。",
-  "立绘会自动抠底成透明 PNG。抠底微调（cutout 参数）留给工坊在用户面前调，你不要填。",
 ].join("");
 
 /** 工坊：同步出图，回执带图片给用户看。 */
@@ -148,13 +130,7 @@ export interface QueuedImageDeps {
   /** 后台发起 bg/cg（宿主负责到货广播 asset_ready / 失败 asset_failed）。 */
   kick: (type: "bg" | "cg", prompt: string, id: string, referenceCharacters?: string[]) => void;
   /** 后台发起立绘：同上的失败广播。 */
-  kickSprite: (
-    charId: string,
-    expression: string,
-    prompt: string,
-    characterName?: string,
-    framing?: SpriteFraming,
-  ) => void;
+  kickSprite: (charId: string, expression: string, prompt: string, framing?: SpriteFraming) => void;
   /** 这个目标在剧目里已有素材的静态 URL（用户导入的或之前生成的）——有就不烧配额。 */
   existingAssetUrl: (target: AssetTarget) => Promise<string | null>;
 }
@@ -206,7 +182,6 @@ async function runSync(
     },
     params.prompt,
     params.style,
-    params.cutout,
   );
   const lines = generated.map((asset) => {
     deps.onAsset(asset.path, asset.url, asset.kind, asset.replaced);
@@ -234,10 +209,10 @@ async function runQueued(
       return textResult(`${charId} 的 ${expression} 立绘剧目里已经有了，直接 <actor id="${charId}"> 引用，不用重出。`);
     }
     deps.emitPreload({ type: "sprite", id: `${charId}:${expression}`, prompt: params.prompt });
-    deps.kickSprite(charId, expression, params.prompt, params.characterName?.trim() || undefined, params.framing);
+    deps.kickSprite(charId, expression, params.prompt, params.framing);
     return textResult(
       `已排产：立绘 ${charId}/${expression}（约一分多钟）。` +
-        "别在这一轮就让它上台，3–5 句之后再 <actor id=…>；角色表里还没有它时会自动建一个临时角色。",
+        "别在这一轮就让它上台，3–5 句之后再 <actor id=…>。",
     );
   }
   const id = params.name?.trim() ?? "";

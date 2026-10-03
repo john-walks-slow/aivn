@@ -1,5 +1,4 @@
-import { DEFAULT_SPRITE_FRAMING, type SpriteFraming } from "@stage-ai/core";
-import type { PlayDetailCast } from "../api.js";
+import { DEFAULT_SPRITE_FRAMING, type CharacterDocument, type SpriteFraming } from "@stage-ai/core";
 import type { GeneratedImage } from "./generatedAssets.js";
 
 /** 素材名 → URL 解析（stem 无扩展名时按目录清单补全；缺素材返回 null 走降级）。 */
@@ -26,7 +25,7 @@ function stemMap(files: string[] | undefined): Map<string, string> {
 
 export function buildAssetIndex(
   playId: string,
-  cast: PlayDetailCast[],
+  cast: CharacterDocument[],
   assets: Record<string, string[]>,
   generated: Record<string, GeneratedImage> = {},
 ): AssetIndex {

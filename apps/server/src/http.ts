@@ -288,13 +288,9 @@ export async function handleHttp(
           play,
           premise: await store.premise(),
           readiness: await store.readiness(),
-          cast: cards.map((c) => ({
-            id: c.id,
-            name: c.name,
-            framing: c.framing,
-            sprites: c.sprites,
-            spriteFraming: c.spriteFraming,
-          })),
+          // 带全量头部与正文：工坊的角色编辑器要的就是正文与音色，
+          // 让它每个角色再 readFile 一次只是把同一份 markdown 读两遍
+          cast: cards,
         });
       }
       if (method === "DELETE") {

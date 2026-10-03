@@ -264,7 +264,7 @@ ${ctx.canSearch ? SEARCH_GUIDE : ""}
 
 **2. 生立绘（generate_image kind="sprite"）**，后台出图，不阻塞台词：
 
-    generate_image(kind="sprite", characterId="xiaoyu", characterName="小雨", expression="neutral", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view, plain white background")
+    generate_image(kind="sprite", characterId="xiaoyu", expression="neutral", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view, plain white background")
 
 - 要表情就带 expression（不给按 neutral）：非 neutral 的会自动垫该角色的 neutral 定妆照，所以是同一个人
 - 角色表里**已有**的差分直接用 \`<actor id="xiaoyu" expression="smile">\`，不要为了凑表情去生成
@@ -275,7 +275,7 @@ ${ctx.canSearch ? SEARCH_GUIDE : ""}
     <say id="passerby" name="路人甲">你好啊。</say>
 
 name 只覆盖本句名牌，不写入角色表，无 TTS 音色。这类角色想有立绘也行：
-generate_image 里给它 characterId + characterName，系统会自动在角色表里建一个空设定的角色。
+先 create_character 给它建一张卡（正文留空即可，name 写上名牌），再照上面的 generate_image 出图。
 
 # 演出契约（引擎规则，不可改）
 

@@ -681,15 +681,14 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
     expect(engine.affinity.mio).toBe(28);
   });
 
-  it("write_memory → stateFiles；read_memory_detail 命中与未命中", async () => {
+  it("update_state 写 stateFiles；read_memory_detail 命中与未命中", async () => {
     const engine = { turn: 1, affinity: {}, flags: {} };
     const { tools, stateFiles } = makeTools(engine);
-    const write = tools.find((t) => t.name === "write_memory")!;
+    const write = tools.find((t) => t.name === "update_state")!;
     const read = tools.find((t) => t.name === "read_memory_detail")!;
 
     await write.execute("t1", {
-      file: "threads",
-      content: "伏笔：旧约定未兑现",
+      threads: "伏笔：旧约定未兑现",
     });
     expect(stateFiles.threads).toBe("伏笔：旧约定未兑现");
 
@@ -856,15 +855,15 @@ describe("长会话装配", () => {
     expect(settledQueue?.type === "prompt_queue" && settledQueue.items).toEqual([]);
   });
 
-  it("write_memory 落谱系快照 → 恢复后注入【状态】（服务器重启续演）", async () => {
+  it("update_state 落谱系快照 → 恢复后注入【状态】（服务器重启续演）", async () => {
     // 记忆工具与 beat_done 分处两个 turn（beat_done 必须独占批次，否则 terminate 被吞）
     const first = setup([
       {
         text: BEAT_1,
         toolCalls: [
           {
-            name: "write_memory",
-            args: { file: "scene", content: "黄昏，教室只剩两人" },
+            name: "update_state",
+            args: { scene: "黄昏，教室只剩两人" },
           },
         ],
       },
@@ -952,8 +951,8 @@ describe("长会话装配", () => {
         beatDone: true,
         toolCalls: [
           {
-            name: "write_memory",
-            args: { file: "threads", content: "伏笔：旧约定" },
+            name: "update_state",
+            args: { threads: "伏笔：旧约定" },
           },
         ],
       },

@@ -160,14 +160,8 @@ export interface OrchestratorOptions {
     playAssets?: PlayAssets;
     /** 后台发起 bg/cg：宿主负责 asset_ready / asset_failed 广播（工具不等图）。 */
     kick: (type: "bg" | "cg", prompt: string, id: string) => void;
-    /** 后台发起立绘：同上的失败广播。characterName 供角色表里还没有的角色自动建 stub。 */
-    kickSprite: (
-      charId: string,
-      expression: string,
-      prompt: string,
-      characterName?: string,
-      framing?: SpriteFraming,
-    ) => void;
+    /** 后台发起立绘：同上的失败广播。 */
+    kickSprite: (charId: string, expression: string, prompt: string, framing?: SpriteFraming) => void;
     /** 联网检索（配了 key 才注册 web_search）。 */
     exa?: Exa;
   };
@@ -178,7 +172,7 @@ export interface OrchestratorOptions {
   assetRefs?: AssetRefResolver;
   /**
    * 写角色设定钩子：create_character file="characters/<id>" 时调用。
-   * 负责落盘 always/characters/<id>.md 并 upsert play.json stub。
+   * 负责落盘 always/characters/<id>.md——角色配置的唯一入口。
    */
   onWriteCharacter?: (charId: string, content: string) => Promise<void>;
   /** 纪元压缩阈值（窗口占比）与保留预算；不传则只增不减到模型自己报错。 */
