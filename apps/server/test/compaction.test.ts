@@ -5,18 +5,24 @@ import { join } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { LineageTree } from "@stage-ai/core";
 import {
+  calibrateTokenScale,
+  capDigest,
+  estimateThreadTokens,
   measureContext,
   pickCutIndex,
+  pickThreadCutIndex,
   renderSeed,
   renderTranscript,
+  renderTranscriptAs,
   splitSummary,
   withSeed,
+  type ThreadTurn,
 } from "../src/compaction.js";
 import { PlayMemory } from "../src/memory.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { buildSystemPrompt } from "../src/prompt.js";
 import type { ServerMessage } from "@stage-ai/core";
-import { createFakeStreamFn, PLAY, BEAT_1, BEAT_2, type FakeResponse } from "./helpers.js";
+import { caps, createFakeStreamFn, PLAY, BEAT_1, BEAT_2, type FakeResponse } from "./helpers.js";
 
 function user(text: string): AgentMessage {
   return { role: "user", content: [{ type: "text", text }], timestamp: 0 };
@@ -267,9 +273,9 @@ describe("编排器纪元压缩", () => {
     // 重建后的 A 区带上了这条纪元（纪元内冻结）
     const systems = (contexts.at(-1) as { messages: { role: string }[] }).messages;
     expect(JSON.stringify(systems[0])).toContain("澪甩开了主角的手");
-    expect(buildSystemPrompt({ play: PLAY, assets: {}, memory, arcIds: [arcs[0]!.file] })).toContain(
-      "澪甩开了主角的手",
-    );
+    expect(
+      buildSystemPrompt({ play: PLAY, assets: {}, memory, arcIds: [arcs[0]!.file], can: caps() }),
+    ).toContain("澪甩开了主角的手");
     // 对话体：seed 摘要打头 + 保留的最近轮次（第一轮原文已不在）
     const rendered = JSON.stringify(systems);
     expect(rendered).toContain("【前情提要·纪元 1】");
@@ -348,5 +354,75 @@ describe("编排器纪元压缩", () => {
 
     expect(memory.cards).toHaveLength(0);
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(2);
+  });
+});
+
+describe("工坊线程压缩", () => {
+  function turn(role: "user" | "assistant", text: string): ThreadTurn {
+    return { role, text };
+  }
+
+  /** 4 轮交替；每条 40 字 = 10 token 估算（chars/4）。 */
+  function turns(): ThreadTurn[] {
+    return [
+      turn("user", "用".repeat(40)),
+      turn("assistant", "甲".repeat(40)),
+      turn("user", "乙".repeat(40)),
+      turn("assistant", "丙".repeat(40)),
+      turn("user", "丁".repeat(40)),
+      turn("assistant", "戊".repeat(40)),
+    ];
+  }
+
+  it("切点落在 user 消息上，保留段从完整一轮开场", () => {
+    // 保留 25 token → 兜住 2 条（20）+ 第 3 条（30），落点 3 是 assistant，向后顺延到下一条 user（下标 4）
+    expect(pickThreadCutIndex(turns(), 25)).toBe(4);
+    // 保留 45 → 兜住 4 条（40）+ 第 5 条（50），落点 1 是 assistant，顺延到下一条 user（下标 2）
+    expect(pickThreadCutIndex(turns(), 45)).toBe(2);
+    // 保留预算大于整个对话体：无段可压
+    expect(pickThreadCutIndex(turns(), 10_000)).toBe(0);
+  });
+
+  it("预算落在一条 user 上时不劈开这一轮", () => {
+    // 保留 5 token：从尾兜 1 条（10）已超，顺延找下一条 user——没有，退到下标 4
+    expect(pickThreadCutIndex(turns(), 5)).toBe(4);
+  });
+
+  it("计量随标定系数线性放大（中文下 chars/4 低估约 4 倍）", () => {
+    const system = "系".repeat(200); // 50 token 估算
+    const messages: AgentMessage[] = [user("中".repeat(400))]; // 100 token 估算
+    expect(estimateThreadTokens(system, messages)).toBe(150);
+    expect(estimateThreadTokens(system, messages, 4)).toBe(600);
+  });
+
+  it("从 provider 实测 usage 标定系数；usage 缺失或越界一律不标", () => {
+    const system = "系".repeat(200); // 50 token 估算
+    const base: AgentMessage[] = [
+      { role: "system", content: system, timestamp: 0 },
+      user("中".repeat(400)), // 100
+      assistant("答".repeat(200), 600), // 50 → 前缀合计 200
+    ];
+    // provider 报 600，本地估 200 → 系数 3
+    expect(calibrateTokenScale(system, base)).toBe(3);
+    // 全零 usage（拿不到实测）：按 1 算
+    expect(calibrateTokenScale(system, [base[0]!, base[1]!, assistant("答")])).toBeNull();
+    // 系数离谱（网关漏报 usage）：不采信
+    expect(calibrateTokenScale(system, [base[0]!, base[1]!, assistant("答".repeat(200), 99_999)])).toBeNull();
+  });
+
+  it("摘要正文封顶：丢最早的，标一句", () => {
+    const body = "起".repeat(10_000);
+    const capped = capDigest(body, 1000);
+    expect(capped.startsWith("（更早的对话已不再保留）")).toBe(true);
+    expect(capped.length).toBeLessThan(1100);
+    expect(capDigest("短正文", 1000)).toBe("短正文");
+  });
+
+  it("转录说话人标签：工坊用「用户/搭台助手」，演出侧默认不变", () => {
+    const messages: AgentMessage[] = [user("改一下世界观"), assistant("改好了")];
+    expect(renderTranscript(messages)).toContain("【玩家/导演】改一下世界观");
+    const workshop = renderTranscriptAs(messages, { user: "【用户】", assistant: "【搭台助手】" });
+    expect(workshop).toContain("【用户】改一下世界观");
+    expect(workshop).toContain("【搭台助手】改好了");
   });
 });

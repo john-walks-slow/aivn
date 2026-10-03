@@ -66,7 +66,7 @@ export interface StageSocket {
   /** 上报阅读位置（播放头推进时防抖调用）：服务端节流落盘，刷新后回到原处。 */
   sendRead: (pos: ReadPos) => void;
   // Director ops: jump moves the world line, fork opens a branch
-  sendJump: (nodeId: string) => void;
+  sendJump: (nodeId: string, opts?: { playFrom?: "start" | "end" }) => void;
   /** 分岔锚点二选一：nodeId（路线/回顾给的节点）或 seq（舞台正在看的那一行）。 */
   sendFork: (anchor: string | number, opts?: { resume?: boolean }) => void;
   sendEdit: (nodeId: string, newText: string) => void;
@@ -86,13 +86,25 @@ export interface StageSocketHandlers {
   /** hello 带回来的既有生成资产全集（重连即恢复可见）。 */
   onAssets?: (assets: GeneratedAsset[]) => void;
   /** 结构性操作完成（P6 rebase）：缓冲已整段重放，播放层须复位后快进到新分支末尾。 */
-  onRebase?: (info: { epoch: number; note?: string; busy: boolean }) => void;
+  onRebase?: (info: {
+    epoch: number;
+    note?: string;
+    playFrom?: "start" | "end";
+    resumeAt?: ReadPos;
+    busy: boolean;
+  }) => void;
   /** 生图就绪（D6）：预解码后就地淡入。 */
   onAssetReady?: (asset: GeneratedAsset) => void;
   /** 生图失败：保持降级视觉 + 提示，不弹永久骨架。 */
   onAssetFailed?: (id: string, message: string) => void;
   /** 一行台词被原地改写：谱系视图跟着换新文本（缓冲由 socket 自己就地替换）。 */
   onLineEdited?: (nodeId: string, text: string) => void;
+  /** 手动生图完成/失败通知（工坊对话框监听）。 */
+  onImageResult?: (
+    result:
+      | { target: string; ok: true; url: string; path: string }
+      | { target: string; ok: false; message: string },
+  ) => void;
 }
 
 export function useStageSocket(
@@ -275,6 +287,8 @@ export function useStageSocket(
             handlersRef.current.onRebase?.({
               epoch: msg.epoch,
               ...(msg.note ? { note: msg.note } : {}),
+              ...(msg.playFrom ? { playFrom: msg.playFrom } : {}),
+              ...(msg.resumeAt ? { resumeAt: msg.resumeAt } : {}),
               // 停在新分支的停止点 = 等玩家继续；停在轮中 = 接下来还会有事件流
               busy: streaming,
             });
@@ -282,6 +296,9 @@ export function useStageSocket(
           }
           case "error":
             setError(msg.message);
+            return;
+          case "image_result":
+            handlersRef.current.onImageResult?.(msg);
             return;
           default:
             // 工坊通道（workshop_*）：与演出状态机无关，整包外发
@@ -331,7 +348,11 @@ export function useStageSocket(
     (jobId: string) => send({ type: "pending_dismiss", jobId }),
     [send],
   );
-  const sendJump = useCallback((nodeId: string) => send({ type: "jump", nodeId }), [send]);
+  const sendJump = useCallback(
+    (nodeId: string, opts?: { playFrom?: "start" | "end" }) =>
+      send({ type: "jump", nodeId, ...(opts?.playFrom ? { playFrom: opts.playFrom } : {}) }),
+    [send],
+  );
   const sendFork = useCallback(
     (anchor: string | number, opts?: { resume?: boolean }) =>
       send(
@@ -346,7 +367,14 @@ export function useStageSocket(
     [send],
   );
   const sendRead = useCallback(
-    (pos: ReadPos) => send({ type: "read", seq: pos.seq, len: pos.len }),
+    (pos: ReadPos) =>
+      send({
+        type: "read",
+        nodeId: pos.nodeId,
+        offset: pos.offset,
+        ...(pos.seq !== undefined ? { seq: pos.seq } : {}),
+        ...(pos.len !== undefined ? { len: pos.len } : {}),
+      }),
     [send],
   );
 

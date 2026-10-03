@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { estimateContextTokens, estimateTokens } from "@earendil-works/pi-agent-core";
+import { calculateContextTokens, estimateContextTokens, estimateTokens } from "@earendil-works/pi-agent-core";
 import { renderBeatDone } from "./agentkit/beatTool.js";
 
 /**
@@ -90,9 +90,23 @@ export function pickCutIndex(
 
 /** 消息列表 → 供摘要模型阅读的纯文本转录（system 消息不在其中，调用方自行切片）。 */
 export function renderTranscript(messages: readonly AgentMessage[]): string {
+  return renderTranscriptAs(messages, { user: "【玩家/导演】" });
+}
+
+/** 转录的说话人标签：工坊那边用户是剧目作者、助手是搭台助手，默认那套是演出口径。 */
+export interface TranscriptLabels {
+  user: string;
+  /** 不给则助手不带标签（演出侧原文如此）。 */
+  assistant?: string;
+}
+
+export function renderTranscriptAs(
+  messages: readonly AgentMessage[],
+  labels: TranscriptLabels,
+): string {
   const lines: string[] = [];
   for (const message of messages) {
-    const line = renderMessage(message);
+    const line = renderMessage(message, labels);
     if (line) lines.push(line);
   }
   let text = lines.join("\n\n");
@@ -167,17 +181,18 @@ export function renderSeed(epochNo: number, beatNo: number, body: string): strin
   ].join("\n");
 }
 
-function renderMessage(message: AgentMessage): string {
+function renderMessage(message: AgentMessage, labels?: TranscriptLabels): string {
   switch (message.role) {
     case "user":
-      return truncate(`【玩家/导演】${blockText(message.content)}`);
+      return truncate(`${labels?.user ?? "【玩家/导演】"}${blockText(message.content)}`);
     case "assistant": {
       const text = blockText(message.content);
       const blocks = Array.isArray(message.content) ? message.content : [];
       const tools = blocks
         .filter((b) => b.type === "toolCall")
         .map((b) => (b.name === "beat_done" ? renderBeatDone(b.arguments) : `[调用 ${b.name}]`));
-      return truncate([text, ...tools].filter(Boolean).join("\n"));
+      const body = [text, ...tools].filter(Boolean).join("\n");
+      return truncate(labels?.assistant ? `${labels.assistant}${body}` : body);
     }
     case "toolResult":
       return truncate(`【记忆工具 ${message.toolName}】${blockText(message.content)}`);
@@ -213,4 +228,119 @@ function clipHead(text: string, maxChars: number): string {
 /** 按码点保留尾部 maxChars 个字符。 */
 function clipTail(text: string, maxChars: number): string {
   return text.length <= maxChars ? text : [...text].slice(-maxChars).join("");
+}
+
+// ── 工坊线程：同一套治理的另一处落点 ──────────────────────────────
+//
+// 工坊每轮重建 Agent、全量回灌线程历史（workshop.ts），没有常驻对话体。压缩做的事一样：
+// 切掉早期轮次压成一张摘要卡，只是不进 memory（搭台过程不是剧目事实）而落线程元数据。
+
+/** 工坊线程的一轮：结构化类型，不反向依赖 workshop.ts。 */
+export interface ThreadTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+/**
+ * 线程上下文的 token 估算：systemPrompt + 消息列表，整体乘同一个 scale。
+ * 与 estimateContextTokens 同一把尺子（pi 的 chars/4 估算 × 标定系数），
+ * 只是标定系数得从上一轮的 provider usage 存下来——工坊历史是纯文本，消息里没有 usage。
+ */
+export function estimateThreadTokens(
+  systemPrompt: string,
+  messages: readonly AgentMessage[],
+  scale = 1,
+): number {
+  let local = textTokens(systemPrompt);
+  for (const message of messages) local += messageTokens(message);
+  return Math.round(local * scale);
+}
+
+/**
+ * 切尾点：返回保留尾部里第一条 user 消息的**相对**下标（切掉 [0, cut)）。
+ * 落点必须是 user 消息——保留段以完整一轮开场。scale 与计量同尺。
+ * 返回 0 表示无段可压（对话体本身就短于保留预算）。
+ */
+export function pickThreadCutIndex(
+  history: readonly ThreadTurn[],
+  keepRecentTokens: number,
+  scale = 1,
+): number {
+  let tokens = 0;
+  let cut = history.length;
+  while (cut > 0 && tokens < keepRecentTokens) {
+    cut -= 1;
+    tokens += turnTokens(history[cut]!) * scale;
+  }
+  if (cut === 0) return 0;
+  // 预算落在消息中间时向后顺延到下一条 user（宁可少留也不劈开一轮）；顺延越界则退到本轮开头。
+  let next = cut;
+  while (next < history.length && history[next]!.role !== "user") next += 1;
+  if (next < history.length) cut = next;
+  else while (cut > 0 && history[cut]!.role !== "user") cut -= 1;
+  return cut > 0 && history[cut]!.role === "user" ? cut : 0;
+}
+
+/**
+ * 从一轮跑完的 agent 消息里标定 scale：provider 实测 usage ÷ 到那条 assistant 为止的本地估算。
+ * 口径与 pi 的 estimateContextTokens 一致（usage 落在最后一条有效 assistant 上）。
+ * usage 缺失/全零、系数越界 → 返回 null（调用方按 1 算）。
+ */
+export function calibrateTokenScale(
+  systemPrompt: string,
+  messages: readonly AgentMessage[],
+): number | null {
+  let index = -1;
+  let usageTokens = 0;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]!;
+    if (
+      message.role === "assistant" &&
+      message.stopReason !== "aborted" &&
+      message.stopReason !== "error" &&
+      calculateContextTokens(message.usage) > 0
+    ) {
+      index = i;
+      usageTokens = calculateContextTokens(message.usage);
+      break;
+    }
+  }
+  if (index < 0) return null;
+  let local = textTokens(systemPrompt);
+  for (let i = 0; i <= index; i += 1) {
+    // system 消息已由 systemPrompt 计过一遍（这里的口径是「prompt + 不含 system 的消息」）
+    if (messages[i]!.role === "system") continue;
+    local += messageTokens(messages[i]!);
+  }
+  if (local <= 0) return null;
+  const scale = usageTokens / local;
+  if (!Number.isFinite(scale) || scale <= 0 || scale > 10) return null;
+  return scale;
+}
+
+/** 摘要正文上限：再长就把开头的早期结论挤掉（新一轮摘要是拿这份定稿当底稿重写的）。 */
+export const DIGEST_MAX_CHARS = 6000;
+
+/** 摘要正文封顶：从尾部保留（最新状态最该留），丢掉的早期部分留一条标记。 */
+export function capDigest(text: string, maxChars = DIGEST_MAX_CHARS): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxChars) return trimmed;
+  return `（更早的对话已不再保留）\n${clipTail(trimmed, maxChars)}`;
+}
+
+/** 单轮文本的 token 估算：与 pi 的 chars/4 同尺，中文误差由 scale 统一纠正。 */
+function turnTokens(turn: ThreadTurn): number {
+  return Math.ceil(turn.text.length / 4);
+}
+
+function textTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/**
+ * 单条消息的 token 估算。pi 的 estimateTokens 不认 system role（返回 0），
+ * 而工坊的 A 区（文件清单 + 技能 + 写作要点）是上下文的大头，不能当零——自己按同一把尺子补上。
+ */
+function messageTokens(message: AgentMessage): number {
+  return message.role === "system" ? textTokens(blockText(message.content)) : estimateTokens(message);
 }

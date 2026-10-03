@@ -15,17 +15,9 @@ import { ModelSelect } from "../ui/ModelSelect.js";
  * 就彻底装不进去（提示词里对应的章节也跟着收掉）。
  */
 
-const ROLES: { id: keyof AgentConfig; name: string; blurb: string }[] = [
-  {
-    id: "playwriter",
-    name: "剧作家",
-    blurb: "演出中实时写剧本的那个。每轮都要出文，模型与思考档位对成品质感影响最大。",
-  },
-  {
-    id: "workshop",
-    name: "搭台助手",
-    blurb: "在工坊里改设定、补素材、翻故事树的那个。对话轮次多、单轮简单，便宜模型通常够用。",
-  },
+const ROLES: { id: keyof AgentConfig; name: string }[] = [
+  { id: "playwriter", name: "剧作家" },
+  { id: "workshop", name: "搭台助手" },
 ];
 
 const THINKING_LABEL: Record<ThinkingLevel, string> = {
@@ -46,11 +38,9 @@ export function AgentPane({ playId }: { playId: string }) {
   const [modelError, setModelError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [loadingModels, setLoadingModels] = useState(false);
 
   const loadModels = useCallback(
     (refresh = false): void => {
-      setLoadingModels(true);
       api
         .agentModels(refresh)
         .then((r) => {
@@ -61,8 +51,7 @@ export function AgentPane({ playId }: { playId: string }) {
         .catch((e: Error) => {
           setModels(null);
           setModelError(e.message);
-        })
-        .finally(() => setLoadingModels(false));
+        });
     },
     [],
   );
@@ -125,7 +114,6 @@ export function AgentPane({ playId }: { playId: string }) {
         return (
           <section className="settings-group agent-card" key={role.id}>
             <h3>{role.name}</h3>
-            <p className="muted small">{role.blurb}</p>
 
             <label className="field">
               <span>模型</span>
@@ -137,10 +125,6 @@ export function AgentPane({ playId }: { playId: string }) {
                 onChange={(id) => patch(role.id, (s) => setOrClear(s, "model", id, ""))}
                 onRetry={() => loadModels(true)}
               />
-              <p className="muted small">
-                网关按量计费：工坊跑便宜模型、剧作家跑强模型是常见配法。
-                {loadingModels && " 正在读模型清单…"}
-              </p>
             </label>
 
             <label className="field">
@@ -155,8 +139,41 @@ export function AgentPane({ playId }: { playId: string }) {
                   </option>
                 ))}
               </select>
-              <p className="muted small">调高会让模型先想再写，代价是每轮更慢也更贵。默认不思考。</p>
             </label>
+
+            {role.id === "playwriter" && (
+              <>
+                <label className="field">
+                  <span>限制级（NSFW）专用模型</span>
+                  <ModelSelect
+                    value={settings.nsfwModel ?? ""}
+                    models={models}
+                    error={modelError}
+                    emptyLabel={`跟随剧作家主模型${settings.model ? `（${settings.model}）` : ""}`}
+                    onChange={(id) => patch(role.id, (s) => setOrClear(s, "nsfwModel", id, ""))}
+                    onRetry={() => loadModels(true)}
+                  />
+                  <p className="muted small">
+                    当剧作家调用 enter_nsfw 进入亲密/限制级剧情时切换为此模型执笔。退出时切回主模型并注入 SFW 摘要。
+                  </p>
+                </label>
+
+                <label className="field">
+                  <span>限制级（NSFW）思考档位</span>
+                  <select
+                    value={settings.nsfwThinking ?? "off"}
+                    onChange={(e) => patch(role.id, (s) => setOrClear(s, "nsfwThinking", e.target.value, "off"))}
+                  >
+                    {THINKING_LEVELS.map((level) => (
+                      <option key={level} value={level}>
+                        {THINKING_LABEL[level]}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="muted small">限制级剧情通道下的独立思考档位。默认不思考。</p>
+                </label>
+              </>
+            )}
 
             <div className="field">
               <span>工具</span>
@@ -185,11 +202,19 @@ export function AgentPane({ playId }: { playId: string }) {
                     ))}
                 </div>
               ))}
-              <p className="muted small">
-                关掉的工具下一轮就装不进去（模型看不见它，提示词里对应的章节也一起收掉）。改完从下一轮生效。
-                没勾的会写进 play.json，与默认集无关——默认只是初始态。
-              </p>
             </div>
+
+            {role.id === "workshop" && (
+              <label className="field">
+                <span>补充要求</span>
+                <textarea
+                  rows={6}
+                  value={settings.prompt ?? ""}
+                  placeholder={"例：这部作品是慢热悬疑，每轮别写太长；\n涉及凶案的情节先问我一句再写。"}
+                  onChange={(e) => patch(role.id, (s) => setOrClear(s, "prompt", e.target.value))}
+                />
+              </label>
+            )}
           </section>
         );
       })}
@@ -198,20 +223,22 @@ export function AgentPane({ playId }: { playId: string }) {
         <button className="primary" onClick={save}>
           保存设置
         </button>
-        {saved && <span className="muted small">已保存。演出或工坊对话的下一轮生效，当前这轮不打断。</span>}
+        {saved && <span className="muted small">已保存，下一轮生效。</span>}
       </p>
     </div>
   );
 }
 
 /** 值等于默认（或空）时把键删掉，别在 play.json 里留一堆等价于缺省的字段。 */
-function setOrClear<K extends "model" | "thinking">(
+function setOrClear<K extends "model" | "thinking" | "prompt" | "nsfwModel" | "nsfwThinking" | "nsfwPrompt">(
   settings: AgentSettings,
   key: K,
   value: string,
   blank?: string,
 ): void {
-  if (value === "" || value === blank) delete settings[key];
+  // 提示词是长文本，清空后多半只剩几个换行：只判空串会把它当成「用户真的写了内容」存进 play.json，
+  // 服务端读回时又因 trim 为空丢掉——文件里留了一段永不生效的文本。
+  if (value.trim() === "" || value === blank) delete settings[key];
   else settings[key] = value as AgentSettings[K];
 }
 

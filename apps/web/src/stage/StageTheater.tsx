@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { actionAnimation, type ActorAction, type ActorAnchor, type ActorShot, type SpriteFraming } from "@stage-ai/core";
 import { dialogContent, emptyDialogHint } from "./playbackState.js";
 import { actorName } from "./script.js";
-import type { Playback, VisualState } from "./director.js";
+import { speakerFocusId, type Playback, type VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
 import { LoopChannel, SfxPlayer } from "./loopAudio.js";
 import type { TranscriptEntry } from "./transcript.js";
@@ -37,7 +37,10 @@ interface StageTheaterProps {
   /** 分岔锚点：字符串是谱系节点 id（回顾/路线），数字是舞台当前行的 seq。 */
   onFork: (anchor: string | number, opts?: { resume?: boolean }) => void;
   /** 导演生图：按当前这一幕出一张插图，指令可留空。 */
-  onGenerateCg: (instruction: string) => void;
+  onGenerateCg: (
+    instruction: string,
+    opts?: { referenceCharacters?: string[]; useHistory?: boolean },
+  ) => void;
   onReplay: (seq: number) => void;
   /** 这一行的语音处于哪一态：none=没配音色/不生成，pending=正在合成，ready=可重听。 */
   voiceState: (seq: number | null) => VoiceState;
@@ -74,6 +77,9 @@ export type VoiceState = "none" | "pending" | "ready";
  * 导演栏的动作。分岔从「当前这一行」开（舞台传 seq），重新生成从整轮开头重演（传 beatId）；
  * 生图不进分支、直接落图。
  */
+import { RefCharacterPicker, type RefCandidate } from "../ui/RefCharacterPicker.js";
+import { cgCanSubmit, toggleReference } from "./cgOptions.js";
+
 type DirectorAction = "prompt" | "edit" | "restart" | "fork" | "cg";
 
 /** 「提示」面板里的两岔：跟着这一轮写下去（引导），还是从这一行退开（分岔）。 */
@@ -115,9 +121,9 @@ const ACTION_META: Record<
   },
 };
 
-/** 「提示」面板两岔各自的一句话说明：说清这一句发出去会发生什么，不解释引擎。 */
+/** 「提示」面板两岔各自的一句话说明：说清这一句发出去会发生什么。 */
 const GUIDE_HINT: Record<GuideMode, string> = {
-  guide: "跟下一轮一起发：话排进队列，等你点选项或输入时一起送到剧作家。",
+  guide: "排进队列，随下一轮一起发送。",
   fork: "从正在看的这一行开新分支。",
 };
 /** 输入态：输入框里的按键是文字的，不能被舞台的快捷键与快进档抢走。 */
@@ -159,6 +165,7 @@ function Sprite({
   leaving,
   action,
   actionSeq,
+  dim,
 }: {
   url: string | null;
   pos: string;
@@ -171,6 +178,8 @@ function Sprite({
   action: ActorAction | null;
   /** 同一行为词要能连演（nod 之后又 nod），靠这个序号让 animation 重挂一次。 */
   actionSeq: number;
+  /** 非当前说话人：压暗到 --sprite-dim，把注意力留给说话的那个。 */
+  dim: boolean;
 }): ReactNode {
   const [current, setCurrent] = useState<string | null>(url);
   const [outgoing, setOutgoing] = useState<string | null>(null);
@@ -218,7 +227,7 @@ function Sprite({
   // 正在退场的那一瞬不挂：离场走 .leaving 的淡出，混上入场动画会打架。
   const cls = `theater-sprite framing-${framing} pos-${pos} anchor-${anchor}${
     leaving ? " leaving" : " entering"
-  }${acting ? " acting" : ""}`;
+  }${acting ? " acting" : ""}${dim ? " dim" : ""}`;
   const style: CSSProperties = {
     "--scale": SHOT_SCALE[shot ?? "normal"],
     "--sprite-act": actionAnimation(action) ?? "none",
@@ -283,9 +292,12 @@ voiceState,
       created.sfx.dispose();
     };
   }, []);
-/** 导演栏的面板：几个动作的全部输入都在对话框里收，不跳视图。 */
+  /** 导演栏的面板：几个动作的全部输入都在对话框里收，不跳视图。 */
   const [action, setAction] = useState<DirectorAction | null>(null);
   const [draft, setDraft] = useState("");
+  /** 生图选项：参考角色立绘（多选有序）与是否基于历史（默认勾上） */
+  const [selectedRefs, setSelectedRefs] = useState<string[]>([]);
+  const [useHistory, setUseHistory] = useState(true);
   /** 「提示」面板走哪条岔：引导 = 排进待注入队列跟着这一轮写，分岔 = 先退开再落笔。 */
   const [guideMode, setGuideMode] = useState<GuideMode>("guide");
   /** 净画面：藏掉压在画面上的台词条与导演栏，只剩背景/立绘/CG。点画面或按 H/空格/Esc 回来。 */
@@ -308,6 +320,8 @@ voiceState,
   // 空对话区的「还没开演」是第三种说法：dialogContent 只分「演出中 / 等玩家」两态，
   // 树还空着时说「剧作家正在落笔…」是在撒谎。三层优先级不动，只在这一态换掉那句话。
   const dialogBody = !playerEcho && !view && fresh ? emptyDialogHint(live, fresh) : dialog.text;
+  // 说话者聚焦：当前这句台词的人保持原亮度，同框的其余人压暗。规则见 speakerFocusId。
+  const focusId = speakerFocusId(view, visual.sprites);
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→/空格 往回追。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
@@ -481,7 +495,10 @@ voiceState,
       return;
     }
     if (act === "cg") {
-      onGenerateCg(text);
+      onGenerateCg(text, {
+        referenceCharacters: selectedRefs.length > 0 ? selectedRefs : undefined,
+        useHistory,
+      });
       return;
     }
     if (act === "restart") {
@@ -516,11 +533,11 @@ voiceState,
     action === "prompt" && guideMode === "fork" ? "fork" : (action ?? "prompt");
 
   /**
-   * 送不出去的四种情形，没有第五种：
+   * 送不出去的五种情形，没有第六种：
    *  - 改写必须真写一句（没内容就无从改起）
    *  - 引导必须有话可排（空句进队列等于没排）
    *  - 分岔/重来要有落点（还没演到任何一行）
-   *  - 生图没有门槛：留空就是按刚才这一幕构图
+   *  - 生图：勾了历史可留空，未勾历史必须填指令（见 cgCanSubmit）
    */
   const submitDisabled: boolean =
     modalAction === "edit"
@@ -531,7 +548,9 @@ voiceState,
           ? forkBlock !== null
           : modalAction === "restart"
             ? targets.beatId === null
-            : false;
+            : modalAction === "cg"
+              ? !cgCanSubmit(draft, useHistory)
+              : false;
 
   return (
     <div
@@ -543,7 +562,7 @@ voiceState,
     >
       {/* 顶栏（游戏 HUD 式的 exit/log/branch/studio）在 StageScreen 里，浮于三个视图之上 */}
 
-      <div className="theater-stage">
+      <div className={`theater-stage${scrubbed ? " rewinding" : ""}`}>
         {bgUrl ? (
           <img key={bgUrl} className="theater-bg theater-bg-in" src={bgUrl} alt="" />
         ) : (
@@ -570,6 +589,7 @@ voiceState,
               leaving={slot.leaving === true}
               action={slot.action}
               actionSeq={slot.actionSeq}
+              dim={focusId !== null && focusId !== id}
             />
           );
         })}
@@ -600,7 +620,7 @@ voiceState,
         <button
           type="button"
           className={`dir-btn ${action === "prompt" ? "on" : ""}`}
-          title="提示：可以是角色的行动或台词，也可以是给这场戏的指示"
+          title="输入角色的行动、台词，或给这场戏的指示"
           aria-label="提示"
           onClick={(e) => {
             e.stopPropagation();
@@ -649,8 +669,14 @@ voiceState,
           disabled={fresh}
           onClick={(e) => {
             e.stopPropagation();
-            setAction(action === "cg" ? null : "cg");
-            setDraft("");
+            if (action === "cg") {
+              setAction(null);
+            } else {
+              setAction("cg");
+              setDraft("");
+              setSelectedRefs([]);
+              setUseHistory(true);
+            }
           }}
         >
           <Icon name="assets" size={17} />
@@ -791,7 +817,7 @@ voiceState,
                   type="button"
                   className={`seg-btn ${guideMode === "guide" ? "active" : ""}`.trim()}
                   aria-pressed={guideMode === "guide"}
-                  title="跟着下一轮写，排进队列等你选。"
+                  title="跟下一轮一起发"
                   onClick={() => setGuideMode("guide")}
                 >
                   引导
@@ -807,6 +833,33 @@ voiceState,
                   分岔
                 </button>
               </div>
+            )}
+            {/* 生图选项：参考角色立绘（多选有序）+ 基于历史开关 */}
+            {action === "cg" && (
+              <>
+                <div className="image-gen-field">
+                  <span className="image-gen-label">参考角色立绘（按点选顺序垫图）：</span>
+                  <RefCharacterPicker
+                    candidates={Object.entries(names)
+                      .map(([id, name]) => ({
+                        id,
+                        name,
+                        spriteUrl: index.sprite(id, null),
+                      }))
+                      .filter((c): c is RefCandidate => Boolean(c.spriteUrl))}
+                    selected={selectedRefs}
+                    onToggle={(id) => setSelectedRefs((prev) => toggleReference(prev, id))}
+                  />
+                </div>
+                <label className="image-gen-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={useHistory}
+                    onChange={(e) => setUseHistory(e.target.checked)}
+                  />
+                  <span>基于刚才演到的剧情与场景</span>
+                </label>
+              </>
             )}
             <div className="director-input">
               {action === "prompt" && (

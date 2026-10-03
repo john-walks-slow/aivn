@@ -3,6 +3,7 @@ import type {
   ClientMessage,
   WorkshopAssetView,
   WorkshopChatMessage,
+  WorkshopCompactionView,
   WorkshopThreadInfo,
 } from "@stage-ai/core";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
@@ -19,6 +20,8 @@ export interface WorkshopState {
   threads: WorkshopThreadInfo[];
   activeId: string | null;
   messages: WorkshopChatMessage[];
+  /** 本线程已发生的压缩（未压缩为 null）：前 cutAt 条仍在 messages 里，只是不再进 agent 上下文。 */
+  compaction: WorkshopCompactionView | null;
   /** 正在流式输出的文本（尚未落进 messages）。 */
   streaming: string;
   /** 工坊 agent 当前在做什么（工具名）。 */
@@ -38,6 +41,7 @@ const EMPTY: WorkshopState = {
   threads: [],
   activeId: null,
   messages: [],
+  compaction: null,
   streaming: "",
   activity: null,
   writes: [],
@@ -46,16 +50,18 @@ const EMPTY: WorkshopState = {
   error: null,
 };
 
+// read / write / edit / bash 是 pi 的内建工具，名字直接就是英文动词
 const TOOL_LABEL: Record<string, string> = {
-  list_files: "查看文件清单",
-  read_file: "读取文件",
-  write_file: "写入文件",
-  delete_file: "删除文件",
+  read: "读取文件",
+  write: "写入文件",
+  edit: "定点编辑",
+  bash: "跑命令",
   get_readiness: "检查就绪条件",
   generate_image: "出图中（几十秒，别急着发下一条）",
+  recut_sprite: "重抠立绘底",
   list_library: "查素材资源库",
   import_asset: "从资源库导入素材",
-  inspect_asset: "看图",
+  view_image: "看图",
   read_skill: "读技能库",
   list_saves: "查看周目",
   read_lineage: "读故事树",
@@ -83,6 +89,7 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
             ...prev,
             activeId: msg.threadId,
             messages: msg.messages,
+            compaction: msg.compaction,
             streaming: "",
             activity: null,
             pendingAssets: [],
@@ -178,6 +185,7 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
     setState((prev) => ({
       ...prev,
       messages: [],
+      compaction: null,
       streaming: "",
       activity: null,
       pendingAssets: [],

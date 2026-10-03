@@ -21,6 +21,10 @@ export interface ServerConfig {
    * 空 = 不限制，沿用「网关 `/v1/models` 有什么给什么」。顺序按配置里写的来。
    */
   models: string[];
+  /** 限制级（NSFW）专用模型 id（`STAGE_NSFW_MODEL_ID`）。缺省为空，回退到 modelId。 */
+  nsfwModelId?: string;
+  /** 限制级（NSFW）专属系统提示词扩展（`STAGE_NSFW_PROMPT`）。 */
+  nsfwPrompt?: string;
   baseUrl: string;
   apiKey: string;
   /** 单请求输出上限（max_tokens）：钳住捐赠元数据的虚高 maxTokens——streamSimple 不传时以 model.maxTokens 填充发出，超网关限制即 400。 */
@@ -31,6 +35,15 @@ export interface ServerConfig {
   compactRatio: number;
   /** 纪元压缩保留的最近上下文（token 估算）：切尾点之后的原文留在对话体。 */
   keepRecentTokens: number;
+  /**
+   * 工坊线程压缩的同一组参数，单独一套 env（`STAGE_WORKSHOP_*`），不设即沿用上面三项。
+   * 工坊模型可以和剧作家不同（play.json 的 agents.workshop.model），窗口不等时压错阈值会误判。
+   */
+  workshopContext: {
+    contextWindow: number;
+    compactRatio: number;
+    keepRecentTokens: number;
+  };
   /** 单轮超时（毫秒）：网关挂住时 provider 既不报错也不收流，到点 abort 这一轮。 */
   beatTimeoutMs: number;
   /** 生图管线（D6）：出图后端 + 预发射 + 媒体缓存。 */
@@ -132,6 +145,15 @@ export function loadConfig(
   env: NodeJS.ProcessEnv = process.env,
   repoRoot = process.cwd(),
 ): ServerConfig {
+  // 纪元压缩的三个全局值先落局部：工坊那组要拿它们当缺省。
+  // 256K：两个 agent 的默认窗口。低于它的部署要显式写小，否则触发阈值会高过网关真实上限。
+  const contextWindow = parsePositiveInt("STAGE_CONTEXT_WINDOW", env.STAGE_CONTEXT_WINDOW, 262144);
+  const compactRatio = parseRatio("STAGE_COMPACT_RATIO", env.STAGE_COMPACT_RATIO, 0.6);
+  const keepRecentTokens = parsePositiveInt(
+    "STAGE_KEEP_RECENT_TOKENS",
+    env.STAGE_KEEP_RECENT_TOKENS,
+    20000,
+  );
   const config: ServerConfig = {
     port: Number(env.STAGE_PORT ?? "8787"),
     password: env.STAGE_PASSWORD ?? "",
@@ -140,16 +162,32 @@ export function loadConfig(
     modelId: env.STAGE_MODEL_ID ?? "ms/deepseek-ai/DeepSeek-V4.1-Flash",
     modelBase: env.STAGE_MODEL_BASE ?? "deepseek/deepseek-flash",
     models: parseModelList(env.STAGE_MODELS),
+    nsfwModelId: env.STAGE_NSFW_MODEL_ID?.trim() || undefined,
+    nsfwPrompt: env.STAGE_NSFW_PROMPT?.trim() || undefined,
     baseUrl: env.STAGE_BASE_URL ?? "http://127.0.0.1:9999/v1",
     apiKey: env.STAGE_API_KEY ?? "sk-1234",
     maxTokens: parsePositiveInt("STAGE_MAX_TOKENS", env.STAGE_MAX_TOKENS, 32768),
-    contextWindow: parsePositiveInt("STAGE_CONTEXT_WINDOW", env.STAGE_CONTEXT_WINDOW, 131072),
-    compactRatio: parseRatio("STAGE_COMPACT_RATIO", env.STAGE_COMPACT_RATIO, 0.6),
-    keepRecentTokens: parsePositiveInt(
-      "STAGE_KEEP_RECENT_TOKENS",
-      env.STAGE_KEEP_RECENT_TOKENS,
-      20000,
-    ),
+    contextWindow,
+    compactRatio,
+    keepRecentTokens,
+    // 工坊侧同一组参数：缺省逐项沿用全局，写了就以工坊自己的为准。
+    workshopContext: {
+      contextWindow: parsePositiveInt(
+        "STAGE_WORKSHOP_CONTEXT_WINDOW",
+        env.STAGE_WORKSHOP_CONTEXT_WINDOW,
+        contextWindow,
+      ),
+      compactRatio: parseRatio(
+        "STAGE_WORKSHOP_COMPACT_RATIO",
+        env.STAGE_WORKSHOP_COMPACT_RATIO,
+        compactRatio,
+      ),
+      keepRecentTokens: parsePositiveInt(
+        "STAGE_WORKSHOP_KEEP_RECENT_TOKENS",
+        env.STAGE_WORKSHOP_KEEP_RECENT_TOKENS,
+        keepRecentTokens,
+      ),
+    },
     // 一轮 240s：一轮里有生图预发射和多轮记忆工具调用，60s 不够；再久就是网关挂了。
     // 到点 abort 这一轮，按轮失败收束（空轮护栏给玩家重试入口），不是无声卡死。
     beatTimeoutMs: parsePositiveInt("STAGE_BEAT_TIMEOUT_MS", env.STAGE_BEAT_TIMEOUT_MS, 240_000),
@@ -188,12 +226,17 @@ export function loadConfig(
     },
   };
   // 保留预算 ≥ 触发阈值：每轮都判定超标却永远切不出可压段，纪元压缩静默失效
-  if (config.keepRecentTokens >= config.contextWindow * config.compactRatio) {
-    console.warn(
-      `[stage-ai] STAGE_KEEP_RECENT_TOKENS（${config.keepRecentTokens}）≥ 触发阈值（${Math.floor(
-        config.contextWindow * config.compactRatio,
-      )}），纪元压缩将无法切出可压段`,
-    );
+  for (const [name, block] of [
+    ["STAGE", config],
+    ["STAGE_WORKSHOP", config.workshopContext],
+  ] as const) {
+    if (block.keepRecentTokens >= block.contextWindow * block.compactRatio) {
+      console.warn(
+        `[stage-ai] ${name}_KEEP_RECENT_TOKENS（${block.keepRecentTokens}）≥ 触发阈值（${Math.floor(
+          block.contextWindow * block.compactRatio,
+        )}），纪元压缩将无法切出可压段`,
+      );
+    }
   }
   return config;
 }

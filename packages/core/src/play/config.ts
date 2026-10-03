@@ -11,10 +11,18 @@ import { framingOf, isSpriteFraming, type SpriteFraming } from "./framing.js";
 export interface CharacterCard {
   id: string;
   name: string;
-  persona: string;
-  /** 台词风格描述（playwriter 提示词用：口癖/句长/语速）。 */
+  /**
+   * 人设正文。真相源是角色卡 `memory/always/characters/<id>.md` 的正文，
+   * 这份是存量数据的兜底——工坊存过卡之后就不再写这里。
+   */
+  persona?: string;
+  /** 台词风格描述（playwriter 提示词用：口癖/句长/语速）。真相源同样是角色卡。 */
   voice?: string;
-  /** TTS 音色 id（fish-audio reference_id，32 位 hex；从 Fish 公共音色库选取，目录见 /api/voices）。 */
+  /**
+   * TTS 音色 id（fish-audio reference_id，32 位 hex；从 Fish 公共音色库选取，目录见 /api/voices）。
+   * 真相源是角色卡的 frontmatter `voiceId`——工坊改不写 play.json 的单个字段，
+   * 这份是存量兜底（导入资源库建的角色一度只有它）。
+   */
   voiceId?: string;
   /** 立绘差分映射：expression id → assets/sprites/<char>/ 文件名（P2 演出层用）。 */
   sprites?: Record<string, string>;
@@ -49,6 +57,14 @@ export interface AgentSettings {
   model?: string;
   thinking?: ThinkingLevel;
   /**
+   * 追加到系统提示词末尾的自定义段（**只有工坊装它**）。
+   *
+   * 引擎自带的提示词不可编辑也不该可编辑——它写的是引擎契约与能力边界，改了必然漂。
+   * 用户真正想逐剧目调的是「这个剧目的搭台助手该怎么做事」，落在这里。
+   * 存原文，注入时原样拼在固定提示词之后。
+   */
+  prompt?: string;
+  /**
    * 显式启用的工具名（工具目录见 `GET /api/agents/tools`）。缺省 = 该角色的默认集。
    *
    * 存的是**启用集**而不是禁用集：默认禁用的那几个（剧作家的生图与资源库）
@@ -56,6 +72,12 @@ export interface AgentSettings {
    * 下次改默认值就会把用户的显式选择一起吞掉。
    */
   tools?: string[];
+  /** 限制级（NSFW）剧情通道专用模型 id（仅剧作家用）。缺省回退到 STAGE_NSFW_MODEL_ID 或 model。 */
+  nsfwModel?: string;
+  /** 限制级（NSFW）剧情通道专用思考档位（仅剧作家用）。缺省回退到 thinking。 */
+  nsfwThinking?: ThinkingLevel;
+  /** 限制级（NSFW）剧情通道专属系统提示词扩展。 */
+  nsfwPrompt?: string;
 }
 
 /**
@@ -73,13 +95,29 @@ export interface PlayCover {
 export interface PlayConfig {
   id: string;
   title: string;
-  characters: CharacterCard[];
+  /**
+   * 角色清单——**纯元数据，没有任何运行时逻辑读它**。
+   *
+   * 角色的真相源是 `memory/always/characters/<id>.md`（见 play/characterCard.ts）：
+   * 名字、人设、音色、voiceId、立绘差分映射与取景全在那里。角色表就是那个目录的
+   * 文件列表。这份留着是因为它读着像「主要角色表」，删了会让 play.json 的角色部分
+   * 对用户完全隐形，而它本来也不影响任何东西。
+   */
+  characters?: CharacterCard[];
   /** 剧目卡与标题画面的封面图。缺省按「第一张背景 → 第一张插图」自动取。 */
   cover?: PlayCover;
   /** 主角（玩家）角色卡：无则输入润色走通用模式。 */
   protagonist?: ProtagonistCard;
   /** 语音语言（ISO 639-1，如 "ja"）：与剧本语言不同时 say 文本先译成该语言再送 TTS；缺省跟随剧本语言。 */
   voiceLanguage?: string;
+  /**
+   * 没有角色卡的角色用哪个音色（剧目级兜底）。
+   *
+   * 一次性路人走 `<say id="passerby" name="路人甲">`——不建卡就不在角色表里，
+   * 而音色挂在角色卡的 voiceId 上，于是这类角色永远没声音。给剧目兜一个，
+   * 路人就有声音了，而每个有名有姓的角色仍然各用各的音色。
+   */
+  defaultVoiceId?: string;
   /** 开局 user 消息中的起始指令。 */
   opening: string;
   initialState: EngineStateSnapshot;
@@ -96,8 +134,8 @@ export interface AgentConfig {
 
 export function parsePlayConfig(raw: unknown): PlayConfig {
   const data = raw as Partial<PlayConfig>;
-  if (!data.id || !data.title || !Array.isArray(data.characters)) {
-    throw new Error("play.json 缺少必填字段（id/title/characters）");
+  if (!data.id || !data.title) {
+    throw new Error("play.json 缺少必填字段（id/title）");
   }
   const protagonist =
     data.protagonist && (data.protagonist.name.trim() !== "" || data.protagonist.persona.trim() !== "")
@@ -117,10 +155,13 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
   return {
     id: data.id,
     title: data.title,
-    characters: data.characters.map(parseCharacter),
+    characters: Array.isArray(data.characters) ? data.characters.map(parseCharacter) : undefined,
     ...(cover ? { cover } : {}),
     ...(protagonist ? { protagonist } : {}),
     ...(data.voiceLanguage?.trim() ? { voiceLanguage: data.voiceLanguage.trim() } : {}),
+    ...(typeof data.defaultVoiceId === "string" && /^[0-9a-f]{32}$/i.test(data.defaultVoiceId.trim())
+      ? { defaultVoiceId: data.defaultVoiceId.trim() }
+      : {}),
     opening: data.opening ?? "（游戏开始，请演出第一轮）",
     initialState: data.initialState ?? { turn: 0, affinity: {}, flags: {} },
     initialScene: data.initialScene ?? "未定",
@@ -158,6 +199,9 @@ function parseCharacter(card: CharacterCard): CharacterCard {
 /**
  * agents 段归一化：整段是可选的，逐字段丢弃非法值而不是让整份 play.json 读不出来。
  * 一条手滑的 thinking 档位不该让整部剧目打不开——那比退回默认值糟得多。
+ *
+ * `prompt` 只给工坊留：剧作家那边读了也没人用，留着只会让手写 play.json 的人
+ * 以为「这段生效了」。剧作家要怎么写走 `memory/always/craft.md`。
  */
 function parseAgentConfig(raw: AgentConfig | undefined): AgentConfig | undefined {
   if (!raw || typeof raw !== "object") return undefined;
@@ -169,6 +213,20 @@ function parseAgentConfig(raw: AgentConfig | undefined): AgentConfig | undefined
     if (typeof source.model === "string" && source.model.trim() !== "") settings.model = source.model.trim();
     if (source.thinking && (THINKING_LEVELS as readonly string[]).includes(source.thinking)) {
       settings.thinking = source.thinking;
+    }
+    if (role === "workshop" && typeof source.prompt === "string" && source.prompt.trim() !== "") {
+      settings.prompt = source.prompt;
+    }
+    if (role === "playwriter") {
+      if (typeof source.nsfwModel === "string" && source.nsfwModel.trim() !== "") {
+        settings.nsfwModel = source.nsfwModel.trim();
+      }
+      if (source.nsfwThinking && (THINKING_LEVELS as readonly string[]).includes(source.nsfwThinking)) {
+        settings.nsfwThinking = source.nsfwThinking;
+      }
+      if (typeof source.nsfwPrompt === "string" && source.nsfwPrompt.trim() !== "") {
+        settings.nsfwPrompt = source.nsfwPrompt.trim();
+      }
     }
     if (Array.isArray(source.tools)) {
       const names = source.tools.filter((n): n is string => typeof n === "string" && n.trim() !== "");

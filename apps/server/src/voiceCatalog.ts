@@ -11,13 +11,22 @@ import type { ServerConfig } from "./config.js";
  *
  * 公共库免费档只开放热度前 1000 条（`accessible_upper_bound`），分页 100/页共 10 页。
  * 策略是**全量抓一次落盘**再在内存里搜索/筛选——每次筛选都打 Fish 既慢又烧请求。
- * 抓取失败但盘上有快照时沿用快照（标 `stale`），没有则把错误如实抛给调用方。
+ * 10 页并发抓取（一轮来回，不是十轮）；抓取失败但盘上有快照时沿用快照（标 `stale`），
+ * 没有则把错误如实抛给调用方。失败后静默几分钟，不让每次调用都重付一遍抓取的代价。
  */
 
 const PAGE_SIZE = 100;
 /** 免费档可达窗口 1000；再多翻页返回空数组，只是多打 10 次无效请求。 */
 const MAX_PAGES = 10;
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+/**
+ * 刷新失败后的静默期。
+ *
+ * 抓不到时 `fetchedAt` 不推进（推进了就等于把旧快照谎称成新的），于是每次调用都会重新
+ * 发起一次完整刷新——代理不通时每次调用都白等三十多秒。失败一次就静默几分钟，
+ * 让「上游坏了」不至于变成「每次查询都卡」。
+ */
+const FAILURE_BACKOFF_MS = 5 * 60 * 1000;
 const TIMEOUT_MS = 30_000;
 
 interface FishModelEntity {
@@ -64,6 +73,8 @@ export class VoiceCatalogService {
   private readonly fetchJson: VoiceFetcher;
   /** 抓取中的共享 Promise——并发请求只打一轮 Fish。 */
   private inflight: Promise<VoiceCatalog> | null = null;
+  /** 最近一次刷新失败的时刻，用于静默期（见 FAILURE_BACKOFF_MS）。 */
+  private lastFailureAt = 0;
 
   constructor(
     private readonly config: ServerConfig,
@@ -84,6 +95,9 @@ export class VoiceCatalogService {
       const cached = await this.readCache();
       if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return { ...cached, stale: false };
       if (cached) return this.refreshOrStale(cached);
+    } else {
+      // 用户显式点刷新（音色库面板那个按钮）不在静默期内，免得按了没反应
+      this.lastFailureAt = 0;
     }
     return this.refreshOrStale(null);
   }
@@ -96,9 +110,21 @@ export class VoiceCatalogService {
   }
 
   private refreshOrStale(fallback: VoiceCatalog | null): Promise<VoiceCatalog> {
-    this.inflight ??= this.refresh().finally(() => {
-      this.inflight = null;
-    });
+    if (Date.now() - this.lastFailureAt >= FAILURE_BACKOFF_MS) {
+      this.inflight ??= this.refresh()
+        .catch((error: unknown) => {
+          this.lastFailureAt = Date.now();
+          throw error;
+        })
+        .finally(() => {
+          this.inflight = null;
+        });
+    }
+    // 静默期内不再打上游：有快照就用旧数据并标 stale，没有就如实报错（不编一个假错误）
+    if (!this.inflight) {
+      if (fallback) return Promise.resolve({ ...fallback, stale: true });
+      return Promise.reject(new Error("音色库暂时拉不到，本机也没有快照"));
+    }
     return this.inflight.catch((error: unknown) => {
       if (!fallback) throw error;
       const message = error instanceof Error ? error.message : String(error);
@@ -108,16 +134,20 @@ export class VoiceCatalogService {
   }
 
   private async refresh(): Promise<VoiceCatalog> {
+    // 10 页一次并发打完，不逐页等：串行时每页一个来回，翻完要三十多秒（本机实测），
+    // 而这些页彼此独立、谁也不依赖谁。超出窗口的页返回空数组，MAX_PAGES 收口。
+    const pages = await Promise.all(
+      Array.from({ length: MAX_PAGES }, (_, i) =>
+        this.fetchJson<FishModelPage>(
+          `/model?page_size=${PAGE_SIZE}&page_number=${i + 1}&self=false&sort_by=score`,
+        ),
+      ),
+    );
     const byId = new Map<string, VoiceEntry>();
     let total = 0;
-    for (let page = 1; page <= MAX_PAGES; page += 1) {
-      const body = await this.fetchJson<FishModelPage>(
-        `/model?page_size=${PAGE_SIZE}&page_number=${page}&self=false&sort_by=score`,
-      );
-      if (page === 1) total = typeof body.total === "number" ? body.total : 0;
-      const items = body.items ?? [];
-      if (items.length === 0) break;
-      for (const raw of items) {
+    for (const [index, body] of pages.entries()) {
+      if (index === 0) total = typeof body.total === "number" ? body.total : 0;
+      for (const raw of body.items ?? []) {
         const entry = toEntry(raw);
         if (entry) byId.set(entry.id, entry);
       }

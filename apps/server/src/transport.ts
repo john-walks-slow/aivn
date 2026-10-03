@@ -173,7 +173,7 @@ async function routeMessage(
     //     jumpTo 只移挂载点、不生成任何内容；分岔落一条 fork 标记，其后内容整段转兄弟分支。
     //     resume=true 一次往返完成「重演这一轮」：分岔后立刻续演，中间不设停止点
     case "jump":
-      await orchestrator.jumpTo(msg.nodeId);
+      await orchestrator.jumpTo(msg.nodeId, { playFrom: msg.playFrom });
       return;
     case "fork": {
       // 锚点二选一：路线/回顾给的是节点 id，舞台给的是「我正在看的那一行」的 seq
@@ -190,10 +190,18 @@ async function routeMessage(
       return;
     case "generate_cg":
       // 生图要穿过编排器落位置、穿过 PlayHouse 写提示词，两者都在这一层汇合
-      await playhouse.requestCg(playId, msg.instruction);
+      await playhouse.requestCg(playId, msg.instruction, {
+        referenceCharacters: msg.referenceCharacters,
+        useHistory: msg.useHistory,
+      });
       return;
     case "read":
-      orchestrator.setReadPos({ seq: msg.seq, len: msg.len });
+      orchestrator.setReadPos({
+        nodeId: msg.nodeId,
+        offset: msg.offset,
+        seq: msg.seq,
+        len: msg.len,
+      });
       return;
     // —— 工坊（D9）：与演出同一连接、不同通道；工坊对话不阻塞演出 ——
     case "workshop_open":

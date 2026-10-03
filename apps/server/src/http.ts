@@ -17,6 +17,7 @@ import {
   type CgEntry,
   type GeneratedImageEntry,
 } from "@stage-ai/core";
+import { loadCharacterCards } from "./memory.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
 
 const BODY_LIMIT = 64 * 1024 * 1024;
@@ -281,7 +282,16 @@ export async function handleHttp(
       if (method === "GET") {
         const play = await store.loadPlay();
         // premise 不在 play.json 里（A 区注入用的那份），详情页要显示就现取
-        return json(res, 200, { play, premise: await store.premise(), readiness: await store.readiness() });
+        // cast = 角色卡目录，角色的真相源。play.characters 那份是纯元数据，前端不读它。
+        const cards = await loadCharacterCards(store.memoryDir("always", "characters"));
+        return json(res, 200, {
+          play,
+          premise: await store.premise(),
+          readiness: await store.readiness(),
+          // 带全量头部与正文：工坊的角色编辑器要的就是正文与音色，
+          // 让它每个角色再 readFile 一次只是把同一份 markdown 读两遍
+          cast: cards,
+        });
       }
       if (method === "DELETE") {
         await playhouse.deletePlay(playId);
@@ -397,7 +407,7 @@ export async function handleHttp(
       if (method === "PUT") {
         const body = JSON.parse((await readBody(req)).toString("utf8")) as { content?: string };
         if (typeof body.content !== "string") return fail(res, 400, "缺少 content");
-        // 走工坊的 writeFile：它已经把「写盘 → 撤销条 → 等节拍边界再重建 runtime」串好了
+        // 走工坊的 writeFile：落盘 + 走置脏与重建收束那条通道（人手改的不记撤销条）
         await runtime.workshop.writeFile(PREMISE_PATH, body.content);
         return json(res, 200, { ok: true });
       }
@@ -474,6 +484,32 @@ export async function handleHttp(
       const body = JSON.parse((await readBody(req)).toString("utf8")) as { voiceId?: string };
       if (!body.voiceId) return fail(res, 400, "缺少 voiceId");
       return json(res, 200, { url: await playhouse.ttsPreview(playId, body.voiceId) });
+    }
+    if (sub === "images" && parts.length === 4) {
+      // 工坊手动生图：POST /api/plays/:id/images
+      if (method !== "POST") return fail(res, 405, "不支持的方法");
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as {
+        kind?: string;
+        name?: string;
+        characterId?: string;
+        expression?: string;
+        framing?: string;
+        referenceCharacters?: string[];
+        instruction?: string;
+      };
+      if (!body.kind || !["sprite", "background", "cg"].includes(body.kind)) {
+        return fail(res, 400, "kind 必须是 sprite、background 或 cg");
+      }
+      const result = await playhouse.generateImage(playId, {
+        kind: body.kind as "sprite" | "background" | "cg",
+        name: body.name,
+        characterId: body.characterId,
+        expression: body.expression,
+        framing: body.framing as any,
+        referenceCharacters: Array.isArray(body.referenceCharacters) ? body.referenceCharacters : undefined,
+        instruction: body.instruction,
+      });
+      return json(res, 200, result);
     }
     if (sub === "polish" && parts.length === 4) {
       if (method !== "POST") return fail(res, 405, "不支持的方法");

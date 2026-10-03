@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zipSync } from "fflate";
-import { libraryEntryMatches, parsePlayAssetManifest } from "@stage-ai/core";
+import { libraryEntryMatches, parseCharacterCard, parsePlayAssetManifest } from "@stage-ai/core";
 import { AssetLibrary, assertEntryId } from "../src/library.js";
 import { importFromLibrary } from "../src/assetImport.js";
 import { PlayLibrary } from "../src/store.js";
@@ -32,6 +32,18 @@ async function makeEntry(root: string, kind: string, id: string, files: Record<s
   await mkdir(dir, { recursive: true });
   for (const [name, body] of Object.entries(files)) await writeFile(join(dir, name), body);
   if (meta !== undefined) await writeFile(join(dir, "meta.json"), typeof meta === "string" ? meta : JSON.stringify(meta));
+}
+
+/** 角色卡（memory/always/characters/<id>.md）：角色的唯一真相源，导入写它而不是 play.json。 */
+async function readCard(playsRoot: string, playId: string, charId: string) {
+  const text = await readFile(join(playsRoot, playId, "memory/always/characters", `${charId}.md`), "utf8");
+  return parseCharacterCard(text);
+}
+
+async function writeCard(playsRoot: string, playId: string, charId: string, text: string): Promise<void> {
+  const dir = join(playsRoot, playId, "memory/always/characters");
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `${charId}.md`), text, "utf8");
 }
 
 describe("AssetLibrary：扫描本地资源库目录", () => {
@@ -192,8 +204,14 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     expect(result.files).toEqual(["assets/sprites/mio/neutral.png", "assets/sprites/mio/smile.png"]);
     expect(result.characters).toEqual(["mio"]);
     expect(result.manifestKeys).toEqual(["mio/neutral", "mio/smile"]);
-    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
-    expect(play.characters[0]).toMatchObject({ id: "mio", name: "澪", sprites: { neutral: "neutral.png", smile: "smile.png" } });
+    expect(await readCard(playsRoot, "p1", "mio")).toMatchObject({
+      id: "mio",
+      name: "澪",
+      body: "元气少女",
+      sprites: { neutral: "neutral.png", smile: "smile.png" },
+    });
+    // 角色不再落 play.json：那格是纯元数据，任何运行时逻辑都不读它
+    expect(JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8")).characters).toEqual([]);
     const manifest = JSON.parse(await readFile(join(playsRoot, "p1", "assets", "manifest.json"), "utf8"));
     expect(manifest["mio/smile"]).toMatchObject({ description: "笑" });
   });
@@ -208,31 +226,26 @@ describe("importFromLibrary：资源库 → 剧目", () => {
       },
     });
     await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
-    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
-    expect(play.characters[0]).toMatchObject({ framing: "half", spriteFraming: { closeup: "square" } });
+    expect(await readCard(playsRoot, "p1", "mio")).toMatchObject({ framing: "half", spriteFraming: { closeup: "square" } });
   });
 
   it("立绘取景：只导一条差分不该把该角色其它差分的取景覆盖抹掉", async () => {
     const store = plays.store("p1");
-    await writeFile(
-      join(playsRoot, "p1", "play.json"),
-      JSON.stringify({
-        id: "p1",
-        title: "保留",
-        characters: [{ id: "mio", name: "澪", persona: "", framing: "full", spriteFraming: { angry: "square" } }],
-        opening: "（开始）",
-        initialScene: "s",
-      }),
+    await writeCard(
+      playsRoot,
+      "p1",
+      "mio",
+      "---\nid: mio\nname: 澪\nframing: full\nspriteFraming:\n  angry: square\n---\n人设",
     );
     await makeEntry(libRoot, "characters", "mio", { "smile.png": "s" }, {
       character: { name: "澪", persona: "" },
       expressions: { smile: { file: "smile.png" } },
     });
     await importFromLibrary(library, store, { kind: "characters", entryId: "mio" });
-    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
     // 条目没声明 framing：剧目侧的值原样留着（含别的差分的覆盖），导入不许顺手清掉
-    expect(play.characters[0].framing).toBe("full");
-    expect(play.characters[0].spriteFraming).toEqual({ angry: "square" });
+    const card = await readCard(playsRoot, "p1", "mio");
+    expect(card.framing).toBe("full");
+    expect(card.spriteFraming).toEqual({ angry: "square" });
   });
 
   it("纯角色卡：没有立绘也能导入（先定人设、图后面再画）", async () => {
@@ -242,27 +255,31 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "yuzuki" });
     expect(result.files).toEqual([]);
     expect(result.characters).toEqual(["yuzuki"]);
-    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
-    expect(play.characters[0]).toMatchObject({ id: "yuzuki", name: "柚月", voice: "短句", voiceId: "a".repeat(32) });
+    expect(await readCard(playsRoot, "p1", "yuzuki")).toMatchObject({
+      id: "yuzuki",
+      name: "柚月",
+      voice: "短句",
+      voiceId: "a".repeat(32),
+      body: "沉默的转学生",
+    });
   });
 
   it("导入已有角色：库里写了什么覆盖什么，没写的字段留住剧目侧手改", async () => {
     const store = plays.store("p1");
-    await writeFile(
-      join(playsRoot, "p1", "play.json"),
-      JSON.stringify({
-        id: "p1",
-        title: "覆盖",
-        characters: [{ id: "yuzuki", name: "旧名", persona: "剧目里手写的补充", voice: "旧语气" }],
-        opening: "（开始）",
-        initialScene: "s",
-      }),
+    await writeCard(
+      playsRoot,
+      "p1",
+      "yuzuki",
+      "---\nid: yuzuki\nname: 旧名\nvoice: 旧语气\n---\n剧目里手写的补充",
     );
     // meta 只写了 name 与 persona：voice 没写，剧目侧那一条得原样留下
     await makeEntry(libRoot, "characters", "yuzuki", {}, { character: { name: "新月", persona: "库里的版本" } });
     await importFromLibrary(library, store, { kind: "characters", entryId: "yuzuki" });
-    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
-    expect(play.characters[0]).toMatchObject({ name: "新月", persona: "库里的版本", voice: "旧语气" });
+    expect(await readCard(playsRoot, "p1", "yuzuki")).toMatchObject({
+      name: "新月",
+      voice: "旧语气",
+      body: "库里的版本",
+    });
   });
 
   it("target=protagonist 写主角卡，不动角色列表", async () => {
@@ -300,16 +317,16 @@ describe("importFromLibrary：资源库 → 剧目", () => {
           premise: "x",
           opening: "（开始）",
           initialScene: "s",
-          characters: [{ id: "mio", name: "澪", persona: "p", sprites: { happy: "happy.png" } }],
+          characters: [],
         }),
         "assets/sprites/mio/happy.png": "已有",
       }),
     );
+    await writeCard(playsRoot, "p2", "mio", "---\nid: mio\nname: 澪\nsprites:\n  happy: happy.png\n---\np");
     await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "sad.png": "s" });
     const store = plays.store("p2");
     await importFromLibrary(library, store, { kind: "characters", entryId: "mio", expressions: ["sad"] });
-    const play = JSON.parse(await readFile(join(playsRoot, "p2", "play.json"), "utf8"));
-    expect(play.characters[0].sprites).toEqual({ happy: "happy.png", sad: "sad.png" });
+    expect((await readCard(playsRoot, "p2", "mio")).sprites).toEqual({ happy: "happy.png", sad: "sad.png" });
     expect(existsSync(join(playsRoot, "p2", "assets", "sprites", "mio", "happy.png"))).toBe(true);
     expect(existsSync(join(playsRoot, "p2", "assets", "sprites", "mio", "neutral.png"))).toBe(false);
   });
@@ -354,7 +371,7 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
     await rm(playsRoot, { recursive: true, force: true });
   });
 
-  it("并发导两个角色包：两份差分映射都得在（各读旧配置会互相冲掉）", async () => {
+  it("并发导两个角色包：两份差分映射都得在（各读旧角色卡会互相冲掉）", async () => {
     await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" });
     await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n" });
     // 刻意各调一次 plays.store()：真实 REST 路径就是这样，每个请求各持一份新实例。
@@ -363,8 +380,9 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
       importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" }),
       importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "rio" }),
     ]);
-    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
-    expect(play.characters.map((c: { id: string }) => c.id).sort()).toEqual(["mio", "rio"]);
+    for (const id of ["mio", "rio"]) {
+      expect((await readCard(playsRoot, "p1", id)).sprites).toEqual({ neutral: "neutral.png" });
+    }
   });
 
   it("同一个包分两次导不同差分：后一次不能把前一次的差分冲掉", async () => {
@@ -373,8 +391,11 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
       importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio", expressions: ["neutral", "smile"] }),
       importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio", expressions: ["sad"] }),
     ]);
-    const play = JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8"));
-    expect(play.characters[0].sprites).toMatchObject({ neutral: "neutral.png", smile: "smile.png", sad: "sad.png" });
+    expect((await readCard(playsRoot, "p1", "mio")).sprites).toMatchObject({
+      neutral: "neutral.png",
+      smile: "smile.png",
+      sad: "sad.png",
+    });
   });
 
   it("并发导两个背景：素材表条目不能互相覆盖", async () => {
@@ -401,7 +422,7 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
     await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" });
     const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
     const paths = result.writes.map((w) => w.path).sort();
-    expect(paths).toEqual(["assets/manifest.json", "play.json"]);
+    expect(paths).toEqual(["assets/manifest.json", "memory/always/characters/mio.md"]);
     for (const w of result.writes) {
       // before 是写盘前的原样内容，撤销条靠它回滚
       expect(w.after.length).toBeGreaterThan(0);
@@ -409,5 +430,7 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
     }
     // 素材表本来不存在 → before 为 null，撤销就是删掉整个文件
     expect(result.writes.find((w) => w.path === "assets/manifest.json")!.before).toBeNull();
+    // 角色卡同理：本来没有这张卡，撤销即删除
+    expect(result.writes.find((w) => w.path.startsWith("memory/"))!.before).toBeNull();
   });
 });

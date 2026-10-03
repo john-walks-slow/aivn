@@ -1,6 +1,7 @@
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import type { PlayConfig } from "@stage-ai/core";
+import type { AgentCapabilities } from "../src/agentkit/kit.js";
 import type { IndexCard } from "../src/memory.js";
 
 export interface FakeResponse {
@@ -13,20 +14,33 @@ export interface FakeResponse {
    * 给对象就是交出停止点（选项/自由输入），与模型真调工具时的参数同形。
    */
   beatDone?: boolean | { options?: string[]; placeholder?: string };
-  /** 额外工具调用（与 beat_done 同批：如 write_memory）。 */
+  /** 额外工具调用（与 beat_done 同批：如 update_state / create_character）。 */
   toolCalls?: { name: string; args: Record<string, unknown> }[];
   /** 闸门：正文照发，但 done 押后到 gate 兑现——用来把某一轮卡在「演出中」。 */
   gate?: Promise<unknown>;
+  /** 回填给 provider 的 input token 数（默认 0 = 不回填，标定系数按 1 算）。 */
+  usageTokens?: number;
 }
 export const PLAY: PlayConfig = {
   id: "test",
   title: "测试剧目",
   premise: "测试 premise",
-  characters: [{ id: "mio", name: "澪", persona: "测试角色" }],
+  // 角色配置在角色卡上，play.json 的 characters 是纯元数据——这里不给也不影响任何运行时行为
+
   opening: "（游戏开始）",
   initialState: { turn: 0, affinity: { mio: 10 }, flags: {} },
   initialScene: "走廊",
 };
+
+/**
+ * 能力位（`kit.can`）的测试构造器。
+ *
+ * 两份 system prompt 读的是同一个形状，测试里也共用这一份——加一位能力时这里必然类型不过，
+ * 两个角色的提示词都得跟着看一眼。缺省取「生图开、联网与资源库关」（剧作家的常见态）。
+ */
+export function caps(over: Partial<AgentCapabilities> = {}): AgentCapabilities {
+  return { image: true, search: false, library: false, voice: false, shell: false, ...over };
+}
 
 export const CARD: IndexCard = {
   layer: "lore",
@@ -102,13 +116,14 @@ export function createFakeStreamFn(responses: FakeResponse[]): StreamFn {
           api: "openai-completions",
           provider: "fake",
           model: "fake-test",
-          // usage 全零：假流不知道真实上下文大小，交回 pi 的字符启发式（纪元压缩按它判定阈值）
+          // usage 全零：假流不知道真实上下文大小，交回 pi 的字符启发式（纪元压缩按它判定阈值）。
+          // 给了 usageTokens 就按它回填 input —— token 标定系数（工坊线程压缩）测的就是这条路径。
           usage: {
-            input: 0,
+            input: response.usageTokens ?? 0,
             output: 0,
             cacheRead: 0,
             cacheWrite: 0,
-            totalTokens: 0,
+            totalTokens: response.usageTokens ?? 0,
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
           },
           stopReason: "stop",

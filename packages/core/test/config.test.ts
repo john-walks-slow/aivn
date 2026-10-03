@@ -52,3 +52,20 @@ describe("parsePlayConfig：立绘取景", () => {
     expect("spriteFraming" in card({ spriteFraming: { bad: "半身" } })).toBe(false);
   });
 });
+
+describe("parsePlayConfig：agents 段的补充提示词", () => {
+  const withPrompt = (role: "playwriter" | "workshop", prompt: string): unknown =>
+    parsePlayConfig({ ...BASE, agents: { [role]: { prompt } } }).agents?.[role]?.prompt;
+
+  it("工坊保留原文（逐剧目追加段，不做 trim 改写）", () => {
+    expect(withPrompt("workshop", " 这部作品不说日语。 ")).toBe(" 这部作品不说日语。 ");
+  });
+
+  it("纯空白当没写，不留空壳", () => {
+    expect(withPrompt("workshop", "  \n ")).toBeUndefined();
+  });
+
+  it("剧作家的那份直接丢：它没人读，留着只会让人以为生效了", () => {
+    expect(withPrompt("playwriter", "每轮写短点")).toBeUndefined();
+  });
+});

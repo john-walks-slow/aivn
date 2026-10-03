@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ClientMessage, WorkshopAssetView } from "@stage-ai/core";
 import { api } from "../api.js";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
@@ -39,6 +39,7 @@ export function WorkshopPane({
   tab,
   onTab,
   subscribe,
+  subscribeImageResult,
   send,
   connected,
   voice,
@@ -49,6 +50,14 @@ export function WorkshopPane({
   onTab: (tab: WorkshopTab) => void;
   /** 注册工坊下行消息回调（返回取消订阅）。 */
   subscribe: (handler: (msg: WorkshopInbound) => void) => () => void;
+  /** 注册手动出图结果回调（返回取消订阅）。 */
+  subscribeImageResult?: (
+    handler: (
+      res:
+        | { target: string; ok: true; url: string; path: string }
+        | { target: string; ok: false; message: string },
+    ) => void,
+  ) => () => void;
   send: (msg: ClientMessage) => void;
   /** WS 连通性：断线要解锁本轮、重连要重新报到。 */
   connected?: boolean;
@@ -60,6 +69,8 @@ export function WorkshopPane({
   const [input, setInput] = useState("");
   const [threadsOpen, setThreadsOpen] = useState(false);
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
+  /** 压缩摘要是否展开（默认折叠成一行一句话）。 */
+  const [digestOpen, setDigestOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // 面板一挂上就先订阅再报到（StrictMode 下会走两遍，报到幂等）
@@ -75,6 +86,11 @@ export function WorkshopPane({
   useEffect(() => {
     if (connected) workshop.open();
   }, [connected, workshop.open]);
+
+  // 换会话就收起摘要：上一个会话展开着看过全文，下一个不该继承这个姿态
+  useEffect(() => {
+    setDigestOpen(false);
+  }, [state.activeId]);
 
   // 新消息/流式增量追随到底部
   useEffect(() => {
@@ -126,11 +142,19 @@ export function WorkshopPane({
         <FileBrowser playId={playId} revision={state.writes.length} onSaved={() => undefined} />
       )}
 
-      {tab === "assets" && <AssetsPanel playId={playId} />}
+      {tab === "assets" && (
+        <AssetsPanel playId={playId} subscribeImageResult={subscribeImageResult} />
+      )}
 
       {tab === "memory" && <SettingsPane playId={playId} revision={state.writes.length} />}
 
-      {tab === "characters" && <CharacterPane playId={playId} revision={state.writes.length} />}
+      {tab === "characters" && (
+        <CharacterPane
+          playId={playId}
+          revision={state.writes.length}
+          subscribeImageResult={subscribeImageResult}
+        />
+      )}
 
       {tab === "agent" && <AgentPane playId={playId} />}
 
@@ -215,22 +239,42 @@ export function WorkshopPane({
           <div className="workshop-chat" ref={scrollRef}>
             {state.messages.length === 0 && !state.streaming && (
               <div className="workshop-empty">
-                <p>和工坊一起把这部剧搭起来。</p>
+                <p>说出你想要的世界、角色或改动。</p>
                 <p className="muted small">
                   例如：「我想要一个赛博朋克侦探故事，主角是个记不住人脸的女高中生」
                 </p>
               </div>
             )}
             {state.messages.map((msg, i) => (
-              <div key={`${msg.at}-${i}`} className={`chat-bubble chat-${msg.role}`}>
-                <WorkshopMarkdown
-                  text={msg.text}
-                  onOpen={(images, index) => setLightbox({ images, index })}
-                />
-                {msg.images && msg.images.length > 0 && (
-                  <AssetStrip assets={msg.images} onOpen={openImage} />
+              <Fragment key={`${msg.at}-${i}`}>
+                {i === state.compaction?.cutAt && (
+                  <>
+                    <div className="chat-divider">
+                      <button className="ghost-btn tiny-btn" onClick={() => setDigestOpen(!digestOpen)}>
+                        早期 {state.compaction!.cutAt} 条对话已压缩
+                      </button>
+                      {!digestOpen && <span>{state.compaction!.oneLiner}</span>}
+                    </div>
+                    {digestOpen && (
+                      <div className="chat-digest">
+                        <WorkshopMarkdown
+                          text={state.compaction!.body}
+                          onOpen={(images, index) => setLightbox({ images, index })}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
-              </div>
+                <div className={`chat-bubble chat-${msg.role}`}>
+                  <WorkshopMarkdown
+                    text={msg.text}
+                    onOpen={(images, index) => setLightbox({ images, index })}
+                  />
+                  {msg.images && msg.images.length > 0 && (
+                    <AssetStrip assets={msg.images} onOpen={openImage} />
+                  )}
+                </div>
+              </Fragment>
             ))}
             {state.streaming && (
               <div className="chat-bubble chat-assistant">
@@ -252,6 +296,42 @@ export function WorkshopPane({
             )}
           </div>
 
+          {state.writes.length > 0 && (
+            <div className="workshop-writes">
+              {state.writes.map((write) => (
+                <div key={write.at} className="write-row">
+                  <span className="file-path">
+                    <Icon name="memory" size={13} /> {write.path}
+                  </span>
+                  <button
+                    className="ghost-btn tiny-btn"
+                    onClick={() => {
+                      const restore = write.before ?? null;
+                      const path = write.path;
+                      void (async () => {
+                        try {
+                          if (restore === null) {
+                            await api.deleteFile(playId, path);
+                          } else {
+                            await api.saveFile(playId, path, restore);
+                          }
+                          workshop.dismissWrite(write.at);
+                        } catch {
+                          // 撤销失败保留记录，用户可重试
+                        }
+                      })();
+                    }}
+                  >
+                    撤销
+                  </button>
+                  <button className="ghost-btn tiny-btn" onClick={() => workshop.dismissWrite(write.at)}>
+                    知道了
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <footer className="workshop-input">
             <textarea
               value={input}
@@ -270,42 +350,6 @@ export function WorkshopPane({
             </button>
           </footer>
         </>
-      )}
-
-      {state.writes.length > 0 && (
-        <div className="workshop-writes">
-          {state.writes.map((write) => (
-            <div key={write.at} className="write-row">
-              <span className="file-path">
-                <Icon name="memory" size={13} /> {write.path}
-              </span>
-              <button
-                className="ghost-btn tiny-btn"
-                onClick={() => {
-                  const restore = write.before ?? null;
-                  const path = write.path;
-                  void (async () => {
-                    try {
-                      if (restore === null) {
-                        await api.deleteFile(playId, path);
-                      } else {
-                        await api.saveFile(playId, path, restore);
-                      }
-                      workshop.dismissWrite(write.at);
-                    } catch {
-                      // 撤销失败保留记录，用户可重试
-                    }
-                  })();
-                }}
-              >
-                撤销
-              </button>
-              <button className="ghost-btn tiny-btn" onClick={() => workshop.dismissWrite(write.at)}>
-                知道了
-              </button>
-            </div>
-          ))}
-        </div>
       )}
 
       {lightbox && (

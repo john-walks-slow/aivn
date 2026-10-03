@@ -8,7 +8,7 @@ coverage/
 .DS_Store
 # 剧目只有 plays/demo 这个样例进 git。用户自己玩的、临时试验跑冒烟的、mock 生成的
 # 一概不进——play.json 与 assets/ 是内容不是引擎结构，留在本机即可（要带走就导出剧目包）。
-plays/*/
+plays/*
 !plays/demo/
 # 样例剧目的运行时数据照样不进 git：存档即一棵独立故事树，外加 active.json 指针
 plays/*/saves/

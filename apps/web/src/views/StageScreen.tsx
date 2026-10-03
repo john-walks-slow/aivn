@@ -54,8 +54,13 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   const [assets, setAssets] = useState<Record<string, string[]>>({});
   /** 当前周目档名：侧栏底部的存档芯片，点它去周目页换一棵故事树。 */
   const [saveName, setSaveName] = useState<string | null>(null);
-  /** P6 缓冲换代：token 变化 = 事件缓冲被整段重放；resume 决定快进还是继续流式。 */
-  const [rebase, setRebase] = useState({ token: 0, resume: true });
+  /** P6 缓冲换代：token 变化 = 事件缓冲被整段重放；resume 决定快进还是继续流式；
+   *  seekTo 是跳转重读的播放头落点（换代后从那句起读，而不是快进到本轮末尾）。 */
+  const [rebase, setRebase] = useState<{
+    token: number;
+    resume: boolean;
+    seekTo: ReadPos | null;
+  }>({ token: 0, resume: true, seekTo: null });
   /** 谱系代次：每轮、结构操作后自增，把最新的树拉回来。 */
   const [lineageNonce, setLineageNonce] = useState(0);
   /**
@@ -107,9 +112,14 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   const generated = useGeneratedAssets();
   // 生图回调要在 socket 建连时就能摸到 playback，但 playback 声明在后面
   const playbackRef = useRef<ReturnType<typeof usePlayback> | null>(null);
-  // 阅读位置上报出口：播放层逐字报位置，这里防抖到 1s 一发，服务端再节流落盘
+  // 阅读位置上报出口：播放层逐字报位置，这里按行首立即 + 行内 1s 节流，服务端再节流落盘
   const readPosRef = useRef<((pos: ReadPos) => void) | null>(null);
   const readPosTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 最近一次已上报的行键与时刻：换行立即发、同行按 1s 节流。 */
+  const lastReadKey = useRef<string | null>(null);
+  const lastReadAt = useRef(0);
+  /** 节流窗口内待发的最后一次上报：卸载时 flush。 */
+  const pendingReadRef = useRef<(() => void) | null>(null);
   // 谱系只在这两个导演视图里拉取（打开/操作后/手动刷新），不做每轮广播
   const lineage = useLineage(playId, lineageNonce);
   // 工坊下行消息的订阅表：面板挂载时登记，卸载时注销（与舞台状态机解耦）
@@ -118,6 +128,17 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     workshopHandlers.current.add(handler);
     return () => {
       workshopHandlers.current.delete(handler);
+    };
+  }, []);
+  // 手动生图结果监听（工坊手动生图对话框用）
+  type ImageResult =
+    | { target: string; ok: true; url: string; path: string }
+    | { target: string; ok: false; message: string };
+  const imageResultHandlers = useRef(new Set<(res: ImageResult) => void>());
+  const subscribeImageResult = useCallback((handler: (res: ImageResult) => void) => {
+    imageResultHandlers.current.add(handler);
+    return () => {
+      imageResultHandlers.current.delete(handler);
     };
   }, []);
   const { push: pushToast } = toast;
@@ -133,9 +154,14 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     // 原地改写：缓冲已就地换字，谱系刷新把剧本/路线的标签换成新文本
     onLineEdited: () => setLineageNonce((n) => n + 1),
     // P6 上下文重建：新分支整段到达——播放层复位，谱系视图跟着换
-    onRebase: ({ note, busy: streaming }) => {
+    onRebase: ({ note, playFrom, resumeAt, busy: streaming }) => {
       director.reset();
-      setRebase((cur) => ({ token: cur.token + 1, resume: !streaming }));
+      setRebase((cur) => ({
+        token: cur.token + 1,
+        resume: !streaming,
+        // 从本轮开头重读：把播放头钉在该轮首句（offset=0），不按终局快进
+        seekTo: playFrom === "start" && resumeAt ? resumeAt : null,
+      }));
       setLineageNonce((n) => n + 1);
       if (note) pushToast(note, "warn");
       goStage(); // 结构操作后回舞台看结果
@@ -157,17 +183,40 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     onWorkshop: (msg) => {
       for (const handler of workshopHandlers.current) handler(msg);
     },
+    onImageResult: (res) => {
+      for (const handler of imageResultHandlers.current) handler(res);
+    },
   }, { workshopOnly: workshopEntry });
 
   // 渲染期回调绑定（N6：置于 stage 声明后，闭包引用才不踩未初始化的 TDZ）
   director.onNotify = () => setAudioTick((t) => t + 1);
   director.onControl = (state) => stage.sendTtsControl(state);
 
-  // 阅读位置出口（渲染期绑定）：打字机逐字推进，不必逐字过网——1s 内只发最后一次。
+  // 阅读位置上报出口（渲染期绑定）：
+  //  · 切到新行（nodeId 变化）→ 立刻发首帧，不等节流；
+  //  · 行内打字机逐字推进 → 1s 节流，只发最后一次；
+  //  · 卸载时 flush 待发的那次，避免刷新丢掉最后一段进度。
   readPosRef.current = (pos: ReadPos) => {
+    const pending = pendingReadRef.current;
+    const key = pos.nodeId || String(pos.seq ?? "");
     const last = readPosTimer.current;
     if (last) clearTimeout(last);
-    readPosTimer.current = setTimeout(() => stage.sendRead(pos), READ_REPORT_MS);
+    const now = Date.now();
+    const sameLine = key === lastReadKey.current;
+    const elapsed = now - lastReadAt.current;
+    const fire = (): void => {
+      readPosTimer.current = null;
+      lastReadKey.current = key;
+      lastReadAt.current = Date.now();
+      pendingReadRef.current = null;
+      stage.sendRead(pos);
+    };
+    pendingReadRef.current = fire;
+    if (!sameLine || elapsed >= READ_REPORT_MS) {
+      fire();
+      return;
+    }
+    readPosTimer.current = setTimeout(fire, READ_REPORT_MS - elapsed);
   };
 
   // 导演出口（P6）：senders 在 useStageSocket 内 useCallback 稳定，仅重连后换引用
@@ -180,8 +229,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
    */
   const routeOps: LineageOps = useMemo(
     () => ({
-      jump: (nodeId: string) => {
-        jump(nodeId);
+      jump: (nodeId: string, opts?: { playFrom?: "start" | "end" }) => {
+        jump(nodeId, opts);
         goStage();
       },
       fork: (nodeId: string, opts?: { resume?: boolean }) => {
@@ -209,13 +258,25 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     return () => director.dispose();
   }, [playId]);
 
-  // 阅读位置上报的待发定时器随连接一起走：连接没了就别补发那一帧
-  useEffect(
-    () => () => {
+  // 阅读位置上报的待发定时器随连接一起走：连接没了就别补发那一帧。
+  // 卸载/刷新前把节流窗口里最后一次位置 flush 出去（sendRead 走已建立的连接，页面卸载时尽力而为）。
+  useEffect(() => {
+    const flush = (): void => {
+      if (readPosTimer.current) {
+        clearTimeout(readPosTimer.current);
+        readPosTimer.current = null;
+      }
+      pendingReadRef.current?.();
+    };
+    window.addEventListener("beforeunload", flush);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("pagehide", flush);
       if (readPosTimer.current) clearTimeout(readPosTimer.current);
-    },
-    [],
-  );
+      pendingReadRef.current?.();
+    };
+  }, []);
 
   // 语音开关本地态 ↔ 服务端（连接建立/重连/切换时同步；关=停合成省配额）
   useEffect(() => {
@@ -225,7 +286,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   }, [stage.voiceAvailable, stage.state, voiceOn]);
 
   const index: AssetIndex | null = useMemo(
-    () => (detail ? buildAssetIndex(playId, detail.play, assets, generated.images) : null),
+    () => (detail ? buildAssetIndex(playId, detail.cast, assets, generated.images) : null),
     [detail, assets, playId, generated.images],
   );
 
@@ -258,6 +319,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     assetsTtlMs: stage.assetsTtlMs,
     // #3 刷新后回到上次读到的那一句，而不是快进到本轮末尾
     resumeAt: stage.readPos,
+    // 跳转重读：换代后从这个落点起读（该轮首句 offset=0）
+    seekTo: rebase.seekTo,
     onLineStart: (line) => director.lineStarted(line?.seq, line?.type === "say"),
     onFastForward: () => director.fastForward(),
     onRead: (pos) => readPosRef.current?.(pos),
@@ -514,8 +577,13 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
               onPrompt={stage.sendPrompt}
               onFork={fork}
               onEdit={edit}
-              onGenerateCg={(instruction) =>
-                stage.send({ type: "generate_cg", ...(instruction ? { instruction } : {}) })
+              onGenerateCg={(instruction, opts) =>
+                stage.send({
+                  type: "generate_cg",
+                  ...(instruction ? { instruction } : {}),
+                  ...(opts?.referenceCharacters?.length ? { referenceCharacters: opts.referenceCharacters } : {}),
+                  ...(opts?.useHistory !== undefined ? { useHistory: opts.useHistory } : {}),
+                })
               }
               onReplay={replay}
               voiceState={voiceState}
@@ -596,6 +664,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
             tab={workshopTab}
             onTab={setWorkshopTab}
             subscribe={subscribeWorkshop}
+            subscribeImageResult={subscribeImageResult}
             send={stage.send}
             connected={stage.connected}
             voice={{ on: voiceOn, available: stage.voiceAvailable, onToggle: toggleVoice }}

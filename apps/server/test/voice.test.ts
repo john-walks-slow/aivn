@@ -39,14 +39,18 @@ const PLAY: PlayConfig = {
   id: "voice-test",
   title: "语音测试",
   premise: "p",
-  characters: [
-    { id: "mio", name: "澪", persona: "有音色", voiceId: "voice-mio" },
-    { id: "nonvoice", name: "无声", persona: "无音色角色" },
-  ],
   opening: "（游戏开始）",
   initialState: { turn: 0, affinity: {}, flags: {} },
   initialScene: "走廊",
 };
+
+/** 角色卡：音色是角色的字段，voiceOf 从这里读，不再从 play.json。 */
+const CAST = new PlayMemory({
+  characters: new Map([
+    ["mio", { id: "mio", name: "澪", body: "有音色", voiceId: "voice-mio" }],
+    ["nonvoice", { id: "nonvoice", name: "无声", body: "无音色角色" }],
+  ]),
+});
 
 interface SetupOpts {
   dsl: string;
@@ -67,7 +71,7 @@ function setup({ dsl, synth }: SetupOpts) {
     model: {} as never,
     getApiKey: () => "test-key",
     play: PLAY,
-    memory: new PlayMemory(),
+    memory: CAST,
     tree: new LineageTree(),
     engine: { ...PLAY.initialState },
     scene: PLAY.initialScene,
@@ -160,7 +164,7 @@ describe("语音管线（D5）", () => {
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,
-      memory: new PlayMemory(),
+      memory: CAST,
       tree: new LineageTree(),
       engine: { ...PLAY.initialState },
       scene: PLAY.initialScene,

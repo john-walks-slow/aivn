@@ -1,13 +1,19 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel } from "@stage-ai/core";
 import { createBeatDoneTool } from "./beatTool.js";
-import { AGENT_ROLES, ROLE_INSTALLABLE, type AgentRole } from "./role.js";
+import { createNsfwTools } from "./nsfwTool.js";
+import { AGENT_ROLES, type AgentRole } from "./role.js";
 import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "./deps.js";
-import { createFilesTools } from "./filesTool.js";
+import { createPiBashTool, createPiFileTools } from "./piTools.js";
+import { PlayEnv } from "./playEnv.js";
+import { createReadinessTool } from "./readinessTool.js";
 import { createGenerateImageTool } from "./imageTool.js";
 import { createLibraryTools } from "./libraryTool.js";
 import { createLineageTools } from "./lineageTool.js";
 import { createMemoryTools } from "./memoryTool.js";
+import { createRecutSpriteTool } from "./recutTool.js";
+import { createViewImageTool } from "./viewTool.js";
+import { createVoiceTool } from "./voiceTool.js";
 import { createWebSearchTool } from "./searchTool.js";
 import { createReadSkillTool } from "./skillTool.js";
 
@@ -19,7 +25,8 @@ import { createReadSkillTool } from "./skillTool.js";
  * - 同一工具传不同的依赖（`generate_image` 的 sync/queued 两种等待策略）；
  * - 提示词按 `can` 决定注不注某一章。
  *
- * 工具开关（play.json 的 agents.disabledTools）在最后一道统一过滤：
+ * 谁装得上写在下面 `TOOL_CATALOG` 的 `roles` 里；用户开关（play.json 的
+ * `agents.<role>.tools`，存的是启用集）在最后一道统一过滤：
  * 装出来再摘掉，模型这一轮就彻底看不见它，提示词里对应的章节也由宿主按 `can` 收掉。
  */
 
@@ -30,9 +37,11 @@ export const TOOL_GROUPS = {
   image: "生图",
   skill: "技能库",
   files: "剧目文件",
+  shell: "命令行",
   library: "素材资源库",
   lineage: "故事树",
   web: "联网检索",
+  voice: "音色库",
 } as const;
 
 export type ToolGroup = keyof typeof TOOL_GROUPS;
@@ -46,72 +55,104 @@ export interface AgentToolEntry {
   groupLabel: string;
 }
 
+/** 工具目录的一项：这个工具是什么（label/group）+ 谁装得上（roles）。 */
+interface ToolCatalogEntry {
+  label: string;
+  group: ToolGroup;
+  /** 装得上的角色（至少一个；实现是同一份，这里说的是这条依赖面上装不装得上）。 */
+  roles: readonly [AgentRole, ...AgentRole[]];
+}
+
 /**
- * 工具目录的**唯一真相源**：装不装、设置页列什么，都从这里出。
+ * 工具目录的**唯一真相源**：工具 id、设置页列什么、哪个角色装得上，都从这里出。
  *
  * 不再按角色切分——两个角色拿到同一份清单，能不能用只看用户勾没勾。
- * 差异留在两处，都不是「工具归属」：
- * - 装配时的依赖与等待策略（`generate_image` 的 sync / queued）；
- * - 默认勾选哪些（`DEFAULT_ENABLED`）。
+ * 角色可见性作为工具自身的属性写在这一行里：早先另有 `role.ts` 的 `ROLE_INSTALLABLE`
+ * 把每个角色装得上的 id 又列一遍，加一个工具要改两处、漏了只能等测试红灯。
+ * 剩下的差异只有装配时的依赖与等待策略（`generate_image` 的 sync / queued）与默认勾选哪些。
  */
-const TOOL_CATALOG: Record<string, { label: string; group: ToolGroup }> = {
-  beat_done: { label: "结束本轮", group: "beat" },
-  update_state: { label: "提议状态更新", group: "memory" },
-  write_memory: { label: "写记忆文件", group: "memory" },
-  read_memory_detail: { label: "读记忆卡详情", group: "memory" },
-  search_archive: { label: "检索历史往事", group: "memory" },
-  generate_image: { label: "生成剧目素材", group: "image" },
-  read_skill: { label: "读技能库", group: "skill" },
-  web_search: { label: "联网检索", group: "web" },
-  list_files: { label: "列出剧目文件", group: "files" },
-  read_file: { label: "读剧目文件", group: "files" },
-  edit_file: { label: "编辑剧目文件", group: "files" },
-  write_file: { label: "写剧目文件", group: "files" },
-  delete_file: { label: "删除剧目文件", group: "files" },
-  get_readiness: { label: "检查开演条件", group: "files" },
-  inspect_asset: { label: "看剧目图片", group: "files" },
-  list_library: { label: "浏览素材资源库", group: "library" },
-  import_asset: { label: "从资源库导入", group: "library" },
-  list_saves: { label: "列出周目", group: "lineage" },
-  read_lineage: { label: "读故事树", group: "lineage" },
+const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
+  beat_done: { label: "结束本轮", group: "beat", roles: ["playwriter"] },
+  enter_nsfw: { label: "进入限制级剧情", group: "beat", roles: ["playwriter"] },
+  exit_nsfw: { label: "退出限制级剧情", group: "beat", roles: ["playwriter"] },
+  update_state: { label: "提议状态更新", group: "memory", roles: ["playwriter"] },
+  create_character: { label: "建角色卡", group: "memory", roles: ["playwriter"] },
+  read_memory_detail: { label: "读记忆卡详情", group: "memory", roles: ["playwriter"] },
+  search_archive: { label: "检索历史往事", group: "memory", roles: ["playwriter"] },
+  generate_image: { label: "生成剧目素材", group: "image", roles: ["playwriter", "workshop"] },
+  recut_sprite: { label: "重抠立绘底", group: "image", roles: ["workshop"] },
+  read_skill: { label: "读技能库", group: "skill", roles: ["workshop"] },
+  list_voices: { label: "查音色库", group: "voice", roles: ["workshop"] },
+  web_search: { label: "联网检索", group: "web", roles: ["playwriter", "workshop"] },
+  // read / write / edit / bash 是 pi 的内建工具，不走 filesTool——路径白名单在 PlayEnv 里收口。
+  read: { label: "读文件", group: "files", roles: ["workshop"] },
+  write: { label: "写文件", group: "files", roles: ["workshop"] },
+  edit: { label: "编辑文件", group: "files", roles: ["workshop"] },
+  bash: { label: "命令行", group: "shell", roles: ["workshop"] },
+  get_readiness: { label: "检查开演条件", group: "files", roles: ["workshop"] },
+  view_image: { label: "看图", group: "files", roles: ["workshop"] },
+  list_library: { label: "浏览素材资源库", group: "library", roles: ["playwriter", "workshop"] },
+  import_asset: { label: "从资源库导入", group: "library", roles: ["playwriter", "workshop"] },
+  list_saves: { label: "列出周目", group: "lineage", roles: ["workshop"] },
+  read_lineage: { label: "读故事树", group: "lineage", roles: ["workshop"] },
 };
+
+/**
+ * 某个角色装得上的工具 id（依赖面允许的那些；`web_search` / 资源库 / 音色还要按配置再收）。
+ * 排一次序：默认启用集的顺序不该跟着目录里的行序走（前端拿它只当开关的初始态，但顺序是白送的确定性）。
+ */
+function installableTools(role: AgentRole): string[] {
+  return Object.entries(TOOL_CATALOG)
+    .filter(([, meta]) => meta.roles.includes(role))
+    .map(([id]) => id)
+    .sort();
+}
 
 /**
  * 各角色的默认启用集。play.json 的 `agents.<role>.tools` 给了就按它来。
  *
- * 剧作家默认不开生图与资源库：它一轮只有 240s，preload 不掉的一次调用就烧掉一轮预算；
- * 资源库那边它是靠「在剧本里写 id、宿主自动导入」用的（见 assetRef.ts），不需要工具。
- * 想让它自己出图或搜库，在 Agent 页勾上即可。
+ * 剧作家默认开着生图与资源库查询：素材来路是**创作决策**（哪些自己画、哪些从库里找），
+ * 由搭台助手与用户对齐后写进剧目的 craft.md（见 workshop.ts 的「素材来源」那条）。
+ * 工具不给它，这条策略就是空话——它会照着策略说「背景该去库里找」，却连库有什么都看不见。
+ * 不想让它烧配额，在 Agent 页把这两个关掉即可，策略随之失效。
  */
 const DEFAULT_ENABLED: Record<AgentRole, string[]> = {
   playwriter: [
     "beat_done",
+    "enter_nsfw",
+    "exit_nsfw",
     "update_state",
-    "write_memory",
+    "create_character",
     "read_memory_detail",
     "search_archive",
+    "generate_image",
     // 只读浏览：宿主的引用即导入只认同名 id，不知道库里有什么就等于瞎猜。
     // import_asset 不开——导入走 DSL 引用，模型自己动手抄一遍 id 没有额外收益。
     "list_library",
     "web_search",
   ],
-  workshop: [...ROLE_INSTALLABLE.workshop],
+  // 搭台的缺省是**全开，除了 bash**：命令行以服务进程的权限跑（这台机器上就是 root），
+  // 不是随手该开的东西，按剧目在 Agent 页手动勾。其余工具开着一个也不会烧钱。
+  workshop: installableTools("workshop").filter((id) => id !== "bash"),
 };
 
+/**
+ * 目录项 → 设置页/装配用的那一行。工具名不在目录里直接报错：目录是唯一真相源，
+ * 装配出一个没登记的工具意味着这一行永远是 `undefined`——那不该悄悄过去。
+ */
+export function agentToolEntry(id: string): AgentToolEntry {
+  const meta = TOOL_CATALOG[id];
+  if (!meta) {
+    throw new Error(`工具 ${id} 不在工具目录里（kit.ts 的 TOOL_CATALOG）：新增工具必须在那里登记角色。`);
+  }
+  return { id, label: meta.label, group: meta.group, groupLabel: TOOL_GROUPS[meta.group] };
+}
 
 /** 工具目录，按分组排序。不给 role 是全集；给了就只出这个角色真装得上的。 */
 export function agentToolCatalog(role?: AgentRole): AgentToolEntry[] {
-  const installable = role ? new Set(ROLE_INSTALLABLE[role]) : null;
-  const catalog = installable
-    ? Object.fromEntries(Object.entries(TOOL_CATALOG).filter(([id]) => installable.has(id)))
-    : TOOL_CATALOG;
-  return Object.entries(catalog)
-    .map(([id, meta]) => ({
-      id,
-      label: meta.label,
-      group: meta.group,
-      groupLabel: TOOL_GROUPS[meta.group],
-    }))
+  const ids = role ? installableTools(role) : Object.keys(TOOL_CATALOG);
+  return ids
+    .map((id) => agentToolEntry(id))
     .sort((a, b) => a.group.localeCompare(b.group) || a.id.localeCompare(b.id));
 }
 
@@ -126,19 +167,41 @@ export function enabledToolsFor(role: AgentRole, configured?: readonly string[])
   return new Set(configured ?? DEFAULT_ENABLED[role]);
 }
 
-/** 能力位：提示词按它决定注不注某一章（装一个必然失败的能力只会教模型反复空转）。 */
-export interface AgentCapabilities {
+/**
+ * 能力位与授权它的工具：**一位一个工具**，模型调得动才有这一位。
+ *
+ * 表在这里而不散在各处：加一位只改这一行，`AgentCapabilities` 跟着长一位——
+ * 两个角色的 system prompt 读的是同一个 `kit.can`，不存在「只改一边」的余地。
+ */
+export const CAPABILITY_TOOLS = {
   /** 生图可用。 */
-  image: boolean;
+  image: "generate_image",
   /** 联网检索可用（配了 Exa key）。 */
-  search: boolean;
+  search: "web_search",
   /** 素材资源库可用（配置了库目录）。 */
-  library: boolean;
+  library: "list_library",
+  /** 音色库可用（配了 TTS key）。没配时 list_voices 不注册，提示词也不提。 */
+  voice: "list_voices",
+  /** 命令行可用。默认关，用户在 Agent 页勾上才有；没勾时提示词不提工作区。 */
+  shell: "bash",
+} as const;
+
+export type CapabilityKey = keyof typeof CAPABILITY_TOOLS;
+
+/** 当前真正可用的能力（`kit.can`）：提示词按它决定注不注某一章，装一个必然失败的能力只会教模型反复空转。 */
+export type AgentCapabilities = Record<CapabilityKey, boolean>;
+
+/** 从实际装上的工具算能力位——判定只有这一份，装配与两个角色的提示词不会各算各的。 */
+export function capabilitiesOf(tools: readonly { name: string }[]): AgentCapabilities {
+  const installed = new Set(tools.map((tool) => tool.name));
+  return Object.fromEntries(
+    Object.entries(CAPABILITY_TOOLS).map(([key, tool]) => [key, installed.has(tool)]),
+  ) as AgentCapabilities;
 }
 
 export interface AgentKit {
   role: AgentRole;
-  /** 装好的工具（已按 disabledTools 过滤）。 */
+  /** 装好的工具（已按用户启用集过滤）。 */
   tools: AgentTool<any>[];
   can: AgentCapabilities;
   /** 本次实际装上的工具目录。 */
@@ -147,27 +210,24 @@ export interface AgentKit {
   thinking: ThinkingLevel;
 }
 
+/**
+ * 这个角色在给定依赖面上真装得出来的工具（**还没有过用户开关那道过滤**）。
+ *
+ * 目录里 `roles` 标注的就是它——`agentkit.test.ts` 拿这里的原样产物比目录，不是比过滤后的结果：
+ * 比过滤后的就等于拿启用集和自己比，工厂多装一个没登记的工具照样能过。
+ */
+export function roleTools(deps: AgentKitDeps): AgentTool<any>[] {
+  return deps.role === "playwriter" ? playwriterTools(deps) : workshopTools(deps);
+}
+
 export function createAgentKit(deps: AgentKitDeps & { thinking?: ThinkingLevel }): AgentKit {
-  const tools = deps.role === "playwriter" ? playwriterTools(deps) : workshopTools(deps);
+  const tools = roleTools(deps);
   const enabled = tools.filter((tool) => deps.enabled.has(tool.name));
-  const has = (name: string): boolean => enabled.some((tool) => tool.name === name);
   return {
     role: deps.role,
     tools: enabled,
-    can: {
-      image: has("generate_image"),
-      search: has("web_search"),
-      library: has("list_library"),
-    },
-    catalog: enabled.map((tool) => {
-      const meta = TOOL_CATALOG[tool.name]!;
-      return {
-        id: tool.name,
-        label: meta.label,
-        group: meta.group,
-        groupLabel: TOOL_GROUPS[meta.group],
-      };
-    }),
+    can: capabilitiesOf(enabled),
+    catalog: enabled.map((tool) => agentToolEntry(tool.name)),
     thinking: deps.thinking ?? "off",
   };
 }
@@ -181,6 +241,7 @@ export function createAgentKit(deps: AgentKitDeps & { thinking?: ThinkingLevel }
 function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
   return [
     createBeatDoneTool(deps),
+    ...createNsfwTools(deps),
     ...createMemoryTools(deps),
     createGenerateImageTool({
       mode: "queued",
@@ -196,17 +257,37 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
   ];
 }
 
-/** 工坊的工具：剧目文件 + 生图（同步）+ 素材库检索 + 故事树 + 技能库 + 联网。 */
+/**
+ * 工坊的工具：pi 的文件与命令行工具 + 生图（同步）+ 素材库检索 + 故事树 + 技能库 + 联网。
+ *
+ * read / write / edit / bash 全部来自 pi，我们只提供 `PlayEnv` 这一个 `ExecutionEnv`：
+ * 白名单、play.json 校验与撤销条都在它里面（见 `playEnv.ts`）。
+ */
 function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
+  const env = new PlayEnv(deps.files, deps.onWrite);
   return [
-    ...createFilesTools(deps),
+    ...createPiFileTools(env),
+    createPiBashTool(env),
+    createReadinessTool(deps),
+    // 看图始终装（本地素材不依赖网络）；网址分支没有下载器时工具自己回「未启用」
+    createViewImageTool({
+      pathOf: (path) => deps.files.pathOf(path, "read"),
+      cacheDir: () => deps.store.webImageDir(),
+      fetchImage: deps.webImage,
+    }),
     createGenerateImageTool({
       mode: "sync",
       playAssets: deps.playAssets,
       onAsset: (path, url, kind, replaced) => deps.onAsset({ kind, path, url }, replaced),
     }),
+    createRecutSpriteTool({
+      playAssets: deps.playAssets,
+      onAsset: (path, url, kind, replaced) => deps.onAsset({ kind, path, url }, replaced),
+    }),
     createReadSkillTool(),
     ...createLineageTools(deps),
+    // 没配 TTS 就不注册：查不出来的工具只会诱使模型空转
+    ...createVoiceTool(deps.voices),
     ...createLibraryTools({
       playId: deps.playId,
       store: deps.store,

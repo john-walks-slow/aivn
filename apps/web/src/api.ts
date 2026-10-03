@@ -1,4 +1,5 @@
 import type {
+  CharacterDocument,
   AssetMeta,
   CgEntry,
   LibraryEntry,
@@ -78,6 +79,11 @@ export interface PlayDetail {
   /** 世界观前提全文（memory/always/premise.md）——A 区注入的同一份，标题页显示与设置页编辑都走它。 */
   premise: string;
   readiness: Readiness;
+  /**
+   * 角色表（memory/always/characters/*.md 的解析结果）——角色的真相源。
+   * play.json 的 `characters` 是纯元数据，任何界面都不该从那里取角色。
+   */
+  cast: CharacterDocument[];
 }
 
 /** 网关模型清单的一行（Agent 设置页的模型下拉）。 */
@@ -135,6 +141,8 @@ export interface Settings {
     contextWindow: number;
     compactRatio: number;
     keepRecentTokens: number;
+    nsfwModelId?: string;
+    nsfwPrompt?: string;
   };
   image: {
     enabled: boolean;
@@ -261,6 +269,25 @@ export const api = {
   agentTools: () => request<{ tools: Record<"playwriter" | "workshop", AgentToolEntry[]>; defaults: Record<string, string[]> }>(
     "/api/agents/tools",
   ),
+
+  /** 手动生图（工坊）：POST /api/plays/:id/images 发起异步生成 */
+  generateImage: (
+    id: string,
+    req: {
+      kind: "sprite" | "background" | "cg";
+      name?: string;
+      characterId?: string;
+      expression?: string;
+      framing?: string;
+      referenceCharacters?: string[];
+      instruction?: string;
+    },
+  ) =>
+    request<{ target: string; path: string; prompt: string }>(`/api/plays/${id}/images`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(req),
+    }),
 
   listAssets: (id: string) => request<Record<string, string[]>>(`/api/plays/${id}/assets`),
 

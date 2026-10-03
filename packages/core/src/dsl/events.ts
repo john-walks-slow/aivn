@@ -26,13 +26,13 @@ export interface PreloadAssetAttrs {
 export type StageEvent =
   | ({ kind: "scene" } & SceneAttrs)
   | ({ kind: "actor" } & ActorAttrs)
-  | ({ kind: "say_start" } & SayAttrs)
+  | ({ kind: "say_start"; nodeId?: string } & SayAttrs)
   | { kind: "say_text"; delta: string }
   | { kind: "say_end" }
-  | { kind: "narrate_start" }
+  | { kind: "narrate_start"; nodeId?: string }
   | { kind: "narrate_text"; delta: string }
   | { kind: "narrate_end" }
-  | ({ kind: "thought_start"; id: string })
+  | ({ kind: "thought_start"; id: string; nodeId?: string })
   | { kind: "thought_text"; delta: string }
   | { kind: "thought_end" }
   | ({ kind: "sfx" } & SfxAttrs)

@@ -324,30 +324,42 @@ function Node({
   return (
     <div className={cls} style={{ left: placed.x, top: placed.y, width: NODE_W, height: NODE_H }}>
       {bg && <img className="route-node-bg" src={bg} alt="" aria-hidden />}
-      <span className="route-node-stamp">{stamp(card.at)}</span>
+      <span className="route-node-head">
+        <span className="route-node-stamp">{stamp(card.at)}</span>
+        <span className="route-node-who">{who}</span>
+      </span>
       <span className="route-node-text">{text}</span>
       <span className="route-node-foot">
-        <span className="route-node-who">{who}</span>
         <span className="route-node-tools">
           <button
             type="button"
             className="route-node-tool"
             disabled={busy}
-            title={hint || "回到这里：世界线落到这一段，不生成新内容"}
-            onClick={() => ops.jump(card.id)}
+            title={hint || "回到选项：落到这一段演完那一刻，选项就在眼前；选别的选项自然开出新分支"}
+            onClick={() => ops.jump(card.endNodeId, { playFrom: "end" })}
           >
             <Icon name="return" />
-            回到这里
+            回到选项
           </button>
           <button
             type="button"
             className="route-node-tool"
             disabled={busy}
-            title={hint || "由此分岔：世界线移到这一段并留下标记，不重新生成；它之后原有的剧情留作旧分支"}
-            onClick={() => ops.fork(card.id)}
+            title={hint || "从头重读：回到这一段的第一句，从头再演一遍，读到末尾才露出选项"}
+            onClick={() => ops.jump(card.endNodeId, { playFrom: "start" })}
+          >
+            <Icon name="rewrite" />
+            从头重读
+          </button>
+          <button
+            type="button"
+            className="route-node-tool"
+            disabled={busy}
+            title={hint || "重演本轮：退到这一段之前，请剧作家重新写一遍（原有内容留作旧分支）"}
+            onClick={() => ops.fork(card.forkFromId, { resume: true })}
           >
             <Icon name="fork" />
-            由此分岔
+            重演本轮
           </button>
         </span>
       </span>

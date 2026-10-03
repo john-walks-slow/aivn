@@ -1,47 +1,14 @@
 /**
- * agent 角色：同一套工具实现，按角色决定「暴露什么、怎么等」。
+ * agent 角色：谁是角色、叫什么名字。
  *
  * 工具实现不按角色切分（同一份 schema 与代码），但**装配按角色切**——每个角色只有
- * 一条路上的依赖面（剧作家要 PlaySaves 拿不到、工坊要 emitStop 用不上）。装不上的工具
- * 不进这个角色的目录，否则设置页会挂一个勾了也没用的开关。
- *
- * 换依赖面时改这里和 `kit.ts` 的 role 工厂两处，`agentkit.test.ts` 里有一条用例
- * 拿工厂的真实产物比这份表，漏改会红。
+ * 一条路上的依赖面（剧作家要 PlaySaves 拿不到、工坊要 emitStop 用不上）。一个角色装不装得上
+ * 某个工具，写在 `kit.ts` 的 `TOOL_CATALOG` 里（角色可见性是工具自身的属性，与它的
+ * label/group 同一行）；这里不再另列一份 id 清单。
  */
 
 export const AGENT_ROLES = ["playwriter", "workshop"] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
-
-/** 每个角色装得上的工具（未列出＝装不上）。`web_search` 与资源库两个工具按配置再收。 */
-export const ROLE_INSTALLABLE: Record<AgentRole, readonly string[]> = {
-  playwriter: [
-    "beat_done",
-    "update_state",
-    "write_memory",
-    "read_memory_detail",
-    "search_archive",
-    "generate_image",
-    "list_library",
-    "import_asset",
-    "web_search",
-  ],
-  workshop: [
-    "list_files",
-    "read_file",
-    "edit_file",
-    "write_file",
-    "delete_file",
-    "get_readiness",
-    "inspect_asset",
-    "generate_image",
-    "read_skill",
-    "list_saves",
-    "read_lineage",
-    "list_library",
-    "import_asset",
-    "web_search",
-  ],
-};
 
 /** 角色元数据：UI 文案与设置页的两张卡都从这里取。 */
 export const ROLE_META: Record<AgentRole, { label: string; blurb: string }> = {

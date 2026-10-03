@@ -1,8 +1,8 @@
 import type { BeatCard } from "./beats.js";
 
 /** 节点盒子：固定尺寸才能算整齐的树，卡面内容超出就截断。
- *  高度 = 轮号 + 三行正文 + 底行（角色 + 两个动词），两个动词长在卡里，不另开工具条。 */
-export const NODE_W = 208;
+ *  高度 = 时刻行 + 三行正文 + 底行动词（三个动词带字样，宽度按最长一组留够）。 */
+export const NODE_W = 300;
 export const NODE_H = 128;
 /** 流向、兄弟两个方向上相邻盒子之间的空隙。 */
 export const GAP = 64;

@@ -3,6 +3,8 @@ import type { PlayConfig, PlayCover } from "@stage-ai/core";
 import { languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
 import { api, assetUrl, type PlayFile } from "../api.js";
 import { Icon, type IconName } from "../ui/Icon.js";
+import { VoiceLibrary } from "../voice/VoiceLibrary.js";
+import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
 
 const CRAFT_PATH = "memory/always/craft.md";
 const PREMISE_PATH = "memory/always/premise.md";
@@ -29,6 +31,9 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   /** 可当封面的图：剧目自己的背景与插图。 */
   const [assets, setAssets] = useState<Record<string, string[]>>({});
+  /** 音色库面板开着时为 true；剧目级兜底音色只在这一处选。 */
+  const [pickingVoice, setPickingVoice] = useState(false);
+  const voices = useVoiceCatalog();
 
   const reload = useCallback((): void => {
     api
@@ -173,8 +178,29 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
                     </option>
                   ))}
               </select>
-              <p className="muted small">翻译由 LLM 完成，任何小语种都能用——前提是所选音色支持该语言。</p>
+              <p className="muted small">音色需支持该语言。</p>
             </label>
+            <div className="field">
+              <span>无名角色音色（路人、临时角色）</span>
+              <div className="row">
+                <button type="button" className="btn-icon" onClick={() => setPickingVoice(true)}>
+                  <Icon name="volume" />
+                  {draft.defaultVoiceId ? "换一个音色" : "挑一个音色"}
+                </button>
+                {draft.defaultVoiceId && (
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    onClick={() => patch((p) => delete p.defaultVoiceId)}
+                  >
+                    清空
+                  </button>
+                )}
+              </div>
+              <p className="muted small">
+                没有角色卡的一次性角色（<code>{'<say id="passerby">'}</code>）默认不出声，这里挑一个兜底。
+              </p>
+            </div>
             <CoverPicker
               playId={playId}
               assets={assets}
@@ -214,6 +240,17 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
 
       </section>
 
+      {pickingVoice && (
+        <VoiceLibrary
+          playId={playId}
+          voices={voices}
+          onClose={() => setPickingVoice(false)}
+          onPick={(entry) => {
+            patch((p) => (p.defaultVoiceId = entry.id));
+            setPickingVoice(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -232,8 +269,8 @@ const TITLES: Record<string, string> = {
  */
 const HINTS: Record<string, string> = {
   [PREMISE_PATH]:
-    "这个世界在哪儿、什么年代、什么规矩；主要人物是谁、想要什么、彼此什么关系；故事从哪个瞬间开始。\n留空也能开演——剧作家会按它已有的东西自由发挥。",
-  [CRAFT_PATH]: "这部剧的台词口径：节奏多密、情绪怎么落地、有什么禁项。\n留空就用引擎内置的通用准则。",
+    "世界在哪儿、什么年代、什么规矩；主要人物是谁、彼此什么关系。\n留空也能开演，剧作家会自己发挥。",
+  [CRAFT_PATH]: "这部剧的台词口径：节奏多密、情绪怎么落地、有什么禁项。\n留空则剧作家没有口径可依，一切自己判断。",
 };
 
 /**

@@ -44,6 +44,8 @@
   --bg: #f5f1e8; /* 和紙 */
   --panel: #fffcf5;
   --panel-2: #ede7da;
+  /* 纸面左上角那片斜光：浅色下是暖白，和纸感就来自它 */
+  --paper-glow: rgb(255 252 245 / 0.9);
   --ink: #23201c;
   --ink-soft: #5b5348;
   --ink-faint: #9a9081;
@@ -91,7 +93,7 @@
   --nameplate-line: rgb(238 226 204 / 0.4);
   /* 亮色舞台（useTheme 的 stageLight）把 --stage-bg 压到 #fdfdfd：剧本还没配景时
      露出的是空白画布，不会被读成「画面加载不出来」。这里的默认基线走暗色。 */
-  --sprite-dim: 0.55; /* 预留：非发言人立绘压暗强度，当前没有任何规则用它 */
+  --sprite-dim: 0.55; /* 非发言人立绘压暗强度（.theater-sprite.dim 用） */
   --choice-bg: rgb(24 21 23 / 0.92);
   --choice-line: rgb(238 226 204 / 0.4);
   --choice-ink: #f2ebde;
@@ -129,6 +131,8 @@ html[data-ui-theme="dark"] {
   --bg: #14110f; /* 和紙反过来：暖调的黑，不是纯 #000 —— 纯黑配暖白字会发蓝 */
   --panel: #201c19;
   --panel-2: #2b2622;
+  /* 深底不能留暖白那片光（读成一块光斑），改成一层压得住的暖提亮 */
+  --paper-glow: rgb(116 104 88 / 0.2);
   --ink: #ece4d8;
   --ink-soft: #b3a897;
   --ink-faint: #8a8073;
@@ -723,9 +727,9 @@ button.link-btn {
 .title-screen {
   justify-content: flex-start;
   position: relative;
-  /* 没有底图时走主题色的和纸渐变：斜向的一片暖白，不是一片死白 */
+  /* 没有底图时走主题色的和纸渐变：斜向的一片暖白，不是一片死白（深色下是 --paper-glow 压过的暖提亮） */
   background:
-    radial-gradient(120% 90% at 12% 8%, rgb(255 252 245 / 0.9), transparent 62%),
+    radial-gradient(120% 90% at 12% 8%, var(--paper-glow), transparent 62%),
     linear-gradient(152deg, var(--panel) 0%, var(--bg) 48%, var(--panel-2) 100%);
 }
 
@@ -1061,12 +1065,14 @@ button.link-btn {
 }
 
 /* 舞台占满工具条以下的全部高度，台词条浮在它上面——台词长短不改变舞台高度，
-   背景与立绘因此不会被对话框挤压变形。 */
+   背景与立绘因此不会被对话框挤压变形。
+   声明 container-type 建立容器上下文，立绘等元素可基于 cqw 换算舞台宽度。 */
 .theater-stage {
   position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  container-type: inline-size;
   background: var(--stage-bg);
 }
 
@@ -1147,9 +1153,10 @@ button.link-btn {
      rotate    → 行为词的倾身
    全部锚在 transform-origin: top center（头顶），所以人是「原地动」而不是整张图在飘。 */
 .theater-sprite {
-  --x: 0%;
+  --x: 0cqw;
   --scale: 1;
   position: absolute;
+  left: 50%;
   top: 10%;
   height: 90%;
   transform-origin: top center;
@@ -1159,7 +1166,17 @@ button.link-btn {
      呼吸与行为词走 animation 不走 transition，所以不列在这里（列了两边会互相等）。 */
   transition:
     opacity var(--fade-ms) ease,
+    filter var(--fade-ms) ease,
     transform var(--move-ms) var(--move-ease);
+}
+
+/* 非说话人压暗：说话的那个保持原亮度，同框的其余人降到 --sprite-dim。
+   走 filter: brightness 而不是 opacity——压暗是「这块像素变暗」，透明会让背景
+   从人身上透出来，读起来是半透明的鬼影。brightness 只动像素、不动 alpha，
+   与 .leaving / .sprite-out 的 opacity 通道互不覆盖。
+   没有焦点时（旁白、玩家输入、说话的人不在台上）不加这个 class，整台原亮度。 */
+.theater-sprite.dim {
+  filter: brightness(var(--sprite-dim));
 }
 
 /* 正在演行为词：这一刻运镜让位。行为词自己的 translate/scale/rotate 与运镜的
@@ -1230,36 +1247,50 @@ button.link-btn {
   }
 }
 
-/* 机位：偏移量是「离画面中心的百分比」，不是 left 的绝对值。--x 写在行内 style 上
-   （见 StageTheater 的 slotStyle），这里只给 7 个具名档位。负数在左、正数在右。 */
+/* 回看（滚轮翻历史台词）时舞台上放的是「那一刻的画面」，不是一次新的演出：
+   换景不淡入、立绘不登场、行为词不重演、站位不补间。少了这一条，滚轮每翻一句
+   就是一次全场闪烁。松手回到播放头时这些规则不再命中，画面按平时的过渡归位。 */
+.theater-stage.rewinding .theater-bg,
+.theater-stage.rewinding .theater-bg-in,
+.theater-stage.rewinding .theater-cg-in,
+.theater-stage.rewinding .theater-sprite {
+  animation: none;
+}
+
+.theater-stage.rewinding .theater-sprite {
+  transition: none;
+}
+
+/* 机位：偏移量是「离画面中心的百分比（相对于舞台宽度的 cqw）」，不是 left 的绝对值。
+   通过 left: 50% 将原点对准舞台中心，--x 驱动左右平移。负数在左、正数在右。 */
 .pos-left {
-  --x: -32%;
+  --x: -28cqw;
 }
 
 .pos-center {
-  --x: 0%;
+  --x: 0cqw;
 }
 
 .pos-right {
-  --x: 32%;
+  --x: 28cqw;
 }
 
 /* 2 人同框：贴到画面两侧，留出中间说话的空（越靠边人越小越远，这是舞台惯例）。 */
 .pos-far-left {
-  --x: -44%;
+  --x: -36cqw;
 }
 
 .pos-far-right {
-  --x: 44%;
+  --x: 36cqw;
 }
 
 /* 3 人以上用：比 far 更靠外。 */
 .pos-edge-left {
-  --x: -55%;
+  --x: -42cqw;
 }
 
 .pos-edge-right {
-  --x: 55%;
+  --x: 42cqw;
 }
 
 /* 行为词 → 动画配方（core 的 spriteAction.ts 是行为词的唯一真相源）。
@@ -1462,11 +1493,11 @@ button.link-btn {
 
 /* 贴边档：用于「在最角落」或非人小物件（猫/道具）的默认落点。 */
 .pos-bleed-left {
-  --x: -64%;
+  --x: -46cqw;
 }
 
 .pos-bleed-right {
-  --x: 64%;
+  --x: 46cqw;
 }
 
 /* 对齐基准：图的那条边锚在 stage 上。
@@ -1962,6 +1993,124 @@ button.primary:hover:not(:disabled) {
 
 .free-box input {
   flex: 1;
+}
+
+/* ── 参考立绘选择器与手动生图 ────────────────────────── */
+
+.ref-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.ref-picker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.ref-picker-chip:hover {
+  background: var(--panel-hover, rgba(0, 0, 0, 0.04));
+}
+
+.ref-picker-chip.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.ref-chip-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.ref-chip-blank {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+}
+
+.ref-chip-name {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ref-chip-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.ref-picker-empty {
+  padding: 6px 0;
+}
+
+.image-gen-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.image-gen-label {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.image-gen-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+}
+
+.image-gen-result-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--panel-tint, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.image-gen-result-card img {
+  max-width: 100%;
+  max-height: 260px;
+  border-radius: var(--radius);
+  object-fit: contain;
 }
 
 /* ── 输入与遮罩 ────────────────────────── */
@@ -2552,15 +2701,16 @@ select:focus {
   max-width: 88%;
 }
 
+/* 气泡底一律走纸面令牌，色随主题；写死浅色值会在深色下变成一块「白底白字」 */
 .chat-user {
   align-self: flex-end;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 
 .chat-assistant {
   align-self: flex-start;
-  background: #f4f3ef;
+  background: var(--panel-2);
   color: var(--ink);
 }
 
@@ -2569,6 +2719,44 @@ select:focus {
   color: var(--ink-faint);
   font-size: 13px;
   font-style: italic;
+}
+
+/* 线程压缩分隔：早期对话仍在上面（原文没删），只是不再进 agent 上下文 */
+.chat-divider {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 92%;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.chat-divider::before,
+.chat-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/* 一句话摘要最长 60 字：窄屏下必须单行截断，否则把两端的分隔线挤没了 */
+.chat-divider > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-digest {
+  align-self: center;
+  width: 92%;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--ink-soft);
+  font-size: 13px;
 }
 
 /* —— 工坊出图：对话内联缩略图 + 灯箱 —— */
@@ -2737,15 +2925,14 @@ select:focus {
   color: var(--ink);
 }
 
-/* 写盘记录条 */
-
+/* 待确认写盘条：紧贴输入框上沿（写在下面时它被输入框压在最底下，读盘记录比输入框还低一等） */
 .workshop-writes {
   border-top: 1px solid var(--line);
   padding: 6px 12px 8px;
   flex-shrink: 0;
   max-height: 132px;
   overflow-y: auto;
-  background: #fbfaf6;
+  background: var(--panel);
 }
 
 .write-row {
@@ -3157,10 +3344,17 @@ select:focus {
   cursor: default;
 }
 
-/* 左上角是这一轮落笔的墙上时刻：日期 + 分钟，扫树时按时间认段。 */
-.route-node-stamp {
+/* 左上角是这一轮落笔的墙上时刻 + 右侧这一轮是谁在说：日期 + 分钟，扫树时按时间认段。 */
+.route-node-head {
   position: relative;
   z-index: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.route-node-stamp {
   font-size: 11px;
   line-height: 1.2;
   font-weight: 700;
@@ -3180,12 +3374,13 @@ select:focus {
   color: var(--ink);
 }
 
-/* 底行：左下角是谁说的，右下角是这一段的两个动词。 */
+/* 底行：右下角是这一段能做的三个动词（回到选项 / 从头重读 / 重演本轮）。 */
 .route-node-foot {
   position: relative;
   z-index: 1;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   margin-top: auto;
   font-size: 11px;
@@ -3197,6 +3392,8 @@ select:focus {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--ink-faint);
 }
 
 /* 空态/加载态：画布不在，剩一句话占住中间 */
@@ -3444,13 +3641,6 @@ select:focus {
   .choice {
     min-height: 46px;
     padding: 10px 12px;
-  }
-
-  /* 选肢时把立绘抬上去。竖屏的卡片列占了中段，不抬的话脸正好压在卡片下面，
-     只剩发顶露在外面——玩家要选的恰恰是卡，不是脸，但脸也不该整个消失。 */
-  .theater:has(.choice-overlay) .theater-sprite {
-    bottom: 46%;
-    height: 58%;
   }
 
   .settings-field {
