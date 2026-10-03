@@ -178,7 +178,7 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
                     </option>
                   ))}
               </select>
-              <p className="muted small">翻译由 LLM 完成，任何小语种都能用——前提是所选音色支持该语言。</p>
+              <p className="muted small">音色需支持该语言。</p>
             </label>
             <div className="field">
               <span>无名角色音色（路人、临时角色）</span>
@@ -198,9 +198,7 @@ export function SettingsPane({ playId, revision }: { playId: string; revision: n
                 )}
               </div>
               <p className="muted small">
-                剧本里写成 <code>{'<say id="passerby" name="路人甲">…</say>'}</code> 的一次性角色没有角色卡，
-                音色挂在角色卡上，于是默认不出声。这里挑一个兜底，他们就用这个声音。
-                每个有角色卡的仍然用各自的音色。
+                没有角色卡的一次性角色（<code>{'<say id="passerby">'}</code>）默认不出声，这里挑一个兜底。
               </p>
             </div>
             <CoverPicker
@@ -271,8 +269,8 @@ const TITLES: Record<string, string> = {
  */
 const HINTS: Record<string, string> = {
   [PREMISE_PATH]:
-    "这个世界在哪儿、什么年代、什么规矩；主要人物是谁、想要什么、彼此什么关系；故事从哪个瞬间开始。\n留空也能开演——剧作家会按它已有的东西自由发挥。",
-  [CRAFT_PATH]: "这部剧的台词口径：节奏多密、情绪怎么落地、有什么禁项。\n留空就用引擎内置的通用准则。",
+    "世界在哪儿、什么年代、什么规矩；主要人物是谁、彼此什么关系。\n留空也能开演，剧作家会自己发挥。",
+  [CRAFT_PATH]: "这部剧的台词口径：节奏多密、情绪怎么落地、有什么禁项。\n留空则剧作家没有口径可依，一切自己判断。",
 };
 
 /**
