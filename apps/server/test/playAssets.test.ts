@@ -100,7 +100,13 @@ function stubBackend(mimeType = "image/jpeg"): { backend: ImageBackend; calls: I
   return { backend, calls };
 }
 
-function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2, reference?: "none" | "neutral"): {
+function makeAssets(
+  store: PlayStore,
+  backend: ImageBackend,
+  concurrency = 2,
+  reference?: "none" | "neutral",
+  fetchImage?: (url: string) => Promise<{ data: Buffer; mimeType: string }>,
+): {
   assets: PlayAssets;
   files: PlayFiles;
   writes: WorkshopWrite[];
@@ -116,6 +122,7 @@ function makeAssets(store: PlayStore, backend: ImageBackend, concurrency = 2, re
       backend,
       limiter: new Limiter(concurrency),
       ...(reference ? { reference } : {}),
+      ...(fetchImage ? { fetchImage } : {}),
       onWrite: (w) => writes.push(w),
       // 自动注册临时角色走这条；用例不接时就是「当前环境不能自动建卡」
       writeCharacter: async (charId, content) => {
@@ -451,6 +458,119 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(calls[0]!.references).toEqual([]);
     // 开关关掉垫图，但提示词里的序号锚点不能留着——没有图就没有「第几张」
     expect(calls[0]!.prompt).not.toMatch(/in this exact order/);
+  });
+
+  it("通用参考图：出 neutral 定妆照时带 references 垫图", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await mkdir(files.absoluteOf("assets/backgrounds"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/backgrounds/ref_char.png"), await realImage("9:16", "image/png"));
+
+    await assets.generate(
+      {
+        kind: "sprite",
+        characterId: "mio",
+        expression: "neutral",
+        references: ["assets/backgrounds/ref_char.png"],
+      },
+      "a girl with ribbon",
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.references).toHaveLength(1);
+    expect(calls[0]!.references![0]!.mimeType).toBe("image/png");
+    // prompt 中拼装了定妆照垫图引导，且包含白底留白与姿势约束
+    expect(calls[0]!.prompt).toMatch(/Based on the attached reference image/);
+    expect(calls[0]!.prompt).toMatch(/front-facing standing pose/);
+    expect(calls[0]!.prompt).toMatch(/pure white background/);
+    expect(existsSync(files.absoluteOf("assets/sprites/mio/neutral.png"))).toBe(true);
+  });
+
+  it("通用参考图：支持外部网络图片 URL 并正确加载", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const mockFetch = async (url: string) => {
+      expect(url).toBe("https://example.com/character.jpg");
+      return { data: await realImage("9:16", "image/jpeg"), mimeType: "image/jpeg" };
+    };
+    const { assets } = makeAssets(store, backend, 2, undefined, mockFetch);
+
+    await assets.generate(
+      {
+        kind: "sprite",
+        characterId: "mio",
+        expression: "neutral",
+        references: ["https://example.com/character.jpg"],
+      },
+      "a girl",
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.references).toHaveLength(1);
+    expect(calls[0]!.references![0]!.mimeType).toBe("image/jpeg");
+    expect(calls[0]!.prompt).toMatch(/Based on the attached reference image/);
+  });
+
+  it("通用参考图：立绘差分不吃 references，恒以该角色 neutral 为基准（顶掉会静默换脸）", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await mkdir(files.absoluteOf("assets/sprites/mio"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/sprites/mio/neutral.png"), await realImage("9:16", "image/png"));
+    await mkdir(files.absoluteOf("assets/backgrounds"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/backgrounds/ref.png"), await realImage("16:9", "image/png"));
+    calls.length = 0;
+
+    await expect(
+      assets.generate(
+        {
+          kind: "sprite",
+          characterId: "mio",
+          expression: "smile",
+          references: ["assets/backgrounds/ref.png"],
+        },
+        "p",
+      ),
+    ).rejects.toThrow(/不能自带参考图/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("通用参考图：从界面复制来的静态 URL（带前导斜杠与 plays 前缀）也认", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await mkdir(files.absoluteOf("assets/backgrounds"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/backgrounds/scene_ref.jpg"), await realImage("16:9", "image/jpeg"));
+
+    await assets.generate(
+      { kind: "cg", name: "copied_ref", references: ["/plays/test/assets/backgrounds/scene_ref.jpg"] },
+      "p",
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.references).toHaveLength(1);
+  });
+
+  it("通用参考图：背景/CG 使用通用参考图并注入 genericReferenceSuffix", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await mkdir(files.absoluteOf("assets/backgrounds"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/backgrounds/scene_ref.jpg"), await realImage("16:9", "image/jpeg"));
+
+    await assets.generate(
+      {
+        kind: "cg",
+        name: "rooftop_sunset",
+        references: ["assets/backgrounds/scene_ref.jpg"],
+      },
+      "rooftop sunset view",
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.references).toHaveLength(1);
+    expect(calls[0]!.prompt).toMatch(/Follow the attached reference image\(s\) for visual appearance/);
   });
 
   it("画幅回执：模型回的画幅不对就报错，一个字节都不落盘", async () => {

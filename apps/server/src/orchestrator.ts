@@ -159,9 +159,9 @@ export interface OrchestratorOptions {
   imageTools?: {
     playAssets?: PlayAssets;
     /** 后台发起 bg/cg：宿主负责 asset_ready / asset_failed 广播（工具不等图）。 */
-    kick: (type: "bg" | "cg", prompt: string, id: string) => void;
-    /** 后台发起立绘：同上的失败广播。 */
-    kickSprite: (charId: string, expression: string, prompt: string, framing?: SpriteFraming) => void;
+    kick: (type: "bg" | "cg", prompt: string, id: string, references?: string[]) => void;
+    /** 后台发起立绘：同上的失败广播。references 只在出 neutral 定妆照时有意义。 */
+    kickSprite: (charId: string, expression: string, prompt: string, framing?: SpriteFraming, references?: string[]) => void;
     /** 联网检索（配了 key 才注册 web_search）。 */
     exa?: Exa;
   };

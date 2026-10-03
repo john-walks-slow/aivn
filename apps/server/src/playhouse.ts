@@ -348,6 +348,7 @@ export class PlayHouse {
       limiter: this.limiterFor(playId),
       reference: this.config.image.reference,
       pending: this.pendingFor(playId),
+      fetchImage: this.webImage,
       // 工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产——按 notify 分流。
       // 事件由工坊会话转发（它知道当前线程号），工坊实例不在时就没有对话流可挂。
       onWrite: (write, notify) => {
@@ -424,6 +425,7 @@ export class PlayHouse {
     type: "bg" | "cg",
     prompt: string,
     id: string,
+    references?: string[],
   ): Promise<void> {
     const sender = (msg: ServerMessage) => {
       for (const send of this.clientsFor(playId)) send(msg);
@@ -434,7 +436,7 @@ export class PlayHouse {
       sender({ type: "asset_failed", id, message: "生图未启用" });
       return;
     }
-    const target = { kind: type === "bg" ? "background" : "cg", name: id } as const;
+    const target = { kind: type === "bg" ? "background" : "cg", name: id, references } as const;
     const existing = await assets.existingUrl(target);
     if (existing) {
       sender({ type: "asset_ready", asset: { id, type, url: existing } });
@@ -464,6 +466,7 @@ export class PlayHouse {
     expression: string,
     prompt: string,
     framing?: SpriteFraming,
+    references?: string[],
   ): Promise<void> {
     const spriteId = `${charId}:${expression}`;
     const assets = this.playAssetsFor(playId, store);
@@ -475,7 +478,7 @@ export class PlayHouse {
     }
     try {
       await assets.generate(
-        { kind: "sprite", characterId: charId, expression, framing },
+        { kind: "sprite", characterId: charId, expression, framing, references },
         prompt,
         undefined,
         { notify: "silent" },
@@ -864,9 +867,10 @@ export class PlayHouse {
       imageTools: playAssets
         ? {
             playAssets,
-            kick: (type, prompt, id) => void this.preloadAsset(play.id, store, type, prompt, id),
-            kickSprite: (charId, expression, prompt, framing) =>
-              void this.preloadSprite(play.id, store, charId, expression, prompt, framing),
+            kick: (type, prompt, id, references) =>
+              void this.preloadAsset(play.id, store, type, prompt, id, references),
+            kickSprite: (charId, expression, prompt, framing, references) =>
+              void this.preloadSprite(play.id, store, charId, expression, prompt, framing, references),
             exa: this.exa ?? undefined,
           }
         : undefined,

@@ -155,7 +155,7 @@ function digestSection(digest: string | undefined): string {
  */
 function assetSourceGuidance(ctx: WorkshopPromptContext): string {
   const draw = ctx.canGenerate
-    ? "**插图与立绘差分**用 `generate_image` 自己画（插图里有角色时带 `referenceCharacters` 垫立绘，脸才对得上）；**立绘先出 neutral 定妆照**，其余差分都由它垫底"
+    ? "**插图与立绘差分**用 `generate_image` 自己画（插图里有角色时带 `references` 垫立绘——给角色 id、剧目内路径或图片网址都行，脸才对得上）；**立绘先出 neutral 定妆照**，其余差分都由它垫底（差分不用自己给参考图，也不该给）"
     : "生图当前不可用，你列的图单剧作家用不上——缺画面的地方只能靠旁白和台词交代";
   const reuse = ctx.canBrowseLibrary
     ? "**背景、配乐、音效从资源库里找**——先用 `list_library` 查清有哪些 id 再写进剧本，不要凭空画背景、不要凭记忆猜 id"

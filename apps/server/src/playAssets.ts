@@ -13,7 +13,7 @@ import {
 } from "@stage-ai/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
-import { IMAGE_EXTS, sniffImageMime } from "./imageMime.js";
+import { IMAGE_EXTS, mimeForExt, sniffImageMime } from "./imageMime.js";
 import type { Limiter } from "./limiter.js";
 import { PlayMemory } from "./memory.js";
 import { jobIdForImage, type PendingJobs } from "./pendingJobs.js";
@@ -21,6 +21,7 @@ import type { PlayFiles } from "./playFiles.js";
 import type { PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
 import type { WorkshopWrite } from "./agentkit/deps.js";
+import type { WebImageFetcher } from "./webImage.js";
 
 /**
  * 剧目素材生成层：**工坊与剧作家共用的唯一出图实现**（两个 agent 的 `generate_image` 工具都走这里）。
@@ -69,8 +70,11 @@ export interface AssetTarget {
   /** 立绘取景（full/half/square）：决定出图景别与画幅，缺省全身。不给就沿用角色卡里该角色已有的声明。 */
   framing?: SpriteFraming;
   /**
-   * 参考立绘（只对 background/cg 生效）：按给定顺序把这些角色的立绘垫给模型，
-   * 顺序即「提示词里第几张图是谁」。立绘本身不给（它垫的是该角色的 neutral 定妆照）。
+   * 参考图列表（通用垫图）：可填角色 id（自动引用其立绘）、剧目内相对路径或 http(s) URL。
+   */
+  references?: string[];
+  /**
+   * 兼容别名：等同于 references（主要用于只填角色 id 的历史调用）。
    */
   referenceCharacters?: string[];
 }
@@ -92,10 +96,14 @@ export interface GeneratedPlayAsset {
   autoNeutral: boolean;
 }
 
-/** 一张要垫进背景/CG 的角色立绘：id 用于排引用顺序，name 进提示词标注「这张图是谁」。 */
-interface ReferenceCharacter {
-  id: string;
-  name: string;
+/** 一张要垫给模型的参考图规格：可能是剧目内角色立绘，也可能是指定路径或网络图片。 */
+export interface ResolvedReference {
+  /** 显示名或角色名（用于在 prompt 里标注「第几张是谁」）；若无法识别则为 null。 */
+  name: string | null;
+  /** 角色 id（若来自角色立绘）。 */
+  characterId?: string;
+  /** 来源：剧目内相对路径或 http(s) 网址。 */
+  source: string;
 }
 
 interface AssetSpec {
@@ -111,10 +119,18 @@ interface AssetSpec {
   /** 角色级取景（不含差分覆盖）：自动补的定妆照按它出，不按当前差分那档。
    *  定妆照是所有差分的垫图基准，一个「全身角色 + 一条 closeup 差分」不该把基准也变成胸像。 */
   baseFraming?: SpriteFraming;
-  /** 背景/CG 的参考立绘（立绘本身不带）。 */
+  /** 解析后的显式参考图列表（按传入顺序）。 */
+  explicitReferences?: ResolvedReference[];
+  /** 兼容旧代码引用的角色列表（如果参考图中有角色）。 */
   referenceCharacters?: ReferenceCharacter[];
   /** 本次出图顺带建了一张角色卡（角色表变了，宿主要排轮边界重建）。 */
   autoRegistered?: boolean;
+}
+
+/** 一张要垫进背景/CG 的角色立绘：id 用于排引用顺序，name 进提示词标注「这张图是谁」。 */
+interface ReferenceCharacter {
+  id: string;
+  name: string;
 }
 
 export interface PlayAssetsDeps {
@@ -126,6 +142,8 @@ export interface PlayAssetsDeps {
   reference?: "none" | "neutral";
   /** 在生成的事（面板上那一行）：出图期间让玩家看得见在忙什么、等了多久。 */
   pending?: PendingJobs;
+  /** 网络图下载（可选，外部 URL 参考图需要它）。 */
+  fetchImage?: WebImageFetcher;
   /** 写一张角色卡（自动注册临时角色用）；没有这条能力就不自动建卡，直接报错。 */
   writeCharacter?: (charId: string, content: string) => Promise<void>;
   /** 角色卡立绘映射补写要进撤销条（二进制本身不进）。 */
@@ -393,7 +411,20 @@ export class PlayAssets {
    * 角色 id 不做正则——`parseCharacterCard` 不约束它的大小写，`Koharu` 这类 id 完全合法。
    */
   private async resolve(target: AssetTarget): Promise<AssetSpec> {
-    if (target.kind === "sprite") return this.resolveSprite(target);
+    const rawRefs = target.references?.length ? target.references : target.referenceCharacters;
+    const explicitReferences = rawRefs?.length ? await this.resolveReferences(rawRefs) : undefined;
+    const referenceCharacters = explicitReferences
+      ?.filter((r): r is ResolvedReference & { characterId: string; name: string } => !!r.characterId && !!r.name)
+      .map((r) => ({ id: r.characterId, name: r.name }));
+
+    if (target.kind === "sprite") {
+      const spriteSpec = await this.resolveSprite(target);
+      return {
+        ...spriteSpec,
+        explicitReferences,
+        referenceCharacters,
+      };
+    }
     const name = target.name?.trim() ?? "";
     if (!name) throw new Error("背景/CG 必须给 name（素材 id，剧本里的 bg/cg id 就是它）");
     if (!STEM.test(name)) {
@@ -404,9 +435,8 @@ export class PlayAssets {
       kindPath: target.kind === "background" ? "backgrounds" : "cg",
       stem: name,
       aspect: "16:9",
-      ...(target.referenceCharacters?.length
-        ? { referenceCharacters: await this.resolveReferences(target.referenceCharacters) }
-        : {}),
+      explicitReferences,
+      referenceCharacters,
     };
   }
 
@@ -421,19 +451,57 @@ export class PlayAssets {
   }
 
   /**
-   * 参考立绘的角色表校验。**不做静默丢弃**：调用方点名了要参考某个角色，那个角色没有立绘时
-   * 悄悄出一张少个人的 CG，比直接报错坏得多——图看着是出来了，演出里才发现人对不上。
+   * 参考图解析：每个输入项可以是：
+   * 1. 角色 id（如 "alice"）——自动解析为其立绘文件；
+   * 2. 剧目内相对路径（如 "assets/backgrounds/ref.png"）；
+   * 3. http(s) URL。
+   *
+   * 解析不合法的项时显式报错，避免静默漏垫图导致生成结果偏差。
    */
-  private async resolveReferences(ids: string[]): Promise<ReferenceCharacter[]> {
+  private async resolveReferences(items: string[]): Promise<ResolvedReference[]> {
     const cast = await this.cast();
-    const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
-    const missing = unique.filter((id) => !cast.has(id));
-    if (missing.length > 0) {
+    const unique = [...new Set(items.map((it) => it.trim()).filter(Boolean))];
+
+    // 先检查是否看起来像角色 id：如果不含路径分隔符也不是 URL 且角色表里没有，直接按角色卡报错
+    const missingChars = unique.filter(
+      (it) => !/^https?:\/\//i.test(it) && !it.includes("/") && !cast.has(it),
+    );
+    if (missingChars.length > 0) {
       throw new Error(
-        `角色卡里没有角色「${missing.join("、")}」。可选：${[...cast.keys()].join(" / ") || "（角色表是空的）"}`,
+        `角色卡里没有角色「${missingChars.join("、")}」。可选：${[...cast.keys()].join(" / ") || "（角色表是空的）"}`,
       );
     }
-    return unique.map((id) => ({ id, name: cast.get(id)!.name ?? id }));
+
+    const resolved: ResolvedReference[] = [];
+
+    for (const item of unique) {
+      if (/^https?:\/\//i.test(item)) {
+        resolved.push({ name: null, source: item });
+        continue;
+      }
+      if (cast.has(item)) {
+        const char = cast.get(item)!;
+        const spriteRel = await this.referenceSpriteOf({ id: item, name: char.name ?? item });
+        resolved.push({ name: char.name ?? item, characterId: item, source: spriteRel });
+        continue;
+      }
+      // 路径形式的参考图：容错前导斜杠（agent 常常直接复制 `/plays/<id>/assets/...` 这种静态 URL），
+      // 兼容 `plays/<playId>/` 前缀，再校验文件存在性。
+      const pathLike = item.replace(/^\/+/, "");
+      if (pathLike.startsWith("assets/") || pathLike.startsWith("plays/")) {
+        const norm = pathLike.startsWith("plays/") ? pathLike.replace(/^plays\/[^/]+\//, "") : pathLike;
+        const abs = this.deps.files.absoluteOf(norm);
+        if (existsSync(abs)) {
+          resolved.push({ name: null, source: norm });
+          continue;
+        }
+      }
+      throw new Error(
+        `未知的参考图「${item}」：既不是已知角色（可选：${[...cast.keys()].join(" / ") || "无"}），` +
+          "也不是存在的剧目内路径或 http(s) 网址。",
+      );
+    }
+    return resolved;
   }
 
   private async resolveSprite(target: AssetTarget): Promise<AssetSpec> {
@@ -517,23 +585,35 @@ export class PlayAssets {
   }
 
   /**
-   * 垫图（参考图）。默认给（与 `config.image.reference` 的默认值一致）：差分靠它才是同一个人，
-   * 代价是单张从 69s 变 138s（实测），像素一模一样。`STAGE_IMAGE_REFERENCE=none` 可以掐掉这条省钱，
-   * 它是全局开关——显式点名要的 CG 参考立绘同样归它管，否则这个开关形同虚设。
+   * 垫图（参考图）的唯一装配点。
+   *
+   * - **立绘差分（非 neutral）恒以该角色的 neutral 定妆照为身份基准**：这是「同一个角色的所有
+   *   差分是同一个人」的底层约定，不接受调用方拿别的图顶掉它（顶掉会静默换脸）。要换基准就把
+   *   neutral 重出一遍，那一次可以带 references。
+   * - **neutral 定妆照**：带 references 就按它垫图出图（首次定妆走这条，用户给的既有角色图从这里进来）；
+   *   不带就是纯文生图。
+   * - **背景 / CG**：按 references 垫图（角色立绘、剧目内路径、网络图都行）。
+   *
+   * `STAGE_IMAGE_REFERENCE=none` 是全局开关，显式指定的参考图同样归它管，否则这个开关形同虚设。
    */
   private async referencesFor(spec: AssetSpec) {
     if (this.deps.reference === "none") return [];
-    if (spec.kind === "sprite") {
-      if (spec.expression === NEUTRAL) return [];
+    const explicit = spec.explicitReferences ?? [];
+
+    if (spec.kind === "sprite" && spec.expression !== NEUTRAL) {
+      if (explicit.length > 0) {
+        throw new Error(
+          `立绘差分「${spec.characterId}/${spec.expression}」不能自带参考图：` +
+            `差分的身份基准恒为该角色的 neutral 定妆照，换基准会与既有差分不是同一个人。` +
+            "要换基准就重新出一次 neutral（那一次可以带 references），再派生差分。",
+        );
+      }
       const neutral = await this.existingPath(spec.kindPath, NEUTRAL);
-      if (!neutral) return [];
-      return [await this.loadReference(neutral)];
+      return neutral ? [await this.loadReference(neutral)] : [];
     }
-    const characters = spec.referenceCharacters ?? [];
+
     const refs = [];
-    for (const character of characters) {
-      refs.push(await this.loadReference(await this.referenceSpriteOf(character)));
-    }
+    for (const ref of explicit) refs.push(await this.loadReference(ref.source));
     return refs;
   }
 
@@ -560,9 +640,19 @@ export class PlayAssets {
     );
   }
 
-  private async loadReference(rel: string) {
-    const data = await readFile(this.deps.files.absoluteOf(rel));
-    return { mimeType: sniffImageMime(data) ?? "image/jpeg", data };
+  private async loadReference(source: string) {
+    if (/^https?:\/\//i.test(source)) {
+      if (!this.deps.fetchImage) {
+        throw new Error("外部网络参考图下载未配置（fetchImage 缺失），无法加载 URL 图片。");
+      }
+      const img = await this.deps.fetchImage(source);
+      return { mimeType: img.mimeType, data: img.data };
+    }
+    const data = await readFile(this.deps.files.absoluteOf(source));
+    // 参考图必须是真图：字节头认不出来时不能冒充 image/jpeg 发给后端（那只会换来一句难懂的模型报错）
+    const mimeType = sniffImageMime(data);
+    if (!mimeType) throw new Error(`参考图「${source}」不是 png/jpeg/webp/gif 图片，垫不进去。`);
+    return { mimeType, data };
   }
 
   /**
@@ -627,13 +717,60 @@ function labelFor(spec: AssetSpec): string {
 
 function suffixFor(spec: AssetSpec, prompt: string, sentReferences: number): string {
   if (spec.kind !== "sprite") {
-    return spec.referenceCharacters?.length && sentReferences > 0
-      ? `${prompt}. ${referenceSuffix(spec.referenceCharacters)}`
-      : prompt;
+    if (sentReferences <= 0) return prompt;
+    // 如果全部为具名角色
+    if (spec.referenceCharacters?.length && spec.referenceCharacters.length === sentReferences) {
+      return `${prompt}. ${referenceSuffix(spec.referenceCharacters)}`;
+    }
+    // 包含通用参考图或混合参考
+    return `${prompt}. ${genericReferenceSuffix(spec.explicitReferences ?? [])}`;
   }
-  return spec.expression === NEUTRAL
-    ? `${prompt}, ${neutralSuffix(spec.framing)}`
-    : `${prompt}. ${identitySuffix(spec.framing)}`;
+  if (spec.expression === NEUTRAL) {
+    // 定妆照垫图：先给白底抠底的构图约束，再点明这是哪张参考图的同一个人。
+    // 顺序不能反——参考图会带背景与景别，构图约束压后面才盖得住它。
+    return sentReferences > 0
+      ? `${prompt}, ${neutralSuffix(spec.framing)} ${neutralReferenceTail(spec.framing)}`
+      : `${prompt}, ${neutralSuffix(spec.framing)}`;
+  }
+  return `${prompt}. ${identitySuffix(spec.framing)}`;
+}
+
+/**
+ * 通用参考图后缀：用于背景、CG 或未全具名角色的垫图场景。
+ */
+function genericReferenceSuffix(refs: ResolvedReference[]): string {
+  const named = refs.filter((r) => !!r.name);
+  if (named.length > 0) {
+    const roster = refs
+      .map((r, i) => `${i + 1}) ${r.name ? r.name : "reference image"}`)
+      .join(", ");
+    return (
+      `The attached reference images are, in this exact order: ${roster}. ` +
+      "Maintain consistent visual appearance, character identity, hairstyle, facial features, and design elements " +
+      "as depicted in the corresponding reference images while adapting them to the scene."
+    );
+  }
+  return (
+    "Follow the attached reference image(s) for visual appearance, design details, " +
+    "color palette and overall aesthetic while rendering the described scene."
+  );
+}
+
+/**
+ * 定妆照的参考图尾注：拼在构图后缀**之后**，点明这一张要长得像参考图里的那个人。
+ *
+ * 与 `identitySuffix`（差分那条）分工不同——差分垫的是自家 neutral，说的是「只改表情」；
+ * 这里垫的是外部图（用户给的既有角色图、原画），要的是「把那个人的样子搬到这张定妆照上」。
+ * 姿势、白底、画风仍由 `neutralSuffix` 管，这一段只补身份。
+ */
+function neutralReferenceTail(framing: SpriteFraming | undefined): string {
+  if ((framing ?? DEFAULT_SPRITE_FRAMING) === "square") {
+    return "Based on the attached reference image: the same subject with identical colors, markings and features.";
+  }
+  return (
+    "Based on the attached reference image: the same character — identical face, hairstyle, hair color, " +
+    "eye color and outfit — redrawn in the pose and framing described above."
+  );
 }
 
 /**

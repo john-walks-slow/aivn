@@ -40,7 +40,7 @@ describe("工坊提示词：素材来源这一维的写法指导", () => {
   it("能力齐全时三类素材各给一条来路，并指向 craft.md", async () => {
     const prompt = await buildWorkshopPrompt({ ...CTX, canGenerate: true, canSearch: true, canBrowseLibrary: true });
     expect(prompt).toContain("素材来源");
-    expect(prompt).toContain("referenceCharacters");
+    expect(prompt).toContain("references");
     expect(prompt).toContain("先出 neutral 定妆照");
     expect(prompt).toContain("从资源库里找");
     // 这一维由剧目的创作口径承载，提示词只教怎么写，不自己定规矩
@@ -58,7 +58,7 @@ describe("工坊提示词：素材来源这一维的写法指导", () => {
     // 只盯素材来源这一行：职责边界里「出图必须真的调用 generate_image」是既有文案，与能力位无关
     const line = prompt.split("\n").find((l) => l.startsWith("- 素材来源"))!;
     expect(line).toContain("生图当前不可用");
-    expect(line).not.toContain("referenceCharacters");
+    expect(line).not.toContain("references");
     expect(line).not.toContain("neutral 定妆照");
   });
 });
