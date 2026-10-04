@@ -7,6 +7,7 @@ import { zipSync } from "fflate";
 import { libraryEntryMatches, parseCharacterCard, parsePlayAssetManifest } from "@aivn/core";
 import { AssetLibrary, assertEntryId } from "../src/library.js";
 import { importFromLibrary } from "../src/assetImport.js";
+import { createLibraryTools } from "../src/agentkit/libraryTool.js";
 import { PlayLibrary } from "../src/store.js";
 
 /**
@@ -429,5 +430,89 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
     expect(result.writes.find((w) => w.path === "assets/manifest.json")!.before).toBeNull();
     // 角色卡同理：本来没有这张卡，撤销即删除
     expect(result.writes.find((w) => w.path.startsWith("characters/"))!.before).toBeNull();
+  });
+});
+
+describe("import_asset 工具：单个与批量", () => {
+  let libRoot: string;
+  let playsRoot: string;
+  let library: AssetLibrary;
+  let plays: PlayLibrary;
+
+  beforeEach(async () => {
+    libRoot = await mkdtemp(join(tmpdir(), "aivn-lib-"));
+    playsRoot = await mkdtemp(join(tmpdir(), "aivn-plays-"));
+    library = new AssetLibrary(libRoot);
+    plays = new PlayLibrary(playsRoot);
+    await plays.importZip(zipOf({ "play.json": PLAY_JSON("p1") }));
+  });
+  afterEach(async () => {
+    await rm(libRoot, { recursive: true, force: true });
+    await rm(playsRoot, { recursive: true, force: true });
+  });
+
+  /** 只取 import_asset：批量入口在工具层，assetImport 只认单条目。 */
+  function importTool(onAsset?: (asset: { path: string }) => void) {
+    const tools = createLibraryTools({
+      playId: "p1",
+      store: plays.store("p1"),
+      library,
+      onAsset: onAsset as never,
+    });
+    return tools.find((t) => t.name === "import_asset")!;
+  }
+
+  const textOf = (result: { content: unknown[] }): string => (result.content[0] as { text: string }).text;
+
+  it("entryId 传单个字符串照旧：一条一个 id", async () => {
+    await makeEntry(libRoot, "backgrounds", "hall", { "a.png": "甲" });
+    const text = textOf(await importTool().execute("t1", { kind: "backgrounds", entryId: "hall" } as never));
+    expect(text).toContain("已导入 hall → assets/backgrounds/hall.png");
+    expect(text).toContain('<scene bg="hall" />');
+  });
+
+  it("entryId 传数组：一趟导完同类条目，回执合成一份而不是逐条复述", async () => {
+    await makeEntry(libRoot, "backgrounds", "hall", { "a.png": "甲" }, { description: "走廊" });
+    await makeEntry(libRoot, "backgrounds", "yard", { "b.png": "乙" }, { description: "后院" });
+    const assets: string[] = [];
+    const text = textOf(
+      await importTool((a) => assets.push(a.path)).execute("t1", {
+        kind: "backgrounds",
+        entryId: ["hall", "yard"],
+      } as never),
+    );
+    expect(text).toContain("已导入 2 条：");
+    expect(text).toContain("hall → assets/backgrounds/hall.png");
+    expect(text).toContain('<scene bg="yard" />');
+    // 素材表说明只说一次
+    expect(text.match(/素材描述已写进/g)).toHaveLength(1);
+    expect(assets).toEqual(["assets/backgrounds/hall.png", "assets/backgrounds/yard.png"]);
+    const manifest = JSON.parse(await readFile(join(playsRoot, "p1", "assets", "manifest.json"), "utf8"));
+    expect(Object.keys(manifest).sort()).toEqual(["hall", "yard"]);
+  });
+
+  it("批量里有一条不存在：其余照常落盘，回执点名那一条", async () => {
+    await makeEntry(libRoot, "backgrounds", "hall", { "a.png": "甲" });
+    const text = textOf(
+      await importTool().execute("t1", { kind: "backgrounds", entryId: ["hall", "nope"] } as never),
+    );
+    expect(text).toContain("已导入 hall → assets/backgrounds/hall.png");
+    expect(text).toContain("这 1 条没导进来");
+    expect(text).toContain("nope");
+    expect(existsSync(join(playsRoot, "p1", "assets", "backgrounds", "hall.png"))).toBe(true);
+  });
+
+  it("target=protagonist 配批量：直接拒绝，一张卡都不写", async () => {
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" });
+    await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n" });
+    const text = textOf(
+      await importTool().execute("t1", {
+        kind: "characters",
+        entryId: ["mio", "rio"],
+        target: "protagonist",
+      } as never),
+    );
+    expect(text).toContain("只配单个条目");
+    expect(existsSync(join(playsRoot, "p1", "characters", "protagonist.md"))).toBe(false);
   });
 });
