@@ -21,8 +21,8 @@ export interface LineageOps {
    * 重写：退到这一段之前，让剧作家**重新生成**这一段（原有内容整段留作旧枝）。
    *
    * `replaced` 是被顶掉的那一拍的首节点（卡片自己知道），新的 fork 标记继承它的来源标签；
-   * `instruction` 是可选的一句交代，留空就是纯重写——填了的话它排在重写那一轮开跑之后，
-   * 生效于下一次开口（与舞台导演栏的「重写」同一条路）。
+   * `instruction` 是可选的一句交代，留空就是纯重写——填了的话它随这一岔一起发，是重写
+   * 这一轮的第一条输入（与舞台导演栏的「重写」同一条路）。
    */
   rewrite: (forkFromId: string, opts?: { replaced?: string; instruction?: string }) => void;
   /** 删除：剪掉这一段及其全部后代。确认弹窗在卡片那一层（见 RouteCanvas）。 */

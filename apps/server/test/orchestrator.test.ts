@@ -2308,6 +2308,71 @@ describe("重写继承来源（同选项认得出刚重写的那条枝）", () =
   });
 });
 
+describe("重写带着交代（落进重演的这一轮，不是排到下一轮）", () => {
+  const REWRITTEN = '<say id="mio">……算了，走吧。</say>';
+
+  it("随 fork 的 instruction 成为重演那一轮的第一条输入，并落一个 prompt 节点", async () => {
+    const contexts: unknown[] = [];
+    const { orchestrator, tree, messages } = setup(
+      [
+        { text: BEAT_1, beatDone: BEAT_1_STOP },
+        { text: BEAT_2, beatDone: true },
+        { text: REWRITTEN, beatDone: true },
+      ],
+      { contexts },
+    );
+    const { beat1End } = await playTwoBeats(orchestrator, tree);
+
+    await orchestrator.forkTo(beat1End, { resume: true, instruction: "别道歉，让她先走" });
+    await orchestrator.whenIdle();
+
+    // 重演那一轮下发给剧作家的正文里就带着这句交代
+    expect(lastUserText(contexts as CapturedContext[])).toContain("别道歉，让她先走");
+
+    // 它是这一轮的第一个节点：fork 标记之下、重演出的台词之前
+    const chain = tree.ancestorChain(tree.leafId).map((id) => tree.get(id)!);
+    const forkAt = chain.findLastIndex((event) => event.kind === "fork");
+    const promptAt = chain.findIndex((event, index) => index > forkAt && event.kind === "prompt");
+    const sayAt = chain.findIndex((event, index) => index > promptAt && event.kind === "say");
+    expect(chain[promptAt]!.payload?.input).toBe("别道歉，让她先走");
+    expect(sayAt).toBeGreaterThan(promptAt);
+
+    // 没有排进待注入队列：队列里没有这一句，它已经在这一轮里兑现了
+    const queued = messages.filter((msg) => msg.type === "prompt_queue").at(-1) as {
+      items: { text: string }[];
+    };
+    expect(queued.items).toEqual([]);
+  });
+
+  it("分岔（不 resume）带的交代：新枝开出来就照这句开演，不用等玩家再开口", async () => {
+    const contexts: unknown[] = [];
+    const { orchestrator, tree, messages } = setup(
+      [
+        { text: BEAT_1, beatDone: BEAT_1_STOP },
+        { text: BEAT_2, beatDone: true },
+        { text: REWRITTEN, beatDone: true },
+      ],
+      { contexts },
+    );
+    const { beat1End } = await playTwoBeats(orchestrator, tree);
+
+    await orchestrator.forkTo(beat1End, { instruction: "从这句改走" });
+    await orchestrator.whenIdle();
+
+    expect(lastUserText(contexts as CapturedContext[])).toContain("从这句改走");
+
+    const chain = tree.ancestorChain(tree.leafId).map((id) => tree.get(id)!);
+    const forkAt = chain.findLastIndex((event) => event.kind === "fork");
+    const promptAt = chain.findIndex((event, index) => index > forkAt && event.kind === "prompt");
+    expect(chain[promptAt]!.payload?.input).toBe("从这句改走");
+
+    const queued = messages.filter((msg) => msg.type === "prompt_queue").at(-1) as {
+      items: { text: string }[];
+    };
+    expect(queued.items).toEqual([]);
+  });
+});
+
 describe("删除一段及其后代", () => {
   it("剪掉这一段：节点与后代消失、世界线回到上一轮末尾、客户端留在路线视图", async () => {
     const { orchestrator, messages, tree } = countingSetup([

@@ -347,8 +347,18 @@ export type ClientMessage =
    *  行要等收尾才落树，所以由服务端按「不大于该 seq 的最后一个节点」解析，见 nodeIdAtSeq）。
    *  resume=true = 「重演这一轮」：分岔后立刻续演，中间不设停止点。
    *  replaced = 被这一岔顶掉的那一拍的首节点（路线卡片知道自己是哪一张，直接点名）。
-   *  新的 fork 标记继承它的来源标签，玩家回到同一锚点重选同一个动作时才认得出这条枝。 */
-  | { type: "fork"; nodeId?: string; seq?: number; resume?: boolean; replaced?: string }
+   *  新的 fork 标记继承它的来源标签，玩家回到同一锚点重选同一个动作时才认得出这条枝。
+   *  instruction = 随这一岔一起交代的一句：它是新枝这一轮的第一条输入（与「插一句」
+   *  同一条入账路径、同一个 prompt 节点），不是排进待注入队列等下一轮。分岔不 resume
+   *  时带上它 = 新分支开出来后立刻照这句开演。 */
+  | {
+      type: "fork";
+      nodeId?: string;
+      seq?: number;
+      resume?: boolean;
+      replaced?: string;
+      instruction?: string;
+    }
   /** 删除：剪掉 nodeId 及其全部后代（路线卡片传该段首节点）。
    *  删完世界线重挂到第一个活着的祖先；只落 session.json，lineage.jsonl 是只增审计流。 */
   | { type: "delete_branch"; nodeId: string }

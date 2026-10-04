@@ -42,8 +42,12 @@ interface StageTheaterProps {
   /** 插一句：唯一的输入通道。空闲时立刻开新轮，演出中排进待注入队列。 */
   onPrompt: (text: string) => void;
   onEdit: (nodeId: string, text: string) => void;
-  /** 分岔锚点：字符串是谱系节点 id（回顾/路线），数字是舞台当前行的 seq。 */
-  onFork: (anchor: string | number, opts?: { resume?: boolean }) => void;
+  /** 分岔锚点：字符串是谱系节点 id（回顾/路线），数字是舞台当前行的 seq。
+   *  `instruction` = 随这一岔交代的一句，它是新枝这一轮的第一条输入。 */
+  onFork: (
+    anchor: string | number,
+    opts?: { resume?: boolean; instruction?: string },
+  ) => void;
   /** 导演生图：按当前这一幕出一张插图，指令可留空。
    *  回看中带上正在看的那一行（anchorNodeId）：提示词与落点都按那一刻走；
    *  这一行还没进谱系就传 null（服务端明确拒绝，不悄悄改成末尾生图）。 */
@@ -521,17 +525,15 @@ voiceState,
     }
     if (act === "restart") {
       if (!targets.beatId) return;
-      onFork(targets.beatId, { resume: true });
-      // 填了就把那句交代排进队列（生效于重写之后的下一次开口）；留空就是纯重写。
-      if (text) onPrompt(text);
+      // 交代的那句跟着这一岔一起发：它是重演这一轮的第一条输入，不是排到下一轮。
+      onFork(targets.beatId, { resume: true, ...(text ? { instruction: text } : {}) });
       return;
     }
     // 分岔：从**正在看的这一行**退开（传 seq，由服务端解析成落点），不是从整轮开头。
     // 轮内分岔 = 腰斩：正在写的后半截就此作废，旧分支停在它演到的位置。
     if (targets.lineSeq === null) return;
-    onFork(targets.lineSeq);
-    // 填了提示词就直接开新一轮；留空则新分支开出来后停在等你开口。
-    if (text) onPrompt(text);
+    // 填了的这句就是新分支这一轮的第一条输入；留空则新分支开出来后停在等你开口。
+    onFork(targets.lineSeq, text ? { instruction: text } : undefined);
   };
 
   /** 当前显示行的语音状态：合成中也占一个喇叭位（闪烁），别让「正在生成」看起来像「没有语音」。 */
@@ -945,7 +947,7 @@ export function BacklogView({
   onReplay: (seq: number) => void;
   onEdit: (nodeId: string, text: string) => void;
   /** 重写：退到这一轮之前重演，会分出一条新线。 */
-  onFork: (nodeId: string, opts?: { resume?: boolean }) => void;
+  onFork: (nodeId: string, opts?: { resume?: boolean; instruction?: string }) => void;
 }) {
   /** 改写就地改：点开编辑框在回顾里完成，不跳视图。 */
   const [editing, setEditing] = useState<string | null>(null);

@@ -240,7 +240,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   };
 
   // 导演出口（P6）：senders 在 useStageSocket 内 useCallback 稳定，仅重连后换引用
-  const { sendFork: fork, sendJump: jump, sendEdit: edit, sendPrompt: queuePrompt, sendDelete: drop } = stage;
+  const { sendFork: fork, sendJump: jump, sendEdit: edit, sendDelete: drop } = stage;
 
   /**
    * 路线页上的三个动词。
@@ -250,8 +250,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
    * 删除反过来——留在路线视图（树上少一张卡就是反馈），服务端那条重建带 `keepView` 把
    * 舞台的 rebase 回调拦下，不把正在整理分支的玩家拽走。
    *
-   * 重写的指令与舞台导演栏同一条路：先把这一段顶掉重开一轮，再把这句交代排进队列，
-   * 因此它生效于**下一次开口**（下一轮，或与玩家的下一次选择合并），不是立刻改写这一轮。
+   * 重写的指令与舞台导演栏同一条路：跟着 fork 一起发，它是重演那一轮的第一条输入——
+   * 交代什么方向，重写的这一轮就照着写什么，不是先重写、下一轮才补上。
    */
   const routeOps: LineageOps = useMemo(
     () => ({
@@ -260,13 +260,16 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
         goStage();
       },
       rewrite: (forkFromId: string, opts?: { replaced?: string; instruction?: string }) => {
-        fork(forkFromId, { resume: true, ...(opts?.replaced ? { replaced: opts.replaced } : {}) });
-        if (opts?.instruction) queuePrompt(opts.instruction);
+        fork(forkFromId, {
+          resume: true,
+          ...(opts?.replaced ? { replaced: opts.replaced } : {}),
+          ...(opts?.instruction ? { instruction: opts.instruction } : {}),
+        });
         goStage();
       },
       remove: (nodeId: string) => drop(nodeId),
     }),
-    [jump, fork, queuePrompt, drop, goStage],
+    [jump, fork, drop, goStage],
   );
 
 

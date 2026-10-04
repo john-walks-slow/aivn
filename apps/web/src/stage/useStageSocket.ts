@@ -70,10 +70,11 @@ export interface StageSocket {
   // Director ops: jump moves the world line, fork opens a branch, delete prunes one
   sendJump: (nodeId: string, opts?: { playFrom?: "start" | "end" }) => void;
   /** 分岔锚点二选一：nodeId（路线/回顾给的节点）或 seq（舞台正在看的那一行）。
-   *  `replaced` = 被这次重写顶掉的那一拍的首节点（路线卡片点名），新 fork 标记继承它的来源标签。 */
+   *  `replaced` = 被这次重写顶掉的那一拍的首节点（路线卡片点名），新 fork 标记继承它的来源标签。
+   *  `instruction` = 随这一岔交代的一句，它是新枝这一轮的第一条输入（不是排进队列等下一轮）。 */
   sendFork: (
     anchor: string | number,
-    opts?: { resume?: boolean; replaced?: string },
+    opts?: { resume?: boolean; replaced?: string; instruction?: string },
   ) => void;
   /** 删除：剪掉该节点及其全部后代。 */
   sendDelete: (nodeId: string) => void;
@@ -376,15 +377,21 @@ export function useStageSocket(
     [send],
   );
   const sendFork = useCallback(
-    (anchor: string | number, opts?: { resume?: boolean; replaced?: string }) =>
+    (anchor: string | number, opts?: { resume?: boolean; replaced?: string; instruction?: string }) =>
       send(
         typeof anchor === "number"
-          ? { type: "fork", seq: anchor, ...(opts?.resume ? { resume: true } : {}) }
+          ? {
+              type: "fork",
+              seq: anchor,
+              ...(opts?.resume ? { resume: true } : {}),
+              ...(opts?.instruction ? { instruction: opts.instruction } : {}),
+            }
           : {
               type: "fork",
               nodeId: anchor,
               ...(opts?.resume ? { resume: true } : {}),
               ...(opts?.replaced ? { replaced: opts.replaced } : {}),
+              ...(opts?.instruction ? { instruction: opts.instruction } : {}),
             },
       ),
     [send],

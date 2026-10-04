@@ -1157,8 +1157,16 @@ export class PlaywrightOrchestrator {
    *
    * `replaced` 是客户端点名的「被这次重写顶掉的那一拍的首节点」：新 fork 标记继承它的
    * 来源标签，玩家回到同一锚点重选同一个动作时才认得出这条枝是刚重写出来的那条。
+   *
+   * `instruction` 是随这一岔一起交代的一句：它是新枝**这一轮**的第一条输入（与「插一句」
+   * 同一条入账路径、同一个 prompt 节点），不是排进待注入队列等下一轮——「带着这句重写」
+   * 是一个动作，不是先重写、下一轮再补一句。分岔不 resume 时带上它 = 新分支立刻照这句开演。
    */
-  async forkTo(nodeId: string, opts?: { resume?: boolean; replaced?: string }): Promise<void> {
+  async forkTo(
+    nodeId: string,
+    opts?: { resume?: boolean; replaced?: string; instruction?: string },
+  ): Promise<void> {
+    const instruction = opts?.instruction?.trim();
     // 重来照旧只在空闲时做：它顶的是「这一轮重头再来」，一轮正写到一半没什么可重来
     if (this.engaged) {
       if (!opts?.resume) this.cancelBeat();
@@ -1167,6 +1175,7 @@ export class PlaywrightOrchestrator {
     if (!opts?.resume) {
       this.prevLeafId = this.opts.tree.leafId;
       this.rebaseAt(nodeId, "已从此处开新分支");
+      if (instruction) await this.deliverForkInstruction(instruction);
       return;
     }
     // 来源必须在改写 prevLeafId 之前算：它读的是「上一次结构操作前我在哪儿」
@@ -1175,7 +1184,22 @@ export class PlaywrightOrchestrator {
     // rebaseAt 同步完成（含 recordFork），beginBeat 同步置 beatPending：
     // 整个 fork+续演是一步，中间没有让 engaged 掉下去的空档。
     this.rebaseAt(nodeId, "重写这一段", { resume: true, origin });
-    await this.beginBeat(this.renderPromptTurn([]));
+    if (instruction) await this.deliverForkInstruction(instruction);
+    else await this.beginBeat(this.renderPromptTurn([]));
+  }
+
+  /**
+   * 随分岔/重写交代的那一句：走「插一句」同一条入账路径——落一个 prompt 节点、
+   * 广播一条玩家输入事件、作为这一轮的第一条输入发下去。
+   *
+   * 它不是排队面板上的条目（不入 `pending`），但仍占一个 id：这一轮判废退回时
+   * （returnBeatSteers）它会原样回到队列，玩家写的那句话不丢。
+   */
+  private deliverForkInstruction(text: string): Promise<void> {
+    return this.deliverPrompts(
+      [{ id: `pq-${(this.pendingSeq += 1)}`, text, beatNo: this.beatNo, status: "pending" }],
+      null,
+    );
   }
 
   /**
