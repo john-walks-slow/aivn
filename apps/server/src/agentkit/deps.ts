@@ -12,7 +12,7 @@ import type { VoiceCatalogService } from "../voiceCatalog.js";
 import type { Exa } from "../exa.js";
 import type { WebImageFetcher } from "../webImage.js";
 import type { AssetTarget, PlayAssets } from "../playAssets.js";
-import type { PlayMusic } from "../playMusic.js";
+import type { GenerateMusicRequest, PlayMusic } from "../playMusic.js";
 import type { PlayFiles } from "../playFiles.js";
 import type { PlaySaves } from "../saves.js";
 import type { PlayStore } from "../store.js";
@@ -116,6 +116,8 @@ export interface WorkshopKitDeps extends KitCommonDeps {
   playAssets?: PlayAssets;
   /** 音乐生成层（音乐生成未启用时为 undefined，不注册 generate_bgm）。 */
   playMusic?: PlayMusic;
+  /** 后台发起 BGM 生成（宿主记账与到货广播）。没配音乐后端时工具压根不注册。 */
+  queueMusic?: (req: GenerateMusicRequest) => string;
   /** 周目（存档）枚举——读故事树前先让 agent 知道有哪几棵。 */
   saves: PlaySaves;
   /** 按 saveId 取存档级操作面（会话面），供 read_lineage 读树。 */

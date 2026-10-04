@@ -22,8 +22,8 @@ import { createExa, type Exa } from "./exa.js";
 import { WebImageFetcherImpl, type WebImageFetcher } from "./webImage.js";
 import { readPlayLedgerEntries, type GeneratedLedgerEntry } from "./generatedLedger.js";
 import { PlayAssets, assertAssetStem, assertSpriteId } from "./playAssets.js";
-import { PlayMusic } from "./playMusic.js";
-import { PendingJobs } from "./pendingJobs.js";
+import { PlayMusic, type GenerateMusicRequest } from "./playMusic.js";
+import { PendingJobs, errorText, jobIdForMusic } from "./pendingJobs.js";
 import { PlayFiles } from "./playFiles.js";
 import {
   capabilityCatalog,
@@ -444,13 +444,55 @@ export class PlayHouse {
       store,
       files: new PlayFiles(store),
       backend: this.musicBackend,
-      // 只装工坊，通知也只有工坊这一头要收（与生图那条 onAsset 同理）
+      // 只装工坊，写盘通知也只有工坊这一头要收（与生图那条 onWrite 同理）
       onWrite: (write) => this.runtimes.get(playId)?.workshop.pushWrite(write),
-      onAsset: (asset, replaced, toolCallId) =>
-        this.runtimes.get(playId)?.workshop.pushAsset(asset, replaced, toolCallId),
+      // **刻意不接 onAsset**：工坊的 pushAsset 会把前端置成 busy（等下一条 workshop_done 才复位），
+      // 而 BGM 是一分半之后才到的——那时那一轮早收束了，再去置 busy 就再没有东西把它解开，
+      // 输入框会被永久锁死。到货走 `asset_ready` 那条（见 queueMusic），素材页照样当场刷新。
+      // 代价是工坊对话里不内联预览那张卡：曲子在回合结束时根本还不存在。
     });
     this.playMusic.set(playId, music);
     return music;
+  }
+
+  /**
+   * 后台生成一首 BGM：记账、跑活、到货广播。
+   *
+   * 工具那边**不 await**（见 `musicTool` 的 kick），这里才是真正干活的地方——
+   * 与 `preloadAsset` 同一套形状。记账在 `begin` 而不是入队时打点，
+   * 所以排队等位的那段也如实算进面板上的「已经等了 N 秒」。
+   *
+   * 到货走 `asset_ready`（type=bgm）而不是工坊气泡：BGM 不进时间线，也没有骨架占位那层，
+   * 客户端收到的是「素材页该重拉了」。工坊气泡里那份预览由 `PlayMusic.onAsset` 单独推。
+   */
+  private queueMusic(playId: string, store: PlayStore, req: GenerateMusicRequest): string {
+    const music = this.playMusicFor(playId, store);
+    if (!music) {
+      return "音乐生成未启用（服务端没配音乐后端）：别在剧本里引用没听过的 bgm id，让用户从素材库里挑几首导入。";
+    }
+    // 先验名再入列：素材名就是 assets/ 下的路径，非法名不该先占掉面板上一行再失败
+    assertAssetStem(req.name, "BGM 素材名");
+    const finish = this.pendingFor(playId).begin({
+      id: jobIdForMusic(req.name),
+      kind: "bgm",
+      label: `BGM ${req.name}`,
+      prompt: req.prompt,
+    });
+    void (async () => {
+      try {
+        const asset = await music.generate(req);
+        this.broadcast(playId, { type: "asset_ready", asset: { id: asset.id, type: "bgm", url: asset.url } });
+        finish();
+      } catch (error) {
+        // 失败不自动消失：面板上那一行留着，等人看过、手动删（pendingJobs 的统一口径）
+        finish(errorText(error));
+      }
+    })();
+    return (
+      `已排产：${req.name}（约一分半，到货后素材页就能播，剧作家也能按情绪选它）。` +
+      `剧本里这样引用：<scene bgm="${req.name}" />。` +
+      "这一轮就引用到它时舞台会按缺素材降级（没有就先不放乐），曲子到货后下一轮直接可用。"
+    );
   }
 
   /** 剧目配置里的模型 id → 模型对象（缓存；缺省是服务端默认模型）。 */
@@ -1338,6 +1380,7 @@ export class PlayHouse {
       },
       playAssets,
       playMusic: this.playMusicFor(play.id, store),
+      queueMusic: (req) => this.queueMusic(play.id, store, req),
       saves: this.library.saves(play.id),
       saveStore: (saveId) => this.library.saveStore(play.id, saveId),
       assetLibrary: this.assetLibrary,

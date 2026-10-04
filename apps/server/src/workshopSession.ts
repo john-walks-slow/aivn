@@ -41,7 +41,7 @@ import {
 } from "./compaction.js";
 import { createAgentKit, enabledCapabilitiesFor, type AgentKit } from "./agentkit/kit.js";
 import type { PlayAssets } from "./playAssets.js";
-import type { PlayMusic } from "./playMusic.js";
+import type { GenerateMusicRequest, PlayMusic } from "./playMusic.js";
 import { WorkshopThreads, type ThreadCompaction, type WorkshopThread } from "./workshopThreads.js";
 
 /**
@@ -66,6 +66,8 @@ export interface WorkshopSessionOptions {
   playAssets?: PlayAssets;
   /** 音乐生成层（未启用音乐生成时不传：不注册 generate_bgm，提示词也不提出歌）。 */
   playMusic?: PlayMusic;
+  /** 后台发起 BGM 生成：宿主记账与到货广播，工具那边不等它（未启用音乐生成时不传）。 */
+  queueMusic?: (req: GenerateMusicRequest) => string;
   /** 周目（存档）管理面：read_lineage 前先列周目。 */
   saves: PlaySaves;
   /** 按 saveId 取存档级操作面（读故事树只走磁盘 session.json，不建 runtime）。 */
@@ -123,6 +125,7 @@ export class WorkshopSession {
       onAsset: (asset, replaced, toolCallId) => this.broadcastAsset(asset, replaced, toolCallId),
       playAssets: opts.playAssets,
       playMusic: opts.playMusic,
+      queueMusic: opts.queueMusic,
       saves: opts.saves,
       saveStore: opts.saveStore,
       assetLibrary: opts.assetLibrary,

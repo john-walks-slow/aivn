@@ -52,7 +52,7 @@ export interface PromptQueueItem {
 /** 一件正在生成的东西（右上角 pending 面板的一行）。 */
 export interface PendingJob {
   id: string;
-  kind: "beat" | "bg" | "cg" | "sprite" | "voice";
+  kind: "beat" | "bg" | "cg" | "sprite" | "voice" | "bgm";
   /** 面板上那一行的话：「第 8 轮」「背景 rooftop」「立绘 小夜/smile」「第 3 句台词」。 */
   label: string;
   /** 生图类的实际提示词（含自动追加的画风/画布后缀）：点开看模型到底被喂了什么。 */
@@ -145,10 +145,14 @@ export interface GeneratedAsset {
   /** 站内 URL：/plays/<playId>/media/img/<file>。 */
   url: string;
   /**
-   * bg | cg | sprite。立绘到货也走这条：客户端据此重拉素材声明与素材列表，
+   * bg | cg | sprite | bgm。前三者客户端据此重拉素材声明与素材列表，
    * 刚出的差分与刚写的取景声明当场生效（id 用 `<立绘>:<差分>`，与预发射骨架同一个）。
+   *
+   * **bgm 走同一条到货通知**：后台生成的曲子落 `assets/bgm/<id>.<ext>`，客户端同样要重拉
+   * 素材列表与素材表（刚写的 mood/scene 声明当场进剧作家的选曲清单）。没有骨架占位那一层
+   * ——BGM 不进时间线，到货只是素材页多了一张卡。
    */
-  type: "bg" | "cg" | "sprite";
+  type: "bg" | "cg" | "sprite" | "bgm";
 }
 
 /** 玩家读到哪儿：正在显示的台词节点 ID 与字数偏移（0 为刚开始本句）。基于稳定 nodeId 寻址，跨 rebase 与刷新保真。 */

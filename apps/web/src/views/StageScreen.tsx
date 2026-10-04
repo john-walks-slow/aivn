@@ -203,7 +203,9 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
       for (const handler of assetReadyHandlers.current) handler(asset);
       // 立绘到货 = 立绘目录里多了一张、素材表里多了一条声明（取景/体量/对齐都是出图那一刻写进去的）。
       // 重拉这两份，舞台才会按新声明摆位——不重拉的话新差分只能按缺省站，与声明的体量对不上。
-      if (asset.type === "sprite") {
+      // BGM 到货同理：`<scene bgm="id">` 正是拿这张素材列表寻址的，不重拉的话它会一直按缺素材降级静音，
+      // 直到用户整页刷新。两者的理由不同，所以条件按类型分开写而不是图省事塞进同一支。
+      if (asset.type === "sprite" || asset.type === "bgm") {
         api.playDetail(playId).then(setDetail).catch(() => {});
         api.listAssets(playId).then(setAssets).catch(() => {});
       }

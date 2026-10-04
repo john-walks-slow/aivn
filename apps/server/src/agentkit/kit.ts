@@ -497,7 +497,11 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
         deps.onAsset({ kind, path, url }, replaced, toolCallId),
     }),
     // 没配音乐后端就不注册：必然失败的工具只会诱使模型空转
-    ...createGenerateMusicTool({ music: deps.playMusic }),
+    ...createGenerateMusicTool({
+      music: deps.playMusic,
+      // 后台发起：工具不等曲子，宿主那边记账并到货广播
+      kick: (req) => deps.queueMusic?.(req) ?? "音乐生成未启用。",
+    }),
     createReadSkillTool(),
     createSetCraftTool(deps),
     ...createLineageTools(deps),

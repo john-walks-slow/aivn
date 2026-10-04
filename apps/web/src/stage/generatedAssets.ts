@@ -23,19 +23,23 @@ export function useGeneratedAssets(): {
   const [images, setImages] = useState<Record<string, GeneratedImage>>({});
 
   const add = useCallback((assets: GeneratedAsset[]): void => {
-    if (assets.length === 0) return;
+    // bgm 也走 asset_ready，但**不进这张表**：它要的是「素材页重拉」而不是「舞台淡入」，
+    // 而预解码与骨架占位都是图的机制（音频没有骨架，也不该在等解码时停住）。
+    // 少 preload 的那一下不影响音频——到货直接播。
+    const images = assets.filter((a) => a.type !== "bgm");
+    if (images.length === 0) return;
     setImages((prev) => {
       const next = { ...prev };
       let changed = false;
-      for (const asset of assets) {
+      for (const asset of images) {
         if (!asset.url || prev[asset.id]?.url === asset.url) continue;
-        next[asset.id] = { url: asset.url, type: asset.type, ready: false };
+        next[asset.id] = { url: asset.url, type: asset.type as GeneratedImage["type"], ready: false };
         changed = true;
       }
       return changed ? next : prev;
     });
     // 解码预热放在 updater 之外：updater 必须是纯函数（StrictMode 会重复调用）
-    for (const asset of assets) {
+    for (const asset of images) {
       // 解码失败也照挂：<img> 自己的加载器是最后一道判官（能画就画、画不出就是降级），
       // 卡在 ready=false 只会让舞台永远停在骨架
       void decode(asset.url).then((ok) => {

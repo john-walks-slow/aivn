@@ -11,6 +11,8 @@ const JOB_ICON: Record<PendingJob["kind"], IconName> = {
   cg: "assets",
   sprite: "users",
   voice: "mic",
+  /** BGM 在生成：走音量字形而不是 mic——mic 已经被语音合成的「正在出声」占着。 */
+  bgm: "volume",
 };
 
 /**

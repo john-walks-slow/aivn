@@ -125,6 +125,16 @@ export function jobIdForImage(kind: "bg" | "cg" | "sprite", target: string): str
 }
 
 /**
+ * 音乐类条目的 id：曲子名唯一，与生图同一口径（同名重生成覆盖同一条而不是并排两行）。
+ *
+ * 前缀 `music:` 而不是 `bgm:` —— 后缀位留给 `img:` 的 kind，词根用可读的 music，
+ * 与协议里的 `bgm` 不冲突（那说的是资产类型，这里说的是记账分类）。
+ */
+export function jobIdForMusic(name: string): string {
+  return `music:${name}`;
+}
+
+/**
  * 异常取一句话（面板上展开那一行看的就是它，所以不塞堆栈）。
  * 收尾函数收的是字符串而不是异常，各调用点自己拍平——记账这一层不该知道
  * 各家异常长什么样，只该知道「失败的原因是一句话」。

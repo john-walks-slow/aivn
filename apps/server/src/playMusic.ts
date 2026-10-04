@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
-import type { AssetMeta, WorkshopAssetView } from "@aivn/core";
+import type { AssetMeta } from "@aivn/core";
 import type { MusicBackend } from "./musicBackend.js";
 import { assertAssetStem } from "./playAssets.js";
 import type { PlayFiles } from "./playFiles.js";
@@ -29,12 +29,6 @@ export interface MusicAssetDeps {
   backend: MusicBackend;
   /** 素材声明补写要进撤销条（二进制本身不进）。 */
   onWrite: (write: PlayFileWrite) => void;
-  /**
-   * 素材到货（工坊侧挂到对话气泡里的音频播放器）。
-   *
-   * `toolCallId` 让工坊把播放器归位到 `generate_bgm` 那一次工具调用行上，而不是笼统挂在消息级。
-   */
-  onAsset?: (asset: WorkshopAssetView, replaced: boolean, toolCallId?: string) => void;
 }
 
 export interface GenerateMusicRequest {
@@ -50,6 +44,13 @@ export interface GenerateMusicRequest {
   loop?: boolean;
   /** 建议默认音量（0–1）。不给按 0.4（垫底 BGM 的常规起点）。 */
   volume?: number;
+  /**
+   * 剧目里已有同名曲子时仍然重生成（覆盖它）。
+   *
+   * 工具层默认是「已有就跳过」——一分钟一次的操作，不打招呼覆盖掉用户可能很喜欢的曲子，
+   * 比多等一轮糟糕得多。只有用户明确说了要重做这一首，助手才传 true。
+   */
+  overwrite?: boolean;
   /**
    * 剧目覆盖的音乐模型名；不给用后端默认。
    *
@@ -77,16 +78,32 @@ export class PlayMusic {
    * 同一目标在飞的那首合并成一次：模型在一个回合里并发调两次同名 id，
    * 两份生成各自烧配额、竞态写盘，覆盖标记也说不清。
    */
-  async generate(req: GenerateMusicRequest, toolCallId?: string): Promise<GeneratedMusicAsset> {
+  async generate(req: GenerateMusicRequest): Promise<GeneratedMusicAsset> {
     const id = assertAssetStem(req.name, "BGM 素材名");
     const running = this.inflight.get(id);
     if (running) return running;
-    const task = this.run(id, req, toolCallId).finally(() => this.inflight.delete(id));
+    const task = this.run(id, req).finally(() => this.inflight.delete(id));
     this.inflight.set(id, task);
     return task;
   }
 
-  private async run(id: string, req: GenerateMusicRequest, toolCallId?: string): Promise<GeneratedMusicAsset> {
+  /**
+   * 剧目里这个 id 已有曲子时的站内 URL，没有则 null。
+   *
+   * 供「跳过重复生成」那条路用：曲子是一次一分钟级的生成，用户导入的与上一轮生成的都在，
+   * 没有这个检查时模型一句「再来一首」就能把配额烧光。扩展名逐个试是因为素材名不带扩展名
+   * （实测上游回 `audio/mp4`，落 `.m4a`，但库里手传的可能是 `.mp3`）。
+   */
+  async existingUrl(name: string): Promise<string | null> {
+    const id = assertAssetStem(name, "BGM 素材名");
+    for (const ext of AUDIO_EXTS) {
+      const rel = `assets/bgm/${id}${ext}`;
+      if (existsSync(this.deps.store.assetPath(`bgm/${id}${ext}`))) return `/plays/${this.deps.playId}/${rel}`;
+    }
+    return null;
+  }
+
+  private async run(id: string, req: GenerateMusicRequest): Promise<GeneratedMusicAsset> {
     const music = await this.deps.backend.generate({ prompt: req.prompt, model: req.model });
     const kindPath = "bgm";
     const replaced = await this.removeStaleSiblings(kindPath, id);
@@ -95,7 +112,6 @@ export class PlayMusic {
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, music.bytes);
     const url = `/plays/${this.deps.playId}/${rel}`;
-    this.deps.onAsset?.({ kind: "bgm", path: rel, url }, replaced, toolCallId);
     await this.declareMeta(id, req);
     return { id, path: rel, url, replaced };
   }
