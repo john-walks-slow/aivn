@@ -437,7 +437,7 @@ const { session } = await createAgentSession({
 - **TypeScript 体验**：全链路类型安全，事件定义清晰，类型推导优秀。
 - **ARM64 / Node.js 兼容性**：
   - 代码全部使用纯 TypeScript/JavaScript 实现，核心包**没有任何原生 C++ Addon 依赖**（SQLite 被专门解耦至可选包 `@earendil-works/pi-session-backend-sqlite-node`）。
-  - 在 Linux ARM64（包括 Android 移动端 Linux 容器）上可开箱即用，依赖安装（pnpm/npm）极快，内存驻留（RSS）仅几十 MB，非常适合 8GB 手机常驻。
+  - 在 Linux ARM64（包括 Android 上的 Linux 容器）上可开箱即用，依赖安装（pnpm/npm）极快，内存驻留（RSS）仅几十 MB，非常适合 8GB 手机常驻。
 
 #### 4.2.2 社区与开源治理风格
 - **治理模型**：Mario Zechner 属于典型的“独断型实用主义维护者（Benevolent Dictator）”。
@@ -470,7 +470,7 @@ const { session } = await createAgentSession({
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **设计定位** | 极致可控、极简透明的 Agent 状态机 | 面向 Web/Next.js 的全功能模型与交互层 | 全功能、开箱即用的 Agent 应用平台 | 显式状态图、复杂工作流与时间旅行引擎 | 针对剧本家定制的最小几百行状态机 |
 | **包大小与依赖** | **极轻**（核心几乎零外部重依赖，无 C++ addon） | **轻**（依赖较少，现代化模块设计） | **较重**（自带 Studio、工作流、丰富插件生态） | **重**（继承 LangChain 体系，模块繁多） | **零依赖**（仅需 OpenAI SDK） |
-| **ARM64 移动端友好度** | **★★★★★**（低内存开销，冷启极快） | **★★★★☆**（表现良好） | **★★☆☆☆**（在手机 移动端 Linux 容器 下开销过大） | **★★☆☆☆**（依赖多，内存占用偏大） | **★★★★★**（极其轻量） |
+| **ARM64 移动端友好度** | **★★★★★**（低内存开销，冷启极快） | **★★★★☆**（表现良好） | **★★☆☆☆**（在手机 Linux 容器下开销过大） | **★★☆☆☆**（依赖多，内存占用偏大） | **★★★★★**（极其轻量） |
 | **OpenAI 兼容网关兼容性** | **★★★★★**（拥有最全面的 `compat` 垫片和思维链兼容） | **★★★★☆**（通用性好，但对某些非标国产端点需自行写 fetch 中间件） | **★★★☆☆**（自带模型路由，定制非标端点门槛稍高） | **★★★☆☆**（通过 ChatOpenAI 适配，定制较重） | **★★★★☆**（完全手写，想怎么调就怎么调） |
 | **流式事件粒度** | **细粒度**（`message_update`, `tool_execution_*`, `turn_*`） | **细粒度**（`streamText`, `onStepFinish`, UI parts） | **中等**（围绕 Workflow / Agent 事件） | **粗/基于图流**（以 Node 状态流转和 checkpoint 为主） | **需手写**（需自行实现 SSE 解析和事件分发） |
 | **工具返回分离 (LLM/UI)**| **原生原生原生**（Split Tool Result: content + details） | 需借助 `experimental_output` 或自定义消息 | 需通过 ClientJS 或状态管理器桥接 | 需自行维护 State 中的 UI 字段 | 需自行手写协议 |
@@ -482,7 +482,7 @@ const { session } = await createAgentSession({
 ### 5.2 对比结论细析
 
 1. **对比 Mastra & LangGraph.js**：
-   - 剧本家运行在**ARM64 移动端设备（ARM64 SoC，8GB 内存）**。Mastra 与 LangGraph.js 属于重型企业级框架，不仅安装包庞大、依赖繁杂，而且内存驻留与 CPU 开销显著过高。Mastra 自带的 Studio、RAG 向量库在移动端服务器上属于无谓浪费；LangGraph.js 复杂的图节点抽象大大增加了调试认知负荷，杀鸡用牛刀。
+   - 剧本家运行在**ARM64 手机本地（8GB 内存）**。Mastra 与 LangGraph.js 属于重型企业级框架，不仅安装包庞大、依赖繁杂，而且内存驻留与 CPU 开销显著过高。Mastra 自带的 Studio、RAG 向量库在移动端服务器上属于无谓浪费；LangGraph.js 复杂的图节点抽象大大增加了调试认知负荷，杀鸡用牛刀。
 2. **对比 Vercel AI SDK Core (`ai`)**：
    - AI SDK 的 `streamText` 和 `ToolLoopAgent` 同样非常优秀，但它本质上是**请求驱动（Request-Response/Pipeline）**的无状态模型，缺乏面向持久长会话的 Agent 状态机实体；
    - 其对自建本地网关的异构响应（特别是 Reasoning/Thinking 的跨模型回放、不规则的 `developer` role 拒绝）不如 `pi-ai` 适配得深；
@@ -642,9 +642,9 @@ shouldStopAfterTurn: async ({ message, toolResults }) => {
 
 ---
 
-### 6.4 部署在 ARM64 本机环境（ARM64 移动端设备）的优化实践
+### 6.4 部署在 ARM64 本机环境的优化实践
 
-在ARM64 SoC（8GB RAM）的 移动端 Linux 容器环境中部署该运行时，建议落实以下工程实践：
+在 ARM64 手机（8GB RAM）的 Linux 容器环境中部署该运行时，建议落实以下工程实践：
 
 1. **依赖精简与摇树（Tree Shaking）**：
    - 严禁引入 `@earendil-works/pi-coding-agent` 全家桶及其 TUI 组件（`pi-tui`）；

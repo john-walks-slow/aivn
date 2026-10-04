@@ -22,7 +22,7 @@
    - 视觉资产：外部生图 API（Google Flow / Gemini Flash Image / Doubao Seedream 等），生成时延约 2s ~ 8s。
 
 ### 1.2 部署环境与软硬件约束
-- **服务端运行环境**：ARM64 移动端设备（8GB RAM），运行 Android + Linux 容器。无图形桌面环境（Headless），进程由 `进程托管` 托管。
+- **服务端运行环境**：ARM64 移动端设备（8GB RAM），运行 Android + Linux 容器。无图形桌面环境（Headless），进程由 `进程托管` 管理。
   - *资源铁律*：宿主 Android 系统常驻占用约 3.5GB ~ 4GB RAM，chroot 容器内所有服务（Node.js 网关、代理等）的安全内存预算上限建议控制在 2GB 以内；CPU 算力需优先供给核心网络 I/O 与并发请求编排，严禁在服务端运行重型图形渲染（如无头 Chrome/Puppeteer/Xvfb）或重型本地推理模型。
 - **客户端环境**：玩家通过桌面浏览器或移动端浏览器（iOS Safari、Android Chrome/Edge 等）访问，网络经由局域网直连或穿透隧道。
 - **团队技术栈**：全栈以 **TypeScript / Node.js** 为绝对技术基石。
@@ -394,4 +394,4 @@ export type StageAIStep =
 
 1. **选型定论**：坚决**不采用** Ren'Py/RenpyWeb；**推荐自研基于 TypeScript + React/Svelte 的轻量级 Web 渲染层**，并深度吸纳 WebGAL 的“状态与演出解耦”理念。
 2. **核心抓手**：以严格 typed 的 **VN Script IR** 作为前后端通信的唯一数据契约，彻底将 LLM 创作管线与前端渲染机制解耦。
-3. **架构安全性**：服务端仅作为极轻量的 Node.js I/O 网关（内存开销 < 80MB），所有重型图音解码完全交由玩家设备浏览器，确保在ARM64 手机环境下长期稳健运转。
+3. **架构安全性**：服务端仅作为极轻量的 Node.js I/O 网关（内存开销 < 80MB），所有重型图音解码完全交由玩家设备浏览器，确保在 ARM64 手机环境下长期稳健运转。
