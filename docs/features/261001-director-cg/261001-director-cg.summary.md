@@ -3,6 +3,50 @@
 需求：导演栏加「生图」按钮，按当前这一幕的剧情生成 CG（可带指令），图落在按下这一刻的位置、
 显示在 CG 页、pending 区可见且完成后停一会儿。
 
+## 增量：回看中生图按「你正看的那一行」（2026-10-04）
+
+原行为只有一个落点：**世界线末尾**。所以回看中（舞台往回滚）点生图，提示词写的是最新剧情、
+图也落在最新处——眼睛在第二句，图却长在最后一句上。
+
+### 落点分两种，靠锚点区分
+
+- **世界线末尾**（没在回看）：不变。`orchestrator.directorCg(id)` 在点下那一刻 append 一个
+  `cg` 节点。
+- **回看中**（客户端 `scrubbed`，`generate_cg` 带上 `anchorNodeId` = 正看的那一行）：
+  提示词按那一刻写（`recentScript(12, anchor)`：链取到锚点为止、场景取 `stateAt(anchor).scene`），
+  图作为**行级旁注**挂在那一行上（`attachCg(anchor, id)` → `LineageTree.recordCg`）。
+
+### 为什么回看这条走旁注而不是「插进链里」
+
+链上每个节点只有一个孩子。要在某一行后面插一个节点，必须挪走它原来的下一个孩子——挪成兄弟
+就是**分叉**（世界线被掰成两条），挪到图下面就是**改结构**（之后的剧情变成这张图的后代）。
+两条都不是「只是加一张图」。
+
+所以复用已有的旁注机制（`recordEdit` 那一套）：`kind="cg"` + `cgTargetId`，不入树、不动挂载点、
+不占 seq；`LineageNodeView.cgs` 把它挂回那一行，客户端翻到那一行就把这张图盖在画面上
+（`withAttachedCg`，图跟着行走、不往后漂）。改写与插图合并成一张统一旁注表 `notes`，
+保证落盘顺序与 `flushLineageLog` 的游标语义稳定。
+
+### 改动
+
+- `packages/core/src/lineage/model.ts`：`recordCg` / `LineageNodeView.cgs` / 统一旁注表
+  （`export` 排末尾、`load` 分流、`removeSubtree` 连旁注一起清）。
+- `packages/core/src/ws/protocol.ts`：`generate_cg.anchorNodeId`、服务端帧 `cg_attached`。
+- `apps/server/src/orchestrator.ts`：`attachCg` / `hasNode` / `recentScript(limit, from?)`。
+- `apps/server/src/playhouse.ts`：`requestCg` 的锚点分支（锚点不存在就明确报错，不留半张图）。
+- `apps/web/src/stage/director.ts`：`withAttachedCg`；`usePlayback` 收 `cgByNode`。
+- `apps/web/src/views/StageScreen.tsx`：`cgs` → `cgByNode`；`cg_attached` 时重拉谱系。
+- `apps/web/src/stage/StageTheater.tsx`：提交生图时带上「正看的那一行」。
+
+### 测试
+
+- core `lineage.test.ts` 4 例：挂载点不动 / 同一行两张 / 目标不存在报错 / 跨进程序列无损 +
+  剪枝连带清理。
+- server `orchestrator.test.ts` 3 例（锚点上下文、`attachCg` 不入树、剪枝后再挂仍落盘）、
+  `playhouse.test.ts` 1 例端到端（提示词只写到那一行、树上没有 cg 节点、leaf 不变）。
+- web `rewindVisual.test.ts` 3 例（`withAttachedCg`）。
+- `pnpm typecheck` + `pnpm -r build` 全过；core 164、server 671、web 193 例全绿。
+
 ## 状态
 
 已完成，等用户验收。

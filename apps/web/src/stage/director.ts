@@ -302,6 +302,21 @@ export function visualAt(cues: readonly Cue[], upto: number): VisualState {
 }
 
 /**
+ * 一副画面 + 当前这一行上挂着的插图 = 该显示什么。
+ *
+ * 回看中生图落的是行级旁注（`LineageNodeView.cgs`）：翻到那一行它就在画面上，
+ * 翻过去就没了——图属于那一刻，不跟着世界线往后走。
+ */
+export function withAttachedCg(
+  visual: VisualState,
+  nodeId: string | null | undefined,
+  cgByNode?: ReadonlyMap<string, string>,
+): VisualState {
+  const attached = nodeId ? cgByNode?.get(nodeId) : undefined;
+  return attached ? { ...visual, cg: { id: attached } } : visual;
+}
+
+/**
  * 回看游标（会话记录下标）→ cue 水位线：折到这一条之前，舞台就是「它刚出现」的样子。
  *
  * 台词条目找它那条 line cue；玩家输入在缓冲里没有 cue，落到下一条台词之前
@@ -471,6 +486,11 @@ export function usePlayback(
     turbo?: boolean;
     /** 骨架占位的兜底上界（hello.assetsTtlMs）；缺省用保守默认值。 */
     assetsTtlMs?: number | null;
+    /**
+     * 挂在行上的插图（谱系旁注）：nodeId → cg id。回看中生图接的就是这条——
+     * 那一行显示时图就在画面上，世界线一根不动。同一行挂过多张时取最新的那张。
+     */
+    cgByNode?: ReadonlyMap<string, string>;
   } & PlaybackHooks,
 ): Playback {
   const [visual, setVisual] = useState<VisualState>(EMPTY_VISUAL);
@@ -774,7 +794,8 @@ export function usePlayback(
   }, []);
 
   return {
-    visual: rewindVisual ?? visual,
+    // 回看重算的画面 + 这一行上挂着的插图（图跟着行走，见 withAttachedCg）
+    visual: withAttachedCg(rewindVisual ?? visual, view?.nodeId, opts.cgByNode),
     current,
     view,
     viewLength: scrubbed ? (view?.text.length ?? 0) : shownLength,

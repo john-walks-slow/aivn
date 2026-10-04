@@ -122,6 +122,16 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   const pendingReadRef = useRef<(() => void) | null>(null);
   // 谱系只在这两个导演视图里拉取（打开/操作后/手动刷新），不做每轮广播
   const lineage = useLineage(playId, lineageNonce);
+  // 挂在行上的插图（回看中生图的旁注）：那一行显示时它就是画面上的图。
+  // 同一行挂过多次取最新那张——重画一张就是换一张。
+  const cgByNode = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const node of lineage.view?.nodes ?? []) {
+      const latest = node.cgs.at(-1);
+      if (latest) map.set(node.id, latest);
+    }
+    return map;
+  }, [lineage.view]);
   // 工坊下行消息的订阅表：面板挂载时登记，卸载时注销（与舞台状态机解耦）
   const workshopHandlers = useRef(new Set<(msg: WorkshopInbound) => void>());
   const subscribeWorkshop = useCallback((handler: (msg: WorkshopInbound) => void) => {
@@ -153,6 +163,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     onReset: () => director.reset(),
     // 原地改写：缓冲已就地换字，谱系刷新把剧本/路线的标签换成新文本
     onLineEdited: () => setLineageNonce((n) => n + 1),
+    // 回看中生图：图挂上了某一行，谱系刷新把那张图贴到那一行上
+    onCgAttached: () => setLineageNonce((n) => n + 1),
     // P6 上下文重建：新分支整段到达——播放层复位，谱系视图跟着换
     onRebase: ({ note, playFrom, resumeAt, busy: streaming, keepView }) => {
       director.reset();
@@ -333,6 +345,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     onLineStart: (line) => director.lineStarted(line?.seq, line?.type === "say"),
     onFastForward: () => director.fastForward(),
     onRead: (pos) => readPosRef.current?.(pos),
+    cgByNode,
   });
   playbackRef.current = playback;
 
@@ -592,6 +605,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
                   ...(instruction ? { instruction } : {}),
                   ...(opts?.referenceCharacters?.length ? { referenceCharacters: opts.referenceCharacters } : {}),
                   ...(opts?.useHistory !== undefined ? { useHistory: opts.useHistory } : {}),
+                  // null 也要发出去：那是「在回看但这一行还没进谱系」，服务端据此明确拒绝
+                  ...(opts?.anchorNodeId !== undefined ? { anchorNodeId: opts.anchorNodeId } : {}),
                 })
               }
               onReplay={replay}

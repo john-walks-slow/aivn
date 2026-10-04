@@ -866,11 +866,19 @@ export class PlayHouse {
    *
    * 顺序是「先验参考角色，再写提示词，再落位置，最后发起」——任一步失败就抛错，
    * 错误通过 error 帧直达玩家，不会在时间线上留下一个等不到图的空节点。
+   *
+   * `anchorNodeId` = 回看中正在看的那一行：提示词按那一刻的剧情写，图也挂回那一行旁边
+   * （旁注，不动世界线）。不给就照旧落一个 cg 节点在当前世界线末尾；`null` 是「在回看但
+   * 这一行还没进谱系」，明确拒绝——那一步真要退成末尾生图就会往世界线上多落一个节点。
    */
   async requestCg(
     playId: string,
     instruction?: string,
-    opts?: { referenceCharacters?: string[]; useHistory?: boolean },
+    opts?: {
+      referenceCharacters?: string[];
+      useHistory?: boolean;
+      anchorNodeId?: string | null;
+    },
   ): Promise<void> {
     const runtime = await this.get(playId);
     if (!this.imageBackend) {
@@ -887,11 +895,21 @@ export class PlayHouse {
       await assets.assertReferences(refIds);
     }
 
+    // 回看的锚点：锚在哪一行，提示词与落点就跟到哪一行
+    const anchor = opts?.anchorNodeId;
+    if (anchor === null) {
+      throw new Error("你看的这一行还没进谱系（这一轮刚演到这儿），稍后再点一次生图");
+    }
+    // 换过分支/删过段的旧节点在这里被拒：宁可不生，也不把图挂到别的世界线上
+    if (anchor && !runtime.orchestrator.hasNode(anchor)) {
+      throw new Error("找不到你看的这一行（谱系刚刚变过），请重新点一次生图");
+    }
+
     const play = await runtime.store.loadPlay();
     const wanted = instruction?.trim() ?? "";
     const useHistory = opts?.useHistory !== false;
     const { lines, scene } = useHistory
-      ? runtime.orchestrator.recentScript()
+      ? runtime.orchestrator.recentScript(12, anchor)
       : { lines: [], scene: "" };
 
     if (!useHistory && !wanted) {
@@ -939,7 +957,8 @@ export class PlayHouse {
     }
 
     const id = `cg_${Date.now().toString(36)}`;
-    runtime.orchestrator.directorCg(id);
+    if (anchor) runtime.orchestrator.attachCg(anchor, id);
+    else runtime.orchestrator.directorCg(id);
     void this.preloadAsset(playId, runtime.store, "cg", prompt, id, refIds.length > 0 ? refIds : undefined);
   }
 

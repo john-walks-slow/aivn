@@ -26,6 +26,7 @@ function view(specs: NodeSpec[]): LineageView {
     editCount: 0,
     editedAt: undefined,
     seq,
+    cgs: [],
   }));
   return { nodes, leafId: nodes.at(-1)!.id, pathIds: nodes.map((n) => n.id) };
 }

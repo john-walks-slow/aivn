@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import { LineageTree, characterIdOfPath, type ServerMessage } from "@aivn/core";
+import { LineageTree, characterIdOfPath, type LineageEvent, type ServerMessage } from "@aivn/core";
 import { PlaywrightOrchestrator, type OrchestratorRuntimeState } from "../src/orchestrator.js";
 import { createMemoryTools } from "../src/agentkit/memoryTool.js";
 import { defaultCapabilitiesFor } from "../src/agentkit/kit.js";
@@ -27,8 +27,10 @@ function setup(
   orchestrator: PlaywrightOrchestrator;
   messages: ServerMessage[];
   tree: LineageTree;
+  logged: LineageEvent[];
 } {
   const messages: ServerMessage[] = [];
+  const logged: LineageEvent[] = [];
   const tree = new LineageTree();
   const base = createFakeStreamFn(responses);
   const streamFn: StreamFn =
@@ -52,9 +54,10 @@ function setup(
     ...(opts.beatTimeoutMs !== undefined ? { beatTimeoutMs: opts.beatTimeoutMs } : {}),
     ...(opts.restored ? { restored: opts.restored } : {}),
     onServerMessage: (msg) => messages.push(msg),
+    onLineageEvent: (event) => logged.push(event),
     persist: () => {},
   });
-  return { orchestrator, messages, tree };
+  return { orchestrator, messages, tree, logged };
 }
 
 /** beat_end 之后还有 beat_settled（编排器真正空闲的信号），断言只认收束本身。 */
@@ -98,6 +101,72 @@ describe("导演生图", () => {
       lines: ["放学后的走廊空无一人。", "……太慢了！"],
       scene: "corridor_dusk",
     });
+  });
+
+  it("recentScript 给了锚点就停在那一刻：台词只到那一行，场景也按那一刻算", async () => {
+    const roofBeat = ['<scene bg="rooftop"/>', '<say id="mio" mood="soft">风好大。</say>'].join("\n");
+    const { orchestrator, tree } = setup([
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: roofBeat, beatDone: true },
+    ]);
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    // 世界线末尾（现场）：最近的是第二拍那句，场景已经换成天台
+    expect(orchestrator.recentScript()).toEqual({
+      lines: ["放学后的走廊空无一人。", "……太慢了！", "风好大。"],
+      scene: "rooftop",
+    });
+
+    // 锚在第一拍那句台词上：后面那一拍不该进提示词，场景也回到那一刻
+    const firstSay = tree.materialize().find((event) => event.text === "……太慢了！")!;
+    expect(orchestrator.recentScript(12, firstSay.id)).toEqual({
+      lines: ["放学后的走廊空无一人。", "……太慢了！"],
+      scene: "corridor_dusk",
+    });
+  });
+
+  it("attachCg 把图挂在那一行旁边：世界线不动、树里没有 cg 节点", async () => {
+    const { orchestrator, messages, tree, logged } = await staged();
+    const leafBefore = tree.leafId;
+    const say = tree.materialize().find((event) => event.text === "……太慢了！")!;
+
+    orchestrator.attachCg(say.id, "cg_back");
+
+    expect(tree.leafId).toBe(leafBefore);
+    expect(tree.materialize().some((event) => event.kind === "cg")).toBe(false);
+    expect(tree.describe().nodes.find((node) => node.id === say.id)?.cgs).toEqual(["cg_back"]);
+    // 同一行再挂一张：末位最新（客户端取最后那张）
+    orchestrator.attachCg(say.id, "cg_back2");
+    expect(tree.describe().nodes.find((node) => node.id === say.id)?.cgs).toEqual(["cg_back", "cg_back2"]);
+
+    const attached = messages.filter((m) => m.type === "cg_attached");
+    expect(attached).toHaveLength(2);
+    expect(attached.at(-1)).toMatchObject({ type: "cg_attached", nodeId: say.id, id: "cg_back2" });
+    // 旁注也要落盘：挂在行上的图不能只活在内存里
+    expect(logged.filter((e) => e.kind === "cg")).toHaveLength(2);
+  });
+
+  it("剪掉一段之后再挂插图：旁注照样落盘", async () => {    const { orchestrator, tree, logged } = await staged();
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    const firstSay = tree.materialize().find((event) => event.text === "……太慢了！")!;
+    const secondBeat = tree.materialize().findLast((event) => event.kind === "prompt")!;
+
+    orchestrator.deleteBranch(secondBeat.id);
+    orchestrator.attachCg(firstSay.id, "cg_after_delete");
+
+    expect(logged.some((e) => e.kind === "cg" && e.cgTargetId === firstSay.id)).toBe(true);
+  });
+
+  it("挂了旁注之后开新分支：分叉标记不漏、旁注不重（两者在事件流里前后位置不同）", async () => {
+    const { orchestrator, tree, logged } = await staged();
+    const say = tree.materialize().find((event) => event.text === "……太慢了！")!;
+    orchestrator.attachCg(say.id, "cg_a");
+
+    await orchestrator.forkTo(say.id);
+
+    expect(logged.filter((e) => e.kind === "fork")).toHaveLength(1);
+    expect(logged.filter((e) => e.kind === "cg")).toHaveLength(1);
   });
 
   it("空树：没有台词也没有场景可照", () => {

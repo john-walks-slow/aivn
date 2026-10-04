@@ -36,10 +36,12 @@ interface StageTheaterProps {
   onEdit: (nodeId: string, text: string) => void;
   /** 分岔锚点：字符串是谱系节点 id（回顾/路线），数字是舞台当前行的 seq。 */
   onFork: (anchor: string | number, opts?: { resume?: boolean }) => void;
-  /** 导演生图：按当前这一幕出一张插图，指令可留空。 */
+  /** 导演生图：按当前这一幕出一张插图，指令可留空。
+   *  回看中带上正在看的那一行（anchorNodeId）：提示词与落点都按那一刻走；
+   *  这一行还没进谱系就传 null（服务端明确拒绝，不悄悄改成末尾生图）。 */
   onGenerateCg: (
     instruction: string,
-    opts?: { referenceCharacters?: string[]; useHistory?: boolean },
+    opts?: { referenceCharacters?: string[]; useHistory?: boolean; anchorNodeId?: string | null },
   ) => void;
   onReplay: (seq: number) => void;
   /** 这一行的语音处于哪一态：none=没配音色/不生成，pending=正在合成，ready=可重听。 */
@@ -503,6 +505,9 @@ voiceState,
       onGenerateCg(text, {
         referenceCharacters: selectedRefs.length > 0 ? selectedRefs : undefined,
         useHistory,
+        // 回看着的那一行就是这张图的归处：提示词照那一刻写，图挂回那一行旁边。
+        // 这一行还没进谱系（刚演到这儿）就传 null——服务端会拒，而不是悄悄落到世界线末尾。
+        anchorNodeId: scrubbed ? (targets.lineNodeId ?? view?.nodeId ?? null) : undefined,
       });
       return;
     }

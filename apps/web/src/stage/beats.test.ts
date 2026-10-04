@@ -27,6 +27,7 @@ function view(specs: NodeSpec[], leafId: string): LineageView {
     editCount: 0,
     editedAt: undefined,
     seq,
+    cgs: [],
   }));
   return { nodes, leafId, pathIds: nodes.filter((n) => n.onPath).map((n) => n.id) };
 }
@@ -327,6 +328,7 @@ describe("buildBeats 一轮一卡", () => {
       editCount: 0,
       editedAt: undefined,
       seq,
+      cgs: [],
     });
     const nodes: LineageNodeView[] = [
       node("r1_say", null, 1, "say", "第1轮", 100, true, 1, 1),

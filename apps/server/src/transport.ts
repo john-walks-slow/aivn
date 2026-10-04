@@ -197,6 +197,7 @@ async function routeMessage(
       await playhouse.requestCg(playId, msg.instruction, {
         referenceCharacters: msg.referenceCharacters,
         useHistory: msg.useHistory,
+        anchorNodeId: msg.anchorNodeId,
       });
       return;
     case "read":

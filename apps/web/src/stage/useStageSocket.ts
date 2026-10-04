@@ -107,6 +107,8 @@ export interface StageSocketHandlers {
   onAssetFailed?: (id: string, message: string) => void;
   /** 一行台词被原地改写：谱系视图跟着换新文本（缓冲由 socket 自己就地替换）。 */
   onLineEdited?: (nodeId: string, text: string) => void;
+  /** 一张插图挂上了某一行（回看中生图的旁注）：谱系重拉，翻到那一行就有图。 */
+  onCgAttached?: (nodeId: string, id: string) => void;
   /** 手动生图完成/失败通知（工坊对话框监听）。 */
   onImageResult?: (
     result:
@@ -272,6 +274,9 @@ export function useStageSocket(
             if (msg.seq !== undefined) builderRef.current.replaceText(msg.seq, msg.text);
             setTick((t) => t + 1);
             handlersRef.current.onLineEdited?.(msg.nodeId, msg.text);
+            return;
+          case "cg_attached":
+            handlersRef.current.onCgAttached?.(msg.nodeId, msg.id);
             return;
           case "rebase": {
             // 上下文重建：整段替换本地缓冲与播放游标（新分支从头重放）

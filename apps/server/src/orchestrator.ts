@@ -400,8 +400,14 @@ export class PlaywrightOrchestrator {
   private prevLeafId: string | null = null;
   /** 阅读位置的落盘节流：打字机逐字报位置，不能逐字写盘。 */
   private readPersistTimer: ReturnType<typeof setTimeout> | null = null;
-  /** 已写入 JSONL 的谱系事件数：直接改动树的操作（编辑/重写）在此增量补推。 */
-  private loggedEvents = 0;
+  /**
+   * 已写入 JSONL 的谱系事件 id。
+   *
+   * 不用「已推条数」当游标：事件流是「树事件 + 排在末尾的旁注（改写/插图）」两段拼起来的
+   * （见 `LineageTree.export`），分叉标记这类直接改树的动作会插在旁注**前面**，条数游标
+   * 一错位就会漏掉新标记、又把它后面的旁注重复推一遍。
+   */
+  private readonly loggedIds = new Set<string>();
   /** 剧作家历史累积器（思考/原始 DSL/工具调用；随 session.json 落盘，只读对外）。 */
   private readonly historyRecorder: HistoryRecorder;
   /** 统一基座装好的工具（一次构造，纪元压缩重建 Agent 时复用同一份）。 */
@@ -493,7 +499,7 @@ export class PlaywrightOrchestrator {
       this.stateFiles = snapshot?.memory.state ?? {};
       this.arcIds = [...(snapshot?.memory.arcs ?? [])];
       // 已有事件早已落过 JSONL，不重复补推
-      this.loggedEvents = opts.tree.export().events.length;
+      for (const event of opts.tree.export().events) this.loggedIds.add(event.id);
       if (opts.restored.nsfw) {
         this.nsfwActive = opts.restored.nsfw.active;
         this.nsfwStartBeatNo = opts.restored.nsfw.startBeatNo ?? null;
@@ -1265,9 +1271,32 @@ export class PlaywrightOrchestrator {
     this.onStageEvent({ kind: "cg", id });
   }
 
-  /** 导演生图的上下文：当前这条世界线上最近几句说出口的话，加当前场景。 */
-  recentScript(limit = 12): { lines: string[]; scene: string } {
-    const chain = this.opts.tree.chainEvents(this.opts.tree.leafId);
+  /**
+   * 回看中生图：把图挂在这一行旁边——旁注，**不入树、不动挂载点、不分叉**。
+   *
+   * 与原地改写同一套：世界线一根都不动，客户端按 nodeId 认领（那一行显示时图就在画面上）。
+   * 落点要跟着提示词走——提示词写的是这一刻的画面，图却挂到世界线末尾的话，
+   * 往后演到那儿它才作为新一幕的插图冒出来，那一刻与画面就对不上了。
+   */
+  attachCg(nodeId: string, id: string): void {
+    this.opts.tree.recordCg(nodeId, id);
+    this.flushLineageLog();
+    this.send({ type: "cg_attached", nodeId, id });
+  }
+
+  /** 这个节点还在树上吗（回看锚点要确认它没被删除/换过分支）。 */
+  hasNode(nodeId: string): boolean {
+    return this.opts.tree.get(nodeId) !== undefined;
+  }
+
+  /**
+   * 导演生图的上下文：最近几句说出口的话，加那一刻的场景。
+   *
+   * `from` 给了就照它的链取（回看中生图按你看的那一行写），默认当前世界线末尾。
+   */
+  recentScript(limit = 12, from?: string | null): { lines: string[]; scene: string } {
+    const end = from ?? this.opts.tree.leafId;
+    const chain = this.opts.tree.chainEvents(end);
     const lines: string[] = [];
     for (let i = chain.length - 1; i >= 0 && lines.length < limit; i -= 1) {
       const event = chain[i]!;
@@ -1275,7 +1304,8 @@ export class PlaywrightOrchestrator {
       const text = event.text?.trim();
       if (text) lines.push(text);
     }
-    return { lines: lines.reverse(), scene: this.opts.scene };
+    // 场景跟着锚点走：那一刻在哪儿，提示词就写哪儿（现场那个 scene 是「此刻」的）
+    return { lines: lines.reverse(), scene: from ? this.stateAt(from).scene : this.opts.scene };
   }
 
   private guardIdle(): void {
@@ -2061,16 +2091,20 @@ export class PlaywrightOrchestrator {
     // 重建时按它折叠（见 rebuild.ts 的 lineageToBeats），前台与 JSONL 照旧留原文。
     const payload = this.beatNsfw ? { ...opts.payload, nsfw: true } : opts.payload;
     const event = this.opts.tree.append(kind, { ...opts, payload });
-    this.opts.onLineageEvent?.(event);
-    this.loggedEvents += 1;
+    this.logLineageEvent(event);
     return event;
   }
 
-  /** 直接改动谱系树的操作（编辑/重写）不经过 append：事后按游标补推 JSONL。 */
+  /** 直接改动谱系树的操作（编辑/改写/插图/分叉标记）不经过 append：事后把没落过盘的补推。 */
   private flushLineageLog(): void {
-    const all = this.opts.tree.export().events;
-    for (let i = this.loggedEvents; i < all.length; i += 1) this.opts.onLineageEvent?.(all[i]!);
-    this.loggedEvents = all.length;
+    for (const event of this.opts.tree.export().events) {
+      if (!this.loggedIds.has(event.id)) this.logLineageEvent(event);
+    }
+  }
+
+  private logLineageEvent(event: LineageEvent): void {
+    this.opts.onLineageEvent?.(event);
+    this.loggedIds.add(event.id);
   }
 
   private onStageEvent(event: StageEvent): void {

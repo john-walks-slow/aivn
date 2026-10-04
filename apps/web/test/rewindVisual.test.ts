@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCue, cueWatermarkForEntry, visualAt } from "../src/stage/director.js";
+import { applyCue, applyVisualCue, cueWatermarkForEntry, visualAt, withAttachedCg } from "../src/stage/director.js";
 import type { Cue } from "../src/stage/script.js";
 import type { TranscriptEntry } from "../src/stage/transcript.js";
 
@@ -111,5 +111,28 @@ describe("回看游标 → cue 水位线（cueWatermarkForEntry）", () => {
 
   it("下标越界返回 null", () => {
     expect(cueWatermarkForEntry(cues, transcript, 99)).toBeNull();
+  });
+});
+
+describe("行级插图（withAttachedCg）", () => {
+  const base = visualAt(cues, 3);
+
+  it("这一行挂着图：它就盖在那一刻的画面上", () => {
+    const attached = withAttachedCg(base, "n_l2", new Map([["n_l2", "cg_back"]]));
+    expect(attached.cg).toEqual({ id: "cg_back" });
+    // 其余画面照旧（图是叠上去的，不是重算一遍）
+    expect(attached.bg).toBe(base.bg);
+  });
+
+  it("翻到别的行、或者这行没挂过图：画面原样不动", () => {
+    const map = new Map([["n_l2", "cg_back"]]);
+    expect(withAttachedCg(base, "n_l1", map).cg).toBe(base.cg);
+    expect(withAttachedCg(base, null, map)).toBe(base);
+    expect(withAttachedCg(base, "n_l2")).toBe(base);
+  });
+
+  it("旁注盖过那一刻原有的 CG：行上挂的是最新的说法", () => {
+    const withCg = applyVisualCue(base, { key: "cX", kind: "cg", id: "cg_old" });
+    expect(withAttachedCg(withCg, "n_l2", new Map([["n_l2", "cg_new"]])).cg).toEqual({ id: "cg_new" });
   });
 });

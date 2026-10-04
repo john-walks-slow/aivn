@@ -7,7 +7,7 @@ import { PlayHouse, helloPayload } from "../src/playhouse.js";
 import { PlayLibrary } from "../src/store.js";
 import { AssetLibrary } from "../src/library.js";
 import { settingsFromEnv } from "../src/config.js";
-import { settingsStoreFor } from "./helpers.js";
+import { settingsStoreFor, createFakeStreamFn, BEAT_1, BEAT_1_STOP } from "./helpers.js";
 
 const PLAY_JSON = JSON.stringify({
   id: "p1",
@@ -203,6 +203,57 @@ describe("导演生图：前置守卫（都不该碰生图后端）", () => {
     await expect(
       house.requestCg("p1", undefined, { useHistory: false }),
     ).rejects.toThrow(/不基于剧情时/);
+  });
+
+  it("锚点还没进谱系（回看中传 null）：明确拒绝，不退成末尾落节点", async () => {
+    house = await houseWithImages(true);
+    await expect(house.requestCg("p1", "黄昏窗边", { anchorNodeId: null })).rejects.toThrow(
+      /还没进谱系/,
+    );
+  });
+
+  it("锚点指向已不在树上的节点：明确拒绝，不挂到别的世界线上", async () => {
+    house = await houseWithImages(true);
+    await expect(
+      house.requestCg("p1", "黄昏窗边", { anchorNodeId: "e-gone-1" }),
+    ).rejects.toThrow(/找不到你看的这一行/);
+  });
+
+  it("回看锚点：提示词只写到那一行为止，图挂回那一行旁边（不落节点）", async () => {
+    house = await houseWithImages(true);
+    // 先演一拍，好有一个「正在看的那一行」（runtime 在这一刻捕获这条假流）
+    (house as any).streamFn = createFakeStreamFn([{ text: BEAT_1, beatDone: BEAT_1_STOP }]);
+    const runtime = await house.begin("p1");
+    await runtime.orchestrator.playerAction({ kind: "free", text: "我到了" });
+    const leafBefore = runtime.orchestrator.lineageView().leafId;
+
+    const firstLine = runtime.orchestrator
+      .lineageView()
+      .nodes.find((n) => n.text === "放学后的走廊空无一人。")!;
+    expect(firstLine).toBeDefined();
+
+    // 写提示词这一步换成可控的假流，把送进去的上下文抓下来
+    const seen: unknown[] = [];
+    const base = createFakeStreamFn([
+      { text: "a quiet school corridor at dusk with empty lockers and soft melancholic light through tall windows" },
+    ]);
+    (house as any).streamFn = (model: unknown, context: unknown, options: unknown) => {
+      seen.push(context);
+      return base(model as never, context as never, options as never);
+    };
+
+    await house.requestCg("p1", undefined, { anchorNodeId: firstLine.id });
+
+    // 提示词按你正看的那一行写：同一拍里后面那句还没发生，不该进上下文
+    const composed = JSON.stringify(seen);
+    expect(composed).toContain("放学后的走廊空无一人。");
+    expect(composed).not.toContain("……太慢了！");
+
+    // 图挂回那一行旁边：树上没有多的 cg 节点，世界线一根不动
+    const after = runtime.orchestrator.lineageView();
+    expect(after.nodes.some((n) => n.kind === "cg")).toBe(false);
+    expect(after.nodes.find((n) => n.id === firstLine.id)!.cgs).toHaveLength(1);
+    expect(after.leafId).toBe(leafBefore);
   });
 
   it("generateImage 手动出图端点：参数校验与目标生成", async () => {

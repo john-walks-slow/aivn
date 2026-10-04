@@ -30,6 +30,8 @@ export function toNodeView(event: LineageEvent): LineageNodeView {
     editCount: 0,
     editedAt: undefined,
     seq: typeof event.payload?.seq === "number" ? event.payload.seq : undefined,
+    // 插图旁注同样挂在目标旁边，单个事件里查不到——由 describe() 补
+    cgs: [],
     ...stop,
   };
 }
