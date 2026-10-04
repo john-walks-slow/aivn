@@ -317,6 +317,20 @@ export function withAttachedCg(
 }
 
 /**
+ * 画面这一刻属于谱系里哪个节点：回看认游标那一条，跟随播放头认正在显示的这一行。
+ *
+ * 缓冲行（`fromLine`）的 nodeId 恒为 null——它取自脚本缓冲，谱系是按需拉的、可能还没跟上；
+ * 回看窗里的那一条来自会话记录，两处指的都是同一行，各取各的才不会认错。
+ */
+export function displayedNodeId(
+  entry: TranscriptEntry | null,
+  line: ScriptLine | null,
+  scrubbed: boolean,
+): string | null {
+  return scrubbed ? (entry?.nodeId ?? null) : (line?.nodeId ?? entry?.nodeId ?? null);
+}
+
+/**
  * 回看游标（会话记录下标）→ cue 水位线：折到这一条之前，舞台就是「它刚出现」的样子。
  *
  * 台词条目找它那条 line cue；玩家输入在缓冲里没有 cue，落到下一条台词之前
@@ -534,6 +548,8 @@ export function usePlayback(
       : // 谱系按需拉取会落后缓冲一两句，此时播放头还没进记录：直接用缓冲这行顶上，别让台词闪空。
         (current ? lineEntry(current) : null);
   const scrubbed = scrubIndex !== null;
+  /** 正显示这一行的谱系节点：插图旁注按它认领（见 withAttachedCg）。 */
+  const displayedNode = displayedNodeId(view, current, scrubbed);
   const headIndexRef = useRef(headIndex);
   headIndexRef.current = headIndex;
 
@@ -795,7 +811,7 @@ export function usePlayback(
 
   return {
     // 回看重算的画面 + 这一行上挂着的插图（图跟着行走，见 withAttachedCg）
-    visual: withAttachedCg(rewindVisual ?? visual, view?.nodeId, opts.cgByNode),
+    visual: withAttachedCg(rewindVisual ?? visual, displayedNode, opts.cgByNode),
     current,
     view,
     viewLength: scrubbed ? (view?.text.length ?? 0) : shownLength,
