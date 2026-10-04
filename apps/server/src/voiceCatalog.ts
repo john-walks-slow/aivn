@@ -10,16 +10,23 @@ import type { SettingsSource } from "./settingsStore.js";
 /**
  * Fish Audio 公共音色库客户端。
  *
- * 公共库免费档只开放热度前 1000 条（`accessible_upper_bound`），分页 100/页共 10 页。
- * 策略是**全量抓一次落盘**再在内存里搜索/筛选——每次筛选都打 Fish 既慢又烧请求。
- * 10 页并发抓取（一轮来回，不是十轮）；抓取失败但盘上有快照时沿用快照（标 `stale`），
- * 没有则把错误如实抛给调用方。失败后静默几分钟，不让每次调用都重付一遍抓取的代价。
+ * 免费档对**每个查询**各开放一个 1000 条窗口（`accessible_upper_bound`）：全局热门前
+ * 1000、`language=ja` 的日语 1000、`tag=anime` 的 1000……窗口彼此不同（全局热门窗口里
+ * 日语只有 52 条）。所以带条件的筛选不能在本地目录里做，`list()` 把条件发给 Fish 抓
+ * 对应窗口；无条件的基础目录仍是一次全量抓取落盘（12h 快照），它是语言下拉与 voiceId
+ * 名字解析的底座。
+ *
+ * 抓取失败但盘上有基础目录快照时沿用快照（标 `stale`），没有则把错误如实抛给调用方。
+ * 失败后静默几分钟，不让每次调用都重付一遍抓取的代价。窗口只进内存缓存（同样 12h，
+ * 外加并发去重与条数上限），不落盘——重启重抓一次几秒钟，目录文件不跟着膨胀。
  */
 
 const PAGE_SIZE = 100;
 /** 免费档可达窗口 1000；再多翻页返回空数组，只是多打 10 次无效请求。 */
 const MAX_PAGES = 10;
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+/** 查询窗口的内存缓存上限：每窗最多 1000 条，16 窗也就几 MB。 */
+const WINDOW_CACHE_LIMIT = 16;
 /**
  * 刷新失败后的静默期。
  *
@@ -94,6 +101,53 @@ export interface VoiceSample {
   languages: string[];
 }
 
+/**
+ * 一次音色查询。条件之间是 AND（日语 且 带 anime 标签 且 名字含雷姆）；
+ * `tags` 内部是 OR——Fish 的多 tag 参数就是并集。
+ */
+export interface VoiceQuery {
+  /** ISO 639-1 小写两位码（Fish 大小写敏感：`JA` 直接 0 条，这里统一转小写）。 */
+  language?: string;
+  /** Fish 标签**原样**（同样大小写敏感：`anime` 100 条、`ANIME` 只有 3 条）；≤4 个。 */
+  tags?: string[];
+  /** 全库标题搜索（子串、不分大小写）——热门窗口之外的音色也只有这条路够得到。 */
+  title?: string;
+}
+
+interface NormalizedVoiceQuery {
+  language: string;
+  tags: string[];
+  title: string;
+}
+
+function normalizeVoiceQuery(query: VoiceQuery): NormalizedVoiceQuery {
+  return {
+    language: (query.language ?? "").trim().toLowerCase(),
+    tags: [...new Set((query.tags ?? []).map((tag) => tag.trim()).filter(Boolean))].sort(),
+    title: (query.title ?? "").trim().toLowerCase(),
+  };
+}
+
+/** 查询的缓存键；空串 = 无条件（基础目录）。 */
+function voiceQueryKey(query: VoiceQuery): string {
+  const q = normalizeVoiceQuery(query);
+  const parts: string[] = [];
+  if (q.language) parts.push(`language=${q.language}`);
+  for (const tag of q.tags) parts.push(`tag=${tag}`);
+  if (q.title) parts.push(`title=${q.title}`);
+  return parts.join("&");
+}
+
+/** 拼到 `/model?…&sort_by=score` 后面的过滤参数（值全部 encodeURIComponent）。 */
+function voiceQuerySuffix(query: VoiceQuery): string {
+  const q = normalizeVoiceQuery(query);
+  const parts: string[] = [];
+  if (q.language) parts.push(`language=${encodeURIComponent(q.language)}`);
+  for (const tag of q.tags) parts.push(`tag=${encodeURIComponent(tag)}`);
+  if (q.title) parts.push(`title=${encodeURIComponent(q.title)}`);
+  return parts.length > 0 ? `&${parts.join("&")}` : "";
+}
+
 export class VoiceCatalogService {
   /** 出口代理：按当前设置里的地址惰性建，地址改了下次请求就用新的。 */
   private dispatcher: { proxy: string; agent: ProxyAgent } | null = null;
@@ -101,6 +155,10 @@ export class VoiceCatalogService {
   private readonly fetchJson: VoiceFetcher;
   /** 抓取中的共享 Promise——并发请求只打一轮 Fish。 */
   private inflight: Promise<VoiceCatalog> | null = null;
+  /** 查询窗口的内存缓存（键见 voiceQueryKey）。 */
+  private readonly windows = new Map<string, VoiceCatalog>();
+  /** 抓取中的查询窗口——同一条件的并发请求只打一轮 Fish。 */
+  private readonly windowInflight = new Map<string, Promise<VoiceCatalog>>();
   /** 最近一次刷新失败的时刻，用于静默期（见 FAILURE_BACKOFF_MS）。 */
   private lastFailureAt = 0;
 
@@ -138,6 +196,58 @@ export class VoiceCatalogService {
       this.lastFailureAt = 0;
     }
     return this.refreshOrStale(null);
+  }
+
+  /**
+   * 按条件查询一个窗口（UI 语言/标签筛选、标题搜索、工坊 `list_voices` 共用）。
+   *
+   * 无条件 = 基础目录（`get()`，磁盘快照那条路）。窗口查询允许空结果——标题搜不到是
+   * 正常答案，不像基础目录把空目录当错误。失败如实抛出，不做静默降级。
+   */
+  async list(query: VoiceQuery, refresh = false): Promise<VoiceCatalog> {
+    const key = voiceQueryKey(query);
+    if (key === "") return this.get(refresh);
+    if (!refresh) {
+      const hit = this.windows.get(key);
+      if (hit && Date.now() - hit.fetchedAt < CACHE_TTL_MS) return hit;
+    }
+    // refresh=true 也复用在途请求：它本来就在抓这份新数据
+    let pending = this.windowInflight.get(key);
+    if (!pending) {
+      pending = this.fetchQueryWindow(key, query).finally(() => {
+        this.windowInflight.delete(key);
+      });
+      this.windowInflight.set(key, pending);
+    }
+    return pending;
+  }
+
+  private async fetchQueryWindow(key: string, query: VoiceQuery): Promise<VoiceCatalog> {
+    // 标题搜索通常是窄查询，先探一页；语言/标签窗口通常拉满 1000 条，直接并发打完
+    const probeFirst = (query.title ?? "").trim() !== "";
+    const { entries } = await this.fetchEntries(voiceQuerySuffix(query), probeFirst);
+    const catalog: VoiceCatalog = {
+      entries,
+      fetchedAt: Date.now(),
+      totalAvailable: entries.length,
+      stale: false,
+    };
+    this.windows.set(key, catalog);
+    // FIFO 收口：最旧的窗口先让位（12h TTL 下进出频率很低，不值得正经 LRU）
+    while (this.windows.size > WINDOW_CACHE_LIMIT) {
+      let oldest: string | null = null;
+      let oldestAt = Infinity;
+      for (const [k, c] of this.windows) {
+        if (c.fetchedAt < oldestAt) {
+          oldest = k;
+          oldestAt = c.fetchedAt;
+        }
+      }
+      if (oldest === null) break;
+      this.windows.delete(oldest);
+    }
+    console.log(`[aivn] 音色窗口已抓取: ${key || "基础目录"} ${entries.length} 条`);
+    return catalog;
   }
 
   /** 按 id 解析单条音色——用于"已填 voiceId 但不在热门目录内"的展示与试听。 */
@@ -198,28 +308,54 @@ export class VoiceCatalogService {
     });
   }
 
-  private async refresh(): Promise<VoiceCatalog> {
-    // 10 页一次并发打完，不逐页等：串行时每页一个来回，翻完要三十多秒（本机实测），
-    // 而这些页彼此独立、谁也不依赖谁。超出窗口的页返回空数组，MAX_PAGES 收口。
-    const pages = await Promise.all(
-      Array.from({ length: MAX_PAGES }, (_, i) =>
-        this.fetchJson<FishModelPage>(
-          `/model?page_size=${PAGE_SIZE}&page_number=${i + 1}&self=false&sort_by=score`,
-        ),
-      ),
-    );
-    const byId = new Map<string, VoiceEntry>();
+  /**
+   * 抓一个窗口的全部条目。
+   *
+   * `probeFirst` 是给标题搜索用的：它通常只有一两页，先探第 1 页、满页才补剩下的
+   * （搜「雷姆」1.2s 就回来）；语言/标签窗口通常拉满 1000 条，10 页直接并发打完
+   * 只用一轮往返（本机实测 ~6s，探路再补要多花一轮）。
+   */
+  private async fetchEntries(
+    suffix: string,
+    probeFirst: boolean,
+  ): Promise<{ entries: VoiceEntry[]; total: number }> {
+    const page = (n: number): Promise<FishModelPage> =>
+      this.fetchJson<FishModelPage>(
+        `/model?page_size=${PAGE_SIZE}&page_number=${n}&self=false&sort_by=score${suffix}`,
+      );
+    const raws: FishModelEntity[] = [];
     let total = 0;
-    for (const [index, body] of pages.entries()) {
-      if (index === 0) total = typeof body.total === "number" ? body.total : 0;
-      for (const raw of body.items ?? []) {
-        const entry = toEntry(raw);
-        if (entry) byId.set(entry.id, entry);
+    if (probeFirst) {
+      const first = await page(1);
+      total = typeof first.total === "number" ? first.total : 0;
+      raws.push(...(first.items ?? []));
+      if (raws.length >= PAGE_SIZE) {
+        const rest = await Promise.all(
+          Array.from({ length: MAX_PAGES - 1 }, (_, i) => page(i + 2)),
+        );
+        for (const body of rest) raws.push(...(body.items ?? []));
       }
+    } else {
+      const pages = await Promise.all(Array.from({ length: MAX_PAGES }, (_, i) => page(i + 1)));
+      total = typeof pages[0]?.total === "number" ? (pages[0]!.total as number) : 0;
+      for (const body of pages) raws.push(...(body.items ?? []));
     }
-    if (byId.size === 0) throw new Error("音色库返回空目录");
-    const catalog: VoiceCatalog = {
+    const byId = new Map<string, VoiceEntry>();
+    for (const raw of raws) {
+      const entry = toEntry(raw);
+      if (entry) byId.set(entry.id, entry);
+    }
+    return {
       entries: [...byId.values()].sort((a, b) => b.likes - a.likes),
+      total: total || raws.length,
+    };
+  }
+
+  private async refresh(): Promise<VoiceCatalog> {
+    const { entries, total } = await this.fetchEntries("", false);
+    if (entries.length === 0) throw new Error("音色库返回空目录");
+    const catalog: VoiceCatalog = {
+      entries,
       fetchedAt: Date.now(),
       totalAvailable: total,
       stale: false,

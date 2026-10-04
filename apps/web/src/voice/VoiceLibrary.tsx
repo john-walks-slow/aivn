@@ -8,13 +8,45 @@ import type { VoiceCatalogState } from "./useVoiceCatalog.js";
 /** Fish 封面图 CDN（cover_image 是 `coverimage/<id>` 相对路径）。 */
 const COVER_BASE = "https://public-platform.r2.fish.audio/";
 
-/** 一页渲染多少张卡——1000 条全量铺开会拖垮滚动。 */
+/** 一页渲染多少张卡——窗口最多 1000 条，全量铺开会拖垮滚动。 */
 const PAGE_SIZE = 60;
 
+/** chips 里展示多少个高频标签。 */
+const TAG_CHIPS = 12;
+
+/** 标签多选上限，与 HTTP 面（≤4 个 tag）一致——超过就是上游 400。 */
+const MAX_TAGS = 4;
+
 /**
- * 全屏音色库面板：顶部搜索 + 语言下拉 + 卡片网格。
+ * 与语言重名的标签不进 chips——语言下拉已经管这个维度，Fish 数据里就有
+ * Japanese / English 这类标签，摆出来只是占位噪音。
+ */
+const LANGUAGE_TAG_WORDS = new Set([
+  "japanese", "english", "chinese", "mandarin", "cantonese", "spanish", "russian", "portuguese",
+  "arabic", "french", "german", "italian", "korean", "turkish", "dutch", "polish", "thai",
+  "vietnamese", "indonesian", "hindi",
+]);
+
+/** 从当前窗口统计高频标签（原样大小写：Fish 的 tag 匹配区分大小写）。 */
+function topTagsOf(entries: VoiceEntry[], limit: number): string[] {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    for (const tag of entry.tags) {
+      if (LANGUAGE_TAG_WORDS.has(tag.toLowerCase())) continue;
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([tag]) => tag);
+}
+
+/**
+ * 全屏音色库面板：顶部搜索 + 语言下拉 + 标签 chips + 卡片网格。
  *
- * 目录来自服务端缓存的 Fish 公共库（热门前 1000），搜索与语言筛选都在本地内存做。
+ * 筛选全部发给服务端按需抓 Fish 对应窗口（每个语言/标签组合各有一个 1000 条窗口，
+ * 本地那份热门目录里日语只有 52 条）；关键词走全库标题搜索，能搜到热门榜单外的音色。
  * 选中小语种音色不需要任何服务端改动——voiceId 原样存进角色卡即可。
  *
  * 语言筛选用下拉而不是侧边栏：侧栏在窄屏上会把卡片网格挤到放不下，且手机上要横向
@@ -31,18 +63,19 @@ export function VoiceLibrary({
   onPick: (entry: VoiceEntry) => void;
   onClose: () => void;
 }) {
-  const { catalog, error, loading, refresh } = voices;
+  const { catalog, error, loading, refresh, search, filter, result, searching, searchError } = voices;
   const [query, setQuery] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
   // null = 用户还没挑过，沿用系统语言；挑过之后以用户的选择为准
   const [picked, setPicked] = useState<string | null>(null);
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [previewingId, setPreviewingId] = useState("");
 
-  const entries = catalog?.entries ?? [];
-  const languages = useMemo(() => countVoicesByLanguage(entries), [entries]);
+  const baseEntries = catalog?.entries ?? [];
+  const languages = useMemo(() => countVoicesByLanguage(baseEntries), [baseEntries]);
 
-  // 目录是异步到的，所以系统语言只能在 entries 齐了之后再算。
-  // 系统语言不在这 1000 条里（冷门语种）就退回不筛。
+  // 目录是异步到的，所以系统语言只能在基础目录齐了之后再算。
+  // 系统语言不在基础目录里（冷门语种）就退回不筛。
   const systemLanguage = useMemo(() => {
     const code = (navigator.language.split("-")[0] ?? "").toLowerCase();
     return languages.some((l) => l.code === code) ? code : undefined;
@@ -50,21 +83,32 @@ export function VoiceLibrary({
 
   const language = picked ?? systemLanguage ?? "";
 
-  const matched = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    return entries.filter((entry) => {
-      if (language && !entry.languages.includes(language)) return false;
-      if (!keyword) return true;
-      return (
-        entry.title.toLowerCase().includes(keyword) ||
-        entry.description.toLowerCase().includes(keyword) ||
-        entry.tags.some((tag) => tag.includes(keyword))
-      );
-    });
-  }, [entries, language, query]);
+  // 关键词防抖：停 300ms 再发查询，别一个字母一个请求
+  const [title, setTitle] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setTitle(query.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // 筛选变化 → 服务端窗口查询（空条件时 search 内部回落到基础目录）
+  useEffect(() => {
+    search({ language, tags, title });
+  }, [search, language, tags, title]);
 
   // 换筛选条件时回到第一页，否则会停在一个空白的第 N 页
-  useEffect(() => setLimit(PAGE_SIZE), [language, query]);
+  useEffect(() => setLimit(PAGE_SIZE), [language, tags, title]);
+
+  // 有筛选时网格只认窗口结果（抓取失败/在途不回落到热门目录，免得张冠李戴）；
+  // 没筛选时就是基础热门目录本身
+  const filterActive = filter.language !== "" || filter.tags.length > 0 || filter.title !== "";
+  const entries = filterActive ? (result?.entries ?? []) : baseEntries;
+  // 选中的标签一定要在行里：它是取消勾选的唯一入口，跌出高频榜就成了「隐形筛选」。
+  // 补在末尾而不是提到队首——点一下整行跳位很难用。
+  const topTags = useMemo(() => {
+    const popular = topTagsOf(entries, TAG_CHIPS);
+    const shown = new Set(popular);
+    return [...popular, ...tags.filter((tag) => !shown.has(tag))];
+  }, [entries, tags]);
 
   useEscape(onClose);
 
@@ -78,14 +122,23 @@ export function VoiceLibrary({
       .finally(() => setPreviewingId(""));
   };
 
-  const visible = matched.slice(0, limit);
+  const toggleTag = (tag: string): void => {
+    setTags((prev) => {
+      if (prev.includes(tag)) return prev.filter((t) => t !== tag);
+      if (prev.length >= MAX_TAGS) return prev;
+      return [...prev, tag];
+    });
+  };
+
+  const visible = entries.slice(0, limit);
+  const busy = loading || searching;
 
   return (
     <div className="picker" role="dialog" aria-label="音色库">
       <header className="picker-bar">
         <input
           className="picker-search"
-          placeholder="搜索音色名 / 描述 / 标签"
+          placeholder="搜索音色名（全库）"
           value={query}
           autoFocus
           onChange={(e) => setQuery(e.target.value)}
@@ -93,29 +146,31 @@ export function VoiceLibrary({
         <select
           className="voice-library-lang"
           value={language}
-          onChange={(e) => setPicked(e.target.value === "" ? null : e.target.value)}
+          onChange={(e) => setPicked(e.target.value)}
         >
-          {/* 列表里不摆「全部语言」——不选就是全部（系统语言没有对应音色时）。
-              这个占位项只为让空值有对应 option，禁用掉，免得能被重新选回来。 */}
-          <option value="" disabled>
-            语言
-          </option>
-          {languages.map(({ code, count }) => (
+          {/* 「全部语言」= 不筛语言（基础热门目录本身）。必须能选回来：切到日语之后
+              没有这一项就再也回不到全局热门列表了。
+              各语言的计数不摆出来——每个语言是各自独立的 1000 条窗口，与热门目录不同源，
+              计数只会误导。 */}
+          <option value="">全部语言</option>
+          {languages.map(({ code }) => (
             <option key={code} value={code}>
-              {languageLabel(code)}（{count}）
+              {languageLabel(code)}
             </option>
           ))}
         </select>
         <div className="picker-meta">
           <span className="muted small picker-count">
-            {catalog
-              ? `匹配 ${matched.length} / ${entries.length}${catalog.stale ? "（离线快照）" : ""}`
-              : loading
-                ? "加载中…"
-                : ""}
+            {searching
+              ? "筛选中…"
+              : entries.length > 0 || filterActive
+                ? `${entries.length} 条${!filterActive && catalog?.stale ? "（离线快照）" : ""}`
+                : loading
+                  ? "加载中…"
+                  : ""}
           </span>
-          <button className="ghost-btn small-btn" disabled={loading} onClick={refresh}>
-            {loading ? "抓取中…" : "重新抓取"}
+          <button className="ghost-btn small-btn" disabled={busy} onClick={refresh}>
+            {busy ? "抓取中…" : "重新抓取"}
           </button>
         </div>
         <button
@@ -128,9 +183,33 @@ export function VoiceLibrary({
         </button>
       </header>
 
+      {topTags.length > 0 && (
+        <div className="picker-tags" role="group" aria-label="标签筛选">
+          {topTags.map((tag) => {
+            const on = tags.includes(tag);
+            return (
+              <button
+                key={tag}
+                className={`chip-btn${on ? " chip-btn-on" : ""}`}
+                // 到上限就把没选中的灰掉而不是静默忽略点击：静默忽略读起来像卡了
+                disabled={!on && tags.length >= MAX_TAGS}
+                title={!on && tags.length >= MAX_TAGS ? `最多同时选 ${MAX_TAGS} 个标签` : tag}
+                onClick={() => toggleTag(tag)}
+              >
+                {tag}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {error ? (
         <div className="error-banner" role="alert">
           音色库加载失败：{error}
+        </div>
+      ) : searchError ? (
+        <div className="error-banner" role="alert">
+          筛选失败：{searchError}（可重试或换个条件）
         </div>
       ) : (
         <div className="picker-grid">
@@ -170,12 +249,12 @@ export function VoiceLibrary({
               </div>
             </article>
           ))}
-          {visible.length === 0 && !loading && (
-            <p className="muted">没有匹配的音色，换个关键词或语言试试。</p>
+          {visible.length === 0 && !busy && (
+            <p className="muted">没有匹配的音色，换个关键词、标签或语言试试。</p>
           )}
-          {matched.length > visible.length && (
+          {entries.length > visible.length && (
             <button className="ghost-btn" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
-              显示更多（还有 {matched.length - visible.length} 条）
+              显示更多（还有 {entries.length - visible.length} 条）
             </button>
           )}
         </div>

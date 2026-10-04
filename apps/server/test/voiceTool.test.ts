@@ -50,8 +50,25 @@ function entries() {
   };
 }
 
-function service(): VoiceCatalogService {
-  return { get: async () => entries() } as never;
+/** 记录查询条件的假窗口服务：language/tags/title 按 Fish 的语义过滤，gender 留给工具本地筛。 */
+function service(): VoiceCatalogService & { queries: unknown[] } {
+  const queries: unknown[] = [];
+  return {
+    queries,
+    list: async (query: { language?: string; tags?: string[]; title?: string }) => {
+      queries.push(query);
+      const all = entries().entries;
+      return {
+        ...entries(),
+        entries: all.filter((e) => {
+          if (query.language && !e.languages.includes(query.language)) return false;
+          if (query.tags?.length && !query.tags.some((tag) => e.tags.includes(tag))) return false;
+          if (query.title && !e.title.toLowerCase().includes(query.title.toLowerCase())) return false;
+          return true;
+        }),
+      };
+    },
+  } as never;
 }
 
 async function run(params: Record<string, unknown>): Promise<string> {
@@ -75,31 +92,44 @@ describe("list_voices", () => {
     expect(out.indexOf("ccc333")).toBeLessThan(out.indexOf("aaa111"));
   });
 
-  it("语言、性别、标签、关键词各筛各的", async () => {
-    expect(await run({ language: "ja" })).toContain("bbb222");
-    expect(await run({ language: "ja" })).not.toContain("aaa111");
+  it("语言、标签并集、标题搜索都发给服务端窗口，gender 在窗口内本地筛", async () => {
+    const fake = service();
+    const [tool] = createVoiceTool(fake);
+    const text = async (params: Record<string, unknown>): Promise<string> => {
+      const result = await tool.execute("call", params as never);
+      return result.content.map((c) => (c as { text: string }).text).join("\n");
+    };
 
-    expect(await run({ gender: "female" })).toContain("bbb222");
-    expect(await run({ gender: "female" })).not.toContain("aaa111");
+    expect(await text({ language: "ja" })).toContain("bbb222");
+    expect(await text({ tags: ["narration", "energetic"] })).toContain("苍老男声");
+    expect(await text({ query: "少女" })).toContain("bbb222");
+    expect(await text({ query: "少女" })).not.toContain("苍老男声");
 
-    expect(await run({ tag: "narration" })).toContain("aaa111");
+    expect(fake.queries).toEqual([
+      { language: "ja", tags: undefined, title: undefined },
+      { language: undefined, tags: ["narration", "energetic"], title: undefined },
+      { language: undefined, tags: undefined, title: "少女" },
+      { language: undefined, tags: undefined, title: "少女" },
+    ]);
 
-    // query 匹配描述：「语速慢」只有苍老男声那条写了这句
-    expect(await run({ query: "语速慢" })).toContain("aaa111");
-    expect(await run({ query: "语速慢" })).not.toContain("bbb222");
+    // gender 是标签：Fish 没有独立参数，工具在抓回的窗口里本地筛
+    expect(await text({ gender: "female" })).toContain("bbb222");
+    expect(await text({ gender: "female" })).not.toContain("苍老男声");
   });
 
   it("筛不出来要说清怎么放宽，别只回一句「没找到」", async () => {
     const out = await run({ query: "机械音" });
     expect(out).toContain("机械音");
-    expect(out).toContain("换个词");
+    expect(out).toContain("去掉");
   });
 
-  it("描述先立语言这一维：不匹配的后果写清楚", () => {
+  it("描述先立语言这一维，并教二次元与找角色的路子", () => {
     const [tool] = createVoiceTool(service());
     // 后果不写，「♥1200 的二次元嗓子」永远赢过「能不能念这门语言」
     expect(tool.description).toContain("先按剧目的语音语言筛");
     expect(tool.description).toContain("口音");
+    expect(tool.description).toContain('"anime","character-voice"');
+    expect(tool.description).toContain("全库");
   });
 });
 

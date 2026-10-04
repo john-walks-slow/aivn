@@ -2413,6 +2413,40 @@ select:focus {
   border-color: var(--accent);
 }
 
+/* 标签 chips 行：从当前窗口统计出的高频标签，多选并集（Fish 的多 tag 就是并集）。
+   与语言下拉是两个维度——行内标签是「什么嗓子」，下拉是「说什么语言」。 */
+.picker-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.chip-btn {
+  padding: 2px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chip-btn:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.chip-btn-on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
 /* 网格容器：flex 列里必须显式 min-height: 0，否则 auto 最小尺寸会顶着，
    网格撑出横向滚动条。行高必须显式给 min-content——auto 在这里会算崩：
    容器高度是定死的（flex: 1 撑的），卡片作为 overflow: hidden 的 flex 列容器，

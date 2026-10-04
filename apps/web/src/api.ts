@@ -345,8 +345,16 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
-  /** Fish 公共音色库目录（服务端抓取并缓存）。`refresh` 强制重抓。 */
-  voiceCatalog: (refresh = false) => request<VoiceCatalog>(`/api/voices${refresh ? "?refresh=1" : ""}`),
+  /** 音色查询：条件发给服务端现拉 Fish 对应窗口（空条件 = 基础热门目录）。 */
+  voiceCatalog: (query: { language?: string; tags?: string[]; title?: string; refresh?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    if (query.language) params.set("language", query.language);
+    for (const tag of query.tags ?? []) params.append("tag", tag);
+    if (query.title) params.set("q", query.title);
+    if (query.refresh) params.set("refresh", "1");
+    const qs = params.toString();
+    return request<VoiceCatalog>(`/api/voices${qs ? `?${qs}` : ""}`);
+  },
 
   /** 单条音色解析：用于"已填 voiceId 但不在热门目录内"的展示与试听。 */
   voice: (voiceId: string) => request<VoiceEntry>(`/api/voices/${voiceId}`),

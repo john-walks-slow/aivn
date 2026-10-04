@@ -11,7 +11,7 @@
 - **封面是 play.json 的 `cover: {kind, id}`（只认 backgrounds/cg），没有设置入口就自动取第一张背景、其次第一张插图，解析只有 `api.ts` 的 `coverUrl` 一处（剧目库与标题画面共用，指向的图被删了自动回落）；设置入口在工坊「剧目」页的封面选图里，点一张即设、可恢复自动挑选**。
 - `src/ui/Icon.tsx`（lucide 图标 registry，全站交互 chrome 统一走它，`btn-icon` 图标+文字行内排；舞台侧栏底栏「退出」的出口用 `exit`（LogOut）而不是 `back`）。
 - **界面铺满视口、没有画框**（`app.css` 里 `--frame`/`--frame-pad` 那层「桌面上的 16:9 窗口」已整层删掉：宽屏四周露出的深色底读起来就是一圈黑边）。
-- `src/voice/`（VoiceLibrary 全屏音色库面板——顶部搜索 + 语言下拉（无「全部语言」项，默认跟随 `navigator.language`）+ 卡片网格逐个试听/选用 + 右上角固定「×」关闭键、分页 60 条防 1000 张图卡顿、useVoiceCatalog 目录状态 + 目录外 voiceId 按 id 解析）。
+- `src/voice/`（VoiceLibrary 全屏音色库面板——**筛选全部走服务端窗口查询**：语言下拉（首项「全部语言」，默认跟随 `navigator.language`，各语言不摆计数——每个语言是各自独立的 1000 条窗口、与热门目录不同源）+ 数据驱动的高频标签 chips（多选 = Fish 的并集语义、标签原样大小写；剔除 Japanese/English 这类与语言重名的标签）+ 搜索框（300ms 防抖，走**全库标题搜索**，不再匹配描述与标签）+ 卡片网格逐个试听/选用 + 右上角固定「×」关闭键、分页 60 条防 1000 张图卡顿；useVoiceCatalog 是两层状态：`catalog` 基础目录管下拉与 `nameOf`、`result` 当前窗口管网格，查询带序号防慢响应覆盖新结果，筛选失败不回落热门目录、目录外 voiceId 按 id 解析）。窗口语义见 `apps/server/AGENTS.md`。
 - `src/workshop/`：
   - WorkshopPane 八 tab 对话/剧目/角色/记忆/素材/文件/Agent/设置（`stage/view.ts` 的 `WorkshopTab` 是顺序唯一真相源：**剧目**在最前——它改的是剧目本身；**角色/记忆**紧跟其后——改的是剧目的成员与内容；其余是素材与机器设置）。
   - AgentPane 单剧目 agent 设置（剧作家/搭台助手各一张卡：模型下拉走 `GET /api/agents/models`（网关清单 ∩ 设置页「支持的模型」清单；读不到就显式报错，不静默退化成默认；清单外的旧值补一项「不在支持清单里」显示，不静默改写 play.json）、思考档位、按 `groupLabel` 分组的**能力开关**（数据源 `GET /api/agents/capabilities`，一行 = 名字 + 一句后果，`locked` 的渲染成灰字「始终开启」不给开关，`available: false` 的行尾补 `unavailableNote`；界面上不出现任何工具 id）；搭台助手那张卡还有**出图审批**（`ask` 默认 / `auto`）；保存即写 play.json 的 `agents` 段）。

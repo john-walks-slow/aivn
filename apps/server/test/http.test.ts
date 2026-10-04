@@ -297,3 +297,53 @@ describe("POST /api/lan/open-firewall：只认本机，且只在装好的 Window
     expect(res.payload).toContain("Windows");
   });
 });
+
+describe("GET /api/voices：按条件现拉窗口", () => {
+  const call = async (query: string, voices?: unknown): Promise<FakeRes> => {
+    const res = new FakeRes();
+    await handleHttp(
+      { url: `/api/voices${query}`, method: "GET" } as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new PlayLibrary("/tmp"),
+      {} as PlayHouse,
+      undefined,
+      undefined,
+      voices as never,
+    );
+    return res;
+  };
+
+  it("language/tag（可重复）/q 解析成窗口查询，refresh 透传", async () => {
+    const seen: { query?: unknown; refresh?: boolean }[] = [];
+    const res = await call(
+      "?language=ja&tag=anime&tag=character-voice&q=%E9%9B%B7%E5%A7%86&refresh=1",
+      {
+        list: async (query: unknown, refresh?: boolean) => {
+          seen.push({ query, refresh });
+          return { entries: [], fetchedAt: 0, totalAvailable: 0, stale: false };
+        },
+      },
+    );
+    expect(res.statusCode).toBe(200);
+    expect(seen[0]?.query).toEqual({ language: "ja", tags: ["anime", "character-voice"], title: "雷姆" });
+    expect(seen[0]?.refresh).toBe(true);
+  });
+
+  it("非法语言码、超量标签、超长关键词都 400，不放行到上游", async () => {
+    const seen: unknown[] = [];
+    const voices = {
+      list: async (query: unknown) => {
+        seen.push(query);
+        return { entries: [], fetchedAt: 0, totalAvailable: 0, stale: false };
+      },
+    };
+    expect((await call("?language=ja1", voices)).statusCode).toBe(400);
+    expect((await call("?tag=a&tag=b&tag=c&tag=d&tag=e", voices)).statusCode).toBe(400);
+    expect((await call(`?q=${"x".repeat(61)}`, voices)).statusCode).toBe(400);
+    expect(seen).toHaveLength(0);
+  });
+
+  it("没启用音色库（没配 TTS key）如实 404", async () => {
+    expect((await call("", undefined)).statusCode).toBe(404);
+  });
+});

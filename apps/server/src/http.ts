@@ -218,11 +218,25 @@ export async function handleHttp(
       });
     }
 
-    // —— Fish 音色库：目录 + 单条解析（角色卡音色选择面板的数据源） ——
+    // —— Fish 音色库：目录（可按语言/标签/标题现拉对应窗口） + 单条解析 ——
     if (parts[0] === "api" && parts[1] === "voices" && method === "GET") {
       if (!voices) return fail(res, 404, "音色库未启用");
       if (parts.length === 2) {
-        return json(res, 200, await voices.get(url.searchParams.get("refresh") === "1"));
+        const language = (url.searchParams.get("language") ?? "").trim();
+        const tags = url.searchParams.getAll("tag").map((tag) => tag.trim()).filter(Boolean);
+        const title = (url.searchParams.get("q") ?? "").trim();
+        if (language && !/^[a-z]{2}(-[a-z]{2})?$/i.test(language)) return fail(res, 400, "语言码非法");
+        if (tags.length > 4) return fail(res, 400, "标签最多 4 个");
+        if (tags.some((tag) => tag.length > 40)) return fail(res, 400, "标签过长");
+        if (title.length > 60) return fail(res, 400, "关键词过长");
+        return json(
+          res,
+          200,
+          await voices.list(
+            { language: language || undefined, tags, title: title || undefined },
+            url.searchParams.get("refresh") === "1",
+          ),
+        );
       }
       if (parts.length === 3) {
         const id = parts[2]!;
