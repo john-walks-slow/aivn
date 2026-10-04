@@ -4386,6 +4386,49 @@ select:focus {
 .setting-card.active .setting-card-thumb {
   border-color: var(--accent);
 }
+
+/* 角色卡面板里的差分条：这个主体有几张立绘、各叫什么，一眼看全（点开看大图）。 */
+.sprite-peek {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.sprite-peek-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 56px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--ink-faint);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  cursor: zoom-in;
+  overflow: hidden;
+}
+
+.sprite-peek-item:hover {
+  border-color: var(--accent);
+}
+
+.sprite-peek-item img {
+  width: 100%;
+  height: 56px;
+  object-fit: contain;
+  display: block;
+}
+
+.sprite-peek-item span {
+  max-width: 100%;
+  padding: 0 2px 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .setting-card-title {
   grid-area: title;
   font-family: var(--font-ui);

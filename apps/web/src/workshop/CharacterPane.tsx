@@ -4,6 +4,7 @@ import type { CharacterDocument, GeneratedAsset, PlayConfig } from "@aivn/core";
 import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { CharacterEditor } from "./CharacterEditor.js";
+import { ImageLightbox } from "../ui/ImageLightbox.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";
 import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
@@ -56,8 +57,10 @@ export function CharacterPane({
   const [libraryInto, setLibraryInto] = useState<string | null>(null);
   const [voiceFor, setVoiceFor] = useState<string | null>(null);
   const voices = useVoiceCatalog();
-  /** 立绘目录 → 文件（`sprites/<id>` → 差分文件名）：缩略图与「打开立绘」的入口靠它。 */
+  /** 立绘目录 → 文件（`sprites/<id>` → 差分文件名）：缩略图、差分条与「管理立绘」的入口靠它。 */
   const [sprites, setSprites] = useState<Record<string, string[]>>({});
+  /** 点开的那张立绘（看大图）。 */
+  const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null);
 
   const reload = useCallback((): void => {
     api
@@ -82,8 +85,10 @@ export function CharacterPane({
    *
    * 立绘与角色卡是两张各自可选的附件，所以它有图才有缩略图；没图的角色仍显示原来那枚图标。
    */
+  const variantsOf = (id: string): string[] => sprites[`sprites/${id}`] ?? [];
+
   const spriteThumb = (id: string): string | null => {
-    const files = sprites[`sprites/${id}`] ?? [];
+    const files = variantsOf(id);
     const pick = files.find((f) => f.replace(/\.\w+$/, "") === "neutral") ?? files[0];
     return pick ? assetUrl(playId, `sprites/${id}`, pick) : null;
   };
@@ -255,7 +260,8 @@ export function CharacterPane({
                 onClick={() => onManageSprites(activeRole.id)}
               >
                 <span className="btn-icon">
-                  <Icon name="assets" size={13} /> 打开立绘
+                  <Icon name="assets" size={13} />{" "}
+                  {variantsOf(activeRole.id).length > 0 ? "管理立绘" : "创建立绘"}
                 </span>
               </button>
             )}
@@ -273,6 +279,27 @@ export function CharacterPane({
             onDocChange={(fn) => patchRole(activeRole.id, fn)}
             {...(isProtagonist(activeRole.id) ? {} : { onRemove: () => removeRole(activeRole.id) })}
           />
+          {/* 这个主体有哪几张立绘，在这一页就该看全：差分的名字就是剧本里写的 variant，
+              看不着名字等于每次都要跑去素材页对一遍 */}
+          {variantsOf(activeRole.id).length > 0 && (
+            <div className="sprite-peek">
+              {variantsOf(activeRole.id).map((name) => {
+                const url = assetUrl(playId, `sprites/${activeRole.id}`, name);
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    className="sprite-peek-item"
+                    title="看大图"
+                    onClick={() => setZoom({ url, name: `${activeRole.id}/${name}` })}
+                  >
+                    <img src={url} alt="" />
+                    <span>{name.replace(/\.\w+$/, "")}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </section>
       )}
 
@@ -283,6 +310,14 @@ export function CharacterPane({
           </button>
           {saved && !dirty && <span className="muted small">已保存</span>}
         </p>
+      )}
+      {zoom && (
+        <ImageLightbox
+          images={[{ url: zoom.url, caption: zoom.name }]}
+          index={0}
+          onIndex={() => {}}
+          onClose={() => setZoom(null)}
+        />
       )}
       {libraryInto !== null && detail && (
         <LibraryBrowser

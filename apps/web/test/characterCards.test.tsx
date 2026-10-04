@@ -207,13 +207,26 @@ describe("角色页：立绘的那一眼", () => {
     });
   });
 
-  it("「管立绘」只在这一页给出入口，点击回的是那个角色的 id", async () => {
+  it("没有立绘时按钮是「创建立绘」，点击回的是那个角色的 id", async () => {
     apiMock.listAssets.mockResolvedValue({});
     const onManageSprites = vi.fn();
     render(<CharacterPane playId="p1" revision={0} onManageSprites={onManageSprites} />);
     await waitFor(() => expect(cardTitles()).toContain("ミオ"));
     fireEvent.click(screen.getByText("ミオ"));
-    fireEvent.click(screen.getByText("打开立绘"));
+    fireEvent.click(screen.getByText("创建立绘"));
     expect(onManageSprites).toHaveBeenCalledWith("mio");
+  });
+
+  it("差分条把该角色的立绘全摆出来（名字就是剧本里写的 variant），有图时按钮叫「管理立绘」", async () => {
+    apiMock.listAssets.mockResolvedValue({ "sprites/mio": ["neutral.png", "smile.png"] });
+    const { container } = render(<CharacterPane playId="p1" revision={0} onManageSprites={vi.fn()} />);
+    await waitFor(() => expect(cardTitles()).toContain("ミオ"));
+    fireEvent.click(screen.getByText("ミオ"));
+    await waitFor(() => expect(container.querySelectorAll(".sprite-peek-item").length).toBe(2));
+    expect([...container.querySelectorAll(".sprite-peek-item span")].map((n) => n.textContent)).toEqual([
+      "neutral",
+      "smile",
+    ]);
+    expect(screen.getByText("管理立绘")).toBeTruthy();
   });
 });
