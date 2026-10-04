@@ -24,6 +24,7 @@
 ## DSL、轮收束与 IR 事件
 
 - **DSL 是时间线、工具是副作用**：`beat_done`（轮收束 + 停止点载荷，`options` 若干条 / `placeholder` / 都不给；schema 只兜「至少两条非空」这个无效载荷，**给几条、何时给归剧目的写作参数**，见下）与 `generate_image` 产出 `stop` / `preload_asset` 两个 IR 事件，经 `emitStageEvent` 与解析器产出的事件走同一条路（加 seq → 广播 → 落谱系），client 侧一行不用改。
+- **判废只认「三无」轮**：无台词、无停止点、且没调用过带副作用的工具（`beat_done` 只是收束记账，不算）才判废回滚。纯工具轮——只调 `enter_nsfw` 交棒、只发起生图、只写记忆/角色卡——按 no_stop 正常收束：副作用已经发生，回滚会吞掉它们（`enter_nsfw` 的 pending 会被重置回日常模型）。DSL 控制指令（scene/actor）仍不算内容。
 - 文本形式的 `<stop>`/`<option>`/`<preload_asset>` 已从 DSL 摘除，遇到只静默降级并记 `legacy_tag` 警告（照读会把标签念到舞台上）。
 
 ## 谱系原语（跳转 / 分岔 / 重写 / 删除）

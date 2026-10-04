@@ -379,6 +379,9 @@ export class PlaywrightOrchestrator {
   private beatWarnings: string[] = [];
   /** 本 turn 调用了 beat_done → 轮在此收束（普通工具轮次不算边界，否则记忆查询会撕裂轮）。 */
   private beatClosed = false;
+  /** 本轮出现过带副作用的工具调用（beat_done 只是收束记账，不算）：纯工具轮（enter_nsfw / 生图 / 写卡）
+   * 没有台词也不是失败——副作用已经发生，回滚只会吞掉它。 */
+  private beatToolActivity = false;
   /** always/state 活跃状态文件内容（谱系级，随快照走；update_state 工具维护）。 */
   private stateFiles: Record<string, string> = {};
   /** 当前分支已走过的纪元摘要 id（谱系级，随快照走；纪元压缩时追加）。 */
@@ -1204,6 +1207,7 @@ export class PlaywrightOrchestrator {
     this.parser.resetBeat();
     this.beatWarnings = [];
     this.beatLines = [];
+    this.beatToolActivity = false;
     this.beatError = null;
     this.beatTimedOut = false;
     this.beatVerdict = null;
@@ -1824,6 +1828,7 @@ export class PlaywrightOrchestrator {
     this.beatError = null;
     this.beatTimedOut = false;
     this.beatLines = [];
+    this.beatToolActivity = false;
     this.beatClosed = false;
     this.beatNsfw = this.beatChannelNsfw();
     this.beatClosing = false;
@@ -1854,6 +1859,10 @@ export class PlaywrightOrchestrator {
       if (event.message.errorMessage && !this.beatTimedOut) this.beatError = event.message.errorMessage;
       // 完整 assistant 消息：思考块与 toolCall 只在这里出现（流式增量拿不全），入史趁早
       if (this.busy) {
+        // beat_done 不算副作用：只叫 beat_done 却一个字没写，仍是零产出（P0 判废要拦的静默空轮）
+        if (event.message.content.some((c) => c.type === "toolCall" && c.name !== "beat_done")) {
+          this.beatToolActivity = true;
+        }
         this.historyRecorder.addAssistantMessage(this.beatNo, event.message, this.opts.tree.leafId);
       }
       this.parser.endMessage();
@@ -1880,9 +1889,11 @@ export class PlaywrightOrchestrator {
     this.parser.resetBeat();
     const stop = this.pendingStop;
     this.pendingStop = null;
-    // 判废护栏：这一轮没有写出任何可演的台词，也没有交出停止点。
+    // 判废护栏：这一轮没有写出任何可演的台词，没有交出停止点，也没调用过带副作用的工具。
+    // 纯工具轮（只调 enter_nsfw 交棒、只发起生图、只写记忆/角色卡）副作用已经发生，
+    // 回滚会把它们吞掉——尤其是 enter_nsfw 的 pending 会被重置回日常模型，那不是失败。
     // 不静默伪装成正常收束，也不在谱系里留下一拍——结论留给 beginBeat 去回滚（见 rewindFailedBeat）。
-    if (!stop && !this.beatHasLines) {
+    if (!stop && !this.beatHasLines && !this.beatToolActivity) {
       this.beatVerdict = {
         reason: this.beatError ?? "模型未产出任何剧本内容",
         // 超时不重演：网关挂住是「路不通」，再来一次只是让玩家再等一个超时
