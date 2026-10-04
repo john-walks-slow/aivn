@@ -14,7 +14,7 @@ export function createReadinessTool(deps: Pick<WorkshopKitDeps, "store">): Agent
   return {
     name: "get_readiness",
     label: "检查开演条件",
-    description: "检查剧目是否达到可开演条件（premise / 角色立绘映射 / 背景图）。",
+    description: "检查剧目是否达到可开演条件（premise / 立绘 / 背景图）。",
     parameters: emptyParams,
     execute: async () => textResult(renderReadiness(await deps.store.readiness())),
   };

@@ -12,6 +12,9 @@ import {
   parsePlayConfig,
   libraryEntryMatches,
   ASSET_KINDS as ASSET_KINDS_LIST,
+  SPRITE_FRAMINGS,
+  SPRITE_STATURES,
+  ACTOR_ANCHORS,
   type AssetKind,
   type AssetMeta,
   type CgEntry,
@@ -320,6 +323,9 @@ export async function handleHttp(
           // 带全量头部与正文：工坊的角色编辑器要的就是正文与音色，
           // 让它每个角色再 readFile 一次只是把同一份 markdown 读两遍
           cast: cards,
+          // 素材表：立绘的取景/体量/对齐声明都在这里，舞台要按它摆位。
+          // asset_ready 之后前端会重拉这一份（新的差分与声明刚写进去）。
+          manifest: await store.assetMeta(),
         });
       }
       if (method === "DELETE") {
@@ -470,7 +476,7 @@ export async function handleHttp(
       const body = JSON.parse((await readBody(req)).toString("utf8")) as {
         kind?: string;
         entryId?: string;
-        expressions?: string[];
+        variants?: string[];
         target?: string;
       };
       if (!body.entryId) return fail(res, 400, "缺少 entryId");
@@ -483,8 +489,8 @@ export async function handleHttp(
       const result = await importFromLibrary(assets, store, {
         kind: body.kind as AssetKind,
         entryId: body.entryId,
-        ...(Array.isArray(body.expressions) && body.expressions.length > 0
-          ? { expressions: body.expressions }
+        ...(Array.isArray(body.variants) && body.variants.length > 0
+          ? { variants: body.variants }
           : {}),
         ...(body.target ? { target: "protagonist" as const } : {}),
       });
@@ -495,6 +501,45 @@ export async function handleHttp(
       // 素材元数据表（stem → 描述/标签/情绪…）：素材页显示副标题用，剧作家提示词也吃这一份
       if (method !== "GET") return fail(res, 405, "不支持的方法");
       return json(res, 200, await store.assetMeta());
+    }
+    if (sub === "assets" && parts[4] === "sprite" && parts.length === 5) {
+      // 立绘呈现声明（素材页的 framing/stature/anchor/名牌四格）：写 assets/manifest.json 的那几格，
+      // null = 摘掉回到缺省。声明不进 runtime 快照，写盘即生效，不排重建。
+      if (method !== "PUT") return fail(res, 405, "不支持的方法");
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as {
+        spriteId?: string;
+        variant?: string | null;
+        framing?: string | null;
+        stature?: string | null;
+        anchor?: string | null;
+        title?: string | null;
+      };
+      if (!body.spriteId) return fail(res, 400, "缺少 spriteId");
+      // 取值校验自己抛错、由下面统一的 catch 落 400：`fail` 只发响应不中断流程，
+      // 在这里「发完继续往下走」会走到第二次写响应头（ERR_HTTP_HEADERS_SENT）。
+      const pick = <T extends string>(value: unknown, allowed: readonly T[], label: string): T | null | undefined => {
+        if (value === undefined) return undefined;
+        if (value === null || value === "") return null;
+        if (typeof value === "string" && (allowed as readonly string[]).includes(value)) return value as T;
+        throw new Error(`未知${label}：${String(value)}`);
+      };
+      try {
+        const framing = pick(body.framing, SPRITE_FRAMINGS, "取景");
+        const stature = pick(body.stature, SPRITE_STATURES, "体量");
+        const anchor = pick(body.anchor, ACTOR_ANCHORS, "对齐");
+        const title = body.title === undefined ? undefined : body.title === null ? null : String(body.title).trim();
+        await playhouse.declareSpriteMeta(playId, {
+          spriteId: body.spriteId,
+          variant: body.variant ?? null,
+          ...(framing !== undefined ? { framing } : {}),
+          ...(stature !== undefined ? { stature } : {}),
+          ...(anchor !== undefined ? { anchor } : {}),
+          ...(title !== undefined ? { title } : {}),
+        });
+      } catch (e) {
+        return fail(res, 400, e instanceof Error ? e.message : String(e));
+      }
+      return json(res, 200, { ok: true });
     }
     if (sub === "cg" && parts.length === 4) {
       // CG 页的台账：静态素材（assets/cg，带素材表描述）+ 站内生成的图（带生图 prompt）。
@@ -520,9 +565,11 @@ export async function handleHttp(
       const body = JSON.parse((await readBody(req)).toString("utf8")) as {
         kind?: string;
         name?: string;
-        characterId?: string;
-        expression?: string;
+        spriteId?: string;
+        variant?: string;
         framing?: string;
+        stature?: string;
+        title?: string;
         referenceCharacters?: string[];
         instruction?: string;
       };
@@ -532,9 +579,11 @@ export async function handleHttp(
       const result = await playhouse.generateImage(playId, {
         kind: body.kind as "sprite" | "background" | "cg",
         name: body.name,
-        characterId: body.characterId,
-        expression: body.expression,
+        spriteId: body.spriteId,
+        variant: body.variant,
         framing: body.framing as any,
+        stature: body.stature as any,
+        title: body.title,
         referenceCharacters: Array.isArray(body.referenceCharacters) ? body.referenceCharacters : undefined,
         instruction: body.instruction,
       });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Limiter } from "../src/limiter.js";
@@ -83,6 +83,12 @@ async function writeCard(dir: string, id: string, doc: CharacterDocument): Promi
   await writeFile(join(path, `${id}.md`), serializeCharacterCard({ ...doc, id }), "utf8");
 }
 
+/** 落一份素材表（立绘的呈现声明与差分描述都在这里，角色卡上不再承载这些）。 */
+async function writeManifest(dir: string, manifest: Record<string, unknown>): Promise<void> {
+  await mkdir(join(dir, "assets"), { recursive: true });
+  await writeFile(join(dir, "assets", "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
+}
+
 /** 读回一张角色卡：出图补写的差分映射与取景都断言它。 */
 async function readCard(files: PlayFiles, id: string): Promise<CharacterDocument> {
   return parseCharacterCard(await files.read(`characters/${id}.md`));
@@ -139,13 +145,13 @@ describe("PlayAssets：原地重抠（抠底参数的后悔药）", () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets, files } = makeAssets(store, backend);
-    const [first] = await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+    const [first] = await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
     expect(calls).toHaveLength(1);
     const source = store.spriteSourceDir("mio", "neutral.jpg");
     expect(existsSync(source)).toBe(true); // 留底在 media-cache/：抠底前那一张原片，跑批产物不进 git
 
     const tuning = { tolerance: 20 };
-    const recut = await assets.recut({ kind: "sprite", characterId: "mio", expression: "neutral" }, tuning);
+    const recut = await assets.recut({ kind: "sprite", spriteId: "mio", variant: "neutral" }, tuning);
     expect(calls).toHaveLength(1); // 重新出图会多烧一份配额，这里一次都没有
     expect(recut.path).toBe("assets/sprites/mio/neutral.png");
     expect(recut.replaced).toBe(true);
@@ -159,19 +165,19 @@ describe("PlayAssets：原地重抠（抠底参数的后悔药）", () => {
 
     // 留底必须是当初那一张原片：默认档重抠要逐字节复现出图时的产物，
     // 否则「重抠」修的是另一张画（读到了别的留底、或留底被二次编码过）。
-    const again = await assets.recut({ kind: "sprite", characterId: "mio", expression: "neutral" });
+    const again = await assets.recut({ kind: "sprite", spriteId: "mio", variant: "neutral" });
     expect(await readFile(files.absoluteOf(again.path))).toEqual(await readFile(files.absoluteOf(first!.path)));
   });
 
   it("换后端后重新出图：旧扩展名的留底要清掉，否则重抠一直在抠上一张画", async () => {
     const store = await makeStore();
     const { assets } = makeAssets(store, stubBackend("image/jpeg").backend);
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
     const dir = store.spriteSourceDir("mio");
     expect(existsSync(join(dir, "neutral.jpg"))).toBe(true);
 
     await makeAssets(store, stubBackend("image/png").backend).assets.generate(
-      { kind: "sprite", characterId: "mio", expression: "neutral" },
+      { kind: "sprite", spriteId: "mio", variant: "neutral" },
       "少女",
     );
     expect(existsSync(join(dir, "neutral.png"))).toBe(true);
@@ -182,14 +188,14 @@ describe("PlayAssets：原地重抠（抠底参数的后悔药）", () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets, files } = makeAssets(store, backend);
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
     // 用户自己上传的立绘：assets/ 里有一张，media-cache 里没有留底
     await mkdir(join(files.absoluteOf("assets/sprites/Koharu")), { recursive: true });
     await writeFile(files.absoluteOf("assets/sprites/Koharu/neutral.png"), await realImage("9:16", "image/png"));
-    await expect(assets.recut({ kind: "sprite", characterId: "Koharu", expression: "neutral" })).rejects.toThrow(
+    await expect(assets.recut({ kind: "sprite", spriteId: "Koharu", variant: "neutral" })).rejects.toThrow(
       /没有留底原片/,
     );
-    await expect(assets.recut({ kind: "sprite", characterId: "mio", expression: "smile" })).rejects.toThrow(
+    await expect(assets.recut({ kind: "sprite", spriteId: "mio", variant: "smile" })).rejects.toThrow(
       /还没有抠底图/,
     );
     expect(calls).toHaveLength(1); // 两种情况都不该退回「重新出图」
@@ -198,14 +204,14 @@ describe("PlayAssets：原地重抠（抠底参数的后悔药）", () => {
   it("重抠失败不落半残图：原来的透明 PNG 原封不动", async () => {
     const store = await makeStore();
     const { assets, files } = makeAssets(store, stubBackend().backend);
-    const [res] = await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+    const [res] = await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
     const before = await readFile(files.absoluteOf(res!.path));
     // 把留底换成一张纯底图：抠底认不出前景，按覆盖率守卫直接报错
     const blank = await sharp({ create: { width: 768, height: 1365, channels: 3, background: "#ffffff" } })
       .png()
       .toBuffer();
     await writeFile(store.spriteSourceDir("mio", "neutral.jpg"), blank);
-    await expect(assets.recut({ kind: "sprite", characterId: "mio", expression: "neutral" })).rejects.toThrow(/抠底失败/);
+    await expect(assets.recut({ kind: "sprite", spriteId: "mio", variant: "neutral" })).rejects.toThrow(/抠底失败/);
     expect(await readFile(files.absoluteOf(res!.path))).toEqual(before);
   });
 });
@@ -267,7 +273,7 @@ describe("PlayAssets：工坊素材落盘", () => {
   it("立绘抠底成透明 PNG 落盘（引擎靠 alpha 叠在场景上）", async () => {
     const store = await makeStore();
     const { assets, files } = makeAssets(store, stubBackend().backend);
-    const [res] = await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+    const [res] = await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
     expect(res!.path).toBe("assets/sprites/mio/neutral.png");
     const meta = await sharp(files.absoluteOf(res!.path)).metadata();
     expect(meta.hasAlpha).toBe(true);
@@ -281,7 +287,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     const { assets } = makeAssets(store, backend);
     await assets.generate({ kind: "background", name: "a" }, "p");
     await assets.generate({ kind: "cg", name: "b" }, "p");
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "p");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "p");
     expect(calls.map((c) => c.aspectRatio)).toEqual(["16:9", "16:9", "9:16"]);
   });
 
@@ -290,13 +296,13 @@ describe("PlayAssets：工坊素材落盘", () => {
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
     // 先定妆照：没有它时每条差分都会先自动补一张，把调用序号顶掉一位
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "full" }, "p");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral", framing: "full" }, "p");
     calls.length = 0;
     // 半身用竖长画幅出：人脸占画幅近一半，仍按 9:16 出会被拉成窄条。
     // square 是非人主体那一档（猫、道具），也走 1:1，但提示词走的是另一套后缀。
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "a", framing: "half" }, "p");
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "b", framing: "square" }, "p");
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "c", framing: "full" }, "p");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "a", framing: "half" }, "p");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "b", framing: "square" }, "p");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "c", framing: "full" }, "p");
     expect(calls.map((c) => c.aspectRatio)).toEqual(["3:4", "1:1", "9:16"]);
     expect(calls[0]!.prompt).toMatch(/medium shot, waist-up/);
     expect(calls[2]!.prompt).toMatch(/full body, head to toe/);
@@ -307,7 +313,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
     // 非人主体也是角色卡里的一条（成员校验照样拦），只是它声明 framing: square
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "square" }, "a cat");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral", framing: "square" }, "a cat");
     const prompt = calls[0]!.prompt;
     // 人形专属词一个都不能有——给猫写「双臂离开身体以分离轮廓」，出来的是人形猫
     expect(prompt).not.toMatch(/standing/i);
@@ -324,7 +330,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
     await assets.generate(
-      { kind: "sprite", characterId: "mio", expression: "neutral", framing: "full" },
+      { kind: "sprite", spriteId: "mio", variant: "neutral", framing: "full" },
       "a girl leaning on a windowsill, three-quarter view",
     );
     const prompt = calls[0]!.prompt;
@@ -338,52 +344,47 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(prompt).toMatch(/above the head/i);
   });
 
-  it("立绘取景：角色卡上声明的取景会被沿用，不必每次都传", async () => {
+  it("立绘取景：素材表里声明过的取景会被沿用，不必每次都传", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
-    await writeCard(store.dir, "mio", { id: "mio", name: "澪", body: "", framing: "half" });
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "p");
+    await writeManifest(store.dir, { mio: { framing: "half" } });
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "p");
     expect(calls[0]!.aspectRatio).toBe("3:4");
   });
 
-  it("立绘取景：差分上的覆盖优先于角色声明，出图后回写角色卡", async () => {
+  it("立绘取景：差分级的覆盖优先于立绘级，出图不改已有的声明", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets, files } = makeAssets(store, backend);
-    await writeCard(store.dir, "mio", {
-      id: "mio",
-      name: "澪",
-      body: "",
-      framing: "full",
-      spriteFraming: { wow: "square" },
-    });
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "wow" }, "p");
-    // 第 0 次调用是自动补的定妆照：它按**角色级**取景出，不按这条差分的 square
+    await writeManifest(store.dir, { mio: { framing: "full" }, "mio/wow": { framing: "square" } });
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "wow" }, "p");
+    // 第 0 次调用是自动补的定妆照：它按**立绘级**取景出，不按这条差分的 square
     expect(calls[0]!.aspectRatio).toBe("9:16");
     expect(calls[1]!.aspectRatio).toBe("1:1");
-    const card = await readCard(files, "mio");
-    expect(card.spriteFraming).toEqual({ neutral: "full", wow: "square" });
-    // 差分覆盖只是覆盖，角色级声明不能被一张差分带走
-    expect(card.framing).toBe("full");
+    const manifest = JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8"));
+    // 差分覆盖只是覆盖，立绘级声明不能被一条差分带走
+    expect(manifest.mio).toMatchObject({ framing: "full" });
+    expect(manifest["mio/wow"]).toEqual({ framing: "square" });
   });
 
-  it("立绘取景：中性定妆照同时立角色级默认，取景随之落进角色卡", async () => {
+  it("立绘取景：中性定妆照同时立立绘级默认，声明随之落进素材表", async () => {
     const store = await makeStore();
     const { backend } = stubBackend();
     const { assets, files } = makeAssets(store, backend);
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "half" }, "p");
-    const card = await readCard(files, "mio");
-    expect(card.framing).toBe("half");
-    expect(card.spriteFraming).toEqual({ neutral: "half" });
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral", framing: "half" }, "p");
+    const manifest = JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8"));
+    expect(manifest.mio).toMatchObject({ framing: "half" });
+    // 角色卡上一个字都不写：立绘的取景归素材表
+    expect(await files.read("characters/mio.md")).not.toMatch(/framing/);
   });
 
   it("立绘取景：差分的提示词也带景别，否则垫图（全身）会把方形主体拖回人形", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral", framing: "square" }, "a cat");
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "sleepy", framing: "square" }, "sleepy");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral", framing: "square" }, "a cat");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "sleepy", framing: "square" }, "sleepy");
     expect(calls[1]!.references.length).toBe(1);
     expect(calls[1]!.prompt).toMatch(/same subject as the reference image/i);
     expect(calls[1]!.prompt).toMatch(/entire subject fully inside the frame/i);
@@ -396,7 +397,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
     for (const id of ["mio", "Koharu"]) {
-      await assets.generate({ kind: "sprite", characterId: id, expression: "neutral" }, "p");
+      await assets.generate({ kind: "sprite", spriteId: id, variant: "neutral" }, "p");
     }
     calls.length = 0;
     await assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mio", "Koharu"] }, "p");
@@ -411,76 +412,75 @@ describe("PlayAssets：工坊素材落盘", () => {
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
     for (const id of ["mio", "Koharu"]) {
-      await assets.generate({ kind: "sprite", characterId: id, expression: "neutral" }, "p");
+      await assets.generate({ kind: "sprite", spriteId: id, variant: "neutral" }, "p");
     }
     calls.length = 0;
     await assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["Koharu", "mio"] }, "p");
     expect(calls[0]!.prompt).toMatch(/in this exact order: 1\) 小春, 2\) 澪/);
   });
 
-  it("CG 参考立绘：没有 neutral 也能垫，退回该角色任意一张差分", async () => {
+  it("CG 参考立绘：没有 neutral 也能垫，退回该主体目录里排序第一张差分", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets, files } = makeAssets(store, backend);
-    // 该角色只有 smile、根本没有 neutral：映射与盘上的文件都要对上，只改一个不算数
+    // 该主体只有 smile、根本没有 neutral：没有映射表可查，找图就是按目录里的文件名找
     await mkdir(files.absoluteOf("assets/sprites/mio"), { recursive: true });
     await writeFile(files.absoluteOf("assets/sprites/mio/smile.png"), await realImage("9:16", "image/png"));
-    await writeCard(store.dir, "mio", { id: "mio", name: "澪", body: "", sprites: { smile: "smile.png" } });
     calls.length = 0;
     await assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mio"] }, "p");
     expect(calls[0]!.references).toHaveLength(1);
     expect(calls[0]!.prompt).toMatch(/1\) 澪/);
   });
 
-  it("CG 参考立绘：点名了但那个角色没立绘，直接报错不出一张少人的图", async () => {
+  it("CG 参考立绘：点名了但那个主体没立绘，直接报错不出一张少人的图", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets, files } = makeAssets(store, backend);
     await expect(
       assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["Koharu"] }, "p"),
-    ).rejects.toThrow(/角色「小春」（Koharu）还没有立绘/);
+    ).rejects.toThrow(/主体「Koharu」还没有立绘/);
     expect(calls).toHaveLength(0);
     expect(existsSync(files.absoluteOf("assets/cg/rooftop.jpg"))).toBe(false);
   });
 
-  it("CG 参考立绘：角色不在角色表时报错并列出可选 id，不静默丢弃", async () => {
+  it("CG 参考立绘：主体既没有立绘也没有角色卡时报错并列出可选 id，不静默丢弃", async () => {
     const store = await makeStore();
     const { backend } = stubBackend();
     const { assets } = makeAssets(store, backend);
     await expect(
       assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mio", "ghost"] }, "p"),
-    ).rejects.toThrow(/角色卡里没有角色「ghost」/);
+    ).rejects.toThrow(/没有立绘也没有角色卡的主体「ghost」/);
   });
 
-  it("CG 参考立绘：映射里的文件名不等于差分名时照样找得到（breezy_oak 的 grin → oak_grin2.png）", async () => {
+  it("CG 参考立绘：主体只有卡没有图时报错，不拿别人的脸顶上", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await writeCard(store.dir, "shion", { id: "shion", name: "诗音", body: "" });
+    await expect(
+      assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["shion"] }, "p"),
+    ).rejects.toThrow(/主体「shion」还没有立绘/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("CG 参考立绘：没有卡但有立绘也能垫，名牌回落到素材表的 title", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets, files } = makeAssets(store, backend);
-    await mkdir(files.absoluteOf("assets/sprites/mio"), { recursive: true });
-    await writeFile(files.absoluteOf("assets/sprites/mio/oak_grin2.png"), await realImage("9:16", "image/png"));
-    await writeCard(store.dir, "mio", { id: "mio", name: "澪", body: "", sprites: { grin: "oak_grin2.png" } });
+    await mkdir(files.absoluteOf("assets/sprites/mecha"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/sprites/mecha/neutral.png"), await realImage("9:16", "image/png"));
+    await writeManifest(store.dir, { mecha: { title: "试作机" } });
     calls.length = 0;
-    // 按差分名去找会判成「没有立绘」——文件并不叫 grin.png
-    await assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mio"] }, "p");
+    await assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mecha"] }, "p");
     expect(calls[0]!.references).toHaveLength(1);
-    expect(calls[0]!.prompt).toMatch(/1\) 澪/);
-  });
-
-  it("CG 参考立绘：映射里的文件名带路径分隔符时不认（路径穿越不因为是映射就放行）", async () => {
-    const store = await makeStore();
-    const { backend } = stubBackend();
-    const { assets } = makeAssets(store, backend);
-    await writeCard(store.dir, "mio", { id: "mio", name: "澪", body: "", sprites: { smile: "../../play.json" } });
-    await expect(
-      assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mio"] }, "p"),
-    ).rejects.toThrow(/还没有立绘/);
+    expect(calls[0]!.prompt).toMatch(/1\) 试作机/);
   });
 
   it("CG 参考立绘：STAGE_IMAGE_REFERENCE=none 是全局开关，显式点名也一样不发", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend, 2, "none");
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "p");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "p");
     calls.length = 0;
     await assets.generate({ kind: "cg", name: "rooftop", referenceCharacters: ["mio"] }, "p");
     expect(calls[0]!.references).toEqual([]);
@@ -498,8 +498,8 @@ describe("PlayAssets：工坊素材落盘", () => {
     await assets.generate(
       {
         kind: "sprite",
-        characterId: "mio",
-        expression: "neutral",
+        spriteId: "mio",
+        variant: "neutral",
         references: ["assets/backgrounds/ref_char.png"],
       },
       "a girl with ribbon",
@@ -527,8 +527,8 @@ describe("PlayAssets：工坊素材落盘", () => {
     await assets.generate(
       {
         kind: "sprite",
-        characterId: "mio",
-        expression: "neutral",
+        spriteId: "mio",
+        variant: "neutral",
         references: ["https://example.com/character.jpg"],
       },
       "a girl",
@@ -554,8 +554,8 @@ describe("PlayAssets：工坊素材落盘", () => {
       assets.generate(
         {
           kind: "sprite",
-          characterId: "mio",
-          expression: "smile",
+          spriteId: "mio",
+          variant: "smile",
           references: ["assets/backgrounds/ref.png"],
         },
         "p",
@@ -607,7 +607,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     const backend: ImageBackend = { generate: async () => ({ data: png(1200, 896), mimeType: "image/png" }) };
     const { assets, files } = makeAssets(store, backend);
     await expect(
-      assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "p"),
+      assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "p"),
     ).rejects.toThrow(/出图画幅不对：请求 9:16，模型回了 1200x896/);
     expect(existsSync(files.absoluteOf("assets/sprites/mio/neutral.png"))).toBe(false);
   });
@@ -620,41 +620,38 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(res!.path).toBe("assets/backgrounds/x.jpg");
   });
 
-  it("素材名与差分名按文件名白名单校验，角色 id 走角色卡成员校验（大小写不限）", async () => {
+  it("素材名与差分名按文件名白名单校验，立绘 id 只挡路径分隔符（大小写不限）", async () => {
     const store = await makeStore();
     const { assets } = makeAssets(store, stubBackend().backend);
 
     await expect(assets.generate({ kind: "background", name: "../escape" }, "p")).rejects.toThrow(/非法/);
     await expect(assets.generate({ kind: "background" }, "p")).rejects.toThrow(/必须给 name/);
-    await expect(assets.generate({ kind: "sprite", characterId: "mio" }, "p")).rejects.toThrow(/必须给 expression/);
-    await expect(assets.generate({ kind: "sprite", characterId: "nobody", expression: "smile" }, "p")).rejects.toThrow(
-      /没有角色「nobody」/,
+    await expect(assets.generate({ kind: "sprite", spriteId: "mio" }, "p")).rejects.toThrow(/差分名不能为空/);
+    // 立绘 id 是目录名，不能靠它把文件写到别的目录去
+    await expect(assets.generate({ kind: "sprite", spriteId: "../mio", variant: "smile" }, "p")).rejects.toThrow(
+      /非法/,
     );
-    // 角色 id 不走文件名正则：角色卡文件名主体 Koharu 完全合法
-    const out = await assets.generate({ kind: "sprite", characterId: "Koharu", expression: "smile" }, "p");
+    // 立绘 id 不走文件名正则：角色卡文件名主体 Koharu 完全合法
+    const out = await assets.generate({ kind: "sprite", spriteId: "Koharu", variant: "smile" }, "p");
     expect(out.at(-1)!.path).toBe("assets/sprites/Koharu/smile.png");
   });
 
-  it("没有角色卡就报错，工坊与剧作家一样：出图无权凭空造角色", async () => {
+  it("没有角色卡照样出图：机甲、道具与猫没有卡，出图不为一张图凭空造一张卡", async () => {
     const store = await makeStore();
     const { assets, files, writes } = makeAssets(store, stubBackend().backend);
 
-    // 工坊（notify 缺省）与剧作家（notify=silent）走同一条判据：角色表是用户与工坊的账，
-    // 一次出图不该悄悄塞进陌生人。临时角色要先 write 一张角色卡。
+    // 工坊（notify 缺省）与剧作家（notify=silent）走同一条路：立绘只按 spriteId 落目录
     for (const notify of [undefined, "silent"] as const) {
-      await expect(
-        assets.generate({ kind: "sprite", characterId: "ran", expression: "neutral" }, "p", undefined, {
-          ...(notify ? { notify } : {}),
-        }),
-      ).rejects.toThrow(/角色卡里没有角色「ran」（characters\/ran.md）/);
+      const out = await assets.generate({ kind: "sprite", spriteId: "mecha", variant: "neutral" }, "p", undefined, {
+        ...(notify ? { notify } : {}),
+      });
+      expect(out.at(-1)!.path).toBe("assets/sprites/mecha/neutral.png");
     }
-    // 报错文案要能指导下一步：把现有角色列出来（目录扫描顺序不定，别钉死顺序）
-    await expect(
-      assets.generate({ kind: "sprite", characterId: "ran", expression: "neutral" }, "p"),
-    ).rejects.toThrow(/可选：Koharu \/ mio|可选：mio \/ Koharu/);
-    // 一个字节都不许落，连自动定妆照都不许
-    expect(existsSync(files.absoluteOf("assets/sprites/ran/neutral.png"))).toBe(false);
-    expect(writes).toHaveLength(0);
+    // 角色卡目录一个字节都不许动：卡是用户与工坊的账，一次出图不该塞进一个陌生人
+    expect(existsSync(files.absoluteOf("characters/mecha.md"))).toBe(false);
+    expect(writes.every((w) => !w.path.startsWith("characters/"))).toBe(true);
+    // 声明照写：没有卡也有摆位与名牌的落点（第二次是同一份内容，不重复写盘）
+    expect(writes.map((w) => w.path)).toEqual(["assets/manifest.json"]);
   });
 
   it("STAGE_IMAGE_REFERENCE=none：差分走纯文生图，不带参考图（定妆照照样自动补）", async () => {
@@ -662,7 +659,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     const { backend, calls } = stubBackend();
     const { assets, files } = makeAssets(store, backend, 2, "none");
 
-    const out = await assets.generate({ kind: "sprite", characterId: "mio", expression: "smile" }, "少女");
+    const out = await assets.generate({ kind: "sprite", spriteId: "mio", variant: "smile" }, "少女");
 
     expect(out.at(-1)!.path).toBe("assets/sprites/mio/smile.png");
     // 定妆照是合法差分（actor 能直接引用），自动补一张；两次出图都不带垫图
@@ -672,12 +669,12 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(existsSync(files.absoluteOf("assets/sprites/mio/neutral.png"))).toBe(true);
   });
 
-  it("差分自动先定妆照：垫图带上、提示词锁身份，角色卡的立绘映射一并补写", async () => {
+  it("差分自动先定妆照：垫图带上、提示词锁身份，呈现声明一并写进素材表", async () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets, files, writes } = makeAssets(store, backend);
 
-    const out = await assets.generate({ kind: "sprite", characterId: "mio", expression: "smile" }, "少女");
+    const out = await assets.generate({ kind: "sprite", spriteId: "mio", variant: "smile" }, "少女");
     // 返回 [自动定的 neutral, 用户点名的 smile]：两张都是真金白银出的，都得交出去
     expect(out.map((a) => a.path)).toEqual(["assets/sprites/mio/neutral.png", "assets/sprites/mio/smile.png"]);
     expect(out.at(-1)!.autoNeutral).toBe(true);
@@ -694,24 +691,26 @@ describe("PlayAssets：工坊素材落盘", () => {
     );
     expect(calls[1]!.prompt).toContain("Same character as the reference image");
 
-    expect((await readCard(files, "mio")).sprites).toEqual({ neutral: "neutral.png", smile: "smile.png" });
-    // 立绘映射补写要可撤销
-    expect(writes).toHaveLength(2);
-    expect(writes[0]!.path).toBe("characters/mio.md");
-    expect(writes[0]!.before).toContain("测试角色");
-    // play.json 一个字节都不动：角色配置不再是它的职责
+    // 呈现声明落素材表：立绘级一条（取景/体量），差分不需要覆盖就不写第二条
+    expect(writes.map((w) => w.path)).toEqual(["assets/manifest.json"]);
+    expect(JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8")).mio).toMatchObject({
+      framing: "full",
+      stature: "normal",
+    });
+    // 角色卡一个字节都不动：立绘不再是卡的附件
+    expect(await files.read("characters/mio.md")).not.toMatch(/smile\.png/);
     expect(await files.read("play.json")).not.toContain("smile.png");
   });
 
-  it("并发出两个差分：角色卡的立绘映射不能互相冲掉", async () => {
+  it("并发出两个差分：两条声明不能互相冲掉", async () => {
     const store = await makeStore();
-    // 预生成一次、每次都返回同一份字节：让两个差分在同一个 tick 冲到 mapSprite。
-    // 每次现生成的话 sharp 是 CPU 密集的，两条流水线会自然错开，撞不出丢失更新。
-    const data = await realImage("9:16", "image/jpeg");
-    const { assets, files } = makeAssets(store, {
-      generate: async () => ({ data, mimeType: "image/jpeg" }),
-    });
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+    const { backend } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    // 先有一张定妆照，这一条测的是两条差分的声明并发写，不是自动补图
+    await mkdir(files.absoluteOf("assets/sprites/mio"), { recursive: true });
+    await writeFile(files.absoluteOf("assets/sprites/mio/neutral.png"), await realImage("9:16", "image/png"));
+    // 两条差分各自声明一套取景：后写的读旧表就会把先写的那条整段冲掉
+    await writeManifest(store.dir, { mio: { framing: "full" } });
 
     // 把"后写的覆盖先写的"这个窗口撑开：两个 read 都到齐就立刻放行（无锁时必丢更新），
     // 到不齐就等 150ms 兜底（有锁时两次 read 天然串行，这里只是白等一会儿，不会挂死）
@@ -721,7 +720,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     const bothArrived = new Promise<void>((r) => (release = r));
     const timeout = setTimeout(release, 150);
     files.read = async (path: string) => {
-      if (path === "characters/mio.md" && ++arrivals <= 2) {
+      if (path === "assets/manifest.json" && ++arrivals <= 2) {
         await bothArrived;
         if (arrivals >= 2) release();
       }
@@ -730,17 +729,16 @@ describe("PlayAssets：工坊素材落盘", () => {
 
     // 两个 read-modify-write 真并发
     const [smile, sad] = await Promise.all([
-      assets.generate({ kind: "sprite", characterId: "mio", expression: "smile" }, "少女"),
-      assets.generate({ kind: "sprite", characterId: "mio", expression: "sad" }, "少女"),
+      assets.generate({ kind: "sprite", spriteId: "mio", variant: "smile", framing: "half" }, "少女"),
+      assets.generate({ kind: "sprite", spriteId: "mio", variant: "sad", framing: "square" }, "少女"),
     ]);
     expect(smile.at(-1)!.path).toBe("assets/sprites/mio/smile.png");
     expect(sad.at(-1)!.path).toBe("assets/sprites/mio/sad.png");
 
-    expect((await readCard(files, "mio")).sprites).toEqual({
-      neutral: "neutral.png",
-      smile: "smile.png",
-      sad: "sad.png",
-    });
+    const manifest = JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8"));
+    // 两条差分与它们各自的取景都得在
+    expect(manifest["mio/smile"]).toEqual({ framing: "half" });
+    expect(manifest["mio/sad"]).toEqual({ framing: "square" });
     clearTimeout(timeout);
   });
 
@@ -748,8 +746,8 @@ describe("PlayAssets：工坊素材落盘", () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
-    const [res] = await assets.generate({ kind: "sprite", characterId: "mio", expression: "sad" }, "少女");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
+    const [res] = await assets.generate({ kind: "sprite", spriteId: "mio", variant: "sad" }, "少女");
     expect(res!.autoNeutral).toBe(false);
     expect(calls).toHaveLength(2);
     expect(calls[1]!.references).toHaveLength(1);
@@ -763,7 +761,7 @@ describe("PlayAssets：工坊素材落盘", () => {
 
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
-    await expect(assets.generate({ kind: "sprite", characterId: "mio", expression: "angry" }, "少女")).rejects.toThrow(
+    await expect(assets.generate({ kind: "sprite", spriteId: "mio", variant: "angry" }, "少女")).rejects.toThrow(
       /静默换脸/,
     );
     expect(calls).toHaveLength(0);
@@ -788,7 +786,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     const names = ["smile", "shy", "angry", "sad", "surprised", "thinking"];
 
     const results = await Promise.all(
-      names.map((expression) => assets.generate({ kind: "sprite", characterId: "mio", expression }, "少女")),
+      names.map((variant) => assets.generate({ kind: "sprite", spriteId: "mio", variant }, "少女")),
     );
 
     // 6 个差分 + 1 张定妆照 = 7 次出图。inflight 救不了这条（generate() 要先 await resolve
@@ -804,8 +802,9 @@ describe("PlayAssets：工坊素材落盘", () => {
       expect(res[0]!.path).toBe("assets/sprites/mio/neutral.png");
       expect(res[1]!.autoNeutral).toBe(true);
     }
-    const sprites = (await readCard(files, "mio")).sprites ?? {};
-    expect(Object.keys(sprites).sort()).toEqual(["angry", "neutral", "sad", "shy", "smile", "surprised", "thinking"]);
+    // 差分就是目录里的文件名，没有第二份映射表要同步
+    const onDisk = (await readdir(files.absoluteOf("assets/sprites/mio"))).map((f) => f.replace(/\.\w+$/, ""));
+    expect(onDisk.sort()).toEqual(["angry", "neutral", "sad", "shy", "smile", "surprised", "thinking"]);
     // 7 次出图各自要走一遍抠底（768x1365，实测单次 ~850ms），默认 5s 只够跑一半，
     // 流水线上任何一点扰动都会翻成假红。这条测的是去重语义，不是性能，给足预算。
   }, 30_000);
@@ -816,7 +815,7 @@ describe("PlayAssets：出图留痕", () => {
     const store = await makeStore();
     const { backend, calls } = stubBackend();
     const { assets, files } = makeAssets(store, backend);
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
     await assets.generate({ kind: "background", name: "rooftop" }, "黄昏天台");
 
     const ledger = JSON.parse(await readFile(files.absoluteOf("assets/generated.json"), "utf8"));
@@ -828,18 +827,21 @@ describe("PlayAssets：出图留痕", () => {
       prompt: calls[0]!.prompt,
     });
     expect(ledger.rooftop).toMatchObject({ kind: "background", prompt: calls[1]!.prompt });
-    // 一张表一个写者：素材描述表归工坊与用户，出图不许碰它
-    expect(existsSync(files.absoluteOf("assets/manifest.json"))).toBe(false);
+    // 一张表一个写者：出图只往素材表补立绘的呈现声明，描述一个字不写
+    const manifest = JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8"));
+    expect(manifest.mio).toEqual({ framing: "full", stature: "normal" });
+    expect(Object.keys(manifest)).not.toContain("rooftop");
   });
 
   it("台账不与工坊的描述表互相覆盖：各写各的", async () => {
     const store = await makeStore();
-    await mkdir(join(store.dir, "assets"), { recursive: true });
-    await writeFile(join(store.dir, "assets", "manifest.json"), JSON.stringify({ neutral: "工坊写的描述" }));
+    // 素材表里已经有一条工坊手写的描述（旧格式：一个键一个字符串）
+    await writeManifest(store.dir, { mio: "工坊写的描述" });
     const { assets, files } = makeAssets(store, stubBackend().backend);
-    await assets.generate({ kind: "sprite", characterId: "mio", expression: "neutral" }, "少女");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
 
-    expect(JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8")).neutral).toBe("工坊写的描述");
+    const manifest = JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8"));
+    expect(manifest.mio).toMatchObject({ description: "工坊写的描述", framing: "full" });
     expect(JSON.parse(await readFile(files.absoluteOf("assets/generated.json"), "utf8"))["mio/neutral"].prompt).toBeTruthy();
   });
 
@@ -847,8 +849,8 @@ describe("PlayAssets：出图留痕", () => {
     const store = await makeStore();
     const { assets, files } = makeAssets(store, stubBackend().backend);
     await Promise.all(
-      ["normal", "smile", "shy", "angry", "sad", "surprised"].map((expression) =>
-        assets.generate({ kind: "sprite", characterId: "mio", expression }, "少女"),
+      ["normal", "smile", "shy", "angry", "sad", "surprised"].map((variant) =>
+        assets.generate({ kind: "sprite", spriteId: "mio", variant }, "少女"),
       ),
     );
     const ledger = JSON.parse(await readFile(files.absoluteOf("assets/generated.json"), "utf8"));
@@ -869,7 +871,7 @@ describe("PlayAssets：出图留痕", () => {
     const { backend, calls } = stubBackend();
     const { assets } = makeAssets(store, backend);
     await assets.generate(
-      { kind: "sprite", characterId: "mio", expression: "neutral" },
+      { kind: "sprite", spriteId: "mio", variant: "neutral" },
       "a girl with pink long straight hair down to her waist",
     );
     // 后缀里的每个词都会被当成设定印进图里：这里曾写着「between the twin tails」，
@@ -881,48 +883,36 @@ describe("PlayAssets：出图留痕", () => {
 });
 
 
-describe("PlayAssets：自动注册临时角色", () => {
-  it("带 characterName 就地建一张最小卡并出图，卡里写明设定未补", async () => {
+describe("PlayAssets：无卡主体（临时路人与道具）", () => {
+  it("出图不建角色卡：没有卡也有名牌与摆位可落", async () => {
     const store = await makeStore();
     const { backend } = stubBackend();
-    const { assets } = makeAssets(store, backend);
+    const { assets, files } = makeAssets(store, backend);
 
     await assets.generate(
-      { kind: "sprite", characterId: "passerby", characterName: "路人甲", expression: "neutral" },
+      { kind: "sprite", spriteId: "passerby", title: "路人甲", variant: "neutral" },
       "a passerby, front view, plain white background",
     );
 
-    const card = await readFile(join(store.characterDir(), "passerby.md"), "utf8");
-    expect(card).toContain("name: 路人甲");
-    // 人设留白会让工坊以为「作者写过了，就是没写」——必须显式说它没写
-    expect(card).toContain("设定未补");
+    // 卡目录里没有它：一次出图不该悄悄塞进一个陌生人
+    await expect(readFile(join(store.characterDir(), "passerby.md"), "utf8")).rejects.toThrow();
+    // 名牌落在素材表上，否则台上那个人只能显示 id
+    const manifest = JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8"));
+    expect(manifest.passerby).toMatchObject({ title: "路人甲" });
   });
 
-  it("不带 characterName 仍然报错，并把「带 characterName」写进下一步指引", async () => {
-    const store = await makeStore();
-    const { backend, calls } = stubBackend();
-    const { assets } = makeAssets(store, backend);
-
-    await expect(assets.generate({ kind: "sprite", characterId: "ghost", expression: "neutral" }, "p")).rejects.toThrow(
-      /带 characterName=显示名 重新发起/,
-    );
-    // 一个字节都不许落
-    expect(calls).toHaveLength(0);
-    await expect(
-      readFile(join(store.characterDir(), "ghost.md"), "utf8"),
-    ).rejects.toThrow();
-  });
-
-  it("已有角色卡时 characterName 不作数：人设不会被覆盖", async () => {
+  it("有卡时也照常出图，卡上的人设一个字不动", async () => {
     const store = await makeStore();
     await writeCard(store.dir, "mio", { id: "mio", name: "美绪", body: "店员，寡言。" });
     const { backend } = stubBackend();
-    const { assets } = makeAssets(store, backend);
+    const { assets, files } = makeAssets(store, backend);
 
-    await assets.generate({ kind: "sprite", characterId: "mio", characterName: "路人甲", expression: "neutral" }, "p");
+    await assets.generate({ kind: "sprite", spriteId: "mio", title: "路人甲", variant: "neutral" }, "p");
 
     const card = await readFile(join(store.characterDir(), "mio.md"), "utf8");
     expect(card).toContain("name: 美绪");
     expect(card).toContain("店员，寡言。");
+    // 名牌以卡上的 name 为准，立绘的 title 只是无卡时的回落——两边都写也不冲突
+    expect(JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8")).mio.title).toBe("路人甲");
   });
 });

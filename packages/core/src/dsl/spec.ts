@@ -92,15 +92,13 @@ export interface ActorAttrs {
   id: string;
   /** 显式站位（left/center/right 等；缺省走在场人数自动排布）。 */
   pos?: string;
-  /** 人物表情差分。 */
-  expression?: string;
   /**
-   * 非人状态差分（完好/破损/发光等）。
+   * 此刻的样子：换哪张差分图。
    *
-   * 与 expression 语义同构（都是换一张图），分开只是为了给模型提示：
-   * 写猫写道具时用 state，写人用 expression，模型不会把猫的状态词当成表情。
+   * 人写表情（smile）、猫写状态（asleep）、机甲写损伤（damaged）——同一个槽位。
+   * 不必按主体类型分名字，因为台上一切（人、机甲、道具）本来就同权。
    */
-  state?: string;
+  variant?: string;
   /** 运镜：当前这句台词的景别强调（wide/normal/close/extreme），不重新生图。 */
   shot?: ActorShot;
   /** 对齐基准（bottom 人贴底 / center 悬空物 / top 垂下）。 */

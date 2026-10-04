@@ -42,7 +42,7 @@ function fullText(events: StageEvent[], kind: "say_text" | "narrate_text" | "tho
 
 const SAMPLE_BEAT = [
   '<scene bg="school_hallway" bgm="melancholy_piano" transition="fade"/>',
-  '<actor id="mio" pos="center" expression="pout" action="enter"/>',
+  '<actor id="mio" pos="center" variant="pout" action="enter"/>',
   "<narrate>放学后的走廊空无一人，夕阳把课桌的影子拉得很长。</narrate>",
   '<say id="mio" mood="annoyed">……太慢了！不是约好立刻集合的吗？</say>',
   '<cg id="cg_rooftop_01" caption="黄昏的天台"/>',
@@ -371,5 +371,29 @@ describe("告警是一次性投递（takeWarnings）", () => {
     parser.feed('<narrate>一切正常。</narrate>');
     parser.endMessage();
     expect(parser.takeWarnings()).toEqual([]);
+  });
+});
+
+describe("差分属性：新名 variant 与旧名 expression / state", () => {
+  const actorOf = (tag: string): StageEvent => {
+    const { events, parser } = collect();
+    parser.feed(tag);
+    parser.endMessage();
+    return events.find((e) => e.kind === "actor")!;
+  };
+
+  it("variant 原样产出", () => {
+    expect(actorOf('<actor id="mecha" variant="damaged"/>')).toMatchObject({ variant: "damaged" });
+  });
+
+  it("旧剧本的 expression / state 收成 variant，属性名不再往外冒", () => {
+    expect(actorOf('<actor id="mio" expression="pout"/>')).toEqual({ kind: "actor", id: "mio", variant: "pout" });
+    expect(actorOf('<actor id="cat" state="asleep"/>')).toEqual({ kind: "actor", id: "cat", variant: "asleep" });
+  });
+
+  it("三个都写时 variant 优先（其余当噪声）", () => {
+    expect(actorOf('<actor id="mio" expression="pout" state="x" variant="smile"/>')).toMatchObject({
+      variant: "smile",
+    });
   });
 });

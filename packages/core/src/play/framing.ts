@@ -95,3 +95,31 @@ export function framingOf(value: unknown): SpriteFraming | undefined {
   if (typeof value === "string") return LEGACY_SPRITE_FRAMING[value];
   return undefined;
 }
+
+/**
+ * 体量：主体在台上站多大。与取景正交——取景管「图里画到哪」，体量管「台上多大」。
+ *
+ * 分开是因为两者真的会拆开：机甲是全身取景（画到脚）但体量巨大，猫是方形取景但体量小。
+ * 原先只有取景一档，`square` 事实上在兼任「小东西」的意思，于是三米高的机甲和巴掌大的
+ * 使魔共用同一档摆位——要么机甲太小，要么使魔太大。
+ */
+export const SPRITE_STATURES = ["small", "normal", "large", "huge"] as const;
+export type SpriteStature = (typeof SPRITE_STATURES)[number];
+
+export const SPRITE_STATURE_LABELS: Record<SpriteStature, string> = {
+  small: "小",
+  normal: "标准",
+  large: "大",
+  huge: "巨大",
+};
+
+export function isSpriteStature(value: unknown): value is SpriteStature {
+  return typeof value === "string" && (SPRITE_STATURES as readonly string[]).includes(value);
+}
+
+/** 缺省体量 = 标准。存量数据不带这个字段，摆位必须与加字段之前一模一样。 */
+export const DEFAULT_SPRITE_STATURE: SpriteStature = "normal";
+
+export function statureOf(value: unknown): SpriteStature | undefined {
+  return isSpriteStature(value) ? value : undefined;
+}

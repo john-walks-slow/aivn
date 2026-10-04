@@ -9,10 +9,14 @@
  * 所以「描述」比标题重要，标签/情绪/时长是让它**按情境选**的辅助。
  */
 
-import { framingOf, type SpriteFraming } from "./framing.js";
+import type { ActorAnchor } from "../dsl/spec.js";
+import { framingOf, statureOf, type SpriteFraming, type SpriteStature } from "./framing.js";
 
-/** 素材类别：characters 是角色包（角色卡 + 可选立绘），其余是单文件条目。 */
-export const ASSET_KINDS = ["backgrounds", "cg", "characters", "bgm", "sfx"] as const;
+/**
+ * 素材类别。`characters` 是角色包（角色卡 + 可选立绘），`sprites` 是纯立绘
+ * （机甲、道具、猫——台上的一切，不必是谁的角色卡附件），其余是单文件条目。
+ */
+export const ASSET_KINDS = ["backgrounds", "cg", "sprites", "characters", "bgm", "sfx"] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
 
 /** 音频类别：带时长/情绪的那一类。 */
@@ -23,12 +27,12 @@ export function isAssetKind(value: string): value is AssetKind {
   return (ASSET_KINDS as readonly string[]).includes(value);
 }
 
-/** 立绘差分条目。 */
-export interface SpriteExpression {
+/** 立绘差分条目：同一个主体换一张图。 */
+export interface SpriteVariant {
   /** 差分文件名（条目录内相对路径）。 */
   file: string;
   description?: string;
-  /** 这条差分的取景：条目级 framing 不够用时按差分覆盖（如一整套里另有一张 closeup）。 */
+  /** 这条差分的取景：立绘级 framing 不够用时按差分覆盖（如一整套里另有一张 closeup）。 */
   framing?: SpriteFraming;
 }
 
@@ -61,10 +65,14 @@ export interface AssetMeta {
   volume?: number;
   /** 角色包的角色卡原料：导入时按它建卡或更新同 id 的角色（protagonist 则更新主角卡）。 */
   character?: AssetCharacter;
-  /** 立绘差分表：表情名 → 文件与画面说明。 */
-  expressions?: Record<string, SpriteExpression>;
-  /** 角色包立绘的取景（导入时落角色卡的 framing，舞台按它套站位预设）。 */
+  /** 立绘差分表：差分名 → 文件与画面说明。 */
+  variants?: Record<string, SpriteVariant>;
+  /** 图里画到哪儿（出图画幅与舞台摆位一起跟着走，见 play/framing.ts）。 */
   framing?: SpriteFraming;
+  /** 台上站多大（机甲 huge、猫 small；见 play/framing.ts）。 */
+  stature?: SpriteStature;
+  /** 垂直对齐：人贴底、悬空物居中、垂下物挂顶。差分不单独声明，随主体。 */
+  anchor?: ActorAnchor;
 }
 
 /**
@@ -125,6 +133,10 @@ function textList(value: unknown): string[] | undefined {
   return out.length > 0 ? out : undefined;
 }
 
+function anchorOf(value: unknown): ActorAnchor | undefined {
+  return value === "bottom" || value === "center" || value === "top" ? value : undefined;
+}
+
 function num(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
@@ -160,25 +172,32 @@ export function parseAssetMeta(raw: unknown): AssetMeta {
     if (c.protagonist === true) character.protagonist = true;
     if (Object.keys(character).length > 0) meta.character = character;
   }
-  if (data.expressions && typeof data.expressions === "object" && !Array.isArray(data.expressions)) {
-    const expressions: Record<string, SpriteExpression> = {};
-    for (const [name, value] of Object.entries(data.expressions as Record<string, unknown>)) {
+  // 旧键 `expressions` 照样读：库里那批条目的 meta.json 是手写的，改名不该让它们的
+  // 差分表整段消失——舞台会退回「目录第一张」，看起来就是差分没了
+  const variantsRaw = data.variants ?? data.expressions;
+  if (variantsRaw && typeof variantsRaw === "object" && !Array.isArray(variantsRaw)) {
+    const variants: Record<string, SpriteVariant> = {};
+    for (const [name, value] of Object.entries(variantsRaw as Record<string, unknown>)) {
       if (!text(name) || !value || typeof value !== "object") continue;
       const row = value as Record<string, unknown>;
       const file = text(row.file);
       if (!file) continue;
       const description = text(row.description);
       const framing = framingOf(row.framing);
-      expressions[name.trim()] = {
+      variants[name.trim()] = {
         file,
         ...(description ? { description } : {}),
         ...(framing ? { framing } : {}),
       };
     }
-    if (Object.keys(expressions).length > 0) meta.expressions = expressions;
+    if (Object.keys(variants).length > 0) meta.variants = variants;
   }
   const framing = framingOf(data.framing);
   if (framing) meta.framing = framing;
+  const stature = statureOf(data.stature);
+  if (stature) meta.stature = stature;
+  const anchor = anchorOf(data.anchor);
+  if (anchor) meta.anchor = anchor;
   return meta;
 }
 
@@ -194,6 +213,59 @@ export function parsePlayAssetManifest(raw: unknown): Record<string, AssetMeta> 
     const asText = text(value);
     const meta = asText ? parseAssetMeta({ description: asText }) : parseAssetMeta(value);
     if (Object.keys(meta).length > 0) out[id] = meta;
+  }
+  return out;
+}
+
+/** 立绘的呈现声明：舞台要怎么摆这个主体。 */
+export interface SpriteDeclaration {
+  /** 图里画到哪儿；没声明过则 undefined，由调用方落缺省。 */
+  framing?: SpriteFraming;
+  stature?: SpriteStature;
+  anchor?: ActorAnchor;
+  /** 无卡主体的名牌：角色卡没有 name 时用它顶上。 */
+  title?: string;
+}
+
+/**
+ * 一个主体的呈现声明：立绘级 `<id>` 打底，差分级 `<id>/<variant>` 覆盖。
+ *
+ * 差分只在**当场要摆的那一个 variant** 上生效，所以不传 variant 时只读立绘级——
+ * 那时问的是「这个主体整体怎么摆」，而不是某个具体差分的例外。
+ * 返回的是声明本身，缺省值由调用方决定（舞台、出图、UI 三处的缺省并不一样）。
+ */
+export function spriteDeclarationOf(
+  manifest: Record<string, AssetMeta>,
+  spriteId: string,
+  variant?: string,
+): SpriteDeclaration {
+  const id = spriteId.trim();
+  const out: SpriteDeclaration = {};
+  const apply = (meta: AssetMeta | undefined): void => {
+    if (!meta) return;
+    if (meta.framing) out.framing = meta.framing;
+    if (meta.stature) out.stature = meta.stature;
+    if (meta.anchor) out.anchor = meta.anchor;
+    if (meta.title) out.title = meta.title;
+  };
+  apply(manifest[id]);
+  if (variant !== undefined && variant.trim() !== "") apply(manifest[`${id}/${variant.trim()}`]);
+  return out;
+}
+
+/**
+ * 名字牌表：素材表里**立绘级**（键不带 `/`）声明了 `title` 的主体。
+ *
+ * 无卡主体（机甲、道具、一次性路人）在舞台上挂的就是这个标题——名字回落链的第三段
+ * （卡 `name` → `<say name>` → 立绘 `title` → id）。差分级键的 `title` 是差分自己的名字，
+ * 不是主体名，所以不在这里。
+ */
+export function spriteTitlesOf(manifest: Record<string, AssetMeta>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, meta] of Object.entries(manifest)) {
+    if (key.includes("/")) continue;
+    const title = meta.title?.trim();
+    if (title) out[key] = title;
   }
   return out;
 }

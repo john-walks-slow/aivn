@@ -185,6 +185,12 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
       generated.add([asset]);
       playbackRef.current?.settleAssets([asset.id]);
       if (asset.type === "cg") setCgNonce((n) => n + 1); // CG 页开着就把它补进网格
+      // 立绘到货 = 立绘目录里多了一张、素材表里多了一条声明（取景/体量/对齐都是出图那一刻写进去的）。
+      // 重拉这两份，舞台才会按新声明摆位——不重拉的话新差分只能按缺省站，与声明的体量对不上。
+      if (asset.type === "sprite") {
+        api.playDetail(playId).then(setDetail).catch(() => {});
+        api.listAssets(playId).then(setAssets).catch(() => {});
+      }
     },
     onAssetFailed: (id, message) => {
       playbackRef.current?.settleAssets([id]);
@@ -307,7 +313,10 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   }, [stage.voiceAvailable, stage.state, voiceOn]);
 
   const index: AssetIndex | null = useMemo(
-    () => (detail ? buildAssetIndex(playId, detail.cast, assets, generated.images) : null),
+    () =>
+      detail
+        ? buildAssetIndex(playId, assets, generated.images, detail.manifest ?? {})
+        : null,
     [detail, assets, playId, generated.images],
   );
 

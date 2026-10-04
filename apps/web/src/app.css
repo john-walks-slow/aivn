@@ -1150,15 +1150,20 @@ button.link-btn {
      translate → 行为词的一次性位移（@keyframes 驱动）
      scale     → 行为词的压扁挤压，或说话者的呼吸（同一时刻只会有一个）
      rotate    → 行为词的倾身
-   全部锚在 transform-origin: top center（头顶），所以人是「原地动」而不是整张图在飘。 */
+   缩放锚点跟着素材的声明走（--sprite-origin，人贴底/悬空物居中/垂下物挂顶），
+   所以人是「原地动」而不是整张图在飘。 */
 .theater-sprite {
   --x: 0cqw;
   --scale: 1;
   position: absolute;
   left: 50%;
-  top: 10%;
-  height: 90%;
-  transform-origin: top center;
+  /* 落位（top/height/transform-origin）全部来自 --sprite-* 变量：
+     值由 core 的 spriteStagePreset 按「取景 × 体量 × 对齐」算出，组件写成行内变量。
+     这里不再枚举 .framing-* / .anchor-* 类名——每加一档体量就要动一处 CSS，
+     而 core 的表才是那份契约。 */
+  top: var(--sprite-top);
+  height: var(--sprite-height);
+  transform-origin: var(--sprite-origin);
   transform: translateX(calc(-50% + var(--x))) scale(var(--scale));
   /* 立绘的一切变化都默认带过渡：换表情、换站位、换景别、退场都是同一个元素上的动画。
      少了这条，角色只是「啪」地一下跳到新位置——台上看着像卡了帧而不是在演。
@@ -1202,23 +1207,14 @@ button.link-btn {
   animation: sprite-breathe 3.4s ease-in-out infinite;
 }
 
-/* 全身：高度 = 90% + 42%，图的下沿越过舞台下沿 42%，大腿以下被画面切掉。 */
-.theater-sprite.framing-full {
-  height: 132%;
-}
-
-/* 半身与胸像沿用上面的 90%，下沿正好落在舞台底边。 */
-
 /* 竖屏舞台（412x839）比 9:16 立绘还窄：人物本身只占图宽 70%，两侧各能裁 15% 再多就切到头发，
-   所以整幅图都按比例缩矮一截，代价是人物多露出一点。顶部的空与底部的裁切规则照旧。 */
+   所以整幅图都按比例缩矮一截，代价是人物多露出一点。顶部的空与底部的裁切规则照旧。
+   换一列现成的数（spriteStagePreset 的 portrait 那列），不在 CSS 里重算一遍。 */
 @media (max-aspect-ratio: 1/1) {
   .theater-sprite {
-    top: 8%;
-    height: 92%;
-  }
-
-  .theater-sprite.framing-full {
-    height: 102%;
+    top: var(--sprite-top-portrait);
+    height: var(--sprite-height-portrait);
+    transform-origin: var(--sprite-origin-portrait);
   }
 }
 
@@ -1497,20 +1493,6 @@ button.link-btn {
 
 .pos-bleed-right {
   --x: 46cqw;
-}
-
-/* 对齐基准：图的那条边锚在 stage 上。
-   bottom（缺省）= 脚踩地，人走这条；center = 悬空物（猫在半空、漂浮的道具），
-   锚到中心后上下都留白；top = 从上方垂下来的东西（吊灯、垂下的藤）。
-   人形立绘不该用后两档——那三个数是给人物定的摆位。 */
-.theater-sprite.anchor-center {
-  top: 50%;
-  transform: translateX(calc(-50% + var(--x))) scale(var(--scale)) translateY(-50%);
-}
-
-.theater-sprite.anchor-top {
-  top: 0;
-  transform: translateX(calc(-50% + var(--x))) scale(var(--scale));
 }
 
 .theater-cg {
@@ -3997,6 +3979,25 @@ select:focus {
 .assets-section-head .ghost-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* 立绘：一个目录一张卡（目录名 = 主体 id）。声明三轴与名牌都落在这张卡上，
+   缩略图按差分排——同一份素材，看图和改声明在同一处。 */
+.sprite-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-size: 13.5px;
+}
+
+.sprite-card .assets-section-head strong {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
 /* ── 资源库浏览弹层 ─────────────── */

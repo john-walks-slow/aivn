@@ -5,7 +5,6 @@ import { api, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { CharacterEditor } from "./CharacterEditor.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
-import { ImageGenDialog, type ImageGenTarget } from "./ImageGenDialog.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";
 import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
 
@@ -31,20 +30,11 @@ function rolesOf(detail: PlayDetail): Role[] {
  * 它不是一类特殊角色——能上台、有立绘、有音色，只是不给删（删了剧目就没有玩家了）。
  * play.json 在这条路径上一个字节都不参与。
  */
-export function CharacterPane({
-  playId,
-  revision,
-  subscribeImageResult,
-}: {
-  playId: string;
-  revision: number;
-  subscribeImageResult?: (handler: (res: any) => void) => () => void;
-}) {
+export function CharacterPane({ playId, revision }: { playId: string; revision: number }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [roles, setRoles] = useState<Role[] | null>(null);
   /** 改过的角色卡：保存时只写这些，没动过的卡不必为刷新 mtime 而重写一遍。 */
   const [dirtyRoles, setDirtyRoles] = useState<Set<string>>(new Set());
-  const [assets, setAssets] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [open, setOpen] = useState<string>(PROTAGONIST_ID);
@@ -53,7 +43,6 @@ export function CharacterPane({
   const [newRoleId, setNewRoleId] = useState("");
   const [libraryInto, setLibraryInto] = useState<string | null>(null);
   const [voiceFor, setVoiceFor] = useState<string | null>(null);
-  const [genTarget, setGenTarget] = useState<ImageGenTarget | null>(null);
   const voices = useVoiceCatalog();
 
   const reload = useCallback((): void => {
@@ -64,7 +53,6 @@ export function CharacterPane({
         setRoles(rolesOf(d));
       })
       .catch((e: Error) => setError(e.message));
-    api.listAssets(playId).then(setAssets).catch(() => {});
   }, [playId]);
   useEffect(reload, [reload, revision]);
 
@@ -222,28 +210,11 @@ export function CharacterPane({
             playId={playId}
             charId={activeRole.id}
             doc={activeRole}
-            files={assets[`sprites/${activeRole.id}`] ?? []}
             voices={voices}
             onPickVoice={() => setVoiceFor(activeRole.id)}
             // 主角那份导入落固定 id 的卡（连立绘一起），普通角色按条目 id 建卡
             onBrowseLibrary={() =>
               setLibraryInto(isProtagonist(activeRole.id) ? PROTAGONIST_ID : activeRole.id)
-            }
-            onUploadSprite={(file) =>
-              api
-                .uploadAsset(playId, `sprites/${activeRole.id}`, file.name, file)
-                .then(reload)
-                .catch((e: Error) => setError(e.message))
-            }
-            onGenerateSprite={(opts) =>
-              setGenTarget({
-                kind: "sprite",
-                characterId: activeRole.id,
-                characterName: activeRole.name ?? activeRole.id,
-                initialExpression: opts.expression,
-                initialFraming: opts.framing,
-                fixedExpression: opts.fixed,
-              })
             }
             onDocChange={(fn) => patchRole(activeRole.id, fn)}
             {...(isProtagonist(activeRole.id) ? {} : { onRemove: () => removeRole(activeRole.id) })}
@@ -293,15 +264,6 @@ export function CharacterPane({
             });
             setVoiceFor(null);
           }}
-        />
-      )}
-      {genTarget !== null && (
-        <ImageGenDialog
-          playId={playId}
-          target={genTarget}
-          subscribeImageResult={subscribeImageResult}
-          onClose={() => setGenTarget(null)}
-          onDone={reload}
         />
       )}
     </div>

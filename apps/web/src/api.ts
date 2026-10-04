@@ -14,6 +14,8 @@ import type {
 export interface ImportResult {
   kind: string;
   id: string;
+  /** 立绘类目落成的立绘 id（= `assets/sprites/<spriteId>/` 的目录名；主角固定 `protagonist`）。 */
+  spriteId: string;
   files: string[];
   characters: string[];
   /** 这次写的是主角卡（角色列表为空）。 */
@@ -26,7 +28,7 @@ export interface ImportResult {
 /** 开演前置检查：引擎手上还没有的东西（只作提示，不挡开演）。 */
 export interface Readiness {
   premise: boolean;
-  characterSprites: boolean;
+  sprites: boolean;
   background: boolean;
   /** 本剧目已有的周目数（0 = 还没开演）。 */
   saves: number;
@@ -42,7 +44,7 @@ export const readinessMissing = (r: Readiness): string[] =>
   r.premise ? [] : ["故事前提"];
 
 export const readinessAdvice = (r: Readiness): string[] => [
-  ...(r.characterSprites ? [] : ["角色立绘"]),
+  ...(r.sprites ? [] : ["立绘"]),
   ...(r.background ? [] : ["背景图"]),
 ];
 
@@ -84,6 +86,11 @@ export interface PlayDetail {
    * play.json 的 `characters` 是纯元数据，任何界面都不该从那里取角色。
    */
   cast: CharacterDocument[];
+  /**
+   * 素材声明（`assets/manifest.json`）：立绘的取景/体量/名牌都在这张表上，
+   * 舞台按它算立绘摆位——角色卡里没有这些字段。
+   */
+  manifest: Record<string, AssetMeta>;
 }
 
 /** 网关模型清单的一行（Agent 设置页的模型下拉）。 */
@@ -299,9 +306,12 @@ export const api = {
     req: {
       kind: "sprite" | "background" | "cg";
       name?: string;
-      characterId?: string;
-      expression?: string;
+      /** 立绘：哪张立绘（= 目录名）、哪个差分、这三分轴。 */
+      spriteId?: string;
+      variant?: string;
       framing?: string;
+      stature?: string;
+      title?: string;
       referenceCharacters?: string[];
       instruction?: string;
     },
@@ -316,6 +326,27 @@ export const api = {
 
   /** 素材元数据表：stem → 描述/标签/情绪（素材页副标题与剧作家提示词同一份）。 */
   assetMeta: (id: string) => request<Record<string, AssetMeta>>(`/api/plays/${id}/assets/meta`),
+
+  /**
+   * 写立绘的呈现声明（素材页「立绘」类别的四个下拉）：立绘级（不给 variant）或差分级覆盖。
+   * 传 null 就是摘掉那一格、回到缺省。
+   */
+  declareSprite: (
+    id: string,
+    req: {
+      spriteId: string;
+      variant?: string | null;
+      framing?: string | null;
+      stature?: string | null;
+      anchor?: string | null;
+      title?: string | null;
+    },
+  ) =>
+    request<{ ok: boolean }>(`/api/plays/${id}/assets/sprite`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(req),
+    }),
 
   uploadAsset: (id: string, kind: string, name: string, data: Blob) =>
     request<{ ok: boolean }>(`/api/plays/${id}/assets?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}`, {
@@ -337,7 +368,7 @@ export const api = {
   /** 从资源库导入到本剧目（复制文件 + 写素材表/角色卡），保存即生效。target=protagonist 落主角卡（连立绘）。 */
   importLibraryAsset: (
     id: string,
-    req: { kind: string; entryId: string; expressions?: string[]; target?: "protagonist" },
+    req: { kind: string; entryId: string; variants?: string[]; target?: "protagonist" },
   ) =>
     request<ImportResult>(`/api/plays/${id}/assets/import`, {
       method: "POST",

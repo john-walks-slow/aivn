@@ -32,7 +32,7 @@ export type LineageEventKind =
 
 /** 行级事件的载荷（编排器按 kind 填充）。 */
 export interface LineagePayload {
-  /** 演出指令属性（scene bg/bgm、actor pos/expression 等）。 */
+  /** 演出指令属性（scene bg/bgm、actor pos/variant 等）。 */
   attrs?: Record<string, string>;
   /** 玩家输入原文（选项选择 / 自由输入 / 插一句，含 OOC 意图）。 */
   input?: string;

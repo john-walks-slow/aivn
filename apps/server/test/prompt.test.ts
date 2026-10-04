@@ -88,10 +88,11 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
       play: {
         ...PLAY,
       },
-      memory: new PlayMemory({ characters: card("mio", { name: "澪", sprites: { pout: "pout.png" } }) }),
+      memory: new PlayMemory({ characters: card("mio", { name: "澪" }) }),
+      assets: { "sprites/mio": ["pout.png"] },
       notes: { "mio/pout": { description: "鼓腮嗔怒" } },
     });
-    expect(prompt).toContain("expression：pout（鼓腮嗔怒）");
+    expect(prompt).toContain("variant：pout（鼓腮嗔怒）");
   });
 
   it("主角卡在角色表里标出「玩家扮演」，契约点明它与别的角色同权", () => {
@@ -112,20 +113,22 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
   });
 
   it("立绘差分的两套键约定合并取字段：规范键只有 prompt 时别把裸键的描述挡掉", () => {
-    // 引擎记 prompt 走 <角色id>/<差分名>，手写与工坊补的描述常是裸差分名：两套并存是现实
+    // 引擎记 prompt 走 <主体id>/<差分名>，手写与工坊补的描述常是裸差分名：两套并存是现实
     const prompt = build({
       play: PLAY,
-      memory: new PlayMemory({ characters: card("mio", { name: "澪", sprites: { neutral: "n.png" } }) }),
+      memory: new PlayMemory({ characters: card("mio", { name: "澪" }) }),
+      assets: { "sprites/mio": ["neutral.png"] },
       notes: { "mio/neutral": { prompt: "a girl with pink hair" }, neutral: { description: "粉发定妆照" } },
     });
-    expect(prompt).toContain("expression：neutral（粉发定妆照）");
+    expect(prompt).toContain("variant：neutral（粉发定妆照）");
     // 规范键自己的字段仍然赢
     const both = build({
       play: PLAY,
-      memory: new PlayMemory({ characters: card("mio", { name: "澪", sprites: { neutral: "n.png" } }) }),
+      memory: new PlayMemory({ characters: card("mio", { name: "澪" }) }),
+      assets: { "sprites/mio": ["neutral.png"] },
       notes: { "mio/neutral": { description: "规范键的描述" }, neutral: { description: "裸键的描述" } },
     });
-    expect(both).toContain("expression：neutral（规范键的描述）");
+    expect(both).toContain("variant：neutral（规范键的描述）");
   });
 
   it("已生成的图带 id 与 prompt 进清单，并提示直接引用", () => {
@@ -311,7 +314,7 @@ describe("buildSystemPrompt：写作参数与创作口径", () => {
     // generate_image 两个角色同一份 schema，这句话曾经是对的，现在是有害的假信息
     const prompt = build({ play: PLAY, can: { image: true } });
     expect(prompt).not.toContain("这个工具没有 expression 参数");
-    expect(prompt).toContain("expression=\"neutral\"");
+    expect(prompt).toContain('variant="neutral"');
   });
 
   it("生图关掉时不出工具调用示范，只留一句降级说明", () => {
@@ -356,7 +359,7 @@ describe("能力位与提示词的一致性：没开的能力不教它调", () =
 
   it("记忆与「管理角色」都开：建卡流程、记忆卡格式、检索工具都在", () => {
     const prompt = build({ ...base, can: { memory: true, characters: true } });
-    expect(prompt).toContain("先建档（write）");
+    expect(prompt).toContain("要人设或音色才建档（write）");
     expect(prompt).toContain("## 记忆卡（memory/index/）");
     expect(prompt).toContain("read_memory_detail");
     expect(prompt).toContain("search_archive");
@@ -364,7 +367,7 @@ describe("能力位与提示词的一致性：没开的能力不教它调", () =
 
   it("「管理角色」关、记忆开：建档那一章换掉，记忆卡那一章原样", () => {
     const prompt = build({ ...base, can: { memory: true, characters: false } });
-    expect(prompt).not.toContain("先建档（write）");
+    expect(prompt).not.toContain("要人设或音色才建档（write）");
     expect(prompt).toContain("建档这条路本剧目没有给你");
     // 收掉的是「怎么调 write 建卡」，不是「怎么引入角色」这件事本身
     expect(prompt).toContain('**2. 生立绘（generate_image kind="sprite"）**');
@@ -377,7 +380,7 @@ describe("能力位与提示词的一致性：没开的能力不教它调", () =
     expect(prompt).not.toContain("## 记忆卡（memory/index/）");
     expect(prompt).not.toContain("read_memory_detail");
     expect(prompt).not.toContain("search_archive");
-    expect(prompt).toContain("先建档（write）");
+    expect(prompt).toContain("要人设或音色才建档（write）");
   });
 
   it("两个都关：只剩「read 带路径的那一行」这条路，且不出现任何工具名", () => {

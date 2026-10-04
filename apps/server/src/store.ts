@@ -20,7 +20,6 @@ import {
   type PlayConfig,
 } from "@aivn/core";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
-import { loadCharacterCards } from "./memory.js";
 import { parseHistory, type HistoryBeat } from "./history.js";
 import { countSaves, readSaveMeta, saveDirOf, writeSaveMeta, assertSaveId, PlaySaves, type SaveMeta } from "./saves.js";
 
@@ -30,8 +29,8 @@ const PREVIEW_KINDS: ReadonlySet<string> = new Set(["say", "narrate", "thought"]
 /** 开演前置检查的细项：引擎手上还没有的东西（只作提示，不挡开演）。 */
 export interface Readiness {
   premise: boolean;
-  /** ≥1 角色卡含立绘映射且差分文件存在。 */
-  characterSprites: boolean;
+  /** ≥1 个立绘目录（`assets/sprites/<主体id>/`）里有图。 */
+  sprites: boolean;
   /** ≥1 背景图。 */
   background: boolean;
   /** 本剧目已有的周目数（0 = 还没开演）。 */
@@ -214,17 +213,12 @@ export class PlayStore {
     try {
       play = await this.loadPlay();
     } catch {
-      return { premise: false, characterSprites: false, background: false, saves: 0 };
+      return { premise: false, sprites: false, background: false, saves: 0 };
     }
-    // 立绘齐备：差分映射在角色卡 frontmatter 里（sprites: expression → 文件名）
+    // 立绘齐备 = 有任意一个主体目录且里面有图。主体不必有角色卡（机甲、道具就只有立绘），
+    // 所以判据在目录上，不在卡上——卡是可选附件。
     const spritesDir = join(this.dir, "assets/sprites");
-    const cards = await loadCharacterCards(this.characterDir());
-    const characterSprites =
-      cards.some((c) => {
-        const sprites = c.sprites;
-        if (!sprites || Object.keys(sprites).length === 0) return false;
-        return Object.values(sprites).every((file) => existsSync(join(spritesDir, c.id ?? "", file)));
-      }) ?? false;
+    const sprites = await this.hasAnySprite(spritesDir);
     const bgDir = join(this.dir, "assets/backgrounds");
     const background = existsSync(bgDir) && (await readdir(bgDir)).some((f) => /\.(png|jpe?g|webp)$/i.test(f));
     const saves = await countSaves(this.dir);
@@ -232,10 +226,21 @@ export class PlayStore {
     const premise = (await this.premise()).trim() !== "";
     return {
       premise,
-      characterSprites,
+      sprites,
       background,
       saves,
     };
+  }
+
+  /** 立绘目录里有没有图：每个主体一个目录，任一目录里有一张就算齐备。 */
+  private async hasAnySprite(root: string): Promise<boolean> {
+    if (!existsSync(root)) return false;
+    for (const entry of await readdir(root, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      const files = await readdir(join(root, entry.name));
+      if (files.some((f) => /\.(png|jpe?g|webp)$/i.test(f))) return true;
+    }
+    return false;
   }
 
   /** 素材绝对路径（静态服务；kindPath 已白名单校验，如 "sprites/角色id/neutral.png"）。 */

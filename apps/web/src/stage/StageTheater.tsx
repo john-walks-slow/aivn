@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { actionAnimation, type ActorAction, type ActorAnchor, type ActorShot, type SpriteFraming } from "@aivn/core";
+import {
+  actionAnimation,
+  spriteStagePreset,
+  type ActorAction,
+  type ActorAnchor,
+  type ActorShot,
+  type SpriteFraming,
+  type SpriteStature,
+} from "@aivn/core";
 import { dialogContent, emptyDialogHint } from "./playbackState.js";
 import { actorName } from "./script.js";
 import { speakerFocusId, type Playback, type VisualState } from "./director.js";
@@ -162,6 +170,7 @@ function Sprite({
   pos,
   name,
   framing,
+  stature,
   shot,
   anchor,
   leaving,
@@ -173,6 +182,7 @@ function Sprite({
   pos: string;
   name: string;
   framing: SpriteFraming;
+  stature: SpriteStature;
   shot: ActorShot | null;
   anchor: ActorAnchor;
   leaving: boolean;
@@ -222,16 +232,25 @@ function Sprite({
 
   if (!current) return null;
   // 站位类直接用 pos-*（CSS 里各自带 --x 偏移，见 app.css）。
-  // shot/anchor 走行内 CSS 变量——它们是这一句台词的状态，不该在 CSS 里枚举出类名。
+  // 落位与运镜走行内 CSS 变量——它们是这一句台词 + 这一份素材声明的结果，
+  // 不该在 CSS 里枚举成类名（三档取景 × 四档体量 × 三档对齐 = 36 个类，加一档就全要改）。
   // .entering 常驻即可，不用挂一帧就摘：CSS 动画不会因重渲染重播，而 key 是角色
   // id，组件只在这个人第一次进舞台时挂载（换表情走的是另一条淡出/淡入，不重挂载）。
   // 所以「重新进场」天然就是一次新挂载，入场动画也就重播一次。
   // 正在退场的那一瞬不挂：离场走 .leaving 的淡出，混上入场动画会打架。
-  const cls = `theater-sprite framing-${framing} pos-${pos} anchor-${anchor}${
-    leaving ? " leaving" : " entering"
-  }${acting ? " acting" : ""}${dim ? " dim" : ""}`;
+  const cls = `theater-sprite pos-${pos}${leaving ? " leaving" : " entering"}${
+    acting ? " acting" : ""
+  }${dim ? " dim" : ""}`;
+  // 横竖屏两列都由 core 的表算好，媒体查询在 CSS 里挑一列——组件不必监听 resize
+  const stage = spriteStagePreset(framing, stature, anchor);
   const style: CSSProperties = {
     "--scale": SHOT_SCALE[shot ?? "normal"],
+    "--sprite-top": `${stage.landscape.top}%`,
+    "--sprite-height": `${stage.landscape.height}%`,
+    "--sprite-origin": stage.landscape.origin,
+    "--sprite-top-portrait": `${stage.portrait.top}%`,
+    "--sprite-height-portrait": `${stage.portrait.height}%`,
+    "--sprite-origin-portrait": stage.portrait.origin,
     "--sprite-act": actionAnimation(action) ?? "none",
     // 时间不是数字：delay 与 iteration-count 相邻时，两个裸数字会让浏览器
     // 判不出哪个是哪个、整条 animation 丢弃（见 app.css .acting 的注释）。
@@ -297,7 +316,7 @@ voiceState,
   /** 导演栏的面板：几个动作的全部输入都在对话框里收，不跳视图。 */
   const [action, setAction] = useState<DirectorAction | null>(null);
   const [draft, setDraft] = useState("");
-  /** 生图选项：参考角色立绘（多选有序）与是否基于历史（默认勾上） */
+  /** 生图选项：参考立绘（多选有序）与是否基于历史（默认勾上） */
   const [selectedRefs, setSelectedRefs] = useState<string[]>([]);
   const [useHistory, setUseHistory] = useState(true);
   /** 「提示」面板走哪条岔：引导 = 排进待注入队列跟着这一轮写，分岔 = 先退开再落笔。 */
@@ -584,18 +603,19 @@ voiceState,
         )}
 
         {Object.entries(visual.sprites).map(([id, slot]) => {
-          // state 与 expression 共用同一张 sprites[] 映射表（人写表情、物写状态），
-          // 所以取图用 expression ?? state。写错时两者都没有，sprite() 会退回该角色第一张。
-          const variant = slot.expression ?? slot.state;
+          // 呈现三轴：取景与体量只听素材声明（剧本管不着图里画到哪、台上站多大），
+          // 对齐则是「剧本写了用剧本的，没写听素材声明的」（机甲默认居中悬空、道具贴地）。
+          const presentation = index.spritePresentation(id, slot.variant);
           return (
             <Sprite
               key={id}
-              url={index.sprite(id, variant)}
+              url={index.sprite(id, slot.variant)}
               pos={slot.resolvedPos}
               name={actorName(names, id)}
-              framing={index.spriteFraming(id, variant)}
+              framing={presentation.framing}
+              stature={presentation.stature}
               shot={slot.shot}
-              anchor={slot.anchor}
+              anchor={slot.anchor ?? presentation.anchor}
               leaving={slot.leaving === true}
               action={slot.action}
               actionSeq={slot.actionSeq}
@@ -846,18 +866,15 @@ voiceState,
                 </button>
               </div>
             )}
-            {/* 生图选项：参考角色立绘（多选有序）+ 基于历史开关 */}
+            {/* 生图选项：参考立绘（多选有序）+ 基于历史开关 */}
             {action === "cg" && (
               <>
                 <div className="image-gen-field">
-                  <span className="image-gen-label">参考角色立绘（按点选顺序垫图）：</span>
+                  <span className="image-gen-label">参考立绘（按点选顺序垫图）：</span>
                   <RefCharacterPicker
-                    candidates={Object.entries(names)
-                      .map(([id, name]) => ({
-                        id,
-                        name,
-                        spriteUrl: index.sprite(id, null),
-                      }))
+                    // 候选 = 有立绘的主体（目录扫出来的），不是角色表：机甲、道具没有卡也能垫
+                    candidates={index.spriteIds
+                      .map((id) => ({ id, name: names[id] ?? id, spriteUrl: index.sprite(id, null) }))
                       .filter((c): c is RefCandidate => Boolean(c.spriteUrl))}
                     selected={selectedRefs}
                     onToggle={(id) => setSelectedRefs((prev) => toggleReference(prev, id))}

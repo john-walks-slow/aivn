@@ -37,9 +37,8 @@ export type Cue =
       kind: "actor";
       id: string;
       pos?: string;
-      expression?: string;
-      /** 非人状态差分（与 expression 同构，分开只为模型提示）。 */
-      state?: string;
+      /** 换哪张差分（人的表情、机甲的状态——台上的一切同权，同一个槽位）。 */
+      variant?: string;
       /** 运镜档位（作用于已有立绘，不重新生图）。 */
       shot?: ActorShot;
       /** 对齐基准（bottom 人贴底 / center 悬空物 / top 垂下）。 */
@@ -113,8 +112,7 @@ export class ScriptBuilder {
           kind: "actor",
           id: event.id,
           pos: event.pos,
-          expression: event.expression,
-          state: event.state,
+          variant: event.variant,
           shot: event.shot,
           anchor: event.anchor,
           action: event.action,

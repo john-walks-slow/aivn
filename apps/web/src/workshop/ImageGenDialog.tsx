@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { SpriteFraming } from "@aivn/core";
-import { SPRITE_FRAMINGS, SPRITE_FRAMING_LABELS } from "@aivn/core";
+import type { SpriteFraming, SpriteStature } from "@aivn/core";
+import { SPRITE_FRAMINGS, SPRITE_FRAMING_LABELS, SPRITE_STATURES, SPRITE_STATURE_LABELS } from "@aivn/core";
 import { api } from "../api.js";
 import { Modal } from "../ui/Modal.js";
 import { RefCharacterPicker, type RefCandidate } from "../ui/RefCharacterPicker.js";
@@ -11,11 +11,15 @@ const STEM = /^[a-z][a-z0-9_]{0,39}$/;
 export type ImageGenTarget =
   | {
       kind: "sprite";
-      characterId: string;
-      characterName: string;
-      initialExpression?: string;
+      /** 立绘 id（= 目录名）。空串 = 新建一张，对话框里现填。 */
+      spriteId: string;
+      /** 名牌：无卡主体用（有卡时卡上的 name 优先）。 */
+      spriteTitle?: string;
+      /** 差分名初值；`fixedVariant` 为真时锁死（重生成某条已有差分）。 */
+      initialVariant?: string;
+      fixedVariant?: boolean;
       initialFraming?: SpriteFraming;
-      fixedExpression?: boolean;
+      initialStature?: SpriteStature;
     }
   | {
       kind: "background";
@@ -50,12 +54,15 @@ export function ImageGenDialog({
   onDone?: () => void;
 }) {
   const [name, setName] = useState(
-    target.kind === "sprite"
-      ? target.initialExpression ?? ""
-      : target.initialName ?? "",
+    target.kind === "sprite" ? target.initialVariant ?? "" : target.initialName ?? "",
   );
+  /** 立绘 id：新建时（给的是空串）在这里现填，与角色卡同名即绑定。 */
+  const [spriteId, setSpriteId] = useState(target.kind === "sprite" ? target.spriteId : "");
   const [framing, setFraming] = useState<SpriteFraming>(
     target.kind === "sprite" ? target.initialFraming ?? "full" : "full",
+  );
+  const [stature, setStature] = useState<SpriteStature>(
+    target.kind === "sprite" ? target.initialStature ?? "normal" : "normal",
   );
   const [instruction, setInstruction] = useState("");
   const [selectedRefs, setSelectedRefs] = useState<string[]>([]);
@@ -82,28 +89,33 @@ export function ImageGenDialog({
 
   const title =
     target.kind === "sprite"
-      ? target.fixedExpression
-        ? `重生成立绘：${target.characterName} / ${name}`
-        : `生成新立绘：${target.characterName}`
+      ? target.fixedVariant
+        ? `重生成立绘：${spriteId} / ${name}`
+        : `生成立绘：${spriteId || "新主体"}`
       : target.kind === "background"
         ? "生成背景"
         : "生成 CG";
 
   const hint =
     target.kind === "sprite"
-      ? "输入差分名与描述，服务端将组装提示词并异步出图。"
-      : "输入素材名称与描述，可选参考角色立绘垫图。";
+      ? "填立绘 id 与差分名。同名角色卡有人设时一并喂给模型，没有卡只按你的描述出。"
+      : "输入素材名称与描述，可选参考立绘垫图。";
 
-  const handleNameChange = (val: string) => {
-    setName(val.toLowerCase().replace(/[^a-z0-9_]/g, ""));
-    setError(null);
-  };
+  /** 输入框只收合法字符，非法字符当场吃掉（本体仍按 STEM 校一遍，给出解释而不是静默） */
+  const cleanStem = (value: string): string => value.toLowerCase().replace(/[^a-z0-9_]/g, "");
+
+  /**
+   * 谁能垫参考图：背景/CG 随时可以，立绘只有 `neutral` 定妆照可以——
+   * 那是这个主体的**身份基准**，从别的图起手是它的正当用法；差分吃的是自己主体的
+   * neutral，换基准会与既有差分不是同一个人，所以服务端直接拒。
+   */
+  const canPickRefs = target.kind !== "sprite" || name.trim() === "neutral";
 
   const canSubmit = (): boolean => {
     if (submitting) return false;
     if (result) return true; // 完成状态显示「完成」按钮
-    const trimmed = name.trim();
-    if (!trimmed) return false;
+    if (!name.trim()) return false;
+    if (target.kind === "sprite" && !spriteId.trim()) return false;
     return true;
   };
 
@@ -121,6 +133,17 @@ export function ImageGenDialog({
       setError("名称只允许小写字母开头的 a-z、数字、下划线，最长 40 字符");
       return;
     }
+    const id = spriteId.trim();
+    if (target.kind === "sprite") {
+      if (!id) {
+        setError("请填写立绘 id（目录名）");
+        return;
+      }
+      if (!STEM.test(id)) {
+        setError("立绘 id 只允许小写字母开头的 a-z、数字、下划线，最长 40 字符");
+        return;
+      }
+    }
 
     setSubmitting(true);
     setError(null);
@@ -129,10 +152,12 @@ export function ImageGenDialog({
       const res = await api.generateImage(playId, {
         kind: target.kind,
         name: target.kind !== "sprite" ? trimmed : undefined,
-        characterId: target.kind === "sprite" ? target.characterId : undefined,
-        expression: target.kind === "sprite" ? trimmed : undefined,
+        spriteId: target.kind === "sprite" ? id : undefined,
+        variant: target.kind === "sprite" ? trimmed : undefined,
         framing: target.kind === "sprite" ? framing : undefined,
-        referenceCharacters: target.kind !== "sprite" && selectedRefs.length > 0 ? selectedRefs : undefined,
+        stature: target.kind === "sprite" ? stature : undefined,
+        title: target.kind === "sprite" ? target.spriteTitle : undefined,
+        referenceCharacters: canPickRefs && selectedRefs.length > 0 ? selectedRefs : undefined,
         instruction: instruction.trim() || undefined,
       });
       setWaitingTarget(res.target);
@@ -179,16 +204,31 @@ export function ImageGenDialog({
           {target.kind === "sprite" ? (
             <>
               <div className="image-gen-field">
+                <span className="image-gen-label">立绘 id（谁/什么，与角色卡同名即绑定）：</span>
+                <input
+                  value={spriteId}
+                  placeholder="如 xiaoyu、mecha_01、cat"
+                  disabled={target.spriteId !== "" || submitting}
+                  onChange={(e) => {
+                    setSpriteId(cleanStem(e.target.value));
+                    setError(null);
+                  }}
+                />
+              </div>
+              <div className="image-gen-field">
                 <span className="image-gen-label">差分名（a-z、数字、下划线）：</span>
                 <input
                   value={name}
                   placeholder="如 smile、angry、neutral"
-                  disabled={target.fixedExpression || submitting}
-                  onChange={(e) => handleNameChange(e.target.value)}
+                  disabled={target.fixedVariant || submitting}
+                  onChange={(e) => {
+                    setName(cleanStem(e.target.value));
+                    setError(null);
+                  }}
                 />
               </div>
               <div className="image-gen-field">
-                <span className="image-gen-label">取景与画幅：</span>
+                <span className="image-gen-label">取景与体量：</span>
                 <select
                   value={framing}
                   disabled={submitting}
@@ -197,6 +237,17 @@ export function ImageGenDialog({
                   {SPRITE_FRAMINGS.map((f) => (
                     <option key={f} value={f}>
                       {SPRITE_FRAMING_LABELS[f]}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={stature}
+                  disabled={submitting}
+                  onChange={(e) => setStature(e.target.value as SpriteStature)}
+                >
+                  {SPRITE_STATURES.map((s) => (
+                    <option key={s} value={s}>
+                      {SPRITE_STATURE_LABELS[s]}
                     </option>
                   ))}
                 </select>
@@ -210,18 +261,24 @@ export function ImageGenDialog({
                   value={name}
                   placeholder={target.kind === "background" ? "如 classroom_sunset" : "如 rooftop_kiss"}
                   disabled={submitting}
-                  onChange={(e) => handleNameChange(e.target.value)}
-                />
-              </div>
-              <div className="image-gen-field">
-                <span className="image-gen-label">参考角色立绘（按点选顺序垫图）：</span>
-                <RefCharacterPicker
-                  candidates={refCandidates}
-                  selected={selectedRefs}
-                  onToggle={(id) => !submitting && setSelectedRefs((prev) => toggleReference(prev, id))}
+                  onChange={(e) => {
+                    setName(cleanStem(e.target.value));
+                    setError(null);
+                  }}
                 />
               </div>
             </>
+          )}
+
+          {canPickRefs && (
+            <div className="image-gen-field">
+              <span className="image-gen-label">参考立绘（按点选顺序垫图）：</span>
+              <RefCharacterPicker
+                candidates={refCandidates}
+                selected={selectedRefs}
+                onToggle={(id) => !submitting && setSelectedRefs((prev) => toggleReference(prev, id))}
+              />
+            </div>
           )}
 
           <div className="image-gen-field">

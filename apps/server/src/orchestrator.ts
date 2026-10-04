@@ -23,6 +23,7 @@ import {
   type StopPayload,
   type PromptQueueItem,
   type SpriteFraming,
+  type SpriteStature,
   type ReadPos,
   type ParserWarning,
   type ParserWarningType,
@@ -198,6 +199,11 @@ export interface OrchestratorOptions {
   assets?: AssetManifest;
   /** 素材描述（stem → 一句画面说明，来自 assets/manifest.json；挂在清单 id 后面）。 */
   assetNotes?: AssetNotes;
+  /**
+   * 立绘级名牌（主体 id → 素材表里声明的 `title`）：无卡主体在重建出来的历史轮次里
+   * 也得有个像样的名字，否则模型读回上一轮的对话只会看到 `mecha_01`。有卡的主体以卡为准。
+   */
+  spriteTitles?: Readonly<Record<string, string>>;
   /** 已生成图清单（playwriter 自己 preload 出来的资产；避免换个 id 重画）。 */
   generatedAssets?: GeneratedNote[];
   /** 剧目目录：素材类工具要往这里写。 */
@@ -234,7 +240,7 @@ export interface OrchestratorOptions {
     /** 后台发起 bg/cg：宿主负责 asset_ready / asset_failed 广播（工具不等图）。 */
     kick: (type: "bg" | "cg", prompt: string, id: string, references?: string[]) => void;
     /** 后台发起立绘：同上的失败广播。references 只在出 neutral 定妆照时有意义。 */
-    kickSprite: (charId: string, expression: string, prompt: string, framing?: SpriteFraming, references?: string[]) => void;
+    kickSprite: (target: { spriteId: string; variant: string; prompt: string; framing?: SpriteFraming; stature?: SpriteStature; title?: string; references?: string[] }) => void;
     /** 联网检索（配了 key 才注册 web_search）。 */
     exa?: Exa;
   };
@@ -1510,7 +1516,7 @@ export class PlaywrightOrchestrator {
     beats: RebuiltBeat[];
     trailingInputs: string[];
   } {
-    const names: Record<string, string> = {};
+    const names: Record<string, string> = { ...this.opts.spriteTitles };
     for (const [id, card] of this.opts.memory.characters) names[id] = card.name ?? id;
     // 读者身份取现场模式：调用点必须先把分支状态装回来（rebuildBranchAt 那里
     // restoreBranchState 在它之前——跳进段内要原文、跳回段后只许摘要）
@@ -2237,7 +2243,7 @@ export class PlaywrightOrchestrator {
             seq,
             attrs: {
               id: event.id,
-              ...pick(event, ["pos", "expression", "action"]),
+              ...pick(event, ["pos", "variant", "action"]),
             },
           },
         });

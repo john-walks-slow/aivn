@@ -196,42 +196,53 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     expect((await store.listAssets()).backgrounds).toEqual(["room.png"]);
   });
 
-  it("立绘包：落 sprites/<id>/ 并把差分写进角色卡", async () => {
+  it("立绘包：落 sprites/<id>/ 并把呈现声明写进素材表，卡上不再挂差分", async () => {
     await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "smile.png": "s" }, {
       character: { name: "澪", persona: "元气少女" },
-      expressions: { neutral: { file: "neutral.png" }, smile: { file: "smile.png", description: "笑" } },
+      variants: { neutral: { file: "neutral.png" }, smile: { file: "smile.png", description: "笑" } },
     });
     const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
     expect(result.files).toEqual(["assets/sprites/mio/neutral.png", "assets/sprites/mio/smile.png"]);
     expect(result.characters).toEqual(["mio"]);
-    expect(result.manifestKeys).toEqual(["mio/neutral", "mio/smile"]);
+    expect(result.manifestKeys).toEqual(["mio/smile"]);
     expect(await readCard(playsRoot, "p1", "mio")).toMatchObject({
       id: "mio",
       name: "澪",
       body: "元气少女",
-      sprites: { neutral: "neutral.png", smile: "smile.png" },
     });
+    // 差分就是目录里的文件名，卡上不再有第二份映射表
+    expect(await readCard(playsRoot, "p1", "mio")).not.toHaveProperty("sprites");
     // 角色不再落 play.json：那格是纯元数据，任何运行时逻辑都不读它
     expect(JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8")).characters).toEqual([]);
     const manifest = JSON.parse(await readFile(join(playsRoot, "p1", "assets", "manifest.json"), "utf8"));
     expect(manifest["mio/smile"]).toMatchObject({ description: "笑" });
+    // neutral 那条一个字都没声明 → 不留空对象
+    expect(manifest["mio/neutral"]).toBeUndefined();
   });
 
-  it("立绘取景：条目级 framing 与差分覆盖都进角色卡", async () => {
+  it("立绘取景：条目级 framing 与差分覆盖都进素材表", async () => {
     await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "closeup.png": "c" }, {
       character: { name: "澪", persona: "" },
       framing: "half",
-      expressions: {
+      variants: {
         neutral: { file: "neutral.png" },
         closeup: { file: "closeup.png", framing: "square" },
       },
     });
     await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
-    expect(await readCard(playsRoot, "p1", "mio")).toMatchObject({ framing: "half", spriteFraming: { closeup: "square" } });
+    const manifest = JSON.parse(await readFile(join(playsRoot, "p1", "assets", "manifest.json"), "utf8"));
+    expect(manifest.mio).toMatchObject({ framing: "half" });
+    expect(manifest["mio/closeup"]).toMatchObject({ framing: "square" });
+    expect(await readCard(playsRoot, "p1", "mio")).not.toHaveProperty("framing");
   });
 
-  it("立绘取景：只导一条差分不该把该角色其它差分的取景覆盖抹掉", async () => {
+  it("立绘取景：只导一条差分不该把该主体其它差分的声明抹掉", async () => {
     const store = plays.store("p1");
+    await mkdir(join(playsRoot, "p1", "assets"), { recursive: true });
+    await writeFile(
+      join(playsRoot, "p1", "assets", "manifest.json"),
+      JSON.stringify({ mio: { framing: "full" }, "mio/angry": { framing: "square" } }),
+    );
     await writeCard(
       playsRoot,
       "p1",
@@ -240,13 +251,15 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     );
     await makeEntry(libRoot, "characters", "mio", { "smile.png": "s" }, {
       character: { name: "澪", persona: "" },
-      expressions: { smile: { file: "smile.png" } },
+      variants: { smile: { file: "smile.png" } },
     });
     await importFromLibrary(library, store, { kind: "characters", entryId: "mio" });
     // 条目没声明 framing：剧目侧的值原样留着（含别的差分的覆盖），导入不许顺手清掉
-    const card = await readCard(playsRoot, "p1", "mio");
-    expect(card.framing).toBe("full");
-    expect(card.spriteFraming).toEqual({ angry: "square" });
+    const manifest = JSON.parse(await readFile(join(playsRoot, "p1", "assets", "manifest.json"), "utf8"));
+    expect(manifest.mio).toMatchObject({ framing: "full" });
+    expect(manifest["mio/angry"]).toEqual({ framing: "square" });
+    // 老卡上那两行残留字段被解析器当噪声丢掉，下次写盘它就瘦下来了
+    expect(await readCard(playsRoot, "p1", "mio")).toEqual({ id: "mio", name: "澪", body: "人设" });
   });
 
   it("纯角色卡：没有立绘也能导入（先定人设、图后面再画）", async () => {
@@ -255,7 +268,7 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     });
     const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "yuzuki" });
     expect(result.files).toEqual([]);
-    expect(result.characters).toEqual(["yuzuki"]);
+    expect(result.manifestKeys).toEqual([]);
     expect(await readCard(playsRoot, "p1", "yuzuki")).toMatchObject({
       id: "yuzuki",
       name: "柚月",
@@ -263,6 +276,8 @@ describe("importFromLibrary：资源库 → 剧目", () => {
       voiceId: "a".repeat(32),
       body: "沉默的转学生",
     });
+    // 没有图就没有摆位可声明：不为了「有条目」凭空写一条素材表记录
+    expect(existsSync(join(playsRoot, "p1", "assets", "manifest.json"))).toBe(false);
   });
 
   it("导入已有角色：库里写了什么覆盖什么，没写的字段留住剧目侧手改", async () => {
@@ -286,7 +301,7 @@ describe("importFromLibrary：资源库 → 剧目", () => {
   it("target=protagonist 写固定 id 的主角卡：卡与立绘都落在 protagonist 名下，play.json 一个字节不动", async () => {
     await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n" }, {
       character: { name: "理央", persona: "玩家扮演" },
-      expressions: { neutral: { file: "neutral.png" } },
+      variants: { neutral: { file: "neutral.png" } },
     });
     const store = plays.store("p1");
     await writeFile(
@@ -300,13 +315,13 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     expect(result.protagonist).toBe(true);
     expect(result.characters).toEqual(["protagonist"]);
     expect(await readCard(playsRoot, "p1", "protagonist")).toMatchObject({ name: "理央", body: "玩家扮演" });
-    // 主角和别的角色一样能上台，所以立绘照导——落在 sprites/protagonist/，差分映射挂它的卡
+    // 主角和别的角色一样能上台，所以立绘照导——落在 sprites/protagonist/
     expect(result.files).toEqual(["assets/sprites/protagonist/neutral.png"]);
     expect(existsSync(join(playsRoot, "p1", "assets", "sprites", "protagonist", "neutral.png"))).toBe(true);
     expect(await readFile(join(playsRoot, "p1", "play.json"), "utf8")).toBe(before);
   });
 
-  it("只导选中的差分，且不冲掉角色卡里已有的其它差分", async () => {
+  it("只导选中的差分，已有的别的差分原样留着", async () => {
     await plays.importZip(
       zipOf({
         "play.json": JSON.stringify({
@@ -323,10 +338,14 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     await writeCard(playsRoot, "p2", "mio", "---\nid: mio\nname: 澪\nsprites:\n  happy: happy.png\n---\np");
     await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "sad.png": "s" });
     const store = plays.store("p2");
-    await importFromLibrary(library, store, { kind: "characters", entryId: "mio", expressions: ["sad"] });
-    expect((await readCard(playsRoot, "p2", "mio")).sprites).toEqual({ happy: "happy.png", sad: "sad.png" });
-    expect(existsSync(join(playsRoot, "p2", "assets", "sprites", "mio", "happy.png"))).toBe(true);
-    expect(existsSync(join(playsRoot, "p2", "assets", "sprites", "mio", "neutral.png"))).toBe(false);
+    await importFromLibrary(library, store, { kind: "characters", entryId: "mio", variants: ["sad"] });
+    const dir = join(playsRoot, "p2", "assets", "sprites", "mio");
+    expect(existsSync(join(dir, "happy.png"))).toBe(true);
+    expect(existsSync(join(dir, "sad.png"))).toBe(true);
+    // 没点名的那条不导
+    expect(existsSync(join(dir, "neutral.png"))).toBe(false);
+    // 卡上没有映射表了，老卡那两行被当噪声丢掉
+    expect(await readCard(playsRoot, "p2", "mio")).toEqual({ id: "mio", name: "澪", body: "p" });
   });
 
   it("库里没有这条就报错，不静默成功", async () => {
@@ -369,31 +388,38 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
     await rm(playsRoot, { recursive: true, force: true });
   });
 
-  it("并发导两个角色包：两份差分映射都得在（各读旧角色卡会互相冲掉）", async () => {
-    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" });
-    await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n" });
+  it("并发导两个角色包：两份呈现声明都得在（各读旧素材表会互相冲掉）", async () => {
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" }, { framing: "full" });
+    await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n" }, { framing: "half" });
     // 刻意各调一次 plays.store()：真实 REST 路径就是这样，每个请求各持一份新实例。
     // 复用同一个 store 变量会让锁的 key 恰好对上，把串行假象测出来。
     await Promise.all([
       importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" }),
       importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "rio" }),
     ]);
+    const manifest = JSON.parse(await readFile(join(playsRoot, "p1", "assets", "manifest.json"), "utf8"));
+    expect(manifest.mio).toMatchObject({ framing: "full" });
+    expect(manifest.rio).toMatchObject({ framing: "half" });
     for (const id of ["mio", "rio"]) {
-      expect((await readCard(playsRoot, "p1", id)).sprites).toEqual({ neutral: "neutral.png" });
+      expect(existsSync(join(playsRoot, "p1", "assets", "sprites", id, "neutral.png"))).toBe(true);
     }
   });
 
-  it("同一个包分两次导不同差分：后一次不能把前一次的差分冲掉", async () => {
-    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "smile.png": "s", "sad.png": "d" });
-    await Promise.all([
-      importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio", expressions: ["neutral", "smile"] }),
-      importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio", expressions: ["sad"] }),
-    ]);
-    expect((await readCard(playsRoot, "p1", "mio")).sprites).toMatchObject({
-      neutral: "neutral.png",
-      smile: "smile.png",
-      sad: "sad.png",
+  it("同一个包分两次导不同差分：后一次不能把前一次的声明冲掉", async () => {
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "smile.png": "s", "sad.png": "d" }, {
+      framing: "full",
+      variants: { smile: { file: "smile.png", framing: "square" } },
     });
+    await Promise.all([
+      importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio", variants: ["neutral", "smile"] }),
+      importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio", variants: ["sad"] }),
+    ]);
+    const manifest = JSON.parse(await readFile(join(playsRoot, "p1", "assets", "manifest.json"), "utf8"));
+    expect(manifest.mio).toMatchObject({ framing: "full" });
+    expect(manifest["mio/smile"]).toMatchObject({ framing: "square" });
+    for (const variant of ["neutral", "smile", "sad"]) {
+      expect(existsSync(join(playsRoot, "p1", "assets", "sprites", "mio", `${variant}.png`))).toBe(true);
+    }
   });
 
   it("并发导两个背景：素材表条目不能互相覆盖", async () => {
@@ -417,7 +443,10 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
   });
 
   it("导入要报出改过的文本：工坊据此给撤销条", async () => {
-    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" });
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" }, {
+      description: "澪的立绘",
+      character: { name: "澪" },
+    });
     const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
     const paths = result.writes.map((w) => w.path).sort();
     expect(paths).toEqual(["assets/manifest.json", "characters/mio.md"]);

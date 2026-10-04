@@ -94,13 +94,18 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
           ...pickVolume(attrs, ["bgm_volume", "ambient_volume"]),
         });
         break;
-      case "actor":
+      case "actor": {
+        // 旧存档里的 actor 属性写着 `expression` / `state`（261004 前分两个名字），
+        // 重放时照旧读得出来，但产出一律是新名字。
+        const variant = attrs.variant ?? attrs.expression ?? attrs.state;
         push(base, {
           kind: "actor",
           id: attrs.id ?? "",
-          ...pickDefined(attrs, ["pos", "expression", "action"]),
+          ...pickDefined(attrs, ["pos", "action"]),
+          ...(variant ? { variant } : {}),
         });
         break;
+      }
       case "cg":
         push(base, { kind: "cg", id: attrs.id ?? "", ...pickDefined(attrs, ["caption"]) });
         break;

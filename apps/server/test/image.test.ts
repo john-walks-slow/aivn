@@ -93,7 +93,7 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
     const store = await makeStore();
     const preloaded: string[] = [];
     const kicked: string[] = [];
-    const spriteKicks: string[] = [];
+    const spriteKicks: Record<string, unknown>[] = [];
     const orchestrator = new PlaywrightOrchestrator({
       streamFn: createFakeStreamFn([
         {
@@ -101,8 +101,8 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
           toolCalls: [
             { name: "generate_image", args: { kind: "background", prompt: "rainy station", name: "bg_station" } },
             { name: "generate_image", args: { kind: "cg", prompt: "confession", name: "cg_01" } },
-            // 立绘：expression 缺省即 neutral（下面单测锁住 schema 统一）
-            { name: "generate_image", args: { kind: "sprite", prompt: "neutral portrait", characterId: "mio" } },
+            // 立绘：variant 缺省即 neutral（下面单测锁住 schema 统一）
+            { name: "generate_image", args: { kind: "sprite", prompt: "neutral portrait", spriteId: "mio" } },
             // 工坊已经导入过这张：同一个 id 不该再烧一次配额
             {
               name: "generate_image",
@@ -132,7 +132,7 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
             t.name === "bg_rooftop_sunset" ? "/plays/img/assets/backgrounds/bg_rooftop_sunset.jpg" : null,
         } as never,
         kick: (_type, _prompt, id) => kicked.push(id),
-        kickSprite: (charId) => spriteKicks.push(charId),
+        kickSprite: (target) => spriteKicks.push(target as unknown as Record<string, unknown>),
       },
       onServerMessage: () => {},
     });
@@ -146,7 +146,9 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
     const ids = preload.map((e) => (e.event as { id: string }).id).sort();
     expect(ids).toEqual(["bg_station", "cg_01", "mio:neutral"]);
     expect(kicked).toEqual(["bg_station", "cg_01"]);
-    expect(spriteKicks).toEqual(["mio"]);
+    // 立绘的 kick 收的是整个目标（主体 id + 差分 + 呈现三轴），宿主据此拼出预载骨架的键
+    expect(spriteKicks).toHaveLength(1);
+    expect(spriteKicks[0]).toMatchObject({ spriteId: "mio", variant: "neutral" });
     orchestrator.dispose();
   });
 
@@ -161,7 +163,7 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
     });
     const sync = createGenerateImageTool({ mode: "sync", playAssets: undefined, onAsset: () => {} });
     const props = (t: { parameters: { properties?: Record<string, unknown> } }) => Object.keys(t.parameters.properties ?? {});
-    for (const key of ["expression", "referenceCharacters", "framing", "style"]) {
+    for (const key of ["variant", "spriteId", "references", "referenceCharacters", "framing", "stature", "title", "style"]) {
       expect(props(queued)).toContain(key);
       expect(props(sync)).toContain(key);
     }

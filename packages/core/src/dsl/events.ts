@@ -11,7 +11,7 @@ export interface PreloadAssetAttrs {
   /**
    * 资产 id。
    * - bg/cg：直接是素材 id。
-   * - sprite：`<charId>` 或 `<charId>:<expression>`；省略 expression 时默认 `neutral`。
+   * - sprite：`<spriteId>` 或 `<spriteId>:<variant>`；省略 variant 时默认 `neutral`。
    */
   id: string;
 }

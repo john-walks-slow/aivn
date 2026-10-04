@@ -16,7 +16,7 @@ const cues: Cue[] = [
   { key: "c1", kind: "line", lineKey: "l1" },
   { key: "c2", kind: "actor", id: "yu", pos: "center" },
   { key: "c3", kind: "line", lineKey: "l2" },
-  { key: "c4", kind: "actor", id: "yu", expression: "pout" },
+  { key: "c4", kind: "actor", id: "yu", variant: "pout" },
   { key: "c5", kind: "preload", id: "bg_roof", type: "bg" },
   { key: "c6", kind: "sfx", src: "door" },
   { key: "c7", kind: "line", lineKey: "l3" },
@@ -52,8 +52,8 @@ describe("回看重算画面（visualAt）", () => {
 
   it("按水位线还原立绘、站位与表情差分", () => {
     expect(Object.keys(visualAt(cues, 3).sprites)).toEqual(["yu"]);
-    expect(visualAt(cues, 3).sprites.yu?.expression).toBeNull();
-    expect(visualAt(cues, 5).sprites.yu?.expression).toBe("pout");
+    expect(visualAt(cues, 3).sprites.yu?.variant).toBeNull();
+    expect(visualAt(cues, 5).sprites.yu?.variant).toBe("pout");
   });
 
   it("严格按那一刻：还没登场的人不出现，已经退场的人不留幽灵", () => {

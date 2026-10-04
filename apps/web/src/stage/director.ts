@@ -70,10 +70,11 @@ export function resolveResumeSeek(
 export interface SpriteSlot {
   pos?: SpritePosition;
   resolvedPos: SpritePosition;
-  expression: string | null;
-  state: string | null;
+  /** 换哪张差分（人的表情、机甲的状态——同一个槽位）。null = 没写过，取目录第一张。 */
+  variant: string | null;
   shot: ActorShot | null;
-  anchor: ActorAnchor;
+  /** 剧本显式写的对齐基准；null = 没写，听素材声明（见立绘的呈现三轴）。 */
+  anchor: ActorAnchor | null;
   /**
    * 行为词（剧本的 `action=`）与它的演出序号。
    *
@@ -106,14 +107,18 @@ export interface VisualState {
   pending: Record<string, { type: "bg" | "cg"; at: number }>;
 }
 
-/** 空 slot 的缺省值——`anchor` 默认 bottom（脚踩地），其余都是「不指定」。 */
+/**
+ * 空 slot 的缺省值——全是「不指定」。
+ *
+ * `variant` 与 `anchor` 的缺省不在这里：差分缺省是立绘目录里的第一张、对齐缺省写在素材声明里
+ * （机甲居中悬空、道具贴地各不同），都由渲染层查素材表补，slot 只记剧本真写了什么。
+ */
 function newSlot(): SpriteSlot {
   return {
     resolvedPos: "center",
-    expression: null,
-    state: null,
+    variant: null,
     shot: null,
-    anchor: "bottom",
+    anchor: null,
     action: null,
     actionSeq: 0,
   };
@@ -146,10 +151,9 @@ export function applyActorCue(
           ...(sprites[cue.id] ?? newSlot()),
           // 显式站位：认不出来就当没写（走自动），不猜不抛
           pos: parsePosition(cue.pos) ?? sprites[cue.id]?.pos,
-          expression: cue.expression ?? sprites[cue.id]?.expression ?? null,
-          state: cue.state ?? sprites[cue.id]?.state ?? null,
+          variant: cue.variant ?? sprites[cue.id]?.variant ?? null,
           shot: cue.shot ?? sprites[cue.id]?.shot ?? null,
-          anchor: cue.anchor ?? sprites[cue.id]?.anchor ?? "bottom",
+          anchor: cue.anchor ?? sprites[cue.id]?.anchor ?? null,
           // 行为词是一次性的：给了就演一次，不给不重播。exit/leave 走退场分支，
           // 不该同时被当成行为词（`action="leave"` 是退场的旧写法，不是动作）。
           action: isActorAction(cue.action) ? cue.action : null,

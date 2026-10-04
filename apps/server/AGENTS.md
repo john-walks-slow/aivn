@@ -9,15 +9,15 @@
 - **两个 agent 共用一套基座**：`src/agentkit/` 是唯一工具实现面（`kit.ts` 按 `role: "playwriter" | "workshop"` 装配，`deps.ts` 用判别联合收窄依赖），同一工具**同一份 schema 与实现，只有 description + 等待策略 + 注入依赖不同**（`generate_image`：工坊 sync 等图并回 markdown 图片、剧作家 queued 后台排产只占时间线位置）。
 - **两套目录，一份语汇**：`kit.ts` 的 `CAPABILITY_CATALOG` 是**用户语汇的唯一真相源**（一行写清：界面名字、一句后果、分组、给哪些角色、授权哪些工具 id、开出来能动哪几类文件、常开还是默认关）——Agent 页、`play.json`、`kit.can`、提示词章节一律说能力。`TOOL_CATALOG`（id + 中文名 + 谁装得上）留在工具层当**角色可见性的真相源**，能力只**引用**工具 id；装一个没登记的 id 或加一个谁都够不到的工具，用例当场红。play.json 的 `agents.<role>.capabilities` 存**启用集**（白名单，不是禁用集），缺省走 `defaultCapabilitiesFor(role)`（搭台 = 目录里属于它的能力减 `shell`——新增能力不会静默漏装；剧作家 = 常开的 `stage` 加 `memory`/`image`/`library`/`search`/`nsfw`，**`characters` 默认关**：角色卡是制作资产、记忆卡是剧情事实）。
 - **两条推导都在 `createAgentKit` 一处**：装上的工具 = 基座 `read` ∪ 开着的能力授权的工具（再按 `TOOL_CATALOG.roles` 与我方依赖面收一道，没配 Exa / TTS / 生图就装不出来）；`can` 位 = **该能力开着且它授权的工具都装上了**（键就是能力 id）——能力声明了一个装不出来的工具，这一位就是假，提示词不会教模型去调它没有的东西。同一个能力在两个角色上授权的口可以不同（`image`：剧作家只要 `generate_image`，工坊还要 `recut_sprite`；`library`：工坊多一个 `import_asset`，实现上是 `libraryTool` 的 `importAsset: false`）。
-- `generate_image` 的两个角色**同一份 schema**（`expression` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只差 description 与等待策略。**垫图入口只有一个 `references`**（每项可以是角色 id、剧目内相对路径或 http(s) 网址，1–6 张；`referenceCharacters` 保留为只吃角色 id 的兼容别名，两者在工具层合并去重）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该角色的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
-- **自动注册临时角色**：`generate_image` 的 `characterName` 参数带上了、而 `characterId` 不在角色卡目录里时，`playAssets.resolveSprite` 就地写一张最小卡再出图（卡里只有 id/name，正文写「（演出中临时引入，设定未补。）」——留空会让工坊以为「作者写过了，就是没写」），并打 `autoRegistered` 让宿主走同一条 `onPlayConfigChanged` 轮边界重建：工坊与用户此刻不在场，等他们想起建卡，这一轮早演过去了。
-- 已有卡时这个参数不作数（不覆盖人设）。
+- `generate_image` 的两个角色**同一份 schema**（`spriteId`/`variant`/`title` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只差 description 与等待策略。**垫图入口只有一个 `references`**（每项可以是主体 id、剧目内相对路径或 http(s) 网址，1–6 张；`referenceCharacters` 保留为只吃主体 id 的兼容别名，两者在工具层合并去重）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该主体的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
+- **卡是可选的，出图也不替谁建卡**：`generate_image` 只按 `spriteId`（主体 id）往 `assets/sprites/<id>/` 落文件——机甲、道具、猫本来就没有卡。名字从哪来：卡 `name` → `<say name>` → 素材表 `title`（`generate_image` 的 `title` 参数就是给无卡主体落名牌用的）→ id；无卡主体的 TTS 走剧目级 `defaultVoiceId`。
+- **出图顺手写呈现声明**：`playAssets.declareSprite` 把 `framing` / `stature` / `title` 写进 `assets/manifest.json`（neutral 那一次立立绘级，`variant` 与立绘级取景不同才写一条 `<id>/<variant>` 覆盖），与卡无关——卡只管人设与音色，立绘声明归素材表。
 - **同名工具调用并发**：写角色卡的落盘与 generate_image 的成员校验原本实时读盘，同批发出时谁先完成不定，会偶发扑空。
 - `playhouse.writeCharacter` 在落盘**之后**把 id 登记进 `knownCharacters`（WeakMap<PlayStore>），`characterIdsOf` 那个回调读实时盘 ∪ 它，竞态就没了；顺序反了会在写失败时留下一个并不存在的 id。
 - 剧作家走通用 `write` 时，同一步（`orchestrator.onPlayFileWritten` → `playhouse.onPlayFileWritten`）按 `characterIdOfPath(write.path)` 认角色卡并登记，两条路汇到同一处。
 - **无名角色音色**：`<say id="passerby" name="路人甲">` 这种一次性角色没有角色卡、而音色挂在角色卡的 voiceId 上，于是永远没声音。
-- `play.defaultVoiceId`（工坊「剧目」页挑）在 `voiceOf` 里兜底，有卡的角色仍然各用各的。
-- **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `recut_sprite`——立绘落盘前把抠底前的原片留一份到 `media-cache/sprite-sources/<角色id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
+- 两处兜底都在 `orchestrator`：`voiceOf` 取卡的 voiceId、没有卡就落剧目级 `defaultVoiceId`（工坊「剧目」页挑）；名字取卡的 `name` → `<say name>` → 素材表 `title`（素材页的「名牌」）→ id。
+- **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `recut_sprite`——立绘落盘前把抠底前的原片留一份到 `media-cache/sprite-sources/<主体 id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
 - 没有留底的（更早出的图、用户上传的）直接报错，只能重新出图。
 - `import_asset` 现在**只装给工坊**（`TOOL_CATALOG` 的 `roles` 只留 `workshop`）——剧作家的默认导入路径是引用即导入（见下），给它留一个自己搬素材的口是重复路径，只是多一个谁都够不到的工具。工坊那边它挂在「素材资源库」能力下（`libraryTool` 的 `importAsset` 开关，剧作家侧传 `false`）。
 
@@ -26,6 +26,7 @@
 - **DSL 是时间线、工具是副作用**：`beat_done`（轮收束 + 停止点载荷，`options` 若干条 / `placeholder` / 都不给；schema 只兜「至少两条非空」这个无效载荷，**给几条、何时给归剧目的写作参数**，见下）与 `generate_image` 产出 `stop` / `preload_asset` 两个 IR 事件，经 `emitStageEvent` 与解析器产出的事件走同一条路（加 seq → 广播 → 落谱系），client 侧一行不用改。
 - **判废只认「三无」轮**：无台词、无停止点、且没调用过带副作用的工具（`beat_done` 只是收束记账，不算）才判废回滚。纯工具轮——只调 `enter_nsfw` 交棒、只发起生图、只写记忆/角色卡——按 no_stop 正常收束：副作用已经发生，回滚会吞掉它们（`enter_nsfw` 的 pending 会被重置回日常模型）。DSL 控制指令（scene/actor）仍不算内容。
 - 文本形式的 `<stop>`/`<option>`/`<preload_asset>` 已从 DSL 摘除，遇到只静默降级并记 `legacy_tag` 警告（照读会把标签念到舞台上）。
+- **一个槽位叫 `variant`**：`<actor id="mio" variant="smile">`。`expression`（人写表情）与 `state`（非人的状态）是 261004 之前的两个旧名，解析器与谱系重放仍当别名收下，所以存量剧本与存档照常演出；但写给模型看的契约只有 `variant`。同一个 id 的立绘声明、差分、垫图基准都按它解析。
 
 ## 谱系原语（跳转 / 分岔 / 重写 / 删除）
 
@@ -63,9 +64,11 @@
 - 代价是内容寻址去重没了：同一句提示词生成两次会真出两张图，剧作家侧改由工具自己判「剧目里已有同名素材就跳过」（`playAssets.existingUrl()`）。
 - CG 页的生成台账只有 `assets/generated.json` 一份（`generatedLedger.ts` 的 `readPlayLedgerEntries`）。
 - **一张表一个写者**：`assets/manifest.json`（素材描述）归工坊与用户，`assets/generated.json`（站内出图这次用的 prompt 记录，进 git、只读）归引擎——两边都动一张表时，工坊补一条中文描述就能把引擎记的 prompt 整条替换掉（2026-10-01 实测）。
+- **`manifest.json` 现在有两个写者，好在键位不重叠**：`title`/`description`/`tags` 这些描述归工坊与用户，呈现声明（`framing`/`stature`/`anchor`/`title`）与差分键归引擎出图与素材页；两边都是「读-改-写整表」，所以一律走 `PlayAssets.withManifest` 那把锁（同一剧目串行），不许各自读一遍再整表覆盖。
 
 ## 立绘：后缀、景别与画幅
 
+- **呈现声明只住 `assets/manifest.json`**：键 `<id>`（立绘级）与 `<id>/<variant>`（差分覆盖），字段 `framing` / `stature` / `anchor` / `title`；卡上的 `framing` / `spriteFraming` 与 `sprites` 映射表一并下线——variant 就是文件名主体，中间不再有映射这一层。`play/spriteStage.ts` 按 取景 × 体量 × 锚点 出落位预设（`spriteStagePreset()` 给横竖屏两套 `{top,height,origin}`），**缺省逐个数字与 261004 之前一致**（存量剧目的站位不能挪），改预设表等于动所有剧目的摆位。
 - 立绘的自动后缀只规定抠底要的构图（**单一纯色底**，且这个色键色不许出现在角色身上；手臂与躯干之间别夹窄缝），不描述任何人物特征：那里曾写着「twin tails」，等于给所有角色定了个双马尾，prompt 里明写 long straight hair 也救不回来。
 - **抠底是纯色键，底色由出图那一步负责选对**（`src/cutout.ts` ↔ `playAssets.ts` 的 `KEY_BACKGROUND`）：底色取整圈边框的逐通道中位数，离它不超过 `tolerance` 的像素**一律**算背景——不分内外、不看连通性、没有面积阈值。所以「白底 + 白袜子」那类撞色会被照抠不误，2026-10-04 之前为此堆的滞回阈值/连通域筛内外/面积阈值整套已删；嫌抠不干净只有两条路：调 `tolerance`，或者出图时换一个不撞色的底。
 - **立绘景别与画幅跟着 `framing` 走**（`play/framing.ts` 是唯一真相源：**三档** full 9:16 / half 3:4 / square 1:1，出图画幅取 `SPRITE_FRAMING_ASPECT`、提示词里的景别措辞取 `SPRITE_FRAMING_SHOT`；写死 9:16 全身时半身角色照样会被画成全身，出图与舞台声明对不上）。
@@ -120,7 +123,8 @@
 
 ## 引用即导入（资源库）
 
-- **引用即导入**（`assetRef.ts` 的 `AssetRefResolver`）：剧本里写了剧目没有的 id，宿主就去库里找同名条目导入（`scene bg`→backgrounds、`cg id`→cg、`actor id`→characters、`scene bgm`→bgm、`ambient`→sfx 再 bgm、`sfx src`→sfx）。
+- **引用即导入**（`assetRef.ts` 的 `AssetRefResolver`）：剧本里写了剧目没有的 id，宿主就去库里找同名条目导入（`scene bg`→backgrounds、`cg id`→cg、`actor id`→characters 与/或 sprites、`scene bgm`→bgm、`ambient`→sfx 再 bgm、`sfx src`→sfx）。
+- **一个主体可以有两张附件，也可以只有一张**：`actor id` 先看剧目里有没有同名卡、有没有同名立绘目录，缺哪张补哪张——库里是 `characters/<id>`（卡，可零媒体）与 `sprites/<id>`（立绘包）两个独立 kind，两张都缺才算库里没有。
 - 解析管道不 await，事件先广播按缺素材降级，到货后广播 `asset_ready` 复用现有的到货淡入。
 - 角色导入写角色卡 `characters/<id>.md`（不再动 `play.json`）走 `rebuildAtBeatBoundary`（与剧作家给临时角色生立绘同一条延迟重建）。
 - 库里没有就静默降级**不回话给模型**。
@@ -134,7 +138,7 @@
 - **手动生图是「REST 同步发起 + WS 异步回报」**：`POST /api/plays/:id/images` 只做校验与提示词组装就返回 `{target, path, prompt}`——CF 隧道 100s 无字节即断，出图 70–140s 绝不能压在 HTTP 连接上。
 - 出图在后台跑，完成或失败一律广播 `image_result`（成功 `{target, ok:true, url, path}`、失败 `{target, ok:false, message}`），客户端对话框按 `target` 匹配自己的那一张。
 - `AssetNotify` 的第三个值 `"manual"` 就是给它留的：刷新素材列表，但不产工坊气泡、不进撤销条、不自动重建。
-- 素材名/差分名的白名单收在 `assertAssetStem`，REST 入口与出图前各判一次——入口不判就会先返回一个非法 path，用户等一分多钟才在 WS 上收到失败。
+- 素材名/差分名的白名单收在 `assertAssetStem`，立绘 id 另走 `assertSpriteId`（只挡路径分隔符、前导点与控制字符——id 就是目录名，大写字母合法），REST 入口与出图前各判一次——入口不判就会先返回一个非法 path，用户等一分多钟才在 WS 上收到失败。
 - 舞台那一路的参考立绘必须在**落时间线节点之前**校验（`assertReferences`），否则会留下一个永远填不上的骨架。
 
 ## 生图配置（接口格式、画幅与尺寸）
@@ -150,7 +154,7 @@
 - 所以 `pnpm -r build` 之后一个端口就是整站，公网部署只指向这一个。
 - 开发时仍是 vite + server 两个端口。
 - 在生成的事由 `pendingJobs.ts` 统一记账（剧作家的轮次 / 背景 / CG / 立绘 / 语音），一改整表广播 `pending_jobs`，与排队面板共用一块浮层，重连时随 hello 的 `pendingJobs` 恢复。
-- 新增端点：`GET /api/agents/models`（网关 `/v1/models` 清单 ∩ 设置里「支持的模型」清单，收窄在 `provider.ts` 的 `supportedModels`：按配置顺序排、清单里的 id 网关没有即报错点名；读不到网关即 400 不降级）、`GET /api/agents/capabilities`（`playhouse.capabilities()`：每个角色的能力目录——id / 名字 / 一句后果 / 分组与分组名 / `locked` / `available` 与 `unavailableNote`，外加每个角色的默认集；`locked` 的那行界面不给开关，`available: false` 指服务端没配 Exa / TTS / 生图后端）。
+- 新增端点：`GET /api/agents/models`（网关 `/v1/models` 清单 ∩ 设置里「支持的模型」清单，收窄在 `provider.ts` 的 `supportedModels`：按配置顺序排、清单里的 id 网关没有即报错点名；读不到网关即 400 不降级）、`GET /api/agents/capabilities`（`playhouse.capabilities()`：每个角色的能力目录——id / 名字 / 一句后果 / 分组与分组名 / `locked` / `available` 与 `unavailableNote`，外加每个角色的默认集；`locked` 的那行界面不给开关，`available: false` 指服务端没配 Exa / TTS / 生图后端）、`PUT /api/plays/:id/assets/sprite`（素材页写立绘呈现声明：body `{spriteId, variant?, framing?|null, stature?|null, anchor?|null, title?|null}`，null 或空串 = 删掉那一格回到缺省，写完 `playhouse.declareSpriteMeta` 即时生效——内部与素材上传同一条路（写盘后 `reload`），不像角色卡那样等轮边界）。`GET /api/plays/:id` 的详情多回一份 `manifest`：舞台靠它摆位。
 
 ## 技能库与新剧目初始状态
 
@@ -163,6 +167,8 @@
 - **主角是一张普通卡**，id 固定 `protagonist`（`PROTAGONIST_ID = "protagonist"`）：`store.createEmpty` 建目录时就写一张（正文「（玩家扮演的角色。还没有写设定。）」——**空文件会被 `loadCharacters` 跳过**，只建目录不写卡的话角色表里根本没有主角）。它不靠 frontmatter 标记来认：`characters/` 的不变式「角色表 = 文件列表 + 固定文件名」天然排除两个主角或零个主角。
 - 主角与别的卡**能力完全一致**（上台、立绘、音色、从资源库导入都照常），只有两处特殊：A 区角色表标注「，玩家扮演」（`prompt.ts` 读 `isProtagonist`）、工坊角色页不给删。是否上台、是否配音是**创作口径**（`memory/always/craft.md` 的事），引擎不预设。
 - 路径一律从 `characterCardPath(id)` 拼，别各自抄字符串：`store.characterDir()` 供 `loadCharacters` / `loadCharacterCards` / `PlayFiles` 白名单（`DIR_ROOTS` 含 `characters`）与 `assetImport` 共用；`playhouse.writeCharacter`、`playhouse.polish`（读主角卡拼「主角设定：」）也走它。
+- **卡上只剩人设与音色**（`CharacterHead` = `id` / `name` / `voice` / `voiceId`）：立绘取景、体量、锚点、差分这些呈现声明都归 `assets/manifest.json`，`parseCharacterCard` 认出旧字段也当噪声丢掉。收益是「一个 id 寻址一切」——机甲、道具、猫连卡都不需要。
+- **卡与立绘目录同名即绑定，谁也不依赖谁**：只有卡 = 有名字与音色、还没有图；只有目录 = 有图，名字回落素材表 `title` 或 id；两张都有才是常驻角色。
 
 ## 创作口径与剧目记忆
 
