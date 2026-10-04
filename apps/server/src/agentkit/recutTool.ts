@@ -30,10 +30,10 @@ const cutoutTuning = Type.Object(
 
 const recutParams = Type.Object(
   {
-    /** 立绘所属角色 id（play.json 里的角色 id）。 */
-    characterId: Type.String({ minLength: 1, maxLength: 40 }),
+    /** 立绘的主体 id（人/机甲/道具同权，剧本里 <actor id> 引用的那个名字）。 */
+    spriteId: Type.String({ minLength: 1, maxLength: 40 }),
     /** 立绘差分名，如 neutral / smile。不给按 neutral。 */
-    expression: Type.Optional(Type.String({ maxLength: 40 })),
+    variant: Type.Optional(Type.String({ maxLength: 40 })),
     /** 抠底调参。症状对不上默认档才填，见描述里的对应关系。 */
     cutout: Type.Optional(cutoutTuning),
   },
@@ -77,8 +77,8 @@ export function createRecutSpriteTool(deps: RecutDeps): AgentTool<typeof recutPa
         const asset = await deps.playAssets.recut(
           {
             kind: "sprite",
-            characterId: params.characterId.trim(),
-            expression: params.expression?.trim() || "neutral",
+            spriteId: params.spriteId.trim(),
+            variant: params.variant?.trim() || "neutral",
           },
           params.cutout,
         );

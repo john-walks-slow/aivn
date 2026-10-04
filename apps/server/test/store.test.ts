@@ -84,7 +84,7 @@ describe("PlayLibrary 剧目包导入与删除", () => {
     await writeFile(join(root, "pic", "play.json"), PLAY_JSON("pic"));
     await store.savePremise("黄昏的走廊。\n");
     const readiness = await store.readiness();
-    expect(readiness.characterSprites).toBe(false);
+    expect(readiness.sprites).toBe(false);
     expect(readiness.background).toBe(false);
     expect(readiness.premise).toBe(true);
   });

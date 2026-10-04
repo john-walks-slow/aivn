@@ -185,6 +185,12 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
       generated.add([asset]);
       playbackRef.current?.settleAssets([asset.id]);
       if (asset.type === "cg") setCgNonce((n) => n + 1); // CG 页开着就把它补进网格
+      // 立绘到货 = 立绘目录里多了一张、素材表里多了一条声明（取景/体量/对齐都是出图那一刻写进去的）。
+      // 重拉这两份，舞台才会按新声明摆位——不重拉的话新差分只能按缺省站，与声明的体量对不上。
+      if (asset.type === "sprite") {
+        api.playDetail(playId).then(setDetail).catch(() => {});
+        api.listAssets(playId).then(setAssets).catch(() => {});
+      }
     },
     onAssetFailed: (id, message) => {
       playbackRef.current?.settleAssets([id]);
@@ -307,15 +313,21 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   }, [stage.voiceAvailable, stage.state, voiceOn]);
 
   const index: AssetIndex | null = useMemo(
-    () => (detail ? buildAssetIndex(playId, detail.cast, assets, generated.images) : null),
+    () =>
+      detail
+        ? buildAssetIndex(playId, assets, generated.images, detail.manifest ?? {})
+        : null,
     [detail, assets, playId, generated.images],
   );
 
   // 会话记录：这一场说过的所有话——剧作家的台词、玩家的选择与输入、导演注，
   // 不含背景/音效/插图这些布景指令。回看游标与回顾列表读的是它，两处才不会各说各话。
+  // revision 进依赖：缓冲是原地变更的稳定引用，谱系不轮询的窗口里（舞台视图生成中）
+  // 刚落进缓冲的 input 行也要立刻进记录——「回顾 0 延迟见输入」靠的是它。
   const transcript = useMemo(() => buildTranscript(lineage.view, stage.lines), [
     lineage.view,
     stage.lines,
+    stage.revision,
   ]);
 
   // 轮是谱系行级日志上的区间，跟舞台行用同一个 seq 对尺：任意一行反查回它的轮与台词节点，
@@ -375,33 +387,9 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     stage.sendContinue();
   }, [stage.sendContinue]);
 
-  /**
-   * 玩家刚发出去的那一句：谱系是按需拉取的，最快也要等下一次轮询才把它收进回顾，
-   * 中间这几十秒对话框里什么都不换新——看着像「没点上」。先就地把它顶成一条消息。
-   *
-   * `afterKey` 是发话那一刻显示着的那一行：播放头一动就说明新一轮的台词进场了，
-   * 此时谱系迟早会补上这条输入，撤掉回声、交回真正的对话内容。手动点舞台也撤。
-   */
-  const [echo, setEcho] = useState<{ text: string; afterKey: string | null } | null>(null);
-  const echoText = echo && (playback.current?.key ?? null) === echo.afterKey ? echo.text : null;
-  const dismissEcho = useCallback((): void => setEcho(null), []);
-
-  const sendChoice = useCallback(
-    (index: number): void => {
-      const text = stage.stop?.options?.[index]?.text;
-      setEcho({ text: `（选择了：${text ?? `选项 ${index + 1}`}）`, afterKey: playbackRef.current?.current?.key ?? null });
-      stage.sendChoice(index);
-    },
-    [stage.stop, stage.sendChoice],
-  );
-
-  const sendFree = useCallback(
-    (text: string): void => {
-      setEcho({ text, afterKey: playbackRef.current?.current?.key ?? null });
-      stage.sendFree(text);
-    },
-    [stage.sendFree],
-  );
+  // 选择/自由输入没有本地回声：服务端在**接受**动作那一刻广播 player_input 事件，
+  // 缓冲里多出的那行就是回执——立刻可见，回看/回顾/第二客户端/重连同享同一行
+  // （「立刻顶上」由 director 的 shouldAutoStart 回执例外保证，被拒的动作则根本没有事件）。
 
   // Esc 回到舞台（侧栏是常驻的，不需要「关掉」它）。走 ui/escape.ts 的浮层栈：
   // 输入模态窗开着的那一下归它，视图栏只在自己是栈顶时才认领。
@@ -611,8 +599,6 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
               }
               onReplay={replay}
               voiceState={voiceState}
-              playerEcho={echoText}
-              onEchoDismiss={dismissEcho}
               onUnlock={unlockVoice}
               onTurbo={setTurbo}
               canContinue={canContinue}
@@ -637,8 +623,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
                     showContinue={affordance.showContinueCard}
                     disabled={busy}
                     seenChoices={seenChoices}
-                    onChoice={sendChoice}
-                    onFree={sendFree}
+                    onChoice={stage.sendChoice}
+                    onFree={stage.sendFree}
                     onContinue={stage.sendContinue}
                     onPolish={(text) => api.polish(playId, text).then(({ text: polished }) => polished)}
                   />

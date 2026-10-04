@@ -3,12 +3,14 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   DEFAULT_SPRITE_FRAMING,
-  parseCharacterCard,
-  serializeCharacterCard,
+  DEFAULT_SPRITE_STATURE,
   SPRITE_FRAMING_ASPECT,
   SPRITE_FRAMING_SHOT,
+  spriteDeclarationOf,
+  type ActorAnchor,
   type CharacterDocument,
   type SpriteFraming,
+  type SpriteStature,
   type WorkshopAssetView,
 } from "@aivn/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
@@ -32,8 +34,12 @@ import type { WebImageFetcher } from "./webImage.js";
  * 落静态素材还有个好处：剧作家后续 `generate_image` 同 id 会被「静态优先」跳过，
  * 不会把工坊定的图重生一遍。
  *
- * 角色一致性靠 `neutral` 差分兼任定妆照与垫图——它既是合法差分（actor 能直接引用），
+ * 主体一致性靠 `neutral` 差分兼任定妆照与垫图——它既是合法差分（actor 能直接引用），
  * 又是进 git 后换机器也保得住的「同一个人」。不另开 assets/refs/ 目录，免得污染素材清单。
+ *
+ * 立绘与角色卡**互不依赖**：出图只认 `spriteId`（目录名），机甲、道具、猫照样能出，
+ * 不必先有卡；出图后把呈现声明（取景/体量/标题）补进 `assets/manifest.json`，
+ * 差分映射这一层随之消失——variant 就是文件名。
  *
  * 实例由 PlayHouse 按剧目缓存：工坊与剧作家拿的是同一个，两边同时要同一张图时
  * 在飞去重只烧一次配额（`inflight` 表按目标路径，跨角色共享）。
@@ -57,10 +63,22 @@ export function assertAssetStem(value: string, label: string): string {
   return trimmed;
 }
 
-/** 角色卡 `sprites[expression]` 的值：只当文件名用，带路径分隔符的一律不认。 */
-const BARE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.(png|jpe?g|webp)$/i;
-
 const NEUTRAL = "neutral";
+
+/**
+ * 立绘主体 id 的合法形状：它就是 `assets/sprites/` 下的目录名。
+ *
+ * 不做小写限制——角色卡允许 `Koharu` 这样的 id，立绘目录跟着卡走；只挡路径分隔符、
+ * 父目录引用与控制字符，别让一个 id 把文件写到别的目录去。
+ */
+export function assertSpriteId(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error("立绘必须给 spriteId（主体 id，剧本里 <actor id> 引用的那个名字）");
+  if (/[/\\]/.test(trimmed) || trimmed.startsWith(".") || /[\u0000-\u001f]/.test(trimmed)) {
+    throw new Error(`立绘主体 id「${trimmed}」非法：不能含路径分隔符或以点开头`);
+  }
+  return trimmed;
+}
 
 
 /** 谁触发的这次出图。工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产。manual 为用户从工坊面板手动触发（不产生对话流气泡，也不排队自动重建）。 */
@@ -72,18 +90,20 @@ export interface AssetTarget {
   kind: AssetKind;
   /** 背景/CG 的素材 id（同时是文件名主体）。 */
   name?: string;
-  /** 立绘所属角色 id（默认对角色卡做成员校验）。 */
-  characterId?: string;
   /**
-   * 角色表里没有 characterId 时的显示名——带了它就自动建一张最小角色卡。
-   * 戏里临时冒出来的人（路人、只在两轮里出现的店员）走这条路：立绘要出，
-   * 而工坊与用户此刻不在场，没人来得及先建卡。
+   * 立绘的主体 id（人、机甲、猫、道具同权）：立绘目录名，也是剧本里的引用名。
+   *
+   * 不要求有角色卡——立绘与卡是同名即绑定的两件可选附件，谁也不依赖谁。
    */
-  characterName?: string;
-  /** 立绘差分名（neutral / smile / ...）。 */
-  expression?: string;
-  /** 立绘取景（full/half/square）：决定出图景别与画幅，缺省全身。不给就沿用角色卡里该角色已有的声明。 */
+  spriteId?: string;
+  /** 立绘差分名（neutral / smile / damaged / asleep ...）。 */
+  variant?: string;
+  /** 立绘取景（full/half/square）：决定出图景别与画幅，缺省全身。不给就沿用素材表里该主体的声明。 */
   framing?: SpriteFraming;
+  /** 立绘体量（small/normal/large/huge）：决定舞台上的大小，缺省标准。不给就沿用素材表里的声明。 */
+  stature?: SpriteStature;
+  /** 立绘标题：写进素材表的立绘级声明，无卡主体靠它出名牌。给了卡就跟着卡走。 */
+  title?: string;
   /**
    * 参考图列表（通用垫图）：可填角色 id（自动引用其立绘）、剧目内相对路径或 http(s) URL。
    */
@@ -111,39 +131,41 @@ export interface GeneratedPlayAsset {
   autoNeutral: boolean;
 }
 
-/** 一张要垫给模型的参考图规格：可能是剧目内角色立绘，也可能是指定路径或网络图片。 */
+/** 一张要垫给模型的参考图规格：可能是剧目内立绘，也可能是指定路径或网络图片。 */
 export interface ResolvedReference {
-  /** 显示名或角色名（用于在 prompt 里标注「第几张是谁」）；若无法识别则为 null。 */
+  /** 显示名或主体名（用于在 prompt 里标注「第几张是谁」）；若无法识别则为 null。 */
   name: string | null;
-  /** 角色 id（若来自角色立绘）。 */
-  characterId?: string;
+  /** 主体 id（若来自立绘：角色卡或立绘目录）。 */
+  spriteId?: string;
   /** 来源：剧目内相对路径或 http(s) 网址。 */
   source: string;
 }
 
 interface AssetSpec {
   kind: AssetKind;
-  /** assets/ 下的目录：backgrounds | cg | sprites/<charId>。 */
+  /** assets/ 下的目录：backgrounds | cg | sprites/<spriteId>。 */
   kindPath: string;
   stem: string;
   aspect: ImageAspect;
-  characterId?: string;
-  expression?: string;
+  spriteId?: string;
+  variant?: string;
   /** 立绘取景；背景/CG 不带。 */
   framing?: SpriteFraming;
-  /** 角色级取景（不含差分覆盖）：自动补的定妆照按它出，不按当前差分那档。
-   *  定妆照是所有差分的垫图基准，一个「全身角色 + 一条 closeup 差分」不该把基准也变成胸像。 */
+  /** 立绘体量；背景/CG 不带。 */
+  stature?: SpriteStature;
+  /** 无卡主体的标题：写进素材表的立绘级声明，名牌回落链的第三档。 */
+  title?: string;
+  /** 立绘级取景（不含差分覆盖）：自动补的定妆照按它出，不按当前差分那档。
+   *  定妆照是所有差分的垫图基准，一个「全身主体 + 一条 closeup 差分」不该把基准也变成胸像。 */
   baseFraming?: SpriteFraming;
   /** 解析后的显式参考图列表（按传入顺序）。 */
   explicitReferences?: ResolvedReference[];
-  /** 兼容旧代码引用的角色列表（如果参考图中有角色）。 */
-  referenceCharacters?: ReferenceCharacter[];
-  /** 本次出图顺带建了一张角色卡（角色表变了，宿主要排轮边界重建）。 */
-  autoRegistered?: boolean;
+  /** 参考图里的立绘主体（如果参考图中有角色）。 */
+  referenceSprites?: ReferenceSprite[];
 }
 
-/** 一张要垫进背景/CG 的角色立绘：id 用于排引用顺序，name 进提示词标注「这张图是谁」。 */
-interface ReferenceCharacter {
+/** 一张要垫进背景/CG 的立绘：id 用于排引用顺序，name 进提示词标注「这张图是谁」。 */
+interface ReferenceSprite {
   id: string;
   name: string;
 }
@@ -159,32 +181,10 @@ export interface PlayAssetsDeps {
   pending?: PendingJobs;
   /** 网络图下载（可选，外部 URL 参考图需要它）。 */
   fetchImage?: WebImageFetcher;
-  /** 写一张角色卡（自动注册临时角色用）；没有这条能力就不自动建卡，直接报错。 */
-  writeCharacter?: (charId: string, content: string) => Promise<void>;
-  /** 角色卡立绘映射补写要进撤销条（二进制本身不进）。 */
+  /** 素材声明补写要进撤销条（二进制本身不进）。 */
   onWrite: (write: PlayFileWrite, notify: AssetNotify) => void;
   /** 素材到货（工坊侧挂到对话气泡里）。 */
   onAsset?: (asset: WorkshopAssetView, replaced: boolean, notify: AssetNotify) => void;
-  /**
-   * **角色卡**（`characters/<id>.md`）被这一层改过：补写差分映射与取景都落它头上，
-   * 宿主据此决定要不要重建 runtime（角色表来自角色卡，不重建就取不到新差分）。
-   * 工坊侧一轮收束时自己会重建，这里收到 "workshop" 无需动作；剧作家侧在拍内不能腰斩演出，
-   * 收到 "silent" 得排到轮边界。
-   *
-   * 名字仍叫 `onPlayConfigChanged`：play.json 是剧目配置文件，角色卡是它的配置项之一，
-   * 回调的形状与触发时机都没变，改名只会逼着范围外的调用方一起动。
-   */
-  onPlayConfigChanged?: (notify: AssetNotify) => void;
-}
-
-/**
- * 自动注册出来的最小角色卡：只声明「戏里有这么个人」。
- *
- * 人设（正文）故意留成一句「设定未补」而不是空白——空白在 A 区里读起来像是
- * 「作者写过了，就是没写」，而工坊后面看到这张卡时也不会知道该去补。
- */
-function stubCharacterCard(characterId: string, name: string): string {
-  return `---\nid: ${characterId}\nname: ${name}\n---\n\n（演出中临时引入，设定未补。）`;
 }
 
 export class PlayAssets {
@@ -218,9 +218,6 @@ export class PlayAssets {
   ): Promise<GeneratedPlayAsset[]> {
     const notify = options?.notify ?? "workshop";
     const spec = await this.resolve(target);
-    // 自动建的角色卡也是角色表的改动：拍进行中同样得排到轮边界重建，否则本轮之后
-    // 这个角色进不了 A 区，剧作家下一轮会当成不认识他。
-    if (spec.autoRegistered) this.deps.onPlayConfigChanged?.(notify);
     const key = `${spec.kindPath}/${spec.stem}`;
     const running = this.inflight.get(key);
     if (running) return running;
@@ -245,20 +242,20 @@ export class PlayAssets {
     // 抢在它前面读到的要么是旧原片要么读不到。
     await this.inflight.get(key);
     if (!(await this.existingPath(spec.kindPath, spec.stem))) {
-      throw new Error(`${spec.characterId}/${spec.stem} 还没有抠底图，先 generate_image 出图再来重抠。`);
+      throw new Error(`${spec.spriteId}/${spec.stem} 还没有抠底图，先 generate_image 出图再来重抠。`);
     }
     const { data } = await cutout(await this.readSpriteSource(spec), resolveTuning(tuning));
     return { ...(await this.persist(spec, data, ".png")), autoNeutral: false };
   }
 
   private async readSpriteSource(spec: AssetSpec): Promise<Buffer> {
-    const dir = this.deps.store.spriteSourceDir(spec.characterId!);
+    const dir = this.deps.store.spriteSourceDir(spec.spriteId!);
     for (const ext of IMAGE_EXTS) {
       const file = join(dir, `${spec.stem}${ext}`);
       if (existsSync(file)) return readFile(file);
     }
     throw new Error(
-      `${spec.characterId}/${spec.stem} 没有留底原片（抠底前那一张），没法原地重抠。` +
+      `${spec.spriteId}/${spec.stem} 没有留底原片（抠底前那一张），没法原地重抠。` +
         "留底是出图时顺手写的：更早出的图、用户自己上传的立绘都没有——那种只能重新出图。",
     );
   }
@@ -281,8 +278,8 @@ export class PlayAssets {
 
   private async existingTargetPath(target: AssetTarget): Promise<string | null> {
     if (target.kind === "sprite") {
-      if (!target.characterId || !target.expression) return null;
-      return this.existingPath(`sprites/${target.characterId}`, target.expression);
+      if (!target.spriteId || !target.variant) return null;
+      return this.existingPath(`sprites/${target.spriteId}`, target.variant);
     }
     if (!target.name) return null;
     return this.existingPath(target.kind === "background" ? "backgrounds" : "cg", target.name);
@@ -338,7 +335,7 @@ export class PlayAssets {
     const bytes = spec.kind === "sprite" ? await this.cutSprite(spec, data, mimeType) : data;
     const ext = spec.kind === "sprite" ? ".png" : extOf(mimeType);
     const written = await this.persist(spec, bytes, ext);
-    if (spec.kind === "sprite") await this.mapSprite(spec, `${spec.stem}${ext}`, notify);
+    if (spec.kind === "sprite") await this.declareSprite(spec, notify);
     await this.recordPrompt(spec, written.path, fullPrompt);
     return auto ? [auto, { ...written, autoNeutral: true }] : [{ ...written, autoNeutral: false }];
   }
@@ -360,8 +357,8 @@ export class PlayAssets {
   }
 
   private async keepSpriteSource(spec: AssetSpec, data: Buffer, mimeType: string): Promise<void> {
-    if (!spec.characterId) return;
-    const dir = this.deps.store.spriteSourceDir(spec.characterId);
+    if (!spec.spriteId) return;
+    const dir = this.deps.store.spriteSourceDir(spec.spriteId);
     const ext = extOf(mimeType);
     try {
       await mkdir(dir, { recursive: true });
@@ -373,7 +370,7 @@ export class PlayAssets {
       );
     } catch (error) {
       console.warn(
-        `[aivn] 立绘 ${spec.characterId}/${spec.stem} 的留底原片没写成（之后没法原地重抠）：` +
+        `[aivn] 立绘 ${spec.spriteId}/${spec.stem} 的留底原片没写成（之后没法原地重抠）：` +
           `${error instanceof Error ? error.message : String(error)}`,
       );
     }
@@ -405,7 +402,7 @@ export class PlayAssets {
    * 并发差分同时记账要走剧目锁，否则后写的会冲掉先写的记录。
    */
   private async recordPrompt(spec: AssetSpec, path: string, prompt: string): Promise<void> {
-    const id = spec.kind === "sprite" ? `${spec.characterId}/${spec.stem}` : spec.stem;
+    const id = spec.kind === "sprite" ? `${spec.spriteId}/${spec.stem}` : spec.stem;
     const kind = spec.kind === "background" ? "background" : spec.kind;
     try {
       await withPlayConfigLock(this.deps.store.dir, () =>
@@ -447,16 +444,16 @@ export class PlayAssets {
   private async resolve(target: AssetTarget): Promise<AssetSpec> {
     const rawRefs = target.references?.length ? target.references : target.referenceCharacters;
     const explicitReferences = rawRefs?.length ? await this.resolveReferences(rawRefs) : undefined;
-    const referenceCharacters = explicitReferences
-      ?.filter((r): r is ResolvedReference & { characterId: string; name: string } => !!r.characterId && !!r.name)
-      .map((r) => ({ id: r.characterId, name: r.name }));
+    const referenceSprites = explicitReferences
+      ?.filter((r): r is ResolvedReference & { spriteId: string; name: string } => !!r.spriteId && !!r.name)
+      .map((r) => ({ id: r.spriteId, name: r.name }));
 
     if (target.kind === "sprite") {
       const spriteSpec = await this.resolveSprite(target);
       return {
         ...spriteSpec,
         explicitReferences,
-        referenceCharacters,
+        referenceSprites,
       };
     }
     const name = target.name?.trim() ?? "";
@@ -468,7 +465,7 @@ export class PlayAssets {
       stem: name,
       aspect: "16:9",
       explicitReferences,
-      referenceCharacters,
+      referenceSprites,
     };
   }
 
@@ -484,26 +481,25 @@ export class PlayAssets {
 
   /**
    * 参考图解析：每个输入项可以是：
-   * 1. 角色 id（如 "alice"）——自动解析为其立绘文件；
+   * 1. 主体 id（如 "xiaoyu" / "mecha"）——有立绘就能垫，不要求有角色卡；
    * 2. 剧目内相对路径（如 "assets/backgrounds/ref.png"）；
    * 3. http(s) URL。
    *
    * 解析不合法的项时显式报错，避免静默漏垫图导致生成结果偏差。
    */
   private async resolveReferences(items: string[]): Promise<ResolvedReference[]> {
-    const cast = await this.cast();
+    const known = await this.spriteIds();
     const unique = [...new Set(items.map((it) => it.trim()).filter(Boolean))];
 
-    // 先检查是否看起来像角色 id：如果不含路径分隔符也不是 URL 且角色表里没有，直接按角色卡报错
-    const missingChars = unique.filter(
-      (it) => !/^https?:\/\//i.test(it) && !it.includes("/") && !cast.has(it),
-    );
-    if (missingChars.length > 0) {
+    // 不含路径分隔符也不是 URL 的项按主体 id 解释：既没有立绘也没有卡就是笔误，当场说清楚
+    const missing = unique.filter((it) => !/^https?:\/\//i.test(it) && !it.includes("/") && !known.has(it));
+    if (missing.length > 0) {
       throw new Error(
-        `角色卡里没有角色「${missingChars.join("、")}」。可选：${[...cast.keys()].join(" / ") || "（角色表是空的）"}`,
+        `没有立绘也没有角色卡的主体「${missing.join("、")}」。可选：${[...known].join(" / ") || "（剧目里还没有主体）"}`,
       );
     }
 
+    const manifest = await this.deps.store.assetMeta();
     const resolved: ResolvedReference[] = [];
 
     for (const item of unique) {
@@ -511,10 +507,9 @@ export class PlayAssets {
         resolved.push({ name: null, source: item });
         continue;
       }
-      if (cast.has(item)) {
-        const char = cast.get(item)!;
-        const spriteRel = await this.referenceSpriteOf({ id: item, name: char.name ?? item });
-        resolved.push({ name: char.name ?? item, characterId: item, source: spriteRel });
+      if (known.has(item)) {
+        const name = (await this.cast()).get(item)?.name ?? spriteDeclarationOf(manifest, item).title ?? item;
+        resolved.push({ name, spriteId: item, source: await this.referenceSpriteOf(item) });
         continue;
       }
       // 路径形式的参考图：容错前导斜杠（agent 常常直接复制 `/plays/<id>/assets/...` 这种静态 URL），
@@ -529,53 +524,53 @@ export class PlayAssets {
         }
       }
       throw new Error(
-        `未知的参考图「${item}」：既不是已知角色（可选：${[...cast.keys()].join(" / ") || "无"}），` +
+        `未知的参考图「${item}」：既不是剧目里有立绘的主体（可选：${[...known].join(" / ") || "无"}），` +
           "也不是存在的剧目内路径或 http(s) 网址。",
       );
     }
     return resolved;
   }
 
-  private async resolveSprite(target: AssetTarget): Promise<AssetSpec> {
-    const characterId = target.characterId?.trim() ?? "";
-    if (!characterId) throw new Error("立绘必须给 characterId（角色卡的文件名主体）");
-    const expression = target.expression?.trim() ?? "";
-    if (!expression) throw new Error("立绘必须给 expression（差分名，如 neutral / smile）");
-    assertAssetStem(expression, "差分名");
-    const cast = await this.cast();
-    let card = cast.get(characterId);
-    // 没有角色卡：这个角色要么是笔误，要么是戏里临时冒出来的人。后者带 characterName 重新发起，
-    // 就地建一张最小卡——工坊与用户此刻不在场，等他们想起建卡，这一轮早就演过去了。
-    if (!card) {
-      const autoName = target.characterName?.trim();
-      if (!autoName) {
-        throw new Error(
-          `角色卡里没有角色「${characterId}」（characters/${characterId}.md）。` +
-            `可选：${[...cast.keys()].join(" / ")}。` +
-            "要在戏里引入一个新角色（路人、临时店员），带 characterName=显示名 重新发起，会自动建卡。",
-        );
+  /** 剧目里已知的主体 id：角色卡目录 ∪ 立绘目录。 */
+  private async spriteIds(): Promise<Set<string>> {
+    const ids = new Set<string>((await this.cast()).keys());
+    const root = this.deps.files.absoluteOf("assets/sprites");
+    if (existsSync(root)) {
+      for (const entry of await readdir(root, { withFileTypes: true })) {
+        if (entry.isDirectory() && !entry.name.startsWith(".")) ids.add(entry.name);
       }
-      if (!this.deps.writeCharacter) {
-        throw new Error(`角色卡里没有角色「${characterId}」，当前环境也不能自动建卡。先 write 一张 characters/${characterId}.md。`);
-      }
-      await this.deps.writeCharacter(characterId, stubCharacterCard(characterId, autoName));
-      card = (await this.cast()).get(characterId);
-      if (!card) throw new Error(`角色卡「${characterId}.md」写完却读不出来，检查该目录的读写权限。`);
     }
-    // 取景优先级：调用方显式给 > 角色卡里该角色这条差分的声明 > 角色级声明 > 全身。
-    // 不给就沿用已有声明，是为了让「先给角色定过取景、之后每次出图都跟着它」成立。
-    const framing =
-      target.framing ?? card.spriteFraming?.[expression] ?? card.framing ?? DEFAULT_SPRITE_FRAMING;
+    return ids;
+  }
+
+  /**
+   * 立绘目标归一化。
+   *
+   * 只要求主体 id 与差分名——**不查角色卡**：立绘是独立素材，机甲、道具、猫都没有卡。
+   * 取景与体量的回落顺序：调用方显式给 > 素材表差分级的声明 > 立绘级的声明 > 缺省。
+   * 先看差分声明是为了让「一整套里另有一条 closeup」成立，再看立绘级是为了让
+   * 「给主体定过一次取景、之后每次出图都跟着它」成立。
+   */
+  private async resolveSprite(target: AssetTarget): Promise<AssetSpec> {
+    const spriteId = assertSpriteId(target.spriteId ?? "");
+    const variant = assertAssetStem(target.variant ?? "", "差分名");
+    const manifest = await this.deps.store.assetMeta();
+    const declared = spriteDeclarationOf(manifest, spriteId, variant);
+    const framing = target.framing ?? declared.framing ?? DEFAULT_SPRITE_FRAMING;
+    const stature = target.stature ?? declared.stature ?? DEFAULT_SPRITE_STATURE;
     return {
       kind: "sprite",
-      kindPath: `sprites/${characterId}`,
-      stem: expression,
+      kindPath: `sprites/${spriteId}`,
+      stem: variant,
       aspect: SPRITE_FRAMING_ASPECT[framing] as ImageAspect,
-      characterId,
-      expression,
+      spriteId,
+      variant,
       framing,
-      baseFraming: card.framing ?? DEFAULT_SPRITE_FRAMING,
-      ...(cast.has(characterId) ? {} : { autoRegistered: true }),
+      stature,
+      ...(target.title ? { title: target.title.trim() } : {}),
+      // 自动补的定妆照按**立绘级**取景走，不按这条差分的覆盖：它是所有差分的基准，
+      // 跟着一条 closeup 出会把这个主体整体带近（见 ensureNeutral）。
+      baseFraming: spriteDeclarationOf(manifest, spriteId).framing ?? DEFAULT_SPRITE_FRAMING,
     };
   }
 
@@ -591,12 +586,12 @@ export class PlayAssets {
    * 后到的 5 条直接复用第一条的 promise（见 generate 与 test 里「并发出 6 个差分」那条）。
    */
   private async ensureNeutral(spec: AssetSpec, prompt: string, notify: AssetNotify): Promise<GeneratedPlayAsset | null> {
-    if (spec.expression === NEUTRAL) return null;
+    if (spec.variant === NEUTRAL) return null;
     if (await this.existingPath(spec.kindPath, NEUTRAL)) return null;
-    const others = await this.spriteStems(spec.characterId!);
+    const others = await this.spriteStems(spec.spriteId!);
     if (others.length > 0) {
       throw new Error(
-        `${spec.characterId} 缺 ${NEUTRAL} 定妆照，但已有 ${others.length} 个差分（${others.join("、")}）：` +
+        `${spec.spriteId} 缺 ${NEUTRAL} 定妆照，但已有 ${others.length} 个差分（${others.join("、")}）：` +
           "新出的定妆照会与已有差分不是同一个人，演出中会静默换脸。" +
           "请先单独生成一次 neutral 让用户过目，确认后再生成差分。",
       );
@@ -606,7 +601,14 @@ export class PlayAssets {
     // 不按当前这条差分：对半身说 standing 会把画拉回全身，景别后缀与它当场打架。
     const neutralFraming = spec.baseFraming ?? DEFAULT_SPRITE_FRAMING;
     const [auto] = await this.generate(
-      { kind: "sprite", characterId: spec.characterId, expression: NEUTRAL, framing: neutralFraming },
+      {
+        kind: "sprite",
+        spriteId: spec.spriteId,
+        variant: NEUTRAL,
+        framing: neutralFraming,
+        ...(spec.stature ? { stature: spec.stature } : {}),
+        ...(spec.title ? { title: spec.title } : {}),
+      },
       `${NEUTRAL_LEAD[neutralFraming]} ${prompt}`,
       undefined,
       { notify },
@@ -630,10 +632,10 @@ export class PlayAssets {
     if (this.deps.reference === "none") return [];
     const explicit = spec.explicitReferences ?? [];
 
-    if (spec.kind === "sprite" && spec.expression !== NEUTRAL) {
+    if (spec.kind === "sprite" && spec.variant !== NEUTRAL) {
       if (explicit.length > 0) {
         throw new Error(
-          `立绘差分「${spec.characterId}/${spec.expression}」不能自带参考图：` +
+          `立绘差分「${spec.spriteId}/${spec.variant}」不能自带参考图：` +
             `差分的身份基准恒为该角色的 neutral 定妆照，换基准会与既有差分不是同一个人。` +
             "要换基准就重新出一次 neutral（那一次可以带 references），再派生差分。",
         );
@@ -655,32 +657,22 @@ export class PlayAssets {
     return this.resolveReferences(ids);
   }
 
-  /** 一张给定的立绘：优先 neutral（身份基准），其次盘上映射差分，最后兜底目录任意文件（与舞台 index.sprite 对齐）。 */
-  private async referenceSpriteOf(character: ReferenceCharacter): Promise<string> {
-    const card = (await this.cast()).get(character.id);
-    const dir = `sprites/${character.id}`;
-    const expressions = [NEUTRAL, ...Object.keys(card?.sprites ?? {}).filter((e) => e !== NEUTRAL)];
-    for (const expression of expressions) {
-      // `sprites[expression]` 存的是**文件名**，不保证等于差分名（breezy_oak 的 grin 存成
-      // oak_grin2.png）。按差分名去猜会把这种角色判成「没有立绘」，所以先信映射——与 web 侧
-      // `AssetIndex.sprite` 的解析方式保持一致。映射里的值只当文件名用，带路径的一律不认。
-      const mapped = card?.sprites?.[expression];
-      if (mapped && BARE_FILENAME.test(mapped)) {
-        const rel = `assets/${dir}/${mapped}`;
-        if (existsSync(this.deps.files.absoluteOf(rel))) return rel;
-      }
-      const byStem = await this.existingPath(dir, expression);
-      if (byStem) return byStem;
-    }
-    // 兜底：目录里有任意图像文件（例如用户刚上传立绘尚未绑定差分映射，舞台端 index.sprite 也会取 files[0]）
-    const stems = await this.spriteStems(character.id);
-    for (const stem of stems) {
-      const p = await this.existingPath(dir, stem);
-      if (p) return p;
+  /**
+   * 一张给定主体的立绘：优先 neutral（身份基准），其次目录里排序第一张。
+   *
+   * 没有映射表可查了——variant 就是文件名，找图就是按 stem 找文件。
+   */
+  private async referenceSpriteOf(spriteId: string): Promise<string> {
+    const dir = `sprites/${spriteId}`;
+    const neutral = await this.existingPath(dir, NEUTRAL);
+    if (neutral) return neutral;
+    for (const stem of await this.spriteStems(spriteId)) {
+      const path = await this.existingPath(dir, stem);
+      if (path) return path;
     }
     throw new Error(
-      `角色「${character.name}」（${character.id}）还没有立绘，不能当参考图：` +
-        `先 generate_image(kind="sprite") 出一张 ${character.id}/neutral 再来。`,
+      `主体「${spriteId}」还没有立绘，不能当参考图：` +
+        `先 generate_image(kind="sprite", spriteId="${spriteId}", variant="neutral") 出一张再来。`,
     );
   }
 
@@ -700,37 +692,100 @@ export class PlayAssets {
   }
 
   /**
-   * 立绘映射补写：文件在盘上但角色卡没映射，剧作家与编排器都取不到，等于没生成。
+   * 素材表的读-改-写一趟（`assets/manifest.json`）。
    *
-   * 落点是角色卡的 frontmatter（`serializeCharacterCard`），不是 play.json——角色的一切都在那张卡上。
-   * 没有角色卡就什么都不写：角色表是用户与工坊的账，出图无权凭空造一个角色。
-   *
-   * 排队锁不可省：一次对话里模型可以并发调两次 generate_image，也会和立绘包导入撞上，
-   * 三个 read-modify-write 各自读到旧角色卡，后写的会把先写的差分映射整个冲掉
-   * （用户看到的现象是「刚出的表情在角色卡里消失了」）。锁按剧目目录发（`store.dir`），
-   * 与资源库导入共用同一条——两条路径改的是同一张角色卡。
+   * 排队锁不可省：一次对话里模型可以并发调两次 generate_image，也会和立绘包导入、素材页的
+   * 声明下拉撞上——两个 read-modify-write 各自读到旧表，后写的会把先写的整段冲掉。
    */
-  private mapSprite(spec: AssetSpec, file: string, notify: AssetNotify): Promise<void> {
+  private withManifest(
+    notify: AssetNotify,
+    edit: (current: Record<string, unknown>, asMeta: (key: string) => Record<string, unknown>) => void,
+  ): Promise<void> {
     return withPlayConfigLock(this.deps.store.dir, async () => {
-      const path = `characters/${spec.characterId}.md`;
-      const raw = await this.deps.files.read(path).catch(() => null);
-      if (raw === null) return;
-      const card = parseCharacterCard(raw);
-      const next: CharacterDocument = {
-        ...card,
-        sprites: { ...(card.sprites ?? {}), [spec.expression!]: file },
+      const raw = await this.deps.files.read("assets/manifest.json").catch(() => "");
+      const current: Record<string, unknown> =
+        raw && raw.trim()
+          ? (() => {
+              try {
+                const parsed: unknown = JSON.parse(raw);
+                return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+                  ? (parsed as Record<string, unknown>)
+                  : {};
+              } catch {
+                return {};
+              }
+            })()
+          : {};
+
+      const asMeta = (key: string): Record<string, unknown> => {
+        const value = current[key];
+        if (value && typeof value === "object" && !Array.isArray(value)) return { ...(value as Record<string, unknown>) };
+        return typeof value === "string" ? { description: value } : {};
       };
-      // 取景跟着这张图一起落进角色卡：出图是唯一知道画幅与景别的时刻，
-      // 不记下来的话舞台只能拿缺省全身去套一张半身图（下次出图也会退回 9:16 全身）。
-      if (spec.framing) {
-        if (spec.expression === NEUTRAL) next.framing = spec.framing;
-        next.spriteFraming = { ...(card.spriteFraming ?? {}), [spec.expression!]: spec.framing };
+
+      edit(current, asMeta);
+
+      const after = `${JSON.stringify(current, null, 2)}\n`;
+      if (after === raw) return;
+      await this.deps.files.write("assets/manifest.json", after);
+      this.deps.onWrite({ path: "assets/manifest.json", before: raw || null, after }, notify);
+    });
+  }
+
+  /**
+   * 出图后把呈现声明补进素材表：文件在盘上但没人声明取景与体量时，
+   * 舞台只能拿缺省档去套——一张半身图会被按全身摆位，机甲会被画成一人高。
+   *
+   * 只写它知道的那几格：`framing`（neutral 那次作为立绘级基准；与基准不同的差分写差分级覆盖）、
+   * `stature`、`title`（无卡主体的名牌）。**描述一个字不动**——那是工坊与用户的账。
+   */
+  private declareSprite(spec: AssetSpec, notify: AssetNotify): Promise<void> {
+    const spriteId = spec.spriteId!;
+    const variant = spec.variant!;
+    return this.withManifest(notify, (current, asMeta) => {
+      const base = asMeta(spriteId);
+      // 立绘级取景以 neutral 那次为准：它是所有差分的垫图基准，一条 closeup 不该把基准带跑
+      if (variant === NEUTRAL && spec.framing) base.framing = spec.framing;
+      if (spec.stature) base.stature = spec.stature;
+      if (spec.title) base.title = spec.title;
+      current[spriteId] = base;
+
+      // 差分级的取景只在与立绘级不同时才写一条覆盖：与基准一致时留空表，文件才读得下去
+      const baseFraming = base.framing;
+      if (spec.framing && variant !== NEUTRAL && spec.framing !== baseFraming) {
+        current[`${spriteId}/${variant}`] = { ...asMeta(`${spriteId}/${variant}`), framing: spec.framing };
       }
-      const content = serializeCharacterCard(next);
-      if (content === raw) return;
-      await this.deps.files.write(path, content);
-      this.deps.onWrite({ path, before: raw, after: content }, notify);
-      this.deps.onPlayConfigChanged?.(notify);
+    });
+  }
+
+  /**
+   * 素材页手写的呈现声明：立绘级（`<id>`）或差分级（`<id>/<variant>`）各四格，
+   * 传 `null` 就是摘掉那一格（回到缺省），整条空了就把键删掉——manifest 是给人读的，
+   * 不留一串空对象。
+   *
+   * 描述与差分表照样一个字不动：这一趟只碰呈现那四格。
+   */
+  declareSpriteMeta(
+    spriteId: string,
+    variant: string | null,
+    patch: {
+      framing?: SpriteFraming | null;
+      stature?: SpriteStature | null;
+      anchor?: ActorAnchor | null;
+      title?: string | null;
+    },
+    notify: AssetNotify,
+  ): Promise<void> {
+    const id = assertSpriteId(spriteId);
+    const key = variant && variant.trim() !== "" ? `${id}/${variant.trim()}` : id;
+    return this.withManifest(notify, (current, asMeta) => {
+      const meta = asMeta(key);
+      for (const [field, value] of Object.entries(patch)) {
+        if (value === null || value === "") delete meta[field];
+        else if (value !== undefined) meta[field] = value;
+      }
+      if (Object.keys(meta).length === 0) delete current[key];
+      else current[key] = meta;
     });
   }
 
@@ -743,8 +798,8 @@ export class PlayAssets {
     return null;
   }
 
-  private async spriteStems(characterId: string): Promise<string[]> {
-    const dir = this.deps.files.absoluteOf(`assets/sprites/${characterId}`);
+  private async spriteStems(spriteId: string): Promise<string[]> {
+    const dir = this.deps.files.absoluteOf(`assets/sprites/${spriteId}`);
     if (!existsSync(dir)) return [];
     return (await readdir(dir))
       .filter((f) => /\.(png|jpe?g|webp)$/i.test(f))
@@ -755,7 +810,7 @@ export class PlayAssets {
 
 /** pending 面板上那一行的话。 */
 function labelFor(spec: AssetSpec): string {
-  if (spec.kind === "sprite") return `立绘 ${spec.characterId}/${spec.expression}`;
+  if (spec.kind === "sprite") return `立绘 ${spec.spriteId}/${spec.variant}`;
   return spec.kind === "background" ? `背景 ${spec.stem}` : `CG ${spec.stem}`;
 }
 
@@ -763,13 +818,13 @@ function suffixFor(spec: AssetSpec, prompt: string, sentReferences: number): str
   if (spec.kind !== "sprite") {
     if (sentReferences <= 0) return prompt;
     // 如果全部为具名角色
-    if (spec.referenceCharacters?.length && spec.referenceCharacters.length === sentReferences) {
-      return `${prompt}. ${referenceSuffix(spec.referenceCharacters)}`;
+    if (spec.referenceSprites?.length && spec.referenceSprites.length === sentReferences) {
+      return `${prompt}. ${referenceSuffix(spec.referenceSprites)}`;
     }
     // 包含通用参考图或混合参考
     return `${prompt}. ${genericReferenceSuffix(spec.explicitReferences ?? [])}`;
   }
-  if (spec.expression === NEUTRAL) {
+  if (spec.variant === NEUTRAL) {
     // 定妆照垫图：先给色键底抠底的构图约束，再点明这是哪张参考图的同一个人。
     // 顺序不能反——参考图会带背景与景别，构图约束压后面才盖得住它。
     return sentReferences > 0
@@ -826,7 +881,7 @@ function neutralReferenceTail(framing: SpriteFraming | undefined): string {
  *
  * 编号从 1 起、顺序与 references 数组严格一致；名字取角色卡的 `name`（没写就退回 id）。
  */
-function referenceSuffix(characters: ReferenceCharacter[]): string {
+function referenceSuffix(characters: ReferenceSprite[]): string {
   const roster = characters.map((c, i) => `${i + 1}) ${c.name}`).join(", ");
   return (
     `The attached reference images are, in this exact order: ${roster}. ` +

@@ -240,10 +240,14 @@ export class StageDslParser {
         if (!id) return this.dropTag("actor", "缺 id");
         const shotRaw = attrs.get("shot");
         const anchorRaw = attrs.get("anchor");
+        // `expression` / `state` 是 261004 之前的旧写法（人写表情、非人写状态），
+        // 合并成一个槽位后照旧收下：存量剧本不能因为改名就不换图。
+        const variant = attrs.get("variant") ?? attrs.get("expression") ?? attrs.get("state");
         this.emit({
           kind: "actor",
           id,
-          ...pick(attrs, ["pos", "expression", "state", "action", "leave"]),
+          ...pick(attrs, ["pos", "action", "leave"]),
+          ...(variant ? { variant } : {}),
           ...(shotRaw && isActorShot(shotRaw) ? { shot: shotRaw } : {}),
           ...(anchorRaw && isActorAnchor(anchorRaw) ? { anchor: anchorRaw } : {}),
         });

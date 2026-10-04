@@ -70,10 +70,11 @@ export function resolveResumeSeek(
 export interface SpriteSlot {
   pos?: SpritePosition;
   resolvedPos: SpritePosition;
-  expression: string | null;
-  state: string | null;
+  /** 换哪张差分（人的表情、机甲的状态——同一个槽位）。null = 没写过，取目录第一张。 */
+  variant: string | null;
   shot: ActorShot | null;
-  anchor: ActorAnchor;
+  /** 剧本显式写的对齐基准；null = 没写，听素材声明（见立绘的呈现三轴）。 */
+  anchor: ActorAnchor | null;
   /**
    * 行为词（剧本的 `action=`）与它的演出序号。
    *
@@ -106,14 +107,18 @@ export interface VisualState {
   pending: Record<string, { type: "bg" | "cg"; at: number }>;
 }
 
-/** 空 slot 的缺省值——`anchor` 默认 bottom（脚踩地），其余都是「不指定」。 */
+/**
+ * 空 slot 的缺省值——全是「不指定」。
+ *
+ * `variant` 与 `anchor` 的缺省不在这里：差分缺省是立绘目录里的第一张、对齐缺省写在素材声明里
+ * （机甲居中悬空、道具贴地各不同），都由渲染层查素材表补，slot 只记剧本真写了什么。
+ */
 function newSlot(): SpriteSlot {
   return {
     resolvedPos: "center",
-    expression: null,
-    state: null,
+    variant: null,
     shot: null,
-    anchor: "bottom",
+    anchor: null,
     action: null,
     actionSeq: 0,
   };
@@ -146,10 +151,9 @@ export function applyActorCue(
           ...(sprites[cue.id] ?? newSlot()),
           // 显式站位：认不出来就当没写（走自动），不猜不抛
           pos: parsePosition(cue.pos) ?? sprites[cue.id]?.pos,
-          expression: cue.expression ?? sprites[cue.id]?.expression ?? null,
-          state: cue.state ?? sprites[cue.id]?.state ?? null,
+          variant: cue.variant ?? sprites[cue.id]?.variant ?? null,
           shot: cue.shot ?? sprites[cue.id]?.shot ?? null,
-          anchor: cue.anchor ?? sprites[cue.id]?.anchor ?? "bottom",
+          anchor: cue.anchor ?? sprites[cue.id]?.anchor ?? null,
           // 行为词是一次性的：给了就演一次，不给不重播。exit/leave 走退场分支，
           // 不该同时被当成行为词（`action="leave"` 是退场的旧写法，不是动作）。
           action: isActorAction(cue.action) ? cue.action : null,
@@ -317,6 +321,20 @@ export function withAttachedCg(
 }
 
 /**
+ * 画面这一刻属于谱系里哪个节点：回看认游标那一条，跟随播放头认正在显示的这一行。
+ *
+ * 缓冲行（`fromLine`）的 nodeId 恒为 null——它取自脚本缓冲，谱系是按需拉的、可能还没跟上；
+ * 回看窗里的那一条来自会话记录，两处指的都是同一行，各取各的才不会认错。
+ */
+export function displayedNodeId(
+  entry: TranscriptEntry | null,
+  line: ScriptLine | null,
+  scrubbed: boolean,
+): string | null {
+  return scrubbed ? (entry?.nodeId ?? null) : (line?.nodeId ?? entry?.nodeId ?? null);
+}
+
+/**
  * 回看游标（会话记录下标）→ cue 水位线：折到这一条之前，舞台就是「它刚出现」的样子。
  *
  * 台词条目找它那条 line cue；玩家输入在缓冲里没有 cue，落到下一条台词之前
@@ -358,13 +376,25 @@ function lastIndexOfKey(entries: readonly TranscriptEntry[], key: string): numbe
   return -1;
 }
 
-/** 谱系还没追上时，播放头这行先按台词行自造一条记录顶上，台词不会闪空。 */
+/** 谱系还没追上时，播放头这行先自造一条记录顶上，台词不会闪空。 */
 function lineEntry(line: ScriptLine): TranscriptEntry {
+  if (line.type === "input") {
+    return {
+      key: line.key,
+      kind: "input",
+      type: "say",
+      actorId: "player",
+      text: line.text,
+      seq: line.seq ?? null,
+      nodeId: null,
+    };
+  }
   return {
     key: line.key,
     kind: "line",
     type: line.type === "say" || line.type === "narrate" || line.type === "thought" ? line.type : "narrate",
     actorId: line.actorId ?? null,
+    ...(line.nameOverride ? { nameOverride: line.nameOverride } : {}),
     text: line.text,
     seq: line.seq ?? null,
     nodeId: null,
@@ -534,6 +564,8 @@ export function usePlayback(
       : // 谱系按需拉取会落后缓冲一两句，此时播放头还没进记录：直接用缓冲这行顶上，别让台词闪空。
         (current ? lineEntry(current) : null);
   const scrubbed = scrubIndex !== null;
+  /** 正显示这一行的谱系节点：插图旁注按它认领（见 withAttachedCg）。 */
+  const displayedNode = displayedNodeId(view, current, scrubbed);
   const headIndexRef = useRef(headIndex);
   headIndexRef.current = headIndex;
 
@@ -558,9 +590,10 @@ export function usePlayback(
       if (!cue) return;
       cursorRef.current += 1;
       if (cue.kind === "line") {
-        setCurrentKey(cue.lineKey);
-        setShownLength(0);
         const line = linesRef.current.find((l) => l.key === cue.lineKey) ?? null;
+        setCurrentKey(cue.lineKey);
+        // 玩家回执一次到位：那是他刚说的话，不是逐字打出来的台词。
+        setShownLength(line?.type === "input" ? line.text.length : 0);
         hooksRef.current.onLineStart?.(line);
         return;
       }
@@ -711,19 +744,28 @@ export function usePlayback(
   // 只在 current 为 null 时生效——正在读的句子不会被新到的内容抢走，阅读节奏仍归玩家；
   // 玩家自己点着读完最后一句（current 归 null、屏幕显示「剧作家正在落笔…」）之后，
   // 新内容一到就该自己出现，这正是「边生成边演出」。
+  // 回执例外：停止点上选完/说完，缓冲里进来的第一张就是自己的 input 行——
+  // 起播不等点击也不等演出状态（player_input 先于 beat_start 到达时 state 还停在
+  // stopped、Auto 模式的读速节奏，都不拦自己的话），但已读完是前提。
   useEffect(() => {
+    const next = cues[cursorRef.current];
+    const nextIsPlayerInput =
+      next?.kind === "line" &&
+      (linesRef.current.find((l) => l.key === next.lineKey)?.type ?? null) === "input";
     const go = shouldAutoStart({
       live: opts.live,
       auto,
       hold: opts.hold === true,
       hasCurrent: current !== null,
+      currentComplete: current === null || shownLength >= current.text.length,
       cursor: cursorRef.current,
       cueCount: cues.length,
+      nextIsPlayerInput,
     });
     if (!go) return;
     const timer = setTimeout(() => consumeNext(), 80);
     return () => clearTimeout(timer);
-  }, [opts.live, auto, current, cues, consumeNext, opts.revision, opts.hold]);
+  }, [opts.live, auto, current, shownLength, cues, consumeNext, opts.revision, opts.hold]);
 
   // 骨架超时兜底：定期摘掉到点还没到货的占位，落到氛围底色而不是一直闪
   const pendingTtl = pendingTtlMs(opts.assetsTtlMs);
@@ -795,7 +837,7 @@ export function usePlayback(
 
   return {
     // 回看重算的画面 + 这一行上挂着的插图（图跟着行走，见 withAttachedCg）
-    visual: withAttachedCg(rewindVisual ?? visual, view?.nodeId, opts.cgByNode),
+    visual: withAttachedCg(rewindVisual ?? visual, displayedNode, opts.cgByNode),
     current,
     view,
     viewLength: scrubbed ? (view?.text.length ?? 0) : shownLength,

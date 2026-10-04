@@ -1,5 +1,4 @@
 import type { EngineStateSnapshot } from "../lineage/model.js";
-import { framingOf, isSpriteFraming, type SpriteFraming } from "./framing.js";
 
 /**
  * 剧目配置（plays/<id>/play.json）——server 与 web 共享的跨端契约。
@@ -24,15 +23,6 @@ export interface CharacterCard {
    * 这份是存量兜底（导入资源库建的角色一度只有它）。
    */
   voiceId?: string;
-  /** 立绘差分映射：expression id → assets/sprites/<char>/ 文件名（P2 演出层用）。 */
-  sprites?: Record<string, string>;
-  /** 立绘取景（full/half/square）：出图画幅与舞台摆位都跟着它走，缺省 = 全身（见 play/framing.ts）。 */
-  framing?: SpriteFraming;
-  /**
-   * 逐差分的取景覆盖：expression id → 取景。同一角色里混入不同画幅的差分时用
-   * （如 shout = full、sigh = half）。bust 已废，写了会降级到 half。
-   */
-  spriteFraming?: Record<string, SpriteFraming>;
 }
 
 /**
@@ -336,30 +326,13 @@ function parseImageConfig(raw: PlayImageConfig | undefined): PlayImageConfig | u
 }
 
 /**
- * 角色卡归一化：取景逐字段校验后丢弃非法值，其余字段原样透传。
+ * 角色卡归一化：卡片字段原样透传。
  *
- * 取景是**声明**出来的（见 play/framing.ts），手滑写个 "半身" 只能当没写：
- * 让它掉回缺省全身，远好过在舞台上按一个查不到的档位去找 CSS 类。
- *
- * 逐差分那圈也走 `framingOf` 而不是 `isSpriteFraming`，跟条目级对齐：已下线的
- * `bust` 在两条路径上都要降级成 `half`（见 framing.ts 的 LEGACY_SPRITE_FRAMING）。
- * 两边规则不一样的话，同一份存量数据在角色卡上被丢掉、在资源库上被降级，
- * 用户看到的现象是「从库里导入之后站位变了」，而两边的代码都「正确」。
+ * 立绘的取景与体量归素材表管（`assets/sprites/<id>/` + manifest），卡上不再有
+ * `framing` / `sprites` / `spriteFraming`——这里不做任何筛，多余字段由读者忽略。
  */
 function parseCharacter(card: CharacterCard): CharacterCard {
-  const framing = framingOf(card.framing);
-  const overrides: Record<string, SpriteFraming> = {};
-  for (const [expression, value] of Object.entries(card.spriteFraming ?? {})) {
-    if (expression.trim() === "") continue;
-    const framing = framingOf(value);
-    if (framing) overrides[expression] = framing;
-  }
-  const out: CharacterCard = { ...card };
-  if (framing) out.framing = framing;
-  else delete out.framing;
-  if (Object.keys(overrides).length > 0) out.spriteFraming = overrides;
-  else delete out.spriteFraming;
-  return out;
+  return { ...card };
 }
 
 /**

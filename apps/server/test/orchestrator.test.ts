@@ -230,10 +230,14 @@ describe("PlaywrightOrchestrator 闭环", () => {
 
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
 
+    // 玩家输入先于开演广播：它是被接受的那个动作在时间线上的一帧（回执），
+    // 客户端在 beat_start 之前就能把它顶进对话框。
+    expect(messages[0]).toMatchObject({ type: "events", events: [{ event: { kind: "player_input", text: "我到了" } }] });
     const kinds = messages.map((m) => m.type);
-    expect(kinds[0]).toBe("beat_start");
+    expect(kinds[1]).toBe("beat_start");
     const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
     expect(mergedKinds(events)).toEqual([
+      "player_input",
       "scene",
       "actor",
       "narrate_start",
@@ -1315,7 +1319,7 @@ describe("长会话装配", () => {
     if (beatEnd.type === "beat_end") expect(beatEnd.stop?.stopType).toBe("choice");
   });
 
-  it("只调记忆工具就结束（零剧本产出）→ 判废退回输入之前，报错并给 pause 重试入口", async () => {
+  it("只调记忆工具就结束（零剧本产出）→ 不判废：工具副作用已经发生，按 no_stop 正常收束", async () => {
     const { orchestrator, messages } = setup(
       [
         {
@@ -1329,11 +1333,17 @@ describe("长会话装配", () => {
 
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
 
-    expect(messages.filter((m) => m.type === "error")).toHaveLength(1);
-    // 控制指令与工具调用都不算「写出了东西」：退回输入之前，一轮都没留下
-    expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(0);
-    const rebase = messages.filter((m) => m.type === "rebase").at(-1);
-    expect(rebase).toMatchObject({ reason: "stop", stop: { stopType: "pause" } });
+    // 工具调用不算「写出了东西」，但它是模型有意的动作：不报错、不回滚，
+    // 一轮照常落下（no_stop），玩家按「继续」开下一轮
+    expect(messages.filter((m) => m.type === "error")).toHaveLength(0);
+    expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(1);
+    expect(messages.filter((m) => m.type === "rebase")).toHaveLength(0);
+    const beatEnd = lastBeatEnd(messages);
+    if (beatEnd.type === "beat_end") {
+      expect(beatEnd.reason).toBe("no_stop");
+      expect(beatEnd.stop).toBeUndefined();
+    }
+    expect(orchestrator.isBusy).toBe(false);
   });
 
   it("beat_done 与记忆工具同批 → finishTurn 兜底收束（terminate 不被 batch 吞掉）", async () => {
@@ -1702,6 +1712,48 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     expect(combinedUserText).toContain("温存亲密的一夜");
     // 露骨台词不应在主模型消息中出现
     expect(combinedUserText).not.toContain("轻一点");
+  });
+
+  it("enter_nsfw 单独成轮（零台词零停止点）→ 不判废：交棒落定，下一轮照常由限制级模型执笔", async () => {
+    const contexts: CapturedContext[] = [];
+    const responses: FakeResponse[] = [
+      // 第 1 轮：只调 enter_nsfw + beat_done 交棒，一个字台词都没写
+      {
+        text: "",
+        beatDone: true,
+        toolCalls: [{ name: "enter_nsfw", args: { reason: "进入房间亲密接触" } }],
+      },
+      // 第 2 轮：限制级模型执笔
+      {
+        text: '<say id="mio">笨蛋……轻一点……</say>',
+        beatDone: true,
+      },
+    ];
+
+    const { orchestrator, messages } = setup(responses, { contexts });
+    orchestrator.start();
+    await orchestrator.whenIdle();
+
+    // 交棒轮不是失败：不报错、不回滚（回滚会把 pendingEnter 重置回日常模型）
+    expect(messages.filter((m) => m.type === "error")).toHaveLength(0);
+    expect(messages.filter((m) => m.type === "rebase")).toHaveLength(0);
+    expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(1);
+    const beatEnd = lastBeatEnd(messages);
+    if (beatEnd.type === "beat_end") {
+      expect(beatEnd.reason).toBe("no_stop");
+      expect(beatEnd.stop).toBeUndefined();
+    }
+
+    // 下一轮：限制级前置合规轮次已注入（nsfwPendingEnter 在开拍前兑现）
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+
+    expect(orchestrator.runtimeState.nsfw?.active).toBe(true);
+    const nsfwContext = contexts[1]!;
+    const hasPreTurn = nsfwContext.messages.some(
+      (m) => typeof m.content === "string" && m.content.includes("20 周岁以上"),
+    );
+    expect(hasPreTurn).toBe(true);
   });
 
   it("从限制级分支跳转或分岔回日常节点时，NSFW 状态重置为 false，不会滞留限制级模式", async () => {

@@ -14,8 +14,10 @@ const WAITING: AutoStartInput = {
   auto: false,
   hold: false,
   hasCurrent: false,
+  currentComplete: true,
   cursor: 2,
   cueCount: 6,
+  nextIsPlayerInput: false,
 };
 
 describe("空对话区文案", () => {
@@ -28,15 +30,10 @@ describe("空对话区文案", () => {
   });
 });
 
-describe("台词条归属：回声 > 当前行 > 空提示", () => {
-  const base = { playerEcho: null, viewName: "小春", shown: "……喂。", hasView: true, live: true };
+describe("台词条归属：当前行 > 空提示（玩家回执是缓冲里的普通行，没有特权分支）", () => {
+  const base = { viewName: "小春", shown: "……喂。", hasView: true, live: true };
 
-  it("停止点上回声压得住上一句——初版就是死在这里，屏幕上什么都没有", () => {
-    const d = dialogContent({ ...base, playerEcho: "（选择了：走）" });
-    expect(d).toEqual({ name: "你", text: "（选择了：走）" });
-  });
-
-  it("没有回声时照常显示当前行与它的名牌", () => {
+  it("照常显示当前行与它的名牌", () => {
     expect(dialogContent(base)).toEqual({ name: "小春", text: "……喂。" });
   });
 
@@ -44,15 +41,11 @@ describe("台词条归属：回声 > 当前行 > 空提示", () => {
     expect(dialogContent({ ...base, viewName: null })).toEqual({ name: null, text: "……喂。" });
   });
 
-  it("既没有回声也没有当前行才轮到占位文案", () => {
+  it("没有当前行才轮到占位文案", () => {
     expect(dialogContent({ ...base, hasView: false, shown: "", viewName: null })).toEqual({
       name: null,
       text: "剧作家正在落笔…",
     });
-  });
-
-  it("回声空了才回落，不留上一句的残影", () => {
-    expect(dialogContent({ ...base, playerEcho: "" })).toEqual({ name: "小春", text: "……喂。" });
   });
 });
 
@@ -63,6 +56,40 @@ describe("演出中自动起播", () => {
 
   it("正在读的那一句不会被新到内容抢走，阅读节奏仍归玩家", () => {
     expect(shouldAutoStart({ ...WAITING, hasCurrent: true })).toBe(false);
+  });
+
+  it("玩家的回执是唯一例外：停止点上选完立刻要看见自己说了什么", () => {
+    expect(
+      shouldAutoStart({ ...WAITING, hasCurrent: true, currentComplete: true, nextIsPlayerInput: true }),
+    ).toBe(true);
+  });
+
+  it("回执不等 beat_start：player_input 先到时 state 还停在 stopped，照样显示", () => {
+    expect(
+      shouldAutoStart({ ...WAITING, live: false, hasCurrent: true, currentComplete: true, nextIsPlayerInput: true }),
+    ).toBe(true);
+  });
+
+  it("回执不等自动模式的读速节奏：自己的话不吃那 2~3 秒延迟", () => {
+    expect(
+      shouldAutoStart({ ...WAITING, auto: true, hasCurrent: true, currentComplete: true, nextIsPlayerInput: true }),
+    ).toBe(true);
+  });
+
+  it("停止点上对话区空着（刷新后/首拍前）时回执也照常顶上", () => {
+    expect(shouldAutoStart({ ...WAITING, live: false, nextIsPlayerInput: true })).toBe(true);
+  });
+
+  it("回执也不抢没读完的句子（多端同看时阅读节奏归各自）", () => {
+    expect(
+      shouldAutoStart({ ...WAITING, hasCurrent: true, currentComplete: false, nextIsPlayerInput: true }),
+    ).toBe(false);
+  });
+
+  it("回执再急也让语音 hold：当前句语音没播完就不推进", () => {
+    expect(
+      shouldAutoStart({ ...WAITING, hold: true, hasCurrent: true, currentComplete: true, nextIsPlayerInput: true }),
+    ).toBe(false);
   });
 
   it("缓冲区空了就等着，不空转", () => {

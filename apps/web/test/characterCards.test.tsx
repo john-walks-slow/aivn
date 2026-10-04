@@ -86,8 +86,9 @@ describe("角色页：真相源是角色卡", () => {
     expect(playId).toBe("p1");
     expect(path).toBe("characters/mio.md");
     expect(content).toContain("name: ミオ");
-    expect(content).toContain("framing: half");
-    expect(content).toContain("neutral: mio_neutral.png");
+    // 立绘取景与差分映射归素材表，卡上一个字节都不写（cast 里带上来的旧字段当噪声丢掉）
+    expect(content).not.toContain("framing");
+    expect(content).not.toContain("sprites");
     expect(content).toContain("改过的人设");
   });
 

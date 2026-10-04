@@ -144,8 +144,11 @@ export interface GeneratedAsset {
   id: string;
   /** 站内 URL：/plays/<playId>/media/img/<file>。 */
   url: string;
-  /** bg | cg（sprite 不做生图，见计划 D6）。 */
-  type: "bg" | "cg";
+  /**
+   * bg | cg | sprite。立绘到货也走这条：客户端据此重拉素材声明与素材列表，
+   * 刚出的差分与刚写的取景声明当场生效（id 用 `<立绘>:<差分>`，与预发射骨架同一个）。
+   */
+  type: "bg" | "cg" | "sprite";
 }
 
 /** 玩家读到哪儿：正在显示的台词节点 ID 与字数偏移（0 为刚开始本句）。基于稳定 nodeId 寻址，跨 rebase 与刷新保真。 */

@@ -4,6 +4,8 @@ import {
   libraryEntryMatches,
   parseAssetMeta,
   parsePlayAssetManifest,
+  spriteDeclarationOf,
+  spriteTitlesOf,
   StageDslParser,
   type StageEvent,
   type LibraryEntry,
@@ -46,7 +48,7 @@ describe("parseAssetMeta：库里人手写的 meta.json", () => {
   it("一份脏数据不能拖垮整库：非对象与空数组都退回空元数据", () => {
     expect(parseAssetMeta(null)).toEqual({});
     expect(parseAssetMeta([1, 2])).toEqual({});
-    expect(parseAssetMeta({ expressions: { a: { file: "" } } }).expressions).toBeUndefined();
+    expect(parseAssetMeta({ variants: { a: { file: "" } } }).variants).toBeUndefined();
   });
 
   it("取景：只认三档，人手写错的值当没写（退回全身由演出层负责）", () => {
@@ -68,18 +70,30 @@ describe("parseAssetMeta：库里人手写的 meta.json", () => {
   it("取景：差分可以覆盖条目级声明，写错的那条丢掉、好的那条照留", () => {
     const meta = parseAssetMeta({
       framing: "full",
-      expressions: {
+      variants: {
         smile: { file: "a.png", framing: "square" },
         angry: { file: "b.png", framing: "上半身" },
         cry: { file: "c.png", description: "哭" },
       },
     });
     expect(meta.framing).toBe("full");
-    expect(meta.expressions).toEqual({
+    expect(meta.variants).toEqual({
       smile: { file: "a.png", framing: "square" },
       angry: { file: "b.png" },
       cry: { file: "c.png", description: "哭" },
     });
+  });
+
+  it("旧键 expressions 照旧读成 variants：库里的 meta.json 是手写的，改名不该让差分表消失", () => {
+    const meta = parseAssetMeta({ expressions: { smile: { file: "a.png" } } });
+    expect(meta.variants).toEqual({ smile: { file: "a.png" } });
+  });
+
+  it("体量与对齐：只认表里的值，写别的当没写", () => {
+    expect(parseAssetMeta({ stature: "huge" }).stature).toBe("huge");
+    expect(parseAssetMeta({ stature: "巨大" }).stature).toBeUndefined();
+    expect(parseAssetMeta({ anchor: "bottom" }).anchor).toBe("bottom");
+    expect(parseAssetMeta({ anchor: "下" }).anchor).toBeUndefined();
   });
 });
 
@@ -94,6 +108,58 @@ describe("parsePlayAssetManifest：新旧两种素材表都收", () => {
     expect(parsePlayAssetManifest(null)).toEqual({});
     expect(parsePlayAssetManifest([1])).toEqual({});
     expect(parsePlayAssetManifest({ "  ": "x" })).toEqual({});
+  });
+});
+
+describe("spriteDeclarationOf：一个主体的呈现声明", () => {
+  const manifest = parsePlayAssetManifest({
+    mecha: { framing: "full", stature: "huge", anchor: "center", title: "试作机" },
+    "mecha/closeup": { framing: "half" },
+    cat: { framing: "square", stature: "small" },
+  });
+
+  it("立绘级打底：三轴与名牌一起读出来", () => {
+    expect(spriteDeclarationOf(manifest, "mecha")).toEqual({
+      framing: "full",
+      stature: "huge",
+      anchor: "center",
+      title: "试作机",
+    });
+  });
+
+  it("差分级只覆盖它自己写了的那几格，没写的仍听立绘级", () => {
+    expect(spriteDeclarationOf(manifest, "mecha", "closeup")).toEqual({
+      framing: "half",
+      stature: "huge",
+      anchor: "center",
+      title: "试作机",
+    });
+    // 差分没声明过：整份就是立绘级那份
+    expect(spriteDeclarationOf(manifest, "mecha", "angry")).toMatchObject({ framing: "full" });
+  });
+
+  it("没声明过的主体与没写 variant 时都是空对象——缺省值由调用方落，不在这里编", () => {
+    expect(spriteDeclarationOf(manifest, "ghost")).toEqual({});
+    expect(spriteDeclarationOf(manifest, "ghost", "smile")).toEqual({});
+    expect(spriteDeclarationOf(manifest, "mecha", "")).toEqual(spriteDeclarationOf(manifest, "mecha"));
+    expect(spriteDeclarationOf({}, "mecha")).toEqual({});
+  });
+
+  it("没有卡的主体也有声明：猫按方形小体量站", () => {
+    expect(spriteDeclarationOf(manifest, "cat")).toEqual({ framing: "square", stature: "small" });
+  });
+});
+
+describe("spriteTitlesOf：无卡主体的名牌表", () => {
+  it("只收立绘级（键不带斜杠）的 title——差分自己的名字不是主体名", () => {
+    const manifest = parsePlayAssetManifest({
+      mecha: { title: "试作机" },
+      "mecha/closeup": { title: "近景" },
+      bg_hall: { title: "礼堂" },
+      空名牌: { title: "   " },
+      cat: { framing: "square" },
+    });
+    expect(spriteTitlesOf(manifest)).toEqual({ mecha: "试作机", bg_hall: "礼堂" });
   });
 });
 

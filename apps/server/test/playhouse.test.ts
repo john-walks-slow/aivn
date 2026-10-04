@@ -297,8 +297,8 @@ describe("导演生图：前置守卫（都不该碰生图后端）", () => {
 
     const res = await house.generateImage("p1", {
       kind: "sprite",
-      characterId: "koharu",
-      expression: "smile",
+      spriteId: "koharu",
+      variant: "smile",
     });
 
     expect(res.target).toBe("sprites/koharu/smile");

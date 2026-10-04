@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "@earendil-works/pi-ai";
-import type { PreloadAssetAttrs, SpriteFraming } from "@aivn/core";
+import type { PreloadAssetAttrs, SpriteFraming, SpriteStature } from "@aivn/core";
 import type { AssetTarget, PlayAssets } from "../playAssets.js";
 import { linesResult, reason, textResult } from "./result.js";
 
@@ -10,14 +10,14 @@ import { linesResult, reason, textResult } from "./result.js";
  * |  | 工坊（sync） | 剧作家（queued） |
  * | --- | --- | --- |
  * | 等待 | await，回执带 markdown 图片 | 发起即返回排产回执 |
- * | 立绘角色 | 必须在角色卡目录里，或带 characterName 自动建最小卡 | 同左 |
+ * | 立绘主体 | 给 spriteId 即可（有没有角色卡都行） | 同左 |
  *
  * 抠底参数不在这里：填它得先看过成图，而出图那一刻没人看过图。改抠底是工坊在用户面前
  * 看到脏边之后的事，走单独的 `recut_sprite`（原地重抠，不重新出图）。
  *
  * 落点两边一样：都进 `assets/`（工坊与剧作家共用同一个 PlayAssets）。
- * 工具能力也**不分角色**——`expression` 与 `references` 两个角色都拿得到，
- * 垫图可以是角色立绘、剧目内路径或网络图，与谁调的无关。要不要给剧作家开这个工具由设置页决定。
+ * 工具能力也**不分角色**——`variant` 与 `references` 两个角色都拿得到，
+ * 垫图可以是任一主体的立绘、剧目内路径或网络图，与谁调的无关。要不要给剧作家开这个工具由设置页决定。
  *
  * 工坊出图是**同步**的：用户就站在对话框前等，回执必须把图贴给他看。
  * 剧作家是**后台预发射**：一轮只有 240s，立绘一张约 100s，等不起也不该等——
@@ -28,19 +28,18 @@ const generateImageParams = Type.Object(
     kind: Type.Union([Type.Literal("background"), Type.Literal("cg"), Type.Literal("sprite")]),
     /** 背景/CG 的素材 id，剧本里的 bg/cg id 就是它。 */
     name: Type.Optional(Type.String({ maxLength: 40 })),
-    /** 立绘所属角色 id（角色卡的文件名主体）。 */
-    characterId: Type.Optional(Type.String({ maxLength: 40 })),
     /**
-     * 角色表里还没有 characterId 时的显示名：带上它就自动建一张最小角色卡。
-     * 戏里临时冒出来的人（路人、店员）走这条——工坊与用户此刻不在场，等他们想起建卡，
-     * 这一轮早演过去了。给一个有卡的角色带这个参数没有额外作用（不会覆盖已有的人设）。
+     * 立绘的主体 id（人、机甲、道具、猫同权）：剧本里 `<actor id>` 与 `<say id>` 引用的那个名字。
+     *
+     * **不要求有角色卡**——立绘与卡是同名即绑定的两件可选附件：机甲没有卡也照样有立绘，
+     * 路人没有卡也能出图上台。有同名卡时会读卡上的人设来写外观。
      */
-    characterName: Type.Optional(Type.String({ maxLength: 40 })),
-    /** 立绘差分名，如 neutral / smile。不给按 neutral。 */
-    expression: Type.Optional(Type.String({ maxLength: 40 })),
+    spriteId: Type.Optional(Type.String({ maxLength: 40 })),
+    /** 立绘差分名，如 neutral / smile / damaged / asleep。不给按 neutral。 */
+    variant: Type.Optional(Type.String({ maxLength: 40 })),
     /**
-     * 参考图（垫图）：可给角色 id（自动引用其立绘）、剧目内路径（如 assets/backgrounds/ref.png）或 http(s) URL。
-     * - 出定妆照(neutral)时传它，垫图生成该角色的初始形象；
+     * 参考图（垫图）：可给主体 id（自动引用其立绘）、剧目内路径（如 assets/backgrounds/ref.png）或 http(s) URL。
+     * - 出定妆照(neutral)时传它，垫图生成该主体的初始形象；
      * - 出 CG/背景时传它，垫出指定角色或画面的参考；
      * - 数组顺序即提示词里「第一张、第二张」的顺序。
      */
@@ -48,17 +47,28 @@ const generateImageParams = Type.Object(
       Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), { minItems: 1, maxItems: 6 }),
     ),
     /**
-     * 兼容别名：等同于 references 中传入角色 id 列表。
+     * 兼容别名：等同于 references 中传入主体 id 列表。
      */
     referenceCharacters: Type.Optional(Type.Array(Type.String({ maxLength: 40 }), { minItems: 1, maxItems: 6 })),
-    /** 立绘取景（只对 kind=sprite 生效；不给则沿用该角色已声明的，默认全身）。 */
+    /** 立绘取景（只对 kind=sprite 生效；不给则沿用该主体已声明的，默认全身）。 */
     framing: Type.Optional(
       Type.Union([
-        Type.Literal("full", { description: "全身：人到脚。人物立绘的常规选择" }),
+        Type.Literal("full", { description: "全身：主体到脚。人物立绘的常规选择" }),
         Type.Literal("half", { description: "半身：到腰。对话时人物更大更清楚" }),
         Type.Literal("square", { description: "方形：正方画幅、主体完整入画。给猫、道具这类非人主体" }),
       ]),
     ),
+    /** 立绘体量（只对 kind=sprite 生效）：台上站多大。机甲/巨物用 huge，猫/小道具用 small，普通人用 normal。 */
+    stature: Type.Optional(
+      Type.Union([
+        Type.Literal("small", { description: "小：猫、小道具，贴地面站" }),
+        Type.Literal("normal", { description: "标准：与人同高" }),
+        Type.Literal("large", { description: "大：比人高一档" }),
+        Type.Literal("huge", { description: "巨大：机甲、巨物，顶天立地" }),
+      ]),
+    ),
+    /** 立绘标题（只对 kind=sprite 生效）：没有角色卡时，舞台名牌显示它。 */
+    title: Type.Optional(Type.String({ maxLength: 40 })),
     /** 画风锚点（可选），如「厚涂写实电影感」「赛璐珞动画」。不给就不预设风格，按角色描述走。 */
     style: Type.Optional(Type.String({ maxLength: 200 })),
     prompt: Type.String({ minLength: 1, maxLength: 4000, description: "英文出图提示词，描述画面本身（不含负面词）" }),
@@ -77,38 +87,40 @@ const generateImageParams = Type.Object(
  */
 const PROMPT_RULES = [
   "写 prompt：",
-  "画面里出现角色时，**逐条带上角色卡的外貌**——发色、发型与长度、发饰、瞳色、脸上记号（泪痣、眼镜）、",
+  "画面里出现一个主体时，**逐条带上角色卡的外貌**（非人主体则是形状、材质、配色）——发色、发型与长度、发饰、瞳色、脸上记号（泪痣、眼镜）、",
   "上衣、领巾或领结、裙、袜、鞋、手里拿着的东西，一条一条写进 prompt；角色卡没写的不要自己发明。",
   "只写「a girl with pink hair」这种泛化描述，等于把衣服和配件交给模型默认，出来的人不是卡上那个人",
   "（实测：人设写白百褶裙 + 黑过膝袜 + 颈上拍立得，图里出来藏青裙 + 白中短袜 + 肩上包）。",
-  "非 neutral 的立绘会自动垫上该角色的 neutral 定妆照，**垫图就是身份基准**：prompt 里只写这次要改的东西",
+  "非 neutral 的立绘会自动垫上该主体的 neutral 定妆照，**垫图就是身份基准**：prompt 里只写这次要改的东西",
   "（表情、姿势、角度），别重新描述长相——重写一遍会和垫图打架。垫图也**不会**把姿势锁回站桩：",
   "实测「垫图 + 明确写姿势机位」照样能出俯视坐姿、拾级而下的动态画面，只垫图不写姿势则一定是正面站桩。",
   "**姿势、机位、景别都要显式写**：只说「她站在天台上」出来是对称站立的正面像，要说清机位（平视/俯视/仰视/侧身回眸）",
   "、动作（坐/走/倚靠栏杆/回头）与景别（full body / medium shot / close-up）——不写景别，袜子、鞋这类细节直接出框。",
   "立绘的**取景用 framing 参数声明**（full 全身 / half 半身 / square 方形）：它决定画幅、构图与舞台上的站位，" +
-  "同一个角色要保持同一档。人物用 full 或 half；**猫、道具这类非人主体用 square**——" +
+  "同一个主体要保持同一档。人物用 full 或 half；**猫、道具这类非人主体用 square**——" +
   "「全身/半身」是人形术语，套到它们身上语义不通，正方画幅也让主体占满画布、不浪费上下空间。" +
-  "不给就沿用该角色已有的声明。",
+  "不给就沿用该主体已有的声明。",
+  "立绘的**体量用 stature 参数声明**（small 猫/小道具，normal 与人同高，large 高一档，huge 机甲/巨物）：" +
+  "它只管台上多大，与取景是两件事——机甲是「全身取景 + 巨大」，猫是「方形取景 + 小」。不给按 normal。",
   "立绘的抠底构图与画风后缀（单一纯色底、平涂、哪里要留白）由引擎自动拼在 prompt 末尾，别在 prompt 里",
-  "重复也别改写它；角色配色与默认的纯绿底撞色时，才在 prompt 里点名换一个纯色底。背景与 CG 没有这层后缀，构图要求要自己写。",
+  "重复也别改写它；主体配色与默认的纯绿底撞色时，才在 prompt 里点名换一个纯色底。背景与 CG 没有这层后缀，构图要求要自己写。",
 ].join("");
 
 /** 垫图规则：两个角色都拿得到 `references` 与 `referenceCharacters`，所以它属于共享的工具契约。 */
 const REFERENCE_RULE =
-  "画面里需要依据既有形象或素材时用 **references**（或兼容易懂的 referenceCharacters）垫图（可给角色 id、剧目内相对路径或 http(s) 网址；数组顺序即提示词里的先后顺序）：" +
-  "出 **neutral 定妆照**时传 references，以给定参考图为基准生成角色初始立绘；" +
-  "背景与 CG 里有人物时传入对应角色立绘或参考图，出来的脸和设定才对得上。" +
-  "**非 neutral 的立绘差分不吃 references**——它的身份基准恒为该角色的 neutral 定妆照，要换基准就把 neutral 重出一遍。" +
+  "画面里需要依据既有形象或素材时用 **references**（或兼容易懂的 referenceCharacters）垫图（可给主体 id、剧目内相对路径或 http(s) 网址；数组顺序即提示词里的先后顺序）：" +
+  "出 **neutral 定妆照**时传 references，以给定参考图为基准生成主体初始立绘；" +
+  "背景与 CG 里有人物时传入对应立绘或参考图，出来的脸和设定才对得上。" +
+  "**非 neutral 的立绘差分不吃 references**——它的身份基准恒为该主体的 neutral 定妆照，要换基准就把 neutral 重出一遍。" +
   "垫了图也不必省略 prompt 里的外貌描述——垫图锁的是脸与核心特征，画面里的动作、姿态、相对位置仍然要 prompt 说。";
 
 const SYNC_DESCRIPTION = [
   "出一张剧目素材并落进 assets/：背景(kind=background) / CG(kind=cg) 给 name，",
-  "立绘(kind=sprite) 给 characterId + expression（不给按 neutral）。立绘会自动抠底成透明 PNG（引擎要靠它叠在场景上）。",
+  "立绘(kind=sprite) 给 spriteId + variant（variant 不给按 neutral）。立绘会自动抠底成透明 PNG（引擎要靠它叠在场景上）。",
   "背景与 CG 一律 16:9 横构图；立绘的画幅跟着 framing 参数走，不用为了构图去改画幅。",
-  "非 neutral 的立绘会自动拿该角色的 neutral 定妆照做垫图，所以同一个角色的差分是同一个人；",
-  "**该角色还没有 neutral 时就出别的差分会被直接拒绝**——先把 neutral 出了。",
-  "neutral 与 normal 是两个名字：出 neutral 不会覆盖 normal，两张文件两张人并存。",
+  "非 neutral 的立绘会自动拿该主体的 neutral 定妆照做垫图，所以同一个主体的差分是同一个人；",
+  "**该主体还没有 neutral 时就出别的差分会被直接拒绝**——先把 neutral 出了。",
+  "`neutral` 是保留的差分名（定妆照），别拿它当普通差分名之外的其它意思。",
   PROMPT_RULES,
   REFERENCE_RULE,
   "一次工具调用只出一张图；要出多个差分就在同一个批次里多次调用本工具，它们是并行的。",
@@ -117,9 +129,10 @@ const SYNC_DESCRIPTION = [
 
 const QUEUED_DESCRIPTION = [
   "出一张剧目素材并**后台排产**（发起即返回，不等图）：背景(kind=background) / CG(kind=cg) 给 name，",
-  "立绘(kind=sprite) 给 characterId + expression（不给按 neutral）。characterId 是已有角色卡的角色；",
-  "**戏里临时冒出来的人**（路人、店员）带 characterName=显示名 一起给，会自动建一张最小角色卡——",
-  "工坊与用户此刻不在场，等他们想起建卡，这一轮早演过去了；有卡的角色别带这个参数，人设不会被覆盖。",
+  "立绘(kind=sprite) 给 spriteId + variant（variant 不给按 neutral）。spriteId 就是剧本里 <actor id> 引用的名字，",
+  "**没有角色卡也能出**（机甲、道具、猫、只在一轮里出现的路人都是这样）；有同名卡时按卡上的人设写外观。",
+  "没有角色卡又想给主体一个显示名，带 title=名称，舞台名牌就用它；",
+  "角色卡是「这个人是谁」的正式落点，要人设、音色、长期出场才值得建（那是工坊与用户的活）。",
   "背景 16:9、CG 16:9、立绘竖构图（取景 full 用 9:16、half 3:4、square 1:1）；提示词写英文，只描述画面本身。",
   PROMPT_RULES,
   REFERENCE_RULE,
@@ -127,7 +140,7 @@ const QUEUED_DESCRIPTION = [
   "引擎不认，那张图不会出现，也不会有人告诉你出错了。",
   "背景与 CG 的 prompt 末尾自己加 \"anime visual novel background, no text\"；立绘的后缀引擎自动拼，别在 prompt 里重复。",
   "**id 自取**：背景与 CG 给一个简短英文下划线 id（如 bg_rooftop_dusk、cg_rooftop_01），",
-  "之后在剧本里一字不差地引用同一个 id：<scene bg=\"…\">、<cg id=\"…\">、<actor expression=\"…\">。",
+  "之后在剧本里一字不差地引用同一个 id：<scene bg=\"…\">、<cg id=\"…\">、<actor id=\"…\" variant=\"…\">。",
   "**图到货要一分多钟**（实测 1k 档 70–80s、2k 档 110s 上下）：这一轮就引用到它，舞台会先上骨架占位，",
   "台词照常演、图到货后自动淡入——照常写就行，不用为了等图停下来。",
   "回执会告诉你剧目里是不是已经有同名素材——有就直接引用，别重复发起。",
@@ -155,7 +168,7 @@ export interface QueuedImageDeps {
   /** 后台发起 bg/cg（宿主负责到货广播 asset_ready / 失败 asset_failed）。 */
   kick: (type: "bg" | "cg", prompt: string, id: string, references?: string[]) => void;
   /** 后台发起立绘：同上的失败广播。references 只在出 neutral 定妆照时有意义。 */
-  kickSprite: (charId: string, expression: string, prompt: string, framing?: SpriteFraming, references?: string[]) => void;
+  kickSprite: (target: { spriteId: string; variant: string; prompt: string; framing?: SpriteFraming; stature?: SpriteStature; title?: string; references?: string[] }) => void;
   /** 这个目标在剧目里已有素材的静态 URL（用户导入的或之前生成的）——有就不烧配额。 */
   existingAssetUrl: (target: AssetTarget) => Promise<string | null>;
 }
@@ -217,10 +230,11 @@ async function runSync(
     {
       kind: params.kind,
       name: params.name,
-      characterId: params.characterId,
-      characterName: typeof params.characterName === "string" ? params.characterName : undefined,
-      expression: typeof params.expression === "string" ? params.expression : undefined,
+      spriteId: typeof params.spriteId === "string" ? params.spriteId : undefined,
+      variant: typeof params.variant === "string" ? params.variant : undefined,
       framing: params.framing,
+      stature: params.stature,
+      title: typeof params.title === "string" ? params.title : undefined,
       references,
       referenceCharacters: references,
     },
@@ -232,7 +246,7 @@ async function runSync(
     return `${asset.replaced ? "已生成并覆盖原有素材" : "已生成"}：${asset.path}\n![${asset.path}](${asset.url})`;
   });
   const auto = generated.find((asset) => asset.autoNeutral);
-  if (auto) lines.push("该角色原本没有任何差分，已先自动出一张 neutral 定妆照。");
+  if (auto) lines.push("该主体原本没有任何差分，已先自动出一张 neutral 定妆照。");
   return linesResult(lines);
 }
 
@@ -244,16 +258,24 @@ async function runQueued(
   const assets = deps.playAssets!;
   const references = resolveRefs(params);
   if (params.kind === "sprite") {
-    const charId = params.characterId?.trim() ?? "";
-    if (!charId) throw new Error("立绘必须给 characterId（角色 id）");
-    const expression = params.expression?.trim() || "neutral";
-    if (await assets.exists({ kind: "sprite", characterId: charId, expression })) {
-      return textResult(`${charId} 的 ${expression} 立绘剧目里已经有了，直接 <actor id="${charId}"> 引用，不用重出。`);
+    const spriteId = params.spriteId?.trim() ?? "";
+    if (!spriteId) throw new Error("立绘必须给 spriteId（主体 id，剧本里 <actor id> 引用的那个名字）");
+    const variant = params.variant?.trim() || "neutral";
+    if (await assets.exists({ kind: "sprite", spriteId, variant })) {
+      return textResult(`${spriteId} 的 ${variant} 立绘剧目里已经有了，直接 <actor id="${spriteId}"> 引用，不用重出。`);
     }
-    deps.emitPreload({ type: "sprite", id: `${charId}:${expression}`, prompt: params.prompt });
-    deps.kickSprite(charId, expression, params.prompt, params.framing, references);
+    deps.emitPreload({ type: "sprite", id: `${spriteId}:${variant}`, prompt: params.prompt });
+    deps.kickSprite({
+      spriteId,
+      variant,
+      prompt: params.prompt,
+      framing: params.framing,
+      stature: params.stature,
+      title: typeof params.title === "string" ? params.title.trim() || undefined : undefined,
+      references,
+    });
     return textResult(
-      `已排产：立绘 ${charId}/${expression}（约一分多钟，到货后自动淡入）。` +
+      `已排产：立绘 ${spriteId}/${variant}（约一分多钟，到货后自动淡入）。` +
         "这一轮就让它上台的话，舞台先上骨架占位，到货后自动淡入。",
     );
   }

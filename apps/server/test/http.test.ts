@@ -347,3 +347,57 @@ describe("GET /api/voices：按条件现拉窗口", () => {
     expect((await call("", undefined)).statusCode).toBe(404);
   });
 });
+
+describe("PUT /api/plays/:id/assets/sprite：素材页写立绘呈现声明", () => {
+  let root: string;
+  let library: PlayLibrary;
+  let declared: unknown[];
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "stage-http-sprite-"));
+    library = new PlayLibrary(root);
+    await library.createEmpty("p1", "黄昏");
+    declared = [];
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const put = async (body: unknown): Promise<FakeRes> => {
+    const res = new FakeRes();
+    const house = {
+      declareSpriteMeta: async (_playId: string, decl: unknown) => {
+        declared.push(decl);
+      },
+    } as unknown as PlayHouse;
+    await handleHttp(
+      {
+        url: "/api/plays/p1/assets/sprite",
+        method: "PUT",
+        async *[Symbol.asyncIterator]() {
+          yield Buffer.from(JSON.stringify(body), "utf8");
+        },
+      } as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      library,
+      house,
+    );
+    return res;
+  };
+
+  it("白名单内的取值原样落给素材表（null = 摘掉那一格）", async () => {
+    const res = await put({ spriteId: "mecha_01", framing: "square", stature: "huge", title: "试验机·壹式" });
+    expect(res.statusCode).toBe(200);
+    expect(declared).toEqual([{ spriteId: "mecha_01", variant: null, framing: "square", stature: "huge", title: "试验机·壹式" }]);
+    expect((await put({ spriteId: "mecha_01", framing: null })).statusCode).toBe(200);
+    expect(declared[1]).toEqual({ spriteId: "mecha_01", variant: null, framing: null });
+  });
+
+  it("取值不在白名单里就直接 400，不许先回 400 再往下写一次响应", async () => {
+    const res = await put({ spriteId: "mecha_01", framing: "bust" });
+    expect(res.statusCode).toBe(400);
+    expect(res.payload).toContain("取景");
+    // 校验不过就一个字节都不该落：落盘那一步根本没被调到
+    expect(declared).toEqual([]);
+  });
+});

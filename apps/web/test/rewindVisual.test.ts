@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { applyCue, applyVisualCue, cueWatermarkForEntry, visualAt, withAttachedCg } from "../src/stage/director.js";
-import type { Cue } from "../src/stage/script.js";
+import {
+  applyCue,
+  applyVisualCue,
+  cueWatermarkForEntry,
+  displayedNodeId,
+  visualAt,
+  withAttachedCg,
+} from "../src/stage/director.js";
+import type { Cue, ScriptLine } from "../src/stage/script.js";
 import type { TranscriptEntry } from "../src/stage/transcript.js";
 
 /** 一次真实形状的缓冲：换景 → 独白 → 小优进场 → 台词 → 表情差分 → 预发射 → 音效 → 台词 → 退场 → 台词。 */
@@ -9,7 +16,7 @@ const cues: Cue[] = [
   { key: "c1", kind: "line", lineKey: "l1" },
   { key: "c2", kind: "actor", id: "yu", pos: "center" },
   { key: "c3", kind: "line", lineKey: "l2" },
-  { key: "c4", kind: "actor", id: "yu", expression: "pout" },
+  { key: "c4", kind: "actor", id: "yu", variant: "pout" },
   { key: "c5", kind: "preload", id: "bg_roof", type: "bg" },
   { key: "c6", kind: "sfx", src: "door" },
   { key: "c7", kind: "line", lineKey: "l3" },
@@ -45,8 +52,8 @@ describe("回看重算画面（visualAt）", () => {
 
   it("按水位线还原立绘、站位与表情差分", () => {
     expect(Object.keys(visualAt(cues, 3).sprites)).toEqual(["yu"]);
-    expect(visualAt(cues, 3).sprites.yu?.expression).toBeNull();
-    expect(visualAt(cues, 5).sprites.yu?.expression).toBe("pout");
+    expect(visualAt(cues, 3).sprites.yu?.variant).toBeNull();
+    expect(visualAt(cues, 5).sprites.yu?.variant).toBe("pout");
   });
 
   it("严格按那一刻：还没登场的人不出现，已经退场的人不留幽灵", () => {
@@ -134,5 +141,23 @@ describe("行级插图（withAttachedCg）", () => {
   it("旁注盖过那一刻原有的 CG：行上挂的是最新的说法", () => {
     const withCg = applyVisualCue(base, { key: "cX", kind: "cg", id: "cg_old" });
     expect(withAttachedCg(withCg, "n_l2", new Map([["n_l2", "cg_new"]])).cg).toEqual({ id: "cg_new" });
+  });
+});
+
+describe("画面认哪个谱系节点（displayedNodeId）", () => {
+  const entry = { nodeId: "n_view" } as TranscriptEntry;
+  const line = { nodeId: "n_line" } as ScriptLine;
+
+  it("跟着播放头：认正在显示的这一行（回看窗那一条的 nodeId 恒空）", () => {
+    expect(displayedNodeId(entry, line, false)).toBe("n_line");
+  });
+
+  it("回看中：认游标那一条，播放头停在别处也不干扰", () => {
+    expect(displayedNodeId(entry, line, true)).toBe("n_view");
+  });
+
+  it("缓冲行还没认回谱系（nodeId 空）：宁可不认，也不拿错节点", () => {
+    expect(displayedNodeId(null, null, false)).toBeNull();
+    expect(displayedNodeId({ nodeId: null } as TranscriptEntry, line, true)).toBeNull();
   });
 });

@@ -1,10 +1,13 @@
 import { useCallback, useState } from "react";
 import type { GeneratedAsset } from "@aivn/core";
 
-/** 站内生成资产（bg/cg）：id 与 `<cg id>` / `<scene bg>` 同一命名空间。 */
+/**
+ * 站内生成资产：id 与 `<cg id>` / `<scene bg>` 同一命名空间；立绘用 `<立绘>:<差分>`，
+ * 只当作「有东西到货了」的信号（立绘图本身按目录从素材列表取，不查这张表）。
+ */
 export interface GeneratedImage {
   url: string;
-  type: "bg" | "cg";
+  type: "bg" | "cg" | "sprite";
   /** 已预解码（可立即淡入，不必等 img 加载）。 */
   ready: boolean;
 }
