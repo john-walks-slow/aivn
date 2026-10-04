@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { normalizeParts } from "@aivn/core";
-import type { ClientMessage, WorkshopAssetView } from "@aivn/core";
+import type { ClientMessage, GeneratedAsset, WorkshopAssetView } from "@aivn/core";
 import { api } from "../api.js";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
 import { Icon, type IconName } from "../ui/Icon.js";
@@ -45,6 +45,9 @@ export function WorkshopPane({
   onTab,
   subscribe,
   subscribeImageResult,
+  subscribeAssetReady,
+  spriteFocus,
+  onManageSprites,
   send,
   connected,
   voice,
@@ -63,6 +66,12 @@ export function WorkshopPane({
         | { target: string; ok: false; message: string },
     ) => void,
   ) => () => void;
+  /** 注册素材到货回调（返回取消订阅）：舞台那边的引用即导入、助手的导入、后台出图都从这里过。 */
+  subscribeAssetReady?: (handler: (asset: GeneratedAsset) => void) => () => void;
+  /** 「管立绘」的落点：素材页要滚到哪个主体（nonce 让同一个 id 再点一次也能生效）。 */
+  spriteFocus?: { id: string; nonce: number } | null;
+  /** 角色页的「管立绘」：切到素材页并点名一个主体。 */
+  onManageSprites?: (id: string) => void;
   send: (msg: ClientMessage) => void;
   /** WS 连通性：断线要解锁本轮、重连要重新报到。 */
   connected?: boolean;
@@ -148,14 +157,26 @@ export function WorkshopPane({
       )}
 
       {tab === "assets" && (
-        <AssetsPanel playId={playId} subscribeImageResult={subscribeImageResult} />
+        <AssetsPanel
+          playId={playId}
+          subscribeImageResult={subscribeImageResult}
+          subscribeAssetReady={subscribeAssetReady}
+          focus={spriteFocus}
+        />
       )}
 
       {tab === "play" && <PlayPane playId={playId} revision={state.writes.length} />}
 
       {tab === "memory" && <MemoryPane playId={playId} revision={state.writes.length} />}
 
-      {tab === "characters" && <CharacterPane playId={playId} revision={state.writes.length} />}
+      {tab === "characters" && (
+        <CharacterPane
+          playId={playId}
+          revision={state.writes.length}
+          subscribeAssetReady={subscribeAssetReady}
+          onManageSprites={onManageSprites}
+        />
+      )}
 
       {tab === "agent" && <AgentPane playId={playId} />}
 

@@ -4371,6 +4371,21 @@ select:focus {
 .setting-card.active > svg {
   color: var(--accent);
 }
+/* 有立绘的角色：图标那一格换成一张立绘缩略图（中立差分优先）。立绘是透明 PNG，
+   用 contain 而不是裁切——竖构图裁成方片会把脸切掉。 */
+.setting-card-thumb {
+  grid-area: icon;
+  display: block;
+  width: 40px;
+  height: 54px;
+  object-fit: contain;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.setting-card.active .setting-card-thumb {
+  border-color: var(--accent);
+}
 .setting-card-title {
   grid-area: title;
   font-family: var(--font-ui);

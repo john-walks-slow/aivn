@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ActorAnchor, AssetKind, AssetMeta, SpriteFraming, SpriteStature } from "@aivn/core";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  ActorAnchor,
+  AssetKind,
+  AssetMeta,
+  GeneratedAsset,
+  SpriteFraming,
+  SpriteStature,
+} from "@aivn/core";
 import {
   ACTOR_ANCHORS,
   SPRITE_FRAMINGS,
@@ -28,9 +35,15 @@ const stemOf = (name: string): string => name.replace(/\.\w+$/, "");
 export function AssetsPanel({
   playId,
   subscribeImageResult,
+  subscribeAssetReady,
+  focus,
 }: {
   playId: string;
   subscribeImageResult?: (handler: (res: any) => void) => () => void;
+  /** 注册素材到货回调（返回取消订阅）：助手/舞台那边导进来或画出来的素材，列表要当场跟上。 */
+  subscribeAssetReady?: (handler: (asset: GeneratedAsset) => void) => () => void;
+  /** 「管立绘」点名的主体：它排在立绘段最前（nonce 让同一个 id 再点一次也生效）。 */
+  focus?: { id: string; nonce: number } | null;
 }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [assets, setAssets] = useState<Record<string, string[]>>({});
@@ -42,17 +55,33 @@ export function AssetsPanel({
   const [genTarget, setGenTarget] = useState<ImageGenTarget | null>(null);
   /** 「新建立绘」那一行的目录名：与角色卡同名即绑定。 */
   const [newSpriteId, setNewSpriteId] = useState("");
+  /** 素材目录读到过没有：落点要等它（挂载那一刻还没有立绘卡可滚）。 */
+  const [spritesRead, setSpritesRead] = useState(false);
 
   const reload = useCallback((): void => {
     api
       .playDetail(playId)
       .then(setDetail)
       .catch((e: Error) => setError(e.message));
-    api.listAssets(playId).then(setAssets).catch(() => {});
+    api
+      .listAssets(playId)
+      .then((a) => {
+        setAssets(a);
+        setSpritesRead(true);
+      })
+      .catch(() => {});
     api.assetMeta(playId).then(setAssetMeta).catch(() => {});
   }, [playId]);
   useEffect(reload, [reload]);
+  // 不是自己发起的到货也要跟上：助手导进来一包立绘、舞台那边引用即导入、后台画完一张
+  useEffect(() => subscribeAssetReady?.(() => reload()), [subscribeAssetReady, reload]);
 
+  /**
+   * 「管立绘」的落点：滚到那个主体的卡上。
+   *
+   * 这个主体还没有立绘目录时没有卡可滚——那就滚到「立绘」段头并把它填进新 id 输入框，
+   * 上传/出图的那一行就在那儿等着，别让人落在一片没变化的面板上发愣。
+   */
   const upload = (kind: string, file: File): void => {
     api
       .uploadAsset(playId, kind, file.name, file)
@@ -94,6 +123,28 @@ export function AssetsPanel({
     ? [...(readiness.sprites ? [] : ["立绘"]), ...(readiness.background ? [] : ["背景图"])]
     : [];
   const spriteDirs = Object.keys(assets).filter((k) => k.startsWith("sprites/"));
+
+  /**
+   * 「管立绘」点名的主体排在最前。
+   *
+   * 试过滚动定位：这一页的卡片高度是随图解码陆续长出来的（实测能拖过四秒），
+   * 滚动条会被后长出来的内容顶回去，怎么对齐都追不上。把主体排到第一个则与布局无关——
+   * 切过来时这一页本来就在顶部，它就在第一屏。
+   */
+  const orderedDirs = useMemo(() => {
+    if (!focus) return spriteDirs;
+    const dir = `sprites/${focus.id}`;
+    if (!spriteDirs.includes(dir)) return spriteDirs;
+    return [dir, ...spriteDirs.filter((d) => d !== dir)];
+  }, [spriteDirs, focus]);
+
+  /** 点名的主体还没有立绘目录：把 id 填进「新立绘」那一行，上传/出图就在段头等着。 */
+  useEffect(() => {
+    if (!focus || !spritesRead) return;
+    if (spriteDirs.includes(`sprites/${focus.id}`)) return;
+    setNewSpriteId(focus.id);
+  }, [focus, spritesRead, spriteDirs]);
+
   /** 立绘级名牌（素材表 `<id>.title`）：无卡主体在卡上显示、也能当参考垫图的名字。 */
   const spriteTitles = useMemo(() => spriteTitlesOf(assetMeta), [assetMeta]);
   /** 角色卡名字表：立绘只按 id 寻址，有同名卡时在卡上标注一句人名。 */
@@ -210,17 +261,22 @@ export function AssetsPanel({
           <span className="muted small">文件名即差分名（如 neutral.png、smile.png）</span>
         </div>
 
-        {spriteDirs.map((dir) => {
+        {orderedDirs.map((dir) => {
           const spriteId = dir.slice("sprites/".length);
           const files = assets[dir] ?? [];
           const decl = spriteDeclarationOf(assetMeta, spriteId);
           const cardName = cardNames.get(spriteId);
+          // 标题写引擎真正在用的名字（卡 name → 名牌 → id）：只有图没卡也是常态，
+          // 名字跟 id 不同才把 id 并排带上——脚本里引用的是 id，藏掉它会更难用。
+          const label = nameOf(spriteId);
           return (
             <div key={spriteId} className="sprite-card">
               <div className="assets-section-head">
                 <strong>
-                  {spriteId}
-                  <span className="muted small"> {cardName ? `角色卡：${cardName}` : "没有同名角色卡"}</span>
+                  {label}
+                  {label !== spriteId && <span className="muted small"> {spriteId}</span>}
+                  {/* 有卡时名字本来就从卡上来，不必再说一遍；没卡才是要讲清的状态 */}
+                  {!cardName && <span className="muted small"> 只有立绘</span>}
                 </strong>
                 <button
                   className="ghost-btn"

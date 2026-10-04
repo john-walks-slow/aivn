@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { characterCardPath, isProtagonist, PROTAGONIST_ID, serializeCharacterCard } from "@aivn/core";
-import type { CharacterDocument, PlayConfig } from "@aivn/core";
-import { api, type PlayDetail } from "../api.js";
+import type { CharacterDocument, GeneratedAsset, PlayConfig } from "@aivn/core";
+import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { CharacterEditor } from "./CharacterEditor.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
@@ -30,7 +30,19 @@ function rolesOf(detail: PlayDetail): Role[] {
  * 它不是一类特殊角色——能上台、有立绘、有音色，只是不给删（删了剧目就没有玩家了）。
  * play.json 在这条路径上一个字节都不参与。
  */
-export function CharacterPane({ playId, revision }: { playId: string; revision: number }) {
+export function CharacterPane({
+  playId,
+  revision,
+  subscribeAssetReady,
+  onManageSprites,
+}: {
+  playId: string;
+  revision: number;
+  /** 注册素材到货回调（返回取消订阅）：导进来或刚画好的立绘要当场出现在缩略图上。 */
+  subscribeAssetReady?: (handler: (asset: GeneratedAsset) => void) => () => void;
+  /** 「管立绘」：跳到素材页那个主体（这一页只管人格与音色，立绘归素材表）。 */
+  onManageSprites?: (id: string) => void;
+}) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [roles, setRoles] = useState<Role[] | null>(null);
   /** 改过的角色卡：保存时只写这些，没动过的卡不必为刷新 mtime 而重写一遍。 */
@@ -44,6 +56,8 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
   const [libraryInto, setLibraryInto] = useState<string | null>(null);
   const [voiceFor, setVoiceFor] = useState<string | null>(null);
   const voices = useVoiceCatalog();
+  /** 立绘目录 → 文件（`sprites/<id>` → 差分文件名）：缩略图与「管立绘」的入口靠它。 */
+  const [sprites, setSprites] = useState<Record<string, string[]>>({});
 
   const reload = useCallback((): void => {
     api
@@ -55,6 +69,24 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
       .catch((e: Error) => setError(e.message));
   }, [playId]);
   useEffect(reload, [reload, revision]);
+
+  const reloadSprites = useCallback((): void => {
+    api.listAssets(playId).then(setSprites).catch(() => {});
+  }, [playId]);
+  useEffect(reloadSprites, [reloadSprites, revision]);
+  // 素材到货：助手/舞台那边刚导进来或画出来的立绘，缩略图当场就能看见（切页才更新等于没更新）
+  useEffect(() => subscribeAssetReady?.(() => reloadSprites()), [subscribeAssetReady, reloadSprites]);
+
+  /**
+   * 一个角色的缩略图：中立差分优先，没有就取第一张。
+   *
+   * 立绘与角色卡是两张各自可选的附件，所以它有图才有缩略图；没图的角色仍显示原来那枚图标。
+   */
+  const spriteThumb = (id: string): string | null => {
+    const files = sprites[`sprites/${id}`] ?? [];
+    const pick = files.find((f) => f.replace(/\.\w+$/, "") === "neutral") ?? files[0];
+    return pick ? assetUrl(playId, `sprites/${id}`, pick) : null;
+  };
 
   /** 角色卡的编辑走这里：只改内存，保存时才落盘。 */
   const patchRole = (id: string, fn: (doc: Role) => void): void => {
@@ -144,20 +176,27 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
       )}
 
       <div className="setting-cards">
-        {roles.map((role) => (
-          <button
-            key={role.id}
-            type="button"
-            className={`setting-card${activeRole?.id === role.id ? " active" : ""}`}
-            onClick={() => setOpen(role.id)}
-          >
-            <Icon name="users" size={14} />
-            <span className="setting-card-title">{role.name || role.id}</span>
-            <span className="setting-card-summary">
-              {isProtagonist(role.id) ? "玩家扮演" : role.body || "（还没写性格）"}
-            </span>
-          </button>
-        ))}
+        {roles.map((role) => {
+          const sprite = spriteThumb(role.id);
+          return (
+            <button
+              key={role.id}
+              type="button"
+              className={`setting-card${activeRole?.id === role.id ? " active" : ""}`}
+              onClick={() => setOpen(role.id)}
+            >
+              {sprite ? (
+                <img className="setting-card-thumb" src={sprite} alt="" />
+              ) : (
+                <Icon name="users" size={14} />
+              )}
+              <span className="setting-card-title">{role.name || role.id}</span>
+              <span className="setting-card-summary">
+                {isProtagonist(role.id) ? "玩家扮演" : role.body || "（还没写性格）"}
+              </span>
+            </button>
+          );
+        })}
         {/* 加人也是这个网格里的一件事：入口摆在人旁边，而不是滚到底部那个角落 */}
         <button
           type="button"
@@ -228,6 +267,14 @@ export function CharacterPane({ playId, revision }: { playId: string; revision: 
             保存
           </button>
           {saved && !dirty && <span className="muted small">已保存</span>}
+          {/* 人格在这页、立绘在素材页：给一条去那边的路，别让人自己记着图在哪儿 */}
+          {onManageSprites && (
+            <button className="ghost-btn" onClick={() => onManageSprites(activeRole.id)}>
+              <span className="btn-icon">
+                <Icon name="assets" size={13} /> 管立绘
+              </span>
+            </button>
+          )}
         </p>
       )}
       {libraryInto !== null && detail && (

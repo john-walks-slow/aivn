@@ -14,7 +14,11 @@ const { apiMock } = vi.hoisted(() => ({
     ttsPreview: vi.fn(),
   },
 }));
-vi.mock("../src/api.js", () => ({ api: apiMock }));
+vi.mock("../src/api.js", () => ({
+  api: apiMock,
+  // 缩略图要用它拼地址；不给出真实实现的话组件会在这里炸掉
+  assetUrl: (playId: string, dir: string, name: string) => `/plays/${playId}/${dir}/${name}`,
+}));
 
 const { CharacterPane } = await import("../src/workshop/CharacterPane.js");
 
@@ -177,5 +181,39 @@ describe("角色页：真相源是角色卡", () => {
     fireEvent.click(screen.getByRole("button", { name: "建这个角色" }));
     expect(await screen.findByText("角色 id「mio」已被占用")).toBeTruthy();
     expect(cardTitles()).not.toContain("新角色");
+  });
+});
+
+describe("角色页：立绘的那一眼", () => {
+  beforeEach(() => {
+    apiMock.playDetail.mockResolvedValue({ play: PLAY, premise: "", readiness: {}, cast: CAST });
+    apiMock.saveFile.mockResolvedValue({ ok: true });
+    apiMock.voiceCatalog.mockResolvedValue({ entries: [] });
+  });
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("有立绘的角色拿立绘当缩略图（中立差分优先），没立绘的仍用图标", async () => {
+    apiMock.listAssets.mockResolvedValue({
+      "sprites/mio": ["smile.png", "neutral.png"],
+      "sprites/other": ["a.png"],
+    });
+    const { container } = render(<CharacterPane playId="p1" revision={0} />);
+    await waitFor(() => {
+      const thumb = container.querySelector("img.setting-card-thumb");
+      expect(thumb?.getAttribute("src")).toContain("sprites/mio/neutral.png");
+    });
+  });
+
+  it("「管立绘」只在这一页给出入口，点击回的是那个角色的 id", async () => {
+    apiMock.listAssets.mockResolvedValue({});
+    const onManageSprites = vi.fn();
+    render(<CharacterPane playId="p1" revision={0} onManageSprites={onManageSprites} />);
+    await waitFor(() => expect(cardTitles()).toContain("ミオ"));
+    fireEvent.click(screen.getByText("ミオ"));
+    fireEvent.click(screen.getByText("管立绘"));
+    expect(onManageSprites).toHaveBeenCalledWith("mio");
   });
 });

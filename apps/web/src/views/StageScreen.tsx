@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReadPos } from "@aivn/core";
+import type { GeneratedAsset, ReadPos } from "@aivn/core";
 import { api, type PlayDetail } from "../api.js";
 import { navigate } from "../router.jsx";
 import { useStageSocket, type WorkshopInbound } from "../stage/useStageSocket.js";
@@ -152,6 +152,20 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
       imageResultHandlers.current.delete(handler);
     };
   }, []);
+  // 素材到货（舞台那边的引用即导入、助手的导入、后台出图）：工坊的面板拿它刷新自己的列表
+  const assetReadyHandlers = useRef(new Set<(asset: GeneratedAsset) => void>());
+  const subscribeAssetReady = useCallback((handler: (asset: GeneratedAsset) => void) => {
+    assetReadyHandlers.current.add(handler);
+    return () => {
+      assetReadyHandlers.current.delete(handler);
+    };
+  }, []);
+  /** 角色页「管立绘」的落点：素材页滚到哪个主体。nonce 让同一个 id 再点一次也生效。 */
+  const [spriteFocus, setSpriteFocus] = useState<{ id: string; nonce: number } | null>(null);
+  const manageSprites = useCallback((id: string) => {
+    setWorkshopTab("assets");
+    setSpriteFocus((cur) => ({ id, nonce: (cur?.nonce ?? 0) + 1 }));
+  }, []);
   const { push: pushToast } = toast;
 
   const stage = useStageSocket(playId, {
@@ -186,6 +200,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
       generated.add([asset]);
       playbackRef.current?.settleAssets([asset.id]);
       if (asset.type === "cg") setCgNonce((n) => n + 1); // CG 页开着就把它补进网格
+      for (const handler of assetReadyHandlers.current) handler(asset);
       // 立绘到货 = 立绘目录里多了一张、素材表里多了一条声明（取景/体量/对齐都是出图那一刻写进去的）。
       // 重拉这两份，舞台才会按新声明摆位——不重拉的话新差分只能按缺省站，与声明的体量对不上。
       if (asset.type === "sprite") {
@@ -693,6 +708,9 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
             onTab={setWorkshopTab}
             subscribe={subscribeWorkshop}
             subscribeImageResult={subscribeImageResult}
+            subscribeAssetReady={subscribeAssetReady}
+            spriteFocus={spriteFocus}
+            onManageSprites={manageSprites}
             send={stage.send}
             connected={stage.connected}
             voice={{ on: voiceOn, available: stage.voiceAvailable, onToggle: toggleVoice }}
