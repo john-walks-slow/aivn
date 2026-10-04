@@ -24,6 +24,12 @@ pnpm --filter @aivn/server start    # 起后端（顺带把 apps/web/dist 挂在
 pnpm --filter @aivn/web dev         # 开发态前端 :5180，代理到 8787
 ```
 
+只跑指名的用例时**不要写 `pnpm test -- <文件>`**：pnpm 会把那个 `--` 原样拼进命令行（回显是 `$ vitest run -- test/x.test.ts`），而 vitest 把 `--` 之后的一切当成非选项参数丢掉——过滤器不生效、静默跑全量，看起来还全绿，没人会发现范围没生效。正确写法是直接跟在脚本名后面：
+
+```bash
+pnpm --filter @aivn/server test test/config.test.ts       # 文件名直接跟，不要 -- 分隔
+```
+
 打包（**只能在 Windows 上跑**，Tauri 不支持交叉编译到 Windows）：
 
 ```bash
