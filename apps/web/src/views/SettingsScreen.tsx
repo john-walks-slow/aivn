@@ -61,6 +61,8 @@ export function SettingsScreen() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string[] | null>(null);
+  /** 保存请求在途：期间禁掉保存键，免得高延迟下连点重复落盘。 */
+  const [saving, setSaving] = useState(false);
   const [models, setModels] = useState<GatewayModel[] | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
   /** 刚复制过的那条局域网地址（按钮上闪一下「已复制」）。 */
@@ -117,7 +119,8 @@ export function SettingsScreen() {
   }, []);
 
   const save = async (): Promise<void> => {
-    if (!draft) return;
+    if (!draft || saving) return;
+    setSaving(true);
     try {
       const { changed, settings: fresh } = await api.saveSettings(draft);
       setSaved(changed);
@@ -127,6 +130,8 @@ export function SettingsScreen() {
       setDraft(draftOf(fresh));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -232,14 +237,14 @@ export function SettingsScreen() {
               label="API Key"
               hint={
                 settings.model.apiKeySet
-                  ? "已存 key 以掩码显示——保持原样即不改，清空 = 删除，输入新值 = 替换"
+                  ? `已存 ${settings.model.apiKey}——保持原样即不改，清空 = 删除，输入新值 = 替换`
                   : "尚未配置——不填则播放会 401"
               }
             >
               <input
                 type="password"
                 value={draft.model.apiKey}
-                placeholder={settings.model.apiKey || "未配置"}
+                placeholder={settings.model.apiKeySet ? "清空保存 = 删除这把 key" : "未配置"}
                 onFocus={(e) => e.target.select()}
                 onChange={(e) => setDraft({ ...draft, model: { ...draft.model, apiKey: e.target.value } })}
               />
@@ -337,14 +342,14 @@ export function SettingsScreen() {
               label="生图 Key"
               hint={
                 settings.image.apiKeySet
-                  ? "已存 key 以掩码显示——保持原样即不改，清空 = 删除，输入新值 = 替换"
+                  ? `已存 ${settings.image.apiKey}——保持原样即不改，清空 = 删除，输入新值 = 替换`
                   : "尚未配置——出图会被网关拒"
               }
             >
               <input
                 type="password"
                 value={draft.image.apiKey}
-                placeholder={settings.image.apiKey || "未配置"}
+                placeholder={settings.image.apiKeySet ? "清空保存 = 删除这把 key" : "未配置"}
                 onFocus={(e) => e.target.select()}
                 onChange={(e) => setDraft({ ...draft, image: { ...draft.image, apiKey: e.target.value } })}
               />
@@ -471,13 +476,13 @@ export function SettingsScreen() {
               label="访问密码"
               hint={
                 settings.passwordSet
-                  ? "已开启（HTTP Basic）——保持掩码即不改；清空并保存 = 关闭设防"
+                  ? `已开启（HTTP Basic），当前 ${settings.password}——保持原样即不改；清空并保存 = 关闭设防`
                   : "当前没有设防。挂到公网前务必设一个（局域网自用可以不设）"
               }
             >
               <input
                 type="password"
-                placeholder={settings.password || "未设置"}
+                placeholder={settings.passwordSet ? "清空保存 = 关闭设防" : "未设置"}
                 value={draft.password}
                 onFocus={(e) => e.target.select()}
                 onChange={(e) => setDraft({ ...draft, password: e.target.value })}
@@ -628,7 +633,7 @@ export function SettingsScreen() {
       )}
       {draft && settings && (
         <div className="settings-footer">
-          <button className="primary-btn" onClick={() => void save()}>
+          <button className="primary-btn" onClick={() => void save()} disabled={saving}>
             保存设置
           </button>
           <button className="ghost-btn" onClick={load}>

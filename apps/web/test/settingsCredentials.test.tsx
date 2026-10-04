@@ -96,9 +96,11 @@ describe("设置页凭据：掩码回填，未触碰不误清", () => {
 
     fireEvent.change(await screen.findByLabelText(/API Key/), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText(/生图 Key/), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText(/访问密码/), { target: { value: "" } });
 
     const draft = await saveDraft();
     expect(draft.model.apiKey).toBe("");
     expect(draft.image.apiKey).toBe("");
+    expect(draft.password).toBe("");
   });
 });
