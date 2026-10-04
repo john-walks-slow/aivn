@@ -48,6 +48,9 @@ export function CharacterPane({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [open, setOpen] = useState<string>(PROTAGONIST_ID);
+  /** 新建角色的 id 输入：开表单、写着、还没落卡。 */
+  const [creating, setCreating] = useState(false);
+  const [newRoleId, setNewRoleId] = useState("");
   const [libraryInto, setLibraryInto] = useState<string | null>(null);
   const [voiceFor, setVoiceFor] = useState<string | null>(null);
   const [genTarget, setGenTarget] = useState<ImageGenTarget | null>(null);
@@ -102,16 +105,28 @@ export function CharacterPane({
     reload();
   };
 
+  /**
+   * 新建角色：id 由用户指定（它同时是角色卡文件名与立绘目录名，落盘后改不了），
+   * 所以先收 id 再进 state——不再自动取 `charN`，那串机器名用户看不出该填什么。
+   * 只进 state，保存时才落成那一张 md（play.json 不再参与）。
+   */
   const addRole = (): void => {
     if (!roles) return;
-    const taken = new Set(roles.map((r) => r.id));
-    let n = roles.length + 1;
-    while (taken.has(`char${n}`)) n++;
-    const id = `char${n}`;
-    // 角色表就是角色卡目录：新建只进 state，保存时才落成那一张 md（play.json 不再参与）
+    const id = newRoleId.trim();
+    if (!/^[\w-]+$/.test(id)) {
+      setError("角色 id 仅允许字母数字与 _-");
+      return;
+    }
+    if (roles.some((r) => r.id === id)) {
+      setError(`角色 id「${id}」已被占用`);
+      return;
+    }
+    setError(null);
     setRoles([...roles, { id, name: "新角色", body: "" }]);
     setDirtyRoles((prev) => new Set(prev).add(id));
     setOpen(id);
+    setCreating(false);
+    setNewRoleId("");
   };
 
   /** 移除角色 = 删那张角色卡，角色本身就在卡里，没有第二处要同步。 */
@@ -166,12 +181,39 @@ export function CharacterPane({
           <span className="setting-card-title">从资源库导入</span>
           <span className="setting-card-summary">复制现成的角色卡与立绘</span>
         </button>
-        <button type="button" className="setting-card add" onClick={addRole}>
+        <button type="button" className="setting-card add" onClick={() => setCreating(true)}>
           <Icon name="plus" size={14} />
           <span className="setting-card-title">新建角色</span>
-          <span className="setting-card-summary">从空白开始写</span>
+          <span className="setting-card-summary">指定 id，从空白开始写</span>
         </button>
       </div>
+
+      {creating && (
+        <div className="create-form">
+          <input
+            placeholder="角色 id（字母数字_-）"
+            value={newRoleId}
+            onChange={(e) => setNewRoleId(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addRole();
+            }}
+          />
+          <span className="row">
+            <button className="primary" onClick={addRole}>
+              建这个角色
+            </button>
+            <button
+              className="ghost-btn"
+              onClick={() => {
+                setCreating(false);
+                setNewRoleId("");
+              }}
+            >
+              取消
+            </button>
+          </span>
+        </div>
+      )}
 
       {activeRole && (
         <section className="panel">

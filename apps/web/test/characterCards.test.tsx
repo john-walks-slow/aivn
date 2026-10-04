@@ -141,20 +141,40 @@ describe("角色页：真相源是角色卡", () => {
     expect(apiMock.saveFile.mock.calls[0]![1]).toBe("characters/protagonist.md");
   });
 
-  it("新建角色只落角色卡，play.json 不参与", async () => {
+  it("新建角色指定 id，只落角色卡，play.json 不参与", async () => {
     render(<CharacterPane playId="p1" revision={0} />);
     await waitFor(() => expect(cardTitles()).toContain("ミオ"));
     fireEvent.click(screen.getByRole("button", { name: /新建角色/ }));
+    fireEvent.change(screen.getByPlaceholderText("角色 id（字母数字_-）"), {
+      target: { value: "rin" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "建这个角色" }));
     await screen.findByPlaceholderText("persona（性格与背景）");
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(apiMock.saveFile).toHaveBeenCalled());
     expect(apiMock.saveFile).toHaveBeenCalledWith(
       "p1",
-      expect.stringMatching(/^characters\/char\d+\.md$/),
+      "characters/rin.md",
       expect.stringContaining("name: 新角色"),
     );
     // 这一页根本不碰 play.json
     expect(apiMock.savePlay).toBeUndefined();
+  });
+
+  it("新建角色拒绝非法与重名的 id，不落卡", async () => {
+    render(<CharacterPane playId="p1" revision={0} />);
+    await waitFor(() => expect(cardTitles()).toContain("ミオ"));
+    fireEvent.click(screen.getByRole("button", { name: /新建角色/ }));
+    const input = screen.getByPlaceholderText("角色 id（字母数字_-）");
+
+    fireEvent.change(input, { target: { value: "有空格 的 id" } });
+    fireEvent.click(screen.getByRole("button", { name: "建这个角色" }));
+    expect(await screen.findByText("角色 id 仅允许字母数字与 _-")).toBeTruthy();
+
+    fireEvent.change(input, { target: { value: "mio" } });
+    fireEvent.click(screen.getByRole("button", { name: "建这个角色" }));
+    expect(await screen.findByText("角色 id「mio」已被占用")).toBeTruthy();
+    expect(cardTitles()).not.toContain("新角色");
   });
 });
