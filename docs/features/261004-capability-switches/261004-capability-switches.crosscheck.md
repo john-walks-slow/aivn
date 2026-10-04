@@ -1,0 +1,27 @@
+# 能力开关 · 计划核查
+
+核查方式：对照 worktree `capability-switches` @ `fa05f12` 的实际代码逐点验证（kit / playFiles / playEnv / prompt / workshop / AgentPane / config / orchestrator / workshopSession / playhouse / http / memoryTool / skills），非仅评文档。
+
+## Must Reconsider
+
+- **Scope 挂在 `PlayFiles` 构造上，「工坊关掉改剧目文件」会连带打断四个与 agent 写文件无关的用户面。** 工坊只有一个 `PlayFiles` 实例（`workshopSession.ts:95`），它同时是：① 文件页的读写删口（`http.ts:371-389`，经 `runtime.workshop.files` / `runtime.workshop.writeFile` / `removeFile`）；② craft.md / premise.md 一等公民读写口（`http.ts:392-417`）；③ `applyChanges` 里 bash 写坏 play.json 后的读盘检查（`workshopSession.ts:265-272`）；④ `view_image` 本地路径分支（`kit.ts:295` 的 `deps.files.pathOf(path, "read")`）。按计划的设计（文件面 = 开着的能力的 scope 并集；`files` 关 → scope 空 → `pathOf` 全拒），关这一个开关的后果是：文件页能列不能开不能存不能删（`list()` 不走 `pathOf`，行为半残更迷惑）、记忆页 craft 编辑器报废、bash 之后收束时读盘抛「路径不在可读范围」被 `playConfigBrokenReason` 的 catch 误报成「play.json 解析不了」并跳过重建（且提示用户去已经坏掉的文件页改）、看图工具失明。计划里「文件页（用户自己的浏览器视图）与工坊读面不变」与「引擎自己的写口不受影响」两句只在 `files` 开着（默认态）成立——而「不让工坊动文件」恰是这次功能的主打用例。**建议行动**：把 scope 的执行点从 `PlayFiles` 挪到 agent 执行面——`PlayEnv`（`playEnv.ts:84-95` 的 `denial()` 本来就是现成检查点，构造收 scope 即可）+ `view_image` 那处 `pathOf` 包一层；`SCOPE_PREFIXES` 仍定义在 `playFiles.ts`，「路径知识只在文件层」不受影响。退而求其次是 `workshopSession` 持两个实例（agent 用带 scope 的、HTTP/内部用不带的），但那是在养「拿错实例」的坑。测试必须补「workshop `files` 关」这一整态。
+- **读、写共用一份 scope，让「角色卡默认关」顺手没收了剧作家读角色卡的能力——与计划自己的风险表自相矛盾。** 计划 §四写「`pathOf` 的读、写两个模式都过它」，风险表又写「它要读的只有 `memory/index/` 与 `characters/`」并要求「两条路径各一条用例」；但默认集里 `characters` 是**关**的，默认态下剧作家连 `characters/` 都读不了——那两条用例要么与默认集打架，要么默认态带着回归上线。具体伤害：角色数 ≥5 且分级时（`prompt.ts` 的 roster 折叠，A 区纪元内冻结、角色回场不展开），不在场角色只剩一行摘要，今天剧作家可以 `read characters/x.md` 拿全卡再让 ta 回场，新默认下这条路被掐死。另外能力名叫「自建角色卡」、desc 只说新角色走临时通道，实际效果是**读既有卡、改既有卡也一并没了**——desc 没讲真话（计划自己的目标是「一句后果讲清关掉它会怎样」）。**建议行动**：scope 拆读/写两张前缀表，或规则化「剧作家读面恒含 `characters/`、写面按能力 gate」；desc 改成「读写角色卡都关」。若产品上就是要连读一起关，得推翻风险表那行并明说，别两头都要。
+- **§五「工坊的文件章与写作参数 | can.files | 不变」是事实错误：工坊提示词今天根本不存在按 `can.files` 设门的章节，文件工具的提法散落且全部无条件注入。** `workshop.ts` 里：`talkRules`（「先读后写…read…edit…write」）、`RESPONSIBILITY_RULES`（「改文件必须真的调用 write / edit 工具」）、`writingPoints`（`set_craft`、play.json 字段表与「只用 edit 改点名字段」、manifest.json 编辑指引）、`setupFlow` 第 4 步（`set_craft`）、`LINEAGE_GUIDE`（整章无条件，lineage 关了照样教 list_saves / read_lineage）、`skillsPrompt()`（教 `read_skill`，assist 关了照样教）。能力开关让 `files` / `lineage` / `assist` 关掉变成一次点击就能到达的状态，「提示词教不存在工具」从今天的边角态放大成常态——违反项目自己的规矩（apps/server/AGENTS.md：「工具的可见性错配要当 bug 治」）。剧作家侧同类漏网一处：`prompt.ts:400-402` 记忆索引段读的是 `can.files` 且无条件教 `read_memory_detail` / `search_archive`，§五 表格没列这行，`memory` 关掉后整句变空转教学。**建议行动**：§五 表补齐（prompt.ts:401 → `can.memory`；workshop.ts 各处按 `can.files` / `can.lineage` / `can.assist` 设门或写 fallback 文案），实现清单加上 `workshop.ts`（目前完全没有），`workshopPrompt.test.ts` 补对应用例（计划测试清单没覆盖工坊侧提示词）。
+
+## Suggestions
+
+- 数字勘误（不阻塞，但计划拿「现有 21 个工具一个不落」当完备性锚点）：`TOOL_CATALOG` 实际 **22** 个工具，计划自己的归属表也列了 22 个；「今天 11 个工具 / 5 个分组」（剧作家）实为 13 / 6，「15 / 9」（工坊）实为 16 / 8。防漏靠「每个工具至少被一个能力授权」那条用例即可，正文数字改准。
+- `available` 不是「仍在」而是新活：`playhouse.tools()`（`playhouse.ts:736-746`）与 `GET /api/agents/tools` 今天都没有这一列；要做「服务端没配 Exa / TTS」的行尾提示，得把 exa / voices / assetLibrary 的配置状态引进 API——实现量与 `http.test.ts` 用例要算进估时。
+- `import_asset` 在 `TOOL_CATALOG` 的 roles 仍标 `playwriter`，但新能力目录不再给剧作家授权它。要么把 roles 收成 workshop-only，要么加一条 per-role 一致性用例（`installableTools(role)` ∩ 该角色被授权的工具 = 实际装配集），否则 `TOOL_CATALOG` 作为「谁装得上」的真相源会骗人。
+- 空数组语义的文案：`capabilities: []` 时 locked 的 `stage` 仍在（「装配时无条件算开」），README 与界面别说「一个都不开」，说「只剩常开」。
+- Q4 默认体验的补法：`characters` 关时的 fallback 文案可加一条「戏份变重的临时角色，把人设写成记忆卡（`memory/index/`）」——记忆能力默认开，这条能补上 persona 只活在 B 区上下文与最小卡占位里的连续性风险（B 区会被压成摘要，最小卡正文是「设定未补」）。`MEMORY_RULES` 那句「角色不在这里」在 `characters` 关时除了指工坊，也可指这条记忆卡路。
+- 测试盲区补两项：① workshop `files` 关的整态（文件页 GET/PUT/DELETE、craft/premise PUT、applyChanges 读盘、view_image 本地分支）——按 Must Reconsider 第一条改执行点后，这些就是防回归钉子；② locked 能力不落 play.json、写了被忽略。
+- 实现顺序：Must Reconsider 前两条是签名级决定（`PlayFiles` / `PlayEnv` 构造参数），要在动 `kit.ts` 之前定稿；800 行单阶段内部建议按 能力目录 → kit 三条推导 → 文件面 → 提示词审计（两侧）→ API/UI 推进。「先合 generic-tools 再开分支」的拍板项判断正确（当前 worktree 确实叠在 `fa05f12` 上）。
+- 已核实成立、无需改动的判断（记录备查）：**Q1 方向成立**——「能写记忆、但别自建角色」在纯工具空间表达不出来（同一组 read/write/edit，分野在路径不在工具），这是能力语汇的硬论据；预设档与「能力 + 高级工具出口」两套界面都会造出第二份要同步的词汇，计划拒绝它们是对的。**Q3 理由成立**——今天 `isVisible`（`playFiles.ts:101-104`）确实放行通用 `read` 直读 `memory/arcs/`、`memory/archive/`（`isGenerated` 只挡写不挡读），绕过 arcIds / pathSet 的分支过滤是真实的跨世界线剧透洞；也没有更简单的独立做法——scope 机制本来就要为 memory/characters 拆分而建，顺带覆盖这两条。**Q6 无反例**——`finishBeat` 在 `agent_end` 有兜底（`orchestrator.ts:1836-1838`，无 stop 时按 `no_stop` 封拍），关掉 `beat_done` 引擎不会挂死，只是每轮都没有设计过的出口、而提示词的引擎契约章（HOW_I_WORK / FORMAT_RULES「结束轮」）无条件在教它——纯伤害无收益；「永远自由输入」的诉求已由 `craft.stopOptions: "free"` 承接，`update_state` 同理（引擎记账，无用户可解释的关闭理由）。**引擎写口三条链路确实隔离**——出图补 sprites 映射走 `playAssetsFor` 自己的实例（`playhouse.ts:373`）、临时角色建卡走 `writeCharacter` 的（`playhouse.ts:548`）、引用即导入走 `assetImport` 的（`assetImport.ts:131`），A 区注入不经 `PlayFiles`（`memoryTool` 走 `deps.memory`，`read_memory_detail` / `search_archive` 均不受读面收窄影响）——计划「不受影响」的断言逐条核实通过。**Q7 评估够用**——预发布单机项目、既有约定明说不迁移、花钱风险已进 validation 步骤；可选加一条「解析到 legacy `tools` 字段时 console.warn」帮用户自察。
+
+## Open questions
+
+- 「自建角色卡」要不要拆「建新卡」与「改既有卡」两个口？倾向不拆（三个写作开关变四个，过度设计），但这是一条应该有意识拍板的产品线，而不是被 scope 实现顺带决定的副作用。
+- 剧作家读面的最终形状：能力各自声明读/写两张前缀表，还是「读面恒含 `characters/`、写面按能力」的规则化写法？两者都解 Must Reconsider 第二条，前者更通用，后者少一个概念。
+- 工坊 `assist` 三合一（read_skill / view_image / get_readiness）：三者都是只读的装配期辅助、没有独立的用户关切（花钱 / 安全 / 内容边界），合并成立；留一个观察点——若将来 `get_readiness` 要进「就绪门」的流程叙事，可能需要独立成行，现在不必动。
+- validation.md 建议补一组「新角色链路」实测：`say name` 一次性角色、出图带 `characterName` 的最小卡、引用即导入、工坊补卡、再勾回「自建角色卡」——把 Q4 的自洽性在真机上过一遍（计划目前只列了「关过生图又回来」的花钱场景）。
