@@ -249,10 +249,50 @@ export function CharacterPane({
 
       {activeRole && (
         <section className="panel">
+          {/* 卡级动作在标题行（动的是整张卡）；字段级的东西在下面的编辑器里 */}
           <div className="assets-section-head">
             <h3>{isProtagonist(activeRole.id) ? "主角卡（玩家扮演）" : "角色卡"}</h3>
-            {/* 人格在这页、立绘在素材页：入口摆在角色卡自己的标题行上，
-                不是跟「保存」挤在面板底下——那一行说的是「改完了怎么存」，跟立绘没关系 */}
+            <button
+              className="ghost-btn"
+              onClick={() =>
+                setLibraryInto(isProtagonist(activeRole.id) ? PROTAGONIST_ID : activeRole.id)
+              }
+              title="从资源库导入一个角色的角色卡与立绘（落在条目对应的角色卡上，不是填这一张）"
+            >
+              <span className="btn-icon">
+                <Icon name="download" size={13} /> 从资源库导入
+              </span>
+            </button>
+            {!isProtagonist(activeRole.id) && (
+              <button className="link-btn" onClick={() => removeRole(activeRole.id)}>
+                移除角色
+              </button>
+            )}
+          </div>
+
+          {/* 立绘与它的入口同一层，摆在名字上面：这一页第一眼要看的就是这个人长什么样 */}
+          <div className="sprite-row">
+            {variantsOf(activeRole.id).length > 0 ? (
+              <div className="sprite-peek">
+                {variantsOf(activeRole.id).map((name) => {
+                  const url = assetUrl(playId, `sprites/${activeRole.id}`, name);
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      className="sprite-peek-item"
+                      title="看大图"
+                      onClick={() => setZoom({ url, name: `${activeRole.id}/${name}` })}
+                    >
+                      <img src={url} alt="" />
+                      <span>{name.replace(/\.\w+$/, "")}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <span className="muted small">还没有立绘</span>
+            )}
             {onManageSprites && (
               <button
                 className="ghost-btn"
@@ -266,40 +306,15 @@ export function CharacterPane({
               </button>
             )}
           </div>
+
           <CharacterEditor
             playId={playId}
             charId={activeRole.id}
             doc={activeRole}
             voices={voices}
             onPickVoice={() => setVoiceFor(activeRole.id)}
-            // 主角那份导入落固定 id 的卡（连立绘一起），普通角色按条目 id 建卡
-            onBrowseLibrary={() =>
-              setLibraryInto(isProtagonist(activeRole.id) ? PROTAGONIST_ID : activeRole.id)
-            }
             onDocChange={(fn) => patchRole(activeRole.id, fn)}
-            {...(isProtagonist(activeRole.id) ? {} : { onRemove: () => removeRole(activeRole.id) })}
           />
-          {/* 这个主体有哪几张立绘，在这一页就该看全：差分的名字就是剧本里写的 variant，
-              看不着名字等于每次都要跑去素材页对一遍 */}
-          {variantsOf(activeRole.id).length > 0 && (
-            <div className="sprite-peek">
-              {variantsOf(activeRole.id).map((name) => {
-                const url = assetUrl(playId, `sprites/${activeRole.id}`, name);
-                return (
-                  <button
-                    key={name}
-                    type="button"
-                    className="sprite-peek-item"
-                    title="看大图"
-                    onClick={() => setZoom({ url, name: `${activeRole.id}/${name}` })}
-                  >
-                    <img src={url} alt="" />
-                    <span>{name.replace(/\.\w+$/, "")}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </section>
       )}
 
@@ -311,6 +326,7 @@ export function CharacterPane({
           {saved && !dirty && <span className="muted small">已保存</span>}
         </p>
       )}
+
       {zoom && (
         <ImageLightbox
           images={[{ url: zoom.url, caption: zoom.name }]}

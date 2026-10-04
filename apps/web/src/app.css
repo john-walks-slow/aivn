@@ -4387,12 +4387,25 @@ select:focus {
   border-color: var(--accent);
 }
 
+/* 立绘条与它的入口同一层：左边是差分缩略图（换行铺），右边是「管理/创建立绘」。 */
+.sprite-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 10px 0 4px;
+}
+
+.sprite-row .ghost-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 /* 角色卡面板里的差分条：这个主体有几张立绘、各叫什么，一眼看全（点开看大图）。 */
 .sprite-peek {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
+  min-width: 0;
 }
 
 .sprite-peek-item {

@@ -79,7 +79,7 @@ describe("角色页：真相源是角色卡", () => {
     await waitFor(() => expect(cardTitles()).toContain("ミオ"));
     fireEvent.click(screen.getByText("ミオ"));
 
-    const textarea = await screen.findByPlaceholderText("persona（性格与背景）");
+    const textarea = await screen.findByPlaceholderText("性格与背景（剧作家每轮都会读到）");
     // 人设就是卡片正文，原样带着那张卡的 markdown 标题
     expect((textarea as HTMLTextAreaElement).value).toBe("# ミオ\n角色卡里的人设。");
     fireEvent.change(textarea, { target: { value: "改过的人设" } });
@@ -101,7 +101,7 @@ describe("角色页：真相源是角色卡", () => {
     await waitFor(() => expect(cardTitles()).toContain("你"));
     fireEvent.click(screen.getByText("你"));
 
-    const textarea = await screen.findByPlaceholderText("persona（性格与背景）");
+    const textarea = await screen.findByPlaceholderText("性格与背景（剧作家每轮都会读到）");
     expect((textarea as HTMLTextAreaElement).value).toBe("玩家扮演的角色。");
     // 主角能配立绘与音色（和别的角色一样），所以编辑器整份都在，唯独没有删除
     expect(screen.getByRole("button", { name: "从资源库导入" })).toBeTruthy();
@@ -137,7 +137,7 @@ describe("角色页：真相源是角色卡", () => {
     expect(cardTitles()).toContain("你");
 
     fireEvent.click(screen.getByText("你"));
-    const textarea = await screen.findByPlaceholderText("persona（性格与背景）");
+    const textarea = await screen.findByPlaceholderText("性格与背景（剧作家每轮都会读到）");
     expect((textarea as HTMLTextAreaElement).value).toBe("");
     fireEvent.change(textarea, { target: { value: "高二学生，话不多。" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
@@ -154,7 +154,7 @@ describe("角色页：真相源是角色卡", () => {
       target: { value: "rin" },
     });
     fireEvent.click(screen.getByRole("button", { name: "建这个角色" }));
-    await screen.findByPlaceholderText("persona（性格与背景）");
+    await screen.findByPlaceholderText("性格与背景（剧作家每轮都会读到）");
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(apiMock.saveFile).toHaveBeenCalled());

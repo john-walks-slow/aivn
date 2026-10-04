@@ -2,18 +2,16 @@ import { useEffect, useState } from "react";
 import type { CharacterDocument } from "@aivn/core";
 import { characterCardPath } from "@aivn/core";
 import { api } from "../api.js";
-import { Icon } from "../ui/Icon.js";
 import type { VoiceCatalogState } from "../voice/useVoiceCatalog.js";
 
 /**
- * 角色卡编辑器：名字 / persona / 音色，全部写角色卡（`characters/<id>.md`）。
+ * 角色卡编辑器：名字 / 人设 / 音色三格，全部写角色卡（`characters/<id>.md`）。
  * play.json 的 `characters` 是纯元数据，不经这里。
  *
- * 立绘不在这里：它是与角色卡同名的**可选**素材（`assets/sprites/<id>/`），
- * 机甲、道具那类没有卡的主体照样有立绘——所以立绘的上传、声明与生图都在素材页。
+ * 三格按「先给谁看、再是什么样的人、最后什么声音」排；卡级动作（从资源库导入、移除角色）
+ * 不在这里——那些动的是整张卡、不是卡里的一格，归宿主的面板标题行。
  *
- * 主角与普通角色共用它——两者是同一种东西。主角不高亮某个字段、也不锁某个字段，
- * 唯一的不同是宿主不给 `onRemove`（主角卡是剧目的一部分，删了就没人可演）。
+ * 主角与普通角色共用它——两者是同一种东西。主角不高亮某个字段、也不锁某个字段。
  */
 export function CharacterEditor({
   playId,
@@ -21,9 +19,7 @@ export function CharacterEditor({
   doc,
   voices,
   onPickVoice,
-  onBrowseLibrary,
   onDocChange,
-  onRemove,
 }: {
   playId: string;
   charId: string;
@@ -31,10 +27,7 @@ export function CharacterEditor({
   doc: CharacterDocument;
   voices: VoiceCatalogState;
   onPickVoice: () => void;
-  onBrowseLibrary: () => void;
   onDocChange: (fn: (doc: CharacterDocument) => void) => void;
-  /** 不给就没有「移除角色」这一项（主角卡不给）。 */
-  onRemove?: () => void;
 }) {
   const [previewing, setPreviewing] = useState(false);
 
@@ -59,56 +52,57 @@ export function CharacterEditor({
 
   return (
     <div className="char-card">
-      <div className="row">
-        <input value={doc.name ?? ""} onChange={(e) => onDocChange((d) => (d.name = e.target.value))} />
-      </div>
-      <div className="row small">
-        <button
-          className="ghost-btn"
-          onClick={onBrowseLibrary}
-          title="从资源库导入一个角色的角色卡与立绘（落在条目对应的角色卡上，不是填这一张）"
-        >
-          <span className="btn-icon">
-            <Icon name="download" size={13} /> 从资源库导入
-          </span>
-        </button>
-        {onRemove && (
-          <button className="link-btn" onClick={onRemove}>
-            移除角色
+      <label className="field">
+        <span>名字</span>
+        <input
+          value={doc.name ?? ""}
+          placeholder="上台时显示的名字"
+          onChange={(e) => onDocChange((d) => (d.name = e.target.value))}
+        />
+      </label>
+
+      <label className="field">
+        <span>人设</span>
+        <textarea
+          rows={4}
+          placeholder="性格与背景（剧作家每轮都会读到）"
+          value={doc.body}
+          onChange={(e) => onDocChange((d) => (d.body = e.target.value))}
+        />
+      </label>
+
+      <div className="field">
+        <span>音色</span>
+        <div className="voice-row">
+          <button className="ghost-btn voice-picker" onClick={onPickVoice}>
+            {doc.voiceId ? (doc.voice ?? voices.nameOf(doc.voiceId)) : "用剧目默认（点这里挑一个）"}
           </button>
-        )}
-      </div>
-      <textarea
-        rows={2}
-        placeholder="persona（性格与背景）"
-        value={doc.body}
-        onChange={(e) => onDocChange((d) => (d.body = e.target.value))}
-      />
-      <div className="voice-row">
-        <button className="ghost-btn voice-picker" onClick={onPickVoice}>
-          {/* 卡里的 voice 是人话描述；没写就退回按 voiceId 现查目录 */}
-          音色：{doc.voice ?? voices.nameOf(doc.voiceId)}
-        </button>
-        {doc.voiceId && (
           <button
             className="ghost-btn"
-            onClick={() =>
-              onDocChange((d) => {
-                d.voiceId = undefined;
-                d.voice = undefined;
-              })
-            }
+            disabled={!doc.voiceId || previewing}
+            onClick={previewVoice}
+            title="合成一句样本听听"
           >
-            清除
+            {previewing ? "合成中…" : "试听"}
           </button>
-        )}
-        <button className="ghost-btn" disabled={!doc.voiceId || previewing} onClick={previewVoice}>
-          {previewing ? "合成中…" : "试听"}
-        </button>
+          {doc.voiceId && (
+            <button
+              className="link-btn"
+              onClick={() =>
+                onDocChange((d) => {
+                  d.voiceId = undefined;
+                  d.voice = undefined;
+                })
+              }
+            >
+              清除
+            </button>
+          )}
+        </div>
       </div>
+
       <p className="muted small">
         角色卡：<code>{characterCardPath(charId)}</code>
-        ；（可选）同名立绘在素材页「立绘」里
       </p>
     </div>
   );
