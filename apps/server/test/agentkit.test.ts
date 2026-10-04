@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PlayMemory } from "../src/memory.js";
 import { LineageTree } from "@aivn/core";
 import { agentToolCatalog, agentToolEntry, createAgentKit, defaultToolsFor, roleTools, type AgentKit } from "../src/agentkit/kit.js";
+import { PlayFiles } from "../src/playFiles.js";
 import { AGENT_ROLES } from "../src/agentkit/role.js";
 import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "../src/agentkit/deps.js";
 
@@ -22,6 +23,9 @@ function playwriterDeps(over: Partial<PlaywriterKitDeps> = {}): PlaywriterKitDep
     tree: new LineageTree(),
     stateFiles: {},
     arcIds: () => [],
+    // 文件工具的白名单根：只有 store.dir 参与，构造时不碰盘
+    files: new PlayFiles({ dir: "/tmp/stage-agentkit-test" } as never),
+    onWrite: () => {},
     emitStop: () => {},
     emitPreload: () => {},
     kick: () => {},
@@ -70,21 +74,24 @@ function roleToolNames(deps: AgentKitDeps): string[] {
 const names = (kit: AgentKit): string[] => kit.tools.map((t) => t.name).sort();
 
 describe("agent kit：两个角色的暴露面", () => {
-  it("剧作家拿轮收束与记忆，不拿剧目文件与故事树", () => {
+  it("剧作家拿轮收束、记忆与剧目文件，不拿命令行与故事树", () => {
     const kit = playwriter();
     expect(names(kit)).toEqual([
       "beat_done",
-      "create_character",
+      "edit",
       "enter_nsfw",
       "exit_nsfw",
       "generate_image",
       "list_library",
+      "read",
       "read_memory_detail",
       "search_archive",
       "update_state",
-      "write_memory",
+      "write",
     ]);
-    expect(names(kit)).not.toContain("write");
+    // 角色卡与记忆卡都是普通剧目文件，没有第二个写口（create_character / write_memory 已收掉）
+    expect(names(kit)).not.toContain("create_character");
+    expect(names(kit)).not.toContain("write_memory");
     expect(names(kit)).not.toContain("bash");
     expect(names(kit)).not.toContain("read_lineage");
     // 用户在 Agent 页关掉生图，下一轮就装不进去（策略随之失效）
@@ -95,7 +102,7 @@ describe("agent kit：两个角色的暴露面", () => {
 
   it("工坊拿剧目文件、故事树与技能库，不拿轮收束与演出记忆", () => {
     const kit = workshop();
-    // read / write / edit 是 pi 的内建工具，工坊这一侧的路径白名单在 PlayEnv 里收口
+    // read / write / edit 是 pi 的内建工具，两个角色同一套，白名单在 PlayEnv 里收口
     expect(names(kit)).toContain("read");
     expect(names(kit)).toContain("write");
     expect(names(kit)).toContain("edit");
@@ -214,7 +221,9 @@ describe("agent kit：工具目录（设置页的数据源）", () => {
     expect(playDefault).toContain("generate_image");
     expect(playDefault).toContain("list_library");
     expect(playDefault).not.toContain("import_asset");
-    expect(playDefault).not.toContain("write");
+    // 角色卡与记忆卡是普通剧目文件，通用写口默认就开着；命令行不开
+    expect(playDefault).toContain("write");
+    expect(playDefault).toContain("edit");
     expect(playDefault).not.toContain("bash");
 
     // 搭台的缺省是**全开，除了 bash**：命令行按剧目在 Agent 页手动勾

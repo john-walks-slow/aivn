@@ -182,59 +182,23 @@ describe("PlayMemory", () => {
     expect(memory.searchArchive("细节", new Set(["e1"]), { nsfw: true })).toHaveLength(1);
   });
 
-  it("appendCard：新增卡即时进 cards + 落盘；同 file 覆盖；分支不过滤用户卡", async () => {
+  it("设定卡落盘后 load 读得回来：用户卡段在前、arcs 段在后（行序即提示词前缀）", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stage-memory-"));
-    const memory = new PlayMemory({ indexDir: join(dir, "memory", "index"), cards: [CARD] });
+    await mkdir(join(dir, "memory", "index", "locations"), { recursive: true });
+    await mkdir(join(dir, "memory", "arcs"), { recursive: true });
+    await writeFile(join(dir, "memory", "index", "locations", "天文台.md"), "# 天文台\n社团活动室在顶楼。\n", "utf8");
+    await writeFile(join(dir, "memory", "index", "zzz.md"), "# 末位\n最后一张。\n", "utf8");
+    await writeFile(join(dir, "memory", "arcs", "epoch-a-1.md"), "# 第一纪\n摘要\n", "utf8");
 
-    await memory.appendCard("locations/天文台", "# 天文台\n社团活动室在顶楼。\n");
-    expect(memory.visibleContext([]).map((c) => c.name)).toContain("天文台");
-    expect(memory.readCard("locations/天文台")).toContain("顶楼");
-
-    // 同 file 覆盖：cards 不增，内容更新
-    await memory.appendCard("locations/天文台", "# 天文台\n已废弃，钥匙在小春手里。\n");
-    expect(memory.cards.filter((c) => c.file === "locations/天文台")).toHaveLength(1);
-    expect(memory.readCard("天文台")).toContain("小春手里");
-
-    // 落盘：下次 load 能读回来
-    const reloaded = await PlayMemory.load(new PlayStore(dir));
-    expect(reloaded.readCard("locations/天文台")).toContain("小春手里");
-  });
-
-  it("appendCard：indexDir=null 时纯内存，不落盘也不报错", async () => {
-    const memory = new PlayMemory({ cards: [] });
-    await memory.appendCard("lore/设定", "# 设定\n内容。\n");
-    expect(memory.readCard("设定")).toContain("内容");
-  });
-
-  it("appendCard：新卡排进用户卡段，不落在 arcs 之后（行序漂了前缀缓存就废）", async () => {
-    const arcCard: IndexCard = {
-      layer: "arcs",
-      name: "第一纪",
-      summary: "摘要",
-      detail: "# 第一纪\n…",
-      file: "epoch-a-1",
-      arc: true,
-    };
-    // 场景一：arcs 卡已在（新卡 push 到末尾后必须被挪回用户段）
-    const withArcs = new PlayMemory({ cards: [CARD, arcCard] });
-    await withArcs.appendCard("aaa/新卡", "# 新卡\n内容。\n");
-    // 用户段按 file 排（ICU 排序：拉丁字母在 CJK 前），arcs 段整体在后
-    expect(withArcs.cards.map((c) => `${c.arc ? "arc" : "user"}:${c.file}`)).toEqual([
-      "user:aaa/新卡",
-      `user:${CARD.file}`,
+    const memory = await PlayMemory.load(new PlayStore(dir));
+    expect(memory.readCard("天文台")).toContain("顶楼");
+    // 用户卡段按 file localeCompare 排在前，arcs 段整体在后（loadArcs 的次序不参与重排）
+    expect(memory.cards.map((c) => `${c.arc ? "arc" : "user"}:${c.file}`)).toEqual([
+      "user:locations/天文台",
+      "user:zzz",
       "arc:epoch-a-1",
     ]);
-
-    // 场景二：一张用户卡都没有（cut 边界为 0 的老写法会整张卡原地不动）
-    const arcsOnly = new PlayMemory({ cards: [arcCard] });
-    await arcsOnly.appendCard("唯一卡", "# 唯一\n内容。\n");
-    expect(arcsOnly.cards.map((c) => c.arc)).toEqual([false, true]);
-
-    // arcs 段内部次序不动（loadArcs 给的是码位序，重排它会白白打乱）
-    const twoArcs = new PlayMemory({
-      cards: [arcCard, { ...arcCard, file: "epoch-a-2" }],
-    });
-    await twoArcs.appendCard("z/新卡", "# 新\n内容。\n");
-    expect(twoArcs.cards.filter((c) => c.arc).map((c) => c.file)).toEqual(["epoch-a-1", "epoch-a-2"]);
+    // 用户卡是剧目设定，不随分支可见性变化
+    expect(memory.visibleContext([]).map((c) => c.name)).toEqual(["天文台", "末位"]);
   });
 });

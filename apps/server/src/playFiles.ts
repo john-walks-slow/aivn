@@ -5,21 +5,21 @@ import { parsePlayConfig, CHARACTER_DIR } from "@aivn/core";
 import type { PlayStore } from "./store.js";
 
 /**
- * 剧目文件层（工坊 agent 与文件浏览器共用）：剧目目录里**面向用户的可编辑面**。
+ * 剧目文件层（两个 agent 与文件浏览器共用）：剧目目录里**面向用户的可编辑面**。
  *
  * 白名单而非黑名单——会话日志（session.json/lineage.jsonl）、TTS 缓存、二进制素材都不在此层，
- * 工坊 agent 与浏览器拿不到它们；越界路径一律拒绝，不做「尽力而为」的裁剪。
+ * agent 与浏览器拿不到它们；越界路径一律拒绝，不做「尽力而为」的裁剪。
  */
 
-/** 可编辑文本文件（工坊 agent 能改的面）。 */
+/** 可编辑文本文件（agent 能改的面）。 */
 const EDITABLE_EXT = new Set([".md", ".json", ".txt"]);
-/** 只读可见目录（浏览器能看，工坊 agent 不写）。 */
+/** 只读可见目录（浏览器能看，agent 不写）。 */
 const READONLY_PREFIXES = ["assets/"];
 /** 素材描述表（stem → 画面说明，注入剧作家提示词）——assets/ 里唯一可写的文本文件。 */
 const ASSET_MANIFEST = "assets/manifest.json";
 /** 允许下钻的顶层目录（其余目录整棵跳过，不进 readdir）。 */
 const DIR_ROOTS = ["memory", "assets", CHARACTER_DIR];
-/** 二进制可写面：仅图像素材（工坊生图落盘）。 */
+/** 二进制可写面：仅图像素材（生图落盘）。 */
 const BINARY_WRITE_PREFIXES = ["assets/backgrounds/", "assets/cg/", "assets/sprites/"];
 /** 单图上限 16MB：2K 图 1–3MB，留足余量又挡得住写歪的产物。 */
 const MAX_BINARY_BYTES = 16 * 1024 * 1024;
@@ -44,7 +44,7 @@ export interface PlayFile {
   /** 目录层级（浏览器建树用）：`play.json` 为 []。 */
   dir: string[];
   size: number;
-  /** 工坊 agent 可写（false = 只读展示）。 */
+  /** agent 可写（false = 只读展示）。 */
   writable: boolean;
   /** 预览方式：text 进编辑器，其余走静态 URL 预览/播放。 */
   kind: PlayFileKind;
@@ -65,7 +65,7 @@ const PLAY_CONFIG = "play.json";
 /**
  * play.json 的结构校验：**所有文本写口的唯一收口**。
  *
- * 文件页手写、工坊 agent 的 write / edit、引用即导入的主角卡，落盘都得从 `write` 过，
+ * 文件页手写、两个 agent 的 write / edit、引用即导入的主角卡，落盘都得从 `write` 过，
  * 谁也别想把一份解析不了的 play.json 留在盘上——留下了，下一次 runtime 重建就会炸在
  * `void` 的 promise 里，用户看到的是「面板不刷新了」而不是「哪里坏了」。
  * bash 是唯一绕得开的写口（它不走这一层），收束时补一次读盘检查来兜。
@@ -81,16 +81,36 @@ function assertPlayConfig(rel: string, text: string): void {
   }
 }
 
+/**
+ * 机器产物：纪元压缩摘要（arcs）与逐轮切片（archive）都由引擎写。
+ *
+ * 它们跟分支走（arcs 按 arcIds 过滤、archive 按 pathSet 过滤），手改或手建就绕过了防剧透。
+ * 所以**看得见、改不动**：文件页能查看，文本写口一律拒。
+ */
+const GENERATED_PREFIXES = ["memory/arcs/", "memory/archive/"];
+
 /** 可写面：根层 play.json + theme.css + 素材描述表 + memory/** 与 characters/** 文本文件。 */
 function isEditable(rel: string): boolean {
   if (rel === PLAY_CONFIG || rel === "theme.css" || rel === ASSET_MANIFEST) return true;
+  if (isGenerated(rel)) return false;
   if (!rel.startsWith("memory/") && !rel.startsWith(`${CHARACTER_DIR}/`)) return false;
   return EDITABLE_EXT.has(extOf(rel));
 }
 
+/** 只读可见面：素材目录（浏览器预览）与引擎产物（文件页看得到、存不了）。 */
 function isVisible(rel: string): boolean {
-  if (isEditable(rel)) return true;
+  if (isEditable(rel) || isGenerated(rel)) return true;
   return READONLY_PREFIXES.some((prefix) => rel.startsWith(prefix));
+}
+
+/**
+ * 是不是引擎产物。**按小写比**：Windows / macOS 的文件系统不区分大小写，
+ * `memory/ARCS/x.md` 在那边就是 `memory/arcs/x.md` 同一个文件——
+ * 区分大小写的比较只在 Linux 上成立，桌面版会从这条路绕过去。
+ */
+function isGenerated(rel: string): boolean {
+  const lower = rel.toLowerCase();
+  return GENERATED_PREFIXES.some((prefix) => lower.startsWith(prefix));
 }
 
 /** 目录可下钻：白名单根的祖先链（`memory`/`assets`）本身不可见，但必须能走进去。 */
@@ -105,7 +125,7 @@ function extOf(rel: string): string {
 
 /** 剧目文件层：路径解析到剧目目录内，越界即抛错。 */
 export class PlayFiles {
-  /** 剧目目录绝对路径（工坊 bash 的 cwd，也是这一层所有白名单判定的根）。 */
+  /** 剧目目录绝对路径（bash 的 cwd，也是这一层所有白名单判定的根）。 */
   readonly root: string;
 
   constructor(store: PlayStore) {
@@ -117,13 +137,13 @@ export class PlayFiles {
     const clean = normalizePath(rel);
     if (!clean) throw new Error(`非法路径: ${rel}`);
     const allowed = mode === "write" ? isEditable(clean) : isVisible(clean);
-    if (!allowed) throw new Error(`路径不在工坊可${mode === "write" ? "写" : "读"}范围: ${clean}`);
+    if (!allowed) throw new Error(`路径不在剧目可${mode === "write" ? "写" : "读"}范围: ${clean}`);
     const abs = resolve(this.root, clean);
     if (abs !== this.root && !abs.startsWith(this.root + sep)) throw new Error(`路径越界: ${rel}`);
     return abs;
   }
 
-  /** 文件清单（浏览器建树 + 工坊 agent 的目录视图）。 */
+  /** 文件清单（浏览器建树 + agent 的目录视图）。 */
   async list(): Promise<PlayFile[]> {
     const out: PlayFile[] = [];
     const walk = async (rel: string): Promise<void> => {
@@ -164,7 +184,7 @@ export class PlayFiles {
     return readFile(abs, "utf8");
   }
 
-  /** 写盘（工坊 agent 与浏览器共用）；返回规范化后的相对路径。 */
+  /** 写盘（agent 与浏览器共用）；返回规范化后的相对路径。 */
   async write(rel: string, content: string): Promise<string> {
     const abs = this.pathOf(rel, "write");
     const clean = normalizePath(rel)!;
@@ -175,19 +195,19 @@ export class PlayFiles {
   }
 
   /**
-   * 剧目图像素材的二进制写入通道（工坊生图落盘）。
+   * 剧目图像素材的二进制写入通道（生图落盘）。
    *
    * 独立于 `write`：文本工具写图片路径没有意义，而素材层若绕过本类直接落盘，
-   * 「工坊的读写都在 PlayFiles 白名单内」这条铁律就成了假话，人和 agent 的写权限面也分叉了。
+   * 「agent 的读写都在 PlayFiles 白名单内」这条铁律就成了假话，人和 agent 的写权限面也分叉了。
    * 调用方（PlayAssets）只传服务端从枚举拼出的路径，本类仍做一遍全量校验。
    *
-   * 不产撤销记录：`WorkshopWrite.before` 是 utf8 文本，2MB 二进制会被解成乱码串回传前端。
+   * 不产撤销记录：`PlayFileWrite.before` 是 utf8 文本，2MB 二进制会被解成乱码串回传前端。
    * 图像的「反悔」手段是覆盖重画与素材页删除。
    */
   async writeBinary(rel: string, data: Buffer): Promise<string> {
     const clean = normalizePath(rel);
     if (!clean || !isBinaryWritable(clean)) {
-      throw new Error(`路径不在工坊二进制可写范围: ${rel}`);
+      throw new Error(`路径不在剧目二进制可写范围: ${rel}`);
     }
     const abs = resolve(this.root, clean);
     if (abs !== this.root && !abs.startsWith(this.root + sep)) throw new Error(`路径越界: ${rel}`);
@@ -215,7 +235,7 @@ export class PlayFiles {
     await rm(abs, { force: true });
   }
 
-  /** 删除图像素材（工坊覆盖生图时清掉换扩展名的旧文件；一个 id 只留一张图）。 */
+  /** 删除图像素材（覆盖生图时清掉换扩展名的旧文件；一个 id 只留一张图）。 */
   async removeAsset(rel: string): Promise<void> {
     const clean = normalizePath(rel);
     if (!clean || !isBinaryWritable(clean)) throw new Error(`路径不在素材范围: ${rel}`);

@@ -31,8 +31,11 @@ import type { AgentRole } from "./role.js";
  */
 export type ModelStop = { stopType: StopType; options?: StopOption[]; placeholder?: string };
 
-/** 工坊对话里的一次写盘（前端在对话流里内联展示 + 可撤销）。 */
-export interface WorkshopWrite {
+/**
+ * 一次剧目文件写盘。**两个 agent 共用**：工坊拿它在对话流里内联展示（可撤销），
+ * 剧作家拿它认角色卡、排轮边界重建——写的是同一批文件、同一条白名单。
+ */
+export interface PlayFileWrite {
   path: string;
   /** 写盘前的内容（撤销用；文件原本不存在则为 null）。 */
   before: string | null;
@@ -58,7 +61,7 @@ export interface PlaywriterKitDeps extends KitCommonDeps {
   engine: EngineStateSnapshot;
   /**
    * 角色 id 集合（来自角色卡目录）：update_state 的好感度按它做成员校验。
-   * 纪元内只增不减——同轮 create_character 建卡后由编排器 add，新角色当轮就能写好感。
+   * 纪元内只增不减——剧作家同轮写下 characters/<id>.md 后由写盘回调 add，新角色当轮就能写好感。
    */
   characterIds: ReadonlySet<string>;
   memory: PlayMemory;
@@ -67,10 +70,13 @@ export interface PlaywriterKitDeps extends KitCommonDeps {
   stateFiles: Record<string, string>;
   /** 当前分支已走过的纪元（分岔回旧分支不得读到后世的章节摘要）。 */
   arcIds: () => readonly string[];
-  /** 写 characters/<id>.md（play.json 只留剧目元数据）；不传则角色卡工具只回提示。 */
-  writeCharacter?: (id: string, content: string) => Promise<void>;
-  /** 写 memory/index/<file>.md 用户设定卡；不传则写记忆卡工具只回提示。 */
-  writeMemoryCard?: (rel: string, content: string) => Promise<void>;
+  /** 剧目文件层：read / write / edit 的白名单与落盘收口，与工坊**同一份**。 */
+  files: PlayFiles;
+  /**
+   * 写盘回调（落盘之后触发，`PlayEnv.writeFile` 调用）。
+   * 角色卡 id 登记、轮边界重建这类领域动作由宿主接在这里——文件工具本身不知道这些。
+   */
+  onWrite: (write: PlayFileWrite) => void;
   /** 停止点载荷 → IR 事件（加 seq → 广播 → 落谱系，与解析器产出的事件同一条管道）。 */
   emitStop: (stop: ModelStop) => void;
   /** 生图预发射 → IR 事件（骨架占位出现在时间线上那个位置）。 */
@@ -99,7 +105,7 @@ export interface WorkshopKitDeps extends KitCommonDeps {
   files: PlayFiles;
   store: PlayStore;
   /** 写盘回调：推给前端（可见/可撤销），不阻塞 agent。 */
-  onWrite: (write: WorkshopWrite) => void;
+  onWrite: (write: PlayFileWrite) => void;
   /** 素材落盘回调：推给前端在对话流里内联展示。 */
   onAsset: (asset: WorkshopAssetView, replaced?: boolean) => void;
   /** 素材生成层（生图未启用时为 undefined，工具直接回不可用）。 */

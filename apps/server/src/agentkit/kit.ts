@@ -77,8 +77,6 @@ const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   enter_nsfw: { label: "进入限制级剧情", group: "beat", roles: ["playwriter"] },
   exit_nsfw: { label: "退出限制级剧情", group: "beat", roles: ["playwriter"] },
   update_state: { label: "提议状态更新", group: "memory", roles: ["playwriter"] },
-  create_character: { label: "建角色卡", group: "memory", roles: ["playwriter"] },
-  write_memory: { label: "写记忆卡", group: "memory", roles: ["playwriter"] },
   read_memory_detail: { label: "读记忆卡详情", group: "memory", roles: ["playwriter"] },
   search_archive: { label: "检索历史往事", group: "memory", roles: ["playwriter"] },
   generate_image: { label: "生成剧目素材", group: "image", roles: ["playwriter", "workshop"] },
@@ -88,9 +86,10 @@ const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   list_voices: { label: "查音色库", group: "voice", roles: ["workshop"] },
   web_search: { label: "联网检索", group: "web", roles: ["playwriter", "workshop"] },
   // read / write / edit / bash 是 pi 的内建工具，不走 filesTool——路径白名单在 PlayEnv 里收口。
-  read: { label: "读文件", group: "files", roles: ["workshop"] },
-  write: { label: "写文件", group: "files", roles: ["workshop"] },
-  edit: { label: "编辑文件", group: "files", roles: ["workshop"] },
+  // 剧作家与工坊写的是同一批文件（角色卡、记忆卡），所以白名单只有一份，不分角色。
+  read: { label: "读文件", group: "files", roles: ["playwriter", "workshop"] },
+  write: { label: "写文件", group: "files", roles: ["playwriter", "workshop"] },
+  edit: { label: "编辑文件", group: "files", roles: ["playwriter", "workshop"] },
   bash: { label: "命令行", group: "shell", roles: ["workshop"] },
   get_readiness: { label: "检查开演条件", group: "files", roles: ["workshop"] },
   view_image: { label: "看图", group: "files", roles: ["workshop"] },
@@ -125,10 +124,12 @@ const DEFAULT_ENABLED: Record<AgentRole, string[]> = {
     "enter_nsfw",
     "exit_nsfw",
     "update_state",
-    "create_character",
-    "write_memory",
     "read_memory_detail",
     "search_archive",
+    // 角色卡与记忆卡都走通用文件工具：写之前先 read，改既有卡用 edit（不会像整篇覆盖那样丢字段）
+    "read",
+    "write",
+    "edit",
     "generate_image",
     // 只读浏览：宿主的引用即导入只认同名 id，不知道库里有什么就等于瞎猜。
     // import_asset 不开——导入走 DSL 引用，模型自己动手抄一遍 id 没有额外收益。
@@ -184,6 +185,13 @@ export const CAPABILITY_TOOLS = {
   search: "web_search",
   /** 素材资源库可用（配置了库目录）。 */
   library: "list_library",
+  /**
+   * 剧作家有写口（write 装上才算）。
+   *
+   * 角色卡与记忆卡怎么写、建卡流程那两章挂在提示词里（pi 的内建工具没有描述可覆写），
+   * 所以在 Agent 页把 write 摘掉时，那两章必须一起收走——否则教它调一个没有的工具。
+   */
+  files: "write",
   /** 音色库可用（配了 TTS key）。没配时 list_voices 不注册，提示词也不提。 */
   voice: "list_voices",
   /** 命令行可用。默认关，用户在 Agent 页勾上才有；没勾时提示词不提工作区。 */
@@ -243,16 +251,19 @@ export function createAgentKit(deps: AgentKitDeps & { thinking?: ThinkingLevel }
 }
 
 /**
- * 剧作家的工具：轮收束 + 记忆 + 生图（后台排产）+ 资源库检索 + 联网。
+ * 剧作家的工具：轮收束 + 状态/记忆 + 剧目文件 + 生图（后台排产）+ 资源库检索 + 联网。
  *
- * 少了 files 与 lineage：它们要 `PlayFiles` / `PlaySaves`，那是工坊那条线的依赖面。
- * 清单是统一的，装不上的那部分不装——不是被切出去，是这条路上没有。
+ * 文件工具与工坊**同一套**（pi 的 read / write / edit，走同一个 `PlayEnv` 白名单）：
+ * 角色卡、记忆卡本来就是普通剧目文件，专用工具只是给同一件事多加一条 schema 与一层守卫。
+ * 少了 bash 与 lineage：命令行按剧目手动勾，故事树是工坊的活。
  */
 function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
+  const env = new PlayEnv(deps.files, deps.onWrite);
   return [
     createBeatDoneTool(deps),
     ...createNsfwTools(deps),
     ...createMemoryTools(deps),
+    ...createPiFileTools(env),
     createGenerateImageTool({
       mode: "queued",
       playAssets: deps.playAssets,

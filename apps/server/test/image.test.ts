@@ -115,6 +115,7 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
       model: {} as never,
       getApiKey: () => "test-key",
       play: { ...PLAY, id: "img" },
+      store,
       memory: await PlayMemory.load(store),
       tree: new LineageTree(),
       engine: { turn: 0, affinity: {}, flags: {} },

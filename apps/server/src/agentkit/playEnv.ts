@@ -8,11 +8,11 @@ import {
 } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { PlayFiles } from "../playFiles.js";
-import type { WorkshopWrite } from "./deps.js";
+import type { PlayFileWrite } from "./deps.js";
 import { reason } from "./result.js";
 
 /**
- * 工坊 agent 的执行环境：pi 的 `NodeExecutionEnv`（纯 Node、跨平台，16 个 FileSystem 方法现成）
+ * 两个 agent 共用的执行环境：pi 的 `NodeExecutionEnv`（纯 Node、跨平台，16 个 FileSystem 方法现成）
  * 外面套一层剧目白名单。**这是装饰，不是重写。**
  *
  * pi 的 read / write / edit 实际只用得到 `absolutePath`（三个工具唯一的路径入口，经
@@ -30,7 +30,7 @@ import { reason } from "./result.js";
 export class PlayEnv extends NodeExecutionEnv {
   constructor(
     private readonly files: PlayFiles,
-    private readonly onWrite: (write: WorkshopWrite) => void,
+    private readonly onWrite: (write: PlayFileWrite) => void,
   ) {
     super({ cwd: files.root });
   }

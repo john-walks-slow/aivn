@@ -20,7 +20,7 @@ import type { Readiness } from "./store.js";
  */
 
 /** 工坊对话里的一次写盘（前端在对话流里内联展示 + 可撤销）。定义在基座的依赖面里。 */
-export type { WorkshopWrite } from "./agentkit/deps.js";
+export type { PlayFileWrite } from "./agentkit/deps.js";
 
 /** 工坊 system prompt 的装配输入。 */
 export interface WorkshopPromptContext {

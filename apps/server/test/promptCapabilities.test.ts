@@ -43,9 +43,9 @@ describe("能力位：一位对应一个工具", () => {
   it("capabilitiesOf：表里有几位就出几位，装了才为 true", () => {
     expect(Object.keys(capabilitiesOf([])).sort()).toEqual(Object.keys(CAPABILITY_TOOLS).sort());
     expect(Object.values(capabilitiesOf([]))).toEqual(Object.keys(CAPABILITY_TOOLS).map(() => false));
-    // bash 在、enter_nsfw 不在：nsfw 这一位就该是 false
+    // bash 在、enter_nsfw 与 write 不在：nsfw 与 files 这两位就该是 false
     expect(capabilitiesOf([{ name: "generate_image" }, { name: "bash" }]))
-      .toEqual({ ...caps({ image: true, shell: true, nsfw: false }) });
+      .toEqual({ ...caps({ image: true, shell: true, nsfw: false, files: false }) });
   });
 });
 

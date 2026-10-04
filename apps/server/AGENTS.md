@@ -7,13 +7,14 @@
 ## agentkit：两个 agent 的共用基座
 
 - **两个 agent 共用一套基座**：`src/agentkit/` 是唯一工具实现面（`kit.ts` 按 `role: "playwriter" | "workshop"` 装配，`deps.ts` 用判别联合收窄依赖），同一工具**同一份 schema 与实现，只有 description + 等待策略 + 注入依赖不同**（`generate_image`：工坊 sync 等图并回 markdown 图片、剧作家 queued 后台排产只占时间线位置）。
-- **工具清单只有一份**：`kit.ts` 的 `TOOL_CATALOG` 收了全部工具的元数据，**角色可见性是每一项自己的 `roles`**（不再有第二份 id 清单；`installableTools(role)` / `agentToolCatalog(role)` 由它投影，是设置页与装配共用的唯一真相源；`agentToolEntry(id)` 碰到未登记的 id 直接抛错），play.json 的 `agents.<role>.tools` 存**启用集**（白名单，不是禁用集）过滤，缺省走 `DEFAULT_ENABLED`（搭台除 `bash` 外全开——命令行按剧目手动勾；剧作家开着轮收束/记忆/联网/生图/**只读**查库，`import_asset` 仍默认关——素材策略是创作决策，工具不给它那条策略就是空话）。
-- `can` 位（image/search/library/voice/shell/nsfw）反过来决定提示词注不注某一章。**一位对应一个授权它的工具**（`CAPABILITY_TOOLS` 表），`kit.can` 由 `capabilitiesOf(装上的工具)` 现算——两个角色的提示词读同一个对象，不会各算各的。
+- **工具清单只有一份**：`kit.ts` 的 `TOOL_CATALOG` 收了全部工具的元数据，**角色可见性是每一项自己的 `roles`**（不再有第二份 id 清单；`installableTools(role)` / `agentToolCatalog(role)` 由它投影，是设置页与装配共用的唯一真相源；`agentToolEntry(id)` 碰到未登记的 id 直接抛错），play.json 的 `agents.<role>.tools` 存**启用集**（白名单，不是禁用集）过滤，缺省走 `DEFAULT_ENABLED`（搭台除 `bash` 外全开——命令行按剧目手动勾；剧作家开着轮收束/状态/记忆检索/联网/生图/**只读**查库与通用文件工具（`read` / `write` / `edit`），`import_asset` 仍默认关——素材策略是创作决策，工具不给它那条策略就是空话）。
+- `can` 位（image/search/library/**files**/voice/shell/nsfw）反过来决定提示词注不注某一章。**一位对应一个授权它的工具**（`CAPABILITY_TOOLS` 表），`kit.can` 由 `capabilitiesOf(装上的工具)` 现算——两个角色的提示词读同一个对象，不会各算各的。
 - `generate_image` 的两个角色**同一份 schema**（`expression` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只差 description 与等待策略。**垫图入口只有一个 `references`**（每项可以是角色 id、剧目内相对路径或 http(s) 网址，1–6 张；`referenceCharacters` 保留为只吃角色 id 的兼容别名，两者在工具层合并去重）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该角色的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
 - **自动注册临时角色**：`generate_image` 的 `characterName` 参数带上了、而 `characterId` 不在角色卡目录里时，`playAssets.resolveSprite` 就地写一张最小卡再出图（卡里只有 id/name，正文写「（演出中临时引入，设定未补。）」——留空会让工坊以为「作者写过了，就是没写」），并打 `autoRegistered` 让宿主走同一条 `onPlayConfigChanged` 轮边界重建：工坊与用户此刻不在场，等他们想起建卡，这一轮早演过去了。
 - 已有卡时这个参数不作数（不覆盖人设）。
-- **同名工具调用并发**：create_character 的落盘与 generate_image 的成员校验原本实时读盘，同批发出时谁先完成不定，会偶发扑空。
-- `playhouse.writeCharacter` 落盘的同时把 id 登记进 `knownCharacters`（WeakMap<PlayStore>），`characterIdsOf` 那个回调读实时盘 ∪ 它，竞态就没了。
+- **同名工具调用并发**：写角色卡的落盘与 generate_image 的成员校验原本实时读盘，同批发出时谁先完成不定，会偶发扑空。
+- `playhouse.writeCharacter` 在落盘**之后**把 id 登记进 `knownCharacters`（WeakMap<PlayStore>），`characterIdsOf` 那个回调读实时盘 ∪ 它，竞态就没了；顺序反了会在写失败时留下一个并不存在的 id。
+- 剧作家走通用 `write` 时，同一步（`orchestrator.onPlayFileWritten` → `playhouse.onPlayFileWritten`）按 `characterIdOfPath(write.path)` 认角色卡并登记，两条路汇到同一处。
 - **无名角色音色**：`<say id="passerby" name="路人甲">` 这种一次性角色没有角色卡、而音色挂在角色卡的 voiceId 上，于是永远没声音。
 - `play.defaultVoiceId`（工坊「剧目」页挑）在 `voiceOf` 里兜底，有卡的角色仍然各用各的。
 - **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `recut_sprite`——立绘落盘前把抠底前的原片留一份到 `media-cache/sprite-sources/<角色id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
@@ -39,8 +40,10 @@
 - **消息文件一条不删**：只有前 `cutAt` 条移出 agent 上下文，面板照常显示（旧对话照常在，只是中间多一条可点开的分隔）。
 - 工坊模型可以和剧作家不同，阈值因此另有一套（`settings.json` 的 `workshopContext`，缺省逐项沿用全局），生效值再与模型自带窗口取 min。
 - 摘要回注 A 区（工坊 A 区本就每轮重建，没有前缀缓存约束），多轮是**拿旧定稿重写成一份完整文档**而不是叠加（`capDigest` 封顶 6000 字）。
-- 工坊的 read / write / edit / bash 全部是 **pi 的内建工具**（`agentkit/piTools.ts` 只做 `AgentHarnessTool → AgentTool` 的适配，把 `onUpdate`/`toolContext`/`invocation`/`context` 补齐，`context` 用 `withAbortSignal(signal, BACKGROUND_CONTEXT)` 把工坊单轮的 7 分钟超时传下去）。
-- 路径白名单与 `play.json` 结构校验收在 `playFiles.ts` 的 `PlayFiles` 上——它是**所有文本写口的收口**（工坊 agent 的 write / edit、文件页、角色卡都从 `write` 过；可写目录是 `memory/**` 与 `characters/**`），校验不过就不落盘、盘上那份一个字节不动。撤销条在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，早拒白名单 + 记撤销条，落盘委派 `PlayFiles.write`）。
+- read / write / edit / bash 全部是 **pi 的内建工具**（`agentkit/piTools.ts` 只做 `AgentHarnessTool → AgentTool` 的适配，把 `onUpdate`/`toolContext`/`invocation`/`context` 补齐，`context` 用 `withAbortSignal(signal, BACKGROUND_CONTEXT)` 把工坊单轮的 7 分钟超时传下去）。**前三个两个角色都装**，`bash` 只装工坊。
+- 路径白名单与 `play.json` 结构校验收在 `playFiles.ts` 的 `PlayFiles` 上——它是**所有文本写口的收口**（两个 agent 的 write / edit、文件页、角色卡都从 `write` 过；可写目录是 `memory/**` 与 `characters/**`），校验不过就不落盘、盘上那份一个字节不动。**白名单不分角色**：两个 agent 写的是同一批文件（角色卡、记忆卡），再分一份只会多一处要同步的地方。
+- `memory/arcs/`（纪元压缩产物）与 `memory/archive/`（逐轮切片）是引擎产物且跟分支走，**看得见、改不动**（`GENERATED_PREFIXES`）：手改手建会绕过 arcs 按 arcIds、archive 按 pathSet 的防剧透过滤。这两条从前由 `write_memory` 的路径守卫兜着，收掉专用工具之后改由文件层兜。
+- 撤销条在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，早拒白名单 + 记撤销条，落盘委派 `PlayFiles.write`）。
 - pi 的 `withFileMutationQueue` 顶掉了原来的 `fileLocks`（WeakMap<env> + canonicalPath，同一 `PlayEnv` 实例内自动串行）。
 - **bash 不走这一层**：它继承 `NodeExecutionEnv.exec`，cwd 就是剧目目录，以服务进程的权限跑、改文件不进撤销条，所以 `DEFAULT_ENABLED` 里默认关，`can.shell` 决定提示词注不注「命令行」那章（讲的是边界与后果，不是用法——cwd/截断/超时都在 pi 的 bash 描述里）。
 - `workshopSession` 订阅 `tool_execution_end`，跑过 bash 就置脏。**置脏只有 `markChanged()` 一个入口**（agent 写盘、素材到货、bash、文件页手改四条路都从这儿过），**收束只有 `applyChanges()` 一个出口**：真有改动才重建——回合内攒着、收束时重建一次，文件页保存没有收束可等、就地兑现。
@@ -72,7 +75,7 @@
 
 ## 提示词装配
 
-- **工具知识只写在工具描述里，系统提示词不复述**（同一规则写两处必然漂移——生图那几条已经漂移过一次）。
+- **工具知识只写在工具描述里，系统提示词不复述**（同一规则写两处必然漂移——生图那几条已经漂移过一次）。**一处明确例外**：pi 的内建 read / write / edit 没有描述覆写入口，角色卡 frontmatter 与记忆卡格式只能落在 A 区（`prompt.ts` 的 `newCharacterRules(can.files)` / `MEMORY_RULES`）——它们同时要求模型「先 read 再 edit」，格式本身以 `parseCharacterCard` 的解析结果为准；`can.files`（= 装上了 `write`）为假时两章一起收走，只留「你没有写口，走临时角色通道」那句。
 - `prompt.ts` 的 `imageChapter` 只留工具本身与后果（发起即返回、这一轮就引用到它则先上骨架占位），调用写法（走函数调用不是文本标签、id 命名、prompt 后缀串）全在 `QUEUED_DESCRIPTION`。
 - **什么时候该画一张不再由引擎决定**——早先那句「清单里没有就自己画一张背景」替所有剧目做了同一个决定，已撤掉，改成指向写作参数的素材来源（`renderCraftParams` 按 `can.image` / `can.library` 渲染那几行）。
 - 原先那句「提前 3–5 句发起」已删——流式播放下 3–5 句只给图 3–5 秒的头，而真图要一分多钟，这个数推导不出来。
@@ -83,8 +86,8 @@
 - 工坊提示词里每个工具名出现的地方都按 `can.library` 收了条件——工具没注册就别在提示词里教它调。
 - 挑音色的语言跟着剧目的 `voiceLanguage` 走（`WorkshopPromptContext.voiceLanguage` 现读注入；未设 = 台词按剧本原文配音，按剧本语言筛），不匹配的后果写在 `list_voices` 的描述里。
 - **`play.json` 的字段表写在工坊 `writingPoints`**：除 `id`/`title` 外全是可选字段，缺省字段不在文件里、read 也读不出来，字段名猜错会被 `parsePlayConfig` 静默丢弃——所以 schema 必须写进提示词，并要求定点 `edit` 而不是整篇覆盖。
-- 工具的可见性错配要当 bug 治：`create_character` 只装给剧作家、`list_voices` 只装给工坊，描述里不能提对方才有的工具（2026-10-04 修：曾教剧作家去调它没有的 `list_voices`）。
-- 两份提示词的正文按章抽成模块常量（剧作家 `ROLE_INTRO` / `HOW_I_WORK` / `FORMAT_RULES` / `NEW_CHARACTER_RULES` / `CONTRACT_RULES`，搭台 `RESPONSIBILITY_RULES` / `TALK_RULES` / `IMAGE_BASICS` / `NO_IMAGE_GUIDE` / `LINEAGE_GUIDE`），带能力位的章走 `imageChapter` / `setupFlow` / `writingPoints`，装配模板只留顺序与开关——改一章不必在几百行里找位置。
+- 工具的可见性错配要当 bug 治：`list_voices` 只装给工坊、`read_lineage` 只装给工坊，提示词与工具描述里不能提对方才有的工具（2026-10-04 修：曾教剧作家去调它没有的 `list_voices`）。
+- 两份提示词的正文按章抽成模块常量（剧作家 `ROLE_INTRO` / `HOW_I_WORK` / `FORMAT_RULES` / `MEMORY_RULES` / `newCharacterRules()` / `CONTRACT_RULES`，搭台 `RESPONSIBILITY_RULES` / `TALK_RULES` / `IMAGE_BASICS` / `NO_IMAGE_GUIDE` / `LINEAGE_GUIDE`），带能力位的章走 `imageChapter` / `setupFlow` / `writingPoints`，装配模板只留顺序与开关——改一章不必在几百行里找位置。
 - 写作参数段（`renderCraftParams`）在 A 区里紧挨 `craftSection` **之前**、且**永远注入**（全默认值时也注入）：缺省口径不说出来，模型面对的就是「没人告诉它一轮写多长」，而它每轮都在做这个决定。
 - `beat_done` 的三种停法只在「## 结束轮」与 `beatTool.ts` 的 `BEAT_DONE_DESCRIPTION` 各写一遍（契约 vs 工具说明），`# 你怎么工作` 不再复述第三遍。
 - 搭台提示词里**不写死 UI 入口清单**（曾列出「玩家能打字的五处界面」，界面一改即成假信息），只说清要改什么、让用户自己找入口。
@@ -150,9 +153,9 @@
 - 素材来源的能力降级在 `craftParams.ts` 里做：`can.image` / `can.library` 决定那几行怎么写（没生图就说「用旁白交代」，没配库就不提清单），**工具没装时提示词不教它调**。文风与禁忌一律留在 `craft.md`，不参数化。
 - 剧本语言 `scriptLanguage`（play.json）与语音语言 `voiceLanguage` 是两件事：前者决定正文/旁白/选项用什么语言写（不设 = 跟随玩家输入），后者是 TTS 的翻译目标。两份提示词都读它（剧作家那段在 `prompt.ts`，工坊那段在 `workshop.ts` 的 `playLanguageNote`）。
 - `memory/always/craft.md` **空着剧作家就少一层口径可听**（写作参数照旧生效），所以工坊「设定流程」第 4 步仍硬性要求把对齐结果落盘——但落的是哪一份要看内容：文风进 craft.md，节奏与素材来源用 `set_craft`。
-- **D7 三层记忆只有 index 层对剧作家可写**：`write_memory`（2026-10-04 补的，只装剧作家）写 `memory/index/<路径>.md`，同路径重复写即更新。`always/` 是每轮注入层、`arcs/` 是压缩产物、`archive/` 是逐轮切片——三层都不是设定卡，守卫一律拒（`sanitizeMemoryCardPath`，正则带 `i` 标志）。
-- **写卡即时进内存、排一次轮边界重建才进 A 区**：`PlayMemory.appendCard` 先落 `cards`（当轮 `read_memory_detail` 可读），`playhouse.writeMemoryCard` 再 `rebuildAtBeatBoundary`——A 区在纪元内冻结，不排重建的话回执承诺的「下一轮进 A 区索引」是空话。
-- **卡片行序即提示词前缀**：`loadCards` + `loadArcs` 建立的不变量是「用户卡在前、按 file localeCompare、arcs 卡在后」，`appendCard` 新增后必须 `sortUserCards` 重排——行序一漂前缀缓存全废。arcs 段**不能**一起排：它是码位序（`epoch-x-10` 会排到 `epoch-x-2` 前）。两个分区要 filter 出来分别处理再拼回，只重排「第一个 arc 之前」那段会把新卡漏在 arcs 后面。
+- **设定卡与角色卡都是普通剧目文件，走通用 `write` / `edit`**（2026-10-04 收掉了 `write_memory` / `create_character`：同一件事不必各来一份 schema 与守卫，通用工具还多给「先 read 再定点 edit」）。设定卡写 `memory/index/<分类>/<名字>.md`（首行 `# 标题`、次行一句话摘要），角色卡写 `characters/<id>.md`（frontmatter 机器字段 + 正文人设）。`always/` 是每轮注入层（可写），`arcs/` / `archive/` 是机器产物（只读，见上）。
+- **写完排一次轮边界重建才进 A 区**：`PlayEnv.writeFile` 落盘后回调 `onPlayFilesChanged` → `playhouse.onPlayFileWritten` → `rebuildAtBeatBoundary`（与工坊写盘、引用即导入同一条延迟重建）。A 区在纪元内冻结，不排重建的话「下一轮进 A 区索引 / 角色表」就是空话。当轮想知道自己刚写了什么，直接 `read` 那个文件——内存里的 `cards` 不再有第二条写入口。
+- **卡片行序即提示词前缀**：不变量是「用户卡在前、按 file localeCompare、arcs 卡在后」，由 `loadCards`（整段 sort）与 `loadArcs`（readdir 序）的拼接顺序建立，`PlayMemory.load` 每次重建都照它来。arcs 段**不能**跟着一起排：它是码位序（`epoch-x-10` 会排到 `epoch-x-2` 前）。
 - **A 区角色分级（roster 一行制）**：角色数 ≥ `CAST_GRADING_MIN_SIZE`(5) 且给了 `activeCast` 时，在场角色全卡全文、最近没出场的只注一行摘要（截 `CAST_SUMMARY_CHARS`）。在场表来自 `orchestrator.recentCast()`——**按事件条数窗口倒扫**（`CAST_SCAN_EVENTS`），不是按去重后的角色数：后者在常驻角色少的剧目会一路扫穿全历史，等于全员标记在场、分级从不生效。不给 `activeCast` = 不分级（小剧目行序抖动伤缓存，不值）。
 - **构造函数里 `restored` 的回填必须赶在 `buildAgent` 之前**（events/seq/beatNo/epoch/readPos/autostarted 整块）：A 区角色分级读 events 算在场，回填放在后面就是冷启动全员折叠——恢复出来的一轮比热启动少一整层设定。
 - **轮边界重建同剧目只挂一个待办**（`pendingRebuilds` + `pendingRebuildNotes`）：一轮里建三张卡、出三张立绘是三次调用，全排下去就是连着重装三份 runtime；对话尾的 note 取首次触发的原因。

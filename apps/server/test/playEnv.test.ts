@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createAgentKit, defaultToolsFor } from "../src/agentkit/kit.js";
-import type { WorkshopKitDeps, WorkshopWrite } from "../src/agentkit/deps.js";
+import type { PlaywriterKitDeps, WorkshopKitDeps, PlayFileWrite } from "../src/agentkit/deps.js";
 import { PlayFiles } from "../src/playFiles.js";
+import { PlayMemory } from "../src/memory.js";
+import { LineageTree } from "@aivn/core";
 
 /**
  * `PlayEnv` 是 pi 内建工具（read / write / edit / bash）与剧目文件之间唯一的那层装饰。
@@ -24,7 +26,7 @@ const PLAY_CONFIG = {
   initialScene: "走廊",
 };
 
-async function tempPlay(): Promise<{ dir: string; writes: WorkshopWrite[]; config: string }> {
+async function tempPlay(): Promise<{ dir: string; writes: PlayFileWrite[]; config: string }> {
   const dir = await mkdtemp(join(tmpdir(), "stage-play-env-"));
   const config = JSON.stringify(PLAY_CONFIG, null, 2);
   await mkdir(join(dir, "memory", "always"), { recursive: true });
@@ -35,14 +37,14 @@ async function tempPlay(): Promise<{ dir: string; writes: WorkshopWrite[]; confi
 }
 
 /** 真装配出来的一套工具（含 bash）——测的是 agent 实际拿到的那份。 */
-function toolset(dir: string, writes: WorkshopWrite[]) {
+function toolset(dir: string, writes: PlayFileWrite[]) {
   const deps = {
     role: "workshop",
     playId: "test",
     enabled: new Set([...defaultToolsFor("workshop"), "bash"]),
     files: new PlayFiles({ dir } as never),
     store: {} as never,
-    onWrite: (w: WorkshopWrite) => writes.push(w),
+    onWrite: (w: PlayFileWrite) => writes.push(w),
     onAsset: () => {},
     saves: {} as never,
     saveStore: () => ({}) as never,
@@ -68,8 +70,8 @@ describe("PlayEnv：read / write / edit 的路径白名单", () => {
     expect(ok.content[0]!.text).toContain("测试剧目");
 
     // session.json 是演出状态，工坊看不见（它有 list_saves / read_lineage 走另一条路）
-    await expect(call(read, { path: "session.json" })).rejects.toThrow(/不在工坊可读范围/);
-    await expect(call(read, { path: "../../etc/passwd" })).rejects.toThrow(/不在剧目目录内|不在工坊可读范围/);
+    await expect(call(read, { path: "session.json" })).rejects.toThrow(/不在剧目可读范围/);
+    await expect(call(read, { path: "../../etc/passwd" })).rejects.toThrow(/不在剧目目录内|不在剧目可读范围/);
     expect(writes).toEqual([]);
   });
 
@@ -83,10 +85,10 @@ describe("PlayEnv：read / write / edit 的路径白名单", () => {
 
     // assets/ 读得到、写不了（唯一的例外是素材描述表 assets/manifest.json）
     await expect(call(write, { path: "assets/backgrounds/新背景.png", content: "x" })).rejects.toThrow(
-      /不在工坊可写范围/,
+      /不在剧目可写范围/,
     );
     // session.json 连读面都不过，于是更早一步被拦下
-    await expect(call(write, { path: "session.json", content: "{}" })).rejects.toThrow(/不在工坊可读范围/);
+    await expect(call(write, { path: "session.json", content: "{}" })).rejects.toThrow(/不在剧目可读范围/);
     expect(writes).toHaveLength(1);
   });
 });
@@ -172,5 +174,105 @@ describe("PlayEnv：bash 是另一条路", () => {
     const out = (await call(bash, { command: "cat session.json" })) as { content: { text: string }[] };
     expect(out.content[0]!.text).toContain("{}");
     expect(writes).toEqual([]); // 也不进撤销条
+  });
+});
+
+/**
+ * 剧作家这一侧：角色卡与记忆卡不再是专用工具，走的是**同一套** read / write / edit
+ * （同一个 `PlayEnv`、同一份 `PlayFiles` 白名单）。这里钉住三件事：
+ * 写盘要过 `onWrite`（宿主靠它登记角色 id、排轮边界重建）、`edit` 能定点改而不抹掉别的字段、
+ * 引擎产物（arcs / archive）看得见但写不进去。
+ */
+describe("PlayEnv：剧作家的文件工具", () => {
+  function playwriterToolset(dir: string, writes: PlayFileWrite[]) {
+    const deps = {
+      role: "playwriter",
+      playId: "test",
+      enabled: new Set([...defaultToolsFor("playwriter")]),
+      store: {} as never,
+      files: new PlayFiles({ dir } as never),
+      onWrite: (w: PlayFileWrite) => writes.push(w),
+      engine: { turn: 0, affinity: {}, flags: {} },
+      characterIds: new Set<string>(),
+      memory: new PlayMemory(),
+      tree: new LineageTree(),
+      stateFiles: {},
+      arcIds: () => [],
+      emitStop: () => {},
+      emitPreload: () => {},
+      kick: () => {},
+      kickSprite: () => {},
+      existingAssetUrl: async () => null,
+      onEnterNsfw: () => {},
+      onExitNsfw: () => {},
+      isNsfw: () => false,
+    } as unknown as PlaywriterKitDeps;
+    const tools = createAgentKit(deps).tools;
+    return {
+      read: tools.find((t) => t.name === "read")!,
+      write: tools.find((t) => t.name === "write")!,
+      edit: tools.find((t) => t.name === "edit")!,
+    };
+  }
+
+  it("写角色卡走通用 write：落盘 + onWrite（宿主据此登记 id、排轮边界重建）", async () => {
+    const { dir, writes } = await tempPlay();
+    const { write } = playwriterToolset(dir, writes);
+
+    await call(write, {
+      path: "characters/xiaoyu.md",
+      content: "---\nname: 小雨\nvoiceId: aaa111\n---\n咖啡店打工的少女。\n",
+    });
+    expect(await readFile(join(dir, "characters", "xiaoyu.md"), "utf8")).toContain("咖啡店打工的少女");
+    expect(writes).toEqual([
+      {
+        path: "characters/xiaoyu.md",
+        before: null,
+        after: "---\nname: 小雨\nvoiceId: aaa111\n---\n咖啡店打工的少女。\n",
+      },
+    ]);
+  });
+
+  it("edit 定点改角色卡：只换那一处，机器字段一个不丢（整篇 write 做不到这件事）", async () => {
+    const { dir, writes } = await tempPlay();
+    const { read, write, edit } = playwriterToolset(dir, writes);
+
+    await call(write, {
+      path: "characters/xiaoyu.md",
+      content: "---\nname: 小雨\nvoiceId: aaa111\nframing: half\n---\n咖啡店打工的少女。\n",
+    });
+    await call(edit, { path: "characters/xiaoyu.md", edits: [{ oldText: "咖啡店打工的少女。", newText: "在旧书店打工的少女。" }] });
+
+    const after = (await call(read, { path: "characters/xiaoyu.md" })) as { content: { text: string }[] };
+    expect(after.content[0]!.text).toContain("在旧书店打工的少女。");
+    // 整篇覆盖那条路会抹掉模型没提到的 voiceId / framing，edit 不会
+    expect(after.content[0]!.text).toContain("voiceId: aaa111");
+    expect(after.content[0]!.text).toContain("framing: half");
+    // **edit 也要回调**：宿主靠它排轮边界重建，漏了这一步改完卡下一轮还是老内容
+    expect(writes.map((w) => [w.path, w.before === null])).toEqual([
+      ["characters/xiaoyu.md", true],
+      ["characters/xiaoyu.md", false],
+    ]);
+    expect(writes[1]!.before).toContain("咖啡店打工的少女。");
+  });
+
+  it("引擎产物（memory/arcs、memory/archive）看得见、写不进去", async () => {
+    const { dir, writes } = await tempPlay();
+    await mkdir(join(dir, "memory", "arcs"), { recursive: true });
+    await writeFile(join(dir, "memory", "arcs", "epoch-a-1.md"), "# 第一纪\n摘要\n", "utf8");
+    const { read, write, edit } = playwriterToolset(dir, writes);
+
+    const ok = (await call(read, { path: "memory/arcs/epoch-a-1.md" })) as { content: { text: string }[] };
+    expect(ok.content[0]!.text).toContain("第一纪");
+
+    for (const path of ["memory/arcs/epoch-a-1.md", "memory/ARCS/epoch-a-1.md", "memory/Archive/x.md"]) {
+      // 大小写也要挡住：Windows / macOS 上这几个是同一个文件
+      await expect(call(write, { path, content: "改掉" })).rejects.toThrow(/不在剧目可写范围/);
+    }
+    await expect(
+      call(edit, { path: "memory/arcs/epoch-a-1.md", edits: [{ oldText: "第一纪", newText: "改掉" }] }),
+    ).rejects.toThrow(/Could not edit file/);
+    expect(await readFile(join(dir, "memory", "arcs", "epoch-a-1.md"), "utf8")).toContain("第一纪");
+    expect(writes).toEqual([]);
   });
 });

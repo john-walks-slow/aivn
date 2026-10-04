@@ -17,7 +17,7 @@ import {
 import type { AssetLibrary } from "./library.js";
 import { PlayFiles } from "./playFiles.js";
 import { withPlayConfigLock, type PlayStore } from "./store.js";
-import type { WorkshopWrite } from "./workshop.js";
+import type { PlayFileWrite } from "./workshop.js";
 
 /**
  * 资源库 → 剧目的导入。
@@ -54,7 +54,7 @@ export interface ImportResult {
   /** 剧目素材表新增/更新的键。 */
   manifestKeys: string[];
   /** 剧目配置/素材表被改动的文本（进工坊撤销条；REST 直连时为空）。 */
-  writes: WorkshopWrite[];
+  writes: PlayFileWrite[];
 }
 
 /** 剧目素材目录里同名的其它扩展名文件要清掉：`stemMap` 只认一个 stem，留着会挑到旧的那张。 */
@@ -228,7 +228,7 @@ async function applyCharacterCard(
     spriteFraming: Record<string, SpriteFraming>;
     framing?: SpriteFraming;
   },
-): Promise<WorkshopWrite | null> {
+): Promise<PlayFileWrite | null> {
   const path = characterCardPath(id);
   const before = await files.read(path).catch(() => null);
   // 卡不存在就是空卡：条目 id 就是角色 id，目录名与文件名主体一致

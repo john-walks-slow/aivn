@@ -129,7 +129,7 @@ function scriptLanguageSection(scriptLanguage: string | undefined): string {
   return `
 # 剧本语言
 
-正文、旁白、选项，以及 create_character 写的角色设定，一律用${languageLabel(scriptLanguage)}写，
+正文、旁白、选项，以及角色卡与记忆卡里写的设定，一律用${languageLabel(scriptLanguage)}写，
 **不要跟随玩家的输入语言**。角色 id、素材 id、DSL 标签名保持原样（英文/拼音）。
 `;
 }
@@ -198,20 +198,47 @@ center（居中悬空）、top（从上垂下）。
 - 想给一个自由回答的口子 → beat_done(placeholder="想对他说什么？")。
 - 这一段自然演完 → beat_done()，两个参数都不给。
 
-beat_done 通常**独占一次工具调用**（模式切换类的工具可以同批发出，不与 create_character、update_state 等其他工具放在同一批里）。
+beat_done 通常**独占一次工具调用**（模式切换类的工具可以同批发出，不与 update_state、write / edit 等其他工具放在同一批里）。
 调完之后本轮就结束，不要再输出任何内容（没有停止点时也不要写收尾交代或过场说明）。
 轮与轮之间由引擎接续。`;
 
-/** 引入角色表里没有的角色时的三条路（建档 / 出立绘 / 临时角色）。 */
-const NEW_CHARACTER_RULES = `## 引入新角色
+/**
+ * 引入角色表里没有的角色时的三条路（建档 / 出立绘 / 临时角色）。
+ *
+ * 第 1 步要求 `write`。没装写口时整段换掉而不是删掉：三步的结构与后面两步的编号原样留着，
+ * 读起来仍是一份完整流程；换成「你没有写口，走临时角色通道」也免得它对着空气找一个不存在的工具。
+ */
+function newCharacterRules(canWrite: boolean): string {
+  const step1 = canWrite
+    ? `**1. 先建档（write）**，把角色设定写进 \`characters/<id>.md\`——**文件名就是角色 id**：
+
+    write(path="characters/xiaoyu.md", content="---\\nname: 小雨\\nframing: half\\n---\\n咖啡店打工的少女，说话温柔，常用省略号。")
+
+卡片是 frontmatter 头部 + 正文两段：
+
+    ---
+    name: 小雨          # 显示名（A 区角色表与舞台名牌用）。不写，A 区就只能显示 id
+    voice: 温柔少女声    # 音色的口语描述，可省
+    voiceId: <32位hex>  # 可省。音色在工坊配（你这条路上没有音色库工具）；
+                        # 留空走剧目兜底音色，兜底也没配这个角色就一直没声音
+    framing: half       # 立绘取景 full/half/square，省了按 full
+    sprites:            # 表情名 → assets/sprites/<id>/ 下的文件名，可省
+      neutral: xiaoyu_neutral.png
+    ---
+
+正文写具体的人：年龄、关系、说话方式、在意的点（正文就是 A 区角色表里你看到的那份 persona）。
+
+- **改既有卡先 read、再用 edit 定点改**：整篇 write 会把你没提到的机器字段（voiceId、sprites）抹掉。
+- 建档后到下一轮边界，角色就出现在 A 区角色表里。
+- 玩家扮演的主角也是一张普通卡，id 固定 \`protagonist\`（\`characters/protagonist.md\`）：要改主角设定就改它，别另建一张。`
+    : `**1. 建档这条路本剧目没有给你**（Agent 页没开文件工具）：新角色直接用下面的临时角色通道，
+人设等工坊那边补。`;
+
+  return `## 引入新角色
 
 需要引入角色表里没有的新角色时，按以下步骤：
 
-**1. 先建档（create_character）**，声明角色设定：
-
-    create_character("characters/xiaoyu", "---\\nname: 小雨\\n---\\n咖啡店打工的少女，说话温柔，常用省略号。")
-
-- 卡片格式（frontmatter 头部 + 正文）看 create_character 的工具说明。建档后到下一轮边界，角色就出现在 A 区角色表里。
+${step1}
 
 **2. 生立绘（generate_image kind="sprite"）**，后台出图，不阻塞台词：
 
@@ -227,9 +254,30 @@ const NEW_CHARACTER_RULES = `## 引入新角色
 name 只覆盖本句名牌，不写入角色表。只想出声、不上台的路人用这条就够了。
 
 这类角色想上台（要立绘）也有两条路：戏里临时冒出来的（路人甲、店员），出图时带 characterName
-一起给，会自动建一张最小角色卡；戏份多、要配音色或人设的，先 create_character 建一张完整卡再出图。
+一起给，会自动建一张最小角色卡；戏份多、要配音色或人设的，先 write 建一张完整卡再出图。
 
 两种临时角色都没有专属音色（音色挂在角色卡上）——剧目配了兜底音色的就用那个。`;
+}
+
+/**
+ * 记忆卡怎么写（\`memory/index/\`）。
+ *
+ * 这一章和《引入新角色》里的卡片格式**本该挂在工具描述上**，但角色卡与记忆卡现在走的是
+ * pi 的内建 read / write / edit——它们没有描述覆写入口。放进 A 区是权衡后的例外，
+ * 不是「顺手复述一遍工具知识」（见 apps/server/AGENTS.md 的提示词装配一节）。
+ */
+const MEMORY_RULES = `## 记忆卡（memory/index/）
+
+世界设定、地点、组织、伏笔写成一张卡：\`memory/index/<分类>/<名字>.md\`，首行 \`# 标题\`、次行一句话摘要，
+其余是详情。分类只是子目录（\`locations/\` 放地点、\`lore/\` 放世界设定），A 区每行会带 \`[分类]\` 前缀。
+
+    write(path="memory/index/lore/旧校舍.md", content="# 旧校舍\\n三年前封了，钥匙在小春手里。\\n\\n更细的设定……")
+
+- **改既有卡先 read、再用 edit 定点改**，整篇 write 容易把没提到的内容抹掉。
+- 写完要到下一轮边界才进 A 区记忆索引；当轮想知道内容就直接 read 那个文件。
+- 写具体可用的设定（地点长什么样、约定是什么），不写「待补充」。
+- 角色不在这里，走 \`characters/<id>.md\`（见《引入新角色》）；当前状态走 update_state。
+- \`memory/always/\`（每轮注入层）与 \`memory/arcs/\`、\`memory/archive/\`（引擎产物，写不进去）不要动。`;
 
 /** 演出契约：引擎认的硬规则，用户不可改（节奏与素材来源见《写作参数》，文风与禁忌见剧目 craft.md）。 */
 const CONTRACT_RULES = `# 演出契约（引擎规则，不可改）
@@ -349,7 +397,9 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const cards = memory?.visibleContext(ctx.arcIds ?? []) ?? [];
   const indexSection =
     cards.length > 0
-      ? `\n# 记忆索引（按需查详情）\n\n${cards.map((c) => `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}：${c.summary}`).join("\n")}\n\n需要某条完整内容时调用 read_memory_detail 工具（传名称）。历史往事用 search_archive 检索。\n`
+      ? `\n# 记忆索引（按需查详情）\n\n${cards.map((c) => `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}：${c.summary}`).join("\n")}\n\n需要某条完整内容时调用 read_memory_detail 工具（传名称）${
+        ctx.can.files ? "，或直接 read 那个文件" : ""
+      }。历史往事用 search_archive 检索。\n`
       : "";
 
   return `${ROLE_INTRO}
@@ -368,7 +418,8 @@ ${FORMAT_RULES}
 
 ${imageChapter(ctx.can.image)}
 ${ctx.can.search ? SEARCH_GUIDE : ""}
-${NEW_CHARACTER_RULES}
+${ctx.can.files ? MEMORY_RULES : ""}
+${newCharacterRules(ctx.can.files)}
 
 ${CONTRACT_RULES}`;
 }

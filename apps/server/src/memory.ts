@@ -36,8 +36,6 @@ export class PlayMemory {
   private readonly archiveFile: string | null;
   /** arcs 纪元摘要目录（空 = 不落盘，纯内存）。 */
   private readonly arcsDir: string | null;
-  /** index 用户设定卡目录（空 = 不落盘，纯内存——测试用）。 */
-  private readonly indexDir: string | null;
   private slices: ArchiveSlice[];
   private index: MiniSearch<{ id: string } & ArchiveSlice> | null = null;
 
@@ -50,7 +48,6 @@ export class PlayMemory {
       cards?: IndexCard[];
       archiveFile?: string | null;
       arcsDir?: string | null;
-      indexDir?: string | null;
       slices?: ArchiveSlice[];
     } = {},
   ) {
@@ -61,7 +58,6 @@ export class PlayMemory {
     this.cards = opts.cards ?? [];
     this.archiveFile = opts.archiveFile ?? null;
     this.arcsDir = opts.arcsDir ?? null;
-    this.indexDir = opts.indexDir ?? null;
     this.slices = opts.slices ?? [];
   }
 
@@ -83,7 +79,6 @@ export class PlayMemory {
       cards: [...indexCards, ...arcCards],
       archiveFile: store.memoryDir("archive", "events.jsonl"),
       arcsDir: store.memoryDir("arcs"),
-      indexDir: store.memoryDir("index"),
       slices,
     });
   }
@@ -190,44 +185,6 @@ export class PlayMemory {
     await writeFile(join(this.arcsDir, `${arc.id}.md`), detail, "utf8");
   }
 
-  /**
-   * 用户设定卡写入（write_memory 工具后端）：落盘 `memory/index/<file>.md` 并即时进内存 cards——
-   * 当轮 read_memory_detail 可读，下一轮 A 区索引带得上（A 区随 runtime 重建，纪元内冻结）。
-   * 同 file 覆盖（更新语义）：替换内存卡并重写文件。路径守卫在工具层做，这里只认相对 index/ 的干净路径。
-   */
-  async appendCard(file: string, detail: string): Promise<void> {
-    const parsed = parseCard(file, detail);
-    const layer = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "";
-    const card: IndexCard = { ...parsed, layer, file, arc: false };
-    const existing = this.cards.findIndex((c) => !c.arc && c.file === file);
-    if (existing >= 0) this.cards[existing] = card;
-    else {
-      this.cards.push(card);
-      sortUserCards(this.cards);
-    }
-    if (!this.indexDir) return;
-    const path = join(this.indexDir, `${file}.md`);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, detail, "utf8");
-  }
-}
-
-/**
- * 卡片重排（`appendCard` 新增后调用）。
- *
- * 不变量由 `loadCards` + `loadArcs` 的拼接顺序建立：用户卡在前、按 file localeCompare 排，
- * arcs 卡在后、保持 `loadArcs` 的 readdir 序。所以只给用户卡段排序——arcs 用默认码位序排的，
- * 这里若也拿 localeCompare 去排反而会把 arcs 的行序搅乱（`epoch-x-10` 会排到 `epoch-x-2` 前面）。
- *
- * 两个分区各自取出再拼回去：新卡是先 push 到数组末尾的（可能落在 arcs 之后），
- * 只重排「第一个 arc 之前」那一段会把它漏在原地。
- *
- * A 区记忆索引的行序直接就是提示词的前缀，行序一漂整个前缀缓存失效。
- */
-function sortUserCards(cards: IndexCard[]): void {
-  const user = cards.filter((c) => !c.arc).sort((a, b) => a.file.localeCompare(b.file));
-  const arcs = cards.filter((c) => c.arc);
-  cards.splice(0, cards.length, ...user, ...arcs);
 }
 
 /** index 卡：首行 `# 标题`，次行一句话摘要，其余为详情（read_memory_detail 返回全文）。 */

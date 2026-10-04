@@ -1,6 +1,6 @@
 import type { ServerMessage } from "@aivn/core";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
-import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, characterCardPath, PROTAGONIST_ID, type EngineStateSnapshot, type SpriteFraming } from "@aivn/core";
+import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, characterCardPath, characterIdOfPath, PROTAGONIST_ID, type EngineStateSnapshot, type SpriteFraming } from "@aivn/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
 import type { AssetLibrary } from "./library.js";
@@ -36,8 +36,8 @@ import {
 } from "./imagePrompt.js";
 import type { AssetTarget } from "./playAssets.js";
 import type { Model } from "@earendil-works/pi-ai";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 export interface PlayRuntime {
   orchestrator: PlaywrightOrchestrator;
@@ -525,7 +525,8 @@ export class PlayHouse {
   }
 
   /**
-   * 写角色卡（characters/<id>.md）。create_character file="characters/<id>" 时由编排器触发。
+   * 写角色卡（characters/<id>.md）。剧作家的 write 落在角色卡上时由编排器触发（见 onPlayFileWritten），
+   * 出图自动注册临时角色那条路也走它。
    *
    * 只写这一个文件——play.json 的 `characters` 早就是纯元数据，没有任何逻辑读它，
    * 往里塞 stub 是白写一遍再留一份会漂移的副本。
@@ -533,7 +534,7 @@ export class PlayHouse {
   /**
    * 本进程内「刚写过的角色」：落盘的同时登记，出图的角色成员校验读实时盘 ∪ 它。
    *
-   * 只为消掉一个竞态：同一批工具调用里 create_character 的落盘与 generate_image
+   * 只为消掉一个竞态：同一批工具调用里写角色卡的落盘与 generate_image
    * 的校验是并发的，谁先完成不定，于是「先建卡再出图」同批发出去会偶发扑空。
    * 登记与落盘在同一个函数里顺序完成，校验那边就不用再赌一次磁盘的时序。
    * 登记只增不减：里面每个 id 都真的写过磁盘，最坏是用户后来删了卡，
@@ -542,36 +543,30 @@ export class PlayHouse {
   private readonly knownCharacters = new WeakMap<PlayStore, Set<string>>();
 
   private async writeCharacter(store: PlayStore, charId: string, content: string): Promise<void> {
+    // 从 PlayFiles 过（不是拿 join 自己拼路径）：白名单与结构校验收在一个口子上，
+    // 「剧目文本写口只有 PlayFiles」这条铁律才不是假话。
+    await new PlayFiles(store).write(characterCardPath(charId), content);
+    // 登记放在落盘**之后**：写失败还留着 id 的话，引用即导入会以为这张卡已经在了。
+    this.registerCharacter(store, charId);
+  }
+
+  /** 登记一个已知角色 id（只增不减；最坏是用户后来删了卡，那时 A 区照样读不到它）。 */
+  private registerCharacter(store: PlayStore, charId: string): void {
     const known = this.knownCharacters.get(store) ?? new Set<string>();
     known.add(charId);
     this.knownCharacters.set(store, known);
-    const charFile = join(store.dir, characterCardPath(charId));
-    await mkdir(dirname(charFile), { recursive: true });
-    await writeFile(charFile, content, "utf8");
   }
 
   /**
-   * 写用户设定卡（memory/index/<rel>.md）：write_memory 工具后端。
-   * 只写这一个文件——always/（每轮注入层）与 arcs/、archive/（机器产物）不在此口。
-   * 写完即时进内存 cards（当轮 read_memory_detail 可读），并排一次轮边界重建，
-   * 让下一轮 A 区的记忆索引就带上这张卡——否则回执承诺的「下一轮进 A 区」是空话。
+   * 剧作家的文件工具（read / write / edit）改动了剧目：登记新角色卡，并排一次轮边界重建。
+   *
+   * 角色表与 A 区记忆索引都在重建时才刷新——写完不排，回执承诺的「下一轮出现」是空话。
+   * 与工坊写盘、引用即导入同一条延迟重建（同剧目只挂一个待办）。
    */
-  private async writeMemoryCard(
-    playId: string,
-    store: PlayStore,
-    rel: string,
-    content: string,
-  ): Promise<void> {
-    const runtime = this.runtimes.get(playId);
-    if (!runtime) {
-      // 无 runtime（测试/离线）：只落盘，内存侧由下次 load 补上
-      const path = join(store.memoryDir("index"), `${rel}.md`);
-      await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, content, "utf8");
-      return;
-    }
-    await runtime.orchestrator.memory.appendCard(rel, content);
-    this.rebuildAtBeatBoundary(playId, `剧作家写入了记忆卡 ${rel}`);
+  private onPlayFileWritten(playId: string, store: PlayStore, write: { path: string }): void {
+    const charId = characterIdOfPath(write.path);
+    if (charId) this.registerCharacter(store, charId);
+    this.rebuildAtBeatBoundary(playId, `剧作家写入了 ${write.path}`);
   }
 
   /** 「开始新周目」：建一棵空树并切过去。旧档原封不动——不删任何事件日志。 */
@@ -1132,14 +1127,8 @@ export class PlayHouse {
       store,
       assetLibrary: this.assetLibrary,
       assetRefs: this.assetRefResolver(play.id, store),
-      onWriteCharacter: async (charId, content) => {
-        await this.writeCharacter(store, charId, content);
-        // 建卡即排轮边界重建（回执"下一拍边界出现在角色表里"的兑现）：
-        // 与 assetRef 角色导入同一条路。不进 writeCharacter 内部——PlayAssets
-        // 自动注册路已有自己的 silent 重建，进共享函数会一轮排两次。
-        this.rebuildAtBeatBoundary(play.id, `剧作家新建了角色 ${charId}`);
-      },
-      onWriteMemoryCard: (rel, content) => this.writeMemoryCard(play.id, store, rel, content),
+      // 剧作家写盘（角色卡 / 记忆卡 / 别的剧目文件）：登记角色 id + 排一次轮边界重建
+      onPlayFilesChanged: (write) => this.onPlayFileWritten(play.id, store, write),
       compaction: {
         contextWindow: this.config.contextWindow,
         triggerRatio: this.config.compactRatio,

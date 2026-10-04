@@ -29,7 +29,7 @@ export interface FakeResponse {
    * 给对象就是交出停止点（选项/自由输入），与模型真调工具时的参数同形。
    */
   beatDone?: boolean | { options?: string[]; placeholder?: string };
-  /** 额外工具调用（与 beat_done 同批：如 update_state / create_character）。 */
+  /** 额外工具调用（与 beat_done 同批：如 update_state / write）。 */
   toolCalls?: { name: string; args: Record<string, unknown> }[];
   /** 闸门：正文照发，但 done 押后到 gate 兑现——用来把某一轮卡在「演出中」。 */
   gate?: Promise<unknown>;
@@ -54,7 +54,7 @@ export const PLAY: PlayConfig = {
  * 两个角色的提示词都得跟着看一眼。缺省取「生图开、限制级通道开、联网与资源库关」（剧作家的常见态）。
  */
 export function caps(over: Partial<AgentCapabilities> = {}): AgentCapabilities {
-  return { image: true, search: false, library: false, voice: false, shell: false, nsfw: true, ...over };
+  return { image: true, search: false, library: false, files: true, voice: false, shell: false, nsfw: true, ...over };
 }
 
 export const CARD: IndexCard = {

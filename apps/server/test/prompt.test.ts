@@ -7,7 +7,7 @@ function card(id: string, head: Partial<CharacterDocument>): Map<string, Charact
   return new Map([[id, { id, body: "p", ...head }]]);
 }
 import { PlayMemory } from "../src/memory.js";
-import { caps, PLAY } from "./helpers.js";
+import { CARD, caps, PLAY } from "./helpers.js";
 
 /**
  * 剧作家提示词的装配口：能力位缺省「生图开、联网与资源库关」，用例只写它关心的那几位。
@@ -344,5 +344,28 @@ describe("buildSystemPrompt：素材从哪来", () => {
     const prompt = build({ play: PLAY, can: { image: true } });
     expect(prompt).toContain("哪些素材该出图、出哪几张，照剧目的创作口径");
     expect(prompt).not.toContain("缺素材时自己画");
+  });
+});
+
+describe("写口与提示词的一致性：没装 write 就不教它写文件", () => {
+  // 记忆索引那一章只在真有条目时才注（没卡时它本来就不出现）——给它一张，才测得到那句 read 提示
+  const base = { play: PLAY, memory: new PlayMemory({ cards: [CARD] }) };
+
+  it("有写口：建卡流程与记忆卡格式都在（格式本该挂在工具描述上，pi 内建工具没有这个口子）", () => {
+    const prompt = build({ ...base, can: { files: true } });
+    expect(prompt).toContain("先建档（write）");
+    expect(prompt).toContain("## 记忆卡（memory/index/）");
+    expect(prompt).toContain("或直接 read 那个文件");
+  });
+
+  it("没写口：两章一起收走，但三步流程的骨架还在（它还有出图与临时角色两条路）", () => {
+    const prompt = build({ ...base, can: { files: false } });
+    expect(prompt).not.toContain("先建档（write）");
+    expect(prompt).not.toContain("## 记忆卡（memory/index/）");
+    expect(prompt).not.toContain("或直接 read 那个文件");
+    // 收掉的是「怎么调 write」，不是「怎么引入角色」这件事本身
+    expect(prompt).toContain("建档这条路本剧目没有给你");
+    expect(prompt).toContain("**2. 生立绘（generate_image kind=\"sprite\"）**");
+    expect(prompt).toContain("**3. 临时角色（一次性 NPC）**");
   });
 });

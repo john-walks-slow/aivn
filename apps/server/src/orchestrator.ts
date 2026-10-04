@@ -10,6 +10,7 @@ import { type Api, type Model, type Static, type TSchema, Type } from "@earendil
 import {
   LineageTree,
   StageDslParser,
+  characterIdOfPath,
   nextId,
   originOfBeat,
   type EngineStateSnapshot,
@@ -30,7 +31,8 @@ import {
 import type { ServerMessage } from "@aivn/core";
 export type { ReadPos } from "@aivn/core";
 import { createAgentKit, enabledToolsFor, type AgentKit } from "./agentkit/kit.js";
-import type { ModelStop } from "./agentkit/deps.js";
+import type { ModelStop, PlayFileWrite } from "./agentkit/deps.js";
+import { PlayFiles } from "./playFiles.js";
 import type { Exa } from "./exa.js";
 import type { PlayAssets } from "./playAssets.js";
 import type { AssetLibrary } from "./library.js";
@@ -242,15 +244,11 @@ export interface OrchestratorOptions {
    */
   assetRefs?: AssetRefResolver;
   /**
-   * 写角色设定钩子：create_character file="characters/<id>" 时调用。
-   * 负责落盘 characters/<id>.md——角色配置的唯一入口。
+   * 剧作家写盘回调（read / write / edit 落盘之后触发）。
+   * 编排器自己先处理「新角色卡要能立刻写好感度」，其余（登记角色 id 给素材引用、
+   * 排一次轮边界重建）交给宿主——它才知道 runtime 与素材层的事。
    */
-  onWriteCharacter?: (charId: string, content: string) => Promise<void>;
-  /**
-   * 写用户设定卡钩子：write_memory file="<index/ 内路径>" 时调用。
-   * 负责即时进内存 cards + 落盘 memory/index/<file>.md——用户设定卡的唯一入口。
-   */
-  onWriteMemoryCard?: (rel: string, content: string) => Promise<void>;
+  onPlayFilesChanged?: (write: PlayFileWrite) => void;
   /** 纪元压缩阈值（窗口占比）与保留预算；不传则只增不减到模型自己报错。 */
   compaction?: {
     contextWindow: number;
@@ -439,25 +437,24 @@ export class PlaywrightOrchestrator {
 
   /**
    * 本纪元内存活的角色 id 集（update_state 好感度成员校验用）。
-   * 构造时从角色卡目录装一份，之后只增：同轮 create_character 建卡即 add。
+   * 构造时从角色卡目录装一份，之后只增：剧作家同轮写下 characters/<id>.md 即 add。
    */
   private readonly liveCharacterIdsValue = new Set<string>();
 
-  /** 装配 kit 用的角色集：先装快照，再把 onWriteCharacter 包一层建卡即 add。 */
-  private liveCharacterIds(opts: OrchestratorOptions): Set<string> {
-    for (const id of opts.memory.characters.keys()) this.liveCharacterIdsValue.add(id);
-    const write = opts.onWriteCharacter;
-    if (write) {
-      opts.onWriteCharacter = async (charId, content) => {
-        await write(charId, content);
-        this.liveCharacterIdsValue.add(charId);
-      };
-    } else {
-      opts.onWriteCharacter = async (charId) => {
-        this.liveCharacterIdsValue.add(charId);
-      };
-    }
+  /** 从角色卡目录播种上面那个集合（纪元内冻结的初始角色表）。 */
+  private seedLiveCharacterIds(memory: PlayMemory): Set<string> {
+    for (const id of memory.characters.keys()) this.liveCharacterIdsValue.add(id);
     return this.liveCharacterIdsValue;
+  }
+
+  /**
+   * 剧作家的文件工具写盘之后：新角色卡要当轮就能写好感度（A 区全文仍等轮边界重建）。
+   * 其余交给 `onPlayFilesChanged`——runtime 与素材层的事编排器不该知道。
+   */
+  private onPlayFileWritten(write: PlayFileWrite): void {
+    const id = characterIdOfPath(write.path);
+    if (id) this.liveCharacterIdsValue.add(id);
+    this.opts.onPlayFilesChanged?.(write);
   }
 
   /**
@@ -524,15 +521,16 @@ export class PlaywrightOrchestrator {
       thinking: opts.agents?.thinking,
       engine: opts.engine,
       // 角色清单来自角色卡目录，不是 play.json 那份元数据。
-      // 可变集合：同轮 create_character 建卡后即 add，update_state 当轮就能写新角色的好感
-      //（A 区全文仍等轮边界重建，纪元内冻结不变）。
-      characterIds: this.liveCharacterIds(opts),
+      // 可变集合：同轮写下 characters/<id>.md 后由 onWrite 即 add，update_state 当轮就能写新角色的
+      // 好感度（A 区全文仍等轮边界重建，纪元内冻结不变）。
+      characterIds: this.seedLiveCharacterIds(opts.memory),
       memory: opts.memory,
       tree: opts.tree,
       stateFiles: this.stateFiles,
       arcIds: () => this.arcIds,
-      writeCharacter: opts.onWriteCharacter,
-      writeMemoryCard: opts.onWriteMemoryCard,
+      // read / write / edit 与工坊同一套：同一份 PlayFiles、同一个 PlayEnv 白名单
+      files: new PlayFiles(opts.store),
+      onWrite: (write) => this.onPlayFileWritten(write),
       emitStop: (stop) => this.emitStop(stop),
       emitPreload: (attrs) => this.onStageEvent({ kind: "preload_asset", ...attrs }),
       playAssets: opts.imageTools?.playAssets,

@@ -11,7 +11,7 @@ import { PlayStore } from "../src/store.js";
 import { PlayAssets } from "../src/playAssets.js";
 import { parseCharacterCard, serializeCharacterCard, type CharacterDocument } from "@aivn/core";
 import type { GeneratedImage, ImageAspect, ImageBackend, ImageRequest } from "../src/imageBackend.js";
-import type { WorkshopWrite } from "../src/workshop.js";
+import type { PlayFileWrite } from "../src/workshop.js";
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
 
@@ -109,10 +109,10 @@ function makeAssets(
 ): {
   assets: PlayAssets;
   files: PlayFiles;
-  writes: WorkshopWrite[];
+  writes: PlayFileWrite[];
 } {
   const files = new PlayFiles(store);
-  const writes: WorkshopWrite[] = [];
+  const writes: PlayFileWrite[] = [];
   return {
     files,
     writes,
@@ -640,7 +640,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     const { assets, files, writes } = makeAssets(store, stubBackend().backend);
 
     // 工坊（notify 缺省）与剧作家（notify=silent）走同一条判据：角色表是用户与工坊的账，
-    // 一次出图不该悄悄塞进陌生人。临时角色要先 create_character 建卡。
+    // 一次出图不该悄悄塞进陌生人。临时角色要先 write 一张角色卡。
     for (const notify of [undefined, "silent"] as const) {
       await expect(
         assets.generate({ kind: "sprite", characterId: "ran", expression: "neutral" }, "p", undefined, {

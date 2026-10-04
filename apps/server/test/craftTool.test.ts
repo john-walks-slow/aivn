@@ -6,7 +6,7 @@ import { parsePlayConfig, type CraftParams } from "@aivn/core";
 import { createSetCraftTool } from "../src/agentkit/craftTool.js";
 import { PlayFiles } from "../src/playFiles.js";
 import { PlayStore } from "../src/store.js";
-import type { WorkshopWrite } from "../src/agentkit/deps.js";
+import type { PlayFileWrite } from "../src/agentkit/deps.js";
 
 /** 造一份最小剧目：`extra` 用来摆 craft 或引擎不认识的手写字段。 */
 async function setup(extra: Record<string, unknown> = {}) {
@@ -28,7 +28,7 @@ async function setup(extra: Record<string, unknown> = {}) {
   );
   const store = new PlayStore(dir);
   const files = new PlayFiles(store);
-  const writes: WorkshopWrite[] = [];
+  const writes: PlayFileWrite[] = [];
   const tool = createSetCraftTool({
     files,
     store,

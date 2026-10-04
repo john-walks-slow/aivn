@@ -114,12 +114,12 @@ describe("纪元压缩：切尾点与转录", () => {
   it("转录：三类消息各取其文，超长单条截断", () => {
     const text = renderTranscript([
       user("【玩家表态】我到了"),
-      assistant('<say id="mio">……太慢了！</say>[调用 write_memory]'),
+      assistant('<say id="mio">……太慢了！</say>[调用 write]'),
       toolResult("search_archive", "【第 1 轮】澪在走廊提到了旧约定"),
     ]);
     expect(text).toContain("【玩家/导演】【玩家表态】我到了");
     expect(text).toContain("……太慢了！");
-    expect(text).toContain("[调用 write_memory]");
+    expect(text).toContain("[调用 write]");
     expect(text).toContain("【记忆工具 search_archive】");
 
     const long = renderTranscript([user("啊".repeat(5000))]);
@@ -222,6 +222,7 @@ describe("编排器纪元压缩", () => {
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,
+      store: { dir: "/tmp/stage-compaction-test" } as never,
       memory,
       tree,
       engine: { ...PLAY.initialState },

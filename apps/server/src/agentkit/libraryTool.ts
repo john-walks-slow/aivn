@@ -5,7 +5,7 @@ import type { AssetLibrary } from "../library.js";
 import { importFromLibrary } from "../assetImport.js";
 import type { PlayStore } from "../store.js";
 import type { ImportResult } from "../assetImport.js";
-import type { WorkshopWrite } from "./deps.js";
+import type { PlayFileWrite } from "./deps.js";
 import { textResult } from "./result.js";
 
 /**
@@ -58,7 +58,7 @@ export interface LibraryToolDeps {
   /** 库没配就不注册这两个工具（装一个必然查不出东西的工具只会诱使模型空转）。 */
   library?: AssetLibrary;
   /** 写盘回调：推给工坊对话流（剧作家侧给空实现即可）。 */
-  onWrite?: (write: WorkshopWrite) => void;
+  onWrite?: (write: PlayFileWrite) => void;
   /** 素材落盘回调：推给工坊对话流内联展示。 */
   onAsset?: (asset: WorkshopAssetView, replaced?: boolean) => void;
 }

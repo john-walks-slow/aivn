@@ -21,6 +21,7 @@ function setup(responses: FakeResponse[]): PlaywrightOrchestrator {
     model: {} as never,
     getApiKey: () => "test-key",
     play: PLAY,
+    store: { dir: "/tmp/stage-history-test" } as never,
     memory: new PlayMemory({ cards: [CARD] }),
     tree,
     engine: { ...PLAY.initialState },

@@ -20,7 +20,7 @@ import { errorText, jobIdForImage, type PendingJobs } from "./pendingJobs.js";
 import type { PlayFiles } from "./playFiles.js";
 import type { PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
-import type { WorkshopWrite } from "./agentkit/deps.js";
+import type { PlayFileWrite } from "./agentkit/deps.js";
 import type { WebImageFetcher } from "./webImage.js";
 
 /**
@@ -162,7 +162,7 @@ export interface PlayAssetsDeps {
   /** 写一张角色卡（自动注册临时角色用）；没有这条能力就不自动建卡，直接报错。 */
   writeCharacter?: (charId: string, content: string) => Promise<void>;
   /** 角色卡立绘映射补写要进撤销条（二进制本身不进）。 */
-  onWrite: (write: WorkshopWrite, notify: AssetNotify) => void;
+  onWrite: (write: PlayFileWrite, notify: AssetNotify) => void;
   /** 素材到货（工坊侧挂到对话气泡里）。 */
   onAsset?: (asset: WorkshopAssetView, replaced: boolean, notify: AssetNotify) => void;
   /**
@@ -556,7 +556,7 @@ export class PlayAssets {
         );
       }
       if (!this.deps.writeCharacter) {
-        throw new Error(`角色卡里没有角色「${characterId}」，当前环境也不能自动建卡。先 create_character 建一张。`);
+        throw new Error(`角色卡里没有角色「${characterId}」，当前环境也不能自动建卡。先 write 一张 characters/${characterId}.md。`);
       }
       await this.deps.writeCharacter(characterId, stubCharacterCard(characterId, autoName));
       card = (await this.cast()).get(characterId);

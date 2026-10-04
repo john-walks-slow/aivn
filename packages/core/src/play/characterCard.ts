@@ -55,6 +55,19 @@ export function characterCardPath(id: string): string {
   return `${CHARACTER_DIR}/${id}.md`;
 }
 
+/**
+ * `characterCardPath` 的反向：剧目内相对路径 → 角色 id；不是角色卡就 null。
+ *
+ * 通用文件工具的写盘回调只拿得到路径（`characters/xiaoyu.md`），要认出「这是一张卡」
+ * 就得有这么一处判定——抄正则在各调用点会漂。
+ */
+export function characterIdOfPath(rel: string): string | null {
+  const prefix = `${CHARACTER_DIR}/`;
+  if (!rel.startsWith(prefix) || !rel.endsWith(".md")) return null;
+  const id = rel.slice(prefix.length, -3);
+  return id !== "" && !id.includes("/") ? id : null;
+}
+
 /** 是不是玩家扮演的那张卡（只有 A 区标注与输入润色关心这件事）。 */
 export function isProtagonist(id: string): boolean {
   return id === PROTAGONIST_ID;

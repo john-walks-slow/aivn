@@ -22,7 +22,7 @@ import {
   runWorkshopTurn,
   summarizeThread,
   type WorkshopMessage,
-  type WorkshopWrite,
+  type PlayFileWrite,
 } from "./workshop.js";
 import {
   capDigest,
@@ -290,7 +290,7 @@ export class WorkshopSession {
   }
 
   /** 写盘事件广播（可见 + 可撤销）；runtime 重建由 `applyChanges` 统一收束。 */
-  private broadcastWrite(write: WorkshopWrite): void {
+  private broadcastWrite(write: PlayFileWrite): void {
     this.markChanged();
     this.opts.emit({
       type: "workshop_write",
@@ -304,7 +304,7 @@ export class WorkshopSession {
    * 转发一次写盘事件（供剧目级 PlayAssets 调用：素材层归 PlayHouse 所有，
    * 但撤销条要挂进**当前工坊线程**的对话流里，只有会话知道 threadId）。
    */
-  pushWrite(write: WorkshopWrite): void {
+  pushWrite(write: PlayFileWrite): void {
     this.broadcastWrite(write);
   }
 

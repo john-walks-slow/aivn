@@ -1,11 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import { LineageTree, type ServerMessage } from "@aivn/core";
+import { LineageTree, characterIdOfPath, type ServerMessage } from "@aivn/core";
 import { PlaywrightOrchestrator, type OrchestratorRuntimeState } from "../src/orchestrator.js";
 import { createMemoryTools } from "../src/agentkit/memoryTool.js";
 import { PlayMemory } from "../src/memory.js";
 import { BEAT_1, BEAT_1_STOP, BEAT_2, CARD, PLAY, createFakeStreamFn, type FakeResponse } from "./helpers.js";
+
+/** 编排器只用到 store.dir（`PlayFiles` 的白名单根）——不落盘的用例不必建真目录。 */
+const TEST_STORE = { dir: "/tmp/stage-orchestrator-test" } as never;
 
 function setup(
   responses: FakeResponse[],
@@ -37,6 +43,7 @@ function setup(
     model: {} as never,
     getApiKey: () => "test-key",
     play: PLAY,
+    store: TEST_STORE,
     memory: opts.memory ?? new PlayMemory({ cards: [CARD] }),
     tree,
     engine: { ...PLAY.initialState },
@@ -454,6 +461,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,
+      store: TEST_STORE,
       memory: new PlayMemory(),
       tree: new LineageTree(),
       engine: { ...PLAY.initialState },
@@ -486,6 +494,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,
+      store: TEST_STORE,
       memory: new PlayMemory({ cards: [CARD] }),
       tree: first.tree,
       engine: { ...PLAY.initialState },
@@ -546,6 +555,7 @@ describe("PlaywrightOrchestrator 闭环", () => {
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,
+      store: TEST_STORE,
       memory: new PlayMemory({ cards: [CARD] }),
       tree: first.tree,
       engine: { ...PLAY.initialState },
@@ -905,75 +915,78 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
     expect(textOf(miss)).toContain("无命中");
   });
 
-  it("create_character 不教剧作家调它没有的工具：音色归搭台助手", () => {
-    const { tools } = makeTools({ turn: 1, affinity: {}, flags: {} });
-    const create = tools.find((t) => t.name === "create_character")!;
-    // list_voices 只装给工坊（kit.ts 的 roles）；剧作家照抄这句只会去猜一个 32 位 hex
-    expect(create.description).not.toContain("list_voices");
-    expect(create.description).toContain("搭台助手");
-  });
-
-  it("write_memory：路径守卫 + 即时进 cards", async () => {
-    const { tools, memory } = makeTools({ turn: 1, affinity: {}, flags: {} });
-    const written: [string, string][] = [];
-    // makeTools 没传 writeMemoryCard 时工具只回提示；这里补一条验证写链路
-    const toolsWithWrite = createMemoryTools({
-      engine: { turn: 1, affinity: {}, flags: {} },
-      characterIds: new Set(["mio"]),
-      memory,
-      tree: new LineageTree(),
-      stateFiles: {},
-      arcIds: () => [],
-      writeMemoryCard: async (rel, content) => {
-        written.push([rel, content]);
-        await memory.appendCard(rel, content);
-      },
-    });
-    const write = toolsWithWrite.find((t) => t.name === "write_memory")!;
-
-    const ok = await write.execute("t1", {
-      file: "lore/新设定",
-      content: "# 新设定\n一句话摘要。\n",
-    });
-    expect(textOf(ok)).toContain("lore/新设定.md");
-    expect(written).toHaveLength(1);
-    expect(memory.readCard("新设定")).toContain("一句话摘要");
-
-    // 路径守卫：always/arcs/archive 与 .. 一律拒绝，不碰 deps
-    for (const bad of ["always/craft", "arcs/e1", "archive/x", "../escape", "/abs", ".hidden"]) {
-      const rejected = await write.execute("t-bad", { file: bad, content: "x" });
-      expect(textOf(rejected)).toContain("路径非法");
-    }
-    expect(written).toHaveLength(1);
-
-    // 没传 writeMemoryCard 时只回提示
-    const noWrite = tools.find((t) => t.name === "write_memory")!;
-    expect(textOf(await noWrite.execute("t2", { file: "lore/x", content: "x" }))).toContain("工坊");
-  });
-
-  it("同轮 create_character 建卡后，update_state 可写新角色好感（liveCharacterIds 即 add）", async () => {
-    // 编排器把构造时快照换成了可变集：建卡回调包一层 add。这里直接验证工具层语义——
-    // 同一个 characterIds Set 在建卡后 add，新角色即放行。
+  it("同轮写下 characters/<id>.md 后，update_state 就能写这个角色的好感度", async () => {
+    // 编排器的角色表 = 构造时的快照 + 写盘回调的增量：回调拿 write.path 认角色卡，
+    // 认出 id 就加进同一个集合（characterIdOfPath + onPlayFileWritten 那一步）。
     const ids = new Set(["mio"]);
     const engine = { turn: 1, affinity: {}, flags: {} };
-    const tree = new LineageTree();
-    const stateFiles: Record<string, string> = {};
-    const memory = new PlayMemory({ cards: [] });
     const tools = createMemoryTools({
       engine,
       characterIds: ids,
-      memory,
-      tree,
-      stateFiles,
+      memory: new PlayMemory({ cards: [] }),
+      tree: new LineageTree(),
+      stateFiles: {},
       arcIds: () => [],
     });
     const update = tools.find((t) => t.name === "update_state")!;
     const before = await update.execute("t1", { affinity: { newcomer: 2 } });
     expect(textOf(before)).toContain("不是本剧角色");
-    ids.add("newcomer"); // = 编排器 liveCharacterIds 包的那层 add
+
+    ids.add(characterIdOfPath("characters/newcomer.md")!); // = onPlayFileWritten 那一步
     const after = await update.execute("t2", { affinity: { newcomer: 2 } });
     expect(textOf(after)).toContain("newcomer +2");
     expect(engine.affinity.newcomer).toBe(2);
+  });
+
+  it("跨轮端到端：write 建卡 → 下一轮 update_state 就认这个角色", async () => {
+    // 走完整链路：PlayEnv 落盘 → onWrite → orchestrator.onPlayFileWritten → liveCharacterIdsValue。
+    // 分两轮写而不是同批发，是因为同一批工具调用是并发的，断言顺序会变成掷骰子。
+    // 每轮再拆成「工具批次 + beat_done 批次」——beat_done 与别的工具同批会把 terminate 吞掉。
+    const dir = await mkdtemp(join(tmpdir(), "stage-play-files-"));
+    const engine = { turn: 0, affinity: {}, flags: {} };
+    const orchestrator = new PlaywrightOrchestrator({
+      streamFn: createFakeStreamFn([
+        {
+          text: BEAT_1,
+          toolCalls: [
+            {
+              name: "write",
+              args: { path: "characters/newcomer.md", content: "---\nname: 新人\n---\n刚转来的。\n" },
+            },
+          ],
+        },
+        { text: "", beatDone: BEAT_1_STOP },
+        { text: BEAT_2, toolCalls: [{ name: "update_state", args: { affinity: { newcomer: 3 } } }] },
+        { text: "", beatDone: true },
+      ]),
+      model: {} as never,
+      getApiKey: () => "test-key",
+      play: PLAY,
+      store: { dir } as never,
+      memory: new PlayMemory(),
+      tree: new LineageTree(),
+      engine,
+      scene: PLAY.initialScene,
+      onServerMessage: () => {},
+      persist: () => {},
+    });
+
+    await orchestrator.playerAction({ kind: "free", text: "有人推门进来" });
+    expect(await readFile(join(dir, "characters", "newcomer.md"), "utf8")).toContain("刚转来的");
+    expect(engine.affinity.newcomer).toBeUndefined();
+
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    // 盘上那张卡在构造期并不存在（memory 是空注入），这里是回调登记那一步真的生效了
+    expect(engine.affinity.newcomer).toBe(3);
+  });
+
+  it("characterIdOfPath 只认角色卡本身：子目录、非 md、别的目录一律不算", () => {
+    expect(characterIdOfPath("characters/newcomer.md")).toBe("newcomer");
+    expect(characterIdOfPath("characters/protagonist.md")).toBe("protagonist");
+    expect(characterIdOfPath("characters/sub/x.md")).toBeNull();
+    expect(characterIdOfPath("characters/x.txt")).toBeNull();
+    expect(characterIdOfPath("characters/.md")).toBeNull();
+    expect(characterIdOfPath("memory/index/lore/x.md")).toBeNull();
   });
 });
 
@@ -1116,6 +1129,7 @@ describe("长会话装配", () => {
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,
+      store: TEST_STORE,
       memory: new PlayMemory({ cards: [CARD] }),
       tree: new LineageTree(),
       engine: { ...PLAY.initialState },
@@ -1185,6 +1199,7 @@ describe("长会话装配", () => {
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,
+      store: TEST_STORE,
       memory: new PlayMemory({ cards: [CARD] }),
       tree: first.tree,
       engine: { ...PLAY.initialState },
@@ -1441,6 +1456,7 @@ describe("阅读位置落盘（#3：刷新回到读到的那一句）", () => {
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,
+      store: TEST_STORE,
       memory: new PlayMemory({ cards: [CARD] }),
       tree: first.tree,
       engine: { ...PLAY.initialState },

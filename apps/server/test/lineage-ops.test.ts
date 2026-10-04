@@ -31,6 +31,7 @@ function setup(
     model: {} as never,
     getApiKey: () => "test-key",
     play: PLAY,
+    store: { dir: "/tmp/stage-lineage-ops-test" } as never,
     memory: new PlayMemory({ cards: [CARD] }),
     tree,
     engine: { ...PLAY.initialState },
