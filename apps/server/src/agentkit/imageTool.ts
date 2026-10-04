@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "@earendil-works/pi-ai";
-import type { PreloadAssetAttrs, SpriteFraming, SpriteStature } from "@aivn/core";
+import { COMMON_SPRITE_VARIANTS, type PreloadAssetAttrs, type SpriteFraming, type SpriteStature } from "@aivn/core";
 import type { AssetTarget, PlayAssets } from "../playAssets.js";
 import { linesResult, reason, textResult } from "./result.js";
 
@@ -35,8 +35,18 @@ const generateImageParams = Type.Object(
      * 路人没有卡也能出图上台。有同名卡时会读卡上的人设来写外观。
      */
     spriteId: Type.Optional(Type.String({ maxLength: 40 })),
-    /** 立绘差分名，如 neutral / smile / damaged / asleep。不给按 neutral。 */
-    variant: Type.Optional(Type.String({ maxLength: 40 })),
+    /**
+     * 立绘差分名，如 neutral / smile / damaged。不给按 neutral。
+     *
+     * **要出几个差分就分几次调用**，每次写这一张自己的 prompt（一批共用一个 prompt 只会出成
+     * 同一张图）；非人主体（机甲、猫）同样用这个槽位，只是名字按它们的状态取。
+     */
+    variant: Type.Optional(
+      Type.String({
+        maxLength: 40,
+        description: `常见差分名：${COMMON_SPRITE_VARIANTS.join(" / ")}。非人主体按状态取，如机甲的 damaged、猫的 sleepy。`,
+      }),
+    ),
     /**
      * 参考图（垫图）：可给主体 id（自动引用其立绘）、剧目内路径（如 assets/backgrounds/ref.png）或 http(s) URL。
      * - 出定妆照(neutral)时传它，垫图生成该主体的初始形象；

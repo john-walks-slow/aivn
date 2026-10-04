@@ -10,6 +10,7 @@ export * from "./play/framing.js";
 export * from "./play/spriteLayout.js";
 export * from "./play/spriteStage.js";
 export * from "./play/spriteAction.js";
+export * from "./play/spriteVariants.js";
 export * from "./play/assets.js";
 export * from "./play/characterCard.js";
 export * from "./speech/chunker.js";

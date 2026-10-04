@@ -13,7 +13,7 @@ import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { ImageLightbox } from "../ui/ImageLightbox.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
-import { ImageGenDialog, type ImageGenTarget } from "./ImageGenDialog.js";
+import { ImageGenDialog, type ImageGenTarget, type SpriteDirState } from "./ImageGenDialog.js";
 import type { RefCandidate } from "../ui/RefCharacterPicker.js";
 
 const KINDS = ["backgrounds", "cg", "sfx", "bgm"] as const;
@@ -141,6 +141,18 @@ export function AssetsPanel({
     [spriteDirs, assets, playId, nameOf],
   );
 
+  /** 对话框要交代的「基准是谁」：该主体已有的差分名与 neutral 定妆照地址（差分恒以它垫图）。 */
+  const spriteDirState = useMemo((): SpriteDirState | undefined => {
+    if (genTarget?.kind !== "sprite" || !genTarget.spriteId) return undefined;
+    const dir = `sprites/${genTarget.spriteId}`;
+    const files = assets[dir] ?? [];
+    const neutral = files.find((f) => stemOf(f) === "neutral");
+    return {
+      variants: files.map(stemOf),
+      ...(neutral ? { neutralUrl: assetUrl(playId, dir, neutral) } : {}),
+    };
+  }, [genTarget, assets, playId]);
+
   return (
     <div className="workshop-tab-pane assets-pane">
       {readiness && (
@@ -210,6 +222,24 @@ export function AssetsPanel({
                   {spriteId}
                   <span className="muted small"> {cardName ? `角色卡：${cardName}` : "没有同名角色卡"}</span>
                 </strong>
+                <button
+                  className="ghost-btn"
+                  title="一次挑几个差分名，批量出图"
+                  onClick={() =>
+                    setGenTarget({
+                      kind: "sprite",
+                      spriteId,
+                      ...(decl.title ? { spriteTitle: decl.title } : {}),
+                      initialFraming: decl.framing ?? "full",
+                      initialStature: decl.stature ?? "normal",
+                      variantsBatch: true,
+                    })
+                  }
+                >
+                  <span className="btn-icon">
+                    <Icon name="plus" size={13} /> 差分
+                  </span>
+                </button>
                 <button
                   className="ghost-btn"
                   onClick={() =>
@@ -451,6 +481,7 @@ export function AssetsPanel({
           subscribeImageResult={subscribeImageResult}
           onClose={() => setGenTarget(null)}
           onDone={reload}
+          spriteDir={spriteDirState}
         />
       )}
     </div>

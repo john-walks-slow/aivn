@@ -2094,6 +2094,53 @@ button.primary:hover:not(:disabled) {
   object-fit: contain;
 }
 
+/* 差分多选：chips 沿用语音库那套 .chip-btn，这里只给一个会换行的容器。 */
+.variant-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 身份基准那一行：neutral 缩略图 + 一句它从哪来。差分恒以它垫图，用户得看得见。 */
+.image-gen-baseline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-gen-baseline img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* 批量出图：每张一行，先到先亮。 */
+.image-gen-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.image-gen-job {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-gen-job img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.error-text {
+  color: var(--dialog-bad);
+}
+
 /* ── 输入与遮罩 ────────────────────────── */
 
 input,
