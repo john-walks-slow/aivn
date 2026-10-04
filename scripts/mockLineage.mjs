@@ -3,7 +3,7 @@
  * 直接用 core 的 LineageTree 拼事件树，落成服务端能 load 的 saves/<saveId>/session.json。
  * 用法：node scripts/mockLineage.mjs [playId] [deep|flat] [周目数]
  */
-import { mkdir, writeFile, copyFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LineageTree } from "../packages/core/dist/lineage/model.js";
@@ -120,7 +120,8 @@ function metaOf(tree, id, name, now) {
 await rm(join(dir, "saves"), { recursive: true, force: true });
 await rm(join(dir, "active.json"), { force: true });
 await mkdir(dir, { recursive: true });
-await copyFile(join(root, "plays", "demo", "play.json"), join(dir, "play.json"));
+// play.json 只有 id/title 是必需的，其余缺省即不写（与 store.createEmpty 同一口径）
+await writeFile(join(dir, "play.json"), `${JSON.stringify({ id: playId, title: "Mock 剧目" }, null, 2)}\n`);
 
 const created = [];
 for (let i = 0; i < saveCount; i += 1) {

@@ -20,7 +20,6 @@ export async function selfTest(resourceRoot: string, dataRoot: string): Promise<
   const checks: [string, () => unknown][] = [
     ["前端产物", () => checkWebBundle(resourceRoot)],
     ["工坊技能库", () => readdirSync(workshopSkillsDirOf(import.meta.url)).join(", ")],
-    ["随包样例剧目", () => readFileSync(join(resourceRoot, "plays/demo/play.json"), "utf8").length],
     ["数据目录可写", () => writeProbe(dataRoot)],
     [
       "sharp 原生库",

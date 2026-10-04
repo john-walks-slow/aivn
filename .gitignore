@@ -6,13 +6,12 @@ dist/
 *.local
 coverage/
 .DS_Store
-# 剧目只有 plays/demo 这个样例进 git。用户自己玩的、临时试验跑冒烟的、mock 生成的
-# 一概不进——play.json 与 assets/ 是内容不是引擎结构，留在本机即可（要带走就导出剧目包）。
+# 剧目整棵不进 git。play.json 与 assets/ 是内容不是引擎结构，用户自己玩的、临时试验跑冒烟的、
+# mock 生成的都留在本机（要带走就导出剧目包）；仓库也不再发任何样例剧目——安装包打开就是一座
+# 空剧场，由「新建剧目」/「导入剧目包」起步（2026-10-05 撤掉了随包的《黄昏教室》）。
+# 运行期状态（saves/ 故事树、active.json 指针、memory/archive/ 与 memory/index/arcs/ 的纪元产物、
+# workshop/ 线程、soak/ 报告）本来就在剧目目录里，一并由这条覆盖。
 plays/*
-!plays/demo/
-# 样例剧目的运行时数据照样不进 git：存档即一棵独立故事树，外加 active.json 指针
-plays/*/saves/
-plays/*/active.json
 media-cache/
 # 运行期设置与数据目录（开发时设置文件落在仓库根，打包后在 exe 同级的 data/）
 settings.json
@@ -24,13 +23,6 @@ build/
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/binaries/
-# 剧目记忆运行时层（D7：always/index 手工层进 git，纪元产物与切片不进）
-plays/*/memory/index/arcs/
-plays/*/memory/archive/
-# 工坊 meta-chat 线程（运行时会话，不进 git）
-plays/*/workshop/
-# soak 报告（scripts/soak.mjs 的跑批产物，留档回看用，不进 git）
-plays/*/soak/
 .mnemon/
 .worktrees/
 
@@ -39,12 +31,12 @@ plays/*/soak/
 # playwright-cli 会话产物
 .playwright-cli/
 # 素材管线的跑批产物（scripts/gen_*.py 的输出）不是仓库内容，跑一遍就有。
-# 前导斜杠必须留着：不锚在仓库根的话这条会连 plays/demo/assets/ 一起吃掉
+# 前导斜杠必须留着：不锚在仓库根的话，这条会连别处任何叫 assets/ 的目录一起吃掉
 /assets/
 # 应用级素材资源库整个不进 git（2026-10-02 起）。仓库默认带一个空库，本机配的
 # 条目属本地配置，不是仓库内容——新增、改名、删除都不该在 git 里留痕（否则一条
 # 本地目录的增删会变成一次待推送的提交，别人 clone 下来还会拿到一份自己用不上的库）。
-# 与 plays/*/ 同一口径：那也只是本机内容，仓库只留 plays/demo 一个样例。
+# 与 plays/* 同一口径：那也只是本机内容，不是仓库该背的东西。
 #
 # 2026-09-30 的旧口径是「媒体二进制不进、meta.json 照旧进 git」，理由是元数据是资源库
 # 整理的产出、媒体可按 sourceUrl 重抓。推翻的理由：那份台账已经写在
@@ -60,9 +52,10 @@ plays/*/soak/
 # Python 字节码
 __pycache__/
 
-# pi-mcp-adapter 的 legacy 项目配置（<cwd>/.pi/mcp.json）：canonical 位置是仓库根的
-# .mcp.json（两者都被读时 legacy 会被 shadow），且它存的是 exa 密钥明文——不进 git。
-# 密钥改从 api-vault 取，见 .mcp.json 里 `!` 前缀的命令式取值。
+# MCP 配置指向本机的工具链（api-vault 取 exa 密钥、localhost 上的 kandev），对 clone 的人
+# 只是两个跑不起来的服务，所以不进 git（.pi/mcp.json 是同一份配置的 legacy 位置，两者都被
+# pi-mcp-adapter 读，legacy 会被 shadow）。
+.mcp.json
 .pi/
 
 # 出图验证用的临时素材（同 plays/* 与 library/ 的口径：生成的图不进 git）

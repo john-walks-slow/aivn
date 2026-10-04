@@ -6,7 +6,6 @@ import { USAGE, UsageError, parseLaunchArgs } from "./cli.js";
 import { SettingsStore, settingsPath } from "./settingsStore.js";
 import { SettingsApi } from "./configApi.js";
 import { defaultDataRoot, envFileDir, isPackaged, loadEnvFile, resourceRootOf } from "./paths.js";
-import { seedDemoPlays } from "./seed.js";
 import { selfTest } from "./selftest.js";
 import { exitWhenStdinCloses, lanAddresses, listenWithFallback, openBrowser } from "./startup.js";
 import { PlayLibrary } from "./store.js";
@@ -38,10 +37,6 @@ export async function main(): Promise<void> {
     if (!(await selfTest(resourceRoot, bootstrap.dataRoot))) process.exitCode = 1;
     return;
   }
-
-  // 双击 exe 的人打开就是一座空剧场，所以第一次启动先把随包的样例剧目解开
-  const seeded = seedDemoPlays(bootstrap.dataRoot, resourceRoot);
-  if (seeded) console.log(`[aivn] 已把随包样例剧目解到 ${seeded}`);
 
   // 设置：第一次启动把旧 .env 迁成 data/settings.json，此后它就是运行期设置的唯一真相源
   const store = SettingsStore.open(bootstrap.dataRoot, process.env);

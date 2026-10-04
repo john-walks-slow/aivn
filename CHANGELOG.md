@@ -14,12 +14,13 @@
 - **配置面改为 `settings.json` + 设置页**：`<数据目录>/settings.json` 是运行期设置的唯一真相源，页面保存即落盘并**立即生效**（不用重启，正在演的剧目在本轮写完之后换用新设置）；手工编辑该文件同样即时生效。首次启动时若存在旧 `.env`，按旧语义一次性迁移过来。
 - 新装默认：网关留空并给一条直达设置页的引导，生图 / 语音 / 联网检索默认关闭。
 - 打包链路：`scripts/build-exe.mjs`（单文件 exe + 免安装 zip）、`scripts/build-desktop.mjs`（+ NSIS 安装包）、`scripts/make-app-icon.mjs`（图标全套）。
-- `--selftest`：逐条体检打包后的前端产物、技能库、样例剧目、数据目录与 sharp，一条命令定位「双击没反应」。
+- `--selftest`：逐条体检打包后的前端产物、技能库、数据目录与 sharp，一条命令定位「双击没反应」。
 - GitHub Actions 发布工作流：打 tag 自动出安装包与 zip，挂到 Release。
 
 ### 变更
 
 - **改名 AIVN**：包名 `@stage-ai/*` → `@aivn/*`、根包 `stage-ai` → `aivn`（exe / zip / 解压目录名随之变）、日志前缀、Basic realm、cookie 与 localStorage 前缀、页面标题一并换掉。舞台语义（Stage DSL / StageTheater / `STAGE_*` 环境变量）保持不动。
+- **新装不再随包发任何样例剧目**：装完打开就是一座空剧场，由「新建剧目」/「导入剧目包」起步。此前随包一份《黄昏教室》样例，第一次启动时解到数据目录；打包又跟着把开发机上该剧目的存档与 930 个 TTS 缓存一起打进安装包——新装的剧目卡直接写着别人的「1 周目」，Windows 安装包还多背 35MB。
 - **全站去衬线字体**，界面统一一套无衬线。
 - 数据目录语义收成一处：`plays/`、`library/`、`media-cache/`、`settings.json` 全在**数据目录**下（打包态 = exe 同级 `data/`，开发态 = 仓库根）。`STAGE_PLAYS_ROOT` / `STAGE_LIBRARY_ROOT` / `STAGE_PLAY_DIR` 不再是配置项。
 - 端口 `0` = 交给系统挑一个空闲口，并把实际端口打印出来 / 报给桌面壳。

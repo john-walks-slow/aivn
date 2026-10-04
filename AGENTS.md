@@ -10,7 +10,7 @@
 
 - `apps/desktop/` —— 桌面壳（Tauri 2）：一层窗口 + 一个由它拉起的服务端 sidecar。见 [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md)。
 
-- 数据目录（打包态 = exe 同级 `data/`，开发态 = 仓库根）—— `plays/` 剧目、`library/` 素材库、`media-cache/` 可重建缓存、`settings.json` 运行期设置。**整个数据目录不进 git**（`plays/demo` 这个样例除外）。
+- 数据目录（打包态 = exe 同级 `data/`，开发态 = 仓库根）—— `plays/` 剧目、`library/` 素材库、`media-cache/` 可重建缓存、`settings.json` 运行期设置。**整个数据目录不进 git**；仓库也不发任何样例剧目，新装打开就是一座空剧场，由「新建剧目」/「导入剧目包」起步。
 
 - 其他：`packages/core` —— Stage DSL 规范、流式解析器、IR 事件、WS 协议与谱系数据模型；`scripts/` —— 开发与打包脚本；`skills/` —— 跨剧目的通用做法速查（只给工坊的 `read_skill`，随包只读）；`docs/` —— 需求、问题与规范记录。
 

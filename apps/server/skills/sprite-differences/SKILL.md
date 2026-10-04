@@ -34,7 +34,7 @@ description: 要出立绘（kind=sprite）时读这个。含「一张一张出�
 `generate_image` 的回执里带素材 URL，**直接写成 markdown 图片贴进回复**：
 
 ```
-![koharu 定妆照](/plays/demo/assets/sprites/koharu/neutral.png)
+![<角色id> 定妆照](/plays/<剧目id>/assets/sprites/<角色id>/neutral.png)
 ```
 
 用户要亲眼看到才谈得上验收。只回一句「已生成」等于让人凭空点头——

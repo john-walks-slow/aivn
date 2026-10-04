@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,6 @@ import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UsageError, parseLaunchArgs } from "../src/cli.js";
 import { workshopSkillsDirOf } from "../src/paths.js";
-import { seedDemoPlays } from "../src/seed.js";
 import { exitWhenStdinCloses, listenWithFallback } from "../src/startup.js";
 
 const servers: Server[] = [];
@@ -94,32 +93,6 @@ describe("桌面壳的回收信号", () => {
     const stdin = new PassThrough();
     exitWhenStdinCloses(stdin, () => {});
     expect(stdin.isPaused()).toBe(false);
-  });
-});
-
-describe("随包样例剧目", () => {
-  it("数据目录里一个剧目都没有时解开样例", () => {
-    const data = tmp("aivn-data-");
-    const resources = tmp("aivn-res-");
-    mkdirSync(join(resources, "plays", "demo"), { recursive: true });
-    writeFileSync(join(resources, "plays", "demo", "play.json"), "{}");
-
-    expect(seedDemoPlays(data, resources)).toBe(join(data, "plays", "demo"));
-    expect(seedDemoPlays(data, resources)).toBeNull(); // 第二次已经有剧目了，不再重复解
-  });
-
-  it("用户已经有自己的剧目就不动他的目录", () => {
-    const data = tmp("aivn-data-");
-    const resources = tmp("aivn-res-");
-    mkdirSync(join(resources, "plays", "demo"), { recursive: true });
-    writeFileSync(join(resources, "plays", "demo", "play.json"), "{}");
-    mkdirSync(join(data, "plays", "my-play"), { recursive: true });
-
-    expect(seedDemoPlays(data, resources)).toBeNull();
-  });
-
-  it("仓库开发态没有随包样例（没有 play.json）就什么都不做", () => {
-    expect(seedDemoPlays(tmp("aivn-data-"), tmp("aivn-res-"))).toBeNull();
   });
 });
 
