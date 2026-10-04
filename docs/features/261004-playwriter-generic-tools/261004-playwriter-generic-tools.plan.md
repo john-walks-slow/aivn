@@ -1,6 +1,8 @@
 # 剧作家收成通用工具 · 计划
 
-工作区 `.worktrees/generic-tools`，分支 `feat/generic-tools`，基线 `main@4c605d0`。
+工作区 `.worktrees/generic-tools`，分支 `feat/generic-tools`，开发基线 `main@4c605d0`。
+合入时主分支已前进到 `main@1622ffb`（样例剧目撤出、NSFW 按读者隔离三条），变基后有两处冲突
+（`memoryTool.ts` 的依赖清单、`memory.test.ts` 里被替换的用例位置），就地解决后合入 `main@a6d9678`。
 
 ## 起因
 

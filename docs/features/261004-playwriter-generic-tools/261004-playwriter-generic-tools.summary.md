@@ -50,11 +50,15 @@ A 区的索引要等轮边界重建。提示词里把这条讲明白了，不留
 
 - `pnpm -r typecheck` 通过。
 - `pnpm --filter @aivn/core test`：151 passed。
-- `pnpm --filter @aivn/server test`：603 passed / 3 skipped（删掉 10 条测已删代码的用例，
+- `pnpm --filter @aivn/server test`：614 passed / 3 skipped（删掉 10 条测已删代码的用例，
   新增 10 条钉新链路的用例：写盘回调对 write 与 edit 都触发、`edit` 保住机器字段、
   引擎产物（含大小写混写）写不进去、`can.files` 决定两章注不注、
   跨轮 `write` 建卡 → 下一轮 `update_state` 认这个角色的端到端）。
+  614 = 本轮的 603 + 合入前主分支 NSFW 隔离那三条带进来的 11 条。
 - `pnpm --filter @aivn/core build` 已跑（core 加了导出）。
+- 合入时的两处变基冲突：`createMemoryTools` 的依赖清单取「本改动收窄后的清单 + 主分支新增的
+  `isNsfw`」；`memory.test.ts` 保留主分支新增的两条限制级检索用例，删掉被本改动替换掉的
+  `appendCard` 用例。
 - 真实模型/生图/TTS 的端到端见同目录 `.validation.md`，待用户实机确认。
 
 ## 检视回应（.review.md）
