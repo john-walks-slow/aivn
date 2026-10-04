@@ -8,8 +8,12 @@ import { DEFAULT_MAX_QUEUE } from "./limiter.js";
  */
 export interface BootstrapConfig {
   port: number;
-  /** 监听地址。`0.0.0.0` = 同一局域网的手机/平板也能连。 */
-  host: string;
+  /**
+   * 显式指定的监听地址（`--host` / `STAGE_HOST`）；没给就是 `undefined`。
+   *
+   * 三态：显式给了就听它，没给则交给设置页的 `lanAccess` 决定（见 `lanAccess.ts` 的 `resolveHost`）。
+   */
+  host: string | undefined;
   /** 数据根目录：`plays/`、`library/`、`media-cache/`、`settings.json` 都在它下面。 */
   dataRoot: string;
 }
@@ -24,6 +28,11 @@ export interface BootstrapConfig {
 export interface ServerConfig {
   /** 公网入口的访问密码（HTTP Basic）。空 = 不设防。 */
   password: string;
+  /**
+   * 允许局域网访问：开着监听 `0.0.0.0`，关着只听 `127.0.0.1`。
+   * 显式写了 `--host` / `STAGE_HOST` 时以那个为准（见 `lanAccess.ts` 的 `resolveHost`）。
+   */
+  lanAccess: boolean;
   /** 默认模型 id（经网关路由的完整 id）。 */
   modelId: string;
   /** pi-ai 内置基础模型（继承 api/cost/contextWindow 等元数据）。 */
@@ -85,6 +94,7 @@ export interface ServerConfig {
 export function freshSettings(): ServerConfig {
   return {
     password: "",
+    lanAccess: false,
     modelId: "",
     modelBase: "deepseek/deepseek-flash",
     models: [],
@@ -197,7 +207,8 @@ export function loadBootstrap(
 ): BootstrapConfig {
   return {
     port: overrides.port ?? parsePositiveInt("STAGE_PORT", env.STAGE_PORT, 8787),
-    host: overrides.host?.trim() || env.STAGE_HOST?.trim() || "0.0.0.0",
+    // 不给默认值：监听地址的三态由 resolveHost 收口，默认「只听本机」是设置项而不是启动参数
+    host: overrides.host?.trim() || env.STAGE_HOST?.trim() || undefined,
     dataRoot: resolve(overrides.dataRoot?.trim() || env.STAGE_DATA_DIR?.trim() || fallbackDataRoot),
   };
 }
@@ -205,6 +216,7 @@ export function loadBootstrap(
 /** 设置补丁：只带要改的字段（设置页提交的形态）。 */
 export interface SettingsPatch {
   password?: string;
+  lanAccess?: boolean;
   modelId?: string;
   modelBase?: string;
   models?: string[];
@@ -253,6 +265,8 @@ export function applyPatch(base: ServerConfig, patch: SettingsPatch): { next: Se
   };
 
   if (patch.password !== undefined) put("password", patch.password.trim());
+  // 手写的 settings.json 里给了非布尔值时按关处理（默认值），与其它标志位同一套口径
+  if (patch.lanAccess !== undefined) put("lanAccess", patch.lanAccess === true);
   if (patch.modelId !== undefined) put("modelId", patch.modelId.trim());
   if (patch.modelBase !== undefined) put("modelBase", assertModelBase(patch.modelBase));
   if (patch.models !== undefined) put("models", parseModelList(patch.models.join(",")));

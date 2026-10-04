@@ -31,7 +31,7 @@ export interface LaunchOptions {
 export const USAGE = `用法：aivn.exe [选项]
 
   -p, --port <端口>      监听端口（默认 8787，被占用时自动往后找；0 = 随便挑一个空闲的）
-      --host <地址>      监听地址（默认 0.0.0.0，即同一局域网都能访问）
+      --host <地址>      监听地址（默认跟随设置页的「局域网访问」；0.0.0.0 = 局域网可连）
       --data-dir <目录>  数据目录（默认 exe 同级的 data/）
       --open             启动后打开默认浏览器（打包版默认打开）
       --no-open          启动后不打开浏览器

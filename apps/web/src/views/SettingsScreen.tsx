@@ -27,6 +27,7 @@ function storedMode(key: string, fallback: ThemeMode): ThemeMode {
 
 type Draft = {
   password: string;
+  lanAccess: boolean;
   model: Settings["model"];
   workshopContext: Settings["workshopContext"];
   beatTimeoutMs: number;
@@ -39,6 +40,7 @@ type Draft = {
 function draftOf(next: Settings): Draft {
   return {
     password: "",
+    lanAccess: next.lanAccess,
     model: { ...next.model, apiKey: "" },
     workshopContext: { ...next.workshopContext },
     beatTimeoutMs: next.beatTimeoutMs,
@@ -55,6 +57,10 @@ export function SettingsScreen() {
   const [saved, setSaved] = useState<string[] | null>(null);
   const [models, setModels] = useState<GatewayModel[] | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
+  /** 刚复制过的那条局域网地址（按钮上闪一下「已复制」）。 */
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const [firewallMsg, setFirewallMsg] = useState<string | null>(null);
+  const [firewallBusy, setFirewallBusy] = useState(false);
 
   // 主题模式状态（分别保存 UI 和 舞台）
   const [uiMode, setUiMode] = useState<ThemeMode>(() => storedMode(UI_MODE_KEY, DEFAULT_UI_MODE));
@@ -115,6 +121,30 @@ export function SettingsScreen() {
       setDraft(draftOf(fresh));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const copyUrl = (url: string): void => {
+    // 非安全上下文（例如手机上直接开局域网 http）里没有 clipboard，地址本身也在页面上可选中
+    const clipboard = navigator.clipboard;
+    if (!clipboard) return;
+    void clipboard.writeText(url).then(
+      () => {
+        setCopiedUrl(url);
+        window.setTimeout(() => setCopiedUrl((current) => (current === url ? null : current)), 1500);
+      },
+      () => setCopiedUrl(null),
+    );
+  };
+
+  const runFirewall = async (): Promise<void> => {
+    setFirewallBusy(true);
+    try {
+      setFirewallMsg((await api.openFirewall()).message);
+    } catch (err) {
+      setFirewallMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFirewallBusy(false);
     }
   };
 
@@ -446,7 +476,10 @@ export function SettingsScreen() {
               改密码会立即生效：此前发出的会话全部作废，刷新页面重新输一次即可。
             </p>
             <div className="settings-grid">
-              <Field label="监听地址（只读）" hint="局域网访问靠它；改它要写 .env 再重启">
+              <Field
+                label="监听地址（只读）"
+                hint="当前实际在听的地址：由下面的「局域网访问」开关决定；显式写了 --host / STAGE_HOST 时以那个为准"
+              >
                 <input value={settings.bootstrap.host} readOnly />
               </Field>
               <Field label="端口（只读）" hint="改它要写 .env 再重启">
@@ -459,6 +492,49 @@ export function SettingsScreen() {
             >
               <input value={settings.bootstrap.dataRoot} readOnly />
             </Field>
+          </Group>
+
+          <Group title="局域网访问">
+            <Field
+              label="允许局域网访问"
+              hint="打开后监听 0.0.0.0，同一个 Wi-Fi 下的手机/平板能连；关着只有本机能连。保存后立即生效，端口不变"
+            >
+              <input
+                type="checkbox"
+                checked={draft.lanAccess}
+                onChange={(e) => setDraft({ ...draft, lanAccess: e.target.checked })}
+              />
+            </Field>
+            <Field label="手机该连的地址">
+              {!settings.lanAccess ? (
+                <span className="muted">打开后这里会显示手机该连的地址</span>
+              ) : settings.bootstrap.lanUrls.length === 0 ? (
+                <span className="muted">这台机器没有可用的局域网地址</span>
+              ) : (
+                settings.bootstrap.lanUrls.map((url) => (
+                  <span className="row" key={url}>
+                    <code>{url}</code>
+                    <button type="button" className="ghost-btn" onClick={() => copyUrl(url)}>
+                      {copiedUrl === url ? "已复制" : "复制"}
+                    </button>
+                  </span>
+                ))
+              )}
+            </Field>
+            <div className="row">
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={firewallBusy}
+                onClick={() => void runFirewall()}
+              >
+                允许局域网访问（Windows 防火墙）
+              </button>
+            </div>
+            <p className="settings-hint">
+              第一次打开开关时，系统会自己弹一次「是否允许访问网络」，点「允许」就够了。这个按钮是给「当时点了取消」或「根本没弹窗」兜底的：它会请求一次管理员权限，写一条按程序（而不是按端口）放行的入站规则，重复点是同一条。
+            </p>
+            {firewallMsg && <p className="settings-hint">{firewallMsg}</p>}
           </Group>
 
           {/* 主题设置 */}

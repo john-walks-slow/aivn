@@ -8,12 +8,13 @@ import {
   parseModelList,
   settingsFromEnv,
 } from "../src/config.js";
+import { resolveHost } from "../src/lanAccess.js";
 
 describe("启动期参数（只有它认环境变量）", () => {
-  it("默认：8787、监听 0.0.0.0（局域网设备能连）、数据目录用调用方给的兜底值", () => {
+  it("默认：8787、监听地址交给设置页的「局域网访问」决定、数据目录用调用方给的兜底值", () => {
     const boot = loadBootstrap({}, "/repo");
     expect(boot.port).toBe(8787);
-    expect(boot.host).toBe("0.0.0.0");
+    expect(boot.host).toBeUndefined();
     expect(boot.dataRoot).toBe("/repo");
   });
 
@@ -43,13 +44,29 @@ describe("启动期参数（只有它认环境变量）", () => {
   });
 });
 
+describe("监听地址的三态（显式覆盖 > 局域网访问开关）", () => {
+  it("显式给了 --host / STAGE_HOST 就是它，开关管不着", () => {
+    expect(resolveHost("192.168.1.5", false)).toBe("192.168.1.5");
+    expect(resolveHost("192.168.1.5", true)).toBe("192.168.1.5");
+    expect(loadBootstrap({ STAGE_HOST: "10.0.0.2" }, "/repo").host).toBe("10.0.0.2");
+  });
+
+  it("没给显式地址时看开关：开着听所有网卡，关着只听本机", () => {
+    expect(resolveHost(undefined, true)).toBe("0.0.0.0");
+    expect(resolveHost(undefined, false)).toBe("127.0.0.1");
+    // 空白串按「没给」算，别把一个空 host 递给 listen
+    expect(resolveHost("   ", true)).toBe("0.0.0.0");
+  });
+});
+
 describe("新装默认值", () => {
-  it("网关留空、生图/语音/联网默认关（什么都不配也能打开界面）", () => {
+  it("网关留空、生图/语音/联网/局域网访问默认关（什么都不配也能打开界面）", () => {
     const config = freshSettings();
     expect(config.baseUrl).toBe("");
     expect(config.apiKey).toBe("");
     expect(config.modelId).toBe("");
     expect(config.password).toBe("");
+    expect(config.lanAccess).toBe(false);
     expect(config.image.enabled).toBe(false);
     expect(config.tts.enabled).toBe(false);
     expect(config.exa.enabled).toBe(false);
@@ -145,6 +162,13 @@ describe("设置补丁（设置页保存的那条路）", () => {
     expect(() => applyPatch(base, { image: { size: "huge" } })).toThrow(/生图尺寸/);
     expect(() => applyPatch(base, { image: { format: "png" as never } })).toThrow(/生图接口格式/);
     expect(() => applyPatch(base, { modelBase: "deepseek-flash" })).toThrow(/provider\/modelId/);
+  });
+
+  it("局域网访问按布尔收：手写 settings.json 里给了非布尔值按关处理", () => {
+    const on = applyPatch(freshSettings(), { lanAccess: true });
+    expect(on.changed).toEqual(["lanAccess"]);
+    expect(on.next.lanAccess).toBe(true);
+    expect(applyPatch(freshSettings(), { lanAccess: "yes" as never }).next.lanAccess).toBe(false);
   });
 
   it("生图档位写回时归一化成官方大写（K 写成小写官方直接拒）", () => {

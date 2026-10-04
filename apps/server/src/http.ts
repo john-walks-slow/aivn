@@ -19,6 +19,7 @@ import {
 } from "@aivn/core";
 import { loadCharacterCards } from "./memory.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
+import { firewallAvailable, isLoopback, openFirewallRule } from "./lanAccess.js";
 
 const BODY_LIMIT = 64 * 1024 * 1024;
 
@@ -253,6 +254,18 @@ export async function handleHttp(
         return json(res, 200, { changed, settings: settings.read() });
       }
       return fail(res, 405, "不支持的方法");
+    }
+
+    // —— 一键放行 Windows 防火墙：只认本机发起的请求，且只在装好的 Windows 版里有意义 ——
+    if (parts[0] === "api" && parts[1] === "lan" && parts[2] === "open-firewall" && parts.length === 3) {
+      if (method !== "POST") return fail(res, 405, "不支持的方法");
+      // 局域网上的任何人都不该能远程把 UAC 弹窗糊到用户脸上
+      if (!isLoopback(req.socket?.remoteAddress)) return fail(res, 403, "只允许在本机操作");
+      if (!firewallAvailable()) {
+        return fail(res, 501, "这条只在装好的 Windows 版里有意义；开发态请手动放行端口");
+      }
+      // 用户点了 UAC 的「否」也是一次失败，如实回一句人话（HTTP 仍是 200，失败在载荷里）
+      return json(res, 200, await openFirewallRule());
     }
 
     // —— REST API ——

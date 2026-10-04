@@ -5,6 +5,7 @@ import { loadBootstrap } from "./config.js";
 import { USAGE, UsageError, parseLaunchArgs } from "./cli.js";
 import { SettingsStore, settingsPath } from "./settingsStore.js";
 import { SettingsApi } from "./configApi.js";
+import { resolveHost } from "./lanAccess.js";
 import { defaultDataRoot, envFileDir, isPackaged, loadEnvFile, resourceRootOf } from "./paths.js";
 import { selfTest } from "./selftest.js";
 import { exitWhenStdinCloses, lanAddresses, listenWithFallback, openBrowser } from "./startup.js";
@@ -80,16 +81,68 @@ export async function main(): Promise<void> {
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
   });
 
-  const port = await listenWithFallback(server, bootstrap.port, bootstrap.host);
+  const initialHost = resolveHost(bootstrap.host, store.get().lanAccess);
+  let port = await listenWithFallback(server, bootstrap.port, initialHost);
   if (bootstrap.port !== 0 && port !== bootstrap.port) {
     console.log(`[aivn] 端口 ${bootstrap.port} 被占用，改用 ${port}`);
   }
+  // 实际端口写回 bootstrap：设置页的只读回显与 lanUrls 读的是同一个对象
+  bootstrap.port = port;
+
+  const logLan = (host: string): void => {
+    if (host !== "0.0.0.0") return;
+    for (const address of lanAddresses()) console.log(`[aivn] 局域网  http://${address}:${port}`);
+  };
 
   const local = `http://127.0.0.1:${port}`;
   console.log(`[aivn] 就绪  ${local}  (REST /api/plays, WS /ws?play=<id>)`);
-  if (bootstrap.host === "0.0.0.0") {
-    for (const address of lanAddresses()) console.log(`[aivn] 局域网  http://${address}:${port}`);
-  }
+  logLan(initialHost);
+
+  /**
+   * 「允许局域网访问」开关改了就地重绑监听地址，**端口不动**（桌面窗口与已打开的页面都在这个端口上）。
+   *
+   * 升级后的 WS 连接挂在同一个 socket 上，不先掐掉它们 `server.close()` 的回调永远不来；
+   * 本机页面因此会掉一次 WS，客户端自己会重连。
+   *
+   * 这次保存请求的连接正走在「还没回完」的状态里，close() 不会碰它，得等它自己空下来——
+   * 实测那样要卡住三秒。所以留一个短延时兜底：响应早就发出去了，届时强制收掉所有连接。
+   */
+  let activeHost = initialHost;
+  let rebinding = false;
+  let queuedHost: string | null = null;
+  const applyHost = (target: string): void => {
+    if (target === activeHost) return;
+    if (rebinding) {
+      queuedHost = target;
+      return;
+    }
+    rebinding = true;
+    activeHost = target;
+    for (const client of wss.clients) client.terminate();
+    const force = setTimeout(() => server.closeAllConnections(), 100);
+    server.close(() => {
+      clearTimeout(force);
+      void listenWithFallback(server, port, target)
+        .then((actual) => {
+          if (actual !== port) {
+            console.warn(`[aivn] 重绑时端口 ${port} 被占用，改用 ${actual}`);
+            port = actual;
+            bootstrap.port = actual;
+          }
+          console.log(`[aivn] 监听地址已改为 ${target}:${port}（页面会自动重连）`);
+          logLan(target);
+        })
+        .catch((error) => console.error("[aivn] 重绑监听地址失败:", error))
+        .finally(() => {
+          rebinding = false;
+          const next = queuedHost;
+          queuedHost = null;
+          if (next !== null) applyHost(next);
+        });
+    });
+  };
+  store.subscribe((next) => applyHost(resolveHost(bootstrap.host, next.lanAccess)));
+
   console.log(`[aivn] 数据目录  ${bootstrap.dataRoot}`);
   console.log(`[aivn] 设置文件  ${settingsPath(bootstrap.dataRoot)}（也可以在设置页里改）`);
   console.log(

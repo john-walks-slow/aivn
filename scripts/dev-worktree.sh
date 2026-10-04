@@ -79,8 +79,8 @@ pnpm --filter @aivn/core build
 
 if [ "$WANT_SERVER" = 1 ]; then
   pnpm --filter @aivn/server build
-  # config.ts 读 env.STAGE_PORT
-  STAGE_PORT="$STAGE_PORT" pnpm --filter @aivn/server start &
+  # config.ts 读 env.STAGE_PORT；dev 是开发工具，局域网直连是日常用法，显式带上 host
+  STAGE_PORT="$STAGE_PORT" STAGE_HOST=0.0.0.0 pnpm --filter @aivn/server start &
   pids+=($!)
   echo "api:  http://127.0.0.1:$STAGE_PORT"
 fi

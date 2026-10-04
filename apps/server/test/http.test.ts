@@ -250,3 +250,30 @@ describe("GET /api/plays/:id/cg：CG 页的台账", () => {
     expect(body.entries).toEqual([]);
   });
 });
+
+describe("POST /api/lan/open-firewall：只认本机，且只在装好的 Windows 版里有意义", () => {
+  const post = async (remoteAddress: string): Promise<FakeRes> => {
+    const res = new FakeRes();
+    await handleHttp(
+      {
+        url: "/api/lan/open-firewall",
+        method: "POST",
+        socket: { remoteAddress },
+      } as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new PlayLibrary("/tmp"),
+      {} as PlayHouse,
+    );
+    return res;
+  };
+
+  it("局域网来源直接 403（不允许远程把 UAC 弹窗糊到用户脸上）", async () => {
+    expect((await post("192.168.1.23")).statusCode).toBe(403);
+  });
+
+  it("本机来源在开发态如实说这条不适用（501），不假装成功", async () => {
+    const res = await post("::ffff:127.0.0.1");
+    expect(res.statusCode).toBe(501);
+    expect(res.payload).toContain("Windows");
+  });
+});

@@ -127,8 +127,12 @@ export interface HistoryBeat {
 
 /** 设置面板数据（P6）：敏感值只回掩码，原样回传视为「不改」。 */
 export interface Settings {
-  /** 只读的启动参数：端口 / 监听地址 / 数据目录（改它们要写 exe 同级的 .env 再重启）。 */
-  bootstrap: { port: number; host: string; dataRoot: string };
+  /**
+   * 只读的启动参数：端口 / 监听地址 / 数据目录（改它们要写 exe 同级的 .env 再重启）。
+   * `host` 是**当前实际**监听的地址（已算进「允许局域网访问」）；`lanUrls` 是手机该连的地址，
+   * 只听本机时为空。
+   */
+  bootstrap: { port: number; host: string; dataRoot: string; lanUrls: string[] };
   model: {
     modelId: string;
     modelBase: string;
@@ -151,6 +155,8 @@ export interface Settings {
   /** 公网入口密码：留空或保持掩码 = 不改，清空 = 关闭设防。 */
   password: string;
   passwordSet: boolean;
+  /** 允许局域网访问：开着监听 0.0.0.0，关着只听 127.0.0.1。显式 --host / STAGE_HOST 优先于它。 */
+  lanAccess: boolean;
   image: {
     enabled: boolean;
     /** 接口格式，不是产品名：gemini 支持垫图，openai 不支持。 */
@@ -391,6 +397,13 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),
     }),
+
+  /**
+   * 一键放行 Windows 防火墙（服务端用自己的 exe 路径写一条入站规则，需要 UAC）。
+   * 服务端只认本机请求：局域网上的别人调它会被 403；开发态 / 非 Windows 回 501。
+   */
+  openFirewall: () =>
+    request<{ ok: boolean; message: string }>("/api/lan/open-firewall", { method: "POST" }),
 };
 
 /** 素材 URL（静态服务）。name 为文件名或 stem（无扩展名时按目录清单补全）。 */

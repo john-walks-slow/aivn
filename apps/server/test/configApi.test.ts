@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { freshSettings, settingsFromEnv, type BootstrapConfig, type ServerConfig } from "../src/config.js";
 import { mask, SettingsApi } from "../src/configApi.js";
+import { lanAddresses } from "../src/startup.js";
 import { settingsPath, SettingsStore } from "../src/settingsStore.js";
 
 const BOOTSTRAP: BootstrapConfig = { port: 8787, host: "0.0.0.0", dataRoot: "/data" };
@@ -52,7 +53,29 @@ describe("设置面板的传输面", () => {
   });
 
   it("读：启动期参数只读展示（端口/监听地址/数据目录）", () => {
-    expect(fixture().api.read().bootstrap).toEqual(BOOTSTRAP);
+    const bootstrap = fixture().api.read().bootstrap;
+    expect(bootstrap.port).toBe(BOOTSTRAP.port);
+    expect(bootstrap.host).toBe(BOOTSTRAP.host);
+    expect(bootstrap.dataRoot).toBe(BOOTSTRAP.dataRoot);
+    expect(Array.isArray(bootstrap.lanUrls)).toBe(true);
+  });
+
+  it("局域网访问：写完读回来一致、落盘也是它，监听地址与手机地址跟着它走", () => {
+    const { api, store, root } = fixture();
+    expect(api.read().lanAccess).toBe(false);
+    expect(api.write({ lanAccess: true })).toEqual(["lanAccess"]);
+    expect(api.read().lanAccess).toBe(true);
+    expect(JSON.parse(readFileSync(settingsPath(root), "utf8")).lanAccess).toBe(true);
+    // 值没变就不算改动
+    expect(api.write({ lanAccess: true })).toEqual([]);
+
+    // 没给显式 --host 时，实际监听地址与手机地址都由这个开关决定
+    const auto = new SettingsApi(store, { ...BOOTSTRAP, host: undefined });
+    expect(auto.read().bootstrap.host).toBe("0.0.0.0");
+    expect(auto.read().bootstrap.lanUrls).toEqual(lanAddresses().map((ip) => `http://${ip}:${BOOTSTRAP.port}`));
+    auto.write({ lanAccess: false });
+    expect(auto.read().bootstrap.host).toBe("127.0.0.1");
+    expect(auto.read().bootstrap.lanUrls).toEqual([]);
   });
 
   it("写：只改被改的字段，其余原样（落盘的就是内存那份）", () => {

@@ -5,6 +5,8 @@
  * 面板只有一个保存入口，任何凭据都不许有绕过它单独落盘的通道。
  */
 import { parseModelList, type BootstrapConfig, type ServerConfig, type SettingsPatch } from "./config.js";
+import { resolveHost } from "./lanAccess.js";
+import { lanAddresses } from "./startup.js";
 import type { SettingsStore } from "./settingsStore.js";
 
 /** 多 key 凭据字段（语音 / 联网）的传输面。 */
@@ -27,8 +29,11 @@ export interface SettingsView {
    * 它们留在环境变量里是刻意的——端口与数据目录属于「装在哪、怎么起」，
    * 不属于用户在设置页里反复调的偏好；但界面上要**显示**出来（很多人排查问题时
    * 第一句就是「你到底写在哪个目录」）。
+   *
+   * `host` 给的是**当前实际**监听的地址（`lanAccess` 已经算进去），
+   * `lanUrls` 是手机该连的那几串地址（只听本机时为空）。
    */
-  bootstrap: { port: number; host: string; dataRoot: string };
+  bootstrap: { port: number; host: string; dataRoot: string; lanUrls: string[] };
   model: {
     modelId: string;
     modelBase: string;
@@ -53,6 +58,8 @@ export interface SettingsView {
   /** 公网入口密码：留空 = 不设防；掩码回传 = 不改。 */
   password: string;
   passwordSet: boolean;
+  /** 允许局域网访问：开着监听 0.0.0.0（显式 --host / STAGE_HOST 优先于它）。 */
+  lanAccess: boolean;
   /** 生图（格式 + 连接 + 档位）：key 只回掩码。 */
   image: ServerConfig["image"] & { apiKeySet: boolean };
   tts: Omit<ServerConfig["tts"], "keys"> & KeyListView;
@@ -63,6 +70,7 @@ export interface SettingsView {
 /** 设置面板的写形态：只带被改过的字段，嵌套块各自可部分提交。 */
 export interface SettingsViewPatch {
   password?: string;
+  lanAccess?: boolean;
   model?: Partial<SettingsView["model"]>;
   workshopContext?: Partial<SettingsView["workshopContext"]>;
   beatTimeoutMs?: number;
@@ -80,8 +88,18 @@ export class SettingsApi {
   /** 读当前设置：仍然是那一份内存镜像——它此刻就是磁盘上的值（写是即时的）。 */
   read(): SettingsView {
     const config = this.store.get();
+    const host = resolveHost(this.bootstrap.host, config.lanAccess);
     return {
-      bootstrap: { ...this.bootstrap },
+      bootstrap: {
+        port: this.bootstrap.port,
+        host,
+        dataRoot: this.bootstrap.dataRoot,
+        // 只听本机时给出去也没用，别让用户拿着一个连不上的地址去手机里试
+        lanUrls:
+          host === "0.0.0.0"
+            ? lanAddresses().map((address) => `http://${address}:${this.bootstrap.port}`)
+            : [],
+      },
       model: {
         modelId: config.modelId,
         modelBase: config.modelBase,
@@ -100,6 +118,7 @@ export class SettingsApi {
       beatTimeoutMs: config.beatTimeoutMs,
       password: mask(config.password),
       passwordSet: config.password !== "",
+      lanAccess: config.lanAccess,
       image: { ...config.image, apiKey: mask(config.image.apiKey), apiKeySet: config.image.apiKey !== "" },
       tts: { ...withoutKeys(config.tts), ...keyListView(config.tts.keys) },
       exa: { ...withoutKeys(config.exa), ...keyListView(config.exa.keys) },
@@ -128,6 +147,7 @@ export class SettingsApi {
     if (patch.workshopContext) next.workshopContext = { ...patch.workshopContext };
     if (patch.beatTimeoutMs !== undefined) next.beatTimeoutMs = patch.beatTimeoutMs;
     if (patch.password !== undefined && patch.password !== mask(config.password)) next.password = patch.password;
+    if (patch.lanAccess !== undefined) next.lanAccess = patch.lanAccess;
     const image = patch.image;
     if (image) {
       next.image = { ...image };
