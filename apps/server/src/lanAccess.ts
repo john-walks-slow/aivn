@@ -42,17 +42,37 @@ export function firewallAvailable(): boolean {
  * 先删同名再新增，所以重复点是同一条规则；用户在 UAC 上点「否」会走失败分支——
  * 那是一次失败的操作，要如实回报，别静默。
  */
-export async function openFirewallRule(
-  execPath = process.execPath,
-): Promise<{ ok: boolean; message: string }> {
-  const inner = [
+/**
+ * 提权要跑的那段脚本：**先清掉自动生成的阻止规则**，再删同名规则，最后写放行。
+ *
+ * 在弹窗上点「取消」时，Windows 会自己写一条以程序命名的**阻止**规则，而显式阻止
+ * 的优先级高于放行——只加一条 Allow 是救不回来的（2026-10-04 在真机上实测：两条
+ * Block 在位时手机连不上，删掉立刻通；而那时我们那条 Allow 已经在册且启用）。
+ * 所以这两类都得清，顺序无所谓，清完再加。
+ */
+export function firewallRuleScript(execPath: string): string {
+  const quoted = execPath.replace(/'/g, "''");
+  return [
+    `$exe = '${quoted}'`,
+    `Get-NetFirewallRule -Direction Inbound -Action Block -ErrorAction SilentlyContinue | Where-Object { ($_ | Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue).Program -ieq $exe } | Remove-NetFirewallRule -ErrorAction SilentlyContinue`,
     `netsh advfirewall firewall delete rule name="${FIREWALL_RULE_NAME}" | Out-Null`,
     `netsh advfirewall firewall add rule name="${FIREWALL_RULE_NAME}" dir=in action=allow program="${execPath}" enable=yes profile=any`,
     `exit $LASTEXITCODE`,
   ].join("\n");
+}
+
+/**
+ * 提权写一条入站放行规则，返回一句人话给设置页显示。
+ *
+ * 先清再新增，所以重复点是同一条规则；用户在 UAC 上点「否」会走失败分支——
+ * 那是一次失败的操作，要如实回报，别静默。
+ */
+export async function openFirewallRule(
+  execPath = process.execPath,
+): Promise<{ ok: boolean; message: string }> {
   // 整段用 -EncodedCommand 递进去：规则名带中文、路径带空格，走命令行引号迟早出错
   const outer = [
-    `$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${encodeCommand(inner)}'`,
+    `$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${encodeCommand(firewallRuleScript(execPath))}'`,
     `exit $p.ExitCode`,
   ].join("\n");
   const code = await runPowerShell(outer);
