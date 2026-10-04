@@ -4,7 +4,7 @@
 
 - 验证对象：「立绘即素材」实施后的实机表现——主体（人 / 机甲 / 猫 / 道具）由同一个 id 寻址，角色卡 `characters/<id>.md` 与立绘目录 `assets/sprites/<id>/` 是两张各自可选的同名附件；呈现三轴（framing / stature / anchor）与名牌声明全部住在 `assets/manifest.json`。
 - 环境/前置条件：
-  - 在 worktree `/root/projects/stage-ai/.worktrees/sprite-entity` 内跑 `./scripts/dev-worktree.sh`，取它打印的 local 与 public URL。
+  - 在 worktree `.worktrees/sprite-entity` 内跑 `./scripts/dev-worktree.sh`，取它打印的 local 与 public URL。
   - 准备一个剧目（新建或已有的 demo 都行）；要验「存量不变」时用一个迁移过的老剧目。
   - 立绘图可以是站内生图，也可以是本机已有的任意 png/jpg。
 
