@@ -172,11 +172,13 @@
 - **入口由工具开关控制**：`can.nsfw` 位（`CAPABILITY_TOOLS.nsfw = "enter_nsfw"`）决定 `prompt.ts` 注不注那两段（进/退指引）。2026-10-04 之前它是**恒注入**的——用户在 Agent 页把 `enter_nsfw`/`exit_nsfw` 摘掉，提示词还在教它去调，只有空转。关掉这两项 = 本剧目不要限制级通道。
 - **限制级（NSFW）剧情通道**：剧作家主动调 `enter_nsfw` 开启限制级通道（切换至限制级专用模型、注入 20 岁以上虚拟合规轮次与 `memory/always/nsfw.md`），退出时调 `exit_nsfw`（推荐与 `beat_done` 同批发出）。
 - **不变式：限制级内容对全年龄读者的唯一出口是它带出的 SFW 摘要。** 正文原文、段内玩家输入、段内每一拍的 `beat_end` 都只在限制级侧可见；前台舞台、`lineage.jsonl`、replay 一如既往保留全文（约束的是**模型读到的东西**，不是存档）。
-- **打标在事件上，不在轮次上**：`LineagePayload.nsfw` 由 `orchestrator.beatNsfw`（开轮时从 `nsfwActive` 取的快照）写进段内每个节点。判断依据必须是这个快照而不是当下的 `nsfwActive`：退出那一拍的 `beat_end` 在 `nsfwActive` 已翻成 false 之后才封，但它承载的仍是限制级原文。
+- **打标在事件上，不在轮次上**：`LineagePayload.nsfw` 由 `orchestrator.beatNsfw` 写进段内每个节点，取值来自 `beatChannelNsfw()` = `nsfwActive || nsfwPendingEnter`。判断依据必须是这个快照而不是当下的 `nsfwActive`：退出那一拍的 `beat_end` 在 `nsfwActive` 已翻成 false 之后才封，但它承载的仍是限制级原文。
+- **这一拍的通道在「注入这段输入时」就定**（`noteBeatInputs`，与 `startBeatWindow` 用同一个 `beatChannelNsfw()`）：prompt 节点落在开拍之前，而边界那一拍按「开拍时才知道的 `nsfwActive`」打标两头都错——进段的那句玩家输入会漏标（SFW 侧从树上重建时它作为普通输入回流），段后的第一句日常输入会误标（从树上重建时整句被吃掉）。所以不许读上一拍残留的 `beatNsfw`，也不许等 `runBeatTurn` 兑现 `nsfwPendingEnter` 之后再定。
 - **快照另说**：`MemorySnapshot.nsfw` 记的是「从这里起世界线是日常还是限制级」，段末那一拍的快照是 `false`——从那里跳转/续演就该是日常。事件层的 `nsfw` 与快照层的 `nsfw` 故意不对称。
 - **摘要在树上落成 `beat_end.payload.nsfwSummary`**，同时以**不带 nsfw 标**的独立切片写进 `memory/archive`（`entryId` = 段末叶子）：SFW 侧 `search_archive` 因此能搜到这一段，不留检索缺口；限制级侧两片都看得到。同一叶子同一轮的两片靠 `sliceId` 尾缀 `:nsfw` 区分，不能只按 `entryId:turn` 认（MiniSearch 会当同一篇）。
 - **退出那一拍要等摘要生成完才算收束**：`finishBeat` 见 `nsfwPendingExit` 就走 `closeNsfwBeat`——`busy` 与新增的 `beatClosing` 一起占着（`beatClosing` 是必须的：`turn_end` 与 `agent_end` 会各唤醒一次 `finishBeat`，而这次 `busy` 不能像往常那样先落回 false），`beat_settled` 推后到摘要之后，玩家输入排队等着。等摘要期间被 `forkTo` 腰斩（`beatToken` 变了）或 `dispose` 就直接作废，不封拍也不拿净化后的上下文盖掉别人刚重建的现场。
 - **重建按读者折叠**（`rebuild.ts` 的 `lineageToBeats(…, { nsfw })`）：SFW 侧把整段折成一条过渡轮（措辞的唯一出处是 `nsfwTransitionBeat`，实时退出与从树上重建共用同一份），段内原文与段内玩家输入一概不进消息；限制级侧照渲原文、不注摘要。没打标的老档两位读者渲出来一样——不做迁移、不叠第二层特判。
+- **退出的净化上下文只从谱系链渲**（`switchBackToSfw` 就是 `renderBeats(rebuildBeats(materialize()))`，摘要早在 `closeBeat` 里落成段末那条过渡轮）：**不留内存基线**——「进入限制级前的消息快照」只在本次会话真的走过 `enter_nsfw` 那一刻才存在，跳进段内或读档续演到段内时它是空的，而那时的内存消息组里全是露骨原文，任何以它为底的兜底都是一次全量回流。代价与 `editLine` / `rebuildBranchAt` 同源：从树重放会把纪元压缩摊回原文（下一拍开跑前的 `maybeCompactEpoch` 会再收一次）。
 - **限制级段落期间不压缩**：`maybeCompactEpoch` 开头 `if (this.nsfwActive) return;`。压缩器的输入是原文对话体，段没结束就还没有摘要，这一压等于把限制级原文固化进 `memory/arcs`（每轮注入 A 区）——那正是这条不变式要挡的事。
 - `rebuildBranchAt` 必须**先** `restoreBranchState` 再 `rebuildBeats`：折叠模式取自恢复出来的快照，顺序反了就按上一个分支的读者渲染这一条链。
 - 谱系快照（MemorySnapshot）存 nsfw 状态，分支跳转自动复位模式。

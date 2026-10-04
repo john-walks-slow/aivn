@@ -38,7 +38,7 @@ import type { VoiceCatalogService } from "./voiceCatalog.js";
 import type { PlayStore } from "./store.js";
 import { refFromActor, refFromCg, refFromSfx, refsFromScene, type AssetRefResolver } from "./assetRef.js";
 import { CAST_SCAN_EVENTS, buildSystemPrompt, renderStateSection, type AssetManifest, type AssetNotes, type GeneratedNote } from "./prompt.js";
-import { lineageToBeats, lineageToEvents, nsfwTransitionBeat, stopFromEvent, type RebuiltBeat } from "./rebuild.js";
+import { lineageToBeats, lineageToEvents, stopFromEvent, type RebuiltBeat } from "./rebuild.js";
 import {
   EPOCH_SUMMARY_SYSTEM,
   measureContext,
@@ -418,12 +418,11 @@ export class PlaywrightOrchestrator {
   private nsfwSuggestedSummary: string | null = null;
   /** 限制级期间收集的台词（供 SFW 摘要生成使用）。 */
   private nsfwLines: string[] = [];
-  /** 进入 NSFW 前保留的主模型消息快照（退出时在此基础上挂 SFW 摘要）。 */
-  private sfwBaselineMessages: AgentMessage[] = [];
   /** 在飞的 SFW 摘要生成与切回任务。 */
   private pendingSfwSwitch: Promise<void> | null = null;
   /**
-   * 正在写的这一拍属于限制级通道——**开拍时**取 `nsfwActive` 的快照。
+   * 正在写的这一拍属于限制级通道——在**这一拍开始前**（注入输入时）定下来，
+   * 取值见 `beatChannelNsfw()`。
    *
    * 事件打标读它而不是读现场的 `nsfwActive`：退出那一拍在落 `beat_end` 之前就把
    * `nsfwActive` 切回 false（快照要记「从这里起世界线回到日常」），而这一拍的台词
@@ -966,11 +965,26 @@ export class PlaywrightOrchestrator {
    *
    * 判废退回要退到它——退到输入节点之后，那次选择与那几句引导就跟着一起退不掉了。
    * 没走这里的轮次（开场、重演这一轮、光点「继续」）没有输入节点，输入锚点即本轮锚点自己。
+   *
+   * 这一拍归属哪条通道也在同一刻定下来：prompt 节点落在开拍之前，而「开拍时才知道」
+   * 的 `nsfwActive` 在进出限制级的边界那一拍上都不对——进入的 pending 还没兑现（该带标
+   * 的那句玩家输入会漏标），退出的残留还没清零（第一句日常输入会被误标而丢掉）。
    */
   private noteBeatInputs(steers: readonly PromptQueueItem[]): void {
     this.beatTailId = this.opts.tree.leafId;
     this.beatTailRecorded = true;
     this.beatSteers = [...steers];
+    this.beatNsfw = this.beatChannelNsfw();
+  }
+
+  /**
+   * 这一拍属于限制级通道吗：以「即将开跑的通道」为准，不是此刻的世界线状态。
+   *
+   * `nsfwPendingEnter` 在开拍前（注入这段输入时）就已经置上了，所以拿它、
+   * 而不是等 `runBeatTurn` 兑现之后再读 `nsfwActive`。
+   */
+  private beatChannelNsfw(): boolean {
+    return this.nsfwActive || this.nsfwPendingEnter;
   }
 
   /**
@@ -1429,7 +1443,6 @@ export class PlaywrightOrchestrator {
     this.nsfwPendingEnter = false;
     this.nsfwPendingExit = false;
     this.nsfwLines = [];
-    this.sfwBaselineMessages = [];
   }
 
   /**
@@ -1615,7 +1628,6 @@ export class PlaywrightOrchestrator {
         this.nsfwActive = true;
         this.nsfwStartBeatNo = this.beatNo + 1;
         this.nsfwLines = [];
-        this.sfwBaselineMessages = stripNsfwPreTurns(this.agent.state.messages);
         this.buildAgent(this.agent.state.messages, true);
       }
       // 纪元边界：轮与轮之间是唯一允许突变 A 区/对话体的时刻（空前缀缓存豁免）
@@ -1785,7 +1797,7 @@ export class PlaywrightOrchestrator {
     this.beatTimedOut = false;
     this.beatLines = [];
     this.beatClosed = false;
-    this.beatNsfw = this.nsfwActive;
+    this.beatNsfw = this.beatChannelNsfw();
     this.beatClosing = false;
     this.opts.engine.turn = this.beatNo;
     // 面板上的「正在写第 N 轮」：一轮最长 240s，没有这一条玩家只能对着静止的舞台等
@@ -1956,9 +1968,9 @@ export class PlaywrightOrchestrator {
   /**
    * 限制级段落的收束（`finishBeat` 的退出分支）：先出 SFW 摘要，再按常规封这一拍。
    *
-   * 摘要一次生成、两处使用——写进 `beat_end` 载荷（谱系上这一段唯一的 SFW 出口），
-   * 以及重建净化后的对话体。等它落地期间 busy 保持占用：`beat_settled` 推后、
-   * 玩家的输入照旧排队，下一轮不会带着露骨原文在旧模型上开跑。
+   * 摘要一次生成、一处落树——写进 `beat_end` 载荷（谱系上这一段唯一的 SFW 出口），
+   * 净化后的对话体随即由 `switchBackToSfw` 从这条链重新渲出来。等它落地期间 busy 保持
+   * 占用：`beat_settled` 推后、玩家的输入照旧排队，下一轮不会带着露骨原文在旧模型上开跑。
    */
   private closeNsfwBeat(stop: StopPayload | null, token: number): Promise<void> {
     const task = (async () => {
@@ -1973,19 +1985,19 @@ export class PlaywrightOrchestrator {
       this.nsfwActive = false;
       this.nsfwStartBeatNo = null;
       this.closeBeat(stop, summary);
-      this.switchBackToSfw(summary);
+      this.switchBackToSfw();
     })()
       .catch((error: unknown) => {
-        console.warn(
-          `[aivn] 限制级段落收束失败: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`[aivn] 限制级段落收束失败: ${message}`);
+        this.send({ type: "error", message: `限制级段落收束失败：${message}`, recoverable: true });
       })
       .finally(() => {
         // 先摘掉自己再放行下一轮：onBeatSettled 会直接开新拍，而新一轮在
         // runBeatTurn 开头就 await pendingSfwSwitch——不清掉就是等自己。
         if (this.pendingSfwSwitch === task) this.pendingSfwSwitch = null;
-        // 现场已被腰斩/新分支接管：busy 与 beatClosing 归它管，这一拍不碰
-        if (token !== this.beatToken) return;
+        // 已销毁（runtime 重建/切档）：dispose 不认 token，不能再唤醒结算去开新拍
+        if (this.disposed || token !== this.beatToken) return;
         this.beatClosing = false;
         this.busy = false;
         this.flushIdleWaiters();
@@ -1997,35 +2009,15 @@ export class PlaywrightOrchestrator {
   /**
    * 退出限制级：把净化后的对话体装回主模型。
    *
-   * 摘要已在封拍前生成（`closeNsfwBeat`）。实时路径与从谱系重建的折叠路径共用
-   * 同一份过渡轮（`nsfwTransitionBeat`）——两条路读到的上下文因此长得一模一样，
-   * 「退出后模型看到的」与「跳回这一段再往前演时模型看到的」不会各说各话。
+   * 净化后的上下文只有一个真相源——当前分支谱系链的 **SFW 侧渲染**。整段限制级已经在
+   * 段末那一片 `beat_end`（带 `nsfwSummary`，`closeBeat` 刚刚落树）上折成一条过渡轮，
+   * 所以这里不必、也不许再拿内存里的 messages 当基线：那个基线只在「本次会话真的走过
+   * 进入限制级那一刻」之后才存在，而跳进段内、读档续演到段内时它都是空的，此时内存里
+   * 的消息组全是露骨原文——一压就整段回流给主模型。实时退出与跳转/读档重建因此走同一
+   * 个函数，两条路读到的上下文逐字一致。
    */
-  private switchBackToSfw(summary: string): void {
-    const base =
-      this.sfwBaselineMessages.length > 0
-        ? this.sfwBaselineMessages
-        : stripNsfwPreTurns(this.agent.state.messages);
-    this.sfwBaselineMessages = [];
-    const transition = nsfwTransitionBeat(summary);
-    const now = Date.now();
-    this.buildAgent(
-      [
-        ...base,
-        { role: "user", content: transition.user, timestamp: now },
-        {
-          role: "assistant",
-          content: [{ type: "text", text: transition.assistant }],
-          api: this.opts.model.api,
-          provider: this.opts.model.provider,
-          model: this.opts.model.id,
-          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-          stopReason: "stop",
-          timestamp: now + 1,
-        },
-      ],
-      false,
-    );
+  private switchBackToSfw(): void {
+    this.buildAgent(this.renderBeats(this.rebuildBeats(this.opts.tree.materialize()).beats), false);
     this.persist();
   }
 

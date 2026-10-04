@@ -1784,6 +1784,124 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     expect(sfwText).not.toContain("轻一点");
     expect(sfwText).not.toContain("抱紧我");
   });
+
+  it("边界那一拍的玩家输入按所属通道打标：进段的那句带标、段后第一句不带标", async () => {
+    const memory = new PlayMemory({ cards: [CARD] });
+    const responses: FakeResponse[] = [
+      {
+        text: '<say id="mio">今天天气真好。</say>',
+        beatDone: true,
+        toolCalls: [{ name: "enter_nsfw", args: {} }],
+      },
+      // 这一段的第一拍：玩家那句「推门进去」是在「即将进入限制级」的通道上发出的
+      { text: '<say id="mio">笨蛋……轻一点……</say>', beatDone: true },
+      {
+        text: '<say id="mio">……抱紧我。</say>',
+        beatDone: true,
+        toolCalls: [{ name: "exit_nsfw", args: {} }],
+      },
+      { text: "两人在房间里互诉心意，关系有了突破。" },
+      // 段后的第一句日常输入
+      { text: '<say id="mio">早啊，昨晚睡得好吗。</say>', beatDone: true },
+    ];
+    const { orchestrator, tree } = setup(responses, { memory });
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    await orchestrator.playerAction({ kind: "free", text: "我轻轻推开门走了进去。" });
+    await orchestrator.whenIdle();
+    await orchestrator.playerAction({ kind: "continue" }); // 段内末拍：退出
+    await orchestrator.whenIdle();
+
+    // 开拍前落树的 prompt 节点拿的是「这一拍归属哪条通道」，不是上一拍的残留值
+    const entryPrompt = tree.materialize().find((e) => e.payload?.input === "我轻轻推开门走了进去。")!;
+    expect(entryPrompt.payload?.nsfw).toBe(true);
+
+    // 净化后的上下文里：摘要留下，段内原文与那句话都不在
+    const afterExit = agentText(orchestrator);
+    expect(afterExit).toContain("互诉心意");
+    expect(afterExit).not.toContain("轻一点");
+    expect(afterExit).not.toContain("抱紧我");
+    expect(afterExit).not.toContain("我轻轻推开门");
+
+    // 段后的第一句日常输入不许继承限制级标记——误标会让它从树上重建时整句消失
+    await orchestrator.playerAction({ kind: "free", text: "第二天早上，我走进客厅。" });
+    await orchestrator.whenIdle();
+    const dailyPrompt = tree.materialize().find((e) => e.payload?.input === "第二天早上，我走进客厅。")!;
+    expect(dailyPrompt.payload?.nsfw).not.toBe(true);
+    await orchestrator.jumpTo(tree.leafId);
+    expect(agentText(orchestrator)).toContain("第二天早上，我走进客厅。");
+  });
+
+  it("段内跳转之后再退出：净化上下文仍从谱系折出来，原文一句都不回流", async () => {
+    const responses: FakeResponse[] = [
+      {
+        text: '<say id="mio">今天天气真好。</say>',
+        beatDone: true,
+        toolCalls: [{ name: "enter_nsfw", args: {} }],
+      },
+      { text: '<say id="mio">笨蛋……轻一点……</say>', beatDone: true },
+      {
+        text: '<say id="mio">……抱紧我。</say>',
+        beatDone: true,
+        toolCalls: [{ name: "exit_nsfw", args: {} }],
+      },
+      { text: "两人在房间里互诉心意，关系有了突破。" },
+    ];
+    const { orchestrator, tree } = setup(responses);
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    await orchestrator.playerAction({ kind: "free", text: "我轻轻推开门走了进去。" });
+    await orchestrator.whenIdle();
+
+    // 段内做一次结构操作：分支状态整体装回现场，此后退出时手上没有「进入前」的内存快照
+    await orchestrator.jumpTo(tree.leafId);
+    expect(orchestrator.runtimeState.nsfw?.active).toBe(true);
+
+    await orchestrator.playerAction({ kind: "continue" }); // 段内末拍：退出
+    await orchestrator.whenIdle();
+
+    expect(orchestrator.runtimeState.nsfw?.active).toBe(false);
+    const afterExit = agentText(orchestrator);
+    expect(afterExit).toContain("互诉心意");
+    expect(afterExit).not.toContain("轻一点");
+    expect(afterExit).not.toContain("抱紧我");
+    expect(afterExit).not.toContain("我轻轻推开门");
+  });
+
+  it("等摘要期间被销毁：不再惊醒下一拍，也不补发 beat_settled", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const contexts: CapturedContext[] = [];
+    const responses = nsfwRun();
+    responses[3] = { text: "两人在房间里互诉心意，关系有了突破。", gate };
+
+    const { orchestrator, messages, tree } = setup(responses, { contexts });
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    await orchestrator.playerAction({ kind: "continue" }); // 进限制级
+    await orchestrator.whenIdle();
+    const settledBefore = messages.filter((m) => m.type === "beat_settled").length;
+
+    const running = orchestrator.playerAction({ kind: "continue" }); // 退出那一拍
+    await vi.waitFor(() => expect(contexts).toHaveLength(4));
+    // 等摘要期间玩家又排了一句：收束若照常惊醒下一拍，这句话会带着新一轮落进谱系
+    await orchestrator.playerAction({ kind: "prompt", text: "明天去海边吧。" });
+    const nodesBefore = tree.materialize().length;
+    const callsBefore = contexts.length;
+
+    orchestrator.dispose();
+    release();
+    await running;
+    // 等这次收束真的跑完（finally 第一件事就是摘掉自己），再断言它没有顺势开新拍
+    await vi.waitFor(() =>
+      expect((orchestrator as unknown as { pendingSfwSwitch: unknown }).pendingSfwSwitch).toBeNull(),
+    );
+    expect(messages.filter((m) => m.type === "beat_settled")).toHaveLength(settledBefore);
+    expect(tree.materialize()).toHaveLength(nodesBefore);
+    expect(contexts).toHaveLength(callsBefore);
+  });
 });
 
 /** 数模型调用次数：走回旧路的核心判据就是「这一拍没有让剧作家再写一遍」。 */
