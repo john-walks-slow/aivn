@@ -12,6 +12,7 @@ import type { VoiceCatalogService } from "../voiceCatalog.js";
 import type { Exa } from "../exa.js";
 import type { WebImageFetcher } from "../webImage.js";
 import type { AssetTarget, PlayAssets } from "../playAssets.js";
+import type { PlayMusic } from "../playMusic.js";
 import type { PlayFiles } from "../playFiles.js";
 import type { PlaySaves } from "../saves.js";
 import type { PlayStore } from "../store.js";
@@ -84,6 +85,8 @@ export interface PlaywriterKitDeps extends KitCommonDeps {
   emitPreload: (attrs: PreloadAssetAttrs) => void;
   /** 静态素材层（assets/，进 git）：立绘、背景、CG 都走它。未启用生图时为 undefined。 */
   playAssets?: PlayAssets;
+  /** 音乐生成层（落 assets/bgm/）。未启用音乐生成时为 undefined。 */
+  playMusic?: PlayMusic;
   /** 后台发起 bg/cg：宿主负责到货广播 asset_ready / 失败 asset_failed（工具不等图）。 */
   kick: (type: "bg" | "cg", prompt: string, id: string, references?: string[]) => void;
   /** 后台发起立绘：同上的失败广播。references 只在出 neutral 定妆照时有意义。 */
@@ -111,6 +114,8 @@ export interface WorkshopKitDeps extends KitCommonDeps {
   onAsset: (asset: WorkshopAssetView, replaced?: boolean, toolCallId?: string) => void;
   /** 素材生成层（生图未启用时为 undefined，工具直接回不可用）。 */
   playAssets?: PlayAssets;
+  /** 音乐生成层（音乐生成未启用时为 undefined，不注册 generate_bgm）。 */
+  playMusic?: PlayMusic;
   /** 周目（存档）枚举——读故事树前先让 agent 知道有哪几棵。 */
   saves: PlaySaves;
   /** 按 saveId 取存档级操作面（会话面），供 read_lineage 读树。 */

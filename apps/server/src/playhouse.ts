@@ -15,11 +15,14 @@ import type { SettingsStore } from "./settingsStore.js";
 import { createCpaProvider, fetchGatewayModels, resolveCpaModel, supportedModels, type GatewayModel } from "./provider.js";
 import { createTts } from "./tts.js";
 import { createImageBackend } from "./imageFactory.js";
+import { createMusicBackend } from "./musicFactory.js";
 import type { ImageBackend } from "./imageBackend.js";
+import type { MusicBackend } from "./musicBackend.js";
 import { createExa, type Exa } from "./exa.js";
 import { WebImageFetcherImpl, type WebImageFetcher } from "./webImage.js";
 import { readPlayLedgerEntries, type GeneratedLedgerEntry } from "./generatedLedger.js";
 import { PlayAssets, assertAssetStem, assertSpriteId } from "./playAssets.js";
+import { PlayMusic } from "./playMusic.js";
 import { PendingJobs } from "./pendingJobs.js";
 import { PlayFiles } from "./playFiles.js";
 import {
@@ -175,6 +178,8 @@ export class PlayHouse {
   private readonly modelCache = new Map<string, Model<"openai-completions">>();
   private tts!: ReturnType<typeof createTts>;
   private imageBackend!: ImageBackend | null;
+  /** 音乐生成后端（无配置为 null：工坊少一个工具）。进程级，与生图同一套「设置一改就地重建」。 */
+  private musicBackend!: MusicBackend | null;
   /** 工坊联网检索（无 key 为 null：工坊少一个工具）。与 TTS 一样是进程级客户端，不随 runtime 重建。 */
   private exa!: Exa | null;
   /** 网络图下载器（`view_image` 的网址分支）。进程级：无状态，按剧目给的缓存目录不同。 */
@@ -191,6 +196,8 @@ export class PlayHouse {
    * 同一个目标的在飞去重就失效了（两边同时要同一张图会烧两份配额）。
    */
   private readonly playAssets = new Map<string, PlayAssets>();
+  /** 剧目级音乐生成层，理由与 playAssets 相同：reload 只换编排器，各建一份会让同名去重失效。 */
+  private readonly playMusic = new Map<string, PlayMusic>();
   /** 在生成的事的记账处（每剧目一个）：剧作家的轮次、生图、语音合成共用一张表。 */
   private readonly pendingJobs = new Map<string, PendingJobs>();
   /** 排到轮边界的 runtime 重建（剧作家立绘落盘后 play.json 变了）；同剧目串行，避免连着重装。 */
@@ -234,6 +241,7 @@ export class PlayHouse {
     ({ provider: this.provider, model: this.model } = createCpaProvider(this.config));
     this.tts = createTts(this.config);
     this.imageBackend = createImageBackend(this.config);
+    this.musicBackend = createMusicBackend(this.config);
     this.exa = createExa(this.config);
   }
 
@@ -248,6 +256,10 @@ export class PlayHouse {
     this.rebuildClients();
     this.modelCache.clear();
     this.gatewayModelsCache = null;
+    // 按剧目缓存的素材层把 backend 拷进了构造时的现场，不清就还拿旧 key/旧模型出图与出歌
+    // （在飞的那次生成持有自己的引用，照跑完；下一次调用才换新的）。
+    this.playAssets.clear();
+    this.playMusic.clear();
     for (const playId of this.runtimes.keys()) this.rebuildAtBeatBoundary(playId, CONFIG_UPDATED);
     console.log("[aivn] 运行期设置已更新（已加载的剧目将在下一个轮边界换用新设置）");
   }
@@ -420,6 +432,25 @@ export class PlayHouse {
     });
     this.playAssets.set(playId, assets);
     return assets;
+  }
+
+  /** 剧目级音乐层（首次调用时装配；未启用音乐生成为 undefined）。 */
+  private playMusicFor(playId: string, store: PlayStore): PlayMusic | undefined {
+    if (!this.musicBackend) return undefined;
+    const cached = this.playMusic.get(playId);
+    if (cached) return cached;
+    const music = new PlayMusic({
+      playId,
+      store,
+      files: new PlayFiles(store),
+      backend: this.musicBackend,
+      // 只装工坊，通知也只有工坊这一头要收（与生图那条 onAsset 同理）
+      onWrite: (write) => this.runtimes.get(playId)?.workshop.pushWrite(write),
+      onAsset: (asset, replaced, toolCallId) =>
+        this.runtimes.get(playId)?.workshop.pushAsset(asset, replaced, toolCallId),
+    });
+    this.playMusic.set(playId, music);
+    return music;
   }
 
   /** 剧目配置里的模型 id → 模型对象（缓存；缺省是服务端默认模型）。 */
@@ -791,6 +822,7 @@ export class PlayHouse {
       search: this.exa !== null,
       voice: this.voices !== undefined,
       image: this.imageBackend !== null,
+      music: this.musicBackend !== null,
     };
     return {
       // 按角色出：设置页给两张卡各画一排开关，列一个这个角色装不上的能力只会让人以为勾了有用
@@ -1305,6 +1337,7 @@ export class PlayHouse {
         keepRecentTokens: this.config.workshopContext.keepRecentTokens,
       },
       playAssets,
+      playMusic: this.playMusicFor(play.id, store),
       saves: this.library.saves(play.id),
       saveStore: (saveId) => this.library.saveStore(play.id, saveId),
       assetLibrary: this.assetLibrary,

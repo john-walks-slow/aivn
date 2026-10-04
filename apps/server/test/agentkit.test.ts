@@ -68,6 +68,8 @@ function workshopDeps(over: Partial<WorkshopKitDeps> = {}): WorkshopKitDeps {
     saveStore: () => ({}) as never,
     assetLibrary: { list: async () => [] } as never,
     voices: { get: async () => ({ entries: [] }) } as never,
+    // 音乐生成层：没配后端就不注册 generate_bgm（与 image / exa 同一套「配齐才装得上」）
+    playMusic: { generate: async () => ({ id: "bgm_x", path: "assets/bgm/bgm_x.m4a", url: "/u", replaced: false }) } as never,
     ...over,
   };
 }
@@ -95,7 +97,7 @@ function roleToolNames(deps: AgentKitDeps): string[] {
 const names = (kit: AgentKit): string[] => kit.tools.map((t) => t.name).sort();
 
 /** 服务端配置齐全时的能力目录（「暂不生效」那一路单独测）。 */
-const FULL_ENV: CapabilityEnv = { search: true, voice: true, image: true };
+const FULL_ENV: CapabilityEnv = { search: true, voice: true, image: true, music: true };
 
 /** 工具层的全集：把每个角色的可装清单并起来就是目录本身。 */
 const allToolIds = (): string[] => [...new Set(AGENT_ROLES.flatMap((role) => installableTools(role)))].sort();
@@ -257,6 +259,7 @@ describe("agent kit：能力目录（设置页的数据源）", () => {
       "voice",
       "files",
       "image",
+      "music",
       "library",
       "search",
       "lineage",
@@ -268,12 +271,13 @@ describe("agent kit：能力目录（设置页的数据源）", () => {
   });
 
   it("服务端没配的东西亮「暂不生效」，但开关照旧给", () => {
-    const rows = capabilityCatalog("workshop", { search: false, voice: false, image: false });
+    const rows = capabilityCatalog("workshop", { search: false, voice: false, image: false, music: false });
     const voice = rows.find((r) => r.id === "voice")!;
     expect(voice.available).toBe(false);
     expect(voice.unavailableNote).toContain("TTS");
     expect(rows.find((r) => r.id === "search")!.available).toBe(false);
     expect(rows.find((r) => r.id === "image")!.available).toBe(false);
+    expect(rows.find((r) => r.id === "music")!.available).toBe(false);
     // 不依赖服务端配置的能力照旧可用，也不给说明
     expect(rows.find((r) => r.id === "files")!.available).toBe(true);
     expect(rows.find((r) => r.id === "files")!.unavailableNote).toBeUndefined();

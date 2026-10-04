@@ -128,6 +128,16 @@ pnpm --filter @aivn/web dev         # 开发态前端：:5180，/api /plays /ws 
 | 出图并发 | `image.concurrency` | `6` | 并发出图上限。每张图 15–140s，并发太小会拖穿预发射窗口 |
 | 出图超时 ms | `image.timeoutMs` | `180000` | 单图超时。超时按失败处理，舞台保持降级视觉 |
 
+**音乐生成**（可选，不开则工坊没有「生成 BGM」这一手，只能从资源库导入）
+
+| 字段 | JSON 键 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| 启用音乐生成 | `music.enabled` | `false` | BGM 生成总开关。关掉时搭台助手那张能力卡上「生成 BGM」亮「暂不生效」，`generate_bgm` 工具**压根不注册**（不是注册了再失败） |
+| 音乐模型 | `music.model` | `flow-music-lyria-3.5` | 音频模型名。flow2api 上可选 `flow-music-lyria-3.5` / `flow-music-lyria-3-pro` / `musicfx` |
+| 音乐 Key | `music.apiKey` | 空 | **留空 = 用上面那把生图 Key**。key 只走 `x-goog-api-key`，与 `image.format` 无关（音频没有第二种协议形状） |
+| 音乐地址 | `music.baseUrl` | 空 | **留空 = 用上面那个生图地址**。本机 flow2api 一个进程同时挂图片与 `flow-music-*` 音频模型，默认就是共用；音乐单独走别家时才填。同样**别带 `/v1` 或 `/v1beta`** |
+| 音乐生成超时 ms | `music.timeoutMs` | `300000` | 单曲超时。一首 ~175s 的曲子实测要 84s，比出图慢一档，超时给得比出图宽 |
+
 **语音**（可选，不配则无声演出）
 
 | 字段 | JSON 键 | 默认 | 说明 |
@@ -399,6 +409,41 @@ data/
 - 这份记录**只读**：素材描述归你和工坊写（`assets/manifest.json`），出图 prompt 归引擎写，两边不碰同一张表
 - 换个机器 clone 下来也知道这张图当初是怎么生成的；要重出同一张图，工坊会先读这份记录在它基础上改
 - 站内生成的 CG 也会把这条 prompt 摊开在 CG 视图上（台账统一在 `assets/generated.json`，工坊与剧作家的出图都往这里写）
+
+### 音乐生成（可选，关掉则只能从资源库导入 BGM）
+
+搭台助手可以调 `generate_bgm` 生成一首曲子，落进 `assets/bgm/<id>.m4a`，之后剧本里用 `<scene bgm="<id>" />` 引用。它生成时会一并把标题、描述、情绪、适用场景、可循环这些写进 `assets/manifest.json`——**剧作家看不见音频，只能靠这一行选曲**，所以「描述比标题重要」在音乐上同样成立（上面「素材描述」那一节）。
+
+字段、默认值与 JSON 键见上面的「设置页字段总表 → 音乐生成」。配法：
+
+```json
+// 默认共用生图那一份（本机 flow2api 一个进程同时挂图片与 flow-music-* 音频模型）
+"music": {
+  "enabled": true,
+  "model": "flow-music-lyria-3.5"
+  // baseUrl 与 apiKey 留空 = 用上面 image.baseUrl / image.apiKey
+}
+```
+
+```json
+// 音乐单独走别家网关时才把地址与 key 填出来
+"music": {
+  "enabled": true,
+  "baseUrl": "https://your-music-gateway.example",
+  "apiKey": "<your-api-key>",
+  "model": "flow-music-lyria-3-pro",
+  "timeoutMs": 300000
+}
+```
+
+行为与边界：
+
+- **只有搭台助手有这一手**。剧作家的能力卡上不出现「生成 BGM」——一首曲子实测要 84s，而剧作家一轮的预算是 240s，把它塞进演出回路等于整轮都在等一首歌落盘。
+- **先查库再生成**：工具描述里写死了「要曲子先 `list_library`」，库里已有的直接导入更快也省配额。
+- **提示词怎么写**有专门的技能库 `galgame-bgm`（`read_skill` 可读）：配器选型、galgame 味的关键措辞、反例词表（`EDM` / `rock band` / `with vocals` 会把曲子推出门）、以及 `mood` / `scene` 这两栏该怎么填。工具描述里只留契约，知识在技能库里——同一套渐进披露，跟出图那条一致。
+- **同名重生成会覆盖剧目里同名那首**，工具回执会说明覆盖了，覆盖前助手应当先跟用户确认。
+- **音效（脚步、门响、心跳）没有生成口**，库里有就用库里，没有就让用户在素材页上传。
+- 产物是 **M4A 容器（AAC 48kHz 立体声）**，落地扩展名跟着上游返回的 MIME 走（`audio/mp4` → `.m4a`）。资源库的导入与舞台播放本来就走 `.m4a`，不用额外适配。
 
 ### 语音（可选，不配则无声演出）
 

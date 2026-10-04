@@ -71,6 +71,21 @@ export interface ServerConfig {
     timeoutMs: number;
     reference: "none" | "neutral";
   };
+  /**
+   * 音乐生成（BGM）。
+   *
+   * **地址与 key 留空时回落到生图那一份**：音乐与生图在本机走同一个网关
+   * （flow2api 同时挂着图片与 `flow-music-*` 音频模型），填两遍是重复劳动。
+   * 换网关（比如音乐单独走别家）时这两项才需要单独填。
+   */
+  music: {
+    enabled: boolean;
+    baseUrl: string;
+    apiKey: string;
+    /** 音频模型名（flow2api：`flow-music-lyria-3.5` / `flow-music-lyria-3-pro` / `musicfx`）。 */
+    model: string;
+    timeoutMs: number;
+  };
   tts: {
     enabled: boolean;
     keys: string[];
@@ -118,6 +133,15 @@ export function freshSettings(): ServerConfig {
       concurrency: 6,
       timeoutMs: 180_000,
       reference: "neutral",
+    },
+    music: {
+      enabled: false,
+      // 留空 = 跟生图同一个网关（musicBaseUrl/musicApiKey 在读侧回落，见 musicConfigOf）
+      baseUrl: "",
+      apiKey: "",
+      model: "flow-music-lyria-3.5",
+      // 实测一首 ~175s 的曲子要走 84s，比出图慢一档，超时给得比出图宽
+      timeoutMs: 300_000,
     },
     tts: { enabled: false, keys: [], proxy: "", baseUrl: "https://api.fish.audio", concurrency: 2 },
     exa: { enabled: false, keys: [], baseUrl: "https://api.exa.ai", proxy: "", timeoutMs: 20_000 },
@@ -184,6 +208,13 @@ export function settingsFromEnv(env: NodeJS.ProcessEnv): ServerConfig {
       baseUrl: env.STAGE_TTS_BASE_URL ?? "https://api.fish.audio",
       concurrency: parsePositiveInt("STAGE_TTS_CONCURRENCY", env.STAGE_TTS_CONCURRENCY, 2),
     },
+    music: {
+      enabled: env.STAGE_MUSIC_ENABLED !== "false",
+      baseUrl: env.STAGE_MUSIC_BASE_URL ?? "",
+      apiKey: env.STAGE_MUSIC_API_KEY ?? "",
+      model: env.STAGE_MUSIC_MODEL ?? "flow-music-lyria-3.5",
+      timeoutMs: parsePositiveInt("STAGE_MUSIC_TIMEOUT_MS", env.STAGE_MUSIC_TIMEOUT_MS, 300_000),
+    },
     exa: {
       enabled: env.STAGE_EXA_ENABLED !== "false",
       keys: parseKeyList(env.STAGE_EXA_KEYS),
@@ -231,6 +262,7 @@ export interface SettingsPatch {
   workshopContext?: Partial<ServerConfig["workshopContext"]>;
   beatTimeoutMs?: number;
   image?: Partial<ServerConfig["image"]>;
+  music?: Partial<ServerConfig["music"]>;
   tts?: Partial<ServerConfig["tts"]>;
   exa?: Partial<ServerConfig["exa"]>;
 }
@@ -246,6 +278,7 @@ export function applyPatch(base: ServerConfig, patch: SettingsPatch): { next: Se
     ...base,
     workshopContext: { ...base.workshopContext },
     image: { ...base.image },
+    music: { ...base.music },
     tts: { ...base.tts },
     exa: { ...base.exa },
   };
@@ -254,7 +287,7 @@ export function applyPatch(base: ServerConfig, patch: SettingsPatch): { next: Se
     next[key] = value;
     changed.push(key);
   };
-  const putIn = <K extends "image" | "tts" | "exa">(
+  const putIn = <K extends "image" | "music" | "tts" | "exa">(
     block: K,
     key: keyof ServerConfig[K],
     value: ServerConfig[K][keyof ServerConfig[K]],
@@ -313,6 +346,15 @@ export function applyPatch(base: ServerConfig, patch: SettingsPatch): { next: Se
     if (image.reference !== undefined) {
       putIn("image", "reference", parseEnum("垫图策略", image.reference, ["none", "neutral"] as const, "neutral"));
     }
+  }
+
+  const music = patch.music;
+  if (music) {
+    if (music.enabled !== undefined) putIn("music", "enabled", music.enabled);
+    if (music.baseUrl !== undefined) putIn("music", "baseUrl", music.baseUrl.trim().replace(/\/$/, ""));
+    if (music.apiKey !== undefined) putIn("music", "apiKey", music.apiKey.trim());
+    if (music.model !== undefined) putIn("music", "model", music.model.trim());
+    if (music.timeoutMs !== undefined) putIn("music", "timeoutMs", positiveInt("音乐生成超时", music.timeoutMs));
   }
 
   const tts = patch.tts;
@@ -436,4 +478,18 @@ function dedupe(parts: readonly string[]): string[] {
 export function imagePendingTtlMs(image: ServerConfig["image"]): number {
   const batches = Math.ceil(DEFAULT_MAX_QUEUE / Math.max(1, image.concurrency));
   return image.timeoutMs * (1 + batches);
+}
+
+/**
+ * 音乐后端的连接参数：**自己的地址/key 留空就回落到生图那一份**。
+ *
+ * 本机 flow2api 一个进程同时挂着图片与 `flow-music-*` 音频模型，两边填两遍地址与 key
+ * 是纯粹的重复劳动；换网关（音乐单独走别家）时单独填这两项即可。
+ * 回落只在这一处发生，界面与配置文件里始终是「音乐自己那两项」。
+ */
+export function musicConnectionOf(config: ServerConfig): { baseUrl: string; apiKey: string } {
+  return {
+    baseUrl: config.music.baseUrl.trim() || config.image.baseUrl,
+    apiKey: config.music.apiKey.trim() || config.image.apiKey,
+  };
 }

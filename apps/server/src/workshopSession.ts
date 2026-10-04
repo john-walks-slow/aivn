@@ -41,6 +41,7 @@ import {
 } from "./compaction.js";
 import { createAgentKit, enabledCapabilitiesFor, type AgentKit } from "./agentkit/kit.js";
 import type { PlayAssets } from "./playAssets.js";
+import type { PlayMusic } from "./playMusic.js";
 import { WorkshopThreads, type ThreadCompaction, type WorkshopThread } from "./workshopThreads.js";
 
 /**
@@ -63,6 +64,8 @@ export interface WorkshopSessionOptions {
    * 未启用生图时不传：工具回「生图未启用」，提示词也不注入出图章节。
    */
   playAssets?: PlayAssets;
+  /** 音乐生成层（未启用音乐生成时不传：不注册 generate_bgm，提示词也不提出歌）。 */
+  playMusic?: PlayMusic;
   /** 周目（存档）管理面：read_lineage 前先列周目。 */
   saves: PlaySaves;
   /** 按 saveId 取存档级操作面（读故事树只走磁盘 session.json，不建 runtime）。 */
@@ -119,6 +122,7 @@ export class WorkshopSession {
       onWrite: (write) => this.broadcastWrite(write),
       onAsset: (asset, replaced, toolCallId) => this.broadcastAsset(asset, replaced, toolCallId),
       playAssets: opts.playAssets,
+      playMusic: opts.playMusic,
       saves: opts.saves,
       saveStore: opts.saveStore,
       assetLibrary: opts.assetLibrary,
@@ -382,9 +386,14 @@ export class WorkshopSession {
     this.broadcastWrite(write);
   }
 
-  /** 转发一次素材到货事件（同 pushWrite）。外部推来的没有调用号，走消息级预览。 */
-  pushAsset(asset: WorkshopAssetView): void {
-    this.broadcastAsset(asset);
+  /**
+   * 转发一次素材到货事件（同 pushWrite）。
+   *
+   * `toolCallId` 由产它的工具带来（生图 / BGM 生成），据此把播放器归位到那次调用的行上；
+   * 外部推来的（资源库导入那条路）没有调用号，走消息级预览。
+   */
+  pushAsset(asset: WorkshopAssetView, replaced = false, toolCallId?: string): void {
+    this.broadcastAsset(asset, replaced, toolCallId);
   }
 
   /** 素材到货：先瞬态播报（对话流立刻可见，带调用号的挂到那次调用的行上），收束时并入段落。 */

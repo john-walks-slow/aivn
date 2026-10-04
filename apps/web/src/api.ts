@@ -185,6 +185,19 @@ export interface Settings {
     timeoutMs: number;
     reference: "none" | "neutral";
   };
+  /**
+   * 音乐生成（BGM）。`baseUrl` / `apiKey` 留空 = 回落到上面 `image` 那一份
+   * （本机 flow2api 一个进程同时挂图片与 `flow-music-*` 音频模型）。
+   */
+  music: {
+    enabled: boolean;
+    baseUrl: string;
+    apiKey: string;
+    apiKeySet: boolean;
+    /** 音频模型名（flow2api：`flow-music-lyria-3.5` / `flow-music-lyria-3-pro` / `musicfx`）。 */
+    model: string;
+    timeoutMs: number;
+  };
   tts: KeyListSettings & { enabled: boolean; proxy: string; baseUrl: string; concurrency: number };
   exa: KeyListSettings & { enabled: boolean; baseUrl: string; proxy: string; timeoutMs: number };
 }

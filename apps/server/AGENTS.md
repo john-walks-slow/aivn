@@ -68,6 +68,8 @@
 - CG 页的生成台账只有 `assets/generated.json` 一份（`generatedLedger.ts` 的 `readPlayLedgerEntries`）。
 - **一张表一个写者**：`assets/manifest.json`（素材描述）归工坊与用户，`assets/generated.json`（站内出图这次用的 prompt 记录，进 git、只读）归引擎——两边都动一张表时，工坊补一条中文描述就能把引擎记的 prompt 整条替换掉（2026-10-01 实测）。
 - **`manifest.json` 现在有两个写者，好在键位不重叠**：`title`/`description`/`tags` 这些描述归工坊与用户，呈现声明（`framing`/`stature`/`anchor`/`title`）与差分键归引擎出图与素材页；两边都是「读-改-写整表」，所以一律走 `PlayAssets.withManifest` 那把锁（同一剧目串行），不许各自读一遍再整表覆盖。
+- **音乐生成是第三个写者，但键仍不重叠**：`playMusic.ts` 的 `PlayMusic` 落 `assets/bgm/`，只补它确知的那几格（`title`/`mood`/`scene`/`loop`/`volume`/`source`），同样走 `withPlayConfigLock`；`description` 不动（归工坊与用户）。它**刻意不并进 `PlayAssets`**——那个类的垫图、抠底、画幅档位、立绘差分基准全是给图准备的，音乐一条都用不上，硬塞会让一个类同时管两件不相干的事。
+- **音乐只装工坊**（`generate_bgm`，能力「生成 BGM」，`roles: ["workshop"]`）：一首 ~175s 的曲子实测要 84s，剧作家一轮 240s，塞进演出回路等于整轮都在等一首歌落盘。**产物是 M4A（AAC 48kHz 立体声），落盘扩展名跟着上游返回的 mime 走**（`audio/mp4` → `.m4a`）——写死 `.mp3` 会让浏览器按错的 codec 播，而 `.m4a` 这条链路（`http.ts` 的 MIME、`store.listAssets` 的过滤、素材页的 `<audio>`、`stemMap`）本来就通。提示词的最佳实践在技能库 `galgame-bgm`，工具描述只留契约，与出图那条渐进披露同一套规矩。
 
 ## 立绘：后缀、景别与画幅
 
@@ -167,7 +169,8 @@
 
 ## 技能库与新剧目初始状态
 
-- 技能库（仓库 `skills/<name>/SKILL.md` + frontmatter）只装**跨剧目的通用做法速查**，只给工坊（`read_skill`，角色标记 `workshop`）——这部剧自己的画风锚点与创作口径一律留在剧目记忆里（`memory/always/craft.md` 与设定卡，每轮本来就注入），不给剧作家开技能通道：教模型调一个装不进去的工具，它只会反复空转烧 token。
+- 技能库（**`apps/server/skills/<name>/SKILL.md`** + frontmatter）只装**跨剧目的通用做法速查**，只给工坊（`read_skill`，角色标记 `workshop`）——这部剧自己的画风锚点与创作口径一律留在剧目记忆里（`memory/always/craft.md` 与设定卡，每轮本来就注入），不给剧作家开技能通道：教模型调一个装不进去的工具，它只会反复空转烧 token。
+- **技能只认 `apps/server/skills/`**：目录由 `paths.ts` 的 `workshopSkillsDirOf` 从模块位置反推，打包时按 `apps/server/skills` 这条仓库相对路径进快照（`scripts/build-exe.mjs` 的随包资源清单）。**仓库根那个 `skills/` 不参与打包、`read_skill` 也读不到**（根目录那份 `galgame-audio` 是选题与授权调研记录，写给人看的，不是技能文件）——新技能放错目录的症状很安静：不报错，`skillsPrompt()` 就是不列它。
 - **新剧目的 premise 与 craft 落盘就是空文件**（`createEmpty` 不再写模板）：premise 空着开不了演（就绪门），craft.md 空着只是少一层口径（节奏与素材来源走 `DEFAULT_CRAFT`）。引导文案只放在前端输入框 placeholder 里——模板正文写进文件会让人以为「已经填过了」，还会让就绪门把一份空模板判成前提已就位。
 
 ## 角色卡（characters/）

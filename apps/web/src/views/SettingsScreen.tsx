@@ -32,6 +32,7 @@ type Draft = {
   workshopContext: Settings["workshopContext"];
   beatTimeoutMs: number;
   image: Settings["image"];
+  music: Settings["music"];
   tts: Omit<Settings["tts"], "keys"> & { keys: string };
   exa: Omit<Settings["exa"], "keys"> & { keys: string };
 };
@@ -51,6 +52,7 @@ function draftOf(next: Settings): Draft {
     workshopContext: { ...next.workshopContext },
     beatTimeoutMs: next.beatTimeoutMs,
     image: { ...next.image },
+    music: { ...next.music },
     tts: { ...next.tts, keys: "" },
     exa: { ...next.exa, keys: "" },
   };
@@ -402,6 +404,52 @@ export function SettingsScreen() {
                 onChange={(v) => setDraft({ ...draft, image: { ...draft.image, timeoutMs: v } })}
               />
             </div>
+          </Group>
+
+          <Group title="音乐生成">
+            <Field label="启用音乐生成" hint="关掉后工坊不再有「生成 BGM」这一手，只能从资源库导入">
+              <input
+                type="checkbox"
+                checked={draft.music.enabled}
+                onChange={(e) => setDraft({ ...draft, music: { ...draft.music, enabled: e.target.checked } })}
+              />
+            </Field>
+            <Field label="音乐模型" hint="flow2api：flow-music-lyria-3.5 / flow-music-lyria-3-pro / musicfx">
+              <input
+                value={draft.music.model}
+                onChange={(e) => setDraft({ ...draft, music: { ...draft.music, model: e.target.value } })}
+              />
+            </Field>
+            <Field
+              label="音乐 Key"
+              hint={
+                draft.music.apiKey
+                  ? "已单独设置——留空则回落到「出图 Key」"
+                  : settings.image.apiKeySet
+                    ? `留空 = 跟出图同一个网关与 Key（当前 ${settings.image.apiKey}）`
+                    : "尚未配置——出图那把 Key 也没填"
+              }
+            >
+              <input
+                type="password"
+                value={draft.music.apiKey}
+                placeholder="留空 = 用出图那把"
+                onFocus={(e) => e.target.select()}
+                onChange={(e) => setDraft({ ...draft, music: { ...draft.music, apiKey: e.target.value } })}
+              />
+            </Field>
+            <Field label="音乐地址" hint="留空 = 用出图地址。服务根地址，不要带 /v1 或 /v1beta">
+              <input
+                value={draft.music.baseUrl}
+                placeholder="留空 = 用出图地址"
+                onChange={(e) => setDraft({ ...draft, music: { ...draft.music, baseUrl: e.target.value } })}
+              />
+            </Field>
+            <NumField
+              label="音乐生成超时 ms"
+              value={draft.music.timeoutMs}
+              onChange={(v) => setDraft({ ...draft, music: { ...draft.music, timeoutMs: v } })}
+            />
           </Group>
 
           <Group title="语音">

@@ -12,6 +12,7 @@ import { createSetCraftTool } from "./craftTool.js";
 import { createGenerateImageTool } from "./imageTool.js";
 import { createLibraryTools } from "./libraryTool.js";
 import { createLineageTools } from "./lineageTool.js";
+import { createGenerateMusicTool } from "./musicTool.js";
 import { createMemoryTools } from "./memoryTool.js";
 import { createRecutSpriteTool } from "./recutTool.js";
 import { createViewImageTool } from "./viewTool.js";
@@ -56,6 +57,8 @@ export interface CapabilityEnv {
   voice: boolean;
   /** 生图后端。 */
   image: boolean;
+  /** 音乐生成后端。 */
+  music: boolean;
 }
 
 interface CapabilityEntry {
@@ -151,6 +154,16 @@ const CATALOG_ROWS = [
     tools: ["generate_image", "recut_sprite"],
     needs: "image",
     unavailableNote: "服务端没配生图后端，暂不生效",
+  },
+  {
+    id: "music",
+    label: "生成 BGM",
+    desc: "库里没有合适的曲子时自己写一首，垫到剧目里。",
+    group: "assets",
+    roles: ["workshop"],
+    tools: ["generate_bgm"],
+    needs: "music",
+    unavailableNote: "服务端没配音乐生成后端，暂不生效",
   },
   {
     id: "library",
@@ -265,6 +278,8 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   read_memory_detail: { label: "读记忆卡详情", roles: ["playwriter"] },
   search_archive: { label: "检索历史往事", roles: ["playwriter"] },
   generate_image: { label: "生成剧目素材", roles: ["playwriter", "workshop"] },
+  // 只装工坊：一首 ~175s 的曲子要 84s，剧作家的一轮等不起；音乐又是制作资产。
+  generate_bgm: { label: "生成 BGM", roles: ["workshop"] },
   recut_sprite: { label: "重抠立绘底", roles: ["workshop"] },
   read_skill: { label: "读技能库", roles: ["workshop"] },
   set_craft: { label: "设置写作参数", roles: ["workshop"] },
@@ -481,6 +496,8 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
       onAsset: (path, url, kind, replaced, toolCallId) =>
         deps.onAsset({ kind, path, url }, replaced, toolCallId),
     }),
+    // 没配音乐后端就不注册：必然失败的工具只会诱使模型空转
+    ...createGenerateMusicTool({ music: deps.playMusic }),
     createReadSkillTool(),
     createSetCraftTool(deps),
     ...createLineageTools(deps),

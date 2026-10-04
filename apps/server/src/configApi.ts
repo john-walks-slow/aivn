@@ -62,6 +62,8 @@ export interface SettingsView {
   lanAccess: boolean;
   /** 生图（格式 + 连接 + 档位）：key 只回掩码。 */
   image: ServerConfig["image"] & { apiKeySet: boolean };
+  /** 音乐生成（BGM）：地址与 key 留空 = 跟生图同一个网关（见 musicConnectionOf）。 */
+  music: Omit<ServerConfig["music"], "apiKey"> & { apiKey: string; apiKeySet: boolean };
   tts: Omit<ServerConfig["tts"], "keys"> & KeyListView;
   /** 工坊联网检索（Exa）。 */
   exa: Omit<ServerConfig["exa"], "keys"> & KeyListView;
@@ -75,6 +77,7 @@ export interface SettingsViewPatch {
   workshopContext?: Partial<SettingsView["workshopContext"]>;
   beatTimeoutMs?: number;
   image?: Partial<SettingsView["image"]>;
+  music?: Partial<SettingsView["music"]>;
   tts?: Partial<SettingsView["tts"]>;
   exa?: Partial<SettingsView["exa"]>;
 }
@@ -120,6 +123,7 @@ export class SettingsApi {
       passwordSet: config.password !== "",
       lanAccess: config.lanAccess,
       image: { ...config.image, apiKey: mask(config.image.apiKey), apiKeySet: config.image.apiKey !== "" },
+      music: { ...config.music, apiKey: mask(config.music.apiKey), apiKeySet: config.music.apiKey !== "" },
       tts: { ...withoutKeys(config.tts), ...keyListView(config.tts.keys) },
       exa: { ...withoutKeys(config.exa), ...keyListView(config.exa.keys) },
     };
@@ -153,6 +157,12 @@ export class SettingsApi {
       next.image = { ...image };
       // 掩码是显示值，不该被当作新密钥写回去
       if (image.apiKey === undefined || image.apiKey === mask(config.image.apiKey)) delete next.image.apiKey;
+    }
+    const music = patch.music;
+    if (music) {
+      next.music = { ...music };
+      // 掩码是显示值，不该被当作新密钥写回去
+      if (music.apiKey === undefined || music.apiKey === mask(config.music.apiKey)) delete next.music.apiKey;
     }
     if (patch.tts) {
       const { keys: keyText, ...rest } = patch.tts;
