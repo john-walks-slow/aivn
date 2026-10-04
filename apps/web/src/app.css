@@ -5065,6 +5065,14 @@ select:focus {
   line-height: 1;
   cursor: pointer;
 }
+/* 窄屏：排队面板占掉大半个宽度，跟左上角那排常驻标识必然压在一起（360px 下标识到 192px、
+   面板从 68px 起）。标识是常驻的、面板是临时的，让面板整块下移一行避让；宽屏上两者仍平齐。 */
+@media (max-width: 520px) {
+  .prompt-queue,
+  .prompt-queue-badge {
+    top: calc(96px + env(safe-area-inset-top, 0px));
+  }
+}
 .prompt-queue-badge-icons {
   display: flex;
   gap: 5px;
