@@ -770,7 +770,7 @@ function suffixFor(spec: AssetSpec, prompt: string, sentReferences: number): str
     return `${prompt}. ${genericReferenceSuffix(spec.explicitReferences ?? [])}`;
   }
   if (spec.expression === NEUTRAL) {
-    // 定妆照垫图：先给白底抠底的构图约束，再点明这是哪张参考图的同一个人。
+    // 定妆照垫图：先给色键底抠底的构图约束，再点明这是哪张参考图的同一个人。
     // 顺序不能反——参考图会带背景与景别，构图约束压后面才盖得住它。
     return sentReferences > 0
       ? `${prompt}, ${neutralSuffix(spec.framing)} ${neutralReferenceTail(spec.framing)}`
@@ -805,7 +805,7 @@ function genericReferenceSuffix(refs: ResolvedReference[]): string {
  *
  * 与 `identitySuffix`（差分那条）分工不同——差分垫的是自家 neutral，说的是「只改表情」；
  * 这里垫的是外部图（用户给的既有角色图、原画），要的是「把那个人的样子搬到这张定妆照上」。
- * 姿势、白底、画风仍由 `neutralSuffix` 管，这一段只补身份。
+ * 姿势、底色、画风仍由 `neutralSuffix` 管，这一段只补身份。
  */
 function neutralReferenceTail(framing: SpriteFraming | undefined): string {
   if ((framing ?? DEFAULT_SPRITE_FRAMING) === "square") {
@@ -837,22 +837,39 @@ function referenceSuffix(characters: ReferenceCharacter[]): string {
 
 
 /**
+ * 抠底底色：**单一纯色，且这个颜色不出现在角色身上**。
+ *
+ * 抠底（`src/cutout.ts`）是纯色键：离底色够近的像素一律算背景，不分内外、不看连通性。
+ * 所以底色一旦和角色撞色，角色身上那块就跟着被抠穿——「纯白底 + 白袜子」就是撞色的极端，
+ * 算法救不了，是出图这一步的责任：底色必须选成角色配色里没有的颜色。
+ *
+ * 默认纯绿 #00FF00；角色本身是绿发/绿衣就换纯品红或纯蓝。选了哪个由模型按角色自己定，
+ * 抠底端不需要知道——它从整圈边框量出实际底色。
+ *
+ * 不许渐变、投影、纹理、装饰：色键只认一种颜色，任何过渡都是抠不干净的白边。
+ */
+const KEY_BACKGROUND =
+  "Background is one single flat solid colour used as a chroma key, chosen to appear nowhere on the " +
+  "character themselves; default pure green #00FF00, but switch to pure magenta #FF00FF or pure blue " +
+  "#0000FF if the character is green. No gradient, no shadow, no texture, no decoration, no text.";
+
+/**
  * 立绘后缀：**只写与主体是人还是物无关的构图与画风约束**。
  *
  * 人形专属的那一小段（手臂留白、头顶留白）由 `POSE_TAIL` 单独提供，只在人形取景时拼；
  * 非人走 `square`，不碰它——给猫套上「手臂与躯干不能留窄缝」只会得到一只人形猫。
  *
  * 这一段留白给抠底：后半段不是修饰词是硬约束，`src/cutout.ts` 的全局色键抠底要求
- * 2D 平涂 + 纯白纯色底，3D 渲染的白衣离底色只有几格色差，抠底会连人带和服一起啃掉；
+ * 2D 平涂 + **单一纯色底**（3D 渲染的渐变与投影会让底色散成一片灰，色键抠不干净）；
  * 剪影连成一片就没法分割人物与底色。
  *
  * 它也不描述任何人物特征——每个词都会被当成设定印进图里。早先这里写的是
- * 「between the twin tails」（为了发梢与身体之间留纯白），等于给所有角色定了个双马尾：
+ * 「between the twin tails」（为了发梢与身体之间留底），等于给所有角色定了个双马尾：
  * 实测 prompt 里明写 pink long straight hair，出来的仍是双马尾。要什么发型由角色卡说。
  */
 const COMMON_TAIL =
   ". Japanese anime style 2D illustration, flat cel shading with clean crisp lineart, NOT a 3D render, " +
-  "no 3D CGI look. Plain solid pure white background, no text, no shadow, no gradient, no vignette.";
+  "no 3D CGI look. " + KEY_BACKGROUND;
 
 /**
  * 留白约束：人形专属。舞台按统一头顶留白摆位（见 app.css 的 .theater-sprite）。
@@ -862,12 +879,12 @@ const COMMON_TAIL =
  * 姿势就此终身固定。站姿还是坐姿、什么机位，属于角色气质，由调用方写（`imageTool.ts` 的
  * PROMPT_RULES 已经要求「姿势、机位、景别都要显式写」），引擎不覆盖。
  *
- * 留在这里的是抠底真要的那条：手臂与躯干之间**不能留窄白缝**——窄缝面积小于 `cutout.ts` 的
- * `minHole`，会被当成眼白那样的高光填回前景，剪影里多一块白。要么贴住，要么彻底分开。
+ * 留在这里的是抠底真要的那条：手臂与躯干之间**不能留窄缝**——色键够不着那条窄缝，
+ * 人会被拆成两块轮廓（要么贴住，要么彻底分开、让底色能灌进去）。
  */
 const POSE_TAIL =
-  ", arms either resting against the body or clearly separated from it, never with a narrow white gap " +
-  "between an arm and the torso" +
+  ", arms either resting against the body or clearly separated from it, never with a narrow sliver of " +
+  "background trapped between an arm and the torso" +
   // 人物矮的那一头空间本来就该空得多，不点明的话模型会把所有角色都顶到画幅上沿，
   // 矮个子的头顶就直接贴边了。
   ". Shorter characters may leave more empty space above the head, and taller characters may leave less, " +
@@ -888,11 +905,11 @@ function humanSuffix(framing: SpriteFraming | undefined): string {
 /**
  * 主体非人（`square`）时的立绘后缀：只说「完整入画 + 四周留白」。
  *
- * 抠底靠的是「主体与纯白底之间有缝」，这与人形无关，所以留白这句留着；
+ * 抠底靠的是「主体四周有一圈底色」，这与人形无关，所以留白这句留着；
  * 姿态与「头顶留白」都去掉——猫没有双臂，吊灯没有头顶。
  */
 const PROP_TAIL =
-  ", the entire subject fully inside the frame with clear empty white space all around it, " +
+  ", the entire subject fully inside the frame with clear empty background space all around it, " +
   "nothing cropped by the frame edges";
 
 function neutralSuffix(framing: SpriteFraming | undefined): string {
@@ -928,7 +945,7 @@ const NEUTRAL_LEAD: Record<SpriteFraming, string> = {
  */
 const IDENTITY_TAIL =
   "Same 2D flat cel-shaded anime illustration style, NOT a 3D render, " +
-  "same plain solid pure white background, no text, no shadow, no gradient.";
+  "same single flat solid background colour as the reference image, no text, no shadow, no gradient.";
 const HUMAN_IDENTITY =
   "Same character as the reference image: identical hairstyle, hair color, eye color, outfit and body type. " +
   "Change only the facial expression.";

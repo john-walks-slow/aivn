@@ -144,7 +144,7 @@ describe("PlayAssets：原地重抠（抠底参数的后悔药）", () => {
     const source = store.spriteSourceDir("mio", "neutral.jpg");
     expect(existsSync(source)).toBe(true); // 留底在 media-cache/：抠底前那一张原片，跑批产物不进 git
 
-    const tuning = { strong: 4, weak: 20 };
+    const tuning = { tolerance: 20 };
     const recut = await assets.recut({ kind: "sprite", characterId: "mio", expression: "neutral" }, tuning);
     expect(calls).toHaveLength(1); // 重新出图会多烧一份配额，这里一次都没有
     expect(recut.path).toBe("assets/sprites/mio/neutral.png");
@@ -316,7 +316,7 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(prompt).not.toMatch(/face/i);
     // 但通用构图与画风约束还在，抠底靠的就是这层
     expect(prompt).toMatch(/entire subject fully inside the frame/i);
-    expect(prompt).toMatch(/pure white background/i);
+    expect(prompt).toMatch(/single flat solid colour used as a chroma key/i);
   });
 
   it("full/half（人）：姿势由调用方写，引擎只补抠底要的留白", async () => {
@@ -333,8 +333,8 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(prompt).not.toMatch(/front-facing/i);
     expect(prompt).not.toMatch(/standing pose/i);
     expect(prompt).toContain("leaning on a windowsill, three-quarter view");
-    // 抠底要的那条留着：手臂与躯干之间的窄白缝会被当成高光填回前景
-    expect(prompt).toMatch(/narrow white gap/i);
+    // 抠底要的那条留着：手臂与躯干之间夹着一条窄缝时，这段剪影会被切成两块
+    expect(prompt).toMatch(/narrow sliver of background/i);
     expect(prompt).toMatch(/above the head/i);
   });
 
@@ -508,10 +508,10 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.references).toHaveLength(1);
     expect(calls[0]!.references![0]!.mimeType).toBe("image/png");
-    // prompt 中拼装了定妆照垫图引导，且包含白底留白与抠底留白约束
+    // prompt 中拼装了定妆照垫图引导，且包含色键底与抠底留白约束
     expect(calls[0]!.prompt).toMatch(/Based on the attached reference image/);
-    expect(calls[0]!.prompt).toMatch(/narrow white gap/i);
-    expect(calls[0]!.prompt).toMatch(/pure white background/);
+    expect(calls[0]!.prompt).toMatch(/narrow sliver of background/i);
+    expect(calls[0]!.prompt).toMatch(/single flat solid colour used as a chroma key/i);
     expect(existsSync(files.absoluteOf("assets/sprites/mio/neutral.png"))).toBe(true);
   });
 
@@ -875,7 +875,7 @@ describe("PlayAssets：出图留痕", () => {
     // 后缀里的每个词都会被当成设定印进图里：这里曾写着「between the twin tails」，
     // 于是所有角色都长出双马尾——prompt 明写 long straight hair 也救不回来。
     const sent = calls[0]!.prompt;
-    expect(sent).toContain("never with a narrow white gap between an arm and the torso");
+    expect(sent).toContain("never with a narrow sliver of background trapped between an arm and the torso");
     expect(sent.toLowerCase()).not.toMatch(/twin|tail|braid|ponytail/);
   });
 });

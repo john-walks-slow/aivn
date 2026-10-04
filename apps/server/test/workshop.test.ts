@@ -579,9 +579,9 @@ describe("工坊工具：generate_image", () => {
     const events: GeneratedPlayAsset[] = [];
     const tools = createWorkshopTools(deps({ playAssets: assets, onAsset: (asset: GeneratedPlayAsset) => events.push(asset) }));
     const recut = tools.find((t) => t.name === "recut_sprite")!;
-    const result = await recut.execute("c1", { characterId: "mio", expression: "neutral", cutout: { weak: 12, minHole: 40 } });
+    const result = await recut.execute("c1", { characterId: "mio", expression: "neutral", cutout: { tolerance: 64 } });
     expect(recuts).toEqual([
-      { kind: "sprite", characterId: "mio", expression: "neutral", tuning: { weak: 12, minHole: 40 } },
+      { kind: "sprite", characterId: "mio", expression: "neutral", tuning: { tolerance: 64 } },
     ]);
     const out = JSON.stringify(result);
     expect(out).toContain("画面没变");

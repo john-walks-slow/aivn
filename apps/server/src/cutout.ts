@@ -1,37 +1,36 @@
 import sharp from "sharp";
 
 /**
- * 立绘抠底层：把「纯色底 + 角色」的生图原片转成引擎能直接压在场景上的透明 PNG。
+ * 立绘抠底层：把「单一纯色底 + 角色」的生图原片转成引擎能直接压在场景上的透明 PNG。
  *
  * 为什么必须有这一层：舞台把立绘当 `<img>` 直接叠在背景图上（`StageTheater.tsx`），
- * 不抠底就是一块不透明矩形挂在画面中央。demo 剧目里的立绘全是 32bit RGBA，
- * 工坊出的图若不带 alpha，等于把剧目资产约定改坏了。
+ * 不抠底就是一块不透明矩形挂在画面中央。
  *
- * 算法五步，每步都对着 2026-09-29 柚子社四角色真图（768x1376 纯白底）量过：
- * 1. **底色 = 整圈边框的逐通道中位数**。不能用均值（角落水印会拽偏），
- *    也不能只取几个角上的种子点——两个角各自被角色/描边污染时，中位数会落在两个白之间
- *   的 `(253,255,254)` 这种假色上，于是容差怎么调都抠不动（实测阈值 1 只抠掉 0.3%）。
- *   整圈取中位数后三张图都精确回到 `RGB(255,255,255)`。
- * 2. **全局色键**，不是邻接比色。邻接比色每步拿上一个像素当基准，会沿长路径逐格漂移，
- *   漂移版实测把前景吃到 0.1~2.2%，直接触发「几乎整张图都被判成背景」。
- * 3. **滞后阈值**：强阈值（默认 1/255）确定「一定是底色」的种子，从种子沿 8 邻域
- *   在弱阈值（默认 8/255）内漫延。孤立的白衬衫/眼白碰不到种子就保住，
- *   轮廓上那圈压缩出来的近白杂边则跟着底色一起走——单阈值做不到这个分离。
- *   实测 2D 图上贴边近白残留 3605px → 13px，代价是 16px（0.003%）误抠。
- * 4. **连通域筛背景**：只有贴画面边、或面积 ≥ `minHole` 的块算真背景。
- *   面积小的填回前景——眼白高光、牙缝靠这条救回来，而发丝间/袖腋下的真空隙
- *   （实测 9951 / 9941px）照抠。`minHole` 调小 = 抠得更狠。
- * 5. **只留最大前景连通域**，再落画布：裁到人物外框、等比缩放、底部居中放进 9:16 画布，
- *   锚点 [0.5, 1.0]——引擎换表情时角色不会晃动。
+ * 底色由出图提示词指定成**一个不与角色配色重复的纯色**（`playAssets.ts` 的 `KEY_BACKGROUND`），
+ * 所以抠底只按颜色来：离底色够近的像素一律算背景——不分内外、不看连通性、不管面积。
+ * 「白衣服白袜子」那类与底色撞色的角色内容由**选底色**这一步挡掉，不再由算法去猜。
+ * （2026-10-04 之前是白底 + 滞回阈值 + 连通域筛内外那一套，换成色键底之后整套删掉。）
+ *
+ * 算法四步：
+ * 1. **底色 = 整圈边框的逐通道中位数**。不能用均值（角落水印会拽偏），也不能只取几个角上的
+ *    种子点；整圈取中位数实测精确回到模型画的那片底色。
+ * 2. **全局色键**：逐通道最大差 ≤ `tolerance` 的像素判成背景。不看连通性是必须的——
+ *    底色本来就会出现在人物内部（腋下、腿间的真空隙），按连通性筛会整块漏掉
+ *    （实测绿幕原片腿间残留 1477px）。
+ * 3. **边缘 alpha 逐像素反解真实覆盖率**：底色 B 已知，合成方程 I = a·F + (1-a)·B 直接给出
+ *    a = (B-I)/(B-F)。掩膜边界**两侧**各 `edgeBand` 像素都解一遍：纯底色解出 0，
+ *    半覆盖解出中间值，边缘渗进去的底色被 `unblend` 扣掉。没有这一步，深色舞台底上
+ *    就是一圈白边晕（旧公式给每圈边界像素垫了 128 的 alpha 地板）。
+ * 4. **只留人物、落画布**：裁到人物外框、等比缩放、底部居中放进 9:16 画布，
+ *    锚点 [0.5, 1.0]——引擎换表情时角色不会晃动。
  *
  * 抠不出干净结果就抛错，由调用方把原因回给模型重试，不落盘半残图。
  *
  * **调用方必须传原始下载字节，不要先过一遍 sharp 重编码。** 后端回来的是 JPEG 时，
- * 二次编码会重新抖一遍轮廓：同一张图误抠从 0.003%（16px）涨到 0.455%（2107px）。
- * 算法本身没错，错的是喂进来的像素。
+ * 二次编码会重新抖一遍轮廓，误抠面积翻百倍。算法本身没错，错的是喂进来的像素。
  *
  * 已知天花板：源图轮廓上**没有半透明过渡带**（实测 255 直接跳到深色），
- * 所以阶梯状锯齿是模型画出来的，算法无从软化；形态学平滑实测反而把 1px 缺口从 3385 推到 4419。
+ * 所以阶梯状锯齿是模型画出来的，算法无从软化；形态学平滑实测反而加重锯齿。
  * 真要解只有提高出图分辨率。
  */
 
@@ -52,26 +51,20 @@ export interface CutoutResult {
 export interface CutoutOptions {
   /** 目标画布高（宽按 9:16 推）。 */
   canvasHeight?: number;
-  /** 强阈值：与底色的通道差小于它就算「确定是底色」，点着它当漫延种子。调大 = 抠得更狠。 */
-  strong?: number;
-  /** 弱阈值：种子沿 8 邻域在此范围内漫延。调大 = 顺着轮廓多啃几像素，毛边更干净。 */
-  weak?: number;
-  /** 背景连通域小于此面积就填回前景。调大 = 抠得更保守（眼白高光会被护回来）。 */
-  minHole?: number;
+  /** 色键容差：逐通道最大差不超过它的像素一律算背景。调大 = 抠得更狠。 */
+  tolerance?: number;
   /**
    * 喂给色键的那份副本的高斯模糊半径。源图是 JPEG，环纹伤的是掩膜的**轮廓形状**，
    * 不是像素颜色——所以色键在一张降噪副本上跑，alpha 仍在原图上解。0 = 不模糊。
    */
   keySmooth?: number;
-  /** 反解带宽（像素）：前景里离背景这么近的像素逐个解覆盖率，更远的直接算实心。 */
+  /** 反解带宽（像素）：掩膜边界两侧这么宽的像素逐个解覆盖率，更远的像素直接判实心或全透明。 */
   edgeBand?: number;
 }
 
 /** 抠底调参的默认值。可被单次调用覆盖，也可用环境变量改全局（工坊 agent 出图看情况可调）。 */
 export interface CutoutTuning {
-  strong: number;
-  weak: number;
-  minHole: number;
+  tolerance: number;
   keySmooth: number;
   edgeBand: number;
 }
@@ -94,34 +87,27 @@ function envFloat(name: string, fallback: number, min: number, max: number): num
 }
 
 /**
- * 强 1 / 弱 8 / 洞 200 / 掩膜降噪 0.8 / 反解带 4。
+ * 色键容差 48 / 掩膜降噪 0.8 / 反解带 4。
  *
- * 前三个是纯色平涂底上的老参数：2D 平涂图上 0.003% 误抠、贴边近白残留 13px；
- * 弱阈值再往上就啃和服了（12 → 0.968%）。
- * 后两个是抗 JPEG 环纹的：源图轮廓上的“平滑过渡带”实际是 3–6 段噪声台阶。
+ * 48 是在绿幕原片（底色 141,244,53）上量的拐点：容差不留残留的临界在 40 附近，
+ * 再往上（48/56/64）实心残留恒为 0，只是多啃几像素边缘。
+ * 底色是「选定的、不与角色撞的颜色」，容差给宽一点才是本意——抠不干净比多啃两像素糟。
  */
 export function defaultTuning(): CutoutTuning {
   return {
-    // 1 不是 0：底色带一格压缩噪点时，0 会让一个种子都点不着，直接报「底色没抠干净」
-    strong: envInt("STAGE_CUTOUT_STRONG", 1, 0, 32),
-    weak: envInt("STAGE_CUTOUT_WEAK", 8, 0, 64),
-    minHole: envInt("STAGE_CUTOUT_MIN_HOLE", 200, 0, 100_000),
-    // 0.8：环纹让色键在轮廓上啃出缺口，白发成片成缕地被挖走（实测头顶洞 1.55%）。
-    // 模糊把环纹抹平、轮廓位置几乎不动；只模糊喂给色键的副本，所以 1px 宽的抗锯齿
-    // 列照样保得住——先模糊再键的话，那一列会被糊成半灰、看着更像底色反而被整列抠掉。
+    tolerance: envInt("STAGE_CUTOUT_TOLERANCE", 48, 0, 128),
+    // 0.8：JPEG 环纹让色键在轮廓上啃出缺口。模糊把环纹抹平、轮廓位置几乎不动；
+    // 只模糊喂给色键的副本，alpha 与原图颜色一律用原图。
     keySmooth: envFloat("STAGE_CUTOUT_KEY_SMOOTH", 0.8, 0, 8),
     // 4：抗锯齿渐变带连 JPEG 抖动实测 3–5px 宽。带子不够宽，落在带外的渐变像素被
-    // 钉成实心 alpha 255，深色舞台底上就是一圈白块（用户实机看到的「右上被挖走一块」）。
-    // 也不能再放宽：分母小的浅色区被过度反解，反而解出更多洞。
+    // 钉成实心 alpha，深色舞台底上就是一圈白块。也不能再放宽：分母小的浅色区
+    // 被过度反解，反而解出更多洞。
     edgeBand: envInt("STAGE_CUTOUT_EDGE_BAND", 4, 1, 32),
   };
 }
 
-/** 单次覆盖与全局默认合并；弱阈值不得低于强阈值，否则滞后退化成单阈值。 */
 export function resolveTuning(override?: Partial<CutoutTuning>): CutoutTuning {
-  const base = defaultTuning();
-  const merged = { ...base, ...override };
-  return { ...merged, weak: Math.max(merged.strong, merged.weak) };
+  return { ...defaultTuning(), ...override };
 }
 
 export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise<CutoutResult> {
@@ -132,13 +118,13 @@ export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise
   if (width < 8 || height < 8) throw new Error("图太小，抠底没有意义");
 
   const tuning = resolveTuning(options);
-  // 掩膜与像素分开处理：环纹污染的是掩膜的**形状**（轮廓被啃出 3–6 段噪声台阶），
+  // 掩膜与像素分开处理：环纹污染的是掩膜的**形状**（轮廓被啃出几段噪声台阶），
   // 不是像素颜色。所以色键吃一张降噪副本，alpha 与输出颜色一律用原图。
   const keyed =
     tuning.keySmooth > 0
       ? await sharp(rgba, { raw: { width, height, channels } }).blur(tuning.keySmooth).raw().toBuffer()
       : rgba;
-  const mask = backgroundMask(keyed, width, height, channels, tuning);
+  const mask = keyMask(keyed, width, height, channels, tuning.tolerance);
   const coverage = countForeground(mask) / (width * height);
   if (coverage < COVERAGE_MIN || coverage > COVERAGE_MAX) {
     // 带上实测值：只说「几乎整张图」没法判断是底色没抠对还是角色没画出来。
@@ -146,7 +132,7 @@ export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise
     throw new Error(
       coverage < COVERAGE_MIN
         ? `抠底失败：只认出 ${pct}% 的前景（要求 ≥${COVERAGE_MIN * 100}%），底色可能不是纯色，或者图里根本没有角色`
-        : `抠底失败：${pct}% 的像素被判成前景，底色没抠干净（要求 ≤${COVERAGE_MAX * 100}%；要求模型出「纯白纯色底、无渐变无投影」）`,
+        : `抠底失败：${pct}% 的像素被判成前景，底色没抠干净（要求 ≤${COVERAGE_MAX * 100}%；要求模型出「单一纯色底、无渐变无投影」，且底色不许与角色配色重复）`,
     );
   }
 
@@ -198,78 +184,29 @@ export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise
 }
 
 /**
- * 背景掩膜：1 = 背景，0 = 前景。全局色键 + 滞后阈值漫延 + 连通域筛除。
- * 显式栈而非递归——百万像素的图递归会爆栈。
+ * 背景掩膜：1 = 背景，0 = 前景。全局色键，只看颜色。
+ *
+ * 没有连通域、没有面积阈值：底色是出图时选定的、不与角色撞色的纯色，
+ * 所以「贴不贴画面边」不提供任何信息，人物内部的底色同样是底色。
  */
-function backgroundMask(
+function keyMask(
   rgba: Buffer,
   width: number,
   height: number,
   channels: number,
-  tuning: CutoutTuning,
+  tolerance: number,
 ): Uint8Array {
-  const total = width * height;
   const reference = borderMedian(rgba, width, height, channels);
-  const { strong, weak, minHole } = tuning;
-
-  const distance = new Uint8Array(total);
-  for (let i = 0; i < total; i++) {
+  const mask = new Uint8Array(width * height);
+  for (let i = 0; i < mask.length; i++) {
     const o = i * channels;
-    distance[i] = Math.max(
+    const distance = Math.max(
       Math.abs((rgba[o] ?? 0) - reference[0]),
       Math.abs((rgba[o + 1] ?? 0) - reference[1]),
       Math.abs((rgba[o + 2] ?? 0) - reference[2]),
     );
+    if (distance <= tolerance) mask[i] = 1;
   }
-
-  // 强种子做漫延起点，弱集限制漫延范围；两者都不贴边就谁也吃不掉谁。
-  const spread = new Uint8Array(total);
-  const stack: number[] = [];
-  for (let i = 0; i < total; i++) {
-    if (distance[i]! > strong) continue;
-    spread[i] = 1;
-    stack.push(i);
-  }
-  while (stack.length > 0) {
-    const i = stack.pop()!;
-    const x = i % width;
-    const y = (i - x) / width;
-    const visit = (nx: number, ny: number) => {
-      if (nx < 0 || ny < 0 || nx >= width || ny >= height) return;
-      const ni = ny * width + nx;
-      if (spread[ni] === 1 || distance[ni]! > weak) return;
-      spread[ni] = 1;
-      stack.push(ni);
-    };
-    visit(x + 1, y);
-    visit(x - 1, y);
-    visit(x, y + 1);
-    visit(x, y - 1);
-    visit(x + 1, y + 1);
-    visit(x - 1, y + 1);
-    visit(x + 1, y - 1);
-    visit(x - 1, y - 1);
-  }
-
-  // 贴边或够大的块才是真背景；小块（眼白高光、牙缝）填回前景。
-  const components = label(spread, width, height);
-  const touchesEdge = new Uint8Array(components.sizes.length);
-  for (let x = 0; x < width; x++) {
-    touchesEdge[components.labels[x]!] = 1;
-    touchesEdge[components.labels[(height - 1) * width + x]!] = 1;
-  }
-  for (let y = 0; y < height; y++) {
-    touchesEdge[components.labels[y * width]!] = 1;
-    touchesEdge[components.labels[y * width + width - 1]!] = 1;
-  }
-  const mask = new Uint8Array(total);
-  for (let i = 0; i < total; i++) {
-    if (spread[i] !== 1) continue;
-    const id = components.labels[i]!;
-    if (touchesEdge[id] === 1 || components.sizes[id]! >= minHole) mask[i] = 1;
-  }
-
-  keepLargestForeground(mask, width, height);
   return mask;
 }
 
@@ -288,66 +225,6 @@ function borderMedian(
     const sorted = ring.map((i) => rgba[i * channels + c] ?? 0).sort((a, b) => a - b);
     return sorted[sorted.length >> 1] ?? 0;
   }) as [number, number, number];
-}
-
-interface Components {
-  labels: Int32Array;
-  sizes: number[];
-}
-
-/** 4 连通域标号。labels 里 -1 表示不属于任何块。 */
-function label(mask: Uint8Array, width: number, height: number): Components {
-  const total = width * height;
-  const labels = new Int32Array(total).fill(-1);
-  const sizes: number[] = [];
-  const stack = new Int32Array(total);
-  for (let start = 0; start < total; start++) {
-    if (mask[start] !== 1 || labels[start] !== -1) continue;
-    const id = sizes.length;
-    let top = 0;
-    stack[top++] = start;
-    labels[start] = id;
-    let size = 0;
-    while (top > 0) {
-      const i = stack[--top]!;
-      size++;
-      const x = i % width;
-      if (x + 1 < width && mask[i + 1] === 1 && labels[i + 1] === -1) {
-        labels[i + 1] = id;
-        stack[top++] = i + 1;
-      }
-      if (x > 0 && mask[i - 1] === 1 && labels[i - 1] === -1) {
-        labels[i - 1] = id;
-        stack[top++] = i - 1;
-      }
-      if (i + width < total && mask[i + width] === 1 && labels[i + width] === -1) {
-        labels[i + width] = id;
-        stack[top++] = i + width;
-      }
-      if (i >= width && mask[i - width] === 1 && labels[i - width] === -1) {
-        labels[i - width] = id;
-        stack[top++] = i - width;
-      }
-    }
-    sizes.push(size);
-  }
-  return { labels, sizes };
-}
-
-/** 前景可能散成碎块（噪点、孤立的发梢），只留最大的一块，其余当背景。 */
-function keepLargestForeground(mask: Uint8Array, width: number, height: number): void {
-  const total = width * height;
-  const foreground = new Uint8Array(total);
-  for (let i = 0; i < total; i++) foreground[i] = mask[i] === 1 ? 0 : 1;
-  const components = label(foreground, width, height);
-  let main = -1;
-  for (let id = 0; id < components.sizes.length; id++) {
-    if (main < 0 || components.sizes[id]! > components.sizes[main]!) main = id;
-  }
-  if (main < 0) return;
-  for (let i = 0; i < total; i++) {
-    if (foreground[i] === 1 && components.labels[i] !== main) mask[i] = 1;
-  }
 }
 
 function countForeground(mask: Uint8Array): number {
@@ -373,16 +250,17 @@ function backgroundColor(rgba: Buffer, mask: Uint8Array, channels: number): [num
   return n === 0 ? [255, 255, 255] : [r / n, g / n, b / n];
 }
 
-/** chamfer 距离变换：每个前景像素到最近背景像素的距离（以 band + 1 为上限）。 */
-function distanceToBackground(
+/** chamfer 距离变换：每个像素到最近的 `seedValue` 像素的距离（以 band + 1 为上限）。 */
+function bandDistance(
   mask: Uint8Array,
   width: number,
   height: number,
   band: number,
+  seedValue: 0 | 1,
 ): Float32Array {
   const far = band + 1;
   const dist = new Float32Array(width * height).fill(far);
-  for (let i = 0; i < mask.length; i++) if (mask[i] === 1) dist[i] = 0;
+  for (let i = 0; i < mask.length; i++) if (mask[i] === seedValue) dist[i] = 0;
 
   const diag = Math.SQRT2;
   const relax = (i: number, j: number, cost: number) => {
@@ -416,25 +294,16 @@ function distanceToBackground(
  * 底色 B 已知，合成方程 I = a·F + (1-a)·B 直接给出 a = (B-I)/(B-F)。
  * 这是纯色平涂底这个前提下的闭式解（文献里叫 color unmixing），不需要 trimap、不需要 GPU。
  *
- * 为什么非解不可：旧公式是 max(色差项, dist/INTERIOR)，而 dist/2 在边界带上恒等于 0.5，
- * 等于给每一圈边界像素垫了 128 的 alpha 地板。深色舞台底上那一圈半透明的边色
- * 就是一圈白边晕（用户实机看出来的主要瑕疵）。反解把这圈解成真实覆盖率——20% 就是 51，
- * 95% 就是 242——晕自然消失，边缘也变成连续的灰阶斜坡。
+ * 掩膜边界**两侧**都解：前景一侧的渐变像素解出 60%、80%；背景一侧被色键吃掉的
+ * 半覆盖像素解出真实覆盖率而不是 0——纯底色解出来自然就是 0，边界因此是连续的灰阶斜坡。
  *
- * 反解会移动 α=0.5 的等值线：旧公式里等值线严格等于二值掩膜，轮廓零漂移
- * （实测几何粗糙度 0.487，与源图逐位相同）；现在等值线跟着真实覆盖率走，
- * 实测 2d-a 0.487 / 60 0.474 / 61 0.457，源图分别是 0.487 / 0.482 / 0.459。
- * 也就是说**新的更贴近模型自己画的线稿**，而不是更毛——立绘边上的锯齿是模型在
- * 768px 上画的线再被 1.406 倍放大到 1080 显出来的，压它只能提高出图分辨率。
+ * 反解会移动 α=0.5 的等值线：旧公式里等值线严格等于二值掩膜，轮廓零漂移；
+ * 现在等值线跟着真实覆盖率走，实测更贴近模型自己画的线稿。立绘边上的锯齿是模型在
+ * 768px 上画的线再被放大到 1080 显出来的，压它只能提高出图分辨率。
  *
- * F 由 `foregroundColors` 沿 BFS 逐像素传播，不能取全局中位数：立绘有白衣，
- * 白衣最外圈恰好就是白底，环带中位数被拽向底色，B−F → 0，整张图的反解全废
- * （实测毛刺不降反升 13%）。分母 B−F 也可能接近 0（白发压在白底上），
- * 所以逐通道只保留能分开前景底色的那一路，最差退回距离斜坡。
- *
- * 带宽必须盖得住抗锯齿渐变带：洪水顺着渐变逐像素走，每步落差只要小于弱阈值就能一路
- * 走进发芯，于是整条渐变带（银发上实测 5px 宽）被判成背景、alpha 0；带子不够宽时
- * 带外那几圈没人反解，轮廓整条塌掉——实机看就是「头发左右上角被挖走一块」。
+ * F 由 `foregroundColors` 沿 BFS 逐像素传播，不能取全局中位数：底色可能与角色某块颜色
+ * 接近（选了撞色的底就是这么来的），全局中位数会被拽向底色，B−F → 0，整张图的反解全废。
+ * 分母 B−F 也可能接近 0，所以逐通道只保留能分开前景底色的那一路，最差退回距离斜坡。
  */
 function edgeAlpha(
   rgba: Buffer,
@@ -445,17 +314,20 @@ function edgeAlpha(
   bg: [number, number, number],
   band: number,
 ): Uint8Array {
-  const dist = distanceToBackground(mask, width, height, band);
-  const fg = foregroundColors(rgba, mask, dist, width, height, channels, band);
+  const distToKey = bandDistance(mask, width, height, band, 1);
+  const distToForeground = bandDistance(mask, width, height, band, 0);
+  const fg = foregroundColors(rgba, mask, distToKey, width, height, channels, band);
   const alpha = new Uint8Array(width * height);
   for (let i = 0; i < mask.length; i++) {
-    if (mask[i] === 1) continue;
-    // 离背景够远 = 实心，直接 255，不再进解方程（白发、皮肤这些亮色也保得住）
-    if (dist[i]! >= band) {
-      alpha[i] = 255;
+    const keyed = mask[i] === 1;
+    // 离对面够远 = 实心前景或纯底色，不再进解方程
+    const distance = keyed ? distToForeground[i]! : distToKey[i]!;
+    if (distance >= band) {
+      alpha[i] = keyed ? 0 : 255;
       continue;
     }
-    const p = i * channels, q = i * 3;
+    const p = i * channels;
+    const q = i * 3;
     const ratio = solveAlpha(
       rgba[p] ?? 0,
       rgba[p + 1] ?? 0,
@@ -463,17 +335,18 @@ function edgeAlpha(
       bg,
       [fg[q]!, fg[q + 1]!, fg[q + 2]!],
     );
-    alpha[i] = ratio === null ? Math.round(255 * (dist[i]! / band)) : Math.round(255 * ratio);
+    if (ratio !== null) alpha[i] = Math.round(255 * ratio);
+    else alpha[i] = keyed ? 0 : Math.round(255 * (distance / band));
   }
   return alpha;
 }
 
 /**
- * 前景色 F：沿 BFS 从最近的「确定前景」像素（离背景 ≥ 带宽）传播过来。
+ * 前景色 F：沿 BFS 从最近的「确定前景」像素（离底色 ≥ 带宽）传播过来。
  *
- * 不能用全局中位数：立绘有白衣，而白衣最外圈恰好就是白底，环带中位数会被拽向白底，
- * 分母 B−F 归零、整张图的反解全废。逐像素取「最近确定前景」才能让白衬衫边缘解出白、
- * 发梢边缘解出深色。-1 = 还没访问到。
+ * 不能用全局中位数：底色与角色某块颜色接近时，中位数会被拽向底色、分母归零，
+ * 整张图的反解全废。逐像素取「最近确定前景」才能让深色描边边缘解出描边色、
+ * 浅色边缘解出浅色。-1 = 还没访问到。
  */
 function foregroundColors(
   rgba: Buffer,
@@ -489,7 +362,7 @@ function foregroundColors(
   let head = 0;
   let tail = 0;
   for (let i = 0; i < mask.length; i++) {
-    if (dist[i]! < band) continue;
+    if (mask[i] === 1 || dist[i]! < band) continue;
     const p = i * channels;
     const q = i * 3;
     out[q] = rgba[p] ?? 0;
@@ -533,20 +406,19 @@ function solveAlpha(
 ): number | null {
   const observed = [r, g, b];
   const spans = [0, 0, 0];
-  let best = -1;
   let bestSpan = 0;
   for (let c = 0; c < 3; c++) {
     spans[c] = Math.abs(bg[c]! - fg[c]!);
-    if (spans[c]! > bestSpan) {
-      bestSpan = spans[c]!;
-      best = c;
-    }
+    if (spans[c]! > bestSpan) bestSpan = spans[c]!;
   }
-  if (best < 0 || bestSpan < 2) return null;
+  if (bestSpan < 2) return null;
   const samples: number[] = [];
   for (let c = 0; c < 3; c++) {
     if (spans[c]! < bestSpan * 0.34) continue;
-    samples.push((bg[c]! - observed[c]!) / spans[c]!);
+    // 分母**带符号**（B−F），不能取绝对值：色键底的通道值常常低于前景
+    // （绿底 #00FF00 的红蓝两路就比肤色低），取绝对值会把 a 的符号翻过来、
+    // 解出负数后被 clamp 成 0，等于把带色的轮廓整圈啃掉。
+    samples.push((bg[c]! - observed[c]!) / (bg[c]! - fg[c]!));
   }
   if (samples.length === 0) return null;
   samples.sort((x, y) => x - y);
@@ -571,7 +443,10 @@ function unblend(
     const k = a >= 255 ? 0 : (255 - a) / a;
     for (let c = 0; c < 3; c++) {
       const observed = rgba[o + c] ?? 0;
-      out[i * 4 + c] = Math.max(0, Math.min(255, Math.round(observed - k * (bg[c] ?? 0))));
+      // F = (I − (1−a)·B) / a = I + k·(I − B)，k = (1−a)/a。
+      // 少了 I 那一项会得到 I − k·B：白底上看着差不多（B≈255 且前景也亮），
+      // 换成绿底就是一层压不掉的绿边。
+      out[i * 4 + c] = Math.max(0, Math.min(255, Math.round(observed + k * (observed - (bg[c] ?? 0)))));
     }
     out[i * 4 + 3] = a;
   }

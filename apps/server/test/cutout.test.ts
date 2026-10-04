@@ -31,17 +31,15 @@ async function alphaAt(data: Buffer, x: number, y: number): Promise<number> {
 }
 
 /**
- * 抠底三个旋钮的专用夹具：纯白底 + 一块深色人形，人形上摆三个「底色口袋」，
- * 各自只被一个旋钮决定（走 PNG，JPEG 的色振铃会把摆好的几格色差搅没）：
- * - A 离底色 4 格、带一条 1px 颈连到外面 → **weak** 够大才被带走（3 邻域漫延不进 4 格外）
- * - B 离底色 4 格、封闭 → **strong** 够小才被点着（强阈值是全局的，不看连通性）
- * - C 就是底色、40x40=1600px 封闭 → **minHole** 说它算不算洞（贴不到画面边）
- * 人形 40..160 × 20..280，三个口袋都深埋在里面。
+ * 色键夹具：纯白底 + 一块深色人形，人形里埋四块「离底色不同远近」的封闭口袋。
+ * 四个都贴不到画面边——纯色键不看连通性，贴不贴边不改变任何事：
+ * A 离底色 4 格、B 20 格、C 42 格、D 60 格（走 PNG，JPEG 的色振铃会把摆好的色差搅没）。
+ * 容差小到几格时它们都还是「角色身上的浅色」，放宽才一块块被当成底色吃进去。
  */
-async function knobsScene(): Promise<Buffer> {
+async function keyedPockets(): Promise<Buffer> {
   const width = 200;
   const height = 300;
-  const paint = (raw: Buffer, x0: number, y0: number, x1: number, y1: number, c: [number, number, number]) => {
+  const paint = (x0: number, y0: number, x1: number, y1: number, c: [number, number, number]) => {
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const o = (y * width + x) * 3;
@@ -52,16 +50,15 @@ async function knobsScene(): Promise<Buffer> {
     }
   };
   const raw = Buffer.alloc(width * height * 3).fill(255);
-  const NEAR: [number, number, number] = [251, 251, 252];
-  paint(raw, 40, 20, 160, 280, [40, 50, 80]);
-  paint(raw, 90, 100, 110, 120, NEAR);
-  paint(raw, 111, 110, 180, 110, [255, 255, 255]);
-  paint(raw, 90, 160, 110, 180, NEAR);
-  paint(raw, 60, 210, 100, 250, [255, 255, 255]);
+  paint(40, 20, 160, 280, [40, 50, 80]);
+  paint(60, 40, 99, 79, [251, 251, 252]); // A：离底色 4 格
+  paint(100, 40, 139, 79, [235, 235, 237]); // B：20 格
+  paint(60, 100, 99, 139, [213, 213, 216]); // C：42 格
+  paint(100, 100, 139, 139, [195, 195, 197]); // D：60 格
   return sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
 }
 
-/** 人物内部被抠穿的像素数（落在不透明外框之内的全透明像素）。量旋钮效应时不依赖坐标换算。 */
+/** 人物内部被抠穿的像素数（落在不透明外框之内的全透明像素）。量容差效应时不依赖坐标换算。 */
 async function interiorHoles(data: Buffer): Promise<number> {
   const { data: raw, info } = await sharp(data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const alpha = (x: number, y: number): number => raw[(y * info.width + x) * info.channels + 3] ?? 0;
@@ -87,9 +84,8 @@ async function interiorHoles(data: Buffer): Promise<number> {
 }
 
 /**
- * 旋钮用例的夹具是刻意干净的 PNG（见 `knobsScene`），而 `keySmooth` 是给 JPEG 环纹用的
- * 掩膜降噪前置：高斯会把夹具里那条 1px 的「颈」糊掉，`weak` 的效应直接测不出来。
- * 这几条只问色键三参数各自的语义，统一把降噪前置关掉。
+ * 容差用例的夹具是刻意干净的 PNG（见 `keyedPockets`），而 `keySmooth` 是给 JPEG 环纹用的
+ * 掩膜降噪前置：高斯会把口袋边缘糊开、四档色差不再逐位可比。这几条只问色键本身，统一关掉降噪。
  */
 const NO_SMOOTH = { keySmooth: 0 } as const;
 
@@ -108,19 +104,61 @@ describe("cutout", () => {
     expect(result.coverage).toBeLessThan(0.95);
   });
 
-  it("不与边界连通的白衬衫保持不透明（连通域保护）", async () => {
-    const { data, shirt } = await synth();
-    const result = await cutout(data);
-    // 衬衫在原图坐标 (120,160) → 裁到人物外框后等比缩放并底部居中
-    const box = { x0: 59, y0: 39, x1: 180, y1: 280 };
+  it("与底色同色的封闭块照抠不误——「别撞色」是出图那一步的责任", async () => {
+    // 纯白底 + 深色人形，胸口一块**与底色逐位同色**的封闭矩形：白袜子/白衬衫的极端形态。
+    // 纯色键不分内外、不看连通性，它就是底色，整块抠掉。想保住它只有一条路——
+    // 出图时把底色选成角色身上没有的颜色（playAssets.ts 的 KEY_BACKGROUND）。
+    const width = 200;
+    const height = 300;
+    const raw = Buffer.alloc(width * height * 3).fill(255);
+    const paint = (x0: number, y0: number, x1: number, y1: number, c: number) => {
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          const o = (y * width + x) * 3;
+          raw[o] = c;
+          raw[o + 1] = c;
+          raw[o + 2] = c;
+        }
+      }
+    };
+    paint(40, 20, 160, 280, 40); // 人形
+    paint(80, 130, 120, 190, 255); // 白袜子：与底色逐位同色、2501px、封闭
+    const data = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
+
+    // 白袜子中心 (100,160) 映射到输出画布（人物外框 + 等比缩放 + 底部居中）
+    const box = { x0: 39, y0: 19, x1: 161, y1: 281 };
     const w = box.x1 - box.x0 + 1;
     const h = box.y1 - box.y0 + 1;
     const scale = Math.min(1080 / w, 1920 / h);
     const left = Math.round((1080 - Math.round(w * scale)) / 2);
     const top = 1920 - Math.round(h * scale);
-    const x = left + Math.round((shirt[0]! - box.x0) * scale);
-    const y = top + Math.round((shirt[1]! - box.y0) * scale);
-    expect(await alphaAt(result.data, x, y)).toBe(255);
+    const x = left + Math.round((100 - box.x0) * scale);
+    const y = top + Math.round((160 - box.y0) * scale);
+
+    const result = await cutout(data, { ...NO_SMOOTH });
+    expect(await alphaAt(result.data, x, y)).toBe(0);
+    // 人形自己没被连坐
+    expect(await alphaAt(result.data, left + Math.round(2 * scale), y)).toBe(255);
+  });
+
+  it("tolerance 是唯一旋钮：多远的像素算底色全由它定", async () => {
+    const data = await keyedPockets();
+    // A/B/C/D 分别离底色 4 / 20 / 42 / 60 格，每块 40x40=1600px，都封闭、都贴不到画面边。
+    // 紧档只吃 A，松档把 B、C 也吃进去；把容差再放宽一到 D 才轮到它。
+    const tight = await interiorHoles((await cutout(data, { tolerance: 8, ...NO_SMOOTH })).data);
+    const loose = await interiorHoles((await cutout(data, { tolerance: 48, ...NO_SMOOTH })).data);
+    const widest = await interiorHoles((await cutout(data, { tolerance: 64, ...NO_SMOOTH })).data);
+    expect(loose - tight).toBeGreaterThan(2000); // B + C 两块
+    expect(widest - loose).toBeGreaterThan(1000); // D 一块
+  });
+
+  it("图里没有角色时抛错", async () => {
+    const blank = await sharp({
+      create: { width: 80, height: 80, channels: 3, background: "#f0f2f5" },
+    })
+      .jpeg()
+      .toBuffer();
+    await expect(cutout(blank)).rejects.toThrow(/抠底失败/);
   });
 
   it("边界带的 alpha 是反解出来的真实覆盖率，不是钉死的 128 地板", async () => {
@@ -170,63 +208,69 @@ describe("cutout", () => {
     expect(new Set(measured).size).toBe(3);
   });
 
-  it("底色不干净时抛错而不是落半残图", async () => {
-    // 满图杂乱花纹（模型没给纯色底时会这样）：没有一块区域贴近边界种子色，漫延啃不动，
-    // 前景占比冲到 97% 以上 → 报「底色没抠干净」
-    const width = 120;
-    const height = 160;
+  it("色键底（绿底）+ 亮色前景：覆盖率与反解出来的边缘色都对", async () => {
+    // 色键底常常在某些通道上比角色**暗**——纯绿 #00FF00 的红、蓝两路就是 0。
+    // 覆盖率反解 a=(B−I)/(B−F) 的分母必须带符号：取绝对值会把符号翻过来、解出负数，
+    // 被 clamp 成 0 之后整圈带色轮廓会被啃掉（白衬衫/肤色上最明显）。
+    // 同一个像素也是 unblend 的试金石：F=(I−(1−a)B)/a，漏掉 I 那一项就会留下压不掉的底色调。
+    const width = 400;
+    const height = 2120;
+    const BG: [number, number, number] = [0, 255, 0];
+    const SKIN: [number, number, number] = [245, 215, 190];
+    const blend = SKIN.map((v, c) => Math.round(0.5 * v + 0.5 * BG[c]!));
     const raw = Buffer.alloc(width * height * 3);
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const o = (y * width + x) * 3;
-        raw[o] = (x * 37) % 256;
-        raw[o + 1] = (y * 53) % 256;
-        raw[o + 2] = ((x + y) * 97) % 256;
+        const inside = x >= 101 && x < 300 && y >= 100 && y < 2020;
+        // 那条半覆盖列只画在人形里，别一路画到画布上下缘——否则外框会被它撑成整张图高
+        const c = x === 100 && y >= 100 && y < 2020 ? blend : inside ? SKIN : BG;
+        raw[o] = c[0]!;
+        raw[o + 1] = c[1]!;
+        raw[o + 2] = c[2]!;
       }
     }
-    const busy = await sharp(raw, { raw: { width, height, channels: 3 } }).jpeg().toBuffer();
-    await expect(cutout(busy)).rejects.toThrow(/底色没抠干净/);
+    const result = await cutout(
+      await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer(),
+    );
+    const { data, info } = await sharp(result.data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const at = (x: number, y: number) => {
+      const o = (y * info.width + x) * info.channels;
+      return [data[o]!, data[o + 1]!, data[o + 2]!, data[o + 3]!];
+    };
+    // 与「反解覆盖率」那条用例同一套尺寸换算：200 宽的人形居中落在 1080 画布的 x 440
+    const left = Math.round((1080 - 200) / 2);
+    const edge = at(left, 600);
+    expect(Math.abs(edge[3]! - 128)).toBeLessThanOrEqual(6);
+    // 半覆盖像素反解回前景色，不能残留底色（绿底的 R/B 通道是 0，残留一眼可见）
+    for (let c = 0; c < 3; c++) expect(Math.abs(edge[c]! - SKIN[c]!)).toBeLessThanOrEqual(12);
+    // 往里是实心前景色，没有被误抠
+    const solid = at(left + 20, 600);
+    expect(solid[3]).toBe(255);
+    for (let c = 0; c < 3; c++) expect(Math.abs(solid[c]! - SKIN[c]!)).toBeLessThanOrEqual(4);
+    // 往外是纯底色，全透明
+    expect(at(left - 3, 600)[3]).toBe(0);
   });
 
-  it("weak 是严厉度的旋钮：贴着底色但差了几格的口袋，够大才连着颈被带走", async () => {
-    const data = await knobsScene();
-    // 口袋 A 离底色 4 格：weak=2 漫延进不去，weak=8 进得去（同一张图、只改这一个参数）
-    const tight = await interiorHoles((await cutout(data, { weak: 2, minHole: 0, ...NO_SMOOTH })).data);
-    const loose = await interiorHoles((await cutout(data, { weak: 8, minHole: 0, ...NO_SMOOTH })).data);
-    expect(loose - tight).toBeGreaterThan(10_000);
+  it("底色只占边框一圈（描边/晕影）时抛错而不是落半残图", async () => {
+    // 色键的底色是从整圈边框量出来的，它必须真是整片底色。模型给画面描了一圈边、
+    // 或加了晕影时，量出来的颜色只覆盖边框那一圈，其余全被判成前景 → 报「底色没抠干净」。
+    const width = 200;
+    const height = 200;
+    const raw = Buffer.alloc(width * height * 3).fill(255);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (x !== 0 && y !== 0 && x !== width - 1 && y !== height - 1) continue;
+        const o = (y * width + x) * 3;
+        raw[o] = 0;
+        raw[o + 1] = 0;
+        raw[o + 2] = 0;
+      }
+    }
+    const bordered = await sharp(raw, { raw: { width, height, channels: 3 } }).jpeg().toBuffer();
+    await expect(cutout(bordered)).rejects.toThrow(/底色没抠干净/);
   });
 
-  it("strong 是另一个旋钮：它管「谁是种子」，不看连通性——封闭口袋只由它点得着", async () => {
-    const data = await knobsScene();
-    // 口袋 B 离底色 4 格且封闭，与外部底色没有任何通路。strong 是全局判据：
-    // 1 ⇒ 它连种子都不算，没人去动它；8 ⇒ 它被点着、漫延成一整块，再由 minHole=0 判成洞
-    const unseeded = await interiorHoles((await cutout(data, { strong: 1, minHole: 0, ...NO_SMOOTH })).data);
-    const seeded = await interiorHoles((await cutout(data, { strong: 8, minHole: 0, ...NO_SMOOTH })).data);
-    expect(seeded - unseeded).toBeGreaterThan(10_000);
-  });
-
-  it("minHole 是第三个旋钮：抠到哪算背景，色差阈值说了不算", async () => {
-    const data = await knobsScene();
-    // 口袋 C 就是底色、1600px、贴不到画面边 ⇒ 算不算洞只看 minHole
-    const holed = await interiorHoles((await cutout(data, { minHole: 200, ...NO_SMOOTH })).data);
-    const filled = await interiorHoles((await cutout(data, { minHole: 8000, ...NO_SMOOTH })).data);
-    expect(holed - filled).toBeGreaterThan(50_000);
-  });
-
-  it("弱阈值不得低于强阈值：否则滞后退化成单阈值，参数直接说谎", async () => {
-    const data = await knobsScene();
-    const clamped = await cutout(data, { strong: 4, weak: 1, ...NO_SMOOTH });
-    expect(clamped.data.equals((await cutout(data, { strong: 4, weak: 4, ...NO_SMOOTH })).data)).toBe(true);
-  });
-
-  it("图里没有角色时抛错", async () => {
-    const blank = await sharp({
-      create: { width: 80, height: 80, channels: 3, background: "#f0f2f5" },
-    })
-      .jpeg()
-      .toBuffer();
-    await expect(cutout(blank)).rejects.toThrow(/抠底失败/);
-  });
 });
 
 /** 纯色底 + 一个站立人形。fillW/fillH 是人物占格的比例：模型在矮格子里会把人撑得又宽又矮。 */

@@ -40,10 +40,10 @@ interface Chara {
   identity: string;
 }
 
-/** 画风单独一栏：立绘的 2D 平涂 + 纯白底不是用户偏好，是抠底管线的硬要求（见 cutout.ts）。 */
+/** 画风单独一栏：立绘的 2D 平涂 + 单一纯色底不是用户偏好，是抠底管线的硬要求（见 cutout.ts）。 */
 const STYLE =
   "Japanese anime style 2D character illustration, flat cel shading with clean crisp lineart, " +
-  "NOT a 3D render, no 3D CGI look. Plain solid pure white background.";
+  "NOT a 3D render, no 3D CGI look. Plain solid chroma-key green background, no gradient.";
 
 const ALL: Chara[] = [
   {

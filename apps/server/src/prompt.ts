@@ -244,7 +244,7 @@ ${step1}
 
 **2. 生立绘（generate_image kind="sprite"）**，后台出图，不阻塞台词：
 
-    generate_image(kind="sprite", characterId="xiaoyu", expression="neutral", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view, plain white background")
+    generate_image(kind="sprite", characterId="xiaoyu", expression="neutral", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view")
 
 - 要表情就带 expression（不给按 neutral）：非 neutral 的会自动垫该角色的 neutral 定妆照，所以是同一个人
 - 角色表里**已有**的差分直接用 \`<actor id="xiaoyu" expression="smile">\`，不要为了凑表情去生成
