@@ -9,8 +9,7 @@
  * 高度才不至于缩成一条。这两列由 web 一次算成 CSS 变量，媒体查询按宽高比挑一列——
  * 方向判定留在 CSS 里，组件不必监听 resize。
  *
- * 数值是百分比，两个方向都相对舞台高度。**缺省三档（full/normal、half/normal、
- * square/normal）与加表之前的 CSS 完全一致**：存量剧目不许因为升级换站位。
+ * 数值是百分比，两个方向都相对舞台高度。
  */
 
 import type { ActorAnchor } from "../dsl/spec.js";
@@ -46,27 +45,30 @@ interface Box {
  * 取景 × 体量 → 舞台基准。
  *
  * `small` 那三行的不变式是 top + height = 100：小东西**贴舞台底**，放大时脚不离地。
- * 其余三档贴头顶（top 是小余量、height 可以超过 100，人物脚下长出画面），
- * 这就是今天全身立绘的画法。竖屏列整体比横屏矮一点，因为竖屏舞台更高更容易塞下。
+ * 其余三档贴头顶（height 可以超过 100，人物脚下长出画面），这就是今天全身立绘的画法。
+ *
+ * 头顶那一档留白（top）统一比 261004 建表时**下移了 8**：立绘图本身顶到画幅上沿，
+ * 10% 的留白读出来就是「脑袋贴着天花板」，横竖屏都一样。竖屏列整体比横屏矮一点，
+ * 因为竖屏舞台更高更容易塞下。
  */
 const STAGE_PRESETS: Record<SpriteFraming, Record<SpriteStature, { landscape: Box; portrait: Box }>> = {
   full: {
     small: { landscape: { top: 68, height: 32 }, portrait: { top: 66, height: 34 } },
-    normal: { landscape: { top: 10, height: 132 }, portrait: { top: 8, height: 102 } },
-    large: { landscape: { top: 6, height: 168 }, portrait: { top: 5, height: 130 } },
-    huge: { landscape: { top: 2, height: 232 }, portrait: { top: 2, height: 178 } },
+    normal: { landscape: { top: 18, height: 132 }, portrait: { top: 16, height: 102 } },
+    large: { landscape: { top: 14, height: 168 }, portrait: { top: 13, height: 130 } },
+    huge: { landscape: { top: 10, height: 232 }, portrait: { top: 10, height: 178 } },
   },
   half: {
     small: { landscape: { top: 70, height: 30 }, portrait: { top: 68, height: 32 } },
-    normal: { landscape: { top: 10, height: 90 }, portrait: { top: 8, height: 92 } },
-    large: { landscape: { top: 5, height: 126 }, portrait: { top: 4, height: 118 } },
-    huge: { landscape: { top: 0, height: 172 }, portrait: { top: 0, height: 156 } },
+    normal: { landscape: { top: 18, height: 90 }, portrait: { top: 16, height: 92 } },
+    large: { landscape: { top: 13, height: 126 }, portrait: { top: 12, height: 118 } },
+    huge: { landscape: { top: 8, height: 172 }, portrait: { top: 8, height: 156 } },
   },
   square: {
     small: { landscape: { top: 72, height: 28 }, portrait: { top: 70, height: 30 } },
-    normal: { landscape: { top: 10, height: 90 }, portrait: { top: 8, height: 92 } },
-    large: { landscape: { top: 4, height: 130 }, portrait: { top: 3, height: 122 } },
-    huge: { landscape: { top: 0, height: 184 }, portrait: { top: 0, height: 164 } },
+    normal: { landscape: { top: 18, height: 90 }, portrait: { top: 16, height: 92 } },
+    large: { landscape: { top: 12, height: 130 }, portrait: { top: 11, height: 122 } },
+    huge: { landscape: { top: 8, height: 184 }, portrait: { top: 8, height: 164 } },
   },
 };
 

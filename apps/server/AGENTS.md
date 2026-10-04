@@ -71,7 +71,7 @@
 
 ## 立绘：后缀、景别与画幅
 
-- **呈现声明只住 `assets/manifest.json`**：键 `<id>`（立绘级）与 `<id>/<variant>`（差分覆盖），字段 `framing` / `stature` / `anchor` / `title`；卡上的 `framing` / `spriteFraming` 与 `sprites` 映射表一并下线——variant 就是文件名主体，中间不再有映射这一层。`play/spriteStage.ts` 按 取景 × 体量 × 锚点 出落位预设（`spriteStagePreset()` 给横竖屏两套 `{top,height,origin}`），**缺省逐个数字与 261004 之前一致**（存量剧目的站位不能挪），改预设表等于动所有剧目的摆位。
+- **呈现声明只住 `assets/manifest.json`**：键 `<id>`（立绘级）与 `<id>/<variant>`（差分覆盖），字段 `framing` / `stature` / `anchor` / `title`；卡上的 `framing` / `spriteFraming` 与 `sprites` 映射表一并下线——variant 就是文件名主体，中间不再有映射这一层。`play/spriteStage.ts` 按 取景 × 体量 × 锚点 出落位预设（`spriteStagePreset()` 给横竖屏两套 `{top,height,origin}`），**改预设表等于动所有剧目的摆位**：表里的 `top` 是头顶留白，2026-10-04 统一下移过 8（normal 档横屏 10→18、竖屏 8→16），此前「缺省逐个数字与 261004 之前一致」那条约束已作废，别再拿它当不动表的理由。
 - 立绘的自动后缀只规定抠底要的构图（**单一纯色底**，且这个色键色不许出现在角色身上；手臂与躯干之间别夹窄缝），不描述任何人物特征：那里曾写着「twin tails」，等于给所有角色定了个双马尾，prompt 里明写 long straight hair 也救不回来。
 - **抠底是纯色键，底色由出图那一步负责选对**（`src/cutout.ts` ↔ `playAssets.ts` 的 `KEY_BACKGROUND`）：底色取整圈边框的逐通道中位数，离它不超过 `tolerance` 的像素**一律**算背景——不分内外、不看连通性、没有面积阈值。所以「白底 + 白袜子」那类撞色会被照抠不误，2026-10-04 之前为此堆的滞回阈值/连通域筛内外/面积阈值整套已删；嫌抠不干净只有两条路：调 `tolerance`，或者出图时换一个不撞色的底。
 - **立绘景别与画幅跟着 `framing` 走**（`play/framing.ts` 是唯一真相源：**三档** full 9:16 / half 3:4 / square 1:1，出图画幅取 `SPRITE_FRAMING_ASPECT`、提示词里的景别措辞取 `SPRITE_FRAMING_SHOT`；写死 9:16 全身时半身角色照样会被画成全身，出图与舞台声明对不上）。
