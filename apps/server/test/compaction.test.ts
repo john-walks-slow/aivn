@@ -305,6 +305,43 @@ describe("编排器纪元压缩", () => {
     expect(contexts).toHaveLength(3);
   });
 
+  it("限制级段落期间不压缩：压缩器看不到原文，arc 里留不下限制级内容", async () => {
+    // 段落里每一拍都写得足够长：到第三轮时上下文一定越过 TIGHT 预算（见下面的非空断言）
+    const explicit = `<say id="mio">${"露骨原文".repeat(400)}</say>`;
+    const memory = new PlayMemory();
+    const { orchestrator, contexts } = setup(
+      [
+        // 第 1 轮：日常，同批请求进入限制级
+        { text: BEAT_1, beatDone: true, toolCalls: [{ name: "enter_nsfw", args: {} }] },
+        // 第 2 轮：限制级
+        { text: explicit, beatDone: true },
+        // 第 3 轮：限制级收尾，同批退出
+        { text: explicit, beatDone: true, toolCalls: [{ name: "exit_nsfw", args: {} }] },
+        // SFW 摘要
+        { text: "两人互诉心意，关系有了突破。" },
+        // 第 4 轮：日常
+        { text: BEAT_2, beatDone: true },
+      ],
+      TIGHT,
+      memory,
+    );
+
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+
+    // 一次都没压：没有 arc 卡，也没有多出来那一次摘要补全（4 = 三拍 + SFW 摘要）
+    expect(memory.cards.filter((c) => c.layer === "arcs")).toHaveLength(0);
+    expect(contexts).toHaveLength(4);
+    // 非空证明：第 3 轮开轮前那段对话体确实远超预算（真压了的话 agent 会被重建，
+    // 这里量到的就是重建后的种子，也就不会超）——所以「没压」是早退的结果，不是没到阈值
+    const beforeBeat3 = (contexts[2] as { messages: AgentMessage[] }).messages;
+    expect(measureContext(beforeBeat3).tokens).toBeGreaterThan(
+      TIGHT.contextWindow * TIGHT.triggerRatio,
+    );
+  });
+
   it("摘要生成失败：只告警不压缩，对话体保持原样", async () => {
     const memory = new PlayMemory();
     const { orchestrator, contexts } = setup(

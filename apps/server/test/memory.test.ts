@@ -153,6 +153,35 @@ describe("PlayMemory", () => {
     expect(memory.searchArchive("新内容", new Set(["e2"]))).toHaveLength(1);
   });
 
+  it("限制级切片：SFW 侧跳过原文、命中段末摘要；NSFW 侧两片都看得到", async () => {
+    // 同一叶节点、同一轮上的两片：露骨原文（带标）与它带出的摘要（不带标）
+    const memory = new PlayMemory({
+      slices: [
+        { entryId: "e1", turn: 3, at: 0, summary: "两人在床上赤裸相拥", nsfw: true },
+        { entryId: "e1", turn: 3, at: 1, summary: "两人互诉心意，关系有了突破" },
+      ],
+    });
+    const allowed = new Set(["e1"]);
+
+    const sfw = memory.searchArchive("两人", allowed);
+    expect(sfw).toHaveLength(1);
+    expect(sfw[0]?.summary).toBe("两人互诉心意，关系有了突破");
+
+    const raw = memory.searchArchive("两人", allowed, { nsfw: true });
+    expect(raw.map((s) => s.summary).sort()).toEqual([
+      "两人互诉心意，关系有了突破",
+      "两人在床上赤裸相拥",
+    ]);
+  });
+
+  it("限制级原文在 SFW 侧搜不出来：不带摘要的段内切片一律不可见", async () => {
+    const memory = new PlayMemory({
+      slices: [{ entryId: "e1", turn: 1, at: 0, summary: "赤裸的细节", nsfw: true }],
+    });
+    expect(memory.searchArchive("细节", new Set(["e1"]))).toEqual([]);
+    expect(memory.searchArchive("细节", new Set(["e1"]), { nsfw: true })).toHaveLength(1);
+  });
+
   it("appendCard：新增卡即时进 cards + 落盘；同 file 覆盖；分支不过滤用户卡", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stage-memory-"));
     const memory = new PlayMemory({ indexDir: join(dir, "memory", "index"), cards: [CARD] });

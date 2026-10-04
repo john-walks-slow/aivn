@@ -3,7 +3,7 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { LineageTree, type LineageEvent, type ServerMessage } from "@aivn/core";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { PlayMemory } from "../src/memory.js";
-import { lineageToBeats, lineageToEvents, stopFromEvent } from "../src/rebuild.js";
+import { lineageToBeats, lineageToEvents, nsfwTransitionBeat, stopFromEvent } from "../src/rebuild.js";
 import { BEAT_1, BEAT_1_STOP, BEAT_2, CARD, PLAY, createFakeStreamFn, type FakeResponse } from "./helpers.js";
 
 function setup(
@@ -489,5 +489,103 @@ describe("P6 rebuild · 谱系 → IR", () => {
     const chain = tree.chainEvents(tree.leafId!);
     expect(stopFromEvent(chain[0]!)).toBeNull();
     expect(lineageToEvents(chain).map((e) => e.event.kind)).toEqual([]);
+  });
+});
+
+describe("限制级段落的按读者折叠", () => {
+  /**
+   * 三段式：日常 → 限制级（两拍，段末那一拍带摘要）→ 日常。
+   * 段内每个节点都带 `nsfw` 标、段末 `beat_end` 带 `nsfwSummary`——这是折叠的唯一依据。
+   */
+  function nsfwChain(): LineageTree {
+    const tree = new LineageTree();
+    tree.append("prompt", { payload: { input: "我推开了门" } });
+    tree.append("say", { text: "她抬起头。", payload: { attrs: { id: "mio" } } });
+    tree.append("beat_end", { payload: { reason: "no_stop" } });
+    tree.append("prompt", { payload: { input: "（选择了：走近她）", nsfw: true } });
+    tree.append("say", { text: "赤裸的告白", payload: { attrs: { id: "mio" }, nsfw: true } });
+    tree.append("beat_end", { payload: { reason: "no_stop", nsfw: true } });
+    tree.append("prompt", { payload: { input: "（选择了：再近一些）", nsfw: true } });
+    tree.append("say", { text: "更露骨的话", payload: { attrs: { id: "mio" }, nsfw: true } });
+    tree.append("beat_end", {
+      payload: { reason: "stop", nsfw: true, nsfwSummary: "两人互诉心意，关系有了突破。" },
+    });
+    tree.append("prompt", { payload: { input: "第二天早上" } });
+    tree.append("say", { text: "早啊。", payload: { attrs: { id: "mio" } } });
+    tree.append("beat_end", { payload: { reason: "no_stop" } });
+    return tree;
+  }
+
+  const rebuild = (tree: LineageTree, nsfw: boolean) =>
+    lineageToBeats(tree.materialize(), { mio: "澪" }, "（游戏开始）", { nsfw });
+
+  it("SFW 侧：整段折叠成一条过渡轮，原文与段内玩家输入都不进消息", () => {
+    const { beats, trailingInputs } = rebuild(nsfwChain(), false);
+
+    expect(beats).toHaveLength(3);
+    expect(beats[0]?.user).toContain("我推开了门");
+    expect(beats[0]?.assistant).toContain("她抬起头。");
+    // 折叠出来的那一条就是实时退出时注入的同一句话（nsfwTransitionBeat 一份措辞两处用）
+    expect(beats[1]).toEqual(nsfwTransitionBeat("两人互诉心意，关系有了突破。"));
+    expect(beats[2]?.user).toContain("第二天早上");
+    expect(beats[2]?.assistant).toContain("早啊。");
+
+    const all = beats.map((b) => `${b.user}\n${b.assistant}`).join("\n");
+    expect(all).not.toContain("赤裸的告白");
+    expect(all).not.toContain("更露骨的话");
+    expect(all).not.toContain("走近她");
+    expect(all).not.toContain("再近一些");
+    expect(all).toContain("两人互诉心意");
+    expect(trailingInputs).toEqual([]);
+  });
+
+  it("NSFW 侧：原文照渲，摘要不用（同一段不出两份）", () => {
+    const { beats } = rebuild(nsfwChain(), true);
+
+    expect(beats).toHaveLength(4);
+    expect(beats[1]?.user).toContain("走近她");
+    expect(beats[1]?.assistant).toContain("赤裸的告白");
+    expect(beats[2]?.user).toContain("再近一些");
+    expect(beats[2]?.assistant).toContain("更露骨的话");
+    expect(beats[3]?.assistant).toContain("早啊。");
+
+    const all = beats.map((b) => `${b.user}\n${b.assistant}`).join("\n");
+    expect(all).not.toContain("两人互诉心意");
+    expect(all).not.toContain("前情提要");
+  });
+
+  it("段外内容两种模式完全一致", () => {
+    const tree = nsfwChain();
+    const sfw = rebuild(tree, false);
+    const raw = rebuild(tree, true);
+    expect(sfw.beats[0]).toEqual(raw.beats[0]);
+    expect(sfw.beats[2]).toEqual(raw.beats[3]);
+  });
+
+  it("没有标记的老档不受影响：两位读者渲出来的东西一样", () => {
+    const tree = new LineageTree();
+    tree.append("prompt", { payload: { input: "我到了" } });
+    tree.append("say", { text: "旧档里的露骨台词", payload: { attrs: { id: "mio" } } });
+    tree.append("beat_end", { payload: { reason: "no_stop" } });
+
+    const sfw = rebuild(tree, false);
+    const raw = rebuild(tree, true);
+    expect(sfw.beats).toEqual(raw.beats);
+    expect(sfw.beats[0]?.assistant).toContain("旧档里的露骨台词");
+  });
+
+  it("段落收束后链尾只剩摘要：段内事件一个都不漏", () => {
+    const tree = nsfwChain();
+    // 截到段末那一拍（带摘要的 beat_end）为止
+    const chain = tree.chainEvents(tree.leafId!);
+    const endIdx = chain.findIndex((e) => e.payload?.nsfwSummary !== undefined);
+    const cut = chain.slice(0, endIdx + 1);
+
+    const { beats, trailingInputs } = lineageToBeats(cut, { mio: "澪" }, "（游戏开始）", {
+      nsfw: false,
+    });
+    expect(beats).toHaveLength(2);
+    expect(beats[1]).toEqual(nsfwTransitionBeat("两人互诉心意，关系有了突破。"));
+    expect(trailingInputs).toEqual([]);
   });
 });

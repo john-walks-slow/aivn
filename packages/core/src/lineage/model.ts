@@ -40,6 +40,10 @@ export interface LineagePayload {
   choice?: { index: number; text: string; value?: string };
   /** 仅 kind=fork：这条重写枝继承的来源标签（见 originOfBeat）。 */
   origin?: string;
+  /** 限制级通道期间产生的事件：原文只许 NSFW 侧读者看到（见 rebuild.ts 的折叠规则）。 */
+  nsfw?: boolean;
+  /** 仅 kind=beat_end：这一拍收束的限制级段落带出的全年龄摘要（段落的唯一 SFW 出口）。 */
+  nsfwSummary?: string;
   [key: string]: unknown;
 }
 

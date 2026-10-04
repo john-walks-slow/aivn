@@ -822,6 +822,7 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
       flags: Record<string, string | number | boolean>;
     },
     arcIds: readonly string[] = [],
+    isNsfw: () => boolean = () => false,
   ) {
     const stateFiles: Record<string, string> = {};
     // 切片挂在当前分支叶子上：search_archive 以 pathSet() 过滤，脱离分支即不可见
@@ -840,6 +841,7 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
       tree,
       stateFiles,
       arcIds: () => arcIds,
+      isNsfw,
     });
     return { tools, stateFiles, memory };
   }
@@ -1659,6 +1661,128 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
       (m: unknown) => typeof (m as { content?: string }).content === "string" && (m as { content: string }).content.includes("20 周岁以上"),
     );
     expect(hasPreTurn).toBe(false);
+  });
+
+  /** 当前 agent 对话体的序列化视图（重建后不经过模型调用，captured context 会过期）。 */
+  function agentText(orchestrator: PlaywrightOrchestrator): string {
+    const messages = (
+      orchestrator as unknown as { agent: { state: { messages: unknown[] } } }
+    ).agent.state.messages;
+    return JSON.stringify(messages);
+  }
+
+  /** 日常 → 限制级两拍（末拍退出）→ 摘要 → 段后一拍。 */
+  function nsfwRun(): FakeResponse[] {
+    return [
+      {
+        text: '<say id="mio">来我房间吧……</say>',
+        beatDone: true,
+        toolCalls: [{ name: "enter_nsfw", args: {} }],
+      },
+      { text: '<say id="mio">笨蛋……轻一点……</say>', beatDone: true },
+      {
+        text: '<say id="mio">……抱紧我。</say>',
+        beatDone: true,
+        toolCalls: [{ name: "exit_nsfw", args: {} }],
+      },
+      { text: "两人在房间里互诉心意，关系有了突破。" },
+      { text: '<say id="mio">早啊，昨晚睡得好吗。</say>', beatDone: true },
+    ];
+  }
+
+  it("退出那一拍：摘要落在 beat_end 上，段内每个节点都带标，快照已切回日常", async () => {
+    const memory = new PlayMemory({ cards: [CARD] });
+    const { orchestrator, tree } = setup(nsfwRun(), { memory });
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    await orchestrator.playerAction({ kind: "continue" }); // 第 2 轮：进限制级
+    await orchestrator.whenIdle();
+    await orchestrator.playerAction({ kind: "continue" }); // 第 3 轮：退出那一拍
+    await orchestrator.whenIdle();
+
+    const chain = tree.chainEvents(tree.leafId);
+    const ends = chain.filter((e) => e.kind === "beat_end");
+    expect(ends).toHaveLength(3);
+    // 段内第一拍的收束带标、不带摘要；段末那一拍带上摘要
+    expect(ends[1]?.payload?.nsfw).toBe(true);
+    expect(ends[1]?.payload?.nsfwSummary).toBeUndefined();
+    expect(ends[2]?.payload?.nsfw).toBe(true);
+    expect(ends[2]?.payload?.nsfwSummary).toBe("两人在房间里互诉心意，关系有了突破。");
+
+    // 段内一个节点都不漏标（从段首到段末），段外一个都不带标
+    const first = chain.findIndex((e) => e.payload?.nsfw === true);
+    const last = chain.indexOf(ends[2]!);
+    expect(first).toBeGreaterThan(0);
+    for (const event of chain.slice(first, last + 1)) expect(event.payload?.nsfw).toBe(true);
+    for (const event of chain.slice(0, first)) expect(event.payload?.nsfw).not.toBe(true);
+
+    // 快照：段内那一拍仍是限制级，段末那一拍起世界线回到日常
+    expect(tree.latestSnapshotOnPath(ends[1]!.id)?.memory.nsfw).toBe(true);
+    expect(tree.latestSnapshotOnPath(tree.leafId)?.memory.nsfw).toBe(false);
+
+    // archive：SFW 侧搜得到那一段、看到的是摘要；原文片只在限制级侧可见
+    const allowed = tree.pathSet();
+    const sfwHits = memory.searchArchive("互诉心意", allowed);
+    expect(sfwHits).toHaveLength(1);
+    expect(sfwHits[0]?.nsfw).toBeUndefined();
+    expect(memory.searchArchive("轻一点", allowed)).toEqual([]);
+    expect(memory.searchArchive("轻一点", allowed, { nsfw: true })).toHaveLength(1);
+  });
+
+  it("beat_settled 推后到摘要落地：等待期间 busy 不放、也不算空闲", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const contexts: CapturedContext[] = [];
+    const responses = nsfwRun();
+    // 摘要那次补全被闸住：摘要没落地之前收束就不算完
+    responses[3] = { text: "两人在房间里互诉心意，关系有了突破。", gate };
+
+    const { orchestrator, messages } = setup(responses, { contexts });
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    await orchestrator.playerAction({ kind: "continue" }); // 第 2 轮：进限制级
+    await orchestrator.whenIdle();
+    const settledBefore = messages.filter((m) => m.type === "beat_settled").length;
+
+    const running = orchestrator.playerAction({ kind: "continue" }); // 第 3 轮：退出那一拍
+    // 摘要请求已发出（四个上下文 = 三拍 + 摘要补全）
+    await vi.waitFor(() => expect(contexts).toHaveLength(4));
+    expect(messages.filter((m) => m.type === "beat_settled")).toHaveLength(settledBefore);
+    expect(orchestrator.isBusy).toBe(true);
+
+    release();
+    await running;
+    await orchestrator.whenIdle();
+    expect(messages.filter((m) => m.type === "beat_settled")).toHaveLength(settledBefore + 1);
+  });
+
+  it("跳回段内照渲原文，跳回段后只剩摘要", async () => {
+    const { orchestrator, tree } = setup(nsfwRun());
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    await orchestrator.playerAction({ kind: "continue" }); // 段内第一拍
+    await orchestrator.whenIdle();
+    const inSegment = tree.leafId!;
+    await orchestrator.playerAction({ kind: "continue" }); // 退出那一拍
+    await orchestrator.whenIdle();
+    const afterSegment = tree.leafId!;
+
+    // 段内：快照说 nsfw=true → 原文照渲，摘要还没出现
+    await orchestrator.jumpTo(inSegment);
+    expect(orchestrator.runtimeState.nsfw?.active).toBe(true);
+    const rawText = agentText(orchestrator);
+    expect(rawText).toContain("轻一点");
+    expect(rawText).not.toContain("互诉心意");
+
+    // 段后：快照说 nsfw=false → 整段折叠成摘要，原文一个字都不进消息
+    await orchestrator.jumpTo(afterSegment);
+    expect(orchestrator.runtimeState.nsfw?.active).toBe(false);
+    const sfwText = agentText(orchestrator);
+    expect(sfwText).toContain("互诉心意");
+    expect(sfwText).not.toContain("轻一点");
+    expect(sfwText).not.toContain("抱紧我");
   });
 });
 

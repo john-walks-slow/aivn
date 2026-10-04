@@ -34,6 +34,30 @@ export interface RebuiltBeat {
   assistant: string;
 }
 
+/** 重建对话轮次时的读者身份。 */
+export interface RebuildMode {
+  /** 此刻是否在限制级通道里。false/缺省 = SFW 侧读者，露骨原文一律不进消息。 */
+  nsfw?: boolean;
+}
+
+/**
+ * 限制级段落 → 日常的过渡轮。
+ *
+ * 一段限制级内容对 SFW 侧只留下这一句摘要，所以过渡轮的措辞在这里定死一份：
+ * 实时退出（`orchestrator.switchBackToSfw`）与从谱系重建（`lineageToBeats` 的折叠）
+ * 共用它——两处各写一套必然漂移，而漂移的表现是「退出前后模型看到的上下文不一样」。
+ */
+export function nsfwTransitionBeat(summary: string): RebuiltBeat {
+  return {
+    user: [
+      "【前情提要·日常接续】（上一幕两人之间展开了亲密温存的互动，全年龄概要如下：）",
+      summary,
+      "（限制级情节已完结，请恢复常规日常基调，根据当前世界状态继续创作后续剧情。）",
+    ].join("\n"),
+    assistant: "已了解。我们将顺着这一进展恢复日常基调，继续后续演出。",
+  };
+}
+
 /**
  * 谱系链 → LLM 对话轮次。
  *
@@ -44,12 +68,18 @@ export interface RebuiltBeat {
  * 链尾若是「有输入没台词」的一组（分岔落在一次表态上），它不能成轮：`{user, assistant:""}`
  * 这种空回复轮次在 Anthropic 一族的接口上直接 400。这类输入原样退回给编排器，
  * 由下一轮生成时并进 user 消息——玩家那句话因此不会丢，也不需要造假轮次。
+ *
+ * **限制级段落按读者折叠**：段内每一轮都带 `payload.nsfw`，段末那一拍的 `beat_end`
+ * 带 `nsfwSummary`。SFW 侧读者（默认）把整段压成一条过渡轮，原文台词与段内玩家输入
+ * 都不进消息；NSFW 侧读者原文照渲、摘要不用（同一段不出两份）。没有标记的老档不受影响。
  */
 export function lineageToBeats(
   chain: readonly LineageEvent[],
   names: Readonly<Record<string, string>>,
   opening: string,
+  mode: RebuildMode = {},
 ): { beats: RebuiltBeat[]; trailingInputs: string[] } {
+  const raw = mode.nsfw === true;
   const text = (event: LineageEvent): string => event.text ?? "";
   const beats: RebuiltBeat[] = [];
   let inputs: string[] = [];
@@ -64,6 +94,16 @@ export function lineageToBeats(
     script = [];
   };
   for (const event of chain) {
+    // SFW 侧读者在限制级段里：一个字都不渲，只在段末那一拍换出摘要
+    if (!raw && event.payload?.nsfw === true) {
+      const summary = event.payload?.nsfwSummary;
+      if (typeof summary === "string" && summary.trim() !== "") {
+        // 段内不 flush，累积器此刻是空的（上一拍的 beat_end 已经结清）；
+        // 这一条直接落，不经过 flush——它的 user 侧是前情提要，不是段内那句被隐去的输入
+        beats.push(nsfwTransitionBeat(summary));
+      }
+      continue;
+    }
     const attrs = event.payload?.attrs ?? {};
     switch (event.kind) {
       case "prompt":

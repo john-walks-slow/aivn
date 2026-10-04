@@ -123,8 +123,15 @@ export class PlayMemory {
   /**
    * archive 检索（search_archive 工具后端）：MiniSearch 全文命中 → 防剧透过滤（祖先链 ⊆ 当前分支路径）。
    * allowed = tree.pathSet()——兄弟/废弃分支的切片不可召回。
+   *
+   * `nsfw` = 读者此刻所处的通道。SFW 侧跳过限制级轮次的切片（露骨原文只许 NSFW 侧读到），
+   * 段末那条摘要切片不带标记、两边都读得到——于是搜得到那一段、看到的是摘要，不断片。
    */
-  searchArchive(query: string, allowed: Set<string>, limit = 5): ArchiveSlice[] {
+  searchArchive(
+    query: string,
+    allowed: Set<string>,
+    opts: { limit?: number; nsfw?: boolean } = {},
+  ): ArchiveSlice[] {
     if (this.slices.length === 0) return [];
     if (!this.index) {
       this.index = new MiniSearch<{ id: string } & ArchiveSlice>({
@@ -135,11 +142,14 @@ export class PlayMemory {
       });
       this.index.addAll(this.slices.map((s) => ({ ...s, id: sliceId(s) })));
     }
+    const limit = opts.limit ?? 5;
     const byId = new Map(this.slices.map((s) => [sliceId(s), s]));
     const hits: ArchiveSlice[] = [];
     for (const { id } of this.index.search(query, { tokenize: cjkBigrams })) {
       const slice = byId.get(id);
-      if (slice && allowed.has(slice.entryId)) hits.push(slice);
+      if (slice && allowed.has(slice.entryId) && (opts.nsfw === true || slice.nsfw !== true)) {
+        hits.push(slice);
+      }
       if (hits.length >= limit) break;
     }
     return hits;
@@ -243,10 +253,21 @@ export interface ArchiveSlice {
   turn: number;
   at: number;
   summary: string;
+  /**
+   * 这片是限制级轮次的露骨原文。只约束检索可见性：SFW 模式跳过，
+   * 段末那条摘要切片不带这个标记（它就是这一段留给 SFW 侧的唯一出口）。
+   */
+  nsfw?: boolean;
 }
 
+/**
+ * 切片的检索 id。
+ *
+ * 限制级那段会在同一个叶节点、同一轮上留两片（原文 + 摘要），只按 `entryId:turn`
+ * 认就会撞成一个 id——MiniSearch 里两篇文档同号，检索命中的是谁全看谁的坐标最后写入。
+ */
 function sliceId(slice: ArchiveSlice): string {
-  return `${slice.entryId}:${slice.turn}`;
+  return `${slice.entryId}:${slice.turn}${slice.nsfw === true ? ":nsfw" : ""}`;
 }
 
 async function readText(path: string): Promise<string> {

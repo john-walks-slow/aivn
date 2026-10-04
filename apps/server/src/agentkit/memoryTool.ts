@@ -67,7 +67,7 @@ const searchArchiveParams = Type.Object(
 export function createMemoryTools(
   deps: Pick<
     PlaywriterKitDeps,
-    "engine" | "memory" | "tree" | "stateFiles" | "arcIds" | "writeCharacter" | "writeMemoryCard"
+    "engine" | "memory" | "tree" | "stateFiles" | "arcIds" | "writeCharacter" | "writeMemoryCard" | "isNsfw"
   > & { characterIds: ReadonlySet<string> },
 ): AgentTool<any>[] {
   const updateState: AgentTool<typeof updateStateParams> = {
@@ -208,11 +208,10 @@ export function createMemoryTools(
     parameters: searchArchiveParams,
     execute: async (_toolCallId, params: Static<typeof searchArchiveParams>) => {
       const { query, limit } = params;
-      const hits = deps.memory.searchArchive(
-        query,
-        deps.tree.pathSet(),
-        Math.max(1, Math.min(10, limit ?? 5)),
-      );
+      const hits = deps.memory.searchArchive(query, deps.tree.pathSet(), {
+        limit: Math.max(1, Math.min(10, limit ?? 5)),
+        nsfw: deps.isNsfw(),
+      });
       if (hits.length === 0) return textResult("（无命中：当前分支历史中未检索到相关内容）");
       return textResult(hits.map((h) => `【第 ${h.turn} 轮】\n${h.summary}`).join("\n\n"));
     },
