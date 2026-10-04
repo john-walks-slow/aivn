@@ -173,8 +173,8 @@ export interface Settings {
   lanAccess: boolean;
   image: {
     enabled: boolean;
-    /** 接口格式，不是产品名：gemini 支持垫图，openai 不支持。 */
-    format: "gemini" | "openai";
+    /** 接口格式，不是产品名：gemini 支持垫图，modelslab 只吃一张，openai 完全不支持。 */
+    format: "gemini" | "openai" | "modelslab";
     baseUrl: string;
     apiKey: string;
     apiKeySet: boolean;

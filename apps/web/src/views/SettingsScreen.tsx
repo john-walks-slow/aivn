@@ -324,7 +324,7 @@ export function SettingsScreen() {
                 onChange={(e) => setDraft({ ...draft, image: { ...draft.image, enabled: e.target.checked } })}
               />
             </Field>
-            <Field label="接口格式" hint="gemini 支持垫图，openai 不支持">
+            <Field label="接口格式" hint="gemini 支持垫图，modelslab 只吃一张，openai 不支持">
               <select
                 value={draft.image.format}
                 onChange={(e) =>
@@ -335,6 +335,7 @@ export function SettingsScreen() {
                 }
               >
                 <option value="gemini">gemini</option>
+                <option value="modelslab">modelslab</option>
                 <option value="openai">openai</option>
               </select>
             </Field>
@@ -368,7 +369,7 @@ export function SettingsScreen() {
             </Field>
             <Field
               label="垫图策略"
-              hint="派生立绘差分时是否拿 neutral 定妆照当参考图。关掉差分与定妆照就不是同一个人了；仅 gemini 格式有效"
+              hint="派生立绘差分时是否拿 neutral 定妆照当参考图。关掉差分与定妆照就不是同一个人了；gemini 与 modelslab 格式有效"
             >
               <select
                 value={draft.image.reference}

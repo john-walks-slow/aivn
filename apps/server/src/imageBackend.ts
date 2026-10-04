@@ -2,8 +2,9 @@
  * 生图后端契约：把「出一张图」从协议细节里抽出来。
  *
  * 两条调用方共用它——playwriter 的 `preload_asset` 预发射（落 media-cache）与
- * 工坊的 `generate_image`（落静态素材）。协议差异（Gemini 原生 / OpenAI 兼容）收敛在
- * `geminiImage.ts` 与 `openaiImage.ts` 两个实现里，调用方只描述「要一张什么图」。
+ * 工坊的 `generate_image`（落静态素材）。协议差异（Gemini 原生 / ModelsLab / OpenAI 兼容）
+ * 收敛在 `geminiImage.ts`、`modelslabImage.ts` 与 `openaiImage.ts` 三个实现里，
+ * 调用方只描述「要一张什么图」。
  */
 
 /**
@@ -45,7 +46,7 @@ export type ImageSize = (typeof IMAGE_SIZES)[number];
 
 /**
  * 生图尺寸（设置页「生图」那一栏）的两种写法：档位（Gemini 的词汇）或字面像素（OpenAI `size` 的词汇）。
- * 两款格式各取所需——Gemini 只认档位，OpenAI 只认 `WxH`。
+ * 各格式各取所需——Gemini 只认档位，OpenAI 只认 `WxH`，ModelsLab 两者都收但封顶 1024。
  */
 export type ImageSizeSpec =
   | { kind: "tier"; tier: ImageSize }

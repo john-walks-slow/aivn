@@ -146,10 +146,16 @@
 
 ## 生图配置（接口格式、画幅与尺寸）
 
-- **生图配置按接口格式而不是按产品名**：`image.format` 选 `gemini|openai` 两种协议形状（`geminiImage.ts` = `/v1beta/models/{model}:generateContent`，垫图走 `inlineData`；`openaiImage.ts` = `/v1/images/generations`，接口没有参考图入参、带垫图直接报错），地址/模型/尺寸统一读 `image.baseUrl` / `image.model` / `image.size`——后者说的是两种官方词汇：`1K`/`2K`/`4K` 是 Gemini `imageConfig.imageSize` 的原词（**K 必须大写，官方拒小写**；语义是总像素量级 1K≈1024²），gemini 侧原样透传。
+- **生图配置按接口格式而不是按产品名**：`image.format` 选 `gemini|modelslab|openai` 三种协议形状（`geminiImage.ts` = `/v1beta/models/{model}:generateContent`，垫图走 `inlineData`；`modelslabImage.ts` = `/images/text2img` 与 `/images/img2img`，垫图先传 `base64_to_url` 换托管链接；`openaiImage.ts` = `/v1/images/generations`，接口没有参考图入参、带垫图直接报错），地址/模型/尺寸统一读 `image.baseUrl` / `image.model` / `image.size`——后者说的是两种官方词汇：`1K`/`2K`/`4K` 是 Gemini `imageConfig.imageSize` 的原词（**K 必须大写，官方拒小写**；语义是总像素量级 1K≈1024²），gemini 侧原样透传。
 - openai 侧的 `size` 是字面 `WxH`，所以档位由 `canvasFor` 按画幅换算（16:9 的 `1K` → `1360x768`），也可以直接写字面尺寸 `1536x1024` 喂只认标准尺寸的老模型。
-- **逐剧目覆盖**：`play.json` 的 `image`（`model` / `size`）覆盖部署级的 `STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`。`ImageRequest` 带可选的 `model?` / `size?`，两个实现取 `req.x ?? this.x`；`PlayAssets` **每次出图现读 play.json**（不是构造时取快照——`PlayAssets` 按剧目缓存、进程内不重建，快照会让「设置页改了模型，出图还是老模型」）。格式不认这个值就直接报错，不静默退回全局。
-- 画幅白名单取两款接口的交集（Gemini 官方 14 个取值，减去 OpenAI 不收的 1:4/4:1/1:8/8:1）——换一家 Gemini 或 OpenAI 生图只改地址与模型名，不动代码。
+- **modelslab 侧三条自带的口子**（`modelslabImage.ts`，别把它当「换个 baseUrl 的 openai」）：
+  - 垫图走**两步**——本地字节只能当 base64 data URI 发给 `/image_editing/base64_to_url` 换一条临时托管链接（官方 `upload_image` 要自备 S3，免 S3 的路子只有这一条），再把链接塞进 `init_image`。所以每次带垫图的出图是两次 HTTP。
+  - **只吃一张垫图**（`init_image` 是单值，只有 Flux Klein 独立端点收数组）；给多张直接报错，不静默取第一张——少垫一张不会报错、只会画错人。**出图画幅随垫图走**（官方原文「生成尺寸与 init_image 相同」），所以这条路不发 `width`/`height`，画幅对不上的兜底仍是 `PlayAssets.assertCanvas`。
+  - **单边上限 1024**（宽高都要被 8 整除），档位对它没有意义，一律按「长边顶到 1024」落地——**立绘要的 `minTier: 2K` 在这个服务上拿不到**，1K 档算出来的长边本来就超上限。字面像素照发但越界即报错（与 openai 格式同一口径）。
+  - `enhance_prompt` 与 `safety_checker` 两条显式写死 `false`：前者默认 true 会重写提示词，而我们的是 tag 结构（`masterpiece, best quality, 1girl, …`），改写会打散它。
+  - `status: processing`（异步队列）本层不接轮询与 webhook，直接报错让部署方换端点——同 `imageFactory` 那条「不为异常做失败降级」的规矩。
+- **逐剧目覆盖**：`play.json` 的 `image`（`model` / `size`）覆盖部署级的 `STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`。`ImageRequest` 带可选的 `model?` / `size?`，三个实现取 `req.x ?? this.x`；`PlayAssets` **每次出图现读 play.json**（不是构造时取快照——`PlayAssets` 按剧目缓存、进程内不重建，快照会让「设置页改了模型，出图还是老模型」）。格式不认这个值就直接报错，不静默退回全局。
+- 画幅白名单取三款接口的交集（Gemini 官方 14 个取值，减去 OpenAI 不收的 1:4/4:1/1:8/8:1）——换一家 Gemini 或 OpenAI 生图只改地址与模型名，不动代码。
 
 ## 服务入口、端点与记账
 

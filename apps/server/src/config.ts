@@ -62,7 +62,7 @@ export interface ServerConfig {
   beatTimeoutMs: number;
   image: {
     enabled: boolean;
-    format: "gemini" | "openai";
+    format: "gemini" | "openai" | "modelslab";
     baseUrl: string;
     apiKey: string;
     model: string;
@@ -168,7 +168,7 @@ export function settingsFromEnv(env: NodeJS.ProcessEnv): ServerConfig {
     beatTimeoutMs: parsePositiveInt("STAGE_BEAT_TIMEOUT_MS", env.STAGE_BEAT_TIMEOUT_MS, 240_000),
     image: {
       enabled: env.STAGE_IMAGE_ENABLED !== "false",
-      format: parseEnum("STAGE_IMAGE_FORMAT", env.STAGE_IMAGE_FORMAT, ["gemini", "openai"] as const, "openai"),
+      format: parseEnum("STAGE_IMAGE_FORMAT", env.STAGE_IMAGE_FORMAT, ["gemini", "openai", "modelslab"] as const, "openai"),
       baseUrl: env.STAGE_IMAGE_BASE_URL ?? "http://127.0.0.1:9999",
       apiKey: env.STAGE_IMAGE_API_KEY ?? "",
       model: env.STAGE_IMAGE_MODEL ?? "gpt-image-2",
@@ -302,7 +302,7 @@ export function applyPatch(base: ServerConfig, patch: SettingsPatch): { next: Se
   if (image) {
     if (image.enabled !== undefined) putIn("image", "enabled", image.enabled);
     if (image.format !== undefined) {
-      putIn("image", "format", parseEnum("生图接口格式", image.format, ["gemini", "openai"] as const, "gemini"));
+      putIn("image", "format", parseEnum("生图接口格式", image.format, ["gemini", "openai", "modelslab"] as const, "gemini"));
     }
     if (image.baseUrl !== undefined) putIn("image", "baseUrl", image.baseUrl.trim().replace(/\/$/, ""));
     if (image.apiKey !== undefined) putIn("image", "apiKey", image.apiKey.trim());

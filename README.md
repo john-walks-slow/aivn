@@ -119,12 +119,12 @@ pnpm --filter @aivn/web dev         # 开发态前端：:5180，/api /plays /ws 
 | 字段 | JSON 键 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | 启用生图 | `image.enabled` | `false` | 生图总开关（关 = 只用导入素材，不发起任何生图） |
-| 接口格式 | `image.format` | `gemini` | **协议形状，不是产品名**：`gemini` = Google 原生 `:generateContent`（支持垫图）；`openai` = 标准 `/v1/images/generations`。接官方 API、flow2api 还是别的网关由地址决定 |
-| 生图 Key | `image.apiKey` | 空 | `gemini` 走 `x-goog-api-key`，`openai` 走 `Authorization: Bearer` |
-| 生图地址 | `image.baseUrl` | 空 | 生图服务根地址。**别带 `/v1` 或 `/v1beta`**，版本段按格式自己拼 |
-| 出图模型 | `image.model` | 空 | 出图模型名，按所选格式与网关填 |
-| 出图档位 | `image.size` | `1K` | `1K` / `2K` / `4K`（**K 大写**，官方拒小写）= 总像素量级；也可直接写字面像素 `1536x1024`（openai 格式专用） |
-| 垫图策略 | `image.reference` | `neutral` | 派生立绘差分时是否拿该主体的 `neutral` 定妆照当参考图。**仅 `gemini` 格式有效** |
+| 接口格式 | `image.format` | `gemini` | **协议形状，不是产品名**：`gemini` = Google 原生 `:generateContent`（垫图走 `inlineData`，最多几张都行）；`modelslab` = `/images/text2img` + `/images/img2img`（垫图先传 base64 换托管链接，**只吃一张**）；`openai` = 标准 `/v1/images/generations`。接官方 API、flow2api 还是别的网关由地址决定 |
+| 生图 Key | `image.apiKey` | 空 | `gemini` 走 `x-goog-api-key`，`openai` 走 `Authorization: Bearer`，`modelslab` 走请求体里的 `key` |
+| 生图地址 | `image.baseUrl` | 空 | 生图服务根地址。**别带 `/v1` 或 `/v1beta`**，版本段按格式自己拼（`modelslab` 填到 `/api/v6` 为止） |
+| 出图模型 | `image.model` | 空 | 出图模型名，按所选格式与网关填（`modelslab` 填社区模型的 `model_id`） |
+| 出图档位 | `image.size` | `1K` | `1K` / `2K` / `4K`（**K 大写**，官方拒小写）= 总像素量级；也可直接写字面像素 `1536x1024`（openai 格式专用）。`modelslab` 没有档位概念，一律按长边 1024 落地 |
+| 垫图策略 | `image.reference` | `neutral` | 派生立绘差分时是否拿该主体的 `neutral` 定妆照当参考图。**`gemini` 与 `modelslab` 格式有效**（后者只吃一张，且出图画幅随垫图走） |
 | 出图并发 | `image.concurrency` | `6` | 并发出图上限。每张图 15–140s，并发太小会拖穿预发射窗口 |
 | 出图超时 ms | `image.timeoutMs` | `180000` | 单图超时。超时按失败处理，舞台保持降级视觉 |
 
@@ -251,16 +251,28 @@ data/
 }
 ```
 
-两款格式的能力差：
+```jsonc
+// modelslab 格式（社区出图模型，垫图走两步上传）
+"image": {
+  "enabled": true,
+  "format": "modelslab",
+  "baseUrl": "https://modelslab.com/api/v6",   // 版本段填到这里为止
+  "apiKey": "<your-api-key>",
+  "model": "<model_id>",                       // 社区模型或自训模型的 id
+  "size": "1K"                                 // 档位对它无意义，单边上限 1024
+}
+```
 
-| | `gemini` | `openai` |
-| --- | --- | --- |
-| 端点 | `POST {base}/v1beta/models/{model}:generateContent` | `POST {base}/v1/images/generations` |
-| 认证头 | `x-goog-api-key` | `Authorization: Bearer` |
-| 画幅 | `generationConfig.imageConfig.aspectRatio`，官方 14 个取值 | 没有画幅参数，**并进 `size`**：档位按总像素量级换算，两边对齐 16 的倍数（`1K`/`16:9` → `1360x768`） |
-| 尺寸 | `imageConfig.imageSize`，只认 `512` / `1K` / `2K` / `4K`（K 大写） | `size` 是**字面 `WxH`**，合法值按模型分家，见下 |
-| 垫图 | 支持（`inlineData` 排在提示词之后，Gemini 3 系上限 14 张） | `/generations` 没有参考图入参——工坊要出差分时直接报错，不静默丢弃（图生图走 `/v1/images/edits`，本站未接） |
-| 返回 | `candidates[0].content.parts[].inlineData`（`fileData` 会单独报错） | `data[0].b64_json` 或 `data[0].url`（远端 url 由本站下载） |
+三款格式的能力差：
+
+| | `gemini` | `modelslab` | `openai` |
+| --- | --- | --- | --- |
+| 端点 | `POST {base}/v1beta/models/{model}:generateContent` | `POST {base}/images/text2img`、`/images/img2img` | `POST {base}/v1/images/generations` |
+| 认证 | `x-goog-api-key` 头 | 请求体里的 `key` 字段 | `Authorization: Bearer` 头 |
+| 画幅 | `generationConfig.imageConfig.aspectRatio`，官方 14 个取值 | 没有画幅参数，`width`/`height` 按画幅换算后按 8 对齐、**长边封顶 1024** | 没有画幅参数，**并进 `size`**：档位按总像素量级换算，两边对齐 16 的倍数（`1K`/`16:9` → `1360x768`） |
+| 尺寸 | `imageConfig.imageSize`，只认 `512` / `1K` / `2K` / `4K`（K 大写） | **档位对它无意义**（单边上限 1024，1K 档算出来的长边本来就超），一律按长边 1024；字面像素可写，越界即报错 | `size` 是**字面 `WxH`**，合法值按模型分家，见下 |
+| 垫图 | 支持（`inlineData` 排在提示词之后，Gemini 3 系上限 14 张） | 支持但**只吃一张**（`init_image` 单值）：本地字节先发 `/image_editing/base64_to_url` 换一条托管链接，多张直接报错 | `/generations` 没有参考图入参——工坊要出差分时直接报错，不静默丢弃（图生图走 `/v1/images/edits`，本站未接） |
+| 返回 | `candidates[0].content.parts[].inlineData`（`fileData` 会单独报错） | `output[0]` 是图片地址（本站下载）；`status: processing` 的异步队列直接报错 | `data[0].b64_json` 或 `data[0].url`（远端 url 由本站下载） |
 
 **出图档位（`image.size`）的两种写法**：档位 `1K` / `2K` / `4K`（= 总像素量级，1K ≈ 1024²；官方 Gemini
 另有一个 `512`（0.5K，仅 3.1 Flash Image），本配置没开放），或字面像素 `1536x1024`。档位只对
@@ -341,7 +353,7 @@ data/
 - **背景与 CG 可以垫参考立绘**：说「这张 CG 里要有澪和小春」，工坊会把这两个角色的立绘（优先 `neutral`，没有就退回该角色任意一张差分）按顺序垫给模型，**数组顺序就是提示词里「第一张、第二张」的顺序**。引擎会自动在提示词末尾点名「第 1 张是澪、第 2 张是小春」——垫图本身没有名字，不点名模型只会画出两个长得一样的人，而且画错得毫无痕迹
   - 点名的主体既没有立绘、也没有角色卡时会**直接报错**，不出一张少人的图（主体 = `assets/sprites/<id>/` 或 `characters/<id>.md`，有其一即可）
   - 垫图会让单张从 69s 变 138s（实测）。垫图策略（`image.reference`）是全局开关，设成 `none` 会把显式点名要的参考立绘一起关掉
-  - 只在接口格式为 `gemini`（`image.format`）下可用：`/v1/images/generations` 没有参考图入参，OpenAI 格式下带垫图直接报错
+  - `gemini` 与 `modelslab` 格式下可用（`openai` 格式的 `/v1/images/generations` 没有参考图入参，带垫图直接报错）：`modelslab` 的 `img2img` 只吃**一张**垫图，给多张直接报错；且它的出图画幅**随垫图走**（官方文档写死「生成尺寸与 init_image 相同」），所以垫图本身的画幅要对
   - 垫图读的是 `assets/sprites/`，与谁调的无关，**谁都能用**：工坊在前台看着出，剧作家后台排产也一样垫
 - **画风没有默认值**：工坊会主动问你想要什么画风，定下来写进 `memory/always/craft.md` 长期生效。也可以直接说「用赛璐珞动画风」，之后所有出图都按它来
 - 出图是慢操作（100s+），工坊单轮对话上限 7 分钟；出图前工坊会先跟你确认要出什么
