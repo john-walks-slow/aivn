@@ -35,7 +35,9 @@
 - `src/stage/CgView.tsx`（CG 视图：`GET /api/plays/<id>/cg` 的只读台账 —— `assets/cg` 静态素材与站内生成图共用一张卡，`origin` 分角标，站内生成那张把生图 prompt 原文摊开；开着这一页时 `asset_ready` 里的 cg 自增 nonce 补进网格。服务端那一路 `generatedLedger.ts` 的 `readPlayLedgerEntries()` 直接读 `assets/generated.json`，不建 runtime、不触发生图）。
 - `src/stage/`：
   - ScriptBuilder 带 cues 轨道与行 seq。
+  - **玩家输入是一等舞台事件**（`player_input`，服务端先于 `beat_start` 广播）：落进缓冲就是普通一行（type `"input"`、actorId `player`，整行显示不走打字机），**没有客户端回声层**——「选完立刻看见」全靠 `shouldAutoStart` 的回执例外（不等 `live`/`auto`，只让语音 hold 与「当前行已读完」把关）。transcript 按 seq 认回谱系 prompt 节点，认走的行及时移出老档兜底池（无 seq 按路径顺序+同文本对回，防同 key 双条）；`beatAtLine` 对 input 行恒 null——玩家的话排在两轮之间，不锚任何一轮，原语按钮置灰。
   - usePlayback 打字机+二段式点击+自动模式+**按住 Ctrl 的快进档**（整行一次读完、行间不设停顿，只追缓冲里已有的内容；回看中不推进；输入框里不劫持）+语音钩子。
+  - **回看中生图的插图是行级旁注**（谱系 `LineageNodeView.cgs`，服务端 `recordCg`）：`usePlayback` 收 `cgByNode`（nodeId → 最新一张），`withAttachedCg` 在返回值上按 nodeId 覆盖画面——图跟着你看的那一行，不往后漂、不进树、不分叉；`cg_attached` 帧一到就重拉谱系。
   - StageTheater 舞台视觉层+解锁遮罩+三按钮导演栏（插一句 / 编辑当前这句台词 / **重写**这一轮，输入都走 Modal；「重写」实际是「分岔 + 把指令排队」，指令生效于重写之后的下一次开口，不是写进正在重写的那一轮）。
   - StageShell 外壳（侧栏五视图 + 视图栏 `×` + `Esc` + 折叠/拖宽/窄屏抽屉 + 底栏两行：当前周目在最上、`exit` 图标的「退出」压在最下，两者间一条线）。
   - `stage/view.ts` 的 `stageViewFromQuery`/`workshopUrl`/`workshopConnectionFromQuery`。
