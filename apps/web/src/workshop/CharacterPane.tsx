@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
-import { characterCardPath, isProtagonist, PROTAGONIST_ID, serializeCharacterCard } from "@aivn/core";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  characterCardPath,
+  isProtagonist,
+  PROTAGONIST_ID,
+  serializeCharacterCard,
+  spriteIdOf,
+} from "@aivn/core";
 import type { CharacterDocument, GeneratedAsset, PlayConfig } from "@aivn/core";
 import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon } from "../ui/Icon.js";
@@ -81,17 +87,28 @@ export function CharacterPane({
   useEffect(() => subscribeAssetReady?.(() => reloadSprites()), [subscribeAssetReady, reloadSprites]);
 
   /**
-   * 一个角色的缩略图：中立差分优先，没有就取第一张。
-   *
+   * 一个角色的立绘目录：卡上显式绑定优先，没写就是同名（`spriteIdOf` 是唯一解析口）。
    * 立绘与角色卡是两张各自可选的附件，所以它有图才有缩略图；没图的角色仍显示原来那枚图标。
    */
-  const variantsOf = (id: string): string[] => sprites[`sprites/${id}`] ?? [];
+  const dirOf = (role: Role): string => spriteIdOf(role.id, role);
 
-  const spriteThumb = (id: string): string | null => {
-    const files = variantsOf(id);
+  const variantsOf = (dir: string): string[] => sprites[`sprites/${dir}`] ?? [];
+
+  const spriteThumb = (dir: string): string | null => {
+    const files = variantsOf(dir);
     const pick = files.find((f) => f.replace(/\.\w+$/, "") === "neutral") ?? files[0];
-    return pick ? assetUrl(playId, `sprites/${id}`, pick) : null;
+    return pick ? assetUrl(playId, `sprites/${dir}`, pick) : null;
   };
+
+  /** 剧目里现有的立绘目录（绑定下拉的候选）。 */
+  const spriteDirs = useMemo(
+    () =>
+      Object.keys(sprites)
+        .filter((key) => key.startsWith("sprites/"))
+        .map((key) => key.slice("sprites/".length))
+        .sort(),
+    [sprites],
+  );
 
   /** 角色卡的编辑走这里：只改内存，保存时才落盘。 */
   const patchRole = (id: string, fn: (doc: Role) => void): void => {
@@ -171,6 +188,22 @@ export function CharacterPane({
   // 选中的那张一定在（主角卡在上面兜过底），兜底的 `roles[0]` 只防空卡目录
   const activeRole = roles.find((r) => r.id === open) ?? roles[0] ?? null;
   const dirty = dirtyRoles.size > 0;
+  /** 选中的角色用哪一套立绘（绑定优先、缺省同名）。 */
+  const activeDir = activeRole ? dirOf(activeRole) : "";
+  /**
+   * 下拉的当前值：与角色同名（含手写的 `sprite: <自己的 id>` 那种卡）一律落在第一项——
+   * 同名目录写与不写是同一件事，摆两个都能选「mio」的选项只会让人猜。
+   */
+  const boundValue = activeRole?.sprite && activeRole.sprite !== activeRole.id ? activeRole.sprite : "";
+  /** 绑定下拉的候选：剧目里现有的目录 ∪ 当前绑定值（可能还没建、刚改成它）；同名那条由第一项代表。 */
+  const bindChoices = [...new Set([...spriteDirs, ...(boundValue ? [boundValue] : [])])]
+    .filter((dir) => dir !== activeRole?.id)
+    .sort();
+  /** 这个目录已经被谁用了：两个角色指向同一套立绘是合法的（同一人的两种身份），但选之前得看得见。 */
+  const dirOwnerHint = (dir: string): string => {
+    const owner = roles.find((r) => r.id !== activeRole?.id && dirOf(r) === dir);
+    return owner ? `（${owner.name || owner.id} 在用）` : "";
+  };
 
   return (
     <div className="workshop-tab-pane setting-cards-pane">
@@ -182,7 +215,7 @@ export function CharacterPane({
 
       <div className="setting-cards">
         {roles.map((role) => {
-          const sprite = spriteThumb(role.id);
+          const sprite = spriteThumb(dirOf(role));
           return (
             <button
               key={role.id}
@@ -272,17 +305,17 @@ export function CharacterPane({
 
           {/* 立绘与它的入口同一层，摆在名字上面：这一页第一眼要看的就是这个人长什么样 */}
           <div className="sprite-row">
-            {variantsOf(activeRole.id).length > 0 ? (
+            {variantsOf(activeDir).length > 0 ? (
               <div className="sprite-peek">
-                {variantsOf(activeRole.id).map((name) => {
-                  const url = assetUrl(playId, `sprites/${activeRole.id}`, name);
+                {variantsOf(activeDir).map((name) => {
+                  const url = assetUrl(playId, `sprites/${activeDir}`, name);
                   return (
                     <button
                       key={name}
                       type="button"
                       className="sprite-peek-item"
                       title="看大图"
-                      onClick={() => setZoom({ url, name: `${activeRole.id}/${name}` })}
+                      onClick={() => setZoom({ url, name: `${activeDir}/${name}` })}
                     >
                       <img src={url} alt="" />
                       <span>{name.replace(/\.\w+$/, "")}</span>
@@ -297,15 +330,38 @@ export function CharacterPane({
               <button
                 className="ghost-btn"
                 title="这个角色的立绘：差分、生成、上传都在素材页"
-                onClick={() => onManageSprites(activeRole.id)}
+                onClick={() => onManageSprites(activeDir)}
               >
                 <span className="btn-icon">
-                  <Icon name="assets" size={13} />{" "}
-                  {variantsOf(activeRole.id).length > 0 ? "管理立绘" : "创建立绘"}
+                  <Icon name="assets" size={13} /> {variantsOf(activeDir).length > 0 ? "管理立绘" : "创建立绘"}
                 </span>
               </button>
             )}
           </div>
+
+          {/* 用哪一套立绘写在卡上（`sprite:`）：不写就是与角色同名，这一行就是「显式绑定」的落点 */}
+          <label className="sprite-bind">
+            <span>立绘目录</span>
+            <select
+              value={boundValue}
+              onChange={(e) =>
+                patchRole(activeRole.id, (d) => {
+                  d.sprite = e.target.value === "" ? undefined : e.target.value;
+                })
+              }
+            >
+              <option value="">与角色同名（{activeRole.id}）</option>
+              {bindChoices.map((dir) => (
+                <option key={dir} value={dir}>
+                  {dir}
+                  {dirOwnerHint(dir)}
+                </option>
+              ))}
+            </select>
+            <span className="muted small">
+              {boundValue ? `assets/sprites/${activeDir}/` : "不写这一格＝用同名目录"}
+            </span>
+          </label>
 
           <CharacterEditor
             playId={playId}

@@ -290,16 +290,21 @@ describe("导演生图：前置守卫（都不该碰生图后端）", () => {
       messages.push(msg);
     };
 
-    // 模拟 streamFn 返回完整立绘提示词
-    (house as any).streamFn = async () => ({
-      async *[Symbol.asyncIterator]() {
-        yield {
-          type: "text_delta",
-          delta: "A beautiful anime girl with pink hair smiling brightly, school uniform, detailed illustration, soft lighting",
-        };
-        yield { type: "done", reason: "stop" };
-      },
-    });
+    // 模拟 streamFn 返回完整立绘提示词；顺手把喂给模型的那份上下文留下来（人设从这儿进提示词）
+    let sent = "";
+    (house as any).streamFn = async (...args: any[]) => {
+      sent = JSON.stringify(args[1] ?? "");
+      return {
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: "text_delta",
+            delta:
+              "A beautiful anime girl with pink hair smiling brightly, school uniform, detailed illustration, soft lighting",
+          };
+          yield { type: "done", reason: "stop" };
+        },
+      };
+    };
 
     const res = await house.generateImage("p1", {
       kind: "sprite",
@@ -309,6 +314,7 @@ describe("导演生图：前置守卫（都不该碰生图后端）", () => {
 
     expect(res.target).toBe("sprites/koharu/smile");
     expect(res.path).toBe("assets/sprites/koharu/smile.png");
+    expect(sent).toContain("小春");
 
     // 等待异步 kick 结算
     await new Promise((r) => setTimeout(r, 50));
@@ -319,5 +325,16 @@ describe("导演生图：前置守卫（都不该碰生图后端）", () => {
       url: "/api/plays/p1/assets/sprites/koharu/smile.png",
       path: "assets/sprites/koharu/smile.png",
     });
+
+    // 显式绑定：出图的 spriteId 是**立绘目录名**，人设要按目录反查卡（拿目录去查角色表会扑空）
+    await writeFile(join(charDir, "rin.md"), "---\nname: 铃音\nsprite: rinne\n---\n金发狐耳少女", "utf8");
+    const bound = await house.generateImage("p1", {
+      kind: "sprite",
+      spriteId: "rinne",
+      variant: "neutral",
+    });
+    expect(bound.target).toBe("sprites/rinne/neutral");
+    expect(sent).toContain("铃音");
+    expect(sent).toContain("金发狐耳少女");
   });
 });

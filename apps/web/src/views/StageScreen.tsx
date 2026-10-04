@@ -338,7 +338,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   const index: AssetIndex | null = useMemo(
     () =>
       detail
-        ? buildAssetIndex(playId, assets, generated.images, detail.manifest ?? {})
+        ? buildAssetIndex(playId, assets, generated.images, detail.manifest ?? {}, detail.cast)
         : null,
     [detail, assets, playId, generated.images],
   );

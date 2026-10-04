@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import type { ServerMessage } from "@aivn/core";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
-import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, characterCardPath, characterIdOfPath, PROTAGONIST_ID, spriteDeclarationOf, spriteTitlesOf, type EngineStateSnapshot, type ActorAnchor, type SpriteFraming, type SpriteStature } from "@aivn/core";
+import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, characterCardPath, characterIdOfPath, characterOfSprite, PROTAGONIST_ID, spriteDeclarationOf, spriteIdOf, spriteTitlesOf, type CharacterDocument, type EngineStateSnapshot, type ActorAnchor, type SpriteFraming, type SpriteStature } from "@aivn/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
 import type { AssetLibrary } from "./library.js";
@@ -1013,20 +1013,22 @@ export class PlayHouse {
     const craft = await readFileOrEmpty(runtime.store.memoryDir("always", "craft.md"));
     const memory = await PlayMemory.load(runtime.store);
 
-    // 准备主体数据：角色卡是可选的，没有卡的主体（机甲、道具）名字取立绘声明的 title
+    // 准备主体数据：角色卡是可选的，没有卡的主体（机甲、道具）名字取立绘声明的 title。
+    // 参考立绘与全套主体都按**立绘目录**列（提示词里的编号图就是目录里的那张），
+    // 所以认卡要按绑定反查——目录可以不叫角色的 id（卡上 `sprite: rinne`）。
     const manifest = await runtime.store.assetMeta();
-    const spriteName = (id: string): string =>
-      memory.characters.get(id)?.name ?? spriteDeclarationOf(manifest, id).title ?? id;
+    const cardOf = (dir: string): CharacterDocument | null =>
+      characterOfSprite(dir, memory.characters.values());
     const subjectOf = (id: string) => ({
       id,
-      name: spriteName(id),
-      body: memory.characters.get(id)?.body,
+      name: cardOf(id)?.name ?? spriteDeclarationOf(manifest, id).title ?? id,
+      body: cardOf(id)?.body,
     });
     const refSprites = refIds.map(subjectOf);
     // 参考图给定时只列这几张；没给才铺全套主体（角色卡 ∪ 立绘声明）当世界观上下文
     const allSprites = [
       ...new Set([
-        ...memory.characters.keys(),
+        ...[...memory.characters.entries()].map(([id, card]) => spriteIdOf(id, card)),
         ...Object.keys(manifest).filter((key) => !key.includes("/")),
       ]),
     ].map(subjectOf);
@@ -1103,7 +1105,8 @@ export class PlayHouse {
       targetPath = `assets/sprites/${spriteId}/${variant}.png`;
       // 卡是可选的：立绘是独立素材，机甲、道具、猫都没有卡。有卡就拿人设喂提示词，
       // 没有就只按用户写的要求出图——不为出一张图凭空造一张卡。
-      const card = memory.characters.get(spriteId);
+      // 找的是**绑到这个立绘目录**的卡：目录可以不叫角色的 id（卡上写了 `sprite: rinne`）
+      const card = characterOfSprite(spriteId, memory.characters.values());
       targetSpec = {
         kind: "sprite",
         spriteId,
@@ -1143,15 +1146,18 @@ export class PlayHouse {
       }
 
       const manifest = await runtime.store.assetMeta();
+      // 同 requestCg：参考立绘与全套主体按立绘目录列，认卡走绑定反查
+      const cardOf = (dir: string): CharacterDocument | null =>
+        characterOfSprite(dir, memory.characters.values());
       const subjectOf = (id: string) => ({
         id,
-        name: memory.characters.get(id)?.name ?? spriteDeclarationOf(manifest, id).title ?? id,
-        body: memory.characters.get(id)?.body,
+        name: cardOf(id)?.name ?? spriteDeclarationOf(manifest, id).title ?? id,
+        body: cardOf(id)?.body,
       });
       const refSprites = refIds.map(subjectOf);
       const allSprites = [
         ...new Set([
-          ...memory.characters.keys(),
+          ...[...memory.characters.entries()].map(([id, card]) => spriteIdOf(id, card)),
           ...Object.keys(manifest).filter((key) => !key.includes("/")),
         ]),
       ].map(subjectOf);

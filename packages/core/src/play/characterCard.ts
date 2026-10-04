@@ -9,19 +9,20 @@
  * `---
  * id: mio
  * name: ミオ
+ * sprite: mio
  * voice: 清冷少女声
  * voiceId: aaa111...
  * ---`
  *
- * **卡只管「这个人是谁」**：名字、人设、音色。立绘是另一件可选附件，落在
- * `assets/sprites/<id>/` 并声明在素材表里（见 play/assets.ts）——两者同名即绑定，
- * 但谁也不依赖谁。机甲、猫、道具可以只有立绘没有卡；路人不建卡也能上台，
- * 名牌与音色各有回落（README「主体与附件」）。
+ * **卡只管「这个人是谁」**：名字、人设、音色，以及这个人**用哪一套立绘**（`sprite`）。
+ * 立绘是另一件可选附件，落在 `assets/sprites/<立绘目录>/` 并声明在素材表里
+ * （见 play/assets.ts）——两张附件谁也不依赖谁。机甲、猫、道具可以只有立绘没有卡；
+ * 路人不建卡也能上台，名牌与音色各有回落（README「主体与附件」）。
  *
  * **play.json 不再承载任何角色数据**——`characters` 那个字段留着只是剧目元数据
  * （像主要角色表），没有任何运行时逻辑读它。角色的全部配置在这里。
  *
- * 手写而非引 YAML 依赖：字段集固定且很小（id/name/voice/voiceId），
+ * 手写而非引 YAML 依赖：字段集固定且很小（id/name/sprite/voice/voiceId），
  * 解析规则必须与「模型会怎么写」对齐——引一个完整 YAML 解析器只会多出
  * 「冒号后要不要空格」「引号要不要闭合」这类模型写不对、报错又难懂的失败模式。
  */
@@ -73,6 +74,12 @@ export interface CharacterHead {
   id?: string;
   /** 显示名（剧作家 A 区与舞台名牌用）。 */
   name?: string;
+  /**
+   * 显式绑定的立绘目录（`assets/sprites/<sprite>/`）。**不写就是同名**：
+   * `characters/mio.md` 默认用 `assets/sprites/mio/`。要写它的场合——立绘目录不叫这个角色的 id，
+   * 或一张卡要用别处画好的一整套立绘。取值交给 `spriteIdOf` 解析，别在调用点各写一遍回落。
+   */
+  sprite?: string;
   /** 音色的人话描述（角色卡上给用户看的），不是 id。 */
   voice?: string;
   /** Fish Audio reference_id（32 位 hex），TTS 取音色按它查。 */
@@ -86,7 +93,35 @@ export interface CharacterDocument extends CharacterHead {
 }
 
 /** 头部字段的书写顺序——序列化时按这个顺序，文件在 diff 里才稳定。 */
-const SCALAR_FIELDS = ["id", "name", "voice", "voiceId"] as const;
+const SCALAR_FIELDS = ["id", "name", "sprite", "voice", "voiceId"] as const;
+
+/**
+ * 一个角色用哪一套立绘（`assets/sprites/` 下的目录名）：卡上显式绑定优先，没写就是同名。
+ *
+ * 舞台、工坊与提示词都从这里取——绑定规则只此一处，别在调用点各写一遍 `?? id`：
+ * 那样每加一个消费方就多一个漏掉显式绑定的地方。
+ */
+export function spriteIdOf(id: string, head: { sprite?: string } = {}): string {
+  const bound = head.sprite?.trim();
+  return bound ? bound : id;
+}
+
+/**
+ * `spriteIdOf` 的反向：这个立绘目录属于哪张卡（谁都没绑就是 null）。
+ *
+ * 素材页的名字、工坊出图时喂给模型的人设都按**立绘目录**找卡——目录不一定是角色的 id，
+ * 拿目录去查角色表会扑空（显式绑定之后这是常态）。两张卡绑同一个目录时取先遇到的那张：
+ * 目录只有一个名字，争用时结果必须确定。
+ */
+export function characterOfSprite<T extends { id?: string; sprite?: string }>(
+  dir: string,
+  cards: Iterable<T>,
+): T | null {
+  for (const card of cards) {
+    if (card.id && spriteIdOf(card.id, card) === dir) return card;
+  }
+  return null;
+}
 
 /**
  * 解析角色卡。文件没有 frontmatter 时全部字段为空、正文是全文——

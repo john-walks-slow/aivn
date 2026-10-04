@@ -14,6 +14,7 @@ import {
   SPRITE_STATURES,
   SPRITE_STATURE_LABELS,
   spriteDeclarationOf,
+  spriteIdOf,
   spriteTitlesOf,
 } from "@aivn/core";
 import { api, assetUrl, type PlayDetail } from "../api.js";
@@ -147,17 +148,34 @@ export function AssetsPanel({
 
   /** 立绘级名牌（素材表 `<id>.title`）：无卡主体在卡上显示、也能当参考垫图的名字。 */
   const spriteTitles = useMemo(() => spriteTitlesOf(assetMeta), [assetMeta]);
-  /** 角色卡名字表：立绘只按 id 寻址，有同名卡时在卡上标注一句人名。 */
-  const cardNames = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const card of detail?.cast ?? []) if (card.id) map.set(card.id, card.name ?? card.id);
+  /**
+   * 立绘目录 → 用它那张卡。反查按**绑定**走（`spriteIdOf`）：卡上写了 `sprite: rinne`，
+   * 目录 `rinne` 就是这张卡的，不能拿同名 id 去认。两张卡绑同一个目录时留第一个。
+   */
+  const spriteOwners = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    for (const card of detail?.cast ?? []) {
+      if (!card.id) continue;
+      const dir = spriteIdOf(card.id, card);
+      if (!map.has(dir)) map.set(dir, { id: card.id, name: card.name ?? card.id });
+    }
     return map;
   }, [detail]);
-  /** 名字表：有同名角色卡以卡为准，没有卡就用素材表里的名牌，再没有才落 id。 */
+  /** 名字表：有卡认下这个目录就以卡为准，没有卡就用素材表里的名牌，再没有才落目录名。 */
   const nameOf = useCallback(
-    (id: string): string => cardNames.get(id) ?? spriteTitles[id] ?? id,
-    [cardNames, spriteTitles],
+    (dir: string): string => spriteOwners.get(dir)?.name ?? spriteTitles[dir] ?? dir,
+    [spriteOwners, spriteTitles],
   );
+  /**
+   * 目录名与某张卡的 id 同名、但那张卡绑去了别的目录：这套图现在没人用。
+   * 不说出来，用户看到的就是「卡在、图也在，怎么就是绑不上」——名字按绑定反查后会显示成别的（或目录名）。
+   * 已经被别的卡认领的目录不算这种情况：那套图有主，名字与归属提示都跟着主人走。
+   */
+  const orphanNote = (dir: string): string | null => {
+    const card = detail?.cast.find((c) => c.id === dir);
+    if (!card || spriteOwners.has(dir)) return null;
+    return `角色「${card.name ?? dir}」的立绘绑的是 ${spriteIdOf(dir, card)}`;
+  };
   /** 剧目里已有的条目：立绘按目录（目录名即条目 id），其余按 stem。 */
   const owned = useMemo(() => {
     const set = new Set<string>();
@@ -265,7 +283,8 @@ export function AssetsPanel({
           const spriteId = dir.slice("sprites/".length);
           const files = assets[dir] ?? [];
           const decl = spriteDeclarationOf(assetMeta, spriteId);
-          const cardName = cardNames.get(spriteId);
+          const owner = spriteOwners.get(spriteId);
+          const orphan = orphanNote(spriteId);
           // 标题写引擎真正在用的名字（卡 name → 名牌 → id）：只有图没卡也是常态，
           // 名字跟 id 不同才把 id 并排带上——脚本里引用的是 id，藏掉它会更难用。
           const label = nameOf(spriteId);
@@ -275,8 +294,10 @@ export function AssetsPanel({
                 <strong>
                   {label}
                   {label !== spriteId && <span className="muted small"> {spriteId}</span>}
-                  {/* 有卡时名字本来就从卡上来，不必再说一遍；没卡才是要讲清的状态 */}
-                  {!cardName && <span className="muted small"> 只有立绘</span>}
+                  {/* 有卡时名字本来就从卡上来（按绑定反查的），不必再说一遍；没卡才是要讲清的状态。
+                      卡绑去了别处时那句「只有立绘」是假话——已经有一张卡了，只是它不看这个目录 */}
+                  {!owner && !orphan && <span className="muted small"> 只有立绘</span>}
+                  {orphan && <span className="muted small"> ｜{orphan}</span>}
                 </strong>
                 <button
                   className="ghost-btn"

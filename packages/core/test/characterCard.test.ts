@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseCharacterCard, serializeCharacterCard } from "../src/play/characterCard.js";
+import {
+  characterOfSprite,
+  parseCharacterCard,
+  serializeCharacterCard,
+  spriteIdOf,
+} from "../src/play/characterCard.js";
 
 /**
  * 角色卡的 frontmatter 头。
@@ -19,6 +24,33 @@ describe("角色卡 frontmatter", () => {
     const doc = { id: "mio", name: "ミオ", voice: "清冷少女声", voiceId: "aaa111", body: "# ミオ\n\n18 岁。" };
     const back = parseCharacterCard(serializeCharacterCard(doc));
     expect(back).toEqual(doc);
+  });
+
+  it("立绘目录的显式绑定往返，且排在名字后面", () => {
+    const doc = { id: "mio", name: "ミオ", sprite: "mio_winter", voice: "清冷少女声", body: "人设" };
+    const text = serializeCharacterCard(doc);
+    expect(parseCharacterCard(text).sprite).toBe("mio_winter");
+    expect(text.indexOf("name:")).toBeLessThan(text.indexOf("sprite:"));
+    expect(text.indexOf("sprite:")).toBeLessThan(text.indexOf("voice:"));
+  });
+
+  it("没写就是同名；写了空格或空串也算没写", () => {
+    // 绑定只有一个解析口：舞台、工坊、提示词都问它，回落规则不会各自漂
+    expect(spriteIdOf("mio")).toBe("mio");
+    expect(spriteIdOf("mio", {})).toBe("mio");
+    expect(spriteIdOf("mio", { sprite: "   " })).toBe("mio");
+    expect(spriteIdOf("mio", { sprite: " mio_b " })).toBe("mio_b");
+  });
+
+  it("按立绘目录反查卡：目录不等于角色 id 时也找得到，没人绑就是 null", () => {
+    const cards = [
+      { id: "mio", body: "" },
+      { id: "rin", sprite: "rinne", body: "" },
+    ];
+    expect(characterOfSprite("rinne", cards)?.id).toBe("rin");
+    // 同名绑定也要认（目录 mio 是 mio 那张卡的）
+    expect(characterOfSprite("mio", cards)?.id).toBe("mio");
+    expect(characterOfSprite("nobody", cards)).toBeNull();
   });
 
   it("模型会给值加引号，两种引号都读回来", () => {

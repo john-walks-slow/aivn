@@ -602,13 +602,15 @@ voiceState,
         )}
 
         {Object.entries(visual.sprites).map(([id, slot]) => {
+          // 立绘目录可能不叫这个演员的 id（卡上写了 `sprite:`）：先解绑定，下面几个查询吃的都是目录名
+          const dir = index.spriteDirOf(id);
           // 呈现三轴：取景与体量只听素材声明（剧本管不着图里画到哪、台上站多大），
           // 对齐则是「剧本写了用剧本的，没写听素材声明的」（机甲默认居中悬空、道具贴地）。
-          const presentation = index.spritePresentation(id, slot.variant);
+          const presentation = index.spritePresentation(dir, slot.variant);
           return (
             <Sprite
               key={id}
-              url={index.sprite(id, slot.variant)}
+              url={index.sprite(dir, slot.variant)}
               pos={slot.resolvedPos}
               name={actorName(names, id)}
               framing={presentation.framing}
@@ -870,9 +872,14 @@ voiceState,
                 <div className="image-gen-field">
                   <span className="image-gen-label">参考立绘（按点选顺序垫图）：</span>
                   <RefCharacterPicker
-                    // 候选 = 有立绘的主体（目录扫出来的），不是角色表：机甲、道具没有卡也能垫
+                    // 候选 = 有立绘的主体（目录扫出来的），不是角色表：机甲、道具没有卡也能垫。
+                    // 名字先问绑定它的那张卡（目录名与角色 id 可以不同名），再落舞台名牌、最后才是目录名
                     candidates={index.spriteIds
-                      .map((id) => ({ id, name: names[id] ?? id, spriteUrl: index.sprite(id, null) }))
+                      .map((id) => ({
+                        id,
+                        name: index.spriteName(id) ?? names[id] ?? id,
+                        spriteUrl: index.sprite(id, null),
+                      }))
                       .filter((c): c is RefCandidate => Boolean(c.spriteUrl))}
                     selected={selectedRefs}
                     onToggle={(id) => setSelectedRefs((prev) => toggleReference(prev, id))}

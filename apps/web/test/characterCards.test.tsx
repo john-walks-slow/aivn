@@ -230,3 +230,71 @@ describe("角色页：立绘的那一眼", () => {
     expect(screen.getByText("管理立绘")).toBeTruthy();
   });
 });
+
+describe("角色页：立绘目录的显式绑定", () => {
+  /** 一张绑到别的目录上的卡：立绘目录不叫这个角色的 id。 */
+  const BOUND = [...CAST, { id: "rin", name: "铃音", sprite: "rinne", body: "绑了别的目录。" }];
+
+  beforeEach(() => {
+    apiMock.playDetail.mockResolvedValue({ play: PLAY, premise: "", readiness: {}, cast: BOUND });
+    apiMock.saveFile.mockResolvedValue({ ok: true });
+    apiMock.deleteFile.mockResolvedValue({ ok: true });
+    apiMock.voiceCatalog.mockResolvedValue({ entries: [] });
+  });
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("缩略图、差分条与「管理立绘」都走绑定的那个目录", async () => {
+    apiMock.listAssets.mockResolvedValue({
+      "sprites/rin": ["stale.png"],
+      "sprites/rinne": ["neutral.png", "smile.png"],
+    });
+    const onManageSprites = vi.fn();
+    const { container } = render(
+      <CharacterPane playId="p1" revision={0} onManageSprites={onManageSprites} />,
+    );
+    await waitFor(() => expect(cardTitles()).toContain("铃音"));
+    // 名字同名的那张卡另有缩略图，别把两者搞混：铃音的缩略图取的是 rinne
+    const thumbs = [...container.querySelectorAll("img.setting-card-thumb")].map((n) =>
+      n.getAttribute("src"),
+    );
+    expect(thumbs).toContain("/plays/p1/sprites/rinne/neutral.png");
+
+    fireEvent.click(screen.getByText("铃音"));
+    await waitFor(() => expect(container.querySelectorAll(".sprite-peek-item").length).toBe(2));
+    expect(container.querySelector(".sprite-peek-item img")?.getAttribute("src")).toContain(
+      "sprites/rinne/neutral.png",
+    );
+    // 下拉摆的是卡上那个绑定，不是 id
+    const select = container.querySelector(".sprite-bind select") as HTMLSelectElement;
+    expect(select.value).toBe("rinne");
+    // 同名目录不再单摆一条（`rin` 由「与角色同名」代表），否则会出现两个都指同一目录的选项
+    expect([...select.options].map((o) => o.value)).toEqual(["", "rinne"]);
+
+    fireEvent.click(screen.getByText("管理立绘"));
+    expect(onManageSprites).toHaveBeenCalledWith("rinne");
+  });
+
+  it("改成「与角色同名」就把这一格从卡上摘掉", async () => {
+    apiMock.listAssets.mockResolvedValue({ "sprites/rinne": ["neutral.png"] });
+    const { container } = render(<CharacterPane playId="p1" revision={0} />);
+    await waitFor(() => expect(cardTitles()).toContain("铃音"));
+    fireEvent.click(screen.getByText("铃音"));
+
+    const select = (await waitFor(() => {
+      const el = container.querySelector(".sprite-bind select") as HTMLSelectElement;
+      expect(el.value).toBe("rinne");
+      return el;
+    })) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(apiMock.saveFile).toHaveBeenCalledTimes(1));
+    const [playId, path, content] = apiMock.saveFile.mock.calls[0] as [string, string, string];
+    expect(playId).toBe("p1");
+    expect(path).toBe("characters/rin.md");
+    expect(content).not.toContain("sprite:");
+  });
+});

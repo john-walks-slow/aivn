@@ -179,8 +179,8 @@
 - **主角是一张普通卡**，id 固定 `protagonist`（`PROTAGONIST_ID = "protagonist"`）：`store.createEmpty` 建目录时就写一张（正文「（玩家扮演的角色。还没有写设定。）」——**空文件会被 `loadCharacters` 跳过**，只建目录不写卡的话角色表里根本没有主角）。它不靠 frontmatter 标记来认：`characters/` 的不变式「角色表 = 文件列表 + 固定文件名」天然排除两个主角或零个主角。
 - 主角与别的卡**能力完全一致**（上台、立绘、音色、从资源库导入都照常），只有两处特殊：A 区角色表标注「，玩家扮演」（`prompt.ts` 读 `isProtagonist`）、工坊角色页不给删。是否上台、是否配音是**创作口径**（`memory/always/craft.md` 的事），引擎不预设。
 - 路径一律从 `characterCardPath(id)` 拼，别各自抄字符串：`store.characterDir()` 供 `loadCharacters` / `loadCharacterCards` / `PlayFiles` 白名单（`DIR_ROOTS` 含 `characters`）与 `assetImport` 共用；`playhouse.writeCharacter`、`playhouse.polish`（读主角卡拼「主角设定：」）也走它。
-- **卡上只剩人设与音色**（`CharacterHead` = `id` / `name` / `voice` / `voiceId`）：立绘取景、体量、锚点、差分这些呈现声明都归 `assets/manifest.json`，`parseCharacterCard` 认出旧字段也当噪声丢掉。收益是「一个 id 寻址一切」——机甲、道具、猫连卡都不需要。
-- **卡与立绘目录同名即绑定，谁也不依赖谁**：只有卡 = 有名字与音色、还没有图；只有目录 = 有图，名字回落素材表 `title` 或 id；两张都有才是常驻角色。
+- **卡上只剩人设、音色与立绘绑定**（`CharacterHead` = `id` / `name` / `sprite` / `voice` / `voiceId`）：立绘取景、体量、锚点、差分这些呈现声明都归 `assets/manifest.json`，`parseCharacterCard` 认出旧字段也当噪声丢掉。收益是「一个 id 寻址一切」——机甲、道具、猫连卡都不需要。
+- **立绘绑定可以显式写、也可以不写**（core `spriteIdOf(id, card)` 是唯一解析口）：`sprite: rinne` 表示这个角色的立绘在 `assets/sprites/rinne/`，不写就是与卡同名。舞台（`web/stage/assets.ts` 的 `spriteDirOf`）、工坊、剧作家 A 区（差分与 `generate_image` 的 `spriteId` 都按**目录名**走）、素材页反查归卡名，四处都从这一个函数取——各写一遍 `?? id` 就会漏掉显式绑定。卡与立绘仍**互不依赖**：只有卡 = 有名字与音色、还没有图；只有目录 = 有图，名字回落素材表 `title` 或 id；被卡绑走的目录不再算「没有卡的主体」。
 
 ## 创作口径与剧目记忆
 

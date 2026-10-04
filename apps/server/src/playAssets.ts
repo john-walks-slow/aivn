@@ -93,7 +93,8 @@ export interface AssetTarget {
   /**
    * 立绘的主体 id（人、机甲、猫、道具同权）：立绘目录名，也是剧本里的引用名。
    *
-   * 不要求有角色卡——立绘与卡是同名即绑定的两件可选附件，谁也不依赖谁。
+   * 不要求有角色卡——立绘与卡是两件各自可选的附件，谁也不依赖谁；有卡时目录名按卡上的
+   * `sprite` 绑定取（不写就是与卡同名，见 core 的 `spriteIdOf`）。
    */
   spriteId?: string;
   /** 立绘差分名（neutral / smile / damaged / asleep ...）。 */

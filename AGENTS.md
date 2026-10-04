@@ -51,5 +51,5 @@ pnpm icon              # 改了 apps/desktop/icon.svg 之后重生成图标全�
 
 - `library` —— 应用级素材资源库（数据目录下的 `library/`，**整个不进 git**）：`<kind>/<id>/{meta.json, 素材文件}`，kind ∈ `backgrounds`/`cg`/`characters`/`sprites`/`bgm`/`sfx`，**目录名即素材 id**。
 - 服务端只读（增删改由用户在本地目录做，UI 不管这块）。
-- `characters/` 与 `sprites/` 是**多文件类目**：前者是「一张角色卡 + 可选同名立绘」，后者是「只有立绘、没有卡」（机甲、道具、猫）。一个主体（舞台上的一个 id）就这么两张**各自可选**的附件，谁也不依赖谁——`characters/` 条目可以零媒体，`sprites/` 条目一张卡都没有。
+- `characters/` 与 `sprites/` 是**多文件类目**：前者是「一张角色卡 + 可选立绘」（导入时立绘落 `assets/sprites/<条目 id>/`，之后可被卡上的 `sprite:` 绑到别的目录），后者是「只有立绘、没有卡」（机甲、道具、猫）。一个主体（舞台上的一个 id）就这么两张**各自可选**的附件，谁也不依赖谁——`characters/` 条目可以零媒体，`sprites/` 条目一张卡都没有。
 - 种子的出处与逐条许可见 `docs/features/260930-asset-library/seed-sources.research.md`。

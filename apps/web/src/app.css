@@ -4442,6 +4442,22 @@ select:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 立绘绑定：这个角色用哪一套立绘（卡上的 `sprite:`，落在 assets/sprites/<目录>/）。 */
+.sprite-bind {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.sprite-bind select {
+  max-width: 240px;
+}
 .setting-card-title {
   grid-area: title;
   font-family: var(--font-ui);

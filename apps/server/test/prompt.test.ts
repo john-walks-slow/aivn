@@ -95,6 +95,23 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
     expect(prompt).toContain("variant：pout（鼓腮嗔怒）");
   });
 
+  it("卡上绑了别的立绘目录：差分列在那个目录上，它也不再说成「没有卡的主体」", () => {
+    const prompt = build({
+      play: PLAY,
+      memory: new PlayMemory({
+        characters: card("rin", { name: "铃音", sprite: "rinne" }),
+      }),
+      assets: { "sprites/rinne": ["smile.png"], "sprites/mecha": ["neutral.png"] },
+      notes: { "rinne/smile": { description: "微笑" } },
+    });
+    // 出图与差分都以目录名寻址，A 区得把这个目录名给出来（顺手也能看出它不与卡同名）
+    expect(prompt).toContain("立绘（目录 rinne）差分 variant：smile（微笑）");
+    expect(prompt).toContain("台上其它主体");
+    expect(prompt).toContain("- mecha");
+    // 被卡绑走的那套立绘不能再进「有立绘、没有角色卡」那一段，否则同一套图会说两遍
+    expect(prompt).not.toContain("- rinne");
+  });
+
   it("主角卡在角色表里标出「玩家扮演」，契约点明它与别的角色同权", () => {
     const prompt = build({
       play: PLAY,

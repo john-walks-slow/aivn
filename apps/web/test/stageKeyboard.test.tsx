@@ -40,8 +40,11 @@ const index: AssetIndex = {
   bgm: () => null,
   sfx: () => null,
   ambient: () => null,
+  spriteDirOf: (actorId) => actorId,
+  spriteName: () => null,
   sprite: () => null,
-  spriteFraming: () => "full",
+  spriteIds: [],
+  spritePresentation: () => ({ framing: "full", stature: "normal", anchor: "bottom" }),
 };
 
 type Playback = ReturnType<typeof usePlayback>;

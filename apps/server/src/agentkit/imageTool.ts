@@ -29,10 +29,11 @@ const generateImageParams = Type.Object(
     /** 背景/CG 的素材 id，剧本里的 bg/cg id 就是它。 */
     name: Type.Optional(Type.String({ maxLength: 40 })),
     /**
-     * 立绘的主体 id（人、机甲、道具、猫同权）：剧本里 `<actor id>` 与 `<say id>` 引用的那个名字。
+     * 立绘的主体 id（人、机甲、道具、猫同权）：立绘目录名，剧本里 `<actor id>` 与 `<say id>` 引用的那个名字。
      *
-     * **不要求有角色卡**——立绘与卡是同名即绑定的两件可选附件：机甲没有卡也照样有立绘，
-     * 路人没有卡也能出图上台。有同名卡时会读卡上的人设来写外观。
+     * **不要求有角色卡**——立绘与卡是两件各自可选的附件：机甲没有卡也照样有立绘，
+     * 路人没有卡也能出图上台。有角色卡时会读卡上的人设来写外观；卡上写了 `sprite:` 时
+     * 这个主体的立绘在它指的那个目录里（A 区角色表标着「立绘（目录 …）」），别拿角色 id 去撞。
      */
     spriteId: Type.Optional(Type.String({ maxLength: 40 })),
     /**
@@ -139,7 +140,7 @@ const SYNC_DESCRIPTION = [
 
 const QUEUED_DESCRIPTION = [
   "出一张剧目素材并**后台排产**（发起即返回，不等图）：背景(kind=background) / CG(kind=cg) 给 name，",
-  "立绘(kind=sprite) 给 spriteId + variant（variant 不给按 neutral）。spriteId 就是剧本里 <actor id> 引用的名字，",
+  "立绘(kind=sprite) 给 spriteId + variant（variant 不给按 neutral）。spriteId 是立绘目录名，通常就是剧本里 <actor id> 引用的名字，",
   "**没有角色卡也能出**（机甲、道具、猫、只在一轮里出现的路人都是这样）；有同名卡时按卡上的人设写外观。",
   "没有角色卡又想给主体一个显示名，带 title=名称，舞台名牌就用它；",
   "角色卡是「这个人是谁」的正式落点，要人设、音色、长期出场才值得建（那是工坊与用户的活）。",

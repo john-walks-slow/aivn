@@ -239,7 +239,8 @@ ${craftNow(ctx)}
   只写风格条目，不要往里写 DSL 格式或工具用法，那些由引擎保证。
   用户改主意时——「文风再冷一点」改这个文件，「节奏太快」「选项给太多」「每段写短点」「背景别自己画」用 \`set_craft\`。
 - 角色卡（\`characters/<id>.md\`，角色的一切都在这张卡里，play.json 不再存角色数据）：
-  头部 frontmatter 放机器字段（id / name / voice / voiceId / framing / sprites），正文写具体的人（年龄/关系/说话方式/在意的点）。
+  头部 frontmatter 放机器字段（id / name / sprite / voice / voiceId），正文写具体的人（年龄/关系/说话方式/在意的点）。
+  \`sprite\` 是可省的立绘绑定：这个角色用 \`assets/sprites/<这个名字>/\` 那套立绘，不写就是与卡同名——要复用别处画好的一整套才写它。
   ${voicePickHint(ctx)}
   ${ctx.can.library ? "库里已有合适的角色可以先 \`import_asset\`（kind=characters）导进来再改，别从零重写。" : ""}
   玩家扮演的主角也是一张普通角色卡，id 固定 \`protagonist\`（\`characters/protagonist.md\`）：要改主角设定就改这张，别另建。

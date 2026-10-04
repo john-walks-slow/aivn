@@ -4,6 +4,7 @@ import {
   isProtagonist,
   languageLabel,
   resolveCraft,
+  spriteIdOf,
   type AssetMeta,
   type EngineStateSnapshot,
 } from "@aivn/core";
@@ -222,10 +223,13 @@ function newCharacterRules(canCharacters: boolean): string {
 
     write(path="characters/xiaoyu.md", content="---\\nname: 小雨\\n---\\n咖啡店打工的少女，说话温柔，常用省略号。")
 
-卡片是 frontmatter 头部 + 正文两段，**头部只有这三项**：
+卡片是 frontmatter 头部 + 正文两段，**头部只有这四项**：
 
     ---
     name: 小雨          # 显示名（A 区角色表与舞台名牌用）。不写，A 区就只能显示 id
+    sprite: rinne       # 可省。这个角色用哪一套立绘（\`assets/sprites/<这个名字>/\`）。
+                        # 不写就是与卡同名（characters/xiaoyu.md ↔ assets/sprites/xiaoyu/）；
+                        # 只在立绘目录不叫这个 id、或要复用别处画好的一整套时才写
     voice: 温柔少女声    # 音色的口语描述，可省
     voiceId: <32位hex>  # 可省。音色在工坊配（你这条路上没有音色库工具）；
                         # 留空走剧目兜底音色，兜底也没配这个角色就一直没声音
@@ -233,7 +237,7 @@ function newCharacterRules(canCharacters: boolean): string {
 
 正文写具体的人：年龄、关系、说话方式、在意的点（正文就是 A 区角色表里你看到的那份 persona）。
 
-- **立绘不写在卡上**：差分、取景、体量都是素材自己的事，落在 \`assets/manifest.json\`（出图时给参数，引擎会写）。
+- **差分与取景体量不写在卡上**：差分就是立绘目录里的文件名，取景/体量/名牌落在 \`assets/manifest.json\`（出图时给参数，引擎会写）。卡上唯一与立绘有关的是 \`sprite\` 那一格——**用哪一套**立绘。
 - **改既有卡先 read、再用 edit 定点改**：整篇 write 会把你没提到的机器字段（voiceId）抹掉。
 - 建档后到下一轮边界，角色就出现在 A 区角色表里。
 - 玩家扮演的主角也是一张普通卡，id 固定 \`protagonist\`（\`characters/protagonist.md\`）：要改主角设定就改它，别另建一张。`
@@ -250,7 +254,7 @@ ${step1}
 
     generate_image(kind="sprite", spriteId="xiaoyu", variant="neutral", framing="half", stature="normal", title="小雨", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view")
 
-- \`spriteId\` 就是剧本里 \`<actor id="…">\` 用的 id；\`variant\` 是这一张差分（不给按 \`neutral\`）
+- \`spriteId\` 是立绘目录名：通常就是剧本里 \`<actor id="…">\` 用的 id，卡上写了 \`sprite:\` 时是那个目录名（A 区角色表里标着「立绘（目录 …）」）；\`variant\` 是这一张差分（不给按 \`neutral\`）
 - 非 neutral 的差分会自动垫该主体已有的 \`neutral\` 定妆照，所以是同一个人
 - \`framing\` 是图里画到哪儿（full 全身 / half 半身 / square 方形，默认 full），\`stature\` 是台上站多大
   （small / normal / large / huge，默认 normal）：机甲是 framing="full" + stature="huge"，猫是 square + small
@@ -320,20 +324,22 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     return detail ? `${name}（${detail}）` : name;
   };
   // 角色表 = 角色卡目录，与 play.json 无关。每张卡都是一份完整设定：
-  // 正文是人设，frontmatter 只有名字/音色——立绘是另一件可选附件，差分即目录里的文件名。
+  // 正文是人设，frontmatter 只有名字/音色/立绘目录——立绘是另一件可选附件，差分即目录里的文件名。
   // 分级（角色数 ≥ CAST_GRADING_MIN_SIZE 且给了 activeCast）：在场全卡全文，不在场只注一行
   // （SOTA 的 roster 一行制——不在场角色只留索引行，人设按需读盘/建卡）。
   const entries = [...(ctx.memory?.characters ?? [])];
-  // 差分的唯一真相源是立绘目录里的文件名（id = 目录名，variant = 文件名 stem，中间没有映射表）
-  const variantsOf = (id: string): string[] =>
-    (ctx.assets?.[`sprites/${id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
+  // 差分的唯一真相源是立绘目录里的文件名（目录名 = 立绘 id，variant = 文件名 stem，中间没有映射表）。
+  // 目录名走 spriteIdOf：卡上显式绑定优先，没写才是与卡同名——`<actor id>` 与立绘目录因此可以不同名。
+  const variantsOf = (dir: string): string[] =>
+    (ctx.assets?.[`sprites/${dir}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
   const grading = ctx.activeCast && entries.length >= CAST_GRADING_MIN_SIZE;
   const active = grading ? new Set(ctx.activeCast) : null;
   active?.add("protagonist"); // 主角恒算在场：玩家本人的人设不能被折叠
   const fullCards: string[] = [];
   const roster: string[] = [];
   for (const [id, card] of entries) {
-    const variants = variantsOf(id);
+    const dir = spriteIdOf(id, card);
+    const variants = variantsOf(dir);
     // 路径写进标题：卡的 id 与文件名同源，但模型不该为了改一张卡去推路径——A 区给全，read / edit 直接用
     const title = `${card.name ?? id}（id: ${id}，卡片 ${characterCardPath(id)}${
       isProtagonist(id) ? "，玩家扮演" : ""
@@ -345,10 +351,13 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       );
       continue;
     }
+    // 立绘不与卡同名时把目录名写出来：出图与差分都以目录名寻址，模型不该拿角色 id 去猜
     fullCards.push(
       `### ${title}\n${card.body}${card.voice ? `\n音色：${card.voice}` : ""}${
         variants.length > 0
-          ? `\n立绘差分 variant：${variants.map((v) => label(v, id)).join(" | ")}`
+          ? `\n立绘${dir === id ? "" : `（目录 ${dir}）`}差分 variant：${variants
+              .map((v) => label(v, dir))
+              .join(" | ")}`
           : ""
       }`,
     );
@@ -357,10 +366,12 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const characters = [...fullCards, ...(roster.length > 0 ? [roster.join("\n")] : [])].join("\n\n");
   // 只有立绘没有卡的主体（机甲、猫、道具）：它们进不了角色表——角色表就是角色卡目录，
   // 但剧作家得知道它们存在、能按 variant 上台。不给这份清单，它就只会重新出图或干脆不用。
+  // 被某张卡绑走的目录不算「没有卡」：那套立绘已经在上面那张卡里列过差分了。
+  const bound = new Set(entries.map(([id, card]) => spriteIdOf(id, card)));
   const bare = Object.keys(ctx.assets ?? {})
     .filter((key) => key.startsWith("sprites/"))
     .map((key) => key.slice("sprites/".length))
-    .filter((id) => !entries.some(([cardId]) => cardId === id))
+    .filter((dir) => !bound.has(dir))
     .sort((a, b) => a.localeCompare(b));
   const bareSection =
     bare.length > 0

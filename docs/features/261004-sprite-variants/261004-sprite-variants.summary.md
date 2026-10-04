@@ -67,3 +67,32 @@
 - **素材到货订阅**（`subscribeAssetReady`）：素材页原来只订阅自己发起的那次出图，助手/舞台那边导入或画完的素材要切页才更新，现在当场跟上（角色页的缩略图同一个来源）。
 
 证据图：`e2e-assets/06-character-thumbnails.png`、`07-assets-pinned-subject.png`。
+
+## 后续：立绘目录的显式绑定（2026-10-04）
+
+用户的诉求原话：「我希望角色卡和立绘是建议显式绑定的而不是只能隐式绑定」「显式绑定我建议归属写在**角色卡里面**」。
+
+- **卡上多一格 `sprite`**（core `CharacterHead`，序列化顺序 id / name / sprite / voice / voiceId）：`sprite: rinne` 表示这个角色的立绘在 `assets/sprites/rinne/`；**不写就是与卡同名**，存量卡与「同名即绑定」的用法一个字节都不用改。取值一律经 core 的 `spriteIdOf(id, card)` 解析——舞台（`web/stage/assets.ts` 的 `spriteDirOf`）、工坊角色页与素材页、剧作家 A 区（差分清单与 `generate_image` 的 `spriteId` 都按目录名走）四处共用这一个函数；各写一遍 `?? id` 就会漏掉显式绑定。
+- **角色页那一行「立绘目录」就是它的落点**（名字上面、立绘条下面）：下拉候选 = 剧目里现有的 `assets/sprites/*` ∪ 当前绑定值，选「与角色同名」= 把那一格从卡上摘掉；被别的角色用着的目录在选项里标「（谁 在用）」——同一套立绘被两个角色用是允许的（同一个人的两种身份），但不该是看不见的事故。保存仍走原来的角色卡写盘，`play.json` 不参与。
+- **素材页的名字按绑定反查**：目录 → 认领它的那张卡（同一个 `spriteIdOf`）→ 卡 `name` → 名牌 → 目录名。目录名与某张卡的 id 同名、而那张卡绑去了别处时，补一句「角色 X 的立绘绑的是 Y」，且**不再说「只有立绘」**——那种情形下「只有立绘」是假话，用户会以为卡丢了。
+- **剧作家 A 区**：卡绑到别的目录时，差分那行写成「立绘（目录 rinne）差分 variant：…」，`generate_image` 的 `spriteId` 照着这个目录名给；被卡绑走的目录也从「台上其它主体（有立绘，没有角色卡）」那一段里去掉，否则同一套立绘会说两遍。
+- 资源库那条路不变：条目导入时卡与立绘都按条目 id 落（`characters/<id>.md` + `assets/sprites/<id>/`），本来就是同名；导入之后再改绑定是用户的事。
+- 一处已知边界：**引用即导入**（`assetRef.ts`）仍按「库里有没有 `sprites/<actor id>`」判缺，不读卡上的绑定——角色绑到别的目录、库里恰好又有同名立绘包时，它可能多导进来一个这套绑定用不上的目录（可手动删）。真要收，得让解析器去读角色卡，代价大于收益，本轮不动。
+- 文档同步：README「角色卡」一节（字段表 + 一个 `sprite:` 的最小例子）、根/server/web 三份 AGENTS.md。
+
+验证：core 13 条（含 `spriteIdOf` 的回落与 trim、`sprite` 的序列化顺序、`characterOfSprite` 的反查）、server `prompt.test.ts` 39 条（新增「绑了别的目录」一条）+ `playhouse.test.ts` 20 条（手动出图的人设按目录反查）、web 新 `test/spriteBinding.test.ts` 3 条（按绑定查图、无名目录不编名字、缺差分回落）+ `characterCards.test.tsx` 12 条（新增两条：缩略图/差分条/「管理立绘」都走绑定目录且下拉不重复摆同名目录，改回同名即摘掉那一格）；`pnpm -r build` 与 `pnpm typecheck` 通过。
+
+实机（dev 实例，`plays/test`）：把「天羽 铃音」绑到 `lilith` → 盘上的卡写出 `sprite: lilith`、立绘条当场换成 lilith 的 `neutral`、素材页 `suzune` 目录出现「角色「天羽 铃音」的立绘绑的是 lilith」；再选回「与角色同名」→ 那一格从卡上消失、立绘条回到 suzune 的四张。验证后已把这张卡改回不绑。证据图：`e2e-assets/12-sprite-binding-panel.png`（角色页那一行）、`11-assets-orphan-note.png`（素材页的归属提示）。
+
+检视（`reviewer`，报告 `261004-sprite-binding.review.md`）：**条件准入**，无阻塞。两条建议已改：
+
+- **SUG-01 手动/参考出图的人设按绑定反查**：`playhouse.requestCg` 与 `generateImage` 原来拿立绘目录去 `memory.characters.get(...)`，角色绑到别的目录时扑空（出图提示词丢掉人设）。改成 core 新增的 `characterOfSprite(dir, cards)` 反查，两处的参考立绘清单与「全套主体」也改成按**立绘目录**列（原来列的是角色 id，绑过的角色会重复/漏项）。`imageTool.ts` 那条「有卡时读卡上人设」的承诺因此对显式绑定也成立。
+- **SUG-02 下拉不再重复摆同名目录**：`mio` 有 `assets/sprites/mio/` 时，选项里既有「与角色同名（mio）」又有「mio」，前者清空字段、后者冗余写入 `sprite: mio`——同义两个选项。现在同名目录由第一项代表，下拉值也做了归一（手写的 `sprite: <自己的 id>` 一律落在「与角色同名」）。
+
+两条非阻塞也顺手处理：`.sprite-bind` 加 `flex-wrap: wrap`（窄屏折行不挤）；素材页的归属提示只在目录真的没人认领时才出现（被别的卡认领的目录有主，不该说成没人用）。验证用的临时脚本已删。
+
+## 遗留（显式绑定）
+
+- 上一条「已知边界」：引用即导入不读绑定。
+- `AssetCharacter`（资源库 `meta.character`）没有 `sprite` 字段：库里条目导入时卡与立绘都按条目 id 落，本来就同名；要复用别处的一整套立绘，导入之后在角色页改绑定。
+- 两张卡绑同一个目录是允许的（同一人的两种身份），舞台会画出同一张脸——没有互斥校验，靠下拉里的「谁 在用」提示让人看见。
