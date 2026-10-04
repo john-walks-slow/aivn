@@ -1485,23 +1485,6 @@ export class PlaywrightOrchestrator {
     return messages;
   }
 
-  private snapshotEngine(): EngineStateSnapshot {
-    const engine = this.opts.engine;
-    return {
-      ...engine,
-      affinity: { ...engine.affinity },
-      flags: { ...engine.flags },
-    };
-  }
-
-  private snapshotMemory(): MemorySnapshot {
-    return {
-      state: { ...this.stateFiles },
-      arcs: [...this.arcIds],
-      nsfw: this.nsfwActive,
-    };
-  }
-
   /**
    * 一轮 user 消息 = 【状态】+ N 条【用户输入】。
    *
