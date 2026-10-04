@@ -38,6 +38,7 @@
 
 - **工坊线程也有纪元压缩**：`workshopSession.ts` 的 `maybeCompact` 每轮开跑前判定（与演出侧同一时刻、同一套 `compaction.ts` 计量与切点），但产物落线程的 `compaction` 字段而不是 `memory/arcs`——工坊会话是搭台过程、不是剧目事实，进 arcs 会污染剧作家每轮注入的 A 区。
 - **消息文件一条不删**：只有前 `cutAt` 条移出 agent 上下文，面板照常显示（旧对话照常在，只是中间多一条可点开的分隔）。
+- **助手回复落成段落流**（2026-10-04）：`WorkshopChatMessage.parts` 是 text / thinking / tool 的有序数组，拼装规则在 core 的 `ws/workshopParts.ts`，**服务端与前端共用同一份纯函数**——各写一遍的症状是「流式时看着对，收束后换了样」。WS 上 `workshop_tool` 因此拆成 `workshop_tool_start` / `workshop_tool_end`（`end` 带 `result` / `isError` / `ms`，`ms` 由会话里一张 `startedAt` 表算），新增 `workshop_thinking`；`workshop_done` 与 `workshop_error` 都带权威 `parts`，前端收束时用它整段替换流式期间自己拼的那份。工具结果截到 `RESULT_MAX_CHARS`（8000 字，图片块记 `[图片]` 不搬 base64），**思考不截断**——截了前端的流式版本就与服务端那份对不上。
 - 工坊模型可以和剧作家不同，阈值因此另有一套（`settings.json` 的 `workshopContext`，缺省逐项沿用全局），生效值再与模型自带窗口取 min。
 - 摘要回注 A 区（工坊 A 区本就每轮重建，没有前缀缓存约束），多轮是**拿旧定稿重写成一份完整文档**而不是叠加（`capDigest` 封顶 6000 字）。
 - read / write / edit / bash 全部是 **pi 的内建工具**（`agentkit/piTools.ts` 只做 `AgentHarnessTool → AgentTool` 的适配，把 `onUpdate`/`toolContext`/`invocation`/`context` 补齐，`context` 用 `withAbortSignal(signal, BACKGROUND_CONTEXT)` 把工坊单轮的 7 分钟超时传下去）。**前三个两个角色都装**，`bash` 只装工坊。

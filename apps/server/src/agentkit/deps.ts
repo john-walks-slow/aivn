@@ -106,8 +106,8 @@ export interface WorkshopKitDeps extends KitCommonDeps {
   store: PlayStore;
   /** 写盘回调：推给前端（可见/可撤销），不阻塞 agent。 */
   onWrite: (write: PlayFileWrite) => void;
-  /** 素材落盘回调：推给前端在对话流里内联展示。 */
-  onAsset: (asset: WorkshopAssetView, replaced?: boolean) => void;
+  /** 素材落盘回调：推给前端挂到产出它的那次工具调用上（调用号见工具 execute 入参）。 */
+  onAsset: (asset: WorkshopAssetView, replaced?: boolean, toolCallId?: string) => void;
   /** 素材生成层（生图未启用时为 undefined，工具直接回不可用）。 */
   playAssets?: PlayAssets;
   /** 周目（存档）枚举——读故事树前先让 agent 知道有哪几棵。 */

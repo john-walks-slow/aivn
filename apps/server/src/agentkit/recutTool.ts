@@ -60,7 +60,13 @@ const DESCRIPTION = [
 
 export interface RecutDeps {
   playAssets?: PlayAssets;
-  onAsset: (path: string, url: string, kind: "background" | "cg" | "sprite", replaced: boolean) => void;
+  onAsset: (
+    path: string,
+    url: string,
+    kind: "background" | "cg" | "sprite",
+    replaced: boolean,
+    toolCallId: string,
+  ) => void;
 }
 
 export function createRecutSpriteTool(deps: RecutDeps): AgentTool<typeof recutParams> {
@@ -69,7 +75,7 @@ export function createRecutSpriteTool(deps: RecutDeps): AgentTool<typeof recutPa
     label: "重抠立绘底",
     description: DESCRIPTION,
     parameters: recutParams,
-    execute: async (_toolCallId, params: Static<typeof recutParams>) => {
+    execute: async (toolCallId, params: Static<typeof recutParams>) => {
       if (!deps.playAssets) return textResult("生图未启用（STAGE_IMAGE_ENABLED=false 或后端缺凭据）。");
       try {
         const asset = await deps.playAssets.recut(
@@ -80,7 +86,7 @@ export function createRecutSpriteTool(deps: RecutDeps): AgentTool<typeof recutPa
           },
           params.cutout,
         );
-        deps.onAsset(asset.path, asset.url, asset.kind, asset.replaced);
+        deps.onAsset(asset.path, asset.url, asset.kind, asset.replaced, toolCallId);
         return linesResult([
           `已重抠（画面没变，只改了透明边缘）：${asset.path}\n![${asset.path}](${asset.url})`,
         ]);

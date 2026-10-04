@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { normalizeParts } from "@aivn/core";
 import type { ClientMessage, WorkshopAssetView } from "@aivn/core";
 import { api } from "../api.js";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
@@ -6,11 +7,13 @@ import { Icon, type IconName } from "../ui/Icon.js";
 import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
 import type { WorkshopTab } from "../stage/view.js";
 import { AgentPane } from "./AgentPane.js";
+import { AssetStrip } from "./AssetStrip.js";
 import { CharacterPane } from "./CharacterPane.js";
 import { AssetsPanel } from "./AssetsPanel.js";
 import { FileBrowser } from "./FileBrowser.js";
 import { MemoryPane } from "./MemoryPane.js";
 import { PlayPane } from "./PlayPane.js";
+import { TurnParts } from "./TurnParts.js";
 import { WorkshopMarkdown } from "./WorkshopMarkdown.js";
 import { WorkshopSettings } from "./WorkshopSettings.js";
 import { useWorkshop } from "./useWorkshop.js";
@@ -98,7 +101,7 @@ export function WorkshopPane({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [state.messages.length, state.streaming, state.activity, state.pendingAssets.length]);
+  }, [state.messages.length, state.live, state.pendingAssets.length]);
 
   const submit = (): void => {
     const text = input.trim();
@@ -241,7 +244,7 @@ export function WorkshopPane({
           )}
 
           <div className="workshop-chat" ref={scrollRef}>
-            {state.messages.length === 0 && !state.streaming && (
+            {state.messages.length === 0 && state.live.length === 0 && (
               <div className="workshop-empty">
                 <p>说出你想要的世界、角色或改动。</p>
                 <p className="muted small">
@@ -269,22 +272,35 @@ export function WorkshopPane({
                     )}
                   </>
                 )}
-                <div className={`chat-bubble chat-${msg.role}`}>
-                  <WorkshopMarkdown
-                    text={msg.text}
-                    onOpen={(images, index) => setLightbox({ images, index })}
-                  />
-                  {msg.images && msg.images.length > 0 && (
-                    <AssetStrip assets={msg.images} onOpen={openImage} />
-                  )}
-                </div>
+                {msg.role === "user" ? (
+                  <div className="chat-bubble chat-user">
+                    <WorkshopMarkdown
+                      text={msg.text}
+                      onOpen={(images, index) => setLightbox({ images, index })}
+                    />
+                  </div>
+                ) : (
+                  <div className="chat-turn">
+                    <TurnParts
+                      parts={normalizeParts(msg)}
+                      live={false}
+                      onOpenMarkdown={(images, index) => setLightbox({ images, index })}
+                      onOpenAssets={openImage}
+                    />
+                    {msg.images && msg.images.length > 0 && (
+                      <AssetStrip assets={msg.images} onOpen={openImage} />
+                    )}
+                  </div>
+                )}
               </Fragment>
             ))}
-            {state.streaming && (
-              <div className="chat-bubble chat-assistant">
-                <WorkshopMarkdown
-                  text={state.streaming}
-                  onOpen={(images, index) => setLightbox({ images, index })}
+            {state.live.length > 0 && (
+              <div className="chat-turn">
+                <TurnParts
+                  parts={state.live}
+                  live
+                  onOpenMarkdown={(images, index) => setLightbox({ images, index })}
+                  onOpenAssets={openImage}
                 />
               </div>
             )}
@@ -294,10 +310,7 @@ export function WorkshopPane({
                 <AssetStrip assets={state.pendingAssets} onOpen={openImage} bare />
               </div>
             )}
-            {state.activity && <div className="chat-activity">{state.activity}…</div>}
-            {state.busy && !state.streaming && !state.activity && (
-              <div className="chat-activity">思考中…</div>
-            )}
+            {state.busy && state.live.length === 0 && <div className="chat-activity">思考中…</div>}
           </div>
 
           {state.writes.length > 0 && (
@@ -366,46 +379,4 @@ export function WorkshopPane({
       )}
     </div>
   );
-}
-
-/** 素材类别 → 灯箱只看图：bgm/sfx 在对话流里给播放器，不进灯箱。 */
-const AUDIO_ASSET = new Set<WorkshopAssetView["kind"]>(["bgm", "sfx"]);
-
-/**
- * 对话流里的素材条：图给缩略图（点开灯箱），音乐/音效给就地播放的播放器——
- * 导入音素材时用户要能当场听一句确认，摆在对话里最省事。
- */
-function AssetStrip({
-  assets,
-  onOpen,
-  bare,
-}: {
-  assets: WorkshopAssetView[];
-  onOpen: (images: WorkshopAssetView[], index: number) => void;
-  /** 外层已经带了 asset-strip（pending 态还要那个 .pending 修饰）时不再包一层。 */
-  bare?: boolean;
-}) {
-  const pictures = assets.filter((a) => !AUDIO_ASSET.has(a.kind));
-  const body = assets.map((asset, j) =>
-    AUDIO_ASSET.has(asset.kind) ? (
-      <audio
-        key={`${asset.path}-${j}`}
-        className="asset-audio"
-        src={asset.url}
-        controls
-        preload="none"
-        title={asset.path}
-      />
-    ) : (
-      <button
-        key={`${asset.path}-${j}`}
-        className="asset-thumb"
-        onClick={() => onOpen(pictures, pictures.indexOf(asset))}
-        title={asset.path}
-      >
-        <img src={asset.url} alt={asset.path} loading="lazy" />
-      </button>
-    ),
-  );
-  return bare ? <>{body}</> : <div className="asset-strip">{body}</div>;
 }

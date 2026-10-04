@@ -780,6 +780,60 @@ describe("WorkshopSession：一轮对话", () => {
     expect(history?.messages[1]!.text).toBe("先写个 premise 吧。");
   });
 
+  it("思考与工具：增量下到前端，参数与结果按调用号配成一段落，并随 done 落进线程", async () => {
+    const store = await makeStore();
+    const emitted: ServerMessage[] = [];
+    const session = makeSession(store, {
+      streamFn: createFakeStreamFn([
+        {
+          text: "",
+          thinking: "先读一眼 play.json，看看现在是什么样。",
+          toolCalls: [{ name: "read", args: { path: "play.json" } }],
+        },
+        { text: "看过了，标题是「测试剧目」。" },
+      ]),
+      emit: (msg) => emitted.push(msg),
+    });
+    await session.chat("现在是什么情况？");
+
+    // 思考按增量发，前端逐字铺开
+    const thinking = emitted
+      .filter((m) => m.type === "workshop_thinking")
+      .map((m) => (m as { delta: string }).delta)
+      .join("");
+    expect(thinking).toContain("先读一眼 play.json");
+
+    const start = emitted.find((m) => m.type === "workshop_tool_start") as
+      | { id: string; name: string; args: unknown }
+      | undefined;
+    expect(start?.name).toBe("read");
+    expect(start?.args).toEqual({ path: "play.json" });
+
+    const end = emitted.find((m) => m.type === "workshop_tool_end") as
+      | { id: string; result: string; isError: boolean; ms: number }
+      | undefined;
+    expect(end?.id).toBe(start?.id);
+    expect(end?.isError).toBe(false);
+    // 结果就是工具真回给模型的那段文字（read 带行号），卡片展开看的就是它
+    expect(end?.result).toContain("测试剧目");
+    expect(end?.ms).toBeGreaterThanOrEqual(0);
+
+    // done 带权威段落：顺序就是发生顺序，调用前的那段叙述不再被丢掉
+    const done = emitted.find((m) => m.type === "workshop_done") as
+      | { parts: { type: string; id?: string; result?: string }[] }
+      | undefined;
+    expect(done?.parts.map((p) => p.type)).toEqual(["thinking", "tool", "text"]);
+    const tool = done?.parts.find((p) => p.type === "tool");
+    expect(tool?.id).toBe(start?.id);
+    expect(tool?.result).toContain("测试剧目");
+
+    // 落盘的段落与下发的同一份：刷新后卡片仍在
+    const history = emitted.filter((m) => m.type === "workshop_history").at(-1) as
+      | { messages: { parts?: { type: string }[] }[] }
+      | undefined;
+    expect(history?.messages.at(-1)?.parts?.map((p) => p.type)).toEqual(["thinking", "tool", "text"]);
+  });
+
   it("模型报错/空回复上报 workshop_error，不落一条空回复", async () => {
     const store = await makeStore();
     const emitted: ServerMessage[] = [];
@@ -828,13 +882,20 @@ describe("WorkshopSession：一轮对话", () => {
     });
     await session.chat("出个天台");
 
-    const error = emitted.find((m) => m.type === "workshop_error") as { images?: unknown[] } | undefined;
-    expect(error?.images).toHaveLength(1);
-    // 关键：图进了 history，重连/刷新后还在。不这么做的话前端一收到 history 就清空 pendingAssets
-    const history = emitted.filter((m) => m.type === "workshop_history").at(-1) as
-      | { messages: { role: string; images?: unknown[] }[] }
+    const error = emitted.find((m) => m.type === "workshop_error") as
+      | { images?: unknown[]; parts?: { type: string; name?: string; assets?: unknown[] }[] }
       | undefined;
-    expect(history?.messages.at(-1)?.images).toHaveLength(1);
+    // 图带得出调用号，就挂在这次调用的那一行上，不再另开一条消息级预览
+    expect(error?.images ?? []).toHaveLength(0);
+    const failed = error?.parts?.find((p) => p.type === "tool");
+    expect(failed?.name).toBe("generate_image");
+    expect(failed?.assets).toHaveLength(1);
+    // 关键：段落进了 history，重连/刷新后还在。不这么做的话前端一收到 history 就清空现场
+    const history = emitted.filter((m) => m.type === "workshop_history").at(-1) as
+      | { messages: { parts?: { type: string; assets?: unknown[] }[] }[] }
+      | undefined;
+    const last = history?.messages.at(-1)?.parts?.find((p) => p.type === "tool");
+    expect(last?.assets).toHaveLength(1);
   });
 
   it("人手改动（REST）不产生撤销记录，但同样触发 runtime 重建", async () => {

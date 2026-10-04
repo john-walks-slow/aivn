@@ -89,12 +89,42 @@ export interface WorkshopAssetView {
   url: string;
 }
 
+/** 工坊里一次工具调用在对话流中的落点。 */
+export interface WorkshopToolPart {
+  type: "tool";
+  /** pi 的 toolCallId：start/end 配对、素材归属都靠它。 */
+  id: string;
+  name: string;
+  args: unknown;
+  result?: string;
+  isError?: boolean;
+  /** 本次调用耗时（毫秒）。 */
+  ms?: number;
+  /** 这次调用产出的素材，就地挂在行上（不再另开一条预览带）。 */
+  assets?: WorkshopAssetView[];
+}
+
+/**
+ * 一轮回复按发生顺序记成的一串段落，是渲染的唯一真相源。
+ * 拼装规则见 workshopParts.ts（服务端与前端共用同一份，不各写一遍）。
+ */
+export type WorkshopPart =
+  | { type: "text"; text: string }
+  | { type: "thinking"; text: string }
+  | WorkshopToolPart;
+
 /** 工坊对话消息（面板回放用）。 */
 export interface WorkshopChatMessage {
   role: "user" | "assistant";
+  /** 回灌 agent 上下文的唯一内容，也是旧线程文件里唯一有的东西。 */
   text: string;
   at: number;
-  /** 本条附带的素材图：随消息持久化，翻历史仍看得见。 */
+  /**
+   * 本轮的段落流（思考 / 文本 / 工具调用）。旧消息没有这个字段，
+   * 渲染前用 normalizeParts() 归一成 `[{ type: "text", text }]`。
+   */
+  parts?: WorkshopPart[];
+  /** 本条附带的素材图：不带工具调用号的素材走这里，翻历史仍看得见。 */
   images?: WorkshopAssetView[];
 }
 
@@ -231,23 +261,41 @@ export type ServerMessage =
       /** 早期对话已压缩（未压缩为 null）：cutAt 条之前的内容已不进 agent 上下文，原文仍在 messages 里。 */
       compaction: WorkshopCompactionView | null;
     }
-  /** 工坊流式增量。 */
+  /** 工坊流式增量：正文。 */
   | { type: "workshop_chunk"; threadId: string; delta: string }
-  /** 工坊 agent 正在调用某工具（前端显示活动指示）。 */
-  | { type: "workshop_tool"; threadId: string; name: string }
+  /** 工坊流式增量：思考（模型开了思考档位才有）。 */
+  | { type: "workshop_thinking"; threadId: string; delta: string }
+  /** 工坊 agent 开始一次工具调用。 */
+  | { type: "workshop_tool_start"; threadId: string; id: string; name: string; args: unknown }
+  /** 工坊 agent 结束一次工具调用（按 toolCallId 配到上面那次）。 */
+  | {
+      type: "workshop_tool_end";
+      threadId: string;
+      id: string;
+      result: string;
+      isError: boolean;
+      ms: number;
+    }
   /** 工坊 agent 写了剧目文件：before 为 null 表示新建，可据此一键撤销。 */
   | { type: "workshop_write"; threadId: string; path: string; before: string | null }
-  /** 工坊出一张素材到货：对话流立刻可见（瞬态），最终随本轮末条消息一起落进历史。 */
+  /** 工坊出一张素材到货：带 toolCallId 的挂到那次调用的行上，不带的走消息级预览。 */
   | {
       type: "workshop_asset";
       threadId: string;
+      toolCallId?: string;
       kind: WorkshopAssetView["kind"];
       path: string;
       url: string;
       replaced: boolean;
     }
-  | { type: "workshop_done"; threadId: string; text: string; images?: WorkshopAssetView[] }
-  | { type: "workshop_error"; threadId: string | null; message: string; images?: WorkshopAssetView[] }
+  | { type: "workshop_done"; threadId: string; text: string; parts: WorkshopPart[]; images?: WorkshopAssetView[] }
+  | {
+      type: "workshop_error";
+      threadId: string | null;
+      message: string;
+      parts: WorkshopPart[];
+      images?: WorkshopAssetView[];
+    }
   /** 手动生图完成/失败（工坊面板）：target 为目标素材 key，按 play 广播给对话框收口。 */
   | {
       type: "image_result";

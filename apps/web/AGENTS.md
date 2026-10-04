@@ -20,7 +20,9 @@
   - MemoryPane 记忆页（只列 `memory/**` 的卡片，`arcs/`+`archive/` 不列；常驻设定在前、设定卡在后。craft.md 的占位符只提文风与禁忌，「节奏与素材来源」指向剧目页）。
   - SettingsScreen 服务端设置页（`#/settings`，剧目库页右上「⚙ 设置」进：模型网关 / 长会话与压缩 / 生图 / 语音 / 联网检索 / 访问密码 / 局域网访问 / 界面主题，外加启动参数只读回显。**保存即落盘 `<数据目录>/settings.json` 并立即生效**，没有「重启后生效」这一步；单把凭据（API Key / 生图 Key / 访问密码）把掩码**填进输入框**——原样回传 = 不改、清空 = 显式清除，多把 key（语音 / 检索）输入框恒空、留空 = 不改。保存/放弃按钮常驻在滚动区之外（`.settings-footer`），滚多深都在。「局域网访问」那一组是开关（写 `lanAccess`）+ 手机该连的地址（只读 `bootstrap.lanUrls`，逐条可复制）+ 「允许局域网访问（Windows 防火墙）」按钮（`POST /api/lan/open-firewall`，只在装好的 Windows 版里可用）。
   - WorkshopSettings（演出侧两个开关）。
-  - useWorkshop 状态机。
+  - useWorkshop 状态机（助手一轮的内容是 `WorkshopPart[]`：流式期间在 `state.live`，收束后取 `message.parts`，同一个渲染器读两种来源；`workshop_asset` 带 `toolCallId` 时挂到对应那次调用上，否则留 `message.images`）。
+  - TurnParts 助手一轮的段落渲染器（按 parts 顺序铺正文气泡 / 「思考」可折叠行 / 工具行；`TOOL_LABEL` 与参数摘要收在这里）。行的展开态默认由「是否流式中、这次调用有没有素材」决定，用户点过之后记进组件本地的 toggled。
+  - AssetStrip 素材条（工具行里显示这次调用产出的图，WorkshopPane 与工具行共用）。
   - FileBrowser 剧目文件树/编辑器/预览。
   - AssetsPanel 素材库（背景/CG/音效/BGM；角色与立绘不在这里，归「角色」页：角色卡带「从资源库导入」入口 + 立绘上传与差分映射，「音色：…」开全屏音色库面板 + 试听，素材行带描述副标题）。
   - **手动生图**（`ImageGenDialog` 是素材页 backgrounds/cg 的「✨ 生成」与角色卡底栏「生成立绘」/逐行「重生成」共用的那个对话框：`kind` 决定出哪些字段、立绘锁差分名；发起后 REST 立刻返回、对话框停在「生成中」，完成经 WS `image_result` 按 `target` 匹配亮图。`ui/RefCharacterPicker.tsx` 是有序多选的角色立绘 chip，序号即提示词里的「第几张」；`src/stage/cgOptions.ts` 是勾选序与提交门槛的纯函数）。

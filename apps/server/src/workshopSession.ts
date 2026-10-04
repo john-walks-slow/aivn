@@ -5,9 +5,18 @@ import type {
   ServerMessage,
   WorkshopAssetView,
   WorkshopChatMessage,
+  WorkshopPart,
   WorkshopThreadInfo,
 } from "@aivn/core";
-import { parsePlayConfig, resolveCraft } from "@aivn/core";
+import {
+  appendText,
+  appendThinking,
+  attachToolAssets,
+  endTool,
+  parsePlayConfig,
+  resolveCraft,
+  startTool,
+} from "@aivn/core";
 import type { Exa } from "./exa.js";
 import type { WebImageFetcher } from "./webImage.js";
 import { PlayFiles } from "./playFiles.js";
@@ -76,6 +85,12 @@ export interface WorkshopSessionOptions {
   };
 }
 
+/** 本轮到货的素材：`toolCallId` 是产出它的那次调用（外部推来的没有，走消息级预览）。 */
+interface PendingAsset extends WorkshopAssetView {
+  replaced: boolean;
+  toolCallId?: string;
+}
+
 export class WorkshopSession {
   readonly files: PlayFiles;
   private readonly threads: WorkshopThreads;
@@ -88,8 +103,8 @@ export class WorkshopSession {
   private changedDuringTurn = false;
   /** 攒下的改动里有 bash：它的写绕开 `PlayFiles`，play.json 的结构校验一道都没过。 */
   private bashDuringTurn = false;
-  /** 本轮生成的素材：到达先攒着，收束时挂到最终那条 assistant 消息上（不落一半在气泡里）。 */
-  private pendingAssets: WorkshopAssetView[] = [];
+  /** 本轮到货的素材：到达先攒着，收束时挂到产出它的那次调用上（不落一半在气泡里）。 */
+  private pendingAssets: PendingAsset[] = [];
 
   constructor(private readonly opts: WorkshopSessionOptions) {
     this.files = new PlayFiles(opts.store);
@@ -102,7 +117,7 @@ export class WorkshopSession {
       files: this.files,
       store: opts.store,
       onWrite: (write) => this.broadcastWrite(write),
-      onAsset: (asset, replaced) => this.broadcastAsset(asset, replaced),
+      onAsset: (asset, replaced, toolCallId) => this.broadcastAsset(asset, replaced, toolCallId),
       playAssets: opts.playAssets,
       saves: opts.saves,
       saveStore: opts.saveStore,
@@ -148,7 +163,12 @@ export class WorkshopSession {
     const content = text.trim();
     if (content === "") return;
     if (this.running) {
-      this.opts.emit({ type: "workshop_error", threadId: this.activeId, message: "工坊正在回复，稍后再发" });
+      this.opts.emit({
+        type: "workshop_error",
+        threadId: this.activeId,
+        message: "工坊正在回复，稍后再发",
+        parts: [],
+      });
       return;
     }
     // 一进门就占位：读线程与开跑前的压缩摘要都在飞，期间再发一条会开出第二个 turn
@@ -157,6 +177,9 @@ export class WorkshopSession {
     this.changedDuringTurn = false;
     this.bashDuringTurn = false;
     this.pendingAssets = [];
+    // 本轮的段落流。声明在 try 外面：中途抛错时它得留着——用户至少要看得见它读了哪些文件、
+    // 卡在哪一步，而不是一段文字全没了。
+    let parts: WorkshopPart[] = [];
     try {
       let thread: WorkshopThread | undefined;
       if (threadId) {
@@ -186,12 +209,42 @@ export class WorkshopSession {
         visible,
         content,
         {
-          onDelta: (delta) => this.opts.emit({ type: "workshop_chunk", threadId: active.id, delta }),
-          onTool: (name) => this.opts.emit({ type: "workshop_tool", threadId: active.id, name }),
-          // bash 的改动不经过 onWrite（它不走 PlayEnv.writeFile），只能在这里记账。
-          // 不置脏的话，模型用 sed / mv 改完文件，宿主以为什么都没变、不会重建 runtime。
-          onToolDone: (name) => {
-            if (name === "bash") {
+          onDelta: (delta) => {
+            parts = appendText(parts, delta);
+            this.opts.emit({ type: "workshop_chunk", threadId: active.id, delta });
+          },
+          onThinking: (delta) => {
+            parts = appendThinking(parts, delta);
+            this.opts.emit({ type: "workshop_thinking", threadId: active.id, delta });
+          },
+          onToolStart: (tool) => {
+            parts = startTool(parts, tool);
+            this.opts.emit({
+              type: "workshop_tool_start",
+              threadId: active.id,
+              id: tool.id,
+              name: tool.name,
+              args: tool.args,
+            });
+          },
+          onToolEnd: (tool) => {
+            parts = endTool(parts, {
+              id: tool.id,
+              result: tool.result,
+              isError: tool.isError,
+              ms: tool.ms,
+            });
+            this.opts.emit({
+              type: "workshop_tool_end",
+              threadId: active.id,
+              id: tool.id,
+              result: tool.result,
+              isError: tool.isError,
+              ms: tool.ms,
+            });
+            // bash 的改动不经过 onWrite（它不走 PlayEnv.writeFile），只能在这里记账。
+            // 不置脏的话，模型用 sed / mv 改完文件，宿主以为什么都没变、不会重建 runtime。
+            if (tool.name === "bash") {
               this.bashDuringTurn = true;
               this.markChanged();
             }
@@ -202,27 +255,48 @@ export class WorkshopSession {
         await this.threads.update(active.id, { tokenScale: turn.scale });
         active.tokenScale = turn.scale;
       }
-      const images = this.pendingAssets;
-      this.pendingAssets = [];
-      await this.threads.append(active.id, { role: "assistant", text: turn.text, at: Date.now(), images });
-      this.opts.emit({ type: "workshop_done", threadId: active.id, text: turn.text, images });
+      const settled = this.settleAssets(parts);
+      await this.threads.append(active.id, {
+        role: "assistant",
+        text: turn.text,
+        at: Date.now(),
+        parts: settled.parts,
+        images: settled.images,
+      });
+      this.opts.emit({
+        type: "workshop_done",
+        threadId: active.id,
+        text: turn.text,
+        parts: settled.parts,
+        images: settled.images,
+      });
     } catch (error) {
-      // 出错也把已出的图交出去：前面几张图是真金白银，不能因为后续一步失败就凭空消失。
+      // 出错也把已经发生的事交出去：前面几张图是真金白银，读过的文件、跑过的命令也不该凭空消失。
       // 必须落进 threads——收束后的 snapshot 会带着它重放，否则前端一收到 history
-      // 就清空 pendingAssets，图只会闪一下就没了，刷新后连闪的资格都没有。
-      const images = this.pendingAssets;
-      this.pendingAssets = [];
+      // 就清空现场，这些只会闪一下就没了，刷新后连闪的资格都没有。
+      const settled = this.settleAssets(parts);
       const message = error instanceof Error ? error.message : String(error);
       const activeId = this.activeId ?? threadId ?? "";
-      if (images.length > 0) {
+      if (settled.parts.length > 0 || settled.images.length > 0) {
+        const note =
+          settled.images.length > 0
+            ? `（这一步中断了，但上面 ${settled.images.length} 张图已经出好了）${message}`
+            : `（这一步中断了）${message}`;
         await this.threads.append(activeId, {
           role: "assistant",
-          text: `（这一步中断了，但上面 ${images.length} 张图已经出好了）${message}`,
+          text: note,
           at: Date.now(),
-          images,
+          parts: settled.parts,
+          images: settled.images,
         });
       }
-      this.opts.emit({ type: "workshop_error", threadId: activeId, message, images });
+      this.opts.emit({
+        type: "workshop_error",
+        threadId: activeId,
+        message,
+        parts: settled.parts,
+        images: settled.images,
+      });
     } finally {
       this.running = false;
       // 一轮里可能写了好几个文件、出了好几张图：收束后只重建一次（保存即生效）
@@ -254,7 +328,7 @@ export class WorkshopSession {
       this.bashDuringTurn = false;
       const broken = await this.playConfigBrokenReason();
       if (broken) {
-        this.opts.emit({ type: "workshop_error", threadId: this.activeId, message: broken });
+        this.opts.emit({ type: "workshop_error", threadId: this.activeId, message: broken, parts: [] });
         return;
       }
     }
@@ -308,23 +382,43 @@ export class WorkshopSession {
     this.broadcastWrite(write);
   }
 
-  /** 转发一次素材到货事件（同 pushWrite）。 */
+  /** 转发一次素材到货事件（同 pushWrite）。外部推来的没有调用号，走消息级预览。 */
   pushAsset(asset: WorkshopAssetView): void {
     this.broadcastAsset(asset);
   }
 
-  /** 素材到货：先瞬态播报（对话流立刻可见），同时挂到本轮收束的那条消息上。 */
-  private broadcastAsset(asset: WorkshopAssetView, replaced = false): void {
+  /** 素材到货：先瞬态播报（对话流立刻可见，带调用号的挂到那次调用的行上），收束时并入段落。 */
+  private broadcastAsset(asset: WorkshopAssetView, replaced = false, toolCallId?: string): void {
     this.markChanged();
-    this.pendingAssets.push(asset);
+    this.pendingAssets.push({ ...asset, replaced, toolCallId });
     this.opts.emit({
       type: "workshop_asset",
       threadId: this.activeId ?? "",
+      toolCallId,
       kind: asset.kind,
       path: asset.path,
       url: asset.url,
       replaced,
     });
+  }
+
+  /**
+   * 收束本轮攒下的素材：带 `toolCallId` 的挂到产出它的那次调用上（展开那一行才看见），
+   * 不带的留在消息级 `images` 里（`pushAsset` 这条外部路径没有调用号可挂）。
+   */
+  private settleAssets(parts: WorkshopPart[]): {
+    parts: WorkshopPart[];
+    images: WorkshopAssetView[];
+  } {
+    let settled = parts;
+    const images: WorkshopAssetView[] = [];
+    for (const asset of this.pendingAssets) {
+      const view: WorkshopAssetView = { kind: asset.kind, path: asset.path, url: asset.url };
+      if (asset.toolCallId) settled = attachToolAssets(settled, asset.toolCallId, [view]);
+      else images.push(view);
+    }
+    this.pendingAssets = [];
+    return { parts: settled, images };
   }
 
   private async sendHistory(threadId: string): Promise<void> {
@@ -345,6 +439,7 @@ export class WorkshopSession {
         role: m.role,
         text: m.text,
         at: m.at,
+        parts: m.parts,
         images: m.images,
       })),
     });

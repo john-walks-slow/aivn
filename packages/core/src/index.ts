@@ -2,6 +2,7 @@ export * from "./dsl/spec.js";
 export * from "./dsl/events.js";
 export * from "./dsl/parser.js";
 export * from "./ws/protocol.js";
+export * from "./ws/workshopParts.js";
 export * from "./lineage/model.js";
 export * from "./lineage/replay.js";
 export * from "./play/config.js";

@@ -473,11 +473,13 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
     createGenerateImageTool({
       mode: "sync",
       playAssets: deps.playAssets,
-      onAsset: (path, url, kind, replaced) => deps.onAsset({ kind, path, url }, replaced),
+      onAsset: (path, url, kind, replaced, toolCallId) =>
+        deps.onAsset({ kind, path, url }, replaced, toolCallId),
     }),
     createRecutSpriteTool({
       playAssets: deps.playAssets,
-      onAsset: (path, url, kind, replaced) => deps.onAsset({ kind, path, url }, replaced),
+      onAsset: (path, url, kind, replaced, toolCallId) =>
+        deps.onAsset({ kind, path, url }, replaced, toolCallId),
     }),
     createReadSkillTool(),
     createSetCraftTool(deps),

@@ -52,7 +52,7 @@ describe("点「新会话」后旧历史不残留", () => {
     act(() => api().clearState());
 
     expect(api().state.messages).toEqual([]);
-    expect(api().state.streaming).toBe("");
+    expect(api().state.live).toEqual([]);
     expect(api().state.busy).toBe(false);
     // 会话层不能跟着消失：列表、当前会话、写盘撤销都要留着
     expect(api().state.threads).toEqual([THREAD]);

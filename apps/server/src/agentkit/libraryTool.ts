@@ -65,8 +65,8 @@ export interface LibraryToolDeps {
   library?: AssetLibrary;
   /** 写盘回调：推给工坊对话流（剧作家侧给空实现即可）。 */
   onWrite?: (write: PlayFileWrite) => void;
-  /** 素材落盘回调：推给工坊对话流内联展示。 */
-  onAsset?: (asset: WorkshopAssetView, replaced?: boolean) => void;
+  /** 素材落盘回调：推给工坊对话流，挂到产出它的那次调用上。 */
+  onAsset?: (asset: WorkshopAssetView, replaced?: boolean, toolCallId?: string) => void;
   /**
    * 装不装 `import_asset`（缺省装）。
    *
@@ -142,7 +142,7 @@ export function createLibraryTools(deps?: LibraryToolDeps): AgentTool<any>[] {
       "条目里的立绘会一并复制并登记差分映射。导完这些 id 就能在剧本里直接引用。" +
       "重复导入同一 id 会**覆盖**剧目里的同名素材。",
     parameters: importAssetParams,
-    execute: async (_id, params: Static<typeof importAssetParams>) => {
+    execute: async (toolCallId, params: Static<typeof importAssetParams>) => {
       const entryIds = Array.isArray(params.entryId) ? params.entryId : [params.entryId];
       // 主角卡只有一张、差分清单是逐条目的：这两项配批量就是在猜给谁用，直接说清而不是挑一条应用
       if (entryIds.length > 1 && params.target) {
@@ -164,7 +164,11 @@ export function createLibraryTools(deps?: LibraryToolDeps): AgentTool<any>[] {
           results.push(result);
           // 素材表与角色卡的改动要进撤销条——导入改了剧目配置，用户得能反悔
           for (const path of result.files) {
-            deps.onAsset?.({ kind: viewKind(params.kind), path, url: `/plays/${deps.playId}/${path}` });
+            deps.onAsset?.(
+              { kind: viewKind(params.kind), path, url: `/plays/${deps.playId}/${path}` },
+              undefined,
+              toolCallId,
+            );
           }
           for (const write of result.writes) deps.onWrite?.(write);
         } catch (error) {

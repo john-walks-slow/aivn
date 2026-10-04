@@ -2720,6 +2720,122 @@ select:focus {
   font-style: italic;
 }
 
+/* 一轮回复：正文气泡与「思考 / 工具」行同属一个回合，行铺满这一栏 */
+.chat-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 思考与工具各占一行，点开才铺开——不做盒子 */
+.turn-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.turn-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 6px;
+  border: none;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.turn-row-head:hover:not(:disabled) {
+  background: var(--panel-2);
+  color: var(--ink);
+}
+
+.turn-row-label {
+  flex: none;
+  color: var(--ink);
+}
+
+.turn-row-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.turn-row-status {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.thinking-body {
+  margin-left: 6px;
+  padding: 2px 10px 6px 16px;
+  border-left: 2px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 8px 6px 24px;
+}
+
+.tool-args {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.tool-arg {
+  display: flex;
+  gap: 8px;
+}
+
+.tool-arg dt {
+  flex: none;
+  min-width: 68px;
+  color: var(--ink-faint);
+}
+
+.tool-arg dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-arg dd pre,
+.tool-result {
+  max-height: 260px;
+  margin: 0;
+  padding: 6px 8px;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--ink-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* 线程压缩分隔：早期对话仍在上面（原文没删），只是不再进 agent 上下文 */
 .chat-divider {
   align-self: center;

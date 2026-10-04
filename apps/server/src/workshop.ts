@@ -2,7 +2,7 @@ import type { AgentEvent, AgentMessage, AgentTool, StreamFn } from "@earendil-wo
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { languageLabel } from "@aivn/core";
-import type { EffectiveCraft, ImageApproval, ThinkingLevel, WorkshopAssetView } from "@aivn/core";
+import type { EffectiveCraft, ImageApproval, ThinkingLevel, WorkshopAssetView, WorkshopPart } from "@aivn/core";
 import { capDigest, renderTranscriptAs, splitSummary, calibrateTokenScale, type EpochSummary } from "./compaction.js";
 import { completeText, type OneShotOptions } from "./llm.js";
 import { skillsPrompt } from "./skills.js";
@@ -391,9 +391,12 @@ export async function summarizeThread(
 /** 单条工坊消息（持久化 + 回放）。 */
 export interface WorkshopMessage {
   role: "user" | "assistant";
+  /** 回灌 agent 上下文的唯一内容，也是旧线程文件里唯一有的东西。 */
   text: string;
   at: number;
-  /** 本条附带的素材图（工坊生成的图随消息存，翻历史仍看得见）。 */
+  /** 本轮的段落流；旧消息没有这个字段，渲染前用 normalizeParts() 归一。 */
+  parts?: WorkshopPart[];
+  /** 本条附带的素材图（不带工具调用号的素材走这里）。 */
   images?: WorkshopAssetView[];
 }
 
@@ -403,16 +406,28 @@ export interface WorkshopTurnResult {
   scale: number | null;
 }
 
+/** 一次工具调用的起止（参数与结果都往对话流上送）。 */
+export interface WorkshopToolStart {
+  id: string;
+  name: string;
+  args: unknown;
+}
+export interface WorkshopToolEnd {
+  id: string;
+  /** bash 的改动绕过写盘回调，宿主只能靠这个名字知道「这一轮动过文件」。 */
+  name: string;
+  result: string;
+  isError: boolean;
+  ms: number;
+}
+
 export interface WorkshopTurnHandlers {
-  /** 流式增量（前端打字机）。 */
+  /** 流式增量：正文。 */
   onDelta: (delta: string) => void;
-  /** 工具调用开始（前端显示"正在写入…"）。 */
-  onTool: (name: string) => void;
-  /**
-   * 工具调用结束。bash 的改动绕过了写盘回调（它不走 `PlayEnv.writeFile`），
-   * 宿主只能在这里知道「这一轮 bash 动过文件」，否则它会以为什么都没变、不重建 runtime。
-   */
-  onToolDone: (name: string) => void;
+  /** 流式增量：思考（模型开了思考档位才有）。 */
+  onThinking: (delta: string) => void;
+  onToolStart: (tool: WorkshopToolStart) => void;
+  onToolEnd: (tool: WorkshopToolEnd) => void;
 }
 
 export interface WorkshopAgentOptions {
@@ -424,6 +439,26 @@ export interface WorkshopAgentOptions {
   systemPrompt: string;
   /** 思考档位（play.json 的 agents.workshop.thinking，缺省 off）。 */
   thinkingLevel?: ThinkingLevel;
+}
+
+/** 单条工具回执落进对话流的上限：read 一个几十 KB 文件的全文进线程文件没有意义。 */
+const RESULT_MAX_CHARS = 8000;
+
+/** 工具回执压成一段可展示的文本：图片块记成一行占位。 */
+function toolResultText(result: unknown): string {
+  const content = (result as { content?: unknown } | null)?.content;
+  const text = Array.isArray(content)
+    ? content
+        .map((block) => {
+          const item = block as { type?: string; text?: string };
+          return item?.type === "text" ? (item.text ?? "") : "[图片]";
+        })
+        .join("\n")
+    : typeof result === "string"
+      ? result
+      : JSON.stringify(result ?? null);
+  if (text.length <= RESULT_MAX_CHARS) return text;
+  return `${text.slice(0, RESULT_MAX_CHARS)}\n…（已截断 ${text.length - RESULT_MAX_CHARS} 字）`;
 }
 
 /**
@@ -452,17 +487,28 @@ export async function runWorkshopTurn(
   });
   const timer = setTimeout(() => agent.abort(), TURN_TIMEOUT_MS);
   let streamed = "";
+  const startedAt = new Map<string, number>();
   agent.subscribe((event: AgentEvent) => {
     if (event.type === "message_update") {
       const inner = event.assistantMessageEvent;
       if (inner.type === "text_delta") {
         streamed += inner.delta;
         handlers.onDelta(inner.delta);
+      } else if (inner.type === "thinking_delta") {
+        handlers.onThinking(inner.delta);
       }
     } else if (event.type === "tool_execution_start") {
-      handlers.onTool(event.toolName);
+      startedAt.set(event.toolCallId, Date.now());
+      handlers.onToolStart({ id: event.toolCallId, name: event.toolName, args: event.args });
     } else if (event.type === "tool_execution_end") {
-      handlers.onToolDone(event.toolName);
+      const since = startedAt.get(event.toolCallId);
+      handlers.onToolEnd({
+        id: event.toolCallId,
+        name: event.toolName,
+        result: toolResultText(event.result),
+        isError: event.isError,
+        ms: since === undefined ? 0 : Date.now() - since,
+      });
     }
   });
   try {

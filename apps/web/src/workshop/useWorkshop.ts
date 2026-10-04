@@ -1,9 +1,11 @@
 import { useCallback, useRef, useState } from "react";
+import { appendText, appendThinking, attachToolAssets, endTool, startTool } from "@aivn/core";
 import type {
   ClientMessage,
   WorkshopAssetView,
   WorkshopChatMessage,
   WorkshopCompactionView,
+  WorkshopPart,
   WorkshopThreadInfo,
 } from "@aivn/core";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
@@ -22,15 +24,13 @@ export interface WorkshopState {
   messages: WorkshopChatMessage[];
   /** 本线程已发生的压缩（未压缩为 null）：前 cutAt 条仍在 messages 里，只是不再进 agent 上下文。 */
   compaction: WorkshopCompactionView | null;
-  /** 正在流式输出的文本（尚未落进 messages）。 */
-  streaming: string;
-  /** 工坊 agent 当前在做什么（工具名）。 */
-  activity: string | null;
+  /** 本轮流式中的段落（正文/思考/工具，拼装规则见 core 的 workshopParts）。done/error 一到整段替换。 */
+  live: WorkshopPart[];
   /** 本会话内的写盘记录（面板关闭即清空）。 */
   writes: WorkshopWriteRecord[];
   /**
-   * 本轮已出图但本轮话还没收束的素材：实时出现在流式区旁边，
-   * 收束时随末条消息一起进 messages（不留在半截气泡里）。
+   * 本轮到货、**不带工具调用号**的素材（外部推来的那种）。
+   * 工具产出的都带调用号，挂在对应那一行上，不进这里。
    */
   pendingAssets: WorkshopAssetView[];
   busy: boolean;
@@ -42,30 +42,11 @@ const EMPTY: WorkshopState = {
   activeId: null,
   messages: [],
   compaction: null,
-  streaming: "",
-  activity: null,
+  live: [],
   writes: [],
   pendingAssets: [],
   busy: false,
   error: null,
-};
-
-// read / write / edit / bash 是 pi 的内建工具，名字直接就是英文动词
-const TOOL_LABEL: Record<string, string> = {
-  read: "读取文件",
-  write: "写入文件",
-  edit: "定点编辑",
-  bash: "跑命令",
-  get_readiness: "检查就绪条件",
-  generate_image: "出图中（几十秒，别急着发下一条）",
-  recut_sprite: "重抠立绘底",
-  list_library: "查素材资源库",
-  import_asset: "从资源库导入素材",
-  view_image: "看图",
-  read_skill: "读技能库",
-  list_saves: "查看周目",
-  read_lineage: "读故事树",
-  web_search: "联网检索中",
 };
 
 /** 工坊状态机：把服务端 workshop_* 下行消息收敛成面板可直接渲染的形态。 */
@@ -90,45 +71,67 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
             activeId: msg.threadId,
             messages: msg.messages,
             compaction: msg.compaction,
-            streaming: "",
-            activity: null,
+            live: [],
             pendingAssets: [],
           };
         case "workshop_chunk":
-          return { ...prev, streaming: prev.streaming + msg.delta, busy: true, error: null };
-        case "workshop_tool":
-          return { ...prev, activity: TOOL_LABEL[msg.name] ?? msg.name, busy: true };
+          return { ...prev, live: appendText(prev.live, msg.delta), busy: true, error: null };
+        case "workshop_thinking":
+          return { ...prev, live: appendThinking(prev.live, msg.delta), busy: true, error: null };
+        case "workshop_tool_start":
+          return {
+            ...prev,
+            live: startTool(prev.live, { id: msg.id, name: msg.name, args: msg.args }),
+            busy: true,
+            error: null,
+          };
+        case "workshop_tool_end":
+          return {
+            ...prev,
+            live: endTool(prev.live, {
+              id: msg.id,
+              result: msg.result,
+              isError: msg.isError,
+              ms: msg.ms,
+            }),
+          };
         case "workshop_write":
           return {
             ...prev,
             writes: [...prev.writes, { path: msg.path, before: msg.before, at: Date.now() }],
           };
-        case "workshop_asset":
-          return {
-            ...prev,
-            pendingAssets: [...prev.pendingAssets, { kind: msg.kind, path: msg.path, url: msg.url }],
-            busy: true,
-          };
+        case "workshop_asset": {
+          const view: WorkshopAssetView = { kind: msg.kind, path: msg.path, url: msg.url };
+          if (msg.toolCallId) {
+            return { ...prev, live: attachToolAssets(prev.live, msg.toolCallId, [view]), busy: true };
+          }
+          return { ...prev, pendingAssets: [...prev.pendingAssets, view], busy: true };
+        }
         case "workshop_done":
           return {
             ...prev,
             messages: [
               ...prev.messages,
-              { role: "assistant", text: msg.text, at: Date.now(), images: msg.images },
+              {
+                role: "assistant",
+                text: msg.text,
+                at: Date.now(),
+                parts: msg.parts,
+                images: msg.images,
+              },
             ],
-            streaming: "",
-            activity: null,
+            live: [],
             pendingAssets: [],
             busy: false,
           };
         case "workshop_error":
-          // 本轮出过的图不能跟着错误一起消失——发出去的是真金白银，且已落盘
+          // 本轮出过的图与跑到一半的段落不能跟着错误一起消失——图是真金白银，段落是刚发生的事。
+          // 服务端随后补发的 history 会带上它们，live 只是那之前的过渡，不会重影。
           return {
             ...prev,
             error: msg.message,
             busy: false,
-            activity: null,
-            streaming: "",
+            live: msg.parts,
             pendingAssets: msg.images ?? [],
           };
         default:
@@ -150,7 +153,7 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
   const onDisconnected = useCallback((): void => {
     setState((prev) =>
       prev.busy
-        ? { ...prev, busy: false, streaming: "", activity: null, error: "连接断开了，正在重连…" }
+        ? { ...prev, busy: false, live: [], error: "连接断开了，正在重连…" }
         : prev,
     );
   }, []);
@@ -186,8 +189,7 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
       ...prev,
       messages: [],
       compaction: null,
-      streaming: "",
-      activity: null,
+      live: [],
       pendingAssets: [],
       busy: false,
       error: null,

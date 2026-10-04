@@ -137,7 +137,13 @@ const QUEUED_DESCRIPTION = [
 export interface SyncImageDeps {
   mode: "sync";
   playAssets?: PlayAssets;
-  onAsset: (path: string, url: string, kind: "background" | "cg" | "sprite", replaced: boolean) => void;
+  onAsset: (
+    path: string,
+    url: string,
+    kind: "background" | "cg" | "sprite",
+    replaced: boolean,
+    toolCallId: string,
+  ) => void;
 }
 
 /** 剧作家：后台排产，先占时间线上的位置，生成结果由宿主广播。 */
@@ -162,7 +168,7 @@ export function createGenerateImageTool(deps: ImageToolDeps): AgentTool<typeof g
     label: "生成剧目素材",
     description: deps.mode === "sync" ? SYNC_DESCRIPTION : QUEUED_DESCRIPTION,
     parameters: generateImageParams,
-    execute: async (_toolCallId, params: Static<typeof generateImageParams>) => {
+    execute: async (toolCallId, params: Static<typeof generateImageParams>) => {
       if (!deps.playAssets && deps.mode === "queued") {
         return textResult(
           "生图未启用（STAGE_IMAGE_ENABLED=false 或后端缺凭据）：别在剧本里引用没见过的素材 id，用旁白/台词交代。",
@@ -173,7 +179,7 @@ export function createGenerateImageTool(deps: ImageToolDeps): AgentTool<typeof g
       }
       try {
         return deps.mode === "sync"
-          ? await runSync(deps, params)
+          ? await runSync(deps, params, toolCallId)
           : await runQueued(deps, params);
       } catch (error) {
         return textResult(`生图失败：${reason(error)}`);
@@ -203,6 +209,7 @@ function resolveRefs(params: Static<typeof generateImageParams>): string[] | und
 async function runSync(
   deps: SyncImageDeps,
   params: Static<typeof generateImageParams>,
+  toolCallId: string,
 ): Promise<ReturnType<typeof linesResult>> {
   const assets = deps.playAssets!;
   const references = resolveRefs(params);
@@ -221,7 +228,7 @@ async function runSync(
     params.style,
   );
   const lines = generated.map((asset) => {
-    deps.onAsset(asset.path, asset.url, asset.kind, asset.replaced);
+    deps.onAsset(asset.path, asset.url, asset.kind, asset.replaced, toolCallId);
     return `${asset.replaced ? "已生成并覆盖原有素材" : "已生成"}：${asset.path}\n![${asset.path}](${asset.url})`;
   });
   const auto = generated.find((asset) => asset.autoNeutral);
