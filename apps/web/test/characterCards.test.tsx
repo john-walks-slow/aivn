@@ -213,7 +213,7 @@ describe("角色页：立绘的那一眼", () => {
     render(<CharacterPane playId="p1" revision={0} onManageSprites={onManageSprites} />);
     await waitFor(() => expect(cardTitles()).toContain("ミオ"));
     fireEvent.click(screen.getByText("ミオ"));
-    fireEvent.click(screen.getByText("管立绘"));
+    fireEvent.click(screen.getByText("打开立绘"));
     expect(onManageSprites).toHaveBeenCalledWith("mio");
   });
 });

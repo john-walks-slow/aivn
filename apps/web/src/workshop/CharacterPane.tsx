@@ -40,7 +40,7 @@ export function CharacterPane({
   revision: number;
   /** 注册素材到货回调（返回取消订阅）：导进来或刚画好的立绘要当场出现在缩略图上。 */
   subscribeAssetReady?: (handler: (asset: GeneratedAsset) => void) => () => void;
-  /** 「管立绘」：跳到素材页那个主体（这一页只管人格与音色，立绘归素材表）。 */
+  /** 「打开立绘」：跳到素材页那个主体（这一页只管人格与音色，立绘归素材表）。 */
   onManageSprites?: (id: string) => void;
 }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
@@ -56,7 +56,7 @@ export function CharacterPane({
   const [libraryInto, setLibraryInto] = useState<string | null>(null);
   const [voiceFor, setVoiceFor] = useState<string | null>(null);
   const voices = useVoiceCatalog();
-  /** 立绘目录 → 文件（`sprites/<id>` → 差分文件名）：缩略图与「管立绘」的入口靠它。 */
+  /** 立绘目录 → 文件（`sprites/<id>` → 差分文件名）：缩略图与「打开立绘」的入口靠它。 */
   const [sprites, setSprites] = useState<Record<string, string[]>>({});
 
   const reload = useCallback((): void => {
@@ -244,7 +244,22 @@ export function CharacterPane({
 
       {activeRole && (
         <section className="panel">
-          <h3>{isProtagonist(activeRole.id) ? "主角卡（玩家扮演）" : "角色卡"}</h3>
+          <div className="assets-section-head">
+            <h3>{isProtagonist(activeRole.id) ? "主角卡（玩家扮演）" : "角色卡"}</h3>
+            {/* 人格在这页、立绘在素材页：入口摆在角色卡自己的标题行上，
+                不是跟「保存」挤在面板底下——那一行说的是「改完了怎么存」，跟立绘没关系 */}
+            {onManageSprites && (
+              <button
+                className="ghost-btn"
+                title="这个角色的立绘：差分、生成、上传都在素材页"
+                onClick={() => onManageSprites(activeRole.id)}
+              >
+                <span className="btn-icon">
+                  <Icon name="assets" size={13} /> 打开立绘
+                </span>
+              </button>
+            )}
+          </div>
           <CharacterEditor
             playId={playId}
             charId={activeRole.id}
@@ -267,14 +282,6 @@ export function CharacterPane({
             保存
           </button>
           {saved && !dirty && <span className="muted small">已保存</span>}
-          {/* 人格在这页、立绘在素材页：给一条去那边的路，别让人自己记着图在哪儿 */}
-          {onManageSprites && (
-            <button className="ghost-btn" onClick={() => onManageSprites(activeRole.id)}>
-              <span className="btn-icon">
-                <Icon name="assets" size={13} /> 管立绘
-              </span>
-            </button>
-          )}
         </p>
       )}
       {libraryInto !== null && detail && (
