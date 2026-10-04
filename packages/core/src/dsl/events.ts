@@ -22,6 +22,10 @@ export interface PreloadAssetAttrs {
  *
  * `preload_asset` 与 `stop` 由工具产出而非文本解析（`260930-agent-kit` 计划 §2），
  * 但仍走同一条 IR 管道：加 seq → 广播 → 落谱系。
+ *
+ * `player_input` 由编排器在**接受**玩家动作（选项/自由输入/排队的引导兑现）那一刻产出：
+ * 它是「玩家说了什么」在时间线上的一帧，客户端的回执、回看与回顾都靠它，
+ * 不再各自从谱系轮询或本地乐观状态里补。
  */
 export type StageEvent =
   | ({ kind: "scene" } & SceneAttrs)
@@ -38,7 +42,8 @@ export type StageEvent =
   | ({ kind: "sfx" } & SfxAttrs)
   | ({ kind: "preload_asset" } & PreloadAssetAttrs)
   | ({ kind: "cg" } & CgAttrs)
-  | { kind: "stop"; stopType: StopType; options?: StopOption[]; placeholder?: string };
+  | { kind: "stop"; stopType: StopType; options?: StopOption[]; placeholder?: string }
+  | { kind: "player_input"; text: string };
 
 /** 线上格式：编排器为事件标序后经 WS 下发，重连凭 seq 重放。 */
 export interface SequencedEvent {

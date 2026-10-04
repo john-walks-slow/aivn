@@ -66,6 +66,14 @@ describe("舞台行 → 谱系反查（导演原语的锚点）", () => {
     expect(beatAtLine(cards, null)).toBeNull();
   });
 
+  it("玩家发来的话不落任何一轮：带着 seq 也只用于认领，不拿来锚定", () => {
+    // input 行排在两轮之间（seq 3 在 a 拍收束之后、b 拍开口之前）——
+    // 不加这个守卫它会错锚到前一拍，回顾工具栏的重来按钮就不该亮
+    expect(beatAtLine(cards, { seq: 3, kind: "input" })).toBeNull();
+    // 相邻的台词行照常锚定，守卫没有误伤
+    expect(beatAtLine(cards, { seq: 3 })?.id).toBe("a");
+  });
+
   it("只有台词三件套给改写目标，布景/收束行没有", () => {
     expect(editableNodeAtLine(buildView(), lines[0])?.id).toBe("a1");
     expect(editableNodeAtLine(buildView(), lines[1])?.id).toBe("a2");

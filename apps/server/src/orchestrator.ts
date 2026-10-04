@@ -886,8 +886,8 @@ export class PlaywrightOrchestrator {
       this.autostarted = true;
       // 开场这一句同样落谱系：否则它只活在对话体里，玩家在轮内分岔就再也找不回来
       this.noteBeatInputs(steers);
-      for (const item of steers) this.appendLineage("prompt", { payload: { input: item.text } });
-      if (resolved) this.appendLineage("prompt", { payload: { input: resolved.text } });
+      for (const item of steers) this.onStageEvent({ kind: "player_input", text: item.text });
+      if (resolved) this.onStageEvent({ kind: "player_input", text: resolved.text });
       this.markSent(steers);
       const inputs = [...steers.map((item) => item.text), ...(resolved ? [resolved.text] : [])];
       await this.beginBeat(
@@ -1020,7 +1020,7 @@ export class PlaywrightOrchestrator {
       : null;
     const items = choice ? [...steers, choice] : [...steers];
     this.noteBeatInputs(steers);
-    for (const item of items) this.appendLineage("prompt", { payload: { input: item.text } });
+    for (const item of items) this.onStageEvent({ kind: "player_input", text: item.text });
     for (const item of items) {
       item.status = "sent";
       item.sentBeatNo = this.beatNo + 1;
@@ -2286,6 +2286,11 @@ export class PlaywrightOrchestrator {
             attrs: { stopType: event.stopType },
           },
         });
+        return;
+      case "player_input":
+        // 玩家输入与台词同一待遇：事件广播（回执/回看/回顾直接消费）+ 落谱系带 seq
+        // （重放与谱系条目按 seq 对上，transcript 不再需要双轨合并）。
+        this.appendLineage("prompt", { payload: { input: event.text, seq } });
         return;
     }
   }

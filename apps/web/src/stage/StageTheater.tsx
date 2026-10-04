@@ -54,9 +54,6 @@ interface StageTheaterProps {
   onReplay: (seq: number) => void;
   /** 这一行的语音处于哪一态：none=没配音色/不生成，pending=正在合成，ready=可重听。 */
   voiceState: (seq: number | null) => VoiceState;
-  /** 玩家刚发出去的那一句（选项/自由输入）：谱系还没拉到，先在对话框里顶一句。 */
-  playerEcho: string | null;
-  onEchoDismiss: () => void;
   onUnlock: () => void;
   onView: (view: StageView) => void;
   /** 点舞台即开新轮：等到内容演完且存在 pause 停止点时成立（不再单列「继续」按钮）。 */
@@ -286,8 +283,6 @@ export function StageTheater({
   onGenerateCg,
   onReplay,
 voiceState,
-  playerEcho,
-  onEchoDismiss,
   voiceOn,
   onToggleVoice,
   onUnlock,
@@ -327,9 +322,8 @@ voiceState,
     playback;
   const shown = view ? view.text.slice(0, viewLength) : "";
   const lineDone = current !== null && shownLength >= current.text.length;
-  // 名牌与正文的归属交给纯函数判：这三者的优先级踩过一次坑，不在 JSX 里重排。
+  // 名牌与正文的归属交给纯函数判：这几者的优先级踩过一次坑，不在 JSX 里重排。
   const dialog = dialogContent({
-    playerEcho,
     viewName:
       view && (view.type === "say" || view.type === "thought")
         ? (view.nameOverride ?? (actorName(names, view.actorId) || "？"))
@@ -339,15 +333,16 @@ voiceState,
     live,
   });
   // 空对话区的「还没开演」是第三种说法：dialogContent 只分「演出中 / 等玩家」两态，
-  // 树还空着时说「剧作家正在落笔…」是在撒谎。三层优先级不动，只在这一态换掉那句话。
-  const dialogBody = !playerEcho && !view && fresh ? emptyDialogHint(live, fresh) : dialog.text;
+  // 树还空着时说「剧作家正在落笔…」是在撒谎。只在这一态换掉那句话。
+  const dialogBody = !view && fresh ? emptyDialogHint(live, fresh) : dialog.text;
   // 说话者聚焦：当前这句台词的人保持原亮度，同框的其余人压暗。规则见 speakerFocusId。
   const focusId = speakerFocusId(view, visual.sprites);
 
   /**
-   * 舞台点击：回看中 → 往回追一句；玩家刚发出去的那句还顶在对话框里 → 先把它收掉；
-   * 等新内容时（pause 停止点）→ 直接开新一轮。翻下一句和继续生成是同一个动作。
-   * 空格共用这一套——点不动画面时（桌面键盘），那一下也得有着落。
+   * 舞台点击：回看中 → 往回追一句；等新内容时（pause 停止点）→ 直接开新一轮。
+   * 翻下一句和继续生成是同一个动作。空格共用这一套——点不动画面时（桌面键盘），
+   * 那一下也得有着落。玩家的回执（input 行）不需要「收掉」：它就是缓冲里的普通一行，
+   * 播放头走到它显示、走到下一句让位，与其他台词同一待遇。
    */
   const onStageClick = useCallback((): void => {
     onUnlock();
@@ -356,15 +351,9 @@ voiceState,
       return;
     }
     if (scrubbed) scrub(1);
-    else if (playerEcho) {
-      // 回声占着台词条时，这一下既是「我看过了」也是「往下走」——
-      // 否则玩家点两下才看得见自己那句话之后的内容。
-      onEchoDismiss();
-      if (canContinue) onContinue();
-      else advance();
-    } else if (canContinue) onContinue();
+    else if (canContinue) onContinue();
     else advance();
-  }, [onUnlock, hideUi, scrubbed, scrub, playerEcho, onEchoDismiss, canContinue, onContinue, advance]);
+  }, [onUnlock, hideUi, scrubbed, scrub, canContinue, onContinue, advance]);
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→ 往回追；空格 = 点舞台。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
@@ -736,11 +725,10 @@ voiceState,
         {/* 名牌：整块落在台词条上方、跟窗的上边缘连着（不留缝），左端跟窗的左边缘对齐。
             骑在窗沿上会把它切成两半，所以是「贴着」，不是「压着」。 */}
         {dialog.name && <div className="dialog-name">{dialog.name}</div>}
-        {/* 回声期间台词条归它：玩家一按下就得看见自己说了什么，不能被上一句挡回去。
-            真台词一到（播放头换行）回声自动让位，见 StageScreen 的 echoText。 */}
-        <p className={`dialog-text ${!playerEcho && view?.type === "thought" ? "thought" : !playerEcho && view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
+        {/* 玩家回执（input 行）与其他台词同一待遇：播放头走到它就整行显示（不打字机）。 */}
+        <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
           {dialogBody}
-          {view && !playerEcho && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
+          {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
         </p>
         {/* 台词条底缘：左是状态提示（回看中 / 生成中），右是游戏选项 */}
         <div className="dialog-foot">

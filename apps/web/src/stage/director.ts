@@ -376,13 +376,25 @@ function lastIndexOfKey(entries: readonly TranscriptEntry[], key: string): numbe
   return -1;
 }
 
-/** 谱系还没追上时，播放头这行先按台词行自造一条记录顶上，台词不会闪空。 */
+/** 谱系还没追上时，播放头这行先自造一条记录顶上，台词不会闪空。 */
 function lineEntry(line: ScriptLine): TranscriptEntry {
+  if (line.type === "input") {
+    return {
+      key: line.key,
+      kind: "input",
+      type: "say",
+      actorId: "player",
+      text: line.text,
+      seq: line.seq ?? null,
+      nodeId: null,
+    };
+  }
   return {
     key: line.key,
     kind: "line",
     type: line.type === "say" || line.type === "narrate" || line.type === "thought" ? line.type : "narrate",
     actorId: line.actorId ?? null,
+    ...(line.nameOverride ? { nameOverride: line.nameOverride } : {}),
     text: line.text,
     seq: line.seq ?? null,
     nodeId: null,
@@ -578,9 +590,10 @@ export function usePlayback(
       if (!cue) return;
       cursorRef.current += 1;
       if (cue.kind === "line") {
-        setCurrentKey(cue.lineKey);
-        setShownLength(0);
         const line = linesRef.current.find((l) => l.key === cue.lineKey) ?? null;
+        setCurrentKey(cue.lineKey);
+        // 玩家回执一次到位：那是他刚说的话，不是逐字打出来的台词。
+        setShownLength(line?.type === "input" ? line.text.length : 0);
         hooksRef.current.onLineStart?.(line);
         return;
       }
@@ -731,19 +744,28 @@ export function usePlayback(
   // 只在 current 为 null 时生效——正在读的句子不会被新到的内容抢走，阅读节奏仍归玩家；
   // 玩家自己点着读完最后一句（current 归 null、屏幕显示「剧作家正在落笔…」）之后，
   // 新内容一到就该自己出现，这正是「边生成边演出」。
+  // 回执例外：停止点上选完/说完，缓冲里进来的第一张就是自己的 input 行——
+  // 起播不等点击也不等演出状态（player_input 先于 beat_start 到达时 state 还停在
+  // stopped、Auto 模式的读速节奏，都不拦自己的话），但已读完是前提。
   useEffect(() => {
+    const next = cues[cursorRef.current];
+    const nextIsPlayerInput =
+      next?.kind === "line" &&
+      (linesRef.current.find((l) => l.key === next.lineKey)?.type ?? null) === "input";
     const go = shouldAutoStart({
       live: opts.live,
       auto,
       hold: opts.hold === true,
       hasCurrent: current !== null,
+      currentComplete: current === null || shownLength >= current.text.length,
       cursor: cursorRef.current,
       cueCount: cues.length,
+      nextIsPlayerInput,
     });
     if (!go) return;
     const timer = setTimeout(() => consumeNext(), 80);
     return () => clearTimeout(timer);
-  }, [opts.live, auto, current, cues, consumeNext, opts.revision, opts.hold]);
+  }, [opts.live, auto, current, shownLength, cues, consumeNext, opts.revision, opts.hold]);
 
   // 骨架超时兜底：定期摘掉到点还没到货的占位，落到氛围底色而不是一直闪
   const pendingTtl = pendingTtlMs(opts.assetsTtlMs);

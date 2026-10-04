@@ -79,8 +79,6 @@ function Harness({
       onGenerateCg={() => {}}
       onReplay={() => {}}
       voiceState={() => "none"}
-      playerEcho={null}
-      onEchoDismiss={() => {}}
       onUnlock={() => {}}
       onView={() => {}}
       canContinue={canContinue}

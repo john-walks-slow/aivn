@@ -240,13 +240,14 @@ const EDITABLE = new Set<LineageNodeView["kind"]>(["say", "narrate", "thought"])
 /**
  * 舞台上正在显示的那一行落在哪一轮——导演原语的锚点。
  * 舞台缓冲里只有当前分支的行，所以只在 onPath 的卡里找；纯布景轮没有 seq，定位不到就是 null。
- * 回看游标可能停在玩家发来的那句话上（它没有 seq），同样定位不到——原语按钮就该是灰的。
+ * 玩家发来的话不落任何一轮（它排在两轮之间，seq 只用于认领回执，不拿来锚定），
+ * 老档的输入行没有 seq——两种情况都定位不到，原语按钮就该是灰的。
  */
 export function beatAtLine(
   cards: readonly BeatCard[],
-  line: { seq?: number | null } | null,
+  line: { seq?: number | null; kind?: string } | null,
 ): BeatCard | null {
-  if (!line || line.seq === undefined || line.seq === null) return null;
+  if (!line || line.seq === undefined || line.seq === null || line.kind === "input") return null;
   const at = line.seq;
   let hit: BeatCard | null = null;
   for (const card of cards) {

@@ -230,10 +230,14 @@ describe("PlaywrightOrchestrator 闭环", () => {
 
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
 
+    // 玩家输入先于开演广播：它是被接受的那个动作在时间线上的一帧（回执），
+    // 客户端在 beat_start 之前就能把它顶进对话框。
+    expect(messages[0]).toMatchObject({ type: "events", events: [{ event: { kind: "player_input", text: "我到了" } }] });
     const kinds = messages.map((m) => m.type);
-    expect(kinds[0]).toBe("beat_start");
+    expect(kinds[1]).toBe("beat_start");
     const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
     expect(mergedKinds(events)).toEqual([
+      "player_input",
       "scene",
       "actor",
       "narrate_start",
