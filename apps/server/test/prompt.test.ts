@@ -36,7 +36,7 @@ describe("buildSystemPrompt：角色分级（roster 一行制 + 全卡按需）"
     // 主角恒在场：全文
     expect(prompt).toContain("玩家本人的长篇人设");
     // 不在场：只一行摘要，不带 ### 全卡头
-    expect(prompt).toContain("- 小春（id: koharu）：后辈，温柔。");
+    expect(prompt).toContain("- 小春（id: koharu，卡片 characters/koharu.md）：后辈，温柔。");
     expect(prompt).not.toContain("### 小春");
     expect(prompt).toContain("上面最后几行是最近没出场的人物");
   });
@@ -105,9 +105,9 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
       }),
     });
     // 主角就是一张普通卡，只在标题里多一个标注——上台、立绘、配音都由创作口径决定
-    expect(prompt).toContain("### 你（id: protagonist，玩家扮演）");
-    expect(prompt).toContain("### 澪（id: mio）");
-    expect(prompt).not.toContain("### 澪（id: mio，玩家扮演）");
+    expect(prompt).toContain("### 你（id: protagonist，卡片 characters/protagonist.md，玩家扮演）");
+    expect(prompt).toContain("### 澪（id: mio，卡片 characters/mio.md）");
+    expect(prompt).not.toContain("### 澪（id: mio，卡片 characters/mio.md，玩家扮演）");
     expect(prompt).toContain("id 固定为 protagonist");
   });
 
@@ -138,19 +138,20 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
     expect(prompt).toContain("不要再 generate_image");
   });
 
-  it("记忆索引：有分类的带 [分类] 前缀，顶层卡不打空括号", () => {
+  it("记忆索引：带 [分类] 前缀与这张卡自己的路径，顶层卡不打空括号", () => {
     const memory = new PlayMemory({
       cards: [
         { layer: "locations", name: "旧校舍", summary: "四层走廊", detail: "", file: "locations/旧校舍", arc: false },
-        { layer: "lore", name: "结界", summary: "折寿一年", detail: "", file: "lore/结界", arc: false },
+        // 标题与文件名可以不一样（parseCard 取 `# 标题`）：所以路径推不出来，只能 A 区给
+        { layer: "lore", name: "结界", summary: "折寿一年", detail: "", file: "lore/boundary", arc: false },
         { layer: "", name: "旧约定", summary: "顶层卡不必分类", detail: "", file: "旧约定", arc: false },
       ],
     });
     const prompt = build({ play: PLAY, memory });
-    expect(prompt).toContain("- [locations] 旧校舍：四层走廊");
-    expect(prompt).toContain("- [lore] 结界：折寿一年");
+    expect(prompt).toContain("- [locations] 旧校舍（memory/index/locations/旧校舍.md）：四层走廊");
+    expect(prompt).toContain("- [lore] 结界（memory/index/lore/boundary.md）：折寿一年");
     // 顶层卡的 layer 是空串：打出来就是「- [] 」，丑且误导
-    expect(prompt).toContain("- 旧约定：顶层卡不必分类");
+    expect(prompt).toContain("- 旧约定（memory/index/旧约定.md）：顶层卡不必分类");
     expect(prompt).not.toContain("- [] ");
   });
 
@@ -162,7 +163,9 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
       ],
     });
     expect(build({ play: PLAY, memory, arcIds: [] })).not.toContain("第一纪元");
-    expect(build({ play: PLAY, memory, arcIds: ["epoch-e1-1"] })).toContain("- [arcs] 第一纪元");
+    // 纪元卡是引擎产物、写不进去：行尾不给路径，免得模型拿着去 edit
+    expect(build({ play: PLAY, memory, arcIds: ["epoch-e1-1"] })).toContain("- [arcs] 第一纪元：两人走到旧校舍");
+    expect(build({ play: PLAY, memory, arcIds: ["epoch-e1-1"] })).not.toContain("memory/index/epoch-e1-1.md");
   });
 
   it("没有描述表时清单退化为纯 id，行为与从前一致", () => {
@@ -377,11 +380,11 @@ describe("能力位与提示词的一致性：没开的能力不教它调", () =
     expect(prompt).toContain("先建档（write）");
   });
 
-  it("两个都关：只剩「直接 read 那个文件」这条路，且不出现任何工具名", () => {
+  it("两个都关：只剩「read 带路径的那一行」这条路，且不出现任何工具名", () => {
     const prompt = build({ ...base, can: { memory: false, characters: false } });
     expect(prompt).not.toContain("read_memory_detail");
     expect(prompt).not.toContain("search_archive");
-    expect(prompt).toContain("需要某条完整内容时直接 read 那个文件；过往剧情问用户");
+    expect(prompt).toContain("需要某条完整内容时 read 带路径的那一行所写的文件；过往剧情问用户");
   });
 
   it("分级角色表末尾那句按「管理角色」指路：开着走建档，关着让人直接 read 卡", () => {

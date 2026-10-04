@@ -200,5 +200,11 @@ describe("PlayMemory", () => {
     ]);
     // 用户卡是剧目设定，不随分支可见性变化
     expect(memory.visibleContext([]).map((c) => c.name)).toEqual(["天文台", "末位"]);
+    // A 区每行要带可写路径：标题（`# 标题`）与文件名可以不一样，路径只有这里给得出来；arcs 卡只读，给 null
+    expect(memory.visibleContext(["epoch-a-1"]).map((c) => c.path)).toEqual([
+      "memory/index/locations/天文台.md",
+      "memory/index/zzz.md",
+      null,
+    ]);
   });
 });

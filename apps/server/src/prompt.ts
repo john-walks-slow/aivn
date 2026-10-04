@@ -1,4 +1,5 @@
 import {
+  characterCardPath,
   describeAsset,
   isProtagonist,
   languageLabel,
@@ -270,7 +271,8 @@ name 只覆盖本句名牌，不写入角色表。只想出声、不上台的路
 const MEMORY_RULES = `## 记忆卡（memory/index/）
 
 世界设定、地点、组织、伏笔写成一张卡：\`memory/index/<分类>/<名字>.md\`，首行 \`# 标题\`、次行一句话摘要，
-其余是详情。分类只是子目录（\`locations/\` 放地点、\`lore/\` 放世界设定），A 区每行会带 \`[分类]\` 前缀。
+其余是详情。分类只是子目录（\`locations/\` 放地点、\`lore/\` 放世界设定），A 区每行带 \`[分类]\` 前缀与这张卡自己的路径
+（**标题与文件名可以不一样**，改卡照 A 区给的路径，别按标题猜）。
 
     write(path="memory/index/lore/旧校舍.md", content="# 旧校舍\\n三年前封了，钥匙在小春手里。\\n\\n更细的设定……")
 
@@ -328,7 +330,10 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       card.sprites && Object.keys(card.sprites).length > 0
         ? Object.keys(card.sprites)
         : (ctx.assets?.[`sprites/${id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
-    const title = `${card.name ?? id}（id: ${id}${isProtagonist(id) ? "，玩家扮演" : ""}）`;
+    // 路径写进标题：卡的 id 与文件名同源，但模型不该为了改一张卡去推路径——A 区给全，read / edit 直接用
+    const title = `${card.name ?? id}（id: ${id}，卡片 ${characterCardPath(id)}${
+      isProtagonist(id) ? "，玩家扮演" : ""
+    }）`;
     if (active && !active.has(id)) {
       const firstLine = card.body.split("\n").map((l) => l.trim()).find((l) => l !== "") ?? "";
       roster.push(
@@ -400,12 +405,15 @@ export function buildSystemPrompt(ctx: PromptContext): string {
         }${ctx.nsfwPrompt?.trim() ? `\n## 补充限制级提示词\n${ctx.nsfwPrompt.trim()}\n` : ""}`
       : `\n## 亲密/限制级剧情入口（enter_nsfw）\n\n当剧情推进至即将发生亲密、成人或限制级（NSFW）接触时，不要在当前模型下直接描写露骨细节。\n调用 \`enter_nsfw\` 开启限制级剧情通道。调用后完成本轮收束并调用 \`beat_done\`，下一轮起将由限制级专用模型和专属提示词接管展开细腻描写；亦可与 \`beat_done\` 在同一批次工具调用中一同发出。\n`;
   const cards = memory?.visibleContext(ctx.arcIds ?? []) ?? [];
+  // 每行带路径：卡的标题（`# 标题`）与文件名可以不一样，路径推不出来，只能这里给
+  const cardLine = (c: { layer: string; name: string; summary: string; path: string | null }): string =>
+    `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}${c.path ? `（${c.path}）` : ""}：${c.summary}`;
   const indexSection =
     cards.length > 0
-      ? `\n# 记忆索引（按需查详情）\n\n${cards.map((c) => `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}：${c.summary}`).join("\n")}\n\n${
+      ? `\n# 记忆索引（按需查详情）\n\n${cards.map(cardLine).join("\n")}\n\n${
         ctx.can.memory
-          ? "需要某条完整内容时调用 read_memory_detail 工具（传名称），或直接 read 那个文件。历史往事用 search_archive 检索。"
-          : "需要某条完整内容时直接 read 那个文件；过往剧情问用户，或让工坊在记忆页查。"
+          ? "需要某条完整内容时调用 read_memory_detail 工具（传名称），带路径的行也可以直接 read 它。历史往事用 search_archive 检索。"
+          : "需要某条完整内容时 read 带路径的那一行所写的文件；过往剧情问用户，或让工坊在记忆页查。"
       }\n`
       : "";
 

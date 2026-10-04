@@ -5,6 +5,9 @@ import MiniSearch from "minisearch";
 import { parseCharacterCard, type CharacterDocument } from "@aivn/core";
 import type { PlayStore } from "./store.js";
 
+/** 用户写的记忆卡目录（剧目内相对路径）：A 区给的是这里起算的路径，模型照着它 read / edit。 */
+const INDEX_DIR = "memory/index";
+
 /**
  * 剧目记忆（D7 三层）：always（每轮注入）/ index（标题列表注入 + 详情按需读）/ archive（只可检索命中）。
  * 剧目级内容（craft/premise/index 卡）读自 memory/ 目录，随 runtime 重建即时生效；
@@ -92,14 +95,21 @@ export class PlayMemory {
     return this.cards.filter((c) => !c.arc || allowed.has(c.file));
   }
 
-  /** 同上，但只给标题+摘要（A 区注入用）。 */
+  /**
+   * 同上，但只给标题+摘要+路径（A 区注入用）。
+   *
+   * `path` 是这张卡在剧目里的可写路径，A 区每行带出去，模型才能直接 read / edit 它——
+   * **标题是 `# 标题`（`parseCard`），与文件名可以不一样**，路径推不出来，只能这里给。
+   * arcs 卡是引擎产物（只读），给 `null`。
+   */
   visibleContext(
     arcIds: readonly string[] = [],
-  ): { layer: string; name: string; summary: string }[] {
-    return this.visibleCards(arcIds).map(({ layer, name, summary }) => ({
+  ): { layer: string; name: string; summary: string; path: string | null }[] {
+    return this.visibleCards(arcIds).map(({ layer, name, summary, file, arc }) => ({
       layer,
       name,
       summary,
+      path: arc ? null : `${INDEX_DIR}/${file}.md`,
     }));
   }
 

@@ -1028,8 +1028,8 @@ describe("A 区角色分级：冷启动与热启动一致", () => {
     // 澪在第一轮说过话 → 在场 → 全卡人设必须在
     expect(coldSystem).toContain("澪的完整人设");
     // 从未出场的角色折叠成一行（没有 ### 全卡头）
-    expect(coldSystem).not.toContain("### 雪（id: yuki）");
-    expect(coldSystem).toContain("- 雪（id: yuki）：");
+    expect(coldSystem).not.toContain("### 雪（id: yuki");
+    expect(coldSystem).toContain("- 雪（id: yuki，卡片 characters/yuki.md）：");
     expect(coldSystem).toContain("上面最后几行是最近没出场的人物");
   });
 });

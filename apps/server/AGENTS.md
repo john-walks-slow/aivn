@@ -78,6 +78,7 @@
 ## 提示词装配
 
 - **工具知识只写在工具描述里，系统提示词不复述**（同一规则写两处必然漂移——生图那几条已经漂移过一次）。**一处明确例外**：pi 的内建 read / write / edit 没有描述覆写入口，角色卡 frontmatter 与记忆卡格式只能落在 A 区（`prompt.ts` 的 `newCharacterRules(can.characters)` / `MEMORY_RULES`）——它们同时要求模型「先 read 再 edit」，格式本身以 `parseCharacterCard` 的解析结果为准。两句**各归各的能力位**：`can.characters`（= 剧作家开着「管理角色」）为假时建档章换成「本剧目没给你改卡的口，新角色直接上台」，`can.memory` 为假时记忆章与 `read_memory_detail` / `search_archive` 的教法一起收走。
+- **A 区把可写文件的路径给全**（2026-10-04）：角色表每张卡带 `characters/<id>.md`（`characterCardPath`）、记忆索引每行带 `memory/index/<相对路径>.md`（`PlayMemory.visibleContext` 的 `path`）——通用 read / write / edit 上手，模型不该为了改一张卡去推路径。记忆卡尤其必须：行首是 `# 标题`（`parseCard`），**与文件名可以不一样**，路径推不出来；arcs 卡是引擎产物、写不进去，`path` 恒为 null。
 - **`can` 的键就是能力 id**（`characters` / `memory` / `image` / `library` / `search` / `lineage` / `skill` / `view` / `readiness` / `voice` / `files` / `shell` / `nsfw` / `stage`，非适用角色的位恒为 false）——两个角色的提示词读 `createAgentKit` 现算的同一个对象，不会各算各的。工坊侧同样逐处收条件（`workshop.ts` 的 `responsibilityRules(can.files)` / `talkRules` / `lineageGuide` / `writingPoints` / `setupFlow` / `skillsPrompt`），关掉一项就没有教它调不存在工具的章节。
 - `prompt.ts` 的 `imageChapter` 只留工具本身与后果（发起即返回、这一轮就引用到它则先上骨架占位），调用写法（走函数调用不是文本标签、id 命名、prompt 后缀串）全在 `QUEUED_DESCRIPTION`。
 - **什么时候该画一张不再由引擎决定**——早先那句「清单里没有就自己画一张背景」替所有剧目做了同一个决定，已撤掉，改成指向写作参数的素材来源（`renderCraftParams` 按 `can.image` / `can.library` 渲染那几行）。
