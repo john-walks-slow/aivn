@@ -176,7 +176,7 @@ describe("PlayStore.saveSession 原子写", () => {
   let library: PlayLibrary;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "stageai-session-"));
+    root = await mkdtemp(join(tmpdir(), "aivn-session-"));
     library = new PlayLibrary(root);
     await library.createEmpty("p1", "剧目");
     // create 自己会建目录并激活，返回带 id 的 SaveInfo

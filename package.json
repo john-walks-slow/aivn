@@ -3,6 +3,26 @@
   "private": true,
   "version": "0.1.0",
   "description": "AIVN — AI visual novel engine: an LLM playwriter streams an incremental Stage DSL script and the browser renders it like streaming video",
+  "license": "MIT",
+  "author": "john-walks-slow",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/john-walks-slow/aivn.git"
+  },
+  "homepage": "https://github.com/john-walks-slow/aivn#readme",
+  "bugs": {
+    "url": "https://github.com/john-walks-slow/aivn/issues"
+  },
+  "keywords": [
+    "galgame",
+    "visual-novel",
+    "ai",
+    "llm",
+    "stage-dsl",
+    "tauri",
+    "react",
+    "typescript"
+  ],
   "packageManager": "pnpm@11.24.0",
   "engines": {
     "node": ">=22.19.0"
