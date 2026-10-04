@@ -2371,6 +2371,39 @@ describe("重写带着交代（落进重演的这一轮，不是排到下一轮�
     };
     expect(queued.items).toEqual([]);
   });
+
+  it("锚在本轮那句输入上（两个入口统一后的口径）：那句话留在新枝上，标签仍按 replaced 算", async () => {
+    const contexts: unknown[] = [];
+    const { orchestrator, tree } = setup(
+      [
+        { text: BEAT_1, beatDone: BEAT_1_STOP },
+        { text: BEAT_2, beatDone: true },
+        { text: REWRITTEN, beatDone: true },
+      ],
+      { contexts },
+    );
+    const { beat2Prompt } = await playTwoBeats(orchestrator, tree);
+
+    await orchestrator.forkTo(beat2Prompt, {
+      resume: true,
+      replaced: beat2Prompt,
+      instruction: "别道歉，让她先走",
+    });
+    await orchestrator.whenIdle();
+
+    const text = lastUserText(contexts as CapturedContext[]);
+    // 本轮那句输入还在（它是锚点，留在新枝上），重写的是它之后的回应
+    expect(text).toContain("（选择了：道歉）");
+    expect(text).toContain("别道歉，让她先走");
+    // 两个输入各一段【用户输入】：链尾悬空那批的标签不套第二层
+    expect(text.match(/【用户输入】/g)).toHaveLength(2);
+
+    // 来源标签是那次输入，不是 continue——回同一锚点重选同一选项时认得出这条新枝
+    const chain = tree.ancestorChain(tree.leafId).map((id) => tree.get(id)!);
+    expect(chain.findLast((event) => event.kind === "fork")!.payload?.origin).toBe(
+      "input:（选择了：道歉）",
+    );
+  });
 });
 
 describe("删除一段及其后代", () => {

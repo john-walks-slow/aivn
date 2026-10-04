@@ -17,8 +17,14 @@ export interface BeatCard {
   endNodeId: string;
   /** 该轮的停止点节点（若存在 stop 事件）。 */
   stopNodeId?: string;
-  /** 「重演本轮」的分岔锚点：本轮之前的那一点（首个节点的父），第一轮退回首节点自身。 */
-  forkFromId: string;
+  /**
+   * 「重写本轮」的分岔锚点。
+   *
+   * 本轮要是从玩家的一句话开出来的（首节点就是那个 prompt 节点），锚点就是这句话本身：
+   * 它留在新枝上，重写的是它**之后**的回应——「我说的不改，你重答」。否则锚本轮之前的
+   * 那一点（首个节点的父），第一轮没有前驱就退回首节点自身，整轮连内容一起重来。
+   */
+  rewriteFromId: string;
   turn: number;
   nodes: LineageNodeView[];
   /** 摘要：轮内首句台词/narration，≤32 字。整轮只有布景就是空串。 */
@@ -274,7 +280,7 @@ function newCard(first: LineageNodeView, parent: BeatCard | null, forkedFrom: Fo
     startNodeId: first.id,
     endNodeId: first.id,
     stopNodeId: undefined,
-    forkFromId: first.id,
+    rewriteFromId: first.id,
     turn: first.turn,
     nodes: [],
     preview: "",
@@ -316,10 +322,15 @@ function collect(card: BeatCard): void {
 
   // endNodeId: 取本轮最后一个有效节点
   card.endNodeId = card.nodes[card.nodes.length - 1]?.id ?? card.id;
-  // 重演本轮：从本轮之前的那一点开新分支重新生成；第一轮没有前驱就退回首节点
-  card.forkFromId = card.nodes[0]?.parentId ?? card.nodes[0]?.id ?? card.id;
+  const head = card.nodes[0];
+  // 重写本轮：从玩家那一句话（本轮由它开头时）或本轮之前的那一点开新分支重新生成；
+  // 第一轮没有前驱就退回首节点
+  card.rewriteFromId =
+    head?.kind === "prompt" ? head.id : (head?.parentId ?? head?.id ?? card.id);
 
-  setPreview(card, spoken?.text ?? "");
+  // 只有一句话的卡（分叉点正好落在这句输入上）拿这句话当正文：它没有台词可摘要，
+  // 掉到「（无台词）」就等于把玩家说过的话从路线树上抹掉。
+  setPreview(card, spoken?.text ?? (head?.kind === "prompt" ? head.text : ""));
 }
 
 function setPreview(card: BeatCard, text: string): void {

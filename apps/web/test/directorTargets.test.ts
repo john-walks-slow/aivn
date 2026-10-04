@@ -44,6 +44,24 @@ function buildView(extra: LineageNodeView[] = []): LineageView {
   } as unknown as LineageView;
 }
 
+/** 第二拍由玩家的一句话开出来（常态：点了选项 / 敲了输入 / 排了引导）。 */
+function buildViewWithInput(extra: LineageNodeView[] = []): LineageView {
+  return {
+    playId: "demo",
+    leafId: "bE",
+    head: "a",
+    nodes: [
+      node("a", 0, "scene", null),
+      node("a1", 1, "say", "a"),
+      node("aE", 2, "beat_end", "a1"),
+      { ...node("p", 3, "prompt", "aE"), text: "（选择了：道歉）" } as LineageNodeView,
+      node("b", 4, "say", "p"),
+      node("bE", 5, "beat_end", "b"),
+      ...extra,
+    ],
+  } as unknown as LineageView;
+}
+
 const lines: ScriptLine[] = [
   { key: "l1", type: "say", actorId: "koharu", mood: null, text: "行 1", seq: 1 },
   { key: "l2", type: "think", actorId: "koharu", mood: null, text: "行 2", seq: 2 },
@@ -89,5 +107,44 @@ describe("舞台行 → 谱系反查（导演原语的锚点）", () => {
   it("废弃分支上的同 seq 行不会被认成可改写的当前行", () => {
     const abandoned = node("x", 1, "say", "a", false);
     expect(editableNodeAtLine(buildView([abandoned]), lines[0])?.id).toBe("a1");
+  });
+});
+
+describe("重写这一轮退到哪儿（卡片自己算）", () => {
+  const lines: ScriptLine[] = [
+    { key: "l0", type: "scene", actorId: null, mood: null, text: "黄昏教室", seq: 0 },
+    { key: "l1", type: "say", actorId: "mio", mood: null, text: "行 1", seq: 1 },
+    { key: "l4", type: "say", actorId: "mio", mood: null, text: "行 4", seq: 4 },
+  ];
+
+  it("本轮不是从玩家的一句话开头的：锚本轮之前的那一点（整轮重来）", () => {
+    const cards = buildBeats(buildView(), lines);
+    const second = beatAtLine(cards, lines[2])!;
+    expect(second.id).toBe("b");
+    expect(second.rewriteFromId).toBe("aE");
+  });
+
+  it("本轮由玩家的一句话开头：锚那句话本身，它留在新枝上（重写的是它之后的回应）", () => {
+    const cards = buildBeats(buildViewWithInput(), lines);
+    const second = beatAtLine(cards, lines[2])!;
+    expect(second.rewriteFromId).toBe("p");
+    // 被顶掉的那一拍的首节点仍是这张卡自己（新 fork 标记按它算来源标签）
+    expect(second.id).toBe("p");
+  });
+
+  it("分叉点正好落在那句输入上：它单独成卡，正文就是这句话，不是「（无台词）」", () => {
+    // 重写把 fork 挂在 p 上 —— 输入与它的两条回应各成一张卡
+    const fork = {
+      ...node("f", 6, "fork", "p"),
+      text: "",
+      attrs: { origin: "input:（选择了：道歉）" },
+    } as LineageNodeView;
+    const rewritten = node("n", 10, "say", "f");
+    const rewrittenEnd = node("nE", 11, "beat_end", "n");
+    const cards = buildBeats(buildViewWithInput([fork, rewritten, rewrittenEnd]), lines);
+
+    const inputCard = cards.find((c) => c.id === "p")!;
+    expect(inputCard.nodes.map((n) => n.kind)).toEqual(["prompt"]);
+    expect(inputCard.preview).toBe("（选择了：道歉）");
   });
 });

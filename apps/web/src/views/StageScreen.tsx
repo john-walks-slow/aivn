@@ -251,7 +251,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
    * 舞台的 rebase 回调拦下，不把正在整理分支的玩家拽走。
    *
    * 重写的指令与舞台导演栏同一条路：跟着 fork 一起发，它是重演那一轮的第一条输入——
-   * 交代什么方向，重写的这一轮就照着写什么，不是先重写、下一轮才补上。
+   * 交代什么方向，重写的这一轮就照着写什么，不是先重写、下一轮才补上。两处的锚点也同一套
+   * （卡片自己算的 `rewriteFromId`）：本轮由玩家的一句话开头时锚那句话，它留在新枝上。
    */
   const routeOps: LineageOps = useMemo(
     () => ({
@@ -259,8 +260,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
         jump(nodeId, opts);
         goStage();
       },
-      rewrite: (forkFromId: string, opts?: { replaced?: string; instruction?: string }) => {
-        fork(forkFromId, {
+      rewrite: (anchor: string, opts?: { replaced?: string; instruction?: string }) => {
+        fork(anchor, {
           resume: true,
           ...(opts?.replaced ? { replaced: opts.replaced } : {}),
           ...(opts?.instruction ? { instruction: opts.instruction } : {}),
@@ -422,9 +423,19 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   const targets: DirectorTargets = useMemo(() => {
     const line = playback.view;
     const seq = line?.seq ?? null;
-    if (!lineage.view) return { beatId: null, lineNodeId: null, lineSeq: seq, lineText: line?.text ?? "" };
+    const beat = lineage.view ? beatAtLine(cards, line) : null;
+    if (!lineage.view) {
+      return {
+        beatId: null,
+        beatNodeId: null,
+        lineNodeId: null,
+        lineSeq: seq,
+        lineText: line?.text ?? "",
+      };
+    }
     return {
-      beatId: beatAtLine(cards, line)?.id ?? null,
+      beatId: beat?.rewriteFromId ?? null,
+      beatNodeId: beat?.id ?? null,
       lineNodeId: editableNodeAtLine(lineage.view, line)?.id ?? null,
       lineSeq: seq,
       lineText: line?.text ?? "",
@@ -433,8 +444,10 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
 
   /** 回顾里每条自己落在哪一轮：玩家发来的话没有轮，工具栏上的重来就置灰。 */
   const beatFor = useCallback(
-    (entry: TranscriptEntry): string | null =>
-      lineage.view ? (beatAtLine(cards, entry)?.id ?? null) : null,
+    (entry: TranscriptEntry): { anchor: string; replaced: string } | null => {
+      const card = lineage.view ? beatAtLine(cards, entry) : null;
+      return card ? { anchor: card.rewriteFromId, replaced: card.id } : null;
+    },
     [cards, lineage.view],
   );
 

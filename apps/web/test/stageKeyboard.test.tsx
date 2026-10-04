@@ -72,7 +72,7 @@ function Harness({
       voiceOn={false}
       onToggleVoice={() => {}}
       busy={false}
-      targets={{ beatId: null, lineNodeId: null, lineSeq: null, lineText: "" }}
+      targets={{ beatId: null, beatNodeId: null, lineNodeId: null, lineSeq: null, lineText: "" }}
       onPrompt={() => {}}
       onEdit={() => {}}
       onFork={() => {}}

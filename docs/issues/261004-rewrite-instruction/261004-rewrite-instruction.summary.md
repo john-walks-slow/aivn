@@ -15,7 +15,10 @@
 | `apps/web/src/views/StageScreen.tsx` | 路线卡片的「重写」不再调 `queuePrompt`，交代随 `fork(..., {resume:true, instruction})` 一起发 |
 | `apps/web/src/stage/StageTheater.tsx` | 导演栏「重写」与「分岔」两处：`onFork` 带 `instruction`，删掉后面的 `onPrompt(text)` |
 | `apps/web/src/stage/LineagePanel.tsx`、两份 `AGENTS.md` | 注释与指引同步（旧的写着「排进队列、生效于下一次开口」） |
-| `apps/server/test/orchestrator.test.ts` | 新增两条：「重写带着交代」（resume）与「分岔带的交代」（不 resume） |
+| `apps/server/test/orchestrator.test.ts` | 新增三条：「重写带着交代」（resume）、「分岔带的交代」（不 resume）、「锚在本轮那句输入上」 |
+| `apps/web/src/stage/beats.ts` | 重写锚点 `forkFromId` → `rewriteFromId`（本轮若是玩家那句话开头就锚它）；只有一句话的卡拿那句话当正文 |
+| `apps/web/src/stage/StageScreen.tsx`、`StageTheater.tsx`、`RouteCanvas.tsx` | 两个入口统一送 anchor + `replaced`；回顾里的「重新生成」也带上 `replaced` |
+| `apps/server/src/rebuild.ts`、`orchestrator.ts` | 重建提示词里【用户输入】不再套两层（标签只在成拍 user 侧与链尾那批各拼一次） |
 
 ## 为什么是这么修
 
@@ -25,20 +28,32 @@
 
 ## 测试
 
-- `apps/server/test/orchestrator.test.ts` 83 例过（含新增两条）；受影响面 `lineage-ops` / `transport` 一并复跑，3 文件 115 例全绿。
-- web：`routeVerbs` / `routeControls` / `stageKeyboard` / `playerReceipt` 共 16 例过。
-- `pnpm typecheck` 干净。
-- 变异验证：把服务端改回「忽略 instruction」（两种路数各一次），对应用例当场红。
+- server 受影响面五文件（orchestrator / lineage-ops / transport / history / compaction）144 例全绿。
+- web 五文件（directorTargets / routeVerbs / routeControls / stageKeyboard / playerReceipt）25 例全绿；`pnpm typecheck` 干净。
+- 变异验证：改回「忽略 instruction」（resume 与非 resume 各一次）、把【用户输入】标签改回在 `rebuild.ts` 里先拼一遍——对应用例都当场红。
 
 ## 检视响应
 
 检视报告见 [261004-rewrite-instruction.review.md](261004-rewrite-instruction.review.md)，结论「条件准入」，无阻塞项。
 
 - **S-01（补分岔带交代的用例）——已采纳**：`fork.resume: false` 是我这次新加的一行，原先零覆盖，补了「分岔（不 resume）带的交代：新枝开出来就照这句开演」并做了变异验证。
-- **S-02（导演栏重写的锚点比路线卡片深一个节点）——本次不动，留待用户裁决**：`StageScreen` 的 `targets.beatId` 取 `beatAtLine(...).id`（本拍首节点），路线卡片取 `card.forkFromId`（本拍首节点的父）。当某一拍是玩家的一次表态开出来的时候，首节点就是这个 prompt 节点，于是两边语义不同——导演栏「保留我那句输入、重写你的回应」，路线卡片「连输入一起重来」。两者各自自洽（`rebuildBranchAt` 对「分岔落在一句输入上」有专门的 `trailingInputs` 通道），且这处差异在本次改动之前就在，不是本次引入的。但有一个实际后果：导演栏那条路算不出准确来源标签（`replacedOrigin` 取到的孩子是内容节点，得 `"continue"`），回到同一锚点重选同一选项时认不出刚重写的那条枝。要统一成 `card.forkFromId` 是一行的事，但那会改掉导演栏现有的「保留输入」手感，不属于本次 bug 的范围。
+- **S-02（导演栏重写的锚点比路线卡片深一个节点）——已收口（用户授权「按最佳做法」）**：`StageScreen` 的 `targets.beatId` 取 `beatAtLine(...).id`（本拍首节点），路线卡片取 `card.forkFromId`（本拍首节点的父）。当某一拍是玩家的一次表态开出来的时候，首节点就是这个 prompt 节点，于是两边语义不同——导演栏「保留我那句输入、重写你的回应」，路线卡片「连输入一起重来」。收口方式见下节。
 - **N-01（判废退回的用例）——未做**：逻辑是隐式继承 `deliverPrompts` / `returnBeatSteers` 的既有机制，不是本次新写的分支；先不加用例。
-- **N-02（`onFork` 与 `sendFork` 的 `replaced` 不对称）——不改**：舞台那一路本来就不点名 `replaced`（它靠世界线位置推来源），类型收窄是有意的，注释里已写明 `instruction` 的含义。
+- **N-02（`onFork` 与 `sendFork` 的 `replaced` 不对称）——已补**：`StageTheaterProps.onFork` 与 `BacklogView` 的 `onFork` 都补上 `replaced?: string`；舞台那两处（导演栏重写、回顾的重新生成）现在都把「被顶掉那一拍的首节点」一起发出去，来源标签不再靠猜。
 
-## 遗留
 
-- S-02 的锚点口径待用户定夺（统一 / 保持现状）。
+## 收口：两个重写入口统一锚点
+
+上一轮把交代送进了重演的那一轮，但两条入口的**锚点**仍不一致。统一成一条规则（落在 `apps/web/src/stage/beats.ts` 的 `BeatCard.rewriteFromId`，原来的 `forkFromId` 随之改名）：
+
+- 本轮由玩家的一句话开头（首节点是 prompt 节点）→ 锚**那句话本身**：它留在新枝上，重写的是它之后的回应，剧作家照旧看得到「玩家选了什么」；
+- 否则 → 锚本轮之前的那一点（首个节点的父；第一轮没有前驱就退回首节点自身），整轮连内容一起重来。
+
+两个入口都把「被顶掉那一拍的首节点」作为 `replaced` 一起发（舞台那两处原来没发），来源标签因此稳定算成 `input:…`——玩家回到同一锚点重选同一选项时认得出刚重写的那条枝（后端用例「锚在本轮那句输入上」守着这条）。
+
+连带两处：
+
+- **只有一句话的卡显示那句话**（`beats.ts` 的 `collect`）：分叉点正好落在那句输入上时它会单独成卡，原先掉进「（无台词）」兜底，等于把玩家说过的话从路线树上抹掉；现在卡面就是那句输入（`toNodeView` 早把 `payload.input` 落到 `node.text`）。
+- **修掉重建提示词里套两层的【用户输入】**（`rebuild.ts` 不再先拼标签：成拍的 user 侧在 `flush` 里拼、链尾悬空那批交给 `renderPromptTurn` 拼一次）：上一轮实测撞见的旧瑕疵，两条重写路都会走到，顺手收掉；成拍那份文本一个字节没变。
+
+`pnpm typecheck` 干净；server 受影响五文件 144 例、web 五文件 25 例全绿；变异验证：去掉标签改动 → 两条用例红，去掉 instruction 兑现 → 对应用例红。

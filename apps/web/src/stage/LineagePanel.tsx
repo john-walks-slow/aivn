@@ -18,13 +18,15 @@ export interface LineageOps {
    */
   jump: (nodeId: string, opts?: { playFrom?: "start" | "end" }) => void;
   /**
-   * 重写：退到这一段之前，让剧作家**重新生成**这一段（原有内容整段留作旧枝）。
+   * 重写：让剧作家**重新生成**这一轮，原有内容整段留作旧枝。
    *
+   * `anchor` 是本轮的重写锚点（`BeatCard.rewriteFromId`）：本轮由玩家的一句话开头时就是
+   * 那句话本身（它留在新枝上，重写的是它之后的回应），否则是本轮之前的那一点。
    * `replaced` 是被顶掉的那一拍的首节点（卡片自己知道），新的 fork 标记继承它的来源标签；
    * `instruction` 是可选的一句交代，留空就是纯重写——填了的话它随这一岔一起发，是重写
    * 这一轮的第一条输入（与舞台导演栏的「重写」同一条路）。
    */
-  rewrite: (forkFromId: string, opts?: { replaced?: string; instruction?: string }) => void;
+  rewrite: (anchor: string, opts?: { replaced?: string; instruction?: string }) => void;
   /** 删除：剪掉这一段及其全部后代。确认弹窗在卡片那一层（见 RouteCanvas）。 */
   remove: (nodeId: string) => void;
 }

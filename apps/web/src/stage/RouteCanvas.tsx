@@ -302,7 +302,7 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
     if (!asking) return;
     const instruction = draft.trim();
     setAsking(null);
-    ops.rewrite(asking.card.forkFromId, {
+    ops.rewrite(asking.card.rewriteFromId, {
       ...(asking.card.nodes[0] ? { replaced: asking.card.nodes[0].id } : {}),
       ...(instruction ? { instruction } : {}),
     });

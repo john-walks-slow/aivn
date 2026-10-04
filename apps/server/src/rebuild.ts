@@ -87,7 +87,10 @@ export function lineageToBeats(
   const flush = (): void => {
     if (script.length === 0) return;
     beats.push({
-      user: inputs.length > 0 ? inputs.join("\n\n") : "【开场】\n" + opening,
+      user:
+        inputs.length > 0
+          ? inputs.map((text) => `【用户输入】\n${text}`).join("\n\n")
+          : "【开场】\n" + opening,
       assistant: script.join("\n"),
     });
     inputs = [];
@@ -107,7 +110,9 @@ export function lineageToBeats(
     const attrs = event.payload?.attrs ?? {};
     switch (event.kind) {
       case "prompt":
-        inputs.push(`【用户输入】\n${event.payload?.input ?? ""}`);
+        // 只收原文，标签由两处消费者各自补：成拍的 user 侧（flush）与链尾悬空那一批
+        // （orchestrator.renderPromptTurn）。在这儿先拼一遍，链尾那批就会套两层【用户输入】。
+        inputs.push(event.payload?.input ?? "");
         break;
       case "say": {
         const who = names[attrs.id ?? ""] ?? attrs.id ?? "";

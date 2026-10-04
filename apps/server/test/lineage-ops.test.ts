@@ -482,7 +482,9 @@ describe("P6 rebuild · 谱系 → IR", () => {
 
     const { beats, trailingInputs } = lineageToBeats(tree.materialize(), { mio: "澪" }, "（游戏开始）");
     expect(beats).toHaveLength(1); // 没有第二条 assistant
-    expect(trailingInputs).toEqual(["【用户输入】\n（选择了：道歉）"]);
+    // 退的是原文，【用户输入】标签由并进下一轮的那一处（renderPromptTurn）补——这里先拼一遍就套两层了
+    expect(trailingInputs).toEqual(["（选择了：道歉）"]);
+    expect(beats[0]?.user).toBe("【用户输入】\n我到了");
   });
 
   it("stop 事件 → 停止点载荷（choice/free）；beat_end 不产出停止点事件", () => {

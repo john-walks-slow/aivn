@@ -43,10 +43,11 @@ interface StageTheaterProps {
   onPrompt: (text: string) => void;
   onEdit: (nodeId: string, text: string) => void;
   /** 分岔锚点：字符串是谱系节点 id（回顾/路线），数字是舞台当前行的 seq。
+   *  `replaced` = 被这次重写顶掉的那一拍的首节点（新 fork 标记按它算来源标签）；
    *  `instruction` = 随这一岔交代的一句，它是新枝这一轮的第一条输入。 */
   onFork: (
     anchor: string | number,
-    opts?: { resume?: boolean; instruction?: string },
+    opts?: { resume?: boolean; replaced?: string; instruction?: string },
   ) => void;
   /** 导演生图：按当前这一幕出一张插图，指令可留空。
    *  回看中带上正在看的那一行（anchorNodeId）：提示词与落点都按那一刻走；
@@ -74,7 +75,10 @@ interface StageTheaterProps {
 }
 
 export interface DirectorTargets {
+  /** 重写这一轮的锚点（`BeatCard.rewriteFromId`）：本轮由玩家的一句话开头时就是那句话本身。 */
   beatId: string | null;
+  /** 被重写顶掉的那一拍的首节点：新 fork 标记按它算来源标签（见 `replacedOrigin`）。 */
+  beatNodeId: string | null;
   lineNodeId: string | null;
   /** 正在显示的这一行在事件缓冲里的 seq：分岔的落点就靠它（轮内谱系还没追上，id 靠不住）。 */
   lineSeq: number | null;
@@ -526,7 +530,11 @@ voiceState,
     if (act === "restart") {
       if (!targets.beatId) return;
       // 交代的那句跟着这一岔一起发：它是重演这一轮的第一条输入，不是排到下一轮。
-      onFork(targets.beatId, { resume: true, ...(text ? { instruction: text } : {}) });
+      onFork(targets.beatId, {
+        resume: true,
+        ...(targets.beatNodeId ? { replaced: targets.beatNodeId } : {}),
+        ...(text ? { instruction: text } : {}),
+      });
       return;
     }
     // 分岔：从**正在看的这一行**退开（传 seq，由服务端解析成落点），不是从整轮开头。
@@ -941,13 +949,13 @@ export function BacklogView({
   busy: boolean;
   voiceAvailable: boolean;
   voiceState: (seq: number | null) => VoiceState;
-  /** 这一条落在哪一轮（重写的锚点）；玩家自己发来的话没有轮，返 null。 */
-  beatFor: (entry: TranscriptEntry) => string | null;
+  /** 这一条落在哪一轮（重写要的两个锚点：退到哪儿、来源标签按谁算）；玩家自己发来的话没有轮，返 null。 */
+  beatFor: (entry: TranscriptEntry) => { anchor: string; replaced: string } | null;
   onSeek: (key: string) => void;
   onReplay: (seq: number) => void;
   onEdit: (nodeId: string, text: string) => void;
-  /** 重写：退到这一轮之前重演，会分出一条新线。 */
-  onFork: (nodeId: string, opts?: { resume?: boolean; instruction?: string }) => void;
+  /** 重写：重演这一轮，会分出一条新线。 */
+  onFork: (nodeId: string, opts?: { resume?: boolean; replaced?: string; instruction?: string }) => void;
 }) {
   /** 改写就地改：点开编辑框在回顾里完成，不跳视图。 */
   const [editing, setEditing] = useState<string | null>(null);
@@ -1042,7 +1050,7 @@ export function BacklogView({
                       className="bl-tool"
                       title={busy ? "演出进行中，暂时不能重新生成" : "重新生成这一轮（从这一轮开头分岔并立刻续演）"}
                       disabled={busy || !beat}
-                      onClick={() => beat && onFork(beat, { resume: true })}
+                      onClick={() => beat && onFork(beat.anchor, { resume: true, replaced: beat.replaced })}
                     >
                       <Icon name="rewrite" size={14} />
                       重新生成
