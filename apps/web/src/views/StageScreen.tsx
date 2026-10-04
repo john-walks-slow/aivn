@@ -32,6 +32,7 @@ import {
   SETTING_VOICE,
 } from "../stage/settings.js";
 import { PromptQueuePanel } from "../stage/PromptQueuePanel.js";
+import { StageModes } from "../stage/StageModes.js";
 import { useVisualViewport } from "../stage/viewport.js";
 import { useEscape } from "../ui/escape.js";
 import { WorkshopPane } from "../workshop/WorkshopPane.js";
@@ -683,6 +684,15 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
 
         {/* 提示一律走浮层 toast，不占内容区顶部的一条 */}
         <ToastStack toasts={toast.toasts} onDismiss={toast.dismiss} />
+
+        {/* 常驻模式标识：左上角、与右上角的排队面板平齐；三种模式全关时整行不渲染 */}
+        {view === "stage" && (
+          <StageModes
+            nsfw={stage.nsfw}
+            muted={stage.voiceAvailable && !voiceOn}
+            auto={playback.auto}
+          />
+        )}
 
         {/* 待注入队列：空则不占地方。排队中的句子能改也能撤 */}
         {view === "stage" && (

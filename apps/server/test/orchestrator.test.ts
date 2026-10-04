@@ -1596,12 +1596,15 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
       },
     ];
 
-    const { orchestrator } = setup(responses, { contexts });
+    const { orchestrator, messages } = setup(responses, { contexts });
     orchestrator.start();
     await orchestrator.whenIdle();
 
     // 第 1 轮演完，已请求 enter_nsfw
     expect(orchestrator.runtimeState.beatNo).toBe(1);
+    // 请求进入的那一刻就告诉客户端（标识先亮，内容随后到）：真值、等一拍都不对
+    expect(messages.filter((m) => m.type === "nsfw")).toEqual([{ type: "nsfw", active: true }]);
+    expect(orchestrator.nsfwChannel).toBe(true);
 
     // 触发第 2 轮（进入 NSFW 模式）
     await orchestrator.playerAction({ kind: "continue" });
@@ -1613,12 +1616,24 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
       (m) => typeof m.content === "string" && m.content.includes("20 周岁以上"),
     );
     expect(hasPreTurn).toBe(true);
+    // 兑现进入不翻标识：亮着的那盏不许闪一下；这一拍末尾同时调了 exit_nsfw，
+    // 所以熄灭紧跟在摘要之后（唯一那一次 false）
+    expect(messages.filter((m) => m.type === "nsfw")).toEqual([
+      { type: "nsfw", active: true },
+      { type: "nsfw", active: false },
+    ]);
 
     // 触发第 3 轮（已切回 SFW 主模型）
     await orchestrator.playerAction({ kind: "continue" });
     await orchestrator.whenIdle();
 
     expect(orchestrator.runtimeState.beatNo).toBe(3);
+    // 进了日常就不再翻：没有第二条 true，也没有第二条 false
+    expect(messages.filter((m) => m.type === "nsfw")).toEqual([
+      { type: "nsfw", active: true },
+      { type: "nsfw", active: false },
+    ]);
+    expect(orchestrator.nsfwChannel).toBe(false);
     // 验证第 3 轮上下文：NSFW 前置合规轮次已被剥离，且包含了 SFW 摘要前情提要
     const sfwContext = contexts[3]!;
     const stillHasPreTurn = sfwContext.messages.some(
@@ -1656,7 +1671,7 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
       },
     ];
 
-    const { orchestrator, tree } = setup(responses, { contexts });
+    const { orchestrator, messages, tree } = setup(responses, { contexts });
     orchestrator.start();
     await orchestrator.whenIdle();
     const beat1NodeId = tree.leafId!;
@@ -1673,6 +1688,8 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     // 跳转回第 1 轮节点
     await orchestrator.jumpTo(beat1NodeId);
     expect(orchestrator.runtimeState.nsfw?.active).toBe(false);
+    // 标识跟着世界线走：跳回日常节点必须熄掉，否则它会一直挂在限制级上
+    expect(messages.filter((m) => m.type === "nsfw").at(-1)).toEqual({ type: "nsfw", active: false });
 
     // 验证当前 agent messages 中无 NSFW 前置合规轮次
     const currentAgentMessages = (orchestrator as unknown as { agent: { state: { messages: unknown[] } } })

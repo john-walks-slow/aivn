@@ -51,6 +51,8 @@ export interface StageSocket {
   queue: readonly PromptQueueItem[];
   /** 正在生成的事（同一块面板的上半截）：剧作家的轮次、生图、语音合成。 */
   pendingJobs: readonly PendingJob[];
+  /** 此刻是否处在限制级（NSFW）剧情通道（hello.nsfw + `nsfw` 消息）：舞台那枚常驻标识。 */
+  nsfw: boolean;
   sendChoice: (index: number) => void;
   sendFree: (text: string) => void;
   sendContinue: () => void;
@@ -136,6 +138,7 @@ export function useStageSocket(
   const [readPos, setReadPos] = useState<ReadPos | null>(null);
   const [queue, setQueue] = useState<readonly PromptQueueItem[]>([]);
   const [pendingJobs, setPendingJobs] = useState<readonly PendingJob[]>([]);
+  const [nsfw, setNsfw] = useState(false);
   /** 本地缓冲所属代号：与服务端不一致说明缓冲已被结构性操作整段替换。 */
   const epochRef = useRef(0);
   /** 本连接是否已经收到过 hello：首屏那次不算「换了树/换代」（见 helloSync）。 */
@@ -182,6 +185,8 @@ export function useStageSocket(
             setVoiceAvailable(msg.voice ?? false);
             if (msg.assetsTtlMs !== undefined) setAssetsTtlMs(msg.assetsTtlMs);
             if (msg.pendingJobs) setPendingJobs(msg.pendingJobs);
+            // 限制级通道：重连即恢复，之后由 `nsfw` 消息翻转
+            setNsfw(msg.nsfw ?? false);
             if (msg.assets) handlersRef.current.onAssets?.(msg.assets);
             // 换了周目 = 换了一棵树：本地缓冲与新树无关，作废重放
             const sync = helloSync({
@@ -266,6 +271,9 @@ export function useStageSocket(
             return;
           case "pending_jobs":
             setPendingJobs(msg.jobs);
+            return;
+          case "nsfw":
+            setNsfw(msg.active);
             return;
           case "line_edited":
             // 原地改写就地替换那一行：谱系重拉要等下一次操作，这里先把画面改对
@@ -416,6 +424,7 @@ export function useStageSocket(
     readPos,
     queue,
     pendingJobs,
+    nsfw,
     sendChoice,
     sendFree,
     sendContinue,

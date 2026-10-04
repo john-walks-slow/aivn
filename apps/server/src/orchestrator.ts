@@ -429,6 +429,8 @@ export class PlaywrightOrchestrator {
   private beatNsfw = false;
   /** 退出那一拍的收束正在等摘要（busy 仍占着）：finishBeat 据此挡住重复收束。 */
   private beatClosing = false;
+  /** 上一次发给客户端的限制级通道开关（值没变就不重复发，客户端那枚常驻标识据此亮灭）。 */
+  private nsfwSignalled = false;
 
   /** 角色卡（persona/voice/voiceId 的真相源）。宿主侧渲染角色相关文案时读它。 */
   get memory(): PlayMemory {
@@ -497,6 +499,9 @@ export class PlaywrightOrchestrator {
       if (opts.restored.nsfw) {
         this.nsfwActive = opts.restored.nsfw.active;
         this.nsfwStartBeatNo = opts.restored.nsfw.startBeatNo ?? null;
+        // 客户端那枚常驻标识的起点由 hello 下发，这里把「已发过」的记账对齐，
+        // 否则读档续演进限制级段落时，第一次广播会白发一条（值其实没变）。
+        this.nsfwSignalled = this.nsfwActive;
       }
       // 事件缓冲与轮状态必须赶在 buildAgent 之前回填：A 区角色分级读 events 算在场，
       // 放到后面就是冷启动时 events 空、除主角全员折叠——恢复出来的一轮比热启动少一整层设定。
@@ -540,6 +545,7 @@ export class PlaywrightOrchestrator {
       exa: opts.imageTools?.exa,
       onEnterNsfw: (reason) => {
         this.nsfwPendingEnter = true;
+        this.broadcastNsfw();
       },
       onExitNsfw: (summary) => {
         this.nsfwPendingExit = true;
@@ -633,6 +639,14 @@ export class PlaywrightOrchestrator {
   /** 玩家读到哪儿（hello 下发；null = 没记过）。 */
   get readingPos(): ReadPos | null {
     return this.readPos;
+  }
+
+  /**
+   * 此刻是否算「在限制级通道里」（hello 下发的起点）：与事件打标同一个取值，
+   * 进段请求一发出就算，段末摘要落地才算退出。
+   */
+  get nsfwChannel(): boolean {
+    return this.beatChannelNsfw();
   }
 
   /**
@@ -986,6 +1000,19 @@ export class PlaywrightOrchestrator {
   }
 
   /**
+   * 通道开关一变就广播一次（值没变不发）。
+   *
+   * 每处改动 `nsfwActive` / `nsfwPendingEnter` 的地方都跟着调一次——腰斩与分支回退
+   * 会把两个字段清回原样，漏掉那里的广播，客户端的常驻标识就停在「限制级通道」上。
+   */
+  private broadcastNsfw(): void {
+    const next = this.beatChannelNsfw();
+    if (next === this.nsfwSignalled) return;
+    this.nsfwSignalled = next;
+    this.send({ type: "nsfw", active: next });
+  }
+
+  /**
    * 兑现一批插一句：落谱系 → 开始新一轮。
    *
    * 谱系节点在**注入时**才落（排队期间玩家还能改还能撤），且挂在开新一轮之前——
@@ -1206,6 +1233,8 @@ export class PlaywrightOrchestrator {
     this.nsfwPendingExit = false;
     this.beatNsfw = false;
     this.beatClosing = false;
+    // 腰斩撤掉的可能正是「已请求进入」——标识得跟着熄，不然它会一直亮着
+    this.broadcastNsfw();
     this.agent.abort();
   }
 
@@ -1441,6 +1470,8 @@ export class PlaywrightOrchestrator {
     this.nsfwPendingEnter = false;
     this.nsfwPendingExit = false;
     this.nsfwLines = [];
+    // 跳转/分岔/读回旧轮都从这里复位通道：标识必须跟着换到目标分支的实况
+    this.broadcastNsfw();
   }
 
   /**
@@ -1627,6 +1658,8 @@ export class PlaywrightOrchestrator {
         this.nsfwStartBeatNo = this.beatNo + 1;
         this.nsfwLines = [];
         this.buildAgent(this.agent.state.messages, true);
+        // 请求进入时已经广播过（值没变这里自然不发），留一行是为了让「每处改动都跟一次广播」这条规矩不漏
+        this.broadcastNsfw();
       }
       // 纪元边界：轮与轮之间是唯一允许突变 A 区/对话体的时刻（空前缀缓存豁免）
       await this.maybeCompactEpoch();
@@ -1982,6 +2015,7 @@ export class PlaywrightOrchestrator {
       // 而这一拍的事件按 beatNsfw 打标——原文的归属不随世界线状态改变。
       this.nsfwActive = false;
       this.nsfwStartBeatNo = null;
+      this.broadcastNsfw();
       this.closeBeat(stop, summary);
       this.switchBackToSfw();
     })()

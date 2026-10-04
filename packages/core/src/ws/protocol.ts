@@ -194,6 +194,8 @@ export type ServerMessage =
       saveName?: string;
       /** 上次退出时读到的位置：老档没有这个字段，客户端退回「快进到本轮末尾」的老行为。 */
       readPos?: ReadPos;
+      /** 此刻是否处在限制级（NSFW）剧情通道：舞台那枚常驻标识的起点，之后由 `nsfw` 消息更新。 */
+      nsfw?: boolean;
     }
   | { type: "beat_start"; beatId: string }
   | { type: "events"; events: SequencedEvent[] }
@@ -245,6 +247,11 @@ export type ServerMessage =
     }
   /** 一行台词/旁白被原地改写：客户端按 seq 就地替换该行文字，不重放全量事件。 */
   | { type: "line_edited"; nodeId: string; text: string; seq?: number }
+  /**
+   * 限制级通道的开关（只在翻转时发，不进事件缓冲）：进段请求一发出就算「在通道里」，
+   * 段末摘要落地才算退出。接上之前的值以 hello.nsfw 为准。
+   */
+  | { type: "nsfw"; active: boolean }
   /** 待注入队列的全量快照（右上角排队面板）：落笔的会留在面板里等这一轮收束。 */
   | { type: "prompt_queue"; items: PromptQueueItem[] }
   /**

@@ -5000,6 +5000,32 @@ select:focus {
   background: var(--accent-soft);
 }
 
+/* 常驻模式标识：内容区左上角，与右上角的排队面板同一条水平线（同一个 60px 起点，
+   让开导演工具栏那一行）。左上角那枚侧栏唤出键占 8~46px，这里从 60px 起，不压它。
+   三种模式（限制级通道 / 静音 / 自动）全关时整块不渲染，所以它不是一条常驻的 chrome。 */
+.stage-modes {
+  position: absolute;
+  z-index: 40;
+  top: calc(60px + env(safe-area-inset-top, 0px));
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: min(70vw, 300px);
+}
+/* 与其余浮层同一套深色玻璃令牌：它也是压在画面上的一块「窗」 */
+.stage-mode {
+  padding: 5px 9px;
+  border: 1px solid var(--dialog-line);
+  border-radius: var(--stage-radius);
+  background: var(--dialog-bg);
+  box-shadow: var(--dialog-shadow);
+  color: var(--dialog-ink);
+  font-size: 11.5px;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+}
+
 /* 待注入队列：内容区右上角、导演工具栏正下方的独立面板，空则不渲染。排队中的话能改也能撤。
    定位挂在内容区（.stage-main，position: relative）而不是视口：之前写的是
    fixed + 一个早已不存在的顶栏偏移（--gui-h），面板凭空下移 52px。

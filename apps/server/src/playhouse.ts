@@ -84,6 +84,8 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
     saveId: runtime.save.id,
     saveName: runtime.save.name,
     readPos: runtime.orchestrator.readingPos ?? undefined,
+    // 重连即恢复左上角那枚限制级通道标识；之后的翻转走 `nsfw` 消息
+    nsfw: runtime.orchestrator.nsfwChannel,
   };
 }
 
