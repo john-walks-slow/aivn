@@ -61,7 +61,7 @@ export function LibraryView() {
   return (
     <div className="screen library">
       <header className="screen-bar wordmark-bar">
-        <h1 className="wordmark">Stage&#8209;AI</h1>
+        <h1 className="wordmark">AIVN</h1>
         <button className="ghost-btn" onClick={() => navigate("/settings")}>
           设置
         </button>
