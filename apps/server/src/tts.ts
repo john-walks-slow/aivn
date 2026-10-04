@@ -9,6 +9,7 @@ import type { ServerConfig } from "./config.js";
  * Fish Audio TTS 客户端（s2.1-pro-free，免费开发者模型）。
  * - 多 Key 轮询：401/402/429/网络错误换下一把 key 重试（对齐 fish-tts CLI 行为）；
  * - 内容寻址缓存：sha1(voiceId + text) 命中即零请求——分岔/重写重演同一句不烧配额；
+ * - 官方试听样本：与合成共用一个代理与落盘路径，签名 URL 由服务端下好，不进客户端；
  * - 代理：设置页「代理」项指定（如 `http://127.0.0.1:7890`），留空直连（api.fish.audio 墙外）。
  */
 
@@ -39,8 +40,42 @@ export class FishTts {
    * 合成并落盘 media-cache/tts/（hash 命中直接复用；写入临时文件后 rename，防并发交错损坏）。
    * 返回文件名——URL 由调用方拼接（/plays/<id>/media/tts/<file>）。
    */
-  async synthesize(text: string, voiceId: string, outDir: string): Promise<{ file: string; cached: boolean }> {
+  synthesize(text: string, voiceId: string, outDir: string): Promise<{ file: string; cached: boolean }> {
     const file = `${createHash("sha1").update(voiceId).update("\0").update(text).digest("hex")}.mp3`;
+    return this.cacheFile(file, outDir, () => this.request(text, voiceId));
+  }
+
+  /**
+   * 官方样本在缓存里的文件名。试听前可以先查这个文件在不在盘上——在就直接放，
+   * 不必再取一次上游元数据（Fish 临时不通时，盘上的样本也照放）。
+   */
+  sampleFile(voiceId: string): string {
+    return `preview-${voiceId}.mp3`;
+  }
+
+  /**
+   * 落盘 Fish 官方的试听样本（音色作者预渲染的那段音频）。
+   *
+   * 样本是 R2 上的签名地址：一小时过期，用户的浏览器也不一定连得上，所以由服务端下好再从
+   * 本地回放。按 voiceId 命名——同一个音色只下第一次。
+   */
+  fetchSample(url: string, voiceId: string, outDir: string): Promise<{ file: string; cached: boolean }> {
+    return this.cacheFile(this.sampleFile(voiceId), outDir, async () => {
+      const res = await undiciFetch(url, {
+        dispatcher: this.dispatcher,
+        signal: AbortSignal.timeout(this.opts.timeoutMs),
+      });
+      if (!res.ok) throw new Error(`试听样本下载失败 HTTP ${res.status}`);
+      return Buffer.from(await res.arrayBuffer());
+    });
+  }
+
+  /** 落盘一处缓存：命中即复用，同目标并发只跑一次，临时文件 + rename 防交错损坏。 */
+  private async cacheFile(
+    file: string,
+    outDir: string,
+    load: () => Promise<Buffer>,
+  ): Promise<{ file: string; cached: boolean }> {
     const target = join(outDir, file);
     if (existsSync(target)) return { file, cached: true };
     const running = this.inflight.get(target);
@@ -49,7 +84,7 @@ export class FishTts {
       return { file, cached: true };
     }
     const job = (async (): Promise<void> => {
-      const audio = await this.request(text, voiceId);
+      const audio = await load();
       await mkdir(outDir, { recursive: true });
       const tmp = `${target}.${randomUUID().slice(0, 8)}.tmp`;
       await writeFile(tmp, audio);

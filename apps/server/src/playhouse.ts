@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { ServerMessage } from "@aivn/core";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
 import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, characterCardPath, characterIdOfPath, PROTAGONIST_ID, type EngineStateSnapshot, type SpriteFraming } from "@aivn/core";
@@ -55,7 +56,7 @@ export interface PlayRuntime {
   cast: { id: string; name: string }[];
   /** 服务端 TTS 能力（配置了可用 key 才开；客户端据此显示语音开关）。 */
   voice: boolean;
-  /** 语音合成闭包（含语音语言翻译）：ttsPreview 复用同路径。 */
+  /** 语音合成闭包（含语音语言翻译）：演出侧专用，试听走 ttsPreview 那条不翻译的路。 */
   synth?: (text: string, voiceId: string) => Promise<{ url: string }>;
   /** 本剧目已生成的 bg/cg（读 assets/generated.json）：重连即恢复可见，不必等下一次预发射。 */
   generated: GeneratedLedgerEntry[];
@@ -89,8 +90,30 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
 /** 网关模型清单缓存时长：网关上加模型不频繁，但也不能让用户非刷新不可。 */
 const GATEWAY_MODELS_TTL_MS = 5 * 60_000;
 
-/** 音色试听固定样本文案（素材管理页「试听」按钮）。 */
-const TTS_SAMPLE_TEXT = "你好呀！这就是我的声音，以后请多多指教哦。";
+/**
+ * 试听兜底文案：音色既没有官方样本音频、也没写官方示例文本时，按它的语言念一句。
+ * Fish 公共库的语种很散（英语只占三成多），一句中文糊弄所有音色的做法到此为止。
+ * 未收录的语种退回英语——它仍是公共库里的第一大语种。
+ */
+const DEFAULT_PREVIEW_TEXT = "Hi there, this is what I sound like.";
+
+const PREVIEW_TEXTS: Record<string, string> = {
+  ar: "مرحباً، هذا هو صوتي.",
+  en: DEFAULT_PREVIEW_TEXT,
+  es: "Hola, así suena mi voz.",
+  fr: "Bonjour, voici ma voix.",
+  it: "Ciao, questa è la mia voce.",
+  ja: "こんにちは、これが私の声です。",
+  ko: "안녕하세요, 제 목소리입니다.",
+  pt: "Olá, esta é a minha voz.",
+  ru: "Здравствуйте, это мой голос.",
+  zh: "你好呀，这就是我的声音。",
+};
+
+/** 按音色语言挑一句试听文案；没有语言标签或语种未收录时用英语。 */
+function previewText(languages: string[]): string {
+  return PREVIEW_TEXTS[languages[0] ?? ""] ?? DEFAULT_PREVIEW_TEXT;
+}
 
 /** 工坊改了剧目文件（创作口径/premise/记忆卡）后的接力说明。 */
 const SETTINGS_UPDATED = [
@@ -781,14 +804,29 @@ export class PlayHouse {
     this.pendingFor(playId).dismiss(jobId);
   }
 
-  /** 音色试听（素材管理页）：经 runtime.synth（含语音语言翻译）合成固定样本。 */
+  /**
+   * 音色试听（素材管理页）。
+   *
+   * 优先放 Fish 官方的预渲染样本：那是音色作者录的、本来就是音色母语，零配额、点了就响。
+   * 没有样本的音色才自己合成，文案取官方示例文本（还是母语），最后一级按语言标签兜底。
+   * 不走 runtime.synth：那条路会把文案翻成剧目的 voiceLanguage，试听要听的是音色本身。
+   */
   async ttsPreview(playId: string, voiceId: string): Promise<string> {
     if (!this.tts) throw new Error("服务端未启用语音（缺少 fish-audio key）");
+    if (!this.voices) throw new Error("音色库未启用");
     if (!isVoiceId(voiceId)) throw new Error("非法音色 id");
-    const runtime = await this.get(playId);
-    if (!runtime.synth) throw new Error("服务端未启用语音（缺少 fish-audio key）");
-    const { url } = await runtime.synth(TTS_SAMPLE_TEXT, voiceId);
-    return url;
+    const store = this.library.store(playId);
+    if (!existsSync(store.dir)) throw new Error("剧目不存在");
+    const outDir = store.mediaDir();
+    let file = this.tts.sampleFile(voiceId);
+    // 盘上已有官方样本就直接放：省一次上游元数据往返，Fish 临时不通时试听也照旧
+    if (!existsSync(join(outDir, file))) {
+      const sample = await this.voices.sample(voiceId);
+      file = sample.audio
+        ? (await this.tts.fetchSample(sample.audio, voiceId, outDir)).file
+        : (await this.tts.synthesize(sample.text || previewText(sample.languages), voiceId, outDir)).file;
+    }
+    return `/plays/${playId}/media/tts/${file}`;
   }
 
   /** 玩家输入润色（P4）：按主角角色卡口吻改写，保意不加戏。 */

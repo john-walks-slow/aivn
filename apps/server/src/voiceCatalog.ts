@@ -39,6 +39,14 @@ interface FishModelEntity {
   like_count?: unknown;
   cover_image?: unknown;
   state?: unknown;
+  default_text?: unknown;
+  samples?: unknown;
+}
+
+/** Fish 的示例样本：作者给这个音色录的预渲染音频与它念的文本。 */
+interface FishModelSample {
+  audio?: unknown;
+  text?: unknown;
 }
 
 interface FishModelPage {
@@ -50,6 +58,14 @@ function str(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+function strList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function firstSample(raw: FishModelEntity): FishModelSample | undefined {
+  return Array.isArray(raw.samples) ? (raw.samples[0] as FishModelSample | undefined) : undefined;
+}
+
 function toEntry(raw: FishModelEntity): VoiceEntry | null {
   const id = str(raw._id);
   // 未训练完的模型进不了 TTS，进目录只会让用户选到合成失败的音色
@@ -58,8 +74,8 @@ function toEntry(raw: FishModelEntity): VoiceEntry | null {
     id,
     title: str(raw.title) || id.slice(0, 8),
     description: str(raw.description),
-    languages: Array.isArray(raw.languages) ? raw.languages.filter((c): c is string => typeof c === "string") : [],
-    tags: Array.isArray(raw.tags) ? raw.tags.filter((t): t is string => typeof t === "string") : [],
+    languages: strList(raw.languages),
+    tags: strList(raw.tags),
     likes: typeof raw.like_count === "number" ? raw.like_count : 0,
     cover: str(raw.cover_image),
   };
@@ -67,6 +83,16 @@ function toEntry(raw: FishModelEntity): VoiceEntry | null {
 
 /** 发一个 GET JSON 请求（测试注入假实现，绕开网络与 key）。 */
 export type VoiceFetcher = <T>(path: string) => Promise<T>;
+
+/** 一个音色的试听素材——官方的示例音频与示例文本，都在音色自己的语言里。 */
+export interface VoiceSample {
+  /** 作者预渲染的示例音频 URL（签名地址，一小时过期，必须落盘后再回放）；空串 = 没传样本。 */
+  audio: string;
+  /** 官方示例文本（音色母语）；作者一样没写时为空，由调用方按语言兜底。 */
+  text: string;
+  /** 音色语言标签，兜底文案据此选语言。 */
+  languages: string[];
+}
 
 export class VoiceCatalogService {
   /** 出口代理：按当前设置里的地址惰性建，地址改了下次请求就用新的。 */
@@ -116,7 +142,34 @@ export class VoiceCatalogService {
 
   /** 按 id 解析单条音色——用于"已填 voiceId 但不在热门目录内"的展示与试听。 */
   async resolve(id: string): Promise<VoiceEntry> {
-    const entry = toEntry(await this.fetchJson<FishModelEntity>(`/model/${id}`));
+    return this.entryOf(id, await this.fetchModel(id));
+  }
+
+  /**
+   * 取试听素材（素材管理页「试听」）。
+   *
+   * 现取、不进 12 小时目录快照：官方样本音频是签名 URL，一小时就过期，存进快照只会是死链。
+   * 样本音频由作者预渲染——音色母语、零配额、点了就响；没传样本的音色（目录里约 2%）
+   * 才退回拿官方示例文本自己合成。
+   */
+  async sample(id: string): Promise<VoiceSample> {
+    const raw = await this.fetchModel(id);
+    // 未训练/不存在的音色连合成都进不去，先在这里如实报错，别把死链或空文本带下去
+    this.entryOf(id, raw);
+    const sample = firstSample(raw);
+    return {
+      audio: str(sample?.audio),
+      text: str(raw.default_text).trim() || str(sample?.text).trim(),
+      languages: strList(raw.languages),
+    };
+  }
+
+  private fetchModel(id: string): Promise<FishModelEntity> {
+    return this.fetchJson<FishModelEntity>(`/model/${id}`);
+  }
+
+  private entryOf(id: string, raw: FishModelEntity): VoiceEntry {
+    const entry = toEntry(raw);
     if (!entry) throw new Error(`音色 ${id} 不存在或未训练完成`);
     return entry;
   }
