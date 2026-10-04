@@ -131,6 +131,17 @@ describe("list_voices", () => {
     expect(tool.description).toContain('"anime","character-voice"');
     expect(tool.description).toContain("全库");
   });
+
+  it("标签词表是实测的常用词，并明确要求照抄不要自己造", () => {
+    const [tool] = createVoiceTool(service());
+    // 词表是拿真实窗口统计出来的（2026-10-04：全局 1000 + 日语 1000）。
+    // 曾经写的 cute 在两个窗口都是 0 条——模型造词的代价是那一轮查询空转。
+    expect(tool.description).toContain("别自己造词");
+    for (const tag of ["narration", "storytelling", "middle-aged", "bright", "measured", "animated"]) {
+      expect(tool.description).toContain(tag);
+    }
+    expect(tool.description).toContain("语言别当 tag");
+  });
 });
 
 /** 工坊的常见态；这一组用例只翻 voice 那一位。 */

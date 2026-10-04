@@ -47,8 +47,13 @@ export function createVoiceTool(voices?: VoiceCatalogService): AgentTool<any>[] 
       "每个查询组合各有一个 1000 条窗口，按需抓取（首次几秒，之后走本机缓存）：\n" +
       "- `language`（ja / en / zh，小写）：**先按剧目的语音语言筛**——台词会译成那个语言再送 TTS" +
       "（未设语音语言时就是剧本原文），选一个不支持它的嗓子，整段台词会带着那个音色的口音念出来。\n" +
-      "- `tags`（并集）：二次元/角色向用 `[\"anime\",\"character-voice\"]`；其余常见标签如 " +
-      "cute / energetic / calm / narration / young。\n" +
+      "- `tags`（并集；Fish 作者自己打的，**大小写敏感、猜错就是 0 条**）：二次元/角色向用 " +
+      "`[\"anime\",\"character-voice\"]`。**照抄下面这批，别自己造词**——" +
+      "性别年龄 female / male / young / middle-aged / old；" +
+      "语气 energetic / calm / confident / cheerful / bright / serious / dramatic / expressive / friendly；" +
+      "质感 deep / clear / smooth / high / measured；" +
+      "用途 narration / storytelling / advertisement / social-media / entertainment / educational；" +
+      "画风 animated。语言别当 tag（Japanese / Mandarin 是作者顺手打的，语言维度走 `language`）。\n" +
       "- `query`：按名字全库搜索（雷姆、Frieren、Hatsune Miku），比翻热门榜单准。\n" +
       "- `gender`：male / female。\n" +
       "每行是：id | 名称 | 语言 | 标签 | 收藏数 | 描述。收藏数是热度，同条件下优先挑高的。\n" +

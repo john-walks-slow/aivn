@@ -50,6 +50,12 @@ list(query: VoiceQuery, refresh = false): Promise<VoiceCatalog>
 
 - `language`：走服务端语言窗口（日语从 52 条变 1000 条）。
 - `tags: string[]`（≤4，并集）：Fish 标签原样传，二次元/角色向 = `["anime","character-voice"]`。
+  描述里给**实测词表**（照抄、别自己造词，作者手打的标签大小写敏感、猜错就是 0 条）：
+  female/male/young/middle-aged/old、energetic/calm/confident/cheerful/bright/serious/dramatic/
+  expressive/friendly、deep/clear/smooth/high/measured、narration/storytelling/advertisement/
+  social-media/entertainment/educational、animated。词表来自真实窗口统计（全局 1000 + 日语 1000），
+  曾经想当然写的 `cute` 实际两个窗口都是 0 条。语言别当 tag（Japanese/Mandarin 是作者顺手打的，
+  语言维度走 `language`）。
 - `query`：升级为**全库标题搜索**（服务端 `title`）——agent 找特定角色（雷姆/Frieren）直达，
   不再局限在窗口内本地匹配 id/描述/标签。
 - `gender`：窗口内本地筛（male/female 是标签，Fish 没有独立参数）。
