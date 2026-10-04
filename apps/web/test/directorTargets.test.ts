@@ -117,23 +117,27 @@ describe("重写这一轮退到哪儿（卡片自己算）", () => {
     { key: "l4", type: "say", actorId: "mio", mood: null, text: "行 4", seq: 4 },
   ];
 
-  it("本轮不是从玩家的一句话开头的：锚本轮之前的那一点（整轮重来）", () => {
+  it("锚本轮之前的那一点：本轮由玩家的一句话开头时，锚上一轮末尾（那句话由服务端带进新枝）", () => {
+    const cards = buildBeats(buildViewWithInput(), lines);
+    const second = beatAtLine(cards, lines[2])!;
+    expect(second.id).toBe("p");
+    expect(second.forkFromId).toBe("aE");
+  });
+
+  it("本轮不是从玩家的一句话开头的：同样锚本轮之前的那一点（整轮重来）", () => {
     const cards = buildBeats(buildView(), lines);
     const second = beatAtLine(cards, lines[2])!;
     expect(second.id).toBe("b");
-    expect(second.rewriteFromId).toBe("aE");
+    expect(second.forkFromId).toBe("aE");
   });
 
-  it("本轮由玩家的一句话开头：锚那句话本身，它留在新枝上（重写的是它之后的回应）", () => {
-    const cards = buildBeats(buildViewWithInput(), lines);
-    const second = beatAtLine(cards, lines[2])!;
-    expect(second.rewriteFromId).toBe("p");
-    // 被顶掉的那一拍的首节点仍是这张卡自己（新 fork 标记按它算来源标签）
-    expect(second.id).toBe("p");
+  it("第一轮没有前驱：锚它自己", () => {
+    const cards = buildBeats(buildView(), lines);
+    expect(cards[0]!.forkFromId).toBe(cards[0]!.id);
   });
 
   it("分叉点正好落在那句输入上：它单独成卡，正文就是这句话，不是「（无台词）」", () => {
-    // 重写把 fork 挂在 p 上 —— 输入与它的两条回应各成一张卡
+    // 从一句输入上分岔（回顾里的「分岔」）—— 输入与它的两条回应各成一张卡
     const fork = {
       ...node("f", 6, "fork", "p"),
       text: "",

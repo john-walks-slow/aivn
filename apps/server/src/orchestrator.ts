@@ -1157,10 +1157,12 @@ export class PlaywrightOrchestrator {
    *
    * `replaced` 是客户端点名的「被这次重写顶掉的那一拍的首节点」：新 fork 标记继承它的
    * 来源标签，玩家回到同一锚点重选同一个动作时才认得出这条枝是刚重写出来的那条。
+   * 它是玩家的一句输入时，那句话还会跟着新枝一起走（见 `replacedInput`）。
    *
-   * `instruction` 是随这一岔一起交代的一句：它是新枝**这一轮**的第一条输入（与「插一句」
-   * 同一条入账路径、同一个 prompt 节点），不是排进待注入队列等下一轮——「带着这句重写」
-   * 是一个动作，不是先重写、下一轮再补一句。分岔不 resume 时带上它 = 新分支立刻照这句开演。
+   * `instruction` 是随这一岔一起交代的一句：它和带过来的那句原话一起构成新枝**这一轮**的
+   * 输入（与「插一句」同一条入账路径、各自的 prompt 节点），不是排进待注入队列等下一轮——
+   * 「带着这句重写」是一个动作，不是先重写、下一轮再补一句。
+   * 分岔不 resume 时带上它 = 新分支立刻照这句开演。
    */
   async forkTo(
     nodeId: string,
@@ -1172,10 +1174,11 @@ export class PlaywrightOrchestrator {
       if (!opts?.resume) this.cancelBeat();
       else this.guardIdle();
     }
+    const carried = this.replacedInput(opts?.replaced, nodeId);
     if (!opts?.resume) {
       this.prevLeafId = this.opts.tree.leafId;
       this.rebaseAt(nodeId, "已从此处开新分支");
-      if (instruction) await this.deliverForkInstruction(instruction);
+      if (instruction || carried) await this.deliverForkInputs(carried, instruction);
       return;
     }
     // 来源必须在改写 prevLeafId 之前算：它读的是「上一次结构操作前我在哪儿」
@@ -1184,22 +1187,48 @@ export class PlaywrightOrchestrator {
     // rebaseAt 同步完成（含 recordFork），beginBeat 同步置 beatPending：
     // 整个 fork+续演是一步，中间没有让 engaged 掉下去的空档。
     this.rebaseAt(nodeId, "重写这一段", { resume: true, origin });
-    if (instruction) await this.deliverForkInstruction(instruction);
+    if (instruction || carried) await this.deliverForkInputs(carried, instruction);
     else await this.beginBeat(this.renderPromptTurn([]));
   }
 
   /**
-   * 随分岔/重写交代的那一句：走「插一句」同一条入账路径——落一个 prompt 节点、
-   * 广播一条玩家输入事件、作为这一轮的第一条输入发下去。
+   * 被这次重写顶掉的那一拍，玩家当时说的那句话。
    *
-   * 它不是排队面板上的条目（不入 `pending`），但仍占一个 id：这一轮判废退回时
-   * （returnBeatSteers）它会原样回到队列，玩家写的那句话不丢。
+   * 它跟着新枝一起走：新枝是「从这句话重新长出来的一拍」，剧作家看不到它就不知道自己
+   * 当初在回应什么（这一轮只有【状态】，等于让它凭空接话）。锚点本身就是那个输入节点时
+   * 不补——第一轮没有前驱，那句输入已经在路径上，再补一份等于同一句话进两次谱系。
    */
-  private deliverForkInstruction(text: string): Promise<void> {
-    return this.deliverPrompts(
-      [{ id: `pq-${(this.pendingSeq += 1)}`, text, beatNo: this.beatNo, status: "pending" }],
-      null,
-    );
+  private replacedInput(replacedId: string | undefined, anchorId: string): string | null {
+    if (!replacedId || replacedId === anchorId) return null;
+    const node = this.opts.tree.get(replacedId);
+    if (node?.kind !== "prompt") return null;
+    return (node.payload?.input ?? "").trim() || null;
+  }
+
+  /**
+   * 重写这一轮的输入：被顶掉那一拍里玩家说过的那句话（有的话）＋ 随这一岔交代的一句。
+   *
+   * 两句都落 prompt 节点、都作为这一轮的【用户输入】发下去。差别只在判废退回时：交代那句
+   * 是待兑现的引导，还回队列（玩家写的话不丢）；原话那句是旧枝上那句话的副本，旧枝上
+   * 它本来就在，再排一次只会让同一句话进两次谱系，所以它不当引导。
+   */
+  private async deliverForkInputs(
+    carried: string | null,
+    instruction: string | undefined,
+  ): Promise<void> {
+    if (carried) {
+      this.onStageEvent({ kind: "player_input", text: carried });
+      // 链尾悬空的那句并进这一轮：它照常进【用户输入】，但不占引导位
+      this.trailingInputs = [...this.trailingInputs, carried];
+    }
+    if (instruction) {
+      await this.deliverPrompts(
+        [{ id: `pq-${(this.pendingSeq += 1)}`, text: instruction, beatNo: this.beatNo, status: "pending" }],
+        null,
+      );
+      return;
+    }
+    await this.beginBeat(this.renderPromptTurn([]));
   }
 
   /**

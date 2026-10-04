@@ -75,9 +75,9 @@ interface StageTheaterProps {
 }
 
 export interface DirectorTargets {
-  /** 重写这一轮的锚点（`BeatCard.rewriteFromId`）：本轮由玩家的一句话开头时就是那句话本身。 */
+  /** 重写这一轮的锚点（`BeatCard.forkFromId`）：本轮之前的那一点，第一轮就是轮首。 */
   beatId: string | null;
-  /** 被重写顶掉的那一拍的首节点：新 fork 标记按它算来源标签（见 `replacedOrigin`）。 */
+  /** 被重写顶掉的那一拍的首节点：新 fork 标记按它算来源标签、它带的那句输入也跟着新枝走。 */
   beatNodeId: string | null;
   lineNodeId: string | null;
   /** 正在显示的这一行在事件缓冲里的 seq：分岔的落点就靠它（轮内谱系还没追上，id 靠不住）。 */

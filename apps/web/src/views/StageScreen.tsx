@@ -251,8 +251,9 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
    * 舞台的 rebase 回调拦下，不把正在整理分支的玩家拽走。
    *
    * 重写的指令与舞台导演栏同一条路：跟着 fork 一起发，它是重演那一轮的第一条输入——
-   * 交代什么方向，重写的这一轮就照着写什么，不是先重写、下一轮才补上。两处的锚点也同一套
-   * （卡片自己算的 `rewriteFromId`）：本轮由玩家的一句话开头时锚那句话，它留在新枝上。
+   * 交代什么方向，重写的这一轮就照着写什么，不是先重写、下一轮才补上。锚点也同一套：
+   * 退到本轮之前那一点，并点名被顶掉的那一拍（本轮由玩家的一句话开头时，那句话由服务端
+   * 带进新枝，剧作家照旧看得到「玩家说了什么」）。
    */
   const routeOps: LineageOps = useMemo(
     () => ({
@@ -434,7 +435,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
       };
     }
     return {
-      beatId: beat?.rewriteFromId ?? null,
+      beatId: beat?.forkFromId ?? null,
       beatNodeId: beat?.id ?? null,
       lineNodeId: editableNodeAtLine(lineage.view, line)?.id ?? null,
       lineSeq: seq,
@@ -446,7 +447,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   const beatFor = useCallback(
     (entry: TranscriptEntry): { anchor: string; replaced: string } | null => {
       const card = lineage.view ? beatAtLine(cards, entry) : null;
-      return card ? { anchor: card.rewriteFromId, replaced: card.id } : null;
+      return card ? { anchor: card.forkFromId, replaced: card.id } : null;
     },
     [cards, lineage.view],
   );

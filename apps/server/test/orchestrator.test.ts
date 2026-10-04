@@ -2094,7 +2094,10 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
 });
 
 /** 数模型调用次数：走回旧路的核心判据就是「这一拍没有让剧作家再写一遍」。 */
-function countingSetup(responses: FakeResponse[]): {
+function countingSetup(
+  responses: FakeResponse[],
+  opts: { contexts?: unknown[] } = {},
+): {
   orchestrator: PlaywrightOrchestrator;
   messages: ServerMessage[];
   tree: LineageTree;
@@ -2104,9 +2107,10 @@ function countingSetup(responses: FakeResponse[]): {
   const base = createFakeStreamFn(responses);
   const streamFn: StreamFn = (model, context, options) => {
     calls.n += 1;
+    opts.contexts?.push(context);
     return base(model, context, options);
   };
-  return { ...setup(responses, { streamFn }), calls };
+  return { ...setup(responses, { ...opts, streamFn }), calls };
 }
 
 /** 演两拍：开场（停在选项）→ 选「道歉」演第二拍。返回两拍的 beat_end 与第二拍的输入节点。 */
@@ -2311,9 +2315,10 @@ describe("重写继承来源（同选项认得出刚重写的那条枝）", () =
 describe("重写带着交代（落进重演的这一轮，不是排到下一轮）", () => {
   const REWRITTEN = '<say id="mio">……算了，走吧。</say>';
 
-  it("随 fork 的 instruction 成为重演那一轮的第一条输入，并落一个 prompt 节点", async () => {
+  /** 两个重写入口现在送的是同一份东西：锚本轮之前那一点 + 点名被顶掉的那一拍（+ 可选的一句交代）。 */
+  const rewriteSecondBeat = async (opts: { instruction?: string } = {}) => {
     const contexts: unknown[] = [];
-    const { orchestrator, tree, messages } = setup(
+    const { orchestrator, tree, messages, calls } = countingSetup(
       [
         { text: BEAT_1, beatDone: BEAT_1_STOP },
         { text: BEAT_2, beatDone: true },
@@ -2321,20 +2326,31 @@ describe("重写带着交代（落进重演的这一轮，不是排到下一轮�
       ],
       { contexts },
     );
-    const { beat1End } = await playTwoBeats(orchestrator, tree);
-
-    await orchestrator.forkTo(beat1End, { resume: true, instruction: "别道歉，让她先走" });
+    const { beat1End, beat2End, beat2Prompt } = await playTwoBeats(orchestrator, tree);
+    await orchestrator.forkTo(beat1End, {
+      resume: true,
+      replaced: beat2Prompt,
+      ...(opts.instruction ? { instruction: opts.instruction } : {}),
+    });
     await orchestrator.whenIdle();
+    return { orchestrator, tree, messages, calls, contexts, beat1End, beat2End, beat2Prompt };
+  };
+
+  it("随 fork 的 instruction 成为重演那一轮的第一条输入，并落一个 prompt 节点", async () => {
+    const { tree, messages, contexts } = await rewriteSecondBeat({ instruction: "别道歉，让她先走" });
 
     // 重演那一轮下发给剧作家的正文里就带着这句交代
     expect(lastUserText(contexts as CapturedContext[])).toContain("别道歉，让她先走");
 
-    // 它是这一轮的第一个节点：fork 标记之下、重演出的台词之前
+    // 它是这一轮落下的输入节点之一：fork 标记之下、重演出的台词之前
     const chain = tree.ancestorChain(tree.leafId).map((id) => tree.get(id)!);
     const forkAt = chain.findLastIndex((event) => event.kind === "fork");
-    const promptAt = chain.findIndex((event, index) => index > forkAt && event.kind === "prompt");
-    const sayAt = chain.findIndex((event, index) => index > promptAt && event.kind === "say");
-    expect(chain[promptAt]!.payload?.input).toBe("别道歉，让她先走");
+    const after = chain.slice(forkAt + 1);
+    const promptAt = after.findIndex(
+      (event) => event.kind === "prompt" && event.payload?.input === "别道歉，让她先走",
+    );
+    const sayAt = after.findIndex((event) => event.kind === "say");
+    expect(promptAt).toBeGreaterThanOrEqual(0);
     expect(sayAt).toBeGreaterThan(promptAt);
 
     // 没有排进待注入队列：队列里没有这一句，它已经在这一轮里兑现了
@@ -2342,6 +2358,53 @@ describe("重写带着交代（落进重演的这一轮，不是排到下一轮�
       items: { text: string }[];
     };
     expect(queued.items).toEqual([]);
+  });
+
+  it("点名 replaced 时，被顶掉那一拍里玩家说的那句话也带进新枝（剧作家不会凭空接话）", async () => {
+    const { tree, messages, contexts, beat2Prompt } = await rewriteSecondBeat();
+
+    const text = lastUserText(contexts as CapturedContext[]);
+    expect(text).toContain("（选择了：道歉）");
+    // 单层标签：链尾悬空那批不再套第二层【用户输入】
+    expect(text.match(/【用户输入】/g)).toHaveLength(1);
+
+    // 原话在新枝上重新落了一个节点（旧枝上那个还在，各枝各记一份）
+    const chain = tree.ancestorChain(tree.leafId).map((id) => tree.get(id)!);
+    const forkAt = chain.findLastIndex((event) => event.kind === "fork");
+    const prompt = chain.find((event, index) => index > forkAt && event.kind === "prompt");
+    expect(prompt!.payload?.input).toBe("（选择了：道歉）");
+    expect(prompt!.id).not.toBe(beat2Prompt);
+
+    // 它不是待兑现的引导：那一句本来就在旧枝上，再排进队列只会让同一句进两次谱系
+    const queued = messages.filter((msg) => msg.type === "prompt_queue").at(-1) as {
+      items: { text: string }[];
+    };
+    expect(queued.items).toEqual([]);
+  });
+
+  it("交代与原话同时在场：两块【用户输入】按「原话在前、交代在后」发出去", async () => {
+    const { contexts } = await rewriteSecondBeat({ instruction: "别道歉，让她先走" });
+    const text = lastUserText(contexts as CapturedContext[]);
+    expect(text.match(/【用户输入】/g)).toHaveLength(2);
+    expect(text.indexOf("（选择了：道歉）")).toBeLessThan(text.indexOf("别道歉，让她先走"));
+  });
+
+  it("来源标签按 replaced 算：回上一轮末尾重选同一选项，走回刚重写的那条枝", async () => {
+    const { orchestrator, tree, calls, beat1End } = await rewriteSecondBeat({
+      instruction: "别道歉，让她先走",
+    });
+    const rewrittenEnd = tree.leafId!;
+    const forkChain = tree.ancestorChain(rewrittenEnd).map((id) => tree.get(id)!);
+    expect(forkChain.findLast((event) => event.kind === "fork")!.payload?.origin).toBe(
+      "input:（选择了：道歉）",
+    );
+
+    await orchestrator.jumpTo(beat1End, { playFrom: "start" });
+    const called = calls.n;
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    expect(calls.n).toBe(called); // 没让剧作家再写一遍
+    expect(tree.leafId).toBe(rewrittenEnd);
   });
 
   it("分岔（不 resume）带的交代：新枝开出来就照这句开演，不用等玩家再开口", async () => {
@@ -2370,39 +2433,6 @@ describe("重写带着交代（落进重演的这一轮，不是排到下一轮�
       items: { text: string }[];
     };
     expect(queued.items).toEqual([]);
-  });
-
-  it("锚在本轮那句输入上（两个入口统一后的口径）：那句话留在新枝上，标签仍按 replaced 算", async () => {
-    const contexts: unknown[] = [];
-    const { orchestrator, tree } = setup(
-      [
-        { text: BEAT_1, beatDone: BEAT_1_STOP },
-        { text: BEAT_2, beatDone: true },
-        { text: REWRITTEN, beatDone: true },
-      ],
-      { contexts },
-    );
-    const { beat2Prompt } = await playTwoBeats(orchestrator, tree);
-
-    await orchestrator.forkTo(beat2Prompt, {
-      resume: true,
-      replaced: beat2Prompt,
-      instruction: "别道歉，让她先走",
-    });
-    await orchestrator.whenIdle();
-
-    const text = lastUserText(contexts as CapturedContext[]);
-    // 本轮那句输入还在（它是锚点，留在新枝上），重写的是它之后的回应
-    expect(text).toContain("（选择了：道歉）");
-    expect(text).toContain("别道歉，让她先走");
-    // 两个输入各一段【用户输入】：链尾悬空那批的标签不套第二层
-    expect(text.match(/【用户输入】/g)).toHaveLength(2);
-
-    // 来源标签是那次输入，不是 continue——回同一锚点重选同一选项时认得出这条新枝
-    const chain = tree.ancestorChain(tree.leafId).map((id) => tree.get(id)!);
-    expect(chain.findLast((event) => event.kind === "fork")!.payload?.origin).toBe(
-      "input:（选择了：道歉）",
-    );
   });
 });
 

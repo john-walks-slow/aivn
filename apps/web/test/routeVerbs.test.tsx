@@ -12,7 +12,7 @@ function card(id: string, parentId: string | null, turn: number, heads: string[]
     id,
     startNodeId: heads[0]!,
     endNodeId: heads[heads.length - 1]!,
-    rewriteFromId: parentId ?? heads[0]!,
+    forkFromId: parentId ?? heads[0]!,
     turn,
     nodes: heads.map((nodeId) => ({ id: nodeId }) as LineageNodeView),
     preview: id,
@@ -117,7 +117,7 @@ describe("路线卡的三个动词", () => {
     fireEvent.change(input, { target: { value: "让她的反应更冷淡一点" } });
     fireEvent.click(modalButton("重写"));
 
-    expect(ops.rewrite).toHaveBeenCalledWith(MID.rewriteFromId, {
+    expect(ops.rewrite).toHaveBeenCalledWith(MID.forkFromId, {
       replaced: MID.nodes[0]!.id,
       instruction: "让她的反应更冷淡一点",
     });
@@ -127,7 +127,7 @@ describe("路线卡的三个动词", () => {
     const { container, ops } = setup();
     fireEvent.click(toolAt(container, 1, "重写"));
     fireEvent.click(modalButton("重写"));
-    expect(ops.rewrite).toHaveBeenCalledWith(MID.rewriteFromId, { replaced: MID.nodes[0]!.id });
+    expect(ops.rewrite).toHaveBeenCalledWith(MID.forkFromId, { replaced: MID.nodes[0]!.id });
   });
 
   it("删除要先确认：弹窗说清会没掉多少，确认才真的剪", () => {
