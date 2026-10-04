@@ -189,7 +189,7 @@ describe("工坊 prompt 与工具", () => {
   const promptCtx = (over: Partial<WorkshopPromptContext> = {}): WorkshopPromptContext => ({
     title: "测试剧目",
     files: "- play.json",
-    readiness: { ready: true, premise: true, characterSprites: false, background: false, saves: 0 },
+    readiness: { ready: true, premise: true, sprites: false, background: false, saves: 0 },
     craft: DEFAULT_CRAFT,
     can: caps(),
     ...over,
@@ -351,7 +351,7 @@ describe("工坊 prompt 与工具", () => {
   it("没有硬门槛：前提与图都只是「还没有」", () => {
     const noImages = renderReadiness({
       premise: true,
-      characterSprites: false,
+      sprites: false,
       background: false,
       saves: 0,
     });
@@ -361,7 +361,7 @@ describe("工坊 prompt 与工具", () => {
 
     const noPremise = renderReadiness({
       premise: false,
-      characterSprites: true,
+      sprites: true,
       background: true,
       saves: 0,
     });
@@ -565,12 +565,12 @@ describe("工坊工具：generate_image", () => {
     await setup();
     const recuts: unknown[] = [];
     const assets = {
-      recut: vi.fn(async (target: { characterId: string; expression?: string }, tuning: unknown) => {
+      recut: vi.fn(async (target: { spriteId: string; variant?: string }, tuning: unknown) => {
         recuts.push({ ...target, tuning });
         return {
           kind: "sprite" as const,
-          path: `assets/sprites/${target.characterId}/${target.expression}.png`,
-          url: `/plays/test/assets/sprites/${target.characterId}/${target.expression}.png`,
+          path: `assets/sprites/${target.spriteId}/${target.variant}.png`,
+          url: `/plays/test/assets/sprites/${target.spriteId}/${target.variant}.png`,
           replaced: true,
           autoNeutral: false,
         };
@@ -579,9 +579,9 @@ describe("工坊工具：generate_image", () => {
     const events: GeneratedPlayAsset[] = [];
     const tools = createWorkshopTools(deps({ playAssets: assets, onAsset: (asset: GeneratedPlayAsset) => events.push(asset) }));
     const recut = tools.find((t) => t.name === "recut_sprite")!;
-    const result = await recut.execute("c1", { characterId: "mio", expression: "neutral", cutout: { tolerance: 64 } });
+    const result = await recut.execute("c1", { spriteId: "mio", variant: "neutral", cutout: { tolerance: 64 } });
     expect(recuts).toEqual([
-      { kind: "sprite", characterId: "mio", expression: "neutral", tuning: { tolerance: 64 } },
+      { kind: "sprite", spriteId: "mio", variant: "neutral", tuning: { tolerance: 64 } },
     ]);
     const out = JSON.stringify(result);
     expect(out).toContain("画面没变");
@@ -593,7 +593,7 @@ describe("工坊工具：generate_image", () => {
     const failing = { recut: async () => { throw new Error("mio/neutral 没有留底原片"); } } as unknown as PlayAssets;
     const bad = await (createWorkshopTools(deps({ playAssets: failing })).find((t) => t.name === "recut_sprite")!).execute(
       "c2",
-      { characterId: "mio" },
+      { spriteId: "mio" },
     );
     expect(JSON.stringify(bad)).toContain("重抠失败：mio/neutral 没有留底原片");
   });
@@ -1136,7 +1136,7 @@ describe("工坊：写作参数与创作口径的交接，以及自定义提示�
   const ctx = (over: Partial<WorkshopPromptContext> = {}): WorkshopPromptContext => ({
     title: "测试剧目",
     files: "- play.json",
-    readiness: { ready: true, premise: true, characterSprites: false, background: false, saves: 0 },
+    readiness: { ready: true, premise: true, sprites: false, background: false, saves: 0 },
     craft: DEFAULT_CRAFT,
     can: {
       stage: false,

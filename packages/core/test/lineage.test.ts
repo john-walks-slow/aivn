@@ -130,6 +130,69 @@ describe("原地编辑（旁注，不入树）", () => {
   });
 });
 
+describe("插图旁注（回看中生图，不入树）", () => {
+  it("图挂在那一行上：挂载点不动、树里没有 cg 节点、物化照旧", () => {
+    const tree = new LineageTree();
+    const { say1 } = buildPlay(tree);
+    tree.append("narrate", { text: "夜风穿过走廊。" });
+    const leafBefore = tree.leafId;
+
+    const note = tree.recordCg(say1.id, "cg_back");
+
+    expect(tree.leafId).toBe(leafBefore);
+    expect(tree.ancestorChain(leafBefore)).not.toContain(note.id);
+    expect(tree.describe().nodes.some((n) => n.kind === "cg")).toBe(false);
+    const view = tree.describe().nodes.find((n) => n.id === say1.id)!;
+    expect(view.children).toBe(1);
+    expect(view.cgs).toEqual(["cg_back"]);
+    expect(spoken(tree)).toEqual(["……太慢了！不是约好立刻集合的吗？", "算了，上来吧。", "夜风穿过走廊。"]);
+  });
+
+  it("同一行挂两张：按挂上的先后排列，末位最新", () => {
+    const tree = new LineageTree();
+    const { say1, say2 } = buildPlay(tree);
+    tree.recordCg(say1.id, "cg_first");
+    tree.recordCg(say1.id, "cg_second");
+
+    expect(tree.describe().nodes.find((n) => n.id === say1.id)?.cgs).toEqual(["cg_first", "cg_second"]);
+    // 没挂过的行是空表
+    expect(tree.describe().nodes.find((n) => n.id === say2.id)?.cgs).toEqual([]);
+  });
+
+  it("挂到不存在的节点上报错，不静默丢图", () => {
+    const tree = new LineageTree();
+    buildPlay(tree);
+    expect(() => tree.recordCg("e-not-here-1", "cg_x")).toThrow(/谱系节点不存在/);
+  });
+
+  it("插图旁注跨进程无损：树里查不到，日志里有", () => {
+    const tree = new LineageTree();
+    const { say1 } = buildPlay(tree);
+    tree.recordCg(say1.id, "cg_back");
+    tree.recordEdit(say1.id, "改过的第一句");
+
+    const rebuilt = new LineageTree();
+    rebuilt.load(tree.export());
+
+    expect(rebuilt.leafId).toBe(tree.leafId);
+    expect(rebuilt.describe().nodes.find((n) => n.id === say1.id)?.cgs).toEqual(["cg_back"]);
+    expect(rebuilt.describe().nodes.some((n) => n.kind === "cg")).toBe(false);
+    // 旁注（改写与插图）仍随日志落盘，且顺序不因谁先谁后而丢
+    expect(rebuilt.export().events.filter((e) => e.kind === "cg" || e.kind === "edit")).toHaveLength(2);
+  });
+
+  it("剪掉一段时挂在它上面的插图跟着清掉", () => {
+    const tree = new LineageTree();
+    tree.append("say", { text: "开场" });
+    const target = tree.append("say", { text: "会被剪掉的一句" });
+    tree.recordCg(target.id, "cg_doomed");
+
+    tree.removeSubtree(target.id);
+
+    expect(tree.export().events.some((e) => e.kind === "cg")).toBe(false);
+  });
+});
+
 describe("谱系快照", () => {
   it("快照随分支走：路径上最近快照可恢复，旧分支看不到未来", () => {
     const tree = new LineageTree();

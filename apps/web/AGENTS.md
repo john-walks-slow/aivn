@@ -16,7 +16,7 @@
   - WorkshopPane 八 tab 对话/剧目/角色/记忆/素材/文件/Agent/设置（`stage/view.ts` 的 `WorkshopTab` 是顺序唯一真相源：**剧目**在最前——它改的是剧目本身；**角色/记忆**紧跟其后——改的是剧目的成员与内容；其余是素材与机器设置）。
   - AgentPane 单剧目 agent 设置（剧作家/搭台助手各一张卡：模型下拉走 `GET /api/agents/models`（网关清单 ∩ 设置页「支持的模型」清单；读不到就显式报错，不静默退化成默认；清单外的旧值补一项「不在支持清单里」显示，不静默改写 play.json）、思考档位、按 `groupLabel` 分组的**能力开关**（数据源 `GET /api/agents/capabilities`，一行 = 名字 + 一句后果，`locked` 的渲染成灰字「始终开启」不给开关，`available: false` 的行尾补 `unavailableNote`；界面上不出现任何工具 id）；搭台助手那张卡还有**出图审批**（`ask` 默认 / `auto`）；保存即写 play.json 的 `agents` 段）。
   - PlayPane 剧目页（标题 / opening / `scriptLanguage` 剧本语言 / `voiceLanguage` 语音语言 / 无名角色音色 / 逐剧目生图 `image.model` + `image.size` / 封面选图 / **写作参数**（`craft` 的六个下拉）；只写 `play.json` 一份，是唯一写剧目字段的页。六个下拉的第一项恒为「默认」，选中即把那个字段从文件里删掉——`editCraft` 是同一条规矩的唯一入口，`setImage` 同理（两个生图字段都留空就把整个 `image` 段删掉））。
-  - CharacterPane 角色页（`detail.cast` 就是全部角色卡，主角只是 id 固定 `protagonist` 的那张：同一个 CharacterEditor、同样能上台/有立绘/有音色/能从资源库导入，只是不给删；**「新建角色」先收一个用户指定的 id**（规则与剧目 id 同：`[\w-]+`，重名/非法就地报错，不自动取 `charN`）；保存只写 `characters/<id>.md`，这一页一个字节都不碰 `play.json`）。
+  - CharacterPane 角色页（`detail.cast` 就是全部角色卡，主角只是 id 固定 `protagonist` 的那张：同一个 CharacterEditor、同样能上台/有音色/能从资源库导入，只是不给删；**「新建角色」先收一个用户指定的 id**（规则与剧目 id 同：`[\w-]+`，重名/非法就地报错，不自动取 `charN`）；**这一页不管立绘**——CharacterEditor 只有名字 / persona / 音色三格，同名立绘是 `assets/sprites/<id>/` 那个目录，归素材页。保存只写 `characters/<id>.md`，这一页一个字节都不碰 `play.json`）。
   - MemoryPane 记忆页（只列 `memory/**` 的卡片，`arcs/`+`archive/` 不列；常驻设定在前、设定卡在后。craft.md 的占位符只提文风与禁忌，「节奏与素材来源」指向剧目页）。
   - SettingsScreen 服务端设置页（`#/settings`，剧目库页右上「⚙ 设置」进：模型网关 / 长会话与压缩 / 生图 / 语音 / 联网检索 / 访问密码 / 局域网访问 / 界面主题，外加启动参数只读回显。**保存即落盘 `<数据目录>/settings.json` 并立即生效**，没有「重启后生效」这一步；单把凭据（API Key / 生图 Key / 访问密码）把掩码**填进输入框**——原样回传 = 不改、清空 = 显式清除，多把 key（语音 / 检索）输入框恒空、留空 = 不改。保存/放弃按钮常驻在滚动区之外（`.settings-footer`），滚多深都在。「局域网访问」那一组是开关（写 `lanAccess`）+ 手机该连的地址（只读 `bootstrap.lanUrls`，逐条可复制）+ 「允许局域网访问（Windows 防火墙）」按钮（`POST /api/lan/open-firewall`，只在装好的 Windows 版里可用）。
   - WorkshopSettings（演出侧两个开关）。
@@ -24,9 +24,9 @@
   - TurnParts 助手一轮的段落渲染器（按 parts 顺序铺正文气泡 / 「思考」可折叠行 / 工具行；`TOOL_LABEL` 与参数摘要收在这里）。行的展开态默认由「是否流式中、这次调用有没有素材」决定，用户点过之后记进组件本地的 toggled。
   - AssetStrip 素材条（工具行里显示这次调用产出的图，WorkshopPane 与工具行共用）。
   - FileBrowser 剧目文件树/编辑器/预览。
-  - AssetsPanel 素材库（背景/CG/音效/BGM；角色与立绘不在这里，归「角色」页：角色卡带「从资源库导入」入口 + 立绘上传与差分映射，「音色：…」开全屏音色库面板 + 试听，素材行带描述副标题）。
-  - **手动生图**（`ImageGenDialog` 是素材页 backgrounds/cg 的「✨ 生成」与角色卡底栏「生成立绘」/逐行「重生成」共用的那个对话框：`kind` 决定出哪些字段、立绘锁差分名；发起后 REST 立刻返回、对话框停在「生成中」，完成经 WS `image_result` 按 `target` 匹配亮图。`ui/RefCharacterPicker.tsx` 是有序多选的角色立绘 chip，序号即提示词里的「第几张」；`src/stage/cgOptions.ts` 是勾选序与提交门槛的纯函数）。
-  - LibraryBrowser 资源库浏览面板（防抖搜索 + 网格卡 + 图片灯箱/音频试听 + 导入/覆盖态 + `target`，素材页与角色/主角卡入口共用一个组件；**素材页的分类 tab 里没有「角色」**——角色卡不是素材，只能从角色页进；角色/主角卡入口传 `only="characters"`，锁死类别且不渲染 tab，**两类卡都能导入库里任意角色**、都连立绘与差分映射一起导（主角和别人同权，`assetImport` 只按 target 决定落到 `characters/protagonist.md` 还是 `characters/<id>.md`），不再有 `filter`）。
+  - AssetsPanel 素材库（**立绘段在最前**，其后是背景/CG/音效/BGM；角色卡不在这里，归「角色」页：「音色：…」开全屏音色库面板 + 试听，素材行带描述副标题。立绘段一个目录一张 `.sprite-card`——`assets/sprites/<id>/` 里的文件即差分，名牌 / 取景 / 体量 / 锚点四个声明留空＝不声明、落回引擎缺省，写走 `PUT /api/plays/:id/assets/sprite`，逐差分行只给取景覆盖与「重新生成」「删除」，目录级能上传差分 / 出图，段头「生成新立绘」+ 新 id 一行建目录；与同名角色卡绑定只在标题上显示一句人名，没有卡也能用名牌）。
+  - **手动生图**（`ImageGenDialog` 是素材页 backgrounds/cg 的「✨ 生成」与立绘段的「生成新立绘」/差分行「重新生成」共用的那个对话框：`kind` 决定出哪些字段；sprite 分支给立绘 id（留空＝新建，id 只在新建时可改）、差分名（`fixedVariant` 时锁死）、取景与体量两个下拉，提交的就是 `spriteId`/`variant`/`framing`/`stature`/`title`。发起后 REST 立刻返回、对话框停在「生成中」，完成经 WS `image_result` 按 `target` 匹配亮图。`ui/RefCharacterPicker.tsx` 是有序多选的角色立绘 chip，序号即提示词里的「第几张」；`src/stage/cgOptions.ts` 是勾选序与提交门槛的纯函数）。
+  - LibraryBrowser 资源库浏览面板（防抖搜索 + 网格卡 + 图片灯箱/音频试听 + 导入/覆盖态 + `target`，素材页与角色/主角卡入口共用一个组件；分类 tab 是背景/插图/**立绘**/音乐/音效，**没有「角色」**——角色卡不是素材，只能从角色页进；角色/主角卡入口传 `only="characters"`，锁死类别且不渲染 tab，两类卡都能导入库里任意角色（主角和别人同权，`assetImport` 只按 target 决定落到 `characters/protagonist.md` 还是 `characters/<id>.md`），立绘包落 `assets/sprites/<id>/` 并把三轴写进 `assets/manifest.json`，不再有 `filter`）。
   - ImageLightbox 灯箱。
   - **工坊恒全屏且复用舞台那条连接**（`useStageSocket.onWorkshop`），不再有独立路由页与独立连接。
 
@@ -35,8 +35,10 @@
 - `src/stage/CgView.tsx`（CG 视图：`GET /api/plays/<id>/cg` 的只读台账 —— `assets/cg` 静态素材与站内生成图共用一张卡，`origin` 分角标，站内生成那张把生图 prompt 原文摊开；开着这一页时 `asset_ready` 里的 cg 自增 nonce 补进网格。服务端那一路 `generatedLedger.ts` 的 `readPlayLedgerEntries()` 直接读 `assets/generated.json`，不建 runtime、不触发生图）。
 - `src/stage/`：
   - ScriptBuilder 带 cues 轨道与行 seq。
+  - **玩家输入是一等舞台事件**（`player_input`，服务端先于 `beat_start` 广播）：落进缓冲就是普通一行（type `"input"`、actorId `player`，整行显示不走打字机），**没有客户端回声层**——「选完立刻看见」全靠 `shouldAutoStart` 的回执例外（不等 `live`/`auto`，只让语音 hold 与「当前行已读完」把关）。transcript 按 seq 认回谱系 prompt 节点，认走的行及时移出老档兜底池（无 seq 按路径顺序+同文本对回，防同 key 双条）；`beatAtLine` 对 input 行恒 null——玩家的话排在两轮之间，不锚任何一轮，原语按钮置灰。
   - usePlayback 打字机+二段式点击+自动模式+**按住 Ctrl 的快进档**（整行一次读完、行间不设停顿，只追缓冲里已有的内容；回看中不推进；输入框里不劫持）+语音钩子。
-  - StageTheater 舞台视觉层+解锁遮罩+三按钮导演栏（插一句 / 编辑当前这句台词 / **重写**这一轮，输入都走 Modal；「重写」实际是「分岔 + 把指令排队」，指令生效于重写之后的下一次开口，不是写进正在重写的那一轮）。
+  - **回看中生图的插图是行级旁注**（谱系 `LineageNodeView.cgs`，服务端 `recordCg`）：`usePlayback` 收 `cgByNode`（nodeId → 最新一张），`withAttachedCg` 在返回值上按 nodeId 覆盖画面——图跟着你看的那一行，不往后漂、不进树、不分叉；`cg_attached` 帧一到就重拉谱系。
+  - StageTheater 舞台视觉层+解锁遮罩+三按钮导演栏（插一句 / 编辑当前这句台词 / **重写**这一轮，输入都走 Modal；「重写」实际是「分岔 + 把指令排队」，指令生效于重写之后的下一次开口，不是写进正在重写的那一轮）。**立绘落位与缩放的唯一入口是一组 CSS 变量**（`--sprite-top/height/origin`，竖屏另有一份 `-portrait`）：值取自 `packages/core` 的 `spriteStagePreset(取景, 体量, 锚点)` 预设表，取景/体量来自 `assets/manifest.json`（差分覆盖立绘级），锚点还能被逐行 `<actor anchor="…">` 覆盖；`framing-*` / `anchor-*` 那层 class 已删，只剩 `pos-*`。
   - StageShell 外壳（侧栏五视图 + 视图栏 `×` + `Esc` + 折叠/拖宽/窄屏抽屉 + 底栏两行：当前周目在最上、`exit` 图标的「退出」压在最下，两者间一条线）。
   - `stage/view.ts` 的 `stageViewFromQuery`/`workshopUrl`/`workshopConnectionFromQuery`。
   - `ui/Modal.tsx` 居中模态窗（portal body，触摸捕获，Esc 只关最上层）。

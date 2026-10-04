@@ -62,26 +62,14 @@ describe("角色卡 frontmatter", () => {
     expect(doc).not.toHaveProperty("mood");
   });
 
-  it("差分映射与逐差分取景是块状字段，读回来是普通 map", () => {
+  it("旧卡上的立绘字段归素材表管，读卡时当噪声丢掉", () => {
+    // framing / sprites / spriteFraming 曾经长在卡上；立绘独立成素材后它们落 manifest。
+    // 这里必须忽略而不是报错——存量剧目升级后卡还是那张卡，立绘仍在台上。
     const doc = parseCharacterCard(
-      "---\nframing: half\nsprites:\n  smile: mio_smile.png\n  neutral: mio_neutral.png\n" +
-        "spriteFraming:\n  shout: full\n---\n正文",
+      "---\nname: ミオ\nframing: half\nsprites:\n  smile: mio_smile.png\nspriteFraming:\n  shout: full\n---\n正文",
     );
-    expect(doc.framing).toBe("half");
-    expect(doc.sprites).toEqual({ neutral: "mio_neutral.png", smile: "mio_smile.png" });
-    expect(doc.spriteFraming).toEqual({ shout: "full" });
-  });
-
-  it("景别取值不合法就丢掉，不静默当全身", () => {
-    // 错的景别会让立绘按错的画幅摆位，比少一个字段更难查
-    expect(parseCharacterCard("---\nframing: bust\n---\n正文").framing).toBeUndefined();
-    expect(parseCharacterCard("---\nspriteFraming:\n  shout: 全身\n---\n正文").spriteFraming).toBeUndefined();
-  });
-
-  it("map 的键排序固定，模型重排也不产生 diff", () => {
-    const a = serializeCharacterCard({ id: "m", sprites: { smile: "s.png", neutral: "n.png" }, body: "x" });
-    const b = serializeCharacterCard({ id: "m", sprites: { neutral: "n.png", smile: "s.png" }, body: "x" });
-    expect(a).toBe(b);
-    expect(a.indexOf("neutral:")).toBeLessThan(a.indexOf("smile:"));
+    expect(doc.name).toBe("ミオ");
+    expect(doc).not.toHaveProperty("sprites");
+    expect(doc).not.toHaveProperty("framing");
   });
 });

@@ -9,10 +9,9 @@ const cue = (partial: Partial<Extract<Cue, { kind: "actor" }>> & { id: string })
 });
 
 const slot = (partial: Partial<SpriteSlot> & { resolvedPos: SpriteSlot["resolvedPos"] }): SpriteSlot => ({
-  expression: null,
-  state: null,
+  variant: null,
   shot: null,
-  anchor: "bottom",
+  anchor: null,
   action: null,
   actionSeq: 0,
   ...partial,
@@ -78,28 +77,29 @@ describe("applyActorCue：站位自动分配", () => {
 
 describe("applyActorCue：状态累积", () => {
   it("缺省属性 = 保持当前，不被后续 cue 抹掉", () => {
-    let s = applyActorCue({}, cue({ id: "a", expression: "smile", shot: "close" }));
+    let s = applyActorCue({}, cue({ id: "a", variant: "smile", shot: "close" }));
     s = applyActorCue(s, cue({ id: "a", pos: "left" }));
-    expect(s.a!.expression).toBe("smile");
+    expect(s.a!.variant).toBe("smile");
     expect(s.a!.shot).toBe("close");
     expect(s.a!.resolvedPos).toBe("left");
   });
 
-  it("anchor 缺省是 bottom（脚踩地），给了才变", () => {
+  it("anchor 缺省是 null：剧本不写就听素材声明，写了才钉住", () => {
     let s = applyActorCue({}, cue({ id: "cat" }));
-    expect(s.cat!.anchor).toBe("bottom");
+    expect(s.cat!.anchor).toBeNull();
     s = applyActorCue(s, cue({ id: "cat", anchor: "center" }));
     expect(s.cat!.anchor).toBe("center");
-    s = applyActorCue(s, cue({ id: "cat", state: "curled" }));
+    // 后续 cue 不给 anchor 时钉住的那一档保留
+    s = applyActorCue(s, cue({ id: "cat", variant: "curled" }));
     expect(s.cat!.anchor).toBe("center");
-    expect(s.cat!.state).toBe("curled");
+    expect(s.cat!.variant).toBe("curled");
   });
 
-  it("expression 与 state 各存各的，互不覆盖", () => {
-    let s = applyActorCue({}, cue({ id: "a", expression: "smile" }));
-    s = applyActorCue(s, cue({ id: "a", state: "broken" }));
-    expect(s.a!.expression).toBe("smile");
-    expect(s.a!.state).toBe("broken");
+  it("换差分只有一个槽位：人的表情与机甲的状态是同一个 variant", () => {
+    let s = applyActorCue({}, cue({ id: "a", variant: "smile" }));
+    expect(s.a!.variant).toBe("smile");
+    s = applyActorCue(s, cue({ id: "a", variant: "broken" }));
+    expect(s.a!.variant).toBe("broken");
   });
 });
 
@@ -115,15 +115,15 @@ describe("applyActorCue：行为词", () => {
 
   it("没给 action 不重播，序号保持", () => {
     let s = applyActorCue({}, cue({ id: "a", action: "shake" }));
-    s = applyActorCue(s, cue({ id: "a", expression: "smile" }));
+    s = applyActorCue(s, cue({ id: "a", variant: "smile" }));
     expect(s.a!.action).toBeNull();
     expect(s.a!.actionSeq).toBe(1);
   });
 
   it("认不出来的词不演（不猜），但也不影响别的属性", () => {
-    const s = applyActorCue({}, cue({ id: "a", action: "explode", expression: "smile" }));
+    const s = applyActorCue({}, cue({ id: "a", action: "explode", variant: "smile" }));
     expect(s.a!.action).toBeNull();
-    expect(s.a!.expression).toBe("smile");
+    expect(s.a!.variant).toBe("smile");
   });
 
   it("退场写法 action=exit 不当成行为词", () => {

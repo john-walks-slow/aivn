@@ -132,7 +132,7 @@ export function lineageToBeats(
         script.push(
           `（${names[attrs.id ?? ""] ?? attrs.id ?? ""} 就位${
             attrs.pos ? ` · ${attrs.pos}` : ""
-          }${attrs.expression ? ` · ${attrs.expression}` : ""}${attrs.action ? ` · ${attrs.action}` : ""}）`,
+          }${attrs.variant ? ` · ${attrs.variant}` : ""}${attrs.action ? ` · ${attrs.action}` : ""}）`,
         );
         break;
       case "cg":

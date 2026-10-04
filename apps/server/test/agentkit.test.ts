@@ -148,7 +148,7 @@ describe("agent kit：两个角色的暴露面", () => {
     const b = workshop().tools.find((t) => t.name === "generate_image")!;
     // 垫图与差分两个角色都拿得到：参考立绘读的是 assets/sprites/，与谁调的无关
     const props = (t: typeof a) => Object.keys((t.parameters as { properties: Record<string, unknown> }).properties);
-    for (const key of ["expression", "referenceCharacters"]) expect(props(a)).toContain(key);
+    for (const key of ["variant", "spriteId", "references"]) expect(props(a)).toContain(key);
     expect(a.parameters).toBe(b.parameters);
     expect(a.description).not.toBe(b.description);
     expect(b.description).toContain("recut_sprite"); // 工坊同步出图：抠底脏了原地重抠，不重新出图

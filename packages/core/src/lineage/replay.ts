@@ -30,6 +30,8 @@ export function toNodeView(event: LineageEvent): LineageNodeView {
     editCount: 0,
     editedAt: undefined,
     seq: typeof event.payload?.seq === "number" ? event.payload.seq : undefined,
+    // 插图旁注同样挂在目标旁边，单个事件里查不到——由 describe() 补
+    cgs: [],
     ...stop,
   };
 }
@@ -92,13 +94,18 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
           ...pickVolume(attrs, ["bgm_volume", "ambient_volume"]),
         });
         break;
-      case "actor":
+      case "actor": {
+        // 旧存档里的 actor 属性写着 `expression` / `state`（261004 前分两个名字），
+        // 重放时照旧读得出来，但产出一律是新名字。
+        const variant = attrs.variant ?? attrs.expression ?? attrs.state;
         push(base, {
           kind: "actor",
           id: attrs.id ?? "",
-          ...pickDefined(attrs, ["pos", "expression", "action"]),
+          ...pickDefined(attrs, ["pos", "action"]),
+          ...(variant ? { variant } : {}),
         });
         break;
+      }
       case "cg":
         push(base, { kind: "cg", id: attrs.id ?? "", ...pickDefined(attrs, ["caption"]) });
         break;
@@ -110,6 +117,11 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
         if (stop) push(base, stopEvent(stop));
         break;
       }
+      case "prompt":
+        // 玩家输入是时间线上的一帧：现场经 emitStageEvent 广播，重放在这里同规格还原，
+        // seq 沿用节点当初的 seq（老档没有才顺序编号），锚点与现场一致。
+        if (node.text) push(base, { kind: "player_input", text: node.text });
+        break;
       case "say":
         pushLine(
           base,
@@ -138,7 +150,7 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
         );
         break;
       default:
-        // preload 只触发生图、不影响重放画面（背景由 scene 携带）；player/ooc/beat_end 是元信息
+        // preload 只触发生图、不影响重放画面（背景由 scene 携带）；ooc/beat_end 是元信息
         break;
     }
   }

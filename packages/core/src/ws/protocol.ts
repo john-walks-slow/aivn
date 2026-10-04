@@ -144,8 +144,11 @@ export interface GeneratedAsset {
   id: string;
   /** 站内 URL：/plays/<playId>/media/img/<file>。 */
   url: string;
-  /** bg | cg（sprite 不做生图，见计划 D6）。 */
-  type: "bg" | "cg";
+  /**
+   * bg | cg | sprite。立绘到货也走这条：客户端据此重拉素材声明与素材列表，
+   * 刚出的差分与刚写的取景声明当场生效（id 用 `<立绘>:<差分>`，与预发射骨架同一个）。
+   */
+  type: "bg" | "cg" | "sprite";
 }
 
 /** 玩家读到哪儿：正在显示的台词节点 ID 与字数偏移（0 为刚开始本句）。基于稳定 nodeId 寻址，跨 rebase 与刷新保真。 */
@@ -252,6 +255,8 @@ export type ServerMessage =
    * 段末摘要落地才算退出。接上之前的值以 hello.nsfw 为准。
    */
   | { type: "nsfw"; active: boolean }
+  /** 一张插图挂上了某一行（回看中生图，旁注）：客户端刷新谱系，翻到那一行就有图。 */
+  | { type: "cg_attached"; nodeId: string; id: string }
   /** 待注入队列的全量快照（右上角排队面板）：落笔的会留在面板里等这一轮收束。 */
   | { type: "prompt_queue"; items: PromptQueueItem[] }
   /**
@@ -351,12 +356,17 @@ export type ClientMessage =
   /** 导演生图：按当前这一刻的剧情（可带玩家指令）写提示词并出一张 CG。
    *  落点是**点下这一刻**在时间线上的位置，与剧作家的预发射同一套机制。
    *  referenceCharacters: 选定的参考角色 id（有序多选，编号与提示词对齐）。
-   *  useHistory: 是否参考最近剧情与场景，默认 true。 */
+   *  useHistory: 是否参考最近剧情与场景，默认 true。
+   *  anchorNodeId: 回看中正在看的那一行。带上它 = 提示词按这一刻的剧情写、图挂在这一行
+   *  旁边（旁注，不动世界线也不分叉，见 recordCg）；不给 = 落一个 cg 节点在当前世界线末尾。
+   *  回看中那一行还没进谱系（这一轮刚演到这儿、客户端还没拉到）时传 `null`：这时退回末尾生图
+   *  会往世界线上多落一个节点，所以明确拒绝，不静默换落点。 */
   | {
       type: "generate_cg";
       instruction?: string;
       referenceCharacters?: string[];
       useHistory?: boolean;
+      anchorNodeId?: string | null;
     }
   /** 跳转：世界线挂到 nodeId，不生成内容。活节点上往前走，废弃节点上回到那条线。
    *  playFrom: 目标轮次播放头朝向，start=从该轮开头重读，end=直接展露末尾选项（默认）。 */

@@ -13,7 +13,7 @@ import type { AgentCapabilities } from "./agentkit/kit.js";
 import { SEARCH_GUIDE } from "./agentkit/searchTool.js";
 import type { PlayMemory } from "./memory.js";
 
-/** 素材清单（store.listAssets 原样；keys: backgrounds/cg/sfx/bgm/sprites/<charId>）。 */
+/** 素材清单（store.listAssets 原样；keys: backgrounds/cg/sfx/bgm/sprites/<主体id>）。 */
 export type AssetManifest = Record<string, string[]>;
 
 /**
@@ -143,7 +143,7 @@ const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
 ## 场景与立绘指令（必须出现在对应台词之前）
 
 <scene bg="背景id" bgm="音乐id" bgm_volume="0.4" ambient="环境音id" ambient_volume="0.3" transition="fade"/>
-<actor id="角色id" expression="表情id" shot="景别" action="行为词" leave="退场"/>
+<actor id="主体id" variant="差分id" shot="景别" action="行为词" leave="退场"/>
 <sfx src="音效id" volume="0.5"/>
 <cg id="cgid" caption="插图说明"/>
 
@@ -154,10 +154,19 @@ const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
 
 | 属性 | 取值 | 什么时候用 |
 |---|---|---|
-| expression | 角色表里已有的差分 id | 换表情。换别的差分同样能用 |
+| variant | 立绘目录里已有的差分 id | 换表情、换状态。机甲受损、猫炸毛与人的笑同样是它 |
 | shot | wide normal close extreme | 镜头远近。**不给就是全身**，用近景只是把镜头推近 |
 | action | 见下表 | 角色的一个反应动作，演一次就结束 |
 | leave | fade | 让这个人退场 |
+
+**台上的一切同权**：人、机甲、猫、道具都按同一个 id 寻址，换图一律走 \`variant\`——没有「人的 expression」
+与「非人的 state」之分（这两个旧属性名引擎照读，但新写的剧本一律用 variant）。人的笑、机甲的 damaged、
+猫的 puffed 都只是某个 id 的一个差分。
+
+立绘取景与体量（图里画到哪儿、台上站多大）是**素材自己的声明**，写在素材表里，剧本不用管；
+它们决定这个主体出场时占多大、贴不贴地。垂直对齐同理有素材级声明，
+想在某一句里改（比如让悬浮物飘到画面中间）才写 anchor="center"——只认
+bottom（贴地，默认）、center（居中悬空）、top（从上垂下）。
 
 **行为词**——写「她怎么动」，不写动画参数：
 
@@ -173,10 +182,6 @@ const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
 | sway | 放松、犯困 |
 
 同一时刻只给一个人一个行为词。
-
-**非人主体**（猫、道具、悬浮物）在角色表里；它们用 state 换图（人的 expression 的对应物），
-配 anchor="center" 让它飘在画面中间而不是站在地上——anchor 只认 bottom（贴地，默认）、
-center（居中悬空）、top（从上垂下）。
 
 ## 台词（三类，正文为原生文本，不要转义）
 
@@ -204,7 +209,7 @@ beat_done 通常**独占一次工具调用**（模式切换类的工具可以同
 轮与轮之间由引擎接续。`;
 
 /**
- * 引入角色表里没有的角色时的三条路（建档 / 出立绘 / 临时角色）。
+ * 引入台上还没有的新主体时的三条路（建档 / 出立绘 / 临时角色）。
  *
  * 第 1 步要求「管理角色」能力（它授权 `write` / `edit` 这一对写角色卡的手）。关着时整段换掉而不是删掉：
  * 三步的结构与后面两步的编号原样留着，读起来仍是一份完整流程；换成「改卡这条路没给你」，
@@ -212,42 +217,45 @@ beat_done 通常**独占一次工具调用**（模式切换类的工具可以同
  */
 function newCharacterRules(canCharacters: boolean): string {
   const step1 = canCharacters
-    ? `**1. 先建档（write）**，把角色设定写进 \`characters/<id>.md\`——**文件名就是角色 id**：
+    ? `**1. 要人设或音色才建档（write）**——**卡是可选的**：只上台不出声、或本来就是来换张图的主体
+（机甲、猫、道具）不该有一张卡。要建就把设定写进 \`characters/<id>.md\`，**文件名就是主体 id**：
 
-    write(path="characters/xiaoyu.md", content="---\\nname: 小雨\\nframing: half\\n---\\n咖啡店打工的少女，说话温柔，常用省略号。")
+    write(path="characters/xiaoyu.md", content="---\\nname: 小雨\\n---\\n咖啡店打工的少女，说话温柔，常用省略号。")
 
-卡片是 frontmatter 头部 + 正文两段：
+卡片是 frontmatter 头部 + 正文两段，**头部只有这三项**：
 
     ---
     name: 小雨          # 显示名（A 区角色表与舞台名牌用）。不写，A 区就只能显示 id
     voice: 温柔少女声    # 音色的口语描述，可省
     voiceId: <32位hex>  # 可省。音色在工坊配（你这条路上没有音色库工具）；
                         # 留空走剧目兜底音色，兜底也没配这个角色就一直没声音
-    framing: half       # 立绘取景 full/half/square，省了按 full
-    sprites:            # 表情名 → assets/sprites/<id>/ 下的文件名，可省
-      neutral: xiaoyu_neutral.png
     ---
 
 正文写具体的人：年龄、关系、说话方式、在意的点（正文就是 A 区角色表里你看到的那份 persona）。
 
-- **改既有卡先 read、再用 edit 定点改**：整篇 write 会把你没提到的机器字段（voiceId、sprites）抹掉。
+- **立绘不写在卡上**：差分、取景、体量都是素材自己的事，落在 \`assets/manifest.json\`（出图时给参数，引擎会写）。
+- **改既有卡先 read、再用 edit 定点改**：整篇 write 会把你没提到的机器字段（voiceId）抹掉。
 - 建档后到下一轮边界，角色就出现在 A 区角色表里。
 - 玩家扮演的主角也是一张普通卡，id 固定 \`protagonist\`（\`characters/protagonist.md\`）：要改主角设定就改它，别另建一张。`
-    : `**1. 建档这条路本剧目没有给你**（Agent 页没开「管理角色」）：新角色直接上台——出图时带上
-\`characterName\`，引擎会建一张最小卡，人设与音色由用户在工坊补；只出声不出图的用 \`say\` 的 \`name\` 属性。`;
+    : `**1. 建档这条路本剧目没有给你**（Agent 页没开「管理角色」）：新主体直接上台——出图时给 \`spriteId\`
+与 \`title\`（名牌），引擎照它建立绘目录；只出声不上台的用 \`say\` 的 \`name\` 属性。`;
 
   return `## 引入新角色
 
-需要引入角色表里没有的新角色时，按以下步骤：
+需要引入台上还没有的新主体时，按以下步骤：
 
 ${step1}
 
 **2. 生立绘（generate_image kind="sprite"）**，后台出图，不阻塞台词：
 
-    generate_image(kind="sprite", characterId="xiaoyu", expression="neutral", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view")
+    generate_image(kind="sprite", spriteId="xiaoyu", variant="neutral", framing="half", stature="normal", title="小雨", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view")
 
-- 要表情就带 expression（不给按 neutral）：非 neutral 的会自动垫该角色的 neutral 定妆照，所以是同一个人
-- 角色表里**已有**的差分直接用 \`<actor id="xiaoyu" expression="smile">\`，不要为了凑表情去生成
+- \`spriteId\` 就是剧本里 \`<actor id="…">\` 用的 id；\`variant\` 是这一张差分（不给按 \`neutral\`）
+- 非 neutral 的差分会自动垫该主体已有的 \`neutral\` 定妆照，所以是同一个人
+- \`framing\` 是图里画到哪儿（full 全身 / half 半身 / square 方形，默认 full），\`stature\` 是台上站多大
+  （small / normal / large / huge，默认 normal）：机甲是 framing="full" + stature="huge"，猫是 square + small
+- \`title\` 是这个主体在名牌上显示的名字——**没有角色卡的主体必须给**，否则名牌只能显示 id
+- 立绘目录里**已有**的差分直接用 \`<actor id="xiaoyu" variant="smile">\`，不要为了凑表情去生成
 
 **3. 临时角色（一次性 NPC）**：只出声不出图也行，直接在 say 上写 name 属性：
 
@@ -255,10 +263,7 @@ ${step1}
 
 name 只覆盖本句名牌，不写入角色表。只想出声、不上台的路人用这条就够了。
 
-这类角色想上台（要立绘）也有两条路：戏里临时冒出来的（路人甲、店员），出图时带 characterName
-一起给，会自动建一张最小角色卡；戏份多、要配音色或人设的，先 write 建一张完整卡再出图。
-
-两种临时角色都没有专属音色（音色挂在角色卡上）——剧目配了兜底音色的就用那个。`;
+临时角色没有专属音色（音色挂在角色卡上）——剧目配了兜底音色的就用那个；要上台就照第 2 步出图。`;
 }
 
 /**
@@ -289,7 +294,7 @@ const CONTRACT_RULES = `# 演出契约（引擎规则，不可改）
 不报告剧本或引擎的状态、不在结尾提问或提议下一步。
 
 1. 指令先于台词：先铺场景/立绘，再写这一轮的台词。
-2. 角色情绪/表情变化时，用 actor 指令同步切换 expression 差分——say 的 mood 只是文字标注，不驱动立绘。
+2. 角色情绪/表情变化时，用 actor 指令同步切换 variant 差分——say 的 mood 只是文字标注，不驱动立绘。
 3. 每轮 user 消息顶部有【状态】区（好感度/场景/进度），信任它作为最新世界状态。
 4. 【用户输入】以「OOC」开头 = 导演指示，据此调整接下来的演出方向，但不要复述它、不要跳出戏外回应它；
    否则 = 其中某个角色（可能就是主角，也可能是别人）的行动、话语或心理，照字面意思演成该角色的言行。
@@ -315,21 +320,20 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     return detail ? `${name}（${detail}）` : name;
   };
   // 角色表 = 角色卡目录，与 play.json 无关。每张卡都是一份完整设定：
-  // 正文是人设，frontmatter 存名字/音色/立绘差分映射与取景。
+  // 正文是人设，frontmatter 只有名字/音色——立绘是另一件可选附件，差分即目录里的文件名。
   // 分级（角色数 ≥ CAST_GRADING_MIN_SIZE 且给了 activeCast）：在场全卡全文，不在场只注一行
   // （SOTA 的 roster 一行制——不在场角色只留索引行，人设按需读盘/建卡）。
   const entries = [...(ctx.memory?.characters ?? [])];
+  // 差分的唯一真相源是立绘目录里的文件名（id = 目录名，variant = 文件名 stem，中间没有映射表）
+  const variantsOf = (id: string): string[] =>
+    (ctx.assets?.[`sprites/${id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
   const grading = ctx.activeCast && entries.length >= CAST_GRADING_MIN_SIZE;
   const active = grading ? new Set(ctx.activeCast) : null;
   active?.add("protagonist"); // 主角恒算在场：玩家本人的人设不能被折叠
   const fullCards: string[] = [];
   const roster: string[] = [];
   for (const [id, card] of entries) {
-    // 差分优先取卡片里配的 sprites 键名（前端按它解析立绘）；没配就回退磁盘文件 stem
-    const expressions =
-      card.sprites && Object.keys(card.sprites).length > 0
-        ? Object.keys(card.sprites)
-        : (ctx.assets?.[`sprites/${id}`] ?? []).map((f) => f.replace(/\.\w+$/, ""));
+    const variants = variantsOf(id);
     // 路径写进标题：卡的 id 与文件名同源，但模型不该为了改一张卡去推路径——A 区给全，read / edit 直接用
     const title = `${card.name ?? id}（id: ${id}，卡片 ${characterCardPath(id)}${
       isProtagonist(id) ? "，玩家扮演" : ""
@@ -343,14 +347,31 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     }
     fullCards.push(
       `### ${title}\n${card.body}${card.voice ? `\n音色：${card.voice}` : ""}${
-        expressions.length > 0
-          ? `\n立绘差分 expression：${expressions.map((e) => label(e, id)).join(" | ")}`
+        variants.length > 0
+          ? `\n立绘差分 variant：${variants.map((v) => label(v, id)).join(" | ")}`
           : ""
       }`,
     );
   }
   // 在场全卡在前、折叠名册在后：两类形状不同，混排一段读起来是碎的。
   const characters = [...fullCards, ...(roster.length > 0 ? [roster.join("\n")] : [])].join("\n\n");
+  // 只有立绘没有卡的主体（机甲、猫、道具）：它们进不了角色表——角色表就是角色卡目录，
+  // 但剧作家得知道它们存在、能按 variant 上台。不给这份清单，它就只会重新出图或干脆不用。
+  const bare = Object.keys(ctx.assets ?? {})
+    .filter((key) => key.startsWith("sprites/"))
+    .map((key) => key.slice("sprites/".length))
+    .filter((id) => !entries.some(([cardId]) => cardId === id))
+    .sort((a, b) => a.localeCompare(b));
+  const bareSection =
+    bare.length > 0
+      ? `\n\n# 台上其它主体（有立绘，没有角色卡）\n\n${bare
+          .map((id) => {
+            const labelText = notes[id]?.title;
+            const head = labelText ? `${id}（${labelText}）` : id;
+            return `- ${head}：variant ${variantsOf(id).map((v) => label(v, id)).join(" | ")}`;
+          })
+          .join("\n")}\n\n它们与角色同权：\`<actor id="…" variant="…">\` 直接上台，不用建档。\n`
+      : "";
   // A 区在纪元内冻结：不因「谁上场了」重建——所以这里只讲事实：
   // 折叠行对已经退场的老角色够用（那是它们上一段戏的存档），
   // 新角色按《引入新角色》建档，轮边界重建后会自动带全卡。
@@ -400,7 +421,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const nsfwGuidance = !ctx.can.nsfw
     ? ""
     : ctx.nsfwMode
-      ? `\n# 限制级（NSFW）创作指引\n\n你当前正处于限制级剧情通道。\n- 专注于亲密接触中的情感张力、双方的心理起伏、生理与感官细节反应的细腻刻画；\n- 保持角色一贯的性格与说话风格，将人设融入亲密互动中；\n- 结合 Stage DSL：合理使用 <actor action="..." expression="..."> 配合肢体反应与微表情，用 <sfx> 辅助营造氛围；\n- 当这段亲密情节告一段落、即将回归正常日常时，调用 exit_nsfw 退出限制级模式。exit_nsfw 可以与 beat_done 在同一批次工具调用中一同发出。\n${
+      ? `\n# 限制级（NSFW）创作指引\n\n你当前正处于限制级剧情通道。\n- 专注于亲密接触中的情感张力、双方的心理起伏、生理与感官细节反应的细腻刻画；\n- 保持角色一贯的性格与说话风格，将人设融入亲密互动中；\n- 结合 Stage DSL：合理使用 <actor action="..." variant="..."> 配合肢体反应与微表情，用 <sfx> 辅助营造氛围；\n- 当这段亲密情节告一段落、即将回归正常日常时，调用 exit_nsfw 退出限制级模式。exit_nsfw 可以与 beat_done 在同一批次工具调用中一同发出。\n${
           memory?.nsfw?.trim() ? `\n## 剧目限制级专属口径\n${memory.nsfw.trim()}\n` : ""
         }${ctx.nsfwPrompt?.trim() ? `\n## 补充限制级提示词\n${ctx.nsfwPrompt.trim()}\n` : ""}`
       : `\n## 亲密/限制级剧情入口（enter_nsfw）\n\n当剧情推进至即将发生亲密、成人或限制级（NSFW）接触时，不要在当前模型下直接描写露骨细节。\n调用 \`enter_nsfw\` 开启限制级剧情通道。调用后完成本轮收束并调用 \`beat_done\`，下一轮起将由限制级专用模型和专属提示词接管展开细腻描写；亦可与 \`beat_done\` 在同一批次工具调用中一同发出。\n`;
@@ -427,7 +448,7 @@ ${premise}
 
 # 角色表
 
-${characters}${castHint}
+${characters}${castHint}${bareSection}
 ${assetSection}${craftParamsSection}${craftSection}${nsfwGuidance}${indexSection}
 ${FORMAT_RULES}
 

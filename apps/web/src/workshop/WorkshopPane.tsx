@@ -155,13 +155,7 @@ export function WorkshopPane({
 
       {tab === "memory" && <MemoryPane playId={playId} revision={state.writes.length} />}
 
-      {tab === "characters" && (
-        <CharacterPane
-          playId={playId}
-          revision={state.writes.length}
-          subscribeImageResult={subscribeImageResult}
-        />
-      )}
+      {tab === "characters" && <CharacterPane playId={playId} revision={state.writes.length} />}
 
       {tab === "agent" && <AgentPane playId={playId} />}
 

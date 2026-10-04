@@ -32,7 +32,7 @@ export type LineageEventKind =
 
 /** 行级事件的载荷（编排器按 kind 填充）。 */
 export interface LineagePayload {
-  /** 演出指令属性（scene bg/bgm、actor pos/expression 等）。 */
+  /** 演出指令属性（scene bg/bgm、actor pos/variant 等）。 */
   attrs?: Record<string, string>;
   /** 玩家输入原文（选项选择 / 自由输入 / 插一句，含 OOC 意图）。 */
   input?: string;
@@ -59,6 +59,8 @@ export interface LineageEvent {
   createdAt: number;
   /** 原地编辑的目标事件 id（仅 kind=edit）。 */
   editTargetId?: string;
+  /** 插图旁注的目标事件 id（仅挂在行上的 kind=cg，见 recordCg）。 */
+  cgTargetId?: string;
 }
 
 export interface EngineStateSnapshot {
@@ -105,13 +107,16 @@ export interface LineageNodeView {
   /** 最近一次改写时刻。 */
   editedAt: number | undefined;
   /** 剧本事件的 seq（say_start/narrate_start/scene/… 的序号）：与客户端 ScriptLine.seq 同尺，
-   *  路线树据此把谱系卡片精确对到剧本行上。prompt/fork/edit 无 seq。 */
+   *  路线树据此把谱系卡片精确对到剧本行上。prompt 同样携带（现场经事件管道落下的都有），
+   *  只有升级前的老档 prompt 无 seq；fork/edit 永远无 seq。 */
   seq: number | undefined;
   /** stop 事件专有：停止点类型/选项/占位文案。attrs 里那个 stopType 只是给旧客户端兜底的，
    *  客户端只读回看要按原样重建停止点，选项必须留在投影里。 */
   stopType?: StopType;
   stopOptions?: StopOption[];
   stopPlaceholder?: string;
+  /** 挂在这一行旁边的插图（导演在回看里生图，见 recordCg）：按挂上的先后排列，末位最新。 */
+  cgs: string[];
 }
 
 export interface LineageView {
@@ -172,6 +177,10 @@ export class LineageTree {
   private readonly events = new Map<string, LineageEvent>();
   /** 目标行 id → 该行历次改写（旁注，不进树也不动挂载点：纯原地）。 */
   private readonly edits = new Map<string, LineageEvent[]>();
+  /** 目标行 id → 挂在这一行旁边的插图（旁注，同上）。 */
+  private readonly cgs = new Map<string, LineageEvent[]>();
+  /** 全部旁注（改写 + 插图），按挂上的先后：落盘时排在树事件之后，读回时分流。 */
+  private readonly notes: LineageEvent[] = [];
   private leaf: string | null = null;
   /** nodeId → 最近快照（一个节点保留一份，后存覆盖）。 */
   private readonly snapshotsByNode = new Map<string, LineageSnapshot>();
@@ -241,6 +250,7 @@ export class LineageTree {
       this.events.delete(id);
       this.snapshotsByNode.delete(id);
       this.edits.delete(id);
+      this.cgs.delete(id);
     }
     // fork 标记只作为「来源标签的载体」存在：子节点被删光，它自己也没有意义了。
     // 上溯可能在链上删掉好几级，所以落点记在循环结束时的 cursor 上——它才是第一个活着的祖先。
@@ -251,11 +261,24 @@ export class LineageTree {
       this.events.delete(cursor);
       this.snapshotsByNode.delete(cursor);
       this.edits.delete(cursor);
+      this.cgs.delete(cursor);
       removed.push(cursor);
       cursor = ancestor.parentId;
     }
+    this.dropNotes(removed);
     if (this.leaf !== null && removed.includes(this.leaf)) this.leaf = cursor;
     return removed;
+  }
+
+  /** 旁注跟着目标节点走：目标被剪掉，它的改写与插图也不该留在日志里。 */
+  private dropNotes(removed: readonly string[]): void {
+    if (this.notes.length === 0) return;
+    const targets = new Set(removed);
+    for (let i = this.notes.length - 1; i >= 0; i -= 1) {
+      const note = this.notes[i]!;
+      const target = note.editTargetId ?? note.cgTargetId;
+      if (target !== undefined && targets.has(target)) this.notes.splice(i, 1);
+    }
   }
 
   /** 直接子节点（按落笔顺序）。 */
@@ -317,6 +340,32 @@ export class LineageTree {
     const list = this.edits.get(target.id);
     if (list) list.push(event);
     else this.edits.set(target.id, [event]);
+    this.notes.push(event);
+    return event;
+  }
+
+  /**
+   * 插图旁注：把一张图挂在这一行旁边。
+   *
+   * 与改写同一套——**不入树、不动挂载点、不分叉**：那一行显示时图就在画面上，
+   * 世界线一根都不动。回看中生图走这条（见 playhouse.requestCg）；退回同一行再挂一张
+   * 就是多一条，末位最新。
+   */
+  recordCg(nodeId: string, cgId: string): LineageEvent {
+    const target = this.requireNode(nodeId);
+    const event: LineageEvent = {
+      id: nextId(),
+      parentId: null,
+      kind: "cg",
+      turn: target.turn,
+      payload: { attrs: { id: cgId } },
+      cgTargetId: target.id,
+      createdAt: Date.now(),
+    };
+    const list = this.cgs.get(target.id);
+    if (list) list.push(event);
+    else this.cgs.set(target.id, [event]);
+    this.notes.push(event);
     return event;
   }
 
@@ -426,6 +475,8 @@ export class LineageTree {
         view.editedText = latest?.text ?? null;
         view.editCount = history.length;
         view.editedAt = latest?.createdAt;
+        // 插图同样是旁注：挂在这一行旁边，不在链上
+        view.cgs = (this.cgs.get(event.id) ?? []).map((note) => note.payload?.attrs?.id ?? "");
         return view;
       });
     return {
@@ -442,9 +493,9 @@ export class LineageTree {
   /** 完整会话状态导出（事件真相源 + leaf 运行态 + 快照/书签存档事实），跨进程持久化用。 */
   export(): LineageStore {
     return {
-      // 编辑旁注与树事件同流落盘（append-only 单日志），但排在末尾：读回时两者分流，
-      // 顺序不影响任何语义。
-      events: [...this.events.values(), ...[...this.edits.values()].flat()],
+      // 旁注（改写 / 插图）与树事件同流落盘（append-only 单日志），但排在末尾：读回时
+      // 两者分流，顺序不影响任何语义。
+      events: [...this.events.values(), ...this.notes],
       leafId: this.leaf,
       snapshots: [...this.snapshotsByNode.values()],
     };
@@ -453,11 +504,19 @@ export class LineageTree {
   /** 从持久化会话状态重建（leaf 显式恢复，不用事件尾推断——裸分岔状态不丢）。 */
   load(store: LineageStore): void {
     for (const event of store.events) {
-      // edit 是旁注：落进目标行的改写历史，不进树也不动挂载点。
+      // 旁注（改写 / 插图）：落进目标行的旁注表，不进树也不动挂载点。
       if (event.kind === "edit" && event.editTargetId) {
         const list = this.edits.get(event.editTargetId);
         if (list) list.push(event);
         else this.edits.set(event.editTargetId, [event]);
+        this.notes.push(event);
+        continue;
+      }
+      if (event.kind === "cg" && event.cgTargetId) {
+        const list = this.cgs.get(event.cgTargetId);
+        if (list) list.push(event);
+        else this.cgs.set(event.cgTargetId, [event]);
+        this.notes.push(event);
         continue;
       }
       this.attach(event);

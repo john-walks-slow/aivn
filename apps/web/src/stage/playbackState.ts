@@ -5,8 +5,7 @@
  * 而不是直接问「演出还在不在进行」：
  *  - 空对话区的文案曾经写成 `live && exhausted`，重演这一轮时新事件一到
  *    `exhausted` 就翻假，舞台当场退回「（点击开始）」；
- *  - 起播条件只看玩家点击，演出中的新内容于是永远等着被点一下才出现；
- *  - 回声曾经排在「当前行」后面，而停止点上永远有当前行，回声等于没做。
+ *  - 起播条件只看玩家点击，演出中的新内容于是永远等着被点一下才出现。
  */
 
 import type { StopPayload } from "@aivn/core";
@@ -23,8 +22,6 @@ export function emptyDialogHint(live: boolean, fresh = false): string {
 }
 
 export interface DialogInput {
-  /** 玩家刚发出去的那句话。非空时它占着台词条。 */
-  playerEcho: string | null;
   /** 当前行的名牌（只有 say/thought 挂名牌）；没有行在显示时为 null。 */
   viewName: string | null;
   /** 当前行已经打出来的字。 */
@@ -38,44 +35,50 @@ export interface DialogInput {
 /**
  * 台词条此刻的名牌与正文。
  *
- * 回声优先级最高——这也是它踩过的坑：初版写成「有当前行就显示当前行，没有才轮到回声」，
- * 而选肢停止点上上一句正是当前行，于是玩家在最常见的路径上根本看不到自己刚发的话。
- * 回声是「按下之后立刻要看见的回执」，不是空对话区的占位符，谁都不该压在它上面。
- *
- * 真台词接管不靠这里的条件，靠 StageScreen 的 echoText——播放头一换行，回声自己就撤了。
+ * 玩家的回执不再有特权分支：它是缓冲里的普通一行（`player_input` 事件），
+ * 播放头走到它就照常显示——「立刻看见」由 shouldAutoStart 的回执例外保证。
  */
 export function dialogContent(input: DialogInput): { name: string | null; text: string } {
-  if (input.playerEcho) return { name: "你", text: input.playerEcho };
   if (input.hasView) return { name: input.viewName, text: input.shown };
   return { name: null, text: emptyDialogHint(input.live) };
 }
 
 export interface AutoStartInput {
-  /** 一拍正在生成（stage.state === "streaming"）。 */
+  /** 一拍正在生成（stage.state === "streaming"）。只管台词的起播，回执不等它。 */
   live: boolean;
-  /** 自动模式：由它自己的延时节奏接管，与这里的起播互斥。 */
+  /** 自动模式：台词由它自己的延时节奏接管，与这里的起播互斥；回执不等它。 */
   auto: boolean;
-  /** 语音 hold：当前句语音还没播完，任何推进都要让路。 */
+  /** 语音 hold：当前句语音还没播完，任何推进都要让路——回执也不例外。 */
   hold: boolean;
   /** 对话区已有正在显示的台词。 */
   hasCurrent: boolean;
+  /** 当前行已读完（hasCurrent 为 false 时无意义）。 */
+  currentComplete: boolean;
   /** 播放游标位置。 */
   cursor: number;
   /** 已缓冲的 cue 数。 */
   cueCount: number;
+  /** 游标前的下一张 cue 是玩家的回执行。 */
+  nextIsPlayerInput: boolean;
 }
 
 /**
  * 演出中且此刻没有台词在显示、缓冲区里还有没消费的内容 → 起播，不必让玩家点一下。
  *
  * `hasCurrent` 是关键：正在读的句子不会被新到的内容抢走，阅读节奏仍归玩家。
- * 只有玩家自己点着读完最后一句（游标到底、对话区空着）之后，新内容一到才自己出现——
- * 这正是「边生成边演出」，也让「重演这一轮」之后不需要任何点击。
+ * 两个例外通道会在「演出中且对话区空着」之外自己出现——
+ * 新内容一到就自己出现（边生成边演出，须演出中），和玩家自己的回执：
+ * 回执不等演出状态。player_input 先于 beat_start 到达时 state 还停在 stopped，
+ * Auto 模式的读速节奏也不拦自己的话——已读完即可顶上，否则「选完立刻看见」
+ * 就成了看网络脸色。
  */
 export function shouldAutoStart(input: AutoStartInput): boolean {
-  if (!input.live || input.auto || input.hold) return false;
-  if (input.hasCurrent) return false;
-  return input.cursor < input.cueCount;
+  if (input.hold) return false;
+  if (input.nextIsPlayerInput) {
+    return (!input.hasCurrent || input.currentComplete) && input.cursor < input.cueCount;
+  }
+  if (!input.live || input.auto) return false;
+  return !input.hasCurrent && input.cursor < input.cueCount;
 }
 
 export interface StopAffordanceInput {

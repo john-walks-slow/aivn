@@ -42,8 +42,8 @@ export interface AssetRefResolverDeps {
 export class AssetRefResolver {
   /** 本次运行已经处理过的 `kind/id`：事件重放与分岔回看会重复报同一个 id。 */
   private readonly done = new Set<string>();
-  /** 同一个目标的并发导入合并成一次。 */
-  private readonly inflight = new Map<string, Promise<void>>();
+  /** 同一个目标的并发导入合并成一次。值是「库里命中了吗」——命中的定义见 `importFrom`。 */
+  private readonly inflight = new Map<string, Promise<boolean>>();
   /** 剧目里已有的素材（目录扫描一次，够这张表的大小）。 */
   private known: Set<string> | null = null;
   /** 角色表缓存：一次对话里几十个 actor 引用，逐个重读角色卡目录没有意义。 */
@@ -64,49 +64,54 @@ export class AssetRefResolver {
   private async resolveOne(ref: AssetRef): Promise<void> {
     const id = ref.id.trim();
     if (!id || isStopToken(id)) return;
-    if (ref.candidates.includes("characters") && (await this.haveLocally("characters", id))) return;
+    // 多类别是**按序**试的：前一个类别在库里没有才轮到下一个（`ambient` 是先音效后音乐，
+    // `actor id` 是先角色卡后立绘包）。剧目里已经有了的类别记进 done 直接跳过。
     for (const kind of ref.candidates) {
-      if (this.done.has(`${kind}/${id}`)) return;
       const key = `${kind}/${id}`;
+      if (this.done.has(key)) continue;
       const running = this.inflight.get(key);
       if (running) {
         await running;
-        return;
+        continue;
       }
       if (await this.haveLocally(kind, id)) {
         this.done.add(key);
-        return;
+        continue;
       }
       const task = this.importFrom(kind, id, ref.attr);
       this.inflight.set(key, task);
-      await task;
-      return;
+      if (await task) return; // 库里命中就不再往后面的类别找
     }
   }
 
-  private async importFrom(kind: AssetKind, id: string, attr: string): Promise<void> {
+  /**
+   * 导一个 `kind/id`，返回**库里命中了吗**（命中含导入失败：那是真错误，不该换个类别再试一遍）。
+   * 没命中就什么都不做——未知 id 多半是模型自己起的名字，缺的图它自己会用 `generate_image` 出。
+   */
+  private async importFrom(kind: AssetKind, id: string, attr: string): Promise<boolean> {
     const key = `${kind}/${id}`;
     try {
-      // 库里没有就当这个 id 是模型自己起的名字：不是错，缺的图它自己会用 generate_image 出
       if (!(await this.deps.library.entry(kind, id))) {
         this.done.add(key);
-        return;
+        return false;
       }
       const result = await importFromLibrary(this.deps.library, this.deps.store, { kind, entryId: id });
       this.done.add(key);
       await this.invalidate();
       this.deps.onImported(result);
+      return true;
     } catch (error) {
       this.done.add(key); // 失败不重试：同一轮里再报一次也只是再失败一次
       this.deps.warn(
         `自动导入 ${kind}/${id}（${attr} 引用）失败：${error instanceof Error ? error.message : String(error)}`,
       );
+      return true;
     } finally {
       this.inflight.delete(key);
     }
   }
 
-  /** 剧目里已经有的素材：背景/CG 查目录，音频同理，角色查角色卡目录。 */
+  /** 剧目里已经有的素材：背景/CG 查目录，音频同理，主体查角色卡目录与立绘目录。 */
   private async haveLocally(kind: AssetKind, id: string): Promise<boolean> {
     if (kind === "characters") {
       if (!this.cast) this.cast = new Set(await this.deps.characters());
@@ -128,6 +133,10 @@ export class AssetRefResolver {
       ];
       for (const [kind, dir] of dirs) {
         for (const file of assets[dir] ?? []) found.add(`${kind}/${file.replace(/\.\w+$/, "")}`);
+      }
+      // 立绘是「一目录一主体」：键已经是 `sprites/<主体 id>`，主体名不再取文件名
+      for (const [dir, files] of Object.entries(assets)) {
+        if (dir.startsWith("sprites/") && files.length > 0) found.add(dir);
       }
     } catch {
       // 扫不动就当什么都没有：多导一次只是覆盖同名文件，不会出错
@@ -161,8 +170,9 @@ export function refFromCg(id: string): AssetRef {
   return { attr: "cg id", id, candidates: ["cg"] };
 }
 
+/** 主体有两张可选附件：角色卡（`characters/<id>`）与立绘目录（`sprites/<id>`），缺哪张补哪张。 */
 export function refFromActor(id: string): AssetRef {
-  return { attr: "actor id", id, candidates: ["characters"] };
+  return { attr: "actor id", id, candidates: ["characters", "sprites"] };
 }
 
 export function refFromSfx(src: string): AssetRef {

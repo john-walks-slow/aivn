@@ -119,6 +119,35 @@ describe("AssetRefResolver：剧本里的 id 缺了就从库里补", () => {
     expect(imported).toEqual([]);
   });
 
+  it("<actor id> 库里只有立绘包也照导：机甲、道具本来就没有卡", async () => {
+    await libraryEntry(root, "sprites", "mecha_01", { "neutral.png": "x", "flare.png": "y" });
+    resolver().resolve([refFromActor("mecha_01")]);
+    await waitFor(() => imported.length === 1);
+    expect(imported[0]).toMatchObject({ kind: "sprites", id: "mecha_01", spriteId: "mecha_01" });
+  });
+
+  it("<actor id> 剧目里已有同名立绘目录就不再导", async () => {
+    await libraryEntry(root, "sprites", "mecha_01", { "neutral.png": "x" });
+    await store.writeAsset("sprites/mecha_01", "neutral.png", Buffer.from("x"));
+    resolver().resolve([refFromActor("mecha_01")]);
+    await tick();
+    expect(imported).toEqual([]);
+  });
+
+  it("<actor id> 剧目里只有卡、库里还有同名立绘包时补立绘：两张附件各补各的", async () => {
+    await libraryEntry(root, "sprites", "koharu", { "neutral.png": "x" });
+    resolver({ characters: ["koharu"] }).resolve([refFromActor("koharu")]);
+    await waitFor(() => imported.length === 1);
+    expect(imported[0]).toMatchObject({ kind: "sprites", id: "koharu" });
+  });
+
+  it("环境音音效库里没有、音乐库里有才落音乐（多类别是按序真的往下试）", async () => {
+    await libraryEntry(root, "bgm", "rainy", { "rainy.mp3": "x" });
+    resolver().resolve(refsFromScene({ ambient: "rainy" }));
+    await waitFor(() => imported.length === 1);
+    expect(imported[0]).toMatchObject({ kind: "bgm", id: "rainy" });
+  });
+
   it("同一个 id 被时间线反复引用只导一次", async () => {
     await libraryEntry(root, "backgrounds", "hall", { "hall.jpg": "x" });
     const r = resolver();

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import type { ServerMessage } from "@aivn/core";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
-import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, characterCardPath, characterIdOfPath, PROTAGONIST_ID, type EngineStateSnapshot, type SpriteFraming } from "@aivn/core";
+import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, characterCardPath, characterIdOfPath, PROTAGONIST_ID, spriteDeclarationOf, spriteTitlesOf, type EngineStateSnapshot, type ActorAnchor, type SpriteFraming, type SpriteStature } from "@aivn/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
 import type { AssetLibrary } from "./library.js";
@@ -19,7 +19,7 @@ import type { ImageBackend } from "./imageBackend.js";
 import { createExa, type Exa } from "./exa.js";
 import { WebImageFetcherImpl, type WebImageFetcher } from "./webImage.js";
 import { readPlayLedgerEntries, type GeneratedLedgerEntry } from "./generatedLedger.js";
-import { PlayAssets, assertAssetStem } from "./playAssets.js";
+import { PlayAssets, assertAssetStem, assertSpriteId } from "./playAssets.js";
 import { PendingJobs } from "./pendingJobs.js";
 import { PlayFiles } from "./playFiles.js";
 import {
@@ -408,6 +408,7 @@ export class PlayHouse {
       fetchImage: this.webImage,
       // 工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产——按 notify 分流。
       // 事件由工坊会话转发（它知道当前线程号），工坊实例不在时就没有对话流可挂。
+      // 素材表的改动（出图补写的取景/体量声明）要进撤销条与轮边界重建
       onWrite: (write, notify) => {
         if (notify !== "workshop") return;
         this.runtimes.get(playId)?.workshop.pushWrite(write);
@@ -415,12 +416,6 @@ export class PlayHouse {
       onAsset: (asset, _replaced, notify) => {
         if (notify !== "workshop") return;
         this.runtimes.get(playId)?.workshop.pushAsset(asset);
-      },
-      // 自动注册临时角色：出图时顺手建一张最小角色卡
-      writeCharacter: (charId, content) => this.writeCharacter(store, charId, content),
-      // 剧作家给临时角色生立绘会改 play.json：拍进行中不能腰斩演出，排到轮边界再重建
-      onPlayConfigChanged: (notify) => {
-        if (notify === "silent") this.rebuildAtBeatBoundary(playId, "剧作家新增了立绘素材");
       },
     });
     this.playAssets.set(playId, assets);
@@ -517,50 +512,63 @@ export class PlayHouse {
 
   /**
    * 立绘预发射：generate_image kind="sprite" 后台发起。
-   * 走与工坊同一个 PlayAssets（neutral 垫图 + 抠底 + 差分映射补写）。
-   * 角色卡的改动由 PlayAssets 的 onPlayConfigChanged 排到轮边界重建——拍进行中直接 reload
-   * 会把正在进行的这一轮腰斩掉。
+   * 走与工坊同一个 PlayAssets（neutral 垫图 + 抠底 + 素材表声明补写）。
+   *
+   * 到货广播 `asset_ready`（type=sprite），客户端重拉素材列表与声明就地淡入——
+   * 素材表的新键不必等下一轮重建才生效：声明是读盘算出来的，不占 runtime 的内存快照。
    */
   private async preloadSprite(
     playId: string,
     store: PlayStore,
-    charId: string,
-    expression: string,
-    prompt: string,
-    framing?: SpriteFraming,
-    references?: string[],
+    target: {
+      spriteId: string;
+      variant: string;
+      prompt: string;
+      framing?: SpriteFraming;
+      stature?: SpriteStature;
+      title?: string;
+      references?: string[];
+    },
   ): Promise<void> {
-    const spriteId = `${charId}:${expression}`;
+    // 预发射的骨架 id 用 `<主体>:<差分>`：事件层认的是这一对，不是路径
+    const key = `${target.spriteId}:${target.variant}`;
     const assets = this.playAssetsFor(playId, store);
     if (!assets) {
       for (const send of this.clientsFor(playId)) {
-        send({ type: "asset_failed", id: spriteId, message: "生图未启用" });
+        send({ type: "asset_failed", id: key, message: "生图未启用" });
       }
       return;
     }
     try {
-      await assets.generate(
-        { kind: "sprite", characterId: charId, expression, framing, references },
-        prompt,
+      const [asset] = await assets.generate(
+        {
+          kind: "sprite",
+          spriteId: target.spriteId,
+          variant: target.variant,
+          framing: target.framing,
+          stature: target.stature,
+          title: target.title,
+          references: target.references,
+        },
+        target.prompt,
         undefined,
         { notify: "silent" },
       );
+      if (!asset) return;
+      // 到货即广而告之：这一轮的差分与取景声明刚写进磁盘，舞台据此重拉素材表按目录取图。
+      // type 用 sprite 是为了让客户端知道「这是一张立绘」而不是某张 bg/cg。
+      for (const send of this.clientsFor(playId)) {
+        send({ type: "asset_ready", asset: { id: key, type: "sprite", url: asset.url } });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[aivn] 立绘生图失败 ${spriteId}: ${message}`);
+      console.warn(`[aivn] 立绘生图失败 ${key}: ${message}`);
       for (const send of this.clientsFor(playId)) {
-        send({ type: "asset_failed", id: spriteId, message });
+        send({ type: "asset_failed", id: key, message });
       }
     }
   }
 
-  /**
-   * 写角色卡（characters/<id>.md）。剧作家的 write 落在角色卡上时由编排器触发（见 onPlayFileWritten），
-   * 出图自动注册临时角色那条路也走它。
-   *
-   * 只写这一个文件——play.json 的 `characters` 早就是纯元数据，没有任何逻辑读它，
-   * 往里塞 stub 是白写一遍再留一份会漂移的副本。
-   */
   /**
    * 本进程内「刚写过的角色」：落盘的同时登记，出图的角色成员校验读实时盘 ∪ 它。
    *
@@ -571,14 +579,6 @@ export class PlayHouse {
    * 那时 A 区照样读不到它，不会有副作用。
    */
   private readonly knownCharacters = new WeakMap<PlayStore, Set<string>>();
-
-  private async writeCharacter(store: PlayStore, charId: string, content: string): Promise<void> {
-    // 从 PlayFiles 过（不是拿 join 自己拼路径）：白名单与结构校验收在一个口子上，
-    // 「剧目文本写口只有 PlayFiles」这条铁律才不是假话。
-    await new PlayFiles(store).write(characterCardPath(charId), content);
-    // 登记放在落盘**之后**：写失败还留着 id 的话，引用即导入会以为这张卡已经在了。
-    this.registerCharacter(store, charId);
-  }
 
   /** 登记一个已知角色 id（只增不减；最坏是用户后来删了卡，那时 A 区照样读不到它）。 */
   private registerCharacter(store: PlayStore, charId: string): void {
@@ -697,10 +697,25 @@ export class PlayHouse {
           this.rebuildAtBeatBoundary(playId, `剧作家引用了资源库角色 ${result.id}，已导入`);
           return; // 立绘文件已落盘，角色卡要等轮边界重建才进 cast
         }
-        // 图像类别才走 asset_ready：客户端那张表只认 bg/cg，音频由 listAssets 的刷新负责
-        if (result.kind !== "backgrounds" && result.kind !== "cg") return;
         const file = result.files[0];
         if (!file) return;
+        // 立绘目录到货：客户端拿这一条当「有新图了」的信号，具体有哪几张它自己重拉素材目录。
+        // 键与立绘预载同一个形状（`<主体 id>:<差分名>`），取第一张当代表。
+        if (result.kind === "sprites") {
+          for (const send of this.clientsFor(playId)) {
+            send({
+              type: "asset_ready",
+              asset: {
+                id: `${result.spriteId}:${file.replace(/\.\w+$/, "")}`,
+                type: "sprite",
+                url: `/plays/${playId}/${file}`,
+              },
+            });
+          }
+          return;
+        }
+        // 图像类别才走 asset_ready：客户端那张表只认 bg/cg，音频由 listAssets 的刷新负责
+        if (result.kind !== "backgrounds" && result.kind !== "cg") return;
         for (const send of this.clientsFor(playId)) {
           send({
             type: "asset_ready",
@@ -868,11 +883,19 @@ export class PlayHouse {
    *
    * 顺序是「先验参考角色，再写提示词，再落位置，最后发起」——任一步失败就抛错，
    * 错误通过 error 帧直达玩家，不会在时间线上留下一个等不到图的空节点。
+   *
+   * `anchorNodeId` = 回看中正在看的那一行：提示词按那一刻的剧情写，图也挂回那一行旁边
+   * （旁注，不动世界线）。不给就照旧落一个 cg 节点在当前世界线末尾；`null` 是「在回看但
+   * 这一行还没进谱系」，明确拒绝——那一步真要退成末尾生图就会往世界线上多落一个节点。
    */
   async requestCg(
     playId: string,
     instruction?: string,
-    opts?: { referenceCharacters?: string[]; useHistory?: boolean },
+    opts?: {
+      referenceCharacters?: string[];
+      useHistory?: boolean;
+      anchorNodeId?: string | null;
+    },
   ): Promise<void> {
     const runtime = await this.get(playId);
     if (!this.imageBackend) {
@@ -883,17 +906,27 @@ export class PlayHouse {
       throw new Error("生图未启用");
     }
 
-    // 1. 前置校验参考角色立绘（若有）
+    // 1. 前置校验参考立绘（若有）
     const refIds = opts?.referenceCharacters?.filter(Boolean) ?? [];
     if (refIds.length > 0) {
       await assets.assertReferences(refIds);
+    }
+
+    // 回看的锚点：锚在哪一行，提示词与落点就跟到哪一行
+    const anchor = opts?.anchorNodeId;
+    if (anchor === null) {
+      throw new Error("你看的这一行还没进谱系（这一轮刚演到这儿），稍后再点一次生图");
+    }
+    // 换过分支/删过段的旧节点在这里被拒：宁可不生，也不把图挂到别的世界线上
+    if (anchor && !runtime.orchestrator.hasNode(anchor)) {
+      throw new Error("找不到你看的这一行（谱系刚刚变过），请重新点一次生图");
     }
 
     const play = await runtime.store.loadPlay();
     const wanted = instruction?.trim() ?? "";
     const useHistory = opts?.useHistory !== false;
     const { lines, scene } = useHistory
-      ? runtime.orchestrator.recentScript()
+      ? runtime.orchestrator.recentScript(12, anchor)
       : { lines: [], scene: "" };
 
     if (!useHistory && !wanted) {
@@ -906,17 +939,23 @@ export class PlayHouse {
     const craft = await readFileOrEmpty(runtime.store.memoryDir("always", "craft.md"));
     const memory = await PlayMemory.load(runtime.store);
 
-    // 准备角色数据：若指定了参考图则把对应的角色卡提取出来
-    const refChars = refIds.map((id) => ({
+    // 准备主体数据：角色卡是可选的，没有卡的主体（机甲、道具）名字取立绘声明的 title
+    const manifest = await runtime.store.assetMeta();
+    const spriteName = (id: string): string =>
+      memory.characters.get(id)?.name ?? spriteDeclarationOf(manifest, id).title ?? id;
+    const subjectOf = (id: string) => ({
       id,
-      name: memory.characters.get(id)?.name ?? id,
+      name: spriteName(id),
       body: memory.characters.get(id)?.body,
-    }));
-    const allChars = [...memory.characters].map(([id, card]) => ({
-      id,
-      name: card.name ?? id,
-      body: card.body,
-    }));
+    });
+    const refSprites = refIds.map(subjectOf);
+    // 参考图给定时只列这几张；没给才铺全套主体（角色卡 ∪ 立绘声明）当世界观上下文
+    const allSprites = [
+      ...new Set([
+        ...memory.characters.keys(),
+        ...Object.keys(manifest).filter((key) => !key.includes("/")),
+      ]),
+    ].map(subjectOf);
 
     const prompt = await composeImagePrompt(
       {
@@ -931,8 +970,8 @@ export class PlayHouse {
         lines: useHistory ? lines : undefined,
         scene: useHistory ? scene : undefined,
         useHistory,
-        referenceCharacters: refChars.length > 0 ? refChars : undefined,
-        allCharacters: refChars.length === 0 ? allChars : undefined,
+        referenceSprites: refSprites.length > 0 ? refSprites : undefined,
+        allSprites: refSprites.length === 0 ? allSprites : undefined,
       },
     );
 
@@ -941,7 +980,8 @@ export class PlayHouse {
     }
 
     const id = `cg_${Date.now().toString(36)}`;
-    runtime.orchestrator.directorCg(id);
+    if (anchor) runtime.orchestrator.attachCg(anchor, id);
+    else runtime.orchestrator.directorCg(id);
     void this.preloadAsset(playId, runtime.store, "cg", prompt, id, refIds.length > 0 ? refIds : undefined);
   }
 
@@ -955,9 +995,11 @@ export class PlayHouse {
     req: {
       kind: ImagePromptKind;
       name?: string;
-      characterId?: string;
-      expression?: string;
+      spriteId?: string;
+      variant?: string;
       framing?: SpriteFraming;
+      stature?: SpriteStature;
+      title?: string;
       referenceCharacters?: string[];
       instruction?: string;
     },
@@ -981,20 +1023,20 @@ export class PlayHouse {
     let prompt: string;
 
     if (req.kind === "sprite") {
-      const charId = req.characterId?.trim();
-      if (!charId) throw new Error("立绘生成必须指定 characterId");
-      const expression = assertAssetStem(req.expression ?? "", "差分名");
-      const card = memory.characters.get(charId);
-      if (!card) {
-        throw new Error(`角色卡里没有角色「${charId}」`);
-      }
-      targetKey = `sprites/${charId}/${expression}`;
-      targetPath = `assets/sprites/${charId}/${expression}.png`;
+      const spriteId = assertSpriteId(req.spriteId ?? "");
+      const variant = assertAssetStem(req.variant ?? "", "差分名");
+      targetKey = `sprites/${spriteId}/${variant}`;
+      targetPath = `assets/sprites/${spriteId}/${variant}.png`;
+      // 卡是可选的：立绘是独立素材，机甲、道具、猫都没有卡。有卡就拿人设喂提示词，
+      // 没有就只按用户写的要求出图——不为出一张图凭空造一张卡。
+      const card = memory.characters.get(spriteId);
       targetSpec = {
         kind: "sprite",
-        characterId: charId,
-        expression,
+        spriteId,
+        variant,
         framing: req.framing,
+        stature: req.stature,
+        title: req.title,
       };
 
       prompt = await composeImagePrompt(
@@ -1007,12 +1049,12 @@ export class PlayHouse {
         {
           instruction: req.instruction,
           craft,
-          targetCharacter: {
-            id: charId,
-            name: card.name ?? charId,
-            body: card.body,
+          targetSprite: {
+            id: spriteId,
+            name: card?.name ?? req.title?.trim() ?? spriteId,
+            body: card?.body,
           },
-          expression,
+          variant,
         },
       );
     } else {
@@ -1026,16 +1068,19 @@ export class PlayHouse {
         await assets.assertReferences(refIds);
       }
 
-      const refChars = refIds.map((id) => ({
+      const manifest = await runtime.store.assetMeta();
+      const subjectOf = (id: string) => ({
         id,
-        name: memory.characters.get(id)?.name ?? id,
+        name: memory.characters.get(id)?.name ?? spriteDeclarationOf(manifest, id).title ?? id,
         body: memory.characters.get(id)?.body,
-      }));
-      const allChars = [...memory.characters].map(([id, card]) => ({
-        id,
-        name: card.name ?? id,
-        body: card.body,
-      }));
+      });
+      const refSprites = refIds.map(subjectOf);
+      const allSprites = [
+        ...new Set([
+          ...memory.characters.keys(),
+          ...Object.keys(manifest).filter((key) => !key.includes("/")),
+        ]),
+      ].map(subjectOf);
 
       targetSpec = {
         kind: req.kind,
@@ -1054,8 +1099,8 @@ export class PlayHouse {
           instruction: req.instruction,
           craft,
           useHistory: false,
-          referenceCharacters: refChars.length > 0 ? refChars : undefined,
-          allCharacters: refChars.length === 0 ? allChars : undefined,
+          referenceSprites: refSprites.length > 0 ? refSprites : undefined,
+          allSprites: refSprites.length === 0 ? allSprites : undefined,
         },
       );
     }
@@ -1101,6 +1146,31 @@ export class PlayHouse {
     })();
 
     return { target: targetKey, path: targetPath, prompt };
+  }
+
+  /**
+   * 素材页的立绘呈现声明（framing / stature / anchor / title 四格，null = 回到缺省）。
+   *
+   * 声明是「读盘现算」的，不进 runtime 的内存快照，所以不必重建 runtime——
+   * 客户端重拉剧目详情就看到了新摆位。素材列表（`assets/sprites/<id>/`）本来也没变。
+   */
+  async declareSpriteMeta(
+    playId: string,
+    decl: {
+      spriteId: string;
+      variant?: string | null;
+      framing?: SpriteFraming | null;
+      stature?: SpriteStature | null;
+      anchor?: ActorAnchor | null;
+      title?: string | null;
+    },
+  ): Promise<void> {
+    const runtime = await this.get(playId);
+    const assets = this.playAssetsFor(playId, runtime.store);
+    if (!assets) throw new Error("素材生成层未就绪");
+    await assets.declareSpriteMeta(decl.spriteId, decl.variant ?? null, decl, "workshop");
+    // 素材清单即时生效：静态服务与素材页读的是同一份盘上目录
+    await this.reload(playId);
   }
 
   private async createRuntime(
@@ -1155,6 +1225,9 @@ export class PlayHouse {
     // 站内生成的 bg/cg 也走它，落 assets/——生成图与手传素材在同一个命名空间里。
     const playAssets = this.playAssetsFor(play.id, store);
     const staticAssets = await store.listAssets();
+    const assetMeta = await store.assetMeta();
+    // 立绘级名牌（素材表 `<id>.title`）：无卡主体靠它上台——名字回落链的第三段。
+    const spriteTitles = spriteTitlesOf(assetMeta);
     const generated: GeneratedLedgerEntry[] = await readPlayLedgerEntries(play.id, store);
     const orchestrator = new PlaywrightOrchestrator({
       streamFn: this.streamFn,
@@ -1162,7 +1235,8 @@ export class PlayHouse {
       getApiKey: () => this.config.apiKey,
       play,
       assets: staticAssets,
-      assetNotes: await store.assetMeta(),
+      assetNotes: assetMeta,
+      spriteTitles,
       generatedAssets: generated,
       memory,
       tree,
@@ -1179,8 +1253,7 @@ export class PlayHouse {
             playAssets,
             kick: (type, prompt, id, references) =>
               void this.preloadAsset(play.id, store, type, prompt, id, references),
-            kickSprite: (charId, expression, prompt, framing, references) =>
-              void this.preloadSprite(play.id, store, charId, expression, prompt, framing, references),
+            kickSprite: (target) => void this.preloadSprite(play.id, store, target),
             exa: this.exa ?? undefined,
           }
         : undefined,
@@ -1245,8 +1318,14 @@ export class PlayHouse {
       workshop,
       store,
       save,
-      // 角色表 = 角色卡目录，不是 play.json 那份元数据
-      cast: [...memory.characters].map(([id, card]) => ({ id, name: card.name ?? id })),
+      // 角色表 = 角色卡目录（不是 play.json 那份元数据）+ 立绘级名牌里那些没有卡的主体：
+      // 机甲、道具、一次性路人在舞台上挂的就是它，缺了这一段名牌只能显示裸 id
+      cast: [
+        ...[...memory.characters].map(([id, card]) => ({ id, name: card.name ?? id })),
+        ...Object.entries(spriteTitles)
+          .filter(([id]) => !memory.characters.has(id))
+          .map(([id, name]) => ({ id, name })),
+      ],
       voice: !!synth,
       synth,
       generated,

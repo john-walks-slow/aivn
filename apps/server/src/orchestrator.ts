@@ -23,6 +23,7 @@ import {
   type StopPayload,
   type PromptQueueItem,
   type SpriteFraming,
+  type SpriteStature,
   type ReadPos,
   type ParserWarning,
   type ParserWarningType,
@@ -198,6 +199,11 @@ export interface OrchestratorOptions {
   assets?: AssetManifest;
   /** 素材描述（stem → 一句画面说明，来自 assets/manifest.json；挂在清单 id 后面）。 */
   assetNotes?: AssetNotes;
+  /**
+   * 立绘级名牌（主体 id → 素材表里声明的 `title`）：无卡主体在重建出来的历史轮次里
+   * 也得有个像样的名字，否则模型读回上一轮的对话只会看到 `mecha_01`。有卡的主体以卡为准。
+   */
+  spriteTitles?: Readonly<Record<string, string>>;
   /** 已生成图清单（playwriter 自己 preload 出来的资产；避免换个 id 重画）。 */
   generatedAssets?: GeneratedNote[];
   /** 剧目目录：素材类工具要往这里写。 */
@@ -234,7 +240,7 @@ export interface OrchestratorOptions {
     /** 后台发起 bg/cg：宿主负责 asset_ready / asset_failed 广播（工具不等图）。 */
     kick: (type: "bg" | "cg", prompt: string, id: string, references?: string[]) => void;
     /** 后台发起立绘：同上的失败广播。references 只在出 neutral 定妆照时有意义。 */
-    kickSprite: (charId: string, expression: string, prompt: string, framing?: SpriteFraming, references?: string[]) => void;
+    kickSprite: (target: { spriteId: string; variant: string; prompt: string; framing?: SpriteFraming; stature?: SpriteStature; title?: string; references?: string[] }) => void;
     /** 联网检索（配了 key 才注册 web_search）。 */
     exa?: Exa;
   };
@@ -379,6 +385,9 @@ export class PlaywrightOrchestrator {
   private beatWarnings: string[] = [];
   /** 本 turn 调用了 beat_done → 轮在此收束（普通工具轮次不算边界，否则记忆查询会撕裂轮）。 */
   private beatClosed = false;
+  /** 本轮出现过带副作用的工具调用（beat_done 只是收束记账，不算）：纯工具轮（enter_nsfw / 生图 / 写卡）
+   * 没有台词也不是失败——副作用已经发生，回滚只会吞掉它。 */
+  private beatToolActivity = false;
   /** always/state 活跃状态文件内容（谱系级，随快照走；update_state 工具维护）。 */
   private stateFiles: Record<string, string> = {};
   /** 当前分支已走过的纪元摘要 id（谱系级，随快照走；纪元压缩时追加）。 */
@@ -400,8 +409,14 @@ export class PlaywrightOrchestrator {
   private prevLeafId: string | null = null;
   /** 阅读位置的落盘节流：打字机逐字报位置，不能逐字写盘。 */
   private readPersistTimer: ReturnType<typeof setTimeout> | null = null;
-  /** 已写入 JSONL 的谱系事件数：直接改动树的操作（编辑/重写）在此增量补推。 */
-  private loggedEvents = 0;
+  /**
+   * 已写入 JSONL 的谱系事件 id。
+   *
+   * 不用「已推条数」当游标：事件流是「树事件 + 排在末尾的旁注（改写/插图）」两段拼起来的
+   * （见 `LineageTree.export`），分叉标记这类直接改树的动作会插在旁注**前面**，条数游标
+   * 一错位就会漏掉新标记、又把它后面的旁注重复推一遍。
+   */
+  private readonly loggedIds = new Set<string>();
   /** 剧作家历史累积器（思考/原始 DSL/工具调用；随 session.json 落盘，只读对外）。 */
   private readonly historyRecorder: HistoryRecorder;
   /** 统一基座装好的工具（一次构造，纪元压缩重建 Agent 时复用同一份）。 */
@@ -495,7 +510,7 @@ export class PlaywrightOrchestrator {
       this.stateFiles = snapshot?.memory.state ?? {};
       this.arcIds = [...(snapshot?.memory.arcs ?? [])];
       // 已有事件早已落过 JSONL，不重复补推
-      this.loggedEvents = opts.tree.export().events.length;
+      for (const event of opts.tree.export().events) this.loggedIds.add(event.id);
       if (opts.restored.nsfw) {
         this.nsfwActive = opts.restored.nsfw.active;
         this.nsfwStartBeatNo = opts.restored.nsfw.startBeatNo ?? null;
@@ -885,8 +900,8 @@ export class PlaywrightOrchestrator {
       this.autostarted = true;
       // 开场这一句同样落谱系：否则它只活在对话体里，玩家在轮内分岔就再也找不回来
       this.noteBeatInputs(steers);
-      for (const item of steers) this.appendLineage("prompt", { payload: { input: item.text } });
-      if (resolved) this.appendLineage("prompt", { payload: { input: resolved.text } });
+      for (const item of steers) this.onStageEvent({ kind: "player_input", text: item.text });
+      if (resolved) this.onStageEvent({ kind: "player_input", text: resolved.text });
       this.markSent(steers);
       const inputs = [...steers.map((item) => item.text), ...(resolved ? [resolved.text] : [])];
       await this.beginBeat(
@@ -1032,7 +1047,7 @@ export class PlaywrightOrchestrator {
       : null;
     const items = choice ? [...steers, choice] : [...steers];
     this.noteBeatInputs(steers);
-    for (const item of items) this.appendLineage("prompt", { payload: { input: item.text } });
+    for (const item of items) this.onStageEvent({ kind: "player_input", text: item.text });
     for (const item of items) {
       item.status = "sent";
       item.sentBeatNo = this.beatNo + 1;
@@ -1225,6 +1240,7 @@ export class PlaywrightOrchestrator {
     this.parser.resetBeat();
     this.beatWarnings = [];
     this.beatLines = [];
+    this.beatToolActivity = false;
     this.beatError = null;
     this.beatTimedOut = false;
     this.beatVerdict = null;
@@ -1294,9 +1310,32 @@ export class PlaywrightOrchestrator {
     this.onStageEvent({ kind: "cg", id });
   }
 
-  /** 导演生图的上下文：当前这条世界线上最近几句说出口的话，加当前场景。 */
-  recentScript(limit = 12): { lines: string[]; scene: string } {
-    const chain = this.opts.tree.chainEvents(this.opts.tree.leafId);
+  /**
+   * 回看中生图：把图挂在这一行旁边——旁注，**不入树、不动挂载点、不分叉**。
+   *
+   * 与原地改写同一套：世界线一根都不动，客户端按 nodeId 认领（那一行显示时图就在画面上）。
+   * 落点要跟着提示词走——提示词写的是这一刻的画面，图却挂到世界线末尾的话，
+   * 往后演到那儿它才作为新一幕的插图冒出来，那一刻与画面就对不上了。
+   */
+  attachCg(nodeId: string, id: string): void {
+    this.opts.tree.recordCg(nodeId, id);
+    this.flushLineageLog();
+    this.send({ type: "cg_attached", nodeId, id });
+  }
+
+  /** 这个节点还在树上吗（回看锚点要确认它没被删除/换过分支）。 */
+  hasNode(nodeId: string): boolean {
+    return this.opts.tree.get(nodeId) !== undefined;
+  }
+
+  /**
+   * 导演生图的上下文：最近几句说出口的话，加那一刻的场景。
+   *
+   * `from` 给了就照它的链取（回看中生图按你看的那一行写），默认当前世界线末尾。
+   */
+  recentScript(limit = 12, from?: string | null): { lines: string[]; scene: string } {
+    const end = from ?? this.opts.tree.leafId;
+    const chain = this.opts.tree.chainEvents(end);
     const lines: string[] = [];
     for (let i = chain.length - 1; i >= 0 && lines.length < limit; i -= 1) {
       const event = chain[i]!;
@@ -1304,7 +1343,8 @@ export class PlaywrightOrchestrator {
       const text = event.text?.trim();
       if (text) lines.push(text);
     }
-    return { lines: lines.reverse(), scene: this.opts.scene };
+    // 场景跟着锚点走：那一刻在哪儿，提示词就写哪儿（现场那个 scene 是「此刻」的）
+    return { lines: lines.reverse(), scene: from ? this.stateAt(from).scene : this.opts.scene };
   }
 
   private guardIdle(): void {
@@ -1507,7 +1547,7 @@ export class PlaywrightOrchestrator {
     beats: RebuiltBeat[];
     trailingInputs: string[];
   } {
-    const names: Record<string, string> = {};
+    const names: Record<string, string> = { ...this.opts.spriteTitles };
     for (const [id, card] of this.opts.memory.characters) names[id] = card.name ?? id;
     // 读者身份取现场模式：调用点必须先把分支状态装回来（rebuildBranchAt 那里
     // restoreBranchState 在它之前——跳进段内要原文、跳回段后只许摘要）
@@ -1827,6 +1867,7 @@ export class PlaywrightOrchestrator {
     this.beatError = null;
     this.beatTimedOut = false;
     this.beatLines = [];
+    this.beatToolActivity = false;
     this.beatClosed = false;
     this.beatNsfw = this.beatChannelNsfw();
     this.beatClosing = false;
@@ -1857,6 +1898,10 @@ export class PlaywrightOrchestrator {
       if (event.message.errorMessage && !this.beatTimedOut) this.beatError = event.message.errorMessage;
       // 完整 assistant 消息：思考块与 toolCall 只在这里出现（流式增量拿不全），入史趁早
       if (this.busy) {
+        // beat_done 不算副作用：只叫 beat_done 却一个字没写，仍是零产出（P0 判废要拦的静默空轮）
+        if (event.message.content.some((c) => c.type === "toolCall" && c.name !== "beat_done")) {
+          this.beatToolActivity = true;
+        }
         this.historyRecorder.addAssistantMessage(this.beatNo, event.message, this.opts.tree.leafId);
       }
       this.parser.endMessage();
@@ -1883,9 +1928,11 @@ export class PlaywrightOrchestrator {
     this.parser.resetBeat();
     const stop = this.pendingStop;
     this.pendingStop = null;
-    // 判废护栏：这一轮没有写出任何可演的台词，也没有交出停止点。
+    // 判废护栏：这一轮没有写出任何可演的台词，没有交出停止点，也没调用过带副作用的工具。
+    // 纯工具轮（只调 enter_nsfw 交棒、只发起生图、只写记忆/角色卡）副作用已经发生，
+    // 回滚会把它们吞掉——尤其是 enter_nsfw 的 pending 会被重置回日常模型，那不是失败。
     // 不静默伪装成正常收束，也不在谱系里留下一拍——结论留给 beginBeat 去回滚（见 rewindFailedBeat）。
-    if (!stop && !this.beatHasLines) {
+    if (!stop && !this.beatHasLines && !this.beatToolActivity) {
       this.beatVerdict = {
         reason: this.beatError ?? "模型未产出任何剧本内容",
         // 超时不重演：网关挂住是「路不通」，再来一次只是让玩家再等一个超时
@@ -2095,16 +2142,20 @@ export class PlaywrightOrchestrator {
     // 重建时按它折叠（见 rebuild.ts 的 lineageToBeats），前台与 JSONL 照旧留原文。
     const payload = this.beatNsfw ? { ...opts.payload, nsfw: true } : opts.payload;
     const event = this.opts.tree.append(kind, { ...opts, payload });
-    this.opts.onLineageEvent?.(event);
-    this.loggedEvents += 1;
+    this.logLineageEvent(event);
     return event;
   }
 
-  /** 直接改动谱系树的操作（编辑/重写）不经过 append：事后按游标补推 JSONL。 */
+  /** 直接改动谱系树的操作（编辑/改写/插图/分叉标记）不经过 append：事后把没落过盘的补推。 */
   private flushLineageLog(): void {
-    const all = this.opts.tree.export().events;
-    for (let i = this.loggedEvents; i < all.length; i += 1) this.opts.onLineageEvent?.(all[i]!);
-    this.loggedEvents = all.length;
+    for (const event of this.opts.tree.export().events) {
+      if (!this.loggedIds.has(event.id)) this.logLineageEvent(event);
+    }
+  }
+
+  private logLineageEvent(event: LineageEvent): void {
+    this.opts.onLineageEvent?.(event);
+    this.loggedIds.add(event.id);
   }
 
   private onStageEvent(event: StageEvent): void {
@@ -2226,7 +2277,7 @@ export class PlaywrightOrchestrator {
             seq,
             attrs: {
               id: event.id,
-              ...pick(event, ["pos", "expression", "action"]),
+              ...pick(event, ["pos", "variant", "action"]),
             },
           },
         });
@@ -2269,6 +2320,11 @@ export class PlaywrightOrchestrator {
             attrs: { stopType: event.stopType },
           },
         });
+        return;
+      case "player_input":
+        // 玩家输入与台词同一待遇：事件广播（回执/回看/回顾直接消费）+ 落谱系带 seq
+        // （重放与谱系条目按 seq 对上，transcript 不再需要双轨合并）。
+        this.appendLineage("prompt", { payload: { input: event.text, seq } });
         return;
     }
   }

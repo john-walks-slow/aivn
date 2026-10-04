@@ -11,32 +11,26 @@
  * name: ミオ
  * voice: 清冷少女声
  * voiceId: aaa111...
- * framing: half
- * sprites:
- *   neutral: mio_neutral.png
- *   smile: mio_smile.png
- * spriteFraming:
- *   shout: full
  * ---`
+ *
+ * **卡只管「这个人是谁」**：名字、人设、音色。立绘是另一件可选附件，落在
+ * `assets/sprites/<id>/` 并声明在素材表里（见 play/assets.ts）——两者同名即绑定，
+ * 但谁也不依赖谁。机甲、猫、道具可以只有立绘没有卡；路人不建卡也能上台，
+ * 名牌与音色各有回落（README「主体与附件」）。
  *
  * **play.json 不再承载任何角色数据**——`characters` 那个字段留着只是剧目元数据
  * （像主要角色表），没有任何运行时逻辑读它。角色的全部配置在这里。
- *
- * 嵌套只支持一层（`sprites` / `spriteFraming` 这种 `k: v` 块）。再多一层就是
- * YAML 的工作量，而不是角色卡的工作量。
  *
  * 手写而非引 YAML 依赖：字段集固定且很小（id/name/voice/voiceId），
  * 解析规则必须与「模型会怎么写」对齐——引一个完整 YAML 解析器只会多出
  * 「冒号后要不要空格」「引号要不要闭合」这类模型写不对、报错又难懂的失败模式。
  */
 
-import { SPRITE_FRAMINGS, type SpriteFraming } from "./framing.js";
-
 const FENCE = "---";
 
 /**
  * 角色卡目录：剧目根下的顶层目录。**角色表就是这个目录的文件列表**——
- * 名字、人设、音色、立绘差分映射与取景全在卡上，play.json 不再承载角色数据。
+ * 名字、人设、音色全在卡上，play.json 不再承载角色数据。
  */
 export const CHARACTER_DIR = "characters";
 
@@ -83,12 +77,6 @@ export interface CharacterHead {
   voice?: string;
   /** Fish Audio reference_id（32 位 hex），TTS 取音色按它查。 */
   voiceId?: string;
-  /** 立绘取景（full/half/square）：出图画幅与舞台摆位都跟着它走，缺省 = 全身（见 play/framing.ts）。 */
-  framing?: SpriteFraming;
-  /** 立绘差分映射：expression id → assets/sprites/<id>/ 文件名。 */
-  sprites?: Record<string, string>;
-  /** 逐差分的取景覆盖：同一角色里混入不同画幅时用（如 shout = full、sigh = half）。 */
-  spriteFraming?: Record<string, SpriteFraming>;
 }
 
 /** 一张角色卡：头部字段 + 正文（不含 frontmatter 本身）。 */
@@ -98,15 +86,17 @@ export interface CharacterDocument extends CharacterHead {
 }
 
 /** 头部字段的书写顺序——序列化时按这个顺序，文件在 diff 里才稳定。 */
-const SCALAR_FIELDS = ["id", "name", "voice", "voiceId", "framing"] as const;
-const MAP_FIELDS = ["sprites", "spriteFraming"] as const;
+const SCALAR_FIELDS = ["id", "name", "voice", "voiceId"] as const;
 
 /**
  * 解析角色卡。文件没有 frontmatter 时全部字段为空、正文是全文——
  * 存量卡片（`# 名字` 开头那种）照旧能读，不强制迁移。
+ *
+ * 旧卡上的 `framing` / `sprites` / `spriteFraming` 现在归素材表管，这里当噪声跳过：
+ * 立绘是立绘自己的事，卡不该替它说话。
  */
 export function parseCharacterCard(text: string): CharacterDocument {
-  const normalized = text.replace(/^﻿/, "").replace(/\r\n/g, "\n");
+  const normalized = text.replace(/^\ufeff/, "").replace(/\r\n/g, "\n");
   if (!normalized.startsWith(`${FENCE}\n`)) return { body: normalized.trim() };
 
   const end = normalized.indexOf(`\n${FENCE}`, FENCE.length);
@@ -124,16 +114,6 @@ export function serializeCharacterCard(doc: CharacterDocument): string {
     if (value === undefined || value === "") continue;
     lines.push(`${key}: ${formatScalar(value)}`);
   }
-  for (const key of MAP_FIELDS) {
-    const map = doc[key];
-    const entries = Object.entries(map ?? {});
-    if (entries.length === 0) continue;
-    lines.push(`${key}:`);
-    // 键排序：模型写的顺序每次都不一样，不排的话 diff 永远在动
-    for (const [k, v] of entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
-      lines.push(`  ${k}: ${formatScalar(v)}`);
-    }
-  }
   const body = doc.body.trim();
   if (lines.length === 0) return body;
   return `${[FENCE, ...lines, FENCE].join("\n")}\n\n${body}\n`;
@@ -141,46 +121,16 @@ export function serializeCharacterCard(doc: CharacterDocument): string {
 
 function parseHead(block: string): CharacterHead {
   const head: CharacterHead = {};
-  const maps: Partial<Record<(typeof MAP_FIELDS)[number], Record<string, string>>> = {};
-  let inMap: (typeof MAP_FIELDS)[number] | null = null;
-
   for (const raw of block.split("\n")) {
     const line = raw.trim();
     if (line === "" || line.startsWith("#")) continue;
     const colon = line.indexOf(":");
     if (colon < 0) continue;
     const key = line.slice(0, colon).trim();
+    if (!(SCALAR_FIELDS as readonly string[]).includes(key)) continue;
     const value = unquote(line.slice(colon + 1).trim());
-
-    if ((SCALAR_FIELDS as readonly string[]).includes(key)) {
-      inMap = null;
-      // 景别取值窄（full/half/square），写成别的就不认——静默当全身会让立绘按错的
-      // 画幅摆位，比少一个字段更难查
-      if (key === "framing") {
-        if (SPRITE_FRAMINGS.includes(value as SpriteFraming)) head.framing = value as SpriteFraming;
-      } else if (value !== "") {
-        head[key as Exclude<(typeof SCALAR_FIELDS)[number], "framing">] = value;
-      }
-      continue;
-    }
-    if ((MAP_FIELDS as readonly string[]).includes(key)) {
-      inMap = key as (typeof MAP_FIELDS)[number];
-      if (value !== "") maps[inMap] = { "": value };
-      else maps[inMap] = maps[inMap] ?? {};
-      continue;
-    }
-    // 块里的 `k: v`；没在块内（缩进错了）就当噪声丢掉，不猜
-    if (inMap && key !== "") maps[inMap]![key] = value;
-  }
-
-  for (const key of MAP_FIELDS) {
-    const map = maps[key];
-    if (!map) continue;
-    // spriteFraming 的值同样是景别，逐个筛；sprites 的值是文件名，原样留
-    const entries = Object.entries(map).filter(([, v]) =>
-      key === "spriteFraming" ? SPRITE_FRAMINGS.includes(v as SpriteFraming) : v !== "",
-    );
-    if (entries.length > 0) head[key] = Object.fromEntries(entries) as never;
+    // 缩进的 `k: v`（旧卡的 sprites 块）在这里被判成噪声丢掉——键不在白名单里
+    if (value !== "") head[key as (typeof SCALAR_FIELDS)[number]] = value;
   }
   return head;
 }

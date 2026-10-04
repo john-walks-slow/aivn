@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { actionAnimation, type ActorAction, type ActorAnchor, type ActorShot, type SpriteFraming } from "@aivn/core";
+import {
+  actionAnimation,
+  spriteStagePreset,
+  type ActorAction,
+  type ActorAnchor,
+  type ActorShot,
+  type SpriteFraming,
+  type SpriteStature,
+} from "@aivn/core";
 import { dialogContent, emptyDialogHint } from "./playbackState.js";
 import { actorName } from "./script.js";
 import { speakerFocusId, type Playback, type VisualState } from "./director.js";
@@ -36,17 +44,16 @@ interface StageTheaterProps {
   onEdit: (nodeId: string, text: string) => void;
   /** 分岔锚点：字符串是谱系节点 id（回顾/路线），数字是舞台当前行的 seq。 */
   onFork: (anchor: string | number, opts?: { resume?: boolean }) => void;
-  /** 导演生图：按当前这一幕出一张插图，指令可留空。 */
+  /** 导演生图：按当前这一幕出一张插图，指令可留空。
+   *  回看中带上正在看的那一行（anchorNodeId）：提示词与落点都按那一刻走；
+   *  这一行还没进谱系就传 null（服务端明确拒绝，不悄悄改成末尾生图）。 */
   onGenerateCg: (
     instruction: string,
-    opts?: { referenceCharacters?: string[]; useHistory?: boolean },
+    opts?: { referenceCharacters?: string[]; useHistory?: boolean; anchorNodeId?: string | null },
   ) => void;
   onReplay: (seq: number) => void;
   /** 这一行的语音处于哪一态：none=没配音色/不生成，pending=正在合成，ready=可重听。 */
   voiceState: (seq: number | null) => VoiceState;
-  /** 玩家刚发出去的那一句（选项/自由输入）：谱系还没拉到，先在对话框里顶一句。 */
-  playerEcho: string | null;
-  onEchoDismiss: () => void;
   onUnlock: () => void;
   onView: (view: StageView) => void;
   /** 点舞台即开新轮：等到内容演完且存在 pause 停止点时成立（不再单列「继续」按钮）。 */
@@ -160,6 +167,7 @@ function Sprite({
   pos,
   name,
   framing,
+  stature,
   shot,
   anchor,
   leaving,
@@ -171,6 +179,7 @@ function Sprite({
   pos: string;
   name: string;
   framing: SpriteFraming;
+  stature: SpriteStature;
   shot: ActorShot | null;
   anchor: ActorAnchor;
   leaving: boolean;
@@ -220,16 +229,25 @@ function Sprite({
 
   if (!current) return null;
   // 站位类直接用 pos-*（CSS 里各自带 --x 偏移，见 app.css）。
-  // shot/anchor 走行内 CSS 变量——它们是这一句台词的状态，不该在 CSS 里枚举出类名。
+  // 落位与运镜走行内 CSS 变量——它们是这一句台词 + 这一份素材声明的结果，
+  // 不该在 CSS 里枚举成类名（三档取景 × 四档体量 × 三档对齐 = 36 个类，加一档就全要改）。
   // .entering 常驻即可，不用挂一帧就摘：CSS 动画不会因重渲染重播，而 key 是角色
   // id，组件只在这个人第一次进舞台时挂载（换表情走的是另一条淡出/淡入，不重挂载）。
   // 所以「重新进场」天然就是一次新挂载，入场动画也就重播一次。
   // 正在退场的那一瞬不挂：离场走 .leaving 的淡出，混上入场动画会打架。
-  const cls = `theater-sprite framing-${framing} pos-${pos} anchor-${anchor}${
-    leaving ? " leaving" : " entering"
-  }${acting ? " acting" : ""}${dim ? " dim" : ""}`;
+  const cls = `theater-sprite pos-${pos}${leaving ? " leaving" : " entering"}${
+    acting ? " acting" : ""
+  }${dim ? " dim" : ""}`;
+  // 横竖屏两列都由 core 的表算好，媒体查询在 CSS 里挑一列——组件不必监听 resize
+  const stage = spriteStagePreset(framing, stature, anchor);
   const style: CSSProperties = {
     "--scale": SHOT_SCALE[shot ?? "normal"],
+    "--sprite-top": `${stage.landscape.top}%`,
+    "--sprite-height": `${stage.landscape.height}%`,
+    "--sprite-origin": stage.landscape.origin,
+    "--sprite-top-portrait": `${stage.portrait.top}%`,
+    "--sprite-height-portrait": `${stage.portrait.height}%`,
+    "--sprite-origin-portrait": stage.portrait.origin,
     "--sprite-act": actionAnimation(action) ?? "none",
     // 时间不是数字：delay 与 iteration-count 相邻时，两个裸数字会让浏览器
     // 判不出哪个是哪个、整条 animation 丢弃（见 app.css .acting 的注释）。
@@ -265,8 +283,6 @@ export function StageTheater({
   onGenerateCg,
   onReplay,
 voiceState,
-  playerEcho,
-  onEchoDismiss,
   voiceOn,
   onToggleVoice,
   onUnlock,
@@ -295,7 +311,7 @@ voiceState,
   /** 导演栏的面板：几个动作的全部输入都在对话框里收，不跳视图。 */
   const [action, setAction] = useState<DirectorAction | null>(null);
   const [draft, setDraft] = useState("");
-  /** 生图选项：参考角色立绘（多选有序）与是否基于历史（默认勾上） */
+  /** 生图选项：参考立绘（多选有序）与是否基于历史（默认勾上） */
   const [selectedRefs, setSelectedRefs] = useState<string[]>([]);
   const [useHistory, setUseHistory] = useState(true);
   /** 「提示」面板走哪条岔：引导 = 排进待注入队列跟着这一轮写，分岔 = 先退开再落笔。 */
@@ -306,9 +322,8 @@ voiceState,
     playback;
   const shown = view ? view.text.slice(0, viewLength) : "";
   const lineDone = current !== null && shownLength >= current.text.length;
-  // 名牌与正文的归属交给纯函数判：这三者的优先级踩过一次坑，不在 JSX 里重排。
+  // 名牌与正文的归属交给纯函数判：这几者的优先级踩过一次坑，不在 JSX 里重排。
   const dialog = dialogContent({
-    playerEcho,
     viewName:
       view && (view.type === "say" || view.type === "thought")
         ? (view.nameOverride ?? (actorName(names, view.actorId) || "？"))
@@ -318,15 +333,16 @@ voiceState,
     live,
   });
   // 空对话区的「还没开演」是第三种说法：dialogContent 只分「演出中 / 等玩家」两态，
-  // 树还空着时说「剧作家正在落笔…」是在撒谎。三层优先级不动，只在这一态换掉那句话。
-  const dialogBody = !playerEcho && !view && fresh ? emptyDialogHint(live, fresh) : dialog.text;
+  // 树还空着时说「剧作家正在落笔…」是在撒谎。只在这一态换掉那句话。
+  const dialogBody = !view && fresh ? emptyDialogHint(live, fresh) : dialog.text;
   // 说话者聚焦：当前这句台词的人保持原亮度，同框的其余人压暗。规则见 speakerFocusId。
   const focusId = speakerFocusId(view, visual.sprites);
 
   /**
-   * 舞台点击：回看中 → 往回追一句；玩家刚发出去的那句还顶在对话框里 → 先把它收掉；
-   * 等新内容时（pause 停止点）→ 直接开新一轮。翻下一句和继续生成是同一个动作。
-   * 空格共用这一套——点不动画面时（桌面键盘），那一下也得有着落。
+   * 舞台点击：回看中 → 往回追一句；等新内容时（pause 停止点）→ 直接开新一轮。
+   * 翻下一句和继续生成是同一个动作。空格共用这一套——点不动画面时（桌面键盘），
+   * 那一下也得有着落。玩家的回执（input 行）不需要「收掉」：它就是缓冲里的普通一行，
+   * 播放头走到它显示、走到下一句让位，与其他台词同一待遇。
    */
   const onStageClick = useCallback((): void => {
     onUnlock();
@@ -335,15 +351,9 @@ voiceState,
       return;
     }
     if (scrubbed) scrub(1);
-    else if (playerEcho) {
-      // 回声占着台词条时，这一下既是「我看过了」也是「往下走」——
-      // 否则玩家点两下才看得见自己那句话之后的内容。
-      onEchoDismiss();
-      if (canContinue) onContinue();
-      else advance();
-    } else if (canContinue) onContinue();
+    else if (canContinue) onContinue();
     else advance();
-  }, [onUnlock, hideUi, scrubbed, scrub, playerEcho, onEchoDismiss, canContinue, onContinue, advance]);
+  }, [onUnlock, hideUi, scrubbed, scrub, canContinue, onContinue, advance]);
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→ 往回追；空格 = 点舞台。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
@@ -503,6 +513,9 @@ voiceState,
       onGenerateCg(text, {
         referenceCharacters: selectedRefs.length > 0 ? selectedRefs : undefined,
         useHistory,
+        // 回看着的那一行就是这张图的归处：提示词照那一刻写，图挂回那一行旁边。
+        // 这一行还没进谱系（刚演到这儿）就传 null——服务端会拒，而不是悄悄落到世界线末尾。
+        anchorNodeId: scrubbed ? (targets.lineNodeId ?? view?.nodeId ?? null) : undefined,
       });
       return;
     }
@@ -579,18 +592,19 @@ voiceState,
         )}
 
         {Object.entries(visual.sprites).map(([id, slot]) => {
-          // state 与 expression 共用同一张 sprites[] 映射表（人写表情、物写状态），
-          // 所以取图用 expression ?? state。写错时两者都没有，sprite() 会退回该角色第一张。
-          const variant = slot.expression ?? slot.state;
+          // 呈现三轴：取景与体量只听素材声明（剧本管不着图里画到哪、台上站多大），
+          // 对齐则是「剧本写了用剧本的，没写听素材声明的」（机甲默认居中悬空、道具贴地）。
+          const presentation = index.spritePresentation(id, slot.variant);
           return (
             <Sprite
               key={id}
-              url={index.sprite(id, variant)}
+              url={index.sprite(id, slot.variant)}
               pos={slot.resolvedPos}
               name={actorName(names, id)}
-              framing={index.spriteFraming(id, variant)}
+              framing={presentation.framing}
+              stature={presentation.stature}
               shot={slot.shot}
-              anchor={slot.anchor}
+              anchor={slot.anchor ?? presentation.anchor}
               leaving={slot.leaving === true}
               action={slot.action}
               actionSeq={slot.actionSeq}
@@ -711,11 +725,10 @@ voiceState,
         {/* 名牌：整块落在台词条上方、跟窗的上边缘连着（不留缝），左端跟窗的左边缘对齐。
             骑在窗沿上会把它切成两半，所以是「贴着」，不是「压着」。 */}
         {dialog.name && <div className="dialog-name">{dialog.name}</div>}
-        {/* 回声期间台词条归它：玩家一按下就得看见自己说了什么，不能被上一句挡回去。
-            真台词一到（播放头换行）回声自动让位，见 StageScreen 的 echoText。 */}
-        <p className={`dialog-text ${!playerEcho && view?.type === "thought" ? "thought" : !playerEcho && view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
+        {/* 玩家回执（input 行）与其他台词同一待遇：播放头走到它就整行显示（不打字机）。 */}
+        <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
           {dialogBody}
-          {view && !playerEcho && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
+          {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
         </p>
         {/* 台词条底缘：左是状态提示（回看中 / 生成中），右是游戏选项 */}
         <div className="dialog-foot">
@@ -841,18 +854,15 @@ voiceState,
                 </button>
               </div>
             )}
-            {/* 生图选项：参考角色立绘（多选有序）+ 基于历史开关 */}
+            {/* 生图选项：参考立绘（多选有序）+ 基于历史开关 */}
             {action === "cg" && (
               <>
                 <div className="image-gen-field">
-                  <span className="image-gen-label">参考角色立绘（按点选顺序垫图）：</span>
+                  <span className="image-gen-label">参考立绘（按点选顺序垫图）：</span>
                   <RefCharacterPicker
-                    candidates={Object.entries(names)
-                      .map(([id, name]) => ({
-                        id,
-                        name,
-                        spriteUrl: index.sprite(id, null),
-                      }))
+                    // 候选 = 有立绘的主体（目录扫出来的），不是角色表：机甲、道具没有卡也能垫
+                    candidates={index.spriteIds
+                      .map((id) => ({ id, name: names[id] ?? id, spriteUrl: index.sprite(id, null) }))
                       .filter((c): c is RefCandidate => Boolean(c.spriteUrl))}
                     selected={selectedRefs}
                     onToggle={(id) => setSelectedRefs((prev) => toggleReference(prev, id))}

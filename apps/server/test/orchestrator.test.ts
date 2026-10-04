@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import { LineageTree, characterIdOfPath, type ServerMessage } from "@aivn/core";
+import { LineageTree, characterIdOfPath, type LineageEvent, type ServerMessage } from "@aivn/core";
 import { PlaywrightOrchestrator, type OrchestratorRuntimeState } from "../src/orchestrator.js";
 import { createMemoryTools } from "../src/agentkit/memoryTool.js";
 import { defaultCapabilitiesFor } from "../src/agentkit/kit.js";
@@ -27,8 +27,10 @@ function setup(
   orchestrator: PlaywrightOrchestrator;
   messages: ServerMessage[];
   tree: LineageTree;
+  logged: LineageEvent[];
 } {
   const messages: ServerMessage[] = [];
+  const logged: LineageEvent[] = [];
   const tree = new LineageTree();
   const base = createFakeStreamFn(responses);
   const streamFn: StreamFn =
@@ -52,9 +54,10 @@ function setup(
     ...(opts.beatTimeoutMs !== undefined ? { beatTimeoutMs: opts.beatTimeoutMs } : {}),
     ...(opts.restored ? { restored: opts.restored } : {}),
     onServerMessage: (msg) => messages.push(msg),
+    onLineageEvent: (event) => logged.push(event),
     persist: () => {},
   });
-  return { orchestrator, messages, tree };
+  return { orchestrator, messages, tree, logged };
 }
 
 /** beat_end 之后还有 beat_settled（编排器真正空闲的信号），断言只认收束本身。 */
@@ -98,6 +101,72 @@ describe("导演生图", () => {
       lines: ["放学后的走廊空无一人。", "……太慢了！"],
       scene: "corridor_dusk",
     });
+  });
+
+  it("recentScript 给了锚点就停在那一刻：台词只到那一行，场景也按那一刻算", async () => {
+    const roofBeat = ['<scene bg="rooftop"/>', '<say id="mio" mood="soft">风好大。</say>'].join("\n");
+    const { orchestrator, tree } = setup([
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: roofBeat, beatDone: true },
+    ]);
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+
+    // 世界线末尾（现场）：最近的是第二拍那句，场景已经换成天台
+    expect(orchestrator.recentScript()).toEqual({
+      lines: ["放学后的走廊空无一人。", "……太慢了！", "风好大。"],
+      scene: "rooftop",
+    });
+
+    // 锚在第一拍那句台词上：后面那一拍不该进提示词，场景也回到那一刻
+    const firstSay = tree.materialize().find((event) => event.text === "……太慢了！")!;
+    expect(orchestrator.recentScript(12, firstSay.id)).toEqual({
+      lines: ["放学后的走廊空无一人。", "……太慢了！"],
+      scene: "corridor_dusk",
+    });
+  });
+
+  it("attachCg 把图挂在那一行旁边：世界线不动、树里没有 cg 节点", async () => {
+    const { orchestrator, messages, tree, logged } = await staged();
+    const leafBefore = tree.leafId;
+    const say = tree.materialize().find((event) => event.text === "……太慢了！")!;
+
+    orchestrator.attachCg(say.id, "cg_back");
+
+    expect(tree.leafId).toBe(leafBefore);
+    expect(tree.materialize().some((event) => event.kind === "cg")).toBe(false);
+    expect(tree.describe().nodes.find((node) => node.id === say.id)?.cgs).toEqual(["cg_back"]);
+    // 同一行再挂一张：末位最新（客户端取最后那张）
+    orchestrator.attachCg(say.id, "cg_back2");
+    expect(tree.describe().nodes.find((node) => node.id === say.id)?.cgs).toEqual(["cg_back", "cg_back2"]);
+
+    const attached = messages.filter((m) => m.type === "cg_attached");
+    expect(attached).toHaveLength(2);
+    expect(attached.at(-1)).toMatchObject({ type: "cg_attached", nodeId: say.id, id: "cg_back2" });
+    // 旁注也要落盘：挂在行上的图不能只活在内存里
+    expect(logged.filter((e) => e.kind === "cg")).toHaveLength(2);
+  });
+
+  it("剪掉一段之后再挂插图：旁注照样落盘", async () => {    const { orchestrator, tree, logged } = await staged();
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    const firstSay = tree.materialize().find((event) => event.text === "……太慢了！")!;
+    const secondBeat = tree.materialize().findLast((event) => event.kind === "prompt")!;
+
+    orchestrator.deleteBranch(secondBeat.id);
+    orchestrator.attachCg(firstSay.id, "cg_after_delete");
+
+    expect(logged.some((e) => e.kind === "cg" && e.cgTargetId === firstSay.id)).toBe(true);
+  });
+
+  it("挂了旁注之后开新分支：分叉标记不漏、旁注不重（两者在事件流里前后位置不同）", async () => {
+    const { orchestrator, tree, logged } = await staged();
+    const say = tree.materialize().find((event) => event.text === "……太慢了！")!;
+    orchestrator.attachCg(say.id, "cg_a");
+
+    await orchestrator.forkTo(say.id);
+
+    expect(logged.filter((e) => e.kind === "fork")).toHaveLength(1);
+    expect(logged.filter((e) => e.kind === "cg")).toHaveLength(1);
   });
 
   it("空树：没有台词也没有场景可照", () => {
@@ -161,10 +230,14 @@ describe("PlaywrightOrchestrator 闭环", () => {
 
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
 
+    // 玩家输入先于开演广播：它是被接受的那个动作在时间线上的一帧（回执），
+    // 客户端在 beat_start 之前就能把它顶进对话框。
+    expect(messages[0]).toMatchObject({ type: "events", events: [{ event: { kind: "player_input", text: "我到了" } }] });
     const kinds = messages.map((m) => m.type);
-    expect(kinds[0]).toBe("beat_start");
+    expect(kinds[1]).toBe("beat_start");
     const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
     expect(mergedKinds(events)).toEqual([
+      "player_input",
       "scene",
       "actor",
       "narrate_start",
@@ -1246,7 +1319,7 @@ describe("长会话装配", () => {
     if (beatEnd.type === "beat_end") expect(beatEnd.stop?.stopType).toBe("choice");
   });
 
-  it("只调记忆工具就结束（零剧本产出）→ 判废退回输入之前，报错并给 pause 重试入口", async () => {
+  it("只调记忆工具就结束（零剧本产出）→ 不判废：工具副作用已经发生，按 no_stop 正常收束", async () => {
     const { orchestrator, messages } = setup(
       [
         {
@@ -1260,11 +1333,17 @@ describe("长会话装配", () => {
 
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
 
-    expect(messages.filter((m) => m.type === "error")).toHaveLength(1);
-    // 控制指令与工具调用都不算「写出了东西」：退回输入之前，一轮都没留下
-    expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(0);
-    const rebase = messages.filter((m) => m.type === "rebase").at(-1);
-    expect(rebase).toMatchObject({ reason: "stop", stop: { stopType: "pause" } });
+    // 工具调用不算「写出了东西」，但它是模型有意的动作：不报错、不回滚，
+    // 一轮照常落下（no_stop），玩家按「继续」开下一轮
+    expect(messages.filter((m) => m.type === "error")).toHaveLength(0);
+    expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(1);
+    expect(messages.filter((m) => m.type === "rebase")).toHaveLength(0);
+    const beatEnd = lastBeatEnd(messages);
+    if (beatEnd.type === "beat_end") {
+      expect(beatEnd.reason).toBe("no_stop");
+      expect(beatEnd.stop).toBeUndefined();
+    }
+    expect(orchestrator.isBusy).toBe(false);
   });
 
   it("beat_done 与记忆工具同批 → finishTurn 兜底收束（terminate 不被 batch 吞掉）", async () => {
@@ -1677,6 +1756,48 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     await orchestrator.whenIdle();
     // 醒过来的旧轮不再收尾，标识也不许再翻回去
     expect(messages.filter((m) => m.type === "nsfw").at(-1)).toEqual({ type: "nsfw", active: false });
+  });
+
+  it("enter_nsfw 单独成轮（零台词零停止点）→ 不判废：交棒落定，下一轮照常由限制级模型执笔", async () => {
+    const contexts: CapturedContext[] = [];
+    const responses: FakeResponse[] = [
+      // 第 1 轮：只调 enter_nsfw + beat_done 交棒，一个字台词都没写
+      {
+        text: "",
+        beatDone: true,
+        toolCalls: [{ name: "enter_nsfw", args: { reason: "进入房间亲密接触" } }],
+      },
+      // 第 2 轮：限制级模型执笔
+      {
+        text: '<say id="mio">笨蛋……轻一点……</say>',
+        beatDone: true,
+      },
+    ];
+
+    const { orchestrator, messages } = setup(responses, { contexts });
+    orchestrator.start();
+    await orchestrator.whenIdle();
+
+    // 交棒轮不是失败：不报错、不回滚（回滚会把 pendingEnter 重置回日常模型）
+    expect(messages.filter((m) => m.type === "error")).toHaveLength(0);
+    expect(messages.filter((m) => m.type === "rebase")).toHaveLength(0);
+    expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(1);
+    const beatEnd = lastBeatEnd(messages);
+    if (beatEnd.type === "beat_end") {
+      expect(beatEnd.reason).toBe("no_stop");
+      expect(beatEnd.stop).toBeUndefined();
+    }
+
+    // 下一轮：限制级前置合规轮次已注入（nsfwPendingEnter 在开拍前兑现）
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+
+    expect(orchestrator.runtimeState.nsfw?.active).toBe(true);
+    const nsfwContext = contexts[1]!;
+    const hasPreTurn = nsfwContext.messages.some(
+      (m) => typeof m.content === "string" && m.content.includes("20 周岁以上"),
+    );
+    expect(hasPreTurn).toBe(true);
   });
 
   it("从限制级分支跳转或分岔回日常节点时，NSFW 状态重置为 false，不会滞留限制级模式", async () => {

@@ -3,7 +3,7 @@ import type { ActorAnchor, ActorShot, StageEvent } from "@aivn/core";
 /** 前端剧本行模型：StageEvent 流 → 渲染行（log 视图与舞台台词共用）。 */
 export interface ScriptLine {
   key: string;
-  type: "say" | "narrate" | "thought" | "scene" | "sfx" | "cg";
+  type: "say" | "narrate" | "thought" | "input" | "scene" | "sfx" | "cg";
   actorId?: string;
   /** say 标签的 name 属性：覆盖本句名牌，不查角色表。 */
   nameOverride?: string;
@@ -37,9 +37,8 @@ export type Cue =
       kind: "actor";
       id: string;
       pos?: string;
-      expression?: string;
-      /** 非人状态差分（与 expression 同构，分开只为模型提示）。 */
-      state?: string;
+      /** 换哪张差分（人的表情、机甲的状态——台上的一切同权，同一个槽位）。 */
+      variant?: string;
       /** 运镜档位（作用于已有立绘，不重新生图）。 */
       shot?: ActorShot;
       /** 对齐基准（bottom 人贴底 / center 悬空物 / top 垂下）。 */
@@ -113,8 +112,7 @@ export class ScriptBuilder {
           kind: "actor",
           id: event.id,
           pos: event.pos,
-          expression: event.expression,
-          state: event.state,
+          variant: event.variant,
           shot: event.shot,
           anchor: event.anchor,
           action: event.action,
@@ -173,6 +171,20 @@ export class ScriptBuilder {
       case "thought_end":
         this.openKey = null;
         return;
+      case "player_input": {
+        // 玩家输入是一次性整行：没有 start/text/end 三段，也不开打字机（回执要立刻可见）。
+        const line: ScriptLine = {
+          key: key(),
+          type: "input",
+          actorId: "player",
+          seq,
+          text: event.text,
+        };
+        this.lines.push(line);
+        this.cues.push({ key: key(), kind: "line", lineKey: line.key });
+        this.openKey = null;
+        return;
+      }
       case "stop":
         return; // 停止点由 StopPanel 渲染
     }

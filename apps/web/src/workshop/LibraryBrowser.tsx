@@ -19,6 +19,7 @@ const KINDS: { key: AssetKind | ""; label: string }[] = [
   { key: "", label: "全部" },
   { key: "backgrounds", label: "背景" },
   { key: "cg", label: "插图" },
+  { key: "sprites", label: "立绘" },
   { key: "bgm", label: "音乐" },
   { key: "sfx", label: "音效" },
 ];
@@ -94,7 +95,12 @@ export function LibraryBrowser({
         ...(target ? { target } : {}),
       })
       .then((r) => {
-        const what = entry.kind === "characters" ? "角色卡" : `${r.files.length} 个文件`;
+        const what =
+          entry.kind === "characters"
+            ? "角色卡"
+            : entry.kind === "sprites"
+              ? `立绘 ${r.spriteId}`
+              : `${r.files.length} 个文件`;
         setDone((prev) => ({ ...prev, [entry.id]: `已导入 ${what}` }));
         onImported(r);
       })
@@ -146,6 +152,8 @@ export function LibraryBrowser({
           const file = entry.files[0];
           const isAudio = AUDIO.has(entry.kind);
           const isCharacter = entry.kind === "characters";
+          // 立绘与角色卡都能零媒体（只有卡 / 只有一张图），副标题得说清导的是什么
+          const isMulti = isCharacter || entry.kind === "sprites";
           const preview = file ? libraryFileUrl(entry.kind, entry.id, file.name) : "";
           const already = imported(entry.kind, entry.id);
           const note = done[entry.id];
@@ -174,11 +182,12 @@ export function LibraryBrowser({
                   {entry.title}
                 </strong>
                 {detail && <p className="library-card-desc">{detail}</p>}
-                {isCharacter && (
+                {isMulti && (
                   <p className="library-card-desc">
                     差分：
-                    {(Object.keys(entry.meta.expressions ?? {}).join("、") ||
-                      entry.files.map((f) => f.name).join("、")) || "（无立绘，只导角色卡）"}
+                    {(Object.keys(entry.meta.variants ?? {}).join("、") ||
+                      entry.files.map((f) => f.name).join("、")) ||
+                      (isCharacter ? "（无立绘，只导角色卡）" : "（没有图）")}
                   </p>
                 )}
                 {entry.warnings?.map((w) => (

@@ -55,7 +55,7 @@ describe("imagePrompt", () => {
       instruction: "画一个两人在伞下相视而笑的特写",
       craft: "日系轻小说赛璐珞画风",
       useHistory: true,
-      referenceCharacters: [
+      referenceSprites: [
         { id: "koharu", name: "小春", body: "粉色双马尾高中生" },
         { id: "hero", name: "男主", body: "黑色短发高中生" },
       ],
@@ -67,7 +67,7 @@ describe("imagePrompt", () => {
     expect(user).toContain("【当前场景】雨中的车站站台");
     expect(user).toContain("【刚才演到的（最新在最后）】");
     expect(user).toContain("小春：雨下得好大啊。");
-    expect(user).toContain("【参考角色（编号即垫图顺序）】");
+    expect(user).toContain("【参考主体（编号即垫图顺序）】");
     expect(user).toContain("[参考图 1] 小春");
     expect(user).toContain("[参考图 2] 男主");
     expect(user).toContain("【要求/指令】画一个两人在伞下相视而笑的特写");
@@ -83,7 +83,7 @@ describe("imagePrompt", () => {
       scene: "原场景",
       useHistory: false,
       instruction: "星空下的唯美单人插图",
-      referenceCharacters: [{ id: "koharu", name: "小春", body: "粉色双马尾" }],
+      referenceSprites: [{ id: "koharu", name: "小春", body: "粉色双马尾" }],
     });
 
     const { user } = getCaptured();
@@ -99,12 +99,12 @@ describe("imagePrompt", () => {
     const { deps, getCaptured } = makeMockDeps(validPrompt);
 
     const result = await composeImagePrompt(deps, "sprite", {
-      targetCharacter: {
+      targetSprite: {
         id: "koharu",
         name: "小春",
         body: "高二女生，粉发双马尾，性格害羞内向，喜欢看书",
       },
-      expression: "shy",
+      variant: "shy",
       instruction: "脸颊泛红，眼神有些移开",
       craft: "干净的赛璐珞平涂线条",
     });
@@ -112,8 +112,8 @@ describe("imagePrompt", () => {
     expect(result).toBe(validPrompt);
     const { system, user } = getCaptured();
     expect(system).toBe(SPRITE_PROMPT_SYSTEM);
-    expect(user).toContain("【目标角色】\n- 小春（id: koharu）：\n高二女生，粉发双马尾");
-    expect(user).toContain("【目标表情/状态】shy");
+    expect(user).toContain("【目标主体】\n- 小春（id: koharu）：\n高二女生，粉发双马尾");
+    expect(user).toContain("【本次差分/状态】shy");
     expect(user).toContain("【要求/指令】脸颊泛红，眼神有些移开");
     expect(user).not.toContain("【当前场景】");
   });
