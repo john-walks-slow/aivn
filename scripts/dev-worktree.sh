@@ -60,7 +60,7 @@ pids=()
 
 # 公网入口走 [[dev-tunnel]] 的 quick tunnel（免登录、URL 随机、进程关了即失效）。
 # 脚本路径可覆盖：TUNNEL_SH=/path/to/dev-tunnel.sh ./scripts/dev-worktree.sh
-TUNNEL_SH="${TUNNEL_SH:-~/.agents/skills/dev-tunnel/scripts/dev-tunnel.sh}"
+TUNNEL_SH="${TUNNEL_SH:-$HOME/.agents/skills/dev-tunnel/scripts/dev-tunnel.sh}"
 TUNNEL_STARTED=0
 
 cleanup() {

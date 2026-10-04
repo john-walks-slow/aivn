@@ -8,7 +8,7 @@ import type { ServerConfig } from "./config.js";
  * 所以工坊只多一个工具，不是搜索 + 抓取两个。
  *
  * - 多 Key 轮询：401/402/429 换下一把（对齐 `tts.ts`；Exa 的免费额度是按 key 给的）；
- * - 代理：本机代理（api.exa.ai 墙外）。
+ * - 代理：设置页「代理」项指定（如 `http://127.0.0.1:7890`），留空直连（api.exa.ai 墙外）。
  */
 
 export interface ExaResult {

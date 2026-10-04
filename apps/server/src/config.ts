@@ -180,7 +180,7 @@ export function settingsFromEnv(env: NodeJS.ProcessEnv): ServerConfig {
     tts: {
       enabled: env.STAGE_TTS_ENABLED !== "false",
       keys: parseKeyList(env.STAGE_TTS_KEYS),
-      proxy: env.STAGE_TTS_PROXY ?? "http://127.0.0.1:7890",
+      proxy: env.STAGE_TTS_PROXY ?? "",
       baseUrl: env.STAGE_TTS_BASE_URL ?? "https://api.fish.audio",
       concurrency: parsePositiveInt("STAGE_TTS_CONCURRENCY", env.STAGE_TTS_CONCURRENCY, 2),
     },
@@ -188,7 +188,7 @@ export function settingsFromEnv(env: NodeJS.ProcessEnv): ServerConfig {
       enabled: env.STAGE_EXA_ENABLED !== "false",
       keys: parseKeyList(env.STAGE_EXA_KEYS),
       baseUrl: env.STAGE_EXA_BASE_URL ?? "https://api.exa.ai",
-      proxy: env.STAGE_EXA_PROXY ?? "http://127.0.0.1:7890",
+      proxy: env.STAGE_EXA_PROXY ?? "",
       timeoutMs: parsePositiveInt("STAGE_EXA_TIMEOUT_MS", env.STAGE_EXA_TIMEOUT_MS, 20_000),
     },
   };

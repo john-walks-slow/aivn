@@ -19,11 +19,11 @@ from PIL import Image
 sys.path.append(str(Path(__file__).resolve().parent))
 from make_transparent import process_image_transparency
 
-FLOW_API_URL = "http://127.0.0.1:38000/v1/chat/completions"
-FLOW_API_KEY = "test-key"
+FLOW_API_URL = os.environ.get("FLOW_API_URL", "http://127.0.0.1:38000/v1/chat/completions")
+FLOW_API_KEY = os.environ["FLOW_API_KEY"]
 IMAGE_MODEL = "gemini-3.1-flash-image-portrait-2k"
 MUSIC_MODEL = "flow-music"
-PROXY = "http://127.0.0.1:7890"
+PROXY = os.environ.get("FLOW_API_PROXY", "")
 
 # Makura / Pillow soft aesthetic: ethereal lighting, delicate pastel translucent colors, starry eyes
 PILLOW_STYLE = (
@@ -69,7 +69,8 @@ CHARACTERS = {
 
 def download_with_proxy(url: str, retries: int = 3) -> bytes:
     session = requests.Session()
-    session.proxies = {'http': PROXY, 'https': PROXY}
+    if PROXY:
+        session.proxies = {'http': PROXY, 'https': PROXY}
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     for i in range(retries):
         try:

@@ -94,7 +94,7 @@ describe("旧 .env 的迁移语义", () => {
     expect(config.image.baseUrl).toBe("http://127.0.0.1:9999");
     expect(config.image.format).toBe("openai");
     expect(config.tts.enabled).toBe(true);
-    expect(config.tts.proxy).toBe("http://127.0.0.1:7890");
+    expect(config.tts.proxy).toBe("");
     expect(config.exa.enabled).toBe(true);
     expect(config.exa.baseUrl).toBe("https://api.exa.ai");
   });

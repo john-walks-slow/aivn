@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""用本机 flow2api（Google Flow 逆向网关）生成资源库的背景图与立绘底图。
+"""用自建生图网关（Gemini 协议）生成资源库的背景图与立绘底图。
 
 只管「出图」，落盘与抠底由 shell 侧脚本接手。出图规格按项目铁律：
 - 背景 16:9（立绘 9:16），画幅写进 imageConfig，**必须传别名模型名**否则参数被静默丢弃。
@@ -16,8 +16,8 @@ import os
 import sys
 import urllib.request
 
-BASE = "http://127.0.0.1:38000"
-KEY = "test-key"
+BASE = os.environ.get("IMAGE_BASE_URL", "http://127.0.0.1:38000")
+KEY = os.environ["IMAGE_API_KEY"]
 MODEL = "gemini-3.1-flash-image"  # 别名：只有别名才会解析 imageConfig 的画幅/尺寸
 
 # 背景：无人场景，画面描述要能直接当 <scene bg> 的语义用

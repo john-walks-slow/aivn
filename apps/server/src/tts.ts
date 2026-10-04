@@ -9,7 +9,7 @@ import type { ServerConfig } from "./config.js";
  * Fish Audio TTS 客户端（s2.1-pro-free，免费开发者模型）。
  * - 多 Key 轮询：401/402/429/网络错误换下一把 key 重试（对齐 fish-tts CLI 行为）；
  * - 内容寻址缓存：sha1(voiceId + text) 命中即零请求——分岔/重写重演同一句不烧配额；
- * - 代理：本机代理（api.fish.audio 墙外）。
+ * - 代理：设置页「代理」项指定（如 `http://127.0.0.1:7890`），留空直连（api.fish.audio 墙外）。
  */
 
 export interface FishTtsOptions {
