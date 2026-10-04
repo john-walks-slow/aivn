@@ -92,13 +92,20 @@ export interface GatewayModel {
   name: string;
 }
 
-/** 工具目录的一行（Agent 设置页的工具开关，按 group 分组）。 */
-export interface AgentToolEntry {
+/** 能力目录的一行（Agent 设置页的能力开关，按 group 分组）。 */
+export interface AgentCapabilityEntry {
   id: string;
   label: string;
+  /** 一句后果（副标题）。界面上不出现工具名。 */
+  desc: string;
   group: string;
-  /** 分组的中文名（服务端 TOOL_GROUPS 的另一半），设置页表头直接用它。 */
+  /** 分组的中文名（服务端 CAPABILITY_GROUPS 的另一半），设置页表头直接用它。 */
   groupLabel: string;
+  /** 常开：渲染成灰字，不给开关。 */
+  locked: boolean;
+  /** 服务端现在配得出它吗；false 时开关照旧能勾，配好后生效。 */
+  available: boolean;
+  unavailableNote?: string;
 }
 
 /**
@@ -277,11 +284,14 @@ export const api = {
       `/api/agents/models${refresh ? "?refresh=1" : ""}`,
     ),
 
-  /** Agent 设置页的工具目录（两个角色共用的那一份真相源）。 */
-  /** 工具目录按角色返回——`beat_done` 只装给剧作家，给搭台那张卡列出来就是骗人。 */
-  agentTools: () => request<{ tools: Record<"playwriter" | "workshop", AgentToolEntry[]>; defaults: Record<string, string[]> }>(
-    "/api/agents/tools",
-  ),
+  /**
+   * Agent 设置页的能力目录（两个角色共用的那一份真相源）。
+   * 按角色返回——「结束本轮」只装给剧作家，给搭台那张卡列出来就是骗人。
+   */
+  agentCapabilities: () => request<{
+    capabilities: Record<"playwriter" | "workshop", AgentCapabilityEntry[]>;
+    defaults: Record<string, string[]>;
+  }>("/api/agents/capabilities"),
 
   /** 手动生图（工坊）：POST /api/plays/:id/images 发起异步生成 */
   generateImage: (

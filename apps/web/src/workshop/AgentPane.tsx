@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AgentConfig, AgentSettings, PlayConfig, ThinkingLevel } from "@aivn/core";
 import { THINKING_LEVELS } from "@aivn/core";
-import { api, type AgentToolEntry, type GatewayModel } from "../api.js";
+import { api, type AgentCapabilityEntry, type GatewayModel } from "../api.js";
 import { ModelSelect } from "../ui/ModelSelect.js";
 
 /**
- * 工坊「Agent」页：这部剧的两个 agent 各自跑什么模型、想多深、能用哪些工具。
+ * 工坊「Agent」页：这部剧的两个 agent 各自跑什么模型、想多深、能开哪些能力。
  *
  * 三项都是**逐剧目**的（落在 play.json 的 agents 段）：网关按量计费，工坊（长对话）跑便宜模型、
  * 剧作家（要文笔）跑强模型是常态；某部剧不想让 agent 自己花钱生图，也只关这一部。
  *
  * 模型清单来自网关 `/v1/models`（读不到就报错，不静默退化——看到的模型和实际计费的对不上
- * 比报错糟得多）；工具目录与服务端 `createAgentKit` 是同一份数据，界面上关掉的工具在下一轮
- * 就彻底装不进去（提示词里对应的章节也跟着收掉）。
+ * 比报错糟得多）；能力目录与服务端 `createAgentKit` 是同一份数据，界面上关掉的能力在下一轮
+ * 就彻底装不进去（提示词里对应的章节也跟着收掉）。界面上不出现任何工具名。
  */
 
 const ROLES: { id: keyof AgentConfig; name: string }[] = [
@@ -31,10 +31,10 @@ export function AgentPane({ playId }: { playId: string }) {
   const [draft, setDraft] = useState<PlayConfig | null>(null);
   const [models, setModels] = useState<GatewayModel[] | null>(null);
   const [defaultModel, setDefaultModel] = useState("");
-  /** 按角色分的工具目录：`beat_done` 只装给剧作家，两张卡列同一份就是骗人。 */
-  const [toolsByRole, setToolsByRole] = useState<Record<string, AgentToolEntry[]>>({});
-  /** 各角色的默认启用集（服务端给的）：play.json 没写 tools 时就是这个。 */
-  const [toolDefaults, setToolDefaults] = useState<Record<string, string[]>>({});
+  /** 按角色分的能力目录：「结束本轮」只装给剧作家，两张卡列同一份就是骗人。 */
+  const [capsByRole, setCapsByRole] = useState<Record<string, AgentCapabilityEntry[]>>({});
+  /** 各角色的默认启用集（服务端给的）：play.json 没写 capabilities 时就是这个。 */
+  const [capDefaults, setCapDefaults] = useState<Record<string, string[]>>({});
   const [modelError, setModelError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -62,10 +62,10 @@ export function AgentPane({ playId }: { playId: string }) {
       .then((d) => setDraft(d.play))
       .catch((e: Error) => setError(e.message));
     api
-      .agentTools()
+      .agentCapabilities()
       .then((r) => {
-        setToolsByRole(r.tools ?? {});
-        setToolDefaults(r.defaults ?? {});
+        setCapsByRole(r.capabilities ?? {});
+        setCapDefaults(r.defaults ?? {});
       })
       .catch((e: Error) => setError(e.message));
     loadModels();
@@ -107,10 +107,10 @@ export function AgentPane({ playId }: { playId: string }) {
 
       {ROLES.map((role) => {
         const settings = draft.agents?.[role.id] ?? {};
-        const tools = toolsByRole[role.id] ?? [];
-        const groups = [...new Set(tools.map((t) => t.group))];
-        // play.json 没写 tools = 走服务端默认；写了就是用户的显式选择，两者在界面上是同一个开关
-        const enabled = new Set(settings.tools ?? toolDefaults[role.id] ?? []);
+        const caps = capsByRole[role.id] ?? [];
+        const groups = [...new Set(caps.map((c) => c.group))];
+        // play.json 没写 capabilities = 走服务端默认；写了就是用户的显式选择，两者在界面上是同一个开关
+        const enabled = new Set(settings.capabilities ?? capDefaults[role.id] ?? []);
         return (
           <section className="settings-group agent-card" key={role.id}>
             <h3>{role.name}</h3>
@@ -176,27 +176,39 @@ export function AgentPane({ playId }: { playId: string }) {
             )}
 
             <div className="field">
-              <span>工具</span>
-              {groups.length === 0 && <p className="muted small">工具目录读取中…</p>}
+              <span>能力</span>
+              {groups.length === 0 && <p className="muted small">能力目录读取中…</p>}
               {groups.map((group) => (
                 <div className="agent-tool-group" key={group}>
-                  <h4>{tools.find((t) => t.group === group)?.groupLabel ?? group}</h4>
-                  {tools
-                    .filter((t) => t.group === group)
-                    .map((tool) => (
-                      <label className="switch-row" key={tool.id}>
-                        <input
-                          type="checkbox"
-                          checked={enabled.has(tool.id)}
-                          onChange={(e) =>
-                            patch(role.id, (s) =>
-                              setToolEnabled(s, tool.id, e.target.checked, toolDefaults[role.id] ?? []),
-                            )
-                          }
-                        />
+                  <h4>{caps.find((c) => c.group === group)?.groupLabel ?? group}</h4>
+                  {caps
+                    .filter((c) => c.group === group)
+                    .map((cap) => (
+                      <label className="switch-row" key={cap.id}>
+                        {cap.locked ? (
+                          <span className="muted small">始终开启</span>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={enabled.has(cap.id)}
+                            onChange={(e) =>
+                              patch(role.id, (s) =>
+                                setCapabilityEnabled(
+                                  s,
+                                  cap.id,
+                                  e.target.checked,
+                                  capDefaults[role.id] ?? [],
+                                ),
+                              )
+                            }
+                          />
+                        )}
                         <span>
-                          <b>{tool.label}</b>
-                          <span className="muted small">{tool.id}</span>
+                          <b>{cap.label}</b>
+                          <span className="muted small">{cap.desc}</span>
+                          {!cap.available && cap.unavailableNote && (
+                            <span className="muted small">{cap.unavailableNote}</span>
+                          )}
                         </span>
                       </label>
                     ))}
@@ -268,14 +280,14 @@ function setOrClear<
   else settings[key] = value as AgentSettings[K];
 }
 
-function setToolEnabled(
+function setCapabilityEnabled(
   settings: AgentSettings,
-  toolId: string,
+  capabilityId: string,
   enabled: boolean,
   defaults: readonly string[],
 ): void {
-  const set = new Set(settings.tools ?? defaults);
-  if (enabled) set.add(toolId);
-  else set.delete(toolId);
-  settings.tools = [...set].sort();
+  const set = new Set(settings.capabilities ?? defaults);
+  if (enabled) set.add(capabilityId);
+  else set.delete(capabilityId);
+  settings.capabilities = [...set].sort();
 }

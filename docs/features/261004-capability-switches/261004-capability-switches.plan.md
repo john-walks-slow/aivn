@@ -71,11 +71,14 @@ interface CapabilityCatalogEntry {
 | `library` | 素材资源库 | 素材 | 两个 | 剧作家 `list_library`；工坊再加 `import_asset` | — | 开 |
 | `search` | 联网检索 | 查资料 | 两个 | `web_search` | — | 开 |
 | `lineage` | 故事树 | 查资料 | 工坊 | `list_saves` `read_lineage` | — | 开 |
-| `assist` | 辅助查询 | 查资料 | 工坊 | `read_skill` `view_image` `get_readiness` | — | 开 |
+| `skill` | 技能库 | 搭台辅助 | 工坊 | `read_skill` | — | 开 |
+| `view` | 看图 | 搭台辅助 | 工坊 | `view_image` | — | 开 |
+| `readiness` | 检查开演条件 | 搭台辅助 | 工坊 | `get_readiness` | — | 开 |
 | `nsfw` | 限制级通道 | 演出 | 剧作家 | `enter_nsfw` `exit_nsfw` | — | 开 |
 | `shell` | 命令行 | 进阶 | 工坊 | `bash` | — | 关 |
 
-行数：剧作家 **6 个开关 + 1 行常开**（今天 13 个工具 / 6 组），工坊 **8 个开关**（今天 16 个工具 / 8 组）。
+行数：剧作家 **6 个开关 + 1 行常开**（今天 13 个工具 / 6 组），工坊 **10 个开关**（今天 16 个工具 / 8 组）。
+「技能库」「看图」「检查开演条件」各占一行——它们互不相干，合成一行只是把三种诉求混在一个开关里。
 「音色库」与「管理角色」同属**角色**组——音色（`voiceId`）本来就写在角色卡上；没有并成一个开关，因为工坊的角色卡
 读写本来就是「改剧目文件」的一部分，并了会让「管理角色」在工坊那边名不副实。
 
@@ -87,7 +90,8 @@ interface CapabilityCatalogEntry {
 - 素材资源库——「查库里有哪些素材」；联网检索——「缺现实资料时上网查」
 - 限制级通道——「能进入 / 退出限制级剧情」
 - 改剧目文件——「直接读写角色卡、记忆卡、play.json 与写作参数」
-- 故事树——「翻周目与分支记录」；辅助查询——「查技能库、看生成出来的图、检查开演条件」
+- 故事树——「翻周目与分支记录」
+- 技能库——「查跨剧目的通用做法」；看图——「把生成出来的图读进来说实话」；检查开演条件——「开演前查还缺什么」
 - 音色库（工坊）——「挑 TTS 音色，配给角色卡」
 - 命令行——「以服务进程权限跑命令，能绕开文件面（默认关）」
 
@@ -143,7 +147,7 @@ export function isGeneratedFile(rel: string): boolean; // 已有的 isGenerated 
 **工坊（`workshop.ts`）——这次要补的审计**
 
 工坊提示词今天**没有一处**按能力位收条件（只有生图、库、音色、命令行收了），能力化之后
-`files` / `lineage` / `assist` 关掉变成一次点击就能到达的状态，「教它调一个没有的工具」会从边角态变常态。
+`files` / `lineage` / `skill` 关掉变成一次点击就能到达的状态，「教它调一个没有的工具」会从边角态变常态。
 逐处收条件，或照 `NO_IMAGE_GUIDE` 的写法换成同形的 fallback 段：
 
 | 位置 | 能力位 | fallback |
@@ -153,7 +157,7 @@ export function isGeneratedFile(rel: string): boolean; // 已有的 isGenerated 
 | `writingPoints` 的 play.json 字段表 / `set_craft` / manifest 编辑 | `files` | 收走（与用户讨论仍可，但不能落盘） |
 | `setupFlow` 第 4 步（`set_craft`） | `files` | 收走 |
 | `LINEAGE_GUIDE`（整章） | `lineage` | 换成「读故事树没开：让用户去回顾面板看」 |
-| `skillsPrompt()`（教 `read_skill`） | `assist` | 收走 |
+| `skillsPrompt()`（教 `read_skill`） | `skill` | 收走 |
 | `voicePickHint` / `imageGuide` / `workspaceSection` / 库相关 | `voice` / `image` / `shell` / `library` | 已收，不动 |
 
 （workshop.ts 的 `can.files` 与剧作家那位是**同名不同义**：对工坊它是「能改剧目文件」，对剧作家恒为 false。）
@@ -163,7 +167,7 @@ export function isGeneratedFile(rel: string): boolean; // 已有的 isGenerated 
 | 角色 | 默认开 |
 | --- | --- |
 | 剧作家 | 常开 `stage` + 基座 `read`；`memory` `image` `library` `search` `nsfw`；**`characters` 关** |
-| 工坊 | 「能力目录里工坊的那 8 个」减 `shell`；即 `files` `voice` `image` `library` `search` `lineage` `assist` |
+| 工坊 | 「能力目录里工坊的那 10 个」减 `shell`；即 `files` `voice` `image` `library` `search` `lineage` `skill` `view` `readiness` |
 
 工坊沿用今天「装得上的全部减 bash」的策略，写成「能力目录里工坊的那些减 `shell`」，新增能力不会静默漏装。
 剧作家侧从「写口整块开」改成「记忆开、改卡关」：角色卡是**制作资产**（音色、立绘、取景都在卡上，工坊的地盘），
@@ -215,21 +219,22 @@ security）管开关。它们都没有我们这三条约束（文件面、分支
 | `web_search` | `search` | 两个 |
 | `set_craft` | `files` | 工坊 |
 | `list_saves` `read_lineage` | `lineage` | 工坊 |
-| `read_skill` `view_image` `get_readiness` | `assist` | 工坊 |
+| `read_skill` | `skill` | 工坊 |
+| `view_image` | `view` | 工坊 |
+| `get_readiness` | `readiness` | 工坊 |
 | `list_voices` | `voice` | 工坊 |
 | `bash` | `shell` | 工坊 |
 
 `import_asset` 在 `TOOL_CATALOG` 里的 `roles` 从 `["playwriter", "workshop"]` 收成 `["workshop"]`——
 能力目录不再给剧作家授权它（它导入素材走 DSL 写 id、引擎自动导入），留着就是一个谁都要不到的孤儿工具。
 
-## 合并掉的独立开关（四处）
+## 合并掉的独立开关（三处）
 
 | 今天能单独关的 | 改后 | 理由 |
 | --- | --- | --- |
 | 剧作家的 `import_asset` | 没了（剧作家侧「素材资源库」只给 `list_library`） | 它导入素材走 DSL 写 id、引擎自动导入；自己搬是重复路径 |
 | 工坊的 `set_craft` | 并入「改剧目文件」 | 写作参数就写在 `play.json` 里 |
 | 工坊的 `recut_sprite` | 并入「生图」 | 抠底脏了原地重抠，是生图的一个后续动作 |
-| 工坊的 `get_readiness` `view_image` `read_skill` | 并入「辅助查询」 | 三个都是只读的装配期辅助，单独成行只是噪音 |
 
 ## 实现方案
 
@@ -240,7 +245,7 @@ security）管开关。它们都没有我们这三条约束（文件面、分支
 | `packages/core/src/play/config.ts` | `AgentSettings.tools` → `capabilities`；解析同形 | ~15 |
 | `apps/server/src/playFiles.ts` | `WriteScope` / `SCOPE_PREFIXES` / `inWriteScopes` / 导出 `isGenerated` | ~40 |
 | `apps/server/src/agentkit/playEnv.ts` | 构造收 `{ writeScopes, readGenerated }`，`denial()` 两种模式分别判；错误消息把「不在剧目可写面」与「本剧目没给这个角色写这类文件」分开 | ~30 |
-| `apps/server/src/agentkit/kit.ts` | 能力目录（12 行）+ 两条推导 + 基座工具；`CAPABILITY_TOOLS` / `TOOL_GROUPS` / `DEFAULT_ENABLED` 下线；`import_asset` roles 收窄 | ~160 |
+| `apps/server/src/agentkit/kit.ts` | 能力目录（14 行）+ 两条推导 + 基座工具；`CAPABILITY_TOOLS` / `TOOL_GROUPS` / `DEFAULT_ENABLED` 下线；`import_asset` roles 收窄 | ~160 |
 | `apps/server/src/agentkit/deps.ts` | `enabled: Set<tool>` → `capabilities: Set<cap>` | ~5 |
 | `apps/server/src/orchestrator.ts` `workshopSession.ts` | 传能力集；`PlayEnv` 带写面与读面 | ~20 |
 | `apps/server/src/prompt.ts` | 上表六处 + fallback 文案 | ~50 |
@@ -262,7 +267,7 @@ security）管开关。它们都没有我们这三条约束（文件面、分支
   `read memory/arcs/x.md` 被拒；
 - `prompt.test.ts` / `promptCapabilities.test.ts`：`memory` 开 `characters` 关 → 记忆章在、建档章换成 fallback、
   角色表末尾那句改指 `read`；两个都开 → 两章都在；两个角色的 `can` 仍是同一个对象；
-- `workshopPrompt.test.ts`：`files` / `lineage` / `assist` 各关一次 → 对应章节收走或换成 fallback，逐字断言；
+- `workshopPrompt.test.ts`：`files` / `lineage` / `skill` 各关一次 → 对应章节收走或换成 fallback，逐字断言；
 - `config.test.ts`：`capabilities` 解析、未知 id 丢弃、空数组保留、locked 能力不落盘；
 - `playhouse.test.ts` / `http.test.ts`：新 API 的形状与 `locked` / `available` 两列。
 
@@ -287,14 +292,22 @@ security）管开关。它们都没有我们这三条约束（文件面、分支
 | 老剧目静默回默认（有人关过生图 → 又开了，会花钱） | 写进 validation.md 的实机步骤；不写迁移是本项目既有约定 |
 | 工坊的「命令行」绕开文件面与 scope | 早就是已知边界（bash 不走白名单），那一行的 desc 直说 |
 
-## 需要拍板的几处
+## 已拍板（原「需要拍板的几处」）
 
-1. **合并顺序**：建议先把 `feat/generic-tools` 合进 `main`（已检视、已过测试，只差你一句话），
-   这项在干净主干上开分支。当前 worktree 叠在 `fa05f12` 上，改成叠主干的代价很小。
-2. **默认集**照上表：剧作家默认关「管理角色」，代价是戏里临时给新角色编的人设留不住（见「六」）。
-3. **音色库与「管理角色」同组**（角色组），但不并成一个开关——工坊的角色卡读写属于「改剧目文件」，
-   并了会让「管理角色」在工坊那边名不副实。若你要的是「并成一个能力」，说一声，改法是把工坊的角色卡写面
-   从「改剧目文件」里切出来，代价是工坊提示词要多切一刀。
-4. **合并掉的四类开关**（表在「合并掉的独立开关」）：尤其剧作家的 `import_asset` 从此没有单独入口。
-5. **`read` 设成基座、`stage` 设成常开**，界面都不给开关。
-6. 老 `play.json` 的 `tools` 不读、不迁移。
+1. **合并顺序**：`feat/generic-tools` 已 fast-forward 进 `main`（`fa05f12`），本分支 rebase 到主干 `88cef4f` 上开工。本分支何时合 main 由用户发话。
+2. **默认集**照「六」的表：剧作家默认关「管理角色」。
+3. **音色库与「管理角色」同组不合并**（角色组）；工坊的角色卡读写留在「改剧目文件」里。
+4. **合并掉的三处开关**照「合并掉的独立开关」表执行。
+5. **`read` 设成基座工具、`stage` 设成常开**，界面都不给开关。
+6. 老 `play.json` 的 `agents.<role>.tools` **不读、不迁移**，老剧目回到新默认。
+
+## 实际实现与原计划的差异
+
+实施过程中定下的几处（与上面的计划表不同，以本节为准）：
+
+- **`assist` 三合一被否**：计划过程中一度把「读技能库 / 看图 / 检查开演条件」合成一行 `assist`，用户否决——「并不直接相关的功能还是保持拆碎」。改回三行 `skill` / `view` / `readiness`（分组均为「搭台辅助」），目录 14 行、工坊 10 个开关。
+- **`import_asset` 的作用域收在工具工厂里**：只在能力目录里不给剧作家授权还不够——`TOOL_CATALOG` 的角色标记与实际装得出来的工具必须一致，否则「装得上的工具 = 基座 ∪ 授权工具」的对账用例会红。实现是 `libraryTool` 多一个 `importAsset?: boolean`（缺省装），`playwriterTools` 传 `false`，`TOOL_CATALOG` 里它的 `roles` 同时收成 `["workshop"]`。
+- **`CapabilityEnv` 只留 `search` / `voice` / `image`**：`library` 不进这个面——`AssetLibrary` 永远是构造出来的（`new AssetLibrary(join(dataRoot, "library"))`），谈不上「没配」，把它算进去会把一个空库误报成「暂不生效」。
+- **`capabilityTools(cap, role)` 会再按 `TOOL_CATALOG.roles` 过滤一道**：能力目录只声明「这个能力要哪些口」，角色可见性仍归工具层，是同一个能力在两个角色上给出不同工具集的落点（`image` / `library`）。
+- **读面拒绝先于写面**：`absolutePath` 是 read / write / edit 共同的路径入口，所以拿引擎产物路径去 write / edit 时撞上的是读面那句「引擎产物走不了通用读写口」，写面那句「本剧目没给这个角色开改…的能力」只对可见文件生效。两句各自的场景都有用例钉住（`test/playEnv.test.ts`）。
+- **`capabilities` 的解析只管形状**（去空白、去重、保留空数组）：未知 id 与 locked 能力都在服务端丢/忽略，core 不引入第二份能力名单。

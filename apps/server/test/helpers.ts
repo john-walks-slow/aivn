@@ -51,10 +51,27 @@ export const PLAY: PlayConfig = {
  * 能力位（`kit.can`）的测试构造器。
  *
  * 两份 system prompt 读的是同一个形状，测试里也共用这一份——加一位能力时这里必然类型不过，
- * 两个角色的提示词都得跟着看一眼。缺省取「生图开、限制级通道开、联网与资源库关」（剧作家的常见态）。
+ * 两个角色的提示词都得跟着看一眼。缺省取剧作家的常见态：记忆与「管理角色」开、限制级开、
+ * 联网与资源库关（没配 key 时的样子），工坊侧的几位一律 false。
  */
 export function caps(over: Partial<AgentCapabilities> = {}): AgentCapabilities {
-  return { image: true, search: false, library: false, files: true, voice: false, shell: false, nsfw: true, ...over };
+  return {
+    stage: true,
+    nsfw: true,
+    characters: true,
+    memory: true,
+    image: true,
+    library: false,
+    search: false,
+    voice: false,
+    files: false,
+    lineage: false,
+    skill: false,
+    view: false,
+    readiness: false,
+    shell: false,
+    ...over,
+  };
 }
 
 export const CARD: IndexCard = {

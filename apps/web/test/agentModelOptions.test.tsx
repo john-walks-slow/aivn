@@ -6,7 +6,7 @@ import type { PlayConfig } from "@aivn/core";
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
     playDetail: vi.fn(),
-    agentTools: vi.fn(),
+    agentCapabilities: vi.fn(),
     agentModels: vi.fn(),
     savePlay: vi.fn(),
   },
@@ -37,7 +37,7 @@ async function modelSelects(): Promise<HTMLSelectElement[]> {
 describe("Agent 页模型下拉：play.json 里已有的模型不能因为清单收窄而消失", () => {
   beforeEach(() => {
     apiMock.playDetail.mockResolvedValue({ play: PLAY });
-    apiMock.agentTools.mockResolvedValue({ tools: [], defaults: { playwriter: [], workshop: [] } });
+    apiMock.agentCapabilities.mockResolvedValue({ capabilities: {}, defaults: { playwriter: [], workshop: [] } });
     apiMock.agentModels.mockResolvedValue({
       models: [{ id: "low", name: "low" }],
       defaultModel: "medium",

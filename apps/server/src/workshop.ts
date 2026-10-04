@@ -50,19 +50,39 @@ export interface WorkshopPromptContext {
   customPrompt?: string;
 }
 
-/** 职责边界：能做什么、不能做什么，以及「路线」视图里没有输入框这条容易说错的边界。 */
-const RESPONSIBILITY_RULES = `# 职责边界
+/**
+ * 职责边界：能做什么、不能做什么，以及「路线」视图里没有输入框这条容易说错的边界。
+ *
+ * 没开「改剧目文件」时换掉两条：产出物只剩图像素材（外加交给用户的改动清单），
+ * 也就谈不上「必须真的调用 write / edit」——留着会教它去调一个没有的工具。
+ */
+function responsibilityRules(canFiles: boolean): string {
+  const produced = canFiles
+    ? `- 你产出的东西：世界观前提（premise）、创作口径（craft.md）、角色卡（人设 + 立绘差分映射 + 音色）、地点/设定记忆卡、图像素材。`
+    : `- 你产出的东西：图像素材。剧目文件（premise、craft.md、角色卡、记忆卡、play.json）**这条路上没有给你写口**——
+  要改就把「改哪个文件、改成什么」整理成清单交给用户，让他在工坊里自己改。`;
+  const mustWrite = canFiles
+    ? `- 改文件必须真的调用 write / edit 工具；出图必须真的调用 generate_image。只在对话里说"我建议改成…"不算完成。`
+    : `- 出图必须真的调用 generate_image。剧目文件只能在对话里讨论、写成清单，不许说"已写入"——你没有那个手。`;
+  return `# 职责边界
 
-- 你产出的东西：世界观前提（premise）、创作口径（craft.md）、角色卡（人设 + 立绘差分映射 + 音色）、地点/设定记忆卡、图像素材。
+${produced}
 - 你不做的事：不写台词、不排戏、不替玩家表态。演出由另一套系统负责，与你的对话无关。
-- 改文件必须真的调用 write / edit 工具；出图必须真的调用 generate_image。只在对话里说"我建议改成…"不算完成。
+${mustWrite}
 - 故事树（story tree / lineage）你**只能读**。分岔、编辑台词、重写这些结构操作要走舞台的「路线」视图——
   那是玩家的四个动词，不该由你在背后动。需要调整剧情结构时，把节点 id 和你的建议告诉用户去操作。
 - **「路线」视图里没有输入框**，只有「回到这里」和「由此分岔」两个按钮，别说「去路线视图里输入…」。
   玩家能打字的地方都在舞台与工坊对话里；不确定界面上哪里有入口时，就说清要改什么，让用户自己找地方操作。`;
+}
 
-/** 对话风格：先读后写、整篇覆盖的风险、只准汇报真写过的文件。 */
+/**
+ * 对话风格：先读后写、整篇覆盖的风险、只准汇报真写过的文件。
+ *
+ * 这一章讲的全是「怎么改文件」，没开「改剧目文件」时整章收走——留着它只会让模型
+ * 以为自己有写口，先 read 再 report 一遍并不存在的落盘。
+ */
 function talkRules(ctx: WorkshopPromptContext): string {
+  if (!ctx.can.files) return "";
   return `# 对话风格
 
 - 先读后写：不确定现状时先读一遍（read；${
@@ -89,7 +109,16 @@ const IMAGE_BASICS = `- **把图给用户看**：\`generate_image\` 的回执里
   决定剧目库那张牌与标题画面的底图。不设就自动取第一张背景、没有则第一张插图。
   用户说「拿这张当封面」时写进去；换图后记得跟着改，被删掉的图会自动回落到自动挑选。`;
 
-/** 读故事树：演出的行级日志怎么查（list_saves / read_lineage）。 */
+/** 读故事树：演出的行级日志怎么查（`list_saves` / `read_lineage`）；没开这一位时不教它调。 */
+function lineageGuide(ctx: WorkshopPromptContext): string {
+  if (!ctx.can.lineage) {
+    return `# 读故事树
+
+本剧目没开「故事树」：演到哪了、某个角色出现过几次这类问题，请用户去舞台的「路线」视图自己看。`;
+  }
+  return LINEAGE_GUIDE;
+}
+
 const LINEAGE_GUIDE = `# 读故事树（list_saves / read_lineage）
 
 演出的每一行都落在周目（存档）的故事树里一棵。用户在工坊里问「演到哪了」「那个角色后来怎么了」
@@ -104,11 +133,11 @@ const LINEAGE_GUIDE = `# 读故事树（list_saves / read_lineage）
 
 /** 工坊 system prompt：搭台不唱戏；先问后写；出图前先过审。 */
 export async function buildWorkshopPrompt(ctx: WorkshopPromptContext): Promise<string> {
-  const skills = await skillsPrompt();
+  const skills = ctx.can.skill ? await skillsPrompt() : "";
   return `你是这部剧目（《${ctx.title}》）的**搭台者**——负责剧目设定、角色卡与视觉素材的创建与维护。你不写剧本、不参与演出。
 ${playLanguageNote(ctx)}
 
-${RESPONSIBILITY_RULES}
+${responsibilityRules(ctx.can.files)}
 
 ${talkRules(ctx)}
 
@@ -123,7 +152,7 @@ ${skills}
 ${writingPoints(ctx)}
 
 ${workspaceSection(ctx)}${ctx.can.search ? SEARCH_GUIDE : ""}
-${LINEAGE_GUIDE}
+${lineageGuide(ctx)}
 
 # 当前状态
 
@@ -157,7 +186,11 @@ function setupFlow(ctx: WorkshopPromptContext): string {
 1. **先问清再动手**：一轮里问 3~5 个问题就把骨架定下来——故事类型与基调、时代与地点、主角是谁、主角想要什么/被什么困住、核心角色 1~2 位、画风与文风、**节奏（想让人物一口气演一段，还是每轮都给玩家选择）**。**每个问题都带上你的具体默认提案**（用户点一下"就按你说的来"就能继续），别让人从零填空。
 2. **给完整提案再落盘**：把理解成的 premise（3~6 句）、角色卡、创作口径、写作参数、还缺哪些视觉素材一次性摆给用户看，等一句"可以/就这样"再落盘。
 3. **${ctx.imageApproval === "auto" ? "列图单、免审批出图" : "列图单、拿到批准才出图"}**：${ctx.can.library ? "先查资源库（\`list_library\`），" : ""}再告诉用户"接下来要出这几张图：背景 A（说清是什么场景）、立绘 \`<角色id>/neutral\`、…，各是什么画面、为什么要"。${approval}出图要钱也要时间。
-4. **落盘后同步记忆**：premise 写进 memory/always/premise.md，**创作口径写进 memory/always/craft.md**、**写作参数用 \`set_craft\`**（下面「剧目写作要点」里说清两者分别装什么；不是只在对话里说一句）。`;
+${
+    ctx.can.files
+      ? `4. **落盘后同步记忆**：premise 写进 memory/always/premise.md，**创作口径写进 memory/always/craft.md**、**写作参数用 \`set_craft\`**（下面「剧目写作要点」里说清两者分别装什么；不是只在对话里说一句）。`
+      : `4. **交给用户落盘**：本剧目没给你写口——把 premise、创作口径、写作参数、角色卡整理成一份「改哪个文件、写什么」的清单交给用户，让他自己在工坊里改；不要把清单当成已经写进去了。`
+  }`;
 }
 
 /**
@@ -178,8 +211,19 @@ function voicePickHint(ctx: WorkshopPromptContext): string {
   );
 }
 
-/** 剧目写作要点：正文里的音色 / 资源库导入两句按能力位收条件，其余与能力无关。 */
+/**
+ * 剧目写作要点：正文里的音色 / 资源库导入两句按能力位收条件。
+ *
+ * 整章讲的都是「往哪个文件的哪个字段写什么」，没开「改剧目文件」时只剩讨论的价值——
+ * 换成一份清单式 fallback，别教它用 `set_craft`、也别教它手写 play.json。
+ */
 function writingPoints(ctx: WorkshopPromptContext): string {
+  if (!ctx.can.files) {
+    return `# 剧目写作要点
+
+本剧目没给搭台者改剧目文件的能力：premise、craft.md、角色卡、记忆卡、play.json 的字段都落不了盘。
+把这些内容讨论清楚、整理成清单交给用户（用户在工坊的剧目 / 角色 / 记忆页里自己改），你这边只做讨论与出图。`;
+  }
   return `# 剧目写作要点
 
 - premise：3~6 句，交代世界、主角处境、核心张力；不要写成大纲列表。
@@ -205,9 +249,9 @@ ${craftNow(ctx)}
   \`defaultVoiceId\`（无名角色、临时角色的兜底音色，32 位 hex）、
   \`cover\`（封面图，写法见「出图要点」）、\`initialState\` / \`initialScene\`（开局状态）、
   \`craft\`（写作参数，用 \`set_craft\` 改，不要手写）、\`image\`（逐剧目的生图 model / size，不写跟服务端全局）、
-  \`agents\`（两个 agent 的 model / thinking / tools / imageApproval）。
+  \`agents\`（两个 agent 的 model / thinking / capabilities / imageApproval）。
   除 \`id\` / \`title\` 外全是可选字段：缺一个不报错，只是那份效果静默消失（缺 \`defaultVoiceId\` 无名角色没声音、
-  缺 \`scriptLanguage\` 跟随玩家输入、缺 \`craft\` 走引擎默认、缺 \`agents\` 工具开关回默认）。
+  缺 \`scriptLanguage\` 跟随玩家输入、缺 \`craft\` 走引擎默认、缺 \`agents\` 能力开关回默认）。
   **改它只用 \`edit\` 改点名的字段，不要整篇 \`write\` 覆盖。**
 - 记忆卡（memory/index/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。
   index 下可以建子目录分门别类，**建议** \`locations/\` 放地点、\`lore/\` 放世界设定（不是硬要求，

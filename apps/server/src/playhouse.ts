@@ -21,7 +21,12 @@ import { readPlayLedgerEntries, type GeneratedLedgerEntry } from "./generatedLed
 import { PlayAssets, assertAssetStem } from "./playAssets.js";
 import { PendingJobs } from "./pendingJobs.js";
 import { PlayFiles } from "./playFiles.js";
-import { agentToolCatalog, defaultToolsFor } from "./agentkit/kit.js";
+import {
+  capabilityCatalog,
+  defaultCapabilitiesFor,
+  type AgentCapabilityEntry,
+  type CapabilityEnv,
+} from "./agentkit/kit.js";
 import { AGENT_ROLES, type AgentRole } from "./agentkit/role.js";
 import { Limiter } from "./limiter.js";
 import { Translator } from "./translate.js";
@@ -732,16 +737,31 @@ export class PlayHouse {
     return { models: supportedModels(models, this.config.models), defaultModel: this.config.modelId };
   }
 
-  /** 工具目录（Agent 设置页的开关清单）。与装配用的是同一份定义。 */
-  tools(): { tools: Record<AgentRole, ReturnType<typeof agentToolCatalog>>; defaults: Record<string, string[]> } {
+  /**
+   * 能力目录（Agent 设置页的开关清单）。与装配用的是同一份定义。
+   *
+   * `available` 来自服务端**当下**的配置：没配 Exa / TTS / 生图后端的能力，工具装不出来，
+   * 界面在那一行补一句「暂不生效」。开关照旧能勾——用户配好 key 之后不用回来重勾一遍。
+   */
+  capabilities(): {
+    capabilities: Record<AgentRole, AgentCapabilityEntry[]>;
+    defaults: Record<AgentRole, string[]>;
+  } {
+    const env: CapabilityEnv = {
+      search: this.exa !== null,
+      voice: this.voices !== undefined,
+      image: this.imageBackend !== null,
+    };
     return {
-      // 按角色出：设置页给两张卡各画一排开关，指向一个装不上的工具只会让人以为勾了有用
-      tools: {
-        playwriter: agentToolCatalog("playwriter"),
-        workshop: agentToolCatalog("workshop"),
+      // 按角色出：设置页给两张卡各画一排开关，列一个这个角色装不上的能力只会让人以为勾了有用
+      capabilities: {
+        playwriter: capabilityCatalog("playwriter", env),
+        workshop: capabilityCatalog("workshop", env),
       },
-      // 设置页要按「默认勾选什么」渲染初始态：play.json 没写 tools 时走的就是这份
-      defaults: Object.fromEntries(AGENT_ROLES.map((role) => [role, [...defaultToolsFor(role)]])),
+      // 设置页要按「默认开什么」渲染初始态：play.json 没写 capabilities 时走的就是这份
+      defaults: Object.fromEntries(
+        AGENT_ROLES.map((role) => [role, [...defaultCapabilitiesFor(role)]]),
+      ) as Record<AgentRole, string[]>,
     };
   }
 

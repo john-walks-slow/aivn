@@ -7,9 +7,25 @@ import {
   type Result,
 } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
-import type { PlayFiles } from "../playFiles.js";
+import type { PlayFiles, WriteScope } from "../playFiles.js";
+import { isGenerated, inWriteScopes, writeScopeOf, WRITE_SCOPE_LABELS } from "../playFiles.js";
 import type { PlayFileWrite } from "./deps.js";
 import { reason } from "./result.js";
+
+/**
+ * 这个角色的手能伸到哪儿。两件事：
+ *
+ * - `writeScopes` —— 能改哪几类文件。**能力（capability）给的就是这个**：剧作家可能只有
+ *   `memory`（记忆开着、「管理角色」关着），工坊则可能三位全给或一位都不给。
+ * - `readGenerated` —— 通用读口认不认引擎产物（`memory/arcs`、`memory/archive`）。
+ *   它们跟分支走、按 arcs / pathSet 过滤，而文件是剧目级的：通用 read 能读出来，
+ *   等于把别的世界线的纪元摘要摊开。剧作家不给，要看往事走 `read_memory_detail` /
+ *   `search_archive`；工坊看得见（它要能读用户手上的剧目全貌）。
+ */
+export interface PlayEnvPolicy {
+  writeScopes: readonly WriteScope[];
+  readGenerated: boolean;
+}
 
 /**
  * 两个 agent 共用的执行环境：pi 的 `NodeExecutionEnv`（纯 Node、跨平台，16 个 FileSystem 方法现成）
@@ -30,6 +46,7 @@ import { reason } from "./result.js";
 export class PlayEnv extends NodeExecutionEnv {
   constructor(
     private readonly files: PlayFiles,
+    private readonly policy: PlayEnvPolicy,
     private readonly onWrite: (write: PlayFileWrite) => void,
   ) {
     super({ cwd: files.root });
@@ -76,10 +93,12 @@ export class PlayEnv extends NodeExecutionEnv {
   }
 
   /**
-   * 路径不在剧目目录内、或不在白名单对应面上，就拒。
+   * 路径不在剧目目录内、不在白名单对应面上、或不在这个角色的能力面内，就拒。
    *
    * 读面与写面共用这一个判定，只是模式不同——`absolutePath` 是读，`writeFile` 是写。
-   * 写面在 `PlayFiles.write` 里还会再校验一次，这里早拒一步只是为了错误消息说得准。
+   * 写面在 `PlayFiles.write` 里还会再校验一次，这里早拒一步只是为了错误消息说得准：
+   * 「剧目里根本没有这条路径」与「本剧目没给这个角色开这项能力」是两回事，
+   * 模型看到后者才会去想让用户开工坊，而不是换个路径再试。
    */
   private denial(abs: string, mode: "read" | "write"): FileError | null {
     const clean = relative(this.files.root, abs);
@@ -90,6 +109,28 @@ export class PlayEnv extends NodeExecutionEnv {
       this.files.pathOf(clean, mode);
     } catch (error) {
       return new FileError("permission_denied", reason(error), abs);
+    }
+    if (mode === "read") {
+      if (!this.policy.readGenerated && isGenerated(clean)) {
+        return new FileError(
+          "permission_denied",
+          // 这条按路径的口对读写两件事都关着（write 也会先经过 absolutePath 解析路径），
+          // 所以消息把两条都说清：引擎产物不是给人手改的，往事要走带分支过滤的工具。
+          `引擎产物走不了通用读写口：${clean}（往事走 read_memory_detail / search_archive，` +
+            `别按路径翻、也别手改）`,
+          abs,
+        );
+      }
+      return null;
+    }
+    if (!inWriteScopes(clean, this.policy.writeScopes)) {
+      const scope = writeScopeOf(clean);
+      const what = scope ? WRITE_SCOPE_LABELS[scope] : "这类文件";
+      return new FileError(
+        "permission_denied",
+        `本剧目没给这个角色开改${what}的能力：${clean}`,
+        abs,
+      );
     }
     return null;
   }

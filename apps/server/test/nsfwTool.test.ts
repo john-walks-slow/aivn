@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { createNsfwTools } from "../src/agentkit/nsfwTool.js";
-import { agentToolCatalog, defaultToolsFor } from "../src/agentkit/kit.js";
+import {
+  CAPABILITY_CATALOG,
+  capabilityTools,
+  defaultCapabilitiesFor,
+  installableTools,
+} from "../src/agentkit/kit.js";
 import { NSFW_PRE_TURNS } from "../src/orchestrator.js";
 import { PlayMemory } from "../src/memory.js";
 import { LineageTree } from "@aivn/core";
@@ -65,14 +70,13 @@ describe("nsfwTool：限制级剧情工具契约", () => {
     expect((res2.content[0] as { text: string }).text).toContain("当前未处于限制级剧情通道中");
   });
 
-  it("剧作家默认工具集包含 enter_nsfw 与 exit_nsfw", () => {
-    const defaults = defaultToolsFor("playwriter");
-    expect(defaults.has("enter_nsfw")).toBe(true);
-    expect(defaults.has("exit_nsfw")).toBe(true);
-    const playwriterTools = agentToolCatalog("playwriter").map((t) => t.id);
-    expect(playwriterTools).toContain("enter_nsfw");
-    expect(playwriterTools).toContain("exit_nsfw");
-    expect(agentToolCatalog("workshop").map((t) => t.id)).not.toContain("enter_nsfw");
+  it("剧作家默认能力集包含「限制级通道」，它授权的就是这两个工具", () => {
+    expect(defaultCapabilitiesFor("playwriter")).toContain("nsfw");
+    const nsfw = CAPABILITY_CATALOG.find((cap) => cap.id === "nsfw")!;
+    expect(capabilityTools(nsfw, "playwriter")).toEqual(["enter_nsfw", "exit_nsfw"]);
+    expect(installableTools("playwriter")).toContain("enter_nsfw");
+    expect(installableTools("playwriter")).toContain("exit_nsfw");
+    expect(installableTools("workshop")).not.toContain("enter_nsfw");
   });
 
   it("NSFW 前置合规轮次包含 20 岁以上声明与虚构确认", () => {

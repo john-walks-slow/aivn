@@ -7,8 +7,8 @@
 ## agentkit：两个 agent 的共用基座
 
 - **两个 agent 共用一套基座**：`src/agentkit/` 是唯一工具实现面（`kit.ts` 按 `role: "playwriter" | "workshop"` 装配，`deps.ts` 用判别联合收窄依赖），同一工具**同一份 schema 与实现，只有 description + 等待策略 + 注入依赖不同**（`generate_image`：工坊 sync 等图并回 markdown 图片、剧作家 queued 后台排产只占时间线位置）。
-- **工具清单只有一份**：`kit.ts` 的 `TOOL_CATALOG` 收了全部工具的元数据，**角色可见性是每一项自己的 `roles`**（不再有第二份 id 清单；`installableTools(role)` / `agentToolCatalog(role)` 由它投影，是设置页与装配共用的唯一真相源；`agentToolEntry(id)` 碰到未登记的 id 直接抛错），play.json 的 `agents.<role>.tools` 存**启用集**（白名单，不是禁用集）过滤，缺省走 `DEFAULT_ENABLED`（搭台除 `bash` 外全开——命令行按剧目手动勾；剧作家开着轮收束/状态/记忆检索/联网/生图/**只读**查库与通用文件工具（`read` / `write` / `edit`），`import_asset` 仍默认关——素材策略是创作决策，工具不给它那条策略就是空话）。
-- `can` 位（image/search/library/**files**/voice/shell/nsfw）反过来决定提示词注不注某一章。**一位对应一个授权它的工具**（`CAPABILITY_TOOLS` 表），`kit.can` 由 `capabilitiesOf(装上的工具)` 现算——两个角色的提示词读同一个对象，不会各算各的。
+- **两套目录，一份语汇**：`kit.ts` 的 `CAPABILITY_CATALOG` 是**用户语汇的唯一真相源**（一行写清：界面名字、一句后果、分组、给哪些角色、授权哪些工具 id、开出来能动哪几类文件、常开还是默认关）——Agent 页、`play.json`、`kit.can`、提示词章节一律说能力。`TOOL_CATALOG`（id + 中文名 + 谁装得上）留在工具层当**角色可见性的真相源**，能力只**引用**工具 id；装一个没登记的 id 或加一个谁都够不到的工具，用例当场红。play.json 的 `agents.<role>.capabilities` 存**启用集**（白名单，不是禁用集），缺省走 `defaultCapabilitiesFor(role)`（搭台 = 目录里属于它的能力减 `shell`——新增能力不会静默漏装；剧作家 = 常开的 `stage` 加 `memory`/`image`/`library`/`search`/`nsfw`，**`characters` 默认关**：角色卡是制作资产、记忆卡是剧情事实）。
+- **两条推导都在 `createAgentKit` 一处**：装上的工具 = 基座 `read` ∪ 开着的能力授权的工具（再按 `TOOL_CATALOG.roles` 与我方依赖面收一道，没配 Exa / TTS / 生图就装不出来）；`can` 位 = **该能力开着且它授权的工具都装上了**（键就是能力 id）——能力声明了一个装不出来的工具，这一位就是假，提示词不会教模型去调它没有的东西。同一个能力在两个角色上授权的口可以不同（`image`：剧作家只要 `generate_image`，工坊还要 `recut_sprite`；`library`：工坊多一个 `import_asset`，实现上是 `libraryTool` 的 `importAsset: false`）。
 - `generate_image` 的两个角色**同一份 schema**（`expression` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只差 description 与等待策略。**垫图入口只有一个 `references`**（每项可以是角色 id、剧目内相对路径或 http(s) 网址，1–6 张；`referenceCharacters` 保留为只吃角色 id 的兼容别名，两者在工具层合并去重）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该角色的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
 - **自动注册临时角色**：`generate_image` 的 `characterName` 参数带上了、而 `characterId` 不在角色卡目录里时，`playAssets.resolveSprite` 就地写一张最小卡再出图（卡里只有 id/name，正文写「（演出中临时引入，设定未补。）」——留空会让工坊以为「作者写过了，就是没写」），并打 `autoRegistered` 让宿主走同一条 `onPlayConfigChanged` 轮边界重建：工坊与用户此刻不在场，等他们想起建卡，这一轮早演过去了。
 - 已有卡时这个参数不作数（不覆盖人设）。
@@ -19,7 +19,7 @@
 - `play.defaultVoiceId`（工坊「剧目」页挑）在 `voiceOf` 里兜底，有卡的角色仍然各用各的。
 - **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `recut_sprite`——立绘落盘前把抠底前的原片留一份到 `media-cache/sprite-sources/<角色id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
 - 没有留底的（更早出的图、用户上传的）直接报错，只能重新出图。
-- `import_asset` 仍在清单里，但**对剧作家默认关闭**——它的默认导入路径是引用即导入（见下），用户想让它自己动手再勾上。
+- `import_asset` 现在**只装给工坊**（`TOOL_CATALOG` 的 `roles` 只留 `workshop`）——剧作家的默认导入路径是引用即导入（见下），给它留一个自己搬素材的口是重复路径，只是多一个谁都够不到的工具。工坊那边它挂在「素材资源库」能力下（`libraryTool` 的 `importAsset` 开关，剧作家侧传 `false`）。
 
 ## DSL、轮收束与 IR 事件
 
@@ -43,9 +43,11 @@
 - read / write / edit / bash 全部是 **pi 的内建工具**（`agentkit/piTools.ts` 只做 `AgentHarnessTool → AgentTool` 的适配，把 `onUpdate`/`toolContext`/`invocation`/`context` 补齐，`context` 用 `withAbortSignal(signal, BACKGROUND_CONTEXT)` 把工坊单轮的 7 分钟超时传下去）。**前三个两个角色都装**，`bash` 只装工坊。
 - 路径白名单与 `play.json` 结构校验收在 `playFiles.ts` 的 `PlayFiles` 上——它是**所有文本写口的收口**（两个 agent 的 write / edit、文件页、角色卡都从 `write` 过；可写目录是 `memory/**` 与 `characters/**`），校验不过就不落盘、盘上那份一个字节不动。**白名单不分角色**：两个 agent 写的是同一批文件（角色卡、记忆卡），再分一份只会多一处要同步的地方。
 - `memory/arcs/`（纪元压缩产物）与 `memory/archive/`（逐轮切片）是引擎产物且跟分支走，**看得见、改不动**（`GENERATED_PREFIXES`）：手改手建会绕过 arcs 按 arcIds、archive 按 pathSet 的防剧透过滤。这两条从前由 `write_memory` 的路径守卫兜着，收掉专用工具之后改由文件层兜。
-- 撤销条在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，早拒白名单 + 记撤销条，落盘委派 `PlayFiles.write`）。
+- **写面收在 `PlayEnv`，不在 `PlayFiles`**：能力声明的 `writeScopes`（`characters` / `memory` / `config`，路径知识只在 `playFiles.ts` 的 `SCOPE_PREFIXES` / `writeScopeOf` / `inWriteScopes` 里）随 `PlayEnvPolicy` 传进 `PlayEnv`，早拒时给两句不同的话——「不在剧目可写面」与「本剧目没给这个角色开改<角色卡|记忆卡|剧目文件>的能力」。挂到 `PlayFiles` 上会连带打断文件页、craft/premise 写口与 `applyChanges` 的读盘检查（工坊只有一个 `PlayFiles` 实例，它同时是这四处的口）。
+- **读面按角色给**：`PlayEnvPolicy.readGenerated` 只在工坊为真——剧作家按路径读不到 `memory/arcs/` 与 `memory/archive/`（那两个目录跟分支走、按 arcIds / pathSet 过滤，而文件是剧目级、不随回滚消失，通用 `read` 直接翻等于把别的世界线摊开），要看往事只能走 `read_memory_detail` / `search_archive`。题面是 `absolutePath`（read/write/edit 共同的路径入口），所以这三个动作用引擎产物路径时都会先撞上这条读面拒绝。
+- 撤销条在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，早拒白名单与写面能力 + 记撤销条，落盘委派 `PlayFiles.write`）。
 - pi 的 `withFileMutationQueue` 顶掉了原来的 `fileLocks`（WeakMap<env> + canonicalPath，同一 `PlayEnv` 实例内自动串行）。
-- **bash 不走这一层**：它继承 `NodeExecutionEnv.exec`，cwd 就是剧目目录，以服务进程的权限跑、改文件不进撤销条，所以 `DEFAULT_ENABLED` 里默认关，`can.shell` 决定提示词注不注「命令行」那章（讲的是边界与后果，不是用法——cwd/截断/超时都在 pi 的 bash 描述里）。
+- **bash 不走这一层**：它继承 `NodeExecutionEnv.exec`，cwd 就是剧目目录，以服务进程的权限跑、改文件不进撤销条，所以「命令行」这一能力**默认关**，`can.shell` 决定提示词注不注「命令行」那章（讲的是边界与后果，不是用法——cwd/截断/超时都在 pi 的 bash 描述里）。
 - `workshopSession` 订阅 `tool_execution_end`，跑过 bash 就置脏。**置脏只有 `markChanged()` 一个入口**（agent 写盘、素材到货、bash、文件页手改四条路都从这儿过），**收束只有 `applyChanges()` 一个出口**：真有改动才重建——回合内攒着、收束时重建一次，文件页保存没有收束可等、就地兑现。
 - bash 绕开了 `PlayFiles` 的结构校验，所以 `applyChanges` 在重建前补一次读盘检查：`play.json` 已解析不了就**跳过这次 runtime 重建并广播 `workshop_error`**（带着坏配置去 rebuild 只会抛在 `void` 的 promise 里，用户看到的是「面板不刷新了」而不是「哪里坏了」）。
 - play.json 校验失败的消息只有走 `write` 才原样回给模型——pi 的 `edit` 把它包成「Could not edit file: …. Error code: invalid.」，原因只留在 cause 上，不为消息粒度再造第二套错误面。
@@ -75,7 +77,8 @@
 
 ## 提示词装配
 
-- **工具知识只写在工具描述里，系统提示词不复述**（同一规则写两处必然漂移——生图那几条已经漂移过一次）。**一处明确例外**：pi 的内建 read / write / edit 没有描述覆写入口，角色卡 frontmatter 与记忆卡格式只能落在 A 区（`prompt.ts` 的 `newCharacterRules(can.files)` / `MEMORY_RULES`）——它们同时要求模型「先 read 再 edit」，格式本身以 `parseCharacterCard` 的解析结果为准；`can.files`（= 装上了 `write`）为假时两章一起收走，只留「你没有写口，走临时角色通道」那句。
+- **工具知识只写在工具描述里，系统提示词不复述**（同一规则写两处必然漂移——生图那几条已经漂移过一次）。**一处明确例外**：pi 的内建 read / write / edit 没有描述覆写入口，角色卡 frontmatter 与记忆卡格式只能落在 A 区（`prompt.ts` 的 `newCharacterRules(can.characters)` / `MEMORY_RULES`）——它们同时要求模型「先 read 再 edit」，格式本身以 `parseCharacterCard` 的解析结果为准。两句**各归各的能力位**：`can.characters`（= 剧作家开着「管理角色」）为假时建档章换成「本剧目没给你改卡的口，新角色直接上台」，`can.memory` 为假时记忆章与 `read_memory_detail` / `search_archive` 的教法一起收走。
+- **`can` 的键就是能力 id**（`characters` / `memory` / `image` / `library` / `search` / `lineage` / `skill` / `view` / `readiness` / `voice` / `files` / `shell` / `nsfw` / `stage`，非适用角色的位恒为 false）——两个角色的提示词读 `createAgentKit` 现算的同一个对象，不会各算各的。工坊侧同样逐处收条件（`workshop.ts` 的 `responsibilityRules(can.files)` / `talkRules` / `lineageGuide` / `writingPoints` / `setupFlow` / `skillsPrompt`），关掉一项就没有教它调不存在工具的章节。
 - `prompt.ts` 的 `imageChapter` 只留工具本身与后果（发起即返回、这一轮就引用到它则先上骨架占位），调用写法（走函数调用不是文本标签、id 命名、prompt 后缀串）全在 `QUEUED_DESCRIPTION`。
 - **什么时候该画一张不再由引擎决定**——早先那句「清单里没有就自己画一张背景」替所有剧目做了同一个决定，已撤掉，改成指向写作参数的素材来源（`renderCraftParams` 按 `can.image` / `can.library` 渲染那几行）。
 - 原先那句「提前 3–5 句发起」已删——流式播放下 3–5 句只给图 3–5 秒的头，而真图要一分多钟，这个数推导不出来。
@@ -94,7 +97,7 @@
 
 ## 看图（view_image）
 
-- **看图是一个能力不是一道流程**：`view_image`（只装给工坊，目录里的 `files` 分组）把图读成 image attachment，`source` 吃两种来源——剧目内路径（PlayFiles 白名单）或图片网址（`webImage.ts` 下载，按 URL 摘要缓存到 `media-cache/web-images/`，不进 git）。
+- **看图是一个能力不是一道流程**：`view_image`（只装给工坊，能力页上的「看图」一行，分组「搭台辅助」）把图读成 image attachment，`source` 吃两种来源——剧目内路径（PlayFiles 白名单）或图片网址（`webImage.ts` 下载，按 URL 摘要缓存到 `media-cache/web-images/`，不进 git）。
 - **系统提示词里不写「出完图看一遍」**——每张都看只是白烧一轮，看不看得由模型自己判断。
 - 网址分支的地址是模型给的，所以 `webImage.ts` 在下载前解析域名并拒掉回环/私网/链路本地/云元数据、每跳重定向重判、非 http(s) 直接拒。
 - 出口代理读标准的 `HTTP_PROXY`/`HTTPS_PROXY` 环境变量（取第一个非空的），不另开配置项——代理本来就是环境的事。
@@ -131,7 +134,7 @@
 - 所以 `pnpm -r build` 之后一个端口就是整站，公网部署只指向这一个。
 - 开发时仍是 vite + server 两个端口。
 - 在生成的事由 `pendingJobs.ts` 统一记账（剧作家的轮次 / 背景 / CG / 立绘 / 语音），一改整表广播 `pending_jobs`，与排队面板共用一块浮层，重连时随 hello 的 `pendingJobs` 恢复。
-- 新增端点：`GET /api/agents/models`（网关 `/v1/models` 清单 ∩ 设置里「支持的模型」清单，收窄在 `provider.ts` 的 `supportedModels`：按配置顺序排、清单里的 id 网关没有即报错点名；读不到网关即 400 不降级）、`GET /api/agents/tools`（工具目录）。
+- 新增端点：`GET /api/agents/models`（网关 `/v1/models` 清单 ∩ 设置里「支持的模型」清单，收窄在 `provider.ts` 的 `supportedModels`：按配置顺序排、清单里的 id 网关没有即报错点名；读不到网关即 400 不降级）、`GET /api/agents/capabilities`（`playhouse.capabilities()`：每个角色的能力目录——id / 名字 / 一句后果 / 分组与分组名 / `locked` / `available` 与 `unavailableNote`，外加每个角色的默认集；`locked` 的那行界面不给开关，`available: false` 指服务端没配 Exa / TTS / 生图后端）。
 
 ## 技能库与新剧目初始状态
 
@@ -172,7 +175,7 @@
 
 ## 限制级（NSFW）通道
 
-- **入口由工具开关控制**：`can.nsfw` 位（`CAPABILITY_TOOLS.nsfw = "enter_nsfw"`）决定 `prompt.ts` 注不注那两段（进/退指引）。2026-10-04 之前它是**恒注入**的——用户在 Agent 页把 `enter_nsfw`/`exit_nsfw` 摘掉，提示词还在教它去调，只有空转。关掉这两项 = 本剧目不要限制级通道。
+- **入口由能力开关控制**：`can.nsfw` 位（能力「限制级通道」授权 `enter_nsfw` / `exit_nsfw`）决定 `prompt.ts` 注不注那两段（进/退指引）。2026-10-04 之前它是**恒注入**的——用户在 Agent 页摘掉那两个工具，提示词还在教它去调，只有空转。关掉这一项 = 本剧目不要限制级通道。
 - **限制级（NSFW）剧情通道**：剧作家主动调 `enter_nsfw` 开启限制级通道（切换至限制级专用模型、注入 20 岁以上虚拟合规轮次与 `memory/always/nsfw.md`），退出时调 `exit_nsfw`（推荐与 `beat_done` 同批发出）。
 - **不变式：限制级内容对全年龄读者的唯一出口是它带出的 SFW 摘要。** 正文原文、段内玩家输入、段内每一拍的 `beat_end` 都只在限制级侧可见；前台舞台、`lineage.jsonl`、replay 一如既往保留全文（约束的是**模型读到的东西**，不是存档）。
 - **打标在事件上，不在轮次上**：`LineagePayload.nsfw` 由 `orchestrator.beatNsfw` 写进段内每个节点，取值来自 `beatChannelNsfw()` = `nsfwActive || nsfwPendingEnter`。判断依据必须是这个快照而不是当下的 `nsfwActive`：退出那一拍的 `beat_end` 在 `nsfwActive` 已翻成 false 之后才封，但它承载的仍是限制级原文。

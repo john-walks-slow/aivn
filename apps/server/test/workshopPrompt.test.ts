@@ -17,13 +17,22 @@ const CTX = {
   craft: DEFAULT_CRAFT,
 };
 
+/** 工坊的常见态：文件、故事树、技能库、看图、就绪门都开，命令行与剧作家那几位不适用。 */
 const caps = (over: Partial<AgentCapabilities> = {}): AgentCapabilities => ({
+  stage: false,
+  nsfw: false,
+  characters: false,
+  memory: false,
+  voice: false,
+  shell: false,
   image: true,
   search: true,
   library: true,
-  voice: false,
-  shell: false,
-  nsfw: true,
+  files: true,
+  lineage: true,
+  skill: true,
+  view: true,
+  readiness: true,
   ...over,
 });
 
@@ -80,5 +89,37 @@ describe("工坊提示词：play.json 的字段面", () => {
     expect(prompt).toContain("不要整篇 `write` 覆盖");
     // 缺省字段不在文件里，read 也读不出来——代价得写在提示词里
     expect(prompt).toContain("静默消失");
+  });
+});
+
+describe("工坊提示词：能力关掉之后不再教它调那个工具", () => {
+  it("「改剧目文件」关：写口那一整套（对话风格 / play.json 字段表 / set_craft）收走", async () => {
+    const prompt = await buildWorkshopPrompt({ ...CTX, can: caps({ files: false }) });
+    // 讲的全是「怎么改文件」的章节整章收走
+    expect(prompt).not.toContain("# 对话风格");
+    expect(prompt).not.toContain("set_craft");
+    expect(prompt).not.toContain("defaultVoiceId");
+    expect(prompt).not.toContain("assets/manifest.json");
+    // 产出物与落盘方式换成清单式：要改就交给用户
+    expect(prompt).toContain("这条路上没有给你写口");
+    expect(prompt).toContain("**交给用户落盘**");
+    expect(prompt).toContain("不许说\"已写入\"");
+    // 出图那部分不受影响
+    expect(prompt).toContain("先出 neutral 定妆照");
+  });
+
+  it("「故事树」关：读树那一章换成让用户去路线视图看", async () => {
+    const prompt = await buildWorkshopPrompt({ ...CTX, can: caps({ lineage: false }) });
+    expect(prompt).not.toContain("list_saves");
+    expect(prompt).not.toContain("read_lineage");
+    expect(prompt).toContain("本剧目没开「故事树」");
+  });
+
+  it("「技能库」关：技能清单块整块不注入（清单里点名了 read_skill）", async () => {
+    const on = await buildWorkshopPrompt({ ...CTX, can: caps({ skill: true }) });
+    const off = await buildWorkshopPrompt({ ...CTX, can: caps({ skill: false }) });
+    expect(on).toContain("style-anchors");
+    expect(off).not.toContain("style-anchors");
+    expect(off).not.toContain("read_skill");
   });
 });

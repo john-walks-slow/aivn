@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createAgentKit, defaultToolsFor } from "../src/agentkit/kit.js";
+import { createAgentKit, defaultCapabilitiesFor } from "../src/agentkit/kit.js";
 import type { PlaywriterKitDeps, WorkshopKitDeps, PlayFileWrite } from "../src/agentkit/deps.js";
 import { PlayFiles } from "../src/playFiles.js";
 import { PlayMemory } from "../src/memory.js";
@@ -41,7 +41,7 @@ function toolset(dir: string, writes: PlayFileWrite[]) {
   const deps = {
     role: "workshop",
     playId: "test",
-    enabled: new Set([...defaultToolsFor("workshop"), "bash"]),
+    capabilities: new Set([...defaultCapabilitiesFor("workshop"), "shell"]),
     files: new PlayFiles({ dir } as never),
     store: {} as never,
     onWrite: (w: PlayFileWrite) => writes.push(w),
@@ -184,11 +184,15 @@ describe("PlayEnv：bash 是另一条路", () => {
  * 引擎产物（arcs / archive）看得见但写不进去。
  */
 describe("PlayEnv：剧作家的文件工具", () => {
-  function playwriterToolset(dir: string, writes: PlayFileWrite[]) {
+  function playwriterToolset(
+    dir: string,
+    writes: PlayFileWrite[],
+    caps: string[] = defaultCapabilitiesFor("playwriter"),
+  ) {
     const deps = {
       role: "playwriter",
       playId: "test",
-      enabled: new Set([...defaultToolsFor("playwriter")]),
+      capabilities: new Set(caps),
       store: {} as never,
       files: new PlayFiles({ dir } as never),
       onWrite: (w: PlayFileWrite) => writes.push(w),
@@ -215,9 +219,11 @@ describe("PlayEnv：剧作家的文件工具", () => {
     };
   }
 
+  const CARD_CAPS = ["characters", "memory"];
+
   it("写角色卡走通用 write：落盘 + onWrite（宿主据此登记 id、排轮边界重建）", async () => {
     const { dir, writes } = await tempPlay();
-    const { write } = playwriterToolset(dir, writes);
+    const { write } = playwriterToolset(dir, writes, CARD_CAPS);
 
     await call(write, {
       path: "characters/xiaoyu.md",
@@ -235,7 +241,7 @@ describe("PlayEnv：剧作家的文件工具", () => {
 
   it("edit 定点改角色卡：只换那一处，机器字段一个不丢（整篇 write 做不到这件事）", async () => {
     const { dir, writes } = await tempPlay();
-    const { read, write, edit } = playwriterToolset(dir, writes);
+    const { read, write, edit } = playwriterToolset(dir, writes, CARD_CAPS);
 
     await call(write, {
       path: "characters/xiaoyu.md",
@@ -256,23 +262,105 @@ describe("PlayEnv：剧作家的文件工具", () => {
     expect(writes[1]!.before).toContain("咖啡店打工的少女。");
   });
 
-  it("引擎产物（memory/arcs、memory/archive）看得见、写不进去", async () => {
+  it("引擎产物（memory/arcs、memory/archive）写不进去，通用读口也不给读", async () => {
     const { dir, writes } = await tempPlay();
     await mkdir(join(dir, "memory", "arcs"), { recursive: true });
     await writeFile(join(dir, "memory", "arcs", "epoch-a-1.md"), "# 第一纪\n摘要\n", "utf8");
     const { read, write, edit } = playwriterToolset(dir, writes);
 
-    const ok = (await call(read, { path: "memory/arcs/epoch-a-1.md" })) as { content: { text: string }[] };
-    expect(ok.content[0]!.text).toContain("第一纪");
-
+    // 通用 read 认不认引擎产物按角色分：这两条目录跟分支走，剧作家读出来就是别的世界线的纪元摘要
+    await expect(call(read, { path: "memory/arcs/epoch-a-1.md" })).rejects.toThrow(/引擎产物走不了通用读写口/);
     for (const path of ["memory/arcs/epoch-a-1.md", "memory/ARCS/epoch-a-1.md", "memory/Archive/x.md"]) {
-      // 大小写也要挡住：Windows / macOS 上这几个是同一个文件
-      await expect(call(write, { path, content: "改掉" })).rejects.toThrow(/不在剧目可写范围/);
+      // 大小写也要挡住：Windows / macOS 上这几个是同一个文件；写走同一条路径解析，也一起拒
+      await expect(call(write, { path, content: "改掉" })).rejects.toThrow(/引擎产物走不了通用读写口/);
     }
+    // edit 也拒在路径解析这一步：读面就先挡下了，pi 不再往 writeFile 走、原话直接回给模型
     await expect(
       call(edit, { path: "memory/arcs/epoch-a-1.md", edits: [{ oldText: "第一纪", newText: "改掉" }] }),
-    ).rejects.toThrow(/Could not edit file/);
+    ).rejects.toThrow(/引擎产物走不了通用读写口/);
     expect(await readFile(join(dir, "memory", "arcs", "epoch-a-1.md"), "utf8")).toContain("第一纪");
     expect(writes).toEqual([]);
+  });
+
+  it("「管理角色」关着时：写角色卡被拒，读角色卡照旧（read 是基座工具）", async () => {
+    const { dir, writes } = await tempPlay();
+    await mkdir(join(dir, "characters"), { recursive: true });
+    await writeFile(join(dir, "characters", "mio.md"), "---\nname: 澪\n---\n走廊上的少女。\n", "utf8");
+    const { read, write } = playwriterToolset(dir, writes); // 默认集：memory 开、characters 关
+
+    await expect(call(write, { path: "characters/xiaoyu.md", content: "---\nname: 小雨\n---\n" })).rejects.toThrow(
+      /没给这个角色开改角色卡的能力/,
+    );
+    await expect(call(write, { path: "play.json", content: "{}" })).rejects.toThrow(
+      /没给这个角色开改剧目文件的能力/,
+    );
+    // 默认集里 memory 开着，记忆卡不受影响
+    await call(write, { path: "memory/index/lore/新设定.md", content: "# 新设定\n" });
+    expect(writes.map((w) => w.path)).toEqual(["memory/index/lore/新设定.md"]);
+
+    // 角色表折叠时模型要能自己把完整人设 read 出来：读口不受「管理角色」影响
+    const ok = (await call(read, { path: "characters/mio.md" })) as { content: { text: string }[] };
+    expect(ok.content[0]!.text).toContain("走廊上的少女。");
+  });
+});
+
+/**
+ * 「scope 挂在 PlayEnv、不挂 PlayFiles」这条决定的防回归钉子：
+ * 工坊关掉「改剧目文件」之后，**用户面**的四条路（文件页读写删、craft / premise 写口、
+ * `applyChanges` 的读盘检查、`view_image` 的本地分支）都得照旧——它们共用同一个 `PlayFiles` 实例。
+ */
+describe("PlayEnv：关掉「改剧目文件」不打断工坊自己的 PlayFiles", () => {
+  function workshopTools(dir: string, writes: PlayFileWrite[], caps: string[]) {
+    const deps = {
+      role: "workshop",
+      playId: "test",
+      capabilities: new Set(caps),
+      files: new PlayFiles({ dir } as never),
+      store: {} as never,
+      onWrite: (w: PlayFileWrite) => writes.push(w),
+      onAsset: () => {},
+      saves: {} as never,
+      saveStore: () => ({}) as never,
+    } as unknown as WorkshopKitDeps;
+    const tools = createAgentKit(deps).tools;
+    return { files: deps.files, write: tools.find((t) => t.name === "write")! };
+  }
+
+  it("「改剧目文件」关着时 agent 没有写口，文件页与 craft 写口用的那份 PlayFiles 照旧", async () => {
+    const { dir, writes } = await tempPlay();
+    const { files, write } = workshopTools(dir, writes, []); // 一个能力都不开
+
+    // 写口就是「改剧目文件」这个能力给的：关掉之后 write / edit 根本不装，模型连试的机会都没有
+    expect(write).toBeUndefined();
+
+    // 文件页（http.ts 经 runtime.workshop.files 读 / 写 / 删）与 craft 写口走的是同一个实例
+    expect(await files.read("play.json")).toContain("测试剧目");
+    await files.write("theme.css", ":root { --accent: #f00; }");
+    expect(await readFile(join(dir, "theme.css"), "utf8")).toContain("--accent");
+    await files.write("memory/always/premise.md", "# 前提\n");
+    await files.remove("memory/always/premise.md");
+    // applyChanges 的读盘检查：play.json 解析得了，就不该被 agent 的能力面挡住
+    expect(JSON.parse(await files.read("play.json")).title).toBe("测试剧目");
+  });
+
+  it("工坊的通用读口看得见引擎产物（它要能读用户手上的剧目全貌）", async () => {
+    const { dir, writes } = await tempPlay();
+    await mkdir(join(dir, "memory", "archive"), { recursive: true });
+    await writeFile(join(dir, "memory", "archive", "turn-1.md"), "# 第一轮\n", "utf8");
+    const deps = {
+      role: "workshop",
+      playId: "test",
+      capabilities: new Set(defaultCapabilitiesFor("workshop")),
+      files: new PlayFiles({ dir } as never),
+      store: {} as never,
+      onWrite: (w: PlayFileWrite) => writes.push(w),
+      onAsset: () => {},
+      saves: {} as never,
+      saveStore: () => ({}) as never,
+    } as unknown as WorkshopKitDeps;
+    const read = createAgentKit(deps).tools.find((t) => t.name === "read")!;
+
+    const ok = (await call(read, { path: "memory/archive/turn-1.md" })) as { content: { text: string }[] };
+    expect(ok.content[0]!.text).toContain("第一轮");
   });
 });

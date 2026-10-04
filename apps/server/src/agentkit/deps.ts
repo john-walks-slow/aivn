@@ -45,8 +45,8 @@ export interface PlayFileWrite {
 export interface KitCommonDeps {
   role: AgentRole;
   playId: string;
-  /** 启用的工具名（play.json 的 agents 段；缺省 = 该角色的默认集，见 kit.ts 的 DEFAULT_ENABLED）。 */
-  enabled: ReadonlySet<string>;
+  /** 启用的能力 id（play.json 的 `agents.<role>.capabilities`；缺省 = 该角色的默认集，见 kit.ts）。 */
+  capabilities: ReadonlySet<string>;
   /** 剧目目录：素材类工具要往这里写。 */
   store: PlayStore;
   /** 应用级素材资源库（只读检索 + 导入）。未配置时不注册 list_library / import_asset。 */

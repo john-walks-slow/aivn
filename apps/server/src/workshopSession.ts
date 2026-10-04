@@ -30,7 +30,7 @@ import {
   pickThreadCutIndex,
   type EpochSummary,
 } from "./compaction.js";
-import { createAgentKit, enabledToolsFor, type AgentKit } from "./agentkit/kit.js";
+import { createAgentKit, enabledCapabilitiesFor, type AgentKit } from "./agentkit/kit.js";
 import type { PlayAssets } from "./playAssets.js";
 import { WorkshopThreads, type ThreadCompaction, type WorkshopThread } from "./workshopThreads.js";
 
@@ -66,7 +66,7 @@ export interface WorkshopSessionOptions {
   exa?: Exa;
   /** 网络图下载器；没有它 `view_image` 只认本地路径。 */
   webImage?: WebImageFetcher;
-  /** 工坊 agent 的运行设置（play.json 的 agents.workshop）：思考档位与工具开关。 */
+  /** 工坊 agent 的运行设置（play.json 的 agents.workshop）：思考档位与能力开关。 */
   agents?: AgentSettings;
   /** 线程压缩参数（工坊可用自己的 STAGE_WORKSHOP_* 一组 env）；不给 = 不压缩。 */
   compaction?: {
@@ -97,7 +97,7 @@ export class WorkshopSession {
     this.kit = createAgentKit({
       role: "workshop",
       playId: opts.playId,
-      enabled: enabledToolsFor("workshop", opts.agents?.tools),
+      capabilities: enabledCapabilitiesFor("workshop", opts.agents?.capabilities),
       thinking: opts.agents?.thinking,
       files: this.files,
       store: opts.store,

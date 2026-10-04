@@ -30,7 +30,7 @@ import {
 } from "@aivn/core";
 import type { ServerMessage } from "@aivn/core";
 export type { ReadPos } from "@aivn/core";
-import { createAgentKit, enabledToolsFor, type AgentKit } from "./agentkit/kit.js";
+import { createAgentKit, enabledCapabilitiesFor, type AgentKit } from "./agentkit/kit.js";
 import type { ModelStop, PlayFileWrite } from "./agentkit/deps.js";
 import { PlayFiles } from "./playFiles.js";
 import type { Exa } from "./exa.js";
@@ -514,7 +514,7 @@ export class PlaywrightOrchestrator {
     this.kit = createAgentKit({
       role: "playwriter",
       playId: opts.play.id,
-      enabled: enabledToolsFor("playwriter", opts.agents?.tools),
+      capabilities: enabledCapabilitiesFor("playwriter", opts.agents?.capabilities),
       store: opts.store,
       assetLibrary: opts.assetLibrary,
       voices: opts.voices,

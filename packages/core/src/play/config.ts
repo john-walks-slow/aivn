@@ -130,9 +130,9 @@ export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 /**
  * 单个 agent 的运行设置（工坊「Agent」页签编辑，落在 play.json）。
  *
- * 缺字段即默认：模型回落到服务端配置的默认模型，思考档位 off，工具全开。
+ * 缺字段即默认：模型回落到服务端配置的默认模型，思考档位 off，能力走该角色的默认集。
  * 这三项都是**逐剧目**的——按量计费时工坊跑便宜模型、剧作家跑强模型是常态，
- * 而某部剧目不想让 agent 自己花钱生图时只关这一个剧目的工具即可。
+ * 而某部剧目不想让 agent 自己花钱生图时只关这一个剧目的「生图」能力即可。
  */
 export interface AgentSettings {
   /** 网关上的模型 id（如 gemini-3.5-flash-lite）。缺省 = STAGE_MODEL_ID。 */
@@ -147,13 +147,13 @@ export interface AgentSettings {
    */
   prompt?: string;
   /**
-   * 显式启用的工具名（工具目录见 `GET /api/agents/tools`）。缺省 = 该角色的默认集。
+   * 显式启用的能力 id（能力目录见 `GET /api/agents/capabilities`）。缺省 = 该角色的默认集。
    *
-   * 存的是**启用集**而不是禁用集：默认禁用的那几个（剧作家的生图与资源库）
-   * 写成黑名单时，「用户打开了它」与「它本来就开着」在文件里长得一样，
-   * 下次改默认值就会把用户的显式选择一起吞掉。
+   * 存的是**启用集**而不是禁用集：默认关的那几个（剧作家的「管理角色」）写成黑名单时，
+   * 「用户打开了它」与「它本来就开着」在文件里长得一样，下次改默认值就会把用户的显式选择
+   * 一起吞掉。常开与基座（`stage`、`read`）不写在这里，写了也忽略。
    */
-  tools?: string[];
+  capabilities?: string[];
   /** 限制级（NSFW）剧情通道专用模型 id（仅剧作家用）。缺省回退到 STAGE_NSFW_MODEL_ID 或 model。 */
   nsfwModel?: string;
   /** 限制级（NSFW）剧情通道专用思考档位（仅剧作家用）。缺省回退到 thinking。 */
@@ -396,10 +396,14 @@ function parseAgentConfig(raw: AgentConfig | undefined): AgentConfig | undefined
         settings.nsfwPrompt = source.nsfwPrompt.trim();
       }
     }
-    if (Array.isArray(source.tools)) {
-      const names = source.tools.filter((n): n is string => typeof n === "string" && n.trim() !== "");
+    if (Array.isArray(source.capabilities)) {
+      const ids = source.capabilities
+        .filter((n): n is string => typeof n === "string")
+        .map((n) => n.trim())
+        .filter((n) => n !== "");
       // 空数组是「一个都不开」的显式选择，与「没写、走默认集」不同义，所以保留。
-      settings.tools = [...new Set(names)];
+      // 认不认得出这些 id 是能力目录的事，这一层只做形状（去空白、去重）。
+      settings.capabilities = [...new Set(ids)];
     }
     if (Object.keys(settings).length > 0) out[role] = settings;
   }

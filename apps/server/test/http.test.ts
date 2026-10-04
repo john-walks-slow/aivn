@@ -94,23 +94,43 @@ describe("Agent 设置页的两个目录", () => {
     expect(res.payload).toContain("网关模型清单读取失败");
   });
 
-  it("GET /api/agents/tools 返回工具目录（设置页渲染开关用）", async () => {
+  it("GET /api/agents/capabilities 返回能力目录（设置页渲染开关用，含 locked / available）", async () => {
     const res = new FakeRes();
     await handleHttp(
-      { url: "/api/agents/tools", method: "GET" } as unknown as IncomingMessage,
+      { url: "/api/agents/capabilities", method: "GET" } as unknown as IncomingMessage,
       res as unknown as ServerResponse,
       new PlayLibrary("/tmp"),
       {
-        tools: () => ({
-          tools: [{ id: "beat_done", label: "结束本轮", group: "beat", groupLabel: "时间线" }],
-          defaults: { playwriter: ["beat_done"], workshop: ["beat_done"] },
+        capabilities: () => ({
+          capabilities: [
+            {
+              id: "stage",
+              label: "轮与状态",
+              desc: "结束本轮、提议状态更新——演出本身的收束口，始终开启。",
+              group: "show",
+              groupLabel: "演出",
+              locked: true,
+              available: true,
+            },
+          ],
+          defaults: { playwriter: ["memory"], workshop: ["files"] },
         }),
       } as unknown as PlayHouse,
     );
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.payload)).toEqual({
-      tools: [{ id: "beat_done", label: "结束本轮", group: "beat", groupLabel: "时间线" }],
-      defaults: { playwriter: ["beat_done"], workshop: ["beat_done"] },
+      capabilities: [
+        {
+          id: "stage",
+          label: "轮与状态",
+          desc: "结束本轮、提议状态更新——演出本身的收束口，始终开启。",
+          group: "show",
+          groupLabel: "演出",
+          locked: true,
+          available: true,
+        },
+      ],
+      defaults: { playwriter: ["memory"], workshop: ["files"] },
     });
   });
 });

@@ -104,11 +104,52 @@ function isVisible(rel: string): boolean {
 }
 
 /**
+ * 可写文件的三个面。**穷尽可写面**：`isEditable` 放行的每一个路径都恰好落在其中之一，
+ * 加一类可写文件而忘了加 scope，用例会红（见 playFiles.test.ts）。
+ *
+ * 名字是用户语汇，不出现具体路径；路径只在上表里出现一次。
+ */
+export type WriteScope = "characters" | "memory" | "config";
+
+/** scope → 它放行的路径（目录带尾斜杠，其余是整文件匹配）。一律按小写比，见 `isGenerated`。 */
+const SCOPE_PREFIXES: Record<WriteScope, readonly string[]> = {
+  characters: [`${CHARACTER_DIR}/`],
+  memory: ["memory/"],
+  config: [PLAY_CONFIG, "theme.css", ASSET_MANIFEST],
+};
+
+/** scope 的用户语汇（错误消息用；界面上的名字在能力目录里）。 */
+export const WRITE_SCOPE_LABELS: Record<WriteScope, string> = {
+  characters: "角色卡",
+  memory: "记忆卡",
+  config: "剧目文件",
+};
+
+/** 这个路径属于哪个可写面；不可写（含引擎产物）返回 null。 */
+export function writeScopeOf(rel: string): WriteScope | null {
+  if (!isEditable(rel)) return null;
+  const lower = rel.toLowerCase();
+  for (const scope of Object.keys(SCOPE_PREFIXES) as WriteScope[]) {
+    const hit = SCOPE_PREFIXES[scope].some((prefix) =>
+      prefix.endsWith("/") ? lower.startsWith(prefix) : lower === prefix,
+    );
+    if (hit) return scope;
+  }
+  return null;
+}
+
+/** 这个路径是否落在给定的可写面之内。能力的写面判定收在这一处。 */
+export function inWriteScopes(rel: string, scopes: readonly WriteScope[]): boolean {
+  const scope = writeScopeOf(rel);
+  return scope !== null && scopes.includes(scope);
+}
+
+/**
  * 是不是引擎产物。**按小写比**：Windows / macOS 的文件系统不区分大小写，
  * `memory/ARCS/x.md` 在那边就是 `memory/arcs/x.md` 同一个文件——
  * 区分大小写的比较只在 Linux 上成立，桌面版会从这条路绕过去。
  */
-function isGenerated(rel: string): boolean {
+export function isGenerated(rel: string): boolean {
   const lower = rel.toLowerCase();
   return GENERATED_PREFIXES.some((prefix) => lower.startsWith(prefix));
 }

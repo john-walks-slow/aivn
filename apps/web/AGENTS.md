@@ -14,7 +14,7 @@
 - `src/voice/`（VoiceLibrary 全屏音色库面板——顶部搜索 + 语言下拉（无「全部语言」项，默认跟随 `navigator.language`）+ 卡片网格逐个试听/选用 + 右上角固定「×」关闭键、分页 60 条防 1000 张图卡顿、useVoiceCatalog 目录状态 + 目录外 voiceId 按 id 解析）。
 - `src/workshop/`：
   - WorkshopPane 八 tab 对话/剧目/角色/记忆/素材/文件/Agent/设置（`stage/view.ts` 的 `WorkshopTab` 是顺序唯一真相源：**剧目**在最前——它改的是剧目本身；**角色/记忆**紧跟其后——改的是剧目的成员与内容；其余是素材与机器设置）。
-  - AgentPane 单剧目 agent 设置（剧作家/搭台助手各一张卡：模型下拉走 `GET /api/agents/models`（网关清单 ∩ 设置页「支持的模型」清单；读不到就显式报错，不静默退化成默认；清单外的旧值补一项「不在支持清单里」显示，不静默改写 play.json）、思考档位、按 `groupLabel` 分组的工具开关；搭台助手那张卡还有**出图审批**（`ask` 默认 / `auto`）；保存即写 play.json 的 `agents` 段）。
+  - AgentPane 单剧目 agent 设置（剧作家/搭台助手各一张卡：模型下拉走 `GET /api/agents/models`（网关清单 ∩ 设置页「支持的模型」清单；读不到就显式报错，不静默退化成默认；清单外的旧值补一项「不在支持清单里」显示，不静默改写 play.json）、思考档位、按 `groupLabel` 分组的**能力开关**（数据源 `GET /api/agents/capabilities`，一行 = 名字 + 一句后果，`locked` 的渲染成灰字「始终开启」不给开关，`available: false` 的行尾补 `unavailableNote`；界面上不出现任何工具 id）；搭台助手那张卡还有**出图审批**（`ask` 默认 / `auto`）；保存即写 play.json 的 `agents` 段）。
   - PlayPane 剧目页（标题 / opening / `scriptLanguage` 剧本语言 / `voiceLanguage` 语音语言 / 无名角色音色 / 逐剧目生图 `image.model` + `image.size` / 封面选图 / **写作参数**（`craft` 的六个下拉）；只写 `play.json` 一份，是唯一写剧目字段的页。六个下拉的第一项恒为「默认」，选中即把那个字段从文件里删掉——`editCraft` 是同一条规矩的唯一入口，`setImage` 同理（两个生图字段都留空就把整个 `image` 段删掉））。
   - CharacterPane 角色页（`detail.cast` 就是全部角色卡，主角只是 id 固定 `protagonist` 的那张：同一个 CharacterEditor、同样能上台/有立绘/有音色/能从资源库导入，只是不给删；保存只写 `characters/<id>.md`，这一页一个字节都不碰 `play.json`）。
   - MemoryPane 记忆页（只列 `memory/**` 的卡片，`arcs/`+`archive/` 不列；常驻设定在前、设定卡在后。craft.md 的占位符只提文风与禁忌，「节奏与素材来源」指向剧目页）。

@@ -60,6 +60,36 @@ describe("parsePlayConfig：agents 段的补充提示词", () => {
   });
 });
 
+describe("parsePlayConfig：agents 段的能力启用集", () => {
+  const caps = (capabilities: unknown): unknown =>
+    parsePlayConfig({ ...BASE, agents: { playwriter: { capabilities } } }).agents?.playwriter?.capabilities;
+
+  it("去空白、去重，顺序照用户写的（顺序不影响装配，但别把文件改样）", () => {
+    expect(caps([" memory ", "image", "memory", "  ", "library"])).toEqual([
+      "memory",
+      "image",
+      "library",
+    ]);
+  });
+
+  it("空数组是显式选择，保留下来（= 只剩常开，与「没写、走默认集」不同义）", () => {
+    expect(caps([])).toEqual([]);
+    expect(parsePlayConfig({ ...BASE, agents: { playwriter: {} } }).agents?.playwriter).toBeUndefined();
+  });
+
+  it("不是数组 / 全是空白：当没写，不留空壳", () => {
+    expect(caps("memory")).toBeUndefined();
+    expect(caps(["  ", 3, null])).toEqual([]);
+    expect(
+      parsePlayConfig({ ...BASE, agents: { workshop: { capabilities: "files" } } }).agents?.workshop,
+    ).toBeUndefined();
+  });
+
+  it("认不认得出这些 id 是能力目录的事：这一层不校验，拼错的也照留", () => {
+    expect(caps(["charactor"])).toEqual(["charactor"]);
+  });
+});
+
 describe("parsePlayConfig：写作参数（craft）与逐剧目生图（image）", () => {
   it("craft 逐字段白名单：拼错的值当没写，不拖累同一段里合法的那些", () => {
     const play = parsePlayConfig({

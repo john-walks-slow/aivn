@@ -347,25 +347,56 @@ describe("buildSystemPrompt：素材从哪来", () => {
   });
 });
 
-describe("写口与提示词的一致性：没装 write 就不教它写文件", () => {
+describe("能力位与提示词的一致性：没开的能力不教它调", () => {
   // 记忆索引那一章只在真有条目时才注（没卡时它本来就不出现）——给它一张，才测得到那句 read 提示
   const base = { play: PLAY, memory: new PlayMemory({ cards: [CARD] }) };
 
-  it("有写口：建卡流程与记忆卡格式都在（格式本该挂在工具描述上，pi 内建工具没有这个口子）", () => {
-    const prompt = build({ ...base, can: { files: true } });
+  it("记忆与「管理角色」都开：建卡流程、记忆卡格式、检索工具都在", () => {
+    const prompt = build({ ...base, can: { memory: true, characters: true } });
     expect(prompt).toContain("先建档（write）");
     expect(prompt).toContain("## 记忆卡（memory/index/）");
-    expect(prompt).toContain("或直接 read 那个文件");
+    expect(prompt).toContain("read_memory_detail");
+    expect(prompt).toContain("search_archive");
   });
 
-  it("没写口：两章一起收走，但三步流程的骨架还在（它还有出图与临时角色两条路）", () => {
-    const prompt = build({ ...base, can: { files: false } });
+  it("「管理角色」关、记忆开：建档那一章换掉，记忆卡那一章原样", () => {
+    const prompt = build({ ...base, can: { memory: true, characters: false } });
     expect(prompt).not.toContain("先建档（write）");
-    expect(prompt).not.toContain("## 记忆卡（memory/index/）");
-    expect(prompt).not.toContain("或直接 read 那个文件");
-    // 收掉的是「怎么调 write」，不是「怎么引入角色」这件事本身
     expect(prompt).toContain("建档这条路本剧目没有给你");
-    expect(prompt).toContain("**2. 生立绘（generate_image kind=\"sprite\"）**");
+    // 收掉的是「怎么调 write 建卡」，不是「怎么引入角色」这件事本身
+    expect(prompt).toContain('**2. 生立绘（generate_image kind="sprite"）**');
     expect(prompt).toContain("**3. 临时角色（一次性 NPC）**");
+    expect(prompt).toContain("## 记忆卡（memory/index/）");
+  });
+
+  it("记忆关、管理角色开：记忆卡格式与检索工具收走，建档那一章原样", () => {
+    const prompt = build({ ...base, can: { memory: false, characters: true } });
+    expect(prompt).not.toContain("## 记忆卡（memory/index/）");
+    expect(prompt).not.toContain("read_memory_detail");
+    expect(prompt).not.toContain("search_archive");
+    expect(prompt).toContain("先建档（write）");
+  });
+
+  it("两个都关：只剩「直接 read 那个文件」这条路，且不出现任何工具名", () => {
+    const prompt = build({ ...base, can: { memory: false, characters: false } });
+    expect(prompt).not.toContain("read_memory_detail");
+    expect(prompt).not.toContain("search_archive");
+    expect(prompt).toContain("需要某条完整内容时直接 read 那个文件；过往剧情问用户");
+  });
+
+  it("分级角色表末尾那句按「管理角色」指路：开着走建档，关着让人直接 read 卡", () => {
+    const cast = new Map([
+      ["protagonist", { id: "protagonist", name: "你", body: "玩家本人的长篇人设。" }],
+      ["mio", { id: "mio", name: "澪", body: "天文社社长。" }],
+      ["koharu", { id: "koharu", name: "小春", body: "后辈。" }],
+      ["aoi", { id: "aoi", name: "葵", body: "学姐。" }],
+      ["ren", { id: "ren", name: "莲", body: "同班。" }],
+    ]);
+    const memory = new PlayMemory({ characters: cast });
+    const withCards = { play: PLAY, memory, activeCast: ["mio", "protagonist"] };
+    expect(build({ ...withCards, can: { characters: true } })).toContain("要它的完整人设出场就走《引入新角色》建档");
+    expect(build({ ...withCards, can: { characters: false } })).toContain(
+      "要它的完整人设就先 read `characters/<id>.md`",
+    );
   });
 });

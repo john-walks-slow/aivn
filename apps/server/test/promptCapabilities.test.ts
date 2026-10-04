@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildSystemPrompt } from "../src/prompt.js";
 import { buildWorkshopPrompt, type WorkshopPromptContext } from "../src/workshop.js";
-import {
-  CAPABILITY_TOOLS,
-  agentToolCatalog,
-  capabilitiesOf,
-  type AgentCapabilities,
-} from "../src/agentkit/kit.js";
-import { AGENT_ROLES } from "../src/agentkit/role.js";
+import { capabilitiesOf, CAPABILITY_CATALOG, type AgentCapabilities } from "../src/agentkit/kit.js";
 import { DEFAULT_CRAFT } from "@aivn/core";
 import { caps, PLAY } from "./helpers.js";
 
@@ -15,7 +9,7 @@ import { caps, PLAY } from "./helpers.js";
  * 能力位的表达与消费：两位角色的 system prompt 读**同一个** `kit.can`。
  *
  * 这里盯的是那类「只改一边」的漂移：加能力位时只给一个角色的提示词收了条件，
- * 另一个就还在教模型调一个装不进去的工具（题面唯一真相源是 `CAPABILITY_TOOLS`）。
+ * 另一个就还在教模型调一个装不进去的工具（题面唯一真相源是 `CAPABILITY_CATALOG`）。
  */
 
 /** 工坊提示词的装配输入（本文件只关心能力位，其余给最小可跑值）。 */
@@ -27,25 +21,30 @@ const workshopCtx = (can: AgentCapabilities): WorkshopPromptContext => ({
   can,
 });
 
-describe("能力位：一位对应一个工具", () => {
-  it("表里每个工具都真在工具目录里——写错一个名字，这一位就永远是 false", () => {
-    const known = new Set(agentToolCatalog().map((entry) => entry.id));
-    // 装不上的工具不该占一位：没人能勾的开关，提示词永远不会为它开章
-    const installable = new Set(
-      AGENT_ROLES.flatMap((role) => agentToolCatalog(role).map((entry) => entry.id)),
+describe("能力位：能力开着、且它声明的工具都装上，这一位才为 true", () => {
+  it("能力目录里每一位都出得来，没装工具时为 false", () => {
+    const empty = capabilitiesOf("playwriter", new Set(), []);
+    expect(Object.keys(empty).sort()).toEqual(CAPABILITY_CATALOG.map((c) => c.id).sort());
+    expect(Object.values(empty).every((on) => on === false)).toBe(true);
+    // 舞台那边是常开位：只要工具在，不看启用集
+    expect(capabilitiesOf("playwriter", new Set(), [{ name: "beat_done" }, { name: "update_state" }]).stage).toBe(
+      true,
     );
-    for (const [key, tool] of Object.entries(CAPABILITY_TOOLS)) {
-      expect(known.has(tool), `能力位 ${key} 指向的工具 ${tool} 不在工具目录里`).toBe(true);
-      expect(installable.has(tool), `能力位 ${key} 指向的工具 ${tool} 两个角色都装不上`).toBe(true);
-    }
   });
 
-  it("capabilitiesOf：表里有几位就出几位，装了才为 true", () => {
-    expect(Object.keys(capabilitiesOf([])).sort()).toEqual(Object.keys(CAPABILITY_TOOLS).sort());
-    expect(Object.values(capabilitiesOf([]))).toEqual(Object.keys(CAPABILITY_TOOLS).map(() => false));
-    // bash 在、enter_nsfw 与 write 不在：nsfw 与 files 这两位就该是 false
-    expect(capabilitiesOf([{ name: "generate_image" }, { name: "bash" }]))
-      .toEqual({ ...caps({ image: true, shell: true, nsfw: false, files: false }) });
+  it("能力声明了装不上的工具：那一位为 false（生图缺 recut_sprite 就不算开）", () => {
+    const half = capabilitiesOf("workshop", new Set(["image"]), [{ name: "generate_image" }]);
+    expect(half.image).toBe(false);
+    const full = capabilitiesOf("workshop", new Set(["image"]), [
+      { name: "generate_image" },
+      { name: "recut_sprite" },
+    ]);
+    expect(full.image).toBe(true);
+  });
+
+  it("只要求这个角色装得上的那些：剧作家开资源库不需要 import_asset", () => {
+    expect(capabilitiesOf("playwriter", new Set(["library"]), [{ name: "list_library" }]).library).toBe(true);
+    expect(capabilitiesOf("workshop", new Set(["library"]), [{ name: "list_library" }]).library).toBe(false);
   });
 });
 

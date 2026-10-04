@@ -7,6 +7,7 @@ import { createAssistantMessageEventStream, type AssistantMessage } from "@earen
 import { LineageTree, characterIdOfPath, type ServerMessage } from "@aivn/core";
 import { PlaywrightOrchestrator, type OrchestratorRuntimeState } from "../src/orchestrator.js";
 import { createMemoryTools } from "../src/agentkit/memoryTool.js";
+import { defaultCapabilitiesFor } from "../src/agentkit/kit.js";
 import { PlayMemory } from "../src/memory.js";
 import { BEAT_1, BEAT_1_STOP, BEAT_2, CARD, PLAY, createFakeStreamFn, type FakeResponse } from "./helpers.js";
 
@@ -939,6 +940,7 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
   });
 
   it("跨轮端到端：write 建卡 → 下一轮 update_state 就认这个角色", async () => {
+    // 「管理角色」默认关着（角色卡是制作资产），这条链路要它开着才谈得上写卡
     // 走完整链路：PlayEnv 落盘 → onWrite → orchestrator.onPlayFileWritten → liveCharacterIdsValue。
     // 分两轮写而不是同批发，是因为同一批工具调用是并发的，断言顺序会变成掷骰子。
     // 每轮再拆成「工具批次 + beat_done 批次」——beat_done 与别的工具同批会把 terminate 吞掉。
@@ -962,6 +964,8 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,
+      // 「管理角色」默认关着（角色卡是制作资产）：这条链路要它开着才谈得上写卡
+      agents: { capabilities: [...defaultCapabilitiesFor("playwriter"), "characters"] },
       store: { dir } as never,
       memory: new PlayMemory(),
       tree: new LineageTree(),

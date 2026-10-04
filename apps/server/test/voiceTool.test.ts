@@ -3,6 +3,7 @@ import { createVoiceTool } from "../src/agentkit/voiceTool.js";
 import type { VoiceCatalogService } from "../src/voiceCatalog.js";
 import { DEFAULT_CRAFT } from "@aivn/core";
 import { buildWorkshopPrompt } from "../src/workshop.js";
+import type { AgentCapabilities } from "../src/agentkit/kit.js";
 
 /**
  * 音色检索工具。
@@ -102,6 +103,25 @@ describe("list_voices", () => {
   });
 });
 
+/** 工坊的常见态；这一组用例只翻 voice 那一位。 */
+const caps = (over: Record<string, boolean> = {}): AgentCapabilities => ({
+  stage: false,
+  nsfw: false,
+  characters: false,
+  memory: false,
+  image: true,
+  search: true,
+  library: true,
+  voice: true,
+  shell: false,
+  files: true,
+  lineage: true,
+  skill: true,
+  view: true,
+  readiness: true,
+  ...over,
+});
+
 describe("工坊提示词：音色知识不在这里重复", () => {
   const base = {
     title: "T",
@@ -111,28 +131,22 @@ describe("工坊提示词：音色知识不在这里重复", () => {
   };
 
   it("配了 TTS 才教它去查音色库", async () => {
-    const on = await buildWorkshopPrompt({
-      ...base,
-      can: { image: true, search: true, library: true, voice: true, shell: false, nsfw: true },
-    });
+    const on = await buildWorkshopPrompt({ ...base, can: caps({ voice: true }) });
     expect(on).toContain("list_voices");
     expect(on).toContain("32 位 hex");
 
-    const off = await buildWorkshopPrompt({
-      ...base,
-      can: { image: true, search: true, library: true, voice: false, shell: false, nsfw: true },
-    });
+    const off = await buildWorkshopPrompt({ ...base, can: caps({ voice: false }) });
     expect(off).not.toContain("list_voices");
   });
 
   it("挑音色的语言跟着剧目的语音语言走，不是跟着系统语言", async () => {
-    const caps = { image: true, search: true, library: true, voice: true, shell: false, nsfw: true };
-    const ja = await buildWorkshopPrompt({ ...base, can: caps, voiceLanguage: "ja" });
+    const capsOn = caps({ voice: true });
+    const ja = await buildWorkshopPrompt({ ...base, can: capsOn, voiceLanguage: "ja" });
     expect(ja).toContain('language="ja"');
     expect(ja).toContain("台词先译成它再配音");
 
     // 未设 = 台词按剧本原文配音，按剧本的书写语言筛（中文剧本 → zh）
-    const unset = await buildWorkshopPrompt({ ...base, can: caps });
+    const unset = await buildWorkshopPrompt({ ...base, can: capsOn });
     expect(unset).toContain('language="zh"');
     expect(unset).toContain("未设");
   });

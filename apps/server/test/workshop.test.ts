@@ -17,7 +17,7 @@ import { WorkshopSession } from "../src/workshopSession.js";
 import { DEFAULT_CRAFT, resolveCraft } from "@aivn/core";
 import { buildWorkshopPrompt, deriveThreadTitle, type WorkshopPromptContext } from "../src/workshop.js";
 import type { WorkshopKitDeps } from "../src/agentkit/deps.js";
-import { createAgentKit, defaultToolsFor, type AgentCapabilities } from "../src/agentkit/kit.js";
+import { createAgentKit, defaultCapabilitiesFor, type AgentCapabilities } from "../src/agentkit/kit.js";
 import { renderReadiness } from "../src/agentkit/readiness.js";
 import { Exa } from "../src/exa.js";
 import { createFakeStreamFn, BEAT_1, BEAT_2, PLAY } from "./helpers.js";
@@ -31,7 +31,12 @@ import { PlayMemory } from "../src/memory.js";
  */
 type WorkshopTestDeps = Omit<WorkshopKitDeps, "role" | "playId" | "disabled">;
 const createWorkshopTools = (deps: WorkshopTestDeps) =>
-  createAgentKit({ role: "workshop", playId: "test", enabled: new Set(defaultToolsFor("workshop")), ...deps }).tools;
+  createAgentKit({
+    role: "workshop",
+    playId: "test",
+    capabilities: new Set(defaultCapabilitiesFor("workshop")),
+    ...deps,
+  }).tools;
 
 /** 造一个带最小剧目目录的 PlayStore：play.json + 记忆卡 + 会话日志（后者必须不可见）。 */
 async function makeStore(): Promise<PlayStore> {
@@ -162,13 +167,22 @@ describe("PlayFiles：剧目文件白名单", () => {
 });
 
 describe("工坊 prompt 与工具", () => {
-  /** 能力位（`kit.can`）：提示词按它决定注不注某一章。 */
+  /** 能力位（`kit.can`）：提示词按它决定注不注某一章。缺省 = 工坊常用态（文件与技能开着）。 */
   const caps = (over: Partial<AgentCapabilities> = {}): AgentCapabilities => ({
+    stage: false,
+    nsfw: false,
+    characters: false,
+    memory: false,
     image: true,
     search: false,
     library: false,
     voice: false,
     shell: false,
+    files: true,
+    lineage: true,
+    skill: true,
+    view: true,
+    readiness: true,
     ...over,
   });
 
@@ -996,7 +1010,7 @@ describe("WorkshopSession：一轮对话", () => {
       saves: new PlaySaves(store.dir),
       saveStore: (saveId) => new PlayStore(store.dir, saveId),
       // bash 默认关，这里显式勾上——测的就是勾上之后那条没有校验的路
-      agents: { tools: [...defaultToolsFor("workshop"), "bash"] },
+      agents: { capabilities: [...defaultCapabilitiesFor("workshop"), "shell"] },
     });
     await session.chat("把 play.json 改坏");
 
@@ -1063,7 +1077,22 @@ describe("工坊：写作参数与创作口径的交接，以及自定义提示�
     files: "- play.json",
     readiness: { ready: true, premise: true, characterSprites: false, background: false, saves: 0 },
     craft: DEFAULT_CRAFT,
-    can: { image: true, search: false, library: false, voice: false, shell: false, nsfw: true },
+    can: {
+      stage: false,
+      nsfw: false,
+      characters: false,
+      memory: false,
+      image: true,
+      search: false,
+      library: false,
+      voice: false,
+      shell: false,
+      files: true,
+      lineage: true,
+      skill: true,
+      view: true,
+      readiness: true,
+    },
     ...over,
   });
 

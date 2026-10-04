@@ -15,7 +15,7 @@ import { textResult } from "./result.js";
  * 剧作家那条线上没有对话流可挂，宿主给空实现——工具照常能用，只是没有撤销条可点。
  *
  * 剧作家的**默认**用法不是这两个工具：它在剧本里写个 id，宿主发现剧目里没有就去库里导入
- * （见 `assetRef.ts`）。`import_asset` 在剧作家这边默认关闭；用户想让它自己动手再勾上。
+ * （见 `assetRef.ts`），所以剧作家侧只装 `list_library`（`importAsset: false`）。
  */
 
 /** 资源库类别：characters 是角色包（角色卡 + 可选立绘），其余是单文件条目。 */
@@ -61,6 +61,13 @@ export interface LibraryToolDeps {
   onWrite?: (write: PlayFileWrite) => void;
   /** 素材落盘回调：推给工坊对话流内联展示。 */
   onAsset?: (asset: WorkshopAssetView, replaced?: boolean) => void;
+  /**
+   * 装不装 `import_asset`（缺省装）。
+   *
+   * 剧作家侧不装：它的默认导入路径是**引用即导入**（剧本里写个 id，宿主去库里搬），
+   * 自己动手搬一遍是同一件事的第二条路。`TOOL_CATALOG` 里这一项也标了 workshop。
+   */
+  importAsset?: boolean;
 }
 
 export function createLibraryTools(deps?: LibraryToolDeps): AgentTool<any>[] {
@@ -147,7 +154,7 @@ export function createLibraryTools(deps?: LibraryToolDeps): AgentTool<any>[] {
     },
   };
 
-  return [listLibrary, importAsset];
+  return deps.importAsset === false ? [listLibrary] : [listLibrary, importAsset];
 }
 
 /** 资源库类别 → 素材气泡的类别（目录名是复数，气泡里按「背景/音效」这种人话分类）。 */

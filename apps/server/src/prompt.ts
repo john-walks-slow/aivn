@@ -205,11 +205,12 @@ beat_done 通常**独占一次工具调用**（模式切换类的工具可以同
 /**
  * 引入角色表里没有的角色时的三条路（建档 / 出立绘 / 临时角色）。
  *
- * 第 1 步要求 `write`。没装写口时整段换掉而不是删掉：三步的结构与后面两步的编号原样留着，
- * 读起来仍是一份完整流程；换成「你没有写口，走临时角色通道」也免得它对着空气找一个不存在的工具。
+ * 第 1 步要求「管理角色」能力（它授权 `write` / `edit` 这一对写角色卡的手）。关着时整段换掉而不是删掉：
+ * 三步的结构与后面两步的编号原样留着，读起来仍是一份完整流程；换成「改卡这条路没给你」，
+ * 也免得它对着空气找一个不存在的工具。
  */
-function newCharacterRules(canWrite: boolean): string {
-  const step1 = canWrite
+function newCharacterRules(canCharacters: boolean): string {
+  const step1 = canCharacters
     ? `**1. 先建档（write）**，把角色设定写进 \`characters/<id>.md\`——**文件名就是角色 id**：
 
     write(path="characters/xiaoyu.md", content="---\\nname: 小雨\\nframing: half\\n---\\n咖啡店打工的少女，说话温柔，常用省略号。")
@@ -231,8 +232,8 @@ function newCharacterRules(canWrite: boolean): string {
 - **改既有卡先 read、再用 edit 定点改**：整篇 write 会把你没提到的机器字段（voiceId、sprites）抹掉。
 - 建档后到下一轮边界，角色就出现在 A 区角色表里。
 - 玩家扮演的主角也是一张普通卡，id 固定 \`protagonist\`（\`characters/protagonist.md\`）：要改主角设定就改它，别另建一张。`
-    : `**1. 建档这条路本剧目没有给你**（Agent 页没开文件工具）：新角色直接用下面的临时角色通道，
-人设等工坊那边补。`;
+    : `**1. 建档这条路本剧目没有给你**（Agent 页没开「管理角色」）：新角色直接上台——出图时带上
+\`characterName\`，引擎会建一张最小卡，人设与音色由用户在工坊补；只出声不出图的用 \`say\` 的 \`name\` 属性。`;
 
   return `## 引入新角色
 
@@ -350,7 +351,11 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   // 新角色按《引入新角色》建档，轮边界重建后会自动带全卡。
   const castHint =
     roster.length > 0
-      ? `\n\n（上面最后几行是最近没出场的人物，只注了一行摘要，照它写即可；要它的完整人设出场就走《引入新角色》建档，那会自动带上全卡。）\n`
+      ? `\n\n（上面最后几行是最近没出场的人物，只注了一行摘要，照它写即可；${
+          ctx.can.characters
+            ? "要它的完整人设出场就走《引入新角色》建档，那会自动带上全卡。"
+            : "要它的完整人设就先 read `characters/<id>.md`——本剧目没给你改角色卡的口。"
+        }）\n`
       : "";
 
   const stems = (key: string): string[] => (ctx.assets?.[key] ?? []).map((f) => f.replace(/\.\w+$/, ""));
@@ -397,9 +402,11 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const cards = memory?.visibleContext(ctx.arcIds ?? []) ?? [];
   const indexSection =
     cards.length > 0
-      ? `\n# 记忆索引（按需查详情）\n\n${cards.map((c) => `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}：${c.summary}`).join("\n")}\n\n需要某条完整内容时调用 read_memory_detail 工具（传名称）${
-        ctx.can.files ? "，或直接 read 那个文件" : ""
-      }。历史往事用 search_archive 检索。\n`
+      ? `\n# 记忆索引（按需查详情）\n\n${cards.map((c) => `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}：${c.summary}`).join("\n")}\n\n${
+        ctx.can.memory
+          ? "需要某条完整内容时调用 read_memory_detail 工具（传名称），或直接 read 那个文件。历史往事用 search_archive 检索。"
+          : "需要某条完整内容时直接 read 那个文件；过往剧情问用户，或让工坊在记忆页查。"
+      }\n`
       : "";
 
   return `${ROLE_INTRO}
@@ -418,8 +425,8 @@ ${FORMAT_RULES}
 
 ${imageChapter(ctx.can.image)}
 ${ctx.can.search ? SEARCH_GUIDE : ""}
-${ctx.can.files ? MEMORY_RULES : ""}
-${newCharacterRules(ctx.can.files)}
+${ctx.can.memory ? MEMORY_RULES : ""}
+${newCharacterRules(ctx.can.characters)}
 
 ${CONTRACT_RULES}`;
 }
