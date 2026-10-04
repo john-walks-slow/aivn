@@ -712,11 +712,13 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
           />
         )}
 
-        {/* 待注入队列：空则不占地方。排队中的句子能改也能撤 */}
-        {view === "stage" && (
+        {/* 待注入队列 + 正在生成的事：空则不占地方。舞台里浮在画面上，工坊里贴内容区底部
+            （工坊右上角是各页自己的头，浮层会压住真按得着的东西） */}
+        {(view === "stage" || view === "workshop") && (
           <PromptQueuePanel
             items={stage.queue}
             jobs={stage.pendingJobs}
+            dock={view === "workshop"}
             onEdit={(id, text) => stage.sendPromptEdit(id, text)}
             onDelete={(id) => stage.sendPromptDelete(id)}
             onDismissJob={(jobId) => stage.sendPendingDismiss(jobId)}

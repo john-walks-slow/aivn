@@ -107,3 +107,24 @@ describe("PromptQueuePanel 失败项", () => {
     expect(screen.getByText("黄昏屋顶")).toBeTruthy();
   });
 });
+describe("dock：工坊里贴内容区底部，不再浮在内容上", () => {
+  const renderDocked = (jobs: PendingJob[]) =>
+    render(
+      <PromptQueuePanel
+        items={[]}
+        jobs={jobs}
+        dock
+        onEdit={() => {}}
+        onDelete={() => {}}
+        onDismissJob={() => {}}
+      />,
+    );
+
+  it("收起态与展开态都带贴底类（定位交给 CSS，两边各一份根元素）", () => {
+    const view = renderDocked([job({ id: "img:sprite:cat/smile", kind: "sprite", label: "立绘 cat/smile" })]);
+    const badge = view.container.querySelector(".prompt-queue-badge");
+    expect(badge?.classList.contains("prompt-queue-docked")).toBe(true);
+    fireEvent.click(badge!);
+    expect(view.container.querySelector(".prompt-queue")?.classList.contains("prompt-queue-docked")).toBe(true);
+  });
+});

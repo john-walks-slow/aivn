@@ -31,6 +31,7 @@ export function PromptQueuePanel({
   onEdit,
   onDelete,
   onDismissJob,
+  dock = false,
 }: {
   items: readonly PromptQueueItem[];
   /** 正在生成的事（剧作家的轮次 / 背景 / CG / 立绘 / 语音）；空数组 = 这会儿没在生成。 */
@@ -39,6 +40,14 @@ export function PromptQueuePanel({
   onDelete: (id: string) => void;
   /** 手动清掉一条失败项（失败项不自动消失，只走这条路）。 */
   onDismissJob: (jobId: string) => void;
+  /**
+   * 贴底一条而不是浮在内容上（工坊用）。
+   *
+   * 舞台那边浮在画面上没问题——底下是画面；工坊的右上角是各页自己的头（素材页那排
+   * 「生成新立绘」按钮就在那儿），浮层会压住真按得着的东西，所以工坊里它落在内容区底部，
+   * 与内容各占各的位置。
+   */
+  dock?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -78,7 +87,7 @@ export function PromptQueuePanel({
     return (
       <button
         type="button"
-        className={`prompt-queue-badge${failed ? " failed" : ""}`}
+        className={`prompt-queue-badge${failed ? " failed" : ""}${dock ? " prompt-queue-docked" : ""}`}
         onClick={() => setOpen(true)}
         title={failed ? "有生成项失败了，点开看" : "看看正在生成什么"}
       >
@@ -99,7 +108,10 @@ export function PromptQueuePanel({
   };
 
   return (
-    <aside className="prompt-queue" aria-label="正在生成的与待注入的话">
+    <aside
+      className={`prompt-queue${dock ? " prompt-queue-docked" : ""}`}
+      aria-label="正在生成的与待注入的话"
+    >
       {rows.length > 0 && (
         <>
           <p className="prompt-queue-head">

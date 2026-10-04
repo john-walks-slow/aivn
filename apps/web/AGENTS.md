@@ -42,7 +42,7 @@
   - StageShell 外壳（侧栏五视图 + 视图栏 `×` + `Esc` + 折叠/拖宽/窄屏抽屉 + 底栏两行：当前周目在最上、`exit` 图标的「退出」压在最下，两者间一条线）。
   - `stage/view.ts` 的 `stageViewFromQuery`/`workshopUrl`/`workshopConnectionFromQuery`。
   - `ui/Modal.tsx` 居中模态窗（portal body，触摸捕获，Esc 只关最上层）。
-  - PromptQueuePanel 排队面板（待注入的句子可改可撤）。
+  - PromptQueuePanel 排队面板（待注入的句子可改可撤 + 正在生成的事：剧作家的轮次/生图/语音，失败项不自动消失、手动清）。**舞台与工坊共用同一份数据**（`useStageSocket` 的 `pendingJobs` 与 `queue`，工坊复用的就是那条连接），差在落点：舞台里浮在画面右上，工坊里 `dock` 成内容区底部一条——工坊右上角是各页自己的头（素材页那排「生成新立绘」就在那儿），浮层会压住真按得着的东西。
   - `src/stage/settings.ts`（localStorage 布尔开关，读写收 storage 参数以便 node 下测）与 `playbackState.ts` 的 `stopAffordance`（本轮写完的出口是摆卡片还是点舞台，二选一；默认关即点舞台）。
   - StopPanel 停止点操作含自由输入 ✨润色/撤销（P4 增量，润色恒基于原文不叠加）。
   - 选肢层是 `.theater-stage` 的子元素（只盖画面，不压台词条/导演栏/侧栏）。

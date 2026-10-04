@@ -5126,6 +5126,22 @@ select:focus {
     top: calc(96px + env(safe-area-inset-top, 0px));
   }
 }
+/* 工坊：同一块面板不浮在内容上，改贴内容区底部一条（右上角是各页自己的头）。
+   收起态是一条状态带，展开态在它上面长出一列。 */
+.prompt-queue-docked {
+  position: static;
+  flex: 0 0 auto;
+  width: auto;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+.prompt-queue-badge.prompt-queue-docked {
+  justify-content: center;
+}
 .prompt-queue-badge-icons {
   display: flex;
   gap: 5px;
