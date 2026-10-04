@@ -18,7 +18,7 @@
   - PlayPane 剧目页（标题 / opening / `scriptLanguage` 剧本语言 / `voiceLanguage` 语音语言 / 无名角色音色 / 逐剧目生图 `image.model` + `image.size` / 封面选图 / **写作参数**（`craft` 的六个下拉）；只写 `play.json` 一份，是唯一写剧目字段的页。六个下拉的第一项恒为「默认」，选中即把那个字段从文件里删掉——`editCraft` 是同一条规矩的唯一入口，`setImage` 同理（两个生图字段都留空就把整个 `image` 段删掉））。
   - CharacterPane 角色页（`detail.cast` 就是全部角色卡，主角只是 id 固定 `protagonist` 的那张：同一个 CharacterEditor、同样能上台/有立绘/有音色/能从资源库导入，只是不给删；保存只写 `characters/<id>.md`，这一页一个字节都不碰 `play.json`）。
   - MemoryPane 记忆页（只列 `memory/**` 的卡片，`arcs/`+`archive/` 不列；常驻设定在前、设定卡在后。craft.md 的占位符只提文风与禁忌，「节奏与素材来源」指向剧目页）。
-  - SettingsScreen 服务端设置页（`#/settings`，剧目库页右上「⚙ 设置」进：模型网关 / 长会话与压缩 / 生图 / 语音 / 联网检索 / 访问密码 / 局域网访问 / 界面主题，外加启动参数只读回显。**保存即落盘 `<数据目录>/settings.json` 并立即生效**，没有「重启后生效」这一步；凭据以掩码回显、输入框留空 = 不改。「局域网访问」那一组是开关（写 `lanAccess`）+ 手机该连的地址（只读 `bootstrap.lanUrls`，逐条可复制）+ 「允许局域网访问（Windows 防火墙）」按钮（`POST /api/lan/open-firewall`，只在装好的 Windows 版里可用）。
+  - SettingsScreen 服务端设置页（`#/settings`，剧目库页右上「⚙ 设置」进：模型网关 / 长会话与压缩 / 生图 / 语音 / 联网检索 / 访问密码 / 局域网访问 / 界面主题，外加启动参数只读回显。**保存即落盘 `<数据目录>/settings.json` 并立即生效**，没有「重启后生效」这一步；单把凭据（API Key / 生图 Key / 访问密码）把掩码**填进输入框**——原样回传 = 不改、清空 = 显式清除，多把 key（语音 / 检索）输入框恒空、留空 = 不改。保存/放弃按钮常驻在滚动区之外（`.settings-footer`），滚多深都在。「局域网访问」那一组是开关（写 `lanAccess`）+ 手机该连的地址（只读 `bootstrap.lanUrls`，逐条可复制）+ 「允许局域网访问（Windows 防火墙）」按钮（`POST /api/lan/open-firewall`，只在装好的 Windows 版里可用）。
   - WorkshopSettings（演出侧两个开关）。
   - useWorkshop 状态机。
   - FileBrowser 剧目文件树/编辑器/预览。

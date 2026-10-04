@@ -3486,11 +3486,22 @@ select:focus {
 .settings-body {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 4px 40px;
+  padding: 8px 4px 16px;
   display: flex;
   flex-direction: column;
   gap: 18px;
   scrollbar-width: thin;
+}
+
+/* 保存 / 放弃常驻在这个滚动区之外，滚多深都不用找 */
+.settings-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 12px 4px 0;
+  border-top: 1px solid var(--line);
 }
 
 .settings-group {
@@ -3660,7 +3671,7 @@ select:focus {
 
 .theater-bar,
 .theater-dialog,
-.settings-body,
+.settings-footer,
 .lineage-view,
 .library {
   padding-bottom: calc(10px + env(safe-area-inset-bottom));

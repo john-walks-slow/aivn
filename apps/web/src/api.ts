@@ -159,7 +159,7 @@ export interface Settings {
   workshopContext: { contextWindow: number; compactRatio: number; keepRecentTokens: number };
   /** 单轮超时（毫秒）。 */
   beatTimeoutMs: number;
-  /** 公网入口密码：留空或保持掩码 = 不改，清空 = 关闭设防。 */
+  /** 公网入口密码：保持掩码 = 不改，清空 = 关闭设防。 */
   password: string;
   passwordSet: boolean;
   /** 允许局域网访问：开着监听 0.0.0.0，关着只听 127.0.0.1。显式 --host / STAGE_HOST 优先于它。 */

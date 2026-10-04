@@ -36,15 +36,21 @@ type Draft = {
   exa: Omit<Settings["exa"], "keys"> & { keys: string };
 };
 
-/** 读视图 → 可编辑草稿（凭据输入框一律留空：留空 = 不改）。 */
+/**
+ * 读视图 → 可编辑草稿。
+ *
+ * 单把凭据（API Key / 访问密码）把**掩码**填进输入框：原样回传 = 服务端判为不改，
+ * 清空 = 显式清除，输入新值 = 替换。读视图里已经是掩码，不再二次改写。
+ * 多把 key（tts / exa）语义不同：输入框恒空，留空即不改、填入即整组替换。
+ */
 function draftOf(next: Settings): Draft {
   return {
-    password: "",
+    password: next.password,
     lanAccess: next.lanAccess,
-    model: { ...next.model, apiKey: "" },
+    model: { ...next.model },
     workshopContext: { ...next.workshopContext },
     beatTimeoutMs: next.beatTimeoutMs,
-    image: { ...next.image, apiKey: "" },
+    image: { ...next.image },
     tts: { ...next.tts, keys: "" },
     exa: { ...next.exa, keys: "" },
   };
@@ -226,13 +232,15 @@ export function SettingsScreen() {
               label="API Key"
               hint={
                 settings.model.apiKeySet
-                  ? "留空或保持掩码即不改；输入新值即替换"
+                  ? "已存 key 以掩码显示——保持原样即不改，清空 = 删除，输入新值 = 替换"
                   : "尚未配置——不填则播放会 401"
               }
             >
               <input
                 type="password"
+                value={draft.model.apiKey}
                 placeholder={settings.model.apiKey || "未配置"}
+                onFocus={(e) => e.target.select()}
                 onChange={(e) => setDraft({ ...draft, model: { ...draft.model, apiKey: e.target.value } })}
               />
             </Field>
@@ -329,13 +337,15 @@ export function SettingsScreen() {
               label="生图 Key"
               hint={
                 settings.image.apiKeySet
-                  ? "留空或保持掩码即不改；输入新值即替换"
+                  ? "已存 key 以掩码显示——保持原样即不改，清空 = 删除，输入新值 = 替换"
                   : "尚未配置——出图会被网关拒"
               }
             >
               <input
                 type="password"
+                value={draft.image.apiKey}
                 placeholder={settings.image.apiKey || "未配置"}
+                onFocus={(e) => e.target.select()}
                 onChange={(e) => setDraft({ ...draft, image: { ...draft.image, apiKey: e.target.value } })}
               />
             </Field>
@@ -461,7 +471,7 @@ export function SettingsScreen() {
               label="访问密码"
               hint={
                 settings.passwordSet
-                  ? "已开启（HTTP Basic）——留空即不改；清空并保存 = 关闭设防"
+                  ? "已开启（HTTP Basic）——保持掩码即不改；清空并保存 = 关闭设防"
                   : "当前没有设防。挂到公网前务必设一个（局域网自用可以不设）"
               }
             >
@@ -469,6 +479,7 @@ export function SettingsScreen() {
                 type="password"
                 placeholder={settings.password || "未设置"}
                 value={draft.password}
+                onFocus={(e) => e.target.select()}
                 onChange={(e) => setDraft({ ...draft, password: e.target.value })}
               />
             </Field>
@@ -613,18 +624,19 @@ export function SettingsScreen() {
               </select>
             </Field>
           </Group>
-
-          <div className="row">
-            <button className="primary-btn" onClick={() => void save()}>
-              保存设置
-            </button>
-            <button className="ghost-btn" onClick={load}>
-              放弃改动
-            </button>
-            <span className="muted">
-              数据目录：{settings.bootstrap.dataRoot}　监听：{settings.bootstrap.host}:{settings.bootstrap.port}
-            </span>
-          </div>
+        </div>
+      )}
+      {draft && settings && (
+        <div className="settings-footer">
+          <button className="primary-btn" onClick={() => void save()}>
+            保存设置
+          </button>
+          <button className="ghost-btn" onClick={load}>
+            放弃改动
+          </button>
+          <span className="muted">
+            数据目录：{settings.bootstrap.dataRoot}　监听：{settings.bootstrap.host}:{settings.bootstrap.port}
+          </span>
         </div>
       )}
     </div>
