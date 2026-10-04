@@ -9,7 +9,7 @@ export interface Toast {
   kind: ToastKind;
 }
 
-/** 普通提示自己退场的时间；错误要等人点掉——它多半是「这一轮演不下去了」，不能一闪而过。 */
+/** 提示一律自己退场；点一下也能提前点掉。 */
 const AUTO_DISMISS_MS = 3600;
 
 export interface Toaster {
@@ -40,12 +40,10 @@ export function useToasts(): Toaster {
       const id = nextId.current;
       nextId.current += 1;
       setToasts((cur) => [...cur.slice(-2), { id, text, kind }]);
-      if (kind === "info") {
-        timers.current.set(
-          id,
-          setTimeout(() => dismiss(id), AUTO_DISMISS_MS),
-        );
-      }
+      timers.current.set(
+        id,
+        setTimeout(() => dismiss(id), AUTO_DISMISS_MS),
+      );
     },
     [dismiss],
   );
