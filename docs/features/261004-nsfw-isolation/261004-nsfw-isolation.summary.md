@@ -1,6 +1,6 @@
 # 261004 限制级内容隔离 —— 实施总结
 
-分支：`feat/nsfw-isolation`（基线 main `177dd76`，含 memory-state 5 项）
+分支：`feat/nsfw-isolation`（从 main `177dd76` 起，合入前变基到 `ce48083`；合入提交 `53b31f0` + `c6455a8`）
 
 ## 为什么做
 
@@ -87,7 +87,7 @@
 6. 测试假绿（INFO-01）：新增 3 条用例补上真实路径——用自由输入进段（而不是 `continue`，后者不落 prompt 节点）、段内跳转之后再退出、等摘要期间被销毁。
 7. 收束异常无前端提示（INFO-02）：catch 里补一条 `send({type:"error", recoverable:true})`。
 
-**新用例的反假绿验证**：把 `apps/server/src/orchestrator.ts` 整份换回 `4c1d71b` 版本、保留新用例再跑，3 条全红（分别是「进段那句没带标」「跳转后退出时上下文里仍有 `轻一点`」「销毁后树多长出一个节点」），换回修复版 3 条全绿。
+**新用例的反假绿验证**：把 `apps/server/src/orchestrator.ts` 整份换回修复前那一版、保留新用例再跑，3 条全红（分别是「进段那句没带标」「跳转后退出时上下文里仍有 `轻一点`」「销毁后树多长出一个节点」），换回修复版 3 条全绿。
 
 第二轮复检结论见 `261004-nsfw-isolation.review.md`。
 
