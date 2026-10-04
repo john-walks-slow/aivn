@@ -15,7 +15,7 @@
  *   node scripts/build-exe.mjs --skip-build --skip-zip  # 只重跑打包（调试构建链时用）
  */
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,8 +82,30 @@ await esbuild({
 });
 
 step("按仓库相对路径摆好随包资源");
-for (const rel of ["apps/web/dist", "apps/server/skills", "plays/demo"]) {
+for (const rel of ["apps/web/dist", "apps/server/skills"]) {
   cpSync(join(repoRoot, rel), join(stageDir, rel), { recursive: true });
+}
+step(`样例剧目只拷 git 追踪的 ${copyTracked("plays/demo")} 个文件（运行期状态不进包）`);
+
+/**
+ * 只拷 git 追踪的文件。
+ *
+ * `plays/demo` 是仓库里唯一的样例剧目，但开发机在自己数据目录里跑过之后，同一目录下会多出
+ * `saves/`、`active.json`、`workshop/`、`media-cache/`、`memory/archive/` 等运行期状态（都在
+ * `.gitignore` 里）。整目录 `cpSync` 会把这些一起装进包，新用户第一次打开就看到别人「1 周目」
+ * 的存档、别人聊过的工坊线程。这些目录运行时都会按需 `mkdir`（见 `apps/server/src/seed.ts`
+ * 与各写入点的 `mkdir(..., {recursive:true})`），所以不需要补空目录骨架。
+ */
+function copyTracked(rel) {
+  const files = execFileSync("git", ["ls-files", "-z", "--", rel], { cwd: repoRoot, encoding: "utf8" })
+    .split("\0")
+    .filter(Boolean);
+  for (const file of files) {
+    const to = join(stageDir, file);
+    mkdirSync(dirname(to), { recursive: true });
+    copyFileSync(join(repoRoot, file), to);
+  }
+  return files.length;
 }
 
 step(`装 sharp@${sharpVersion}（${targetOs}-${targetCpu}，原生模块必须与目标平台一致）`);
