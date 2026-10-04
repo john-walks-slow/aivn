@@ -4,7 +4,7 @@ set -euo pipefail
 WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${WORKTREE_ROOT}"
 
-echo "=== [Stage-AI Galgame Assets] Starting Development & Showcase Server ==="
+echo "=== [AIVN Galgame Assets] Starting Development & Showcase Server ==="
 
 # Acquire an unconflicted dynamic port
 PORT=$(acquire-port --wait)

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { LineageNodeView } from "@stage-ai/core";
+import type { LineageNodeView } from "@aivn/core";
 import type { BeatCard } from "../src/stage/beats.js";
 import type { LineageOps } from "../src/stage/LineagePanel.js";
 import { RouteCanvas } from "../src/stage/RouteCanvas.js";

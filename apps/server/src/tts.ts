@@ -115,7 +115,7 @@ export function createTts(config: ServerConfig): FishTts | null {
   if (!config.tts.enabled) return null;
   const valid = config.tts.keys;
   if (valid.length === 0) {
-    console.warn("[stage-ai] STAGE_TTS_KEYS 为空（语音停用）");
+    console.warn("[aivn] STAGE_TTS_KEYS 为空（语音停用）");
     return null;
   }
   return new FishTts({

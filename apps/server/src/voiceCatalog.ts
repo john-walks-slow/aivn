@@ -3,8 +3,9 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fetch as undiciFetch, ProxyAgent } from "undici";
-import type { VoiceCatalog, VoiceEntry } from "@stage-ai/core";
+import type { VoiceCatalog, VoiceEntry } from "@aivn/core";
 import type { ServerConfig } from "./config.js";
+import type { SettingsSource } from "./settingsStore.js";
 
 /**
  * Fish Audio 公共音色库客户端。
@@ -68,7 +69,8 @@ function toEntry(raw: FishModelEntity): VoiceEntry | null {
 export type VoiceFetcher = <T>(path: string) => Promise<T>;
 
 export class VoiceCatalogService {
-  private readonly dispatcher: ProxyAgent | undefined;
+  /** 出口代理：按当前设置里的地址惰性建，地址改了下次请求就用新的。 */
+  private dispatcher: { proxy: string; agent: ProxyAgent } | null = null;
   private readonly cacheFile: string;
   private readonly fetchJson: VoiceFetcher;
   /** 抓取中的共享 Promise——并发请求只打一轮 Fish。 */
@@ -77,13 +79,23 @@ export class VoiceCatalogService {
   private lastFailureAt = 0;
 
   constructor(
-    private readonly config: ServerConfig,
+    private readonly settings: SettingsSource,
     cacheFile: string,
     fetchJson?: VoiceFetcher,
   ) {
-    if (config.tts.proxy) this.dispatcher = new ProxyAgent(config.tts.proxy);
     this.cacheFile = cacheFile;
     this.fetchJson = fetchJson ?? this.createFetcher();
+  }
+
+  /** 当前设置，每次现取：面板改完地址/密钥，这里立刻跟上（不再需要重启）。 */
+  private get config(): ServerConfig {
+    return this.settings.get();
+  }
+
+  private proxyAgent(proxy: string): ProxyAgent | undefined {
+    if (proxy === "") return undefined;
+    if (this.dispatcher?.proxy !== proxy) this.dispatcher = { proxy, agent: new ProxyAgent(proxy) };
+    return this.dispatcher.agent;
   }
 
   /**
@@ -128,7 +140,7 @@ export class VoiceCatalogService {
     return this.inflight.catch((error: unknown) => {
       if (!fallback) throw error;
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[stage-ai] 音色库抓取失败（沿用磁盘快照）: ${message}`);
+      console.warn(`[aivn] 音色库抓取失败（沿用磁盘快照）: ${message}`);
       return { ...fallback, stale: true };
     });
   }
@@ -160,7 +172,7 @@ export class VoiceCatalogService {
       stale: false,
     };
     await this.writeCache(catalog);
-    console.log(`[stage-ai] 音色库已更新: ${catalog.entries.length} 条 / 全库 ${total}`);
+    console.log(`[aivn] 音色库已更新: ${catalog.entries.length} 条 / 全库 ${total}`);
     return catalog;
   }
 
@@ -174,7 +186,7 @@ export class VoiceCatalogService {
         try {
           const res = await undiciFetch(`${this.config.tts.baseUrl}${path}`, {
             headers: { authorization: `Bearer ${key}` },
-            dispatcher: this.dispatcher,
+            dispatcher: this.proxyAgent(this.config.tts.proxy),
             signal: AbortSignal.timeout(TIMEOUT_MS),
           });
           if (!res.ok) {
@@ -214,7 +226,7 @@ export class VoiceCatalogService {
       await writeFile(tmp, JSON.stringify(catalog));
       await rename(tmp, this.cacheFile);
     } catch (error) {
-      console.warn(`[stage-ai] 音色库快照落盘失败（不影响本次使用）: ${String(error)}`);
+      console.warn(`[aivn] 音色库快照落盘失败（不影响本次使用）: ${String(error)}`);
     }
   }
 }

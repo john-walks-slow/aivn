@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LineageNodeView, LineageView } from "@stage-ai/core";
+import type { LineageNodeView, LineageView } from "@aivn/core";
 import { beatAtLine, buildBeats, editableNodeAtLine } from "../src/stage/beats.js";
 import type { ScriptLine } from "../src/stage/script.js";
 

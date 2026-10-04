@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { GeneratedImageEntry } from "@stage-ai/core";
+import type { GeneratedImageEntry } from "@aivn/core";
 import type { PlayStore } from "./store.js";
 
 /**

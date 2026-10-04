@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { LineageTree, type LineageEvent, type ServerMessage } from "@stage-ai/core";
+import { LineageTree, type LineageEvent, type ServerMessage } from "@aivn/core";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { PlayMemory } from "../src/memory.js";
 import { lineageToBeats, lineageToEvents, stopFromEvent } from "../src/rebuild.js";

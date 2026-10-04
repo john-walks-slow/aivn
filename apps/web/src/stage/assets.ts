@@ -1,4 +1,4 @@
-import { DEFAULT_SPRITE_FRAMING, type CharacterDocument, type SpriteFraming } from "@stage-ai/core";
+import { DEFAULT_SPRITE_FRAMING, type CharacterDocument, type SpriteFraming } from "@aivn/core";
 import type { GeneratedImage } from "./generatedAssets.js";
 
 /** 素材名 → URL 解析（stem 无扩展名时按目录清单补全；缺素材返回 null 走降级）。 */

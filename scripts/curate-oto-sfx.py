@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""把 OtoLogic 下载的 SE zip 整理成 stage-ai 资源库条目（一条一目录 + meta.json）。
+"""把 OtoLogic 下载的 SE zip 整理成 AIVN 资源库条目（一条一目录 + meta.json）。
 
 OtoLogic 每个「素材名」一个 zip，里面是该音的 MP3（可能带 -1/-2 变体）。
 """
 import json, re, shutil, subprocess, zipfile
 from pathlib import Path
 
+# 目标库按仓库位置算，别写死某台机器的绝对路径
+LIBRARY = Path(__file__).resolve().parent.parent / "library"
+
 SRC = Path("/tmp/itd/oto")
-DST = Path("./library/sfx")
+DST = LIBRARY / "sfx"
 
 SOURCE = "OtoLogic(https://otologic.jp) / CC BY 4.0"
 TERMS = "https://otologic.jp/free/license.html"

@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zipSync } from "fflate";
-import { libraryEntryMatches, parseCharacterCard, parsePlayAssetManifest } from "@stage-ai/core";
+import { libraryEntryMatches, parseCharacterCard, parsePlayAssetManifest } from "@aivn/core";
 import { AssetLibrary, assertEntryId } from "../src/library.js";
 import { importFromLibrary } from "../src/assetImport.js";
 import { PlayLibrary } from "../src/store.js";
@@ -51,7 +51,7 @@ describe("AssetLibrary：扫描本地资源库目录", () => {
   let library: AssetLibrary;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "stageai-lib-"));
+    root = await mkdtemp(join(tmpdir(), "aivn-lib-"));
     library = new AssetLibrary(root);
   });
   afterEach(async () => {
@@ -148,8 +148,8 @@ describe("importFromLibrary：资源库 → 剧目", () => {
   let plays: PlayLibrary;
 
   beforeEach(async () => {
-    libRoot = await mkdtemp(join(tmpdir(), "stageai-lib-"));
-    playsRoot = await mkdtemp(join(tmpdir(), "stageai-plays-"));
+    libRoot = await mkdtemp(join(tmpdir(), "aivn-lib-"));
+    playsRoot = await mkdtemp(join(tmpdir(), "aivn-plays-"));
     library = new AssetLibrary(libRoot);
     plays = new PlayLibrary(playsRoot);
     await plays.importZip(zipOf({ "play.json": PLAY_JSON("p1") }));
@@ -357,8 +357,8 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
   let plays: PlayLibrary;
 
   beforeEach(async () => {
-    libRoot = await mkdtemp(join(tmpdir(), "stageai-libq-"));
-    playsRoot = await mkdtemp(join(tmpdir(), "stageai-playsq-"));
+    libRoot = await mkdtemp(join(tmpdir(), "aivn-libq-"));
+    playsRoot = await mkdtemp(join(tmpdir(), "aivn-playsq-"));
     library = new AssetLibrary(libRoot);
     plays = new PlayLibrary(playsRoot);
     await plays.importZip(zipOf({ "play.json": PLAY_JSON("p1") }));

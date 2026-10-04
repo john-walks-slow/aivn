@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { CharacterDocument, SpriteFraming } from "@stage-ai/core";
-import { characterCardPath, SPRITE_FRAMINGS, SPRITE_FRAMING_LABELS } from "@stage-ai/core";
+import type { CharacterDocument, SpriteFraming } from "@aivn/core";
+import { characterCardPath, SPRITE_FRAMINGS, SPRITE_FRAMING_LABELS } from "@aivn/core";
 import { api } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import type { VoiceCatalogState } from "../voice/useVoiceCatalog.js";

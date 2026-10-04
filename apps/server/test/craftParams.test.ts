@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CRAFT, resolveCraft } from "@stage-ai/core";
+import { DEFAULT_CRAFT, resolveCraft } from "@aivn/core";
 import { describeCraftParams, mergeCraftParams, renderCraftParams } from "../src/craftParams.js";
 
 const FULL = { image: true, library: true };

@@ -1,5 +1,5 @@
 import type { WebSocket, WebSocketServer } from "ws";
-import type { ClientMessage, ServerMessage } from "@stage-ai/core";
+import type { ClientMessage, ServerMessage } from "@aivn/core";
 import { helloPayload, type PlayHouse, type PlayRuntime } from "./playhouse.js";
 
 /**
@@ -87,7 +87,7 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage
       runtime = await playhouse.get(playId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[stage-ai] WS 连接失败 play=${playId}: ${message}`);
+      console.warn(`[aivn] WS 连接失败 play=${playId}: ${message}`);
       if (!dropped && stage) {
         dropped = true;
         const left = (stageConnections.get(playId) ?? 1) - 1;

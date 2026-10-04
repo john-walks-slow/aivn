@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createVoiceTool } from "../src/agentkit/voiceTool.js";
 import type { VoiceCatalogService } from "../src/voiceCatalog.js";
-import { DEFAULT_CRAFT } from "@stage-ai/core";
+import { DEFAULT_CRAFT } from "@aivn/core";
 import { buildWorkshopPrompt } from "../src/workshop.js";
 
 /**

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "启动页不需要任何 IPC 能力：窗口一就绪就被导航到服务端地址，之后跑的是普通网页。",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

@@ -2,95 +2,356 @@ import { resolve } from "node:path";
 import { parseImageSize, imageSizeText } from "./imageBackend.js";
 import { DEFAULT_MAX_QUEUE } from "./limiter.js";
 
-/** 服务端配置：环境变量驱动（cpa 网关 + 模型 + 剧目库根目录 + fish-audio TTS）。 */
-export interface ServerConfig {
+/**
+ * 启动期参数：进程起来时读一次，改了要重启。只有这三项留在环境变量里——
+ * 端口与数据目录属于「装在哪、怎么起」，不属于用户在设置页里调的偏好。
+ */
+export interface BootstrapConfig {
   port: number;
-  /**
-   * 公网入口的访问密码（`STAGE_PASSWORD`，HTTP Basic）。空 = 不设防（本机直连的开发场景）；
-   * 挂到公网隧道上就该设，否则任何人都能开剧目、改剧目、烧生图额度。
-   */
+  /** 监听地址。`0.0.0.0` = 同一局域网的手机/平板也能连。 */
+  host: string;
+  /** 数据根目录：`plays/`、`library/`、`media-cache/`、`settings.json` 都在它下面。 */
+  dataRoot: string;
+}
+
+/**
+ * 运行期设置（`ServerConfig`）：**唯一真相源是 `<dataRoot>/settings.json`**，
+ * 由 `SettingsStore` 持有一份可变实例并对外只暴露 `get()`。
+ *
+ * 现场语义：持有者应通过 store 在**每次使用时**取当前值（见 `playhouse.ts` 的
+ * `get config()`），不要在构造时把字段拷进局部变量——那正是「改完要重启」的来源。
+ */
+export interface ServerConfig {
+  /** 公网入口的访问密码（HTTP Basic）。空 = 不设防。 */
   password: string;
-  /** 剧目库根目录（多剧目，每子目录一剧目）。 */
-  playsRoot: string;
-  /** 应用级素材资源库根目录（每子目录一素材条目，用户在本地目录里增删改，服务端只读）。 */
-  libraryRoot: string;
+  /** 默认模型 id（经网关路由的完整 id）。 */
   modelId: string;
-  modelBase: string; // pi-ai 内置基础模型（继承 api/cost/contextWindow 等元数据）
-  /**
-   * 这台部署支持哪些模型（`STAGE_MODELS`）：剧目「Agent」页的模型下拉只给这些。
-   * 空 = 不限制，沿用「网关 `/v1/models` 有什么给什么」。顺序按配置里写的来。
-   */
+  /** pi-ai 内置基础模型（继承 api/cost/contextWindow 等元数据）。 */
+  modelBase: string;
+  /** 这台部署支持哪些模型；空 = 网关有什么给什么。 */
   models: string[];
-  /** 限制级（NSFW）专用模型 id（`STAGE_NSFW_MODEL_ID`）。缺省为空，回退到 modelId。 */
-  nsfwModelId?: string;
-  /** 限制级（NSFW）专属系统提示词扩展（`STAGE_NSFW_PROMPT`）。 */
-  nsfwPrompt?: string;
+  /** 限制级（NSFW）专用模型 id。空 = 回退到 modelId。 */
+  nsfwModelId: string;
+  /** 限制级（NSFW）专属系统提示词扩展。 */
+  nsfwPrompt: string;
+  /** OpenAI 兼容网关地址（`…/v1`）。 */
   baseUrl: string;
   apiKey: string;
-  /** 单请求输出上限（max_tokens）：钳住捐赠元数据的虚高 maxTokens——streamSimple 不传时以 model.maxTokens 填充发出，超网关限制即 400。 */
+  /** 单请求输出上限（max_tokens）。 */
   maxTokens: number;
-  /** 纪元压缩（P4b）：模型上下文窗口真实值——捐赠元数据不可信，须由部署方按实际网关限制定。 */
+  /** 模型上下文窗口真实值。 */
   contextWindow: number;
-  /** 纪元压缩触发阈值（占窗口比例）：对话体到预算即压缩成 arcs 摘要。 */
   compactRatio: number;
-  /** 纪元压缩保留的最近上下文（token 估算）：切尾点之后的原文留在对话体。 */
   keepRecentTokens: number;
-  /**
-   * 工坊线程压缩的同一组参数，单独一套 env（`STAGE_WORKSHOP_*`），不设即沿用上面三项。
-   * 工坊模型可以和剧作家不同（play.json 的 agents.workshop.model），窗口不等时压错阈值会误判。
-   */
+  /** 工坊线程压缩的同一组参数（工坊模型可与剧作家不同）。 */
   workshopContext: {
     contextWindow: number;
     compactRatio: number;
     keepRecentTokens: number;
   };
-  /** 单轮超时（毫秒）：网关挂住时 provider 既不报错也不收流，到点 abort 这一轮。 */
+  /** 单轮超时（毫秒）。 */
   beatTimeoutMs: number;
-  /** 生图管线（D6）：出图后端 + 预发射 + 媒体缓存。 */
   image: {
     enabled: boolean;
-    /**
-     * 接口格式，不是产品名：
-     * - `gemini` = `POST {base}/v1beta/models/{model}:generateContent`（图片在 inlineData，**支持垫图**）；
-     * - `openai` = `POST {base}/v1/images/generations`（b64_json / url，**没有参考图入参**）。
-     * 接的是官方 API、本机 flow2api 还是 cpa，由 baseUrl 决定。
-     */
     format: "gemini" | "openai";
-    /** 生图服务根地址（不要再带 `/v1` 或 `/v1beta`，版本段由格式自己拼）。 */
     baseUrl: string;
     apiKey: string;
-    /** 出图模型名，按所选格式填（flow2api 那条路要把画幅档位写进别名，否则 imageConfig 被忽略）。 */
     model: string;
-    /**
-     * 出图档位或字面像素（`STAGE_IMAGE_SIZE`，构造期已归一化）：`1K` / `2K` / `4K`，或 `1536x1024`。
-     * gemini 只认档位（原样交给 `imageConfig.imageSize`），openai 只认像素（档位由 `canvasFor` 换算）。
-     */
     size: string;
-    /** 并发出图上限（每图 15–140s，串行会把预发射窗口拖穿）。 */
     concurrency: number;
-    /** 单图超时（毫秒）：超时按失败降级，占位骨架不留死。 */
     timeoutMs: number;
-    /** 垫图策略：neutral = 派生立绘差分时用该角色的 neutral 定妆照垫图（默认）；none = 纯文生图。仅 gemini 格式有效。 */
     reference: "none" | "neutral";
   };
-  /** 语音管线（D5）：fish-audio keys / 代理 / 并发。 */
   tts: {
     enabled: boolean;
-    /** 多把 key 轮询（`STAGE_TTS_KEYS`，逗号分隔）。 */
     keys: string[];
     proxy: string;
     baseUrl: string;
     concurrency: number;
   };
-  /** 工坊联网检索（Exa）：工坊 agent 唯一的联网口子，一次调用同时搜索并取回正文。 */
   exa: {
     enabled: boolean;
-    /** 多把 key 轮询（`STAGE_EXA_KEYS`，逗号分隔）；Exa 的免费额度按 key 给。 */
     keys: string[];
     baseUrl: string;
     proxy: string;
     timeoutMs: number;
   };
+}
+
+/**
+ * 新装默认值：网关留空（第一次打开要自己在设置页填），
+ * 生图/语音/联网**一律关着**——默认对着 `127.0.0.1:9999` 打请求只会让人以为坏了。
+ */
+export function freshSettings(): ServerConfig {
+  return {
+    password: "",
+    modelId: "",
+    modelBase: "deepseek/deepseek-flash",
+    models: [],
+    nsfwModelId: "",
+    nsfwPrompt: "",
+    baseUrl: "",
+    apiKey: "",
+    maxTokens: 32768,
+    contextWindow: 262144,
+    compactRatio: 0.6,
+    keepRecentTokens: 20000,
+    workshopContext: { contextWindow: 262144, compactRatio: 0.6, keepRecentTokens: 20000 },
+    beatTimeoutMs: 240_000,
+    image: {
+      enabled: false,
+      format: "gemini",
+      baseUrl: "",
+      apiKey: "",
+      model: "",
+      size: "1K",
+      concurrency: 6,
+      timeoutMs: 180_000,
+      reference: "neutral",
+    },
+    tts: { enabled: false, keys: [], proxy: "", baseUrl: "https://api.fish.audio", concurrency: 2 },
+    exa: { enabled: false, keys: [], baseUrl: "https://api.exa.ai", proxy: "", timeoutMs: 20_000 },
+  };
+}
+
+/**
+ * 从环境变量解析出**旧版语义**的设置（`.env` 一次性迁移用）。
+ *
+ * 与 `freshSettings` 的差别只在默认值：这里是过去 `loadConfig` 的那套默认
+ * （生图/语音/联网默认开、指向本机网关），迁移过来的部署行为逐字不变。
+ */
+export function settingsFromEnv(env: NodeJS.ProcessEnv): ServerConfig {
+  const contextWindow = parsePositiveInt("STAGE_CONTEXT_WINDOW", env.STAGE_CONTEXT_WINDOW, 262144);
+  const compactRatio = parseRatio("STAGE_COMPACT_RATIO", env.STAGE_COMPACT_RATIO, 0.6);
+  const keepRecentTokens = parsePositiveInt(
+    "STAGE_KEEP_RECENT_TOKENS",
+    env.STAGE_KEEP_RECENT_TOKENS,
+    20000,
+  );
+  return {
+    ...freshSettings(),
+    password: env.STAGE_PASSWORD ?? "",
+    modelId: env.STAGE_MODEL_ID ?? "ms/deepseek-ai/DeepSeek-V4.1-Flash",
+    modelBase: env.STAGE_MODEL_BASE ?? "deepseek/deepseek-flash",
+    models: parseModelList(env.STAGE_MODELS),
+    nsfwModelId: env.STAGE_NSFW_MODEL_ID?.trim() ?? "",
+    nsfwPrompt: env.STAGE_NSFW_PROMPT?.trim() ?? "",
+    baseUrl: env.STAGE_BASE_URL ?? "http://127.0.0.1:9999/v1",
+    apiKey: env.STAGE_API_KEY ?? "sk-1234",
+    maxTokens: parsePositiveInt("STAGE_MAX_TOKENS", env.STAGE_MAX_TOKENS, 32768),
+    contextWindow,
+    compactRatio,
+    keepRecentTokens,
+    workshopContext: {
+      contextWindow: parsePositiveInt(
+        "STAGE_WORKSHOP_CONTEXT_WINDOW",
+        env.STAGE_WORKSHOP_CONTEXT_WINDOW,
+        contextWindow,
+      ),
+      compactRatio: parseRatio("STAGE_WORKSHOP_COMPACT_RATIO", env.STAGE_WORKSHOP_COMPACT_RATIO, compactRatio),
+      keepRecentTokens: parsePositiveInt(
+        "STAGE_WORKSHOP_KEEP_RECENT_TOKENS",
+        env.STAGE_WORKSHOP_KEEP_RECENT_TOKENS,
+        keepRecentTokens,
+      ),
+    },
+    beatTimeoutMs: parsePositiveInt("STAGE_BEAT_TIMEOUT_MS", env.STAGE_BEAT_TIMEOUT_MS, 240_000),
+    image: {
+      enabled: env.STAGE_IMAGE_ENABLED !== "false",
+      format: parseEnum("STAGE_IMAGE_FORMAT", env.STAGE_IMAGE_FORMAT, ["gemini", "openai"] as const, "openai"),
+      baseUrl: env.STAGE_IMAGE_BASE_URL ?? "http://127.0.0.1:9999",
+      apiKey: env.STAGE_IMAGE_API_KEY ?? "",
+      model: env.STAGE_IMAGE_MODEL ?? "gpt-image-2",
+      size: imageSizeText(parseImageSize(env.STAGE_IMAGE_SIZE ?? "1K")),
+      concurrency: parsePositiveInt("STAGE_IMAGE_CONCURRENCY", env.STAGE_IMAGE_CONCURRENCY, 6),
+      timeoutMs: parsePositiveInt("STAGE_IMAGE_TIMEOUT_MS", env.STAGE_IMAGE_TIMEOUT_MS, 180_000),
+      reference: parseEnum("STAGE_IMAGE_REFERENCE", env.STAGE_IMAGE_REFERENCE, ["none", "neutral"] as const, "neutral"),
+    },
+    tts: {
+      enabled: env.STAGE_TTS_ENABLED !== "false",
+      keys: parseKeyList(env.STAGE_TTS_KEYS),
+      proxy: env.STAGE_TTS_PROXY ?? "http://127.0.0.1:7890",
+      baseUrl: env.STAGE_TTS_BASE_URL ?? "https://api.fish.audio",
+      concurrency: parsePositiveInt("STAGE_TTS_CONCURRENCY", env.STAGE_TTS_CONCURRENCY, 2),
+    },
+    exa: {
+      enabled: env.STAGE_EXA_ENABLED !== "false",
+      keys: parseKeyList(env.STAGE_EXA_KEYS),
+      baseUrl: env.STAGE_EXA_BASE_URL ?? "https://api.exa.ai",
+      proxy: env.STAGE_EXA_PROXY ?? "http://127.0.0.1:7890",
+      timeoutMs: parsePositiveInt("STAGE_EXA_TIMEOUT_MS", env.STAGE_EXA_TIMEOUT_MS, 20_000),
+    },
+  };
+}
+
+/**
+ * 启动期参数：端口、监听地址、数据目录。
+ *
+ * 数据目录没在环境里给就从 `fallbackDataRoot` 取（开发时是仓库根，打包后是 exe 同级的 `data/`）。
+ * `overrides` 是命令行给的，优先级最高：双击 exe 的人改不了环境变量，但可以带参数启动。
+ */
+export function loadBootstrap(
+  env: NodeJS.ProcessEnv,
+  fallbackDataRoot: string,
+  overrides: { port?: number; host?: string; dataRoot?: string } = {},
+): BootstrapConfig {
+  return {
+    port: overrides.port ?? parsePositiveInt("STAGE_PORT", env.STAGE_PORT, 8787),
+    host: overrides.host?.trim() || env.STAGE_HOST?.trim() || "0.0.0.0",
+    dataRoot: resolve(overrides.dataRoot?.trim() || env.STAGE_DATA_DIR?.trim() || fallbackDataRoot),
+  };
+}
+
+/** 设置补丁：只带要改的字段（设置页提交的形态）。 */
+export interface SettingsPatch {
+  password?: string;
+  modelId?: string;
+  modelBase?: string;
+  models?: string[];
+  nsfwModelId?: string;
+  nsfwPrompt?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  maxTokens?: number;
+  contextWindow?: number;
+  compactRatio?: number;
+  keepRecentTokens?: number;
+  workshopContext?: Partial<ServerConfig["workshopContext"]>;
+  beatTimeoutMs?: number;
+  image?: Partial<ServerConfig["image"]>;
+  tts?: Partial<ServerConfig["tts"]>;
+  exa?: Partial<ServerConfig["exa"]>;
+}
+
+/**
+ * 把补丁合并到当前设置上：逐字段校验，任何一个不合法就整体抛错（不写半份配置）。
+ *
+ * 返回值同时给出「哪些字段真的变了」——设置页据此提示，也避免无改动的保存触发重建。
+ */
+export function applyPatch(base: ServerConfig, patch: SettingsPatch): { next: ServerConfig; changed: string[] } {
+  const changed: string[] = [];
+  const next: ServerConfig = {
+    ...base,
+    workshopContext: { ...base.workshopContext },
+    image: { ...base.image },
+    tts: { ...base.tts },
+    exa: { ...base.exa },
+  };
+  const put = <K extends keyof ServerConfig>(key: K, value: ServerConfig[K]): void => {
+    if (base[key] === value) return;
+    next[key] = value;
+    changed.push(key);
+  };
+  const putIn = <K extends "image" | "tts" | "exa">(
+    block: K,
+    key: keyof ServerConfig[K],
+    value: ServerConfig[K][keyof ServerConfig[K]],
+  ): void => {
+    if (base[block][key] === value) return;
+    (next[block] as Record<string, unknown>)[key as string] = value;
+    changed.push(`${block}.${String(key)}`);
+  };
+
+  if (patch.password !== undefined) put("password", patch.password.trim());
+  if (patch.modelId !== undefined) put("modelId", patch.modelId.trim());
+  if (patch.modelBase !== undefined) put("modelBase", assertModelBase(patch.modelBase));
+  if (patch.models !== undefined) put("models", parseModelList(patch.models.join(",")));
+  if (patch.nsfwModelId !== undefined) put("nsfwModelId", patch.nsfwModelId.trim());
+  if (patch.nsfwPrompt !== undefined) put("nsfwPrompt", patch.nsfwPrompt.trim());
+  if (patch.baseUrl !== undefined) put("baseUrl", patch.baseUrl.trim().replace(/\/$/, ""));
+  if (patch.apiKey !== undefined) put("apiKey", patch.apiKey.trim());
+  if (patch.maxTokens !== undefined) put("maxTokens", positiveInt("输出上限", patch.maxTokens));
+  if (patch.contextWindow !== undefined) put("contextWindow", positiveInt("上下文窗口", patch.contextWindow));
+  if (patch.compactRatio !== undefined) put("compactRatio", ratio("压缩阈值", patch.compactRatio));
+  if (patch.keepRecentTokens !== undefined) {
+    put("keepRecentTokens", positiveInt("保留上下文", patch.keepRecentTokens));
+  }
+  if (patch.beatTimeoutMs !== undefined) put("beatTimeoutMs", positiveInt("单轮超时", patch.beatTimeoutMs));
+
+  const workshop = patch.workshopContext;
+  if (workshop) {
+    const merged = { ...next.workshopContext };
+    if (workshop.contextWindow !== undefined) {
+      merged.contextWindow = positiveInt("工坊上下文窗口", workshop.contextWindow);
+    }
+    if (workshop.compactRatio !== undefined) merged.compactRatio = ratio("工坊压缩阈值", workshop.compactRatio);
+    if (workshop.keepRecentTokens !== undefined) {
+      merged.keepRecentTokens = positiveInt("工坊保留上下文", workshop.keepRecentTokens);
+    }
+    if (JSON.stringify(merged) !== JSON.stringify(base.workshopContext)) {
+      next.workshopContext = merged;
+      changed.push("workshopContext");
+    }
+  }
+
+  const image = patch.image;
+  if (image) {
+    if (image.enabled !== undefined) putIn("image", "enabled", image.enabled);
+    if (image.format !== undefined) {
+      putIn("image", "format", parseEnum("生图接口格式", image.format, ["gemini", "openai"] as const, "gemini"));
+    }
+    if (image.baseUrl !== undefined) putIn("image", "baseUrl", image.baseUrl.trim().replace(/\/$/, ""));
+    if (image.apiKey !== undefined) putIn("image", "apiKey", image.apiKey.trim());
+    if (image.model !== undefined) putIn("image", "model", image.model.trim());
+    if (image.size !== undefined) putIn("image", "size", imageSizeText(parseImageSize(image.size)));
+    if (image.concurrency !== undefined) putIn("image", "concurrency", positiveInt("出图并发", image.concurrency));
+    if (image.timeoutMs !== undefined) putIn("image", "timeoutMs", positiveInt("出图超时", image.timeoutMs));
+    if (image.reference !== undefined) {
+      putIn("image", "reference", parseEnum("垫图策略", image.reference, ["none", "neutral"] as const, "neutral"));
+    }
+  }
+
+  const tts = patch.tts;
+  if (tts) {
+    if (tts.enabled !== undefined) putIn("tts", "enabled", tts.enabled);
+    if (tts.keys !== undefined) putIn("tts", "keys", dedupe(tts.keys));
+    if (tts.proxy !== undefined) putIn("tts", "proxy", tts.proxy.trim());
+    if (tts.baseUrl !== undefined) putIn("tts", "baseUrl", tts.baseUrl.trim().replace(/\/$/, ""));
+    if (tts.concurrency !== undefined) putIn("tts", "concurrency", positiveInt("语音并发", tts.concurrency));
+  }
+
+  const exa = patch.exa;
+  if (exa) {
+    if (exa.enabled !== undefined) putIn("exa", "enabled", exa.enabled);
+    if (exa.keys !== undefined) putIn("exa", "keys", dedupe(exa.keys));
+    if (exa.baseUrl !== undefined) putIn("exa", "baseUrl", exa.baseUrl.trim().replace(/\/$/, ""));
+    if (exa.proxy !== undefined) putIn("exa", "proxy", exa.proxy.trim());
+    if (exa.timeoutMs !== undefined) putIn("exa", "timeoutMs", positiveInt("检索超时", exa.timeoutMs));
+  }
+
+  // 保留预算 ≥ 触发阈值：每轮都判定超标却永远切不出可压段，纪元压缩会静默失效
+  for (const [name, block] of [
+    ["", next],
+    ["工坊", next.workshopContext],
+  ] as const) {
+    if (block.keepRecentTokens >= block.contextWindow * block.compactRatio) {
+      console.warn(
+        `[aivn] ${name}保留上下文（${block.keepRecentTokens}）≥ 触发阈值（${Math.floor(
+          block.contextWindow * block.compactRatio,
+        )}），纪元压缩将无法切出可压段`,
+      );
+    }
+  }
+  return { next, changed };
+}
+
+/** `provider/modelId` 形态校验：pi-ai 内置目录里查不到的具体名字由 provider 构造时点名。 */
+function assertModelBase(raw: string): string {
+  const value = raw.trim();
+  if (!value.includes("/")) throw new Error(`基础模型须为 provider/modelId 形式：${raw}`);
+  return value;
+}
+
+/** 正整数校验：NaN/0/小数会让下游静默失效，直接挡在写入前。 */
+function positiveInt(label: string, value: number): number {
+  if (!Number.isInteger(value) || value < 1) throw new Error(`${label}必须是正整数`);
+  return value;
+}
+
+/** (0,1] 比例校验。 */
+function ratio(label: string, value: number): number {
+  if (!Number.isFinite(value) || value <= 0 || value > 1) throw new Error(`${label}必须是 0 到 1 之间的小数`);
+  return value;
 }
 
 /** 正整数环境变量解析（N3）：非法值回退默认并告警——NaN/0 会让下游静默失效。 */
@@ -98,19 +359,19 @@ function parsePositiveInt(name: string, raw: string | undefined, fallback: numbe
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1) {
     if (raw !== undefined && raw !== "") {
-      console.warn(`[stage-ai] ${name} 非法（${raw}），回退默认 ${fallback}`);
+      console.warn(`[aivn] ${name} 非法（${raw}），回退默认 ${fallback}`);
     }
     return fallback;
   }
   return n;
 }
 
-/** (0,1] 比例解析：越界阈值会让纪元压缩永不触发或每轮都触发，非法值回退默认并告警。 */
+/** (0,1] 比例解析：越界阈值会让纪元压缩永不触发或每轮都触发。 */
 function parseRatio(name: string, raw: string | undefined, fallback: number): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0 || n > 1) {
     if (raw !== undefined && raw !== "") {
-      console.warn(`[stage-ai] ${name} 非法（${raw}），回退默认 ${fallback}`);
+      console.warn(`[aivn] ${name} 非法（${raw}），回退默认 ${fallback}`);
     }
     return fallback;
   }
@@ -133,112 +394,21 @@ function parseEnum<T extends string>(name: string, raw: string | undefined, allo
  * 「便宜→贵」这种配法用字母序排出来等于没排。
  */
 export function parseModelList(raw: string | undefined): string[] {
-  const out: string[] = [];
-  for (const part of (raw ?? "").split(/[,\s]+/)) {
-    const id = part.trim();
-    if (id !== "" && !out.includes(id)) out.push(id);
-  }
-  return out;
+  return dedupe((raw ?? "").split(/[,\s]+/));
 }
 
-export function loadConfig(
-  env: NodeJS.ProcessEnv = process.env,
-  repoRoot = process.cwd(),
-): ServerConfig {
-  // 纪元压缩的三个全局值先落局部：工坊那组要拿它们当缺省。
-  // 256K：两个 agent 的默认窗口。低于它的部署要显式写小，否则触发阈值会高过网关真实上限。
-  const contextWindow = parsePositiveInt("STAGE_CONTEXT_WINDOW", env.STAGE_CONTEXT_WINDOW, 262144);
-  const compactRatio = parseRatio("STAGE_COMPACT_RATIO", env.STAGE_COMPACT_RATIO, 0.6);
-  const keepRecentTokens = parsePositiveInt(
-    "STAGE_KEEP_RECENT_TOKENS",
-    env.STAGE_KEEP_RECENT_TOKENS,
-    20000,
-  );
-  const config: ServerConfig = {
-    port: Number(env.STAGE_PORT ?? "8787"),
-    password: env.STAGE_PASSWORD ?? "",
-    playsRoot: resolve(repoRoot, env.STAGE_PLAYS_ROOT ?? "plays"),
-    libraryRoot: resolve(repoRoot, env.STAGE_LIBRARY_ROOT ?? "library"),
-    modelId: env.STAGE_MODEL_ID ?? "ms/deepseek-ai/DeepSeek-V4.1-Flash",
-    modelBase: env.STAGE_MODEL_BASE ?? "deepseek/deepseek-flash",
-    models: parseModelList(env.STAGE_MODELS),
-    nsfwModelId: env.STAGE_NSFW_MODEL_ID?.trim() || undefined,
-    nsfwPrompt: env.STAGE_NSFW_PROMPT?.trim() || undefined,
-    baseUrl: env.STAGE_BASE_URL ?? "http://127.0.0.1:9999/v1",
-    apiKey: env.STAGE_API_KEY ?? "sk-1234",
-    maxTokens: parsePositiveInt("STAGE_MAX_TOKENS", env.STAGE_MAX_TOKENS, 32768),
-    contextWindow,
-    compactRatio,
-    keepRecentTokens,
-    // 工坊侧同一组参数：缺省逐项沿用全局，写了就以工坊自己的为准。
-    workshopContext: {
-      contextWindow: parsePositiveInt(
-        "STAGE_WORKSHOP_CONTEXT_WINDOW",
-        env.STAGE_WORKSHOP_CONTEXT_WINDOW,
-        contextWindow,
-      ),
-      compactRatio: parseRatio(
-        "STAGE_WORKSHOP_COMPACT_RATIO",
-        env.STAGE_WORKSHOP_COMPACT_RATIO,
-        compactRatio,
-      ),
-      keepRecentTokens: parsePositiveInt(
-        "STAGE_WORKSHOP_KEEP_RECENT_TOKENS",
-        env.STAGE_WORKSHOP_KEEP_RECENT_TOKENS,
-        keepRecentTokens,
-      ),
-    },
-    // 一轮 240s：一轮里有生图预发射和多轮记忆工具调用，60s 不够；再久就是网关挂了。
-    // 到点 abort 这一轮，按轮失败收束（空轮护栏给玩家重试入口），不是无声卡死。
-    beatTimeoutMs: parsePositiveInt("STAGE_BEAT_TIMEOUT_MS", env.STAGE_BEAT_TIMEOUT_MS, 240_000),
-    image: {
-      enabled: env.STAGE_IMAGE_ENABLED !== "false",
-      format: parseEnum("STAGE_IMAGE_FORMAT", env.STAGE_IMAGE_FORMAT, ["gemini", "openai"] as const, "openai"),
-      baseUrl: env.STAGE_IMAGE_BASE_URL ?? "http://127.0.0.1:9999",
-      apiKey: env.STAGE_IMAGE_API_KEY ?? "",
-      model: env.STAGE_IMAGE_MODEL ?? "gpt-image-2",
-      // 启动即校验并归一化（配置里写 1k 也认，发出去的一律是官方的大写 1K）。
-      size: imageSizeText(parseImageSize(env.STAGE_IMAGE_SIZE ?? "1K")),
-      // 6 是按本地网关定的：单价近乎免费，工坊一次要出几个差分，
-      // 串行等 6×100s 用户受不了。换成计费网关时按钱包调小。
-      concurrency: parsePositiveInt("STAGE_IMAGE_CONCURRENCY", env.STAGE_IMAGE_CONCURRENCY, 6),
-      // 出图最慢的是带垫图的差分（实测 138s），180s 留够余量。
-      timeoutMs: parsePositiveInt("STAGE_IMAGE_TIMEOUT_MS", env.STAGE_IMAGE_TIMEOUT_MS, 180_000),
-      // 垫图（参考图）策略：neutral = 派生立绘差分时拿该角色的 neutral 定妆照垫图（保角色一致性）；
-      // none = 全走文生图，差分与其它表情就不是同一个人了。
-      // 默认 neutral：垫图让单张耗时翻倍（实测 9:16 69s → 138s）而像素一模一样，
-      // 但一致性是演出观感的事；差分只由工坊（用户眼前）生成，剧作家在参数层就拿不到 expression。
-      reference: parseEnum("STAGE_IMAGE_REFERENCE", env.STAGE_IMAGE_REFERENCE, ["none", "neutral"] as const, "neutral"),
-    },
-    tts: {
-      enabled: env.STAGE_TTS_ENABLED !== "false",
-      keys: parseKeyList(env.STAGE_TTS_KEYS),
-      proxy: env.STAGE_TTS_PROXY ?? "http://127.0.0.1:7890",
-      baseUrl: env.STAGE_TTS_BASE_URL ?? "https://api.fish.audio",
-      concurrency: parsePositiveInt("STAGE_TTS_CONCURRENCY", env.STAGE_TTS_CONCURRENCY, 2),
-    },
-    exa: {
-      enabled: env.STAGE_EXA_ENABLED !== "false",
-      keys: parseKeyList(env.STAGE_EXA_KEYS),
-      baseUrl: env.STAGE_EXA_BASE_URL ?? "https://api.exa.ai",
-      proxy: env.STAGE_EXA_PROXY ?? "http://127.0.0.1:7890",
-      timeoutMs: parsePositiveInt("STAGE_EXA_TIMEOUT_MS", env.STAGE_EXA_TIMEOUT_MS, 20_000),
-    },
-  };
-  // 保留预算 ≥ 触发阈值：每轮都判定超标却永远切不出可压段，纪元压缩静默失效
-  for (const [name, block] of [
-    ["STAGE", config],
-    ["STAGE_WORKSHOP", config.workshopContext],
-  ] as const) {
-    if (block.keepRecentTokens >= block.contextWindow * block.compactRatio) {
-      console.warn(
-        `[stage-ai] ${name}_KEEP_RECENT_TOKENS（${block.keepRecentTokens}）≥ 触发阈值（${Math.floor(
-          block.contextWindow * block.compactRatio,
-        )}），纪元压缩将无法切出可压段`,
-      );
-    }
+/** 多 key 凭据：逗号或换行分隔，保序去重。 */
+export function parseKeyList(raw: string | undefined): string[] {
+  return dedupe((raw ?? "").split(/[,\s]+/));
+}
+
+function dedupe(parts: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const part of parts) {
+    const item = part.trim();
+    if (item !== "" && !out.includes(item)) out.push(item);
   }
-  return config;
+  return out;
 }
 
 /**
@@ -252,14 +422,4 @@ export function loadConfig(
 export function imagePendingTtlMs(image: ServerConfig["image"]): number {
   const batches = Math.ceil(DEFAULT_MAX_QUEUE / Math.max(1, image.concurrency));
   return image.timeoutMs * (1 + batches);
-}
-
-/** 多 key 凭据（`STAGE_TTS_KEYS` / `STAGE_EXA_KEYS`）：逗号或换行分隔，保序去重。 */
-export function parseKeyList(raw: string | undefined): string[] {
-  const out: string[] = [];
-  for (const part of (raw ?? "").split(/[,\s]+/)) {
-    const key = part.trim();
-    if (key !== "" && !out.includes(key)) out.push(key);
-  }
-  return out;
 }

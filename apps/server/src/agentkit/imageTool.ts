@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "@earendil-works/pi-ai";
-import type { PreloadAssetAttrs, SpriteFraming } from "@stage-ai/core";
+import type { PreloadAssetAttrs, SpriteFraming } from "@aivn/core";
 import type { AssetTarget, PlayAssets } from "../playAssets.js";
 import { linesResult, reason, textResult } from "./result.js";
 

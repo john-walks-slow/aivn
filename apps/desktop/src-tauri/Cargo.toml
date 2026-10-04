@@ -1,0 +1,26 @@
+# 桌面壳的 Rust 侧。版本号与 tauri.conf.json、根 package.json 三处必须一致，
+# scripts/build-desktop.mjs 会核对（三份版本号漂了，装出来的东西就说不清是哪个版本）。
+[package]
+name = "aivn"
+version = "0.1.0"
+description = "AIVN desktop shell: a Tauri window around the bundled aivn-server sidecar"
+authors = ["john-walks-slow"]
+license = "MIT"
+repository = "https://github.com/john-walks-slow/aivn"
+edition = "2024"
+rust-version = "1.90"
+
+[build-dependencies]
+tauri-build = { version = "2.7.1", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.1", features = [] }
+# 第二次双击不再起第二个实例：两个进程会去写同一份 data/，剧目与设置互相盖。
+tauri-plugin-single-instance = "2.5.2"
+serde_json = "1"
+
+[profile.release]
+# 壳子本身很薄，真正的体积在随包的 sidecar 上；这里只是别让调试符号进安装包。
+strip = true
+lto = true
+codegen-units = 1

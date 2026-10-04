@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineageTree } from "@stage-ai/core";
+import { LineageTree } from "@aivn/core";
 import { PlayMemory, cjkBigrams, type ArchiveSlice, type IndexCard } from "../src/memory.js";
 import { PlayStore } from "../src/store.js";
 

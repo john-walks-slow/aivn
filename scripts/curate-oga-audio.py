@@ -10,9 +10,12 @@
 import json, shutil, subprocess, zipfile
 from pathlib import Path
 
+# 目标库按仓库位置算，别写死某台机器的绝对路径
+LIBRARY = Path(__file__).resolve().parent.parent / "library"
+
 SRC = Path("/tmp/itd/oga")
-BGM = Path("./library/bgm")
-SFX = Path("./library/sfx")
+BGM = LIBRARY / "bgm"
+SFX = LIBRARY / "sfx"
 
 def dur(p: Path) -> int:
     try:

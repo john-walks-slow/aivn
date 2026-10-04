@@ -1,8 +1,8 @@
 {
-  "name": "stage-ai",
+  "name": "aivn",
   "private": true,
-  "version": "0.0.1",
-  "description": "AI galgame engine: LLM playwriter streams an incremental script, the stage renders it like streaming video",
+  "version": "0.1.0",
+  "description": "AIVN — AI visual novel engine: an LLM playwriter streams an incremental Stage DSL script and the browser renders it like streaming video",
   "packageManager": "pnpm@11.24.0",
   "engines": {
     "node": ">=22.19.0"
@@ -11,11 +11,19 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "soak": "node scripts/soak.mjs"
+    "soak": "node scripts/soak.mjs",
+    "exe": "node scripts/build-exe.mjs",
+    "desktop": "node scripts/build-desktop.mjs",
+    "icon": "node scripts/make-app-icon.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.87.1",
     "@earendil-works/pi-ai": "^0.87.1",
     "markdown-to-jsx": "^9.10.3"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.23.0",
+    "esbuild": "^0.28.2",
+    "fflate": "^0.8.3"
   }
 }

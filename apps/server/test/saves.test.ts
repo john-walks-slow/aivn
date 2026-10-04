@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineageTree } from "@stage-ai/core";
+import { LineageTree } from "@aivn/core";
 import { PlayLibrary } from "../src/store.js";
 import { PlaySaves, assertSaveId, saveDirOf } from "../src/saves.js";
 
@@ -32,7 +32,7 @@ describe("PlaySaves 周目档管理", () => {
   let saves: PlaySaves;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "stageai-saves-"));
+    root = await mkdtemp(join(tmpdir(), "aivn-saves-"));
     playDir = join(root, "p1");
     await import("node:fs/promises").then((fs) => fs.mkdir(playDir, { recursive: true }));
     await writeFile(join(playDir, "play.json"), PLAY_JSON);
@@ -110,7 +110,7 @@ describe("PlayStore 按周目隔离会话", () => {
   let library: PlayLibrary;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "stageai-saves-store-"));
+    root = await mkdtemp(join(tmpdir(), "aivn-saves-store-"));
     library = new PlayLibrary(root);
     const { mkdir } = await import("node:fs/promises");
     const playDir = join(root, "p1");

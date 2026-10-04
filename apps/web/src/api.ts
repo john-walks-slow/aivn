@@ -8,7 +8,7 @@ import type {
   PlayCover,
   VoiceCatalog,
   VoiceEntry,
-} from "@stage-ai/core";
+} from "@aivn/core";
 
 /** 资源库导入回执（服务端 assetImport 的结果原样）。 */
 export interface ImportResult {
@@ -127,8 +127,8 @@ export interface HistoryBeat {
 
 /** 设置面板数据（P6）：敏感值只回掩码，原样回传视为「不改」。 */
 export interface Settings {
-  port: number;
-  playsRoot: string;
+  /** 只读的启动参数：端口 / 监听地址 / 数据目录（改它们要写 exe 同级的 .env 再重启）。 */
+  bootstrap: { port: number; host: string; dataRoot: string };
   model: {
     modelId: string;
     modelBase: string;
@@ -141,9 +141,16 @@ export interface Settings {
     contextWindow: number;
     compactRatio: number;
     keepRecentTokens: number;
-    nsfwModelId?: string;
-    nsfwPrompt?: string;
+    nsfwModelId: string;
+    nsfwPrompt: string;
   };
+  /** 工坊线程的压缩参数（工坊模型可与剧作家不同，阈值因此另有一套）。 */
+  workshopContext: { contextWindow: number; compactRatio: number; keepRecentTokens: number };
+  /** 单轮超时（毫秒）。 */
+  beatTimeoutMs: number;
+  /** 公网入口密码：留空或保持掩码 = 不改，清空 = 关闭设防。 */
+  password: string;
+  passwordSet: boolean;
   image: {
     enabled: boolean;
     /** 接口格式，不是产品名：gemini 支持垫图，openai 不支持。 */
@@ -377,8 +384,9 @@ export const api = {
 
   settings: () => request<Settings>("/api/config"),
 
+  /** 保存设置：服务端就地生效，并回传新的读视图（凭据只回掩码，改完要拿新的掩码）。 */
   saveSettings: (patch: unknown) =>
-    request<{ changed: string[] }>("/api/config", {
+    request<{ changed: string[]; settings: Settings }>("/api/config", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),

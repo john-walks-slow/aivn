@@ -2,13 +2,13 @@
 """
 scripts/gen_sprite.py - Galgame Character Sprite Generator & Pipeline
 =====================================================================
-Stage-AI Asset Pipeline script for generating multi-expression anime character
+AIVN Asset Pipeline script for generating multi-expression anime character
 sprites with two battle-tested paradigms:
   1. Paradigm A: Sheet Slicing (Single prompt 2x3 grid -> automated cell slice + matting)
   2. Paradigm B: Iterative Reference (Base normal render -> multimodal image-to-image
      locking character features while mutating expressions)
 
-Outputs production-ready transparent RGBA PNGs compliant with Stage-AI VN standards.
+Outputs production-ready transparent RGBA PNGs compliant with AIVN VN standards.
 """
 
 import os
@@ -324,7 +324,7 @@ Pure solid white background, half-body front view portrait.
 
 
 def write_manifest(char_name: str, char_desc: str, out_dir: Path, expressions: List[str]):
-    """Generates Stage-AI sprite manifest file."""
+    """Generates AIVN sprite manifest file."""
     manifest = {
         "character": char_name,
         "description": char_desc,
@@ -348,7 +348,7 @@ def write_manifest(char_name: str, char_desc: str, out_dir: Path, expressions: L
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Stage-AI Galgame Multi-Expression Character Sprite Generator"
+        description="AIVN Galgame Multi-Expression Character Sprite Generator"
     )
     parser.add_argument("--character", default="koharu", help="Character identifier (default: koharu)")
     parser.add_argument("--desc", help="Character appearance description prompt")
@@ -394,7 +394,7 @@ def main():
 
     expr_list = [e.strip() for e in args.expressions.split(",") if e.strip()]
 
-    print(f"=== Stage-AI Character Sprite Generation ===")
+    print(f"=== AIVN Character Sprite Generation ===")
     print(f"Character: {args.character}")
     print(f"Mode: {args.mode}")
     print(f"Output: {out_dir}")

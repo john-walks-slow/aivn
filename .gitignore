@@ -14,6 +14,16 @@ plays/*
 plays/*/saves/
 plays/*/active.json
 media-cache/
+# 运行期设置与数据目录（开发时设置文件落在仓库根，打包后在 exe 同级的 data/）
+settings.json
+data/
+# exe 打包的中间产物与最终产物（scripts/build-exe.mjs 的落点，跑一遍就有，不是仓库内容）
+build/
+# 桌面壳的构建产物：sidecar 是 scripts/build-desktop.mjs 现打现铺的 147MB 产物，
+# Rust 的 target/ 与 tauri 生成的 schema 同理（图标不在此列——那是设计资产，进 git）
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/binaries/
 # 剧目记忆运行时层（D7：always/index 手工层进 git，纪元产物与切片不进）
 plays/*/memory/index/arcs/
 plays/*/memory/archive/

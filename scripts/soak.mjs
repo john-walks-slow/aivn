@@ -59,7 +59,7 @@ const 齐缺 = (b) => (b ? "齐" : "缺（不阻塞演出）");
  */
 async function preflight() {
   const health = await getJson("/api/health");
-  if (!health) die(`服务端不可达 ${BASE}/api/health —— 先 pnpm --filter @stage-ai/server start`);
+  if (!health) die(`服务端不可达 ${BASE}/api/health —— 先 pnpm --filter @aivn/server start`);
 
   const play = await getJson(`/api/plays/${PLAY}`);
   if (!play) die(`读不到剧目 ${PLAY}（${BASE}/api/plays/${PLAY}）`);

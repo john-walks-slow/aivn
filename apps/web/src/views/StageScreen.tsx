@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReadPos } from "@stage-ai/core";
+import type { ReadPos } from "@aivn/core";
 import { api, type PlayDetail } from "../api.js";
 import { navigate } from "../router.jsx";
 import { useStageSocket, type WorkshopInbound } from "../stage/useStageSocket.js";
@@ -178,7 +178,7 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
       playbackRef.current?.settleAssets([id]);
       // 原始错误（状态码、模型名、provider、错误码）不是玩家能用的信息，也不该出现在
       // 玩家界面上；它留给 console，toast 只说发生了什么、玩家下一步能做什么。
-      console.warn(`[stage-ai] 生图失败 ${id}: ${message}`);
+      console.warn(`[aivn] 生图失败 ${id}: ${message}`);
       pushToast("有一张图没生成出来，已用氛围底色顶上。可到剧目库「设置」里换出图后端。", "warn");
     },
     onWorkshop: (msg) => {

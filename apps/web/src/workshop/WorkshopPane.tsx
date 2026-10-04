@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import type { ClientMessage, WorkshopAssetView } from "@stage-ai/core";
+import type { ClientMessage, WorkshopAssetView } from "@aivn/core";
 import { api } from "../api.js";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
 import { Icon, type IconName } from "../ui/Icon.js";

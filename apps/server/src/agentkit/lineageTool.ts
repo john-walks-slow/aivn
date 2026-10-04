@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { LineageTree, type LineageEvent, type LineageEventKind, type LineageSnapshot } from "@stage-ai/core";
+import { LineageTree, type LineageEvent, type LineageEventKind, type LineageSnapshot } from "@aivn/core";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { assertSaveId } from "../saves.js";
 import type { WorkshopKitDeps } from "./deps.js";

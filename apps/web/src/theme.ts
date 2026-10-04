@@ -33,7 +33,7 @@ export function reloadPlayTheme(): void {
 }
 
 /** 工坊文件存盘后广播，App 收到即重挂主题表（换皮不必刷新页面）。 */
-export const THEME_CHANGED = "stage-ai:theme-changed";
+export const THEME_CHANGED = "aivn:theme-changed";
 export function notifyThemeChanged(): void {
   window.dispatchEvent(new Event(THEME_CHANGED));
 }

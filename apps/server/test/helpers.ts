@@ -1,8 +1,23 @@
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import type { PlayConfig } from "@stage-ai/core";
+import type { PlayConfig } from "@aivn/core";
 import type { AgentCapabilities } from "../src/agentkit/kit.js";
 import type { IndexCard } from "../src/memory.js";
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { ServerConfig } from "../src/config.js";
+import { SettingsStore } from "../src/settingsStore.js";
+
+/**
+ * 测试用的设置源：只带一份配置，不落盘也不起监视。
+ *
+ * 依赖设置的模块（PlayHouse / 音色库 / 密码闸门）要的是「随时能读到当前设置」这件事本身，
+ * 测试里给它一份固定值就够了；真要验证落盘与迁移的用例去 `settingsStore.test.ts`。
+ */
+export function settingsStoreFor(config: ServerConfig): SettingsStore {
+  return new SettingsStore(join(tmpdir(), `stage-settings-unused-${randomUUID()}.json`), config);
+}
 
 export interface FakeResponse {
   /** 剧本 DSL 原文（流式输出的 assistant 文本）。 */

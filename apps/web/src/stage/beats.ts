@@ -1,4 +1,4 @@
-import type { LineageNodeView, LineageView, StopType } from "@stage-ai/core";
+import type { LineageNodeView, LineageView, StopType } from "@aivn/core";
 import type { ScriptLine } from "./script.js";
 
 /** 分岔来源：这张卡是被重演的那一轮顶出来的，父卡 id + 它当时的轮号。 */

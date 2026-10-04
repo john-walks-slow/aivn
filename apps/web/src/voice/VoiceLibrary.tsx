@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { countVoicesByLanguage, languageLabel, type VoiceEntry } from "@stage-ai/core";
+import { countVoicesByLanguage, languageLabel, type VoiceEntry } from "@aivn/core";
 import { api } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { useEscape } from "../ui/escape.js";

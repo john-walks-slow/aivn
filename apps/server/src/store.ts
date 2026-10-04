@@ -7,7 +7,7 @@ import {
   type EngineStateSnapshot,
   type LineageEvent,
   type LineageStore,
-} from "@stage-ai/core";
+} from "@aivn/core";
 import {
   parsePlayConfig,
   parsePlayAssetManifest,
@@ -17,7 +17,7 @@ import {
   PROTAGONIST_ID,
   type AssetMeta,
   type PlayConfig,
-} from "@stage-ai/core";
+} from "@aivn/core";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
 import { loadCharacterCards } from "./memory.js";
 import { parseHistory, type HistoryBeat } from "./history.js";

@@ -101,7 +101,7 @@ export function createExa(config: ServerConfig): Exa | null {
   if (!config.exa.enabled) return null;
   const keys = config.exa.keys;
   if (keys.length === 0) {
-    console.warn("[stage-ai] STAGE_EXA_KEYS 为空（工坊联网停用）");
+    console.warn("[aivn] STAGE_EXA_KEYS 为空（工坊联网停用）");
     return null;
   }
   return new Exa({

@@ -1,4 +1,4 @@
-import { PhraseChunker } from "@stage-ai/core";
+import { PhraseChunker } from "@aivn/core";
 import { errorText, type PendingJobs } from "./pendingJobs.js";
 
 /** 合成函数（FishTts + 剧目 URL 前缀绑定；测试注入 fake）。 */
@@ -121,7 +121,7 @@ export class VoicePipeline {
           const reason = errorText(error);
           // 音频失败不阻塞演出：告警后丢弃该句（客户端的喇叭就此熄灭）。
           // 面板上那一条留成失败态记下错因：合成挂了得有人看见，不该跟着这句一起蒸发。
-          console.warn(`[stage-ai] TTS 失败（跳过）: ${reason}`);
+          console.warn(`[aivn] TTS 失败（跳过）: ${reason}`);
           done?.(reason);
         })
         .finally(() => {

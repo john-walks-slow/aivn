@@ -3,7 +3,7 @@
 - 计划/简报：`/tmp/debt-briefs/2-tool-catalog-roles.md`（本轮债务清单，未入仓）
 - 检视：无独立文件（reviewer 子代理在线检视，结论 **条件准入**、无阻塞项；两条建议已落地并复检，见下）
 - 用户验证：`261004-tool-catalog-roles.validation.md`（本目录）
-- 分支：`refactor/tool-catalog-roles`，worktree `./.worktrees/tool-catalog-roles`，基线 `main@4281ad7`
+- 分支：`refactor/tool-catalog-roles`，worktree `.worktrees/tool-catalog-roles`，基线 `main@4281ad7`
 - 提交：`851e42b`
 
 ## 一句话
@@ -47,7 +47,7 @@
 
 ## 验证证据
 
-- 静态：`pnpm --filter @stage-ai/server typecheck`（`tsc -b --noEmit`）与 `build`（`tsc -b`）均通过。
+- 静态：`pnpm --filter @aivn/server typecheck`（`tsc -b --noEmit`）与 `build`（`tsc -b`）均通过。
 - 测试：与 agentkit 相关的 7 个文件 113 例全绿 —— `agentkit` / `nsfwTool` / `playEnv` / `workshop` / `workshopPrompt` / `playhouse` / `http`。
 - 未跑浏览器 e2e：本次是纯内部重构、无 UI 与行为变更，e2e 对本改动几乎没有鉴别力；用户侧可确认的部分见验证文档。
 - 改动规模：4 文件，+124 / −119（`kit.ts` / `role.ts` / `test/agentkit.test.ts` / `test/nsfwTool.test.ts`）。

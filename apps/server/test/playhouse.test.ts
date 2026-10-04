@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineageTree } from "@stage-ai/core";
+import { LineageTree } from "@aivn/core";
 import { PlayHouse, helloPayload } from "../src/playhouse.js";
 import { PlayLibrary } from "../src/store.js";
 import { AssetLibrary } from "../src/library.js";
-import { loadConfig } from "../src/config.js";
+import { settingsFromEnv } from "../src/config.js";
+import { settingsStoreFor } from "./helpers.js";
 
 const PLAY_JSON = JSON.stringify({
   id: "p1",
@@ -23,17 +24,17 @@ describe("PlayHouse 周目作用域：逛不建、连舞台也不建，开演才
   let root: string;
   let library: PlayLibrary;
   let house: PlayHouse;
-  let config: ReturnType<typeof loadConfig>;
+  let config: ReturnType<typeof settingsFromEnv>;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "stageai-playhouse-"));
+    root = await mkdtemp(join(tmpdir(), "aivn-playhouse-"));
     const playDir = join(root, "p1");
     await mkdir(playDir, { recursive: true });
     await writeFile(join(playDir, "play.json"), PLAY_JSON);
     library = new PlayLibrary(root);
     // 生图关掉：runtime 只碰磁盘，不发任何网络请求
-    config = loadConfig({ STAGE_IMAGE_ENABLED: "false" }, root);
-    house = new PlayHouse(library, config, new AssetLibrary(join(root, "library")));
+    config = settingsFromEnv({ STAGE_IMAGE_ENABLED: "false" });
+    house = new PlayHouse(library, settingsStoreFor(config), new AssetLibrary(join(root, "library")));
   });
 
   afterEach(async () => {
@@ -122,8 +123,8 @@ describe("PlayHouse 周目作用域：逛不建、连舞台也不建，开演才
         status: 200,
       })) as typeof fetch;
     try {
-      const config = loadConfig({ STAGE_IMAGE_ENABLED: "false", STAGE_MODELS: "high,low" }, root);
-      const narrowed = new PlayHouse(library, config, new AssetLibrary(join(root, "library")));
+      const config = settingsFromEnv({ STAGE_IMAGE_ENABLED: "false", STAGE_MODELS: "high,low" });
+      const narrowed = new PlayHouse(library, settingsStoreFor(config), new AssetLibrary(join(root, "library")));
       const listed = await narrowed.gatewayModels();
       expect(listed.models.map((m) => m.id)).toEqual(["high", "low"]);
       expect(listed.defaultModel).toBe(config.modelId);
@@ -140,7 +141,7 @@ describe("导演生图：前置守卫（都不该碰生图后端）", () => {
 
   /** 生图开着的 PlayHouse：填一个永远不会被打到的网关地址，出题之前不发任何请求。 */
   async function houseWithImages(enabled: boolean): Promise<PlayHouse> {
-    const config = loadConfig(
+    const config = settingsFromEnv(
       enabled
         ? {
             STAGE_IMAGE_ENABLED: "true",
@@ -150,13 +151,12 @@ describe("导演生图：前置守卫（都不该碰生图后端）", () => {
             STAGE_IMAGE_MODEL: "no-such-model",
           }
         : { STAGE_IMAGE_ENABLED: "false" },
-      root,
     );
-    return new PlayHouse(library, config, new AssetLibrary(join(root, "library")));
+    return new PlayHouse(library, settingsStoreFor(config), new AssetLibrary(join(root, "library")));
   }
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "stageai-cg-"));
+    root = await mkdtemp(join(tmpdir(), "aivn-cg-"));
     const playDir = join(root, "p1");
     await mkdir(playDir, { recursive: true });
     await writeFile(join(playDir, "play.json"), PLAY_JSON);

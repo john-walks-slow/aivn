@@ -7,7 +7,7 @@ import type { ImageBackend } from "../src/imageBackend.js";
 import { PlayStore } from "../src/store.js";
 import { createGenerateImageTool } from "../src/agentkit/imageTool.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
-import { LineageTree } from "@stage-ai/core";
+import { LineageTree } from "@aivn/core";
 import { PlayMemory } from "../src/memory.js";
 import { BEAT_2, createFakeStreamFn, PLAY } from "./helpers.js";
 

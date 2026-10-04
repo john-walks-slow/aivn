@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { describeAsset, libraryEntryMatches, type AssetKind, type WorkshopAssetView } from "@stage-ai/core";
+import { describeAsset, libraryEntryMatches, type AssetKind, type WorkshopAssetView } from "@aivn/core";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import type { AssetLibrary } from "../library.js";
 import { importFromLibrary } from "../assetImport.js";

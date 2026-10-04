@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CRAFT } from "@stage-ai/core";
+import { DEFAULT_CRAFT } from "@aivn/core";
 import { buildWorkshopPrompt } from "../src/workshop.js";
 import type { AgentCapabilities } from "../src/agentkit/kit.js";
 

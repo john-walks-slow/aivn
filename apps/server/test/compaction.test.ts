@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { LineageTree } from "@stage-ai/core";
+import { LineageTree } from "@aivn/core";
 import {
   calibrateTokenScale,
   capDigest,
@@ -21,7 +21,7 @@ import {
 import { PlayMemory } from "../src/memory.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { buildSystemPrompt } from "../src/prompt.js";
-import type { ServerMessage } from "@stage-ai/core";
+import type { ServerMessage } from "@aivn/core";
 import { caps, createFakeStreamFn, PLAY, BEAT_1, BEAT_2, type FakeResponse } from "./helpers.js";
 
 function user(text: string): AgentMessage {

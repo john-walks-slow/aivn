@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PendingJob } from "@stage-ai/core";
+import type { PendingJob } from "@aivn/core";
 import { PendingJobs, errorText, jobIdForImage } from "../src/pendingJobs.js";
 
 /** 记账用例一律关掉停留：它们测的是「谁在表里」，不是「在表里待多久」。 */

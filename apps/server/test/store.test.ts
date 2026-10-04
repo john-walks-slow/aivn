@@ -24,7 +24,7 @@ describe("PlayLibrary 剧目包导入与删除", () => {
   let library: PlayLibrary;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "stageai-"));
+    root = await mkdtemp(join(tmpdir(), "aivn-"));
     library = new PlayLibrary(root);
   });
   afterEach(async () => {
@@ -48,12 +48,12 @@ describe("PlayLibrary 剧目包导入与删除", () => {
       library.importZip(
         zipOf({
           "play.json": PLAY_JSON("evil"),
-          "assets/../../../tmp/stageai-pwn.txt": new Uint8Array([1]),
+          "assets/../../../tmp/aivn-pwn.txt": new Uint8Array([1]),
         }),
       ),
     ).rejects.toThrow("非法路径");
     expect(await readdir(root)).toEqual([]);
-    expect(existsSync("/tmp/stageai-pwn.txt")).toBe(false);
+    expect(existsSync("/tmp/aivn-pwn.txt")).toBe(false);
   });
 
   it("非法剧目 id（目录穿越）被拒", async () => {
@@ -137,7 +137,7 @@ describe("PlayStore.assetMeta：素材描述表", () => {
   let library: PlayLibrary;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "stageai-"));
+    root = await mkdtemp(join(tmpdir(), "aivn-"));
     library = new PlayLibrary(root);
     await library.importZip(
       zipOf({

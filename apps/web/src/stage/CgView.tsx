@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { CgEntry } from "@stage-ai/core";
+import type { CgEntry } from "@aivn/core";
 import { api } from "../api.js";
 import { ImageLightbox } from "../ui/ImageLightbox.js";
 

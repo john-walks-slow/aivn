@@ -1,7 +1,7 @@
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
-import { parsePlayConfig, CHARACTER_DIR } from "@stage-ai/core";
+import { parsePlayConfig, CHARACTER_DIR } from "@aivn/core";
 import type { PlayStore } from "./store.js";
 
 /**

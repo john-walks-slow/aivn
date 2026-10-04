@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import type { GeneratedAsset } from "@stage-ai/core";
+import type { GeneratedAsset } from "@aivn/core";
 
 /** 站内生成资产（bg/cg）：id 与 `<cg id>` / `<scene bg>` 同一命名空间。 */
 export interface GeneratedImage {
@@ -36,7 +36,7 @@ export function useGeneratedAssets(): {
       // 解码失败也照挂：<img> 自己的加载器是最后一道判官（能画就画、画不出就是降级），
       // 卡在 ready=false 只会让舞台永远停在骨架
       void decode(asset.url).then((ok) => {
-        if (!ok) console.warn(`[stage-ai] 生图预解码失败: ${asset.url}`);
+        if (!ok) console.warn(`[aivn] 生图预解码失败: ${asset.url}`);
         setImages((cur) => {
           const hit = cur[asset.id];
           if (!hit || hit.url !== asset.url || hit.ready) return cur;

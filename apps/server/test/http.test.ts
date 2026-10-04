@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CgEntry } from "@stage-ai/core";
+import type { CgEntry } from "@aivn/core";
 import { PlayLibrary } from "../src/store.js";
 import { handleHttp } from "../src/http.js";
 import type { PlayHouse } from "../src/playhouse.js";

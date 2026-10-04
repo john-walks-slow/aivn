@@ -1,4 +1,4 @@
-import { createProvider, envApiKeyAuth, type Model, type Provider } from "@earendil-works/pi-ai";
+import { createProvider, type ApiKeyAuth, type Model, type Provider } from "@earendil-works/pi-ai";
 import { getBuiltinModels, getBuiltinProviders, type BuiltinProvider } from "@earendil-works/pi-ai/providers/all";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import type { ServerConfig } from "./config.js";
@@ -37,12 +37,30 @@ export function createCpaProvider(config: ServerConfig): {
     id: CPA_PROVIDER_ID,
     name: "cli-proxy-api",
     baseUrl: config.baseUrl,
-    auth: { apiKey: envApiKeyAuth("cpa", ["STAGE_API_KEY"]) },
+    auth: { apiKey: settingsApiKeyAuth(config) },
     models: [model],
     api: { "openai-completions": openAICompletionsApi() },
   });
 
   return { provider, model };
+}
+
+/**
+ * 网关密钥取自**设置**（设置页里那一栏），不是环境变量。
+ *
+ * 这里原本挂的是 `envApiKeyAuth("cpa", ["STAGE_API_KEY"])`：设置页把 key 写进 `.env` 之后，
+ * 这张快照读的仍然是启动时的进程环境，于是界面上改 key 完全不起作用——用户看到「保存成功」，
+ * 请求照旧 401。密钥只有一份真相源：`settings.json`，且它的改动会重建 provider（见 playhouse）。
+ */
+function settingsApiKeyAuth(config: ServerConfig): ApiKeyAuth {
+  return {
+    name: "网关密钥",
+    resolve: async ({ signal }) => {
+      signal.throwIfAborted();
+      const key = config.apiKey.trim();
+      return key === "" ? undefined : { auth: { apiKey: key }, source: "settings.json" };
+    },
+  };
 }
 
 /**
@@ -65,7 +83,7 @@ export function resolveCpaModel(
   const builtin = findBuiltin(id) ?? (base ? findBuiltin(base) : undefined);
   if (builtin) return buildModel(config, id, builtin);
   console.warn(
-    `[stage-ai] 模型「${id}」不在 pi-ai 内置目录：沿用 ${config.modelId} 的元数据（思考档位与输出上限可能不准）`,
+    `[aivn] 模型「${id}」不在 pi-ai 内置目录：沿用 ${config.modelId} 的元数据（思考档位与输出上限可能不准）`,
   );
   return buildModel(config, id, baseModelOf(config));
 }
@@ -141,6 +159,8 @@ export async function fetchGatewayModels(
   config: ServerConfig,
   signal?: AbortSignal,
 ): Promise<GatewayModel[]> {
+  // 新装默认没有网关：这里必须点名怎么说人话，不然用户看到的是 fetch 的 "Failed to parse URL"
+  if (config.baseUrl === "") throw new Error('还没有配置模型网关，请到「设置 → 模型网关」里填网关地址与 API Key');
   const url = `${config.baseUrl.replace(/\/$/, "")}/models`;
   let res: Response;
   try {

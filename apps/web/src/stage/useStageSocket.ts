@@ -7,7 +7,7 @@ import type {
   ReadPos,
   ServerMessage,
   StopPayload,
-} from "@stage-ai/core";
+} from "@aivn/core";
 
 /** 工坊通道下行消息：与演出事件共用连接、按 type 分流（工坊是舞台外壳的一个视图）。 */
 export type WorkshopInbound = Extract<ServerMessage, { type: `workshop_${string}` }>;

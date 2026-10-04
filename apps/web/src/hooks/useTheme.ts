@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-const STORAGE_KEY_PREFIX = "stage-ai:";
+const STORAGE_KEY_PREFIX = "aivn:";
 const UI_MODE_KEY = STORAGE_KEY_PREFIX + "ui-theme-mode";
 const STAGE_MODE_KEY = STORAGE_KEY_PREFIX + "stage-theme-mode";
 const ACCENT_KEY = STORAGE_KEY_PREFIX + "accent";
@@ -17,8 +17,8 @@ export const DEFAULT_UI_MODE: ThemeMode = "system";
 export const DEFAULT_STAGE_MODE: ThemeMode = "dark";
 
 /** 本标签页改偏好时由设置页广播：storage 事件只发到别的标签页。 */
-export const THEME_MODE_CHANGED = "stage-ai:theme-mode-changed";
-export const ACCENT_CHANGED = "stage-ai:accent-changed";
+export const THEME_MODE_CHANGED = "aivn:theme-mode-changed";
+export const ACCENT_CHANGED = "aivn:accent-changed";
 
 /** 主色预设。custom 用设置页里自己挑的那个颜色（存 ACCENT_CUSTOM_KEY）。 */
 export type AccentId = "blue" | "teal" | "green" | "violet" | "wine" | "custom";

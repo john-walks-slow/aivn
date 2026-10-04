@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { LineageTree } from "@stage-ai/core";
+import { LineageTree } from "@aivn/core";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { PlayMemory } from "../src/memory.js";
 import { PlayLibrary } from "../src/store.js";
@@ -173,7 +173,7 @@ describe("PlayStore 历史读面", () => {
   let library: PlayLibrary;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "stageai-history-"));
+    root = await mkdtemp(join(tmpdir(), "aivn-history-"));
     library = new PlayLibrary(root);
     await mkdir(join(root, "p1"), { recursive: true });
     await writeFile(join(root, "p1", "play.json"), PLAY_JSON);
@@ -236,7 +236,7 @@ describe("GET /api/plays/:id/history", () => {
   let library: PlayLibrary;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "stageai-history-api-"));
+    root = await mkdtemp(join(tmpdir(), "aivn-history-api-"));
     library = new PlayLibrary(root);
     await mkdir(join(root, "p1"), { recursive: true });
     await writeFile(join(root, "p1", "play.json"), PLAY_JSON);

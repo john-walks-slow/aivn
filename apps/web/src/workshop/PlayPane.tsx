@@ -11,8 +11,8 @@ import type {
   PlayConfig,
   PlayCover,
   PlayImageConfig,
-} from "@stage-ai/core";
-import { DEFAULT_CRAFT, languageLabel, LANGUAGE_LABELS } from "@stage-ai/core";
+} from "@aivn/core";
+import { DEFAULT_CRAFT, languageLabel, LANGUAGE_LABELS } from "@aivn/core";
 import { api, assetUrl } from "../api.js";
 import { Icon } from "../ui/Icon.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";

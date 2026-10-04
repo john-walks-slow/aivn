@@ -16,7 +16,7 @@ import {
   type CraftSpriteSource,
   type CraftStopOptions,
   type EffectiveCraft,
-} from "@stage-ai/core";
+} from "@aivn/core";
 import type { AgentCapabilities } from "./agentkit/kit.js";
 
 export { resolveCraft };

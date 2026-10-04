@@ -39,7 +39,7 @@ COMMONS = "https://upload.wikimedia.org/wikipedia/commons"
 INC = "https://incompetech.com/music/royalty-free/mp3-royaltyfree"
 
 # 调研文档 §4.4 实测：浏览器 UA 连续打 upload.wikimedia.org 会 429，描述性 UA 全 200。
-UA = "stage-ai-asset-library/1.0 (local seed library build; https://github.com/stage-ai) curl/8"
+UA = "aivn-asset-library/1.0 (local seed library build; https://github.com/john-walks-slow/aivn) curl/8"
 WIKI_PAUSE = 3.0  # Commons 请求间隔（秒）
 
 BGM_BITRATE = "128k"
@@ -611,7 +611,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--kind", choices=["bgm", "sfx", "backgrounds"], action="append")
     parser.add_argument("--force", action="store_true")
-    parser.add_argument("--cache", default="/tmp/stage-ai-seed-cache")
+    parser.add_argument("--cache", default="/tmp/aivn-seed-cache")
     args = parser.parse_args()
 
     cache = Path(args.cache)

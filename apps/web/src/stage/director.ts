@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ActorAction, ActorAnchor, ActorShot, ReadPos } from "@stage-ai/core";
-import { isActorAction, layoutSprites, parsePosition, type SpritePosition } from "@stage-ai/core";
+import type { ActorAction, ActorAnchor, ActorShot, ReadPos } from "@aivn/core";
+import { isActorAction, layoutSprites, parsePosition, type SpritePosition } from "@aivn/core";
 import { shouldAutoStart } from "./playbackState.js";
 import type { Cue, ScriptLine } from "./script.js";
 import type { TranscriptEntry } from "./transcript.js";

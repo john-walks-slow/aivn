@@ -2,7 +2,7 @@
 """
 scripts/audio_loop_helper.py - Galgame BGM Loop & Audio Engineering Tool
 ======================================================================
-Stage-AI Asset Pipeline utility for audio post-processing:
+AIVN Asset Pipeline utility for audio post-processing:
 1. Seamless Loop Creation: Equal-power crossfade of reverb tails into track head.
 2. Loudness Normalization: Normalizes tracks to Galgame standard -16 LUFS.
 3. Vorbis Loop Comment Injection: Injects LOOPSTART / LOOPLENGTH metadata for VN engines.
@@ -195,7 +195,7 @@ def synthesize_demo_track(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Stage-AI Galgame Audio Pipeline & Looping Tool")
+    parser = argparse.ArgumentParser(description="AIVN Galgame Audio Pipeline & Looping Tool")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # Subcommand: loop

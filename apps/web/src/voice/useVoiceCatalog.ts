@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { VoiceCatalog, VoiceEntry } from "@stage-ai/core";
+import type { VoiceCatalog, VoiceEntry } from "@aivn/core";
 import { api } from "../api.js";
 
 /** 音色目录状态：懒加载一次，角色卡（解析当前音色名）与音色库面板共用。 */

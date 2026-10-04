@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import type { ThinkingLevel } from "@stage-ai/core";
+import type { ThinkingLevel } from "@aivn/core";
 import { createBeatDoneTool } from "./beatTool.js";
 import { createNsfwTools } from "./nsfwTool.js";
 import { AGENT_ROLES, type AgentRole } from "./role.js";

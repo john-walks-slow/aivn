@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { PendingJob, PromptQueueItem } from "@stage-ai/core";
+import type { PendingJob, PromptQueueItem } from "@aivn/core";
 import { Icon, type IconName } from "../ui/Icon.js";
 
 /**

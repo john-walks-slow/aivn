@@ -5,8 +5,8 @@ import {
   resolveCraft,
   type AssetMeta,
   type EngineStateSnapshot,
-} from "@stage-ai/core";
-import type { PlayConfig } from "@stage-ai/core";
+} from "@aivn/core";
+import type { PlayConfig } from "@aivn/core";
 import { renderCraftParams } from "./craftParams.js";
 import type { AgentCapabilities } from "./agentkit/kit.js";
 import { SEARCH_GUIDE } from "./agentkit/searchTool.js";

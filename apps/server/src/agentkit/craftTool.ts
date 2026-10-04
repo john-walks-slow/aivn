@@ -1,5 +1,5 @@
 import { type Static, Type } from "@earendil-works/pi-ai";
-import { parsePlayConfig } from "@stage-ai/core";
+import { parsePlayConfig } from "@aivn/core";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { CRAFT_ENUMS, describeCraftParams, mergeCraftParams, resolveCraft, type CraftPatch } from "../craftParams.js";
 import { withPlayConfigLock } from "../store.js";

@@ -1,0 +1,136 @@
+<!doctype html>
+<!--
+  启动页：服务端还没报出地址之前，窗口里显示的就是这一页。
+
+  它不参与任何业务——服务端一就绪，Rust 侧就把窗口 navigate 到 http://127.0.0.1:<port>，
+  这一页随即被换掉。启动失败时 Rust 调 window.aivnFailed(消息)，把线索留在屏幕上：
+  桌面壳没有控制台，不写在这里用户就只能看到一个白窗口。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>AIVN</title>
+    <style>
+      /* 配色跟 apps/web 的纸面/舞台一套：深底 + 纸白字 + 冷蓝强调 */
+      :root {
+        --bg: #17130f;
+        --ink: #f2ebde;
+        --ink-soft: #a9a6a4;
+        --accent: #3f6b93;
+        --bad: #e8917f;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC",
+          "Microsoft YaHei", sans-serif;
+        user-select: none;
+      }
+      main {
+        width: min(560px, 82vw);
+        text-align: center;
+      }
+      h1 {
+        margin: 0 0 18px;
+        font-size: 44px;
+        font-weight: 600;
+        letter-spacing: 0.32em;
+        text-indent: 0.32em; /* 字距把整串推右了，补回来才真的居中 */
+      }
+      p {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+      .bar {
+        position: relative;
+        height: 2px;
+        margin: 22px auto 0;
+        overflow: hidden;
+        background: rgb(242 235 222 / 0.12);
+      }
+      .bar::after {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 40%;
+        background: var(--accent);
+        animation: sweep 1.4s ease-in-out infinite;
+        content: "";
+      }
+      @keyframes sweep {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(250%);
+        }
+      }
+      /* 失败态：把原因原样摊开，别让用户对着一个转圈的窗口猜 */
+      body.failed .bar {
+        display: none;
+      }
+      body.failed h1 {
+        font-size: 24px;
+        letter-spacing: 0.06em;
+        text-indent: 0;
+        color: var(--bad);
+      }
+      .detail {
+        display: none;
+        max-height: 42vh;
+        margin-top: 18px;
+        padding: 12px 14px;
+        overflow: auto;
+        border: 1px solid rgb(242 235 222 / 0.14);
+        background: rgb(0 0 0 / 0.28);
+        color: var(--ink-soft);
+        font-size: 12px;
+        line-height: 1.6;
+        text-align: left;
+        white-space: pre-wrap;
+        user-select: text;
+      }
+      body.failed .detail {
+        display: block;
+      }
+      .hint {
+        display: none;
+        margin-top: 14px;
+      }
+      body.failed .hint {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 id="title">AIVN</h1>
+      <p id="status">正在启动演出引擎…</p>
+      <div class="bar"></div>
+      <pre class="detail" id="detail"></pre>
+      <p class="hint" id="hint">
+        可以关掉这个窗口，再从命令行运行 <code>aivn-server.exe --selftest</code> 看逐条体检结果。
+      </p>
+    </main>
+    <script>
+      // Rust 侧就这两个入口，别改名字（src-tauri/src/main.rs 里按字面调用）
+      window.aivnFailed = (message) => {
+        document.body.classList.add("failed");
+        document.getElementById("title").textContent = "AIVN 启动失败";
+        document.getElementById("status").textContent = "服务端没能起来。下面是它最后说的话：";
+        document.getElementById("detail").textContent = message;
+      };
+    </script>
+  </body>
+</html>

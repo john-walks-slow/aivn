@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parsePlayConfig, type CraftParams } from "@stage-ai/core";
+import { parsePlayConfig, type CraftParams } from "@aivn/core";
 import { createSetCraftTool } from "../src/agentkit/craftTool.js";
 import { PlayFiles } from "../src/playFiles.js";
 import { PlayStore } from "../src/store.js";

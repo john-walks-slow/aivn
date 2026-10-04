@@ -1,4 +1,4 @@
-import { parseCharacterCard } from "@stage-ai/core";
+import { parseCharacterCard } from "@aivn/core";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { textResult } from "./result.js";

@@ -38,7 +38,7 @@
 ## 4. 前序工作
 
 本项目在 2026-09-30 做过一轮素材来源调研，报告在
-`./docs/features/260930-asset-library/galgame-asset-sources.research.md`
+`docs/features/260930-asset-library/galgame-asset-sources.research.md`
 （670 行，涵盖背景与立绘全部候选、逐条许可分析、下载配方、排除理由）。
 那份报告是本轮调研的起点，请先读它，再在其基础上推进——已有的结论不必重复验证，
 但**画风不对口这一条要重新审视**：立绘那节（§3）推荐的 Breezy 与 onboroo，
@@ -88,7 +88,7 @@ curl -s -b jar -A "$UA" -e "https://<user>.itch.io/<slug>/purchase" "$DURL" -o l
 
 ## 6. 交付要求
 
-**输出一份 markdown 报告到 `./docs/features/261001-anime-sprites/261001-anime-sprite-sources.research.md`，并在回复里只给这个文件的链接 + 一段 5 行以内的结论摘要。**
+**输出一份 markdown 报告到 `docs/features/261001-anime-sprites/261001-anime-sprite-sources.research.md`，并在回复里只给这个文件的链接 + 一段 5 行以内的结论摘要。**
 
 报告需覆盖：
 

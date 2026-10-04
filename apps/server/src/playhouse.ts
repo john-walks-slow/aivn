@@ -1,15 +1,16 @@
-import type { ServerMessage } from "@stage-ai/core";
+import type { ServerMessage } from "@aivn/core";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
-import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, characterCardPath, PROTAGONIST_ID, type EngineStateSnapshot, type SpriteFraming } from "@stage-ai/core";
+import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, characterCardPath, PROTAGONIST_ID, type EngineStateSnapshot, type SpriteFraming } from "@aivn/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
 import { withPlayConfigLock } from "./store.js";
 import type { AssetLibrary } from "./library.js";
 import { AssetRefResolver, characterIdsOf } from "./assetRef.js";
 import { PlaywrightOrchestrator, type CarryOver, type OrchestratorRuntimeState } from "./orchestrator.js";
 import type { SaveInfo } from "./saves.js";
-import type { PlayConfig } from "@stage-ai/core";
+import type { PlayConfig } from "@aivn/core";
 import type { ServerConfig } from "./config.js";
 import { imagePendingTtlMs } from "./config.js";
+import type { SettingsStore } from "./settingsStore.js";
 import { createCpaProvider, fetchGatewayModels, resolveCpaModel, supportedModels, type GatewayModel } from "./provider.js";
 import { createTts } from "./tts.js";
 import { createImageBackend } from "./imageFactory.js";
@@ -100,6 +101,9 @@ const PLAY_RELOADED = [
   "不要复述、不要重演。",
 ].join("\n");
 
+/** 运行期设置改动后的接力说明：只交代「参数换新」，不碰剧目设定（与工坊改文件不是一回事）。 */
+const CONFIG_UPDATED = "（运行期设置已在本次之前更新：模型或生成参数换新，继续往后写即可。）";
+
 /** 读一个可选文件：没有就是没有，不是错误。 */
 async function readFileOrEmpty(path: string): Promise<string> {
   try {
@@ -135,14 +139,14 @@ export class PlayHouse {
   peek(playId: string): PlayRuntime | undefined {
     return this.runtimes.get(playId);
   }
-  private readonly provider: ReturnType<typeof createCpaProvider>["provider"];
-  private readonly model: ReturnType<typeof createCpaProvider>["model"];
+  private provider!: ReturnType<typeof createCpaProvider>["provider"];
+  private model!: ReturnType<typeof createCpaProvider>["model"];
   /** 按剧目解析出来的模型缓存（agents 段选了什么 id → 那个模型对象）。 */
   private readonly modelCache = new Map<string, Model<"openai-completions">>();
-  private readonly tts: ReturnType<typeof createTts>;
-  private readonly imageBackend: ImageBackend | null;
+  private tts!: ReturnType<typeof createTts>;
+  private imageBackend!: ImageBackend | null;
   /** 工坊联网检索（无 key 为 null：工坊少一个工具）。与 TTS 一样是进程级客户端，不随 runtime 重建。 */
-  private readonly exa: Exa | null;
+  private exa!: Exa | null;
   /** 网络图下载器（`view_image` 的网址分支）。进程级：无状态，按剧目给的缓存目录不同。 */
   private readonly webImage: WebImageFetcher;
   /**
@@ -172,20 +176,48 @@ export class PlayHouse {
 
   constructor(
     private readonly library: PlayLibrary,
-    private readonly config: ServerConfig,
+    /** 运行期设置的持有者（index.ts 构造时注入）：设置一改就地重建下面这些客户端，不重启。 */
+    private readonly settings: SettingsStore,
     private readonly assetLibrary: AssetLibrary,
     /** 公共音色库客户端（index.ts 构造时注入）：工坊的 list_voices 走它。没配 TTS 时可以是 undefined。 */
     private readonly voices?: VoiceCatalogService,
   ) {
-    ({ provider: this.provider, model: this.model } = createCpaProvider(config));
-    this.tts = createTts(config);
-    this.imageBackend = createImageBackend(config);
-    this.exa = createExa(config);
     this.webImage = new WebImageFetcherImpl().fetchImage;
     // StreamFn 契约是 SimpleStreamOptions（reasoning 字段）——须接 streamSimple 做换算；
-    // 错接完整版 stream 会丢弃 reasoning，thinking 档位全部失效
+    // 错接完整版 stream 会丢弃 reasoning，thinking 档位全部失效。
+    // 它每次调用现取 this.provider：重建之后这条闭包自动指向新 provider。
     this.streamFn = (m, context, options) =>
       this.provider.streamSimple(m as Model<"openai-completions">, context, options);
+    this.rebuildClients();
+    settings.subscribe(() => this.applySettings());
+  }
+
+  /** 当前设置（每次现取，不缓存字段——那正是「改完要重启」的来源）。 */
+  private get config(): ServerConfig {
+    return this.settings.get();
+  }
+
+  /** 按当前设置重建进程级客户端（provider / 生图 / 语音 / 联网）。 */
+  private rebuildClients(): void {
+    ({ provider: this.provider, model: this.model } = createCpaProvider(this.config));
+    this.tts = createTts(this.config);
+    this.imageBackend = createImageBackend(this.config);
+    this.exa = createExa(this.config);
+  }
+
+  /**
+   * 设置改动后就地生效：先重建进程级客户端，再让已加载的 runtime 在**下一个轮边界**换上新设置。
+   *
+   * 为什么要连 runtime 一起换：编排器构造时就把模型、压缩阈值、单轮超时拷进了自己那份现场，
+   * 只换 PlayHouse 的客户端，正在开的剧目照旧跑旧模型——用户看到的还是「改了没生效」。
+   * 走的是剧作家写角色卡那条既有路径（等 idle、接力对话尾、换编排器、复用同一个工坊）。
+   */
+  private applySettings(): void {
+    this.rebuildClients();
+    this.modelCache.clear();
+    this.gatewayModelsCache = null;
+    for (const playId of this.runtimes.keys()) this.rebuildAtBeatBoundary(playId, CONFIG_UPDATED);
+    console.log("[aivn] 运行期设置已更新（已加载的剧目将在下一个轮边界换用新设置）");
   }
 
   /**
@@ -446,7 +478,7 @@ export class PlayHouse {
       sender({ type: "asset_ready", asset: { id, type, url: asset.url } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[stage-ai] 生图失败 ${id}: ${message}`);
+      console.warn(`[aivn] 生图失败 ${id}: ${message}`);
       sender({ type: "asset_failed", id, message });
     }
   }
@@ -483,7 +515,7 @@ export class PlayHouse {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[stage-ai] 立绘生图失败 ${spriteId}: ${message}`);
+      console.warn(`[aivn] 立绘生图失败 ${spriteId}: ${message}`);
       for (const send of this.clientsFor(playId)) {
         send({ type: "asset_failed", id: spriteId, message });
       }
@@ -625,7 +657,7 @@ export class PlayHouse {
           });
         }
       },
-      warn: (message) => console.warn(`[stage-ai] ${message}`),
+      warn: (message) => console.warn(`[aivn] ${message}`),
     });
   }
 
@@ -641,7 +673,7 @@ export class PlayHouse {
       .then(() => this.reloadAfterWorkshopWrite(playId, note))
       .catch((error: unknown) =>
         console.warn(
-          `[stage-ai] 轮边界重建 runtime 失败: ${error instanceof Error ? error.message : String(error)}`,
+          `[aivn] 轮边界重建 runtime 失败: ${error instanceof Error ? error.message : String(error)}`,
         ),
       )
       .finally(() => {
@@ -968,7 +1000,7 @@ export class PlayHouse {
         await this.reloadAfterWorkshopWrite(playId, "手动生成了素材");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.warn(`[stage-ai] 手动出图失败 ${targetKey}: ${message}`);
+        console.warn(`[aivn] 手动出图失败 ${targetKey}: ${message}`);
         this.broadcast(playId, {
           type: "image_result",
           target: targetKey,
@@ -1021,7 +1053,7 @@ export class PlayHouse {
               spoken = await translator.translate(text);
             } catch (error) {
               console.warn(
-                `[stage-ai] 台词翻译失败（回退原文）: ${error instanceof Error ? error.message : String(error)}`,
+                `[aivn] 台词翻译失败（回退原文）: ${error instanceof Error ? error.message : String(error)}`,
               );
             }
           }

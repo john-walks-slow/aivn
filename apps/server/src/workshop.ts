@@ -1,8 +1,8 @@
 import type { AgentEvent, AgentMessage, AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { languageLabel } from "@stage-ai/core";
-import type { EffectiveCraft, ImageApproval, ThinkingLevel, WorkshopAssetView } from "@stage-ai/core";
+import { languageLabel } from "@aivn/core";
+import type { EffectiveCraft, ImageApproval, ThinkingLevel, WorkshopAssetView } from "@aivn/core";
 import { capDigest, renderTranscriptAs, splitSummary, calibrateTokenScale, type EpochSummary } from "./compaction.js";
 import { completeText, type OneShotOptions } from "./llm.js";
 import { skillsPrompt } from "./skills.js";

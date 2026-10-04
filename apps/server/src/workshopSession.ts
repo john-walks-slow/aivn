@@ -6,8 +6,8 @@ import type {
   WorkshopAssetView,
   WorkshopChatMessage,
   WorkshopThreadInfo,
-} from "@stage-ai/core";
-import { parsePlayConfig, resolveCraft } from "@stage-ai/core";
+} from "@aivn/core";
+import { parsePlayConfig, resolveCraft } from "@aivn/core";
 import type { Exa } from "./exa.js";
 import type { WebImageFetcher } from "./webImage.js";
 import { PlayFiles } from "./playFiles.js";
@@ -389,7 +389,7 @@ export class WorkshopSession {
       );
     } catch (error) {
       console.warn(
-        `[stage-ai] 工坊线程压缩跳过（摘要生成失败）: ${error instanceof Error ? error.message : String(error)}`,
+        `[aivn] 工坊线程压缩跳过（摘要生成失败）: ${error instanceof Error ? error.message : String(error)}`,
       );
       return { visible, prompt };
     }
@@ -405,7 +405,7 @@ export class WorkshopSession {
     thread.compaction = next;
     thread.tokenScale = scale;
     console.log(
-      `[stage-ai] 工坊线程压缩：${used} tok → 保留 ${visible.length - cut}/${visible.length} 条，epoch=${next.epochs}`,
+      `[aivn] 工坊线程压缩：${used} tok → 保留 ${visible.length - cut}/${visible.length} 条，epoch=${next.epochs}`,
     );
     return {
       visible: visible.slice(cut),

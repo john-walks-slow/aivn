@@ -101,7 +101,7 @@ function sizeFor(aspect: ImageAspect, spec: ImageSizeSpec): string {
   if (long > MAX_LONG_EDGE || short > MAX_SHORT_EDGE) {
     throw new Error(
       `档位 ${spec.tier} 在 ${aspect} 下算出 ${size}，超过 OpenAI 官方上限 ${MAX_LONG_EDGE}x${MAX_SHORT_EDGE}。` +
-        `请把 STAGE_IMAGE_SIZE 写成目标模型认的字面尺寸，或改用 gemini 格式。`,
+        `请把设置页里的生图尺寸写成目标模型认的字面尺寸（如 1536x1024），或改用 gemini 格式。`,
     );
   }
   return size;

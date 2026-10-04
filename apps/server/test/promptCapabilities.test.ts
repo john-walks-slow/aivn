@@ -8,7 +8,7 @@ import {
   type AgentCapabilities,
 } from "../src/agentkit/kit.js";
 import { AGENT_ROLES } from "../src/agentkit/role.js";
-import { DEFAULT_CRAFT } from "@stage-ai/core";
+import { DEFAULT_CRAFT } from "@aivn/core";
 import { caps, PLAY } from "./helpers.js";
 
 /**

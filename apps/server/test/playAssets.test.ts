@@ -9,7 +9,7 @@ import { cutout, resolveTuning } from "../src/cutout.js";
 import { PlayFiles } from "../src/playFiles.js";
 import { PlayStore } from "../src/store.js";
 import { PlayAssets } from "../src/playAssets.js";
-import { parseCharacterCard, serializeCharacterCard, type CharacterDocument } from "@stage-ai/core";
+import { parseCharacterCard, serializeCharacterCard, type CharacterDocument } from "@aivn/core";
 import type { GeneratedImage, ImageAspect, ImageBackend, ImageRequest } from "../src/imageBackend.js";
 import type { WorkshopWrite } from "../src/workshop.js";
 

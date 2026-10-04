@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ServerMessage } from "@stage-ai/core";
+import type { ServerMessage } from "@aivn/core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { PlayFiles } from "../src/playFiles.js";
 import { PlaySaves } from "../src/saves.js";
@@ -14,7 +14,7 @@ import { PlayAssets } from "../src/playAssets.js";
 import type { GeneratedPlayAsset } from "../src/playAssets.js";
 import { WorkshopThreads } from "../src/workshopThreads.js";
 import { WorkshopSession } from "../src/workshopSession.js";
-import { DEFAULT_CRAFT, resolveCraft } from "@stage-ai/core";
+import { DEFAULT_CRAFT, resolveCraft } from "@aivn/core";
 import { buildWorkshopPrompt, deriveThreadTitle, type WorkshopPromptContext } from "../src/workshop.js";
 import type { WorkshopKitDeps } from "../src/agentkit/deps.js";
 import { createAgentKit, defaultToolsFor, type AgentCapabilities } from "../src/agentkit/kit.js";
@@ -22,7 +22,7 @@ import { renderReadiness } from "../src/agentkit/readiness.js";
 import { Exa } from "../src/exa.js";
 import { createFakeStreamFn, BEAT_1, BEAT_2, PLAY } from "./helpers.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
-import { LineageTree } from "@stage-ai/core";
+import { LineageTree } from "@aivn/core";
 import { PlayMemory } from "../src/memory.js";
 
 /**

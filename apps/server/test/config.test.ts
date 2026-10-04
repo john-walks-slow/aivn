@@ -1,42 +1,93 @@
 import { describe, expect, it, vi } from "vitest";
-import { imagePendingTtlMs, loadConfig, parseKeyList, parseModelList } from "../src/config.js";
+import {
+  applyPatch,
+  freshSettings,
+  imagePendingTtlMs,
+  loadBootstrap,
+  parseKeyList,
+  parseModelList,
+  settingsFromEnv,
+} from "../src/config.js";
 
-describe("STAGE_MODELS 支持清单", () => {
-  it("不配 = 不限制（空表）", () => {
-    expect(loadConfig({}, "/repo").models).toEqual([]);
-    expect(parseModelList(undefined)).toEqual([]);
-    expect(parseModelList("   ")).toEqual([]);
+describe("启动期参数（只有它认环境变量）", () => {
+  it("默认：8787、监听 0.0.0.0（局域网设备能连）、数据目录用调用方给的兜底值", () => {
+    const boot = loadBootstrap({}, "/repo");
+    expect(boot.port).toBe(8787);
+    expect(boot.host).toBe("0.0.0.0");
+    expect(boot.dataRoot).toBe("/repo");
   });
 
-  it("逗号与空白都算分隔，保序去重（下拉的顺序就是配置里写的顺序）", () => {
-    expect(parseModelList("low, high\tvision\nmedium")).toEqual(["low", "high", "vision", "medium"]);
-    expect(loadConfig({ STAGE_MODELS: "low, low ,high" }, "/repo").models).toEqual(["low", "high"]);
+  it("端口 / 监听地址 / 数据目录都能用环境变量改（打包后是 exe 旁边的 .env）", () => {
+    const boot = loadBootstrap(
+      { STAGE_PORT: "9000", STAGE_HOST: "127.0.0.1", STAGE_DATA_DIR: "/data/stage" },
+      "/repo",
+    );
+    expect(boot).toEqual({ port: 9000, host: "127.0.0.1", dataRoot: "/data/stage" });
+  });
+
+  it("端口非法回退默认并告警（0 会让监听落在一个随机端口上）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(loadBootstrap({ STAGE_PORT: "0" }, "/repo").port).toBe(8787);
+    expect(loadBootstrap({ STAGE_PORT: "abc" }, "/repo").port).toBe(8787);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("命令行参数压过环境变量（双击 exe 的人改不了环境变量，但能带参数）", () => {
+    const boot = loadBootstrap(
+      { STAGE_PORT: "9000", STAGE_HOST: "127.0.0.1", STAGE_DATA_DIR: "/data/stage" },
+      "/repo",
+      { port: 8123, dataRoot: "/data/other" },
+    );
+    expect(boot).toEqual({ port: 8123, host: "127.0.0.1", dataRoot: "/data/other" });
   });
 });
 
-describe("ServerConfig 纪元压缩参数", () => {
-  it("默认窗口/阈值/保留预算", () => {
-    const config = loadConfig({}, "/repo");
+describe("新装默认值", () => {
+  it("网关留空、生图/语音/联网默认关（什么都不配也能打开界面）", () => {
+    const config = freshSettings();
+    expect(config.baseUrl).toBe("");
+    expect(config.apiKey).toBe("");
+    expect(config.modelId).toBe("");
+    expect(config.password).toBe("");
+    expect(config.image.enabled).toBe(false);
+    expect(config.tts.enabled).toBe(false);
+    expect(config.exa.enabled).toBe(false);
+  });
+
+  it("默认窗口/阈值/保留预算，工坊逐项沿用全局", () => {
+    const config = freshSettings();
     expect(config.contextWindow).toBe(262144);
     expect(config.compactRatio).toBe(0.6);
     expect(config.keepRecentTokens).toBe(20000);
-    // 工坊缺省逐项沿用全局，两个 agent 默认同一份 256K 窗口。
     expect(config.workshopContext).toEqual({
       contextWindow: 262144,
       compactRatio: 0.6,
       keepRecentTokens: 20000,
     });
   });
+});
+
+describe("旧 .env 的迁移语义", () => {
+  it("生图/语音/联网默认开、指向本机网关（与迁移前逐字一致）", () => {
+    const config = settingsFromEnv({});
+    expect(config.baseUrl).toBe("http://127.0.0.1:9999/v1");
+    expect(config.apiKey).toBe("sk-1234");
+    expect(config.image.enabled).toBe(true);
+    expect(config.image.baseUrl).toBe("http://127.0.0.1:9999");
+    expect(config.image.format).toBe("openai");
+    expect(config.tts.enabled).toBe(true);
+    expect(config.tts.proxy).toBe("http://127.0.0.1:7890");
+    expect(config.exa.enabled).toBe(true);
+    expect(config.exa.baseUrl).toBe("https://api.exa.ai");
+  });
 
   it("工坊三项各自覆盖全局（工坊能换窗口不同的模型）", () => {
-    const config = loadConfig(
-      {
-        STAGE_CONTEXT_WINDOW: "262144",
-        STAGE_WORKSHOP_CONTEXT_WINDOW: "131072",
-        STAGE_WORKSHOP_KEEP_RECENT_TOKENS: "8000",
-      },
-      "/repo",
-    );
+    const config = settingsFromEnv({
+      STAGE_CONTEXT_WINDOW: "262144",
+      STAGE_WORKSHOP_CONTEXT_WINDOW: "131072",
+      STAGE_WORKSHOP_KEEP_RECENT_TOKENS: "8000",
+    });
     expect(config.contextWindow).toBe(262144);
     expect(config.workshopContext.contextWindow).toBe(131072);
     expect(config.workshopContext.keepRecentTokens).toBe(8000);
@@ -46,47 +97,73 @@ describe("ServerConfig 纪元压缩参数", () => {
 
   it("非法值回退默认并告警（越界比例会让压缩永不触发或每轮都触发）", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(loadConfig({ STAGE_COMPACT_RATIO: "3" }, "/repo").compactRatio).toBe(0.6);
-    expect(loadConfig({ STAGE_COMPACT_RATIO: "0" }, "/repo").compactRatio).toBe(0.6);
-    expect(loadConfig({ STAGE_CONTEXT_WINDOW: "abc" }, "/repo").contextWindow).toBe(262144);
+    expect(settingsFromEnv({ STAGE_COMPACT_RATIO: "3" }).compactRatio).toBe(0.6);
+    expect(settingsFromEnv({ STAGE_COMPACT_RATIO: "0" }).compactRatio).toBe(0.6);
+    expect(settingsFromEnv({ STAGE_CONTEXT_WINDOW: "abc" }).contextWindow).toBe(262144);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
 
+  it("多把 key 逗号/空白分隔读入，保序去重（轮询顺序就是配置里写的顺序）", () => {
+    expect(parseKeyList(undefined)).toEqual([]);
+    expect(parseKeyList("   ")).toEqual([]);
+    expect(parseKeyList("k1, k2 , k3")).toEqual(["k1", "k2", "k3"]);
+    expect(parseKeyList("k2, k1, k2")).toEqual(["k2", "k1"]);
+    expect(settingsFromEnv({ STAGE_TTS_KEYS: "sk-a,sk-b" }).tts.keys).toEqual(["sk-a", "sk-b"]);
+  });
+
+  it("STAGE_MODELS：逗号与空白都算分隔，保序去重", () => {
+    expect(parseModelList(undefined)).toEqual([]);
+    expect(parseModelList("   ")).toEqual([]);
+    expect(parseModelList("low, high\tvision\nmedium")).toEqual(["low", "high", "vision", "medium"]);
+    expect(settingsFromEnv({ STAGE_MODELS: "low, low ,high" }).models).toEqual(["low", "high"]);
+  });
+});
+
+describe("设置补丁（设置页保存的那条路）", () => {
+  it("只返回真的变了的字段", () => {
+    const base = freshSettings();
+    expect(applyPatch(base, {}).changed).toEqual([]);
+    expect(applyPatch(base, { modelId: "" }).changed).toEqual([]);
+    expect(applyPatch(base, { modelId: "low" }).changed).toEqual(["modelId"]);
+    expect(applyPatch(base, { image: { enabled: true, concurrency: 6 } }).changed).toEqual(["image.enabled"]);
+  });
+
+  it("嵌套块只改给到的项，其余原样", () => {
+    const base = settingsFromEnv({});
+    const { next, changed } = applyPatch(base, { tts: { concurrency: 4 } });
+    expect(changed).toEqual(["tts.concurrency"]);
+    expect(next.tts.concurrency).toBe(4);
+    expect(next.tts.keys).toEqual(base.tts.keys);
+    expect(next.image).toEqual(base.image);
+  });
+
+  it("非法数值直接抛错（写进去的值上游读不懂，比报错更难查）", () => {
+    const base = freshSettings();
+    expect(() => applyPatch(base, { maxTokens: 0 })).toThrow(/正整数/);
+    expect(() => applyPatch(base, { compactRatio: 1.5 })).toThrow(/0 到 1/);
+    expect(() => applyPatch(base, { image: { size: "huge" } })).toThrow(/生图尺寸/);
+    expect(() => applyPatch(base, { image: { format: "png" as never } })).toThrow(/生图接口格式/);
+    expect(() => applyPatch(base, { modelBase: "deepseek-flash" })).toThrow(/provider\/modelId/);
+  });
+
+  it("生图档位写回时归一化成官方大写（K 写成小写官方直接拒）", () => {
+    const { next } = applyPatch(freshSettings(), { image: { size: "1k" } });
+    expect(next.image.size).toBe("1K");
+    expect(applyPatch(freshSettings(), { image: { size: "1536x1024" } }).next.image.size).toBe("1536x1024");
+  });
+
   it("保留预算 ≥ 触发阈值：告警（否则每轮判超标却永远切不出可压段）", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    loadConfig({ STAGE_KEEP_RECENT_TOKENS: "200000" }, "/repo");
+    applyPatch(freshSettings(), { keepRecentTokens: 200000 });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("纪元压缩将无法切出可压段"));
     warn.mockRestore();
   });
 });
 
-describe("ServerConfig 联网检索与凭据", () => {
-  it("exa 默认开、走本地代理；env 能改端点与开关", () => {
-    const base = loadConfig({}, "/repo");
-    expect(base.exa.enabled).toBe(true);
-    expect(base.exa.baseUrl).toBe("https://api.exa.ai");
-    expect(base.exa.proxy).toBe("http://127.0.0.1:7890");
-    expect(base.exa.keys).toEqual([]);
-
-    const custom = loadConfig({ STAGE_EXA_ENABLED: "false" }, "/repo");
-    expect(custom.exa.enabled).toBe(false);
-  });
-
-  it("多把 key 从 env 逗号分隔读入（不再指向凭据文件）", () => {
-    expect(parseKeyList(undefined)).toEqual([]);
-    expect(parseKeyList("   ")).toEqual([]);
-    expect(parseKeyList("k1, k2 , k3")).toEqual(["k1", "k2", "k3"]);
-    expect(parseKeyList("k1 k2\tk3")).toEqual(["k1", "k2", "k3"]);
-    // 保序去重：轮询顺序就是配置里写的顺序
-    expect(parseKeyList("k2, k1, k2")).toEqual(["k2", "k1"]);
-    expect(loadConfig({ STAGE_TTS_KEYS: "sk-a,sk-b" }, "/repo").tts.keys).toEqual(["sk-a", "sk-b"]);
-  });
-});
-
 describe("骨架兜底上界", () => {
   it("覆盖「自己超时 + 排队等到自己」最坏情况，且随生图配置缩放", () => {
-    const base = loadConfig({}, "/repo").image;
+    const base = freshSettings().image;
     // 默认 180s 超时、并发 6、队列 12 → 自己一次 + 排在两批后面 = 540s
     expect(imagePendingTtlMs(base)).toBe(540_000);
 

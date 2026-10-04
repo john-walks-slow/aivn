@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { renderHook, act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ServerMessage } from "@stage-ai/core";
+import type { ServerMessage } from "@aivn/core";
 import { useStageSocket } from "../src/stage/useStageSocket.js";
 
 /** jsdom 没有 WebSocket。装一个假壳，只留连接建立与投递下行两件事。 */

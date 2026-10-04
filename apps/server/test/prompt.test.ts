@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CharacterDocument } from "@stage-ai/core";
+import type { CharacterDocument } from "@aivn/core";
 import type { AgentCapabilities } from "../src/agentkit/kit.js";
 import { buildSystemPrompt, type PromptContext } from "../src/prompt.js";
 

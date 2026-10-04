@@ -13,7 +13,7 @@ import {
   type LibraryEntry,
   type LibraryFile,
   type SpriteFraming,
-} from "@stage-ai/core";
+} from "@aivn/core";
 import type { AssetLibrary } from "./library.js";
 import { PlayFiles } from "./playFiles.js";
 import { withPlayConfigLock, type PlayStore } from "./store.js";

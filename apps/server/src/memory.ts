@@ -2,7 +2,7 @@ import { appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promise
 import { existsSync } from "node:fs";
 import { dirname, extname, join, relative } from "node:path";
 import MiniSearch from "minisearch";
-import { parseCharacterCard, type CharacterDocument } from "@stage-ai/core";
+import { parseCharacterCard, type CharacterDocument } from "@aivn/core";
 import type { PlayStore } from "./store.js";
 
 /**
