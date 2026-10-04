@@ -378,13 +378,13 @@ describe("导演操作 · 编排器（分岔 / 编辑 / 插一句）", () => {
 });
 
 describe("P6 rebuild · 谱系 → IR", () => {
-  it("preload / asset_ready 不进缓冲（瞬态），玩家与元信息行也不重放", () => {
+  it("preload / asset_ready 不进缓冲（瞬态），玩家输入按节点 seq 同规格重放", () => {
     const tree = new LineageTree();
-    tree.append("say", { text: "……太慢了！", payload: { attrs: { id: "mio", mood: "annoyed" } } });
+    tree.append("say", { text: "……太慢了！", payload: { attrs: { id: "mio", mood: "annoyed" }, seq: 1 } });
     tree.append("preload", { payload: { attrs: { id: "bg_x", prompt: "corridor" } } });
     tree.append("asset_ready", { payload: { attrs: { id: "bg_x" } } });
-    tree.append("prompt", { payload: { input: "我到了" } });
-    tree.append("narrate", { text: "风停了。" });
+    tree.append("prompt", { payload: { input: "我到了", seq: 4 } });
+    tree.append("narrate", { text: "风停了。", payload: { seq: 5 } });
     tree.append("beat_end", { payload: { reason: "no_stop" } });
 
     const events = lineageToEvents(tree.chainEvents(tree.leafId!));
@@ -392,11 +392,25 @@ describe("P6 rebuild · 谱系 → IR", () => {
       "say_start",
       "say_text",
       "say_end",
+      "player_input",
       "narrate_start",
       "narrate_text",
       "narrate_end",
     ]);
-    expect(events.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(events.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    const input = events.find((e) => e.event.kind === "player_input");
+    expect(input?.event).toEqual({ kind: "player_input", text: "我到了" });
+  });
+
+  it("老档的 prompt（无 seq）也重放成 player_input，seq 顺序编号", () => {
+    const tree = new LineageTree();
+    tree.append("prompt", { payload: { input: "（选择了：道歉）" } });
+    tree.append("narrate", { text: "风停了。", payload: { seq: 2 } });
+
+    const events = lineageToEvents(tree.chainEvents(tree.leafId!));
+    expect(events.map((e) => e.event.kind)).toEqual(["player_input", "narrate_start", "narrate_text", "narrate_end"]);
+    expect(events[0]!.seq).toBe(1);
+    expect(events[0]!.event).toEqual({ kind: "player_input", text: "（选择了：道歉）" });
   });
 
   it("重放沿用节点原 seq（路线树锚点跨分岔不漂）", () => {

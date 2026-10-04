@@ -3,7 +3,7 @@ import type { ActorAnchor, ActorShot, StageEvent } from "@aivn/core";
 /** 前端剧本行模型：StageEvent 流 → 渲染行（log 视图与舞台台词共用）。 */
 export interface ScriptLine {
   key: string;
-  type: "say" | "narrate" | "thought" | "scene" | "sfx" | "cg";
+  type: "say" | "narrate" | "thought" | "input" | "scene" | "sfx" | "cg";
   actorId?: string;
   /** say 标签的 name 属性：覆盖本句名牌，不查角色表。 */
   nameOverride?: string;
@@ -173,6 +173,20 @@ export class ScriptBuilder {
       case "thought_end":
         this.openKey = null;
         return;
+      case "player_input": {
+        // 玩家输入是一次性整行：没有 start/text/end 三段，也不开打字机（回执要立刻可见）。
+        const line: ScriptLine = {
+          key: key(),
+          type: "input",
+          actorId: "player",
+          seq,
+          text: event.text,
+        };
+        this.lines.push(line);
+        this.cues.push({ key: key(), kind: "line", lineKey: line.key });
+        this.openKey = null;
+        return;
+      }
       case "stop":
         return; // 停止点由 StopPanel 渲染
     }

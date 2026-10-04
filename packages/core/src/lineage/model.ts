@@ -107,7 +107,8 @@ export interface LineageNodeView {
   /** 最近一次改写时刻。 */
   editedAt: number | undefined;
   /** 剧本事件的 seq（say_start/narrate_start/scene/… 的序号）：与客户端 ScriptLine.seq 同尺，
-   *  路线树据此把谱系卡片精确对到剧本行上。prompt/fork/edit 无 seq。 */
+   *  路线树据此把谱系卡片精确对到剧本行上。prompt 同样携带（现场经事件管道落下的都有），
+   *  只有升级前的老档 prompt 无 seq；fork/edit 永远无 seq。 */
   seq: number | undefined;
   /** stop 事件专有：停止点类型/选项/占位文案。attrs 里那个 stopType 只是给旧客户端兜底的，
    *  客户端只读回看要按原样重建停止点，选项必须留在投影里。 */

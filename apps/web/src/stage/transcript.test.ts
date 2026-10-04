@@ -35,6 +35,11 @@ function line(key: string, seq: number, text: string, type: ScriptLine["type"] =
   return { key, seq, text, type } as ScriptLine;
 }
 
+/** 缓冲里的玩家输入行（player_input 事件落进 ScriptBuilder 的形状）。 */
+function inputLine(key: string, seq: number, text: string): ScriptLine {
+  return { key, seq, text, type: "input", actorId: "player" } as ScriptLine;
+}
+
 describe("buildTranscript 会话记录", () => {
   it("记下玩家发来的话，布景指令不进记录", () => {
     const entries = buildTranscript(
@@ -91,5 +96,71 @@ describe("buildTranscript 会话记录", () => {
     ]);
 
     expect(entries.map((e) => e.text)).toEqual(["台词"]);
+  });
+
+  it("刚发的输入不等谱系：缓冲里就有，立刻进记录", () => {
+    const entries = buildTranscript(view([["n1", "say", 1, "第一句"]]), [
+      line("L1", 1, "第一句"),
+      inputLine("L2", 2, "（选择了：道歉）"),
+    ]);
+
+    expect(entries.map((e) => [e.kind, e.text])).toEqual([
+      ["line", "第一句"],
+      ["input", "（选择了：道歉）"],
+    ]);
+  });
+
+  it("谱系追上后按 seq 认回同一条缓冲行，输入不重复出现", () => {
+    const entries = buildTranscript(
+      view([
+        ["n1", "say", 1, "第一句"],
+        ["p1", "prompt", 2, "（选择了：道歉）"],
+        ["n2", "say", 3, "第二句"],
+      ]),
+      [
+        line("L1", 1, "第一句"),
+        inputLine("L2", 2, "（选择了：道歉）"),
+        line("L3", 3, "第二句"),
+      ],
+    );
+
+    const inputs = entries.filter((e) => e.kind === "input");
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toMatchObject({ key: "L2", nodeId: "p1", seq: 2 });
+  });
+
+  it("老档的 prompt 没有 seq：按顺序认回重放出的同文本输入行，回顾里不出现两条", () => {
+    const entries = buildTranscript(
+      view([
+        ["n1", "say", 1, "第一句"],
+        ["p1", "prompt", undefined, "（选择了：道歉）"],
+      ]),
+      [line("L1", 1, "第一句"), inputLine("L2", 2, "（选择了：道歉）")],
+    );
+
+    const inputs = entries.filter((e) => e.kind === "input");
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toMatchObject({ key: "L2", nodeId: "p1" });
+    // 位置与谱系一致：输入夹在台词后面，不是被甩到末尾
+    expect(entries.map((e) => e.kind)).toEqual(["line", "input"]);
+  });
+
+  it("seq 认回的行及时移出兜底池：后面同文本的无 seq 节点不会把同一条再认一次", () => {
+    const entries = buildTranscript(
+      view([
+        ["n1", "say", 1, "第一句"],
+        ["p1", "prompt", 2, "（选择了：道歉）"],
+        ["n2", "say", 3, "第二句"],
+        ["p2", "prompt", undefined, "（选择了：道歉）"],
+      ]),
+      [line("L1", 1, "第一句"), inputLine("L2", 2, "（选择了：道歉）"), line("L3", 3, "第二句")],
+    );
+
+    const inputs = entries.filter((e) => e.kind === "input");
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]).toMatchObject({ key: "L2", nodeId: "p1" });
+    // 第二条（无 seq、同文本）不得复用已被认走的缓冲行——同 key 两条记录会炸回顾列表
+    expect(inputs[1]!.key).not.toBe("L2");
+    expect(new Set(entries.map((e) => e.key)).size).toBe(entries.length);
   });
 });
