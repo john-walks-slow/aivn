@@ -1,7 +1,7 @@
 # 路线视图第二轮（回到旧轮走原路 + 动词三改） 端到端测试报告
 
 ## 测试环境
-- 工作目录：`./.worktrees/route-branch-and-readpos`
+- 工作目录：`<仓库根>/.worktrees/route-branch-and-readpos`
 - 分支：`fix/route-branch-and-readpos`
 - Web 服务：`http://127.0.0.1:50720`
 - API 服务：`http://127.0.0.1:43983`
@@ -15,13 +15,13 @@
 
 | # | 测试步骤 | 预期 | 实际 | 状态 | 证据 |
 |---|----------|------|------|------|------|
-| 1 | 打开路线视图，检查所有卡片右下角的动词按钮及悬停 title | 只有「跳转 / 重写 / 删除」三个动词（无旧动词）；title 明确标出是否重新生成 | 全树卡片均仅有「跳转」「重写」「删除」；hover title 分别标注“不重新生成”与“让剧作家重新写一遍” | 通过 | [01-route-verbs-and-canvas.jpg](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/01-route-verbs-and-canvas.jpg>) |
-| 2 | 点击卡片主干进入选中态；随后点击画布空白或按 Esc | 选中卡进入 selected 态；祖先链高亮（.kin）；该卡及全部后代标出删除波及范围（.doomed）；点画布空白或按 Esc 能取消选中 | 卡片获得 `.selected` 样式，祖先节点获得 `.kin`，子孙节点获得 `.doomed`，连线同步标记；点击画布空白完全取消选中；按 Esc 取消选中的同时会切回舞台（详见体验观察） | 通过 | [02-card-selection-kin-doomed.jpg](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/02-card-selection-kin-doomed.jpg>) |
-| 3 | 在卡片上点击「重写」按钮，检查弹窗交互；尝试留空或输入补充指令后取消 | 弹出指令输入框，允许留空或输入一句话要求；点击取消或右上角关闭能正常退出，无崩溃 | 成功呼出 `ui/Modal` 对话框，标题为“重写这一段”，placeholder 提示“（可留空）”，输入文字后取消或关闭均正常关闭且页面无异常 | 通过 | [03-rewrite-modal.jpg](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/03-rewrite-modal.jpg>) |
-| 4 | 在卡片上点击「删除」按钮，检查确认弹窗文案与量级说明；点击取消 | 弹出删除确认框，明确告知不可撤销后果，并给出具体量级（如“将删除 N 轮 / M 个节点”）；点取消不删 | 成功弹出确认框，文案清晰标出“将删除 4 轮 / 26 个节点：这一段，以及它之后长出来的全部内容”；点击取消后未执行删除，树节点完好 | 通过 | [04-delete-modal-scope.jpg](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/04-delete-modal-scope.jpg>) |
-| 5 | 在 mock 存档上确认执行一次删除 | 该卡及其全部后代从树上移除，不留空壳节点，界面保持在路线视图（不跳回舞台） | 确认后成功剪除选中的 4 轮/26 个节点，卡片数从 7 降为 3，残留卡片全部完整，无空壳 fork 节点；当前页面仍为 `route` 视图 | 通过 | [05-after-delete-stay-route.jpg](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/05-after-delete-stay-route.jpg>) |
-| 6 | **验收命门**：真剧目演至第二轮末尾 → 路线视图点第一张卡「跳转」回到开头 → 读到末尾**选同一个选项** → 随后再次跳转并**改选另一个选项** | 选同一选项：**不触发模型调用**，无「剧作家正在落笔」，树节点与事件数不增，末梢为旧枝末尾；改选另一选项：正常长出新枝，事件数增加，旧枝保留为废弃枝 | 选同一选项立即播放且文字完全一致，session 事件数保持 33 毫无增加，leafId 完全一致，toast 提示“顺着原路继续”；改选选项 2 触发模型生成新枝，事件数增至 48，旧枝标记为 dead，新枝标记为 live here | 通过 | [06-01-beat1-choices.jpg](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/06-01-beat1-choices.jpg>), [06-04-beat1-revisited-choices.jpg](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/06-04-beat1-revisited-choices.jpg>), [06-05-same-choice-reused.jpg](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/06-05-same-choice-reused.jpg>), [06-06-new-branch-forked.jpg](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/06-06-new-branch-forked.jpg>) |
-| 7 | 检查舞台导演栏的重写按钮及行为 | 按钮字样改为「重写」，title 明确标出语义，点击后能弹出输入框重新生成 | 导演栏按钮文本为“重写”，title 为“重写：退到这一轮之前，让剧作家重新写一遍（原有内容留作旧枝）”，点击弹出方向输入框 | 通过 | [07-theater-rewrite-modal.jpg](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/07-theater-rewrite-modal.jpg>) |
+| 1 | 打开路线视图，检查所有卡片右下角的动词按钮及悬停 title | 只有「跳转 / 重写 / 删除」三个动词（无旧动词）；title 明确标出是否重新生成 | 全树卡片均仅有「跳转」「重写」「删除」；hover title 分别标注“不重新生成”与“让剧作家重新写一遍” | 通过 | [01-route-verbs-and-canvas.jpg](<./screenshots/01-route-verbs-and-canvas.jpg>) |
+| 2 | 点击卡片主干进入选中态；随后点击画布空白或按 Esc | 选中卡进入 selected 态；祖先链高亮（.kin）；该卡及全部后代标出删除波及范围（.doomed）；点画布空白或按 Esc 能取消选中 | 卡片获得 `.selected` 样式，祖先节点获得 `.kin`，子孙节点获得 `.doomed`，连线同步标记；点击画布空白完全取消选中；按 Esc 取消选中的同时会切回舞台（详见体验观察） | 通过 | [02-card-selection-kin-doomed.jpg](<./screenshots/02-card-selection-kin-doomed.jpg>) |
+| 3 | 在卡片上点击「重写」按钮，检查弹窗交互；尝试留空或输入补充指令后取消 | 弹出指令输入框，允许留空或输入一句话要求；点击取消或右上角关闭能正常退出，无崩溃 | 成功呼出 `ui/Modal` 对话框，标题为“重写这一段”，placeholder 提示“（可留空）”，输入文字后取消或关闭均正常关闭且页面无异常 | 通过 | [03-rewrite-modal.jpg](<./screenshots/03-rewrite-modal.jpg>) |
+| 4 | 在卡片上点击「删除」按钮，检查确认弹窗文案与量级说明；点击取消 | 弹出删除确认框，明确告知不可撤销后果，并给出具体量级（如“将删除 N 轮 / M 个节点”）；点取消不删 | 成功弹出确认框，文案清晰标出“将删除 4 轮 / 26 个节点：这一段，以及它之后长出来的全部内容”；点击取消后未执行删除，树节点完好 | 通过 | [04-delete-modal-scope.jpg](<./screenshots/04-delete-modal-scope.jpg>) |
+| 5 | 在 mock 存档上确认执行一次删除 | 该卡及其全部后代从树上移除，不留空壳节点，界面保持在路线视图（不跳回舞台） | 确认后成功剪除选中的 4 轮/26 个节点，卡片数从 7 降为 3，残留卡片全部完整，无空壳 fork 节点；当前页面仍为 `route` 视图 | 通过 | [05-after-delete-stay-route.jpg](<./screenshots/05-after-delete-stay-route.jpg>) |
+| 6 | **验收命门**：真剧目演至第二轮末尾 → 路线视图点第一张卡「跳转」回到开头 → 读到末尾**选同一个选项** → 随后再次跳转并**改选另一个选项** | 选同一选项：**不触发模型调用**，无「剧作家正在落笔」，树节点与事件数不增，末梢为旧枝末尾；改选另一选项：正常长出新枝，事件数增加，旧枝保留为废弃枝 | 选同一选项立即播放且文字完全一致，session 事件数保持 33 毫无增加，leafId 完全一致，toast 提示“顺着原路继续”；改选选项 2 触发模型生成新枝，事件数增至 48，旧枝标记为 dead，新枝标记为 live here | 通过 | [06-01-beat1-choices.jpg](<./screenshots/06-01-beat1-choices.jpg>), [06-04-beat1-revisited-choices.jpg](<./screenshots/06-04-beat1-revisited-choices.jpg>), [06-05-same-choice-reused.jpg](<./screenshots/06-05-same-choice-reused.jpg>), [06-06-new-branch-forked.jpg](<./screenshots/06-06-new-branch-forked.jpg>) |
+| 7 | 检查舞台导演栏的重写按钮及行为 | 按钮字样改为「重写」，title 明确标出语义，点击后能弹出输入框重新生成 | 导演栏按钮文本为“重写”，title 为“重写：退到这一轮之前，让剧作家重新写一遍（原有内容留作旧枝）”，点击弹出方向输入框 | 通过 | [07-theater-rewrite-modal.jpg](<./screenshots/07-theater-rewrite-modal.jpg>) |
 
 ---
 
@@ -41,84 +41,84 @@
 ### 1. 路线卡片三动词与提示信息
 路线视图中每张卡片右下角仅保留「跳转」「重写」「删除」三个动词，无旧动词残留；hover title 明确标出是否重新生成。
 
-![路线卡片三动词与布局](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/01-route-verbs-and-canvas.jpg>)
+![路线卡片三动词与布局](<./screenshots/01-route-verbs-and-canvas.jpg>)
 
 ---
 
 ### 2. 卡片选中态：祖先链（.kin）与删除波及子树（.doomed）
 点击废弃枝的根卡片，卡片呈现 accent 描边外环（`.selected`），其父节点卡片与连线淡色高亮（`.kin`），其全部 3 个子孙节点呈现危险色虚线（`.doomed`），删除范围一览无余。
 
-![卡片选中态与波及范围](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/02-card-selection-kin-doomed.jpg>)
+![卡片选中态与波及范围](<./screenshots/02-card-selection-kin-doomed.jpg>)
 
 ---
 
 ### 3. 卡片「重写」输入弹窗
 点击卡片上的「重写」，呼出居中模态框，支持交代一句要求，并允许直接留空。
 
-![卡片重写输入弹窗](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/03-rewrite-modal.jpg>)
+![卡片重写输入弹窗](<./screenshots/03-rewrite-modal.jpg>)
 
 ---
 
 ### 4. 卡片「删除」确认弹窗（明确量级）
 点击卡片「删除」，弹窗明确展示不可撤销提示，并精确计算量级：“将删除 4 轮 / 26 个节点：这一段，以及它之后长出来的全部内容。”
 
-![删除确认弹窗与量级说明](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/04-delete-modal-scope.jpg>)
+![删除确认弹窗与量级说明](<./screenshots/04-delete-modal-scope.jpg>)
 
 ---
 
 ### 5. 执行删除后保留在路线视图
 确认删除后，被选中的 4 轮/26 个节点瞬间从树上移除，卡片数从 7 张精简为 3 张，未留任何空壳节点，且界面依然停留在路线视图。
 
-![删除后留在路线视图且无空壳残留](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/05-after-delete-stay-route.jpg>)
+![删除后留在路线视图且无空壳残留](<./screenshots/05-after-delete-stay-route.jpg>)
 
 ---
 
 ### 6. 验收命门：真剧目演至第一轮末尾的停止点
 真实剧目 `黄昏教室` 演出第一幕开场，进入第一个交互停止点，展示 3 个剧情选肢与自由输入。
 
-![第一轮末尾选项停止点](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/06-01-beat1-choices.jpg>)
+![第一轮末尾选项停止点](<./screenshots/06-01-beat1-choices.jpg>)
 
 ---
 
 ### 7. 验收命门：选择选项 1 演完第二轮末尾
 玩家选择选项 1（“你也太慢了…”），剧作家生成第二轮，推进至第二轮末尾新选肢。
 
-![第二轮末尾停止点](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/06-02-beat2-choices.jpg>)
+![第二轮末尾停止点](<./screenshots/06-02-beat2-choices.jpg>)
 
 ---
 
 ### 8. 验收命门：此时路线树包含两轮剧情
 查看路线树，包含第一轮卡片（index 0）与第二轮卡片（index 2），谱系事件总数为 33。
 
-![两轮路线树状态](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/06-03-route-view-beat2-nodes.jpg>)
+![两轮路线树状态](<./screenshots/06-03-route-view-beat2-nodes.jpg>)
 
 ---
 
 ### 9. 验收命门：跳回第一轮开头并读至末尾，选项原样重现
 在路线视图点击卡片 0「跳转」，回到故事开头重演，推进至第一轮末尾，原有选肢原样摆出。
 
-![跳回第一轮重新出现原选项](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/06-04-beat1-revisited-choices.jpg>)
+![跳回第一轮重新出现原选项](<./screenshots/06-04-beat1-revisited-choices.jpg>)
 
 ---
 
 ### 10. 验收命门：选同一选项零模型调用、原路继续
 再次选择选项 1，**无任何等待与落笔提示**，立即播放既有第二轮内容，toast 提示“顺着原路继续”；谱系事件数严格保持 33 个未增加，末梢依然是 `emusz6rn0-2z`。
 
-![同选项走原路完全复用旧枝](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/06-05-same-choice-reused.jpg>)
+![同选项走原路完全复用旧枝](<./screenshots/06-05-same-choice-reused.jpg>)
 
 ---
 
 ### 11. 验收命门：改选选项 2 正常分岔出新枝
 再次跳转并改选选项 2（“说漏嘴了吧…”），剧作家正常生成，路线树成功长出新分支；选项 1 枝自动标记为 `dead`，新枝标记为 `live here`，谱系事件数由 33 增至 48。
 
-![改选选项长出新分支](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/06-06-new-branch-forked.jpg>)
+![改选选项长出新分支](<./screenshots/06-06-new-branch-forked.jpg>)
 
 ---
 
 ### 12. 舞台导演栏「重写」按钮与弹窗
 舞台右上角导演栏按钮已规范改名为「重写」，点击后弹出重新生成方向输入框。
 
-![舞台导演栏重写按钮与弹窗](<./.worktrees/route-branch-and-readpos/docs/features/261004-route-revisit-and-verbs/screenshots/07-theater-rewrite-modal.jpg>)
+![舞台导演栏重写按钮与弹窗](<./screenshots/07-theater-rewrite-modal.jpg>)
 
 ---
 
