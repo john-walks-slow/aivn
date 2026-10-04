@@ -1650,6 +1650,35 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     expect(combinedUserText).not.toContain("轻一点");
   });
 
+  it("腰斩正在请求进入限制级的那一轮：标识跟着熄灭", async () => {
+    // 永不兑现的闸门：把这一轮卡在演出中（腰斩之后它本来也不会再收尾，
+    // 事后再把它放行会让被作废的那条流醒过来挂住进程）
+    const gate = new Promise<void>(() => {});
+    const responses: FakeResponse[] = [
+      { text: BEAT_1, beatDone: true }, // 第 1 轮：日常，留一个可回的分岔锚点
+      // 第 2 轮：先请求进限制级（这一轮还没收束），再被闸在半路——标识这时必须是亮的
+      { text: '<say id="mio">把门关上。</say>', toolCalls: [{ name: "enter_nsfw", args: {} }] },
+      { text: '<say id="mio">……轻一点。</say>', beatDone: true, gate },
+    ];
+    const { orchestrator, messages, tree } = setup(responses);
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    const anchor = tree.leafId!;
+
+    orchestrator.playerAction({ kind: "continue" }).catch(() => {}); // 腰斩后这一轮不再收尾
+    await vi.waitFor(() => expect(orchestrator.nsfwChannel).toBe(true), { timeout: 3000 });
+    expect(messages.filter((m) => m.type === "nsfw")).toEqual([{ type: "nsfw", active: true }]);
+
+    // 腰斩：从锚点开新分支，那一轮连同它「已请求进入」的状态一起作废——标识不许留在亮着
+    await orchestrator.forkTo(anchor);
+    expect(orchestrator.nsfwChannel).toBe(false);
+    expect(messages.filter((m) => m.type === "nsfw").at(-1)).toEqual({ type: "nsfw", active: false });
+
+    await orchestrator.whenIdle();
+    // 醒过来的旧轮不再收尾，标识也不许再翻回去
+    expect(messages.filter((m) => m.type === "nsfw").at(-1)).toEqual({ type: "nsfw", active: false });
+  });
+
   it("从限制级分支跳转或分岔回日常节点时，NSFW 状态重置为 false，不会滞留限制级模式", async () => {
     const contexts: CapturedContext[] = [];
     const responses: FakeResponse[] = [
@@ -1796,7 +1825,7 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
   });
 
   it("跳回段内照渲原文，跳回段后只剩摘要", async () => {
-    const { orchestrator, tree } = setup(nsfwRun());
+    const { orchestrator, messages, tree } = setup(nsfwRun());
     orchestrator.start();
     await orchestrator.whenIdle();
     await orchestrator.playerAction({ kind: "continue" }); // 段内第一拍
@@ -1806,16 +1835,18 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     await orchestrator.whenIdle();
     const afterSegment = tree.leafId!;
 
-    // 段内：快照说 nsfw=true → 原文照渲，摘要还没出现
+    // 段内：快照说 nsfw=true → 原文照渲，摘要还没出现；标识跟着这条分支亮起来
     await orchestrator.jumpTo(inSegment);
     expect(orchestrator.runtimeState.nsfw?.active).toBe(true);
+    expect(messages.filter((m) => m.type === "nsfw").at(-1)).toEqual({ type: "nsfw", active: true });
     const rawText = agentText(orchestrator);
     expect(rawText).toContain("轻一点");
     expect(rawText).not.toContain("互诉心意");
 
-    // 段后：快照说 nsfw=false → 整段折叠成摘要，原文一个字都不进消息
+    // 段后：快照说 nsfw=false → 整段折叠成摘要，原文一个字都不进消息；标识跟着熄
     await orchestrator.jumpTo(afterSegment);
     expect(orchestrator.runtimeState.nsfw?.active).toBe(false);
+    expect(messages.filter((m) => m.type === "nsfw").at(-1)).toEqual({ type: "nsfw", active: false });
     const sfwText = agentText(orchestrator);
     expect(sfwText).toContain("互诉心意");
     expect(sfwText).not.toContain("轻一点");

@@ -5010,20 +5010,24 @@ select:focus {
   left: 12px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 10px;
   max-width: min(70vw, 300px);
 }
-/* 与其余浮层同一套深色玻璃令牌：它也是压在画面上的一块「窗」 */
+/* 压在画面上的一行淡痕，不是一块面板：没有边框、没有底色，只留字与图标本身。
+   画面明暗不可控，所以靠同一枚文字阴影（--dialog-text-shadow）保住可读性——
+   与旁白/台词用的那层阴影同源，换了主题不会有一边落单。 */
 .stage-mode {
-  padding: 5px 9px;
-  border: 1px solid var(--dialog-line);
-  border-radius: var(--stage-radius);
-  background: var(--dialog-bg);
-  box-shadow: var(--dialog-shadow);
-  color: var(--dialog-ink);
+  display: flex;
+  align-items: center;
+  color: var(--dialog-ink-faint);
+  text-shadow: var(--dialog-text-shadow);
+  line-height: 1;
+}
+/* 限制级那枚没有字形可画，用四个字母当记号：字号小、字距放开，读起来像一枚印记 */
+.stage-mode-nsfw {
   font-size: 11.5px;
-  line-height: 1.2;
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  letter-spacing: 0.12em;
 }
 
 /* 待注入队列：内容区右上角、导演工具栏正下方的独立面板，空则不渲染。排队中的话能改也能撤。
@@ -5065,11 +5069,12 @@ select:focus {
   line-height: 1;
   cursor: pointer;
 }
-/* 窄屏：排队面板占掉大半个宽度，跟左上角那排常驻标识必然压在一起（360px 下标识到 192px、
-   面板从 68px 起）。标识是常驻的、面板是临时的，让面板整块下移一行避让；宽屏上两者仍平齐。 */
+/* 窄屏：展开的排队面板占掉大半个宽度，跟左上角那排常驻标识必然压在一起（360px 下标识到
+   192px、面板从 68px 起）。用兄弟选择器只在「标识真的在」时让面板下移一行——三种模式全关
+   时那排不渲染，面板不该平白空出 36px。收起态的徽标只有 50~60px 宽（最右从 288px 起），
+   横向就跟标识错开了，不用动。宽屏上两者仍平齐。 */
 @media (max-width: 520px) {
-  .prompt-queue,
-  .prompt-queue-badge {
+  .stage-modes ~ .prompt-queue {
     top: calc(96px + env(safe-area-inset-top, 0px));
   }
 }
