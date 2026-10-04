@@ -36,7 +36,7 @@ function view(): Settings {
     },
     workshopContext: { contextWindow: 65536, compactRatio: 0.6, keepRecentTokens: 8000 },
     beatTimeoutMs: 180000,
-    password: "john••••2014",
+    password: "test••••word",
     passwordSet: true,
     lanAccess: false,
     image: {
@@ -83,12 +83,12 @@ describe("设置页凭据：掩码回填，未触碰不误清", () => {
     const password = screen.getByLabelText(/访问密码/) as HTMLInputElement;
     expect(modelKey.value).toBe("sk-s••••1234");
     expect(imageKey.value).toBe("flow••••9876");
-    expect(password.value).toBe("john••••2014");
+    expect(password.value).toBe("test••••word");
 
     const draft = await saveDraft();
     expect(draft.model.apiKey).toBe("sk-s••••1234");
     expect(draft.image.apiKey).toBe("flow••••9876");
-    expect(draft.password).toBe("john••••2014");
+    expect(draft.password).toBe("test••••word");
   });
 
   it("清空输入框 = 显式清除，保存回传空串", async () => {

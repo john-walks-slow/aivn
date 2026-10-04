@@ -2,18 +2,6 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)，格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
-
-### 变更
-
-- **默认代理留空直连**：`tts.proxy` / `exa.proxy` 此前默认写死一个本机代理端口，没跑代理的机器上语音与联网检索会先连过去再失败；现在默认空、要用自己填（`STAGE_TTS_PROXY` / `STAGE_EXA_PROXY` 照旧可用）。
-
-### 移除
-
-- 素材与样例剧目彻底不进仓库：`library/` 素材、`assets/` 立绘与音频、`plays/` 样例剧目连同其历史一并剥离（数据目录本来就不进 Git）。
-- 一次性素材生成脚本改为从环境变量读凭据与网关地址，不再内置任何真实 Key。
-- 一次性的内部排障记录移出仓库，只保留面向使用者的网关配置说明。
-
 ## [0.1.0] - 2026-10-04
 
 第一次公开发布。
@@ -37,6 +25,7 @@
 - 端口 `0` = 交给系统挑一个空闲口，并把实际端口打印出来 / 报给桌面壳。
 - 留在环境变量里的只剩启动参数（`STAGE_PORT` / `STAGE_HOST` / `STAGE_DATA_DIR`）与出口代理（`HTTP_PROXY` / `HTTPS_PROXY`）。
 - 设置页补齐两项此前只存在于接口的配置：「限制级专属提示词」与「垫图策略」。
+- **默认代理留空直连**：`tts.proxy` / `exa.proxy` 此前默认写死一个本机代理端口，没跑代理的机器上语音与联网检索会先连过去再失败；现在默认空、要用自己填（`STAGE_TTS_PROXY` / `STAGE_EXA_PROXY` 照旧可用）。
 
 ### 修复
 
@@ -44,5 +33,10 @@
 - Windows 上 spawn `npm` 需带 `shell`（`.cmd` 不是可执行文件）；pnpm 11 默认拒绝跑依赖构建脚本，已显式批准必需的三项。
 - 端口的 `0` 语义在 `startup.ts` 里不再被注释误导为「桌面壳专用」。
 
-[Unreleased]: https://github.com/john-walks-slow/aivn/compare/v0.1.0...HEAD
+### 移除
+
+- 素材与样例剧目彻底不进仓库：`library/` 素材、`assets/` 立绘与音频、`plays/` 样例剧目连同其历史一并剥离（数据目录本来就不进 Git）。
+- 一次性素材生成脚本改为从环境变量读凭据与网关地址，不再内置任何真实 Key。
+- 一次性的内部排障记录移出仓库，只保留面向使用者的网关配置说明。
+
 [0.1.0]: https://github.com/john-walks-slow/aivn/releases/tag/v0.1.0
