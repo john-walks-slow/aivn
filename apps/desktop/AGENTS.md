@@ -39,6 +39,8 @@ apps/desktop/
 
 同一版图标由 `scripts/make-app-icon.mjs` 拷一份 `favicon.ico` 给 `apps/web/public/`——web 与桌面共用一个记号。
 
+`tauri.conf.json` 里 NSIS 的 `installerIcon` / `uninstallerIcon` 显式指向 `icons/icon.ico`：不写的话安装包与卸载项用的是 NSIS 自带的那张图，跟应用图标不是一回事（2026-10-04 实测：装完的 `aivn.exe` 是新记号，而 `aivn-0.1.0-x64-setup.exe` 还是 NSIS 默认的）。
+
 ## 构建（`scripts/build-desktop.mjs`，根目录 `pnpm desktop`）
 
 `build-exe.mjs` 先出服务端 exe 与免安装 zip → 按 `rustc --print host-tuple` 把 exe 拷成 `src-tauri/binaries/aivn-server-<triple>.exe`（`externalBin` 就是按这个后缀找文件的）→ `tauri build` → NSIS 安装包拷成 `build/aivn-<版本>-x64-setup.exe` → **删掉 sidecar 副本**（147MB，留着会让下次 `tauri build` 误判为最新）。
