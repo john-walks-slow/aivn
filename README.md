@@ -8,7 +8,7 @@ AI galgame 引擎：LLM 剧作家（playwriter）流式输出 Stage DSL 增量�
 
 ### 方式一：Windows 安装包（推荐）
 
-从 [Releases](https://github.com/john-walks-slow/aivn/releases) 下 `AIVN-<版本>-x64-setup.exe`，双击安装（装到 `%LOCALAPPDATA%\AIVN`，不需要管理员权限），然后从开始菜单启动。
+从 [Releases](https://github.com/john-walks-slow/aivn/releases) 下 `aivn-<版本>-x64-setup.exe`，双击安装（装到 `%LOCALAPPDATA%\AIVN`，不需要管理员权限），然后从开始菜单启动。
 
 启动后是一个带图标的应用窗口，标题栏里就是局域网地址：
 
@@ -28,7 +28,7 @@ AIVN · 局域网 http://192.168.1.23:8787（手机连同一个 Wi-Fi 打开它�
 
 ### 方式二：Windows 免安装 zip
 
-同一页 Releases 里的 `AIVN-<版本>-win-x64.zip`：解压到一个**有写权限**的目录（例如 `D:\AIVN\`，别放 `C:\Program Files` 下面），双击里面的 `aivn.exe`。这一份是命令行形态，会有一个控制台窗口，关掉它就是退出服务。
+同一页 Releases 里的 `aivn-<版本>-win-x64.zip`：解压到一个**有写权限**的目录（例如 `D:\AIVN\`，别放 `C:\Program Files` 下面），双击里面的 `aivn.exe`。这一份是命令行形态，会有一个控制台窗口，关掉它就是退出服务。
 
 数据与设置都在解压目录的 `data\` 里，整个文件夹拷走就是搬家。
 
