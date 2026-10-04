@@ -898,15 +898,17 @@ function referenceSuffix(characters: ReferenceSprite[]): string {
  * 所以底色一旦和角色撞色，角色身上那块就跟着被抠穿——「纯白底 + 白袜子」就是撞色的极端，
  * 算法救不了，是出图这一步的责任：底色必须选成角色配色里没有的颜色。
  *
- * 默认纯绿 #00FF00；角色本身是绿发/绿衣就换纯品红或纯蓝。选了哪个由模型按角色自己定，
- * 抠底端不需要知道——它从整圈边框量出实际底色。
+ * 默认纯绿 #00FF00，不再让模型自由挑色——绿幕对深色描边、暖色皮肤、深发色都是最远的色距，
+ * 抠完的边最干净。**只有角色配色本身就是绿色系（绿发/绿衣/绿瞳）时才换**成纯品红 #FF00FF
+ * 或纯蓝 #0000FF。换了哪个抠底端不需要知道：它从整圈边框量出实际底色。
  *
  * 不许渐变、投影、纹理、装饰：色键只认一种颜色，任何过渡都是抠不干净的白边。
  */
 const KEY_BACKGROUND =
   "Background is one single flat solid colour used as a chroma key, chosen to appear nowhere on the " +
-  "character themselves; default pure green #00FF00, but switch to pure magenta #FF00FF or pure blue " +
-  "#0000FF if the character is green. No gradient, no shadow, no texture, no decoration, no text.";
+  "character themselves; always use pure green #00FF00, unless the character's own colouring is " +
+  "greenish (green hair, green clothing, green eyes), in which case use pure magenta #FF00FF instead. " +
+  "No gradient, no shadow, no texture, no decoration, no text.";
 
 /**
  * 立绘后缀：**只写与主体是人还是物无关的构图与画风约束**。
