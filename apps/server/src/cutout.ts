@@ -24,6 +24,9 @@ import sharp from "sharp";
  * 4. **只留人物、落画布**：裁到人物外框、等比缩放、底部居中放进 9:16 画布，
  *    锚点 [0.5, 1.0]——引擎换表情时角色不会晃动。
  *
+ * 反解与限色这两步管的是**颜色**不是抠得多狠：`tolerance` 才是抠得多狠的那个旋钮，
+ * 调它会连发丝一起啃掉。想消掉边上的底色残留，走 `spill`，不要去拧 `tolerance`。
+ *
  * 抠不出干净结果就抛错，由调用方把原因回给模型重试，不落盘半残图。
  *
  * **调用方必须传原始下载字节，不要先过一遍 sharp 重编码。** 后端回来的是 JPEG 时，
@@ -60,6 +63,8 @@ export interface CutoutOptions {
   keySmooth?: number;
   /** 反解带宽（像素）：掩膜边界两侧这么宽的像素逐个解覆盖率，更远的像素直接判实心或全透明。 */
   edgeBand?: number;
+  /** 限色量：压掉边缘残存的底色。0 = 不限色。默认 20。 */
+  spill?: number;
 }
 
 /** 抠底调参的默认值。可被单次调用覆盖，也可用环境变量改全局（工坊 agent 出图看情况可调）。 */
@@ -67,6 +72,7 @@ export interface CutoutTuning {
   tolerance: number;
   keySmooth: number;
   edgeBand: number;
+  spill: number;
 }
 
 const CANVAS_HEIGHT = 1920;
@@ -103,6 +109,10 @@ export function defaultTuning(): CutoutTuning {
     // 钉成实心 alpha，深色舞台底上就是一圈白块。也不能再放宽：分母小的浅色区
     // 被过度反解，反而解出更多洞。
     edgeBand: envInt("STAGE_CUTOUT_EDGE_BAND", 4, 1, 32),
+    // 20：反解只能把覆盖率解准，解不出的那部分仍留着底色（绿幕上表现为绿边）。
+    // 限色压的是**颜色**不是 alpha，所以发丝一根不少——调容差会连发丝一起啃掉，
+    // 实测容差 48→128 不透明像素掉 2 万、绿残留反而从 2.3 万涨到 3 万。
+    spill: envInt("STAGE_CUTOUT_SPILL", 20, 0, 255),
   };
 }
 
@@ -137,8 +147,8 @@ export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise
   }
 
   const bg = backgroundColor(rgba, mask, channels);
-  const alpha = edgeAlpha(rgba, mask, width, height, channels, bg, tuning.edgeBand);
-  const out = unblend(rgba, alpha, width, height, channels, bg);
+  const { alpha, foreground } = edgeAlpha(rgba, mask, width, height, channels, bg, tuning.edgeBand);
+  const out = unblend(rgba, alpha, foreground, width, height, channels, bg, tuning.spill);
 
   const box = foregroundBounds(alpha, width, height);
   if (!box) throw new Error("抠底失败：没有找到角色轮廓");
@@ -313,7 +323,7 @@ function edgeAlpha(
   channels: number,
   bg: [number, number, number],
   band: number,
-): Uint8Array {
+): { alpha: Uint8Array; foreground: Int16Array } {
   const distToKey = bandDistance(mask, width, height, band, 1);
   const distToForeground = bandDistance(mask, width, height, band, 0);
   const fg = foregroundColors(rgba, mask, distToKey, width, height, channels, band);
@@ -338,7 +348,7 @@ function edgeAlpha(
     if (ratio !== null) alpha[i] = Math.round(255 * ratio);
     else alpha[i] = keyed ? 0 : Math.round(255 * (distance / band));
   }
-  return alpha;
+  return { alpha, foreground: fg };
 }
 
 /**
@@ -426,31 +436,73 @@ function solveAlpha(
   return Math.max(0, Math.min(1, median));
 }
 
-/** C = a·F + (1-a)·B 反解出 F，把渗进边缘的底色扣掉。 */
+/**
+ * C = a·F + (1-a)·B 反解出 F，把渗进边缘的底色扣掉。
+ *
+ * 但反解式在低覆盖率处不可靠：a 越小 k=(1−a)/a 越大，`I + k·(I−B)` 会一路冲出 0–255。
+ * 银发压绿幕、a≈0.33 时解出 (668,181,670) → clamp 成 (255,181,255)，整圈轮廓套上**品红光晕**。
+ * 所以按覆盖率把两路结果混起来：a 越低越信邻近的实心前景色（`foreground`，反解用的同一个
+ * BFS 传播结果），a 越高越信闭式解。混完之后有效增益被压在 1 以内，放大不出去了。
+ */
 function unblend(
   rgba: Buffer,
   alpha: Uint8Array,
+  foreground: Int16Array,
   width: number,
   height: number,
   channels: number,
   bg: [number, number, number],
+  spill: number,
 ): Buffer {
   const out = Buffer.alloc(width * height * 4);
   for (let i = 0; i < alpha.length; i++) {
     const a = alpha[i]!;
     if (a === 0) continue;
     const o = i * channels;
+    const q = i * 3;
+    const t = smoothstep(0.35, 0.85, a / 255);
     const k = a >= 255 ? 0 : (255 - a) / a;
     for (let c = 0; c < 3; c++) {
       const observed = rgba[o + c] ?? 0;
       // F = (I − (1−a)·B) / a = I + k·(I − B)，k = (1−a)/a。
       // 少了 I 那一项会得到 I − k·B：白底上看着差不多（B≈255 且前景也亮），
       // 换成绿底就是一层压不掉的绿边。
-      out[i * 4 + c] = Math.max(0, Math.min(255, Math.round(observed + k * (observed - (bg[c] ?? 0)))));
+      const solved = clamp255(observed + k * (observed - (bg[c] ?? 0)));
+      const neighbor = clamp255(foreground[q + c] ?? observed);
+      out[i * 4 + c] = Math.round(t * solved + (1 - t) * neighbor);
     }
     out[i * 4 + 3] = a;
   }
-  return out;
+  return despill(out, bg, spill);
+}
+
+/**
+ * 限色：把还带着底色味道的那一路通道压到「这个像素另两路的较大值 + spill」以内。
+ *
+ * 反解只能解准覆盖率，解不准的像素颜色里仍然混着底色，直接输出就是一圈绿边（实测 2.3 万像素）。
+ * 限色动的是**颜色不是 alpha**，所以发丝一根不少——这是它与调容差的本质区别。
+ * 只动底色那一路（bg 的峰值通道）：另两路本来就没被底色染过。
+ */
+function despill(rgba: Buffer, bg: [number, number, number], spill: number): Buffer {
+  if (spill <= 0) return rgba;
+  let peak = 0;
+  for (let c = 1; c < 3; c++) if (bg[c]! > bg[peak]!) peak = c;
+  const rest = [0, 1, 2].filter((c) => c !== peak);
+  for (let i = 0; i < rgba.length; i += 4) {
+    const limit = Math.max(rgba[i + rest[0]!]!, rgba[i + rest[1]!]!) + spill;
+    if (rgba[i + peak]! > limit) rgba[i + peak] = limit;
+  }
+  return rgba;
+}
+
+function clamp255(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+/** 两端平滑过渡的阶跃函数：把覆盖率过渡成「信闭式解」的比例。 */
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
 }
 
 /** 人物外框（alpha > 0 的范围），留 1px 余量免得削掉描边。 */

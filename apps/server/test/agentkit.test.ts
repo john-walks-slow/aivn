@@ -69,7 +69,7 @@ function workshopDeps(over: Partial<WorkshopKitDeps> = {}): WorkshopKitDeps {
     assetLibrary: { list: async () => [] } as never,
     voices: { get: async () => ({ entries: [] }) } as never,
     // 音乐生成层：没配后端就不注册 generate_bgm（与 image / exa 同一套「配齐才装得上」）
-    playMusic: { generate: async () => ({ id: "bgm_x", path: "assets/bgm/bgm_x.m4a", url: "/u", replaced: false }) } as never,
+    playMusic: { existingUrl: async () => null } as never,
     ...over,
   };
 }
