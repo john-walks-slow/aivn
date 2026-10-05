@@ -299,7 +299,7 @@ DSH 提供了正规的注入点（`@deepseek-ai/dsh-system-prompt`）：
 角色表分级（AIVN 的 activeCast：在场全卡、不在场只注一行）在插件里没有编排器给「在场」，
 2a 先**全卡注入**（剧目角色通常个位数），等实测有 token 压力再加按最近出场推的分级。
 
-#### 2b 语音生成（宿主半边）
+#### 2b 语音生成（宿主半边）✅（2026-10-05 完成，`dsh-aivn` 1958794）
 
 - `src/tts.ts` —— Fish Audio 客户端（多 Key 轮询、内容寻址缓存 `sha1(voiceId+text)`、
   写临时文件后 rename、代理）。从 `apps/server/src/tts.ts`（163 行）搬。
@@ -314,7 +314,7 @@ DSH 提供了正规的注入点（`@deepseek-ai/dsh-system-prompt`）：
   没有音色声明的角色（含旁白）不合成。
 - 插件 `Config` 加语音段（keys / baseUrl / model / proxy），环境变量兜底；README 写进配置总表。
 
-#### 2c 语音生成（客户端接线）
+#### 2c 语音生成（客户端接线）✅（同上；`67730fb` 检视收口、`ba1fe17` 节奏收口）
 
 `apps/web/src/stage/audio.ts` 的 `VoiceDirector`（436 行，纯 Web Audio、**零 import**）是又一个
 「属于舞台层却留在 app 里」的模块（与这次补的 `.choice*` 样式同一类漏搬）：
@@ -331,7 +331,15 @@ DSH 提供了正规的注入点（`@deepseek-ai/dsh-system-prompt`）：
   断言各段在场、带的是 `premise.md` / 角色卡的正文与 `assets/` 里真实的素材 id、
   且阶段 1 那句「得你自己去读」已消失——11/11。`verify-stage` 14/14 仍绿。
   **实测探路开销**：首轮 step 6.5 → 4、工具调用 ~14 → ~6，`glob` / `bash` 那圈探路消失。
-- 语音：e2e 真跑一轮，断言 `say` 行拿到音频 URL、`voiceState` 到 `ready`、音频字节可取回。
+- 语音 ✅（`e2e/verify-voice.mjs` **16/16**，真打 Fish Audio）：voice 帧到达、音频能取回且是
+  真 MP3、**浏览器把 MP3 解成了 PCM 并真的有音源起播**（页面里给 `AudioContext` /
+  `decodeAudioData` / `AudioBufferSourceNode.start` 挂钩子——只断言「帧到了、URL 能取回」
+  说明不了出声，导演没解锁 / 解码失败 / 音频晚于该行结束这三种都不报错）、语音总开关确实
+  传到了宿主（抓客户端真实请求体，V14/V15）。
+- **语音节奏的结论**（检视 B3，`ba1fe17`）：舞台是**手动推进**的，没点之前播放头不落在任何
+  一行上；一行成为当前行后会一直停着等玩家点，停够 2–5 秒（Fish 免费模型的实测合成时间）就
+  听得到，点太快那一句按引擎本来的设计被丢弃。自动模式下额外把「这一行还在合成」也算作 hold
+  （封顶 8 秒，TTS 挂掉时不会把演出卡死）。
 
 #### 实现记录（2a）
 
@@ -349,8 +357,29 @@ DSH 提供了正规的注入点（`@deepseek-ai/dsh-system-prompt`）：
 
 ### 阶段 3 · 发布
 
-- npm 发布 + GitHub 仓库 + 双语 README（安装、配置项总表、权限声明）+ 市场收录材料。
-- 线上 profile 保持 `link:` 本地目录；发布验证走 scratch profile。
+进行中（2026-10-05）。**不依赖用户决策的部分已经做完**：
+
+- ✅ 双语 README：`README.md`（中文主体）+ `README.en.md`，顶部语言切换；两份结构核对一致
+  （10 个 `##` / 6 个 `###` / 24 个代码块 / 58 行表格）。README 四件套齐：一行价值、可复制安装
+  命令（`dsh plugin --profile web add dsh-aivn`，dsh-plugin.org 的收录硬要求）、舞台实拍图、
+  「权限与兼容」声明。
+- ✅ 发布元数据：双语 description、中英混排 keywords（含 `dsh-plugin`）、author / repository /
+  homepage / bugs、`files` 与产物核对、`prepublishOnly`（重建 + 类型检查）、版本 0.1.0。
+- ✅ 依赖面：`@aivn/core` / `@aivn/stage` 移进 `devDependencies`（esbuild 已把它们打进 `lib/`，
+  运行时不依赖，留在 `dependencies` 只会让消费者解析一条本机路径）。
+- ✅ `screenshots/screenshot-1.png` + `screenshots.json`（市场详情页）。
+- ✅ 隔离验证：`npm pack` → `dsh plugin --profile scratch-aivn add ./dsh-aivn-0.1.0.tgz` →
+  `--dump-config` 出现该层 → profile 目录内 `import('dsh-aivn')` 得到 `apply/name/inject` ✓，
+  验完删除 scratch profile。
+- ✅ 发布前检查（`before-publish-repo` 阶段 A）：全历史扫描抓到本地施工单（绝对路径 + 私有仓库
+  引用）与宿主环境叙述（本地服务配置路径、provider 名称、某个模型的地区限制）→ 施工单迁到本
+  需求记录、其余改写成通用说法 → **历史重写**（21 个提交，含提交者身份统一）→ 复扫归零。
+  `HEAD^{tree}` 前后一致：重写没有动任何一次提交的内容。
+- ⏳ **等用户点头**：npm 发布（对外动作）与 GitHub 建仓公开。
+- ⏳ 发布后：仓库打 topic `dsh-plugin`（自动市场靠它收录）、隔天提 awesome PR
+  （`data/plugins/john-walks-slow__dsh-aivn.yml`，描述会被对着代码核）。
+
+线上 profile 保持 `link:` 本地目录；发布验证走 scratch profile。
 
 ---
 
