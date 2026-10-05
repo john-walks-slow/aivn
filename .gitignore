@@ -61,3 +61,6 @@ __pycache__/
 # 出图验证用的临时素材（同 plays/* 与 library/ 的口径：生成的图不进 git）
 /test-assets/*
 !/test-assets/.gitkeep
+
+# 一次性生图/抓取脚本：哪次试验写在哪次目录或 /tmp，别在仓库根另起 tools/ 或 scripts 外的新顶层脚本目录
+/tools/
