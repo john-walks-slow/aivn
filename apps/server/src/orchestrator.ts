@@ -74,6 +74,17 @@ const MAX_FEEDBACK_WARNINGS = 8;
  */
 const BEAT_RETRY_LIMIT = 1;
 
+/**
+ * 漏调 beat_done 的同轮追收束（只追一次）：模型写完正文却没调 beat_done 时，
+ * 直接封成 no_stop 等于把「忘了收束」当正常轮收了——下一轮变成纯状态续写，
+ * 模型在那里面大概率空补一个零台词的 beat_done。追收束在同一轮里补一句指令，
+ * 让它接着把 beat_done 交出来，而不是把问题推到下一轮。
+ */
+const BEAT_DONE_NUDGE =
+  "这一轮的剧本正文已经写完，请现在调用 beat_done 收束本轮（参数就是这一轮的出口：" +
+  "给玩家选项就填 options，想给自由回答的口子就填 placeholder，这一段自然演完就空参数调用）。" +
+  "不要再写新的剧本内容，不要重写已经演出的部分。";
+
 /** 告警类型 → 模型看得懂的说法（英文枚举名对它没有诊断价值）。 */
 const WARNING_LABELS: Record<ParserWarningType, string> = {
   orphan_text: "DSL 之外的散文",
@@ -385,6 +396,8 @@ export class PlaywrightOrchestrator {
   private beatWarnings: string[] = [];
   /** 本 turn 调用了 beat_done → 轮在此收束（普通工具轮次不算边界，否则记忆查询会撕裂轮）。 */
   private beatClosed = false;
+  /** 本轮已经追过一次 beat_done 收束：追收束只追一次，追完它还不交就按 no_stop 正常封轮。 */
+  private beatDoneNudged = false;
   /** 本轮出现过带副作用的工具调用（beat_done 只是收束记账，不算）：纯工具轮（enter_nsfw / 生图 / 写卡）
    * 没有台词也不是失败——副作用已经发生，回滚只会吞掉它。 */
   private beatToolActivity = false;
@@ -626,9 +639,21 @@ export class PlaywrightOrchestrator {
     // 与记忆工具同批调用，terminate 会被吞掉导致本轮继续空转——此时按 beat_done 显式收束 run。
     agent.finishTurn = async (turn) => {
       const calls = turn.message.content.filter((c) => c.type === "toolCall");
-      if (!calls.some((c) => c.name === "beat_done")) return undefined;
-      this.beatClosed = true;
-      return calls.length > 1 ? { action: "end" as const } : undefined;
+      if (calls.some((c) => c.name === "beat_done")) {
+        this.beatClosed = true;
+        return calls.length > 1 ? { action: "end" as const } : undefined;
+      }
+      // 漏调 beat_done 的同轮追收束（只追一次）：模型写完正文却没调 beat_done 时，
+      // run 在这里直接收 run → 按 no_stop 封轮，问题被推到下一轮（纯状态续写里空补 beat_done）。
+      // 追一句让它在同一轮里把 beat_done 交出来。只追「有真实台词」的轮：裸散文/空轮
+      // 走判废重演那条路（追一句等于替它免了重演，还把拒答原文留进对话体）。
+      // 失败路径不追：error/aborted 的轮是中断不是忘了收束。
+      if (this.beatDoneNudged || this.beatClosed) return undefined;
+      if (turn.message.stopReason === "error" || turn.message.stopReason === "aborted") return undefined;
+      if (!this.busy || !this.beatHasLines) return undefined;
+      this.beatDoneNudged = true;
+      agent.steer({ role: "user", content: BEAT_DONE_NUDGE, timestamp: Date.now() });
+      return { action: "continue" as const };
     };
     this.unsubscribeAgent = agent.subscribe((event) => void this.onAgentEvent(event));
     this.agent = agent;
@@ -1922,6 +1947,7 @@ export class PlaywrightOrchestrator {
     this.beatLines = [];
     this.beatToolActivity = false;
     this.beatClosed = false;
+    this.beatDoneNudged = false;
     this.beatNsfw = this.beatChannelNsfw();
     this.beatClosing = false;
     this.opts.engine.turn = this.beatNo;
