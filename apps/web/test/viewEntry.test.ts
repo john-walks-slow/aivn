@@ -7,7 +7,7 @@ import {
   workshopUrl,
   type StageView,
   type WorkshopTab,
-} from "../src/stage/view.js";
+} from "@aivn/stage";
 
 /**
  * 工坊从标题页直达：URL 带 ?view=workshop&tab=assets。

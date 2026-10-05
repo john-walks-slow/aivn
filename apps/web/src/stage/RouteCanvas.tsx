@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useEscape } from "../ui/escape.js";
-import { Icon } from "../ui/Icon.js";
-import { Modal } from "../ui/Modal.js";
-import { stamp } from "../ui/stamp.js";
-import type { AssetIndex } from "./assets.js";
+import { useEscape, Icon, Modal, stamp, type AssetIndex } from "@aivn/stage";
 import type { BeatCard } from "./beats.js";
 import type { LineageOps } from "./LineagePanel.js";
 import { layoutRoute, NODE_H, NODE_W, type PlacedCard, type RouteDir } from "./routeTree.js";

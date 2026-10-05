@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Icon } from "../ui/Icon.js";
-import { stamp } from "../ui/stamp.js";
+import { Icon, stamp } from "@aivn/stage";
 import { api, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
 

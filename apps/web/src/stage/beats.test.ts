@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LineageNodeView, LineageView } from "@aivn/core";
 import { buildBeats, firstLineOf } from "./beats.js";
-import type { ScriptLine } from "./script.js";
+import type { ScriptLine } from "@aivn/stage";
 
 type NodeSpec = [
   id: string,

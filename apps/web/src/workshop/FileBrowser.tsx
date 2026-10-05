@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { notifyThemeChanged } from "../theme.js";
 import { api, fileUrl, type PlayFile } from "../api.js";
-import { Icon, type IconName } from "../ui/Icon.js";
+import { Icon, type IconName } from "@aivn/stage";
 import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
 
 /** 二进制文件在树里的图标：一眼分出「能编辑」和「只能看」。 */

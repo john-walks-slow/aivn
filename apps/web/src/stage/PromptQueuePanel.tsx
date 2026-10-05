@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PendingJob, PromptQueueItem } from "@aivn/core";
-import { Icon, type IconName } from "../ui/Icon.js";
+import { Icon, type IconName } from "@aivn/stage";
 
 /**
  * 分类图标（收起时那枚徽标用）：bg 与 cg 同为出图，共用一个字形。

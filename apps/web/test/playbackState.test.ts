@@ -5,8 +5,11 @@ import {
   shouldAutoStart,
   stopAffordance,
   type AutoStartInput,
-} from "../src/stage/playbackState.js";
-import { readFlag, writeFlag, SETTING_CONTINUE_CARD, SETTING_VOICE } from "../src/stage/settings.js";
+  readFlag,
+  writeFlag,
+  SETTING_CONTINUE_CARD,
+  SETTING_VOICE,
+} from "@aivn/stage";
 
 /** 「演出中、对话区空着、缓冲区里还有内容」——重演这一轮之后就是这个状态。 */
 const WAITING: AutoStartInput = {

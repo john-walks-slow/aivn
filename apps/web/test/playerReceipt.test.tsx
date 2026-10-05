@@ -1,9 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { usePlayback } from "../src/stage/director.js";
-import { buildTranscript, type TranscriptEntry } from "../src/stage/transcript.js";
-import type { Cue, ScriptLine } from "../src/stage/script.js";
+import { usePlayback, buildTranscript, type TranscriptEntry, type Cue, type ScriptLine } from "@aivn/stage";
 
 /**
  * 选完选项后的回执流：player_input 事件落进缓冲 → 播放头还停在上一句（已读完）→

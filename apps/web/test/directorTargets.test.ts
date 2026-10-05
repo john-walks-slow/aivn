@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LineageNodeView, LineageView } from "@aivn/core";
 import { beatAtLine, buildBeats, editableNodeAtLine } from "../src/stage/beats.js";
-import type { ScriptLine } from "../src/stage/script.js";
+import type { ScriptLine } from "@aivn/stage";
 
 /** 线性链上的一个事件：parentId 指回前一个 id，就是行级日志的自然形态。 */
 function node(

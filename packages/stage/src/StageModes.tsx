@@ -1,4 +1,4 @@
-import { Icon } from "../ui/Icon.js";
+import { Icon } from "./ui/Icon.js";
 
 /**
  * 舞台左上角的常驻标识：此刻开着的几种模式各占一枚（限制级通道 / 静音 / 自动）。

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Cue } from "../src/stage/script.js";
-import { applyActorCue, type SpriteSlot } from "../src/stage/director.js";
+import { type Cue, applyActorCue, type SpriteSlot } from "@aivn/stage";
 
 const cue = (partial: Partial<Extract<Cue, { kind: "actor" }>> & { id: string }): Extract<Cue, { kind: "actor" }> => ({
   key: "k",

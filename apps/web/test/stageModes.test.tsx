@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { StageModes } from "../src/stage/StageModes.js";
+import { StageModes } from "@aivn/stage";
 
 afterEach(cleanup);
 

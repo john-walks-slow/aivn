@@ -1,0 +1,33 @@
+{
+  "name": "@aivn/stage",
+  "version": "0.2.0",
+  "description": "Stage rendering and playback layer: theater visuals, dialog bar, stop affordance, playback state",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./stage.css": "./dist/stage.css"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b && node scripts/copy-css.mjs",
+    "typecheck": "tsc -b --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aivn/core": "workspace:*",
+    "lucide-react": "^1.48.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

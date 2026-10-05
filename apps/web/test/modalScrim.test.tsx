@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { usePlayback } from "../src/stage/director.js";
-import type { Cue, ScriptLine } from "../src/stage/script.js";
-import type { TranscriptEntry } from "../src/stage/transcript.js";
-import { StageTheater } from "../src/stage/StageTheater.js";
-import type { AssetIndex } from "../src/stage/assets.js";
+import {
+  usePlayback,
+  type Cue,
+  type ScriptLine,
+  type TranscriptEntry,
+  StageTheater,
+  type AssetIndex,
+} from "@aivn/stage";
 
 // jsdom 没有 ResizeObserver；舞台靠它把两块浮层的实测高度写回 CSS 变量。
 class NoopResizeObserver {

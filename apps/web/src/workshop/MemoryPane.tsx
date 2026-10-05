@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type PlayFile } from "../api.js";
-import { Icon } from "../ui/Icon.js";
+import { Icon } from "@aivn/stage";
 
 const CRAFT_PATH = "memory/always/craft.md";
 const PREMISE_PATH = "memory/always/premise.md";

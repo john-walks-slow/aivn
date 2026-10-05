@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pendingTtlMs } from "../src/stage/director.js";
+import { pendingTtlMs } from "@aivn/stage";
 
 describe("骨架兜底上界", () => {
   it("服务端给了就用服务端的（写死 45s 会让正在生成的占位被自己撤掉）", () => {

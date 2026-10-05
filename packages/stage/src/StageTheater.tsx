@@ -15,11 +15,9 @@ import { speakerFocusId, type Playback, type VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
 import { LoopChannel, SfxPlayer } from "./loopAudio.js";
 import type { TranscriptEntry } from "./transcript.js";
-import { api } from "../api.js";
-import type { HistoryBeat, HistoryEntry } from "../api.js";
-import { Icon } from "../ui/Icon.js";
-import { escapeClaimed } from "../ui/escape.js";
-import { Modal } from "../ui/Modal.js";
+import { Icon } from "./ui/Icon.js";
+import { escapeClaimed } from "./ui/escape.js";
+import { Modal } from "./ui/Modal.js";
 import type { StageView } from "./view.js";
 
 interface StageTheaterProps {
@@ -72,6 +70,12 @@ interface StageTheaterProps {
    * 选肢时要紧的只有「别手滑把这一轮点了过去」。
    */
   overlay?: ReactNode;
+  /**
+   * 右上角导演工具栏（提示/改写/重写/生图/重听）。默认开。
+   * 没有落点的宿主（手里只有 IR 事件流、没有谱系与服务端动作）把它关掉：
+   * 那一块不渲染，`.theater` 的 `--dir-h` 也随之写回 0，画面上不留一条空缝。
+   */
+  directorBar?: boolean;
 }
 
 export interface DirectorTargets {
@@ -92,7 +96,7 @@ export type VoiceState = "none" | "pending" | "ready";
  * 导演栏的动作。分岔从「当前这一行」开（舞台传 seq），重新生成从整轮开头重写（传 beatId）；
  * 生图不进分支、直接落图。
  */
-import { RefCharacterPicker, type RefCandidate } from "../ui/RefCharacterPicker.js";
+import { RefCharacterPicker, type RefCandidate } from "./ui/RefCharacterPicker.js";
 import { cgCanSubmit, toggleReference } from "./cgOptions.js";
 
 type DirectorAction = "prompt" | "edit" | "restart" | "fork" | "cg";
@@ -299,6 +303,7 @@ voiceState,
   onContinue,
   onTurbo,
   overlay,
+  directorBar = true,
 }: StageTheaterProps) {
   /**
    * 循环音轨：BGM 与环境音各一路，都带交叉淡入淡出。缺省音量分别是 0.28 / 0.16——
@@ -371,18 +376,20 @@ voiceState,
   useEffect(() => {
     const root = theaterRef.current;
     const dialog = dialogRef.current;
+    if (!root || !dialog) return;
     const director = directorRef.current;
-    if (!root || !dialog || !director) return;
     const measure = (): void => {
       root.style.setProperty("--dialog-h", `${dialog.offsetHeight}px`);
-      root.style.setProperty("--dir-h", `${director.offsetHeight}px`);
+      // 没有导演栏（directorBar=false）时必须显式写 0：CSS 缺省值是 46px，
+      // 留着它，选肢层的底部留白会凭空多出一条缝。
+      root.style.setProperty("--dir-h", `${director?.offsetHeight ?? 0}px`);
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(dialog);
-    ro.observe(director);
+    if (director) ro.observe(director);
     return () => ro.disconnect();
-  }, []);
+  }, [directorBar]);
   useEffect(() => {
     const el = theaterRef.current;
     if (!el) return;
@@ -582,7 +589,7 @@ voiceState,
 
   return (
     <div
-      className={`theater ${hideUi ? "bare" : ""}`}
+      className={`theater stage-root${hideUi ? " bare" : ""}`}
       ref={theaterRef}
       onClick={onStageClick}
       onTouchStart={onTouchStart}
@@ -648,90 +655,93 @@ voiceState,
 
       {/* 导演工具栏（提示/改写/重写/生图/重听）：舞台右上角浮层。点击动作 stopPropagation，
            不劫持舞台的继续/回看手势。分岔不在这里——它是「提示」面板里的一条岔
-           （引导/分岔两选一），单独再挂一个键只是把同一个决定拆成两处。 */}
-      <div className="theater-director" ref={directorRef}>
-        <button
-          type="button"
-          className={`dir-btn ${action === "prompt" ? "on" : ""}`}
-          title="输入角色的行动、台词，或给这场戏的指示"
-          aria-label="提示"
-          onClick={(e) => {
-            e.stopPropagation();
-            setAction(action === "prompt" ? null : "prompt");
-            setDraft("");
-          }}
-        >
-          <Icon name="chat" size={17} />
-          提示
-        </button>
-        <button
-          type="button"
-          className={`dir-btn ${action === "edit" ? "on" : ""}`}
-          title={editBlock ?? "编辑当前这句台词"}
-          aria-label="改写当前这句台词"
-          disabled={editBlock !== null}
-          onClick={(e) => {
-            e.stopPropagation();
-            setAction(action === "edit" ? null : "edit");
-            setDraft(targets.lineText);
-          }}
-        >
-          <Icon name="pencil" size={17} />
-          改写
-        </button>
-        <button
-          type="button"
-          className={`dir-btn ${action === "restart" ? "on" : ""}`}
-          title={beatBlock ?? "重写：退到这一轮之前，让剧作家重新写一遍（原有内容留作旧枝）"}
-          aria-label="重写这一轮"
-          disabled={beatBlock !== null}
-          onClick={(e) => {
-            e.stopPropagation();
-            setAction(action === "restart" ? null : "restart");
-            setDraft("");
-          }}
-        >
-          <Icon name="rewrite" size={17} />
-          重写
-        </button>
-        <button
-          type="button"
-          className={`dir-btn ${action === "cg" ? "on" : ""}`}
-          title={fresh ? "还没有剧情可以入画" : "为这一幕生成一张插图（指令可留空）"}
-          aria-label="生成插图"
-          disabled={fresh}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (action === "cg") {
-              setAction(null);
-            } else {
-              setAction("cg");
-              setDraft("");
-              setSelectedRefs([]);
-              setUseHistory(true);
-            }
-          }}
-        >
-          <Icon name="assets" size={17} />
-          生图
-        </button>
-        {voiceAvailable && voice !== "none" && (
+           （引导/分岔两选一），单独再挂一个键只是把同一个决定拆成两处。
+           宿主没有落点（directorBar=false）时整块不渲染：没有工具栏，也就没有它开的那些面板。 */}
+      {directorBar && (
+        <div className="theater-director" ref={directorRef}>
           <button
             type="button"
-            className={`dir-btn ${voice === "pending" ? "voice-pending" : ""}`}
-            title={voice === "pending" ? "语音合成中" : !voiceOn ? "语音已关，先打开语音再重听" : "重听这句"}
-            aria-label={voice === "pending" ? "语音合成中" : "重听这句"}
-            disabled={voice === "pending" || !voiceOn}
+            className={`dir-btn ${action === "prompt" ? "on" : ""}`}
+            title="输入角色的行动、台词，或给这场戏的指示"
+            aria-label="提示"
             onClick={(e) => {
               e.stopPropagation();
-              if (voice === "ready" && view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
+              setAction(action === "prompt" ? null : "prompt");
+              setDraft("");
             }}
           >
-            <Icon name="volume" size={17} />
-            重听
+            <Icon name="chat" size={17} />
+            提示
           </button>
-        )}
-      </div>
+          <button
+            type="button"
+            className={`dir-btn ${action === "edit" ? "on" : ""}`}
+            title={editBlock ?? "编辑当前这句台词"}
+            aria-label="改写当前这句台词"
+            disabled={editBlock !== null}
+            onClick={(e) => {
+              e.stopPropagation();
+              setAction(action === "edit" ? null : "edit");
+              setDraft(targets.lineText);
+            }}
+          >
+            <Icon name="pencil" size={17} />
+            改写
+          </button>
+          <button
+            type="button"
+            className={`dir-btn ${action === "restart" ? "on" : ""}`}
+            title={beatBlock ?? "重写：退到这一轮之前，让剧作家重新写一遍（原有内容留作旧枝）"}
+            aria-label="重写这一轮"
+            disabled={beatBlock !== null}
+            onClick={(e) => {
+              e.stopPropagation();
+              setAction(action === "restart" ? null : "restart");
+              setDraft("");
+            }}
+          >
+            <Icon name="rewrite" size={17} />
+            重写
+          </button>
+          <button
+            type="button"
+            className={`dir-btn ${action === "cg" ? "on" : ""}`}
+            title={fresh ? "还没有剧情可以入画" : "为这一幕生成一张插图（指令可留空）"}
+            aria-label="生成插图"
+            disabled={fresh}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (action === "cg") {
+                setAction(null);
+              } else {
+                setAction("cg");
+                setDraft("");
+                setSelectedRefs([]);
+                setUseHistory(true);
+              }
+            }}
+          >
+            <Icon name="assets" size={17} />
+            生图
+          </button>
+          {voiceAvailable && voice !== "none" && (
+            <button
+              type="button"
+              className={`dir-btn ${voice === "pending" ? "voice-pending" : ""}`}
+              title={voice === "pending" ? "语音合成中" : !voiceOn ? "语音已关，先打开语音再重听" : "重听这句"}
+              aria-label={voice === "pending" ? "语音合成中" : "重听这句"}
+              disabled={voice === "pending" || !voiceOn}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (voice === "ready" && view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
+              }}
+            >
+              <Icon name="volume" size={17} />
+              重听
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="theater-dialog" role="text" ref={dialogRef}>
         {/* 名牌：整块落在台词条上方、跟窗的上边缘连着（不留缝），左端跟窗的左边缘对齐。
@@ -1068,76 +1078,6 @@ export function BacklogView({
             );
           })}
         </ol>
-      )}
-    </div>
-  );
-}
-
-/** 历史条目的呈现分工：正文一个样式，思考/原始 DSL 走等宽体（它们不是台词）。 */
-const HISTORY_KIND: Record<HistoryEntry["role"], { label: string; cls: string }> = {
-  user: { label: "注入上下文", cls: "hx-user" },
-  thinking: { label: "剧作家思考", cls: "hx-thinking" },
-  assistant: { label: "原始 DSL（未解析）", cls: "hx-dsl" },
-  toolCall: { label: "工具调用", cls: "hx-tool" },
-};
-
-/**
- * 剧作家原始历史：活动周目最近若干轮的 session 快照（REST 只读，不建 runtime、不改状态）。
- * 与回顾互补——回顾只给解析后的台词与选肢，这里给写出来之前的原文：注入上下文、
- * 思考、未经解析的原始 DSL、工具调用。空表不是错误：还没落盘（读盘落后一轮）
- * 或纪元压缩前没有留存。标题条由外层 BacklogView 统一给，这里只出内容。
- */
-export function HistoryView({ playId, nonce }: { playId: string; nonce: number }) {
-  const [beats, setBeats] = useState<HistoryBeat[] | null>(null);
-  useEffect(() => {
-    let alive = true;
-    api
-      .history(playId)
-      .then((r) => alive && setBeats(r.beats))
-      .catch(() => alive && setBeats([]));
-    return () => {
-      alive = false;
-    };
-  }, [playId, nonce]);
-
-  if (beats === null) return <div className="overlay">读取历史…</div>;
-  if (beats.length === 0) {
-    return <p className="backlog-empty">还没有留存的历史——生成完就写进来了。</p>;
-  }
-  return (
-    <div className="backlog-panel">
-      {beats === null ? (
-        <div className="overlay">读取历史…</div>
-      ) : beats.length === 0 ? (
-        <p className="backlog-empty">还没有留存的历史——生成完就写进来了。</p>
-      ) : (
-        <>
-          {beats.map((beat) => (
-            <section key={beat.turn} className="hx-beat">
-              <header className="hx-beat-head">
-                <span>第 {beat.turn} 次生成</span>
-                <span className="muted">{beat.entries.length} 条</span>
-              </header>
-              {beat.entries.map((entry) => {
-                const kind = HISTORY_KIND[entry.role];
-                return (
-                  <div key={`${entry.beat}-${entry.seq}`} className={`hx-entry ${kind.cls}`}>
-                    <span className="hx-kind">
-                      {kind.label}
-                      {entry.role === "toolCall" && entry.name ? ` · ${entry.name}` : ""}
-                    </span>
-                    {entry.role === "toolCall" ? (
-                      <pre className="hx-tool">{JSON.stringify(entry.args ?? {}, null, 2)}</pre>
-                    ) : (
-                      <p className="hx-text">{entry.text}</p>
-                    )}
-                  </div>
-                );
-              })}
-            </section>
-          ))}
-          <p className="muted hx-foot">只读快照，落盘比当前轮慢一步——要最新的按侧栏的「刷新」。</p>
-        </>
       )}
     </div>
   );

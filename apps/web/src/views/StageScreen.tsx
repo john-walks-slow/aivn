@@ -3,38 +3,41 @@ import type { GeneratedAsset, ReadPos } from "@aivn/core";
 import { api, type PlayDetail } from "../api.js";
 import { navigate } from "../router.jsx";
 import { useStageSocket, type WorkshopInbound } from "../stage/useStageSocket.js";
-import { usePlayback } from "../stage/director.js";
-import { VoiceDirector } from "../stage/audio.js";
-import { buildAssetIndex, type AssetIndex } from "../stage/assets.js";
-import { useGeneratedAssets } from "../stage/generatedAssets.js";
 import {
+  usePlayback,
+  VoiceDirector,
+  buildAssetIndex,
+  type AssetIndex,
+  useGeneratedAssets,
   BacklogView,
-  HistoryView,
   StageTheater,
   type DirectorTargets,
-} from "../stage/StageTheater.js";
-import type { StageView } from "../stage/view.js";
-import { stageTabFromQuery, stageViewFromQuery, workshopConnectionFromQuery } from "../stage/view.js";
-import { RouteTree, useLineage, type LineageOps } from "../stage/LineagePanel.js";
-import { CgView } from "../stage/CgView.js";
-import type { RouteControls } from "../stage/RouteCanvas.js";
-import { StageShell } from "../stage/StageShell.js";
-import { Icon } from "../ui/Icon.js";
-import { beatAtLine, buildBeats, editableNodeAtLine } from "../stage/beats.js";
-import { buildTranscript, type TranscriptEntry } from "../stage/transcript.js";
-import { ToastStack, useToasts } from "../stage/toast.js";
-import { StopPanel } from "../stage/StopPanel.js";
-import { stopAffordance } from "../stage/playbackState.js";
-import {
+  type StageView,
+  stageTabFromQuery,
+  stageViewFromQuery,
+  workshopConnectionFromQuery,
+  Icon,
+  buildTranscript,
+  type TranscriptEntry,
+  ToastStack,
+  useToasts,
+  StopPanel,
+  stopAffordance,
   readFlag,
   writeFlag,
   SETTING_CONTINUE_CARD,
   SETTING_VOICE,
-} from "../stage/settings.js";
+  StageModes,
+  useVisualViewport,
+  useEscape,
+} from "@aivn/stage";
+import { HistoryView } from "./HistoryView.js";
+import { RouteTree, useLineage, type LineageOps } from "../stage/LineagePanel.js";
+import { CgView } from "../stage/CgView.js";
+import type { RouteControls } from "../stage/RouteCanvas.js";
+import { StageShell } from "../stage/StageShell.js";
+import { beatAtLine, buildBeats, editableNodeAtLine } from "../stage/beats.js";
 import { PromptQueuePanel } from "../stage/PromptQueuePanel.js";
-import { StageModes } from "../stage/StageModes.js";
-import { useVisualViewport } from "../stage/viewport.js";
-import { useEscape } from "../ui/escape.js";
 import { WorkshopPane } from "../workshop/WorkshopPane.js";
 
 /** 阅读位置上报的防抖窗口：打字机逐字推进，1s 内只发最后一次位置。 */

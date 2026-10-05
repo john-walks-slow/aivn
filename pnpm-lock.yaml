@@ -79,6 +79,9 @@ importers:
       '@aivn/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@aivn/stage':
+        specifier: workspace:*
+        version: link:../../packages/stage
       lucide-react:
         specifier: ^1.48.0
         version: 1.48.0(react@19.3.0)
@@ -116,6 +119,34 @@ importers:
 
   packages/core:
     devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@26.6.3)(jsdom@30.1.1)(yaml@2.9.0)
+
+  packages/stage:
+    dependencies:
+      '@aivn/core':
+        specifier: workspace:*
+        version: link:../core
+      lucide-react:
+        specifier: ^1.48.0
+        version: 1.48.0(react@19.3.0)
+      react:
+        specifier: ^19.2.3
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.2.3
+        version: 19.3.0(react@19.3.0)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.2.5
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.3.0(@types/react@19.3.0)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

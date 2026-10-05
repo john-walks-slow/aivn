@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { WorkshopAssetView, WorkshopPart, WorkshopToolPart } from "@aivn/core";
 import type { LightboxImage } from "../ui/ImageLightbox.js";
-import { Icon } from "../ui/Icon.js";
+import { Icon } from "@aivn/stage";
 import { AssetStrip } from "./AssetStrip.js";
 import { WorkshopMarkdown } from "./WorkshopMarkdown.js";
 

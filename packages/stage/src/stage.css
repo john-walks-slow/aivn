@@ -1,0 +1,989 @@
+/* @aivn/stage 的舞台样式：从 apps/web/src/app.css 原样搬来的小节。
+ *
+ * 这一层要能嵌进别人的页面（DSH 插件的宿主页），所以顶部的令牌与全局规则
+ * 一律挂在包自己的根类 `.stage-root` 上，不写 `:root`：`:root` 是整页级的，
+ * 写上去就是把 --bg/--panel/--ink/--accent 这些通用名塞进宿主的根元素，
+ * 还会连带改掉整页的焦点框与选中色。挂 `.stage-root` 后令牌靠 DOM 继承往下走，
+ * 作用范围就是带这个类的子树。
+ *
+ * 带 `.stage-root` 的是各组件**可以脱离 .theater 独立存在**的根：
+ * StageTheater 的 `.theater`、ToastStack 的 `.toast-stack`、Modal portal 出来的
+ * `.modal-scrim`（portal 到 body，继承链断了，必须自己带）。
+ *
+ *  - 台词流一节是 P1 文字视图留下的样式，眼下没有组件引用它，原样保留不删。
+ *  - 导演栏、移动端等小节仍留在宿主 app.css 里，不在这次搬家的范围内。
+ */
+
+/* ── 主题令牌（app.css 顶部变量区的副本）───────────── */
+
+.stage-root,
+.stage-root * {
+  box-sizing: border-box;
+  /* 触摸设备上浏览器给每个可点元素铺一层半透明蓝底，手指点下去闪一下。
+     那层蓝是网页味，去掉后点下去只剩元素自己的反馈色。 */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 焦点框只留给键盘 Tab，且走主题色细环；鼠标点、手指点都不出框。
+   两者一起上：只去 outline，纯键盘操作会瞎；只留浏览器默认框，又像在填网页表单。 */
+.stage-root :focus {
+  outline: none;
+}
+
+.stage-root :focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 选中文字时浏览器铺的也是那层网页蓝（手机上长按/双击最容易撞上）。
+   换成主题色的淡底，选词与复制照常能用。 */
+.stage-root ::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.stage-root {
+  /* ① 纸面（浅色日常系） */
+  --bg: #f5f1e8; /* 和紙 */
+  --panel: #fffcf5;
+  --panel-2: #ede7da;
+  /* 纸面左上角那片斜光：浅色下是暖白，和纸感就来自它 */
+  --paper-glow: rgb(255 252 245 / 0.9);
+  --ink: #23201c;
+  --ink-soft: #5b5348;
+  --ink-faint: #9a9081;
+  --line: #ded5c4;
+  --accent: #3f6b93; /* 冷蓝 */
+  --accent-ink: #f7fbff;
+  --accent-soft: #dde7f0;
+  --link: #2f5d7c;
+  --radius: 2px; /* 近直角：AVG 的窗与键都不圆 */
+
+/* 字体：全站一套无衬线。曾经台词与标题走衬线（明朝气质），但衬线字体栈依赖
+     本机装有 Noto Serif CJK / 宋体，缺了会掉到浏览器默认的 serif，笔画细、屏上发虚。 */
+  --font-ui:
+    system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei",
+    sans-serif;
+
+  /* ② 画面（暗色为默认基线；亮/暗两套舞台变量由 useTheme 在运行时改写同一批键） */
+  --stage-bg: #17130f; /* 舞台衬底（图片未到/加载中露出的底） */
+  --dialog-bg: linear-gradient(178deg, rgb(28 24 25 / 0.9), rgb(17 15 17 / 0.94));
+  --dialog-line: rgb(238 226 204 / 0.55);
+  --dialog-ink: #f2ebde;
+  --dialog-ink-soft: #c6bba9; /* 旁白 */
+  --dialog-ink-thought: #a9a6c4; /* 内心独白 */
+  --dialog-ink-faint: rgb(242 235 222 / 0.45); /* 次要提示：「回看中」「已选过」 */
+  /* 失败态的色：pending 面板上的失败行与收起徽标。深底上要够亮才认得出是警号，
+     不用 --ink-faint 那类压暗灰——那一档是「刚完成」，与「挂了」不能混。 */
+  --dialog-bad: #e8917f;
+  /* 浮层上的字一律带一层压暗投影：深底玻璃上这是唯一让字脱开底的办法。
+     浅色舞台底本来就亮，再压一层黑阴影只会糊掉笔画——那边整个置 none。 */
+  --dialog-text-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
+  --dir-text-shadow: 0 1px 2px rgb(0 0 0 / 0.55);
+  /* 浮层键的悬停/点亮底：半透明白，深底上像擦亮一层 */
+  --dialog-hover: rgb(242 235 222 / 0.12);
+  --dialog-veil: rgb(242 235 222 / 0.07);
+  --dialog-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+  /* 舞台浮层的圆角：台词条 + 画面上浮的那几块（导演工具栏 / 排队面板 / 侧栏唤出键）。
+     全局 --radius 是 2px（近直角，给页面里的卡片与键），但这几块是压在画面上的
+     「窗」，圆角大一点才跟画面脱开、读得出是浮在上面的一层。 */
+  --stage-radius: 10px;
+  /* 名牌跟着舞台深浅走：深底上是深牌浅字，浅底上是浅牌深字。压在背景图上时两种都得
+     自己带底，所以不取透明。描边两套主题都看得见，取固定的中性灰，不跟主色。 */
+  --nameplate-bg: rgb(24 21 23 / 0.92);
+  --nameplate-ink: #f2ebde;
+  --nameplate-line: rgb(238 226 204 / 0.4);
+  /* 亮色舞台（useTheme 的 stageLight）把 --stage-bg 压到 #fdfdfd：剧本还没配景时
+     露出的是空白画布，不会被读成「画面加载不出来」。这里的默认基线走暗色。 */
+  --sprite-dim: 0.55; /* 非发言人立绘压暗强度（.theater-sprite.dim 用） */
+  --choice-bg: rgb(24 21 23 / 0.92);
+  --choice-line: rgb(238 226 204 / 0.4);
+  --choice-ink: #f2ebde;
+  --choice-active-bg: color-mix(in srgb, var(--accent) 40%, transparent);
+  --choice-scrim: linear-gradient(180deg, transparent 24%, rgb(10 8 10 / 0.55));
+  --shadow: 0 6px 18px rgb(34 24 16 / 0.16);
+
+  /* ③ 运动 */
+  --type-ms: 35; /* 每字毫秒 */
+  --pause-short-ms: 120; /* 逗号类额外停顿 */
+  --pause-long-ms: 240; /* 句号类额外停顿 */
+  --fade-ms: 220; /* 立绘差分 / 背景切换 */
+  --move-ms: 380ms; /* 立绘换位、换景别（运镜）——比差分慢，走过去不是瞬移 */
+  --act-ms: 520ms; /* 行为词演出时长（点一次头、抖一下） */
+  /* 缓动：起步快、尾巴长。站位与运镜都是「一个演员走过去」的观感，
+     ease-in-out 匀加速匀减速最像。 */
+  --move-ease: cubic-bezier(0.33, 0, 0.2, 1);
+  --hover-ms: 140;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-root {
+    --type-ms: 0;
+    --fade-ms: 0;
+    --move-ms: 0ms;
+    --act-ms: 0ms;
+  }
+}
+
+/* 主题切换：UI（纸面）与舞台（画面）各自一套，由 <html> 上的 data-* 属性驱动。
+   用属性选择器而不是内联 style 写 :root —— 剧目定制主题（plays/<id>/theme.css）
+   挂的是 :root 变量，内联 style 优先级更高会把它整张压掉，用户换的皮就没了。
+   属性选择器只覆盖下面这几个令牌，剧目主题没碰到的部分照旧生效。 */
+html[data-ui-theme="dark"] .stage-root {
+  --bg: #14110f; /* 和紙反过来：暖调的黑，不是纯 #000 —— 纯黑配暖白字会发蓝 */
+  --panel: #201c19;
+  --panel-2: #2b2622;
+  /* 深底不能留暖白那片光（读成一块光斑），改成一层压得住的暖提亮 */
+  --paper-glow: rgb(116 104 88 / 0.2);
+  --ink: #ece4d8;
+  --ink-soft: #b3a897;
+  --ink-faint: #8a8073;
+  --line: #3d362f;
+  --accent: #8ab6dd; /* 深底上的主色要提亮，否则色相压黑糊成一团 */
+  --accent-ink: #101820;
+  --accent-soft: rgba(138, 182, 221, 0.18);
+  --link: #8fb8d4;
+}
+
+/* 主色预设：设置页选哪一档就挂哪个 data-accent（useTheme.applyAccent）。
+   每个预设给浅底/深底两套值——同一色相在纸面上要压得住、在暖黑上要提得起。
+   custom 不在这里：那个色由 useTheme 写成内联 --accent。 */
+html[data-accent="teal"] .stage-root {
+  --accent: #2f6f73;
+  --accent-ink: #f3fbfa;
+  --accent-soft: #d7e8e8;
+}
+html[data-accent="green"] .stage-root {
+  --accent: #4a6f45;
+  --accent-ink: #f6faf2;
+  --accent-soft: #dfe9da;
+}
+html[data-accent="violet"] .stage-root {
+  --accent: #6a5599;
+  --accent-ink: #faf7ff;
+  --accent-soft: #e5dff2;
+}
+html[data-accent="wine"] .stage-root {
+  --accent: #9b3b4f;
+  --accent-ink: #fff7f3;
+  --accent-soft: #f4e3e2;
+}
+html[data-ui-theme="dark"][data-accent="teal"] .stage-root {
+  --accent: #79b8bd;
+  --accent-ink: #0e1a1b;
+  --accent-soft: rgba(121, 184, 189, 0.18);
+}
+html[data-ui-theme="dark"][data-accent="green"] .stage-root {
+  --accent: #9cbb92;
+  --accent-ink: #131a11;
+  --accent-soft: rgba(156, 187, 146, 0.18);
+}
+html[data-ui-theme="dark"][data-accent="violet"] .stage-root {
+  --accent: #ab98d8;
+  --accent-ink: #16121f;
+  --accent-soft: rgba(171, 152, 216, 0.18);
+}
+html[data-ui-theme="dark"][data-accent="wine"] .stage-root {
+  --accent: #d98a7a;
+  --accent-ink: #1a1512;
+  --accent-soft: rgba(217, 138, 122, 0.18);
+}
+
+/* 舞台浅色：台词条 / 选肢卡整套换成浅底深字。
+   这套的取舍和深色相反——深色模式靠「玻璃压住画面」，浅色没有压的余地，
+   所以底色必须实（0.88 起步）而不是半透明，否则背景图的亮部会透上来吃掉字。 */
+html[data-stage-theme="light"] .stage-root {
+  --stage-bg: #efece5;
+  --dialog-bg: linear-gradient(178deg, rgb(252 250 246 / 0.94), rgb(240 236 228 / 0.96));
+  --dialog-line: rgb(120 108 92 / 0.45);
+  --dialog-ink: #23201c;
+  --dialog-ink-soft: #4a443c;
+  --dialog-ink-thought: #5a5468;
+  --dialog-ink-faint: rgb(35 32 28 / 0.5);
+  --dialog-bad: #b3372f;
+  --dialog-text-shadow: none;
+  --dir-text-shadow: none;
+  --dialog-hover: rgb(120 108 92 / 0.12);
+  --dialog-veil: rgb(120 108 92 / 0.07);
+  --dialog-shadow: 0 10px 30px rgb(60 48 32 / 0.18);
+  --choice-bg: rgb(252 250 246 / 0.94);
+  --choice-line: rgb(120 108 92 / 0.4);
+  --choice-ink: #23201c;
+  --choice-active-bg: color-mix(in srgb, var(--accent) 22%, transparent);
+  --choice-scrim: linear-gradient(180deg, transparent 24%, rgb(239 236 229 / 0.55));
+  --nameplate-bg: rgb(252 250 246 / 0.94);
+  --nameplate-ink: #23201c;
+  --nameplate-line: rgb(90 80 68 / 0.45);
+}
+
+/* ── 舞台 ─────────────────────────────── */
+.theater {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  /* 选肢带的上下两条边。默认值按「导演栏一行 + 台词条 min-height」起步，
+     真实高度由 StageTheater 的 ResizeObserver 写回（换行、长台词都不用手改数值）。 */
+  --dir-h: 46px;
+  --dialog-h: 168px;
+}
+
+/* 净画面：藏掉压在画面上的两块窗（台词条 + 右上角导演栏），只剩背景/立绘/CG。
+   两块都是 absolute浮层，display:none 掉不引起回流，.theater-stage 本来就 flex:1 铺满。
+   顶栏（exit/log/branch）和侧栏留在外面——那是出去的路，藏了就容易困在里面。 */
+.theater.bare .theater-director,
+.theater.bare .theater-dialog {
+  display: none;
+}
+
+.theater-bar {
+  position: relative;
+  z-index: 20; /* 舞台层的浮层 z-index 会盖到操作条上，这里明确压在它们之上 */
+  transition: opacity var(--fade-ms) ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+
+.bar-btn {
+  padding: 4px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--hover-ms) ease,
+    color var(--hover-ms) ease,
+    border-color var(--hover-ms) ease;
+}
+
+.bar-btn:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.bar-btn.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.theater-more {
+  position: absolute;
+  z-index: 45;
+  top: 44px;
+  right: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.theater-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* 舞台占满工具条以下的全部高度，台词条浮在它上面——台词长短不改变舞台高度，
+   背景与立绘因此不会被对话框挤压变形。
+   声明 container-type 建立容器上下文，立绘等元素可基于 cqw 换算舞台宽度。 */
+.theater-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  container-type: inline-size;
+  background: var(--stage-bg);
+}
+
+/* 台词条：浮在画面上的窗，不是页面里的一块。深色玻璃压住背景图，白字才立得住。
+   一道描边 + 圆角。窗框内侧原先还走一道细白线（想造玻璃厚度），深色下那道线
+   读起来是「窗里还有一圈框」，已删。 */
+.theater-dialog {
+  position: absolute;
+  z-index: 12;
+  left: 2.4%;
+  right: 2.4%;
+  max-width: 1180px;
+  margin: 0 auto;
+  bottom: calc(2.4% + var(--safe-b));
+  box-sizing: border-box;
+  background: var(--dialog-bg);
+  border: 1px solid var(--dialog-line);
+  border-radius: var(--stage-radius);
+  padding: 22px 30px 14px;
+  /* 预留三行（见 .dialog-text 的 min-height）：1~3 行的台词来回换时高度恒定，画面不再顶一下沉一下 */
+  min-height: 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+  box-shadow: var(--dialog-shadow);
+  backdrop-filter: blur(10px) saturate(1.05);
+}
+
+.theater-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: bg-fade var(--fade-ms) ease;
+}
+
+.theater-bg-fallback {
+  animation: none;
+}
+
+.theater-bg.cut {
+  animation: none;
+}
+
+@keyframes bg-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* 立绘怎么摆：顶部对齐，底下按景别裁。
+
+   只有两个数：
+   - top    所有立绘同一个值——头顶留多少空，三档一致，换图时人不会上下跳。
+   - height 图有多高。top 到舞台底边是 100% - top，景别要多露的就再往上加。
+
+   全身比半身/胸像多出的那截，露出来的部分被**画面下沿**切掉（不是被台词条切，
+   台词条只是正好压在那儿）。半身与胸像的高度就是 100% - top，图的下沿落在舞台底边。
+
+   top 取 10%：实测生成的立绘 alpha 顶部留白中位 7.5%、最紧 0.1%（模型常把头顶顶到
+   画幅上沿），10% 保证最紧的那批头顶也还留得住一条缝。
+
+   高度必须写死：<img> 是替换元素，只给 top/bottom 而 height:auto 的话浏览器判定
+   过约束会忽略 bottom、图按原始像素尺寸画出来（比舞台大一大圈）。
+
+   水平位置走 transform 而不是 left（--x）：left 过渡每帧触发重排，五六个立绘同框
+   就是每帧一次全舞台重排；transform 只走合成层，零重排。--x 存的是「离画面中心的
+   偏移百分比」，-50% 那半张图是图自身居中，与位置无关，所以合成式是
+   translateX(-50% + var(--x))。--scale 是运镜：整体放大，头顶不动、身体往下长出画面，
+   就是「推近」。
+
+   四层变换各占一个互不覆盖的属性，所以谁也不会把谁冲掉：
+     transform → 站位（--x）与运镜（--scale），两者有 transition，换位/换景别平滑
+     translate → 行为词的一次性位移（@keyframes 驱动）
+     scale     → 行为词的压扁挤压，或说话者的呼吸（同一时刻只会有一个）
+     rotate    → 行为词的倾身
+   缩放锚点跟着素材的声明走（--sprite-origin，人贴底/悬空物居中/垂下物挂顶），
+   所以人是「原地动」而不是整张图在飘。 */
+.theater-sprite {
+  --x: 0cqw;
+  --scale: 1;
+  position: absolute;
+  left: 50%;
+  /* 落位（top/height/transform-origin）全部来自 --sprite-* 变量：
+     值由 core 的 spriteStagePreset 按「取景 × 体量 × 对齐」算出，组件写成行内变量。
+     这里不再枚举 .framing-* / .anchor-* 类名——每加一档体量就要动一处 CSS，
+     而 core 的表才是那份契约。 */
+  top: var(--sprite-top);
+  height: var(--sprite-height);
+  transform-origin: var(--sprite-origin);
+  transform: translateX(calc(-50% + var(--x))) scale(var(--scale));
+  /* 立绘的一切变化都默认带过渡：换表情、换站位、换景别、退场都是同一个元素上的动画。
+     少了这条，角色只是「啪」地一下跳到新位置——台上看着像卡了帧而不是在演。
+     呼吸与行为词走 animation 不走 transition，所以不列在这里（列了两边会互相等）。 */
+  transition:
+    opacity var(--fade-ms) ease,
+    filter var(--fade-ms) ease,
+    transform var(--move-ms) var(--move-ease);
+}
+
+/* 非说话人压暗：说话的那个保持原亮度，同框的其余人降到 --sprite-dim。
+   走 filter: brightness 而不是 opacity——压暗是「这块像素变暗」，透明会让背景
+   从人身上透出来，读起来是半透明的鬼影。brightness 只动像素、不动 alpha，
+   与 .leaving / .sprite-out 的 opacity 通道互不覆盖。
+   没有焦点时（旁白、玩家输入、说话的人不在台上）不加这个 class，整台原亮度。 */
+.theater-sprite.dim {
+  filter: brightness(var(--sprite-dim));
+}
+
+/* 正在演行为词：这一刻运镜让位。行为词自己的 translate/scale/rotate 与运镜的
+   transform 是两个独立属性、正常应该并存，但两者都改缩放观感——特写（scale 1.35）
+   叠一记点头会让人物突然弹一下，所以行为词期间把运镜压回 1。
+   演完自动恢复，运镜不用重播。
+
+   --act-nonce 是重播用：同一个 animation-name 连写两次不会重来，把 delay 换成另一个值，
+   浏览器就认成新动画从 0% 播起。**必须写成时间**（`-0.001s`）：delay 与 iteration-count
+   位置相邻，写成裸数字就成了 `520ms ease 1 1` 这种两个数挨着，浏览器判不出哪个是哪个，
+   整条 animation 被静默丢弃（animation-name 变 none，动画永远不启动）。 */
+.theater-sprite.acting {
+  --scale: 1;
+  animation: var(--sprite-act) var(--act-ms) var(--move-ease) var(--act-nonce, 0s) 1;
+}
+
+/* 说话者轻微呼吸——预留，当前不挂这个 class。
+   幅度是 scale 1.004（0.4%），肉眼不可辨：等于给每张立绘挂了一条永不结束的
+   动画却什么都没换来。要开的话，在 StageTheater 拼 cls 的地方按
+   `playback.view?.actorId === id` 补回 " speaking" 即可。
+   与行为词共用 scale 通道，所以两者同时成立时以行为词为准——class 顺序保证
+   .acting 的 animation 后写会覆盖。 */
+.theater-sprite.speaking {
+  animation: sprite-breathe 3.4s ease-in-out infinite;
+}
+
+/* 竖屏舞台（412x839）比 9:16 立绘还窄：人物本身只占图宽 70%，两侧各能裁 15% 再多就切到头发，
+   所以整幅图都按比例缩矮一截，代价是人物多露出一点。顶部的空与底部的裁切规则照旧。
+   换一列现成的数（spriteStagePreset 的 portrait 那列），不在 CSS 里重算一遍。 */
+@media (max-aspect-ratio: 1/1) {
+  .theater-sprite {
+    top: var(--sprite-top-portrait);
+    height: var(--sprite-height-portrait);
+    transform-origin: var(--sprite-origin-portrait);
+  }
+}
+
+/* 表情差分：旧像留在下层淡出，新像从透明叠上来 */
+.theater-sprite.sprite-out {
+  opacity: 0;
+}
+
+/* 登场：淡入。退场靠 .leaving（见下）而不是直接卸载——直接卸载没有过渡可播。 */
+.theater-sprite.entering {
+  animation: sprite-in var(--fade-ms) ease;
+}
+
+.theater-sprite.leaving {
+  opacity: 0;
+  transition:
+    opacity var(--fade-ms) ease,
+    transform var(--move-ms) var(--move-ease);
+  pointer-events: none;
+}
+
+@keyframes sprite-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* 回看（滚轮翻历史台词）时舞台上放的是「那一刻的画面」，不是一次新的演出：
+   换景不淡入、立绘不登场、行为词不重演、站位不补间。少了这一条，滚轮每翻一句
+   就是一次全场闪烁。松手回到播放头时这些规则不再命中，画面按平时的过渡归位。 */
+.theater-stage.rewinding .theater-bg,
+.theater-stage.rewinding .theater-bg-in,
+.theater-stage.rewinding .theater-cg-in,
+.theater-stage.rewinding .theater-sprite {
+  animation: none;
+}
+
+.theater-stage.rewinding .theater-sprite {
+  transition: none;
+}
+
+/* 机位：偏移量是「离画面中心的百分比（相对于舞台宽度的 cqw）」，不是 left 的绝对值。
+   通过 left: 50% 将原点对准舞台中心，--x 驱动左右平移。负数在左、正数在右。 */
+.pos-left {
+  --x: -28cqw;
+}
+
+.pos-center {
+  --x: 0cqw;
+}
+
+.pos-right {
+  --x: 28cqw;
+}
+
+/* 2 人同框：贴到画面两侧，留出中间说话的空（越靠边人越小越远，这是舞台惯例）。 */
+.pos-far-left {
+  --x: -36cqw;
+}
+
+.pos-far-right {
+  --x: 36cqw;
+}
+
+/* 3 人以上用：比 far 更靠外。 */
+.pos-edge-left {
+  --x: -42cqw;
+}
+
+.pos-edge-right {
+  --x: 42cqw;
+}
+
+/* 行为词 → 动画配方（core 的 spriteAction.ts 是行为词的唯一真相源）。
+   剧本只写一个词，配方与时长都在这里，不外泄成参数。
+
+   每条 @keyframes **显式写全四个属性**：漏写的属性会保留上一次的值，
+   于是「nod 之后接着 shake」会把点头压出来的挤压带进抖动里。写全 0 才是「这条通道不动」。
+
+   只用可插值的类型（百分比位移、scale、deg 旋转）——自定义属性按 token 替换、
+   不可插值，@keyframes 里驱动它不会平滑补间，还会整段跳。
+   幅度刻意压得小（2%~4%）：立绘贴满画面，位移一大就出画。
+   transform-origin: top center（见 .theater-sprite）让位移与旋转都绕头顶发生，
+   人的脚不动——像在原地动，不是整张图在飘。 */
+@keyframes sprite-act-nudge {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  25% {
+    translate: 1.4% 0;
+    scale: 1 1;
+    rotate: 0.3deg;
+  }
+  75% {
+    translate: -1.4% 0;
+    scale: 1 1;
+    rotate: -0.3deg;
+  }
+}
+
+@keyframes sprite-act-stagger {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  20% {
+    translate: -3% -1%;
+    scale: 0.98 1;
+    rotate: -3.5deg;
+  }
+  55% {
+    translate: 2% 0;
+    scale: 1.02 1;
+    rotate: 1.5deg;
+  }
+  80% {
+    translate: -0.8% 0;
+    scale: 1 1;
+    rotate: -0.5deg;
+  }
+}
+
+@keyframes sprite-act-jump {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  30% {
+    translate: 0 -4%;
+    scale: 0.97 1;
+    rotate: 0deg;
+  }
+  60% {
+    translate: 0 0;
+    scale: 1.04 1;
+    rotate: 0deg;
+  }
+  80% {
+    translate: 0 -1%;
+    scale: 0.99 1;
+    rotate: 0deg;
+  }
+}
+
+@keyframes sprite-act-nod {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  30% {
+    translate: 0 2.5%;
+    scale: 1.02 1;
+    rotate: 0deg;
+  }
+  62% {
+    translate: 0 -0.8%;
+    scale: 0.99 1;
+    rotate: 0deg;
+  }
+}
+
+@keyframes sprite-act-bow {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  45% {
+    translate: 0 2%;
+    scale: 1.04 1;
+    rotate: 0deg;
+  }
+  70% {
+    translate: 0 1.2%;
+    scale: 1.02 1;
+    rotate: 0deg;
+  }
+}
+
+/* 伪转身：横向压扁到 0 再展开，中间全是侧身。立绘没有第二张背面图时的业界通法。 */
+@keyframes sprite-act-turn {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  45% {
+    translate: 2% 0;
+    scale: 0.12 1;
+    rotate: 0deg;
+  }
+  55% {
+    translate: -2% 0;
+    scale: 0.12 1;
+    rotate: 0deg;
+  }
+}
+
+@keyframes sprite-act-shake {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  20% {
+    translate: -1.6% 0.4%;
+    scale: 1 1;
+    rotate: 0.6deg;
+  }
+  40% {
+    translate: 1.6% -0.4%;
+    scale: 1 1;
+    rotate: -0.6deg;
+  }
+  60% {
+    translate: -1.1% 0.3%;
+    scale: 1 1;
+    rotate: 0.4deg;
+  }
+  80% {
+    translate: 1.1% -0.3%;
+    scale: 1 1;
+    rotate: -0.4deg;
+  }
+}
+
+@keyframes sprite-act-sway {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  25% {
+    translate: 2.2% -0.6%;
+    scale: 0.99 1;
+    rotate: 1.2deg;
+  }
+  75% {
+    translate: -2.2% 0.6%;
+    scale: 1.01 1;
+    rotate: -1.2deg;
+  }
+}
+
+/* 说话者轻微呼吸：常驻，不写剧本。0.4% 小到没人会当成「图在抖」，
+   但看得出是活的。 */
+/* 呼吸与运镜共用 scale 这一个通道，所以两者只在自己生效时写 --scale：
+   .acting 时运镜不参与（正在演行为词），呼吸则乘在 --scale 外面。 */
+@keyframes sprite-breathe {
+  0%,
+  100% {
+    scale: 1 1;
+  }
+  50% {
+    scale: 1.004 1.004;
+  }
+}
+
+/* 贴边档：用于「在最角落」或非人小物件（猫/道具）的默认落点。 */
+.pos-bleed-left {
+  --x: -46cqw;
+}
+
+.pos-bleed-right {
+  --x: 46cqw;
+}
+
+.theater-cg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--stage-bg);
+  animation: bg-fade var(--fade-ms) ease;
+}
+
+.theater-cg img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.theater-cg-caption {
+  position: absolute;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #eee;
+  font-size: 13.5px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  margin: 0;
+}
+
+/* 说话人：台词条上方、跟窗连着的一块牌。它不是贴纸，是窗的一部分——所以
+   底色、描边、字色全都取台词条自己那套（--dialog-*），只把上缘两个角留圆、
+   下缘开口不描边：上圆下方 + 左侧描边，看起来就是从这块窗上长出来的一截。
+   骑在窗沿上会把名字切成两半，所以是「贴着」，不是「压着」。 */
+.dialog-name {
+  position: absolute;
+  bottom: 100%;
+  left: 10px;
+  padding: 4px 16px 5px;
+  border: 1px solid var(--dialog-line);
+  border-bottom: none;
+  border-radius: var(--stage-radius) var(--stage-radius) 0 0;
+  background: var(--dialog-bg);
+  color: var(--dialog-ink);
+  backdrop-filter: blur(10px) saturate(1.05);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+
+.dialog-text {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 17px;
+  line-height: 2;
+  letter-spacing: 0.03em;
+  white-space: pre-wrap;
+  /* 恒定三行高：短台词不再让文本框忽高忽低（超过三行的长台词才自然长高） */
+  min-height: 6em;
+  color: var(--dialog-ink);
+  text-shadow: var(--dialog-text-shadow);
+}
+
+/* 旁白只弱色，不居中：居中是排版式的分型，一段话被居中之后每行起点都在变，
+   眼睛要重新找行首，读长旁白反而费劲。跟台词一样左对齐，靠颜色分型就够。 */
+.dialog-text.narrate {
+  color: var(--dialog-ink-soft);
+}
+
+.dialog-text.thought {
+  color: var(--dialog-ink-thought);
+  font-style: italic;
+}
+
+.dialog-caret {
+  display: inline-block;
+  width: 8px;
+  height: 15px;
+  margin-left: 4px;
+  vertical-align: text-bottom;
+  background: var(--dialog-ink);
+  opacity: 0.8;
+  animation: blink 1s step-start infinite;
+}
+
+.dialog-hint {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  color: var(--dialog-ink-soft);
+}
+
+.dialog-hint .muted {
+  color: inherit;
+}
+
+.dialog-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid currentcolor;
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+.dialog-next {
+  animation: bob 1.2s ease-in-out infinite;
+}
+
+.dialog-rewind {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--dialog-ink-soft);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.dialog-rewind:hover {
+  color: var(--dialog-ink);
+}
+
+.dialog-text.rewinding {
+  opacity: 0.78;
+}
+
+@keyframes bob {
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+/* ── 台词流（剧本 log 视图）───────────── */
+
+.stage-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 4px 28px;
+  scrollbar-width: thin;
+}
+
+.line {
+  margin: 0 0 14px;
+}
+
+.line-scene {
+  margin: 26px 0 18px;
+  text-align: center;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+}
+
+.line-scene span {
+  display: inline-block;
+  padding: 4px 18px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.line-narrate {
+  color: var(--ink-soft);
+  text-align: center;
+  padding: 0 24px;
+}
+
+.line-thought {
+  color: var(--ink-faint);
+  font-style: italic;
+  text-align: center;
+  padding: 0 24px;
+}
+
+.line-say {
+  border-left: 3px solid var(--line);
+  padding-left: 12px;
+}
+
+.say-name {
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.say-mood {
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.say-text {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+}
+
+.stage-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--ink-faint);
+  animation: blink 1s step-start infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ── 停止点（浮在舞台上，不占底部条） ────────────── */
+/* 变暗只给画面（背景图 / 立绘 / CG），不给盖在画面上的那些界面层：
+   台词条、导演栏、侧栏唤出键、排队的面板——它们是玩家此刻还要读、还要点的，
+   跟着压暗等于把选项摆在一条读不清的路前面。遮罩因此挂在画面区里，
+   不在选肢层上；选肢层只管摆卡片。 */
+.theater:has(.choice-overlay) .theater-stage::after {
+  content: "";
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  background: var(--choice-scrim);
+  pointer-events: none;
+}
+
+.choice-seen {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--dialog-ink-faint);
+}
+
+/* 「（继续）」那类无内容卡：走同一形制，只是不给主色标尺 */
+.choice.ghost {
+  color: var(--dialog-ink-soft);
+  font-size: 14px;
+  border-left-color: var(--choice-line);
+}

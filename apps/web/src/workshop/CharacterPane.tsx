@@ -8,7 +8,7 @@ import {
 } from "@aivn/core";
 import type { CharacterDocument, GeneratedAsset, PlayConfig } from "@aivn/core";
 import { api, assetUrl, type PlayDetail } from "../api.js";
-import { Icon } from "../ui/Icon.js";
+import { Icon } from "@aivn/stage";
 import { CharacterEditor } from "./CharacterEditor.js";
 import { ImageLightbox } from "../ui/ImageLightbox.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";

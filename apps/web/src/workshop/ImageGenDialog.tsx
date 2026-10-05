@@ -8,9 +8,7 @@ import {
   spriteVariantChoices,
 } from "@aivn/core";
 import { api } from "../api.js";
-import { Modal } from "../ui/Modal.js";
-import { RefCharacterPicker, type RefCandidate } from "../ui/RefCharacterPicker.js";
-import { toggleReference } from "../stage/cgOptions.js";
+import { Modal, RefCharacterPicker, type RefCandidate, toggleReference } from "@aivn/stage";
 
 const STEM = /^[a-z][a-z0-9_]{0,39}$/;
 const NEUTRAL = "neutral";

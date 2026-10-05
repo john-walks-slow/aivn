@@ -17,6 +17,9 @@ import type { ReactNode } from "react";
  *
  * 挂到 body 上（portal）：台词条带 `backdrop-filter`，那是 fixed 定位的包含块——
  * 直接渲染在它里面的话，模态窗会以台词条为基准居中，而不是屏幕。
+ *
+ * 也因为它挂在 body 上，`.stage-root` 得由它自己带：舞台那一层的 CSS 变量
+ * 靠 DOM 继承往下走，portal 一出 `.theater`，继承链就断了。
  */
 export function Modal({
   title,
@@ -66,7 +69,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="modal-scrim"
+      className="modal-scrim stage-root"
       role="dialog"
       aria-modal="true"
       aria-label={title}
