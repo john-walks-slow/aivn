@@ -2339,6 +2339,8 @@ export class PlaywrightOrchestrator {
         if (event.bg) this.opts.scene = event.bg;
         this.opts.assetRefs?.resolve(refsFromScene(event));
         const attrs = pick(event, ["bg", "bgm", "ambient", "transition", "bgm_volume", "ambient_volume"]);
+        // 开新场（`<scene clear/>`）落谱系：重放与回看照它清人；缺省不写 = 老行为（只换底）。
+        if (event.clear === true) attrs.clear = "true";
         for (const key of Object.keys(attrs)) if (attrs[key] === "") delete attrs[key];
         // 音频属性的空串在流式里是「停」（director 的 STOP_AUDIO 认 ""），但谱系里空串会被
         // 上面这行删掉，重放时读成 undefined = 「保持当前」——刷新一下音乐又响起来。

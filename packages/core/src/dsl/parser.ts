@@ -35,17 +35,25 @@ const WARN_DETAIL_LIMIT = 120;
 const NAME_CHAR_RE = /^[a-z_]/;
 const CLOSE_TAG_RE = /^<\/([a-z_]+)\s*>/;
 const ATTR_RE = /^\s*([a-z_]+)\s*=\s*(?:"([^"]*)"|'([^']*)')\s*/;
+/** 无值属性（`<scene bg="x" clear/>` 的 `clear`）：出现即成立，不用写 `="…"`。 */
+const BARE_ATTR_RE = /^\s*([a-z_]+)(?=[\s\/]|$)/;
 
 function parseAttrs(source: string): Map<string, string> | null {
   const attrs = new Map<string, string>();
   let rest = source;
   while (rest.trim() !== "") {
     const match = ATTR_RE.exec(rest);
-    if (!match) return null;
-    const key = match[1]!;
-    const value = match[2] ?? match[3] ?? "";
-    attrs.set(key, value);
-    rest = rest.slice(match[0].length);
+    if (match) {
+      const key = match[1]!;
+      const value = match[2] ?? match[3] ?? "";
+      attrs.set(key, value);
+      rest = rest.slice(match[0].length);
+      continue;
+    }
+    const bare = BARE_ATTR_RE.exec(rest);
+    if (!bare) return null;
+    attrs.set(bare[1]!, "");
+    rest = rest.slice(bare[0].length);
   }
   return attrs;
 }
@@ -231,6 +239,9 @@ export class StageDslParser {
         this.emit({
           kind: "scene",
           ...pick(attrs, ["bg", "bgm", "ambient", "transition"]),
+          // 裸属性（`<scene clear/>`）与显式值（`clear="true"`）都认成开新场；
+          // 写了 `clear="false"` / `clear="0"` 才是不清（给模板条件拼串留的出口）。
+          ...(isTruthyFlag(attrs.get("clear")) ? { clear: true } : {}),
           ...this.pickVolume(attrs, ["bgm_volume", "ambient_volume"]),
         });
         return;
@@ -362,6 +373,14 @@ export class StageDslParser {
  */
 function isKnownTag(name: string): boolean {
   return (DSL_TAGS as readonly string[]).includes(name) || LEGACY_TAGS.has(name);
+}
+
+/** 开关型标记：裸写（空串）与 "true"/"1"/"yes" 算开，"false"/"0"/"no" 算关。 */
+function isTruthyFlag(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  const v = value.trim().toLowerCase();
+  if (v === "" || v === "true" || v === "1" || v === "yes") return true;
+  return false;
 }
 
 function pick(attrs: Map<string, string>, keys: string[]): Record<string, string> {

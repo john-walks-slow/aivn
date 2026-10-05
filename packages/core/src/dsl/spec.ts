@@ -61,6 +61,11 @@ export const LEGACY_TAGS: ReadonlySet<string> = new Set(["stop", "option", "prel
  */
 export interface SceneAttrs {
   bg?: string;
+  /**
+   * 开新场：背景换了、台上的人全下，后面把本场在的人重铺一遍。
+   * 缺省（不带）= 只换底、人不动（同屋日夜微调走这条）。
+   */
+  clear?: boolean;
   /** 背景音乐 id。缺省 = 保持当前；`none` = 停止。 */
   bgm?: string;
   /** 环境音 id（雨声/风声/人声，循环播放）。语义同 bgm。 */

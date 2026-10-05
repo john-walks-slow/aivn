@@ -31,6 +31,8 @@ export type Cue =
       bgmVolume?: number;
       ambientVolume?: number;
       transition?: string;
+      /** 开新场：背景换了、台上的人全下（缺省只换底，人不动）。 */
+      clear?: boolean;
     }
   | {
       key: string;
@@ -97,6 +99,7 @@ export class ScriptBuilder {
           bgmVolume: event.bgm_volume,
           ambientVolume: event.ambient_volume,
           transition: event.transition,
+          ...(event.clear === true ? { clear: true } : {}),
         });
         return;
       }

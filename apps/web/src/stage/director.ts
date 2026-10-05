@@ -254,6 +254,9 @@ export function applyVisualCue(visual: VisualState, cue: Cue): VisualState {
         transition: cue.transition ?? "fade",
         // 换景即从上一张插画里出来：CG 是「这一刻的画面」，不跨景延续
         cg: cue.bg ? null : visual.cg,
+        // 开新场（`<scene clear/>`）：台上的人全下，后面把本场的人重铺一遍。
+        // 缺省只换底、人不动。退场中的也不留：它们本就只为播完淡出，清场不等那一帧。
+        sprites: cue.clear === true ? {} : visual.sprites,
       };
     case "cg":
       return { ...visual, cg: { id: cue.id, caption: cue.caption } };

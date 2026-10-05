@@ -91,6 +91,8 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
         push(base, {
           kind: "scene",
           ...pickDefined(attrs, ["bg", "bgm", "ambient", "transition"]),
+          // 开新场标记：谱系里是 "true" 字符串，重放还原成布尔（缺省 = 老行为，只换底）。
+          ...(isTruthyFlag(attrs.clear) ? { clear: true } : {}),
           ...pickVolume(attrs, ["bgm_volume", "ambient_volume"]),
         });
         break;
@@ -201,6 +203,13 @@ function pickDefined(
     if (value !== undefined && value !== "") out[key] = value;
   }
   return out;
+}
+
+/** 开关型标记（谱系里是 "true" 字符串）：裸写与真值写法都算开。 */
+function isTruthyFlag(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  const v = value.trim().toLowerCase();
+  return v === "" || v === "true" || v === "1" || v === "yes";
 }
 
 /** 音量类属性：谱系里存的是字符串，重放要还原成数字（缺省 = 保持当前音量）。 */

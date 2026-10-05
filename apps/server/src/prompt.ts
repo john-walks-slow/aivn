@@ -144,6 +144,7 @@ const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
 ## 场景与立绘指令（必须出现在对应台词之前）
 
 <scene bg="背景id" bgm="音乐id" bgm_volume="0.4" ambient="环境音id" ambient_volume="0.3" transition="fade"/>
+<scene bg="新背景id" clear/>（开新场：换地方/时间跳了/阵容大换，台上的人全下，后面把本场在的人用 actor 重铺一遍；同屋换个时间不带）
 <actor id="主体id" variant="差分id" shot="景别" action="行为词" leave="退场"/>
 <sfx src="音效id" volume="0.5"/>
 <cg id="cgid" caption="插图说明"/>
@@ -158,7 +159,7 @@ const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
 | variant | 立绘目录里已有的差分 id | 换表情、换状态。机甲受损、猫炸毛与人的笑同样是它 |
 | shot | wide normal close extreme | 镜头远近。**不给就是全身**，用近景只是把镜头推近 |
 | action | 见下表 | 角色的一个反应动作，演一次就结束 |
-| leave | fade | 让这个人退场 |
+| leave | fade | 这一场里这个人先走一步（开新场用 scene 的 clear 一次清，不用逐个 leave） |
 
 **台上的一切同权**：人、机甲、猫、道具都按同一个 id 寻址，换图一律走 \`variant\`——没有「人的 expression」
 与「非人的 state」之分（这两个旧属性名引擎照读，但新写的剧本一律用 variant）。人的笑、机甲的 damaged、
