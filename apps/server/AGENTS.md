@@ -11,13 +11,18 @@
 - **两条推导都在 `createAgentKit` 一处**：装上的工具 = 基座 `read` ∪ 开着的能力授权的工具（再按 `TOOL_CATALOG.roles` 与我方依赖面收一道，没配 Exa / TTS / 生图就装不出来）；`can` 位 = **该能力开着且它授权的工具都装上了**（键就是能力 id）——能力声明了一个装不出来的工具，这一位就是假，提示词不会教模型去调它没有的东西。同一个能力在两个角色上授权的口可以不同（`image`：剧作家只要 `generate_image`，工坊还要 `recut_sprite`；`library`：工坊多一个 `import_asset`，实现上是 `libraryTool` 的 `importAsset: false`）。
 - `generate_image` 的两个角色**同一份 schema**（`spriteId`/`variant`/`title` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只差 description 与等待策略。**垫图入口只有一个 `references`**（每项可以是主体 id、剧目内相对路径或 http(s) 网址，1–6 张；`referenceCharacters` 保留为只吃主体 id 的兼容别名，两者在工具层合并去重）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该主体的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
 - **卡是可选的，出图也不替谁建卡**：`generate_image` 只按 `spriteId`（主体 id）往 `assets/sprites/<id>/` 落文件——机甲、道具、猫本来就没有卡。名字从哪来：卡 `name` → `<say name>` → 素材表 `title`（`generate_image` 的 `title` 参数就是给无卡主体落名牌用的）→ id；无卡主体的 TTS 走剧目级 `defaultVoiceId`。
-- **出图顺手写呈现声明**：`playAssets.declareSprite` 把 `framing` / `stature` / `title` 写进 `assets/manifest.json`（neutral 那一次立立绘级，`variant` 与立绘级取景不同才写一条 `<id>/<variant>` 覆盖），与卡无关——卡只管人设与音色，立绘声明归素材表。
+- **出图与入库拆成两步**（2026-10-05）：`PlayAssets.draft()` 只出图，落 `media-cache/drafts/<draftId>/`（成图 + 立绘抠底前的原片 + `draft.json` 记出图意图），**不写 `assets/`、不碰素材表、不记台账**；`commit(draftId)` 才落 `assets/`、补呈现声明、记 `assets/generated.json`、把原片搬进 `media-cache/sprite-sources/`（重抠要用）。
+  - 工坊的 `generate_image` 走 `draft`：回执给 `draftId` 与预览，候选图也走 `onAsset` 推气泡（不推的话默认折叠的工具行把候选藏起来了）；采用是显式的下一步 `commit_asset(draftId)`（只装工坊，挂在「生图」能力下）。
+  - 剧作家与素材页的手动生图走 `generate()` = `draft` + `commit` 一次做完——那边的 id 是调用时就定下的，没有「让用户在候选里挑」这回事，时间线的骨架占位 → `asset_ready` 语义不变。
+  - **草稿不是身份基准**：非 neutral 的立绘要求该主体有**已入库的** neutral（`generate()` 里那套自动补定妆照照旧，它补出来的是真素材）。`draft()` 不去重——同一目标并发出三张候选正是这条流程要的；`inflight` 去重只在 `generate()` 那层。
+  - 草稿超过 7 天，由下一次出图顺手清掉；预览走 `/plays/:id/drafts/<draftId>/<file>` 静态路由（`WorkshopMarkdown` 的 `assetUrl` 同时认 `assets/` 与 `drafts/`）。
+  - `playAssets.declareSprite` 把 `framing` / `stature` / `title` 写进 `assets/manifest.json`（neutral 那一次立立绘级，`variant` 与立绘级取景不同才写一条 `<id>/<variant>` 覆盖），与卡无关——卡只管人设与音色，立绘声明归素材表。
 - **同名工具调用并发**：写角色卡的落盘与 generate_image 的成员校验原本实时读盘，同批发出时谁先完成不定，会偶发扑空。
 - `playhouse.writeCharacter` 在落盘**之后**把 id 登记进 `knownCharacters`（WeakMap<PlayStore>），`characterIdsOf` 那个回调读实时盘 ∪ 它，竞态就没了；顺序反了会在写失败时留下一个并不存在的 id。
 - 剧作家走通用 `write` 时，同一步（`orchestrator.onPlayFileWritten` → `playhouse.onPlayFileWritten`）按 `characterIdOfPath(write.path)` 认角色卡并登记，两条路汇到同一处。
 - **无名角色音色**：`<say id="passerby" name="路人甲">` 这种一次性角色没有角色卡、而音色挂在角色卡的 voiceId 上，于是永远没声音。
 - 两处兜底都在 `orchestrator`：`voiceOf` 取卡的 voiceId、没有卡就落剧目级 `defaultVoiceId`（工坊「剧目」页挑）；名字取卡的 `name` → `<say name>` → 素材表 `title`（素材页的「名牌」）→ id。
-- **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `recut_sprite`——立绘落盘前把抠底前的原片留一份到 `media-cache/sprite-sources/<主体 id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
+- **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `recut_sprite`——立绘**入库时**把抠底前的原片留一份到 `media-cache/sprite-sources/<主体 id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
 - 没有留底的（更早出的图、用户上传的）直接报错，只能重新出图。
 - `import_asset` 现在**只装给工坊**（`TOOL_CATALOG` 的 `roles` 只留 `workshop`）——剧作家的默认导入路径是引用即导入（见下），给它留一个自己搬素材的口是重复路径，只是多一个谁都够不到的工具。工坊那边它挂在「素材资源库」能力下（`libraryTool` 的 `importAsset` 开关，剧作家侧传 `false`）。
 
@@ -62,8 +67,8 @@
 
 ## 素材、出图与台账
 
-- 出图**只有一层**：`PlayAssets` 落 `assets/`，工坊与剧作家共用一个实例，同一张图在飞去重只烧一次配额。
-- `ImageAssets`（media-cache 里的 bg/cg 内容寻址缓存）已删——`media-cache/` 现在只剩 TTS 音频、立绘留底原片（sprite-sources/）与 `view_image` 下载的网图（web-images/）——全是可重建的中间物。
+- 出图**只有一层**：`PlayAssets` 是工坊与剧作家共用的唯一实现（工坊走 `draft` + `commit_asset`，剧作家在后台 `generate()` 一次做完），同一张图在飞去重只烧一次配额。
+- `ImageAssets`（media-cache 里的 bg/cg 内容寻址缓存）已删——`media-cache/` 现在只剩 TTS 音频、立绘留底原片（sprite-sources/）、`view_image` 下载的网图（web-images/）与出图草稿区（drafts/）——全是可重建的中间物。
 - 代价是内容寻址去重没了：同一句提示词生成两次会真出两张图，剧作家侧改由工具自己判「剧目里已有同名素材就跳过」（`playAssets.existingUrl()`）。
 - CG 页的生成台账只有 `assets/generated.json` 一份（`generatedLedger.ts` 的 `readPlayLedgerEntries`）。
 - **一张表一个写者**：`assets/manifest.json`（素材描述）归工坊与用户，`assets/generated.json`（站内出图这次用的 prompt 记录，进 git、只读）归引擎——两边都动一张表时，工坊补一条中文描述就能把引擎记的 prompt 整条替换掉（2026-10-01 实测）。

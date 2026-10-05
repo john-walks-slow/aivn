@@ -83,9 +83,12 @@ export interface WorkshopThreadInfo {
 export interface WorkshopAssetView {
   /** background/cg/sprite = 图片气泡；bgm/sfx = 音频播放器（资源库导入的音素材）。 */
   kind: "background" | "cg" | "sprite" | "bgm" | "sfx";
-  /** 剧目内相对路径（assets/backgrounds/rooftop.jpg），素材页与文件树里同一个东西。 */
+  /**
+   * 剧目内相对路径：`assets/backgrounds/rooftop.jpg`（已入库的素材，素材页与文件树里同一个东西）
+   * 或 `media-cache/drafts/<draftId>/image.png`（`generate_image` 出的**草稿**，还没进素材表）。
+   */
   path: string;
-  /** 站内 URL：/plays/<playId>/assets/backgrounds/rooftop.jpg。 */
+  /** 站内 URL：`/plays/<playId>/assets/…` 或 `/plays/<playId>/drafts/…`。 */
   url: string;
 }
 

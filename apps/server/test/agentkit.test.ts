@@ -321,11 +321,11 @@ describe("agent kit：能力 → 工具与文件面", () => {
     }
   });
 
-  it("同一个能力在两个角色上授权的工具按角色收：剧作家不拿 recut_sprite / import_asset", () => {
+  it("同一个能力在两个角色上授权的工具按角色收：剧作家不拿 recut_sprite / commit_asset / import_asset", () => {
     const image = CAPABILITY_CATALOG.find((c) => c.id === "image")!;
     const library = CAPABILITY_CATALOG.find((c) => c.id === "library")!;
     expect(capabilityTools(image, "playwriter")).toEqual(["generate_image"]);
-    expect(capabilityTools(image, "workshop")).toEqual(["generate_image", "recut_sprite"]);
+    expect(capabilityTools(image, "workshop")).toEqual(["generate_image", "recut_sprite", "commit_asset"]);
     expect(capabilityTools(library, "playwriter")).toEqual(["list_library"]);
     expect(capabilityTools(library, "workshop")).toEqual(["list_library", "import_asset"]);
     expect(installableTools("playwriter")).not.toContain("import_asset");

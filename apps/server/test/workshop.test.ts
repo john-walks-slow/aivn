@@ -465,7 +465,7 @@ describe("工坊工具：generate_image", () => {
     store = await makeStore();
   };
 
-  it("出图成功：落盘 + 广播 asset + 结果回给模型", async () => {
+  it("出图成功：只落草稿 + 广播草稿预览 + 结果回给模型", async () => {
     await setup();
     const events: GeneratedPlayAsset[] = [];
     const assets = new PlayAssets("test", {
@@ -479,12 +479,15 @@ describe("工坊工具：generate_image", () => {
     const gen = tools.find((t) => t.name === "generate_image")!;
 
     const out = JSON.stringify(await gen.execute("c1", { kind: "background", name: "rooftop", prompt: "黄昏天台" }));
-    expect(out).toContain("已生成：assets/backgrounds/rooftop.jpg");
+    // 工坊出图只产草稿：不进 assets/、不碰素材表，回执给 draftId 让模型接着调 commit_asset
+    expect(out).toContain("草稿已出");
+    expect(out).toContain("commit_asset");
+    expect(existsSync(join(store.dir, "assets/backgrounds/rooftop.jpg"))).toBe(false);
     // 回执必须带 markdown 图片：agent 要靠这行把图贴给用户看，用户才谈得上验收
-    expect(out).toContain("![assets/backgrounds/rooftop.jpg](/plays/test/assets/backgrounds/rooftop.jpg)");
+    expect(out).toMatch(/!\[[\w-]+\]\(\/plays\/test\/drafts\/[\w-]+\/image\.jpg\)/);
     expect(events).toHaveLength(1);
-    expect(events[0]!.url).toBe("/plays/test/assets/backgrounds/rooftop.jpg");
-    expect(existsSync(join(store.dir, "assets/backgrounds/rooftop.jpg"))).toBe(true);
+    expect(events[0]!.url).toMatch(/^\/plays\/test\/drafts\/[\w-]+\/image\.jpg$/);
+    expect(existsSync(join(store.dir, events[0]!.path))).toBe(true);
   });
 
   it("view_image：剧目内的图以 image attachment 交给模型（抠底质量只有眼睛能判）", async () => {

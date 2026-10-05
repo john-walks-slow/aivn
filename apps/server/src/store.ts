@@ -279,6 +279,21 @@ export class PlayStore {
     return join(this.dir, "media-cache", "web-images");
   }
 
+  /**
+   * 生图草稿区（media-cache/drafts/<draftId>/）：出图与入库之间的半临时落脚点。
+   *
+   * 出图不再直接写 `assets/`：先落这里，挑中了才 commit 进素材。所以它与留底原片、TTS 缓存
+   * 同一档——可重建的中间物，不进 git、可随手清。
+   */
+  draftDir(draftId: string): string {
+    return join(this.dir, "media-cache", "drafts", draftId);
+  }
+
+  /** 草稿根目录（清理过期草稿时列目录用）。 */
+  draftsDir(): string {
+    return join(this.dir, "media-cache", "drafts");
+  }
+
 
   /**
    * 世界观前提（memory/always/premise.md）：A 区注入、就绪门、剧目卡简介的唯一真相源。
