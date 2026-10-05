@@ -261,9 +261,91 @@ id 缺省从目录名规范化派生（S3，`My Plays` 这类目录名不再当�
   立绘路由到不了（v1 限制，宿主侧 `/aivn/play` 带上 cast 即可解决）。
 - `@aivn/stage` 仍以 `file:` 指向 `stage-ai/.worktrees/dsh-vn-stage` 的包，发布前换版本依赖。
 
-### 阶段 2 · 搭台助手与生成
+### 阶段 2 · 上下文注入 + 语音生成（2026-10-05 用户重新定范围）
 
-- 预设与提示词；`generate_image` 三后端、抠底、`generate_bgm`、`list_voices` + TTS、`view_image`、`web_search`、`import_asset`；生成任务接 `ctx.jobs`；设置分区补齐（网关 / 生图 / 语音 / 检索）。
+> 用户原话：「上下文的注入和组装肯定要有啊」「语音生成是基础中的基础是必须要有的」。
+> 其余独立版能力（生图、抠底、资源库导入、回顾/路线树/存档、改写分岔重演、润色、
+> 设置页、工坊界面）本阶段**不做**；将来若要，按外挂形态的独立插件做。
+
+#### 2a 上下文注入与组装 ✅（2026-10-05 完成，`dsh-aivn` 497edb3）
+
+阶段 1 把「引擎每轮替你注入」的内容一律改写成「去哪儿读文件」，这不是终态，是当时没有注入点的权宜。
+DSH 提供了正规的注入点（`@deepseek-ai/dsh-system-prompt`）：
+
+- `ctx.systemPrompt.section({ name, order, text: (assemblyCtx) => string })` —— **动态系统提示段**，
+  每次组装时求值。AIVN 的「A 区」（前提、角色表、素材清单、写作参数、记忆索引）走这里。
+- `ctx.systemPrompt.context({ name, order, text })` —— **物化成 user 角色快照的动态上下文**，
+  正是 AIVN 每轮那条 `【状态】` 区（场景 / 剧情线 / 好感度 / 旗标）。
+- 注册在 **agent scope**（`agent.ctx.effect(...)`，与 `preset-tools` 同址）：只有剧作家的会话吃这套注入。
+
+段落与顺序（对齐 `apps/server/src/prompt.ts` 的 A 区拼装顺序）：
+
+| 段 | 内容 | 来源 |
+|---|---|---|
+| `aivn:play-premise` | 世界观前提 | `memory/always/premise.md` |
+| `aivn:play-cast` | 角色表（卡全文 + 音色 + 立绘差分；只有立绘没有卡的主体单列） | `characters/*.md` + `assets/sprites/*` |
+| `aivn:play-assets` | 背景 / BGM / SFX / 插图清单（带 `manifest.json` 描述）+ 配乐编排规则 | `assets/` + `assets/manifest.json` |
+| `aivn:play-craft` | 写作参数 + 创作口径散文 | `play.json` 的 `craft` + `memory/always/craft.md` |
+| `aivn:play-language` | 剧本语言 | `play.json` 的 `scriptLanguage` |
+| `aivn:play-memory-index` | 记忆索引（每条一行：`[分类] 名称（路径）：摘要`） | `memory/index/**` |
+| `context: aivn:state` | 状态区（场景 / 剧情线 / 好感度 / 旗标） | `memory/always/state/*` |
+
+刷新时机：**轮边界**（`agent/status → running`）重读一次并缓存，段求值时用缓存——AIVN 的
+「A 区在纪元内冻结」就是这个语义，一个 turn 里多个 step 不该读到半截文件。
+
+提示词正文同步改回来：`WHERE_THE_PLAY_IS` 那一段「这些不在这份提示词里，得你自己去读」删掉，
+换成「下面这些是引擎每轮注入的，直接用」；保留「缺什么看 `get_readiness`」与写文件那部分。
+
+角色表分级（AIVN 的 activeCast：在场全卡、不在场只注一行）在插件里没有编排器给「在场」，
+2a 先**全卡注入**（剧目角色通常个位数），等实测有 token 压力再加按最近出场推的分级。
+
+#### 2b 语音生成（宿主半边）
+
+- `src/tts.ts` —— Fish Audio 客户端（多 Key 轮询、内容寻址缓存 `sha1(voiceId+text)`、
+  写临时文件后 rename、代理）。从 `apps/server/src/tts.ts`（163 行）搬。
+- `src/voice.ts` —— 语音预取管线：`PhraseChunker`（`@aivn/core` 已有）分句 → 并发（默认 2）
+  → 门控（`enabled` 总开关 / `paused` 客户端背压）。从 `apps/server/src/voice.ts`（133 行）搬。
+- 接进 `stage-tap` 的 say 流：`say_start` → `lineStart(seq, charId)`、文本增量 → `feedText`、
+  `say_end` → `lineEnd()`。`seq` 用中枢分配的帧号（客户端就是按它关联当前行的）。
+- 路由：`GET /aivn/audio?session=&seq=&phrase=`（回音频字节，带缓存）、
+  `POST /aivn/voice { session, enabled?, paused? }`（总开关与背压）。
+- 中枢新增一种帧：`{ kind: 'voice', lineSeq, phrase, state: 'started' | 'ready', url? }`。
+- `voiceOf(charId)`：角色卡的音色字段（`voice` 是显示名、`voiceId` 是 Fish 音色 id），
+  没有音色声明的角色（含旁白）不合成。
+- 插件 `Config` 加语音段（keys / baseUrl / model / proxy），环境变量兜底；README 写进配置总表。
+
+#### 2c 语音生成（客户端接线）
+
+`apps/web/src/stage/audio.ts` 的 `VoiceDirector`（436 行，纯 Web Audio、**零 import**）是又一个
+「属于舞台层却留在 app 里」的模块（与这次补的 `.choice*` 样式同一类漏搬）：
+
+- 移进 `@aivn/stage`（`packages/stage/src/audio.ts`）并 re-export；AIVN app 改为从包 import。
+- 插件里：`new VoiceDirector()`，接 `usePlayback` 的 `onLineStart` / `onFastForward` /
+  `hold: director.holdsLine()`；`voiceState(seq)` / `onReplay(seq)` / `onUnlock()`；
+  `onControl → POST /aivn/voice`（背压）；`voiceAvailable={true}`、`voiceOn` 持久化到 localStorage。
+- 未解锁时舞台上的「点击开始」手势遮罩由 `onUnlock` 驱动（移动端 AudioContext 铁律）。
+
+#### 验收
+
+- 注入 ✅：`e2e/verify-injection.mjs` 从**会话日志**（`system/message` 事件记了完整系统提示词）
+  断言各段在场、带的是 `premise.md` / 角色卡的正文与 `assets/` 里真实的素材 id、
+  且阶段 1 那句「得你自己去读」已消失——11/11。`verify-stage` 14/14 仍绿。
+  **实测探路开销**：首轮 step 6.5 → 4、工具调用 ~14 → ~6，`glob` / `bash` 那圈探路消失。
+- 语音：e2e 真跑一轮，断言 `say` 行拿到音频 URL、`voiceState` 到 `ready`、音频字节可取回。
+
+#### 实现记录（2a）
+
+- `src/play-context.ts` —— 快照读取 + 段注册。`systemPrompt.section()` 挂 A 区六段
+  （语言 / 前提 / 角色表 / 素材 / 写作参数 / 记忆索引）与静态尾段；
+  `systemPrompt.context()` 挂【状态】。注册在 agent scope，只有剧作家的会话吃。
+- 提示词拆两段：`PLAYWRITER_PROMPT`（persona prefix）与 `PLAYWRITER_TAIL`（order 200 的段）。
+  `persona` 那一格只装得下一段静态文本，A 区只能由插件插在中间。
+- 读盘改同步：段 provider 的签名就是同步的，而读的是本机小文件。`assets.ts` 的
+  `listAssets` / `readManifest` 与 `play.ts` 的 `loadPlaySync` 都改/加成同步，
+  解析与报错与异步版共用一份——不为同步再抄一遍素材表口径。
+- 角色表这一版**全卡注入**（AIVN 的在场/折叠分级没有编排器给「在场」，等有 token 压力再加）。
+- 记忆索引按 AIVN 的 `parseCard` 口径解析（首个 `# 标题` 是名字、其后首个非空行是摘要），
+  每行带路径。
 
 ### 阶段 3 · 发布
 
