@@ -356,7 +356,7 @@ describe("agent kit：能力 → 工具与文件面", () => {
     }
   });
 
-  it("两个角色的资源库工具是同一份实现（剧作家只是没有对话流可挂撤销条）", () => {
+  it("两个角色的资源库工具是同一份实现（剧作家只是没有对话流可挂气泡）", () => {
     const a = playwriter();
     const b = workshop();
     const ta = a.tools.find((t) => t.name === "list_library")!;

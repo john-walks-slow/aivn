@@ -52,7 +52,6 @@ describe("set_craft：只改 craft 这一段", () => {
     expect(await craftOf()).toEqual({ beatLength: "long" });
     expect(writes).toHaveLength(1);
     expect(writes[0]!.path).toBe("play.json");
-    expect(writes[0]!.before).toContain('"title": "测试剧目"');
     expect(text).toContain("每轮篇幅：长");
   });
 
@@ -73,7 +72,6 @@ describe("set_craft：只改 craft 这一段", () => {
     await call({ beatLength: "medium" });
     expect(await craftOf()).toBeUndefined();
     expect(writes).toHaveLength(1);
-    expect(writes[0]!.after).not.toContain('"craft"');
   });
 
   it("素材来源逐类改，不牵连同表其它项", async () => {

@@ -53,9 +53,9 @@
 - `memory/arcs/`（纪元压缩产物）与 `memory/archive/`（逐轮切片）是引擎产物且跟分支走，**看得见、改不动**（`GENERATED_PREFIXES`）：手改手建会绕过 arcs 按 arcIds、archive 按 pathSet 的防剧透过滤。这两条从前由 `write_memory` 的路径守卫兜着，收掉专用工具之后改由文件层兜。
 - **写面收在 `PlayEnv`，不在 `PlayFiles`**：能力声明的 `writeScopes`（`characters` / `memory` / `config`，路径知识只在 `playFiles.ts` 的 `SCOPE_PREFIXES` / `writeScopeOf` / `inWriteScopes` 里）随 `PlayEnvPolicy` 传进 `PlayEnv`，早拒时给两句不同的话——「不在剧目可写面」与「本剧目没给这个角色开改<角色卡|记忆卡|剧目文件>的能力」。挂到 `PlayFiles` 上会连带打断文件页、craft/premise 写口与 `applyChanges` 的读盘检查（工坊只有一个 `PlayFiles` 实例，它同时是这四处的口）。
 - **读面按角色给**：`PlayEnvPolicy.readGenerated` 只在工坊为真——剧作家按路径读不到 `memory/arcs/` 与 `memory/archive/`（那两个目录跟分支走、按 arcIds / pathSet 过滤，而文件是剧目级、不随回滚消失，通用 `read` 直接翻等于把别的世界线摊开），要看往事只能走 `read_memory_detail` / `search_archive`。题面是 `absolutePath`（read/write/edit 共同的路径入口），所以这三个动作用引擎产物路径时都会先撞上这条读面拒绝。
-- 撤销条在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，早拒白名单与写面能力 + 记撤销条，落盘委派 `PlayFiles.write`）。
+- 写盘信号在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，早拒白名单与写面能力，落盘委派 `PlayFiles.write`）。
 - pi 的 `withFileMutationQueue` 顶掉了原来的 `fileLocks`（WeakMap<env> + canonicalPath，同一 `PlayEnv` 实例内自动串行）。
-- **bash 不走这一层**：它继承 `NodeExecutionEnv.exec`，cwd 就是剧目目录，以服务进程的权限跑、改文件不进撤销条，所以「命令行」这一能力**默认关**，`can.shell` 决定提示词注不注「命令行」那章（讲的是边界与后果，不是用法——cwd/截断/超时都在 pi 的 bash 描述里）。
+- **bash 不走这一层**：它继承 `NodeExecutionEnv.exec`，cwd 就是剧目目录，以服务进程的权限跑，所以「命令行」这一能力**默认关**，`can.shell` 决定提示词注不注「命令行」那章（讲的是边界与后果，不是用法——cwd/截断/超时都在 pi 的 bash 描述里）。
 - `workshopSession` 订阅 `tool_execution_end`，跑过 bash 就置脏。**置脏只有 `markChanged()` 一个入口**（agent 写盘、素材到货、bash、文件页手改四条路都从这儿过），**收束只有 `applyChanges()` 一个出口**：真有改动才重建——回合内攒着、收束时重建一次，文件页保存没有收束可等、就地兑现。
 - bash 绕开了 `PlayFiles` 的结构校验，所以 `applyChanges` 在重建前补一次读盘检查：`play.json` 已解析不了就**跳过这次 runtime 重建并广播 `workshop_error`**（带着坏配置去 rebuild 只会抛在 `void` 的 promise 里，用户看到的是「面板不刷新了」而不是「哪里坏了」）。
 - play.json 校验失败的消息只有走 `write` 才原样回给模型——pi 的 `edit` 把它包成「Could not edit file: …. Error code: invalid.」，原因只留在 cause 上，不为消息粒度再造第二套错误面。
@@ -142,7 +142,7 @@
 - **出图提示词的内核只有一份**：`src/imagePrompt.ts` 的 `composeImagePrompt(deps, kind, ctx)` 按 sprite/background/cg 选系统提示词并拼上下文（指令 + 创作口径 + 角色卡 + 剧情/场景 + 参考图编号），舞台 `requestCg` 与手动入口都走它。
 - **手动生图是「REST 同步发起 + WS 异步回报」**：`POST /api/plays/:id/images` 只做校验与提示词组装就返回 `{target, path, prompt}`——CF 隧道 100s 无字节即断，出图 70–140s 绝不能压在 HTTP 连接上。
 - 出图在后台跑，完成或失败一律广播 `image_result`（成功 `{target, ok:true, url, path}`、失败 `{target, ok:false, message}`），客户端对话框按 `target` 匹配自己的那一张。
-- `AssetNotify` 的第三个值 `"manual"` 就是给它留的：刷新素材列表，但不产工坊气泡、不进撤销条、不自动重建。
+- `AssetNotify` 的第三个值 `"manual"` 就是给它留的：刷新素材列表，但不产工坊气泡、不自动重建。
 - 素材名/差分名的白名单收在 `assertAssetStem`，立绘 id 另走 `assertSpriteId`（只挡路径分隔符、前导点与控制字符——id 就是目录名，大写字母合法），REST 入口与出图前各判一次——入口不判就会先返回一个非法 path，用户等一分多钟才在 WS 上收到失败。
 - 舞台那一路的参考立绘必须在**落时间线节点之前**校验（`assertReferences`），否则会留下一个永远填不上的骨架。
 

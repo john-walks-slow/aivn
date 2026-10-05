@@ -418,9 +418,9 @@ export class PlayHouse {
       reference: this.config.image.reference,
       pending: this.pendingFor(playId),
       fetchImage: this.webImage,
-      // 工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产——按 notify 分流。
+      // 工坊要刷新信号与素材气泡，剧作家在拍内预发射一样都不产——按 notify 分流。
       // 事件由工坊会话转发（它知道当前线程号），工坊实例不在时就没有对话流可挂。
-      // 素材表的改动（出图补写的取景/体量声明）要进撤销条与轮边界重建
+      // 素材表的改动（出图补写的取景/体量声明）要推刷新信号与轮边界重建
       onWrite: (write, notify) => {
         if (notify !== "workshop") return;
         this.runtimes.get(playId)?.workshop.pushWrite(write);

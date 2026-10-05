@@ -19,7 +19,7 @@ import type { Readiness } from "./store.js";
  * 同一份实现、同一份 schema，只有描述与等待策略不同。见 `agentkit/kit.ts`。
  */
 
-/** 工坊对话里的一次写盘（前端在对话流里内联展示 + 可撤销）。定义在基座的依赖面里。 */
+/** 工坊对话里的一次写盘。定义在基座的依赖面里。 */
 export type { PlayFileWrite } from "./agentkit/deps.js";
 
 /** 工坊 system prompt 的装配输入。 */
@@ -309,8 +309,8 @@ function workspaceSection(ctx: WorkshopPromptContext): string {
 
 - 工作目录就是这部剧目的目录。read / write / edit 限在剧目目录内（play.json、theme.css、memory/**、assets/**），
   **bash 不受这个限制**：它以本服务的权限运行，这台机器上进程能碰的东西它都能碰、也能改。
-- 所以**改文件优先用 write / edit**：它们过 play.json 结构校验、每次写都挂撤销条，用户看得到改了什么。
-  bash 的改动不进撤销条，要看它改了什么用 \`git diff\`。
+- 所以**改文件优先用 write / edit**：它们过 play.json 结构校验，用户在各页能直接看到新内容。
+  bash 的改动同样走轮边界重建，要看它改了什么用 \`git diff\`。
 - 找内容用 \`grep -rn\`、读 JSON 用 \`jq\`，比整篇 read 快得多。
 
 `;

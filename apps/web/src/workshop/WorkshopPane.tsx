@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { normalizeParts } from "@aivn/core";
 import type { ClientMessage, GeneratedAsset, WorkshopAssetView } from "@aivn/core";
-import { api } from "../api.js";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
 import { Icon, type IconName } from "../ui/Icon.js";
 import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
@@ -153,7 +152,7 @@ export function WorkshopPane({
       )}
 
       {tab === "files" && (
-        <FileBrowser playId={playId} revision={state.writes.length} onSaved={() => undefined} />
+        <FileBrowser playId={playId} revision={state.revision} onSaved={() => undefined} />
       )}
 
       {tab === "assets" && (
@@ -165,14 +164,14 @@ export function WorkshopPane({
         />
       )}
 
-      {tab === "play" && <PlayPane playId={playId} revision={state.writes.length} />}
+      {tab === "play" && <PlayPane playId={playId} revision={state.revision} />}
 
-      {tab === "memory" && <MemoryPane playId={playId} revision={state.writes.length} />}
+      {tab === "memory" && <MemoryPane playId={playId} revision={state.revision} />}
 
       {tab === "characters" && (
         <CharacterPane
           playId={playId}
-          revision={state.writes.length}
+          revision={state.revision}
           subscribeAssetReady={subscribeAssetReady}
           onManageSprites={onManageSprites}
         />
@@ -327,42 +326,6 @@ export function WorkshopPane({
             )}
             {state.busy && state.live.length === 0 && <div className="chat-activity">思考中…</div>}
           </div>
-
-          {state.writes.length > 0 && (
-            <div className="workshop-writes">
-              {state.writes.map((write) => (
-                <div key={write.at} className="write-row">
-                  <span className="file-path">
-                    <Icon name="memory" size={13} /> {write.path}
-                  </span>
-                  <button
-                    className="ghost-btn tiny-btn"
-                    onClick={() => {
-                      const restore = write.before ?? null;
-                      const path = write.path;
-                      void (async () => {
-                        try {
-                          if (restore === null) {
-                            await api.deleteFile(playId, path);
-                          } else {
-                            await api.saveFile(playId, path, restore);
-                          }
-                          workshop.dismissWrite(write.at);
-                        } catch {
-                          // 撤销失败保留记录，用户可重试
-                        }
-                      })();
-                    }}
-                  >
-                    撤销
-                  </button>
-                  <button className="ghost-btn tiny-btn" onClick={() => workshop.dismissWrite(write.at)}>
-                    知道了
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
 
           <footer className="workshop-input">
             <textarea

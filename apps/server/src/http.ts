@@ -442,7 +442,7 @@ export async function handleHttp(
       if (method === "PUT") {
         const body = JSON.parse((await readBody(req)).toString("utf8")) as { content?: string };
         if (typeof body.content !== "string") return fail(res, 400, "缺少 content");
-        // 走工坊的 writeFile：落盘 + 走置脏与重建收束那条通道（人手改的不记撤销条）
+        // 走工坊的 writeFile：落盘 + 走置脏与重建收束那条通道
         await runtime.workshop.writeFile(PREMISE_PATH, body.content);
         return json(res, 200, { ok: true });
       }

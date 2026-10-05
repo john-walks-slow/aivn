@@ -81,7 +81,7 @@ export function assertSpriteId(value: string): string {
 }
 
 
-/** 谁触发的这次出图。工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产。manual 为用户从工坊面板手动触发（不产生对话流气泡，也不排队自动重建）。 */
+/** 谁触发的这次出图。工坊要素材气泡，剧作家在拍内预发射一样都不产。manual 为用户从工坊面板手动触发（不产生对话流气泡，也不排队自动重建）。 */
 export type AssetNotify = "workshop" | "silent" | "manual";
 
 export type AssetKind = "background" | "cg" | "sprite";
@@ -116,7 +116,7 @@ export interface AssetTarget {
 }
 
 export interface GenerateOptions {
-  /** 事件去向：工坊要撤销条与素材气泡，剧作家的后台预发射一律静默。 */
+  /** 事件去向：工坊要素材气泡，剧作家的后台预发射一律静默。 */
   notify?: AssetNotify;
 }
 
@@ -182,7 +182,7 @@ export interface PlayAssetsDeps {
   pending?: PendingJobs;
   /** 网络图下载（可选，外部 URL 参考图需要它）。 */
   fetchImage?: WebImageFetcher;
-  /** 素材声明补写要进撤销条（二进制本身不进）。 */
+  /** 素材声明补写推刷新信号（二进制本身不进）。 */
   onWrite: (write: PlayFileWrite, notify: AssetNotify) => void;
   /** 素材到货（工坊侧挂到对话气泡里）。 */
   onAsset?: (asset: WorkshopAssetView, replaced: boolean, notify: AssetNotify) => void;
@@ -729,7 +729,7 @@ export class PlayAssets {
       const after = `${JSON.stringify(current, null, 2)}\n`;
       if (after === raw) return;
       await this.deps.files.write("assets/manifest.json", after);
-      this.deps.onWrite({ path: "assets/manifest.json", before: raw || null, after }, notify);
+      this.deps.onWrite({ path: "assets/manifest.json" }, notify);
     });
   }
 

@@ -354,8 +354,7 @@ export class WorkshopSession {
 
   /**
    * 文件浏览器改动（REST）：落盘 + 就地兑现。
-   * 不产生 `workshop_write` 撤销记录——那是「agent 改了什么」的账，人手改的自己在编辑器里看得见，
-   * 否则点一次撤销就多一条记录，套娃到停不下来。
+   * 人手改的不广播——文件页自己看得见改了什么，不需要再推一条通知。
    */
   async writeFile(path: string, content: string): Promise<void> {
     await this.files.write(path, content);
@@ -370,20 +369,19 @@ export class WorkshopSession {
     await this.applyChanges();
   }
 
-  /** 写盘事件广播（可见 + 可撤销）；runtime 重建由 `applyChanges` 统一收束。 */
+  /** 写盘事件广播（只当刷新信号，各页重拉）；runtime 重建由 `applyChanges` 统一收束。 */
   private broadcastWrite(write: PlayFileWrite): void {
     this.markChanged();
     this.opts.emit({
       type: "workshop_write",
       threadId: this.activeId ?? "",
       path: write.path,
-      before: write.before,
     });
   }
 
   /**
    * 转发一次写盘事件（供剧目级 PlayAssets 调用：素材层归 PlayHouse 所有，
-   * 但撤销条要挂进**当前工坊线程**的对话流里，只有会话知道 threadId）。
+   * 但刷新信号要挂进**当前工坊线程**的对话流里，只有会话知道 threadId）。
    */
   pushWrite(write: PlayFileWrite): void {
     this.broadcastWrite(write);

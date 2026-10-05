@@ -434,7 +434,7 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
     expect(manifest.yard.description).toBe("乙的说明");
   });
 
-  it("素材表没改动就不记撤销条：撤销条里混着空操作会误导用户", async () => {
+  it("素材表没改动就不推刷新信号：空操作会让各页白重拉一次", async () => {
     await makeEntry(libRoot, "backgrounds", "hall", { "a.png": "图" });
     const store = plays.store("p1");
     await importFromLibrary(library, store, { kind: "backgrounds", entryId: "hall" });
@@ -442,7 +442,7 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
     expect(second.writes.filter((w) => w.path === "assets/manifest.json")).toEqual([]);
   });
 
-  it("导入要报出改过的文本：工坊据此给撤销条", async () => {
+  it("导入要报出改过的路径：工坊据此重拉各页", async () => {
     await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" }, {
       description: "澪的立绘",
       character: { name: "澪" },
@@ -450,15 +450,6 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
     const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
     const paths = result.writes.map((w) => w.path).sort();
     expect(paths).toEqual(["assets/manifest.json", "characters/mio.md"]);
-    for (const w of result.writes) {
-      // before 是写盘前的原样内容，撤销条靠它回滚
-      expect(w.after.length).toBeGreaterThan(0);
-      expect(w.before === null || typeof w.before === "string").toBe(true);
-    }
-    // 素材表本来不存在 → before 为 null，撤销就是删掉整个文件
-    expect(result.writes.find((w) => w.path === "assets/manifest.json")!.before).toBeNull();
-    // 角色卡同理：本来没有这张卡，撤销即删除
-    expect(result.writes.find((w) => w.path.startsWith("characters/"))!.before).toBeNull();
   });
 });
 

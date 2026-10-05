@@ -898,7 +898,7 @@ describe("WorkshopSession：一轮对话", () => {
     expect(last?.assets).toHaveLength(1);
   });
 
-  it("人手改动（REST）不产生撤销记录，但同样触发 runtime 重建", async () => {
+  it("人手改动（REST）不广播写盘信号，但同样触发 runtime 重建", async () => {
     const store = await makeStore();
     const emitted: ServerMessage[] = [];
     let reloads = 0;

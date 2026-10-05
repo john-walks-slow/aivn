@@ -34,14 +34,11 @@ import type { AgentRole } from "./role.js";
 export type ModelStop = { stopType: StopType; options?: StopOption[]; placeholder?: string };
 
 /**
- * 一次剧目文件写盘。**两个 agent 共用**：工坊拿它在对话流里内联展示（可撤销），
+ * 一次剧目文件写盘。**两个 agent 共用**：工坊拿它推刷新信号（各页重拉），
  * 剧作家拿它认角色卡、排轮边界重建——写的是同一批文件、同一条白名单。
  */
 export interface PlayFileWrite {
   path: string;
-  /** 写盘前的内容（撤销用；文件原本不存在则为 null）。 */
-  before: string | null;
-  after: string;
 }
 
 export interface KitCommonDeps {
@@ -108,7 +105,7 @@ export interface WorkshopKitDeps extends KitCommonDeps {
   role: "workshop";
   files: PlayFiles;
   store: PlayStore;
-  /** 写盘回调：推给前端（可见/可撤销），不阻塞 agent。 */
+  /** 写盘回调：推刷新信号（各页重拉），不阻塞 agent。 */
   onWrite: (write: PlayFileWrite) => void;
   /** 素材落盘回调：推给前端挂到产出它的那次工具调用上（调用号见工具 execute 入参）。 */
   onAsset: (asset: WorkshopAssetView, replaced?: boolean, toolCallId?: string) => void;

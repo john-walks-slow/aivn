@@ -3103,31 +3103,6 @@ select:focus {
   color: var(--ink);
 }
 
-/* 待确认写盘条：紧贴输入框上沿（写在下面时它被输入框压在最底下，读盘记录比输入框还低一等） */
-.workshop-writes {
-  border-top: 1px solid var(--line);
-  padding: 6px 12px 8px;
-  flex-shrink: 0;
-  max-height: 132px;
-  overflow-y: auto;
-  background: var(--panel);
-}
-
-.write-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  padding: 2px 0;
-}
-
-.write-row .file-path {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* 文件浏览器 */
 
 .workshop-files {

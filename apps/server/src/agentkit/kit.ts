@@ -455,7 +455,7 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
       kickSprite: deps.kickSprite,
       existingAssetUrl: deps.existingAssetUrl,
     }),
-    // 剧作家这边没有对话流可挂，onWrite/onAsset 就不给：工具照常能用，只是没有撤销条；
+    // 剧作家这边没有对话流可挂，onWrite/onAsset 就不给：工具照常能用，只是没有气泡可看；
     // import_asset 也不装——它的默认导入路径是引用即导入。
     ...createLibraryTools({
       playId: deps.playId,
@@ -471,7 +471,7 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
  * 工坊的工具：pi 的文件与命令行工具 + 生图（同步）+ 素材库检索 + 故事树 + 技能库 + 联网。
  *
  * read / write / edit / bash 全部来自 pi，我们只提供 `PlayEnv` 这一个 `ExecutionEnv`：
- * 白名单、play.json 校验与撤销条都在它里面（见 `playEnv.ts`）。
+ * 白名单与 play.json 校验都在它里面（见 `playEnv.ts`）。
  */
 function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
   const env = envOf(deps.role, deps.files, deps.capabilities, deps.onWrite);

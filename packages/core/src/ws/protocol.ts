@@ -292,8 +292,8 @@ export type ServerMessage =
       isError: boolean;
       ms: number;
     }
-  /** 工坊 agent 写了剧目文件：before 为 null 表示新建，可据此一键撤销。 */
-  | { type: "workshop_write"; threadId: string; path: string; before: string | null }
+  /** 工坊 agent 写了剧目文件：前端只当刷新信号，各页据此重拉。 */
+  | { type: "workshop_write"; threadId: string; path: string }
   /** 工坊出一张素材到货：带 toolCallId 的挂到那次调用的行上，不带的走消息级预览。 */
   | {
       type: "workshop_asset";

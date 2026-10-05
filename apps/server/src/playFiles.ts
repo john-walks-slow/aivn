@@ -242,7 +242,7 @@ export class PlayFiles {
    * 「agent 的读写都在 PlayFiles 白名单内」这条铁律就成了假话，人和 agent 的写权限面也分叉了。
    * 调用方（PlayAssets）只传服务端从枚举拼出的路径，本类仍做一遍全量校验。
    *
-   * 不产撤销记录：`PlayFileWrite.before` 是 utf8 文本，2MB 二进制会被解成乱码串回传前端。
+   * 不推刷新信号：二进制走素材到货那条通道（`workshop_asset`），写盘信号只带文本路径。
    * 图像的「反悔」手段是覆盖重画与素材页删除。
    */
   async writeBinary(rel: string, data: Buffer): Promise<string> {
