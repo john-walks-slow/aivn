@@ -1,7 +1,7 @@
 {
   "name": "aivn",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AIVN — AI visual novel engine: an LLM playwriter streams an incremental Stage DSL script and the browser renders it like streaming video",
   "license": "MIT",
   "author": "john-walks-slow",

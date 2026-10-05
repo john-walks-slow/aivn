@@ -1,6 +1,6 @@
 {
   "name": "@aivn/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Stage DSL spec, streaming parser, IR events, WS protocol, lineage data model",
   "type": "module",
   "main": "./dist/index.js",
