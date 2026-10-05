@@ -70,7 +70,13 @@ export function Modal({
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      onClick={dismissible ? onClose : undefined}
+      onClick={(e) => {
+        // 遮罩这一下到此为止：Modal 是 portal（DOM 上挂 body），但 React 事件按组件树
+        // 冒泡——不拦的话，点遮罩关弹窗的同时会一路冒到舞台/路线画布的 onClick，
+        // 顺手翻一句 / 开新一轮 / 清掉选中。卡片层本来就有 stopPropagation，只差这一路。
+        e.stopPropagation();
+        if (dismissible) onClose();
+      }}
       onTouchStart={(e) => e.stopPropagation()}
       onTouchMove={(e) => e.stopPropagation()}
       onTouchEnd={(e) => e.stopPropagation()}
