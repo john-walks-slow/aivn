@@ -24,6 +24,8 @@ const cutoutTuning = Type.Object(
     keySmooth: Type.Optional(Type.Number({ minimum: 0, maximum: 8 })),
     /** 反解带宽 1–32：源图抗锯齿过渡带有多宽就得设多宽；不够宽会把渐变像素钉成实心，深色底上是一圈白块。默认 4。 */
     edgeBand: Type.Optional(Type.Integer({ minimum: 1, maximum: 32 })),
+    /** 实心判据 0–255：胶着带里的像素离「底色↔邻近前景色」这条线超过它就算实心（护住细描边）。调小 = 更多像素当真；0 = 关掉这条。默认 48。 */
+    solidResidual: Type.Optional(Type.Integer({ minimum: 0, maximum: 255 })),
   },
   { additionalProperties: false },
 );
@@ -49,8 +51,9 @@ const DESCRIPTION = [
   "- 人物内部、腿间或腋下该透出背景的地方还糊着一块底色 → tolerance 加 4~8（纯色键，调大就是大胆抠）；",
   "- 角色身上被啃掉一块（那块颜色本就与底色接近）→ tolerance 减 4~8；底色选错了调参救不了，只能重新出图；",
   "- 头顶/两鬓有成片被挖走的缺口 → keySmooth 加到 1.0~1.2（治源图 JPEG 环纹把掩膜咬穿）；",
-  "- 深色底上一圈白块/白边晕 → edgeBand 加 1~2。",
-  "默认档（48/0.8/4）是量着真实立绘定的，对得上的症状别动它。",
+  "- 深色底上一圈白块/白边晕 → edgeBand 加 1~2；",
+  "- 描边被压成硬边、边缘发毛（手绘感强的图容易这样）→ solidResidual 减到 24~32（0 = 关掉这条，回到纯混合模型）。",
+  "默认档（48/0.8/4/48）是量着真实立绘定的，对得上的症状别动它。",
   "没留底原片的（更早出的图、用户自己上传的立绘）会直接报错，那种只能重新出图——如实转告用户，别重画。",
 ].join("\n");
 

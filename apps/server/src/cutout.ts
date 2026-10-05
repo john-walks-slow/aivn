@@ -65,6 +65,12 @@ export interface CutoutOptions {
   edgeBand?: number;
   /** 限色量：压掉边缘残存的底色。0 = 不限色。默认 20。 */
   spill?: number;
+  /**
+   * 混合模型的残差上限：胶着带里的像素离「底色 ↔ 邻近前景色」这条线超过它，
+   * 就判定为**实心颜色**（最典型的是压在轮廓上的深色描边）而不是混合色，按不透明处理。
+   * 调小 = 更多像素被当成实心（描边更容易留住，但边缘的抗锯齿斜坡也会被压成实心）。
+   */
+  solidResidual?: number;
 }
 
 /** 抠底调参的默认值。可被单次调用覆盖，也可用环境变量改全局（工坊 agent 出图看情况可调）。 */
@@ -73,6 +79,7 @@ export interface CutoutTuning {
   keySmooth: number;
   edgeBand: number;
   spill: number;
+  solidResidual: number;
 }
 
 const CANVAS_HEIGHT = 1920;
@@ -113,6 +120,9 @@ export function defaultTuning(): CutoutTuning {
     // 限色压的是**颜色**不是 alpha，所以发丝一根不少——调容差会连发丝一起啃掉，
     // 实测容差 48→128 不透明像素掉 2 万、绿残留反而从 2.3 万涨到 3 万。
     spill: envInt("STAGE_CUTOUT_SPILL", 20, 0, 255),
+    // 48：拿真实立绘量的。描边像素（深色、绿幕上）残差实测 180 以上；
+    // 抗锯齿斜坡与 JPEG 噪声像素的残差都在 40 以下，48 把它们分开还留了一档余量。
+    solidResidual: envInt("STAGE_CUTOUT_SOLID_RESIDUAL", 48, 0, 255),
   };
 }
 
@@ -147,7 +157,16 @@ export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise
   }
 
   const bg = backgroundColor(rgba, mask, channels);
-  const { alpha, foreground } = edgeAlpha(rgba, mask, width, height, channels, bg, tuning.edgeBand);
+  const { alpha, foreground } = edgeAlpha(
+    rgba,
+    mask,
+    width,
+    height,
+    channels,
+    bg,
+    tuning.edgeBand,
+    tuning.solidResidual,
+  );
   const out = unblend(rgba, alpha, foreground, width, height, channels, bg, tuning.spill);
 
   const box = foregroundBounds(alpha, width, height);
@@ -313,7 +332,12 @@ function bandDistance(
  *
  * F 由 `foregroundColors` 沿 BFS 逐像素传播，不能取全局中位数：底色可能与角色某块颜色
  * 接近（选了撞色的底就是这么来的），全局中位数会被拽向底色，B−F → 0，整张图的反解全废。
- * 分母 B−F 也可能接近 0，所以逐通道只保留能分开前景底色的那一路，最差退回距离斜坡。
+ *
+ * **F 取错的那一类像素靠残差兜住**：细描边（1–2px）比带宽还窄，BFS 够不到它，
+ * F 只能取到描边内侧的填充色；混合模型于是把这个深色描边解成「覆盖率 0.1 的底色」，
+ * `unblend` 再把它换成填充色——整圈黑描边就此消失（2026-10-05 实测：
+ * 轮廓内侧 2px 的平均亮度从 32 变成 187）。`solveMix` 的残差认得出这种像素
+ * （它离 B–F 这条线太远），直接判成实心前景。
  */
 function edgeAlpha(
   rgba: Buffer,
@@ -323,6 +347,7 @@ function edgeAlpha(
   channels: number,
   bg: [number, number, number],
   band: number,
+  solidResidual: number,
 ): { alpha: Uint8Array; foreground: Int16Array } {
   const distToKey = bandDistance(mask, width, height, band, 1);
   const distToForeground = bandDistance(mask, width, height, band, 0);
@@ -338,15 +363,26 @@ function edgeAlpha(
     }
     const p = i * channels;
     const q = i * 3;
-    const ratio = solveAlpha(
+    const mix = solveMix(
       rgba[p] ?? 0,
       rgba[p + 1] ?? 0,
       rgba[p + 2] ?? 0,
       bg,
       [fg[q]!, fg[q + 1]!, fg[q + 2]!],
     );
-    if (ratio !== null) alpha[i] = Math.round(255 * ratio);
-    else alpha[i] = keyed ? 0 : Math.round(255 * (distance / band));
+    if (mix === null) {
+      alpha[i] = keyed ? 0 : Math.round(255 * (distance / band));
+      continue;
+    }
+    // 残差大 = 这个像素根本不在「底色 ↔ 邻近前景色」这条线上：它是**实心颜色**，
+    // 不是混合色。最典型的就是模型压在轮廓上的深色描边——它比掩膜的带宽还窄，
+    // 于是 F 只能取到描边内侧的填充色（白裙、亮发），解出来的 a 只有 0.1 上下，
+    // 接着 unblend 在低覆盖率档把它整块替成填充色，黑描边就此消失。
+    if (mix.residual > solidResidual && !keyed) {
+      alpha[i] = 255;
+      continue;
+    }
+    alpha[i] = Math.round(255 * mix.a);
   }
   return { alpha, foreground: fg };
 }
@@ -402,38 +438,34 @@ function foregroundColors(
 }
 
 /**
- * 闭式解 a = (B−I)/(B−F)。返回 0..1 的**比例**（调用方负责乘 255）。
+ * 闭式解 a = (B−I)·(B−F) / |B−F|²（B→F 这条线上的最小二乘投影），外加**残差**。
  *
- * 只用能分开前景底色的通道：B 和 F 几乎同色的那一路分母太小，除出来的 α 噪声极大。
- * 三路都还能用就取中位数挡单通道离群。B−F 全体都小到没有意义时返回 null，让调用方退回距离斜坡。
+ * 投影而不是逐通道比值：混合模型 I = a·F + (1−a)·B 只在「像素确实是 B 与 F 的线性混合」
+ * 时成立，投影是这条线上的最佳拟合，残差就是「这个假设有多不成立」的度量——
+ * 调用方拿它把「实心颜色」从「混合色」里摘出来（见 `edgeAlpha`）。
+ *
+ * 逐通道比值在其中一个通道的 B−F 很小时噪声极大，得靠中位数挡；投影天然按跨度加权，
+ * 跨度大的通道说了算，不需要再挡一次。B 与 F 几乎同色（|B−F| < 4）时这条线区分不出
+ * 任何东西，返回 null 让调用方退回距离斜坡。
  */
-function solveAlpha(
+function solveMix(
   r: number,
   g: number,
   b: number,
   bg: [number, number, number],
   fg: [number, number, number],
-): number | null {
-  const observed = [r, g, b];
-  const spans = [0, 0, 0];
-  let bestSpan = 0;
+): { a: number; residual: number } | null {
+  const d = [fg[0] - bg[0], fg[1] - bg[1], fg[2] - bg[2]];
+  const dd = d[0]! * d[0]! + d[1]! * d[1]! + d[2]! * d[2]!;
+  if (dd < 16) return null;
+  const v = [r - bg[0], g - bg[1], b - bg[2]];
+  const t = Math.max(0, Math.min(1, (v[0]! * d[0]! + v[1]! * d[1]! + v[2]! * d[2]!) / dd));
+  let residual = 0;
   for (let c = 0; c < 3; c++) {
-    spans[c] = Math.abs(bg[c]! - fg[c]!);
-    if (spans[c]! > bestSpan) bestSpan = spans[c]!;
+    const gap = Math.abs(v[c]! - t * d[c]!);
+    if (gap > residual) residual = gap;
   }
-  if (bestSpan < 2) return null;
-  const samples: number[] = [];
-  for (let c = 0; c < 3; c++) {
-    if (spans[c]! < bestSpan * 0.34) continue;
-    // 分母**带符号**（B−F），不能取绝对值：色键底的通道值常常低于前景
-    // （绿底 #00FF00 的红蓝两路就比肤色低），取绝对值会把 a 的符号翻过来、
-    // 解出负数后被 clamp 成 0，等于把带色的轮廓整圈啃掉。
-    samples.push((bg[c]! - observed[c]!) / (bg[c]! - fg[c]!));
-  }
-  if (samples.length === 0) return null;
-  samples.sort((x, y) => x - y);
-  const median = samples[samples.length >> 1]!;
-  return Math.max(0, Math.min(1, median));
+  return { a: t, residual };
 }
 
 /**
