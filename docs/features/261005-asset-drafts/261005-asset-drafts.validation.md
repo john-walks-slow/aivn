@@ -20,7 +20,19 @@
 - `http.test.ts`：`/plays/:id/drafts/<id>/<file>` 送图、越界与不存在的都 404。
 - `workshop.test.ts` / `promptCapabilities.test.ts` / `agentkit.test.ts`：工具目录与提示词按新契约。
 
+## 实机跑通（2026-10-05，worktree 实例）
+
+建了一个验证剧目 `draftdemo`（银发店员 mio），真实走了一遍两轮对话：
+
+1. 「给 mio 出 3 张定妆照候选」→ 3 次并发的 `generate_image`（各 79s / 84s / 91s）各出一张草稿，
+   全部落在 `media-cache/drafts/<draftId>/`；**`assets/sprites/` 是空的、`manifest.json` 根本没生成**。
+2. 「我要 B」→ `commit_asset`（39ms）落 `assets/sprites/mio/neutral.png`，
+   `manifest.json` 得到 `mio: {framing: half, stature: normal}`，`assets/generated.json` 记下这次 prompt，
+   抠底前原片进 `media-cache/sprite-sources/mio/neutral.jpg`（重抠要用）；另外两张候选仍是草稿。
+
+工坊页面里三张候选按 markdown 图与工具行素材条两处渲染（各 3 张，1080×1920 全部加载成功）。
+
 ## 未覆盖 / 已知边界
 
 - 草稿区没有管理界面（列出/删除草稿）——七天自动清，中间不打扰用户。
-- 草稿预览走 `WorkshopMarkdown` 的 markdown 图与工具行素材条两处，**实拍截图待补**（见下）。
+- `workshop_chat` 不带 threadId 时每次都新开一条工坊线程（既有行为，与本次改动无关）。
