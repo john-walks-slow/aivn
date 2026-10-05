@@ -2,7 +2,7 @@
 
 ## 概要
 
-检视范围为 `/root/projects/dsh-aivn` 的 `8b58660`（阶段 1：舞台视图、剧作家预设与停止点全链路），跳过构建产物 `lib/`，逐文件读了 `src/`、`build.mjs`、`cordis.patch.yml`、`e2e/`、`README.md`、`AGENTS.md`，并对照计划 `261005-dsh-vn-plugin.plan.md`、实施规格 `docs/features/261005-dsh-vn-plugin/preset-and-prompt.spec.md`、上游 AIVN（`apps/server`、`packages/core`、`.worktrees/dsh-vn-stage/packages/stage`）与 DSH 本体（`0.1.7-rc.2` 类型契约）核对。
+检视范围为 `/root/projects/dsh-aivn` 的 `ce954b3`（阶段 1：舞台视图、剧作家预设与停止点全链路），跳过构建产物 `lib/`，逐文件读了 `src/`、`build.mjs`、`cordis.patch.yml`、`e2e/`、`README.md`、`AGENTS.md`，并对照计划 `261005-dsh-vn-plugin.plan.md`、实施规格 `docs/features/261005-dsh-vn-plugin/preset-and-prompt.spec.md`、上游 AIVN（`apps/server`、`packages/core`、`.worktrees/dsh-vn-stage/packages/stage`）与 DSH 本体（`0.1.7-rc.2` 类型契约）核对。
 
 整体：**架构方向正确、分层干净、注释质量高**（`sessionPreset` 的权威判据、`preset-tools` 的装卸、`beat-guard` 的动机都写清了「为什么」）。真正的风险集中在**宿主的错误处理边界**与**客户端重连/继续两条路径**：三个阻塞项都是「能跑到、但一跑到就出事」的类型，不是风格问题。
 
@@ -62,7 +62,7 @@
 
 ---
 
-## 修复复核（2026-10-05，`dsh-aivn` 提交 `0376112`）
+## 修复复核（2026-10-05，`dsh-aivn` 提交 `0bcd136`）
 
 三条阻塞项全部按建议修掉，建议项 12 条收口 11 条（S6 按检视自己的措辞「需真机确认」登记为待办），
 非阻塞项收口 8 条。逐条对应：
