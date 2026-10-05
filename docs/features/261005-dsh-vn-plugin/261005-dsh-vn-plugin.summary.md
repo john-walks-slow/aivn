@@ -12,6 +12,8 @@
 | --- | --- |
 | `8b58660` | 阶段 1 本体：`@aivn/stage` 抽取（在 `stage-ai` 侧分支 `feat/dsh-vn-stage`）、宿主半边（剧目数据层 / 提示词 / DSL 管线 / 工具 / 素材路由 / 起剧目两条入口）、客户端「舞台」tab |
 | `0376112` | 检视收口：3 个阻塞项 + 12 个建议项 |
+| `87207d0` | 用户实测报的两处：舞台接上补全后的样式、藏掉原生输入框铺满整栏 |
+| `febcccce`（stage-ai `feat/dsh-vn-stage`） | `@aivn/stage` 补回抽包时漏搬的样式（含移动端小节） |
 
 做出来的东西：在 DSH 里新建会话、选「剧作家」预设，会话工作目录就是一座剧目（`play.json`
 是身份证），切到「舞台」页签就能看到剧作家用它写的 Stage DSL 实时演出一场视觉小说——
@@ -59,17 +61,31 @@
 真机截图（`dsh-aivn/e2e-artifacts/`）：`stage-preset.png`（座位选剧作家）、`stage-stop.png`
 （停止点面板）、`stage-echo.png`（选项原文落成玩家台词）、`stage-next-beat.png`（第二轮停止点）。
 
+## 用户实测报的两处（2026-10-05 下午）
+
+1. **舞台样式看着没应用**：不是没注入，是 `@aivn/stage` 抽包时**漏搬了一整段**——
+   `.choice*`（选项卡片本身）、`.modal-*`、`.ref-picker-*`、`.dir-btn`、全局
+   `button` / `input` 底样式，以及整个移动端 `@media (max-width:720px)` 小节。
+   没有 `.choice`，选项就落成浏览器默认按钮的样子，也不绝对定位，位置自然不对。
+   补法是不手抄：`scripts/port-stage-css.py` 按白名单从 app.css 精确抽取，元素级
+   选择器加 `:where(.stage-root)`（特异性为零，不改与类规则的胜负关系）。
+   顺手把 S6 那条移动端缺口一起收了。
+2. **原生输入框该藏**：舞台页签下它是多余的（舞台自己有出口），还占着下面 128px。
+   按 DSH 的稳定 `data-*` 钩子（`data-conversation-content` / `data-composer-seat`）在舞台页签下藏掉，
+   舞台从 656 长到 784，手机竖屏铺到窗口底边；切回 Chat 页签自动恢复。
+
+排障留下的工具：`e2e/css-diag.mjs` 往舞台根里插探针元素量计算样式——「样式到底有没有
+生效」这种问题不用再靠肉眼猜。
+
 ## 遗留
 
-1. **S6 移动端样式**（`@aivn/stage` 的 `stage.css` 没搬 AIVN 的 `max-width:720px` 与安全区小节）
-   —— 需真机确认后按 `.stage-root` 作用域补回。
-2. **发布准备**：`@aivn/core` / `@aivn/stage` 由 `file:` 换版本号依赖（被 stage-ai 侧
+1. **发布准备**：`@aivn/core` / `@aivn/stage` 由 `file:` 换版本号依赖（被 stage-ai 侧
    `@aivn/stage` 未合并/未发布阻塞）、`before-publish-repo` 检查、去掉 `package.json` 的 `"private": true`。
 3. **按会话回收缓冲**：插件卸载已收（`StageHub.dispose()`），会话被删/归档后的 `buffers` /
    `parsers` 回收留到接 `agent/disposed`。
-4. **`@aivn/stage` 尚未合进 stage-ai main**（在 `feat/dsh-vn-stage` 分支、
+3. **`@aivn/stage` 尚未合进 stage-ai main**（在 `feat/dsh-vn-stage` 分支、
    `.worktrees/dsh-vn-stage`）。
-5. **阶段 2**：搭台助手的素材生成工具（生图、抠底裁切、BGM、配音、跨剧目资源库导入）。
+4. **阶段 2**：搭台助手的素材生成工具（生图、抠底裁切、BGM、配音、跨剧目资源库导入）。
 
 ## 一句话回顾
 
