@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Icon } from "../ui/Icon.js";
+import { Icon } from "@aivn/stage";
 import { api, type GatewayModel, type Settings } from "../api.js";
 import { navigate } from "../router.jsx";
 import { ModelSelect, modelSourceHint } from "../ui/ModelSelect.js";

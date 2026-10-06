@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAssetIndex } from "../src/stage/assets.js";
+import { buildAssetIndex } from "@aivn/stage";
 
 /**
  * 立绘绑定：一个主体的立绘在 `assets/sprites/<目录>/` 里，目录名由角色卡的 `sprite:` 决定，
@@ -41,5 +41,21 @@ describe("素材索引：立绘绑定", () => {
       stature: "normal",
       anchor: "bottom",
     });
+  });
+
+  // 宿主换地址拼法时，只有「相对路径 → 最终地址」这一步换掉；id 推导与差分回退照旧。
+  it("assetUrl 覆盖只换最后一步，差分回退语义不变", () => {
+    const index = buildAssetIndex("p1", ASSETS, {}, {}, CAST, {
+      assetUrl: (path) => `/aivn/asset?session=s1&path=${encodeURIComponent(path)}`,
+    });
+    expect(index.sprite("rinne", "smile")).toBe(
+      "/aivn/asset?session=s1&path=sprites%2Frinne%2Fsmile.png",
+    );
+    // 差分名在索引里不存在 → 仍然退回目录第一张，只是地址换了一套
+    expect(index.sprite("rinne", "nope")).toBe(
+      "/aivn/asset?session=s1&path=sprites%2Frinne%2Fneutral.png",
+    );
+    expect(index.spriteDirOf("铃音")).toBe("rinne");
+    expect(index.spriteIds).toEqual(["mecha", "rinne"]);
   });
 });

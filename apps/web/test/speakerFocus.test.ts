@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { speakerFocusId, type SpriteSlot } from "../src/stage/director.js";
-import type { TranscriptEntry } from "../src/stage/transcript.js";
+import { speakerFocusId, type SpriteSlot, type TranscriptEntry } from "@aivn/stage";
 
 const slot: SpriteSlot = {
   resolvedPos: "center",

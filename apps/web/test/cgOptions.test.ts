@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cgCanSubmit, toggleReference } from "../src/stage/cgOptions.js";
+import { cgCanSubmit, toggleReference } from "@aivn/stage";
 
 describe("cgOptions", () => {
   describe("toggleReference", () => {

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useEscape } from "./escape.js";
+import { useEscape } from "@aivn/stage";
 
 export interface LightboxImage {
   url: string;

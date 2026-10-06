@@ -1,4 +1,4 @@
-import { Icon } from "../ui/Icon.js";
+import { Icon } from "@aivn/stage";
 
 /**
  * 工坊「设置」页：演出侧的开关。存在浏览器本地（localStorage），换设备不跟着走——

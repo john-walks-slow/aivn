@@ -12,7 +12,7 @@ import type {
 /** 工坊通道下行消息：与演出事件共用连接、按 type 分流（工坊是舞台外壳的一个视图）。 */
 export type WorkshopInbound = Extract<ServerMessage, { type: `workshop_${string}` }>;
 
-import { ScriptBuilder, type ScriptLine, type Cue } from "./script.js";
+import { ScriptBuilder, type ScriptLine, type Cue } from "@aivn/stage";
 import { helloSync } from "./helloSync.js";
 
 export type BeatState = "connecting" | "streaming" | "stopped" | "error";

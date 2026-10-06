@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { Icon } from "../ui/Icon.js";
-import { Modal } from "../ui/Modal.js";
+import { Icon, Modal, workshopUrl } from "@aivn/stage";
 import { api, coverUrl, readinessAdvice, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
-import { workshopUrl } from "../stage/view.js";
 
 /** Title Screen：背景 + 作品名 + 竖排动词菜单（开始/继续 / 工坊 / 导出 / 删除）。 */
 export function TitleView({ playId }: { playId: string }) {

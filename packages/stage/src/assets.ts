@@ -44,6 +44,15 @@ export interface AssetIndex {
   spritePresentation: (spriteId: string, variant: string | null) => SpritePresentation;
 }
 
+/**
+ * `buildAssetIndex` 的宿主选项。缺省 = AIVN app 的服务端路由（`/plays/<id>/assets/<相对路径>`）；
+ * 别的宿主（素材不走那条路由的）用它把最后一步的地址拼法换掉。
+ */
+export interface AssetIndexOptions {
+  /** 给定素材相对路径（assets 索引里的 key，如 `backgrounds/room.png`、`sprites/alice/happy.png`），返回最终 URL。 */
+  assetUrl?: (path: string) => string;
+}
+
 function stemMap(files: string[] | undefined): Map<string, string> {
   const map = new Map<string, string>();
   for (const file of files ?? []) {
@@ -60,6 +69,9 @@ function stemMap(files: string[] | undefined): Map<string, string> {
  * 角色卡只用来解**绑定**：一个主体要不要有卡、卡上有没有人设，与立绘没关系——
  * 机甲、道具没有卡也照样上台，所以 `cast` 缺省是空表，那时每个演员都用同名目录。
  * 主体名另有回落链（卡 name → `<say name>` → 立绘 title → id），不在这层。
+ *
+ * `opts.assetUrl` 只换「相对路径 → 最终地址」这最后一步：素材 id 到相对路径的推导
+ * （目录清单补扩展名、差分回退）与索引里有哪些键完全是两码事，不受它影响。
  */
 export function buildAssetIndex(
   playId: string,
@@ -67,12 +79,14 @@ export function buildAssetIndex(
   generated: Record<string, GeneratedImage> = {},
   manifest: Record<string, AssetMeta> = {},
   cast: readonly CharacterDocument[] = [],
+  opts: AssetIndexOptions = {},
 ): AssetIndex {
   const bg = stemMap(assets.backgrounds);
   const cg = stemMap(assets.cg);
   const bgm = stemMap(assets.bgm);
   const sfx = stemMap(assets.sfx);
-  const url = (dir: string, file: string): string => `/plays/${playId}/assets/${dir}/${file}`;
+  const assetUrl = opts.assetUrl ?? ((path: string): string => `/plays/${playId}/assets/${path}`);
+  const url = (dir: string, file: string): string => assetUrl(`${dir}/${file}`);
   const byStem = (map: Map<string, string>, dir: string) => (stem: string | null) => {
     const file = stem ? map.get(stem) : undefined;
     if (file) return url(dir, file);

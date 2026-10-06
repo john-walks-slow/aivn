@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { countVoicesByLanguage, languageLabel, type VoiceEntry } from "@aivn/core";
 import { api } from "../api.js";
-import { Icon } from "../ui/Icon.js";
-import { useEscape } from "../ui/escape.js";
+import { Icon, useEscape } from "@aivn/stage";
 import type { VoiceCatalogState } from "./useVoiceCatalog.js";
 
 /** Fish 封面图 CDN（cover_image 是 `coverimage/<id>` 相对路径）。 */

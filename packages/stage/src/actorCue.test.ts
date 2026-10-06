@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Cue } from "../src/stage/script.js";
-import { applyActorCue, type SpriteSlot } from "../src/stage/director.js";
+import { applyActorCue, applyVisualCue, type SpriteSlot, type VisualState } from "./director.js";
+import type { Cue } from "./script.js";
+import { ScriptBuilder } from "./script.js";
 
 const cue = (partial: Partial<Extract<Cue, { kind: "actor" }>> & { id: string }): Extract<Cue, { kind: "actor" }> => ({
   key: "k",
@@ -15,6 +16,17 @@ const slot = (partial: Partial<SpriteSlot> & { resolvedPos: SpriteSlot["resolved
   action: null,
   actionSeq: 0,
   orderSeq: 1,
+  ...partial,
+});
+
+const visual = (partial: Partial<VisualState>): VisualState => ({
+  bg: null,
+  bgm: null,
+  ambient: null,
+  transition: null,
+  cg: null,
+  sprites: {},
+  pending: {},
   ...partial,
 });
 
@@ -177,5 +189,30 @@ describe("applyActorCue：入场次序与 z-index (orderSeq)", () => {
     expect(s.a!.leaving).toBe(false);
     expect(s.a!.orderSeq).toBe(3);
     expect(s.a!.orderSeq).toBeGreaterThan(s.b!.orderSeq);
+  });
+});
+
+describe("开新场 <scene clear/>", () => {
+  const twoOnStage = (): Record<string, SpriteSlot> =>
+    applyActorCue(
+      applyActorCue({}, cue({ id: "a" })),
+      cue({ id: "b" }),
+    );
+
+  it("ScriptBuilder 把 IR 的 clear 带进 cue", () => {
+    const builder = new ScriptBuilder();
+    builder.apply({ kind: "scene", bg: "rooftop", clear: true }, 1);
+    expect(builder.cues[0]).toMatchObject({ kind: "scene", bg: "rooftop", clear: true });
+  });
+
+  it("缺省（不写 clear）只换底、人不动", () => {
+    const next = applyVisualCue(visual({ sprites: twoOnStage() }), { key: "k", kind: "scene", bg: "rooftop" });
+    expect(Object.keys(next.sprites).sort()).toEqual(["a", "b"]);
+  });
+
+  it("clear 时台上的人全下（退场中的也不留）", () => {
+    const sprites = applyActorCue(twoOnStage(), cue({ id: "b", leave: "fade" }));
+    const next = applyVisualCue(visual({ sprites }), { key: "k", kind: "scene", bg: "rooftop", clear: true });
+    expect(Object.keys(next.sprites)).toHaveLength(0);
   });
 });

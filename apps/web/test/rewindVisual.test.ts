@@ -6,9 +6,10 @@ import {
   displayedNodeId,
   visualAt,
   withAttachedCg,
-} from "../src/stage/director.js";
-import type { Cue, ScriptLine } from "../src/stage/script.js";
-import type { TranscriptEntry } from "../src/stage/transcript.js";
+  type Cue,
+  type ScriptLine,
+  type TranscriptEntry,
+} from "@aivn/stage";
 
 /** 一次真实形状的缓冲：换景 → 独白 → 小优进场 → 台词 → 表情差分 → 预发射 → 音效 → 台词 → 退场 → 台词。 */
 const cues: Cue[] = [

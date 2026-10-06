@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Icon, type IconName } from "../ui/Icon.js";
-import type { StageView } from "./view.js";
-import { VIEW_LABEL } from "./view.js";
+import { Icon, type IconName, type StageView, VIEW_LABEL } from "@aivn/stage";
 
 /**
  * 舞台外壳：左侧导航栏 + 右侧内容区。五个视图（舞台 / 回顾 / 路线 / CG / 工坊）共用这一套，

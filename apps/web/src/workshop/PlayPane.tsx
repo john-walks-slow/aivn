@@ -14,7 +14,7 @@ import type {
 } from "@aivn/core";
 import { DEFAULT_CRAFT, languageLabel, LANGUAGE_LABELS } from "@aivn/core";
 import { api, assetUrl } from "../api.js";
-import { Icon } from "../ui/Icon.js";
+import { Icon } from "@aivn/stage";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";
 import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
 

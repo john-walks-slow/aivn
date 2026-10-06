@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Icon } from "../ui/Icon.js";
+import { Icon } from "./ui/Icon.js";
 
 export type ToastKind = "info" | "warn" | "error";
 
@@ -60,10 +60,11 @@ export function useToasts(): Toaster {
   return { toasts, push, dismiss };
 }
 
+/** 提示条自己带 `.stage-root`：它在宿主的 StageScreen 一级挂载，不在 `.theater` 里。 */
 export function ToastStack({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
   if (toasts.length === 0) return null;
   return (
-    <div className="toast-stack" role="status" aria-live="polite">
+    <div className="toast-stack stage-root" role="status" aria-live="polite">
       {toasts.map((toast) => (
         <button
           key={toast.id}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { StopPayload } from "@aivn/core";
-import { Icon } from "../ui/Icon.js";
-import { Modal } from "../ui/Modal.js";
+import { Icon } from "./ui/Icon.js";
+import { Modal } from "./ui/Modal.js";
 
 interface StopPanelProps {
   stop: StopPayload | null;
@@ -14,8 +14,9 @@ interface StopPanelProps {
   onChoice: (index: number) => void;
   onFree: (text: string) => void;
   onContinue: () => void;
-  /** 输入润色（P4）：传原始文本，返回润色文本；失败抛错由本组件就地提示。 */
-  onPolish: (text: string) => Promise<string>;
+  /** 输入润色（P4）：传原始文本，返回润色文本；失败抛错由本组件就地提示。
+   *  不传 = 这个宿主没有润色接口：那一枚「润色」按钮连同撤销都不出现。 */
+  onPolish?: (text: string) => Promise<string>;
 }
 
 /**
@@ -90,6 +91,7 @@ export function StopPanel({
 
   /** 润色始终基于原始输入：重按不叠加改写，撤销零损失。 */
   const polish = (): void => {
+    if (!onPolish) return;
     const source = (original ?? draft).trim();
     if (!source || polishing) return;
     setPolishing(true);
@@ -176,16 +178,18 @@ export function StopPanel({
               onKeyDown={(e) => e.key === "Enter" && submitFree()}
               disabled={disabled}
             />
-            <button
-              type="button"
-              className="ghost-btn"
-              title="LLM 按主角口吻润色（可撤销）"
-              onClick={polish}
-              disabled={disabled || polishing || draft.trim() === ""}
-            >
-              <Icon name="sparkles" />
-              {polishing ? "润色中…" : "润色"}
-            </button>
+            {onPolish && (
+              <button
+                type="button"
+                className="ghost-btn"
+                title="LLM 按主角口吻润色（可撤销）"
+                onClick={polish}
+                disabled={disabled || polishing || draft.trim() === ""}
+              >
+                <Icon name="sparkles" />
+                {polishing ? "润色中…" : "润色"}
+              </button>
+            )}
             {original !== null && (
               <button
                 type="button"

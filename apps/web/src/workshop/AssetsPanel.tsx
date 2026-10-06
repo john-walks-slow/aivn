@@ -18,11 +18,10 @@ import {
   spriteTitlesOf,
 } from "@aivn/core";
 import { api, assetUrl, type PlayDetail } from "../api.js";
-import { Icon } from "../ui/Icon.js";
+import { Icon, type RefCandidate } from "@aivn/stage";
 import { ImageLightbox } from "../ui/ImageLightbox.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
 import { ImageGenDialog, type ImageGenTarget, type SpriteDirState } from "./ImageGenDialog.js";
-import type { RefCandidate } from "../ui/RefCharacterPicker.js";
 
 const KINDS = ["backgrounds", "cg", "sfx", "bgm"] as const;
 

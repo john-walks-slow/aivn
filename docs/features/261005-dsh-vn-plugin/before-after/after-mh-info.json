@@ -1,0 +1,83 @@
+{
+  "hash": "#/play/mh/stage",
+  "counts": {
+    "theater": 1,
+    "sprites": 3,
+    "bg": 1,
+    "cg": 0,
+    "choices": 4
+  },
+  "styles": {
+    "dialog": {
+      "background-image": "linear-gradient(178deg, rgba(28, 24, 25, 0.9), rgba(17, 15, 17, 0.94))",
+      "color": "rgb(35, 32, 28)",
+      "border-radius": "10px",
+      "box-shadow": "rgba(0, 0, 0, 0.45) 0px 10px 30px 0px",
+      "padding": "22px 30px 10px",
+      "font-family": "system-ui, -apple-system, \"Segoe UI\", \"PingFang SC\", \"Noto Sans CJK SC\", \"Microsoft YaHei\", sans-serif"
+    },
+    "dialogText": {
+      "font-size": "17px",
+      "line-height": "34px",
+      "color": "rgb(169, 166, 196)",
+      "text-shadow": "rgba(0, 0, 0, 0.55) 0px 1px 3px",
+      "font-family": "system-ui, -apple-system, \"Segoe UI\", \"PingFang SC\", \"Noto Sans CJK SC\", \"Microsoft YaHei\", sans-serif"
+    },
+    "choice": {
+      "background-color": "rgba(24, 21, 23, 0.92)",
+      "color": "rgb(242, 235, 222)",
+      "border-left-color": "rgb(63, 107, 147)",
+      "border-radius": "1px",
+      "font-size": "16px",
+      "backdrop-filter": "blur(8px)"
+    },
+    "sprite": {
+      "top": "144px",
+      "height": "1056px",
+      "transform": "matrix(1, 0, 0, 1, -297, 0)",
+      "opacity": "1",
+      "object-fit": "fill"
+    },
+    "stage": {
+      "background-color": "rgb(23, 19, 15)",
+      "position": "relative"
+    },
+    "director": {
+      "border-radius": "10px",
+      "background-image": "linear-gradient(178deg, rgba(28, 24, 25, 0.9), rgba(17, 15, 17, 0.94))"
+    }
+  },
+  "boxes": {
+    "dialog": {
+      "x": 257,
+      "y": 604,
+      "w": 998,
+      "h": 177
+    },
+    "choice": {
+      "x": 476,
+      "y": 158,
+      "w": 560,
+      "h": 80
+    },
+    "sprite": {
+      "x": 459,
+      "y": 144,
+      "w": 594,
+      "h": 1056
+    },
+    "director": {
+      "x": 1018,
+      "y": 8,
+      "w": 252,
+      "h": 42
+    },
+    "stage": {
+      "x": 232,
+      "y": 0,
+      "w": 1048,
+      "h": 800
+    }
+  },
+  "dialogText": "（同班的神崎爱实、大一的凛学姐、还有图书委员会的结月学妹……这个车队的现实配置未免也太超现实了吧？！）"
+}

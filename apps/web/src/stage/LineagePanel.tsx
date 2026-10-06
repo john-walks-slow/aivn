@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { LineageView } from "@aivn/core";
 import { api } from "../api.js";
-import type { AssetIndex } from "./assets.js";
+import type { AssetIndex, ScriptLine } from "@aivn/stage";
 import { buildBeats } from "./beats.js";
 import { RouteCanvas, type RouteControls } from "./RouteCanvas.js";
-import type { ScriptLine } from "./script.js";
 
 /**
  * 路线卡上的三个动词——这就是树上能做的全部世界线写操作。
