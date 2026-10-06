@@ -18,9 +18,12 @@
  * 受影响的主要是生图 prompt 等自由文本字段，触发时该标签整体降级丢弃（有 warning），可回喂自修正。
  */
 
+import type { Transition } from "./effects.js";
+
 export const DSL_TAGS = [
   "scene",
   "actor",
+  "fx",
   "say",
   "narrate",
   "thought",
@@ -35,7 +38,7 @@ export const DSL_TAGS = [
 export type DslTag = (typeof DSL_TAGS)[number];
 
 /** 自闭合指令标签（无正文）。 */
-export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "sfx", "cg", "stop", "ending"]);
+export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "fx", "sfx", "cg", "stop", "ending"]);
 
 /**
  * 停止点标签——**剧本的最后一行**，这一拍就停在玩家能动手的地方：
@@ -134,7 +137,8 @@ export interface SceneAttrs {
   bgm_volume?: number;
   /** ambient 音量 0–1。 */
   ambient_volume?: number;
-  transition?: string;
+  /** 换底方式（cut/dissolve/fade…）：封闭词表，见 effects.ts 的 TRANSITIONS。 */
+  transition?: Transition;
 }
 
 /** 运镜档位：作用于**已有立绘**（放大 + 上移），不触发重新生成。 */

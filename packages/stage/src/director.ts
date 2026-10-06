@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ActorAction, ActorAnchor, ActorShot, ReadPos } from "@aivn/core";
-import { isActorAction, layoutSprites, parsePosition, type SpritePosition } from "@aivn/core";
+import type { ActorAction, ActorAnchor, ActorShot, FxTarget, ReadPos } from "@aivn/core";
+import {
+  DEFAULT_TRANSITION,
+  isActorAction,
+  layoutSprites,
+  parsePosition,
+  type SpritePosition,
+  type Transition,
+} from "@aivn/core";
 import { shouldAutoStart, titleLastStep, titleRevealTarget } from "./playbackState.js";
 import type { Cue, ScriptLine } from "./script.js";
 import type { TranscriptEntry } from "./transcript.js";
@@ -90,6 +97,39 @@ export interface SpriteSlot {
   leaving?: boolean;
 }
 
+/**
+ * 一次换层过渡：需要旧画面快照（dual-source），所以是唯一带 `from` 的效果。
+ * `seq` 单调递增，渲染层据此重挂动画（值相同不重播）。
+ */
+export interface LayerTransition {
+  name: Transition;
+  seq: number;
+  /** 旧层 id（背景/cg），用于把旧画面留在下层做 cross-fade；没有 = 首次上屏。 */
+  from: string | null;
+}
+
+/** 一次性舞台效果：`seq` 每触发一次 +1，渲染层据此重播（与 SpriteSlot.actionSeq 同理）。 */
+export interface TriggerFx {
+  value: string;
+  seq: number;
+}
+
+/**
+ * 舞台级效果状态（按 target 分字段）。只有 state 型效果常驻这里；
+ * trigger 型（flash/shake）也存成 `{value, seq}`，是为了与 action 一致——回看时靠
+ * `.rewinding` 抑制、刷新时靠 visualAt 重建，渲染层只认 seq 变化。
+ */
+export interface FxState {
+  /** 画面内容变换层：整幅画面一起动（抖动）。 */
+  camera: { shake?: TriggerFx };
+  /** 屏幕遮罩层：叠加在画面之上（闪光、黑边、暗角）。 */
+  screen: { flash?: TriggerFx; letterbox?: boolean; vignette?: boolean };
+}
+
+function emptyFx(): FxState {
+  return { camera: {}, screen: {} };
+}
+
 /** 舞台视觉状态（视觉 cues 即时应用后的累积结果）。 */
 export interface VisualState {
   bg: string | null;
@@ -100,8 +140,10 @@ export interface VisualState {
   /** 剧本给的音量（bgm_volume / ambient_volume）；缺省 = 用客户端默认值。 */
   bgmVolume?: number;
   ambientVolume?: number;
-  /** 场景切换方式（fade/cut），供背景层 CSS 过渡。 */
-  transition: string | null;
+  /** 背景换图过渡（换层那一刻才有意义；值不变就不重播）。 */
+  bgTransition: LayerTransition | null;
+  /** 舞台级效果（镜头/屏幕遮罩）。 */
+  fx: FxState;
   cg: { id: string; caption?: string } | null;
   /** 在场角色 id → 舞台状态。站位每次重排都重算（见 applyVisual）。 */
   sprites: Record<string, SpriteSlot>;
@@ -227,7 +269,8 @@ const EMPTY_VISUAL: VisualState = {
   bg: null,
   bgm: null,
   ambient: null,
-  transition: null,
+  bgTransition: null,
+  fx: emptyFx(),
   cg: null,
   sprites: {},
   pending: {},
@@ -256,21 +299,61 @@ export function resolveAudio(current: string | null, cue: string | undefined): s
  */
 export function applyVisualCue(visual: VisualState, cue: Cue): VisualState {
   switch (cue.kind) {
-    case "scene":
+    case "scene": {
+      // 只有真换了底才播过渡：只改 BGM 的 <scene> 不该闪一下。
+      const changed = cue.bg !== undefined && cue.bg !== visual.bg;
       return {
         ...visual,
         bg: cue.bg ?? visual.bg,
-        transition: cue.transition ?? "fade",
+        bgTransition: changed
+          ? { name: cue.transition ?? DEFAULT_TRANSITION, seq: (visual.bgTransition?.seq ?? 0) + 1, from: visual.bg }
+          : visual.bgTransition,
         // 换景即从上一张插画里出来：CG 是「这一刻的画面」，不跨景延续
         cg: cue.bg ? null : visual.cg,
         // 开新场（`<scene clear/>`）：台上的人全下，后面把本场的人重铺一遍。
         // 缺省只换底、人不动。退场中的也不留：它们本就只为播完淡出，清场不等那一帧。
         sprites: cue.clear === true ? {} : visual.sprites,
       };
+    }
     case "cg":
       return { ...visual, cg: { id: cue.id, caption: cue.caption } };
     case "actor":
       return { ...visual, cg: null, sprites: applyActorCue(visual.sprites, cue) };
+    case "fx":
+      return applyFxCue(visual, cue);
+    default:
+      return visual;
+  }
+}
+
+/** `release`：清空某 target 上的全部持续效果。 */
+function releaseFxTarget(fx: FxState, target: FxTarget): FxState {
+  return target === "camera" ? { ...fx, camera: {} } : { ...fx, screen: {} };
+}
+
+/**
+ * 一条 `<fx>` 对舞台效果状态的改动。seq 自增 = 重播信号——同一个效果连写两次要能重来，
+ * 与 SpriteSlot.actionSeq 同一套（渲染层只认 seq 变化，不认绝对序号）。
+ */
+export function applyFxCue(visual: VisualState, cue: Extract<Cue, { kind: "fx" }>): VisualState {
+  const fx = visual.fx;
+  if (cue.release === true) return { ...visual, fx: releaseFxTarget(fx, cue.target) };
+  const value = cue.value ?? "";
+  switch (cue.effect) {
+    case "flash":
+      return {
+        ...visual,
+        fx: { ...fx, screen: { ...fx.screen, flash: { value: value || "white", seq: (fx.screen.flash?.seq ?? 0) + 1 } } },
+      };
+    case "shake":
+      return {
+        ...visual,
+        fx: { ...fx, camera: { ...fx.camera, shake: { value: value || "light", seq: (fx.camera.shake?.seq ?? 0) + 1 } } },
+      };
+    case "letterbox":
+      return { ...visual, fx: { ...fx, screen: { ...fx.screen, letterbox: value !== "off" } } };
+    case "vignette":
+      return { ...visual, fx: { ...fx, screen: { ...fx.screen, vignette: value !== "off" } } };
     default:
       return visual;
   }

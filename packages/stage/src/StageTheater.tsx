@@ -4,6 +4,7 @@ import {
   actionAnimation,
   resolveSceneBg,
   spriteStagePreset,
+  transitionVeilColor,
   type ActorAction,
   type ActorAnchor,
   type ActorShot,
@@ -318,6 +319,36 @@ function Sprite({
   );
 }
 
+/** 全屏闪光色。剧本只写 white/red/black，落到具体色值。 */
+const FLASH_COLORS: Record<string, string> = { white: "#ffffff", red: "#d0342c", black: "#000000" };
+/** 一次性效果的时长（与 stage.css 的动画时长对齐）。 */
+const FLASH_MS = 420;
+const SHAKE_MS = { light: 340, heavy: 560 } as const;
+
+/**
+ * 一次性舞台效果：`seq` 变化就播一次，`durationMs` 后摘掉。与 Sprite 的 acting 同一套机制
+ * ——同一个效果连写两次要能重播（seq 递增），播完不能一直占着（否则运镜/抖动的通道被锁死）。
+ *
+ * `muted`（回看中）时整段跳过且**不更新 last**：回看会把状态折回过去（seq 变小），
+ * 若在回看里跟进 seq，回到播放头那一刻 seq 又跳回来，等于凭空补放一次闪光/抖动。
+ * 不跟进 last，回看期间安静、回现场时 seq 与离开前一致，不会误触发。
+ */
+function useOneShot(seq: number | null | undefined, durationMs: number, muted = false): { active: boolean; nonce: number } {
+  const [active, setActive] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  const last = useRef<number | null>(null);
+  useEffect(() => {
+    if (muted) return;
+    if (seq === null || seq === undefined || seq === last.current) return;
+    last.current = seq;
+    setActive(true);
+    setNonce((n) => n + 1);
+    const timer = setTimeout(() => setActive(false), durationMs);
+    return () => clearTimeout(timer);
+  }, [seq, durationMs, muted]);
+  return { active, nonce };
+}
+
 /** 舞台：背景/立绘/CG 视觉层 + 打字机对话框 + 二段式点击 + 自动模式 + sfx/bgm + 语音 + 导演工具栏（右上角）。 */
 export function StageTheater({
   visual,
@@ -575,6 +606,16 @@ voiceState,
   const cgId = visual.cg?.id ?? null;
   const cgPending = !cgUrl && !!cgId && visual.pending[cgId]?.type === "cg";
 
+  // 换层过渡：需要旧画面留在下层（dual-source）。旧图取不回来（素材缺）就退化为单层淡入。
+  const bgFromUrl = visual.bgTransition?.from ? index.bg(visual.bgTransition.from) : null;
+  const bgStack = visual.bgTransition && visual.bgTransition.from !== null ? visual.bgTransition : null;
+  const bgVeil = bgStack ? transitionVeilColor(bgStack.name) : null;
+  // 舞台效果：镜头抖（一次性，靠 seq 重播）与屏幕遮罩（闪光一次性；黑边/暗角持续）。
+  const shakeValue = visual.fx.camera.shake?.value === "heavy" ? "heavy" : "light";
+  const shake = useOneShot(visual.fx.camera.shake?.seq, SHAKE_MS[shakeValue], scrubbed);
+  const flashValue = visual.fx.screen.flash?.value ?? "white";
+  const flash = useOneShot(visual.fx.screen.flash?.seq, FLASH_MS, scrubbed);
+
   /** 第二岔是哪一个：宿主说了算（见 `promptAlt`）。 */
   const altMode: GuideMode = promptAlt === "interrupt" ? "interrupt" : "fork";
 
@@ -666,13 +707,34 @@ voiceState,
       {/* 顶栏（游戏 HUD 式的 exit/log/branch/studio）在 StageScreen 里，浮于三个视图之上 */}
 
       <div className={`theater-stage${scrubbed ? " rewinding" : ""}`}>
-        {bgUrl ? (
+        {/* 镜头容器（画面内容变换层）：抖动作用在这一层，背景/立绘/CG 因此一起动。
+            letterbox、暗角、闪光留在容器之外的屏幕遮罩层——它们是「画面框」，不该跟着抖。 */}
+        <div
+          className={`theater-camera${shake.active ? ` shaking shake-${shakeValue}` : ""}`}
+          style={
+            {
+              "--shake-ms": `${SHAKE_MS[shakeValue]}ms`,
+              "--shake-nonce": `-${(shake.nonce % 100) / 1000}s`,
+            } as CSSProperties
+          }
+        >
+        {/* 背景：换层时旧图留在下层、新图按 transition 盖上来（dual-source）。
+            旧图取不回来（素材缺）或首次上屏（没有 from）就退化为单层淡入。 */}
+        {bgUrl && !bgStack ? (
           <img key={bgUrl} className="theater-bg theater-bg-in" src={bgUrl} alt="" />
+        ) : bgStack ? (
+          <div key={bgStack.seq} className={`theater-bg-stack theater-stack trans-${bgStack.name}${scrubbed ? " rewinding" : ""}`}>
+            {bgFromUrl && <img className="theater-bg theater-stack-old" src={bgFromUrl} alt="" aria-hidden />}
+            {bgUrl ? (
+              <img className="theater-bg theater-stack-new" src={bgUrl} alt="" />
+            ) : (
+              <div className={`theater-bg theater-stack-new theater-bg-fallback${bgPending ? " theater-bg-pending" : ""}`} />
+            )}
+            {bgVeil && <span className="theater-stack-veil" style={{ background: bgVeil }} />}
+          </div>
         ) : (
           <div
-            className={`theater-bg theater-bg-fallback ${bgPending ? "theater-bg-pending" : ""} ${
-              visual.transition === "cut" ? "cut" : ""
-            }`}
+            className={`theater-bg theater-bg-fallback${bgPending ? " theater-bg-pending" : ""}`}
             style={bgColor ? { background: bgColor } : undefined}
           />
         )}
@@ -721,6 +783,17 @@ voiceState,
             {visual.cg?.caption && <p className="theater-cg-caption">{visual.cg.caption}</p>}
           </div>
         )}
+        </div>
+
+        {/* 屏幕遮罩层：flash / letterbox / 暗角。都在镜头容器之外——它们叠加在画面上，
+            画面内容抖动时它们不动。 */}
+        <div className="theater-overlay" aria-hidden="true">
+          {visual.fx.screen.letterbox && <span className="theater-letterbox" />}
+          {visual.fx.screen.vignette && <span className="theater-vignette" />}
+          {flash.active && (
+            <span key={flash.nonce} className="theater-flash" style={{ background: FLASH_COLORS[flashValue] ?? "#fff" }} />
+          )}
+        </div>
 
         {/* 全屏标题卡：整屏铺文本，对话框让位（.theater.title-mode 里藏掉）。
             逐句模式下 `shown` 是导演按已揭示句数截出的前缀，这里只管按对齐铺出去。 */}

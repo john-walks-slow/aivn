@@ -142,15 +142,17 @@ const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
 
 ## 场景与立绘指令（必须出现在对应台词之前）
 
-<scene bg="背景id" bgm="音乐id" bgm_volume="0.4" ambient="环境音id" ambient_volume="0.3" transition="fade"/>
+<scene bg="背景id" bgm="音乐id" bgm_volume="0.4" ambient="环境音id" ambient_volume="0.3" transition="换底方式"/>
 <scene bg="新背景id" clear/>（开新场：换地方/时间跳了/阵容大换，台上的人全下，后面把本场在的人用 actor 重铺一遍；同屋换个时间不带）
 <actor id="主体id" variant="差分id" shot="景别" action="行为词" leave="退场"/>
+<fx target="应用目标" effect="效果" value="取值"/>（舞台级效果：镜头与全屏，见下）
 <sfx src="音效id" volume="0.5"/>
 <cg id="cgid" caption="插图说明"/>
 
 **纯色场（黑场 / 白场）**：bg 也可以是保留色名或十六进制色值，直接铺一块纯色底——
 \`<scene bg="black"/>\`、\`<scene bg="white"/>\`（大小写不敏感）或 \`<scene bg="#1a1a2e"/>\`；
 其余值仍按素材 id 查背景表。章节转场、标题卡前的留白、回忆收束常用它。
+换底方式（只属于 scene）认这几个：cut（硬切）、dissolve（交叉溶解，默认）、fade（经黑场淡入淡出）、fade-white（经白场）。
 
 **位置不用你写。** 引擎按在场人数自动分配，第二个人进场第一个人自动让开。
 只有在你想钉死某个人（比如主角固定在中间）时才写 pos="center"。
@@ -187,6 +189,26 @@ bottom（贴地，默认）、center（居中悬空）、top（从上垂下）�
 | sway | 放松、犯困 |
 
 同一时刻只给一个人一个行为词。
+
+## 舞台效果（fx）
+
+镜头与全屏的效果统一写 \`<fx target="…" effect="…" value="…"/>\`。target 是作用面：
+
+| target | 作用面 |
+|---|---|
+| camera | 画面本身（背景/立绘/CG 一起动，比如抖动） |
+| screen | 屏幕叠加层（闪光、黑边、暗角），画面内容不动 |
+
+| effect | target | 取值 | 一次性/持续 | 什么时候用 |
+|---|---|---|---|---|
+| flash | screen | white / red / black | 一次性 | 全屏一闪：白（雷击、闪光）、红（受击）、黑（冲击） |
+| shake | camera | light / heavy | 一次性 | 整幅画面抖一下：受击、巨响、震撼 |
+| letterbox | screen | on / off | 持续 | 电影宽画幅黑边 |
+| vignette | screen | on / off | 持续 | 暗角 |
+
+某个人的特写不要用 fx，写 actor 的 \`shot\`。
+持续效果写了就一直保留，直到你写 \`<fx target="…" release/>\` 停掉（一幕演完记得收掉黑边与暗角）。
+一次性效果演一次就结束，不要连着写同一个闪光。
 
 ## 台词（正文为原生文本，不要转义）
 

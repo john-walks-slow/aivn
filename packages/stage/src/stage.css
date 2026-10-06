@@ -117,6 +117,8 @@
   --fade-ms: 220; /* 立绘差分 / 背景切换 */
   --move-ms: 380ms; /* 立绘换位、换景别（运镜）——比差分慢，走过去不是瞬移 */
   --act-ms: 520ms; /* 行为词演出时长（点一次头、抖一下） */
+  --trans-ms: 560ms; /* 换层过渡（转场 cross-fade / fade） */
+  --fx-ms: 360ms; /* 一次性屏幕效果（闪光基础时长；抖动在类里另给） */
   /* 缓动：起步快、尾巴长。站位与运镜都是「一个演员走过去」的观感，
      ease-in-out 匀加速匀减速最像。 */
   --move-ease: cubic-bezier(0.33, 0, 0.2, 1);
@@ -129,6 +131,14 @@
     --fade-ms: 0;
     --move-ms: 0ms;
     --act-ms: 0ms;
+    --trans-ms: 0ms;
+    --fx-ms: 0ms;
+  }
+  /* 抖动的时长来自行内变量（按档位算），媒体查询覆盖不了它，直接掐掉动画。
+     闪光掐掉动画后落回基础 opacity:0，等于不闪。 */
+  .stage-root .theater-camera.shaking,
+  .stage-root .theater-flash {
+    animation: none;
   }
 }
 
@@ -359,13 +369,207 @@ html[data-stage-theme="light"] .stage-root {
   animation: none;
 }
 
-.theater-bg.cut {
-  animation: none;
-}
-
 @keyframes bg-fade {
   from {
     opacity: 0;
+  }
+}
+
+/* ── 镜头容器与换层过渡 ───────────────────────────────
+   镜头容器是「画面内容变换层」：作用在它上面的效果让背景/立绘/CG 一起动（现只用于抖动，
+   走独立的 translate 属性，不与别的 transform 抢通道）。
+   换层过渡（转场）是唯一的 dual-source 效果：旧图留在下层、新图按 trans-* 盖上来。 */
+.theater-camera {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+
+.theater-stack {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.theater-stack .theater-stack-new {
+  z-index: 2;
+}
+
+.theater-stack .theater-stack-old {
+  z-index: 1;
+}
+
+.theater-stack-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 栈内的层不要吃 .theater-bg 那条常驻 bg-fade——否则旧层也会淡入一次。 */
+.theater-stack .theater-bg {
+  animation: none;
+}
+
+/* cut：新图直接顶掉旧图 */
+.theater-stack.trans-cut .theater-stack-old {
+  display: none;
+}
+
+/* dissolve：新图交叉淡入（旧图静止在下） */
+.theater-stack.trans-dissolve .theater-stack-new {
+  animation: fx-fade-in var(--trans-ms) ease;
+}
+
+/* fade / fade-black / fade-white：旧图在上（前半程保持），veil 纯色升到全遮挡再落下，
+   下半程揭开的是已经就位的新图。旧图必须在 50% 处让位（steps 硬切），否则它会一直压着新图。 */
+.theater-stack.trans-fade .theater-stack-old,
+.theater-stack.trans-fade-black .theater-stack-old,
+.theater-stack.trans-fade-white .theater-stack-old {
+  z-index: 4;
+  animation: fx-hold-half var(--trans-ms) steps(1, end) forwards;
+}
+
+.theater-stack.trans-fade .theater-stack-new,
+.theater-stack.trans-fade-black .theater-stack-new,
+.theater-stack.trans-fade-white .theater-stack-new {
+  z-index: 1;
+}
+
+.theater-stack.trans-fade .theater-stack-veil,
+.theater-stack.trans-fade-black .theater-stack-veil,
+.theater-stack.trans-fade-white .theater-stack-veil {
+  animation: fx-veil var(--trans-ms) ease forwards;
+}
+
+@keyframes fx-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes fx-hold-half {
+  0%,
+  49.9% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes fx-veil {
+  0% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ── 屏幕遮罩：letterbox / 暗角 / 闪光 ───────────────── */
+.theater-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.theater-letterbox::before,
+.theater-letterbox::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 11%;
+  background: #000;
+}
+
+.theater-letterbox::before {
+  top: 0;
+}
+
+.theater-letterbox::after {
+  bottom: 0;
+}
+
+.theater-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 52%, rgb(0 0 0 / 0.55) 100%);
+}
+
+.theater-flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation: fx-flash var(--fx-ms) ease-out;
+}
+
+@keyframes fx-flash {
+  0% {
+    opacity: 0;
+  }
+  22% {
+    opacity: 0.92;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 镜头抖动：只用 translate 一个通道，幅度小、频率高。nonce 换值即重播（同行为词）。 */
+.theater-camera.shaking {
+  animation: fx-cam-shake-light var(--shake-ms, 340ms) linear var(--shake-nonce, 0s) 1;
+}
+
+.theater-camera.shaking.shake-heavy {
+  animation-name: fx-cam-shake-heavy;
+}
+
+@keyframes fx-cam-shake-light {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  20% {
+    translate: -0.5% 0.3%;
+  }
+  40% {
+    translate: 0.5% -0.3%;
+  }
+  60% {
+    translate: -0.35% 0.2%;
+  }
+  80% {
+    translate: 0.35% -0.2%;
+  }
+}
+
+@keyframes fx-cam-shake-heavy {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  15% {
+    translate: -1.6% 1%;
+  }
+  30% {
+    translate: 1.6% -1%;
+  }
+  45% {
+    translate: -1.2% 0.8%;
+  }
+  60% {
+    translate: 1.2% -0.8%;
+  }
+  80% {
+    translate: -0.6% 0.4%;
   }
 }
 
@@ -503,12 +707,21 @@ html[data-stage-theme="light"] .stage-root {
 .theater-stage.rewinding .theater-bg,
 .theater-stage.rewinding .theater-bg-in,
 .theater-stage.rewinding .theater-cg-in,
-.theater-stage.rewinding .theater-sprite {
+.theater-stage.rewinding .theater-sprite,
+.theater-stage.rewinding .theater-camera,
+.theater-stage.rewinding .theater-stack,
+.theater-stage.rewinding .theater-stack > * {
   animation: none;
 }
 
-.theater-stage.rewinding .theater-sprite {
+.theater-stage.rewinding .theater-sprite,
+.theater-stage.rewinding .theater-camera {
   transition: none;
+}
+
+/* 回看要的是「那一刻的终态」，不是转场过程：旧层直接让位，露出新画面。 */
+.theater-stage.rewinding .theater-stack .theater-stack-old {
+  display: none;
 }
 
 /* 机位：偏移量是「离画面中心的百分比（相对于舞台宽度的 cqw）」，不是 left 的绝对值。

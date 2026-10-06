@@ -1,4 +1,5 @@
 export * from "./dsl/spec.js";
+export * from "./dsl/effects.js";
 export * from "./dsl/events.js";
 export * from "./dsl/parser.js";
 export * from "./dsl/sceneBg.js";

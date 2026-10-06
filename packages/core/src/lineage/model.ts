@@ -19,6 +19,7 @@ export type LineageEventKind =
   | "root"
   | "scene"
   | "actor"
+  | "fx"
   | "say"
   | "narrate"
   | "thought"

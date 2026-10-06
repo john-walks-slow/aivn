@@ -14,6 +14,15 @@ import {
   type TitleAlign,
   type TitleMode,
 } from "./spec.js";
+import {
+  DEFAULT_TRANSITION,
+  FX_TARGETS,
+  effectSpec,
+  isFxTarget,
+  isTransition,
+  type EffectSpec,
+  type Transition,
+} from "./effects.js";
 
 export type ParserWarningType =
   | "orphan_text"
@@ -268,14 +277,35 @@ export class StageDslParser {
         return;
       }
       case "scene": {
+        const transition = this.pickTransition(attrs, "scene");
         this.emit({
           kind: "scene",
-          ...pick(attrs, ["bg", "bgm", "ambient", "transition"]),
+          ...pick(attrs, ["bg", "bgm", "ambient"]),
+          ...(transition ? { transition } : {}),
           // 裸属性（`<scene clear/>`）与显式值（`clear="true"`）都认成开新场；
           // 写了 `clear="false"` / `clear="0"` 才是不清（给模板条件拼串留的出口）。
           ...(isTruthyFlag(attrs.get("clear")) ? { clear: true } : {}),
           ...this.pickVolume(attrs, ["bgm_volume", "ambient_volume"]),
         });
+        return;
+      }
+      case "fx": {
+        const target = attrs.get("target")?.trim();
+        if (!target || !isFxTarget(target)) {
+          return this.dropTag("fx", `target 非法或缺失: ${target ?? ""}（可用 ${FX_TARGETS.join("/")}）`);
+        }
+        // `release`：停掉该 target 上的全部持续效果，不是效果本身。
+        if (isTruthyFlag(attrs.get("release"))) {
+          this.emit({ kind: "fx", target, release: true });
+          return;
+        }
+        const effect = attrs.get("effect")?.trim().toLowerCase();
+        if (!effect) return this.dropTag("fx", "缺 effect（或写 release 停掉持续效果）");
+        const spec = effectSpec(effect);
+        if (!spec) return this.dropTag("fx", `未知 effect: ${effect}`);
+        if (!spec.targets.includes(target)) return this.dropTag("fx", `effect=${effect} 不适用于 target=${target}`);
+        const value = this.pickEffectValue(attrs, spec);
+        this.emit({ kind: "fx", target, effect, ...(value !== undefined ? { value } : {}) });
         return;
       }
       case "actor": {
@@ -417,6 +447,38 @@ export class StageDslParser {
       out[key] = Math.min(1, Math.max(0, value));
     }
     return out;
+  }
+
+  /**
+   * 转场属性：认不出来就丢属性、留好属性（同 pickVolume 的策略），并挂 warning。
+   * 剧本写错一个转场名，不该把整个换景连背景一起丢掉。
+   */
+  private pickTransition(attrs: Map<string, string>, tag: string): Transition | undefined {
+    const raw = attrs.get("transition");
+    if (raw === undefined) return undefined;
+    const value = raw.trim().toLowerCase();
+    if (isTransition(value)) return value;
+    this.warn("malformed_tag", `${tag} 的 transition="${raw}" 认不出来，忽略，按缺省 ${DEFAULT_TRANSITION}`);
+    return undefined;
+  }
+
+  /** 效果取值：按注册表的封闭枚举归一；越界或多余都退回缺省并挂 warning，不丢整条效果。 */
+  private pickEffectValue(attrs: Map<string, string>, spec: EffectSpec): string | undefined {
+    if (!spec.values) {
+      const raw = attrs.get("value");
+      if (raw !== undefined && raw.trim() !== "") {
+        this.warn("malformed_tag", `effect=${spec.name} 不接受 value，忽略`);
+      }
+      return undefined;
+    }
+    const fallback = spec.defaultValue ?? spec.values[0]!;
+    const raw = attrs.get("value")?.trim().toLowerCase();
+    if (raw === undefined || raw === "") return fallback;
+    if (!spec.values.includes(raw)) {
+      this.warn("malformed_tag", `effect=${spec.name} 的 value="${raw}" 非法，改用 ${fallback}`);
+      return fallback;
+    }
+    return raw;
   }
 
   /** 旧标签原文（供 warning 定位用）：只拼头部，正文一律不留。 */

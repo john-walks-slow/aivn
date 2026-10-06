@@ -2411,6 +2411,19 @@ export class PlaywrightOrchestrator {
           payload: { seq, attrs: { id: event.id, ...pick(event, ["caption"]) } },
         });
         return;
+      case "fx":
+        // 效果已经是终态（解析器归一过 target/effect/value），落谱系就是原样记下，重放不再校验。
+        this.appendLineage("fx", {
+          payload: {
+            seq,
+            attrs: {
+              target: event.target,
+              ...(event.release === true ? { release: "true" } : { effect: event.effect ?? "" }),
+              ...pick(event, ["value"]),
+            },
+          },
+        });
+        return;
       case "stop":
         this.pendingStop = {
           stopType: event.stopType,

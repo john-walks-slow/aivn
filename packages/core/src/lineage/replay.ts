@@ -1,5 +1,6 @@
 import type { SequencedEvent, StageEvent } from "../dsl/events.js";
 import { DEFAULT_TITLE_ALIGN, DEFAULT_TITLE_MODE, isTitleAlign, isTitleMode } from "../dsl/spec.js";
+import { isFxTarget, type FxTarget } from "../dsl/effects.js";
 import type { StopOption, StopType } from "../ws/protocol.js";
 import type { LineageEvent, LineageNodeView } from "./model.js";
 import type { StopPayload } from "../ws/protocol.js";
@@ -112,6 +113,14 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
       case "cg":
         push(base, { kind: "cg", id: attrs.id ?? "", ...pickDefined(attrs, ["caption"]) });
         break;
+      case "fx": {
+        // 目标非法（老档/手改）就整条不重放：丢一个效果，总好过让舞台状态机吃到坏 target。
+        const target = attrs.target;
+        if (!isFxTarget(target)) break;
+        if (isTruthyFlag(attrs.release)) push(base, { kind: "fx", target: target as FxTarget, release: true });
+        else push(base, { kind: "fx", target: target as FxTarget, effect: attrs.effect ?? "", ...pickDefined(attrs, ["value"]) });
+        break;
+      }
       case "sfx":
         push(base, { kind: "sfx", src: attrs.src ?? "", ...pickVolume(attrs, ["volume"]) });
         break;
