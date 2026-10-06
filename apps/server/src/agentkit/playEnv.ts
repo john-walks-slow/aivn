@@ -17,10 +17,10 @@ import { reason } from "./result.js";
  *
  * - `writeScopes` —— 能改哪几类文件。**能力（capability）给的就是这个**：剧作家可能只有
  *   `memory`（记忆开着、「管理角色」关着），工坊则可能三位全给或一位都不给。
- * - `readGenerated` —— 通用读口认不认引擎产物（`memory/arcs`、`memory/archive`）。
- *   它们跟分支走、按 arcs / pathSet 过滤，而文件是剧目级的：通用 read 能读出来，
- *   等于把别的世界线的纪元摘要摊开。剧作家不给，要看往事走 `read_memory_detail` /
- *   `search_archive`；工坊看得见（它要能读用户手上的剧目全貌）。
+ * - `readGenerated` —— 通用读口认不认引擎产物（`memory/archive`）。
+ *   它跟分支走、按 pathSet 过滤，而文件是剧目级的：通用 read 能读出来，等于把别的
+ *   世界线的往事摊开。剧作家不给，要看往事走 `search_archive`；工坊看得见
+ *   （它要能读用户手上的剧目全貌）。
  */
 export interface PlayEnvPolicy {
   writeScopes: readonly WriteScope[];

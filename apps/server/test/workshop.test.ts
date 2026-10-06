@@ -43,7 +43,7 @@ async function makeStore(): Promise<PlayStore> {
   const dir = await mkdtemp(join(tmpdir(), "stage-workshop-"));
   await mkdir(join(dir, "memory", "always"), { recursive: true });
   await mkdir(join(dir, "memory", "index", "lore"), { recursive: true });
-  await mkdir(join(dir, "memory", "arcs"), { recursive: true });
+  await mkdir(join(dir, "memory", "archive"), { recursive: true });
   await mkdir(join(dir, "assets", "backgrounds"), { recursive: true });
   await writeFile(
     join(dir, "play.json"),
@@ -59,7 +59,7 @@ async function makeStore(): Promise<PlayStore> {
   );
   await writeFile(join(dir, "memory", "always", "premise.md"), "# 前提\n走廊的故事。\n");
   await writeFile(join(dir, "memory", "index", "lore", "旧约定.md"), "# 旧约定\n约定。\n");
-  await writeFile(join(dir, "memory", "arcs", "epoch-a-1.md"), "# 第一纪\n摘要\n");
+  await writeFile(join(dir, "memory", "archive", "events.jsonl"), "{}\n");
   await writeFile(join(dir, "session.json"), "{}");
   await writeFile(join(dir, "lineage.jsonl"), "");
   await writeFile(join(dir, "assets", "backgrounds", "corridor.png"), "png");
@@ -77,11 +77,11 @@ describe("PlayFiles：剧目文件白名单", () => {
     expect(listed).not.toContain("session.json");
     expect(listed).not.toContain("lineage.jsonl");
     expect((await files.list()).find((f) => f.path === "assets/backgrounds/corridor.png")?.writable).toBe(false);
-    // 引擎产物（纪元摘要）：看得到、存不了——它的写主是压缩流程，不是手
-    const arcs = (await files.list()).find((f) => f.path === "memory/arcs/epoch-a-1.md");
-    expect(arcs?.writable).toBe(false);
-    expect(() => files.pathOf("memory/arcs/epoch-a-1.md", "write")).toThrow(/不在剧目可写范围/);
-    expect(files.pathOf("memory/arcs/epoch-a-1.md", "read")).toContain("epoch-a-1.md");
+    // 引擎产物（逐轮切片）：看得到、存不了——它的写主是演出收束，不是手
+    const archive = (await files.list()).find((f) => f.path === "memory/archive/events.jsonl");
+    expect(archive?.writable).toBe(false);
+    expect(() => files.pathOf("memory/archive/events.jsonl", "write")).toThrow(/不在剧目可写范围/);
+    expect(files.pathOf("memory/archive/events.jsonl", "read")).toContain("events.jsonl");
   });
 
   it("越界与非法路径一律拒绝（不裁剪、不尽力而为）", async () => {

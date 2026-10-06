@@ -37,7 +37,6 @@ function playwriterDeps(over: Partial<PlaywriterKitDeps> = {}): PlaywriterKitDep
     memory: new PlayMemory(),
     tree: new LineageTree(),
     stateFiles: {},
-    arcIds: () => [],
     // 文件工具的白名单根：只有 store.dir 参与，构造时不碰盘
     files: new PlayFiles({ dir: "/tmp/stage-agentkit-test" } as never),
     onWrite: () => {},

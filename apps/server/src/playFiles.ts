@@ -82,12 +82,12 @@ function assertPlayConfig(rel: string, text: string): void {
 }
 
 /**
- * 机器产物：纪元压缩摘要（arcs）与逐轮切片（archive）都由引擎写。
+ * 机器产物：逐轮切片（archive）由引擎写。
  *
- * 它们跟分支走（arcs 按 arcIds 过滤、archive 按 pathSet 过滤），手改或手建就绕过了防剧透。
+ * 它跟分支走（按 pathSet 过滤），手改或手建就绕过了防剧透。
  * 所以**看得见、改不动**：文件页能查看，文本写口一律拒。
  */
-const GENERATED_PREFIXES = ["memory/arcs/", "memory/archive/"];
+const GENERATED_PREFIXES = ["memory/archive/"];
 
 /** 可写面：根层 play.json + theme.css + 素材描述表 + memory/** 与 characters/** 文本文件。 */
 function isEditable(rel: string): boolean {
@@ -146,7 +146,7 @@ export function inWriteScopes(rel: string, scopes: readonly WriteScope[]): boole
 
 /**
  * 是不是引擎产物。**按小写比**：Windows / macOS 的文件系统不区分大小写，
- * `memory/ARCS/x.md` 在那边就是 `memory/arcs/x.md` 同一个文件——
+ * `MEMORY/ARCHIVE/x.md` 在那边就是 `memory/archive/x.md` 同一个文件——
  * 区分大小写的比较只在 Linux 上成立，桌面版会从这条路绕过去。
  */
 export function isGenerated(rel: string): boolean {

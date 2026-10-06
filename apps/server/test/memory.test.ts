@@ -62,34 +62,19 @@ describe("PlayMemory", () => {
     await writeFile(join(dir, "memory", "index", "旧约定.md"), "# 旧约定\n顶层卡不必分类。\n", "utf8");
     await writeFile(join(dir, "memory", "index", "locations", "旧校舍.md"), "# 旧校舍\n四层走廊。\n", "utf8");
     await writeFile(join(dir, "memory", "index", "lore", "结界", "代价.md"), "# 代价\n每破一次结界折寿一年。\n", "utf8");
-    // arcs 在 index 之外：它的文件名是谱系快照引用的 arcId，不能跟用户卡混在一起
+    // memory/arcs/ 下的旧引擎产物不进 index：那是压缩记录，早就不在文件层了
     await mkdir(join(dir, "memory", "arcs"), { recursive: true });
     await writeFile(join(dir, "memory", "arcs", "epoch-e1-1.md"), "# 第一纪元\n两人走到旧校舍。\n", "utf8");
 
     const memory = await PlayMemory.load(new PlayStore(dir));
 
     const byFile = new Map(memory.cards.map((c) => [c.file, c]));
-    expect([...byFile.keys()].sort()).toEqual(["epoch-e1-1", "locations/旧校舍", "lore/结界/代价", "旧约定"]);
+    expect([...byFile.keys()].sort()).toEqual(["locations/旧校舍", "lore/结界/代价", "旧约定"]);
     expect(byFile.get("旧约定")!.layer).toBe(""); // 顶层卡没有分类
     expect(byFile.get("locations/旧校舍")!.layer).toBe("locations");
     expect(byFile.get("lore/结界/代价")!.layer).toBe("lore/结界");
-    expect(byFile.get("epoch-e1-1")!.layer).toBe("arcs");
-    // arcs 按分支过滤：不在这条分支上的纪元摘要一律不注入 A 区
-    expect(memory.visibleCards([]).map((c) => c.file)).toEqual(["locations/旧校舍", "lore/结界/代价", "旧约定"]);
-    expect(memory.visibleCards(["epoch-e1-1"]).map((c) => c.file)).toContain("epoch-e1-1");
-  });
-
-  it("用户自己建的 index/arcs/ 卡不被当成纪元卡过滤掉", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "stage-memory-"));
-    await mkdir(join(dir, "memory", "index", "arcs"), { recursive: true });
-    // 目录名叫 arcs、文件名也是 arcId 形状，但它没有 arc 标记：这是剧目设定卡
-    await writeFile(join(dir, "memory", "index", "arcs", "prologue.md"), "# 序章设定\n故事开场就发生在结界里。\n", "utf8");
-    const memory = await PlayMemory.load(new PlayStore(dir));
-    const card = memory.cards[0]!;
-    expect(card.layer).toBe("arcs");
-    expect(card.arc).toBe(false);
-    // 不在当前分支上也得看得见——否则用户的设定卡会在 A 区里凭空消失
-    expect(memory.visibleCards([]).map((c) => c.file)).toEqual(["arcs/prologue"]);
+    // 剧目设定不随分支变化：任何分支看到的都是同一份
+    expect(memory.cards.map((c) => c.file)).toEqual(["locations/旧校舍", "lore/结界/代价", "旧约定"]);
   });
 
   it("卡没写 # 标题时用文件名，读详情认文件名/相对路径/标题三种写法", async () => {
@@ -182,29 +167,21 @@ describe("PlayMemory", () => {
     expect(memory.searchArchive("细节", new Set(["e1"]), { nsfw: true })).toHaveLength(1);
   });
 
-  it("设定卡落盘后 load 读得回来：用户卡段在前、arcs 段在后（行序即提示词前缀）", async () => {
+  it("设定卡落盘后 load 读得回来：行序按 file localeCompare（行序即提示词前缀）", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stage-memory-"));
     await mkdir(join(dir, "memory", "index", "locations"), { recursive: true });
-    await mkdir(join(dir, "memory", "arcs"), { recursive: true });
     await writeFile(join(dir, "memory", "index", "locations", "天文台.md"), "# 天文台\n社团活动室在顶楼。\n", "utf8");
     await writeFile(join(dir, "memory", "index", "zzz.md"), "# 末位\n最后一张。\n", "utf8");
-    await writeFile(join(dir, "memory", "arcs", "epoch-a-1.md"), "# 第一纪\n摘要\n", "utf8");
 
     const memory = await PlayMemory.load(new PlayStore(dir));
     expect(memory.readCard("天文台")).toContain("顶楼");
-    // 用户卡段按 file localeCompare 排在前，arcs 段整体在后（loadArcs 的次序不参与重排）
-    expect(memory.cards.map((c) => `${c.arc ? "arc" : "user"}:${c.file}`)).toEqual([
-      "user:locations/天文台",
-      "user:zzz",
-      "arc:epoch-a-1",
-    ]);
-    // 用户卡是剧目设定，不随分支可见性变化
-    expect(memory.visibleContext([]).map((c) => c.name)).toEqual(["天文台", "末位"]);
-    // A 区每行要带可写路径：标题（`# 标题`）与文件名可以不一样，路径只有这里给得出来；arcs 卡只读，给 null
-    expect(memory.visibleContext(["epoch-a-1"]).map((c) => c.path)).toEqual([
+    // readdir 次序由文件系统给，行序漂移会让整个前缀缓存失效——整段按 file 排死
+    expect(memory.cards.map((c) => c.file)).toEqual(["locations/天文台", "zzz"]);
+    expect(memory.visibleContext().map((c) => c.name)).toEqual(["天文台", "末位"]);
+    // A 区每行要带可写路径：标题（`# 标题`）与文件名可以不一样，路径只有这里给得出来
+    expect(memory.visibleContext().map((c) => c.path)).toEqual([
       "memory/index/locations/天文台.md",
       "memory/index/zzz.md",
-      null,
     ]);
   });
 });

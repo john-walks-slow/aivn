@@ -41,7 +41,7 @@ const searchArchiveParams = Type.Object(
 export function createMemoryTools(
   deps: Pick<
     PlaywriterKitDeps,
-    "engine" | "memory" | "tree" | "stateFiles" | "arcIds" | "isNsfw"
+    "engine" | "memory" | "tree" | "stateFiles" | "isNsfw"
   > & { characterIds: ReadonlySet<string> },
 ): AgentTool<any>[] {
   const updateState: AgentTool<typeof updateStateParams> = {
@@ -103,11 +103,10 @@ export function createMemoryTools(
     parameters: readMemoryDetailParams,
     execute: async (_toolCallId, params: Static<typeof readMemoryDetailParams>) => {
       const { name } = params;
-      const arcIds = deps.arcIds();
-      const detail = deps.memory.readCard(name, arcIds);
+      const detail = deps.memory.readCard(name);
       if (detail) return textResult(detail);
       const available = deps.memory
-        .visibleContext(arcIds)
+        .visibleContext()
         .map((c) => c.name)
         .join("、");
       return textResult(`未找到「${name}」。可用条目：${available || "（无）"}。`);

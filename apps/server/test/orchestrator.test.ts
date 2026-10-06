@@ -1939,8 +1939,8 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     for (const event of chain.slice(0, first)) expect(event.payload?.nsfw).not.toBe(true);
 
     // 快照：段内那一拍仍是限制级，段末那一拍起世界线回到日常
-    expect(tree.latestSnapshotOnPath(ends[1]!.id)?.memory.nsfw).toBe(true);
-    expect(tree.latestSnapshotOnPath(tree.leafId)?.memory.nsfw).toBe(false);
+    expect(tree.latestSnapshotOnPath(ends[1]!.id)?.nsfw).toBe(true);
+    expect(tree.latestSnapshotOnPath(tree.leafId)?.nsfw).toBe(false);
 
     // archive：SFW 侧搜得到那一段、看到的是摘要；原文片只在限制级侧可见
     const allowed = tree.pathSet();

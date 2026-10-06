@@ -175,7 +175,7 @@ describe("PlayEnv：bash 是另一条路", () => {
  * 剧作家这一侧：角色卡与记忆卡不再是专用工具，走的是**同一套** read / write / edit
  * （同一个 `PlayEnv`、同一份 `PlayFiles` 白名单）。这里钉住三件事：
  * 写盘要过 `onWrite`（宿主靠它登记角色 id、排轮边界重建）、`edit` 能定点改而不抹掉别的字段、
- * 引擎产物（arcs / archive）看得见但写不进去。
+ * 引擎产物（archive）看得见但写不进去。
  */
 describe("PlayEnv：剧作家的文件工具", () => {
   function playwriterToolset(
@@ -246,23 +246,24 @@ describe("PlayEnv：剧作家的文件工具", () => {
     expect(writes.map((w) => w.path)).toEqual(["characters/xiaoyu.md", "characters/xiaoyu.md"]);
   });
 
-  it("引擎产物（memory/arcs、memory/archive）写不进去，通用读口也不给读", async () => {
+  it("引擎产物（memory/archive）写不进去，通用读口也不给读", async () => {
     const { dir, writes } = await tempPlay();
-    await mkdir(join(dir, "memory", "arcs"), { recursive: true });
-    await writeFile(join(dir, "memory", "arcs", "epoch-a-1.md"), "# 第一纪\n摘要\n", "utf8");
+    await mkdir(join(dir, "memory", "archive"), { recursive: true });
+    await writeFile(join(dir, "memory", "archive", "events.jsonl"), "{}\n", "utf8");
     const { read, write, edit } = playwriterToolset(dir, writes);
 
-    // 通用 read 认不认引擎产物按角色分：这两条目录跟分支走，剧作家读出来就是别的世界线的纪元摘要
-    await expect(call(read, { path: "memory/arcs/epoch-a-1.md" })).rejects.toThrow(/引擎产物走不了通用读写口/);
-    for (const path of ["memory/arcs/epoch-a-1.md", "memory/ARCS/epoch-a-1.md", "memory/Archive/x.md"]) {
+    // 通用 read 认不认引擎产物按角色分：这条目录跟分支走，剧作家读出来就是别的世界线的往事
+    await expect(call(read, { path: "memory/archive/events.jsonl" })).rejects.toThrow(
+      /引擎产物走不了通用读写口/,
+    );
+    for (const path of ["memory/archive/turn-1.md", "memory/ARCHIVE/turn-1.md", "memory/Archive/x.md"]) {
       // 大小写也要挡住：Windows / macOS 上这几个是同一个文件；写走同一条路径解析，也一起拒
       await expect(call(write, { path, content: "改掉" })).rejects.toThrow(/引擎产物走不了通用读写口/);
     }
     // edit 也拒在路径解析这一步：读面就先挡下了，pi 不再往 writeFile 走、原话直接回给模型
     await expect(
-      call(edit, { path: "memory/arcs/epoch-a-1.md", edits: [{ oldText: "第一纪", newText: "改掉" }] }),
+      call(edit, { path: "memory/archive/turn-1.md", edits: [{ oldText: "一", newText: "改掉" }] }),
     ).rejects.toThrow(/引擎产物走不了通用读写口/);
-    expect(await readFile(join(dir, "memory", "arcs", "epoch-a-1.md"), "utf8")).toContain("第一纪");
     expect(writes).toEqual([]);
   });
 

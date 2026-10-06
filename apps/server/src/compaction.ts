@@ -6,8 +6,17 @@ import { renderBeatDone } from "./agentkit/beatTool.js";
  * 纪元压缩（epoch compaction）：长会话的上下文治理。
  *
  * 三区装配约定下，A 区（system）与 B 区（对话体）在一个纪元内逐 token 稳定以命中前缀缓存；
- * 纪元边界是唯一允许突变对话体的时刻：切掉早期轮次，压缩成一张 arcs 摘要卡（A 区新增一行，
- * 仍纪元内冻结），原文早已逐轮落进 archive，检索层照常命中。
+ * 纪元边界是唯一允许突变对话体的时刻：切掉早期轮次，压成一份摘要。原文早已逐轮落进 archive，
+ * 检索层照常命中。
+ *
+ * **两侧共用**：计量尺子（`estimateMessageTokens` / `localTextTokens`）、切点
+ * （`pickCompactionCut`）、转录与摘要整形（`renderTranscript*` / `splitSummary` / `compactionText`）。
+ * **记录各持一份**：演出侧落谱系快照（core 的 `CompactionRecord`，重放时由 `rebuild.ts`
+ * 投影对话体），工坊侧落线程元数据（`ThreadCompaction`，每轮重建提示词时注入 A 区）——
+ * 真相源不同（树上重放 vs 线程文件），这一点不强行合并。
+ *
+ * 所以这里只管「量」：计量、切点、转录、摘要产物的整形。何时压归两侧各自的会话层，
+ * 怎么生效归各自的重建路径。
  */
 
 /** 单条消息在摘要输入里的截断上限：DSL 原文可很长，摘要只需剧情骨架。 */
@@ -15,7 +24,7 @@ const TRANSCRIPT_CHARS_PER_MESSAGE = 2000;
 /** 摘要输入总量上限（字符）：防止极端窗口下一次性塞爆补全请求。 */
 const TRANSCRIPT_CHARS_TOTAL = 120_000;
 
-/** 摘要生成指令：只压事实不续写，输出首行一句话摘要 + 分节正文（首行即 arcs 卡的 summary）。 */
+/** 摘要生成指令：只压事实不续写。首行一句话摘要、其后分节正文，两者都会进压缩记录。 */
 export const EPOCH_SUMMARY_SYSTEM = [
   "你是一部视觉小说的长期上下文整理员。下面是一段「玩家与剧作家」多轮演出的原文记录（按时间顺序）。",
   "请把它压缩成一份前情提要，供剧作家在后续创作中无缝续演。",
@@ -40,52 +49,80 @@ const TRUNCATED = "…（略）";
  * 做法：拿 provider 报告的 usage 标定本地估算的系数，触发与切尾都乘同一个系数。
  */
 export interface ContextMeasure {
-  /** 对话体总 token（真实口径）。 */
+  /** 上下文总 token：有 usage 时按实测（含 A 区），没有时是 A 区 + 对话体的 CJK 加权下限。 */
   tokens: number;
   /** 本地估算 → 真实 token 的标定系数（无 usage 或异常时为 1）。 */
   scale: number;
 }
 
 export function measureContext(messages: readonly AgentMessage[]): ContextMeasure {
-  const { tokens, usageTokens, trailingTokens, lastUsageIndex } = estimateContextTokens([
-    ...messages,
-  ]);
-  if (lastUsageIndex === null || usageTokens <= 0) return { tokens, scale: 1 };
+  const local = messages.map(estimateMessageTokens);
+  const localTotal = local.reduce((sum, n) => sum + n, 0);
+  const { usageTokens, lastUsageIndex } = estimateContextTokens([...messages]);
+  if (lastUsageIndex === null || usageTokens <= 0) {
+    // 没有 usage 可标定（冷启动、从谱系重放出来的对话体）：按 CJK 加权的保守下限。
+    // 这里退回 pi 的 chars/4 会让中文对话体（实测 ≈1 token/字）低估 2.4–4 倍，
+    // 压缩线永远够不到，长会话会一路涨到模型报错。
+    return { tokens: localTotal, scale: 1 };
+  }
   let localPrefix = 0;
-  for (let i = 0; i <= lastUsageIndex; i += 1) localPrefix += estimateTokens(messages[i]!);
+  for (let i = 0; i <= lastUsageIndex; i += 1) localPrefix += local[i]!;
   const scale = localPrefix > 0 ? usageTokens / localPrefix : 1;
   // 系数异常（网关漏报 usage 等）时退回 1，宁可估算粗一点也不算出负数/天文数字的保留段
-  if (!Number.isFinite(scale) || scale <= 0 || scale > 10) return { tokens, scale: 1 };
-  return { tokens: usageTokens + trailingTokens * scale, scale };
+  if (!Number.isFinite(scale) || scale <= 0 || scale > 10) return { tokens: localTotal, scale: 1 };
+  return { tokens: usageTokens + (localTotal - localPrefix) * scale, scale };
 }
 
 /**
- * 切尾点：返回保留尾部里第一条消息的下标（切掉 [0, cut)）。
- * 落点必须是一条 user 消息——保留段以完整的一轮开场，工具调用对不被劈开。
- * scale 为 measureContext 标定的系数，与触发判定同尺。
- * 返回 0 表示无段可压（对话体本身就短于保留预算）。
+ * 单条消息的 token 估算：pi 的尺子 + 中文散文的加权修正。
  *
- * 预算落在消息中间时先向后顺延到下一条 user（宁可少留也不超预算）。顺延会越界时改为
- * 向前退到本轮开头：对话体尾巴上永远挂着 beat_done 的 toolResult，而它本身没有下一条 user，
- * 只认顺延的话这里恒判「无可压段」——纪元压缩一辈子不触发，长会话会一路涨到模型报错。
+ * `estimateTokens` 一律按 chars/4 折算，一个汉字只算 0.25 token，而 provider 实测约 1 token/字；
+ * 差额只补在正文与思考上，工具结构、图片那些仍用 pi 的估算（两块口径不能混起来算）。
  */
-export function pickCutIndex(
-  messages: readonly AgentMessage[],
-  keepRecentTokens: number,
-  scale = 1,
-): number {
-  let tokens = 0;
-  let cut = messages.length;
-  while (cut > 0 && tokens < keepRecentTokens) {
-    cut -= 1;
-    tokens += estimateTokens(messages[cut]!) * scale;
+export function estimateMessageTokens(message: AgentMessage): number {
+  // bashExecution 一类消息没有 content 字段（它按 command/output 计），取不到就当没有散文
+  const prose = proseText((message as { content?: unknown }).content);
+  const base = message.role === "system" ? 0 : estimateTokens(message);
+  if (prose === "") return base;
+  return base + localTextTokens(prose) - Math.ceil(prose.length / 4);
+}
+
+/** CJK 加权字数：汉字按 1 token/字，其余按 chars/4。 */
+export function localTextTokens(text: string): number {
+  let cjk = 0;
+  let rest = 0;
+  for (const ch of text) {
+    if (isCjk(ch)) cjk += 1;
+    else rest += 1;
   }
-  let next = cut;
-  while (next < messages.length && messages[next]?.role !== "user") next += 1;
-  if (next < messages.length) cut = next;
-  else while (cut > 1 && messages[cut]?.role !== "user") cut -= 1;
-  // 下标 0 是 A 区 system 消息，不能进被压段；退无可退时判为无可压缩
-  return messages[cut]?.role !== "user" || cut <= 1 ? 0 : cut;
+  return cjk + Math.ceil(rest / 4);
+}
+
+/** 汉字与全角标点：中日韩表意文字、假名、CJK 标点与全角形式。 */
+function isCjk(ch: string): boolean {
+  const code = ch.codePointAt(0) ?? 0;
+  return (
+    (code >= 0x3000 && code <= 0x303f) ||
+    (code >= 0x3040 && code <= 0x30ff) ||
+    (code >= 0x3400 && code <= 0x4dbf) ||
+    (code >= 0x4e00 && code <= 0x9fff) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0xff00 && code <= 0xffef)
+  );
+}
+
+/** 消息里的散文部分（正文与思考）——中文加权只作用在它上面。 */
+function proseText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const block of content as Array<{ type?: string; text?: string; thinking?: string }>) {
+    if (block?.type === "text" && typeof block.text === "string") parts.push(block.text);
+    else if (block?.type === "thinking" && typeof block.thinking === "string") {
+      parts.push(block.thinking);
+    }
+  }
+  return parts.join("\n");
 }
 
 /** 消息列表 → 供摘要模型阅读的纯文本转录（system 消息不在其中，调用方自行切片）。 */
@@ -117,7 +154,7 @@ export function renderTranscriptAs(
   return text;
 }
 
-/** 压缩产物：首行一句话摘要（写进 arcs 卡）+ 其余正文。 */
+/** 压缩产物：首行一句话摘要（工坊面板的标题行）+ 其余正文。 */
 export interface EpochSummary {
   oneLiner: string;
   body: string;
@@ -135,7 +172,7 @@ const GENERIC_TITLES = new Set([
   "剧情回顾",
 ]);
 
-/** 拆分模型输出：首行 = 一句话摘要（index 卡的 summary），其余 = 详情（read_memory_detail 返回）。 */
+/** 拆分模型输出：首行一句话摘要（工坊面板的标题行），其余是正文。 */
 export function splitSummary(text: string): EpochSummary {
   const lines = text.split("\n");
   let first = lines.findIndex((l) => l.trim() !== "");
@@ -160,8 +197,11 @@ function isGenericTitle(line: string): boolean {
 }
 
 /**
- * 压缩后回注对话体的前情提要：并进保留段的第一条 user 消息顶部（不另起一条 user——
- * 相邻两条同角色消息在部分 OpenAI 兼容网关上会被拒或打乱角色结构）。
+ * 接力前情提要：并进保留段的第一条 user 消息顶部（不另起一条 user——相邻两条同角色消息
+ * 在部分 OpenAI 兼容网关上会被拒或打乱角色结构）。
+ *
+ * 只用在 `carryOver` 那条路上（工坊改了 A 区、runtime 重建时把最近几轮接给新实例）；
+ * 纪元压缩不走这里——它的前情提要由 `rebuild.ts` 在投影时就并进保留段首拍了。
  */
 export function withSeed(tail: readonly AgentMessage[], seed: string): AgentMessage[] {
   const head = tail[0];
@@ -170,15 +210,15 @@ export function withSeed(tail: readonly AgentMessage[], seed: string): AgentMess
   return [{ ...head, content: `${seed}\n\n${blockText(head.content)}` }, ...tail.slice(1)];
 }
 
-/** 压缩后回注对话体的前情提要正文：告诉剧作家「这些已经是前情，别重演」。 */
-export function renderSeed(epochNo: number, beatNo: number, body: string): string {
-  return [
-    `【前情提要·纪元 ${epochNo}】（截至第 ${beatNo} 轮的早期演出已压缩归档）`,
-    "",
-    body,
-    "",
-    "以上是已经发生的既定事实。请直接从当前场景继续往后写，不要重演、不要推翻已确立的情节。",
-  ].join("\n");
+/**
+ * 压缩记录的摘要正文：模型输出的全部内容（只去掉开场那个通用标题）。
+ *
+ * 剧作家拿到的就是这一份，所以不再拆「一句话 + 正文」——那个形状是给 A 区索引卡用的，
+ * 索引卡已经没有了。工坊线程仍走 splitSummary（它的面板要一行标题）。
+ */
+export function compactionText(raw: string): string {
+  const { oneLiner, body } = splitSummary(raw);
+  return body === oneLiner ? oneLiner : `${oneLiner}\n\n${body}`;
 }
 
 function renderMessage(message: AgentMessage, labels?: TranscriptLabels): string {
@@ -252,33 +292,61 @@ export function estimateThreadTokens(
   scale = 1,
 ): number {
   let local = textTokens(systemPrompt);
-  for (const message of messages) local += messageTokens(message);
+  for (const message of messages) local += estimateMessageTokens(message);
   return Math.round(local * scale);
 }
 
 /**
- * 切尾点：返回保留尾部里第一条 user 消息的**相对**下标（切掉 [0, cut)）。
- * 落点必须是 user 消息——保留段以完整一轮开场。scale 与计量同尺。
- * 返回 0 表示无段可压（对话体本身就短于保留预算）。
+ * 压缩切点：一串「单位」（演出侧 = 一拍，工坊侧 = 一轮）各自多少 token，
+ * 返回保留段第一条单位的下标（切掉 [0, keepFrom)）。
+ *
+ * 两侧共用的语义：
+ * - 切点只落在单位边界上，半拍/半轮永远不进保留段；
+ * - 连最后一条单位都超预算时只留它（`length - 1`）——宁可压掉太多，也不把整段留在上下文里等着撞窗口；
+ * - `null` = 无可压段（只有一条单位，或整段本来就装得下）。
+ *
+ * 单位从哪来、切点怎么映射回真相源（该拍的 `boundaryId` / 该轮的首条消息下标）归调用方。
+ */
+export function pickCompactionCut(
+  unitTokens: readonly number[],
+  keepRecentTokens: number,
+): number | null {
+  if (unitTokens.length < 2) return null;
+  let kept = 0;
+  let keepFrom = unitTokens.length;
+  while (keepFrom > 0) {
+    const cost = unitTokens[keepFrom - 1]!;
+    if (kept + cost > keepRecentTokens) break;
+    kept += cost;
+    keepFrom -= 1;
+  }
+  if (keepFrom === unitTokens.length) return unitTokens.length - 1;
+  return keepFrom === 0 ? null : keepFrom;
+}
+
+/**
+ * 工坊线程的切点：单位是一轮（一条 user + 它后面的 assistant），
+ * 返回保留段第一条**消息**的下标。0 = 无段可压（与 `pickCompactionCut` 的 null 同义）。
+ * scale 与计量同尺。
  */
 export function pickThreadCutIndex(
   history: readonly ThreadTurn[],
   keepRecentTokens: number,
   scale = 1,
 ): number {
-  let tokens = 0;
-  let cut = history.length;
-  while (cut > 0 && tokens < keepRecentTokens) {
-    cut -= 1;
-    tokens += turnTokens(history[cut]!) * scale;
+  const units: { start: number; tokens: number }[] = [];
+  for (let i = 0; i < history.length; i += 1) {
+    const turn = history[i]!;
+    // 一条 user 起一轮；开头的 assistant（不正常的历史）并进第一轮，不另起一条
+    if (turn.role === "user" || units.length === 0) units.push({ start: i, tokens: 0 });
+    const unit = units[units.length - 1]!;
+    unit.tokens += turnTokens(turn) * scale;
   }
-  if (cut === 0) return 0;
-  // 预算落在消息中间时向后顺延到下一条 user（宁可少留也不劈开一轮）；顺延越界则退到本轮开头。
-  let next = cut;
-  while (next < history.length && history[next]!.role !== "user") next += 1;
-  if (next < history.length) cut = next;
-  else while (cut > 0 && history[cut]!.role !== "user") cut -= 1;
-  return cut > 0 && history[cut]!.role === "user" ? cut : 0;
+  const keepFrom = pickCompactionCut(
+    units.map((unit) => unit.tokens),
+    keepRecentTokens,
+  );
+  return keepFrom === null ? 0 : units[keepFrom]!.start;
 }
 
 /**
@@ -310,7 +378,7 @@ export function calibrateTokenScale(
   for (let i = 0; i <= index; i += 1) {
     // system 消息已由 systemPrompt 计过一遍（这里的口径是「prompt + 不含 system 的消息」）
     if (messages[i]!.role === "system") continue;
-    local += messageTokens(messages[i]!);
+    local += estimateMessageTokens(messages[i]!);
   }
   if (local <= 0) return null;
   const scale = usageTokens / local;
@@ -328,19 +396,11 @@ export function capDigest(text: string, maxChars = DIGEST_MAX_CHARS): string {
   return `（更早的对话已不再保留）\n${clipTail(trimmed, maxChars)}`;
 }
 
-/** 单轮文本的 token 估算：与 pi 的 chars/4 同尺，中文误差由 scale 统一纠正。 */
+/** 单轮文本的 token 估算：与 estimateMessageTokens 同一把 CJK 加权的尺子。 */
 function turnTokens(turn: ThreadTurn): number {
-  return Math.ceil(turn.text.length / 4);
+  return localTextTokens(turn.text);
 }
 
 function textTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
-/**
- * 单条消息的 token 估算。pi 的 estimateTokens 不认 system role（返回 0），
- * 而工坊的 A 区（文件清单 + 技能 + 写作要点）是上下文的大头，不能当零——自己按同一把尺子补上。
- */
-function messageTokens(message: AgentMessage): number {
-  return message.role === "system" ? textTokens(blockText(message.content)) : estimateTokens(message);
+  return localTextTokens(text);
 }

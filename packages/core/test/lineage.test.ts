@@ -198,10 +198,11 @@ describe("谱系快照", () => {
   it("快照随分支走：路径上最近快照可恢复，旧分支看不到未来", () => {
     const tree = new LineageTree();
     const { say1, say2 } = buildPlay(tree);
-    const snap1 = tree.saveSnapshot(
-      { turn: 2, affinity: { mio: 10 }, flags: {} },
-      { state: { scene: "走廊" }, arcs: [] },
-    );
+    const snap1 = tree.saveSnapshot({
+      engine: { turn: 2, affinity: { mio: 10 }, flags: {} },
+      stateFiles: { scene: "走廊" },
+      nsfw: false,
+    });
     expect(snap1.nodeId).toBe(say2.id);
 
     tree.append("say", { text: "第三章剧情（未来）" });
@@ -281,10 +282,12 @@ describe("持久化往返", () => {
     const tree = new LineageTree();
     const say1 = tree.append("say", { text: "……太慢了！", payload: { seq: 11 } });
     const say2 = tree.append("say", { text: "算了，上来吧。", payload: { seq: 19 } });
-    const snap = tree.saveSnapshot(
-      { turn: 2, affinity: { mio: 10 }, flags: {} },
-      { state: { scene: "走廊" }, arcs: ["arc1"] },
-    );
+    const snap = tree.saveSnapshot({
+      engine: { turn: 2, affinity: { mio: 10 }, flags: {} },
+      stateFiles: { scene: "走廊" },
+      compaction: { summary: "两人走到旧校舍。", cutNodeId: say1.id, tokensBefore: 900 },
+      nsfw: false,
+    });
 
     const rebuilt = new LineageTree();
     rebuilt.load(tree.export());
@@ -292,7 +295,11 @@ describe("持久化往返", () => {
     const restored = rebuilt.latestSnapshotOnPath(say2.id);
     expect(restored?.id).toBe(snap.id);
     expect(restored?.engine.affinity).toEqual({ mio: 10 });
-    expect(restored?.memory.arcs).toEqual(["arc1"]);
+    expect(restored?.compaction).toEqual({
+      summary: "两人走到旧校舍。",
+      cutNodeId: say1.id,
+      tokensBefore: 900,
+    });
     // 剧本事件的 seq 锚点随事件流往返：路线树据此把每张卡对到剧本首行
     expect(rebuilt.describe().nodes.find((n) => n.id === say1.id)?.seq).toBe(11);
     expect(rebuilt.describe().nodes.find((n) => n.id === say2.id)?.seq).toBe(19);
@@ -489,7 +496,7 @@ describe("剪枝（删除一段及其后代）", () => {
     const tree = new LineageTree();
     tree.append("say", { text: "开场" });
     const target = tree.append("say", { text: "会被剪掉的一句" });
-    tree.saveSnapshot({ turn: 1, affinity: {}, flags: {} }, { state: {}, arcs: [] });
+    tree.saveSnapshot({ engine: { turn: 1, affinity: {}, flags: {} }, stateFiles: {}, nsfw: false });
     tree.recordEdit(target.id, "改过的一句");
 
     tree.removeSubtree(target.id);

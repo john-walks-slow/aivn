@@ -67,8 +67,6 @@ export interface PlaywriterKitDeps extends KitCommonDeps {
   tree: LineageTree;
   /** 引擎状态真值在这里，update_state 的 scene/threads 直接改它（谱系级，随快照走）。 */
   stateFiles: Record<string, string>;
-  /** 当前分支已走过的纪元（分岔回旧分支不得读到后世的章节摘要）。 */
-  arcIds: () => readonly string[];
   /** 剧目文件层：read / write / edit 的白名单与落盘收口，与工坊**同一份**。 */
   files: PlayFiles;
   /**

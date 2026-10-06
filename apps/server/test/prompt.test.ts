@@ -175,17 +175,14 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
     expect(prompt).not.toContain("- [] ");
   });
 
-  it("纪元卡只在它所属的分支上出现（防剧透）", () => {
+  it("记忆索引每行都带可写路径（标题与文件名可以不一样）", () => {
     const memory = new PlayMemory({
       cards: [
-        { layer: "arcs", name: "第一纪元", summary: "两人走到旧校舍", detail: "", file: "epoch-e1-1", arc: true },
-        { layer: "locations", name: "旧校舍", summary: "四层走廊", detail: "", file: "locations/旧校舍", arc: false },
+        { layer: "locations", name: "旧校舍", summary: "四层走廊", detail: "", file: "locations/旧校舍" },
       ],
     });
-    expect(build({ play: PLAY, memory, arcIds: [] })).not.toContain("第一纪元");
-    // 纪元卡是引擎产物、写不进去：行尾不给路径，免得模型拿着去 edit
-    expect(build({ play: PLAY, memory, arcIds: ["epoch-e1-1"] })).toContain("- [arcs] 第一纪元：两人走到旧校舍");
-    expect(build({ play: PLAY, memory, arcIds: ["epoch-e1-1"] })).not.toContain("memory/index/epoch-e1-1.md");
+    const prompt = build({ play: PLAY, memory });
+    expect(prompt).toContain("- [locations] 旧校舍（memory/index/locations/旧校舍.md）：四层走廊");
   });
 
   it("没有描述表时清单退化为纯 id，行为与从前一致", () => {
@@ -400,11 +397,11 @@ describe("能力位与提示词的一致性：没开的能力不教它调", () =
     expect(prompt).toContain("要人设或音色才建档（write）");
   });
 
-  it("两个都关：只剩「read 带路径的那一行」这条路，且不出现任何工具名", () => {
+  it("两个都关：只剩「read 每行括号里的路径」这条路，且不出现任何工具名", () => {
     const prompt = build({ ...base, can: { memory: false, characters: false } });
     expect(prompt).not.toContain("read_memory_detail");
     expect(prompt).not.toContain("search_archive");
-    expect(prompt).toContain("需要某条完整内容时 read 带路径的那一行所写的文件；过往剧情问用户");
+    expect(prompt).toContain("需要某条完整内容时 read 每行括号里的路径；过往剧情问用户");
   });
 
   it("分级角色表末尾那句按「管理角色」指路：开着走建档，关着让人直接 read 卡", () => {
