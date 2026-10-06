@@ -43,21 +43,21 @@ describe("点「新会话」后旧历史不残留", () => {
     expect(api().freshThread).toBe(true);
   });
 
-  it("clearState 清掉聊天区但保住线程列表与写盘记录", () => {
+  it("clearState 清掉聊天区但保住线程列表", () => {
     const { api, inbound } = mount();
     inbound({ type: "workshop_threads", threads: [THREAD], activeId: "t1" });
     inbound({ type: "workshop_history", threadId: "t1", messages: [{ role: "user", text: "旧消息", at: 1 }] });
-    inbound({ type: "workshop_write", path: "memory/always/craft.md", before: "旧内容", at: 5 });
+    inbound({ type: "workshop_write", threadId: "t1", path: "memory/always/craft.md", before: "旧内容" });
 
     act(() => api().clearState());
 
     expect(api().state.messages).toEqual([]);
     expect(api().state.live).toEqual([]);
     expect(api().state.busy).toBe(false);
-    // 会话层不能跟着消失：列表、当前会话、写盘撤销都要留着
+    // 会话层不能跟着消失：列表与当前会话要留着；写盘只涨 revision，不留记录
     expect(api().state.threads).toEqual([THREAD]);
     expect(api().state.activeId).toBe("t1");
-    expect(api().state.writes).toHaveLength(1);
+    expect(api().state.revision).toBe(1);
   });
 
   it("清空后发出的第一条消息不带 threadId，服务端据此新建会话", () => {

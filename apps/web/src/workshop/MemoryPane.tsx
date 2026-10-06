@@ -71,9 +71,9 @@ export function MemoryPane({ playId, revision }: { playId: string; revision: num
   const cards = useMemo<Card[]>(() => {
     const out: Card[] = [];
     for (const f of files) {
-      // 只有剧目记忆进这一页：纪元产物是机器写的，列出来只会让人以为能改
+      // 只有剧目记忆进这一页：archive 是机器写的逐轮切片，列出来只会让人以为能改
       if (!f.path.startsWith("memory/")) continue;
-      if (f.path.startsWith("memory/arcs/") || f.path.startsWith("memory/archive/")) continue;
+      if (f.path.startsWith("memory/archive/")) continue;
       out.push({
         key: f.path,
         title: titleOf(f),

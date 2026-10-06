@@ -11,8 +11,8 @@ import { LineageTree } from "@aivn/core";
 /**
  * `PlayEnv` 是 pi 内建工具（read / write / edit / bash）与剧目文件之间唯一的那层装饰。
  *
- * 它管三件事，这里逐个钉住：**路径白名单**（read / write / edit 走它，bash 不走）、
- * **play.json 的结构校验**、**撤销条**（before/after 交给前端）。pi 那边的匹配语义
+ * 它管两件事，这里逐个钉住：**路径白名单**（read / write / edit 走它，bash 不走）、
+ * **play.json 的结构校验**。pi 那边的匹配语义
  * （精确→模糊、唯一性、BOM/行尾）是 pi 自己的事，不在这里重测。
  */
 
@@ -81,7 +81,7 @@ describe("PlayEnv：read / write / edit 的路径白名单", () => {
 
     await call(write, { path: "memory/index/lore/新设定.md", content: "# 新设定\n" });
     expect(await readFile(join(dir, "memory/index/lore/新设定.md"), "utf8")).toBe("# 新设定\n");
-    expect(writes).toEqual([{ path: "memory/index/lore/新设定.md", before: null, after: "# 新设定\n" }]);
+    expect(writes).toEqual([{ path: "memory/index/lore/新设定.md" }]);
 
     // assets/ 读得到、写不了（唯一的例外是素材描述表 assets/manifest.json）
     await expect(call(write, { path: "assets/backgrounds/新背景.png", content: "x" })).rejects.toThrow(
@@ -121,8 +121,8 @@ describe("PlayEnv：play.json 的结构校验", () => {
   });
 });
 
-describe("PlayEnv：撤销条（before / after）", () => {
-  it("edit 定点替换后落盘，并把改前改后交给撤销条", async () => {
+describe("PlayEnv：写盘信号（只带路径，各页据此重拉）", () => {
+  it("edit 定点替换后落盘，并推出写盘信号", async () => {
     const { dir, writes } = await tempPlay();
     const { edit } = toolset(dir, writes);
 
@@ -131,13 +131,7 @@ describe("PlayEnv：撤销条（before / after）", () => {
       edits: [{ oldText: "柔和的夏日色调。", newText: "柔和的夏日色调，线稿偏细。" }],
     });
     expect(await readFile(join(dir, "memory/always/craft.md"), "utf8")).toBe("# 画风\n柔和的夏日色调，线稿偏细。\n");
-    expect(writes).toEqual([
-      {
-        path: "memory/always/craft.md",
-        before: "# 画风\n柔和的夏日色调。\n",
-        after: "# 画风\n柔和的夏日色调，线稿偏细。\n",
-      },
-    ]);
+    expect(writes).toEqual([{ path: "memory/always/craft.md" }]);
   });
 
   it("play.json 改对了照样过校验并落盘", async () => {
@@ -173,7 +167,7 @@ describe("PlayEnv：bash 是另一条路", () => {
 
     const out = (await call(bash, { command: "cat session.json" })) as { content: { text: string }[] };
     expect(out.content[0]!.text).toContain("{}");
-    expect(writes).toEqual([]); // 也不进撤销条
+    expect(writes).toEqual([]); // 也不推写盘信号
   });
 });
 
@@ -181,7 +175,7 @@ describe("PlayEnv：bash 是另一条路", () => {
  * 剧作家这一侧：角色卡与记忆卡不再是专用工具，走的是**同一套** read / write / edit
  * （同一个 `PlayEnv`、同一份 `PlayFiles` 白名单）。这里钉住三件事：
  * 写盘要过 `onWrite`（宿主靠它登记角色 id、排轮边界重建）、`edit` 能定点改而不抹掉别的字段、
- * 引擎产物（arcs / archive）看得见但写不进去。
+ * 引擎产物（archive）看得见但写不进去。
  */
 describe("PlayEnv：剧作家的文件工具", () => {
   function playwriterToolset(
@@ -230,13 +224,7 @@ describe("PlayEnv：剧作家的文件工具", () => {
       content: "---\nname: 小雨\nvoiceId: aaa111\n---\n咖啡店打工的少女。\n",
     });
     expect(await readFile(join(dir, "characters", "xiaoyu.md"), "utf8")).toContain("咖啡店打工的少女");
-    expect(writes).toEqual([
-      {
-        path: "characters/xiaoyu.md",
-        before: null,
-        after: "---\nname: 小雨\nvoiceId: aaa111\n---\n咖啡店打工的少女。\n",
-      },
-    ]);
+    expect(writes).toEqual([{ path: "characters/xiaoyu.md" }]);
   });
 
   it("edit 定点改角色卡：只换那一处，机器字段一个不丢（整篇 write 做不到这件事）", async () => {
@@ -255,30 +243,27 @@ describe("PlayEnv：剧作家的文件工具", () => {
     expect(after.content[0]!.text).toContain("voiceId: aaa111");
     expect(after.content[0]!.text).toContain("framing: half");
     // **edit 也要回调**：宿主靠它排轮边界重建，漏了这一步改完卡下一轮还是老内容
-    expect(writes.map((w) => [w.path, w.before === null])).toEqual([
-      ["characters/xiaoyu.md", true],
-      ["characters/xiaoyu.md", false],
-    ]);
-    expect(writes[1]!.before).toContain("咖啡店打工的少女。");
+    expect(writes.map((w) => w.path)).toEqual(["characters/xiaoyu.md", "characters/xiaoyu.md"]);
   });
 
-  it("引擎产物（memory/arcs、memory/archive）写不进去，通用读口也不给读", async () => {
+  it("引擎产物（memory/archive）写不进去，通用读口也不给读", async () => {
     const { dir, writes } = await tempPlay();
-    await mkdir(join(dir, "memory", "arcs"), { recursive: true });
-    await writeFile(join(dir, "memory", "arcs", "epoch-a-1.md"), "# 第一纪\n摘要\n", "utf8");
+    await mkdir(join(dir, "memory", "archive"), { recursive: true });
+    await writeFile(join(dir, "memory", "archive", "events.jsonl"), "{}\n", "utf8");
     const { read, write, edit } = playwriterToolset(dir, writes);
 
-    // 通用 read 认不认引擎产物按角色分：这两条目录跟分支走，剧作家读出来就是别的世界线的纪元摘要
-    await expect(call(read, { path: "memory/arcs/epoch-a-1.md" })).rejects.toThrow(/引擎产物走不了通用读写口/);
-    for (const path of ["memory/arcs/epoch-a-1.md", "memory/ARCS/epoch-a-1.md", "memory/Archive/x.md"]) {
+    // 通用 read 认不认引擎产物按角色分：这条目录跟分支走，剧作家读出来就是别的世界线的往事
+    await expect(call(read, { path: "memory/archive/events.jsonl" })).rejects.toThrow(
+      /引擎产物走不了通用读写口/,
+    );
+    for (const path of ["memory/archive/turn-1.md", "memory/ARCHIVE/turn-1.md", "memory/Archive/x.md"]) {
       // 大小写也要挡住：Windows / macOS 上这几个是同一个文件；写走同一条路径解析，也一起拒
       await expect(call(write, { path, content: "改掉" })).rejects.toThrow(/引擎产物走不了通用读写口/);
     }
     // edit 也拒在路径解析这一步：读面就先挡下了，pi 不再往 writeFile 走、原话直接回给模型
     await expect(
-      call(edit, { path: "memory/arcs/epoch-a-1.md", edits: [{ oldText: "第一纪", newText: "改掉" }] }),
+      call(edit, { path: "memory/archive/turn-1.md", edits: [{ oldText: "一", newText: "改掉" }] }),
     ).rejects.toThrow(/引擎产物走不了通用读写口/);
-    expect(await readFile(join(dir, "memory", "arcs", "epoch-a-1.md"), "utf8")).toContain("第一纪");
     expect(writes).toEqual([]);
   });
 

@@ -401,3 +401,44 @@ describe("PUT /api/plays/:id/assets/sprite：素材页写立绘呈现声明", ()
     expect(declared).toEqual([]);
   });
 });
+
+describe("GET /plays/:id/drafts/<draftId>/<file>：生图草稿预览", () => {
+  let root: string;
+  let library: PlayLibrary;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "stage-http-drafts-"));
+    library = new PlayLibrary(root);
+    await library.createEmpty("p1", "黄昏");
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  async function get(url: string): Promise<FakeRes> {
+    const res = new FakeRes();
+    await handleHttp(
+      { url, method: "GET" } as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      library,
+      {} as PlayHouse,
+    );
+    return res;
+  }
+
+  it("把草稿目录里的成图送出去（出图与入库解耦后，候选预览靠这条）", async () => {
+    const dir = join(root, "p1", "media-cache", "drafts", "d-1");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "image.png"), Buffer.from("PNGDATA"));
+
+    const res = await get("/plays/p1/drafts/d-1/image.png");
+    expect(res.statusCode).toBe(200);
+    expect(res.payload).toBe("PNGDATA");
+  });
+
+  it("草稿不存在时 404，不越出草稿目录", async () => {
+    expect((await get("/plays/p1/drafts/d-1/image.png")).statusCode).toBe(404);
+    expect((await get("/plays/p1/drafts/d-1/..%2F..%2Fplay.json")).statusCode).toBe(404);
+    expect((await get("/plays/p1/drafts/d-1/a/b.png")).statusCode).toBe(404);
+  });
+});

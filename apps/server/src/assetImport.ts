@@ -55,7 +55,7 @@ export interface ImportResult {
   protagonist: boolean;
   /** 剧目素材表新增/更新的键。 */
   manifestKeys: string[];
-  /** 剧目配置/素材表被改动的文本（进工坊撤销条；REST 直连时为空）。 */
+  /** 剧目配置/素材表被改动的路径（推刷新信号用；REST 直连时前端不用它）。 */
   writes: PlayFileWrite[];
 }
 
@@ -205,8 +205,6 @@ export async function importFromLibrary(
 
   // ── 配置读改写在锁内：角色卡与素材表都是「读全量 → 改 → 写回」，裸做就是互相覆盖 ──
   await withPlayConfigLock(store.dir, async () => {
-    // before 与 after 都在锁内现取：撤销条要能精确回滚，锁外读到的可能已被别人改过
-    const manifestBefore = await files.read("assets/manifest.json").catch(() => null);
     if (manifest.length > 0) {
       const current = await readManifest(files);
       for (const [key, meta] of manifest) {
@@ -214,9 +212,10 @@ export async function importFromLibrary(
         result.manifestKeys.push(key);
       }
       const manifestText = `${JSON.stringify(current, null, 2)}\n`;
+      const manifestBefore = await files.read("assets/manifest.json").catch(() => null);
       await files.write("assets/manifest.json", manifestText);
       if (manifestBefore !== manifestText) {
-        result.writes.push({ path: "assets/manifest.json", before: manifestBefore, after: manifestText });
+        result.writes.push({ path: "assets/manifest.json" });
       }
     }
 
@@ -232,7 +231,7 @@ export async function importFromLibrary(
 
 /**
  * 把角色卡原料落进 `characters/<id>.md`：库里没写的字段一律不动，
- * 剧目侧手改过的补充说明要留住。没变化就不写盘，也不记撤销条（空操作会误导用户）。
+ * 剧目侧手改过的补充说明要留住。没变化就不写盘，也不推刷新信号（空操作会误导各页重拉）。
  *
  * 立绘字段（framing / sprites / spriteFraming）不在这里——它们归素材表，
  * 顺带也让存量卡下次被写到时就瘦下来（`serializeCharacterCard` 只写四个机器字段）。
@@ -256,5 +255,5 @@ async function applyCharacterCard(
   const after = serializeCharacterCard(next);
   if (after === before) return null;
   await files.write(path, after);
-  return { path, before, after };
+  return { path };
 }

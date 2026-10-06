@@ -11,13 +11,18 @@
 - **两条推导都在 `createAgentKit` 一处**：装上的工具 = 基座 `read` ∪ 开着的能力授权的工具（再按 `TOOL_CATALOG.roles` 与我方依赖面收一道，没配 Exa / TTS / 生图就装不出来）；`can` 位 = **该能力开着且它授权的工具都装上了**（键就是能力 id）——能力声明了一个装不出来的工具，这一位就是假，提示词不会教模型去调它没有的东西。同一个能力在两个角色上授权的口可以不同（`image`：剧作家只要 `generate_image`，工坊还要 `recut_sprite`；`library`：工坊多一个 `import_asset`，实现上是 `libraryTool` 的 `importAsset: false`）。
 - `generate_image` 的两个角色**同一份 schema**（`spriteId`/`variant`/`title` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只差 description 与等待策略。**垫图入口只有一个 `references`**（每项可以是主体 id、剧目内相对路径或 http(s) 网址，1–6 张；`referenceCharacters` 保留为只吃主体 id 的兼容别名，两者在工具层合并去重）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该主体的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
 - **卡是可选的，出图也不替谁建卡**：`generate_image` 只按 `spriteId`（主体 id）往 `assets/sprites/<id>/` 落文件——机甲、道具、猫本来就没有卡。名字从哪来：卡 `name` → `<say name>` → 素材表 `title`（`generate_image` 的 `title` 参数就是给无卡主体落名牌用的）→ id；无卡主体的 TTS 走剧目级 `defaultVoiceId`。
-- **出图顺手写呈现声明**：`playAssets.declareSprite` 把 `framing` / `stature` / `title` 写进 `assets/manifest.json`（neutral 那一次立立绘级，`variant` 与立绘级取景不同才写一条 `<id>/<variant>` 覆盖），与卡无关——卡只管人设与音色，立绘声明归素材表。
+- **出图与入库拆成两步**（2026-10-05）：`PlayAssets.draft()` 只出图，落 `media-cache/drafts/<draftId>/`（成图 + 立绘抠底前的原片 + `draft.json` 记出图意图），**不写 `assets/`、不碰素材表、不记台账**；`commit(draftId)` 才落 `assets/`、补呈现声明、记 `assets/generated.json`、把原片搬进 `media-cache/sprite-sources/`（重抠要用）。
+  - 工坊的 `generate_image` 走 `draft`：回执给 `draftId` 与预览，候选图也走 `onAsset` 推气泡（不推的话默认折叠的工具行把候选藏起来了）；采用是显式的下一步 `commit_asset(draftId)`（只装工坊，挂在「生图」能力下）。
+  - 剧作家与素材页的手动生图走 `generate()` = `draft` + `commit` 一次做完——那边的 id 是调用时就定下的，没有「让用户在候选里挑」这回事，时间线的骨架占位 → `asset_ready` 语义不变。
+  - **草稿不是身份基准**：非 neutral 的立绘要求该主体有**已入库的** neutral（`generate()` 里那套自动补定妆照照旧，它补出来的是真素材）。`draft()` 不去重——同一目标并发出三张候选正是这条流程要的；`inflight` 去重只在 `generate()` 那层。
+  - 草稿超过 7 天，由下一次出图顺手清掉；预览走 `/plays/:id/drafts/<draftId>/<file>` 静态路由（`WorkshopMarkdown` 的 `assetUrl` 同时认 `assets/` 与 `drafts/`）。
+  - `playAssets.declareSprite` 把 `framing` / `stature` / `title` 写进 `assets/manifest.json`（neutral 那一次立立绘级，`variant` 与立绘级取景不同才写一条 `<id>/<variant>` 覆盖），与卡无关——卡只管人设与音色，立绘声明归素材表。
 - **同名工具调用并发**：写角色卡的落盘与 generate_image 的成员校验原本实时读盘，同批发出时谁先完成不定，会偶发扑空。
 - `playhouse.writeCharacter` 在落盘**之后**把 id 登记进 `knownCharacters`（WeakMap<PlayStore>），`characterIdsOf` 那个回调读实时盘 ∪ 它，竞态就没了；顺序反了会在写失败时留下一个并不存在的 id。
 - 剧作家走通用 `write` 时，同一步（`orchestrator.onPlayFileWritten` → `playhouse.onPlayFileWritten`）按 `characterIdOfPath(write.path)` 认角色卡并登记，两条路汇到同一处。
 - **无名角色音色**：`<say id="passerby" name="路人甲">` 这种一次性角色没有角色卡、而音色挂在角色卡的 voiceId 上，于是永远没声音。
 - 两处兜底都在 `orchestrator`：`voiceOf` 取卡的 voiceId、没有卡就落剧目级 `defaultVoiceId`（工坊「剧目」页挑）；名字取卡的 `name` → `<say name>` → 素材表 `title`（素材页的「名牌」）→ id。
-- **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `recut_sprite`——立绘落盘前把抠底前的原片留一份到 `media-cache/sprite-sources/<主体 id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
+- **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `recut_sprite`——立绘**入库时**把抠底前的原片留一份到 `media-cache/sprite-sources/<主体 id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
 - 没有留底的（更早出的图、用户上传的）直接报错，只能重新出图。
 - `import_asset` 现在**只装给工坊**（`TOOL_CATALOG` 的 `roles` 只留 `workshop`）——剧作家的默认导入路径是引用即导入（见下），给它留一个自己搬素材的口是重复路径，只是多一个谁都够不到的工具。工坊那边它挂在「素材资源库」能力下（`libraryTool` 的 `importAsset` 开关，剧作家侧传 `false`）。
 
@@ -36,6 +41,7 @@
 - **重写的来源继承**：新 fork 标记必须带上被顶掉那一拍的 `origin`，否则玩家回到同一锚点重选同一选项时认不出这条重写枝。优先取客户端点名的 `replaced`（本轮首节点），其次取「世界线在锚点之下」时路径上的那个孩子。锚点由客户端算（`BeatCard.forkFromId`）＝**本轮之前的那一点**（首节点的父；第一轮没有前驱就退回首节点自身），整轮连内容一起重来。本轮由玩家的一句话开头时，那句话由客户端作为 `replaced` 一起点名、服务端 `replacedInput` 取回原话带进新枝（见下条）——**不要把锚点改到那个输入节点上**：`LineageTree.beatEndFrom` 见分叉点（输入节点有 2 个孩子）就返回它自己，玩家回到锚点重选同一选项时会落在那句输入上而不是走回刚重写的那条枝（2026-10-04 实测）。两条重写入口（路线卡片 / 舞台导演栏）走同一套口径。
 - **重写/分岔带的交代跟着这一岔一起发**（`fork.instruction` → `forkTo` 的 `deliverForkInputs`）：它是新枝**这一轮**的输入——与「插一句」同一条入账路径（`deliverPrompts`：落一个 prompt 节点 + 广播 `player_input` + `beginBeat` 的 `【用户输入】`），不是排进 `pending` 等下一轮兑现。分岔不 resume 时带上它 = 新分支立刻照这句开演。判废退回时它照常回到队列（`returnBeatSteers`）。
 - **被顶掉那一拍的原话也带进新枝**（`replaced` 是 prompt 节点时由 `replacedInput` 取回）：新枝只带【状态】的话剧作家不知道自己当初在回应什么、只能凭空接话。它与交代的差别只在判废退回——原话是旧枝上那句话的副本，旧枝上本来就在，所以它只落节点、进 `trailingInputs`，**不当引导**（再排一次等于同一句话进两次谱系）；交代是待兑现的引导，照旧还回队列。
+- **纪元压缩是分支状态 + 重放投影**：压缩记录（core 的 `CompactionRecord`：`summary` / `cutNodeId` / `tokensBefore`）是谱系快照（`LineageSnapshot`）的一个字段，随快照跟分支走；`rebuild.ts` 的 `lineageToBeats` 按它把切点之前的段落换成一条前情提要并进保留段首拍。跳转/分岔/编辑/读档冷启动读到的因此都是同一个结果，压缩不需要任何撤销逻辑（跳回压缩点之前的分支时链上没有那个 `cutNodeId`，自动照渲原文）。切点由 `compaction.ts` 的 `pickCompactionCut` 算（单位 = 一拍，落在链上的一个 `beat_end`；`RebuiltBeat.boundaryId`，限制级折叠段取段末那一拍），二次压缩就是对投影再压一次，不拿旧摘要当底稿。计量同在那个文件：有 provider usage 按实测标定，没有就按 CJK 加权给下限——沿用 pi 的 chars/4 会把中文低估 2.4–4 倍，压缩永远够不到阈值。
 - **删除是剪整条子树**（协议 `delete_branch`，`nodeId` = 该段首节点）：`removeSubtree` 删节点与后代、清快照与改写旁注、**上溯清空壳 fork 标记**（fork 是卡片首节点的父、不进卡片，只删卡片会留下一个带来源标签的空节点）。世界线本来就不在这条枝上时它不会被动，重建因此是幂等的。`rebase` 消息带 `keepView`，删除后客户端留在路线视图。
 - **回看里的插图是旁注，不是节点**（`LineageTree.recordCg` / `orchestrator.attachCg`，与原地改写同一套）：图挂在「玩家正看的那一行」上，**不入树、不动挂载点、不分叉**——链上每个节点只有一个孩子，往链里插一个节点必然要么挪走它原来的下一个（=分叉）要么掰链改结构。协议上 `generate_cg` 的 `anchorNodeId` 是三态：不给 = 现场（末尾落 `cg` 节点，`directorCg`）、给 id = 挂那一行、`null` = 在回看但这一行还没进谱系（**明确拒绝**，退成末尾生图会往世界线上多落一个节点）。两类旁注（改写 / 插图）统一在 `notes` 一张表里，`export()` 排在树事件之后、`load()` 分流回来、剪枝时连旁注一起清。
 - **`flushLineageLog` 按「已推事件 id」补推，别用条数当游标**：事件流是「树事件 + 恒排末尾的旁注」两段拼接，分叉标记（`recordFork`）会插在旁注**前面**——用已推条数切片时，有旁注之后新标记漏落盘、旧旁注被重复落盘（2026-10-04 实测修掉）。
@@ -43,27 +49,27 @@
 
 ## 工坊线程（压缩、消息文件与文件工具）
 
-- **工坊线程也有纪元压缩**：`workshopSession.ts` 的 `maybeCompact` 每轮开跑前判定（与演出侧同一时刻、同一套 `compaction.ts` 计量与切点），但产物落线程的 `compaction` 字段而不是 `memory/arcs`——工坊会话是搭台过程、不是剧目事实，进 arcs 会污染剧作家每轮注入的 A 区。
+- **工坊线程也有纪元压缩**：`workshopSession.ts` 的 `maybeCompact` 每轮开跑前判定，与演出侧**同一套** `compaction.ts`：同一把计量尺子（`estimateMessageTokens` / `localTextTokens`）、同一个切点原语（`pickCompactionCut`，单位分别是「一轮」与「一拍」）。差别只在记录落点与摘要策略——工坊落线程元数据（`ThreadCompaction`）并每轮注入 A 区，且是**拿旧定稿重写成一份完整文档**（`capDigest` 封顶）；演出侧落谱系快照、由投影生效，重算即可。工坊会话是搭台过程、不是剧目事实，落进剧目记忆只会污染剧作家每轮注入的 A 区。
 - **消息文件一条不删**：只有前 `cutAt` 条移出 agent 上下文，面板照常显示（旧对话照常在，只是中间多一条可点开的分隔）。
 - **助手回复落成段落流**（2026-10-04）：`WorkshopChatMessage.parts` 是 text / thinking / tool 的有序数组，拼装规则在 core 的 `ws/workshopParts.ts`，**服务端与前端共用同一份纯函数**——各写一遍的症状是「流式时看着对，收束后换了样」。WS 上 `workshop_tool` 因此拆成 `workshop_tool_start` / `workshop_tool_end`（`end` 带 `result` / `isError` / `ms`，`ms` 由会话里一张 `startedAt` 表算），新增 `workshop_thinking`；`workshop_done` 与 `workshop_error` 都带权威 `parts`，前端收束时用它整段替换流式期间自己拼的那份。工具结果截到 `RESULT_MAX_CHARS`（8000 字，图片块记 `[图片]` 不搬 base64），**思考不截断**——截了前端的流式版本就与服务端那份对不上。
 - 工坊模型可以和剧作家不同，阈值因此另有一套（`settings.json` 的 `workshopContext`，缺省逐项沿用全局），生效值再与模型自带窗口取 min。
 - 摘要回注 A 区（工坊 A 区本就每轮重建，没有前缀缓存约束），多轮是**拿旧定稿重写成一份完整文档**而不是叠加（`capDigest` 封顶 6000 字）。
 - read / write / edit / bash 全部是 **pi 的内建工具**（`agentkit/piTools.ts` 只做 `AgentHarnessTool → AgentTool` 的适配，把 `onUpdate`/`toolContext`/`invocation`/`context` 补齐，`context` 用 `withAbortSignal(signal, BACKGROUND_CONTEXT)` 把工坊单轮的 7 分钟超时传下去）。**前三个两个角色都装**，`bash` 只装工坊。
 - 路径白名单与 `play.json` 结构校验收在 `playFiles.ts` 的 `PlayFiles` 上——它是**所有文本写口的收口**（两个 agent 的 write / edit、文件页、角色卡都从 `write` 过；可写目录是 `memory/**` 与 `characters/**`），校验不过就不落盘、盘上那份一个字节不动。**白名单不分角色**：两个 agent 写的是同一批文件（角色卡、记忆卡），再分一份只会多一处要同步的地方。
-- `memory/arcs/`（纪元压缩产物）与 `memory/archive/`（逐轮切片）是引擎产物且跟分支走，**看得见、改不动**（`GENERATED_PREFIXES`）：手改手建会绕过 arcs 按 arcIds、archive 按 pathSet 的防剧透过滤。这两条从前由 `write_memory` 的路径守卫兜着，收掉专用工具之后改由文件层兜。
+- `memory/archive/`（逐轮切片）是引擎产物且跟分支走，**看得见、改不动**（`GENERATED_PREFIXES`）：手改手建会绕过它按 pathSet 的防剧透过滤。这条从前由 `write_memory` 的路径守卫兜着，收掉专用工具之后改由文件层兜。（纪元压缩不再落文件层，见「谱系原语」那条。）
 - **写面收在 `PlayEnv`，不在 `PlayFiles`**：能力声明的 `writeScopes`（`characters` / `memory` / `config`，路径知识只在 `playFiles.ts` 的 `SCOPE_PREFIXES` / `writeScopeOf` / `inWriteScopes` 里）随 `PlayEnvPolicy` 传进 `PlayEnv`，早拒时给两句不同的话——「不在剧目可写面」与「本剧目没给这个角色开改<角色卡|记忆卡|剧目文件>的能力」。挂到 `PlayFiles` 上会连带打断文件页、craft/premise 写口与 `applyChanges` 的读盘检查（工坊只有一个 `PlayFiles` 实例，它同时是这四处的口）。
-- **读面按角色给**：`PlayEnvPolicy.readGenerated` 只在工坊为真——剧作家按路径读不到 `memory/arcs/` 与 `memory/archive/`（那两个目录跟分支走、按 arcIds / pathSet 过滤，而文件是剧目级、不随回滚消失，通用 `read` 直接翻等于把别的世界线摊开），要看往事只能走 `read_memory_detail` / `search_archive`。题面是 `absolutePath`（read/write/edit 共同的路径入口），所以这三个动作用引擎产物路径时都会先撞上这条读面拒绝。
-- 撤销条在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，早拒白名单与写面能力 + 记撤销条，落盘委派 `PlayFiles.write`）。
+- **读面按角色给**：`PlayEnvPolicy.readGenerated` 只在工坊为真——剧作家按路径读不到 `memory/archive/`（它跟分支走、按 pathSet 过滤，而文件是剧目级、不随回滚消失，通用 `read` 直接翻等于把别的世界线的往事摊开），要看往事只能走 `search_archive`。题面是 `absolutePath`（read/write/edit 共同的路径入口），所以这三个动作用引擎产物路径时都会先撞上这条读面拒绝。
+- 写盘信号在 `agentkit/playEnv.ts` 的 `PlayEnv extends NodeExecutionEnv` 里——**装饰不是重写**，只覆写两个口子：`absolutePath`（读面，read/write/edit 唯一的路径入口）与 `writeFile`（写面，早拒白名单与写面能力，落盘委派 `PlayFiles.write`）。
 - pi 的 `withFileMutationQueue` 顶掉了原来的 `fileLocks`（WeakMap<env> + canonicalPath，同一 `PlayEnv` 实例内自动串行）。
-- **bash 不走这一层**：它继承 `NodeExecutionEnv.exec`，cwd 就是剧目目录，以服务进程的权限跑、改文件不进撤销条，所以「命令行」这一能力**默认关**，`can.shell` 决定提示词注不注「命令行」那章（讲的是边界与后果，不是用法——cwd/截断/超时都在 pi 的 bash 描述里）。
+- **bash 不走这一层**：它继承 `NodeExecutionEnv.exec`，cwd 就是剧目目录，以服务进程的权限跑，所以「命令行」这一能力**默认关**，`can.shell` 决定提示词注不注「命令行」那章（讲的是边界与后果，不是用法——cwd/截断/超时都在 pi 的 bash 描述里）。
 - `workshopSession` 订阅 `tool_execution_end`，跑过 bash 就置脏。**置脏只有 `markChanged()` 一个入口**（agent 写盘、素材到货、bash、文件页手改四条路都从这儿过），**收束只有 `applyChanges()` 一个出口**：真有改动才重建——回合内攒着、收束时重建一次，文件页保存没有收束可等、就地兑现。
 - bash 绕开了 `PlayFiles` 的结构校验，所以 `applyChanges` 在重建前补一次读盘检查：`play.json` 已解析不了就**跳过这次 runtime 重建并广播 `workshop_error`**（带着坏配置去 rebuild 只会抛在 `void` 的 promise 里，用户看到的是「面板不刷新了」而不是「哪里坏了」）。
 - play.json 校验失败的消息只有走 `write` 才原样回给模型——pi 的 `edit` 把它包成「Could not edit file: …. Error code: invalid.」，原因只留在 cause 上，不为消息粒度再造第二套错误面。
 
 ## 素材、出图与台账
 
-- 出图**只有一层**：`PlayAssets` 落 `assets/`，工坊与剧作家共用一个实例，同一张图在飞去重只烧一次配额。
-- `ImageAssets`（media-cache 里的 bg/cg 内容寻址缓存）已删——`media-cache/` 现在只剩 TTS 音频、立绘留底原片（sprite-sources/）与 `view_image` 下载的网图（web-images/）——全是可重建的中间物。
+- 出图**只有一层**：`PlayAssets` 是工坊与剧作家共用的唯一实现（工坊走 `draft` + `commit_asset`，剧作家在后台 `generate()` 一次做完），同一张图在飞去重只烧一次配额。
+- `ImageAssets`（media-cache 里的 bg/cg 内容寻址缓存）已删——`media-cache/` 现在只剩 TTS 音频、立绘留底原片（sprite-sources/）、`view_image` 下载的网图（web-images/）与出图草稿区（drafts/）——全是可重建的中间物。
 - 代价是内容寻址去重没了：同一句提示词生成两次会真出两张图，剧作家侧改由工具自己判「剧目里已有同名素材就跳过」（`playAssets.existingUrl()`）。
 - CG 页的生成台账只有 `assets/generated.json` 一份（`generatedLedger.ts` 的 `readPlayLedgerEntries`）。
 - **一张表一个写者**：`assets/manifest.json`（素材描述）归工坊与用户，`assets/generated.json`（站内出图这次用的 prompt 记录，进 git、只读）归引擎——两边都动一张表时，工坊补一条中文描述就能把引擎记的 prompt 整条替换掉（2026-10-01 实测）。
@@ -75,6 +81,7 @@
 
 - **呈现声明只住 `assets/manifest.json`**：键 `<id>`（立绘级）与 `<id>/<variant>`（差分覆盖），字段 `framing` / `stature` / `anchor` / `title`；卡上的 `framing` / `spriteFraming` 与 `sprites` 映射表一并下线——variant 就是文件名主体，中间不再有映射这一层。`play/spriteStage.ts` 按 取景 × 体量 × 锚点 出落位预设（`spriteStagePreset()` 给横竖屏两套 `{top,height,origin}`），**改预设表等于动所有剧目的摆位**：表里的 `top` 是头顶留白，2026-10-04 统一下移过 8（normal 档横屏 10→18、竖屏 8→16），此前「缺省逐个数字与 261004 之前一致」那条约束已作废，别再拿它当不动表的理由。
 - 立绘的自动后缀只规定抠底要的构图（**单一纯色底**，且这个色键色不许出现在角色身上；手臂与躯干之间别夹窄缝），不描述任何人物特征：那里曾写着「twin tails」，等于给所有角色定了个双马尾，prompt 里明写 long straight hair 也救不回来。
+- **细描边靠「实心判据」兜住**（2026-10-05）：反解的前提是「这个像素是底色与邻近前景色的混合」，而 1–2px 的深色描边比反解带宽还窄，BFS 取不到描边色当 F，只能拿内侧的填充色去解——解出来是「覆盖率 0.1 的底色」，`unblend` 再把它换成填充色，整圈黑描边就此消失（实测轮廓内侧 2px 平均亮度 32 → 187）。现在 `solveMix` 走 B→F 这条线上的最小二乘投影并**把残差交出来**：残差超过 `solidResidual`（默认 48，`STAGE_CUTOUT_SOLID_RESIDUAL`）又不在色键里的像素判成实心前景，颜色原样保留。旧行为 = 把它设成 0。残差是「混合假设有多不成立」的度量，不是「抠得多狠」——真·抗锯齿斜坡与 JPEG 噪声的残差都在 40 以下，描边在 150 以上。
 - **抠底是纯色键，底色由出图那一步负责选对**（`src/cutout.ts` ↔ `playAssets.ts` 的 `KEY_BACKGROUND`）：底色取整圈边框的逐通道中位数，离它不超过 `tolerance` 的像素**一律**算背景——不分内外、不看连通性、没有面积阈值。所以「白底 + 白袜子」那类撞色会被照抠不误，2026-10-04 之前为此堆的滞回阈值/连通域筛内外/面积阈值整套已删；嫌抠不干净只有两条路：调 `tolerance`，或者出图时换一个不撞色的底。
 - **立绘景别与画幅跟着 `framing` 走**（`play/framing.ts` 是唯一真相源：**三档** full 9:16 / half 3:4 / square 1:1，出图画幅取 `SPRITE_FRAMING_ASPECT`、提示词里的景别措辞取 `SPRITE_FRAMING_SHOT`；写死 9:16 全身时半身角色照样会被画成全身，出图与舞台声明对不上）。
 - **没有 bust 档**——胸像的价值已被 `shot` 运镜吃掉，留着只是多一个让模型选错的出口。
@@ -101,7 +108,7 @@
 ## 提示词装配
 
 - **工具知识只写在工具描述里，系统提示词不复述**（同一规则写两处必然漂移——生图那几条已经漂移过一次）。**一处明确例外**：pi 的内建 read / write / edit 没有描述覆写入口，角色卡 frontmatter 与记忆卡格式只能落在 A 区（`prompt.ts` 的 `newCharacterRules(can.characters)` / `MEMORY_RULES`）——它们同时要求模型「先 read 再 edit」，格式本身以 `parseCharacterCard` 的解析结果为准。两句**各归各的能力位**：`can.characters`（= 剧作家开着「管理角色」）为假时建档章换成「本剧目没给你改卡的口，新角色直接上台」，`can.memory` 为假时记忆章与 `read_memory_detail` / `search_archive` 的教法一起收走。
-- **A 区把可写文件的路径给全**（2026-10-04）：角色表每张卡带 `characters/<id>.md`（`characterCardPath`）、记忆索引每行带 `memory/index/<相对路径>.md`（`PlayMemory.visibleContext` 的 `path`）——通用 read / write / edit 上手，模型不该为了改一张卡去推路径。记忆卡尤其必须：行首是 `# 标题`（`parseCard`），**与文件名可以不一样**，路径推不出来；arcs 卡是引擎产物、写不进去，`path` 恒为 null。
+- **A 区把可写文件的路径给全**（2026-10-04）：角色表每张卡带 `characters/<id>.md`（`characterCardPath`）、记忆索引每行带 `memory/index/<相对路径>.md`（`PlayMemory.visibleContext` 的 `path`）——通用 read / write / edit 上手，模型不该为了改一张卡去推路径。记忆卡尤其必须：行首是 `# 标题`（`parseCard`），**与文件名可以不一样**，路径推不出来。
 - **`can` 的键就是能力 id**（`characters` / `memory` / `image` / `library` / `search` / `lineage` / `skill` / `view` / `readiness` / `voice` / `files` / `shell` / `nsfw` / `stage`，非适用角色的位恒为 false）——两个角色的提示词读 `createAgentKit` 现算的同一个对象，不会各算各的。工坊侧同样逐处收条件（`workshop.ts` 的 `responsibilityRules(can.files)` / `talkRules` / `lineageGuide` / `writingPoints` / `setupFlow` / `skillsPrompt`），关掉一项就没有教它调不存在工具的章节。
 - `prompt.ts` 的 `imageChapter` 只留工具本身与后果（发起即返回、这一轮就引用到它则先上骨架占位），调用写法（走函数调用不是文本标签、id 命名、prompt 后缀串）全在 `QUEUED_DESCRIPTION`。
 - **什么时候该画一张不再由引擎决定**——早先那句「清单里没有就自己画一张背景」替所有剧目做了同一个决定，已撤掉，改成指向写作参数的素材来源（`renderCraftParams` 按 `can.image` / `can.library` 渲染那几行）。
@@ -142,7 +149,7 @@
 - **出图提示词的内核只有一份**：`src/imagePrompt.ts` 的 `composeImagePrompt(deps, kind, ctx)` 按 sprite/background/cg 选系统提示词并拼上下文（指令 + 创作口径 + 角色卡 + 剧情/场景 + 参考图编号），舞台 `requestCg` 与手动入口都走它。
 - **手动生图是「REST 同步发起 + WS 异步回报」**：`POST /api/plays/:id/images` 只做校验与提示词组装就返回 `{target, path, prompt}`——CF 隧道 100s 无字节即断，出图 70–140s 绝不能压在 HTTP 连接上。
 - 出图在后台跑，完成或失败一律广播 `image_result`（成功 `{target, ok:true, url, path}`、失败 `{target, ok:false, message}`），客户端对话框按 `target` 匹配自己的那一张。
-- `AssetNotify` 的第三个值 `"manual"` 就是给它留的：刷新素材列表，但不产工坊气泡、不进撤销条、不自动重建。
+- `AssetNotify` 的第三个值 `"manual"` 就是给它留的：刷新素材列表，但不产工坊气泡、不自动重建。
 - 素材名/差分名的白名单收在 `assertAssetStem`，立绘 id 另走 `assertSpriteId`（只挡路径分隔符、前导点与控制字符——id 就是目录名，大写字母合法），REST 入口与出图前各判一次——入口不判就会先返回一个非法 path，用户等一分多钟才在 WS 上收到失败。
 - 舞台那一路的参考立绘必须在**落时间线节点之前**校验（`assertReferences`），否则会留下一个永远填不上的骨架。
 
@@ -190,9 +197,9 @@
 - 素材来源的能力降级在 `craftParams.ts` 里做：`can.image` / `can.library` 决定那几行怎么写（没生图就说「用旁白交代」，没配库就不提清单），**工具没装时提示词不教它调**。文风与禁忌一律留在 `craft.md`，不参数化。
 - 剧本语言 `scriptLanguage`（play.json）与语音语言 `voiceLanguage` 是两件事：前者决定正文/旁白/选项用什么语言写（不设 = 跟随玩家输入），后者是 TTS 的翻译目标。两份提示词都读它（剧作家那段在 `prompt.ts`，工坊那段在 `workshop.ts` 的 `playLanguageNote`）。
 - `memory/always/craft.md` **空着剧作家就少一层口径可听**（写作参数照旧生效），所以工坊「设定流程」第 4 步仍硬性要求把对齐结果落盘——但落的是哪一份要看内容：文风进 craft.md，节奏与素材来源用 `set_craft`。
-- **设定卡与角色卡都是普通剧目文件，走通用 `write` / `edit`**（2026-10-04 收掉了 `write_memory` / `create_character`：同一件事不必各来一份 schema 与守卫，通用工具还多给「先 read 再定点 edit」）。设定卡写 `memory/index/<分类>/<名字>.md`（首行 `# 标题`、次行一句话摘要），角色卡写 `characters/<id>.md`（frontmatter 机器字段 + 正文人设）。`always/` 是每轮注入层（可写），`arcs/` / `archive/` 是机器产物（只读，见上）。
+- **设定卡与角色卡都是普通剧目文件，走通用 `write` / `edit`**（2026-10-04 收掉了 `write_memory` / `create_character`：同一件事不必各来一份 schema 与守卫，通用工具还多给「先 read 再定点 edit」）。设定卡写 `memory/index/<分类>/<名字>.md`（首行 `# 标题`、次行一句话摘要），角色卡写 `characters/<id>.md`（frontmatter 机器字段 + 正文人设）。`always/` 是每轮注入层（可写），`index/` 是设定卡（可写），`archive/` 是机器产物（只读，见上）。
 - **写完排一次轮边界重建才进 A 区**：`PlayEnv.writeFile` 落盘后回调 `onPlayFilesChanged` → `playhouse.onPlayFileWritten` → `rebuildAtBeatBoundary`（与工坊写盘、引用即导入同一条延迟重建）。A 区在纪元内冻结，不排重建的话「下一轮进 A 区索引 / 角色表」就是空话。当轮想知道自己刚写了什么，直接 `read` 那个文件——内存里的 `cards` 不再有第二条写入口。
-- **卡片行序即提示词前缀**：不变量是「用户卡在前、按 file localeCompare、arcs 卡在后」，由 `loadCards`（整段 sort）与 `loadArcs`（readdir 序）的拼接顺序建立，`PlayMemory.load` 每次重建都照它来。arcs 段**不能**跟着一起排：它是码位序（`epoch-x-10` 会排到 `epoch-x-2` 前）。
+- **卡片行序即提示词前缀**：不变量是「按 file localeCompare」，由 `loadCards` 的整段 sort 建立，`PlayMemory.load` 每次重建都照它来——readdir 的次序由文件系统给，漂一次整个前缀缓存就失效。
 - **A 区角色分级（roster 一行制）**：角色数 ≥ `CAST_GRADING_MIN_SIZE`(5) 且给了 `activeCast` 时，在场角色全卡全文、最近没出场的只注一行摘要（截 `CAST_SUMMARY_CHARS`）。在场表来自 `orchestrator.recentCast()`——**按事件条数窗口倒扫**（`CAST_SCAN_EVENTS`），不是按去重后的角色数：后者在常驻角色少的剧目会一路扫穿全历史，等于全员标记在场、分级从不生效。不给 `activeCast` = 不分级（小剧目行序抖动伤缓存，不值）。
 - **构造函数里 `restored` 的回填必须赶在 `buildAgent` 之前**（events/seq/beatNo/epoch/readPos/autostarted 整块）：A 区角色分级读 events 算在场，回填放在后面就是冷启动全员折叠——恢复出来的一轮比热启动少一整层设定。
 - **轮边界重建同剧目只挂一个待办**（`pendingRebuilds` + `pendingRebuildNotes`）：一轮里建三张卡、出三张立绘是三次调用，全排下去就是连着重装三份 runtime；对话尾的 note 取首次触发的原因。
@@ -214,12 +221,12 @@
 - **不变式：限制级内容对全年龄读者的唯一出口是它带出的 SFW 摘要。** 正文原文、段内玩家输入、段内每一拍的 `beat_end` 都只在限制级侧可见；前台舞台、`lineage.jsonl`、replay 一如既往保留全文（约束的是**模型读到的东西**，不是存档）。
 - **打标在事件上，不在轮次上**：`LineagePayload.nsfw` 由 `orchestrator.beatNsfw` 写进段内每个节点，取值来自 `beatChannelNsfw()` = `nsfwActive || nsfwPendingEnter`。判断依据必须是这个快照而不是当下的 `nsfwActive`：退出那一拍的 `beat_end` 在 `nsfwActive` 已翻成 false 之后才封，但它承载的仍是限制级原文。
 - **这一拍的通道在「注入这段输入时」就定**（`noteBeatInputs`，与 `startBeatWindow` 用同一个 `beatChannelNsfw()`）：prompt 节点落在开拍之前，而边界那一拍按「开拍时才知道的 `nsfwActive`」打标两头都错——进段的那句玩家输入会漏标（SFW 侧从树上重建时它作为普通输入回流），段后的第一句日常输入会误标（从树上重建时整句被吃掉）。所以不许读上一拍残留的 `beatNsfw`，也不许等 `runBeatTurn` 兑现 `nsfwPendingEnter` 之后再定。
-- **快照另说**：`MemorySnapshot.nsfw` 记的是「从这里起世界线是日常还是限制级」，段末那一拍的快照是 `false`——从那里跳转/续演就该是日常。事件层的 `nsfw` 与快照层的 `nsfw` 故意不对称。
+- **快照另说**：`LineageSnapshot.nsfw` 记的是「从这里起世界线是日常还是限制级」，段末那一拍的快照是 `false`——从那里跳转/续演就该是日常。事件层的 `nsfw` 与快照层的 `nsfw` 故意不对称。
 - **摘要在树上落成 `beat_end.payload.nsfwSummary`**，同时以**不带 nsfw 标**的独立切片写进 `memory/archive`（`entryId` = 段末叶子）：SFW 侧 `search_archive` 因此能搜到这一段，不留检索缺口；限制级侧两片都看得到。同一叶子同一轮的两片靠 `sliceId` 尾缀 `:nsfw` 区分，不能只按 `entryId:turn` 认（MiniSearch 会当同一篇）。
 - **退出那一拍要等摘要生成完才算收束**：`finishBeat` 见 `nsfwPendingExit` 就走 `closeNsfwBeat`——`busy` 与新增的 `beatClosing` 一起占着（`beatClosing` 是必须的：`turn_end` 与 `agent_end` 会各唤醒一次 `finishBeat`，而这次 `busy` 不能像往常那样先落回 false），`beat_settled` 推后到摘要之后，玩家输入排队等着。等摘要期间被 `forkTo` 腰斩（`beatToken` 变了）或 `dispose` 就直接作废，不封拍也不拿净化后的上下文盖掉别人刚重建的现场。
 - **重建按读者折叠**（`rebuild.ts` 的 `lineageToBeats(…, { nsfw })`）：SFW 侧把整段折成一条过渡轮（措辞的唯一出处是 `nsfwTransitionBeat`，实时退出与从树上重建共用同一份），段内原文与段内玩家输入一概不进消息；限制级侧照渲原文、不注摘要。没打标的老档两位读者渲出来一样——不做迁移、不叠第二层特判。
-- **退出的净化上下文只从谱系链渲**（`switchBackToSfw` 就是 `renderBeats(rebuildBeats(materialize()))`，摘要早在 `closeBeat` 里落成段末那条过渡轮）：**不留内存基线**——「进入限制级前的消息快照」只在本次会话真的走过 `enter_nsfw` 那一刻才存在，跳进段内或读档续演到段内时它是空的，而那时的内存消息组里全是露骨原文，任何以它为底的兜底都是一次全量回流。代价与 `editLine` / `rebuildBranchAt` 同源：从树重放会把纪元压缩摊回原文（下一拍开跑前的 `maybeCompactEpoch` 会再收一次）。
-- **限制级段落期间不压缩**：`maybeCompactEpoch` 开头 `if (this.nsfwActive) return;`。压缩器的输入是原文对话体，段没结束就还没有摘要，这一压等于把限制级原文固化进 `memory/arcs`（每轮注入 A 区）——那正是这条不变式要挡的事。
+- **退出的净化上下文只从谱系链渲**（`switchBackToSfw` / `editLine` / 冷启动共用一个 `bodyFromTree()`：`renderBeats(rebuildBeats(materialize()))`，摘要早在 `closeBeat` 里落成段末那条过渡轮）：**不留内存基线**——「进入限制级前的消息快照」只在本次会话真的走过 `enter_nsfw` 那一刻才存在，跳进段内或读档续演到段内时它是空的，而那时的内存消息组里全是露骨原文，任何以它为底的兜底都是一次全量回流。代价与 `editLine` / `rebuildBranchAt` 同源：从树重放会把纪元压缩摊回原文（下一拍开跑前的 `maybeCompactEpoch` 会再收一次）。
+- **限制级段落期间不压缩**：`maybeCompactEpoch` 开头 `if (this.nsfwActive) return;`。压缩器的输入是原文对话体，段没结束就还没有摘要，这一压等于把限制级原文固化进摘要（随谱系快照长期带着、每次重放都注入）——那正是这条不变式要挡的事。
 - `rebuildBranchAt` 必须**先** `restoreBranchState` 再 `rebuildBeats`：折叠模式取自恢复出来的快照，顺序反了就按上一个分支的读者渲染这一条链。
-- 谱系快照（MemorySnapshot）存 nsfw 状态，分支跳转自动复位模式。
+- 谱系快照（`LineageSnapshot`，扁平结构：engine / stateFiles / compaction / nsfw 四件事并列）存 nsfw 状态，分支跳转自动复位模式。
 

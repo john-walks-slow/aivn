@@ -17,10 +17,10 @@ import { reason } from "./result.js";
  *
  * - `writeScopes` —— 能改哪几类文件。**能力（capability）给的就是这个**：剧作家可能只有
  *   `memory`（记忆开着、「管理角色」关着），工坊则可能三位全给或一位都不给。
- * - `readGenerated` —— 通用读口认不认引擎产物（`memory/arcs`、`memory/archive`）。
- *   它们跟分支走、按 arcs / pathSet 过滤，而文件是剧目级的：通用 read 能读出来，
- *   等于把别的世界线的纪元摘要摊开。剧作家不给，要看往事走 `read_memory_detail` /
- *   `search_archive`；工坊看得见（它要能读用户手上的剧目全貌）。
+ * - `readGenerated` —— 通用读口认不认引擎产物（`memory/archive`）。
+ *   它跟分支走、按 pathSet 过滤，而文件是剧目级的：通用 read 能读出来，等于把别的
+ *   世界线的往事摊开。剧作家不给，要看往事走 `search_archive`；工坊看得见
+ *   （它要能读用户手上的剧目全貌）。
  */
 export interface PlayEnvPolicy {
   writeScopes: readonly WriteScope[];
@@ -36,11 +36,11 @@ export interface PlayEnvPolicy {
  * bash 只用 `cwd` 与 `exec`。所以白名单只要卡住两个口子：
  *
  * - `absolutePath` —— 读面，read / write / edit 都得先从这儿过；
- * - `writeFile` —— 写面，早拒一次（错误消息说得准些）并记一条撤销条；真正落盘走
+ * - `writeFile` —— 写面，早拒一次（错误消息说得准些）；真正落盘走
  *   `PlayFiles.write`，路径白名单与 play.json 结构校验都收在那个口子上。
  *
  * **bash 不经过这一层**：它继承 `NodeExecutionEnv.exec`，跑在同一台机器、同一个用户下。
- * 白名单管的是 read / write / edit 这三个结构化工具（它们要过校验、要挂撤销条），
+ * 白名单管的是 read / write / edit 这三个结构化工具（它们要过校验），
  * 不是一道进程边界——要边界得靠部署（容器 / 独立用户），代码里不自己造。
  */
 export class PlayEnv extends NodeExecutionEnv {
@@ -72,12 +72,6 @@ export class PlayEnv extends NodeExecutionEnv {
     const clean = relative(this.files.root, abs.value);
     const text = typeof content === "string" ? content : Buffer.from(content).toString("utf8");
 
-    let before: string | null = null;
-    try {
-      before = await this.files.read(clean);
-    } catch {
-      before = null;
-    }
     try {
       await this.files.write(clean, text);
     } catch (error) {
@@ -88,7 +82,7 @@ export class PlayEnv extends NodeExecutionEnv {
       const code = clean === "play.json" ? "invalid" : "permission_denied";
       return err(new FileError(code, reason(error), abs.value));
     }
-    this.onWrite({ path: clean, before, after: text });
+    this.onWrite({ path: clean });
     return ok<void, FileError>(undefined);
   }
 

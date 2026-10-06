@@ -10,14 +10,6 @@ import type {
 } from "@aivn/core";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
 
-/** 工坊面板的一次写盘记录（可一键撤销）。 */
-export interface WorkshopWriteRecord {
-  path: string;
-  /** 写盘前内容；null = 新建（撤销即删除）。 */
-  before: string | null;
-  at: number;
-}
-
 export interface WorkshopState {
   threads: WorkshopThreadInfo[];
   activeId: string | null;
@@ -26,8 +18,8 @@ export interface WorkshopState {
   compaction: WorkshopCompactionView | null;
   /** 本轮流式中的段落（正文/思考/工具，拼装规则见 core 的 workshopParts）。done/error 一到整段替换。 */
   live: WorkshopPart[];
-  /** 本会话内的写盘记录（面板关闭即清空）。 */
-  writes: WorkshopWriteRecord[];
+  /** 写盘版本号：agent 每次写盘 +1，各页据此重拉（只当刷新信号，不再展示记录）。 */
+  revision: number;
   /**
    * 本轮到货、**不带工具调用号**的素材（外部推来的那种）。
    * 工具产出的都带调用号，挂在对应那一行上，不进这里。
@@ -43,7 +35,7 @@ const EMPTY: WorkshopState = {
   messages: [],
   compaction: null,
   live: [],
-  writes: [],
+  revision: 0,
   pendingAssets: [],
   busy: false,
   error: null,
@@ -96,10 +88,8 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
             }),
           };
         case "workshop_write":
-          return {
-            ...prev,
-            writes: [...prev.writes, { path: msg.path, before: msg.before, at: Date.now() }],
-          };
+          // 只当刷新信号：各页据此重拉，写了什么不需要在对话里再摆一条
+          return { ...prev, revision: prev.revision + 1 };
         case "workshop_asset": {
           const view: WorkshopAssetView = { kind: msg.kind, path: msg.path, url: msg.url };
           if (msg.toolCallId) {
@@ -183,7 +173,7 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
   /** 开新会话：不立刻建（服务端没有「空会话」这个动作），只把下一条消息标记成新会话的第一句。 */
   const newThread = useCallback((): void => setFreshThread(true), []);
 
-  /** 清空聊天区（消息/流式/状态），保留线程列表与写盘撤销记录，避免切换新会话时整个会话层消失。 */
+  /** 清空聊天区（消息/流式/状态），保留线程列表，避免切换新会话时整个会话层消失。 */
   const clearState = useCallback((): void => {
     setState((prev) => ({
       ...prev,
@@ -218,10 +208,6 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
     [send],
   );
 
-  const dismissWrite = useCallback((at: number): void => {
-    setState((prev) => ({ ...prev, writes: prev.writes.filter((w) => w.at !== at) }));
-  }, []);
-
   return {
     state,
     freshThread,
@@ -234,6 +220,5 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
     activate,
     setArchived,
     remove,
-    dismissWrite,
   };
 }

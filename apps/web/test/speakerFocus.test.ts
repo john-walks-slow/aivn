@@ -3,12 +3,12 @@ import { speakerFocusId, type SpriteSlot, type TranscriptEntry } from "@aivn/sta
 
 const slot: SpriteSlot = {
   resolvedPos: "center",
-  expression: null,
-  state: null,
+  variant: null,
   shot: null,
   anchor: "bottom",
   action: null,
   actionSeq: 0,
+  orderSeq: 1,
 };
 
 const entry = (partial: Partial<TranscriptEntry> = {}): TranscriptEntry => ({

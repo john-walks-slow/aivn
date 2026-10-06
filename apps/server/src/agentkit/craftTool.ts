@@ -11,7 +11,7 @@ import { textResult } from "./result.js";
  *
  * 为什么不走 write/edit：那是三个字段的结构化配置，而 `play.json` 里还躺着 `id`/`title`/
  * `initialState` 这些引擎状态，让模型整篇重写一遍等于把整份配置交给一次自由发挥。
- * 更实际的是**撤销与并发**：这里的读改写包在 `withPlayConfigLock` 里，与引用即导入、
+ * 更实际的是**并发**：这里的读改写包在 `withPlayConfigLock` 里，与引用即导入、
  * 工坊文件页共用一条队列——模型手写 edit 撞上另一个写者，后写的会静默吃掉先写的。
  *
  * 参数三态（省略 / 给值 / null）见 `craftParams.ts` 的 `CraftPatch`：省略 = 不动，
@@ -137,7 +137,7 @@ export function createSetCraftTool(deps: Pick<WorkshopKitDeps, "files" | "store"
         const after = JSON.stringify(out, null, 2);
         if (after !== before) {
           await deps.files.write("play.json", after);
-          deps.onWrite({ path: "play.json", before, after });
+          deps.onWrite({ path: "play.json" });
         }
         return merged;
       });

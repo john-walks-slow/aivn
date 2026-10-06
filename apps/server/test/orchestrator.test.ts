@@ -328,6 +328,41 @@ describe("PlaywrightOrchestrator 闭环", () => {
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(beatStartsBefore);
   });
 
+  it("漏调 beat_done 只追一次：有台词没收束 → 同轮追一句补上停止点", async () => {
+    const contexts: { messages: { role: string }[] }[] = [];
+    const { orchestrator, messages } = setup(
+      [
+        // 首跑：有台词但没调 beat_done；追收束那一跑补上停止点
+        { text: BEAT_1 },
+        { text: "", beatDone: BEAT_1_STOP },
+      ],
+      { contexts },
+    );
+
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+
+    // 追收束只多发一轮 provider 请求（首跑 + 追的那一跑），不是开新的一轮
+    expect(contexts).toHaveLength(2);
+    expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1);
+    const beatEnd = lastBeatEnd(messages);
+    expect(beatEnd).toMatchObject({ reason: "stop" });
+    if (beatEnd.type === "beat_end") expect(beatEnd.stop?.options).toHaveLength(2);
+    // 台词只演一遍：追的那一跑是空正文补 beat_done，不重复落台词
+    const script = messages.flatMap((m) => (m.type === "events" ? m.events : []));
+    expect(script.filter((e) => e.event.kind === "say_end")).toHaveLength(1);
+  });
+
+  it("追完还不交 beat_done 就不再追：按 no_stop 正常封轮", async () => {
+    const contexts: { messages: { role: string }[] }[] = [];
+    const { orchestrator, messages } = setup([{ text: BEAT_1 }, { text: BEAT_2 }], { contexts });
+
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+
+    expect(contexts).toHaveLength(2);
+    expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1);
+    expect(lastBeatEnd(messages)).toMatchObject({ reason: "no_stop" });
+  });
+
   it("插一句（引导）走【用户输入】区且谱系记 prompt 行；停在停止点时只排队，不吞停止点", async () => {
     const contexts: { messages: { role: string }[] }[] = [];
     const { orchestrator, messages, tree } = setup(
@@ -1904,8 +1939,8 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     for (const event of chain.slice(0, first)) expect(event.payload?.nsfw).not.toBe(true);
 
     // 快照：段内那一拍仍是限制级，段末那一拍起世界线回到日常
-    expect(tree.latestSnapshotOnPath(ends[1]!.id)?.memory.nsfw).toBe(true);
-    expect(tree.latestSnapshotOnPath(tree.leafId)?.memory.nsfw).toBe(false);
+    expect(tree.latestSnapshotOnPath(ends[1]!.id)?.nsfw).toBe(true);
+    expect(tree.latestSnapshotOnPath(tree.leafId)?.nsfw).toBe(false);
 
     // archive：SFW 侧搜得到那一段、看到的是摘要；原文片只在限制级侧可见
     const allowed = tree.pathSet();
@@ -2454,14 +2489,19 @@ describe("删除一段及其后代", () => {
     expect(orchestrator.runtimeState.prevLeafId).toBe(beat1End);
   });
 
-  it("开场那一轮不能删", async () => {
+  it("哨兵节点不能删，第一轮可删除并退回到哨兵", async () => {
     const { orchestrator, tree } = countingSetup([{ text: BEAT_1, beatDone: BEAT_1_STOP }]);
     orchestrator.start();
     await orchestrator.whenIdle();
     const root = tree.ancestorChain(tree.leafId)[0]!;
 
-    expect(() => orchestrator.deleteBranch(root)).toThrow(/开场那一轮不能删/);
+    expect(() => orchestrator.deleteBranch(root)).toThrow(/哨兵节点不能删/);
     expect(tree.get(root)).toBeDefined();
+
+    // 第一轮的首个节点（挂在 root 下）可以被删除
+    const firstRoundNodeId = tree.ancestorChain(tree.leafId)[1]!;
+    orchestrator.deleteBranch(firstRoundNodeId);
+    expect(tree.leafId).toBe("root");
   });
 
   it("删别的枝不动世界线：玩家在另一条枝上的位置不被这一剪拽走", async () => {

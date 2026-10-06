@@ -3,7 +3,6 @@ import { type Static, Type } from "@earendil-works/pi-ai";
 import { COMMON_SPRITE_VARIANTS, type PreloadAssetAttrs, type SpriteFraming, type SpriteStature } from "@aivn/core";
 import type { AssetTarget, PlayAssets } from "../playAssets.js";
 import { linesResult, reason, textResult } from "./result.js";
-
 /**
  * `generate_image`：两个 agent 共用的**同一份实现与 schema**。
  *
@@ -15,7 +14,8 @@ import { linesResult, reason, textResult } from "./result.js";
  * 抠底参数不在这里：填它得先看过成图，而出图那一刻没人看过图。改抠底是工坊在用户面前
  * 看到脏边之后的事，走单独的 `recut_sprite`（原地重抠，不重新出图）。
  *
- * 落点两边一样：都进 `assets/`（工坊与剧作家共用同一个 PlayAssets）。
+ * 落点是**草稿区**：工坊出的是草稿（挑中了才由 `commit_asset` 入库），剧作家的后台预发射
+ * 直接 `draft + commit` 一次做完——那边没有「让用户在候选里挑」这回事，工具调用本身就声明了最终 id。
  * 工具能力也**不分角色**——`variant` 与 `references` 两个角色都拿得到，
  * 垫图可以是任一主体的立绘、剧目内路径或网络图，与谁调的无关。要不要给剧作家开这个工具由设置页决定。
  *
@@ -126,16 +126,19 @@ const REFERENCE_RULE =
   "垫了图也不必省略 prompt 里的外貌描述——垫图锁的是脸与核心特征，画面里的动作、姿态、相对位置仍然要 prompt 说。";
 
 const SYNC_DESCRIPTION = [
-  "出一张剧目素材并落进 assets/：背景(kind=background) / CG(kind=cg) 给 name，",
-  "立绘(kind=sprite) 给 spriteId + variant（variant 不给按 neutral）。立绘会自动抠底成透明 PNG（引擎要靠它叠在场景上）。",
+  "出一张剧目素材的**草稿**（背景 kind=background / CG kind=cg / 立绘 kind=sprite）：",
+  "背景与 CG 给 name；立绘给 spriteId + variant（variant 不给按 neutral）。立绘会自动抠底成透明 PNG（引擎要靠它叠在场景上）。",
   "背景与 CG 一律 16:9 横构图；立绘的画幅跟着 framing 参数走，不用为了构图去改画幅。",
-  "非 neutral 的立绘会自动拿该主体的 neutral 定妆照做垫图，所以同一个主体的差分是同一个人；",
-  "**该主体还没有 neutral 时就出别的差分会被直接拒绝**——先把 neutral 出了。",
-  "`neutral` 是保留的差分名（定妆照），别拿它当普通差分名之外的其它意思。",
+  "**草稿不是素材**：图落在临时草稿区，回执里给 draftId 与预览；要让它正式进剧目（写进 assets/ 与素材表），再调 commit_asset(draftId=\"…\")。",
+  "**要出多张候选**：同一目标多调几次本工具（每张 prompt 各不相同；定妆照候选就给同一个 variant=neutral），",
+  "把预览一起贴给用户，用户挑中哪张就只 commit 那一张——没被挑中的候选不会在素材表里留下任何痕迹。",
+  "**定妆照（neutral）建议一次出 3 张候选让用户挑**：挑定并采用之后，再据它派生其余差分。",
+  "非 neutral 的立绘会自动拿该主体**已入库的** neutral 定妆照做垫图，所以同一个主体的差分是同一个人；",
+  "**该主体还没有入库的 neutral 时不能出别的差分**（草稿当不了身份基准）——先把 neutral 出了、采用一张。",
   PROMPT_RULES,
   REFERENCE_RULE,
-  "一次工具调用只出一张图；要出多个差分就在同一个批次里多次调用本工具，它们是并行的。",
-  "抠底不用你管：引擎自动抠，用户看了成图说抠得不干净时用 recut_sprite 原地重抠，别重新出图。",
+  "一次工具调用只出一张图；要出多个候选或差分就在同一个批次里多次调用本工具，它们是并行的。",
+  "抠底不用你管：引擎自动抠；用户看了成图说抠得不干净时用 recut_sprite 原地重抠，别重新出图（recut 只认已入库的立绘）。",
 ].join("");
 
 const QUEUED_DESCRIPTION = [
@@ -157,7 +160,13 @@ const QUEUED_DESCRIPTION = [
   "回执会告诉你剧目里是不是已经有同名素材——有就直接引用，别重复发起。",
 ].join("");
 
-/** 工坊：同步出图，回执带图片给用户看。 */
+/**
+ * 工坊：同步出图，**只出草稿**，回执与素材气泡都带草稿预览。
+ *
+ * 入库是另一件事（`commit_asset`）：工坊要先能一次出几张候选让用户挑，挑中的那张才进
+ * `assets/`。草稿也走 `onAsset` 推气泡——候选图得摆在对话里让用户直接看见、点开对比，
+ * 只塞在工具回执里（默认折叠）等于让人自己去找。
+ */
 export interface SyncImageDeps {
   mode: "sync";
   playAssets?: PlayAssets;
@@ -229,7 +238,7 @@ function resolveRefs(params: Static<typeof generateImageParams>): string[] | und
   return merged.length > 0 ? merged.slice(0, 6) : undefined;
 }
 
-/** 工坊：等图出完，回执里贴 markdown 图片。 */
+/** 工坊：等图出完，回执里贴草稿预览 + draftId（入库另走 commit_asset）。 */
 async function runSync(
   deps: SyncImageDeps,
   params: Static<typeof generateImageParams>,
@@ -237,7 +246,7 @@ async function runSync(
 ): Promise<ReturnType<typeof linesResult>> {
   const assets = deps.playAssets!;
   const references = resolveRefs(params);
-  const generated = await assets.generate(
+  const draft = await assets.draft(
     {
       kind: params.kind,
       name: params.name,
@@ -252,13 +261,12 @@ async function runSync(
     params.prompt,
     params.style,
   );
-  const lines = generated.map((asset) => {
-    deps.onAsset(asset.path, asset.url, asset.kind, asset.replaced, toolCallId);
-    return `${asset.replaced ? "已生成并覆盖原有素材" : "已生成"}：${asset.path}\n![${asset.path}](${asset.url})`;
-  });
-  const auto = generated.find((asset) => asset.autoNeutral);
-  if (auto) lines.push("该主体原本没有任何差分，已先自动出一张 neutral 定妆照。");
-  return linesResult(lines);
+  deps.onAsset(draft.path, draft.url, draft.kind, false, toolCallId);
+  return linesResult([
+    `草稿已出：\`${draft.draftId}\``,
+    `![${draft.draftId}](${draft.url})`,
+    "这张**还没进素材表**。要采用它就调 `commit_asset(draftId=\"…\")`；要换一张就再出一次候选。",
+  ]);
 }
 
 /** 剧作家：占住时间线上的位置后立刻返回，不等图。 */

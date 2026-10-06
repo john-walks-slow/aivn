@@ -19,7 +19,7 @@ import type { Readiness } from "./store.js";
  * 同一份实现、同一份 schema，只有描述与等待策略不同。见 `agentkit/kit.ts`。
  */
 
-/** 工坊对话里的一次写盘（前端在对话流里内联展示 + 可撤销）。定义在基座的依赖面里。 */
+/** 工坊对话里的一次写盘。定义在基座的依赖面里。 */
 export type { PlayFileWrite } from "./agentkit/deps.js";
 
 /** 工坊 system prompt 的装配输入。 */
@@ -309,8 +309,8 @@ function workspaceSection(ctx: WorkshopPromptContext): string {
 
 - 工作目录就是这部剧目的目录。read / write / edit 限在剧目目录内（play.json、theme.css、memory/**、assets/**），
   **bash 不受这个限制**：它以本服务的权限运行，这台机器上进程能碰的东西它都能碰、也能改。
-- 所以**改文件优先用 write / edit**：它们过 play.json 结构校验、每次写都挂撤销条，用户看得到改了什么。
-  bash 的改动不进撤销条，要看它改了什么用 \`git diff\`。
+- 所以**改文件优先用 write / edit**：它们过 play.json 结构校验，用户在各页能直接看到新内容。
+  bash 的改动同样走轮边界重建，要看它改了什么用 \`git diff\`。
 - 找内容用 \`grep -rn\`、读 JSON 用 \`jq\`，比整篇 read 快得多。
 
 `;
@@ -329,9 +329,13 @@ function imageGuide(ctx: WorkshopPromptContext): string {
     ctx.imageApproval === "auto"
       ? `- **本剧目免审批出图**（Agent 页里设的「出图审批」= 自动）：不用等用户点头，该出就出——
   但仍然**一次只出真正需要的那几张**，出完把图贴给他看。`
-      : `- 调 generate_image 出图。出什么、什么时候出由你判断，但**用户没点头之前一张都不要开跑**——出图要钱，立绘一张要等 100 秒起。`;
+      : `- **用户没点头之前一张都不要开跑**——出图要花钱、立绘一张要等 100 秒起。`;
   return `${approval}
-- **同一角色首次出定妆照时，建议同时生成 3 张候选 variant 给用户选择（A/B/C 三选一）**，用户挑中确认了满意基准后再据此垫图出其余差分，避免单张定妆照可爱度或细节不达预期导致全套差分推倒重来。
+- **generate_image 只出草稿，不进素材表**：回执给 \`draftId\` 与预览图，要采用它再调 \`commit_asset\`。
+  没被采用的草稿留在临时草稿区（一周后自动清），素材页与素材表里看不到它。
+- **先出 neutral 定妆照给用户看，而且是 3 张候选**：同一角色首次定妆时按 \`variant="neutral"\` 调 3 次 \`generate_image\`
+  （prompt 各不相同），把三张预览一起摆给用户挑；用户挑定后**只 commit 那一张**——\`commit_asset(draftId=…)\` 就把它绑成正式定妆照。
+- **定妆照采用之后再派生差分**：非 neutral 的差分自动垫上**已入库的** neutral，同一个角色才是同一个人。
 - **出图失败把接口原话带给用户**：回执里带 503 / 额度 / 模型名 / 被拒的尺寸，照抄。
   「生图服务暂时不可用」等于什么都没说，用户没法判断是自己的额度还是网关挂了。`;
 }

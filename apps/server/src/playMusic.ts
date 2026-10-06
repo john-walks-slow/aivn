@@ -27,7 +27,7 @@ export interface MusicAssetDeps {
   store: PlayStore;
   files: PlayFiles;
   backend: MusicBackend;
-  /** 素材声明补写要进撤销条（二进制本身不进）。 */
+  /** 素材声明补写推刷新信号（二进制本身不进）。 */
   onWrite: (write: PlayFileWrite) => void;
 }
 
@@ -175,7 +175,7 @@ export class PlayMusic {
       const after = `${JSON.stringify(current, null, 2)}\n`;
       if (after === raw) return;
       await this.deps.files.write("assets/manifest.json", after);
-      this.deps.onWrite({ path: "assets/manifest.json", before: raw || null, after });
+      this.deps.onWrite({ path: "assets/manifest.json" });
     });
   }
 }

@@ -43,7 +43,7 @@ async function makeStore(): Promise<PlayStore> {
   const dir = await mkdtemp(join(tmpdir(), "stage-workshop-"));
   await mkdir(join(dir, "memory", "always"), { recursive: true });
   await mkdir(join(dir, "memory", "index", "lore"), { recursive: true });
-  await mkdir(join(dir, "memory", "arcs"), { recursive: true });
+  await mkdir(join(dir, "memory", "archive"), { recursive: true });
   await mkdir(join(dir, "assets", "backgrounds"), { recursive: true });
   await writeFile(
     join(dir, "play.json"),
@@ -59,7 +59,7 @@ async function makeStore(): Promise<PlayStore> {
   );
   await writeFile(join(dir, "memory", "always", "premise.md"), "# 前提\n走廊的故事。\n");
   await writeFile(join(dir, "memory", "index", "lore", "旧约定.md"), "# 旧约定\n约定。\n");
-  await writeFile(join(dir, "memory", "arcs", "epoch-a-1.md"), "# 第一纪\n摘要\n");
+  await writeFile(join(dir, "memory", "archive", "events.jsonl"), "{}\n");
   await writeFile(join(dir, "session.json"), "{}");
   await writeFile(join(dir, "lineage.jsonl"), "");
   await writeFile(join(dir, "assets", "backgrounds", "corridor.png"), "png");
@@ -77,11 +77,11 @@ describe("PlayFiles：剧目文件白名单", () => {
     expect(listed).not.toContain("session.json");
     expect(listed).not.toContain("lineage.jsonl");
     expect((await files.list()).find((f) => f.path === "assets/backgrounds/corridor.png")?.writable).toBe(false);
-    // 引擎产物（纪元摘要）：看得到、存不了——它的写主是压缩流程，不是手
-    const arcs = (await files.list()).find((f) => f.path === "memory/arcs/epoch-a-1.md");
-    expect(arcs?.writable).toBe(false);
-    expect(() => files.pathOf("memory/arcs/epoch-a-1.md", "write")).toThrow(/不在剧目可写范围/);
-    expect(files.pathOf("memory/arcs/epoch-a-1.md", "read")).toContain("epoch-a-1.md");
+    // 引擎产物（逐轮切片）：看得到、存不了——它的写主是演出收束，不是手
+    const archive = (await files.list()).find((f) => f.path === "memory/archive/events.jsonl");
+    expect(archive?.writable).toBe(false);
+    expect(() => files.pathOf("memory/archive/events.jsonl", "write")).toThrow(/不在剧目可写范围/);
+    expect(files.pathOf("memory/archive/events.jsonl", "read")).toContain("events.jsonl");
   });
 
   it("越界与非法路径一律拒绝（不裁剪、不尽力而为）", async () => {
@@ -465,7 +465,7 @@ describe("工坊工具：generate_image", () => {
     store = await makeStore();
   };
 
-  it("出图成功：落盘 + 广播 asset + 结果回给模型", async () => {
+  it("出图成功：只落草稿 + 广播草稿预览 + 结果回给模型", async () => {
     await setup();
     const events: GeneratedPlayAsset[] = [];
     const assets = new PlayAssets("test", {
@@ -479,12 +479,15 @@ describe("工坊工具：generate_image", () => {
     const gen = tools.find((t) => t.name === "generate_image")!;
 
     const out = JSON.stringify(await gen.execute("c1", { kind: "background", name: "rooftop", prompt: "黄昏天台" }));
-    expect(out).toContain("已生成：assets/backgrounds/rooftop.jpg");
+    // 工坊出图只产草稿：不进 assets/、不碰素材表，回执给 draftId 让模型接着调 commit_asset
+    expect(out).toContain("草稿已出");
+    expect(out).toContain("commit_asset");
+    expect(existsSync(join(store.dir, "assets/backgrounds/rooftop.jpg"))).toBe(false);
     // 回执必须带 markdown 图片：agent 要靠这行把图贴给用户看，用户才谈得上验收
-    expect(out).toContain("![assets/backgrounds/rooftop.jpg](/plays/test/assets/backgrounds/rooftop.jpg)");
+    expect(out).toMatch(/!\[[\w-]+\]\(\/plays\/test\/drafts\/[\w-]+\/image\.jpg\)/);
     expect(events).toHaveLength(1);
-    expect(events[0]!.url).toBe("/plays/test/assets/backgrounds/rooftop.jpg");
-    expect(existsSync(join(store.dir, "assets/backgrounds/rooftop.jpg"))).toBe(true);
+    expect(events[0]!.url).toMatch(/^\/plays\/test\/drafts\/[\w-]+\/image\.jpg$/);
+    expect(existsSync(join(store.dir, events[0]!.path))).toBe(true);
   });
 
   it("view_image：剧目内的图以 image attachment 交给模型（抠底质量只有眼睛能判）", async () => {
@@ -898,7 +901,7 @@ describe("WorkshopSession：一轮对话", () => {
     expect(last?.assets).toHaveLength(1);
   });
 
-  it("人手改动（REST）不产生撤销记录，但同样触发 runtime 重建", async () => {
+  it("人手改动（REST）不广播写盘信号，但同样触发 runtime 重建", async () => {
     const store = await makeStore();
     const emitted: ServerMessage[] = [];
     let reloads = 0;

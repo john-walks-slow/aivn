@@ -1,17 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { LineageTree } from "@aivn/core";
 import {
   calibrateTokenScale,
   capDigest,
+  compactionText,
   estimateThreadTokens,
   measureContext,
-  pickCutIndex,
   pickThreadCutIndex,
-  renderSeed,
   renderTranscript,
   renderTranscriptAs,
   splitSummary,
@@ -20,9 +16,8 @@ import {
 } from "../src/compaction.js";
 import { PlayMemory } from "../src/memory.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
-import { buildSystemPrompt } from "../src/prompt.js";
 import type { ServerMessage } from "@aivn/core";
-import { caps, createFakeStreamFn, PLAY, BEAT_1, BEAT_2, type FakeResponse } from "./helpers.js";
+import { createFakeStreamFn, PLAY, BEAT_1, BEAT_2, type FakeResponse } from "./helpers.js";
 
 function user(text: string): AgentMessage {
   return { role: "user", content: [{ type: "text", text }], timestamp: 0 };
@@ -57,58 +52,23 @@ function toolResult(name: string, text: string): AgentMessage {
   };
 }
 
-describe("纪元压缩：切尾点与转录", () => {
-  it("切点落在 user 消息上（工具调用对不被劈开）", () => {
-    const messages: AgentMessage[] = [
-      assistant("A 区不算"),
-      user("第一轮".repeat(50)),
-      assistant("剧本一".repeat(50)),
-      user("第二轮".repeat(50)),
-      assistant("剧本二".repeat(50)),
-      user("第三轮".repeat(50)),
-      assistant("剧本三".repeat(50)),
-    ];
-    // 保留预算只够最后一条 user + 它的回复：切点必须正好是那条 user
-    expect(pickCutIndex(messages, 60)).toBe(5);
-    // 预算大到覆盖全部对话体 → 无可压段
-    expect(pickCutIndex(messages, 100_000)).toBe(0);
-    // 预算落在 toolResult 上：向前退到那一条 user（工具调用对不被劈开），退无可退判无可压
-    const withTool: AgentMessage[] = [
-      user("轮".repeat(400)),
-      assistant("回".repeat(400)),
-      toolResult("search_archive", "命中"),
-    ];
-    expect(pickCutIndex(withTool, 1)).toBe(0);
-    // 尾巴上挂着 beat_done 的 toolResult 是常态：预算落在那条 assistant 上时，
-    // 顺延会越界（toolResult 之后没有 user），必须能退回本轮的 user
-    const stranded: AgentMessage[] = [
-      user("一".repeat(400)),
-      assistant("二".repeat(400)),
-      toolResult("beat_done", "命中"),
-      user("三".repeat(400)),
-      assistant("四".repeat(400)),
-      toolResult("beat_done", "命中"),
-    ];
-    expect(pickCutIndex(stranded, 60)).toBe(3);
-    // 边缘：只有一条超长 user（没有第二轮可切）→ 顺延越界，判为无可压段
-    expect(pickCutIndex([user("长".repeat(4000)), assistant("回")], 1)).toBe(0);
-    expect(pickCutIndex([], 1)).toBe(0);
-  });
-
-  it("计量标定：provider usage 与本地估算不同尺时，触发与切尾同尺（中文 chars/4 低估防线）", () => {
-    // 八条 120 字消息：本地估算各 30 token，assistant 报 usage 480 → 标定系数 2（≈1 token/汉字）
+describe("纪元压缩：计量与转录", () => {
+  it("计量：有 usage 按实测标定；没有 usage 用 CJK 加权兜底（不是 chars/4）", () => {
+    // 八条 120 字消息：CJK 加权各 120 token；最后一条 assistant 报 usage 480（前缀实测）
     const beat: AgentMessage[] = [];
     for (let i = 0; i < 4; i += 1) {
       beat.push(user("一".repeat(120)), assistant("二".repeat(120), 480));
     }
     const { tokens, scale } = measureContext(beat);
-    expect(scale).toBe(2);
+    // 480 / 960：本地 CJK 估算比 provider 报的还高一倍，标定系数把它压回来
+    expect(scale).toBe(0.5);
     expect(tokens).toBe(480);
-    // 同一把尺子：保留 180 真实 token 落两条消息；不标定就会按 180 估算 token 落下六条
-    expect(pickCutIndex(beat, 180, scale)).toBe(6);
-    expect(pickCutIndex(beat, 180)).toBe(2);
-    // usage 漏报时退回系数 1，不产生天文数字的保留段
-    expect(measureContext([user("一".repeat(120)), assistant("二".repeat(120))]).scale).toBe(1);
+
+    // 冷启动 / 从树上重放出来的对话体没有 usage：兜底必须按 CJK 加权给下限。
+    // 退回 pi 的 chars/4 会把 240 token 算成 60——中文下压缩线永远够不到，长会话涨到模型报错。
+    const cold = measureContext([user("一".repeat(120)), assistant("二".repeat(120))]);
+    expect(cold.scale).toBe(1);
+    expect(cold.tokens).toBe(240);
   });
 
   it("转录：三类消息各取其文，超长单条截断", () => {
@@ -140,13 +100,12 @@ describe("纪元压缩：切尾点与转录", () => {
     expect(withHeading.oneLiner).toBe("澪生气地走了。");
     expect(splitSummary("# 前情提要\n\n澪走了。").oneLiner).toBe("澪走了。");
     expect(splitSummary("## 前情提要\n## 剧情进展").oneLiner).toBe("剧情进展");
-  });
 
-  it("seed 消息带纪元与轮号，正文原样嵌入", () => {
-    const seed = renderSeed(2, 24, "## 剧情进展\n两人走到旧校舍。");
-    expect(seed).toContain("【前情提要·纪元 2】（截至第 24 轮");
-    expect(seed).toContain("## 剧情进展\n两人走到旧校舍。");
-    expect(seed).toContain("不要重演");
+    // 压缩记录里的正文：通用标题剥掉，一行摘要与正文合成一份（模型看到的就是它）
+    expect(compactionText("## 概览\n澪生气地走了。\n\n## 剧情进展\n两人走到旧校舍。")).toBe(
+      "澪生气地走了。\n\n## 剧情进展\n两人走到旧校舍。",
+    );
+    expect(compactionText("只有一句")).toBe("只有一句");
   });
 
   it("withSeed：并入保留段首条 user，不产生相邻同角色消息", () => {
@@ -160,43 +119,6 @@ describe("纪元压缩：切尾点与转录", () => {
     // 保留段首条不是 user（理论上不会发生）时退化为独立 seed 消息
     const odd = withSeed([assistant("剧本")], "【前情提要】");
     expect(odd[0]!.role).toBe("user");
-  });
-});
-
-describe("PlayMemory 纪元卡", () => {
-  it("appendArc 落盘 + 即时进 cards；visibleCards 按分支过滤", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "stage-arc-"));
-    const memory = new PlayMemory({
-      arcsDir: join(dir, "memory", "arcs"),
-    });
-
-    await memory.appendArc({
-      id: "epoch-e1-1",
-      title: "纪元 1｜截至第 12 轮",
-      summary: "澪甩开了主角。",
-      detail: "## 剧情进展\n旧校舍。",
-    });
-
-    expect(memory.cards).toHaveLength(1);
-    expect(memory.readCard("epoch-e1-1", ["epoch-e1-1"])).toContain("旧校舍");
-    const onDisk = await readFile(join(dir, "memory", "arcs", "epoch-e1-1.md"), "utf8");
-    expect(onDisk).toContain("# 纪元 1｜截至第 12 轮");
-    expect(onDisk).toContain("澪甩开了主角。");
-
-    // 谱系级过滤：别的分支不得读到这条纪元
-    expect(memory.visibleCards([])).toHaveLength(0);
-    expect(memory.visibleCards(["epoch-e1-1"])).toHaveLength(1);
-    expect(memory.readCard("epoch-e1-1", [])).toBeNull();
-    expect(memory.readCard("epoch-e1-1", ["epoch-e1-1"])).toContain("旧校舍");
-
-    // 同 id 重复写入幂等
-    await memory.appendArc({
-      id: "epoch-e1-1",
-      title: "重复",
-      summary: "x",
-      detail: "y",
-    });
-    expect(memory.cards).toHaveLength(1);
   });
 });
 
@@ -234,18 +156,17 @@ describe("编排器纪元压缩", () => {
     return { orchestrator, tree, contexts, messages };
   }
 
-  // 两轮对话体约 90 token 估算：预算 84 触发；保留 20 token 恰好留下第二轮的 user + 剧本
-  const TIGHT = { contextWindow: 140, triggerRatio: 0.6, keepRecentTokens: 20 };
+  // A 区本身就远超 84 token 的预算，所以只要有一拍可压就会触发；
+  // 保留 40 token 恰好够留下最后一拍（更早的拍装不下）
+  const TIGHT = { contextWindow: 140, triggerRatio: 0.6, keepRecentTokens: 40 };
   const ROOMY = {
     contextWindow: 1_000_000,
     triggerRatio: 0.6,
-    keepRecentTokens: 20,
+    keepRecentTokens: 40,
   };
 
-  it("超阈值：压成 arcs 卡 + 重建 Agent（seed 落对话体头）", async () => {
-    const memory = new PlayMemory({
-      arcsDir: join(await mkdtemp(join(tmpdir(), "stage-arc-")), "memory", "arcs"),
-    });
+  it("超阈值：早期轮次换成摘要（落谱系快照）+ 重建 Agent", async () => {
+    const memory = new PlayMemory();
     const { orchestrator, tree, contexts } = setup(
       [
         { text: BEAT_1, beatDone: true },
@@ -261,29 +182,31 @@ describe("编排器纪元压缩", () => {
 
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
     await orchestrator.playerAction({ kind: "continue" });
-    expect(memory.cards).toHaveLength(0);
+    // 只有一拍时无可压段：压缩记录还不该出现
+    expect(tree.latestSnapshotOnPath(tree.leafId)?.compaction).toBeUndefined();
 
     // 第三轮开轮前跨过纪元边界
     await orchestrator.playerAction({ kind: "continue" });
 
-    const arcs = memory.cards.filter((c) => c.layer === "arcs");
-    expect(arcs).toHaveLength(1);
-    expect(arcs[0]!.summary).toBe("澪甩开了主角的手，两人走到旧校舍。");
-    expect(arcs[0]!.detail).toContain("旧校舍即将拆除。");
+    const record = tree.latestSnapshotOnPath(tree.leafId)?.compaction;
+    expect(record?.summary).toContain("澪甩开了主角的手，两人走到旧校舍。");
+    expect(record?.summary).toContain("旧校舍即将拆除。");
+    expect(record?.tokensBefore).toBeGreaterThan(84);
+    // 切点必须是链上的一个轮边界（第一拍的 beat_end），否则投影对不上原文
+    expect(tree.get(record!.cutNodeId)?.kind).toBe("beat_end");
+    // 压缩只改对话体：没有多余的卡落到剧目文件层
+    expect(memory.cards).toHaveLength(0);
 
-    // 重建后的 A 区带上了这条纪元（纪元内冻结）
-    const systems = (contexts.at(-1) as { messages: { role: string }[] }).messages;
-    expect(JSON.stringify(systems[0])).toContain("澪甩开了主角的手");
-    expect(
-      buildSystemPrompt({ play: PLAY, assets: {}, memory, arcIds: [arcs[0]!.file], can: caps() }),
-    ).toContain("澪甩开了主角的手");
-    // 对话体：seed 摘要打头 + 保留的最近轮次（第一轮原文已不在）
-    const rendered = JSON.stringify(systems);
-    expect(rendered).toContain("【前情提要·纪元 1】");
+    // 重建后的对话体：摘要打头并进保留段首拍的 user，第一轮原文已不在
+    const rendered = JSON.stringify((contexts.at(-1) as { messages: unknown[] }).messages);
+    expect(rendered).toContain("【前情提要】");
+    expect(rendered).toContain("澪甩开了主角的手");
     expect(rendered).not.toContain("放学后的走廊空无一人");
 
-    // 谱系快照记录 arc 引用
-    expect(tree.latestSnapshotOnPath(tree.leafId)?.memory.arcs).toEqual([arcs[0]!.file]);
+    // 摘要不进 A 区（它只活在对话体里，不再是一张记忆卡）
+    expect(JSON.stringify((contexts.at(-1) as { messages: unknown[] }).messages[0])).not.toContain(
+      "澪甩开了主角的手",
+    );
   });
 
   it("未超阈值：不压缩、不重建", async () => {
@@ -306,11 +229,11 @@ describe("编排器纪元压缩", () => {
     expect(contexts).toHaveLength(3);
   });
 
-  it("限制级段落期间不压缩：压缩器看不到原文，arc 里留不下限制级内容", async () => {
+  it("限制级段落期间不压缩：压缩器看不到原文，摘要里留不下限制级内容", async () => {
     // 段落里每一拍都写得足够长：到第三轮时上下文一定越过 TIGHT 预算（见下面的非空断言）
     const explicit = `<say id="mio">${"露骨原文".repeat(400)}</say>`;
     const memory = new PlayMemory();
-    const { orchestrator, contexts } = setup(
+    const { orchestrator, tree, contexts } = setup(
       [
         // 第 1 轮：日常，同批请求进入限制级
         { text: BEAT_1, beatDone: true, toolCalls: [{ name: "enter_nsfw", args: {} }] },
@@ -332,8 +255,8 @@ describe("编排器纪元压缩", () => {
     await orchestrator.playerAction({ kind: "continue" });
     await orchestrator.whenIdle();
 
-    // 一次都没压：没有 arc 卡，也没有多出来那一次摘要补全（4 = 三拍 + SFW 摘要）
-    expect(memory.cards.filter((c) => c.layer === "arcs")).toHaveLength(0);
+    // 一次都没压：没有压缩记录，也没有多出来那一次摘要补全（4 = 三拍 + SFW 摘要）
+    expect(tree.latestSnapshotOnPath(tree.leafId)?.compaction).toBeUndefined();
     expect(contexts).toHaveLength(4);
     // 非空证明：第 3 轮开轮前那段对话体确实远超预算（真压了的话 agent 会被重建，
     // 这里量到的就是重建后的种子，也就不会超）——所以「没压」是早退的结果，不是没到阈值
@@ -345,7 +268,7 @@ describe("编排器纪元压缩", () => {
 
   it("摘要生成失败：只告警不压缩，对话体保持原样", async () => {
     const memory = new PlayMemory();
-    const { orchestrator, contexts } = setup(
+    const { orchestrator, tree, contexts } = setup(
       [
         { text: BEAT_1, beatDone: true },
         { text: BEAT_2, beatDone: true },
@@ -360,19 +283,17 @@ describe("编排器纪元压缩", () => {
     await orchestrator.playerAction({ kind: "continue" });
     await orchestrator.playerAction({ kind: "continue" });
 
-    expect(memory.cards).toHaveLength(0);
     // 压缩补全确实发出去了（第三个上下文即摘要请求），只是模型给了空文本；对话体未重建
     expect(contexts).toHaveLength(4);
+    expect(tree.latestSnapshotOnPath(tree.leafId)?.compaction).toBeUndefined();
     expect(JSON.stringify((contexts.at(-1) as { messages: unknown[] }).messages[0])).not.toContain(
       "前情提要",
     );
   });
 
-  it("压缩请求在飞时 dispose：不落卡、不重建 Agent、不再开轮", async () => {
-    const memory = new PlayMemory({
-      arcsDir: join(await mkdtemp(join(tmpdir(), "stage-arc-")), "memory", "arcs"),
-    });
-    const { orchestrator, messages } = setup(
+  it("压缩请求在飞时 dispose：不落摘要、不重建 Agent、不再开轮", async () => {
+    const memory = new PlayMemory();
+    const { orchestrator, tree, messages } = setup(
       [
         { text: BEAT_1, beatDone: true },
         { text: BEAT_2, beatDone: true },
@@ -390,8 +311,8 @@ describe("编排器纪元压缩", () => {
     orchestrator.dispose();
     await pending;
 
-    expect(memory.cards).toHaveLength(0);
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(2);
+    expect(tree.latestSnapshotOnPath(tree.leafId)?.compaction).toBeUndefined();
   });
 });
 
@@ -400,7 +321,7 @@ describe("工坊线程压缩", () => {
     return { role, text };
   }
 
-  /** 4 轮交替；每条 40 字 = 10 token 估算（chars/4）。 */
+  /** 3 轮交替；每条 40 个汉字 = 40 token 估算（CJK 加权，1 token/字），一轮 80。 */
   function turns(): ThreadTurn[] {
     return [
       turn("user", "用".repeat(40)),
@@ -412,36 +333,33 @@ describe("工坊线程压缩", () => {
     ];
   }
 
-  it("切点落在 user 消息上，保留段从完整一轮开场", () => {
-    // 保留 25 token → 兜住 2 条（20）+ 第 3 条（30），落点 3 是 assistant，向后顺延到下一条 user（下标 4）
-    expect(pickThreadCutIndex(turns(), 25)).toBe(4);
-    // 保留 45 → 兜住 4 条（40）+ 第 5 条（50），落点 1 是 assistant，顺延到下一条 user（下标 2）
-    expect(pickThreadCutIndex(turns(), 45)).toBe(2);
-    // 保留预算大于整个对话体：无段可压
+  it("切点只落在轮边界上，从尾部按预算保留", () => {
+    // 保留 5：连最后一轮（80）都超预算，至少留它——一轮永远不被劈开，落点是它的 user（下标 4）
+    expect(pickThreadCutIndex(turns(), 5)).toBe(4);
+    // 保留 90：装得下最后一轮（80），再往前一轮就 160 了
+    expect(pickThreadCutIndex(turns(), 90)).toBe(4);
+    // 保留 170：装得下最后两轮（160）
+    expect(pickThreadCutIndex(turns(), 170)).toBe(2);
+    // 整段本来就装得下：无段可压
     expect(pickThreadCutIndex(turns(), 10_000)).toBe(0);
   });
 
-  it("预算落在一条 user 上时不劈开这一轮", () => {
-    // 保留 5 token：从尾兜 1 条（10）已超，顺延找下一条 user——没有，退到下标 4
-    expect(pickThreadCutIndex(turns(), 5)).toBe(4);
-  });
-
-  it("计量随标定系数线性放大（中文下 chars/4 低估约 4 倍）", () => {
-    const system = "系".repeat(200); // 50 token 估算
-    const messages: AgentMessage[] = [user("中".repeat(400))]; // 100 token 估算
-    expect(estimateThreadTokens(system, messages)).toBe(150);
-    expect(estimateThreadTokens(system, messages, 4)).toBe(600);
+  it("计量随标定系数线性放大（尺子是 CJK 加权，不是 chars/4）", () => {
+    const system = "系".repeat(200); // 200 token（一个汉字一个）
+    const messages: AgentMessage[] = [user("中".repeat(400))]; // 400
+    expect(estimateThreadTokens(system, messages)).toBe(600);
+    expect(estimateThreadTokens(system, messages, 4)).toBe(2400);
   });
 
   it("从 provider 实测 usage 标定系数；usage 缺失或越界一律不标", () => {
-    const system = "系".repeat(200); // 50 token 估算
+    const system = "系".repeat(200); // 200
     const base: AgentMessage[] = [
       { role: "system", content: system, timestamp: 0 },
-      user("中".repeat(400)), // 100
-      assistant("答".repeat(200), 600), // 50 → 前缀合计 200
+      user("中".repeat(400)), // 400
+      assistant("答".repeat(200), 600), // 200 → 前缀合计 800
     ];
-    // provider 报 600，本地估 200 → 系数 3
-    expect(calibrateTokenScale(system, base)).toBe(3);
+    // provider 报 600，本地估 800 → 系数 0.75
+    expect(calibrateTokenScale(system, base)).toBe(0.75);
     // 全零 usage（拿不到实测）：按 1 算
     expect(calibrateTokenScale(system, [base[0]!, base[1]!, assistant("答")])).toBeNull();
     // 系数离谱（网关漏报 usage）：不采信

@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   DEFAULT_SPRITE_FRAMING,
@@ -65,6 +66,9 @@ export function assertAssetStem(value: string, label: string): string {
 
 const NEUTRAL = "neutral";
 
+/** 草稿区的保鲜期：超过这个时间没动过的草稿目录，在下一次出图时顺手清掉。 */
+const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
  * 立绘主体 id 的合法形状：它就是 `assets/sprites/` 下的目录名。
  *
@@ -81,7 +85,7 @@ export function assertSpriteId(value: string): string {
 }
 
 
-/** 谁触发的这次出图。工坊要撤销条与素材气泡，剧作家在拍内预发射一样都不产。manual 为用户从工坊面板手动触发（不产生对话流气泡，也不排队自动重建）。 */
+/** 谁触发的这次出图。工坊要素材气泡，剧作家在拍内预发射一样都不产。manual 为用户从工坊面板手动触发（不产生对话流气泡，也不排队自动重建）。 */
 export type AssetNotify = "workshop" | "silent" | "manual";
 
 export type AssetKind = "background" | "cg" | "sprite";
@@ -116,7 +120,7 @@ export interface AssetTarget {
 }
 
 export interface GenerateOptions {
-  /** 事件去向：工坊要撤销条与素材气泡，剧作家的后台预发射一律静默。 */
+  /** 事件去向：工坊要素材气泡，剧作家的后台预发射一律静默。 */
   notify?: AssetNotify;
 }
 
@@ -130,6 +134,47 @@ export interface GeneratedPlayAsset {
   replaced: boolean;
   /** 落盘前没有 neutral 垫图，本轮先自动定了一张定妆照。 */
   autoNeutral: boolean;
+}
+
+/**
+ * 一张**草稿**：已经出好图（立绘也抠好了底），但还没进 `assets/`。
+ *
+ * 出图与入库拆开是为了「一次出几张候选、用户挑一张」这条流程：generate 只产草稿，
+ * 挑中的那张才 `commit` 成素材。草稿落在 media-cache/drafts/ 下，是中间物不是剧目内容。
+ */
+export interface DraftedAsset {
+  draftId: string;
+  kind: AssetKind;
+  /** 剧目内相对路径（media-cache/drafts/<id>/image.png），预览用。 */
+  path: string;
+  /** 预览 URL（/plays/<playId>/drafts/<id>/image.png）。 */
+  url: string;
+}
+
+/** `commit` 的选项：事件去向（工坊要素材气泡，剧作家的后台链路一律静默）。 */
+export interface CommitOptions {
+  notify?: AssetNotify;
+}
+
+/** 草稿目录里的 draft.json：出图那一刻的意图，`commit` 不在同一个回合也能拿回来。 */
+interface DraftRecord {
+  draftId: string;
+  kind: AssetKind;
+  name?: string;
+  spriteId?: string;
+  variant?: string;
+  framing?: SpriteFraming;
+  stature?: SpriteStature;
+  title?: string;
+  /** 出图时的画幅（提交时按目标重算，这里只作留痕）。 */
+  aspect: ImageAspect;
+  prompt: string;
+  /** 成图扩展名（含点）；立绘是抠底后的 .png。 */
+  imageExt: string;
+  /** 抠底前原片的扩展名（立绘才有）。 */
+  sourceExt?: string;
+  createdAt: string;
+  committedAt?: string;
 }
 
 /** 一张要垫给模型的参考图规格：可能是剧目内立绘，也可能是指定路径或网络图片。 */
@@ -182,7 +227,7 @@ export interface PlayAssetsDeps {
   pending?: PendingJobs;
   /** 网络图下载（可选，外部 URL 参考图需要它）。 */
   fetchImage?: WebImageFetcher;
-  /** 素材声明补写要进撤销条（二进制本身不进）。 */
+  /** 素材声明补写推刷新信号（二进制本身不进）。 */
   onWrite: (write: PlayFileWrite, notify: AssetNotify) => void;
   /** 素材到货（工坊侧挂到对话气泡里）。 */
   onAsset?: (asset: WorkshopAssetView, replaced: boolean, notify: AssetNotify) => void;
@@ -211,6 +256,15 @@ export class PlayAssets {
     private readonly deps: PlayAssetsDeps,
   ) {}
 
+  /**
+   * 出图并**入库**：`draft` + `commit` 的组合，签名与语义对调用方不变。
+   *
+   * 剧作家的后台预发射、素材页的手动生图、原地重抠都走这条——那边的图一出来就是要用的，
+   * 没有「让用户在候选里挑」这一步。工坊的 `generate_image` 走 `draft`，挑中了再 `commit`。
+   *
+   * `inflight` 只在这一层去重：同一最终目标在同批次里被要两次纯属浪费；`draft` 不去重——
+   * 同一目标并发出三张候选，正是候选流程本身要的。
+   */
   async generate(
     target: AssetTarget,
     prompt: string,
@@ -227,6 +281,77 @@ export class PlayAssets {
     });
     this.inflight.set(key, job);
     return job;
+  }
+
+  /**
+   * 只出图、不落库：出好图（立绘抠好底）放进草稿区，等 `commit` 才进 `assets/`。
+   *
+   * 这是「一次出三张候选给用户挑」的入口——三张都只是草稿，没被挑中的那张不会在素材表里
+   * 留下任何痕迹。工坊的 `generate_image` 走它；剧作家与手动生图走 `generate`。
+   */
+  async draft(target: AssetTarget, prompt: string, style?: string): Promise<DraftedAsset> {
+    const spec = await this.resolve(target);
+    // 差分的身份基准恒为**已入库**的 neutral：草稿当不了基准（拿一张没人过目的脸锚定全套差分，
+    // 事后换掉基准等于整套差分换人）。要出差分先出定妆照候选、挑一张入库。
+    if (spec.kind === "sprite" && spec.variant !== NEUTRAL && !(await this.existingPath(spec.kindPath, NEUTRAL))) {
+      throw new Error(
+        `${spec.spriteId} 还没有入库的 ${NEUTRAL} 定妆照：先出定妆照候选、挑一张用 commit_asset 采用，再派生差分。`,
+      );
+    }
+    return this.produce(spec, prompt, style);
+  }
+
+  /**
+   * 把一张草稿正式入库：写 `assets/`、补素材表呈现声明、记生图台账、把留底原片搬进
+   * `media-cache/sprite-sources/`（重抠要用）。
+   *
+   * 落位就用**草稿出图时的意图**（立绘的 spriteId/variant、背景/CG 的 name）——候选之间
+   * 的差别在画面不在身份：定妆照的三张候选都按 `neutral` 出图，挑中的那张就按 `neutral` 入库。
+   * 同一张草稿重复入库只是把同一个文件再写一遍，幂等。
+   */
+  async commit(draftId: string, options?: CommitOptions): Promise<GeneratedPlayAsset> {
+    const notify = options?.notify ?? "workshop";
+    const draft = await this.loadDraft(draftId);
+    const spec = await this.resolve({
+      kind: draft.kind,
+      name: draft.name,
+      spriteId: draft.spriteId,
+      variant: draft.variant,
+      framing: draft.framing,
+      stature: draft.stature,
+      title: draft.title,
+    });
+    const dir = this.deps.store.draftDir(draftId);
+    const bytes = await readFile(join(dir, `image${draft.imageExt}`));
+    // 留底跟着入库：`recut_sprite` 只认 media-cache/sprite-sources/ 那一份。
+    if (spec.kind === "sprite" && draft.sourceExt) {
+      await this.keepSpriteSource(spec, await readFile(join(dir, `source${draft.sourceExt}`)), draft.sourceExt);
+    }
+    const written = await this.persist(spec, bytes, draft.imageExt);
+    if (spec.kind === "sprite") await this.declareSprite(spec, notify);
+    await this.recordPrompt(spec, written.path, draft.prompt);
+    await this.markCommitted(draftId, draft);
+    return { ...written, autoNeutral: false };
+  }
+
+  private async loadDraft(draftId: string): Promise<DraftRecord> {
+    const id = draftId.trim();
+    if (!/^[\w-]{1,64}$/.test(id)) throw new Error(`草稿 id「${draftId}」非法`);
+    const file = join(this.deps.store.draftDir(id), "draft.json");
+    if (!existsSync(file)) {
+      throw new Error(`找不到草稿 ${id}：它可能已被清理，或者 id 记错了——重新出一次图。`);
+    }
+    return JSON.parse(await readFile(file, "utf8")) as DraftRecord;
+  }
+
+  /** 入库留痕（best-effort）：草稿目录迟早会被清理，这一笔只为当下看得出「已经采用过」。 */
+  private async markCommitted(draftId: string, draft: DraftRecord): Promise<void> {
+    try {
+      const file = join(this.deps.store.draftDir(draftId), "draft.json");
+      await writeFile(file, `${JSON.stringify({ ...draft, committedAt: new Date().toISOString() }, null, 2)}\n`);
+    } catch {
+      // 素材已经落好了，为一条留痕报错不值
+    }
   }
 
   /**
@@ -294,6 +419,16 @@ export class PlayAssets {
     notify: AssetNotify = "workshop",
   ): Promise<GeneratedPlayAsset[]> {
     const auto = spec.kind === "sprite" ? await this.ensureNeutral(spec, prompt, notify) : null;
+    const draft = await this.produce(spec, prompt, style);
+    const committed = await this.commit(draft.draftId, { notify });
+    return auto ? [auto, { ...committed, autoNeutral: true }] : [committed];
+  }
+
+  /**
+   * 真正出图那一段：垫图、拼后缀、等后端、抠底、落草稿区。**不写 `assets/`、不碰素材表**——
+   * 入库是 `commit` 的事。
+   */
+  private async produce(spec: AssetSpec, prompt: string, style?: string): Promise<DraftedAsset> {
     const references = await this.referencesFor(spec);
     const image = await this.imageOverride();
     // 后缀跟着**真正发出去的图**走：STAGE_IMAGE_REFERENCE=none 时一张都没发，
@@ -333,34 +468,90 @@ export class PlayAssets {
     }
     done?.();
     this.assertCanvas(spec, data);
-    const bytes = spec.kind === "sprite" ? await this.cutSprite(spec, data, mimeType) : data;
-    const ext = spec.kind === "sprite" ? ".png" : extOf(mimeType);
-    const written = await this.persist(spec, bytes, ext);
-    if (spec.kind === "sprite") await this.declareSprite(spec, notify);
-    await this.recordPrompt(spec, written.path, fullPrompt);
-    return auto ? [auto, { ...written, autoNeutral: true }] : [{ ...written, autoNeutral: false }];
+    // 立绘抠底成透明 PNG，同时把抠底前那张原片一起收进草稿——留底是抠底参数唯一的后悔药
+    // （见 `recut`），入库时跟着搬进 media-cache/sprite-sources/。
+    const bytes = spec.kind === "sprite" ? (await cutout(data, resolveTuning())).data : data;
+    return this.writeDraft(spec, fullPrompt, { image: bytes, raw: data, mimeType });
   }
 
   /**
-   * 立绘落盘前的最后一步：抠底成透明 PNG，并把**抠底前的原片**留一份。
+   * 落一张草稿：成图 + （立绘的）抠底前原片 + `draft.json`（出图意图）。
    *
-   * 留底是抠底参数唯一的后悔药：透明 PNG 一落盘底色就没了，之后想改抠底只剩「重新出图」——
-   * 而重新出图出来的是另一张画，用户刚点头的那张会被顶掉，还白烧一份配额。
-   * 留了底，「图挺好、抠得脏」就是本地重跑一遍的事（见 `recut`）。
-   *
-   * 留底写在 media-cache/（跑批产物，不进 git）：换机器后老图没法重抠，这是有意的取舍——
-   * 原片是中间物，不是剧目内容。写失败只记一条告警，不把一次成功的出图报成失败。
+   * 顺带清掉过期的旧草稿——草稿是中间物，攒着只占盘。清理是 best-effort，删不掉不影响出图。
    */
-  private async cutSprite(spec: AssetSpec, data: Buffer, mimeType: string): Promise<Buffer> {
-    const { data: png } = await cutout(data, resolveTuning());
-    await this.keepSpriteSource(spec, data, mimeType);
-    return png;
+  private async writeDraft(
+    spec: AssetSpec,
+    prompt: string,
+    bytes: { image: Buffer; raw: Buffer; mimeType: string },
+  ): Promise<DraftedAsset> {
+    const draftId = randomUUID();
+    const dir = this.deps.store.draftDir(draftId);
+    await mkdir(dir, { recursive: true });
+    const imageExt = spec.kind === "sprite" ? ".png" : extOf(bytes.mimeType);
+    const sourceExt = spec.kind === "sprite" ? extOf(bytes.mimeType) : undefined;
+    await writeFile(join(dir, `image${imageExt}`), bytes.image);
+    if (sourceExt) await writeFile(join(dir, `source${sourceExt}`), bytes.raw);
+    const intent =
+      spec.kind === "sprite"
+        ? {
+            spriteId: spec.spriteId,
+            variant: spec.variant,
+            framing: spec.framing,
+            stature: spec.stature,
+            ...(spec.title ? { title: spec.title } : {}),
+          }
+        : { name: spec.stem };
+    const record: DraftRecord = {
+      draftId,
+      kind: spec.kind,
+      ...intent,
+      aspect: spec.aspect,
+      prompt,
+      imageExt,
+      ...(sourceExt ? { sourceExt } : {}),
+      createdAt: new Date().toISOString(),
+    };
+    await writeFile(join(dir, "draft.json"), `${JSON.stringify(record, null, 2)}\n`);
+    await this.pruneDrafts();
+    return {
+      draftId,
+      kind: spec.kind,
+      path: `media-cache/drafts/${draftId}/image${imageExt}`,
+      url: `/plays/${this.playId}/drafts/${draftId}/image${imageExt}`,
+    };
   }
 
-  private async keepSpriteSource(spec: AssetSpec, data: Buffer, mimeType: string): Promise<void> {
+  /** 清掉过期草稿：超过 `DRAFT_TTL_MS` 没动过的整份目录删掉。删不掉就算了，不打断出图。 */
+  private async pruneDrafts(): Promise<void> {
+    const root = this.deps.store.draftsDir();
+    if (!existsSync(root)) return;
+    const cutoff = Date.now() - DRAFT_TTL_MS;
+    try {
+      for (const entry of await readdir(root, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const dir = join(root, entry.name);
+        try {
+          if ((await stat(dir)).mtimeMs < cutoff) await rm(dir, { recursive: true, force: true });
+        } catch {
+          // 单份草稿删不掉不该影响这次出图
+        }
+      }
+    } catch {
+      // 草稿区列不出来同理
+    }
+  }
+
+  /**
+   * 把抠底前的原片留一份到 `media-cache/sprite-sources/`：抠底参数唯一的后悔药。
+   *
+   * 透明 PNG 一落盘底色就没了，之后想改抠底只剩「重新出图」——而重新出图出来的是另一张画，
+   * 用户刚点头的那张会被顶掉，还白烧一份配额。留了底，「图挺好、抠得脏」就是本地重跑一遍的事。
+   * 留底是跑批产物（不进 git）：换机器后老图没法重抠，这是有意的取舍。
+   * 写失败只记一条告警，不把一次成功的出图报成失败。
+   */
+  private async keepSpriteSource(spec: AssetSpec, data: Buffer, ext: string): Promise<void> {
     if (!spec.spriteId) return;
     const dir = this.deps.store.spriteSourceDir(spec.spriteId);
-    const ext = extOf(mimeType);
     try {
       await mkdir(dir, { recursive: true });
       await writeFile(join(dir, `${spec.stem}${ext}`), data);
@@ -729,7 +920,7 @@ export class PlayAssets {
       const after = `${JSON.stringify(current, null, 2)}\n`;
       if (after === raw) return;
       await this.deps.files.write("assets/manifest.json", after);
-      this.deps.onWrite({ path: "assets/manifest.json", before: raw || null, after }, notify);
+      this.deps.onWrite({ path: "assets/manifest.json" }, notify);
     });
   }
 

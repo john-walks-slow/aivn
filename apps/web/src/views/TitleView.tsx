@@ -3,7 +3,7 @@ import { Icon, Modal, workshopUrl } from "@aivn/stage";
 import { api, coverUrl, readinessAdvice, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
 import { navigate } from "../router.jsx";
 
-/** Title Screen：背景 + 作品名 + 竖排动词菜单（继续 / 开始新周目 / 周目 / 工坊 / 导出 / 删除）。 */
+/** Title Screen：背景 + 作品名 + 竖排动词菜单（开始/继续 / 工坊 / 导出 / 删除）。 */
 export function TitleView({ playId }: { playId: string }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [saves, setSaves] = useState<SaveInfo[]>([]);
@@ -100,33 +100,25 @@ export function TitleView({ playId }: { playId: string }) {
                 生成底图和定妆照。
               </p>
             )}
-            {saves.length === 0 && (
-              <p className="title-note">还没有周目。开一个新周目，就有第一棵故事树了。</p>
-            )}
           </div>
 
           {/* 游玩动作与剧目管理分两组：前者是玩家在标题画面上按的，后者是作者的日常操作 */}
           <div className="title-right">
             <nav className="title-menu">
-              {/* 有周目时，「继续」是主项且排在前：来得最多的动作该是最显眼的那一个。
-                  开始新周目永远排在它后面，没有周目时它自己就是主项。 */}
+              {/* 没有周目时只显示「开始」，已有周目时只显示「继续」 */}
               {current ? (
                 <button className="title-item main" onClick={() => navigate(`/play/${playId}/stage`)}>
                   继续
-                  <span className="title-item-sub">{current.name}</span>
                 </button>
-              ) : null}
-              <button
-                className={`title-item${current ? "" : " main"}`}
-                disabled={starting}
-                onClick={startNew}
-              >
-                开始新周目
-              </button>
-              <button className="title-item" onClick={() => navigate(`/play/${playId}/saves`)}>
-                周目
-                {saves.length > 0 && <span className="title-item-sub">{saves.length} 棵故事树</span>}
-              </button>
+              ) : (
+                <button
+                  className="title-item main"
+                  disabled={starting}
+                  onClick={startNew}
+                >
+                  开始
+                </button>
+              )}
             </nav>
 
             <div className="title-manage">

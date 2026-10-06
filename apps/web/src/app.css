@@ -2336,31 +2336,6 @@ select:focus {
   color: var(--ink);
 }
 
-/* 待确认写盘条：紧贴输入框上沿（写在下面时它被输入框压在最底下，读盘记录比输入框还低一等） */
-.workshop-writes {
-  border-top: 1px solid var(--line);
-  padding: 6px 12px 8px;
-  flex-shrink: 0;
-  max-height: 132px;
-  overflow-y: auto;
-  background: var(--panel);
-}
-
-.write-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  padding: 2px 0;
-}
-
-.write-row .file-path {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* 文件浏览器 */
 
 .workshop-files {
@@ -2703,6 +2678,16 @@ select:focus {
 .route-node.dead .route-node-bg {
   opacity: 0.1;
   filter: grayscale(0.7);
+}
+
+.route-node.sentinel {
+  border-left-width: 4px;
+  background: color-mix(in srgb, var(--panel) 92%, var(--accent) 8%);
+}
+
+.route-node.sentinel .route-node-stamp {
+  font-weight: 600;
+  color: var(--accent);
 }
 
 .route-node:hover {

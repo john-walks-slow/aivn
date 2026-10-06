@@ -7,10 +7,15 @@ import { compiler } from "markdown-to-jsx";
  * 仅允许本地剧目素材图片点击打开灯箱，外部图片一律不渲染。
  */
 
-/** 只认同源的剧目素材路径，外链与 javascript: 一律当普通文本，不给模型往页面里塞任意 src 的机会。 */
+/**
+ * 只认同源的剧目素材路径（assets/ 或生图草稿 drafts/），外链与 javascript: 一律当普通文本，
+ * 不给模型往页面里塞任意 src 的机会。
+ *
+ * 草稿要认：`generate_image` 在工坊只出草稿，候选预览就靠这条 markdown 图给用户看。
+ */
 function assetUrl(src: string): string | null {
   const url = src.trim().replace(/^<|>$/g, "");
-  if (!/^\/plays\/[\w-]+\/assets\/[\w./-]+$/.test(url)) return null;
+  if (!/^\/plays\/[\w-]+\/(?:assets|drafts)\/[\w./-]+$/.test(url)) return null;
   return url;
 }
 

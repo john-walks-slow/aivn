@@ -365,3 +365,60 @@ describe("人物高度：不同格子制式下必须一致", () => {
     expect(alphaAtSource(155, 150)).toBeGreaterThan(128);
   });
 });
+
+describe("细描边：压在轮廓上的黑色描边必须留住", () => {
+  /**
+   * 纯绿底 + 浅色人形，边缘只压 **1 像素**深色描边，再走一遍 JPEG（模型回来的就是 JPEG）。
+   * 1px 是要害：它比反解带宽（4px）还窄，`foregroundColors` 的 BFS 够不到它，
+   * 前景色 F 只能取到描边内侧的填充色。混合模型于是把这个深色描边解成
+   * 「覆盖率 0.1 的底色」，`unblend` 再把它整块换成填充色——整圈黑描边消失。
+   * 实测（真实立绘）：轮廓内侧 2px 的平均亮度 32 → 187，肉眼就是「描边被抠掉了」。
+   */
+  async function hairlineOutline(): Promise<Buffer> {
+    const w = 200;
+    const h = 300;
+    const raw = Buffer.alloc(w * h * 3);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const o = (y * w + x) * 3;
+        const inFigure = x >= 60 && x <= 140 && y >= 60 && y <= 240;
+        const inCore = x >= 61 && x <= 139 && y >= 61 && y <= 239;
+        const c: [number, number, number] = !inFigure ? [0, 255, 0] : inCore ? [235, 235, 240] : [25, 28, 35];
+        raw[o] = c[0];
+        raw[o + 1] = c[1];
+        raw[o + 2] = c[2];
+      }
+    }
+    return sharp(raw, { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality: 92 }).toBuffer();
+  }
+
+  it("中线进入人物的头几个不透明像素是描边（深色），不是被换成的填充色", async () => {
+    const result = await cutout(await hairlineOutline());
+    const { data, info } = await sharp(result.data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const y = Math.round(info.height * 0.45);
+    const luminance = (x: number): number => {
+      const p = (y * info.width + x) * 4;
+      return 0.299 * data[p]! + 0.587 * data[p + 1]! + 0.114 * data[p + 2]!;
+    };
+    const edge: number[] = [];
+    for (let x = 0; x < info.width && edge.length < 3; x++) {
+      if ((data[(y * info.width + x) * 4 + 3] ?? 0) >= 128) edge.push(x);
+    }
+    expect(edge).toHaveLength(3);
+    const mean = (edge.map(luminance).reduce((a, b) => a + b, 0)) / edge.length;
+    // 描边 Lt≈29、填充色 Lt≈236：取中间当门槛，用均值挡掉单像素抖动
+    expect(mean).toBeLessThan(120);
+  });
+
+  it("边缘仍是灰阶斜坡，没有被压成硬边", async () => {
+    const result = await cutout(await hairlineOutline());
+    const { data, info } = await sharp(result.data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    let partial = 0;
+    for (let i = 0; i < info.width * info.height; i++) {
+      const a = data[i * 4 + 3]!;
+      if (a > 8 && a < 248) partial++;
+    }
+    // 一整圈轮廓的过渡带：数量级在几千，绝不是一个「全有或全无」的硬掩膜
+    expect(partial).toBeGreaterThan(500);
+  });
+});

@@ -16,6 +16,7 @@ import type { StopOption, StopType } from "../ws/protocol.js";
 import { toNodeView } from "./replay.js";
 
 export type LineageEventKind =
+  | "root"
   | "scene"
   | "actor"
   | "say"
@@ -69,23 +70,44 @@ export interface EngineStateSnapshot {
   flags: Record<string, string | number | boolean>;
 }
 
-export interface MemorySnapshot {
-  /** always/state 层内容（小，直接内联）。 */
-  state: Record<string, string>;
-  /** arcs 摘要 id 列表（引用，内容在剧目记忆目录）。 */
-  arcs: string[];
-  /** 限制级（NSFW）剧情通道是否激活。 */
-  nsfw?: boolean;
+/**
+ * 纪元压缩记录：这条分支最近一次压缩的产物与切点。
+ *
+ * 它是**分支状态**（随谱系快照走），不是记忆卡：重放按它把「切点之前的原文」换成摘要，
+ * 于是跳转/分岔/编辑/冷启动都不需要任何撤销逻辑（见 rebuild.ts 的 lineageToBeats）。
+ */
+export interface CompactionRecord {
+  /** 前情提要正文：重放时并进保留段首条 user 消息。 */
+  summary: string;
+  /** 切点：该节点及其之前的一切都已被 summary 覆盖（恒为路径上的 beat_end，最远到哨兵根）。 */
+  cutNodeId: string;
+  /** 压缩前的上下文 token 量（记账/日志/UI 用）。 */
+  tokensBefore: number;
 }
 
+/**
+ * 谱系快照：某个节点上，这条分支的全部状态。
+ *
+ * 跳转/分岔/删除/续演都靠它把现场装回来。四件事并列，**不套「记忆」这层壳**：引擎状态
+ * （好感度/旗标）、活跃状态文件、限制级通道、纪元压缩记录都是分支事实，谁也不是谁的一层。
+ */
 export interface LineageSnapshot {
   id: string;
   nodeId: string;
   turn: number;
+  /** 引擎状态（好感度 / 旗标 / 轮号）。 */
   engine: EngineStateSnapshot;
-  memory: MemorySnapshot;
+  /** 活跃状态文件正文（键是文件名：scene / threads 这些，每轮注入【状态】区）。 */
+  stateFiles: Record<string, string>;
+  /** 最近一次纪元压缩；没有这个键 = 这条分支还没压过（短会话、压缩点之前）。 */
+  compaction?: CompactionRecord;
+  /** 这一刻世界线在不在限制级通道里（段末那一拍是 false：从那里续演就该是日常）。 */
+  nsfw: boolean;
   createdAt: number;
 }
+
+/** 快照的「事实」部分：调用方说清这一刻的全部状态，身份（id / nodeId / 轮号 / 时间）由树补。 */
+export type SnapshotFacts = Omit<LineageSnapshot, "id" | "nodeId" | "turn" | "createdAt">;
 
 /** 路线树视图（前端渲染用）：事件全集投影 + 路径标记，替代存读档的「历史即存档」。 */
 export interface LineageNodeView {
@@ -147,6 +169,9 @@ export function originOfBeat(event: LineageEvent): string {
   return "continue";
 }
 
+export const ROOT_ID = "root";
+export const SENTINEL_ID = ROOT_ID;
+
 /** 持久化结构：事件日志（真相源）+ 会话运行态（leafId）+ 分岔事实快照。 */
 export interface LineageStore {
   events: LineageEvent[];
@@ -184,6 +209,24 @@ export class LineageTree {
   private leaf: string | null = null;
   /** nodeId → 最近快照（一个节点保留一份，后存覆盖）。 */
   private readonly snapshotsByNode = new Map<string, LineageSnapshot>();
+
+  constructor() {
+    this.initRoot();
+  }
+
+  private initRoot(createdAt = 0): LineageEvent {
+    const root: LineageEvent = {
+      id: ROOT_ID,
+      parentId: null,
+      kind: "root",
+      turn: 0,
+      text: "",
+      createdAt,
+    };
+    this.events.set(ROOT_ID, root);
+    this.leaf = ROOT_ID;
+    return root;
+  }
 
   get leafId(): string | null {
     return this.leaf;
@@ -237,6 +280,9 @@ export class LineageTree {
    * 世界线被接进一片空白。空壳一律连带删掉，一级一级往上看。
    */
   removeSubtree(nodeId: string): string[] {
+    if (nodeId === ROOT_ID) {
+      throw new Error("哨兵节点不可删除");
+    }
     const node = this.requireNode(nodeId);
     const removed: string[] = [];
     const stack = [nodeId];
@@ -302,6 +348,7 @@ export class LineageTree {
    */
   beatEndFrom(headId: string): string | null {
     let current = this.requireNode(headId);
+    if (current.kind === "root") return current.id;
     if (current.kind === "fork") {
       const kids = this.childrenOf(current.id);
       if (kids.length !== 1) return null;
@@ -374,7 +421,7 @@ export class LineageTree {
     const script: LineageEvent[] = [];
     for (const id of this.ancestorChain(fromLeaf)) {
       const event = this.events.get(id)!;
-      if (event.kind === "fork") continue;
+      if (event.kind === "fork" || event.kind === "root") continue;
       const history = this.edits.get(id);
       if (history?.length) {
         const latest = history[history.length - 1]!;
@@ -408,30 +455,24 @@ export class LineageTree {
     return candidateId !== nodeId && this.ancestorChain(nodeId).includes(candidateId);
   }
 
-  /** 保存谱系快照（分岔/重写时）。 */
-  saveSnapshot(engine: EngineStateSnapshot, memory: MemorySnapshot): LineageSnapshot {
+  /** 在当前挂载点保存谱系快照（每拍收束时）。 */
+  saveSnapshot(facts: SnapshotFacts): LineageSnapshot {
     if (this.leaf === null) throw new Error("空树不能保存快照");
-    const snapshot: LineageSnapshot = {
-      id: nextId(),
-      nodeId: this.leaf,
-      turn: this.events.get(this.leaf)?.turn ?? 0,
-      engine,
-      memory,
-      createdAt: Date.now(),
-    };
-    this.snapshotsByNode.set(snapshot.nodeId, snapshot);
-    return snapshot;
+    return this.putSnapshot(this.leaf, this.events.get(this.leaf)?.turn ?? 0, facts);
   }
 
   /** 在指定节点挂快照（书签：标记历史位置，不动挂载点）。 */
-  saveSnapshotAt(nodeId: string, engine: EngineStateSnapshot, memory: MemorySnapshot): LineageSnapshot {
+  saveSnapshotAt(nodeId: string, facts: SnapshotFacts): LineageSnapshot {
     const node = this.requireNode(nodeId);
+    return this.putSnapshot(node.id, node.turn, facts);
+  }
+
+  private putSnapshot(nodeId: string, turn: number, facts: SnapshotFacts): LineageSnapshot {
     const snapshot: LineageSnapshot = {
       id: nextId(),
-      nodeId: node.id,
-      turn: node.turn,
-      engine,
-      memory,
+      nodeId,
+      turn,
+      ...facts,
       createdAt: Date.now(),
     };
     this.snapshotsByNode.set(snapshot.nodeId, snapshot);
@@ -503,6 +544,17 @@ export class LineageTree {
 
   /** 从持久化会话状态重建（leaf 显式恢复，不用事件尾推断——裸分岔状态不丢）。 */
   load(store: LineageStore): void {
+    this.events.clear();
+    this.edits.clear();
+    this.cgs.clear();
+    this.notes.length = 0;
+    this.snapshotsByNode.clear();
+
+    const hasRoot = store.events.some((e) => e.id === ROOT_ID);
+    if (!hasRoot) {
+      this.initRoot();
+    }
+
     for (const event of store.events) {
       // 旁注（改写 / 插图）：落进目标行的旁注表，不进树也不动挂载点。
       if (event.kind === "edit" && event.editTargetId) {
@@ -519,10 +571,14 @@ export class LineageTree {
         this.notes.push(event);
         continue;
       }
-      this.attach(event);
+      const patchedEvent =
+        !hasRoot && event.parentId === null && event.id !== ROOT_ID
+          ? { ...event, parentId: ROOT_ID }
+          : event;
+      this.attach(patchedEvent);
     }
     // attach 已把 leaf 推到最后一个树事件；只在无 leafId 时拿它兜底。
-    this.leaf = store.leafId ?? this.leaf;
+    this.leaf = store.leafId ?? this.leaf ?? ROOT_ID;
     for (const snapshot of store.snapshots) this.snapshotsByNode.set(snapshot.nodeId, snapshot);
     seedNextId([
       ...store.events.map((e) => e.id),

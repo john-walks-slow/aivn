@@ -83,9 +83,12 @@ export interface WorkshopThreadInfo {
 export interface WorkshopAssetView {
   /** background/cg/sprite = 图片气泡；bgm/sfx = 音频播放器（资源库导入的音素材）。 */
   kind: "background" | "cg" | "sprite" | "bgm" | "sfx";
-  /** 剧目内相对路径（assets/backgrounds/rooftop.jpg），素材页与文件树里同一个东西。 */
+  /**
+   * 剧目内相对路径：`assets/backgrounds/rooftop.jpg`（已入库的素材，素材页与文件树里同一个东西）
+   * 或 `media-cache/drafts/<draftId>/image.png`（`generate_image` 出的**草稿**，还没进素材表）。
+   */
   path: string;
-  /** 站内 URL：/plays/<playId>/assets/backgrounds/rooftop.jpg。 */
+  /** 站内 URL：`/plays/<playId>/assets/…` 或 `/plays/<playId>/drafts/…`。 */
   url: string;
 }
 
@@ -292,8 +295,8 @@ export type ServerMessage =
       isError: boolean;
       ms: number;
     }
-  /** 工坊 agent 写了剧目文件：before 为 null 表示新建，可据此一键撤销。 */
-  | { type: "workshop_write"; threadId: string; path: string; before: string | null }
+  /** 工坊 agent 写了剧目文件：前端只当刷新信号，各页据此重拉。 */
+  | { type: "workshop_write"; threadId: string; path: string }
   /** 工坊出一张素材到货：带 toolCallId 的挂到那次调用的行上，不带的走消息级预览。 */
   | {
       type: "workshop_asset";

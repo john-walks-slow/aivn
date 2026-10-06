@@ -477,6 +477,7 @@ function Node({
   const { card } = placed;
   const cls = [
     "route-node",
+    card.isSentinel ? "sentinel" : "",
     card.isAbandoned ? "dead" : "",
     card.onPath ? "live" : "",
     card.isLeaf ? "here" : "",
@@ -486,8 +487,9 @@ function Node({
   ]
     .filter(Boolean)
     .join(" ");
-  const who = card.speakers.map((id) => names[id] ?? id).join("、");
-  const text = card.preview || "（无台词）";
+  const who = card.isSentinel ? "" : card.speakers.map((id) => names[id] ?? id).join("、");
+  const timeStamp = card.isSentinel ? "起点" : stamp(card.at);
+  const text = card.preview || (card.isSentinel ? "开端" : "（无台词）");
   // 画面：这一幕出过的 CG 优先于背景。CG 才是这一幕真正给玩家看的那张画，
   // 拿背景顶上来等于告诉玩家「这一幕没出过图」。
   const bg = (card.cgId ? index?.cg(card.cgId) : null) ?? index?.bg(card.sceneBg) ?? null;
@@ -501,7 +503,7 @@ function Node({
     >
       {bg && <img className="route-node-bg" src={bg} alt="" aria-hidden />}
       <span className="route-node-head">
-        <span className="route-node-stamp">{stamp(card.at)}</span>
+        <span className="route-node-stamp">{timeStamp}</span>
         <span className="route-node-who">{who}</span>
       </span>
       <span className="route-node-text">{text}</span>
@@ -511,32 +513,36 @@ function Node({
             type="button"
             className="route-node-tool"
             disabled={busy}
-            title={hint || "跳转：回到这一段的开头，从头演一遍。不重新生成，选项照旧。"}
+            title={hint || (card.isSentinel ? "跳转：回到故事的起点。" : "跳转：回到这一段的开头，从头演一遍。不重新生成，选项照旧。")}
             onClick={() => ops.jump(card.endNodeId, { playFrom: "start" })}
           >
             <Icon name="return" />
             跳转
           </button>
-          <button
-            type="button"
-            className="route-node-tool"
-            disabled={busy}
-            title={hint || "重写：退到这一段之前，让剧作家重新写一遍这一段（原有内容留作旧枝）。可以交代一句要求。"}
-            onClick={() => onRewrite(card)}
-          >
-            <Icon name="rewrite" />
-            重写
-          </button>
-          <button
-            type="button"
-            className="route-node-tool"
-            disabled={busy}
-            title={hint || "删除：剪掉这一段，以及它之后长出来的全部内容。会先让你确认。"}
-            onClick={() => onRemove(card)}
-          >
-            <Icon name="remove" />
-            删除
-          </button>
+          {!card.isSentinel && (
+            <>
+              <button
+                type="button"
+                className="route-node-tool"
+                disabled={busy}
+                title={hint || "重写：退到这一段之前，让剧作家重新写一遍这一段（原有内容留作旧枝）。可以交代一句要求。"}
+                onClick={() => onRewrite(card)}
+              >
+                <Icon name="rewrite" />
+                重写
+              </button>
+              <button
+                type="button"
+                className="route-node-tool"
+                disabled={busy}
+                title={hint || "删除：剪掉这一段，以及它之后长出来的全部内容。会先让你确认。"}
+                onClick={() => onRemove(card)}
+              >
+                <Icon name="remove" />
+                删除
+              </button>
+            </>
+          )}
         </span>
       </span>
     </div>

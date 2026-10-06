@@ -1,23 +1,18 @@
-import type {
-  AgentTool,
-  AgentToolResult,
-  Agent,
-  AgentMessage,
-  StreamFn,
-} from "@earendil-works/pi-agent-core";
-import { Agent as PiAgent, estimateTokens } from "@earendil-works/pi-agent-core";
-import { type Api, type Model, type Static, type TSchema, Type } from "@earendil-works/pi-ai";
+import type { Agent, AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
+import { Agent as PiAgent } from "@earendil-works/pi-agent-core";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import {
   LineageTree,
+  ROOT_ID,
   StageDslParser,
   characterIdOfPath,
   nextId,
   originOfBeat,
+  type CompactionRecord,
   type EngineStateSnapshot,
   type LineageEvent,
   type LineageView,
-  type MemorySnapshot,
-  type PreloadAssetAttrs,
+  type SnapshotFacts,
   type SequencedEvent,
   type StageEvent,
   type StopPayload,
@@ -44,13 +39,13 @@ import { CAST_SCAN_EVENTS, buildSystemPrompt, renderStateSection, type AssetMani
 import { lineageToBeats, lineageToEvents, stopFromEvent, type RebuiltBeat } from "./rebuild.js";
 import {
   EPOCH_SUMMARY_SYSTEM,
+  compactionText,
+  estimateMessageTokens,
+  localTextTokens,
   measureContext,
-  pickCutIndex,
-  renderSeed,
+  pickCompactionCut,
   renderTranscript,
-  splitSummary,
   withSeed,
-  type EpochSummary,
 } from "./compaction.js";
 import { completeText } from "./llm.js";
 import { HistoryRecorder, type HistoryBeat } from "./history.js";
@@ -73,6 +68,17 @@ const MAX_FEEDBACK_WARNINGS = 8;
  * 只重试一次：同一段输入、同一个上下文，第三轮还写不出来就是写不出来。
  */
 const BEAT_RETRY_LIMIT = 1;
+
+/**
+ * 漏调 beat_done 的同轮追收束（只追一次）：模型写完正文却没调 beat_done 时，
+ * 直接封成 no_stop 等于把「忘了收束」当正常轮收了——下一轮变成纯状态续写，
+ * 模型在那里面大概率空补一个零台词的 beat_done。追收束在同一轮里补一句指令，
+ * 让它接着把 beat_done 交出来，而不是把问题推到下一轮。
+ */
+const BEAT_DONE_NUDGE =
+  "这一轮的剧本正文已经写完，请现在调用 beat_done 收束本轮（参数就是这一轮的出口：" +
+  "给玩家选项就填 options，想给自由回答的口子就填 placeholder，这一段自然演完就空参数调用）。" +
+  "不要再写新的剧本内容，不要重写已经演出的部分。";
 
 /** 告警类型 → 模型看得懂的说法（英文枚举名对它没有诊断价值）。 */
 const WARNING_LABELS: Record<ParserWarningType, string> = {
@@ -385,13 +391,18 @@ export class PlaywrightOrchestrator {
   private beatWarnings: string[] = [];
   /** 本 turn 调用了 beat_done → 轮在此收束（普通工具轮次不算边界，否则记忆查询会撕裂轮）。 */
   private beatClosed = false;
+  /** 本轮已经追过一次 beat_done 收束：追收束只追一次，追完它还不交就按 no_stop 正常封轮。 */
+  private beatDoneNudged = false;
   /** 本轮出现过带副作用的工具调用（beat_done 只是收束记账，不算）：纯工具轮（enter_nsfw / 生图 / 写卡）
    * 没有台词也不是失败——副作用已经发生，回滚只会吞掉它。 */
   private beatToolActivity = false;
   /** always/state 活跃状态文件内容（谱系级，随快照走；update_state 工具维护）。 */
   private stateFiles: Record<string, string> = {};
-  /** 当前分支已走过的纪元摘要 id（谱系级，随快照走；纪元压缩时追加）。 */
-  private arcIds: string[] = [];
+  /**
+   * 当前分支的纪元压缩记录（谱系级，随快照走）：切点之前的原文由这份摘要代表。
+   * 压缩因此是分支状态的一部分——跳转/分岔自动跟着换，不存在「撤销压缩」这回事。
+   */
+  private compaction: CompactionRecord | null = null;
   /** 待注入的插一句（演出中收到，等这一轮收束再兑现）。不落盘：重启后队列不复活。 */
   private pending: PromptQueueItem[] = [];
   /** 本轮在 pending 面板上的那一条（收束时销掉）：剧作家正在写的那一轮。失败常驻不销。 */
@@ -505,10 +516,10 @@ export class PlaywrightOrchestrator {
     this.historyRecorder = new HistoryRecorder(opts.restoredHistory);
     this.parser = new StageDslParser((event) => this.onStageEvent(event));
     if (opts.restored) {
-      // 恢复会话：活跃状态文件与纪元摘要从路径最近快照回填（谱系级记忆）
+      // 恢复会话：活跃状态文件与纪元压缩记录从路径最近快照回填（谱系级记忆）
       const snapshot = opts.tree.latestSnapshotOnPath(opts.tree.leafId);
-      this.stateFiles = snapshot?.memory.state ?? {};
-      this.arcIds = [...(snapshot?.memory.arcs ?? [])];
+      this.stateFiles = snapshot?.stateFiles ?? {};
+      this.compaction = snapshot?.compaction ?? null;
       // 已有事件早已落过 JSONL，不重复补推
       for (const event of opts.tree.export().events) this.loggedIds.add(event.id);
       if (opts.restored.nsfw) {
@@ -547,7 +558,6 @@ export class PlaywrightOrchestrator {
       memory: opts.memory,
       tree: opts.tree,
       stateFiles: this.stateFiles,
-      arcIds: () => this.arcIds,
       // read / write / edit 与工坊同一套：同一份 PlayFiles、同一个 PlayEnv 白名单
       files: new PlayFiles(opts.store),
       onWrite: (write) => this.onPlayFileWritten(write),
@@ -568,7 +578,13 @@ export class PlaywrightOrchestrator {
       },
       isNsfw: () => this.nsfwActive || this.nsfwPendingEnter,
     });
-    this.agent = this.buildAgent(opts.seed ? withSeed(opts.seed.messages, opts.seed.note) : []);
+    // 冷启动（读档续演、服务重启）从树投影重放对话体：压缩记录在这一步自动生效，
+    // 不需要为「这条分支压过」留任何特例。现场有更近的接力（工坊改文件后的重建）时才用接力那段。
+    this.agent = this.buildAgent(
+      opts.seed
+        ? withSeed(opts.seed.messages, opts.seed.note)
+        : this.bodyFromTree(),
+    );
     this.voice = opts.tts
       ? new VoicePipeline({
           synth: opts.tts.synth,
@@ -610,7 +626,6 @@ export class PlaywrightOrchestrator {
           notes: opts.assetNotes,
           generated: opts.generatedAssets,
           memory: opts.memory,
-          arcIds: this.arcIds,
           can: this.kit.can,
           nsfwMode: isNsfw,
           nsfwPrompt: opts.nsfwPrompt,
@@ -626,9 +641,21 @@ export class PlaywrightOrchestrator {
     // 与记忆工具同批调用，terminate 会被吞掉导致本轮继续空转——此时按 beat_done 显式收束 run。
     agent.finishTurn = async (turn) => {
       const calls = turn.message.content.filter((c) => c.type === "toolCall");
-      if (!calls.some((c) => c.name === "beat_done")) return undefined;
-      this.beatClosed = true;
-      return calls.length > 1 ? { action: "end" as const } : undefined;
+      if (calls.some((c) => c.name === "beat_done")) {
+        this.beatClosed = true;
+        return calls.length > 1 ? { action: "end" as const } : undefined;
+      }
+      // 漏调 beat_done 的同轮追收束（只追一次）：模型写完正文却没调 beat_done 时，
+      // run 在这里直接收 run → 按 no_stop 封轮，问题被推到下一轮（纯状态续写里空补 beat_done）。
+      // 追一句让它在同一轮里把 beat_done 交出来。只追「有真实台词」的轮：裸散文/空轮
+      // 走判废重演那条路（追一句等于替它免了重演，还把拒答原文留进对话体）。
+      // 失败路径不追：error/aborted 的轮是中断不是忘了收束。
+      if (this.beatDoneNudged || this.beatClosed) return undefined;
+      if (turn.message.stopReason === "error" || turn.message.stopReason === "aborted") return undefined;
+      if (!this.busy || !this.beatHasLines) return undefined;
+      this.beatDoneNudged = true;
+      agent.steer({ role: "user", content: BEAT_DONE_NUDGE, timestamp: Date.now() });
+      return { action: "continue" as const };
     };
     this.unsubscribeAgent = agent.subscribe((event) => void this.onAgentEvent(event));
     this.agent = agent;
@@ -704,7 +731,7 @@ export class PlaywrightOrchestrator {
     let cut = messages.length;
     while (cut > 1 && tokens < CARRY_OVER_TOKENS) {
       cut -= 1;
-      tokens += estimateTokens(messages[cut]!) * scale;
+      tokens += estimateMessageTokens(messages[cut]!) * scale;
     }
     while (cut < messages.length && messages[cut]?.role !== "user") cut += 1;
     // 落在末尾：没有可接力的完整轮次（空轮 / 只有 system）
@@ -1266,7 +1293,7 @@ export class PlaywrightOrchestrator {
     const node = this.opts.tree.get(nodeId);
     if (!node) throw new Error(`谱系节点不存在: ${nodeId}`);
     const parentId = node.parentId;
-    if (parentId === null) throw new Error("开场那一轮不能删");
+    if (node.id === ROOT_ID || parentId === null) throw new Error("哨兵节点不能删");
     this.prevLeafId = this.opts.tree.leafId;
     const removed = this.opts.tree.removeSubtree(nodeId);
     // 删掉的枝里含「上一次走过的那条」：引用已经悬空，跟着世界线落到删除后的落脚处
@@ -1340,7 +1367,7 @@ export class PlaywrightOrchestrator {
     const target = this.opts.tree.get(nodeId);
     this.opts.tree.recordEdit(nodeId, text);
     this.flushLineageLog();
-    this.buildAgent(this.renderBeats(this.rebuildBeats(this.opts.tree.materialize()).beats));
+    this.buildAgent(this.bodyFromTree());
     // seq 是这一行在舞台缓冲里的身份：客户端靠它就地换字，不必整段重放
     const seq = target?.payload?.seq;
     this.send({
@@ -1520,12 +1547,12 @@ export class PlaywrightOrchestrator {
     this.persist();
   }
 
-  /** 某节点路径上的分支状态：引擎/场景/活跃状态文件/剧情线引用（纯计算，不改现场）。 */
+  /** 某节点路径上的分支状态：引擎/场景/活跃状态文件/纪元压缩记录（纯计算，不改现场）。 */
   private stateAt(nodeId: string | null): {
     engine: NonNullable<PlayConfig["initialState"]>;
     scene: string;
     stateFiles: Record<string, string>;
-    arcIds: string[];
+    compaction: CompactionRecord | null;
     nsfw: boolean;
   } {
     const chain = this.opts.tree.chainEvents(nodeId);
@@ -1538,9 +1565,9 @@ export class PlaywrightOrchestrator {
     return {
       engine: { turn: base.turn, affinity: { ...base.affinity }, flags: { ...base.flags } },
       scene,
-      stateFiles: { ...(snapshot?.memory.state ?? {}) },
-      arcIds: [...(snapshot?.memory.arcs ?? [])],
-      nsfw: snapshot?.memory.nsfw ?? false,
+      stateFiles: { ...(snapshot?.stateFiles ?? {}) },
+      compaction: snapshot?.compaction ?? null,
+      nsfw: snapshot?.nsfw ?? false,
     };
   }
 
@@ -1555,7 +1582,7 @@ export class PlaywrightOrchestrator {
     // 换引用的话分岔之后记忆工具会写到一个没人再读的对象上去（状态区再也不更新）。
     for (const key of Object.keys(this.stateFiles)) delete this.stateFiles[key];
     Object.assign(this.stateFiles, state.stateFiles);
-    this.arcIds = [...state.arcIds];
+    this.compaction = state.compaction;
     this.beatNo = engine.turn;
     this.opts.scene = state.scene;
     // 重置 NSFW 状态为该节点历史快照中的状态，并清空进行中的 pending 与台词缓存
@@ -1602,9 +1629,22 @@ export class PlaywrightOrchestrator {
   } {
     const names: Record<string, string> = { ...this.opts.spriteTitles };
     for (const [id, card] of this.opts.memory.characters) names[id] = card.name ?? id;
-    // 读者身份取现场模式：调用点必须先把分支状态装回来（rebuildBranchAt 那里
+    // 读者身份与压缩记录都取现场：调用点必须先把分支状态装回来（rebuildBranchAt 那里
     // restoreBranchState 在它之前——跳进段内要原文、跳回段后只许摘要）
-    return lineageToBeats(chain, names, this.opts.play.opening, { nsfw: this.nsfwActive });
+    return lineageToBeats(chain, names, this.opts.play.opening, {
+      nsfw: this.nsfwActive,
+      ...(this.compaction ? { compaction: this.compaction } : {}),
+    });
+  }
+
+  /**
+   * 当前分支的对话体：从树重放到 LLM 消息。
+   *
+   * 压缩记录在这一步生效（投影），所以「重建对话体」的每一处都该走它——
+   * 各写一遍的症状是某一条路忘了带投影，跳转/压缩后那条路就退回原文。
+   */
+  private bodyFromTree(): AgentMessage[] {
+    return this.renderBeats(this.rebuildBeats(this.opts.tree.materialize()).beats);
   }
 
   /** 对话轮次 → LLM 消息（历史轮的玩家原话与已演出脚本，状态不进历史轮次）。 */
@@ -1778,7 +1818,7 @@ export class PlaywrightOrchestrator {
   /**
    * 判废回滚：这一轮整段作废，回到「这段输入还没发出去」的那一刻。
    *
-   * 复用上下文重建那一套（引擎状态 / 场景 / 活跃状态文件 / arcs / 事件缓冲 / 对话体 / 历史
+   * 复用上下文重建那一套（引擎状态 / 场景 / 活跃状态文件 / 压缩记录 / 事件缓冲 / 对话体 / 历史
    * 一起退，见 rebuildBranchAt），但不落 fork 标记——这不是玩家开的新分支，是这一轮不存在。
    * 客户端整段重放（epoch+1），所以判废前流出去的那半截（改了一半的背景、只发起的一张图）
    * 也从台上一并消失。
@@ -1841,60 +1881,60 @@ export class PlaywrightOrchestrator {
   }
 
   /**
-   * 纪元压缩：对话体涨到窗口预算（默认 60%）时，把早期轮次压成一张 arcs 摘要卡并重建 Agent。
-   * - 摘要失败/无可压段：只告警不动对话体——压缩是优化不是正确性前提，不做降级；
+   * 纪元压缩：对话体涨到窗口预算（默认 60%）时，把早期轮次压成一份摘要并重建 Agent。
+   *
+   * 切点按**投影后的拍**从尾部保留，切点之前的原文由摘要代表（记录落在 `this.compaction`，
+   * 随谱系快照走）。二次压缩因此天然是「在投影上再压一次」——旧摘要只是首拍的一部分，
+   * 不需要拿它当底稿改写。
+   * - 无可压段（链上只有一拍、第一拍之前没有边界、或单拍就超保留预算）：直接跳过，不动对话体；
+   * - 摘要失败同样是「跳过」——压缩是优化不是正确性前提，不做降级；
    * - 切掉的原文早已逐轮落进 archive，检索层（search_archive）照常命中。
+   *
+   * 记录要等下一拍收束的 `closeBeat` 快照才落盘：压缩成功后、下一拍收束前崩溃会退回
+   * 压缩前的原文（下次开轮重算一遍）。这是接受的取舍——在这里补一次刷盘换来的是
+   * 一条可能指向「已经封了别的拍」的快照，不值。
    */
   private async maybeCompactEpoch(): Promise<void> {
     const compaction = this.opts.compaction;
     if (!compaction || this.disposed) return;
     // 限制级段落期间不压：段没结束就还没有摘要，压缩器只能吃到露骨原文，
-    // 而 arc 是要进长期记忆、每个纪元的 A 区都带着的。退出时上下文本来就会
-    // 重建为净化版、体积回退，不差这一下。
+    // 而这份摘要会随谱系快照长期带着、每次重放都注入。退出时上下文本来就会
+    // 重建成净化版、体积回退，不差这一下。
     if (this.nsfwActive) return;
     const messages = this.agent.state.messages;
     const budget = Math.floor(compaction.contextWindow * compaction.triggerRatio);
-    // 触发判定与切尾点同尺：scale 由 provider 实测 usage 标定（中文下 chars/4 严重低估）
+    // 触发判定用实测（有 usage 时）或 CJK 加权的保守下限（冷启动、重放出来的对话体）
     const { tokens: used, scale } = measureContext(messages);
     if (used <= budget) return;
-    const cut = pickCutIndex(messages, compaction.keepRecentTokens, scale);
-    if (cut === 0) return;
-    const head = messages.slice(1, cut);
-    const tail = messages.slice(cut);
-    const summary = await this.summarizeEpoch(head);
+    const { beats } = this.rebuildBeats(this.opts.tree.materialize());
+    // 切点按**投影后的拍**算：量的是拍自己的文本，工具结果不参与（触发判定那一侧仍然
+    // 用真实消息组，带工具结果）。单位体量乘同一个标定系数，两侧的预算才是同一把尺子。
+    const keep = pickCompactionCut(
+      beats.map((beat) => beatTokens(beat) * scale),
+      compaction.keepRecentTokens,
+    );
+    if (keep === null) return;
+    const cutNodeId = beats[keep]!.boundaryId;
+    // 边界为 null = 要切的第一拍就是分支开头，前面没有可压的段
+    if (!cutNodeId) return;
+    const summary = await this.summarizeEpoch(this.renderBeats(beats.slice(0, keep)));
     if (!summary) return;
-    const { oneLiner, body } = summary;
     // 摘要请求在飞：期间可能已 reload/切档重建/dispose——此时重建 Agent 等于僵尸复活
     if (this.disposed) return;
-    const epochNo = this.arcIds.length + 1;
-    // arcId 带谱系叶：分岔后两条支路各自压缩不会互相覆盖同名卡
-    const arcId = `epoch-${this.opts.tree.leafId ?? "root"}-${epochNo}`;
-    try {
-      await this.opts.memory.appendArc({
-        id: arcId,
-        title: `纪元 ${epochNo}｜截至第 ${this.beatNo} 轮`,
-        summary: oneLiner,
-        detail: body,
-      });
-    } catch (error) {
-      console.warn(
-        `[aivn] 纪元压缩跳过（摘要落盘失败）: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return;
-    }
-    if (this.disposed) return;
-    this.arcIds = [...this.arcIds, arcId];
-    this.buildAgent(withSeed(tail, renderSeed(epochNo, this.beatNo, body)));
+    this.compaction = { summary, cutNodeId, tokensBefore: used };
+    // 重建即生效：投影自动把切点之前换成这份摘要（不再需要 withSeed 那层「就地突变」）
+    this.buildAgent(this.bodyFromTree());
     console.log(
-      `[aivn] 纪元 ${epochNo} 压缩完成：${used} tok → 保留 ${tail.length}/${messages.length} 条消息，arc=${arcId}`,
+      `[aivn] 纪元压缩：${used} tok → 保留 ${beats.length - keep}/${beats.length} 拍（切点 ${cutNodeId}）`,
     );
     this.persist();
   }
 
   /** 生成纪元摘要；失败只告警并返回 null（压缩是优化不是正确性前提，不阻断本轮开轮）。 */
-  private async summarizeEpoch(head: readonly AgentMessage[]): Promise<EpochSummary | null> {
+  private async summarizeEpoch(head: readonly AgentMessage[]): Promise<string | null> {
+    if (head.length === 0) return null;
     try {
-      const summary = await completeText(
+      const raw = await completeText(
         {
           streamFn: this.opts.streamFn,
           model: this.opts.model,
@@ -1904,7 +1944,8 @@ export class PlaywrightOrchestrator {
         EPOCH_SUMMARY_SYSTEM,
         renderTranscript(head),
       );
-      return splitSummary(summary);
+      const summary = compactionText(raw).trim();
+      return summary === "" ? null : summary;
     } catch (error) {
       console.warn(
         `[aivn] 纪元压缩跳过（摘要生成失败）: ${error instanceof Error ? error.message : String(error)}`,
@@ -1922,6 +1963,7 @@ export class PlaywrightOrchestrator {
     this.beatLines = [];
     this.beatToolActivity = false;
     this.beatClosed = false;
+    this.beatDoneNudged = false;
     this.beatNsfw = this.beatChannelNsfw();
     this.beatClosing = false;
     this.opts.engine.turn = this.beatNo;
@@ -2049,22 +2091,16 @@ export class PlaywrightOrchestrator {
         ...(nsfwSummary ? { nsfwSummary } : {}),
       },
     });
-    // 谱系快照随 beat 收束保存（分岔/续演恢复用）：活跃状态文件 + arcs 引用（谱系级记忆）
+    // 谱系快照随 beat 收束保存（分岔/续演恢复用）。
+    // 引擎状态与状态文件都克隆后再存：快照按节点留档，存引用会被后续轮的原地修改污染
     const engine = this.opts.engine;
-    const memory: MemorySnapshot = {
-      state: { ...this.stateFiles },
-      arcs: [...this.arcIds],
+    const facts: SnapshotFacts = {
+      engine: { ...engine, affinity: { ...engine.affinity }, flags: { ...engine.flags } },
+      stateFiles: { ...this.stateFiles },
+      ...(this.compaction ? { compaction: this.compaction } : {}),
       nsfw: this.nsfwActive,
     };
-    // 克隆后再存：快照按节点留档，存引用会被后续轮的原地修改污染（分岔恢复必须拿到当轮真值）
-    this.opts.tree.saveSnapshot(
-      {
-        ...engine,
-        affinity: { ...engine.affinity },
-        flags: { ...engine.flags },
-      },
-      memory,
-    );
+    this.opts.tree.saveSnapshot(facts);
     // archive 逐轮切片（D7 第三层）：本轮台词全文，entryId = 谱系叶（防剧透过滤键）
     const leafId = this.opts.tree.leafId ?? "";
     const at = Date.now();
@@ -2146,10 +2182,10 @@ export class PlaywrightOrchestrator {
    * 所以这里不必、也不许再拿内存里的 messages 当基线：那个基线只在「本次会话真的走过
    * 进入限制级那一刻」之后才存在，而跳进段内、读档续演到段内时它都是空的，此时内存里
    * 的消息组全是露骨原文——一压就整段回流给主模型。实时退出与跳转/读档重建因此走同一
-   * 个函数，两条路读到的上下文逐字一致。
+   * 条投影（`bodyFromTree`），两条路读到的上下文逐字一致。
    */
   private switchBackToSfw(): void {
-    this.buildAgent(this.renderBeats(this.rebuildBeats(this.opts.tree.materialize()).beats), false);
+    this.buildAgent(this.bodyFromTree(), false);
     this.persist();
   }
 
@@ -2313,6 +2349,8 @@ export class PlaywrightOrchestrator {
         if (event.bg) this.opts.scene = event.bg;
         this.opts.assetRefs?.resolve(refsFromScene(event));
         const attrs = pick(event, ["bg", "bgm", "ambient", "transition", "bgm_volume", "ambient_volume"]);
+        // 开新场（`<scene clear/>`）落谱系：重放与回看照它清人；缺省不写 = 老行为（只换底）。
+        if (event.clear === true) attrs.clear = "true";
         for (const key of Object.keys(attrs)) if (attrs[key] === "") delete attrs[key];
         // 音频属性的空串在流式里是「停」（director 的 STOP_AUDIO 认 ""），但谱系里空串会被
         // 上面这行删掉，重放时读成 undefined = 「保持当前」——刷新一下音乐又响起来。
@@ -2381,6 +2419,11 @@ export class PlaywrightOrchestrator {
         return;
     }
   }
+}
+
+/** 一拍在对话体里的体量：两侧都按 CJK 加权的本地估算（与压缩计量同一把尺子）。 */
+function beatTokens(beat: RebuiltBeat): number {
+  return localTextTokens(beat.user) + localTextTokens(beat.assistant);
 }
 
 function pick(source: object, keys: string[]): Record<string, string> {

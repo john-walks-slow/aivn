@@ -1,0 +1,182 @@
+[
+  {
+    "tol": 48,
+    "smooth": 0.8,
+    "band": 4,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 677595,
+    "holes": 154193,
+    "coverage": 0.2633491930111434
+  },
+  {
+    "tol": 48,
+    "smooth": 0.8,
+    "band": 6,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 656677,
+    "holes": 151733,
+    "coverage": 0.2633491930111434
+  },
+  {
+    "tol": 48,
+    "smooth": 0.8,
+    "band": 8,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 635504,
+    "holes": 152010,
+    "coverage": 0.2633491930111434
+  },
+  {
+    "tol": 64,
+    "smooth": 0.8,
+    "band": 4,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 673213,
+    "holes": 154372,
+    "coverage": 0.260505617126938
+  },
+  {
+    "tol": 64,
+    "smooth": 0.8,
+    "band": 6,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 654092,
+    "holes": 152478,
+    "coverage": 0.260505617126938
+  },
+  {
+    "tol": 64,
+    "smooth": 0.8,
+    "band": 8,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 630685,
+    "holes": 152644,
+    "coverage": 0.260505617126938
+  },
+  {
+    "tol": 80,
+    "smooth": 0.8,
+    "band": 4,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 671830,
+    "holes": 155141,
+    "coverage": 0.25783521075581395
+  },
+  {
+    "tol": 80,
+    "smooth": 0.8,
+    "band": 6,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 651103,
+    "holes": 153427,
+    "coverage": 0.25783521075581395
+  },
+  {
+    "tol": 80,
+    "smooth": 0.8,
+    "band": 8,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 628734,
+    "holes": 153602,
+    "coverage": 0.25783521075581395
+  },
+  {
+    "tol": 96,
+    "smooth": 0.8,
+    "band": 4,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 669396,
+    "holes": 155151,
+    "coverage": 0.25581111464389533
+  },
+  {
+    "tol": 96,
+    "smooth": 0.8,
+    "band": 6,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 648029,
+    "holes": 153627,
+    "coverage": 0.25581111464389533
+  },
+  {
+    "tol": 96,
+    "smooth": 0.8,
+    "band": 8,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 624854,
+    "holes": 153684,
+    "coverage": 0.25581111464389533
+  },
+  {
+    "tol": 112,
+    "smooth": 0.8,
+    "band": 4,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 666915,
+    "holes": 155060,
+    "coverage": 0.25385420451792634
+  },
+  {
+    "tol": 112,
+    "smooth": 0.8,
+    "band": 6,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 644995,
+    "holes": 154012,
+    "coverage": 0.25385420451792634
+  },
+  {
+    "tol": 112,
+    "smooth": 0.8,
+    "band": 8,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 620303,
+    "holes": 154028,
+    "coverage": 0.25385420451792634
+  },
+  {
+    "tol": 128,
+    "smooth": 0.8,
+    "band": 4,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 656604,
+    "holes": 155680,
+    "coverage": 0.2516200339147287
+  },
+  {
+    "tol": 128,
+    "smooth": 0.8,
+    "band": 6,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 631931,
+    "holes": 155718,
+    "coverage": 0.2516200339147287
+  },
+  {
+    "tol": 128,
+    "smooth": 0.8,
+    "band": 8,
+    "solid": 0,
+    "fringe": 0,
+    "opaque": 602792,
+    "holes": 157305,
+    "coverage": 0.2516200339147287
+  }
+]

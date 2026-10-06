@@ -492,7 +492,7 @@ describe("P6 rebuild · 谱系 → IR", () => {
     tree.append("stop", { payload: { stopType: "choice", options: [{ text: "道歉" }] } });
     tree.append("beat_end", { payload: { reason: "no_stop" } });
 
-    const chain = tree.chainEvents(tree.leafId!);
+    const chain = tree.chainEvents(tree.leafId!).filter((e) => e.kind !== "root");
     expect(stopFromEvent(chain[0]!)).toEqual({
       stopType: "choice",
       options: [{ text: "道歉" }],
@@ -503,7 +503,7 @@ describe("P6 rebuild · 谱系 → IR", () => {
   it("旧的 pause 停止点不再还原成停止点（幕末走「下一幕」）", () => {
     const tree = new LineageTree();
     tree.append("stop", { payload: { stopType: "pause" } });
-    const chain = tree.chainEvents(tree.leafId!);
+    const chain = tree.chainEvents(tree.leafId!).filter((e) => e.kind !== "root");
     expect(stopFromEvent(chain[0]!)).toBeNull();
     expect(lineageToEvents(chain).map((e) => e.event.kind)).toEqual([]);
   });
@@ -543,7 +543,7 @@ describe("限制级段落的按读者折叠", () => {
     expect(beats[0]?.user).toContain("我推开了门");
     expect(beats[0]?.assistant).toContain("她抬起头。");
     // 折叠出来的那一条就是实时退出时注入的同一句话（nsfwTransitionBeat 一份措辞两处用）
-    expect(beats[1]).toEqual(nsfwTransitionBeat("两人互诉心意，关系有了突破。"));
+    expect(beats[1]).toMatchObject(nsfwTransitionBeat("两人互诉心意，关系有了突破。"));
     expect(beats[2]?.user).toContain("第二天早上");
     expect(beats[2]?.assistant).toContain("早啊。");
 
@@ -602,7 +602,58 @@ describe("限制级段落的按读者折叠", () => {
       nsfw: false,
     });
     expect(beats).toHaveLength(2);
-    expect(beats[1]).toEqual(nsfwTransitionBeat("两人互诉心意，关系有了突破。"));
+    expect(beats[1]).toMatchObject(nsfwTransitionBeat("两人互诉心意，关系有了突破。"));
     expect(trailingInputs).toEqual([]);
+  });
+});
+
+describe("纪元压缩投影", () => {
+  /** 三拍链：每拍一句台词 + beat_end；返回每拍的 beat_end id。 */
+  function threeBeats(): { tree: LineageTree; ends: string[] } {
+    const tree = new LineageTree();
+    const ends: string[] = [];
+    for (const text of ["第一拍", "第二拍", "第三拍"]) {
+      tree.append("say", { text, payload: { attrs: { id: "mio" } } });
+      ends.push(tree.append("beat_end", { payload: { reason: "no_stop" } }).id);
+    }
+    return { tree, ends };
+  }
+  const rebuild = (tree: LineageTree, cutNodeId: string) =>
+    lineageToBeats(tree.materialize(), { mio: "澪" }, "（游戏开始）", {
+      compaction: { summary: "两人在走廊上定了约定。", cutNodeId, tokensBefore: 999 },
+    });
+
+  it("切点之前的拍折成摘要，并进保留段首拍（不新起一条 user）", () => {
+    const { tree, ends } = threeBeats();
+    const { beats } = rebuild(tree, ends[0]!);
+
+    expect(beats).toHaveLength(2);
+    expect(beats[0]!.user).toContain("【前情提要】");
+    expect(beats[0]!.user).toContain("两人在走廊上定了约定。");
+    expect(beats[0]!.user).toContain("【开场】"); // 摘要是并进首拍，不是替掉它
+    expect(beats[0]!.assistant).toContain("第二拍");
+    expect(beats.map((b) => b.assistant).join("\n")).not.toContain("第一拍");
+    // 每拍都带自己前一个 beat_end：下一次压缩按它记切点
+    expect(beats[0]!.boundaryId).toBe(ends[0]);
+    expect(beats[1]!.boundaryId).toBe(ends[1]);
+  });
+
+  it("切点不在链上（记录是别的分支写的）：原文照渲", () => {
+    const { tree } = threeBeats();
+    const { beats } = rebuild(tree, "别的分支上的节点");
+
+    expect(beats).toHaveLength(3);
+    expect(beats[0]!.boundaryId).toBeNull();
+    expect(JSON.stringify(beats)).not.toContain("前情提要");
+    expect(beats[0]!.assistant).toContain("第一拍");
+  });
+
+  it("切点之后没有拍：摘要自己成一条，不至于一个字都不剩", () => {
+    const { tree, ends } = threeBeats();
+    const { beats } = rebuild(tree, ends[2]!);
+
+    expect(beats).toHaveLength(1);
+    expect(beats[0]!.user).toContain("前情提要");
+    expect(beats[0]!.boundaryId).toBe(ends[2]);
   });
 });

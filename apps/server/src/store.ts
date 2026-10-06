@@ -253,7 +253,7 @@ export class PlayStore {
     return join(this.dir, "media-cache", "tts");
   }
 
-  /** 剧目记忆目录（D7：always/index 剧目级进 git；arcs 与 archive 运行时不进）。 */
+  /** 剧目记忆目录（D7：always/index 剧目级进 git；archive 运行时不进）。 */
   memoryDir(...segments: string[]): string {
     return join(this.dir, "memory", ...segments);
   }
@@ -277,6 +277,21 @@ export class PlayStore {
   /** 网络图缓存目录（media-cache/web-images）：`view_image` 下载的外部图片，按 URL 摘要落名。 */
   webImageDir(): string {
     return join(this.dir, "media-cache", "web-images");
+  }
+
+  /**
+   * 生图草稿区（media-cache/drafts/<draftId>/）：出图与入库之间的半临时落脚点。
+   *
+   * 出图不再直接写 `assets/`：先落这里，挑中了才 commit 进素材。所以它与留底原片、TTS 缓存
+   * 同一档——可重建的中间物，不进 git、可随手清。
+   */
+  draftDir(draftId: string): string {
+    return join(this.dir, "media-cache", "drafts", draftId);
+  }
+
+  /** 草稿根目录（清理过期草稿时列目录用）。 */
+  draftsDir(): string {
+    return join(this.dir, "media-cache", "drafts");
   }
 
 

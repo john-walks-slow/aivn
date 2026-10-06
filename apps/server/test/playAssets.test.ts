@@ -916,3 +916,65 @@ describe("PlayAssets：无卡主体（临时路人与道具）", () => {
     expect(JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8")).mio.title).toBe("路人甲");
   });
 });
+
+describe("PlayAssets：出图与入库解耦（草稿 → 采用）", () => {
+  it("draft 只落草稿区：不写 assets/（素材、素材表、台账一个都不碰）", async () => {
+    const store = await makeStore();
+    const { assets } = makeAssets(store, stubBackend().backend);
+    const draft = await assets.draft({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
+
+    expect(draft.url).toBe(`/plays/test/drafts/${draft.draftId}/image.png`);
+    expect(existsSync(join(store.draftDir(draft.draftId), "image.png"))).toBe(true);
+    // 留底跟着入库走：出图阶段只有草稿目录里那一份 source
+    expect(existsSync(join(store.draftDir(draft.draftId), "source.jpg"))).toBe(true);
+    expect(existsSync(store.spriteSourceDir("mio", "neutral.jpg"))).toBe(false);
+    expect(existsSync(join(store.dir, "assets", "sprites", "mio", "neutral.png"))).toBe(false);
+    expect(existsSync(join(store.dir, "assets", "manifest.json"))).toBe(false);
+    expect(existsSync(join(store.dir, "assets", "generated.json"))).toBe(false);
+  });
+
+  it("同一目标并发出的是几张**不同**的候选（草稿不去重）", async () => {
+    const store = await makeStore();
+    const { assets } = makeAssets(store, stubBackend().backend);
+    const drafts = await Promise.all(
+      [0, 1, 2].map(() => assets.draft({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女")),
+    );
+    expect(new Set(drafts.map((d) => d.draftId)).size).toBe(3);
+  });
+
+  it("commit 把草稿搬进 assets/：呈现声明与台账此时才写，留底原片跟着入库", async () => {
+    const store = await makeStore();
+    const { assets, files } = makeAssets(store, stubBackend().backend);
+    const draft = await assets.draft(
+      { kind: "sprite", spriteId: "mio", variant: "neutral", framing: "full", title: "澪" },
+      "少女",
+    );
+    const asset = await assets.commit(draft.draftId);
+
+    expect(asset.path).toBe("assets/sprites/mio/neutral.png");
+    expect(existsSync(files.absoluteOf(asset.path))).toBe(true);
+    expect(existsSync(store.spriteSourceDir("mio", "neutral.jpg"))).toBe(true);
+    const manifest = JSON.parse(await files.read("assets/manifest.json")) as Record<string, Record<string, unknown>>;
+    expect(manifest.mio).toMatchObject({ framing: "full", title: "澪" });
+    const ledger = JSON.parse(await files.read("assets/generated.json")) as Record<string, { prompt?: string }>;
+    expect(ledger["mio/neutral"]?.prompt).toContain("少女");
+    // 入库后重抠能拿到留底（留底落在 sprite-sources 而不是草稿目录）
+    const recut = await assets.recut({ kind: "sprite", spriteId: "mio", variant: "neutral" });
+    expect(recut.replaced).toBe(true);
+  });
+
+  it("非 neutral 的草稿必须以**已入库**的 neutral 为基准", async () => {
+    const store = await makeStore();
+    const { assets } = makeAssets(store, stubBackend().backend);
+    await expect(assets.draft({ kind: "sprite", spriteId: "mio", variant: "smile" }, "笑")).rejects.toThrow(
+      /neutral/,
+    );
+    // 出一张定妆照草稿还不算基准，得先入库
+    const neutral = await assets.draft({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
+    await expect(assets.draft({ kind: "sprite", spriteId: "mio", variant: "smile" }, "笑")).rejects.toThrow(
+      /neutral/,
+    );
+    await assets.commit(neutral.draftId);
+    await expect(assets.draft({ kind: "sprite", spriteId: "mio", variant: "smile" }, "笑")).resolves.toBeTruthy();
+  });
+});

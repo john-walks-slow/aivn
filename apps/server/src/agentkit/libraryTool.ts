@@ -11,8 +11,8 @@ import { reason, textResult } from "./result.js";
 /**
  * 素材资源库的两个工具：`list_library`（只读浏览）与 `import_asset`（复制进剧目）。
  *
- * 两个角色的依赖是**同一份**：`onWrite` / `onAsset` 往工坊对话流推撤销条与素材气泡，
- * 剧作家那条线上没有对话流可挂，宿主给空实现——工具照常能用，只是没有撤销条可点。
+ * 两个角色的依赖是**同一份**：`onWrite` 是写盘后的刷新信号（各页重拉），`onAsset` 往工坊对话流
+ * 推素材气泡。剧作家那条线上没有对话流可挂，宿主给空实现——工具照常能用，只是没有气泡可看。
  *
  * 剧作家的**默认**用法不是这两个工具：它在剧本里写个 id，宿主发现剧目里没有就去库里导入
  * （见 `assetRef.ts`），所以剧作家侧只装 `list_library`（`importAsset: false`）。
@@ -167,7 +167,7 @@ export function createLibraryTools(deps?: LibraryToolDeps): AgentTool<any>[] {
             target: params.target,
           });
           results.push(result);
-          // 素材表与角色卡的改动要进撤销条——导入改了剧目配置，用户得能反悔
+          // 素材表与角色卡的改动要推刷新信号——各页靠它重拉
           for (const path of result.files) {
             deps.onAsset?.(
               { kind: viewKind(params.kind), path, url: `/plays/${deps.playId}/${path}` },

@@ -73,7 +73,6 @@ export interface PromptContext {
   /** 已生成图清单：让剧作家记得自己造过哪些 id，别换个名字重画一遍。 */
   generated?: GeneratedNote[];
   memory?: PlayMemory;
-  arcIds?: readonly string[];
   /**
    * 能力位（`kit.can`，与搭台助手同一份形状、同一个对象）：按它决定注不注某一章——
    * 生图工具被关掉时整章不注入、教它调一个不存在的工具只会空转；没配库目录时引用即导入
@@ -144,6 +143,7 @@ const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
 ## 场景与立绘指令（必须出现在对应台词之前）
 
 <scene bg="背景id" bgm="音乐id" bgm_volume="0.4" ambient="环境音id" ambient_volume="0.3" transition="fade"/>
+<scene bg="新背景id" clear/>（开新场：换地方/时间跳了/阵容大换，台上的人全下，后面把本场在的人用 actor 重铺一遍；同屋换个时间不带）
 <actor id="主体id" variant="差分id" shot="景别" action="行为词" leave="退场"/>
 <sfx src="音效id" volume="0.5"/>
 <cg id="cgid" caption="插图说明"/>
@@ -158,7 +158,7 @@ const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
 | variant | 立绘目录里已有的差分 id | 换表情、换状态。机甲受损、猫炸毛与人的笑同样是它 |
 | shot | wide normal close extreme | 镜头远近。**不给就是全身**，用近景只是把镜头推近 |
 | action | 见下表 | 角色的一个反应动作，演一次就结束 |
-| leave | fade | 让这个人退场 |
+| leave | fade | 这一场里这个人先走一步（开新场用 scene 的 clear 一次清，不用逐个 leave） |
 
 **台上的一切同权**：人、机甲、猫、道具都按同一个 id 寻址，换图一律走 \`variant\`——没有「人的 expression」
 与「非人的 state」之分（这两个旧属性名引擎照读，但新写的剧本一律用 variant）。人的笑、机甲的 damaged、
@@ -289,7 +289,7 @@ const MEMORY_RULES = `## 记忆卡（memory/index/）
 - 写完要到下一轮边界才进 A 区记忆索引；当轮想知道内容就直接 read 那个文件。
 - 写具体可用的设定（地点长什么样、约定是什么），不写「待补充」。
 - 角色不在这里，走 \`characters/<id>.md\`（见《引入新角色》）；当前状态走 update_state。
-- \`memory/always/\`（每轮注入层）与 \`memory/arcs/\`、\`memory/archive/\`（引擎产物，写不进去）不要动。`;
+- \`memory/always/\`（每轮注入层）与 \`memory/archive/\`（引擎产物，写不进去）不要动。`;
 
 /** 演出契约：引擎认的硬规则，用户不可改（节奏与素材来源见《写作参数》，文风与禁忌见剧目 craft.md）。 */
 const CONTRACT_RULES = `# 演出契约（引擎规则，不可改）
@@ -436,16 +436,16 @@ export function buildSystemPrompt(ctx: PromptContext): string {
           memory?.nsfw?.trim() ? `\n## 剧目限制级专属口径\n${memory.nsfw.trim()}\n` : ""
         }${ctx.nsfwPrompt?.trim() ? `\n## 补充限制级提示词\n${ctx.nsfwPrompt.trim()}\n` : ""}`
       : `\n## 亲密/限制级剧情入口（enter_nsfw）\n\n当剧情推进至即将发生亲密、成人或限制级（NSFW）接触时，不要在当前模型下直接描写露骨细节。\n调用 \`enter_nsfw\` 开启限制级剧情通道。调用后完成本轮收束并调用 \`beat_done\`，下一轮起将由限制级专用模型和专属提示词接管展开细腻描写；亦可与 \`beat_done\` 在同一批次工具调用中一同发出。\n`;
-  const cards = memory?.visibleContext(ctx.arcIds ?? []) ?? [];
+  const cards = memory?.visibleContext() ?? [];
   // 每行带路径：卡的标题（`# 标题`）与文件名可以不一样，路径推不出来，只能这里给
-  const cardLine = (c: { layer: string; name: string; summary: string; path: string | null }): string =>
-    `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}${c.path ? `（${c.path}）` : ""}：${c.summary}`;
+  const cardLine = (c: { layer: string; name: string; summary: string; path: string }): string =>
+    `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}（${c.path}）：${c.summary}`;
   const indexSection =
     cards.length > 0
       ? `\n# 记忆索引（按需查详情）\n\n${cards.map(cardLine).join("\n")}\n\n${
         ctx.can.memory
-          ? "需要某条完整内容时调用 read_memory_detail 工具（传名称），带路径的行也可以直接 read 它。历史往事用 search_archive 检索。"
-          : "需要某条完整内容时 read 带路径的那一行所写的文件；过往剧情问用户，或让工坊在记忆页查。"
+          ? "需要某条完整内容时调用 read_memory_detail 工具（传名称），也可以直接 read 每行括号里的路径。历史往事用 search_archive 检索。"
+          : "需要某条完整内容时 read 每行括号里的路径；过往剧情问用户，或让工坊在记忆页查。"
       }\n`
       : "";
 

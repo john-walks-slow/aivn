@@ -43,6 +43,8 @@ export interface BeatCard {
   parentId: string | null;
   /** 承接哪一个 fork 标记长出来的；不是分岔重演出来的轮为 null。 */
   forkedFrom: ForkOrigin | null;
+  /** 是否为故事树哨兵节点（开端）。 */
+  isSentinel?: boolean;
 }
 
 /**
@@ -74,6 +76,40 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
     forkedFrom: ForkOrigin | null,
   ): void {
     if (visited.has(startNode.id)) return;
+
+    if (startNode.kind === "root") {
+      visited.add(startNode.id);
+      const card: BeatCard = {
+        id: startNode.id,
+        startNodeId: startNode.id,
+        endNodeId: startNode.id,
+        forkFromId: startNode.id,
+        turn: 0,
+        nodes: [startNode],
+        preview: startNode.text || "开端",
+        speakers: [],
+        at: startNode.createdAt,
+        cgId: null,
+        sceneBg: null,
+        stopType: null,
+        startSeq: null,
+        endSeq: null,
+        onPath: true,
+        isLeaf: false,
+        isAbandoned: false,
+        depth: 0,
+        parentId: null,
+        forkedFrom: null,
+        isSentinel: true,
+      };
+      cards.push(card);
+      cardOfNode.set(startNode.id, card);
+      const kids = childrenOf.get(startNode.id) ?? [];
+      for (const child of kids) {
+        traceBeat(child, card, null);
+      }
+      return;
+    }
 
     if (startNode.kind === "fork") {
       visited.add(startNode.id);
@@ -158,11 +194,16 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
   // 场景是持续状态：换了一次就一直有效到下一次换。轮里没有 scene 事件的，继承上一轮的景。
   let currentBg: string | null = null;
   for (const card of cards) {
+    if (card.isSentinel) {
+      card.onPath = true;
+      card.isAbandoned = false;
+      continue;
+    }
     card.onPath = card.nodes.some((n) => n.onPath);
     card.isAbandoned = !card.onPath;
     card.startSeq = card.nodes.find((n) => n.seq !== undefined)?.seq ?? null;
     card.endSeq = card.nodes.slice().reverse().find((n) => n.seq !== undefined)?.seq ?? null;
-    collect(card);
+    collect(card, byId);
     currentBg = card.sceneBg ?? currentBg;
     card.sceneBg = currentBg;
   }
@@ -172,7 +213,7 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
   // 活动路径上的卡片：摘要取本轮的第一句台词（场景/音效行只是布景，不配当摘要）。
   // 找不着就留着 collect() 从树上取的正文——行缓冲只覆盖不擦除。
   for (const [card, text] of beatPreviews(cards, lines)) {
-    if (text) setPreview(card, text);
+    if (text && !card.isSentinel) setPreview(card, text);
   }
   return cards;
 }
@@ -295,7 +336,7 @@ function newCard(first: LineageNodeView, parent: BeatCard | null, forkedFrom: Fo
   };
 }
 
-function collect(card: BeatCard): void {
+function collect(card: BeatCard, byId?: Map<string, LineageNodeView>): void {
   for (const node of card.nodes) {
     if (node.kind === "scene" && node.attrs.bg) card.sceneBg = node.attrs.bg;
     // 同一轮多张 CG 时取最后一张：那是这一幕结束前屏幕上停着的那张
@@ -318,8 +359,16 @@ function collect(card: BeatCard): void {
   // endNodeId: 取本轮最后一个有效节点
   card.endNodeId = card.nodes[card.nodes.length - 1]?.id ?? card.id;
   const head = card.nodes[0];
-  // 重演本轮：从本轮之前的那一点开新分支重新生成；第一轮没有前驱就退回首节点
-  card.forkFromId = head?.parentId ?? head?.id ?? card.id;
+  // 重演本轮：从本轮之前的那一点开新分支重新生成；若父节点是 fork 标记，跳过 fork 标记追溯到实体锚点
+  let anchor = head?.parentId ?? head?.id ?? card.id;
+  if (byId) {
+    while (anchor && byId.get(anchor)?.kind === "fork") {
+      const parentOfFork = byId.get(anchor)?.parentId;
+      if (parentOfFork) anchor = parentOfFork;
+      else break;
+    }
+  }
+  card.forkFromId = anchor;
 
   // 只有一句话的卡（分叉点正好落在这句输入上）拿这句话当正文：它没有台词可摘要，
   // 掉到「（无台词）」就等于把玩家说过的话从路线树上抹掉。

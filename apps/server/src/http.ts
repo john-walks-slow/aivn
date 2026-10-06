@@ -174,6 +174,20 @@ export async function handleHttp(
       return;
     }
 
+    // —— 生图草稿静态服务：/plays/:id/drafts/<draftId>/<file>（预览用；草稿是中间物，不进素材页） ——
+    if (parts[0] === "plays" && parts[1] && parts[2] === "drafts" && method === "GET") {
+      if (parts.length !== 5) return fail(res, 404, "未找到");
+      const [, playId, , draftId, file] = parts;
+      if (!/^[\w-]+$/.test(playId) || !/^[\w-]{1,64}$/.test(draftId ?? "")) return fail(res, 404, "未找到");
+      if (!/^[\w][\w.-]*$/.test(file ?? "") || file!.includes("..")) return fail(res, 404, "未找到");
+      const path = join(library.store(playId).draftDir(draftId!), file!);
+      const mime = MIME[extOf(path)];
+      if (!mime || !existsSync(path)) return fail(res, 404, "未找到");
+      res.writeHead(200, { "content-type": mime, "cache-control": "no-cache" });
+      res.end(await readFile(path));
+      return;
+    }
+
     // —— 资源库素材静态服务：/library/<kind>/<id>/<file>（只读，用户目录里的原始文件） ——
     if (parts[0] === "library" && method === "GET") {
       if (parts.length !== 4) return fail(res, 404, "未找到");
@@ -442,7 +456,7 @@ export async function handleHttp(
       if (method === "PUT") {
         const body = JSON.parse((await readBody(req)).toString("utf8")) as { content?: string };
         if (typeof body.content !== "string") return fail(res, 400, "缺少 content");
-        // 走工坊的 writeFile：落盘 + 走置脏与重建收束那条通道（人手改的不记撤销条）
+        // 走工坊的 writeFile：落盘 + 走置脏与重建收束那条通道
         await runtime.workshop.writeFile(PREMISE_PATH, body.content);
         return json(res, 200, { ok: true });
       }

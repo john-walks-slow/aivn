@@ -354,8 +354,7 @@ export class WorkshopSession {
 
   /**
    * 文件浏览器改动（REST）：落盘 + 就地兑现。
-   * 不产生 `workshop_write` 撤销记录——那是「agent 改了什么」的账，人手改的自己在编辑器里看得见，
-   * 否则点一次撤销就多一条记录，套娃到停不下来。
+   * 人手改的不广播——文件页自己看得见改了什么，不需要再推一条通知。
    */
   async writeFile(path: string, content: string): Promise<void> {
     await this.files.write(path, content);
@@ -370,20 +369,19 @@ export class WorkshopSession {
     await this.applyChanges();
   }
 
-  /** 写盘事件广播（可见 + 可撤销）；runtime 重建由 `applyChanges` 统一收束。 */
+  /** 写盘事件广播（只当刷新信号，各页重拉）；runtime 重建由 `applyChanges` 统一收束。 */
   private broadcastWrite(write: PlayFileWrite): void {
     this.markChanged();
     this.opts.emit({
       type: "workshop_write",
       threadId: this.activeId ?? "",
       path: write.path,
-      before: write.before,
     });
   }
 
   /**
    * 转发一次写盘事件（供剧目级 PlayAssets 调用：素材层归 PlayHouse 所有，
-   * 但撤销条要挂进**当前工坊线程**的对话流里，只有会话知道 threadId）。
+   * 但刷新信号要挂进**当前工坊线程**的对话流里，只有会话知道 threadId）。
    */
   pushWrite(write: PlayFileWrite): void {
     this.broadcastWrite(write);
@@ -458,9 +456,9 @@ export class WorkshopSession {
   }
 
   /**
-   * 开跑前的线程压缩：对话体涨到窗口预算（默认 60%）时，把早期轮次压成一张摘要卡。
-   * 与演出侧同一套治理、同一时刻（每轮开跑前），只是产物落线程而不是 memory/arcs——
-   * 工坊会话是搭台过程，不是剧目事实，进 arcs 会污染剧作家每轮注入的 A 区。
+   * 开跑前的线程压缩：对话体涨到窗口预算（默认 60%）时，把早期轮次压成一份摘要。
+   * 与演出侧同一套治理、同一时刻（每轮开跑前），只是产物落线程元数据——工坊会话是搭台过程，
+   * 不是剧目事实，落进剧目记忆只会污染剧作家每轮注入的 A 区。
    *
    * 消息文件一条不删：只有前 cutAt 条移出 agent 上下文，用户眼前的历史照常完整。
    * 摘要失败只告警不动对话体（压缩是优化不是正确性前提）。

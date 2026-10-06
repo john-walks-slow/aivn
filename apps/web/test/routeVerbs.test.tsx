@@ -150,6 +150,31 @@ describe("路线卡的三个动词", () => {
     fireEvent.click(modalButton("取消"));
     expect(ops.remove).not.toHaveBeenCalled();
   });
+
+  it("哨兵卡片只有「跳转」，不能删除与重写", () => {
+    const sentinelCard: BeatCard = {
+      ...ROOT,
+      id: "root",
+      isSentinel: true,
+      preview: "开端",
+    };
+    const { container } = render(
+      <RouteCanvas
+        cards={[sentinelCard, MID]}
+        ops={{ jump: vi.fn(), rewrite: vi.fn(), remove: vi.fn() } as unknown as LineageOps}
+        busy={false}
+        names={{}}
+        index={null}
+        onControls={() => {}}
+      />,
+    );
+    const sentinelElement = container.querySelectorAll<HTMLElement>(".route-node")[0]!;
+    expect(sentinelElement.classList.contains("sentinel")).toBe(true);
+    const labels = [...sentinelElement.querySelectorAll(".route-node-tool")].map((b) =>
+      b.textContent?.trim(),
+    );
+    expect(labels).toEqual(["跳转"]);
+  });
 });
 
 describe("点卡片选中：照出这一段的来路与去路", () => {

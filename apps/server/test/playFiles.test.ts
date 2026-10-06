@@ -23,9 +23,8 @@ const WRITABLE: [string, WriteScope][] = [
 /** 不可写面：没有 scope，`PlayFiles` 也拒。 */
 const NOT_WRITABLE = [
   // 引擎产物：看得见、改不动
-  "memory/arcs/epoch-a-1.md",
   "memory/archive/turn-1.md",
-  "memory/ARCS/epoch-a-1.md",
+  "memory/ARCHIVE/turn-1.md",
   // 只读素材面
   "assets/backgrounds/a.png",
   "assets/foo.json",
@@ -56,7 +55,7 @@ describe("playFiles：可写面的 scope 穷尽", () => {
 
   it("读面不受 scope 影响：写了 scope 判定不改 PlayFiles 自己的分权", () => {
     // assets/ 与引擎产物都是「读得到、写不了」——能力层收的是写面，不是可见面
-    for (const rel of ["assets/backgrounds/a.png", "memory/arcs/epoch-a-1.md"]) {
+    for (const rel of ["assets/backgrounds/a.png", "memory/archive/turn-1.md"]) {
       expect(() => files.pathOf(rel, "read"), rel).not.toThrow();
     }
   });

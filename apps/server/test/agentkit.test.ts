@@ -37,7 +37,6 @@ function playwriterDeps(over: Partial<PlaywriterKitDeps> = {}): PlaywriterKitDep
     memory: new PlayMemory(),
     tree: new LineageTree(),
     stateFiles: {},
-    arcIds: () => [],
     // 文件工具的白名单根：只有 store.dir 参与，构造时不碰盘
     files: new PlayFiles({ dir: "/tmp/stage-agentkit-test" } as never),
     onWrite: () => {},
@@ -321,11 +320,11 @@ describe("agent kit：能力 → 工具与文件面", () => {
     }
   });
 
-  it("同一个能力在两个角色上授权的工具按角色收：剧作家不拿 recut_sprite / import_asset", () => {
+  it("同一个能力在两个角色上授权的工具按角色收：剧作家不拿 recut_sprite / commit_asset / import_asset", () => {
     const image = CAPABILITY_CATALOG.find((c) => c.id === "image")!;
     const library = CAPABILITY_CATALOG.find((c) => c.id === "library")!;
     expect(capabilityTools(image, "playwriter")).toEqual(["generate_image"]);
-    expect(capabilityTools(image, "workshop")).toEqual(["generate_image", "recut_sprite"]);
+    expect(capabilityTools(image, "workshop")).toEqual(["generate_image", "recut_sprite", "commit_asset"]);
     expect(capabilityTools(library, "playwriter")).toEqual(["list_library"]);
     expect(capabilityTools(library, "workshop")).toEqual(["list_library", "import_asset"]);
     expect(installableTools("playwriter")).not.toContain("import_asset");
@@ -356,7 +355,7 @@ describe("agent kit：能力 → 工具与文件面", () => {
     }
   });
 
-  it("两个角色的资源库工具是同一份实现（剧作家只是没有对话流可挂撤销条）", () => {
+  it("两个角色的资源库工具是同一份实现（剧作家只是没有对话流可挂气泡）", () => {
     const a = playwriter();
     const b = workshop();
     const ta = a.tools.find((t) => t.name === "list_library")!;

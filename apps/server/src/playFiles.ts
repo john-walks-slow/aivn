@@ -82,12 +82,12 @@ function assertPlayConfig(rel: string, text: string): void {
 }
 
 /**
- * 机器产物：纪元压缩摘要（arcs）与逐轮切片（archive）都由引擎写。
+ * 机器产物：逐轮切片（archive）由引擎写。
  *
- * 它们跟分支走（arcs 按 arcIds 过滤、archive 按 pathSet 过滤），手改或手建就绕过了防剧透。
+ * 它跟分支走（按 pathSet 过滤），手改或手建就绕过了防剧透。
  * 所以**看得见、改不动**：文件页能查看，文本写口一律拒。
  */
-const GENERATED_PREFIXES = ["memory/arcs/", "memory/archive/"];
+const GENERATED_PREFIXES = ["memory/archive/"];
 
 /** 可写面：根层 play.json + theme.css + 素材描述表 + memory/** 与 characters/** 文本文件。 */
 function isEditable(rel: string): boolean {
@@ -146,7 +146,7 @@ export function inWriteScopes(rel: string, scopes: readonly WriteScope[]): boole
 
 /**
  * 是不是引擎产物。**按小写比**：Windows / macOS 的文件系统不区分大小写，
- * `memory/ARCS/x.md` 在那边就是 `memory/arcs/x.md` 同一个文件——
+ * `MEMORY/ARCHIVE/x.md` 在那边就是 `memory/archive/x.md` 同一个文件——
  * 区分大小写的比较只在 Linux 上成立，桌面版会从这条路绕过去。
  */
 export function isGenerated(rel: string): boolean {
@@ -242,7 +242,7 @@ export class PlayFiles {
    * 「agent 的读写都在 PlayFiles 白名单内」这条铁律就成了假话，人和 agent 的写权限面也分叉了。
    * 调用方（PlayAssets）只传服务端从枚举拼出的路径，本类仍做一遍全量校验。
    *
-   * 不产撤销记录：`PlayFileWrite.before` 是 utf8 文本，2MB 二进制会被解成乱码串回传前端。
+   * 不推刷新信号：二进制走素材到货那条通道（`workshop_asset`），写盘信号只带文本路径。
    * 图像的「反悔」手段是覆盖重画与素材页删除。
    */
   async writeBinary(rel: string, data: Buffer): Promise<string> {
