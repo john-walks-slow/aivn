@@ -1,7 +1,7 @@
 # 261006-aivn-stop-tag 端到端测试报告
 
 ## 测试环境
-- 环境/前置：Worktree `/root/projects/dsh-aivn/.worktrees/accept-stop-tag` (commit `2798292`)，E2E 实例 `http://127.0.0.1:41330/?token=e2etest`（Chromium Headless，预设「剧作家」）。
+- 环境/前置：Worktree `<dsh-aivn 检出>/.worktrees/accept-stop-tag`（commit `2798292`），E2E 实例 `http://127.0.0.1:<port>/?token=e2etest`（Chromium Headless，预设「剧作家」）。
 
 ## 程序化 DOM 读数与会话证据
 
@@ -22,8 +22,8 @@
   <stop/>
   ```
   *证据说明：模型生成的内容末尾精确包含且仅包含自闭合标签 `<stop/>`，确凿证明为纯粹的自然收尾，未携带选项或输入框属性。*
-- **原始日志**：`~/documents/aivn/261006-stop-tag-acceptance/session-e2547f0a.v4.jsonl.zstd`（34 KB，`zstd -dc` 解；验收 worktree 已删，这是唯一原件）。
-  刻意放在**仓库目录之外**：它是原始会话正文（带 `/root/…` 这类宿主路径），`.gitignore` 只保证不提交，不等于安全，仓库目录不当归档区用。
+- **原始日志**：`<本机归档目录>/261006-stop-tag-acceptance/session-e2547f0a.v4.jsonl.zstd`（34 KB，`zstd -dc` 解；验收 worktree 已删，这是唯一原件）。
+  刻意放在**仓库目录之外**：它是原始会话正文（带本机绝对路径），`.gitignore` 只保证不提交，不等于安全，仓库目录不当归档区用。
 
 ---
 

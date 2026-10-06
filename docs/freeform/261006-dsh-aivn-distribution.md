@@ -8,9 +8,9 @@
 
 证据链：
 
-1. **dsh-aivn 没有 git remote**：`git -C dsh-aivn remote -v` 为空。它只存在于这台手机的 `/root/projects/dsh-aivn`，公网上没有任何一个地方能 `git clone` 它。
+1. **dsh-aivn 没有 git remote**：`git -C dsh-aivn remote -v` 为空。它只存在于这台手机的 dsh-aivn 检出（`<projects>/dsh-aivn`），公网上没有任何一个地方能 `git clone` 它。
 2. **dsh-aivn 不在 npm 上**：`npm view dsh-aivn` 404；`package.json` 声明了 `"private": true`。
-3. **唯一的外部消费者克隆的是 stage-ai，不是 dsh-aivn**：局域网 Windows 电脑（`192.168.71.90`）上有一份 `stage-ai-mirror.git`，用来跑 Windows 专有的 Tauri 打包（`pnpm exe` / `pnpm desktop`）。在 stage-ai 里，`@aivn/core` 与 `@aivn/stage` 是 workspace 依赖（`workspace:*`），自身代码就在同一棵源码树下，根本不需要 npm。
+3. **唯一的外部消费者克隆的是 stage-ai，不是 dsh-aivn**：局域网那台 Windows 电脑（`<pc-ip>`）上有一份 `stage-ai-mirror.git`，用来跑 Windows 专有的 Tauri 打包（`pnpm exe` / `pnpm desktop`）。在 stage-ai 里，`@aivn/core` 与 `@aivn/stage` 是 workspace 依赖（`workspace:*`），自身代码就在同一棵源码树下，根本不需要 npm。
 4. **所谓的「发布卡在这一条」是预先焦虑**：源自 dsh-aivn 的 README 在规划发布流程时，假定「将来发布到 DSH 市场时别人要能克隆并构建」，于是把「依赖需要发到 npm」当成了前置阻塞。今天没有任何真实的外部接收方在跑这一步。
 
 主路径工作量归零：**不需要为了一个假设的克隆者把两个内部包发到公网 npm。**
@@ -49,7 +49,7 @@ dsh-aivn 里面有：
 
 ```bash
 rm -rf /tmp/stage-ai-fresh
-git clone --no-local /root/projects/stage-ai /tmp/stage-ai-fresh   # HEAD = f63fe09，工作树干净，无 .worktrees/
+git clone --no-local <stage-ai 检出> /tmp/stage-ai-fresh   # HEAD = f63fe09，工作树干净，无 .worktrees/
 cd /tmp/stage-ai-fresh
 pnpm install --frozen-lockfile      # Done in 8.1s
 pnpm -r build                       # 退出码 0
