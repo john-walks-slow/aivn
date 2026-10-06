@@ -1399,6 +1399,41 @@ button.primary:hover:not(:disabled) {
   text-transform: uppercase;
 }
 
+/* 导演工具栏：舞台右上角的一排导演动作（提示 / 改写 / 重写 / 生图 / 重听）。
+   底、描边、字色全跟台词条同一套深色玻璃：这几块都是压在画面上的「窗」，
+   用浅色卡片会跟画面里的亮处打架，也跟下面的台词条不像一家人。 */
+.theater-director {
+  position: absolute;
+  z-index: 45;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  right: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0;
+  /* 左上角是侧栏唤出键（38px + 左右各 8px），这一排不能横过去盖住它。
+     宁可自己换行——换行是往下长，不会压别人的键。 */
+  max-width: calc(100% - 60px);
+  padding: 0 3px;
+  border: 1px solid var(--dialog-line);
+  border-radius: var(--stage-radius);
+  background: var(--dialog-bg);
+  box-shadow: var(--dialog-shadow);
+}
+
+.theater-director .dir-btn {
+  color: var(--dialog-ink);
+}
+
+.theater-director .dir-btn:hover:not(:disabled) {
+  background: var(--dialog-hover);
+}
+
+.theater-director .dir-btn.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
 .dir-btn {
   position: relative;
   display: inline-flex;

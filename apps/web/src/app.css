@@ -4227,39 +4227,8 @@ select:focus {
 .dialog-options .dir-btn {
   text-transform: uppercase;
 }
-/* 导演工具栏：舞台右上角的一排导演动作（提示 / 改写 / 重来 / 重听）。
-   「正在生成」面板排在这条的正下方（.prompt-queue 的 top 见下），两块同在右上角
-   但上下错开、不重叠——之前两处都锚 top/right，整块叠上 211×42 看着像同一块面板。
-   底、描边、字色全跟台词条同一套深色玻璃：这几块都是压在画面上的「窗」，
-   用浅色卡片会跟画面里的亮处打架，也跟下面的台词条不像一家人。 */
-.theater-director {
-  position: absolute;
-  z-index: 45;
-  top: calc(8px + env(safe-area-inset-top, 0px));
-  right: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0;
-  /* 左上角是侧栏唤出键（38px + 左右各 8px），这一排不能横过去盖住它。
-     宁可自己换行——换行是往下长，不会压别人的键。 */
-  max-width: calc(100% - 60px);
-  padding: 0 3px;
-  border: 1px solid var(--dialog-line);
-  border-radius: var(--stage-radius);
-  background: var(--dialog-bg);
-  box-shadow: var(--dialog-shadow);
-}
-.theater-director .dir-btn {
-  color: var(--dialog-ink);
-}
-.theater-director .dir-btn:hover:not(:disabled) {
-  background: var(--dialog-hover);
-}
-.theater-director .dir-btn.on {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
+/* 导演工具栏（.theater-director / .dir-btn）的样式在 @aivn/stage 的 stage.css 里——
+   它是舞台组件自己画的浮层，跟着组件走，宿主不再各写一份。 */
 /* 图标 + 文字的键：无边框无底色，图标在前、短词在后。
    padding: 0 只在纵向收，横向留 10px 让图标不贴边。
    42px 高 ≈ 触控下限，整排仍在窗内不顶到窗沿。 */

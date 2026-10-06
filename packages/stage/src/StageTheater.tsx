@@ -37,8 +37,12 @@ interface StageTheaterProps {
   busy: boolean;
   /** 由当前显示行 seq 反查出的锚点：编辑绑行，重写绑整轮。 */
   targets: DirectorTargets;
-  /** 插一句：唯一的输入通道。空闲时立刻开新轮，演出中排进待注入队列。 */
-  onPrompt: (text: string) => void;
+  /**
+   * 「提示」：唯一的输入通道。
+   * `guide` = 排进待注入队列、随下一轮一起发；`interrupt` = 先停下这一轮再用它接着写
+   * （第二岔由 `promptAlt` 决定给不给）。
+   */
+  onPrompt: (text: string, mode: "guide" | "interrupt") => void;
   onEdit: (nodeId: string, text: string) => void;
   /** 分岔锚点：字符串是谱系节点 id（回顾/路线），数字是舞台当前行的 seq。
    *  `replaced` = 被这次重写顶掉的那一拍的首节点（新 fork 标记按它算来源标签）；
@@ -64,6 +68,13 @@ interface StageTheaterProps {
   onContinue: () => void;
   /** 快进档：按住 Ctrl 期间为 true，松开/失焦回 false。 */
   onTurbo: (on: boolean) => void;
+  /**
+   * 「提示」面板的第二岔由宿主决定：`fork` = 从这一行开新分支（AIVN 主线，有谱系时的做法），
+   * `interrupt` = 打断这一轮、用这句接着写（宿主没有谱系时的做法）。缺省 `fork`。
+   */
+  promptAlt?: "fork" | "interrupt";
+  /** 出图这一格归不归宿主：宿主没有生图落点时关掉，别摆一个点了没反应的键。缺省开。 */
+  showGenerate?: boolean;
   /**
    * 停止点浮层（选肢卡、自由输入、no_stop 时的「（继续）」卡）。
    * 它挂在**画面区**里：只盖住背景与立绘，台词条、工具栏、侧栏都照常可点——
@@ -99,10 +110,13 @@ export type VoiceState = "none" | "pending" | "ready";
 import { RefCharacterPicker, type RefCandidate } from "./ui/RefCharacterPicker.js";
 import { cgCanSubmit, toggleReference } from "./cgOptions.js";
 
-type DirectorAction = "prompt" | "edit" | "restart" | "fork" | "cg";
+type DirectorAction = "prompt" | "edit" | "restart" | "fork" | "cg" | "interrupt";
 
-/** 「提示」面板里的两岔：跟着这一轮写下去（引导），还是从这一行退开（分岔）。 */
-type GuideMode = "guide" | "fork";
+/**
+ * 「提示」面板里的两岔：跟着这一轮写下去（引导），还是走另一条路——
+ * 有谱系的宿主是「从这一行开新分支」（分岔），没有谱系的宿主是「停下这一轮、用这句接着写」（打断）。
+ */
+type GuideMode = "guide" | "fork" | "interrupt";
 
 const ACTION_META: Record<
   DirectorAction,
@@ -113,6 +127,12 @@ const ACTION_META: Record<
     hint: "",
     placeholder: "写一句…",
     submit: () => "发送",
+  },
+  interrupt: {
+    title: "打断",
+    hint: "立刻停下这一轮，用这句接着写。",
+    placeholder: "接下来怎么写…",
+    submit: () => "打断并发送",
   },
   edit: {
     title: "改写这句",
@@ -144,7 +164,17 @@ const ACTION_META: Record<
 const GUIDE_HINT: Record<GuideMode, string> = {
   guide: "排进队列，随下一轮一起发送。",
   fork: "从正在看的这一行开新分支。",
+  interrupt: "立刻停下这一轮，用这句接着写。",
 };
+/**
+ * 「提示」面板这一下按的是哪条岔。引导仍是 prompt 本身（宿主那边差别只有「排进队列」）；
+ * 另一岔直接借用它的动作名（`fork` / `interrupt`），提交处按名字分派。
+ */
+function effectiveAction(action: DirectorAction | null, guideMode: GuideMode): DirectorAction {
+  if (action !== "prompt") return action ?? "prompt";
+  return guideMode === "guide" ? "prompt" : guideMode;
+}
+
 /** 输入态：输入框里的按键是文字的，不能被舞台的快捷键与快进档抢走。 */
 function isTyping(t: EventTarget | null): boolean {
   return t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
@@ -294,6 +324,8 @@ export function StageTheater({
   busy,
   targets,
   onPrompt,
+  promptAlt = "fork",
+  showGenerate = true,
   onEdit,
   onFork,
   onGenerateCg,
@@ -514,14 +546,18 @@ voiceState,
   const cgId = visual.cg?.id ?? null;
   const cgPending = !cgUrl && !!cgId && visual.pending[cgId]?.type === "cg";
 
+  /** 第二岔是哪一个：宿主说了算（见 `promptAlt`）。 */
+  const altMode: GuideMode = promptAlt === "interrupt" ? "interrupt" : "fork";
+
   const submitAction = (): void => {
     const text = draft.trim();
-    const act: DirectorAction = action === "prompt" && guideMode === "fork" ? "fork" : (action ?? "prompt");
+    const act = effectiveAction(action, guideMode);
     setDraft("");
     setAction(null);
-    if (act === "prompt") {
+    if (act === "prompt" || act === "interrupt") {
       // 引导：只是排进待注入队列，不动分支也不吃掉停止点——选项还摆着，玩家照选不误。
-      if (text) onPrompt(text);
+      // 打断：宿主那边会先停下这一轮再把这句投进去，同样不动停止点。
+      if (text) onPrompt(text, act === "interrupt" ? "interrupt" : "guide");
       return;
     }
     if (act === "edit") {
@@ -567,9 +603,8 @@ voiceState,
   // 分岔不因 busy 置灰：玩家说「就到这里」随时成立，正在写的那半截就此腰斩。
   const forkBlock = targets.lineSeq === null ? "这里还没有可分岔的位置" : null;
 
-  /** 提交按哪条岔走：只有「提示」面板有两种（引导 / 分岔），其余动作单一。 */
-  const modalAction: DirectorAction =
-    action === "prompt" && guideMode === "fork" ? "fork" : (action ?? "prompt");
+  /** 提交按哪条岔走：只有「提示」面板有两种（引导 / 另一岔），其余动作单一。 */
+  const modalAction = effectiveAction(action, guideMode);
 
   /**
    * 送不出去的五种情形，没有第六种：
@@ -716,6 +751,7 @@ voiceState,
             <Icon name="rewrite" size={17} />
             重写
           </button>
+          {showGenerate && (
           <button
             type="button"
             className={`dir-btn ${action === "cg" ? "on" : ""}`}
@@ -737,6 +773,7 @@ voiceState,
             <Icon name="assets" size={17} />
             生图
           </button>
+          )}
           {voiceAvailable && voice !== "none" && (
             <button
               type="button"
@@ -879,13 +916,14 @@ voiceState,
                 </button>
                 <button
                   type="button"
-                  className={`seg-btn ${guideMode === "fork" ? "active" : ""}`.trim()}
-                  aria-pressed={guideMode === "fork"}
-                  title={forkBlock ?? "从这一行开新分支。"}
-                  disabled={forkBlock !== null}
-                  onClick={() => setGuideMode("fork")}
+                  className={`seg-btn ${guideMode === altMode ? "active" : ""}`.trim()}
+                  aria-pressed={guideMode === altMode}
+                  // 分岔要一个落点（正在看的这一行）；打断随时成立，没有可置灰的情形。
+                  title={altMode === "interrupt" ? GUIDE_HINT.interrupt : (forkBlock ?? "从这一行开新分支。")}
+                  disabled={altMode === "fork" && forkBlock !== null}
+                  onClick={() => setGuideMode(altMode)}
                 >
-                  分岔
+                  {altMode === "interrupt" ? "打断" : "分岔"}
                 </button>
               </div>
             )}
