@@ -84,7 +84,8 @@ export const CARD: IndexCard = {
 
 /**
  * 第一轮的剧本正文。停止点不在这里——它由 beat_done 的工具参数交出（`beatDone` 字段）。
- * 旧写法 `<stop type="choice">` 现在会被解析器当遗留标签静默丢弃，测试里不该再出现。
+ * 旧写法的 `<option>` 子标签仍是遗留标签（静默丢弃），测试里不该再出现；剧本正文里要写停止点
+ * 只有 `<stop options="甲 | 乙"/>` 这一种形态（DSH 插件侧走它，本体仍走工具）。
  */
 export const BEAT_1 = [
   '<scene bg="corridor_dusk" bgm="melancholy" transition="fade"/>',

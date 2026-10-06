@@ -31,7 +31,7 @@
 - **DSL 是时间线、工具是副作用**：`beat_done`（轮收束 + 停止点载荷，`options` 若干条 / `placeholder` / 都不给；schema 只兜「至少两条非空」这个无效载荷，**给几条、何时给归剧目的写作参数**，见下）与 `generate_image` 产出 `stop` / `preload_asset` 两个 IR 事件，经 `emitStageEvent` 与解析器产出的事件走同一条路（加 seq → 广播 → 落谱系），client 侧一行不用改。
 - **玩家输入也是这条管道的一等事件**（2026-10-04 回声层拆除）：`playerAction` 的选项/自由输入经 `onStageEvent({ kind: "player_input", text })` 广播，**先于 autostart 的 `beat_start`**——客户端「选完立刻见回执」靠这个时序，别改成先开拍再补发；`accumulateLineage` 把它落成带 `payload.seq` 的 prompt 节点（core 的 `lineageToEvents` 重放时还原成 `player_input` 事件）。NSFW 打标不变：`noteBeatInputs` 在事件发出前定，prompt 落谱系照走原路径。升级前的老档 prompt 节点没有 seq，客户端按路径顺序+同文本认回。
 - **判废只认「三无」轮**：无台词、无停止点、且没调用过带副作用的工具（`beat_done` 只是收束记账，不算）才判废回滚。纯工具轮——只调 `enter_nsfw` 交棒、只发起生图、只写记忆/角色卡——按 no_stop 正常收束：副作用已经发生，回滚会吞掉它们（`enter_nsfw` 的 pending 会被重置回日常模型）。DSL 控制指令（scene/actor）仍不算内容。
-- 文本形式的 `<stop>`/`<option>`/`<preload_asset>` 已从 DSL 摘除，遇到只静默降级并记 `legacy_tag` 警告（照读会把标签念到舞台上）。
+- `<stop>` **回来了**（2026-10-06，DSH 插件侧要「轮尾是助手消息」才分得出支）：新形态是自闭合的 `<stop options="甲 | 乙"/>` / `<stop placeholder="…"/>` / `<stop/>`，与这里的 `beat_done` 工具产出同一帧 IR。旧形态 `<stop type="choice"> + <option>` 里的 `<option>` 子标签仍在 `LEGACY_TAGS`（连同 `preload_asset`），遇到只静默降级并记 `legacy_tag` 警告（照读会把标签念到舞台上）。
 - **一个槽位叫 `variant`**：`<actor id="mio" variant="smile">`。`expression`（人写表情）与 `state`（非人的状态）是 261004 之前的两个旧名，解析器与谱系重放仍当别名收下，所以存量剧本与存档照常演出；但写给模型看的契约只有 `variant`。同一个 id 的立绘声明、差分、垫图基准都按它解析。
 
 ## 谱系原语（跳转 / 分岔 / 重写 / 删除）

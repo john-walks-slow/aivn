@@ -5,6 +5,7 @@ import {
   isActorAnchor,
   isActorShot,
   LEGACY_TAGS,
+  STOP_OPTION_SEPARATOR,
   VOID_TAGS,
 } from "./spec.js";
 
@@ -65,7 +66,7 @@ function parseAttrs(source: string): Map<string, string> | null {
  * - endMessage() 消息边界：未完成标签丢弃，未闭合包裹标签自动闭合（保留已流出台词）；
  * - <comment> 正文整体吞掉、不产出事件（注释是模型的出口，不是演出内容）；
  * - 未知标签按字面文本输出（不丢用户可见内容），残缺标签/属性才丢弃；
- * - 已迁进工具的旧标签（stop/option/preload_asset）**静默丢弃**（见 spec.ts 的 LEGACY_TAGS）。
+ * - 已从 DSL 迁进工具的旧标签（option/preload_asset）**静默丢弃**（见 spec.ts 的 LEGACY_TAGS）。
  */
 export class StageDslParser {
   private buffer = "";
@@ -281,6 +282,28 @@ export class StageDslParser {
         this.emit({ kind: "cg", id, ...pick(attrs, ["caption"]) });
         return;
       }
+      case "stop": {
+        const raw = attrs.get("options");
+        const placeholder = attrs.get("placeholder")?.trim();
+        const options = splitStopOptions(raw);
+        if (options.length >= 2) {
+          if (placeholder) {
+            this.warn("malformed_tag", "options 与 placeholder 同给，按 options 走，placeholder 本轮不生效");
+          }
+          this.emit({ kind: "stop", stopType: "choice", options: options.map((text) => ({ text })) });
+          return;
+        }
+        if (raw !== undefined) {
+          // 一条选项不是「选择」：静默当成自然演完会把模型的一次笔误变成一次没有停止点的轮。
+          this.warn("malformed_tag", `options 去掉空白后不足两条，忽略: ${preview(raw)}`);
+        }
+        if (placeholder) {
+          this.emit({ kind: "stop", stopType: "free", placeholder });
+          return;
+        }
+        // 两个都没给（`<stop/>`）：这一段自然演完，不产出停止点——与漏写这个标签同一条路。
+        return;
+      }
       case "say":
       case "narrate":
       case "thought": {
@@ -368,11 +391,20 @@ export class StageDslParser {
  * 已知标签 = 当前 DSL 白名单 + 已迁进工具的旧标签。
  *
  * 旧标签要进白名单**只是为了让它们被整条吞掉**（未知标签的处理是「按字面文本输出」，
- * 那会把 `<stop type="choice">` 念到舞台上）。真正的分派在 handleTag 之前的
+ * 那会把 `<option>回家</option>` 念到舞台上）。真正的分派在 handleTag 之前的
  * LEGACY_TAGS 分支：丢弃 + 一条 legacy_tag warning。
  */
 function isKnownTag(name: string): boolean {
   return (DSL_TAGS as readonly string[]).includes(name) || LEGACY_TAGS.has(name);
+}
+
+/** `<stop options="甲 | 乙"/>` 的载荷：按 `|` 拆、去两端空白、丢空项。 */
+function splitStopOptions(raw: string | undefined): string[] {
+  if (raw === undefined) return [];
+  return raw
+    .split(STOP_OPTION_SEPARATOR)
+    .map((text) => text.trim())
+    .filter((text) => text !== "");
 }
 
 /** 开关型标记：裸写（空串）与 "true"/"1"/"yes" 算开，"false"/"0"/"no" 算关。 */

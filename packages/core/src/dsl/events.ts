@@ -20,8 +20,9 @@ export interface PreloadAssetAttrs {
  * StageEvent —— 舞台 IR 事件（编排器加 seq 后即为发往客户端的事件流）。
  * say/narrate/thought 拆为 start/text(delta)/end 三段，支撑流式打字机与语音句级预取。
  *
- * `preload_asset` 与 `stop` 由工具产出而非文本解析（`260930-agent-kit` 计划 §2），
- * 但仍走同一条 IR 管道：加 seq → 广播 → 落谱系。
+ * `stop` 由剧本里的 `<stop …/>` 标签产出（2026-10-06；AIVN 本体仍走 `beat_done` 工具参数），
+ * `preload_asset` 由 `generate_image` 工具产出——两者产出的 IR 完全同构，都走同一条管道：
+ * 加 seq → 广播 → 落谱系。
  *
  * `player_input` 由编排器在**接受**玩家动作（选项/自由输入/排队的引导兑现）那一刻产出：
  * 它是「玩家说了什么」在时间线上的一帧，客户端的回执、回看与回顾都靠它，

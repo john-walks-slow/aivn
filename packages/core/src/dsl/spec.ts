@@ -8,10 +8,11 @@
  *  4. 消息边界自动闭合：包裹类标签未闭合时收尾保留已流出台词。
  *  5. 每条 assistant 消息独立解析；工具调用轮次对播放透明。
  *
- * **标签集只收「会出现在时间线上」的东西**（`260930-agent-kit` 计划 §2）：
- * 停止点与轮收束并进 `beat_done` 工具参数，生图预发射变成 `generate_image` 工具——
- * 它们是对宿主说的话，不是剧本。三者的 IR 事件（`stop` / `preload_asset`）仍在事件流里，
- * 改由工具产出，client 侧不感知这次迁移。
+ * **停止点在 2026-10-06 回到剧本**（`<stop …/>`，见 `STOP_TAG`）：它一度被并进 `beat_done`
+ * 工具参数（`260930-agent-kit` 计划 §2），代价是轮尾落成**工具结果**节点——DSH 侧的
+ * 「在新对话中分支」只认「本轮最后一条是助手消息」，于是每拍演完分支键都置灰。回到文本之后
+ * 轮尾重新是助手消息，舞台重建（只重放助手文本）也带得上停止点。
+ * `preload_asset` 仍由 `generate_image` 工具承载——它确实是对宿主说的话，不是剧本。
  *
  * 已知限制（v1 接受）：属性值含 ">" 会使标签头提前截断（解析按首个 ">" 定界，不感知引号）——
  * 受影响的主要是生图 prompt 等自由文本字段，触发时该标签整体降级丢弃（有 warning），可回喂自修正。
@@ -25,12 +26,28 @@ export const DSL_TAGS = [
   "thought",
   "sfx",
   "cg",
+  "stop",
   "comment",
 ] as const;
 export type DslTag = (typeof DSL_TAGS)[number];
 
 /** 自闭合指令标签（无正文）。 */
-export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "sfx", "cg"]);
+export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "sfx", "cg", "stop"]);
+
+/**
+ * 停止点标签——**剧本的最后一行**，这一拍就停在玩家能动手的地方：
+ *
+ *     <stop options="去天台 | 回家"/>      选项面板（`|` 分隔，两端空白去掉；不足两条不算数）
+ *     <stop placeholder="想对他说什么？"/>  自由输入框
+ *     <stop/>                             这一段自然演完，不设停止点（与不写这个标签等价）
+ *
+ * 一行写完就停笔：它之后不该再有剧本内容。写成**标签**而不是工具调用是刻意的——
+ * 轮尾因此是一条助手消息，DSH 的「在新对话中分支」与舞台重建都只认这种轮尾。
+ */
+export const STOP_TAG = "stop";
+
+/** 选项分隔符：`<stop options="甲 | 乙"/>`。选项是短句，正文里不该出现它。 */
+export const STOP_OPTION_SEPARATOR = "|";
 
 /**
  * 注释标签——**不产出任何 IR 事件**（解析器吞掉正文）。
@@ -46,12 +63,12 @@ export const COMMENT_TAG = "comment";
 /**
  * 已从 DSL 迁进工具的旧标签——**静默降级，不按未知标签原样输出**。
  *
- * 模型对旧形态有肌肉记忆，硬判成未知标签会把 `<stop type="choice">` 当台词原样吐到舞台上，
+ * 模型对旧形态有肌肉记忆，硬判成未知标签会把 `<option>…</option>` 当台词原样吐到舞台上，
  * 那比丢掉糟得多。命中即丢弃并挂一条 warning：一次调用静默失效，模型下一轮自己改正。
- * 退出说明：`stop`/`option` 的载荷改由 `beat_done(options, placeholder)` 承载，
+ * 退出说明：`<option>` 子标签随停止点回到 DSL 一起作废（新写法是 `<stop options="…"/>`），
  * `preload_asset` 改由 `generate_image` 工具承载。
  */
-export const LEGACY_TAGS: ReadonlySet<string> = new Set(["stop", "option", "preload_asset"]);
+export const LEGACY_TAGS: ReadonlySet<string> = new Set(["option", "preload_asset"]);
 
 /**
  * 场景指令属性。

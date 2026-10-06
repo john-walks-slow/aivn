@@ -15,6 +15,7 @@
 | 3 | 引导指令入队与插入会话 (D7–D10) | 发送 `action: 'guide'` 响应 200，进队列，剧作家推演时将导演提示放入会话（不生成玩家台词） | HTTP 200 入队，帧解析到 pending → sent 转化；日志生成 `dsh-aivn-director` 导演消息，未多出玩家台词，下一拍顺畅落笔 | 通过 | 日志契约与 SSE 帧断言通过 |
 | 4 | 改写追加替换标记与舞台 reset 重投影 (D11–D14) | 发送 `action: 'rewrite'`，舞台收到 `{kind:'reset'}` 帧，会话面上作废旧内容，重写后整段重投影接上帧流 | HTTP 200，舞台收到 reset 帧，`surfaceOp.replace` 生效（面 37 → 36 条，作废 msg #91）；剧作家重写交出新停止点，帧流重投影后正常接上 | 通过 | `/root/projects/dsh-aivn/e2e-artifacts/director-rewrite.png` |
 | 5 | 原生聊天界面「在新对话中分支」 (D15–D16) | 在包含改写标记的会话中从当前轮尾部分支，新建分支会话并重投影舞台 | 探针检测到 3 个分支按钮，但因原生 Chat 判定 `branchUnavailable`，导致按钮 `aria-disabled="true"` (`usable: 0`)，分支未能点击触发 | 不通过 | 详见下方诊断分析 |
+| 5b | 同上，停止点回到 DSL 之后重跑（2026-10-06 当晚，`261006-aivn-stop-tag`） | 分支键可用、点得出子会话、子会话进舞台回到同一点 | `分支键：{"found":3,"usable":3,"clicked":true}`；分出 `session-316dd236`，子会话探针收到 107 帧整段重投影，D15/D16/D17 全绿，套件 **17/17** | 通过 | `dsh-e2e run e2e/run.mjs director` 输出 |
 | 6 | 运行 `dsh-e2e run e2e/run.mjs stage` (S1–S14) | 验证 stage 闭环与 S6 导演栏渲染（提示/改写/重写三格，无生图） | S1–S14 14 项全部通过，S6 顺利断言导演栏渲染符合规范 | 通过 | `/root/projects/dsh-aivn/e2e-artifacts/stage.png` |
 | 7 | 运行 `dsh-e2e run e2e/run.mjs stage` 中的 `verify-opening` (T0–T3) | 验证开场指令发送与未带玩家台词逻辑 | T0–T3 5 项全部通过，开局指令跟随首条消息送出且不落地为玩家台词 | 通过 | 自动化断言匹配 |
 

@@ -88,7 +88,7 @@ const WARNING_LABELS: Record<ParserWarningType, string> = {
   mismatched_close: "对不上的闭合标签",
   auto_closed: "没闭合就被自动收束",
   nested_wrap: "嵌套的台词块",
-  legacy_tag: "已经改成工具调用的旧标签",
+  legacy_tag: "已经作废的旧标签",
 };
 
 /** 解析告警去重限量后转成人话：一轮最多回灌这么多条。 */
