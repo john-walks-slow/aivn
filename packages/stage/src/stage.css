@@ -360,6 +360,16 @@ html[data-stage-theme="light"] .stage-root {
   }
 }
 
+/* 立绘层：position + z-index:0 自成一个层叠上下文，把立绘之间的 orderSeq 排序关在
+   自己这一层里——说话者那个 +1000 只是「同台最上」，不该蹿到台词条（12）、选肢层（15）
+   或工具条（20）上面去。整层落在选肢遮罩（.theater-stage::after，8）之下，遮罩亮起时
+   立绘跟着一起暗。 */
+.theater-sprites {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
 /* 立绘怎么摆：顶部对齐，底下按景别裁。
 
    只有两个数：

@@ -612,33 +612,38 @@ voiceState,
           />
         )}
 
-        {Object.entries(visual.sprites).map(([id, slot]) => {
-          // 立绘目录可能不叫这个演员的 id（卡上写了 `sprite:`）：先解绑定，下面几个查询吃的都是目录名
-          const dir = index.spriteDirOf(id);
-          // 呈现三轴：取景与体量只听素材声明（剧本管不着图里画到哪、台上站多大），
-          // 对齐则是「剧本写了用剧本的，没写听素材声明的」（机甲默认居中悬空、道具贴地）。
-          const presentation = index.spritePresentation(dir, slot.variant);
-          const isSpeaking = focusId === id;
-          // 层级：后上场的更高（orderSeq），正在说话的角色额外 +1000 置于最顶层
-          const zIndex = (slot.orderSeq || 1) + (isSpeaking ? 1000 : 0);
-          return (
-            <Sprite
-              key={id}
-              url={index.sprite(dir, slot.variant)}
-              pos={slot.resolvedPos}
-              name={actorName(names, id)}
-              framing={presentation.framing}
-              stature={presentation.stature}
-              shot={slot.shot}
-              anchor={slot.anchor ?? presentation.anchor}
-              leaving={slot.leaving === true}
-              action={slot.action}
-              actionSeq={slot.actionSeq}
-              zIndex={zIndex}
-              dim={focusId !== null && !isSpeaking}
-            />
-          );
-        })}
+        {/* 立绘层自带层叠上下文：下面的 orderSeq 与「说话者置顶」只在这一层里比，
+            不参与外层——否则说话者（+1000）会压过台词条（12）、选肢层（15）与
+            工具条（20）；整层也落在选肢遮罩（8）之下，遮罩能把它一并压暗。 */}
+        <div className="theater-sprites">
+          {Object.entries(visual.sprites).map(([id, slot]) => {
+            // 立绘目录可能不叫这个演员的 id（卡上写了 `sprite:`）：先解绑定，下面几个查询吃的都是目录名
+            const dir = index.spriteDirOf(id);
+            // 呈现三轴：取景与体量只听素材声明（剧本管不着图里画到哪、台上站多大），
+            // 对齐则是「剧本写了用剧本的，没写听素材声明的」（机甲默认居中悬空、道具贴地）。
+            const presentation = index.spritePresentation(dir, slot.variant);
+            const isSpeaking = focusId === id;
+            // 层级：后上场的更高（orderSeq），正在说话的角色额外 +1000 置于最顶层
+            const zIndex = (slot.orderSeq || 1) + (isSpeaking ? 1000 : 0);
+            return (
+              <Sprite
+                key={id}
+                url={index.sprite(dir, slot.variant)}
+                pos={slot.resolvedPos}
+                name={actorName(names, id)}
+                framing={presentation.framing}
+                stature={presentation.stature}
+                shot={slot.shot}
+                anchor={slot.anchor ?? presentation.anchor}
+                leaving={slot.leaving === true}
+                action={slot.action}
+                actionSeq={slot.actionSeq}
+                zIndex={zIndex}
+                dim={focusId !== null && !isSpeaking}
+              />
+            );
+          })}
+        </div>
 
         {cgUrl && (
           <div className="theater-cg">
