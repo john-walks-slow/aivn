@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { LineageTree, type LineageEvent, type LineageEventKind, type LineageSnapshot } from "@aivn/core";
+import { LineageTree, ROOT_ID, type LineageEvent, type LineageEventKind, type LineageSnapshot } from "@aivn/core";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { assertSaveId } from "../saves.js";
 import type { WorkshopKitDeps } from "./deps.js";
@@ -117,7 +117,9 @@ function renderLineage(
   const view = tmp.describe();
 
   const all = params.allBranches === true;
-  const nodes = all ? view.nodes : view.nodes.filter((n) => n.onPath);
+  // 哨兵根是脚手架的挂点，不是一行剧情：它没有文本，kind 也不在中文标签表里，
+  // 混进列表就是一行 `root	root` 的垃圾，还把节点总数与分页序号整体撑大一位。
+  const nodes = (all ? view.nodes : view.nodes.filter((n) => n.onPath)).filter((n) => n.id !== ROOT_ID);
   const offset = Math.max(0, params.offset ?? 0);
   const limit = Math.min(200, Math.max(1, params.limit ?? 60));
   const page = nodes.slice(offset, offset + limit);
