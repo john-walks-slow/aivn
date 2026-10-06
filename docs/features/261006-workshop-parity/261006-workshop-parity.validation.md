@@ -158,18 +158,18 @@
 | --- | --- | --- |
 | 类型 | `npx tsc --noEmit` | 通过 |
 | 构建 | `npm run build`（`lib/` 是跟踪产物） | 通过（`lib/index.js` 236.7kb；sharp 走 external） |
-| 素材链路离线套件（新增） | `npm run e2e:media` | **21/21 通过** |
+| 素材链路离线套件 | `npm run e2e:media` | **24/24 通过** |
 | 搭台助手 e2e（加两条断言） | `dsh-e2e run e2e/run.mjs stagehand` | **17/17 通过** |
 | 注入 e2e（加一条断言） | `dsh-e2e run e2e/verify-injection.mjs` | **14/14 通过** |
 | 舞台 e2e（回归） | `dsh-e2e run e2e/run.mjs stage` | **14/14 通过** |
-| 真后端出图 | 直连本机 flow2api | **未通过（网关侧环境问题，见下）** |
+| 真后端全链路（生图草稿→入库→抠底→重抠→BGM） | `/tmp/aivn-probe/media-probe.ts` 直连本机 flow2api（模型换为 `gemini-3.0-pro-image`） | **全绿（见下）** |
 
 新增套件 `e2e/verify-media.ts`（`npm run e2e:media`，离线、几秒）用**桩后端 + 真 sharp** 跑完整条落盘路径：
 立绘草稿的自动抠底（前景占比、人物高）与 alpha PNG、入库到 `assets/sprites/<id>/neutral.png`、
 抠底前原片留底、素材表写 `framing`/`stature`、台账记 prompt、原地重抠、背景入库与「同 id 再次入库
-认得出是覆盖」、BGM 落 `assets/bgm/<id>.m4a` 与素材表 source，外加三条负例（画幅不符不落盘、
-没有入库的 neutral 出不了差分、立绘差分拒吃显式垫图）与三条 persona 分叉断言（配了/没配生图与音乐、
-剧作家的缺图章跟着能力位出现与消失）。
+认得出是覆盖」、BGM 落 `assets/bgm/<id>.m4a` 与素材表 source，外加四条负例（画幅不符不落盘、
+没有入库的 neutral 出不了差分、立绘差分拒吃显式垫图、**重抠不改台账里原来的出图记录**）
+与三条 persona 分叉断言（配了/没配生图与音乐、剧作家的缺图章跟着能力位出现与消失）。
 
 **能力位两个方向都实测过**（e2e 实例的插件配置改一次、跑一轮、再还原）：套件按「工具面与 persona
 必须一致」断言，所以配与不配两种实例都跑得过，且都跑了一遍：
@@ -186,13 +186,28 @@
 搭台助手 : create_play, edit, get_readiness, glob, grep, list_assets, read, read_image, set_craft, skill, write
 ```
 
-**真后端那一条为什么没跑通**（如实记，未验就是未验）：本机 flow2api（`127.0.0.1:38000`）对
-`gemini-3.1-flash-image` 一律回
-`{"error":{"code":500,"message":"生成失败: Flow frontend RPC rejected: rpc=ogiZ0b, code=[5]"}}`——
-用最小请求（"a red apple"、不带 `imageConfig`）同样复现，而 `tokens` 表里 `is_active=1`、`credits=988`、
-项目绑定 `Sep 28 - 14:56 P2`（2026-10-05 还成功出过图），所以是网关上游的 Flow 项目引用失效，
-不是插件的请求形状问题（请求已被网关接受并转发）。Google 官方 API 从本机也连不通（直连与 7890 代理
-都超时）。**下一步**：网关侧恢复后按第 10 节那条命令补跑一次真出图。
+**真后端那一条的结论（已修好，不再是未验项）**：起初本机 flow2api 对 `gemini-3.1-flash-image`
+一律回 `{"error":{"code":500,"message":"生成失败: Flow frontend RPC rejected: rpc=ogiZ0b, code=[5]"}}`——
+用最小请求（"a red apple"、不带 `imageConfig`）同样复现。逐项排除后定因：**不是项目池失效、不是代理问题**，
+而是 Flow 侧下线了 `gemini-3.1-flash-image-*`（NARWHAL）这个模型键。同项目同代理下，
+`gemini-3.1-flash-lite-image-landscape` 出图成功（HTTP 200，888KB JPEG），`gemini-3.0-pro-image` 的
+横构图（43s）与竖构 + 2K 别名（70s，JPEG）也都成功。项目池、库、代理一律没动。
+
+修复面只在插件侧（网关代码与项目池不动）：示例模型换成 `gemini-3.0-pro-image`
+（`src/index.ts` 注释、`gemini-image.ts` 别名注释、双语 README；dsh-aivn 提交 `c7e7ab8`），
+另顺手修掉真机验收抓到的一个真 bug——`recut` 会把台账里原来的出图 prompt 覆盖掉
+（重抠不产生新画面，台账只记「当初用什么描述出的」；离线套件加 M8b 钉住）。
+
+全链路真机验收（`/tmp/aivn-probe/`，模型 `gemini-3.0-pro-image`，总用时 166s，一次性探针不进仓库）：
+
+| 步 | 结果 |
+| --- | --- |
+| 背景草稿 → 入库 | `assets/backgrounds/rooftop_dusk.jpg`（1376x768 JPEG，49s） |
+| 立绘（2K 源图）→ 自动抠底 → 入库 | `assets/sprites/probe_girl/neutral.png`（1080x1920，前景占比 62.2%，68s），留底 `media-cache/sprite-sources/` |
+| 原地重抠（tolerance 56） | 覆盖同一张 PNG（1.1s，不烧配额），台账 prompt 保持原样 |
+| BGM | `assets/bgm/probe_theme.m4a`（2.29MB，48s），素材表与台账各一条 |
+
+两张成图已看过：背景是黄昏天台（铁丝网 + 水塔，要素齐）；立绘银发水手服、透明底干净、边缘无脏边。
 
 ## 9. 与计划的偏离（阶段 2）
 
@@ -207,9 +222,9 @@
 
 ## 10. 阶段 2 的遗留与接续
 
-- **真出图验收待补**：网关恢复后跑一次真后端（单点、不批量）。临时探针（不进仓库）的用法是
-  `npx esbuild <探针>.ts --bundle --platform=node --format=esm --target=node22 --external:sharp --outfile=./probe.tmp.mjs`
-  再从仓库目录跑（`sharp` 要按包名解析）；配好 `image` 之后直接在 GUI 里让搭台助手出候选更直观。
+- ~~**真出图验收待补**~~ **已补**（见 §8 表格与验收表）：网关恢复指的是 Flow 上游模型键。
+  注意 `gemini-3.1-flash-image-*` 仍是死键——flow2api 模型表里那 15 个 NARWHAL 条目
+  发出去就是 `code=[5]`，要么等上游恢复、要么网关侧清掉这个基础模型，**与插件无关**。
 - **候选图在工具回执里的渲染**未验：见第 7 节，persona 已按「回执不渲染也看得到」的写法兜住。
 - **舞台吃掉新素材**：素材落位与声明都由离线套件验过（路径、`framing`/`stature`、扩展名），
   但「出完真的在舞台上看见」要等真图——`stage` 套件跑的是夹具里已有的素材。
