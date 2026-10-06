@@ -1,6 +1,6 @@
 {
   "name": "@aivn/desktop",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "AIVN 桌面壳（Tauri）：开窗口、拉起随包的服务端 sidecar，再把窗口指过去",
   "devDependencies": {

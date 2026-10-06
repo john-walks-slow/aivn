@@ -1,6 +1,6 @@
 {
   "name": "@aivn/stage",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Stage rendering and playback layer: theater visuals, dialog bar, stop affordance, playback state",
   "type": "module",
   "main": "./dist/index.js",

@@ -2,6 +2,12 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)，格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.3.1] - 2026-10-06
+
+### 修复
+
+- **立绘不再压住台词条**：0.3.0 给立绘加了行内 z-index（后上场的更高、说话中的 +1000 置顶），但它直接跟外层比了大小——说话的角色会盖住台词条、选肢层与右上角工具条，角色反复进出把次序号涨过 12 的也一样。现在立绘收进自己的一层，排序只在这一层内比，整层落在选肢遮罩之下（遮罩压暗时立绘跟着一起暗）。
+
 ## [0.3.0] - 2026-10-06
 
 ### 新增
@@ -86,6 +92,7 @@
 - 一次性素材生成脚本改为从环境变量读凭据与网关地址，不再内置任何真实 Key。
 - 一次性的内部排障记录移出仓库，只保留面向使用者的网关配置说明。
 
+[0.3.1]: https://github.com/john-walks-slow/aivn/releases/tag/v0.3.1
 [0.3.0]: https://github.com/john-walks-slow/aivn/releases/tag/v0.3.0
 [0.2.0]: https://github.com/john-walks-slow/aivn/releases/tag/v0.2.0
 [0.1.0]: https://github.com/john-walks-slow/aivn/releases/tag/v0.1.0
