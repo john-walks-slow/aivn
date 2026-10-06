@@ -2,7 +2,7 @@
 # scripts/build-desktop.mjs 会核对（三份版本号漂了，装出来的东西就说不清是哪个版本）。
 [package]
 name = "aivn"
-version = "0.3.1"
+version = "0.3.2"
 description = "AIVN desktop shell: a Tauri window around the bundled aivn-server sidecar"
 authors = ["john-walks-slow"]
 license = "MIT"
