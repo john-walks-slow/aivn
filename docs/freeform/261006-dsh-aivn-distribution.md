@@ -43,6 +43,21 @@ dsh-aivn 里面有：
 不用注册 npm，用 `pnpm pack` 出两份 tgz，放进 dsh-aivn 的 `vendor/`，package.json 写 `"@aivn/core": "file:vendor/aivn-core-0.3.1.tgz"`。
 自包含、不依赖兄弟目录、不惊动公网 npm、不需要指纹、随时可换。
 
+## 2.5 全新建构面：clone 一份 stage-ai 能不能构建出来
+
+查的是「有没有引用会逃出仓库根」：
+
+- `pnpm-workspace.yaml` 只声明了 `packages/*` 与 `apps/*`；
+- `@aivn/core` / `@aivn/stage` 的全部引用都是 **`workspace:*`**（`packages/stage`、`apps/server`、`apps/web` 各一处），**没有任何 `file:` 依赖**（`grep '"file:' --include=package.json` 零命中）；
+- `apps/desktop` 没有 dependencies；
+- `scripts/`、各 `tsconfig`、`vite.config` 里没有指向仓库根之外的路径（唯一的 `../../../` 在 `apps/server/src/paths.ts`，那是数据目录定位，仍在仓库内）。
+
+结论：**一台全新机器 clone stage-ai 就能构建，不需要任何 npm 上的 `@aivn/*` 包**，所以局域网那台 Windows 镜像没有因为这个「静默坏掉」。真正会被「没发 npm」卡住的只有一种情形：有人要在**没有兄弟仓 stage-ai** 的情况下构建 dsh-aivn。
+
+## 2.6 决策
+
+**决策：不发布。** 触发条件 = 出现首个外部接收方——即有人需要在没有兄弟仓 `stage-ai` 的情况下构建/运行 dsh-aivn，或第三方要 `npm i @aivn/*`。触发时先走 §2 的路径 2（`vendor/` tarball + `file:`），只有确实需要 registry 分发时才回到路径 3，并按 skill 的阶段 B 补齐 README / LICENSE / 元数据与隔离安装验证。
+
 ## 3. 现场 Nit 修复
 
 `e2e/verify-rebuild.ts` 头部注释写了 `npm run e2e:rebuild`，但 package.json 里并没有这个 script（它走的是 `node e2e/run.mjs rebuild`）。已修：注释对齐为真实命令，不给 dirty 的 package.json 叠改动。
