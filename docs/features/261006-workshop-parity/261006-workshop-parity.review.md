@@ -2,16 +2,27 @@
 
 ## 概要
 
-本次检视覆盖 `dsh-aivn` 插件（对标 AIVN 工坊角色能力与提示词机制审视）**阶段 1** 的全部工作区改动（包含能力面模型、搭台助手 persona、系统提示词注入段、Fish 音色库客户端与工具、Exa 检索客户端与工具、随包技能库、工具迁移与重命名、剧作家提示词审视、README 双语更新及端到端测试）。
-总体评价：**实现规范、边界清晰、需求对齐完整**。代码重构符合模块职责划分，双角色预设及提示词中的机制承诺均能精确对齐到真实工具与注入点，且已通过全套 TypeScript 编译、esbuild 打包及真实 e2e 套件验证。检视中未发现阻塞级缺陷，仅发现若干处利于长期维护与提示词自文档性的建议及非阻塞项。
+本次检视覆盖 `dsh-aivn` 仓库 master 分支下未提交的**阶段 2（素材生成）**全部改动，包括 `src/media/`（契约、三类生图协议、音乐、后端装配、抠底、出图入库资产管理）、新增的 5 个 Agent 工具（搭台助手 4 个、剧作家 1 个）、能力面判定与双角色 persona/注入分叉、技能库更新、双语 README、`build.mjs` external 配置以及新增的媒体离线自动化套件 `e2e/verify-media.ts`。
+
+整体评价：架构设计干净利落，扎实对标了 AIVN 工坊侧的素材生成语义，同时准确适应了 DSH 会话制模型的特性（如将剧作家缺图改造为同步一步入库、将候选预览下放至 Markdown 图片直出）；类型安全、构建与 22 项离线测试全绿；代码结构严谨，路径越界防御到位。**本次检视无阻塞问题**，给出条件准入（建议合并前处理 2 项建议改进）。
+
+---
 
 ## 需求对齐
 
-检视核对了计划文档（`261006-workshop-parity.plan.md`）与验证记录（`261006-workshop-parity.validation.md`），变更严格满足阶段 1 目标：
-1. **能力面与预设**：`resolveCapabilities` 收敛为 `shell` / `voice` / `search` 三个动态配置位，预设行集按能力组装，剧作家与搭台助手工具完全隔离。
-2. **工具迁移与去歧义**：`get_readiness` 与 `set_craft` 成功移至搭台助手；原剧作家 `list_library` 正式重命名为 `list_assets` 并向双角色开放，消除了跨剧目资源库的歧义。
-3. **提示词与机制审视**：剧作家提示词中 4 处无对应机制的悬空承诺已按计划彻底剥离；搭台助手 14 章 persona 均按 DSH 插件运行环境事实重写，未引入虚构界面或机制。
-4. **范围控制**：严格按拍板决策将应用级素材库、周目与分支树（lineage）排除在外，生图与 BGM 亦如期留待阶段 2。
+检视依据包括：
+1. `261006-workshop-parity.plan.md`（§4.5、§5、§7、§8）；
+2. `261006-workshop-parity.validation.md`（§6-§10）；
+3. `261006-workshop-parity.assets.research.md`。
+
+核查结果如下：
+- **能力位门控与装配**：`can.image` 与 `can.music` 在地址和模型均配齐时才激活；未配置时不注册工具、persona 干净回落至 fallback 章且绝不提及未注册工具名，两角色提示词与工具清单完全闭环。
+- **两套出图等待策略（D3 决策）**：搭台助手坚持「两步法」（`generate_image` 产出草稿 → 挑中后 `commit_asset` 入库），草稿不入素材表不污染台账；剧作家缺图坚持「同步一步法」（`generate()` 串行 `draft` + `commit`），调用即出图并当场入库，符合会话模型单轮自洽要求。
+- **协议与契约实现**：Gemini、OpenAI、ModelsLab 三协议客户端与音频单一 Gemini 协议完整照搬，垫图规则（Gemini 独占多张/ModelsLab 单张/OpenAI 拒绝）、画幅校验容差比对（12%）、立绘 2K 档位下限、mimeType 自适应扩展名与音频 `.m4a` 默认策略均符合预期。
+- **立绘抠底与留底原片（D2 决策）**：色键中位数提取、全局色键、反解带宽、限色等纯算法完整保留，`media-cache/sprite-sources/` 留存抠底前原片作为 `recut_sprite` 的前提；`sharp` 作为正式依赖并在 esbuild 中声明为 external，避免打包原生模块破坏插件加载。
+- **既定不做项（D1、§8）**：周目/故事树、应用级素材库跨剧目导入、AIVN 前端广播通道/审批状态机均未引入，保持纯净。
+
+---
 
 ## 阻塞问题
 
@@ -19,26 +30,47 @@
 
 | ID  | 位置 | 问题 | 建议 |
 | --- | ---- | ---- | ---- |
-| - | - | 无 | 无 |
+| -   | -    | 无   | 无   |
+
+---
 
 ## 建议修改
 
-| ID  | 位置 | 问题 | 建议 |
-| --- | ---- | ---- | ---- |
-| S1  | `src/stagehand/prompt.ts:125-126` | **搭台助手 persona 中提及了角色卡上的 `voice` 字段，但在配置了 `voice` 能力时未引导调用 `list_voices` 工具**。persona 中仅在角色卡说明里提到 `voice` 是音色 id，并在末尾提到“最后配素材与音色”，但并未像 `set_craft` 或 `list_assets` 那样明确告知“挑音色用 `list_voices` 查询”，导致模型可能仅从已有上下文猜测音色 id。 | 建议在 `stagehandPrompt` 的角色卡或音色相关段落中，当 `can.voice` 为真时，追加一句话提醒：“挑音色用 `list_voices` 查询（id 是 hex 串，按人设挑），填进角色卡 frontmatter 的 `voice` 字段”。 |
-| S2  | `src/stagehand/prompt.ts:75`, `src/tools/list-assets.ts:66` | **「现在没有生图工具」文案在阶段 2 将面临修改扩散**。当前在 persona `setupFlow`、`assetGuide` 以及 `list_assets` 工具回执中均硬编码了“现在/本阶段没有生图工具”。进入阶段 2 引入 `generate_image` 后，如果遗漏工具回执等散落文本，会导致回执与能力矛盾。 | 建议在阶段 2 重构出图部分时，统一将素材引导文案与能力位（如 `can.image`）关联，避免工具回执与提示词出现多处硬编码。 |
-| S3  | `src/stagehand/exa.ts:47-48`, `src/stagehand/voice-catalog.ts:127-133` | **网络请求超时 AbortSignal 建议统一防护未捕获的 TimeoutError**。`AbortSignal.timeout(TIMEOUT_MS)` 超时在 Node.js 中会抛出 `TimeoutError`（继承自 `DOMException`），`Exa.search` 的轮询逻辑将其捕获并归入 `lastError` 后重试其他 key，但对于纯网络超时，换 key 依然可能全部耗时较长（30s * N）。 | 建议在多 key 轮询遇到连续超时或非 key 认证相关错误时，若已探测到是网络不通/DNS 解析失败，可做短路或明确日志记录，避免无效耗时。 |
+| ID | 位置 | 问题 | 建议 |
+| -- | ---- | ---- | ---- |
+| S1 | `src/stagehand/prompt.ts:133` | **提示词口径微小笔误**：在搭台助手的出图要点中写道「立绘**四档**取景（`framing`：full / half / square）」，但枚举实际上只有 `full`、`half`、`square` **三档**（后半句体量 `stature` 才是四档：small / normal / large / huge）。虽然模型能读懂后续括号，但这属于文字口径不一致。 | 将「立绘四档取景（`framing`：full / half / square）」改为「立绘三档取景（`framing`：full / half / square）」。 |
+| S2 | `src/media/assets.ts:534-541` | **`manifest.json` 读改写的并发安全兜底**：`withManifest` 通过 `readManifest(this.dir)` 读取当前内存/文件后执行 `writeAtomic`。在单 turn 串行执行时不会有问题；但在并发调用（例如搭台助手在同一 turn 批量并发调用 3 次 `draft`，或者用户在剧作家出图同时操作）时，`writeAtomic` 虽然保证了单次写入原子替换，但缺乏并发排队互斥锁（In-Process Lock），存在后完成的 Promise 覆盖先完成的 Promise 局部写入的潜在竞态。 | 在 `PlayAssets` 类内引入一个轻量级的链式 Promise 锁（类似 `private manifestLock: Promise<void> = Promise.resolve()`），使 `withManifest` 和 `recordLedger` 的读-改-写在内存中串行排队。 |
+
+---
 
 ## 非阻塞问题
 
-| ID  | 位置 | 问题 | 建议 |
-| --- | ---- | ---- | ---- |
-| N1  | `src/stagehand/tools/get-readiness.ts` | **搭台助手的 `get_readiness` 在静态 persona 中未显式提及**。虽然在《当前状态》注入段中每轮都会自动带上就绪自查报告（`readiness`），且工具本身已注册给搭台助手，但搭台助手的 persona 文本并未提及这个工具名（而剧作家之前曾教过它调用）。虽然模型在工具列表能看到它，但 persona 中稍微点一句（例如“备料过程中随时可调用 `get_readiness` 检查开演条件”）会更符合直觉。 | 可在 persona《设定流程》或《职责边界》顺手提一句 `get_readiness`，强化主动调用意图。 |
-| N2  | `src/stagehand/context.ts:68` | **工作区目录扫描深度硬编码为 3**。`walk(..., depth = 0)` 中注释写明 `depth < 3` 足够看清 `assets/sprites/<主体id>/<差分>.png`。但若用户在 `memory/index/<层>/<子目录>/` 下有多级嵌套，或者素材子目录较深，第 4 层文件会被跳过。 | 阶段 1 目前结构足够；若未来支持用户自定义任意深度记忆卡层级，可考虑将深度放宽至 4 或对 `memory/` 与 `assets/` 分开设置。 |
-| N3  | `package.json:26-27` | **`package.json` 中的 e2e 脚本可补充 stagehand 入口**。当前脚本有 `"e2e:stage"`，可考虑补充 `"e2e:stagehand": "dsh-e2e run e2e/run.mjs stagehand"`，方便日常一键单跑新套件。 | 在 `package.json` 的 `scripts` 顺手加一条 `e2e:stagehand`。 |
+| ID | 位置 | 问题 | 建议 |
+| -- | ---- | ---- | ---- |
+| N1 | `src/media/assets.ts:46` | **常量的代码自文档性**：`const NEUTRAL = 'neutral'` 定义在文件顶层，而 `@aivn/core` 或相关类型中也存在基准差分概念。作为剧目差分基准的核心标识，建议保持与上游 core 约定的紧密语义。 | 保留现状即可，已写明注释「立绘的身份基准差分名」。 |
+| N2 | `src/media/assets.ts:571-589` | **草稿自动清理的 I/O 时机**：`pruneDrafts()` 目前在每次 `writeDraft` 时同步触发（通过异步 best-effort 遍历）。当草稿区累积大量小文件或目录时，高频遍历目录可能有少量冗余 I/O。 | 可以在清理函数上加一个防抖或时间戳冷却（例如距上次清理超过 1 小时才真正扫描一次），目前草稿量小，属于 Nice-to-have。 |
+| N3 | `e2e/verify-media.ts` | **E2E 临时目录清理保证**：套件末尾执行了 `await rm(dir, { recursive: true, force: true })`，若中间断言抛出未捕获异常退出，临时目录可能会残留在 `/tmp` 下。 | 可在外部包裹 `try...finally` 确保无论测试通过还是异常中断都清理临时目录。 |
+
+---
 
 ## 准入结论
 
-**结论**：`准入`
+**结论**：`条件准入`
 
-**说明**：阶段 1 改造严格达成了架构解耦、工具分权、提示词真机制映射和随包技能注入的目标，代码实现干净扎实，无任何阻塞问题；建议修改项均属于提示词体验细节与后续阶段可顺手完善的点，不阻碍本阶段合入与交付。
+**说明**：代码实现完整、扎实，不仅精确还原了 AIVN 工坊与剧作家侧的素材生成与处理机制，而且严格遵守了 DSH 运行时的无假绿、不谎报能力、路径沙箱防御与原生外部模块打包规范。测试套件完备且全数通过。建议处理 S1（文案笔误）与 S2（原子写入竞态兜底）后合入主分支。
+
+---
+
+## 检视结论的处理
+
+| ID | 处理 | 落点 |
+| --- | --- | --- |
+| S1 | 已改：「立绘四档取景」→「立绘三档取景」，并在离线套件的 persona 断言里钉住这个用词（`on.includes('立绘三档取景')`），写错就红 | `src/stagehand/prompt.ts:133`、`e2e/verify-media.ts` |
+| S2 | 已改：读-改-写按**文件路径**加串行队列（`withFileLock`，模块级 `Map`，跨 `PlayAssets` 实例共享——工具是并发调用的，各建各的实例，锁挂在实例上等于没锁），`withManifest` 与 `recordLedger` 都走它；队列里存「吞掉结果的版本」，一个任务失败不毒化后面的任务，空闲时清 Map | `src/media/assets.ts` |
+| S2（验证） | 新增断言 M22：并发落库五首曲子后素材表与台账一条不少。**确认它抓得住**：临时把锁去掉跑一遍 → `✗ M22 …（0/5）`，装回来 → 23/23 通过 | `e2e/verify-media.ts` |
+| N3 | 已改：套件在 `process.on('exit')` 里兜一次临时剧目清理（正常路径末尾照旧删），断言中途抛异常也不在 `/tmp` 留东西 | `e2e/verify-media.ts` |
+| N1 | 不动（注释已写明「立绘的身份基准差分名」） | — |
+| N2 | 不动：与 AIVN 同口径（每次出图顺手清一次），草稿量小、`pruneDrafts` 本身 best-effort 且失败不打断出图 | — |
+
+复跑：`npm run e2e:media` **23/23**、`npx tsc --noEmit` 通过、`npm run build` 通过；
+`dsh-e2e` 的 `stagehand` / `verify-injection` 两套在改动后重跑仍全绿。
