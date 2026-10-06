@@ -84,6 +84,8 @@ export interface SpriteSlot {
    */
   action: ActorAction | null;
   actionSeq: number;
+  /** 入场次序（1, 2, 3...）：后上场的更大，用于立绘层级 z-index 排序。 */
+  orderSeq: number;
   /** 正在退场（淡出播完才真正摘掉，见 applyVisual 的 actor 分支）。 */
   leaving?: boolean;
 }
@@ -121,6 +123,7 @@ function newSlot(): SpriteSlot {
     anchor: null,
     action: null,
     actionSeq: 0,
+    orderSeq: 0,
   };
 }
 
@@ -139,25 +142,31 @@ export function applyActorCue(
   cue: Extract<Cue, { kind: "actor" }>,
 ): Record<string, SpriteSlot> {
   const isLeave = Boolean(cue.leave) || cue.action === "exit" || cue.action === "leave";
-  const leaving = sprites[cue.id];
+  const existing = sprites[cue.id];
+  // 入场次序：角色原本不在台上（或正在退场时重新登场），获得递增的 orderSeq；已在台上的保持原次序
+  const nextOrderSeq =
+    existing && !existing.leaving
+      ? existing.orderSeq
+      : Math.max(0, ...Object.values(sprites).map((s) => s.orderSeq || 0)) + 1;
   const next: Record<string, SpriteSlot> = isLeave
     ? // 软删除而不是从表里抹掉：直接抹掉没有淡出可播，角色是「啪」地消失。
-      leaving
-      ? { ...sprites, [cue.id]: { ...leaving, leaving: true } }
+      existing
+      ? { ...sprites, [cue.id]: { ...existing, leaving: true } }
       : sprites
     : {
         ...sprites,
         [cue.id]: {
-          ...(sprites[cue.id] ?? newSlot()),
+          ...(existing ?? newSlot()),
           // 显式站位：认不出来就当没写（走自动），不猜不抛
-          pos: parsePosition(cue.pos) ?? sprites[cue.id]?.pos,
-          variant: cue.variant ?? sprites[cue.id]?.variant ?? null,
-          shot: cue.shot ?? sprites[cue.id]?.shot ?? null,
-          anchor: cue.anchor ?? sprites[cue.id]?.anchor ?? null,
+          pos: parsePosition(cue.pos) ?? existing?.pos,
+          variant: cue.variant ?? existing?.variant ?? null,
+          shot: cue.shot ?? existing?.shot ?? null,
+          anchor: cue.anchor ?? existing?.anchor ?? null,
           // 行为词是一次性的：给了就演一次，不给不重播。exit/leave 走退场分支，
           // 不该同时被当成行为词（`action="leave"` 是退场的旧写法，不是动作）。
           action: isActorAction(cue.action) ? cue.action : null,
-          actionSeq: isActorAction(cue.action) ? (sprites[cue.id]?.actionSeq ?? 0) + 1 : (sprites[cue.id]?.actionSeq ?? 0),
+          actionSeq: isActorAction(cue.action) ? (existing?.actionSeq ?? 0) + 1 : (existing?.actionSeq ?? 0),
+          orderSeq: nextOrderSeq,
           leaving: false,
         },
       };
@@ -254,6 +263,9 @@ export function applyVisualCue(visual: VisualState, cue: Cue): VisualState {
         transition: cue.transition ?? "fade",
         // 换景即从上一张插画里出来：CG 是「这一刻的画面」，不跨景延续
         cg: cue.bg ? null : visual.cg,
+        // 开新场（`<scene clear/>`）：台上的人全下，后面把本场的人重铺一遍。
+        // 缺省只换底、人不动。退场中的也不留：它们本就只为播完淡出，清场不等那一帧。
+        sprites: cue.clear === true ? {} : visual.sprites,
       };
     case "cg":
       return { ...visual, cg: { id: cue.id, caption: cue.caption } };
