@@ -1121,6 +1121,14 @@ pnpm typecheck         # 全部包
 pnpm -r build
 ```
 
+构建的引用面（workspace 内全是 `workspace:*`，没有指向仓库之外的路径）改过之后，
+跑一遍「全新 clone 实跑」——它会 clone 到临时目录、`pnpm install --frozen-lockfile`、
+`pnpm -r build`，并打印这次比对是在什么现场做的（HEAD、工作树、与远端差几笔、用的是哪个克隆源）：
+
+```bash
+bash scripts/verify-fresh-clone.sh
+```
+
 打包（都要在 Windows 上跑，见下）：
 
 ```bash

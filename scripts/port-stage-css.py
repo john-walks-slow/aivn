@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# TODO(2026-10-07)：这个脚本是抽包时的**一次性搬运工具**，不是常规构建步骤。到 10-07 中午为止
+# 若它自己与 app.css / stage.css 都不再变动（说明那批样式已经搬完），就把它收编成 `pnpm -r build`
+# 里的一步、或者丢掉；别让它一直挂在工作树里当「说不清是工具还是残留」的东西。
 """从 AIVN 的 app.css 里抽出 @aivn/stage 漏搬的规则，生成可粘贴的 CSS 片段。
 
 背景：`packages/stage/src/stage.css` 是从 `apps/web/src/app.css` 手工搬的，漏了一大段——
