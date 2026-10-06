@@ -118,8 +118,8 @@ describe("工坊提示词：能力关掉之后不再教它调那个工具", () =
   it("「技能库」关：技能清单块整块不注入（清单里点名了 read_skill）", async () => {
     const on = await buildWorkshopPrompt({ ...CTX, can: caps({ skill: true }) });
     const off = await buildWorkshopPrompt({ ...CTX, can: caps({ skill: false }) });
-    expect(on).toContain("style-anchors");
-    expect(off).not.toContain("style-anchors");
+    expect(on).toContain("galgame-visual-craft");
+    expect(off).not.toContain("galgame-visual-craft");
     expect(off).not.toContain("read_skill");
   });
 });

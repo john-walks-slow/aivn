@@ -4,6 +4,12 @@
 > **所属项目**：Stage-AI 视觉小说引擎 (`feat/galgame-assets`)  
 > **资产目标**：多表情高一致性立绘、16:9 电影级场景/事件 CG、6 大类标准配乐与无缝循环 BGM  
 
+> **适用范围**：本篇写的是 `scripts/` 那套**离线一次性资产生成脚本**（`gen_sprite.py` /
+> `make_transparent.py` / `gen_cg.py` / `audio_loop_helper.py`）。产品里工坊与剧作家出图走的是另一条链——
+> 草稿 → 采用、neutral 定妆照垫图、运行时纯色键抠底（`apps/server/src/cutout.ts`），做法见随包技能
+> `galgame-visual-craft`。两者不冲突，但**别把下面 §2.2（2×3 表情 sheet）与 §2.3（白底泛洪 + 反解）
+> 当成现行流程**。
+
 ---
 
 ## 1. 架构总览与设计哲学

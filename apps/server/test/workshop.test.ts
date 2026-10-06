@@ -437,10 +437,10 @@ describe("工坊 prompt 与工具", () => {
     const prompt = await buildWorkshopPrompt(promptCtx());
     // 清单在、但只是索引：细节留在 skill 文件里，不是每轮都塞满 system prompt
     expect(prompt).toContain("<available_skills>");
-    expect(prompt).toContain("<name>style-anchors</name>");
-    expect(prompt).toContain("<name>sprite-differences</name>");
+    expect(prompt).toContain("<name>galgame-visual-craft</name>");
+    expect(prompt).toContain("<name>galgame-bgm</name>");
     // 清单里只有 name/description/路径，skill 正文不占每轮 system prompt
-    expect(prompt).not.toContain("## 常用锚点");
+    expect(prompt).not.toContain("纯色键底是硬要求");
     expect(prompt).toContain("画风没有默认值");
   });
 
@@ -605,11 +605,11 @@ describe("工坊工具：generate_image", () => {
     await setup();
     const tools = createWorkshopTools(deps());
     const read = tools.find((t) => t.name === "read_skill")!;
-    const ok = JSON.stringify(await read.execute("c1", { name: "style-anchors" }));
-    expect(ok).toContain("画风锚点");
+    const ok = JSON.stringify(await read.execute("c1", { name: "galgame-visual-craft" }));
+    expect(ok).toContain("出图：画风、立绘、场景");
     const bad = JSON.stringify(await read.execute("c1", { name: "nope" }));
     expect(bad).toContain("读取失败");
-    expect(bad).toContain("style-anchors");
+    expect(bad).toContain("galgame-visual-craft");
   });
 
   it("出图失败：把原因回给模型而不是抛出去（让模型如实转告用户）", async () => {

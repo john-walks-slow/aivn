@@ -985,14 +985,20 @@ library/
 
 > ⚠️ 素材**随剧目包导出**等于把素材原文件本身再分发，这比「可商用」严格得多。日系素材站（魔王魂、効果音ラボ、OpenTracks 旧 DOVA 等）的条款大多只授权使用、禁止再配布，所以不在清单里。要加自己的素材时，同样先确认许可允许再分发。（`library/` 本身已整目录不进 git，这条卡的是导出剧目包时。）
 
-### 技能库（skills/ 目录）
+### 技能库（`apps/server/skills/`）
 
-仓库里 `skills/<name>/SKILL.md`（带 `name` / `description` frontmatter）是一份**跨剧目通用的做法速查**——
-去哪里找可用素材、授权能不能商用、某类活儿的标准流程。工坊 agent 的 system prompt 里只列清单（name + description），
-它觉得对上了才用 `read_skill` 读全文：省 token，也省得每轮都塞一长篇。仓库现成带一份 `galgame-audio`
-（免费 BGM / 音效素材源与授权判断）。自己加就照同样的格式建目录，**改完重启服务端**。
+随包带两份：**`galgame-visual-craft`**（画风锚点怎么定、提示词工艺、立绘与差分、背景与 CG 的构图）与
+**`galgame-bgm`**（配乐提示词）。工坊 agent 的 system prompt 里只列清单（name + description），
+它觉得对上了才用 `read_skill` 读全文：省 token，也省得每轮都塞一长篇。
 
-> 技能库是**打包进 exe 的只读资源**，不是数据目录的一部分：从源码跑可以直接加目录，用安装包/免安装版的话技能清单就是随包的那几份。
+自己加一份就照同样的格式建目录 —— `apps/server/skills/<name>/SKILL.md`，带 `name` / `description` frontmatter，
+**改完重启服务端**。
+
+> 目录别搞错：技能**只认 `apps/server/skills/`**（`paths.ts` 从模块位置反推，打包也按这条仓库相对路径进快照）。
+> 仓库根那个 `skills/` 不参与打包、`read_skill` 也读不到，那里放的是给人看的调研记录。
+> 放错目录不会报错，只是清单里永远不出现这一份。
+
+> 技能库是**打包进 exe 的只读资源**，不是数据目录的一部分：从源码跑可以直接加目录，用安装包/免安装版的话技能清单就是随包的那两份。
 
 边界说清楚：
 
