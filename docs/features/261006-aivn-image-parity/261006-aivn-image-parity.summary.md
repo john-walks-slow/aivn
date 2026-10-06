@@ -42,9 +42,14 @@ neutral」，而代码现在会在该主体一张立绘都没有时自动补一�
 - **媒体层回归用例落在既有的 `e2e/verify-media.ts`**，不给插件新引一套 vitest。
 - **抠底调参 CLI 不做**：`recut_sprite` 就是那个入口。
 
-## 未做的（已记入计划文末）
+## 舞台分叉：漂移已结束
 
-`@aivn/stage` 抽包分支与 main 的结构性漂移：分支里的 `packages/stage` 是 `apps/web/src/stage/`
-在抽取那一刻的副本，main 之后每改一次舞台层都不会自动到达，`packages/core` 副本同样在漂。
-本轮是"手工搬 + 补测试"，下次核对 `git log main -- apps/web/src/stage` 即可看出漏没漏；
-根治要么把抽包做进 main（`apps/web` 直接引 `@aivn/stage`），要么给插件加一步从 main 生成的构建脚本。
+上半场是"手工搬 + 补测试"（提交 `4573e205`），下半场把分支接回了 main：
+`git merge main`（合并提交 `2c3f5df6`）——34 个新提交只撞出 1 处冲突（`packages/stage/src/StageTheater.tsx`
+里 zIndex 那行的注释措辞），改名检测把 main 对 `apps/web/src/stage/*` 的改动自动并进了
+`packages/stage/src/*`，`packages/core` 副本也一并对齐。验证：core/stage `tsc -b` 通过、
+stage vitest 35/35、apps/web `tsc --noEmit` 通过且 vitest 31 文件 202 用例全绿；dsh-aivn 重建后
+`lib/` 与合并前逐字节相同，插件运行时行为不受影响。**以后保持"定期 merge main"即可。**
+
+根治方案（把抽包落到 main，让插件直接依赖 main 的 `packages/stage`）现在只差一条
+`git merge --ff-only feat/dsh-vn-stage`，但它会改 AIVN main 的结构，属于待定的仓库决定。

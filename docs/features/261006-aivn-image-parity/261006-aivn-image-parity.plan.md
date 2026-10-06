@@ -125,3 +125,15 @@ English 版同步；`e2e/verify-injection.mjs` 的 A12 反转为"不在工具面
 
 在此之前，每次 AIVN 动舞台层，都得有人记得往分叉搬一次——本轮把这条写进审计文档，
 下次核对 `git log main -- apps/web/src/stage` 即可看出漏没漏。
+
+**2026-10-06 补记（已做）**：上面这条"手工搬"只撑了一轮。当天把分支接回了 main
+（`git merge main`，提交 `2c3f5df6`）：34 个新提交只撞出 1 处冲突（`packages/stage/src/StageTheater.tsx`
+里 zIndex 那行的注释措辞——上一轮手工搬过一次，两边写的是同一段代码），git 的改名检测把 main 对
+`apps/web/src/stage/*` 的改动自动并进了 `packages/stage/src/*`，合并结果树里没有悬挂 import；
+`packages/core` 副本也跟着对齐了（那正是上一轮要手工搬 core `clear` 的原因）。验证：core/stage
+`tsc -b` 通过、stage vitest 35/35、apps/web `tsc --noEmit` 通过且 vitest 202 用例全绿；插件侧
+零影响（dsh-aivn 重建后 `lib/` 与合并前逐字节相同）。**以后保持"定期 merge main"即可，不必再搬。**
+
+剩下那条根治（把抽包落到 main：`git merge --ff-only feat/dsh-vn-stage` 现在可行，main 已是合并结果的
+祖先）仍留着——它会让 AIVN main 多一个 workspace 包、`apps/web` 改成从它引，属于仓库结构决定，
+打包链路（Windows 上的 `pnpm exe` / `pnpm desktop`）也还没验过。
