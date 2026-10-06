@@ -109,3 +109,18 @@ N1（`packages/core/src/dsl/events.ts` 的注释仍说 `stop` 由工具产出）
   现存旧会话都是 `.dsh-e2e-home` 里的 e2e 产物，丢掉重开即可。
 - **`apps/server`（AIVN 本体）仍走 `beatTool`**：本次改的是解析器，对它是纯增量——以前被丢弃的
   `<stop>` 现在会产出事件，而它的剧本与提示词里本来就没有这个标签。
+
+## 收尾（2026-10-06 晚）
+
+- **实机验收**：三条场景在独立 worktree + 隔离实例里通过，实拍图已随 `…acceptance.md` 入库；
+  验收口径（分支键可点 / 停止态可辨识 / 自然收尾不混淆）已确认。
+- **顺手立起的两道设施**（都属于「静默失败」类，靠人记得手动演一遍等于没防）：
+  - `node build.mjs --check` + `.githooks/pre-commit`：产物 ↔ 源码逐字节比对，宿主半边永远硬判、
+    客户端半边只在兄弟检出干净时硬判（否则警告，不挡别人正在改依赖的提交）；单次约 0.75~0.9 秒。
+  - `stage-ai/scripts/verify-fresh-clone.sh`：全新 clone → `pnpm install --frozen-lockfile` →
+    `pnpm -r build` → 核对产物落地；**从远端克隆重跑通过**（`c221b73`，退出码 0）。
+- **已知残差三条**：① 旧会话重建后没有停止点（本改动之前就有的行为，只对新拍修复）；
+  ② 设置套件的环境前提读的是 harness 写下的**声明**（实例被别人重启或事后注 key 时守卫会放过）；
+  ③ `core.hooksPath` 指向不存在的目录时 git 静默跳过——`.githooks/` 是受跟踪文件，别删。
+- **发到公开远端的**：`7e4c3eed`（core 的 `<stop>` 标签）… `98bbf1e2`（文档脱敏），
+  远端 `origin/main` 与本地一致；dsh-aivn 侧没有 remote，提交留在本地。
