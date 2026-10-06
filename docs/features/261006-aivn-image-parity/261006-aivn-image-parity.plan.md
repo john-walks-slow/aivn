@@ -134,6 +134,6 @@ English 版同步；`e2e/verify-injection.mjs` 的 A12 反转为"不在工具面
 `tsc -b` 通过、stage vitest 35/35、apps/web `tsc --noEmit` 通过且 vitest 202 用例全绿；插件侧
 零影响（dsh-aivn 重建后 `lib/` 与合并前逐字节相同）。**以后保持"定期 merge main"即可，不必再搬。**
 
-剩下那条根治（把抽包落到 main：`git merge --ff-only feat/dsh-vn-stage` 现在可行，main 已是合并结果的
-祖先）仍留着——它会让 AIVN main 多一个 workspace 包、`apps/web` 改成从它引，属于仓库结构决定，
+剩下那条根治（把抽包落到 main：`git merge feat/dsh-vn-stage`——合并那一刻 main 还是合并结果的祖先、
+可以 ff，之后 main 又多了这篇补记的一次提交，所以现在会落成一个合并提交）仍留着——它会让 AIVN main 多一个 workspace 包、`apps/web` 改成从它引，属于仓库结构决定，
 打包链路（Windows 上的 `pnpm exe` / `pnpm desktop`）也还没验过。

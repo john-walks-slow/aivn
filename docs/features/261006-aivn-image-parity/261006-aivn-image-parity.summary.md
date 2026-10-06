@@ -51,5 +51,5 @@ neutral」，而代码现在会在该主体一张立绘都没有时自动补一�
 stage vitest 35/35、apps/web `tsc --noEmit` 通过且 vitest 31 文件 202 用例全绿；dsh-aivn 重建后
 `lib/` 与合并前逐字节相同，插件运行时行为不受影响。**以后保持"定期 merge main"即可。**
 
-根治方案（把抽包落到 main，让插件直接依赖 main 的 `packages/stage`）现在只差一条
-`git merge --ff-only feat/dsh-vn-stage`，但它会改 AIVN main 的结构，属于待定的仓库决定。
+根治方案（把抽包落到 main，让插件直接依赖 main 的 `packages/stage`）现在只差把分支合进 main
+（`git merge feat/dsh-vn-stage`，会落成一个合并提交），但它会改 AIVN main 的结构，属于待定的仓库决定。
