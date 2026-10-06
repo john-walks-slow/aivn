@@ -17,11 +17,11 @@ function buildPlay(tree: LineageTree): { say1: LineageEvent; say2: LineageEvent 
 }
 
 describe("行级事件与分支树", () => {
-  it("append 按序挂链，turn 递增", () => {
+  it("append 按序挂链，turn 递增，首个业务节点接在哨兵节点后", () => {
     const tree = new LineageTree();
     const a = tree.append("scene", { payload: { attrs: { bg: "hall" } } });
     const b = tree.append("narrate", { text: "夜。" });
-    expect(a.parentId).toBeNull();
+    expect(a.parentId).toBe("root");
     expect(b.parentId).toBe(a.id);
     expect(b.turn).toBe(a.turn + 1);
     expect(tree.leafId).toBe(b.id);
@@ -51,7 +51,8 @@ describe("行级事件与分支树", () => {
     expect(tree.isAncestor(say1.id, fresh.id)).toBe(true);
     expect(tree.isAncestor(say2.id, fresh.id)).toBe(false);
     expect(tree.isAncestor(abandoned.id, fresh.id)).toBe(false);
-    expect(tree.ancestorChain(fresh.id)).toHaveLength(2);
+    // 包含哨兵节点: [root, say1, fresh]
+    expect(tree.ancestorChain(fresh.id)).toHaveLength(3);
   });
 
   it("recordFork：挂载点移到目标并落一个 fork 标记，其后内容整段转兄弟分支", () => {
@@ -302,7 +303,9 @@ describe("持久化往返", () => {
     buildPlay(tree);
     const before = tree.export();
     const maxCounter = Math.max(
-      ...before.events.map((e) => Number.parseInt(e.id.split("-")[1]!, 36)),
+      ...before.events
+        .filter((e) => e.id.includes("-"))
+        .map((e) => Number.parseInt(e.id.split("-")[1]!, 36)),
     );
 
     const rebuilt = new LineageTree();
@@ -524,5 +527,43 @@ describe("剪枝（删除一段及其后代）", () => {
     expect(removed).toEqual([say.id, inner.id, outer.id]);
     expect(tree.childrenOf(anchor.id)).toHaveLength(0);
     expect(tree.leafId).toBe(anchor.id);
+  });
+
+  it("哨兵节点：自带 root 节点，不可删除，删除首轮后回退到哨兵节点", () => {
+    const tree = new LineageTree();
+    expect(tree.leafId).toBe("root");
+    const rootNode = tree.get("root");
+    expect(rootNode).toBeDefined();
+    expect(rootNode?.kind).toBe("root");
+    expect(rootNode?.parentId).toBeNull();
+
+    expect(() => tree.removeSubtree("root")).toThrow("哨兵节点不可删除");
+
+    const firstSay = tree.append("say", { text: "第一轮第一句" });
+    expect(firstSay.parentId).toBe("root");
+    expect(tree.leafId).toBe(firstSay.id);
+
+    // 删除第一轮
+    const removed = tree.removeSubtree(firstSay.id);
+    expect(removed).toContain(firstSay.id);
+    expect(tree.leafId).toBe("root");
+  });
+
+  it("旧存档加载：没有 root 节点的旧存档自动补上 root 并将根事件重定向到 root", () => {
+    const oldStore = {
+      events: [
+        { id: "e1", parentId: null, kind: "scene" as const, turn: 1, createdAt: 100 },
+        { id: "e2", parentId: "e1", kind: "say" as const, turn: 2, text: "旧台词", createdAt: 200 },
+      ],
+      leafId: "e2",
+      snapshots: [],
+    };
+    const tree = new LineageTree();
+    tree.load(oldStore);
+
+    expect(tree.get("root")).toBeDefined();
+    expect(tree.get("e1")?.parentId).toBe("root");
+    expect(tree.ancestorChain("e2")).toEqual(["root", "e1", "e2"]);
+    expect(tree.materialize().map((e) => e.id)).toEqual(["e1", "e2"]);
   });
 });

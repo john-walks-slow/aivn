@@ -9,6 +9,7 @@ import { Agent as PiAgent, estimateTokens } from "@earendil-works/pi-agent-core"
 import { type Api, type Model, type Static, type TSchema, Type } from "@earendil-works/pi-ai";
 import {
   LineageTree,
+  ROOT_ID,
   StageDslParser,
   characterIdOfPath,
   nextId,
@@ -1291,7 +1292,7 @@ export class PlaywrightOrchestrator {
     const node = this.opts.tree.get(nodeId);
     if (!node) throw new Error(`谱系节点不存在: ${nodeId}`);
     const parentId = node.parentId;
-    if (parentId === null) throw new Error("开场那一轮不能删");
+    if (node.id === ROOT_ID || parentId === null) throw new Error("哨兵节点不能删");
     this.prevLeafId = this.opts.tree.leafId;
     const removed = this.opts.tree.removeSubtree(nodeId);
     // 删掉的枝里含「上一次走过的那条」：引用已经悬空，跟着世界线落到删除后的落脚处

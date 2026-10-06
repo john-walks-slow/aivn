@@ -41,6 +41,33 @@ function sceneLine(key: string, seq: number, text: string): ScriptLine {
   return line(key, seq, text, "scene");
 }
 
+const makeNodeView = (
+  id: string,
+  parentId: string | null,
+  turn: number,
+  kind: LineageNodeView["kind"],
+  text: string,
+  createdAt: number,
+  onPath: boolean,
+  children: number,
+  seq?: number,
+): LineageNodeView => ({
+  id,
+  parentId,
+  turn,
+  kind,
+  text,
+  attrs: {},
+  createdAt,
+  onPath,
+  children,
+  editedText: null,
+  editCount: 0,
+  editedAt: undefined,
+  seq,
+  cgs: [],
+});
+
 describe("buildBeats 一轮一卡", () => {
   it("beat_end 收束、换场景不切轮", () => {
     const cards = buildBeats(
@@ -304,44 +331,18 @@ describe("buildBeats 一轮一卡", () => {
     // Round 2: r2_say -> r2_end
     // Round 3 (旧叶子): r3_say -> r3_end
     // 此时从 Round 1 分岔: fork(parentId=r1_end) -> r1b_say -> r1b_end
-    const node = (
-      id: string,
-      parentId: string | null,
-      turn: number,
-      kind: LineageNodeView["kind"],
-      text: string,
-      createdAt: number,
-      onPath: boolean,
-      children: number,
-      seq?: number,
-    ): LineageNodeView => ({
-      id,
-      parentId,
-      turn,
-      kind,
-      text,
-      attrs: {},
-      createdAt,
-      onPath,
-      children,
-      editedText: null,
-      editCount: 0,
-      editedAt: undefined,
-      seq,
-      cgs: [],
-    });
     const nodes: LineageNodeView[] = [
-      node("r1_say", null, 1, "say", "第1轮", 100, true, 1, 1),
-      node("r1_end", "r1_say", 1, "beat_end", "", 101, true, 2),
+      makeNodeView("r1_say", null, 1, "say", "第1轮", 100, true, 1, 1),
+      makeNodeView("r1_end", "r1_say", 1, "beat_end", "", 101, true, 2),
       // 旧分支（Round 2 & 3）
-      node("r2_say", "r1_end", 2, "say", "第2轮旧", 200, false, 1, 4),
-      node("r2_end", "r2_say", 2, "beat_end", "", 201, false, 1),
-      node("r3_say", "r2_end", 3, "say", "第3轮旧叶子", 300, false, 1, 7),
-      node("r3_end", "r3_say", 3, "beat_end", "", 301, false, 0),
+      makeNodeView("r2_say", "r1_end", 2, "say", "第2轮旧", 200, false, 1, 4),
+      makeNodeView("r2_end", "r2_say", 2, "beat_end", "", 201, false, 1),
+      makeNodeView("r3_say", "r2_end", 3, "say", "第3轮旧叶子", 300, false, 1, 7),
+      makeNodeView("r3_end", "r3_say", 3, "beat_end", "", 301, false, 0),
       // 新分支从 r1_end 分岔出来，时间在最后
-      node("fork_mark", "r1_end", 4, "fork", "", 400, true, 1),
-      node("r1b_say", "fork_mark", 4, "say", "新第2轮", 401, true, 1, 10),
-      node("r1b_end", "r1b_say", 4, "beat_end", "", 402, true, 0),
+      makeNodeView("fork_mark", "r1_end", 4, "fork", "", 400, true, 1),
+      makeNodeView("r1b_say", "fork_mark", 4, "say", "新第2轮", 401, true, 1, 10),
+      makeNodeView("r1b_end", "r1b_say", 4, "beat_end", "", 402, true, 0),
     ];
     const treeView: LineageView = {
       nodes,
@@ -365,5 +366,46 @@ describe("buildBeats 一轮一卡", () => {
     expect(cardR1B.onPath).toBe(true);
     expect(cardR1B.isLeaf).toBe(true);
     expect(cardR3.isAbandoned).toBe(true);
+  });
+
+  it("哨兵节点：第一轮接在哨兵节点下，重试第一轮时新分支接到哨兵节点", () => {
+    const nodes: LineageNodeView[] = [
+      makeNodeView("root", null, 0, "root", "", 0, true, 2),
+      // 第一轮原分支
+      makeNodeView("r1_say", "root", 1, "say", "第1轮旧台词", 100, false, 1, 1),
+      makeNodeView("r1_end", "r1_say", 1, "beat_end", "", 101, false, 0),
+      // 重试第1轮：从 root 开 fork 节点长出新第1轮分支
+      makeNodeView("fork_root", "root", 2, "fork", "", 200, true, 1),
+      makeNodeView("r1_new_say", "fork_root", 2, "say", "第1轮新台词", 201, true, 1, 10),
+      makeNodeView("r1_new_end", "r1_new_say", 2, "beat_end", "", 202, true, 0),
+    ];
+    const treeView: LineageView = {
+      nodes,
+      leafId: "r1_new_end",
+      pathIds: ["root", "fork_root", "r1_new_say", "r1_new_end"],
+    };
+    const cards = buildBeats(treeView, []);
+
+    // 哨兵卡片 + 原第1轮卡片 + 新第1轮卡片
+    expect(cards).toHaveLength(3);
+    const sentinel = cards.find((c) => c.id === "root")!;
+    const oldR1 = cards.find((c) => c.id === "r1_say")!;
+    const newR1 = cards.find((c) => c.id === "r1_new_say")!;
+
+    expect(sentinel.isSentinel).toBe(true);
+    expect(sentinel.parentId).toBeNull();
+    expect(sentinel.preview).toBe("开端");
+
+    // 原第1轮卡片父卡片是哨兵卡片，forkFromId 也指向 root
+    expect(oldR1.parentId).toBe("root");
+    expect(oldR1.forkFromId).toBe("root");
+    expect(oldR1.isAbandoned).toBe(true);
+
+    // 新第1轮卡片同样挂在哨兵卡片下，成为原第1轮的兄弟分支！
+    expect(newR1.parentId).toBe("root");
+    expect(newR1.forkFromId).toBe("root");
+    expect(newR1.onPath).toBe(true);
+    expect(newR1.isLeaf).toBe(true);
+    expect(newR1.forkedFrom?.nodeId).toBe("root");
   });
 });

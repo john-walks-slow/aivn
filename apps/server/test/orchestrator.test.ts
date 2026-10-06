@@ -2489,14 +2489,19 @@ describe("删除一段及其后代", () => {
     expect(orchestrator.runtimeState.prevLeafId).toBe(beat1End);
   });
 
-  it("开场那一轮不能删", async () => {
+  it("哨兵节点不能删，第一轮可删除并退回到哨兵", async () => {
     const { orchestrator, tree } = countingSetup([{ text: BEAT_1, beatDone: BEAT_1_STOP }]);
     orchestrator.start();
     await orchestrator.whenIdle();
     const root = tree.ancestorChain(tree.leafId)[0]!;
 
-    expect(() => orchestrator.deleteBranch(root)).toThrow(/开场那一轮不能删/);
+    expect(() => orchestrator.deleteBranch(root)).toThrow(/哨兵节点不能删/);
     expect(tree.get(root)).toBeDefined();
+
+    // 第一轮的首个节点（挂在 root 下）可以被删除
+    const firstRoundNodeId = tree.ancestorChain(tree.leafId)[1]!;
+    orchestrator.deleteBranch(firstRoundNodeId);
+    expect(tree.leafId).toBe("root");
   });
 
   it("删别的枝不动世界线：玩家在另一条枝上的位置不被这一剪拽走", async () => {

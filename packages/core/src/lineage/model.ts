@@ -16,6 +16,7 @@ import type { StopOption, StopType } from "../ws/protocol.js";
 import { toNodeView } from "./replay.js";
 
 export type LineageEventKind =
+  | "root"
   | "scene"
   | "actor"
   | "say"
@@ -147,6 +148,9 @@ export function originOfBeat(event: LineageEvent): string {
   return "continue";
 }
 
+export const ROOT_ID = "root";
+export const SENTINEL_ID = ROOT_ID;
+
 /** 持久化结构：事件日志（真相源）+ 会话运行态（leafId）+ 分岔事实快照。 */
 export interface LineageStore {
   events: LineageEvent[];
@@ -184,6 +188,24 @@ export class LineageTree {
   private leaf: string | null = null;
   /** nodeId → 最近快照（一个节点保留一份，后存覆盖）。 */
   private readonly snapshotsByNode = new Map<string, LineageSnapshot>();
+
+  constructor() {
+    this.initRoot();
+  }
+
+  private initRoot(createdAt = 0): LineageEvent {
+    const root: LineageEvent = {
+      id: ROOT_ID,
+      parentId: null,
+      kind: "root",
+      turn: 0,
+      text: "",
+      createdAt,
+    };
+    this.events.set(ROOT_ID, root);
+    this.leaf = ROOT_ID;
+    return root;
+  }
 
   get leafId(): string | null {
     return this.leaf;
@@ -237,6 +259,9 @@ export class LineageTree {
    * 世界线被接进一片空白。空壳一律连带删掉，一级一级往上看。
    */
   removeSubtree(nodeId: string): string[] {
+    if (nodeId === ROOT_ID) {
+      throw new Error("哨兵节点不可删除");
+    }
     const node = this.requireNode(nodeId);
     const removed: string[] = [];
     const stack = [nodeId];
@@ -302,6 +327,7 @@ export class LineageTree {
    */
   beatEndFrom(headId: string): string | null {
     let current = this.requireNode(headId);
+    if (current.kind === "root") return current.id;
     if (current.kind === "fork") {
       const kids = this.childrenOf(current.id);
       if (kids.length !== 1) return null;
@@ -374,7 +400,7 @@ export class LineageTree {
     const script: LineageEvent[] = [];
     for (const id of this.ancestorChain(fromLeaf)) {
       const event = this.events.get(id)!;
-      if (event.kind === "fork") continue;
+      if (event.kind === "fork" || event.kind === "root") continue;
       const history = this.edits.get(id);
       if (history?.length) {
         const latest = history[history.length - 1]!;
@@ -503,6 +529,17 @@ export class LineageTree {
 
   /** 从持久化会话状态重建（leaf 显式恢复，不用事件尾推断——裸分岔状态不丢）。 */
   load(store: LineageStore): void {
+    this.events.clear();
+    this.edits.clear();
+    this.cgs.clear();
+    this.notes.length = 0;
+    this.snapshotsByNode.clear();
+
+    const hasRoot = store.events.some((e) => e.id === ROOT_ID);
+    if (!hasRoot) {
+      this.initRoot();
+    }
+
     for (const event of store.events) {
       // 旁注（改写 / 插图）：落进目标行的旁注表，不进树也不动挂载点。
       if (event.kind === "edit" && event.editTargetId) {
@@ -519,10 +556,14 @@ export class LineageTree {
         this.notes.push(event);
         continue;
       }
-      this.attach(event);
+      const patchedEvent =
+        !hasRoot && event.parentId === null && event.id !== ROOT_ID
+          ? { ...event, parentId: ROOT_ID }
+          : event;
+      this.attach(patchedEvent);
     }
     // attach 已把 leaf 推到最后一个树事件；只在无 leafId 时拿它兜底。
-    this.leaf = store.leafId ?? this.leaf;
+    this.leaf = store.leafId ?? this.leaf ?? ROOT_ID;
     for (const snapshot of store.snapshots) this.snapshotsByNode.set(snapshot.nodeId, snapshot);
     seedNextId([
       ...store.events.map((e) => e.id),

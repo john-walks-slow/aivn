@@ -3447,6 +3447,16 @@ select:focus {
   filter: grayscale(0.7);
 }
 
+.route-node.sentinel {
+  border-left-width: 4px;
+  background: color-mix(in srgb, var(--panel) 92%, var(--accent) 8%);
+}
+
+.route-node.sentinel .route-node-stamp {
+  font-weight: 600;
+  color: var(--accent);
+}
+
 .route-node:hover {
   border-color: var(--accent-soft);
 }

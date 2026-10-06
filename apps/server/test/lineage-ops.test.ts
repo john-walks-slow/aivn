@@ -492,7 +492,7 @@ describe("P6 rebuild · 谱系 → IR", () => {
     tree.append("stop", { payload: { stopType: "choice", options: [{ text: "道歉" }] } });
     tree.append("beat_end", { payload: { reason: "no_stop" } });
 
-    const chain = tree.chainEvents(tree.leafId!);
+    const chain = tree.chainEvents(tree.leafId!).filter((e) => e.kind !== "root");
     expect(stopFromEvent(chain[0]!)).toEqual({
       stopType: "choice",
       options: [{ text: "道歉" }],
@@ -503,7 +503,7 @@ describe("P6 rebuild · 谱系 → IR", () => {
   it("旧的 pause 停止点不再还原成停止点（幕末走「下一幕」）", () => {
     const tree = new LineageTree();
     tree.append("stop", { payload: { stopType: "pause" } });
-    const chain = tree.chainEvents(tree.leafId!);
+    const chain = tree.chainEvents(tree.leafId!).filter((e) => e.kind !== "root");
     expect(stopFromEvent(chain[0]!)).toBeNull();
     expect(lineageToEvents(chain).map((e) => e.event.kind)).toEqual([]);
   });
