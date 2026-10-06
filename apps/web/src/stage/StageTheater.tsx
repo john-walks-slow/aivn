@@ -181,6 +181,7 @@ function Sprite({
   leaving,
   action,
   actionSeq,
+  zIndex,
   dim,
 }: {
   url: string | null;
@@ -195,6 +196,8 @@ function Sprite({
   action: ActorAction | null;
   /** 同一行为词要能连演（nod 之后又 nod），靠这个序号让 animation 重挂一次。 */
   actionSeq: number;
+  /** 层级：后上场的更高，说话中的角色最高。 */
+  zIndex: number;
   /** 非当前说话人：压暗到 --sprite-dim，把注意力留给说话的那个。 */
   dim: boolean;
 }): ReactNode {
@@ -249,6 +252,7 @@ function Sprite({
   // 横竖屏两列都由 core 的表算好，媒体查询在 CSS 里挑一列——组件不必监听 resize
   const stage = spriteStagePreset(framing, stature, anchor);
   const style: CSSProperties = {
+    zIndex,
     "--scale": SHOT_SCALE[shot ?? "normal"],
     "--sprite-top": `${stage.landscape.top}%`,
     "--sprite-height": `${stage.landscape.height}%`,
@@ -268,7 +272,7 @@ function Sprite({
   };
   return (
     <>
-      {outgoing && <img className={`${cls} sprite-out`} src={outgoing} alt="" aria-hidden />}
+      {outgoing && <img className={`${cls} sprite-out`} style={{ zIndex }} src={outgoing} alt="" aria-hidden />}
       <img className={cls} style={style} src={current} alt={name} onError={onError} />
     </>
   );
@@ -607,6 +611,9 @@ voiceState,
           // 呈现三轴：取景与体量只听素材声明（剧本管不着图里画到哪、台上站多大），
           // 对齐则是「剧本写了用剧本的，没写听素材声明的」（机甲默认居中悬空、道具贴地）。
           const presentation = index.spritePresentation(dir, slot.variant);
+          const isSpeaking = focusId === id;
+          // 层级：后上场的更高（orderSeq），正在说话的角色额外 +1000 置于最顶层
+          const zIndex = (slot.orderSeq || 1) + (isSpeaking ? 1000 : 0);
           return (
             <Sprite
               key={id}
@@ -620,7 +627,8 @@ voiceState,
               leaving={slot.leaving === true}
               action={slot.action}
               actionSeq={slot.actionSeq}
-              dim={focusId !== null && focusId !== id}
+              zIndex={zIndex}
+              dim={focusId !== null && !isSpeaking}
             />
           );
         })}

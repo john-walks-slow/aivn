@@ -14,6 +14,7 @@ const slot = (partial: Partial<SpriteSlot> & { resolvedPos: SpriteSlot["resolved
   anchor: null,
   action: null,
   actionSeq: 0,
+  orderSeq: 1,
   ...partial,
 });
 
@@ -136,5 +137,45 @@ describe("applyActorCue：行为词", () => {
   it("行为词不影响站位：一个人演动作仍是居中", () => {
     const s = applyActorCue({}, cue({ id: "a", action: "jump" }));
     expect(s.a!.resolvedPos).toBe("center");
+  });
+});
+
+describe("applyActorCue：入场次序与 z-index (orderSeq)", () => {
+  it("首个角色入场次序为 1，后入场角色次序递增", () => {
+    let s = applyActorCue({}, cue({ id: "a" }));
+    expect(s.a!.orderSeq).toBe(1);
+    s = applyActorCue(s, cue({ id: "b" }));
+    expect(s.b!.orderSeq).toBe(2);
+    s = applyActorCue(s, cue({ id: "c" }));
+    expect(s.c!.orderSeq).toBe(3);
+  });
+
+  it("已在场角色更新状态（动作、差分等）时，orderSeq 保持不变", () => {
+    let s = applyActorCue({}, cue({ id: "a" }));
+    s = applyActorCue(s, cue({ id: "b" }));
+    expect(s.a!.orderSeq).toBe(1);
+    expect(s.b!.orderSeq).toBe(2);
+
+    // a 更新动作和差分
+    s = applyActorCue(s, cue({ id: "a", action: "nod", variant: "smile" }));
+    expect(s.a!.orderSeq).toBe(1);
+    expect(s.b!.orderSeq).toBe(2);
+  });
+
+  it("角色退场后重新入场，获得新的更高 orderSeq", () => {
+    let s = applyActorCue({}, cue({ id: "a" }));
+    s = applyActorCue(s, cue({ id: "b" }));
+    expect(s.a!.orderSeq).toBe(1);
+    expect(s.b!.orderSeq).toBe(2);
+
+    // a 退场
+    s = applyActorCue(s, cue({ id: "a", leave: "fade" }));
+    expect(s.a!.leaving).toBe(true);
+
+    // a 重新入场
+    s = applyActorCue(s, cue({ id: "a" }));
+    expect(s.a!.leaving).toBe(false);
+    expect(s.a!.orderSeq).toBe(3);
+    expect(s.a!.orderSeq).toBeGreaterThan(s.b!.orderSeq);
   });
 });
