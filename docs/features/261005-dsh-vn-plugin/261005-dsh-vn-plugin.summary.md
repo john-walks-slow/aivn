@@ -79,12 +79,15 @@
 
 ## 遗留
 
-1. **发布准备**：`@aivn/core` / `@aivn/stage` 由 `file:` 换版本号依赖（被 stage-ai 侧
-   `@aivn/stage` 未合并/未发布阻塞）、`before-publish-repo` 检查、去掉 `package.json` 的 `"private": true`。
+1. **发布准备**：`@aivn/core` / `@aivn/stage` 由 `file:` 换版本号依赖（缺的是
+   `@aivn/stage` 发布到 npm——包装在 main 上了，见下）、`before-publish-repo` 检查、
+   去掉 `package.json` 的 `"private": true`。
 3. **按会话回收缓冲**：插件卸载已收（`StageHub.dispose()`），会话被删/归档后的 `buffers` /
    `parsers` 回收留到接 `agent/disposed`。
-3. **`@aivn/stage` 尚未合进 stage-ai main**（在 `feat/dsh-vn-stage` 分支、
-   `.worktrees/dsh-vn-stage`）。
+3. **`@aivn/stage` 已合进 stage-ai main**（2026-10-06：抽包本身 `9cf654bb`，随后
+   `feat/dsh-vn-stage` 上最后那笔 `9486a070`（导演栏两岔与出图格交给宿主）由
+   `f1439282` 一并并入）。插件的 `file:` 依赖因此从 `.worktrees/dsh-vn-stage/packages/stage`
+   改指 `stage-ai/packages/stage`，分叉消失。
 4. **阶段 2**：搭台助手的素材生成工具（生图、抠底裁切、BGM、配音、跨剧目资源库导入）。
 
 ## 一句话回顾
