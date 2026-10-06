@@ -73,6 +73,15 @@
 2. **原生输入框该藏**：舞台页签下它是多余的（舞台自己有出口），还占着下面 128px。
    按 DSH 的稳定 `data-*` 钩子（`data-conversation-content` / `data-composer-seat`）在舞台页签下藏掉，
    舞台从 656 长到 784，手机竖屏铺到窗口底边；切回 Chat 页签自动恢复。
+3. **提示弹窗的里子还是裸的**（2026-10-06 报）：首轮补搬的白名单只认「插件当时会渲染的组件」
+   （`StageTheater` / `StopPanel` / `ToastStack` / `ui/Modal` / `RefCharacterPicker`），导演栏与
+   回顾面板当时插件还没有，就留在宿主 `app.css` 里。今天插件接上导演栏之后，弹窗只有
+   `.modal-*` 壳子是包提供的，里面的分段控件（`.seg*`）、OOC 输入（`.director-input` /
+   `.ooc-shortcut`）、回顾面板（`.backlog-*` / `.bl-*`）与模式标识（`.stage-mode*`）、
+   CG 占位（`.theater-cg/bg-pending`）全落成裸控件——宿主那份规则插件根本不加载。
+   补法同首轮：白名单补上这几组（`.bl-text` 那几条是拿「包内代码出现过的类名 ∩ app.css 有、
+   stage.css 没有」的差集扫出来的），`scripts/port-stage-css.py` 重新生成、搬完即从 app.css 删掉。
+   顺手修了脚本的两处去重缺陷（按逗号拆开比、先加 `:where()` 再比），现在重跑是幂等的。
 
 排障留下的工具：`e2e/css-diag.mjs` 往舞台根里插探针元素量计算样式——「样式到底有没有
 生效」这种问题不用再靠肉眼猜。

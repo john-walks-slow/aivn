@@ -6,9 +6,12 @@
 `input` 底样式，以及整个移动端 `@media (max-width: 720px)` 小节。没有 `.choice*`，
 选项就是浏览器默认按钮的样子、位置也不对。
 
-按**白名单**抽：只搬插件真正会渲染的组件用到的选择器（`StageTheater` / `StopPanel` /
-`ToastStack` / `ui/Modal` / `ui/RefCharacterPicker`；导演栏、回顾面板、路由树不搬）。
-原文照抄，两处加工：
+按**白名单**抽：只搬插件真正会渲染的组件用到的选择器。首轮（2026-10-05）只认
+`StageTheater` / `StopPanel` / `ToastStack` / `ui/Modal` / `ui/RefCharacterPicker`，
+导演栏与回顾面板当时插件还不渲染，所以没搬；2026-10-06 插件接上导演栏（提示 / 改写 /
+重写，含引导·打断两岔与 OOC 输入）与模式标识、回顾面板之后，白名单补上这几组——
+插件的提示弹窗曾因此只有 `.modal-*` 壳子、里面的分段控件与输入框是裸的。
+路由树仍不搬。原文照抄，两处加工：
 
 - 元素级选择器加 `:where(.stage-root)` 前缀——`:where()` 特异性为零，既把作用域圈在
   舞台子树里，又不改变它与 `.choice` 这类类规则之间的胜负关系（直接写 `.stage-root button`
@@ -63,6 +66,16 @@ CLASSES = {
     ".dialog-options .dir-btn", ".dir-btn", ".dir-btn:hover:not(:disabled)",
     ".dir-btn.on", ".dir-btn.tgl-on", ".dir-btn.voice-pending", ".dir-btn:disabled",
     ".theater-bar", ".theater-dialog", ".theater-scene", ".dialog-text",
+    # 2026-10-06 补：插件接上导演栏与回顾面板之后，这些也在插件里渲染了。
+    ".seg", ".seg .seg-btn", ".seg .seg-btn.active",
+    ".director-input", ".ooc-shortcut", ".ooc-shortcut:hover", ".ooc-shortcut.on",
+    ".backlog-panel", ".backlog-list", ".backlog-list b", ".backlog-empty",
+    ".backlog-panel > .muted",
+    ".bl-tools", ".bl-tool", ".bl-tool:hover:not(:disabled)", ".bl-tool:disabled",
+    ".bl-edit", ".bl-edit input",
+    ".bl-text", ".bl-text.current", ".bl-player .bl-text b", ".bl-input .bl-text",
+    ".stage-modes", ".stage-mode", ".stage-mode-nsfw",
+    ".theater-bg-pending", ".theater-cg-pending",
 }
 
 MOBILE = {".theater-bar", ".theater-scene", ".theater-dialog", ".dialog-text",
@@ -102,8 +115,19 @@ def walk(css):
 
 
 def stage_selectors():
+    """stage.css 里已有的选择器**逐个**收集（按逗号拆开）。
+
+    不拆的话，一条 `A, B` 的合并规则只以整串进集合，`A` 单看就「没有」——
+    补搬时会把它原样再写一遍，同一批规则搬两遍（2026-10-06 实测）。
+    """
     css = re.sub(r"/\*.*?\*/", "", STAGE_CSS.read_text(), flags=re.S)
-    return {" ".join(m.group(1).split()) for m in re.finditer(r"([^{}]+)\{", css)}
+    out = set()
+    for m in re.finditer(r"([^{}]+)\{", css):
+        for part in m.group(1).split(","):
+            part = " ".join(part.split())
+            if part:
+                out.add(part)
+    return out
 
 
 def keep_parts(sel, pool):
@@ -136,16 +160,17 @@ def main():
             continue
         if at:
             continue
-        parts = [p for p in keep_parts(sel, pool) if p not in already]
+        # 先加 `:where(.stage-root)` 再比「有没有搬过」：stage.css 里收的就是加了作用域
+        # 的写法，拿裸 `button` 去比永远比不中，元素级规则会被无脑重搬一遍。
+        parts = [p for p in (scope(p) for p in keep_parts(sel, pool)) if p not in already]
         if not parts:
             continue
-        base.append((", ".join(scope(p) for p in parts), body))
+        base.append((", ".join(parts), body))
 
-    print("/* ── 漏搬的规则（2026-10-05 用 scripts/port-stage-css.py 从 app.css 抽出）───────")
-    print("   抽包时漏了这一大批：`.choice*` 是舞台选项卡片本身（没有它，选项就是浏览器默认")
-    print("   按钮的样子、位置也不对），全局 `button` / `input` 是每一颗按钮的底样式，")
-    print("   移动端小节整段没搬。原文照抄，只在元素级选择器上加 `:where(.stage-root)`")
-    print("   圈作用域——`:where()` 特异性为零，不改它与类规则之间的胜负关系。 */\n")
+    print("/* ── 从 app.css 补搬的规则（scripts/port-stage-css.py 生成，别手改这一节）───")
+    print("   白名单在脚本的 `CLASSES` / `MOBILE`：只搬插件真正会渲染的组件用到的选择器。")
+    print("   原文照抄，只在元素级选择器上加 `:where(.stage-root)` 圈作用域——`:where()`")
+    print("   特异性为零，不改它与 `.choice` 这类类规则之间的胜负关系。 */\n")
     for sel, body in base:
         print(sel + " {")
         for line in textwrap.dedent(body).strip().splitlines():

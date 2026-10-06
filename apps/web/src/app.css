@@ -1426,15 +1426,6 @@ select:focus {
   animation: bg-fade 0.6s ease;
 }
 
-.theater-bg-pending,
-.theater-cg-pending {
-  background:
-    linear-gradient(100deg, rgba(255, 255, 255, 0) 28%, rgba(255, 255, 255, 0.07) 50%, rgba(255, 255, 255, 0) 72%),
-    linear-gradient(160deg, #1d2330, #2a3243 60%, #232a37);
-  background-size: 220% 100%, 100% 100%;
-  animation: asset-shimmer 1.6s linear infinite;
-}
-
 .theater-cg-in {
   animation: bg-fade 0.5s ease;
 }
@@ -3139,35 +3130,6 @@ select:focus {
   height: calc(100dvh - var(--kb, 0px));
 }
 
-/* ── 回顾：正文列表 ────────────── */
-
-.backlog-empty {
-  margin: 0;
-  padding: 18px 14px;
-  color: var(--ink-faint);
-  font-size: 14px;
-}
-
-/* 宽屏上别把一句话拉成横贯 1920px 的一条线——按可读宽度居中 */
-.backlog-list,
-.backlog-empty,
-.backlog-panel > .muted {
-  max-width: 860px;
-  margin-inline: auto;
-  width: 100%;
-}
-.backlog-list {
-  padding: 6px;
-  list-style: none;
-}
-
-.backlog-list b {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--accent);
-  font-size: 12.5px;
-}
-
 /* ── 素材行缩略图 ─────────────── */
 
 .asset-row .asset-name {
@@ -4299,58 +4261,6 @@ select:focus {
   opacity: 0.28;
   cursor: default;
 }
-/* 三个原语的输入改走 ui/Modal.tsx（不再长在对话框里）——这里只留 OOC 快捷前缀 */
-.director-input {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.ooc-shortcut {
-  flex: 0 0 auto;
-  padding: 2px 7px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: none;
-  color: var(--ink-muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-.ooc-shortcut:hover,
-.ooc-shortcut.on {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
-/* 常驻模式标识：内容区左上角，与右上角的排队面板同一条水平线（同一个 60px 起点，
-   让开导演工具栏那一行）。左上角那枚侧栏唤出键占 8~46px，这里从 60px 起，不压它。
-   三种模式（限制级通道 / 静音 / 自动）全关时整块不渲染，所以它不是一条常驻的 chrome。 */
-.stage-modes {
-  position: absolute;
-  z-index: 40;
-  top: calc(60px + env(safe-area-inset-top, 0px));
-  left: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  max-width: min(70vw, 300px);
-}
-/* 压在画面上的一行淡痕，不是一块面板：没有边框、没有底色，只留字与图标本身。
-   画面明暗不可控，所以靠同一枚文字阴影（--dialog-text-shadow）保住可读性——
-   与旁白/台词用的那层阴影同源，换了主题不会有一边落单。 */
-.stage-mode {
-  display: flex;
-  align-items: center;
-  color: var(--dialog-ink-faint);
-  text-shadow: var(--dialog-text-shadow);
-  line-height: 1;
-}
-/* 限制级那枚没有字形可画，用四个字母当记号：字号小、字距放开，读起来像一枚印记 */
-.stage-mode-nsfw {
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-}
 
 /* 待注入队列：内容区右上角、导演工具栏正下方的独立面板，空则不渲染。排队中的话能改也能撤。
    定位挂在内容区（.stage-main，position: relative）而不是视口：之前写的是
@@ -4571,15 +4481,6 @@ select:focus {
   background: var(--bg);
 }
 
-/* 回顾正文：手机上抽屉只有半屏宽读台词费劲，所以整页铺开按可读宽度排 */
-.backlog-panel {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 12px max(16px, env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom));
-  scrollbar-width: thin;
-}
-
 /* ── CG 页 ────────────────────── */
 
 .cg-screen {
@@ -4699,31 +4600,6 @@ select:focus {
 .cg-none {
   color: var(--ink-faint);
 }
-
-/* 视图切换：一根标题条里切两种内容，不叠第二条栏 */
-.seg {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg);
-}
-.seg .seg-btn {
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  padding: 5px 12px;
-  font-size: 13.5px;
-  color: var(--ink-soft);
-  cursor: pointer;
-}
-.seg .seg-btn.active {
-  background: var(--panel);
-  color: var(--accent);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
-}
 .hx-foot {
   margin: 14px 0 4px;
   font-size: 12px;
@@ -4742,75 +4618,6 @@ select:focus {
   padding: 5px 6px;
   font-size: 13px;
   text-align: center;
-}
-/* 正文不响应点击：翻到过去是为了在这一条下面做点什么，误触跳走比多点一下更烦 */
-.bl-text {
-  padding: 6px 8px;
-  border-radius: calc(var(--radius) - 2px);
-  color: var(--ink);
-  font-size: 14.5px;
-  line-height: 1.7;
-}
-.bl-text.current {
-  background: var(--accent-soft);
-  outline: 1px solid var(--accent);
-}
-/* 玩家发来的话（选择 / 自由输入 / 插一句）：跟剧作家的台词一眼分得开 */
-.bl-player .bl-text b,
-/* 玩家发来的话（选择/自由输入/插一句）：斜体 + 左侧竖线，跟台词区分开 */
-.bl-input .bl-text {
-  color: var(--ink-faint);
-  font-style: italic;
-  padding-left: 12px;
-  border-left: 2px solid var(--line);
-}
-/* 回顾里每条台词下面的动词条。白底浅灰等于没有：底、边框、字色都得看得见，
-   动词带字样（「回到舞台 / 重听 / 改写 / 由此分岔」）而不是二十几像素的方块。 */
-.bl-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 4px 6px 8px;
-}
-.bl-tool {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 30px;
-  padding: 5px 11px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
-  color: var(--ink-soft);
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.3;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background-color var(--hover-ms) ease,
-    color var(--hover-ms) ease,
-    border-color var(--hover-ms) ease;
-}
-.bl-tool:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.bl-tool:disabled {
-  color: var(--ink-faint);
-  background: var(--bg);
-  cursor: default;
-}
-.bl-edit {
-  display: flex;
-  gap: 6px;
-  padding: 4px 6px 0;
-}
-.bl-edit input {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 14px;
 }
 
 /* ── 剧作家原始历史（回顾里的第二视图）───────────────────── */

@@ -1543,3 +1543,199 @@ button.primary:hover:not(:disabled) {
     padding: 10px 12px;
   }
 }
+/* ── 从 app.css 补搬的规则（scripts/port-stage-css.py 生成，别手改这一节）───
+   白名单在脚本的 `CLASSES` / `MOBILE`：只搬插件真正会渲染的组件用到的选择器。
+   原文照抄，只在元素级选择器上加 `:where(.stage-root)` 圈作用域——`:where()`
+   特异性为零，不改它与 `.choice` 这类类规则之间的胜负关系。 */
+
+.theater-bg-pending, .theater-cg-pending {
+  background:
+    linear-gradient(100deg, rgba(255, 255, 255, 0) 28%, rgba(255, 255, 255, 0.07) 50%, rgba(255, 255, 255, 0) 72%),
+    linear-gradient(160deg, #1d2330, #2a3243 60%, #232a37);
+  background-size: 220% 100%, 100% 100%;
+  animation: asset-shimmer 1.6s linear infinite;
+}
+
+.backlog-empty {
+  margin: 0;
+  padding: 18px 14px;
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
+.backlog-list, .backlog-empty, .backlog-panel > .muted {
+  max-width: 860px;
+  margin-inline: auto;
+  width: 100%;
+}
+
+.backlog-list {
+  padding: 6px;
+  list-style: none;
+}
+
+.backlog-list b {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--accent);
+  font-size: 12.5px;
+}
+
+.director-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ooc-shortcut {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ooc-shortcut:hover, .ooc-shortcut.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.stage-modes {
+  position: absolute;
+  z-index: 40;
+  top: calc(60px + env(safe-area-inset-top, 0px));
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: min(70vw, 300px);
+}
+
+.stage-mode {
+  display: flex;
+  align-items: center;
+  color: var(--dialog-ink-faint);
+  text-shadow: var(--dialog-text-shadow);
+  line-height: 1;
+}
+
+.stage-mode-nsfw {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.backlog-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px max(16px, env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom));
+  scrollbar-width: thin;
+}
+
+.seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.seg .seg-btn {
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.seg .seg-btn.active {
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+}
+
+.bl-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 6px 8px;
+}
+
+.bl-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--hover-ms) ease,
+    color var(--hover-ms) ease,
+    border-color var(--hover-ms) ease;
+}
+
+.bl-tool:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.bl-tool:disabled {
+  color: var(--ink-faint);
+  background: var(--bg);
+  cursor: default;
+}
+
+.bl-edit {
+  display: flex;
+  gap: 6px;
+  padding: 4px 6px 0;
+}
+
+.bl-edit input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+}
+
+/* ── 从 app.css 补搬的规则（scripts/port-stage-css.py 生成，别手改这一节）───
+   白名单在脚本的 `CLASSES` / `MOBILE`：只搬插件真正会渲染的组件用到的选择器。
+   原文照抄，只在元素级选择器上加 `:where(.stage-root)` 圈作用域——`:where()`
+   特异性为零，不改它与 `.choice` 这类类规则之间的胜负关系。 */
+
+.bl-text {
+  padding: 6px 8px;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--ink);
+  font-size: 14.5px;
+  line-height: 1.7;
+}
+
+.bl-text.current {
+  background: var(--accent-soft);
+  outline: 1px solid var(--accent);
+}
+
+.bl-player .bl-text b, .bl-input .bl-text {
+  color: var(--ink-faint);
+  font-style: italic;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
