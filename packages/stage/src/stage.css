@@ -422,23 +422,20 @@ html[data-stage-theme="light"] .stage-root {
   animation: fx-fade-in var(--trans-ms) ease;
 }
 
-/* fade / fade-black / fade-white：旧图在上（前半程保持），veil 纯色升到全遮挡再落下，
+/* fade / fade-white：旧图在上（前半程保持），veil 纯色升到全遮挡再落下，
    下半程揭开的是已经就位的新图。旧图必须在 50% 处让位（steps 硬切），否则它会一直压着新图。 */
 .theater-stack.trans-fade .theater-stack-old,
-.theater-stack.trans-fade-black .theater-stack-old,
 .theater-stack.trans-fade-white .theater-stack-old {
   z-index: 4;
   animation: fx-hold-half var(--trans-ms) steps(1, end) forwards;
 }
 
 .theater-stack.trans-fade .theater-stack-new,
-.theater-stack.trans-fade-black .theater-stack-new,
 .theater-stack.trans-fade-white .theater-stack-new {
   z-index: 1;
 }
 
 .theater-stack.trans-fade .theater-stack-veil,
-.theater-stack.trans-fade-black .theater-stack-veil,
 .theater-stack.trans-fade-white .theater-stack-veil {
   animation: fx-veil var(--trans-ms) ease forwards;
 }

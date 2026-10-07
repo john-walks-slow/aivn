@@ -19,16 +19,12 @@
  *  - `screen` —— **屏幕遮罩层**：效果是叠加在画面之上的层（闪光、黑边、暗角），画面内容不动。
  * 每个效果只挂一个自然目标，不提供「同效果挂多个目标」。
  */
-export const EFFECT_TARGETS = ["camera", "screen"] as const;
-export type EffectTarget = (typeof EFFECT_TARGETS)[number];
-export const FX_TARGETS = EFFECT_TARGETS;
-export type FxTarget = EffectTarget;
+export const FX_TARGETS = ["camera", "screen"] as const;
+export type FxTarget = (typeof FX_TARGETS)[number];
 
-export function isEffectTarget(value: unknown): value is EffectTarget {
-  return typeof value === "string" && (EFFECT_TARGETS as readonly string[]).includes(value);
+export function isFxTarget(value: unknown): value is FxTarget {
+  return typeof value === "string" && (FX_TARGETS as readonly string[]).includes(value);
 }
-
-export const isFxTarget = isEffectTarget;
 
 /**
  * `<fx target="…" effect="…" value="…"/>` 的载荷（value 已由解析器按注册表归一化）。
@@ -48,15 +44,11 @@ export interface EffectSpec {
   name: string;
   lifecycle: EffectLifecycle;
   /** 合法目标集；`<fx>` 只认其中的 FxTarget，越界即丢弃（不猜）。 */
-  targets: readonly EffectTarget[];
+  targets: readonly FxTarget[];
   /** 封闭取值；不给 = 该效果不接受 value。 */
   values?: readonly string[];
   /** 缺省取值（`value` 省略或非法时回落到它）。 */
   defaultValue?: string;
-  /** 需要旧画面快照：目前只有转场（另见 TRANSITIONS）。 */
-  dual?: boolean;
-  /** 写进剧作家提示词的中文说法。 */
-  label: string;
 }
 
 export const EFFECTS: Readonly<Record<string, EffectSpec>> = {
@@ -67,7 +59,6 @@ export const EFFECTS: Readonly<Record<string, EffectSpec>> = {
     targets: ["screen"],
     values: ["white", "red", "black"],
     defaultValue: "white",
-    label: "闪光（白/红/黑）",
   },
   /** 一次性画面抖动（整幅画面，背景/立绘/CG 一起）。 */
   shake: {
@@ -76,7 +67,6 @@ export const EFFECTS: Readonly<Record<string, EffectSpec>> = {
     targets: ["camera"],
     values: ["light", "heavy"],
     defaultValue: "light",
-    label: "画面抖动",
   },
   /** 持续电影宽画幅黑边。 */
   letterbox: {
@@ -85,7 +75,6 @@ export const EFFECTS: Readonly<Record<string, EffectSpec>> = {
     targets: ["screen"],
     values: ["on", "off"],
     defaultValue: "on",
-    label: "电影宽画幅（上下黑边）",
   },
   /** 持续暗角。 */
   vignette: {
@@ -94,7 +83,6 @@ export const EFFECTS: Readonly<Record<string, EffectSpec>> = {
     targets: ["screen"],
     values: ["on", "off"],
     defaultValue: "on",
-    label: "暗角",
   },
 };
 
@@ -102,26 +90,11 @@ export function effectSpec(name: string): EffectSpec | null {
   return EFFECTS[name] ?? null;
 }
 
-export function isEffectName(value: unknown): boolean {
-  return typeof value === "string" && EFFECTS[value] !== undefined;
-}
-
-export function effectAppliesTo(name: string, target: EffectTarget): boolean {
-  return EFFECTS[name]?.targets.includes(target) === true;
-}
-
 /**
- * 转场：换层时旧画面如何变成新画面。**dual** —— 需要旧画面快照，
- * 所以它是 effect 里唯一需要两层 DOM 的一类（见调研 §4.1）。
- * `fade` 与 `fade-black` 同义（经过黑场），保留两种写法照顾直觉。
+ * 转场：换层时旧画面如何变成新画面。需要旧画面快照，是唯一需要两层 DOM 的一类
+ * （见调研 §4.1）；不走 `<fx>`，只作 `<scene transition>`。
  */
-export const TRANSITIONS = [
-  "cut",
-  "dissolve",
-  "fade",
-  "fade-black",
-  "fade-white",
-] as const;
+export const TRANSITIONS = ["cut", "dissolve", "fade", "fade-white"] as const;
 export type Transition = (typeof TRANSITIONS)[number];
 
 export function isTransition(value: unknown): value is Transition {
@@ -133,7 +106,7 @@ export const DEFAULT_TRANSITION: Transition = "fade";
 
 /** 转场经过的纯色（cut/dissolve 无）；渲染层据此给 veil 上色。 */
 export function transitionVeilColor(name: Transition): string | null {
-  if (name === "fade" || name === "fade-black") return "#000";
+  if (name === "fade") return "#000";
   if (name === "fade-white") return "#fff";
   return null;
 }

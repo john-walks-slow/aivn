@@ -178,7 +178,7 @@ interface VisualState {
 按 `trans-*` 类互相配合；`fade`/`fade-white` 额外一层 `.theater-stack-veil` 纯色。
 - `cut`：旧层 `display:none`，新图直接顶替（修掉「cut 只落占位」的 bug）。
 - `dissolve`：新图 `opacity 0→1` 交叉溶解。
-- `fade` / `fade-black` / `fade-white`：旧图保持到 50%（`steps` 硬切让位），
+- `fade` / `fade-white`：旧图保持到 50%（`steps` 硬切让位），
   veil 纯色升到全遮挡再落下，揭开已就位的新图。
 - 时长/曲线全来自配方表（`stage.css`），剧本不见。
 - 实现选择：**双层 DOM + CSS**（走合成器）；不采用 View Transitions API（会冻快照，见调研 §3.3）。
