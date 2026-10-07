@@ -31,7 +31,26 @@
 | `npm run build` + `node build.mjs --check` | 通过（lib 与源码一致） |
 | `npm run e2e:media`（离线静态） | **48/48**（含新增 M21b/M21c） |
 | `node e2e/run.mjs rebuild` | **13/13** |
-| 实例级 GUI e2e（stagehand / injection） | **未跑**：dsh 升级到 0.2.0 后 `DSH_TOKEN` 固定 token 机制失效（token 每进程随机），且 fresh worktree 缺本地 provider 前提；属环境回归，与本次改动正交。 |
+| 实例级 `e2e/verify-injection.mjs` | **18/18**（含新增 A14b；本实例未配生图，走门控指针消失分支） |
+| 实例级 `e2e/verify-stagehand.mjs` | **22/22**（含新增 S12b；persona 结构、门控措辞、技能清单中立） |
+
+跑通实例级 e2e 的两个前置（都是本机环境，不在仓库里）：
+
+1. **重打 dsh 部署补丁**：dsh 升级到 0.2.0 覆盖了 `/root/projects/dsh-patch` 的全部补丁，其中 0004
+   （`DSH_TOKEN` 固定启动 token）是 e2e harness 的前提——不重打则 `dsh web` 每次随机 token，套件 401。
+   `./apply.sh` 已全部重打（0001/0004/0005/0006/0007）。
+2. **给 worktree 的 `.dsh-e2e-home` 喂 provider**：profile 的 `cordis.patch.yml` 补 `llm-pi-ai` 行
+   （cpa 网关 + CPA_API_KEY）并把 `welcomeNoticeVersion` 提到 `2026-09-28.1` 压掉欢迎弹窗。
+
+## 顺带修的三处 e2e 基建问题（提交 91fed41）
+
+跑实例套件时暴露，均与提示词改动正交，但会挡住验证：
+
+- **会话 slug 折叠点号**：6 个 e2e 脚本用 `replace(/[/.]/g,'-')` 算 sessions 目录名，而 dsh 只折 `/`。
+  路径含点（如 `.kandev` 下的 task worktree）时目录名对不上 → 必然 ENOENT。改为只折 `/`。
+- **重名常量**：verify-stagehand 新增的 `gatedToolNames` 与既有 `gatedTools` 重名（SyntaxError）。
+- **AGENTS.md 误撞技能清单锚**：提示词地图里写了字面量 `<available_skills>`，而 e2e 靠它定位技能清单；
+  AGENTS.md 被注入会话后，提取器命中了 AGENTS.md 而非真正的清单。把该字面量从 AGENTS.md 去掉。
 
 ## 检视
 
@@ -42,6 +61,7 @@ N2/N4/N6 等）为工程体验备忘，不阻塞，留后续迭代。
 
 ## 已知残留
 
-- 实例级 GUI e2e 在本机不可跑（环境回归）。改动是提示词文本 + 文档，离线静态套件已覆盖其内容/门控断言；
-  注入接线（A 区、技能清单挂载）未被本次改动触及。
-- 检视建议的 `lib/index.js` esbuild 路径注释（`../stage-ai` vs 绝对路径）随 build host 漂移，与本次无关。
+- 配置了生图后端那一支（剧作家演出中真出图）与配乐章的人工验证仍未做（e2e 实例无生图/音乐后端）；
+  见 validation.md 的待验证项。
+- dsh 每次升级都会覆盖补丁——升级后必须重跑 `/root/projects/dsh-patch/apply.sh`，否则固定 token 等修补失效。
+- reviewer 提到的 `lib/index.js` esbuild 路径注释随 build host 漂移，与本次无关。
