@@ -25,6 +25,8 @@
 
 ## 待跟进
 
+- **合入门槛**：本改动在真实实例完成验证项 2 / 3（配与不配生图后端时剧作家的缺图行为）之前，**不得合入 main、不得发版**。
 - 实例级 GUI e2e（`e2e/verify-stagehand.mjs` / `e2e/verify-injection.mjs`）在本机不可跑，原因是环境回归
   （dsh 0.2.0 的浏览器 token 现在每进程随机，e2e harness 仍假设固定 `DSH_TOKEN=e2etest`；fresh worktree 的
-  `.dsh-e2e-home` 也缺可用的 provider patch）。与本改动正交，但会让上面 2/3/4 项无法自动完成，需人工在实例里验证。
+  `.dsh-e2e-home` 也缺可用的 provider patch）。与本改动正交，属**需单独认领修复**的 e2e 基建回归，
+  充当上面 2/3/4 项自动化的前置阻塞。
