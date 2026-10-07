@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
   actionAnimation,
+  resolveSceneBg,
   spriteStagePreset,
   type ActorAction,
   type ActorAnchor,
@@ -9,7 +10,7 @@ import {
   type SpriteFraming,
   type SpriteStature,
 } from "@aivn/core";
-import { dialogContent, emptyDialogHint } from "./playbackState.js";
+import { dialogContent, emptyDialogHint, titleStepEnds } from "./playbackState.js";
 import { actorName } from "./script.js";
 import { speakerFocusId, type Playback, type VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
@@ -371,6 +372,18 @@ voiceState,
     playback;
   const shown = view ? view.text.slice(0, viewLength) : "";
   const lineDone = current !== null && shownLength >= current.text.length;
+  /** 全屏标题卡：整卡铺满画面、对话框让位（见 docs/features/261007-dsl-title）。 */
+  const isTitle = view?.type === "title";
+  /**
+   * 标题卡正文已全部显示（逐句模式 = 末句已出）→ 再点一下离开。
+   * 用最后一个揭示断点判，而不是 `shown === view.text`：正文常带尾随换行（模型把 `</title>`
+   * 另起一行），而尾随空行不占揭示步，字面比对会永远差一个换行、提示永不出现。
+   */
+  const titleReady =
+    isTitle &&
+    view !== null &&
+    current?.closed === true &&
+    shown.length >= (titleStepEnds(view.text).at(-1) ?? 0);
   // 名牌与正文的归属交给纯函数判：这几者的优先级踩过一次坑，不在 JSX 里重排。
   const dialog = dialogContent({
     viewName:
@@ -400,9 +413,13 @@ voiceState,
       return;
     }
     if (scrubbed) scrub(1);
+    // 正在显示标题卡时，点击只归标题卡自己（翻下一句 / 末句读完离开 / 流式未闭合时等它写完）。
+    // 优先级必须高于「继续生成」：标题卡若是这一拍最后一条内容，继续出口会把它一click跳过，
+    // 对话框都没恢复就开下一轮。
+    else if (isTitle) advance();
     else if (canContinue) onContinue();
     else advance();
-  }, [onUnlock, hideUi, scrubbed, scrub, canContinue, onContinue, advance]);
+  }, [onUnlock, hideUi, scrubbed, scrub, isTitle, canContinue, onContinue, advance]);
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→ 往回追；空格 = 点舞台。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
@@ -539,10 +556,14 @@ voiceState,
     channels.current!.ambient.set(ambientUrl, visual.ambientVolume);
   }, [ambientUrl, visual.ambientVolume]);
 
-  const bgUrl = index.bg(visual.bg);
+  // 纯色场（黑场/白场/任意色）不走素材表：`bg` 是保留色名或十六进制时直接画一块底。
+  const sceneBg = resolveSceneBg(visual.bg ?? undefined);
+  const bgColor = sceneBg?.kind === "color" ? sceneBg.color : null;
+  const bgAssetId = sceneBg?.kind === "asset" ? sceneBg.id : null;
+  const bgUrl = index.bg(bgAssetId);
   const cgUrl = index.cg(visual.cg?.id ?? null);
   // D6：引用的资产正在生成 → 骨架占位（台词照常演出），到货后 crossfade 替换
-  const bgPending = !bgUrl && !!visual.bg && visual.pending[visual.bg]?.type === "bg";
+  const bgPending = !bgUrl && bgAssetId !== null && visual.pending[bgAssetId]?.type === "bg";
   const cgId = visual.cg?.id ?? null;
   const cgPending = !cgUrl && !!cgId && visual.pending[cgId]?.type === "cg";
 
@@ -628,7 +649,7 @@ voiceState,
 
   return (
     <div
-      className={`theater stage-root${hideUi ? " bare" : ""}`}
+      className={`theater stage-root${hideUi ? " bare" : ""}${isTitle ? " title-mode" : ""}`}
       ref={theaterRef}
       onClick={onStageClick}
       onTouchStart={onTouchStart}
@@ -644,6 +665,7 @@ voiceState,
             className={`theater-bg theater-bg-fallback ${bgPending ? "theater-bg-pending" : ""} ${
               visual.transition === "cut" ? "cut" : ""
             }`}
+            style={bgColor ? { background: bgColor } : undefined}
           />
         )}
 
@@ -692,6 +714,19 @@ voiceState,
           </div>
         )}
 
+        {/* 全屏标题卡：整屏铺文本，对话框让位（.theater.title-mode 里藏掉）。
+            逐句模式下 `shown` 是导演按已揭示句数截出的前缀，这里只管按对齐铺出去。 */}
+        {isTitle && view && (
+          <div className={`theater-title title-align-${view.align ?? "center"}`} role="heading" aria-level={1}>
+            <p className="theater-title-text">{shown}</p>
+            {titleReady && (
+              <span className="theater-title-next" aria-hidden>
+                ▼
+              </span>
+            )}
+          </div>
+        )}
+
         {/* 选肢层挂在 .theater 上（不在画面区里）：台词条是叠在画面上的，
             「铺满画面区」等于铺到台词条底下，卡片会被盖住点不到。见 .choice-overlay。 */}
       </div>
@@ -699,7 +734,9 @@ voiceState,
       {/* 选肢层：导演栏与台词条之间那一段，画面层之上、台词条之下。
           净画面态整层不渲染（不是 display:none）：它带着压暗舞台的遮罩
           （.theater:has(.choice-overlay)），藏掉卡片却留着遮罩，看到的还是暗的。 */}
-      {!hideUi && overlay}
+      {/* 标题卡期间不摆停止点/继续出口：title 与 stop 不同时在场（stop 写在 </title> 之后），
+          先点掉标题卡、对话框恢复，选项才出现。 */}
+      {!hideUi && !isTitle && overlay}
 
       {/* 导演工具栏（提示/改写/重写/生图/重听）：舞台右上角浮层。点击动作 stopPropagation，
            不劫持舞台的继续/回看手势。分岔不在这里——它是「提示」面板里的一条岔

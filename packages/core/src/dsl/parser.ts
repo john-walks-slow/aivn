@@ -1,12 +1,18 @@
 import type { StageEvent } from "./events.js";
 import {
   COMMENT_TAG,
+  DEFAULT_TITLE_ALIGN,
+  DEFAULT_TITLE_MODE,
   DSL_TAGS,
   isActorAnchor,
   isActorShot,
+  isTitleAlign,
+  isTitleMode,
   LEGACY_TAGS,
   STOP_OPTION_SEPARATOR,
   VOID_TAGS,
+  type TitleAlign,
+  type TitleMode,
 } from "./spec.js";
 
 export type ParserWarningType =
@@ -24,10 +30,17 @@ export interface ParserWarning {
 }
 
 interface OpenWrap {
-  tag: "say" | "narrate" | "thought";
+  tag: "say" | "narrate" | "thought" | "title";
   id?: string;
   mood?: string;
   name?: string;
+  /** title 专有：对齐与出法。 */
+  align?: TitleAlign;
+  mode?: TitleMode;
+  /** title 专有：正文是否已经开始产出事件（空标题不产出）。 */
+  started?: boolean;
+  /** title 专有：尚未见非空白字符时先攒着，见 emitText。 */
+  pending?: string;
 }
 
 const MAX_WARNINGS = 200;
@@ -304,6 +317,27 @@ export class StageDslParser {
         // 两个都没给（`<stop/>`）：这一段自然演完，不产出停止点——与漏写这个标签同一条路。
         return;
       }
+      case "title": {
+        if (selfClosing) return this.dropTag(name, "包裹标签不能自闭合");
+        if (this.openWrap) {
+          this.warn("nested_wrap", `<title> 打开时 <${this.openWrap.tag}> 未闭合，自动闭合前者`);
+          this.closeWrap();
+        }
+        const alignRaw = attrs.get("align");
+        const modeRaw = attrs.get("mode");
+        const align = isTitleAlign(alignRaw) ? alignRaw : DEFAULT_TITLE_ALIGN;
+        const mode = isTitleMode(modeRaw) ? modeRaw : DEFAULT_TITLE_MODE;
+        if (alignRaw !== undefined && alignRaw !== align) {
+          this.warn("malformed_tag", `title align 非法，取默认 ${align}: ${preview(alignRaw)}`);
+        }
+        if (modeRaw !== undefined && modeRaw !== mode) {
+          this.warn("malformed_tag", `title mode 非法，取默认 ${mode}: ${preview(modeRaw)}`);
+        }
+        // title_start 延后到第一段非空白正文再发（见 emitText）：空 <title> 不该凭空
+        // 制造一个要点掉的全屏空屏。这里只记挂起态。
+        this.openWrap = { tag: "title", align, mode, started: false };
+        return;
+      }
       case "say":
       case "narrate":
       case "thought": {
@@ -355,13 +389,28 @@ export class StageDslParser {
     // 注释优先于一切：连 openWrap 也轮不到（comment 不会与包裹标签并存，见 handleTag）
     if (this.commentParse) return;
     if (this.openWrap) {
-      const { tag } = this.openWrap;
-      if (tag === "say") this.emit({ kind: "say_text", delta: text });
-      else if (tag === "narrate") this.emit({ kind: "narrate_text", delta: text });
-      else this.emit({ kind: "thought_text", delta: text });
+      const wrap = this.openWrap;
+      if (wrap.tag === "say") this.emit({ kind: "say_text", delta: text });
+      else if (wrap.tag === "narrate") this.emit({ kind: "narrate_text", delta: text });
+      else if (wrap.tag === "thought") this.emit({ kind: "thought_text", delta: text });
+      else this.emitTitleText(wrap, text);
       return;
     }
     if (text.trim() !== "") this.warn("orphan_text", `标签外裸文本丢弃: ${preview(text)}`);
+  }
+
+  /** title 正文：第一段见非空白字符才把挂起的 start 与攒下的空白一起吐出。 */
+  private emitTitleText(wrap: OpenWrap, text: string): void {
+    if (wrap.started !== true) {
+      wrap.pending = (wrap.pending ?? "") + text;
+      if (wrap.pending.trim() === "") return;
+      wrap.started = true;
+      this.emit({ kind: "title_start", align: wrap.align!, mode: wrap.mode! });
+      this.emit({ kind: "title_text", delta: wrap.pending });
+      wrap.pending = "";
+      return;
+    }
+    this.emit({ kind: "title_text", delta: text });
   }
 
   private closeWrap(): void {
@@ -370,7 +419,9 @@ export class StageDslParser {
     this.openWrap = null;
     if (wrap.tag === "say") this.emit({ kind: "say_end" });
     else if (wrap.tag === "narrate") this.emit({ kind: "narrate_end" });
-    else this.emit({ kind: "thought_end" });
+    else if (wrap.tag === "thought") this.emit({ kind: "thought_end" });
+    else if (wrap.started === true) this.emit({ kind: "title_end" });
+    else this.warn("malformed_tag", "空 <title> 丢弃（正文为空白）");
   }
 
   private emit(event: StageEvent): void {

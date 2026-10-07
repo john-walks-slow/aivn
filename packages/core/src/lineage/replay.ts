@@ -1,4 +1,5 @@
 import type { SequencedEvent, StageEvent } from "../dsl/events.js";
+import { DEFAULT_TITLE_ALIGN, DEFAULT_TITLE_MODE, isTitleAlign, isTitleMode } from "../dsl/spec.js";
 import type { StopOption, StopType } from "../ws/protocol.js";
 import type { LineageEvent, LineageNodeView } from "./model.js";
 import type { StopPayload } from "../ws/protocol.js";
@@ -148,6 +149,21 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
           { kind: "thought_start", id: attrs.id ?? "", nodeId: node.id },
           { kind: "thought_text", delta: delta() },
           { kind: "thought_end" },
+          delta(),
+        );
+        break;
+      case "title":
+        // title 的对齐/出法存在 attrs 里；重放时过一遍守卫，坏值落回默认（老档/手改的日志）。
+        pushLine(
+          base,
+          {
+            kind: "title_start",
+            align: isTitleAlign(attrs.align) ? attrs.align : DEFAULT_TITLE_ALIGN,
+            mode: isTitleMode(attrs.mode) ? attrs.mode : DEFAULT_TITLE_MODE,
+            nodeId: node.id,
+          },
+          { kind: "title_text", delta: delta() },
+          { kind: "title_end" },
           delta(),
         );
         break;

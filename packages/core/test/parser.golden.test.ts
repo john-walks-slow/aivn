@@ -20,7 +20,10 @@ function mergeDeltas(events: StageEvent[]): StageEvent[] {
   for (const event of events) {
     const prev = merged.at(-1);
     if (
-      (event.kind === "say_text" || event.kind === "narrate_text" || event.kind === "thought_text") &&
+      (event.kind === "say_text" ||
+        event.kind === "narrate_text" ||
+        event.kind === "thought_text" ||
+        event.kind === "title_text") &&
       prev !== undefined &&
       prev.kind === event.kind
     ) {
@@ -464,5 +467,78 @@ describe("差分属性：新名 variant 与旧名 expression / state", () => {
     expect(actorOf('<actor id="mio" expression="pout" state="x" variant="smile"/>')).toMatchObject({
       variant: "smile",
     });
+  });
+});
+
+describe("全屏标题卡 <title>", () => {
+  it("缺省 align=center / mode=lines，正文多行保真", () => {
+    const { events, parser } = collect();
+    parser.feed("<title>床前明月光\n疑是地上霜\n</title>");
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["title_start", "title_text", "title_end"]);
+    expect(events[0]).toMatchObject({ kind: "title_start", align: "center", mode: "lines" });
+    expect((events[1] as { delta: string }).delta).toBe("床前明月光\n疑是地上霜\n");
+  });
+
+  it("显式 align / mode 原样产出", () => {
+    const { events, parser } = collect();
+    parser.feed('<title align="top-right" mode="block">三日后</title>');
+    parser.endMessage();
+    expect(events[0]).toEqual({ kind: "title_start", align: "top-right", mode: "block" });
+    expect(events[1]).toEqual({ kind: "title_text", delta: "三日后" });
+  });
+
+  it("非法 align / mode 落回默认并挂警告", () => {
+    const { events, parser } = collect();
+    parser.feed('<title align="middle" mode="slow">风起</title>');
+    parser.endMessage();
+    expect(events[0]).toMatchObject({ kind: "title_start", align: "center", mode: "lines" });
+    expect(parser.warnings.filter((w) => w.type === "malformed_tag")).toHaveLength(2);
+  });
+
+  it("空 <title> 不产出事件（不留一个要点掉的全屏空屏）", () => {
+    const { events, parser } = collect();
+    parser.feed("<title>   \n  </title><say id=\"mio\">嗯。</say>");
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end"]);
+    expect(parser.warnings.some((w) => w.type === "malformed_tag" && w.detail.includes("<title>"))).toBe(true);
+  });
+
+  it("前导空白/换行不丢失：第一段非空白字符才吐出 start", () => {
+    const { events, parser } = collect();
+    parser.feed("<title>\n  序\n</title>");
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["title_start", "title_text", "title_end"]);
+    expect((events[1] as { delta: string }).delta).toBe("\n  序\n");
+  });
+
+  it("自闭合 <title/> 丢弃", () => {
+    const { events, parser } = collect();
+    parser.feed('<title/><say id="mio">嗯。</say>');
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end"]);
+    expect(parser.warnings.some((w) => w.type === "malformed_tag")).toBe(true);
+  });
+
+  it("撕裂喂入与整段喂入等价", () => {
+    const source = '<scene bg="black"/>\n<title align="center">第一章\n风起</title>\n<say id="mio">是你。</say>';
+    const whole = collect();
+    whole.parser.feed(source);
+    whole.parser.endMessage();
+    for (const chunkSize of [1, 2, 3, 5, 7]) {
+      const torn = collect();
+      feedTorn(torn.parser, source, chunkSize);
+      torn.parser.endMessage();
+      expect(mergeDeltas(torn.events)).toEqual(mergeDeltas(whole.events));
+      expect(torn.parser.warnings).toEqual([]);
+    }
+  });
+
+  it("未闭合的 title 在消息边界自动闭合，保留已流出正文", () => {
+    const { events, parser } = collect();
+    parser.feed("<title>第一章\n风");
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["title_start", "title_text", "title_end"]);
+    expect((events[1] as { delta: string }).delta).toBe("第一章\n风");
   });
 });

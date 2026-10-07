@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LineageNodeView, LineageView } from "@aivn/core";
 import type { ScriptLine } from "./script.js";
-import { buildTranscript } from "./transcript.js";
+import { buildTranscript, editableNodeId } from "./transcript.js";
 
 type NodeSpec = [
   id: string,
@@ -162,5 +162,21 @@ describe("buildTranscript 会话记录", () => {
     // 第二条（无 seq、同文本）不得复用已被认走的缓冲行——同 key 两条记录会炸回顾列表
     expect(inputs[1]!.key).not.toBe("L2");
     expect(new Set(entries.map((e) => e.key)).size).toBe(entries.length);
+  });
+
+  it("标题卡进会话记录可回顾，带对齐，但不可改写", () => {
+    const entries = buildTranscript(
+      view([["t1", "title", 1, "第一章\n风起", { align: "top-left", mode: "lines" }]]),
+      [],
+    );
+    expect(entries[0]).toMatchObject({ kind: "line", type: "title", text: "第一章\n风起", align: "top-left" });
+    expect(editableNodeId(entries[0]!)).toBeNull();
+  });
+
+  it("谱系未追上时，缓冲里的标题卡也进记录（对齐取缺省）", () => {
+    const entries = buildTranscript(null, [
+      { key: "T1", seq: 1, text: "序章", type: "title", align: "center", mode: "block" } as ScriptLine,
+    ]);
+    expect(entries[0]).toMatchObject({ kind: "line", type: "title", text: "序章", align: "center" });
   });
 });

@@ -351,8 +351,10 @@ function collect(card: BeatCard, byId?: Map<string, LineageNodeView>): void {
     }
   }
 
-  // startNodeId: 优先选台词/心声/旁白节点，次选场景/演员/CG，最后退回卡片首节点
-  const spoken = card.nodes.find((n) => n.kind === "say" || n.kind === "narrate" || n.kind === "thought");
+  // startNodeId: 优先选台词/心声/旁白/标题卡节点，次选场景/演员/CG，最后退回卡片首节点
+  const spoken = card.nodes.find(
+    (n) => n.kind === "say" || n.kind === "narrate" || n.kind === "thought" || n.kind === "title",
+  );
   const dramatic = card.nodes.find((n) => n.kind !== "preload" && n.kind !== "fork");
   card.startNodeId = spoken?.id ?? dramatic?.id ?? card.nodes[0]?.id ?? card.id;
 

@@ -33,6 +33,8 @@
 - **判废只认「三无」轮**：无台词、无停止点、且没调用过带副作用的工具（`beat_done` 只是收束记账，不算）才判废回滚。纯工具轮——只调 `enter_nsfw` 交棒、只发起生图、只写记忆/角色卡——按 no_stop 正常收束：副作用已经发生，回滚会吞掉它们（`enter_nsfw` 的 pending 会被重置回日常模型）。DSL 控制指令（scene/actor）仍不算内容。
 - `<stop>` **回来了**（2026-10-06，DSH 插件侧要「轮尾是助手消息」才分得出支）：新形态是自闭合的 `<stop options="甲 | 乙"/>` / `<stop placeholder="…"/>` / `<stop/>`，与这里的 `beat_done` 工具产出同一帧 IR。旧形态 `<stop type="choice"> + <option>` 里的 `<option>` 子标签仍在 `LEGACY_TAGS`（连同 `preload_asset`），遇到只静默降级并记 `legacy_tag` 警告（照读会把标签念到舞台上）。
 - **一个槽位叫 `variant`**：`<actor id="mio" variant="smile">`。`expression`（人写表情）与 `state`（非人的状态）是 261004 之前的两个旧名，解析器与谱系重放仍当别名收下，所以存量剧本与存档照常演出；但写给模型看的契约只有 `variant`。同一个 id 的立绘声明、差分、垫图基准都按它解析。
+- **全屏标题卡 `<title align="…" mode="block|lines">正文</title>`**（261007）：台词三类之外的第四种包裹标签，产出 `title_start / title_text / title_end` 三段 IR（不配音）。`lines`（缺省）按**非空物理行**逐句揭示、`block` 整段一次出；进 title 隐藏对话框、离开恢复。谱系落 `kind: "title"` 节点（attrs 存 `align`/`mode`），`lineageToEvents` 与 `rebuildStage` 照常重放；`lineageToBeats` 把它写回助手脚本体（`（标题）…`），并使它计为「有内容」（仅标题+停止点的一拍不被判废）。title **不可原地改写**（`EDITABLE_KINDS` 不含它）。
+- **`<scene bg>` 认纯色场**（261007）：`bg="black"`/`bg="white"`（大小写不敏感）与十六进制 `#rgb`/`#rrggbb` 由 core 的 `resolveSceneBg()` 判为纯色，客户端直接画一块底（不查素材表）；其余仍走 `assets/backgrounds/<id>`。谱系原样存 `bg` 值，重放自然带上。
 
 ## 谱系原语（跳转 / 分岔 / 重写 / 删除）
 

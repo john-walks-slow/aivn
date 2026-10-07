@@ -174,6 +174,10 @@ export function lineageToBeats(
       case "narrate":
         script.push(`（旁白）${text(event)}`);
         break;
+      case "title":
+        // 全屏标题卡也写回助手脚本体：剧作家后续轮次得知道自己写过这张卡（章节标题/诗歌）。
+        script.push(`（标题）${text(event)}`);
+        break;
       case "scene":
         script.push(
           `（场景：${attrs.bg ?? "未定"}${attrs.bgm ? ` · ♪ ${attrs.bgm}` : ""}${

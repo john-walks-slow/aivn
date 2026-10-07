@@ -452,6 +452,29 @@ describe("P6 rebuild · 谱系 → IR", () => {
     expect(text?.event.kind === "say_text" && text.event.delta).toBe("改过的台词");
   });
 
+  it("全屏标题卡按三段重放，对齐/出法从 attrs 还原", () => {
+    const tree = new LineageTree();
+    tree.append("title", {
+      text: "床前明月光\n疑是地上霜",
+      payload: { attrs: { align: "center", mode: "lines" }, seq: 3 },
+    });
+    const events = lineageToEvents(tree.chainEvents(tree.leafId!));
+    expect(events.map((e) => e.event.kind)).toEqual(["title_start", "title_text", "title_end"]);
+    expect(events.map((e) => e.seq)).toEqual([3, 4, 5]);
+    expect(events[0]!.event).toMatchObject({ kind: "title_start", align: "center", mode: "lines" });
+    expect(events[1]!.event).toEqual({ kind: "title_text", delta: "床前明月光\n疑是地上霜" });
+  });
+
+  it("标题卡写回助手脚本体：剧作家后续轮次看得到它", () => {
+    const tree = new LineageTree();
+    tree.append("title", { text: "第一章\n风起", payload: { attrs: { align: "center", mode: "block" } } });
+    tree.append("say", { text: "……又是这里。", payload: { attrs: { id: "mio" } } });
+    tree.append("beat_end", { payload: { reason: "no_stop" } });
+    const { beats } = lineageToBeats(tree.materialize(), { mio: "澪" }, "（游戏开始）");
+    expect(beats[0]?.assistant).toContain("（标题）第一章\n风起");
+    expect(beats[0]?.assistant).toContain("澪：……又是这里。");
+  });
+
   it("幕划分 = 两个 beat_end 之间；未收束的半轮也算一幕", () => {
     const tree = new LineageTree();
     tree.append("prompt", { payload: { input: "我到了" } });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActorAction, ActorAnchor, ActorShot, ReadPos } from "@aivn/core";
 import { isActorAction, layoutSprites, parsePosition, type SpritePosition } from "@aivn/core";
-import { shouldAutoStart } from "./playbackState.js";
+import { shouldAutoStart, titleLastStep, titleRevealTarget } from "./playbackState.js";
 import type { Cue, ScriptLine } from "./script.js";
 import type { TranscriptEntry } from "./transcript.js";
 
@@ -404,12 +404,16 @@ function lineEntry(line: ScriptLine): TranscriptEntry {
   return {
     key: line.key,
     kind: "line",
-    type: line.type === "say" || line.type === "narrate" || line.type === "thought" ? line.type : "narrate",
+    type:
+      line.type === "say" || line.type === "narrate" || line.type === "thought" || line.type === "title"
+        ? line.type
+        : "narrate",
     actorId: line.actorId ?? null,
     ...(line.nameOverride ? { nameOverride: line.nameOverride } : {}),
     text: line.text,
     seq: line.seq ?? null,
     nodeId: null,
+    ...(line.type === "title" && line.align ? { align: line.align } : {}),
   };
 }
 /**
@@ -538,6 +542,8 @@ export function usePlayback(
   const [visual, setVisual] = useState<VisualState>(EMPTY_VISUAL);
   const [currentKey, setCurrentKey] = useState<string | null>(null);
   const [shownLength, setShownLength] = useState(0);
+  /** 逐句标题卡（`<title mode="lines">`）已揭示到第几行；其余行恒 0。 */
+  const [titleStep, setTitleStep] = useState(0);
   const [auto, setAuto] = useState(false);
   /** 最近消费的音效（key 变化触发播放）。 */
   const [sfx, setSfx] = useState<{ key: string; src: string; volume?: number } | null>(null);
@@ -604,6 +610,7 @@ export function usePlayback(
       if (cue.kind === "line") {
         const line = linesRef.current.find((l) => l.key === cue.lineKey) ?? null;
         setCurrentKey(cue.lineKey);
+        setTitleStep(0);
         // 玩家回执一次到位：那是他刚说的话，不是逐字打出来的台词。
         setShownLength(line?.type === "input" ? line.text.length : 0);
         hooksRef.current.onLineStart?.(line);
@@ -617,44 +624,68 @@ export function usePlayback(
     }
   }, [cues, applyVisual]);
 
+  /**
+   * 当前该显示到第几个字。
+   *
+   * 逐句标题卡按 `titleStep` 取断点（只把已揭示的行当作"该显示的字数"），其余行恒取全文——
+   * 这是逐句揭示能复用打字机的关键：目标一变，打字机自己追上去。
+   */
+  const revealTarget = current ? titleRevealTarget(current, titleStep) : 0;
   /** 该行是否已播完（文本到头，且不再有增量——live 中以「下一条 cue 已到」为准）。 */
-  const lineComplete = current !== null && shownLength >= current.text.length;
+  const lineComplete = current !== null && shownLength >= revealTarget;
   const canAdvance = current === null || lineComplete;
   /** 派生：队列消费到头且当前行播完（无台词也算到头）——streaming 中即「等新内容」。 */
   const exhausted = cues.length <= cursorRef.current && (current === null || lineComplete);
 
   const advance = useCallback((): void => {
     if (!canAdvance) {
-      setShownLength(current?.text.length ?? 0);
+      setShownLength(revealTarget);
       hooksRef.current.onFastForward?.();
       return;
     }
+    // 全屏标题卡：点击是"翻下一句 / 读完离开"，与普通台词的单义推进同一套两段式。
+    if (current?.type === "title") {
+      // 流式还没闭合（`</title>` 未到）：已显完也先不离开，等它写完。
+      if (current.closed !== true) return;
+      if (titleStep < titleLastStep(current)) {
+        setTitleStep(titleStep + 1);
+        return;
+      }
+      // 末句已显完：离开 title、恢复对话框，并立刻接上后面那一条 cue（若有）。
+      setCurrentKey(null);
+      setShownLength(0);
+      setTitleStep(0);
+      consumeNext();
+      return;
+    }
     consumeNext();
-  }, [canAdvance, current, consumeNext]);
+  }, [canAdvance, current, titleStep, revealTarget, consumeNext]);
 
   // 打字机：本地节奏逐字推进（目标行文本随流式增长，追赶即等待）。
   // 标点决定下一个字的等待时长——逗号类短停、句号类长停，读起来才有呼吸（galgame 惯例）。
-  // 快进档：不等字，整行一次读完（语音同步淡出，与点击二段式第一段同一套钩子）。
+  // 快进档：不等字，整行一次读完（语音同步淡出，与点击二段式第一段同一套钩子）；
+  // 逐句标题卡在快进档下直接展开全部，避免每一行都要点。
   useEffect(() => {
-    if (!current || shownLength >= current.text.length) return;
+    if (!current || shownLength >= revealTarget) return;
     if (turbo) {
+      if (current.type === "title") setTitleStep(titleLastStep(current));
       setShownLength(current.text.length);
       hooksRef.current.onFastForward?.();
       return;
     }
     const timer = setTimeout(() => setShownLength((n) => n + 1), charDelay(current.text, shownLength));
     return () => clearTimeout(timer);
-  }, [current, shownLength, turbo]);
+  }, [current, shownLength, revealTarget, turbo]);
 
   // 快进（按住 Ctrl）：不依赖自动模式——松手立刻回到原节奏，中途只追缓冲里已有的内容。
   // 回看中不推进：正在读历史时把播放头往前拽，读到的东西就白翻了。
   useEffect(() => {
     if (!turbo || scrubIndex !== null) return;
-    if (current && shownLength < current.text.length) return;
+    if (current && shownLength < revealTarget) return;
     if (cursorRef.current >= cues.length) return;
     const timer = setTimeout(() => consumeNext(), 30);
     return () => clearTimeout(timer);
-  }, [turbo, scrubIndex, current, shownLength, cues, consumeNext, opts.revision]);
+  }, [turbo, scrubIndex, current, shownLength, revealTarget, cues, consumeNext, opts.revision]);
 
   // 自动模式：行播完且还有后续 → 延迟推进；尚未开演时自动起播。
   // 语音 hold：当前行语音仍在播则暂缓（D5 文字先行、语音收尾再走）。
@@ -663,6 +694,8 @@ export function usePlayback(
   useEffect(() => {
     if (!auto || turbo) return;
     if (opts.hold) return;
+    // 全屏标题卡不进自动推进：卡片是给读者的停顿，且逐句卡自动消费会直接跳过剩下的行。
+    if (current?.type === "title") return;
     if (!current) {
       if (cursorRef.current >= cues.length) return;
       const timer = setTimeout(() => consumeNext(), 400);
@@ -686,6 +719,7 @@ export function usePlayback(
     cursorRef.current = 0;
     setCurrentKey(null);
     setShownLength(0);
+    setTitleStep(0);
     setScrubIndex(null);
     setVisual(EMPTY_VISUAL);
     // 两种情况都要快进到新分支末尾：区别只在要不要把最后一句旧台词显示出来。
@@ -703,6 +737,7 @@ export function usePlayback(
       cursorRef.current = 0;
       setCurrentKey(null);
       setShownLength(0);
+      setTitleStep(0);
       setScrubIndex(null);
       setVisual(EMPTY_VISUAL);
       return;
@@ -722,7 +757,14 @@ export function usePlayback(
         cursorRef.current = resumeIndex + 1;
         if (cue.kind === "line") {
           setCurrentKey(cue.lineKey);
-          setShownLength(seek.shownLength);
+          const line = linesRef.current.find((l) => l.key === cue.lineKey);
+          // 标题卡重放整卡一次显示，不重演逐句点击（见 261007-dsl-title）。
+          if (line?.type === "title") {
+            setShownLength(line.text.length);
+            setTitleStep(titleLastStep(line));
+          } else {
+            setShownLength(seek.shownLength);
+          }
         }
         return;
       }
@@ -733,7 +775,12 @@ export function usePlayback(
       if (lastLineKey && showTailRef.current) {
         setCurrentKey(lastLineKey);
         const line = linesRef.current.find((l) => l.key === lastLineKey);
-        setShownLength(line?.text.length ?? 0);
+        if (line?.type === "title") {
+          setShownLength(line.text.length);
+          setTitleStep(titleLastStep(line));
+        } else {
+          setShownLength(line?.text.length ?? 0);
+        }
       }
     }
   }, [opts.revision, cues, applyVisual]);
@@ -769,7 +816,7 @@ export function usePlayback(
       auto,
       hold: opts.hold === true,
       hasCurrent: current !== null,
-      currentComplete: current === null || shownLength >= current.text.length,
+      currentComplete: current === null || shownLength >= revealTarget,
       cursor: cursorRef.current,
       cueCount: cues.length,
       nextIsPlayerInput,

@@ -22,6 +22,7 @@ export type LineageEventKind =
   | "say"
   | "narrate"
   | "thought"
+  | "title"
   | "sfx"
   | "preload"
   | "cg"

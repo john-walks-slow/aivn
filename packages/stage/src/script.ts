@@ -1,9 +1,9 @@
-import type { ActorAnchor, ActorShot, StageEvent } from "@aivn/core";
+import type { ActorAnchor, ActorShot, StageEvent, TitleAlign, TitleMode } from "@aivn/core";
 
 /** 前端剧本行模型：StageEvent 流 → 渲染行（log 视图与舞台台词共用）。 */
 export interface ScriptLine {
   key: string;
-  type: "say" | "narrate" | "thought" | "input" | "scene" | "sfx" | "cg";
+  type: "say" | "narrate" | "thought" | "input" | "scene" | "sfx" | "cg" | "title";
   actorId?: string;
   /** say 标签的 name 属性：覆盖本句名牌，不查角色表。 */
   nameOverride?: string;
@@ -13,6 +13,11 @@ export interface ScriptLine {
   seq?: number;
   /** 行级台词节点 ID（LineageNode.id，阅读位置寻址与原地改写用）。 */
   nodeId?: string;
+  /** title 专有：对齐与出法。 */
+  align?: TitleAlign;
+  mode?: TitleMode;
+  /** title 专有：正文已流完（收到 `</title>`）——未闭合前点击不离开，等它写完。 */
+  closed?: boolean;
 }
 
 /**
@@ -162,11 +167,34 @@ export class ScriptBuilder {
         this.openKey = line.key;
         return;
       }
+      case "title_start": {
+        const line: ScriptLine = {
+          key: key(),
+          type: "title",
+          align: event.align,
+          mode: event.mode,
+          seq,
+          nodeId: event.nodeId,
+          text: "",
+          closed: false,
+        };
+        this.lines.push(line);
+        this.cues.push({ key: key(), kind: "line", lineKey: line.key });
+        this.openKey = line.key;
+        return;
+      }
       case "say_text":
       case "narrate_text":
-      case "thought_text": {
+      case "thought_text":
+      case "title_text": {
         const line = this.lines.at(-1);
         if (line && line.key === this.openKey) line.text += event.delta;
+        return;
+      }
+      case "title_end": {
+        const line = this.lines.at(-1);
+        if (line && line.key === this.openKey) line.closed = true;
+        this.openKey = null;
         return;
       }
       case "say_end":

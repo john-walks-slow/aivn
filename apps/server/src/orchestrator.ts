@@ -320,7 +320,7 @@ export interface OrchestratorRuntimeState {
 }
 
 interface OpenLine {
-  kind: "say" | "narrate" | "thought";
+  kind: "say" | "narrate" | "thought" | "title";
   nodeId?: string;
   id?: string;
   text: string;
@@ -2249,7 +2249,10 @@ export class PlaywrightOrchestrator {
 
   private onStageEvent(event: StageEvent): void {
     if (
-      (event.kind === "say_start" || event.kind === "narrate_start" || event.kind === "thought_start") &&
+      (event.kind === "say_start" ||
+        event.kind === "narrate_start" ||
+        event.kind === "thought_start" ||
+        event.kind === "title_start") &&
       !event.nodeId
     ) {
       event.nodeId = nextId();
@@ -2322,14 +2325,26 @@ export class PlaywrightOrchestrator {
           seq,
         };
         return;
+      case "title_start":
+        // 全屏标题卡的正文与普通台词同一套行聚合；对齐/出法落 attrs（重放与回看都读它）。
+        this.openLine = {
+          kind: "title",
+          nodeId: event.nodeId,
+          text: "",
+          attrs: { align: event.align, mode: event.mode },
+          seq,
+        };
+        return;
       case "say_text":
       case "narrate_text":
       case "thought_text":
+      case "title_text":
         if (this.openLine) this.openLine.text += event.delta;
         return;
       case "say_end":
       case "narrate_end":
-      case "thought_end": {
+      case "thought_end":
+      case "title_end": {
         const line = this.openLine;
         this.openLine = null;
         if (line) {

@@ -24,6 +24,7 @@ export const DSL_TAGS = [
   "say",
   "narrate",
   "thought",
+  "title",
   "sfx",
   "cg",
   "stop",
@@ -150,4 +151,31 @@ export interface SayAttrs {
 export interface CgAttrs {
   id: string;
   caption?: string;
+}
+
+/**
+ * 全屏文本卡（章节标题 / 诗歌 / 独白）：`<title align="…" mode="…">正文</title>`。
+ *
+ * 进入 title 隐藏对话框，离开时恢复；正文是多行原生文本，`lines` 模式下每个**非空物理行**
+ * 是一个揭示单位（点击出下一行）。句子边界取物理换行而不是标点切分：诗歌的"句"就是换行，
+ * 标点在无标点的诗行上完全失效，且作者才最清楚一行到哪儿断。
+ *
+ * 缺省 `lines`：单行标题在 `lines` 下退化成一个揭示单位、与 `block` 等价，所以缺省 `lines`
+ * 对标题场景零损失，却让诗歌不必显式声明；要"整段砸下来"才写 `mode="block"`。
+ */
+export const TITLE_ALIGNS = ["top-left", "top-right", "bottom-left", "bottom-right", "center"] as const;
+export type TitleAlign = (typeof TITLE_ALIGNS)[number];
+
+export const TITLE_MODES = ["block", "lines"] as const;
+export type TitleMode = (typeof TITLE_MODES)[number];
+
+export const DEFAULT_TITLE_ALIGN: TitleAlign = "center";
+export const DEFAULT_TITLE_MODE: TitleMode = "lines";
+
+export function isTitleAlign(value: unknown): value is TitleAlign {
+  return typeof value === "string" && (TITLE_ALIGNS as readonly string[]).includes(value);
+}
+
+export function isTitleMode(value: unknown): value is TitleMode {
+  return typeof value === "string" && (TITLE_MODES as readonly string[]).includes(value);
 }

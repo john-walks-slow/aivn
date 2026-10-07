@@ -9,6 +9,7 @@
  */
 
 import type { StopPayload } from "@aivn/core";
+import type { ScriptLine } from "./script.js";
 
 /**
  * 空对话区该显示什么。
@@ -116,4 +117,39 @@ export function stopAffordance(input: StopAffordanceInput): StopAffordance {
   // 有真停止点（choice/free）时出口是选项本身，不额外给继续
   if (!input.isNoStop || input.stopType !== null) return none;
   return input.continueCardOn ? { ...none, showContinueCard: true } : { ...none, clickToContinue: true };
+}
+
+/**
+ * 逐句标题卡（`<title mode="lines">`）的揭示断点：每个**非空物理行**结束处的字符偏移。
+ *
+ * 句子边界取物理换行而不是标点切分——诗歌的"句"就是换行，标点在无标点的诗行上完全失效，
+ * 且作者才最清楚一行到哪儿断（见 docs/features/261007-dsl-title）。空行是分节间距，
+ * 不单独占一个揭示步，但它的换行字符会随前缀一起显示出来。
+ *
+ * 全是空白的正文返回 `[text.length]`：保证至少有一个揭示步，避免零步卡死（正常不会出现——
+ * 解析器已把空 title 丢掉）。
+ */
+export function titleStepEnds(text: string): number[] {
+  const ends: number[] = [];
+  let offset = 0;
+  for (const line of text.split("\n")) {
+    offset += line.length;
+    if (line.trim() !== "") ends.push(offset);
+    offset += 1; // 该行的换行符
+  }
+  return ends.length > 0 ? ends : [text.length];
+}
+
+/** 当前该显示到第几个字：逐句卡按 step 取断点，其余行（含 block 标题卡）取全文。 */
+export function titleRevealTarget(line: ScriptLine, step: number): number {
+  if (line.type !== "title" || line.mode !== "lines") return line.text.length;
+  const ends = titleStepEnds(line.text);
+  const index = Math.min(Math.max(step, 0), ends.length - 1);
+  return ends[index] ?? line.text.length;
+}
+
+/** 逐句卡的最后一个揭示步下标（其余行为 0）——末句已显完时才允许点击离开。 */
+export function titleLastStep(line: ScriptLine): number {
+  if (line.type !== "title" || line.mode !== "lines") return 0;
+  return Math.max(0, titleStepEnds(line.text).length - 1);
 }

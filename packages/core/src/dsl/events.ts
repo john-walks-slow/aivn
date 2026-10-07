@@ -1,4 +1,4 @@
-import type { ActorAttrs, CgAttrs, SceneAttrs, SayAttrs, SfxAttrs } from "./spec.js";
+import type { ActorAttrs, CgAttrs, SceneAttrs, SayAttrs, SfxAttrs, TitleAlign, TitleMode } from "./spec.js";
 import type { StopOption, StopType } from "../ws/protocol.js";
 
 /**
@@ -40,6 +40,9 @@ export type StageEvent =
   | ({ kind: "thought_start"; id: string; nodeId?: string })
   | { kind: "thought_text"; delta: string }
   | { kind: "thought_end" }
+  | { kind: "title_start"; align: TitleAlign; mode: TitleMode; nodeId?: string }
+  | { kind: "title_text"; delta: string }
+  | { kind: "title_end" }
   | ({ kind: "sfx" } & SfxAttrs)
   | ({ kind: "preload_asset" } & PreloadAssetAttrs)
   | ({ kind: "cg" } & CgAttrs)

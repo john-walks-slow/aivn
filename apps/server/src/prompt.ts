@@ -148,6 +148,10 @@ const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
 <sfx src="音效id" volume="0.5"/>
 <cg id="cgid" caption="插图说明"/>
 
+**纯色场（黑场 / 白场）**：bg 也可以是保留色名或十六进制色值，直接铺一块纯色底——
+\`<scene bg="black"/>\`、\`<scene bg="white"/>\`（大小写不敏感）或 \`<scene bg="#1a1a2e"/>\`；
+其余值仍按素材 id 查背景表。章节转场、标题卡前的留白、回忆收束常用它。
+
 **位置不用你写。** 引擎按在场人数自动分配，第二个人进场第一个人自动让开。
 只有在你想钉死某个人（比如主角固定在中间）时才写 pos="center"。
 
@@ -184,11 +188,27 @@ bottom（贴地，默认）、center（居中悬空）、top（从上垂下）�
 
 同一时刻只给一个人一个行为词。
 
-## 台词（三类，正文为原生文本，不要转义）
+## 台词（正文为原生文本，不要转义）
 
 <say id="角色id" mood="情绪">台词正文，可以换行。</say>
 <narrate>旁白正文。</narrate>
 <thought id="角色id">（内心独白）</thought>
+
+## 全屏标题卡（title，第四种台词标签）
+
+章节标题、诗歌、独白这类「整屏是文本、对话框让位」的段落，用 <title>：
+
+<title align="center" mode="lines">床前明月光
+疑是地上霜
+举头望明月
+低头思故乡</title>
+
+- align（对齐）五档：top-left / top-right / bottom-left / bottom-right / center，缺省 center。
+- mode（出法）：lines（缺省）每个非空物理行一个揭示单位，点一下出下一句，适合诗歌；
+  block 整段一次出。
+- 进入 title 自动隐藏对话框，离开时恢复；离开靠玩家点击（末句读完后点一下），引擎不自动收。
+- 常与纯色场配合：先 \`<scene bg="black"/>\`，再写 <title>…</title>。
+- 标题卡是一段演出内容，不是停止点；它之后照常按《结束轮》收束。
 
 ## 注释（不产生活动内容）
 

@@ -1,4 +1,5 @@
-import type { LineageNodeView, LineageView } from "@aivn/core";
+import type { LineageNodeView, LineageView, TitleAlign } from "@aivn/core";
+import { DEFAULT_TITLE_ALIGN, isTitleAlign } from "@aivn/core";
 import type { ScriptLine } from "./script.js";
 
 /** 会话记录里的一条：角色台词，或玩家发来的一句话。 */
@@ -9,7 +10,7 @@ export interface TranscriptEntry {
   key: string;
   kind: TranscriptKind;
   /** 显示形态：line 用自己的说话方式，input 借对话框样式。 */
-  type: "say" | "narrate" | "thought";
+  type: "say" | "narrate" | "thought" | "title";
   actorId: string | null;
   /** 一次性名牌覆盖（来自 say name="..."），只影响本句名牌显示。 */
   nameOverride?: string;
@@ -18,13 +19,15 @@ export interface TranscriptEntry {
   seq: number | null;
   /** 谱系节点 id：分岔/编辑的锚点。找得到就是它，找不到为 null（此时原语按钮置灰）。 */
   nodeId: string | null;
+  /** title 专有：对齐（缺省居中）。 */
+  align?: TitleAlign;
 }
 
-/** 只有这三类算「会话里说过的话」；其余（场景/音效/CG/立绘/停止点/本轮收束/生图预发射）都是布景。 */
-const SPOKEN: ReadonlySet<LineageNodeView["kind"]> = new Set(["say", "narrate", "thought"]);
+/** 只有台词三件套 + 标题卡算「会话里出现过的话」；其余（场景/音效/CG/立绘/停止点/本轮收束/生图预发射）都是布景。 */
+const SPOKEN: ReadonlySet<LineageNodeView["kind"]> = new Set(["say", "narrate", "thought", "title"]);
 
-/** 会话记录收录的行类型：台词三件套 + 玩家输入（输入也是「他说了什么」，不是布景）。 */
-const RECORDED: ReadonlySet<ScriptLine["type"]> = new Set(["say", "narrate", "thought", "input"]);
+/** 会话记录收录的行类型：台词三件套 + 标题卡 + 玩家输入（输入也是「他说了什么」，不是布景）。 */
+const RECORDED: ReadonlySet<ScriptLine["type"]> = new Set(["say", "narrate", "thought", "title", "input"]);
 
 /**
  * 会话记录 = 这一支世界线上，剧作家说过的话 + 玩家说过的话。
@@ -65,6 +68,7 @@ function fromLine(line: ScriptLine): TranscriptEntry {
     text: line.text,
     seq: line.seq ?? null,
     nodeId: null,
+    ...(line.type === "title" && line.align ? { align: line.align } : {}),
   };
 }
 
@@ -87,12 +91,15 @@ function fromView(view: LineageView, lines: readonly ScriptLine[]): TranscriptEn
       out.push({
         key: line?.key ?? node.id,
         kind: "line",
-        type: node.kind as "say" | "narrate" | "thought",
+        type: node.kind as "say" | "narrate" | "thought" | "title",
         actorId: (node.attrs.id as string | undefined) ?? line?.actorId ?? null,
         ...(line?.nameOverride ? { nameOverride: line.nameOverride } : {}),
         text: line?.text || node.text,
         seq: node.seq ?? null,
         nodeId: node.id,
+        ...(node.kind === "title"
+          ? { align: isTitleAlign(node.attrs.align) ? node.attrs.align : DEFAULT_TITLE_ALIGN }
+          : {}),
       });
       continue;
     }
@@ -136,7 +143,7 @@ function withFreshTail(entries: TranscriptEntry[], lines: readonly ScriptLine[])
   return entries;
 }
 
-/** 台词三件套才有「改写这一句」；玩家发来的话不是剧作家的原句，改它没有意义。 */
+/** 台词三件套才有「改写这一句」；标题卡与玩家发来的话都不是可改写的原句。 */
 export function editableNodeId(entry: TranscriptEntry): string | null {
-  return entry.kind === "line" && entry.nodeId ? entry.nodeId : null;
+  return entry.kind === "line" && entry.type !== "title" && entry.nodeId ? entry.nodeId : null;
 }

@@ -214,6 +214,8 @@ html[data-stage-theme="light"] {
   --nameplate-bg: rgb(252 250 246 / 0.94);
   --nameplate-ink: #23201c;
   --nameplate-line: rgb(90 80 68 / 0.45);
+  --title-ink: #23201c;
+  --title-shadow: 0 2px 12px rgb(255 255 255 / 0.6);
 }
 
 html,

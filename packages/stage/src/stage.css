@@ -84,6 +84,13 @@
   --dialog-hover: rgb(242 235 222 / 0.12);
   --dialog-veil: rgb(242 235 222 / 0.07);
   --dialog-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+  /* 全屏标题卡（<title>）：字色 / 字族 / 投影。对齐五档是剧本里的属性，不进令牌；
+     缺省字族与 --font-ui 同值（写成字面量，便于 dsh-aivn 的皮肤令牌表逐字对表）。 */
+  --title-ink: #f2ebde;
+  --title-font:
+    system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei",
+    sans-serif;
+  --title-shadow: 0 2px 14px rgb(0 0 0 / 0.72);
   /* 舞台浮层的圆角：台词条 + 画面上浮的那几块（导演工具栏 / 排队面板 / 侧栏唤出键）。
      全局 --radius 是 2px（近直角，给页面里的卡片与键），但这几块是压在画面上的
      「窗」，圆角大一点才跟画面脱开、读得出是浮在上面的一层。 */
@@ -214,6 +221,8 @@ html[data-stage-theme="light"] .stage-root {
   --nameplate-bg: rgb(252 250 246 / 0.94);
   --nameplate-ink: #23201c;
   --nameplate-line: rgb(90 80 68 / 0.45);
+  --title-ink: #23201c;
+  --title-shadow: 0 2px 12px rgb(255 255 255 / 0.6);
 }
 
 /* ── 舞台 ─────────────────────────────── */
@@ -767,6 +776,72 @@ html[data-stage-theme="light"] .stage-root {
   font-size: 13.5px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   margin: 0;
+}
+
+/* ── 全屏标题卡（<title>）───────────────────
+   整屏铺文本、对话框让位；对齐由 title-align-* 五档给。过渡与转场任务解耦：
+   当前随对话框显隐即时切换，将来可在动效任务里接转场词汇。 */
+.theater.title-mode .theater-dialog,
+.theater.title-mode .theater-director {
+  display: none;
+}
+
+.theater-title {
+  position: absolute;
+  inset: 0;
+  z-index: 13;
+  display: flex;
+  padding: clamp(24px, 9vh, 104px) clamp(20px, 8vw, 120px);
+  /* 点击透传：整卡是"提示玩家点一下"，点哪儿都算翻下一句 / 离开 */
+  pointer-events: none;
+  animation: bg-fade var(--fade-ms) ease;
+}
+
+.title-align-center {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.title-align-top-left {
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+}
+.title-align-top-right {
+  align-items: flex-start;
+  justify-content: flex-end;
+  text-align: right;
+}
+.title-align-bottom-left {
+  align-items: flex-end;
+  justify-content: flex-start;
+  text-align: left;
+}
+.title-align-bottom-right {
+  align-items: flex-end;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.theater-title-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--title-font);
+  color: var(--title-ink);
+  font-size: clamp(22px, 5.2vw, 46px);
+  line-height: 1.75;
+  letter-spacing: 0.06em;
+  text-shadow: var(--title-shadow);
+}
+
+.theater-title-next {
+  position: absolute;
+  right: clamp(16px, 4vw, 40px);
+  bottom: clamp(16px, 4vh, 40px);
+  color: var(--title-ink);
+  opacity: 0.72;
+  font-size: 14px;
 }
 
 /* 说话人：台词条上方、跟窗连着的一块牌。它不是贴纸，是窗的一部分——所以
