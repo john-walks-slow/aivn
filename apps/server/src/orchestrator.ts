@@ -2412,9 +2412,9 @@ export class PlaywrightOrchestrator {
         });
         return;
       case "fx":
-        // 效果已经是终态（解析器归一过 effect/value），落谱系就是原样记下，重放不再校验。
+        // 效果已经是终态（解析器归一过 effect/verb/value），落谱系就是原样记下，重放不再校验。
         this.appendLineage("fx", {
-          payload: { seq, attrs: { effect: event.effect, ...pick(event, ["value"]) } },
+          payload: { seq, attrs: { effect: event.effect, verb: event.verb, ...pick(event, ["value"]) } },
         });
         return;
       case "stop":

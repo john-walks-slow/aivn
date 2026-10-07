@@ -18,10 +18,12 @@
 | 同上改用 `transition="dissolve"` | 新背景从旧背景上**交叉溶解**盖上来（不是从黑/透明淡入） | | 待验证 | |
 | 同上改用 `transition="fade"` | 画面**经黑场**淡出再淡入新背景 | | 待验证 | |
 | 同上改用 `transition="fade-white"` | 画面**经白场**淡出再淡入 | | 待验证 | |
-| 写 `<fx effect="flash" value="red"/>` | 全屏红闪一下即消失；连写两条会各闪一次 | | 待验证 | |
-| 写 `<fx effect="shake" value="heavy"/>` | 整个画面抖一下；**立绘相对布局不位移**（不出现立绘错位的残影） | | 待验证 | |
-| 写 `<fx effect="letterbox"/>` 与 `<fx effect="vignette"/>` | 出现上下黑边与暗角，持续存在 | | 待验证 | |
-| 接着分别写 `<fx effect="letterbox" value="off"/>` 与 `<fx effect="vignette" value="off"/>` | 黑边与暗角各自消失（互不影响） | | 待验证 | |
+| 写 `<fx effect="flash" trigger value="red"/>` | 全屏红闪一下即消失；连写两条会各闪一次 | | 待验证 | |
+| 写 `<fx effect="shake" trigger value="heavy"/>` | 整个画面抖一下；**立绘相对布局不位移**（不出现立绘错位的残影） | | 待验证 | |
+| 写 `<fx effect="letterbox" on/>` 与 `<fx effect="vignette" on/>` | 出现上下黑边与暗角，持续存在 | | 待验证 | |
+| 接着分别写 `<fx effect="letterbox" off/>` 与 `<fx effect="vignette" off/>` | 黑边与暗角各自消失（互不影响） | | 待验证 | |
+| 写 `<fx effect="flash" on value="red"/>`，之后 `<fx effect="flash" off/>` | 画面常亮一层红（盖住立绘/CG）直到 off 撤掉 | | 待验证 | |
+| 写 `<fx effect="shake" on/>`，之后 `<fx effect="shake" off/>` | 画面持续抖动直到 off 停 | | 待验证 | |
 | 写 `<actor id="x" shot="close"/>` | 该角色推近特写（actor 属性，与 `<fx>` 无关） | | 待验证 | |
 | 演到有 flash/shake 之后，滚轮回看几句再回到最新 | 回看中不重放闪光/抖动；回到最新**不补放**一次闪光/抖动 | | 待验证 | |
 | 上述状态下刷新页面 | 持续效果（黑边/暗角/镜头景别）按谱系还原；过渡与闪光不重放 | | 待验证 | |

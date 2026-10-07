@@ -520,6 +520,12 @@ html[data-stage-theme="light"] .stage-root {
   }
 }
 
+/* 常亮色（flash 的 on）：撤掉一次性动画，底色保持不透明。 */
+.theater-flash-hold {
+  opacity: 1;
+  animation: none;
+}
+
 /* 镜头抖动：只用 translate 一个通道，幅度小、频率高。nonce 换值即重播（同行为词）。 */
 .theater-camera.shaking {
   animation: fx-cam-shake-light var(--shake-ms, 340ms) linear var(--shake-nonce, 0s) 1;
@@ -527,6 +533,12 @@ html[data-stage-theme="light"] .stage-root {
 
 .theater-camera.shaking.shake-heavy {
   animation-name: fx-cam-shake-heavy;
+}
+
+/* 持续抖（shake 的 on）：同一套关键帧改成无限循环。 */
+.theater-camera.shaking.shake-hold {
+  animation-iteration-count: infinite;
+  animation-delay: 0s;
 }
 
 @keyframes fx-cam-shake-light {

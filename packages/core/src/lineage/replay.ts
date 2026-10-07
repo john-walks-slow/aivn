@@ -1,5 +1,6 @@
 import type { SequencedEvent, StageEvent } from "../dsl/events.js";
 import { DEFAULT_TITLE_ALIGN, DEFAULT_TITLE_MODE, isTitleAlign, isTitleMode } from "../dsl/spec.js";
+import { isFxVerb } from "../dsl/effects.js";
 import type { StopOption, StopType } from "../ws/protocol.js";
 import type { LineageEvent, LineageNodeView } from "./model.js";
 import type { StopPayload } from "../ws/protocol.js";
@@ -113,10 +114,11 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
         push(base, { kind: "cg", id: attrs.id ?? "", ...pickDefined(attrs, ["caption"]) });
         break;
       case "fx": {
-        // 没 effect 的 fx 节点（老档/手改）整条不重放：丢一个效果，好过让舞台状态机吃到空 effect。
+        // effect/verb 缺失或非法（老档/手改）整条不重放：丢一个效果，好过让舞台状态机吃到坏数据。
         const effect = attrs.effect;
-        if (!effect) break;
-        push(base, { kind: "fx", effect, ...pickDefined(attrs, ["value"]) });
+        const verb = attrs.verb;
+        if (!effect || !isFxVerb(verb)) break;
+        push(base, { kind: "fx", effect, verb, ...pickDefined(attrs, ["value"]) });
         break;
       }
       case "sfx":

@@ -3,60 +3,66 @@
  *
  * `<fx>` 是**舞台级全局效果**：作用于整幅画面，不点名任何主体；针对某个主体的
  * `action` / `shot` / `variant` / `anchor` 写在 `<actor>` 上（由 spec.ts / spriteAction.ts
- * 校验）。剧本只写效果词与取值，永远碰不到时长、曲线、坐标，也不用关心效果落在哪一层
- * ——每个效果的实现层（画面内容变换层 `camera` / 屏幕遮罩层 `screen`）是引擎内部的事
- * （见 director.ts 的 FxState）。详见 docs/features/261007-dsl-effects/。
+ * 校验）。
  *
- * 生命周期：
- *  - `trigger` 一次性：播完即止，靠单调 seq 重播（见 director.ts）。
- *  - `state` 持续保持：写进 VisualState，用 `value="off"` 关掉。
+ * 每条 `<fx>` 形如 `<fx effect="…" VERB [value="…"]/>`，动词三选一：
+ *  - `trigger` —— 演一次即止，靠单调 seq 重播（见 director.ts）。
+ *  - `on` / `off` —— 持续效果的开关（开了就保留，直到 off）。
+ * 每个效果声明自己支持哪些动词：flash / shake 三种都支持，letterbox / vignette 只有开关。
+ * `value` 只表达「口味」（flash 的颜色、shake 的轻重），不承担开关语义。
+ *
+ * 效果落在哪一层（画面内容变换层 `camera` / 屏幕遮罩层 `screen`）是引擎内部的事
+ * （见 director.ts 的 FxState）。详见 docs/features/261007-dsl-effects/。
  */
 
-/** `<fx effect="…" value="…"/>` 的载荷（value 已由解析器按注册表归一化）。 */
+export const FX_VERBS = ["trigger", "on", "off"] as const;
+export type FxVerb = (typeof FX_VERBS)[number];
+
+export function isFxVerb(value: unknown): value is FxVerb {
+  return typeof value === "string" && (FX_VERBS as readonly string[]).includes(value);
+}
+
+/** `<fx effect="…" trigger|on|off value="…"/>` 的载荷（value 已由解析器按注册表归一化）。 */
 export interface FxAttrs {
   effect: string;
+  verb: FxVerb;
   value?: string;
 }
 
-export type EffectLifecycle = "trigger" | "state";
-
 export interface EffectSpec {
   name: string;
-  lifecycle: EffectLifecycle;
-  /** 封闭取值；不给 = 该效果不接受 value。 */
+  /** 该效果支持的动词；不在其中的动词会被解析器丢弃。 */
+  verbs: readonly FxVerb[];
+  /** 封闭取值（口味）；不给 = 该效果不接受 value。 */
   values?: readonly string[];
   /** 缺省取值（`value` 省略或非法时回落到它）。 */
   defaultValue?: string;
 }
 
 export const EFFECTS: Readonly<Record<string, EffectSpec>> = {
-  /** 一次性全屏闪光：白（雷击/闪光）、红（受击）、黑（冲击）。 */
+  /** 全屏色闪：trigger 闪一次 / on 常亮一块色 / off 撤掉。口味=颜色。 */
   flash: {
     name: "flash",
-    lifecycle: "trigger",
+    verbs: ["trigger", "on", "off"],
     values: ["white", "red", "black"],
     defaultValue: "white",
   },
-  /** 一次性画面抖动（整幅画面，背景/立绘/CG 一起）。 */
+  /** 画面抖动：trigger 抖一下 / on 持续抖（地震、轰鸣）/ off 停。口味=轻重。 */
   shake: {
     name: "shake",
-    lifecycle: "trigger",
+    verbs: ["trigger", "on", "off"],
     values: ["light", "heavy"],
     defaultValue: "light",
   },
-  /** 持续电影宽画幅黑边。 */
+  /** 持续电影宽画幅黑边：on / off。 */
   letterbox: {
     name: "letterbox",
-    lifecycle: "state",
-    values: ["on", "off"],
-    defaultValue: "on",
+    verbs: ["on", "off"],
   },
-  /** 持续暗角。 */
+  /** 持续暗角：on / off。 */
   vignette: {
     name: "vignette",
-    lifecycle: "state",
-    values: ["on", "off"],
-    defaultValue: "on",
+    verbs: ["on", "off"],
   },
 };
 

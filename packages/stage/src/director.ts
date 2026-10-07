@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ActorAction, ActorAnchor, ActorShot, ReadPos } from "@aivn/core";
+import type { ActorAction, ActorAnchor, ActorShot, FxVerb, ReadPos } from "@aivn/core";
 import {
   DEFAULT_TRANSITION,
   isActorAction,
@@ -108,22 +108,28 @@ export interface LayerTransition {
   from: string | null;
 }
 
-/** 一次性舞台效果：`seq` 每触发一次 +1，渲染层据此重播（与 SpriteSlot.actionSeq 同理）。 */
-export interface TriggerFx {
+/**
+ * 单个效果在某一层上的状态。
+ *  - `trigger` 动词：`seq` 每触发一次 +1，渲染层据此重播（与 SpriteSlot.actionSeq 同理）。
+ *  - `on` / `off` 动词：`on` 是持续态开关。
+ *  - `value` 是口味（flash 颜色 / shake 轻重；无口味的效果恒为 ""）。
+ */
+export interface FxSlot {
   value: string;
   seq: number;
+  on: boolean;
 }
 
 /**
- * 舞台级效果状态（按 target 分字段）。只有 state 型效果常驻这里；
- * trigger 型（flash/shake）也存成 `{value, seq}`，是为了与 action 一致——回看时靠
- * `.rewinding` 抑制、刷新时靠 visualAt 重建，渲染层只认 seq 变化。
+ * 舞台级效果状态（按层分字段——层是内部实现，剧本只写 effect+verb）。
+ * trigger 与 on/off 都存进同一个 slot：回看时靠 `.rewinding` 抑制、刷新时靠 visualAt 重建，
+ * 渲染层只认 seq / on / value 的变化。
  */
 export interface FxState {
   /** 画面内容变换层：整幅画面一起动（抖动）。 */
-  camera: { shake?: TriggerFx };
+  camera: { shake?: FxSlot };
   /** 屏幕遮罩层：叠加在画面之上（闪光、黑边、暗角）。 */
-  screen: { flash?: TriggerFx; letterbox?: boolean; vignette?: boolean };
+  screen: { flash?: FxSlot; letterbox?: FxSlot; vignette?: FxSlot };
 }
 
 function emptyFx(): FxState {
@@ -327,27 +333,40 @@ export function applyVisualCue(visual: VisualState, cue: Cue): VisualState {
 }
 
 /**
+ * 动词落到 slot 上：trigger 递增 seq（重播信号，同 SpriteSlot.actionSeq）；on/off 切持续开关。
+ * `off` 不改口味——沿用上一次的值，别把它复位成缺省。
+ */
+function nextFxSlot(cur: FxSlot | undefined, verb: FxVerb, value: string): FxSlot {
+  const base = cur ?? { value: "", seq: 0, on: false };
+  if (verb === "off") return { ...base, on: false };
+  const nextValue = value || base.value;
+  if (verb === "trigger") return { ...base, value: nextValue, seq: base.seq + 1 };
+  return { ...base, value: nextValue, on: true };
+}
+
+/**
  * 一条 `<fx>` 对舞台效果状态的改动。seq 自增 = 重播信号——同一个效果连写两次要能重来，
  * 与 SpriteSlot.actionSeq 同一套（渲染层只认 seq 变化，不认绝对序号）。
  */
 export function applyFxCue(visual: VisualState, cue: Extract<Cue, { kind: "fx" }>): VisualState {
   const fx = visual.fx;
+  const { verb } = cue;
   const value = cue.value ?? "";
   switch (cue.effect) {
     case "flash":
       return {
         ...visual,
-        fx: { ...fx, screen: { ...fx.screen, flash: { value: value || "white", seq: (fx.screen.flash?.seq ?? 0) + 1 } } },
+        fx: { ...fx, screen: { ...fx.screen, flash: nextFxSlot(fx.screen.flash, verb, value || "white") } },
       };
     case "shake":
       return {
         ...visual,
-        fx: { ...fx, camera: { ...fx.camera, shake: { value: value || "light", seq: (fx.camera.shake?.seq ?? 0) + 1 } } },
+        fx: { ...fx, camera: { ...fx.camera, shake: nextFxSlot(fx.camera.shake, verb, value || "light") } },
       };
     case "letterbox":
-      return { ...visual, fx: { ...fx, screen: { ...fx.screen, letterbox: value !== "off" } } };
+      return { ...visual, fx: { ...fx, screen: { ...fx.screen, letterbox: nextFxSlot(fx.screen.letterbox, verb, "") } } };
     case "vignette":
-      return { ...visual, fx: { ...fx, screen: { ...fx.screen, vignette: value !== "off" } } };
+      return { ...visual, fx: { ...fx, screen: { ...fx.screen, vignette: nextFxSlot(fx.screen.vignette, verb, "") } } };
     default:
       return visual;
   }

@@ -145,7 +145,7 @@ const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
 <scene bg="背景id" bgm="音乐id" bgm_volume="0.4" ambient="环境音id" ambient_volume="0.3" transition="换底方式"/>
 <scene bg="新背景id" clear/>（开新场：换地方/时间跳了/阵容大换，台上的人全下，后面把本场在的人用 actor 重铺一遍；同屋换个时间不带）
 <actor id="主体id" variant="差分id" shot="景别" action="行为词" leave="退场"/>
-<fx effect="效果" value="取值"/>（舞台级全局效果：作用于整幅画面，见下）
+<fx effect="效果" trigger|on|off value="取值"/>（舞台级全局效果：作用于整幅画面，见下）
 <sfx src="音效id" volume="0.5"/>
 <cg id="cgid" caption="插图说明"/>
 
@@ -192,18 +192,21 @@ bottom（贴地，默认）、center（居中悬空）、top（从上垂下）�
 
 ## 舞台效果（fx）
 
-舞台级全局效果统一写 \`<fx effect="…" value="…"/>\`：作用于整幅画面，不针对某个主体。
-某个主体的特写、动作写 actor 的 \`shot\` / \`action\`，不用 fx。
+舞台级全局效果统一写 \`<fx effect="…" 动词 value="…"/>\`：作用于整幅画面，不针对某个主体。
+动词三选一：\`trigger\`（演一次）、\`on\` / \`off\`（持续开关）。某个主体的特写、动作写 actor 的
+\`shot\` / \`action\`，不用 fx。
 
-| effect | 取值 | 一次性/持续 | 什么时候用 |
+| effect | 动词 | value | 什么时候用 |
 |---|---|---|---|
-| flash | white / red / black | 一次性 | 全屏一闪：白（雷击、闪光）、红（受击）、黑（冲击） |
-| shake | light / heavy | 一次性 | 整幅画面抖一下：受击、巨响、震撼 |
-| letterbox | on / off | 持续 | 电影宽画幅黑边 |
-| vignette | on / off | 持续 | 暗角 |
+| flash | trigger | white / red / black | 全屏一闪：白（雷击、闪光）、红（受击）、黑（冲击） |
+| flash | on / off | white / red / black | 常亮一块色（血色、白光刺眼），off 撤掉 |
+| shake | trigger | light / heavy | 整幅画面抖一下：受击、巨响、震撼 |
+| shake | on / off | light / heavy | 持续抖动：地震、轰鸣，off 停 |
+| letterbox | on / off | — | 电影宽画幅黑边 |
+| vignette | on / off | — | 暗角 |
 
-持续效果写了就一直保留，用 \`value="off"\` 关掉（一幕演完记得收掉黑边与暗角）。
-一次性效果演一次就结束，不要连着写同一个闪光。
+\`trigger\` 演一次就结束，不要连着写同一个 trigger。\`on\` 写了就一直保留，记得用 \`off\` 收掉
+（黑边、暗角、常亮色、持续抖都要收）。
 
 ## 台词（正文为原生文本，不要转义）
 

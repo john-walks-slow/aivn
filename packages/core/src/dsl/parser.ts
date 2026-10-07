@@ -16,9 +16,11 @@ import {
 } from "./spec.js";
 import {
   DEFAULT_TRANSITION,
+  FX_VERBS,
   effectSpec,
   isTransition,
   type EffectSpec,
+  type FxVerb,
   type Transition,
 } from "./effects.js";
 
@@ -292,8 +294,14 @@ export class StageDslParser {
         if (!effect) return this.dropTag("fx", "缺 effect");
         const spec = effectSpec(effect);
         if (!spec) return this.dropTag("fx", `未知 effect: ${effect}`);
-        const value = this.pickEffectValue(attrs, spec);
-        this.emit({ kind: "fx", effect, ...(value !== undefined ? { value } : {}) });
+        const verb = this.pickVerb(attrs);
+        if (!verb) return this.dropTag("fx", "动词必须三选一：trigger / on / off");
+        if (!spec.verbs.includes(verb)) {
+          return this.dropTag("fx", `effect=${effect} 不支持 ${verb}（可用 ${spec.verbs.join("/")}）`);
+        }
+        // off 只是关掉，不带口味；其余动词才解析 value（缺省回落到 spec.default）。
+        const value = verb === "off" ? undefined : this.pickEffectValue(attrs, spec);
+        this.emit({ kind: "fx", effect, verb, ...(value !== undefined ? { value } : {}) });
         return;
       }
       case "actor": {
@@ -451,6 +459,12 @@ export class StageDslParser {
   }
 
   /** 效果取值：按注册表的封闭枚举归一；越界或多余都退回缺省并挂 warning，不丢整条效果。 */
+  /** 动词：trigger / on / off 三选一，多给少给都算无效（返回 null，由调用方丢弃）。 */
+  private pickVerb(attrs: Map<string, string>): FxVerb | null {
+    const hits = FX_VERBS.filter((verb) => isTruthyFlag(attrs.get(verb)));
+    return hits.length === 1 ? hits[0]! : null;
+  }
+
   private pickEffectValue(attrs: Map<string, string>, spec: EffectSpec): string | undefined {
     if (!spec.values) {
       const raw = attrs.get("value");

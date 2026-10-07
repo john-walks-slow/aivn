@@ -18,29 +18,43 @@ const fx = (
   cue: Omit<Extract<Cue, { kind: "fx" }>, "key" | "kind">,
 ): Extract<Cue, { kind: "fx" }> => ({ key: "k", kind: "fx", ...cue });
 
-describe("applyFxCue：一次性效果 (trigger)", () => {
-  it("flash 每次 seq +1（连写两次要能重播）", () => {
-    let v = applyFxCue(visual(), fx({ effect: "flash", value: "red" }));
-    expect(v.fx.screen.flash).toEqual({ value: "red", seq: 1 });
-    v = applyFxCue(v, fx({ effect: "flash", value: "white" }));
-    expect(v.fx.screen.flash).toEqual({ value: "white", seq: 2 });
+describe("applyFxCue：trigger（演一次，靠 seq 重播）", () => {
+  it("flash 每次 seq +1", () => {
+    let v = applyFxCue(visual(), fx({ effect: "flash", verb: "trigger", value: "red" }));
+    expect(v.fx.screen.flash).toEqual({ value: "red", seq: 1, on: false });
+    v = applyFxCue(v, fx({ effect: "flash", verb: "trigger", value: "white" }));
+    expect(v.fx.screen.flash).toEqual({ value: "white", seq: 2, on: false });
   });
 
   it("shake 落在 camera 上", () => {
-    const v = applyFxCue(visual(), fx({ effect: "shake", value: "heavy" }));
-    expect(v.fx.camera.shake).toEqual({ value: "heavy", seq: 1 });
+    const v = applyFxCue(visual(), fx({ effect: "shake", verb: "trigger", value: "heavy" }));
+    expect(v.fx.camera.shake).toEqual({ value: "heavy", seq: 1, on: false });
   });
 });
 
-describe("applyFxCue：持续效果 (state)", () => {
+describe("applyFxCue：on/off（持续开关）", () => {
+  it("shake 可以持续抖并停", () => {
+    let v = applyFxCue(visual(), fx({ effect: "shake", verb: "on", value: "heavy" }));
+    expect(v.fx.camera.shake).toEqual({ value: "heavy", seq: 0, on: true });
+    v = applyFxCue(v, fx({ effect: "shake", verb: "off" }));
+    expect(v.fx.camera.shake).toEqual({ value: "heavy", seq: 0, on: false });
+  });
+
+  it("flash 可以常亮并撤掉", () => {
+    let v = applyFxCue(visual(), fx({ effect: "flash", verb: "on", value: "red" }));
+    expect(v.fx.screen.flash).toEqual({ value: "red", seq: 0, on: true });
+    v = applyFxCue(v, fx({ effect: "flash", verb: "off" }));
+    expect(v.fx.screen.flash).toEqual({ value: "red", seq: 0, on: false });
+  });
+
   it("letterbox / vignette 各自独立开关", () => {
-    let v = applyFxCue(visual(), fx({ effect: "letterbox", value: "on" }));
-    v = applyFxCue(v, fx({ effect: "vignette", value: "on" }));
-    expect(v.fx.screen.letterbox).toBe(true);
-    expect(v.fx.screen.vignette).toBe(true);
-    v = applyFxCue(v, fx({ effect: "letterbox", value: "off" }));
-    expect(v.fx.screen.letterbox).toBe(false);
-    expect(v.fx.screen.vignette).toBe(true);
+    let v = applyFxCue(visual(), fx({ effect: "letterbox", verb: "on" }));
+    v = applyFxCue(v, fx({ effect: "vignette", verb: "on" }));
+    expect(v.fx.screen.letterbox).toEqual({ value: "", seq: 0, on: true });
+    expect(v.fx.screen.vignette).toEqual({ value: "", seq: 0, on: true });
+    v = applyFxCue(v, fx({ effect: "letterbox", verb: "off" }));
+    expect(v.fx.screen.letterbox?.on).toBe(false);
+    expect(v.fx.screen.vignette?.on).toBe(true);
   });
 });
 

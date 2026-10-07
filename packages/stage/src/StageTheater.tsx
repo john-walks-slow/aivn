@@ -622,10 +622,14 @@ voiceState,
   const bgStack = visual.bgTransition && visual.bgTransition.from !== null ? visual.bgTransition : null;
   const bgVeil = bgStack ? transitionVeilColor(bgStack.name) : null;
   // 舞台效果：镜头抖（一次性，靠 seq 重播）与屏幕遮罩（闪光一次性；黑边/暗角持续）。
-  const shakeValue = visual.fx.camera.shake?.value === "heavy" ? "heavy" : "light";
-  const shake = useOneShot(visual.fx.camera.shake?.seq, SHAKE_MS[shakeValue], scrubbed);
-  const flashValue = visual.fx.screen.flash?.value ?? "white";
-  const flash = useOneShot(visual.fx.screen.flash?.seq, FLASH_MS, scrubbed);
+  const shakeSlot = visual.fx.camera.shake;
+  const shakeValue = shakeSlot?.value === "heavy" ? "heavy" : "light";
+  const shake = useOneShot(shakeSlot?.seq, SHAKE_MS[shakeValue], scrubbed);
+  const shakeHold = shakeSlot?.on === true;
+  const flashSlot = visual.fx.screen.flash;
+  const flashValue = flashSlot?.value ?? "white";
+  const flash = useOneShot(flashSlot?.seq, FLASH_MS, scrubbed);
+  const flashHold = flashSlot?.on === true;
 
   /** 第二岔是哪一个：宿主说了算（见 `promptAlt`）。 */
   const altMode: GuideMode = promptAlt === "interrupt" ? "interrupt" : "fork";
@@ -721,7 +725,9 @@ voiceState,
         {/* 镜头容器（画面内容变换层）：抖动作用在这一层，背景/立绘/CG 因此一起动。
             letterbox、暗角、闪光留在容器之外的屏幕遮罩层——它们是「画面框」，不该跟着抖。 */}
         <div
-          className={`theater-camera${shake.active ? ` shaking shake-${shakeValue}` : ""}`}
+          className={`theater-camera${
+            shake.active || shakeHold ? ` shaking shake-${shakeValue}${shakeHold ? " shake-hold" : ""}` : ""
+          }`}
           style={
             {
               "--shake-ms": `${SHAKE_MS[shakeValue]}ms`,
@@ -799,11 +805,13 @@ voiceState,
         {/* 屏幕遮罩层：flash / letterbox / 暗角。都在镜头容器之外——它们叠加在画面上，
             画面内容抖动时它们不动。 */}
         <div className="theater-overlay" aria-hidden="true">
-          {visual.fx.screen.letterbox && <span className="theater-letterbox" />}
-          {visual.fx.screen.vignette && <span className="theater-vignette" />}
-          {flash.active && (
+          {visual.fx.screen.letterbox?.on && <span className="theater-letterbox" />}
+          {visual.fx.screen.vignette?.on && <span className="theater-vignette" />}
+          {flashHold ? (
+            <span className="theater-flash theater-flash-hold" style={{ background: FLASH_COLORS[flashValue] ?? "#fff" }} />
+          ) : flash.active ? (
             <span key={flash.nonce} className="theater-flash" style={{ background: FLASH_COLORS[flashValue] ?? "#fff" }} />
-          )}
+          ) : null}
         </div>
 
         {/* 全屏标题卡：整屏铺文本，对话框让位（.theater.title-mode 里藏掉）。

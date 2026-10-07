@@ -7,11 +7,11 @@
 > `variant`/`anchor` 只作 actor 属性；`transition` 只作 scene 属性；持续效果用 `value="off"` 停；
 > 不做组合打包词。
 
-> **修订（2026-10-07，收敛表达面）**：早期設計把 `target`（`camera`/`screen`）作为 `<fx>` 的
-> 显式属性，并要求写作者记住「effect × target」的搭配。定稿后去掉：每个效果只作用于一个自然层，
-> target 对写作者纯属冗余。现在剧本只写 `effect` + 可选 `value`，**效果落在哪一层（画面内容变换层
-> `camera` / 屏幕遮罩层 `screen`）是引擎内部实现**（见 §5.3、§6）。`release` 与逐个 `value="off"`
-> 二义，也一并去掉，只留 `value="off"`。
+> **修订（2026-10-07，收敛表达面）**：早期設計把 `target`（`camera`/`screen`）作为 `<fx>` 的显式
+> 属性，并要求写作者记住「effect × target」的搭配。定稿后去掉：每个效果只作用于一个自然层，
+> **分层是引擎内部实现**（见 §5.3、§6）。模式也从 `value` 里拆出来：每条 `<fx>` 必带一个**动词**
+> `trigger` / `on` / `off`，`value` 只留口味。早期用 `release` 停持续效果、与 `value="off"` 二义，
+> 已删——持续效果一律用 `off`。下文旧稿中与 target / release 冲突处，以本节为准。
 
 ---
 
@@ -36,19 +36,19 @@
 <actor id="lucy" variant="shock" action="stagger"/>   <!-- 一次性：被吓到 -->
 <actor id="lucy" shot="close"/>                        <!-- 持续：特写（actor 属性） -->
 <say id="lucy">你…你怎么在这？</say>
-<fx effect="flash" value="white"/>                     <!-- 一次性：闪白 -->
-<fx effect="shake" value="heavy"/>                     <!-- 一次性：画面震 -->
+<fx effect="flash" trigger value="white"/>             <!-- 一次性：闪白 -->
+<fx effect="shake" trigger value="heavy"/>             <!-- 一次性：画面震 -->
 <actor id="lucy" shot="normal"/>                       <!-- 改回全身（state 补间） -->
 ```
 
 ### 路径 B：持续氛围（拼装而非打包）
 ```xml
 <scene bg="classroom_night" transition="fade"/>
-<fx effect="vignette"/>                                <!-- 暗角，保持 -->
-<fx effect="letterbox"/>                               <!-- 电影宽画幅 -->
+<fx effect="vignette" on/>                             <!-- 暗角，保持 -->
+<fx effect="letterbox" on/>                            <!-- 电影宽画幅 -->
 … 一场戏 …
-<fx effect="letterbox" value="off"/>                   <!-- 各自关掉 -->
-<fx effect="vignette" value="off"/>
+<fx effect="letterbox" off/>                           <!-- 各自关掉 -->
+<fx effect="vignette" off/>
 ```
 
 ### 路径 C：回看与刷新
@@ -62,16 +62,17 @@
 
 ### 3.1 一个 Effect 的两根轴
 ```
-Effect {
-  name:      string                 // 封闭效果词
-  lifecycle: "trigger" | "state"     // 一次性 / 持续保持
-  values?:   string[]                // 该效果的封闭取值（可选）
-  defaultValue?: string              // 取值缺省
+Effect {                              // 剧本写：<fx effect="…" 动词 value="…" />
+  name:      string                   // 封闭效果词
+  verbs:     ("trigger"|"on"|"off")[] // 该效果支持哪些动词
+  values?:   string[]                 // 封闭取值（口味，可选）
+  defaultValue?: string               // 口味缺省
 }
 ```
-- `lifecycle` 决定存在形态与回看行为（对照表见调研 §4.2）：
+- 动词三选一，决定存在形态与回看行为（对照表见调研 §4.2）：
   - `trigger` 一次性：播完即止，靠单调 seq 重播。
-  - `state` 持续保持：写进 `VisualState`，用 `value="off"` 关掉。
+  - `on` / `off` 持续开关：写进 `VisualState`，`on` 保留直到 `off`。
+- `value` 只表达口味（flash 颜色 / shake 轻重），不承担开关语义。
 - 效果的**实现层**（`camera` 画面内容变换层 / `screen` 屏幕遮罩层）不进 DSL，是引擎内部约定
   （§5.3、§6）；剧本不写、也无需知道。
 
@@ -82,16 +83,16 @@ Effect {
 
 ### 3.3 起步词表（2026-10-07 定稿）
 
-| effect | lifecycle | values | 备注 |
+| effect | verbs | values | 备注 |
 |---|---|---|---|
-| `flash` | trigger | white / red / black | WCAG：不提供连发 |
-| `shake` | trigger | light / heavy | |
-| `letterbox` | state | on / off | value 缺省 = on |
-| `vignette` | state | on / off | value 缺省 = on |
+| `flash` | trigger / on / off | white / red / black | trigger 闪一次；on 常亮一块色 |
+| `shake` | trigger / on / off | light / heavy | trigger 抖一下；on 持续抖 |
+| `letterbox` | on / off | — | 电影宽画幅黑边 |
+| `vignette` | on / off | — | 暗角 |
 
 - **`shot` 不做成 `<fx>`**：继续是 `<actor shot>`（某个人的景别），不进 effect 注册表。
 - **`transition` 只作 `<scene>` 属性**（不进 `<fx>`，也不给 `<cg>`）。
-- **持续效果用 `value="off"` 停**：每个 state 效果独立开关，不用 target 也不做批量清除。
+- **持续效果用 `off` 停**：每个 state 效果独立开关，不用 target 也不做批量清除。
 - **不做组合版**：不提供 `impact`/`cinematic` 之类打包词。
 - `nudge`…`sway`（8 个 actor 行为词）仍由 `spriteAction.ts` 承载，写在 `<actor action>`。
 - Phase 2 候选（`kenburns`/`grade`/slide-push 转场）本次**未注册**（写进剧本会被丢弃 + warning）。
@@ -107,10 +108,11 @@ Effect {
 | `<actor>` | 不变（`variant`/`shot`/`anchor`/`action`/`leave`/`pos`）。 |
 | `<scene>` | `transition="…"` 取值改为封闭转场枚举。**转场只属于 scene。** |
 | `<cg>` | 不变（**不新增** `transition`）。 |
-| `<fx>` | **新增**：`<fx effect="…" value="…"/>`；舞台级全局效果。 |
+| `<fx>` | **新增**：`<fx effect="…" trigger|on|off value="…"/>`；舞台级全局效果。 |
 
 ### 4.2 `<fx>` 校验规则（解析端）
 - `effect` 不在注册表 / 缺失 → 丢弃 + `malformed_tag` warning。
+- 动词必须三选一（trigger/on/off）且该效果支持它 → 否则丢弃 + warning。
 - 非法 `value` → 退化为该 effect 的缺省值 + warning（只丢 value，不丢效果）。
 
 ### 4.3 与 `mood` 的关系
@@ -122,7 +124,7 @@ Effect {
 ## 5. IR 与数据模型
 
 ### 5.1 `packages/core/src/dsl/events.ts`
-新增：`| ({ kind: "fx" } & FxAttrs)`，`FxAttrs = { effect: string; value?: string }`。
+新增：`| ({ kind: "fx" } & FxAttrs)`，`FxAttrs = { effect: string; verb: "trigger"|"on"|"off"; value?: string }`。
 `scene` 沿用 `transition?: Transition`。
 
 ### 5.2 `packages/core/src/dsl/spec.ts`
@@ -136,20 +138,21 @@ interface VisualState {
   …既有 bg/bgm/ambient/volumes/cg/sprites/pending…
   /** 背景换图过渡（需要旧画面快照，仅 scene）。 */
   bgTransition: { name: Transition; seq: number; from: string | null } | null;
-  /** 舞台级效果。trigger 用 {seq} 表达重播；state 为持久字段。分层是内部实现。 */
+  /** 舞台级效果。trigger 用 seq 表达重播；on/off 切开关；value 是口味。分层是内部实现。 */
   fx: {
-    camera: { shake?: { value: string; seq: number } };
-    screen: { flash?: { value: string; seq: number }; letterbox?: boolean; vignette?: boolean };
+    camera: { shake?: FxSlot };
+    screen: { flash?: FxSlot; letterbox?: FxSlot; vignette?: FxSlot };
   };
+  // FxSlot = { value: string; seq: number; on: boolean }
 }
 ```
 - `applyVisualCue`：scene 分支仅在背景 id 真变化时递增 `bgTransition.seq`（只改 BGM 不播过渡）；
   `fx` 分支走 `applyFxCue`。
-- `applyFxCue`：按 effect 写入对应层（trigger 递增 seq）；state 由 `value !== "off"` 定开关。
+- `applyFxCue`：按 effect 写入对应层；`trigger` 递增 seq，`on`/`off` 切 slot 的 `on` 开关。
 - `visualAt()`：从空场重折，`fx` 与 `bgTransition` 一并重算；渲染层只认值/序号变化。
 
 ### 5.4 谱系持久化
-- `apps/server/src/orchestrator.ts`：`fx` 落谱系（记 `effect` 与可选 `value`）。
+- `apps/server/src/orchestrator.ts`：`fx` 落谱系（记 `effect`/`verb` 与可选 `value`）。
 - `packages/core/src/lineage/model.ts`：`LineageEventKind` 加 `fx`。
 - `packages/core/src/lineage/replay.ts`：`case "fx"` 还原。
 - `packages/stage/src/script.ts`：`Cue` 联合加 `fx`；`ScriptBuilder` 映射。
@@ -238,5 +241,6 @@ Phase 2（可选，模型已支持）：`kenburns`、`grade` preset、slide/push
 1. `<fx>` 取值用 `value=` 单属性（不把变体折进词）。
 2. `shot` 保留为 `<actor>` 属性，不迁到 `<fx>`。
 3. 无组合打包词。
-4. 持续效果用 `value="off"` 停（每个效果独立开关，不做 target 级批量清除）。
+4. 每条 `<fx>` 必带动词 `trigger` / `on` / `off`；持续效果用 `off` 停（每效果独立开关）。
 5. **`<fx>` 是舞台级全局效果，不写 `target`**；效果落在哪一层（camera/screen）由引擎内部决定。
+6. flash / shake 三种动词都支持（含持续态）；letterbox / vignette 只有 on/off。
