@@ -10,6 +10,16 @@ describe("parsePlayConfig（P4 增量字段归一化）", () => {
   });
 });
 
+describe("parsePlayConfig：多周目开关 newGamePlus", () => {
+  it("只认严格的 true；缺省 / 其它值一律当没开（不留空壳）", () => {
+    expect(parsePlayConfig({ ...BASE }).newGamePlus).toBeUndefined();
+    expect(parsePlayConfig({ ...BASE, newGamePlus: true }).newGamePlus).toBe(true);
+    expect(parsePlayConfig({ ...BASE, newGamePlus: false }).newGamePlus).toBeUndefined();
+    expect(parsePlayConfig({ ...BASE, newGamePlus: "true" }).newGamePlus).toBeUndefined();
+    expect(parsePlayConfig({ ...BASE, newGamePlus: 1 }).newGamePlus).toBeUndefined();
+  });
+});
+
 describe("parsePlayConfig：agents 段的补充提示词", () => {
   const withPrompt = (role: "playwriter" | "workshop", prompt: string): unknown =>
     parsePlayConfig({ ...BASE, agents: { [role]: { prompt } } }).agents?.[role]?.prompt;

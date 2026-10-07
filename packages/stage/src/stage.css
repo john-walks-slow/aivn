@@ -1186,6 +1186,64 @@ button.link-btn {
   gap: 10px;
 }
 
+/* 结局卡：与选肢卡共用遮罩定位，但**整体吃掉点击**——终局没有「点画面继续」这回事。 */
+.ending-overlay {
+  pointer-events: auto;
+}
+
+.ending-card {
+  width: min(620px, 88vw);
+  margin: 0 auto;
+  padding: 28px 26px 24px;
+  text-align: center;
+  font-family: var(--font-ui);
+  color: var(--choice-ink);
+  background: var(--choice-bg);
+  border: 1px solid var(--choice-line);
+  border-top: 3px solid var(--accent);
+  border-radius: 1px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.5);
+  animation: choice-in 0.3s ease-out;
+}
+
+.ending-mark {
+  font-size: 12px;
+  letter-spacing: 0.4em;
+  text-indent: 0.4em;
+  color: var(--ink-faint);
+}
+
+.ending-title {
+  margin: 10px 0 4px;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.ending-subtitle {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+}
+
+.ending-summary {
+  margin: 18px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--choice-line);
+  font-size: 15px;
+  line-height: 1.9;
+  text-align: left;
+  white-space: pre-wrap;
+  color: var(--choice-ink);
+}
+
+.ending-summary-pending {
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
 :where(.stage-root) button {
   font: inherit;
   border: 1px solid var(--line);

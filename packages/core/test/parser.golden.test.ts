@@ -23,7 +23,8 @@ function mergeDeltas(events: StageEvent[]): StageEvent[] {
       (event.kind === "say_text" ||
         event.kind === "narrate_text" ||
         event.kind === "thought_text" ||
-        event.kind === "title_text") &&
+        event.kind === "title_text" ||
+        event.kind === "epilogue_text") &&
       prev !== undefined &&
       prev.kind === event.kind
     ) {
@@ -36,7 +37,10 @@ function mergeDeltas(events: StageEvent[]): StageEvent[] {
 }
 
 /** 聚合某类 text 事件的完整文本。 */
-function fullText(events: StageEvent[], kind: "say_text" | "narrate_text" | "thought_text"): string {
+function fullText(
+  events: StageEvent[],
+  kind: "say_text" | "narrate_text" | "thought_text" | "epilogue_text",
+): string {
   return mergeDeltas(events)
     .filter((e) => e.kind === kind)
     .map((e) => (e as { delta: string }).delta)
@@ -540,5 +544,105 @@ describe("全屏标题卡 <title>", () => {
     parser.endMessage();
     expect(events.map((e) => e.kind)).toEqual(["title_start", "title_text", "title_end"]);
     expect((events[1] as { delta: string }).delta).toBe("第一章\n风");
+  });
+});
+
+describe("结局 <ending>", () => {
+  it("三字段原样产出，作为末行", () => {
+    const { events, parser } = collect();
+    parser.feed(
+      '<narrate>她在晨光里回头。</narrate>\n<ending id="true_sunrise" title="晨光" subtitle="这一次，她没有回头"/>',
+    );
+    parser.endMessage();
+    expect(events.filter((e) => e.kind === "ending")).toEqual([
+      { kind: "ending", id: "true_sunrise", title: "晨光", subtitle: "这一次，她没有回头" },
+    ]);
+    expect(parser.warnings).toEqual([]);
+  });
+
+  it("title / subtitle 可缺省，id 照旧", () => {
+    const { events, parser } = collect();
+    parser.feed('<ending id="bad_end"/>');
+    parser.endMessage();
+    expect(events).toEqual([{ kind: "ending", id: "bad_end" }]);
+    expect(parser.warnings).toEqual([]);
+  });
+
+  it("缺 id / id 非法：整条丢弃 + 告警", () => {
+    const missing = collect();
+    missing.parser.feed("<ending title=\"无名\"/>");
+    missing.parser.endMessage();
+    expect(missing.events).toEqual([]);
+    expect(missing.parser.warnings.some((w) => w.type === "malformed_tag")).toBe(true);
+
+    const illegal = collect();
+    illegal.parser.feed('<ending id="../etc/passwd"/>');
+    illegal.parser.endMessage();
+    expect(illegal.events).toEqual([]);
+    expect(illegal.parser.warnings.some((w) => w.type === "malformed_tag")).toBe(true);
+  });
+
+  it("结局之后的内容一律丢弃（同一条消息内）", () => {
+    const { events, parser } = collect();
+    parser.feed(
+      '<ending id="e1"/><say id="mio">这话不该演。</say><stop options="甲 | 乙"/><scene bg="x"/>',
+    );
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["ending"]);
+    expect(parser.warnings.filter((w) => w.type === "content_after_ending").length).toBeGreaterThan(0);
+  });
+
+  it("结局后不跨消息：下一条消息照常解析", () => {
+    const { events, parser } = collect();
+    parser.feed('<ending id="e1"/>');
+    parser.endMessage();
+    parser.feed('<say id="mio">下一轮照常。</say>');
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["ending", "say_start", "say_text", "say_end"]);
+  });
+
+  it("撕裂喂入与整段喂入语义等价", () => {
+    const source = '她笑了。<ending id="e1" title="终"/>';
+    const whole = collect();
+    whole.parser.feed(source);
+    whole.parser.endMessage();
+    for (const chunkSize of [1, 2, 3, 5]) {
+      const torn = collect();
+      feedTorn(torn.parser, source, chunkSize);
+      torn.parser.endMessage();
+      expect(torn.events).toEqual(whole.events);
+    }
+  });
+});
+
+describe("收束散文 <epilogue>", () => {
+  it("包裹正文照常流出，换行保真", () => {
+    const { events, parser } = collect();
+    parser.feed("<epilogue>这一趟走到这里。\n谢谢你陪我到最后。</epilogue>");
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["epilogue_start", "epilogue_text", "epilogue_end"]);
+    expect(fullText(events, "epilogue_text")).toBe("这一趟走到这里。\n谢谢你陪我到最后。");
+    expect(parser.warnings).toEqual([]);
+  });
+
+  it("不需要 id，未闭合在消息边界自动闭合", () => {
+    const { events, parser } = collect();
+    parser.feed("<epilogue>她再也没有回来……");
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["epilogue_start", "epilogue_text", "epilogue_end"]);
+  });
+
+  it("撕裂喂入与整段喂入等价", () => {
+    const source = "<epilogue>风停了。\n灯灭了。</epilogue>";
+    const whole = collect();
+    whole.parser.feed(source);
+    whole.parser.endMessage();
+    for (const chunkSize of [1, 2, 3, 5]) {
+      const torn = collect();
+      feedTorn(torn.parser, source, chunkSize);
+      torn.parser.endMessage();
+      expect(mergeDeltas(torn.events)).toEqual(mergeDeltas(whole.events));
+      expect(torn.parser.warnings).toEqual([]);
+    }
   });
 });

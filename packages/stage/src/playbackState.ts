@@ -91,6 +91,13 @@ export interface StopAffordanceInput {
   isNoStop: boolean;
   /** 设置项：本轮写完时摆一张「（继续）」卡。默认关。 */
   continueCardOn: boolean;
+  /**
+   * 这一条会话已经到达结局（`<ending …/>`）。终局态没有任何出口：不给卡、点舞台也不继续。
+   *
+   * 缺省 false（向后兼容：还没有结局概念的老宿主照旧）。它与 `isNoStop` 的交互是要点——
+   * 结局那一轮本来就没有 `<stop>`，`isNoStop` 为真，没有这道闸就会摆出「点舞台继续」。
+   */
+  ended?: boolean;
 }
 
 export interface StopAffordance {
@@ -112,6 +119,8 @@ export interface StopAffordance {
  */
 export function stopAffordance(input: StopAffordanceInput): StopAffordance {
   const none: StopAffordance = { showContinueCard: false, clickToContinue: false };
+  // 终局优先于一切：结局之后不给任何出口（它没有 stop，isNoStop 反而是真的）。
+  if (input.ended) return none;
   if (!input.ready) return none;
   if (input.stopType === "pause") return { ...none, clickToContinue: true };
   // 有真停止点（choice/free）时出口是选项本身，不额外给继续

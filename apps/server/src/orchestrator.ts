@@ -89,6 +89,7 @@ const WARNING_LABELS: Record<ParserWarningType, string> = {
   auto_closed: "没闭合就被自动收束",
   nested_wrap: "嵌套的台词块",
   legacy_tag: "已经作废的旧标签",
+  content_after_ending: "结局之后的内容",
 };
 
 /** 解析告警去重限量后转成人话：一轮最多回灌这么多条。 */

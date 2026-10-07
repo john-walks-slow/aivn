@@ -218,6 +218,11 @@ export class ScriptBuilder {
       }
       case "stop":
         return; // 停止点由 StopPanel 渲染
+      case "ending":
+      case "epilogue_start":
+      case "epilogue_text":
+      case "epilogue_end":
+        return; // 结局与收束散文由结局卡渲染，不进台词时间线
     }
   }
 }

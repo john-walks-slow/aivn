@@ -156,6 +156,27 @@ describe("本轮写完的出口", () => {
   });
 });
 
+describe("结局终局态：不给任何出口", () => {
+  const NO_STOP = { ready: true, stopType: null, isNoStop: true, continueCardOn: false };
+  const NONE = { showContinueCard: false, clickToContinue: false };
+
+  it("终局时 no_stop 也不点舞台（否则会摆出「点舞台继续」）", () => {
+    expect(stopAffordance({ ...NO_STOP, ended: true })).toEqual(NONE);
+  });
+
+  it("终局时即使开着「（继续）」卡也不摆", () => {
+    expect(stopAffordance({ ...NO_STOP, ended: true, continueCardOn: true })).toEqual(NONE);
+  });
+
+  it("终局时 pause 也不给出口", () => {
+    expect(stopAffordance({ ...NO_STOP, ended: true, stopType: "pause", continueCardOn: true })).toEqual(NONE);
+  });
+
+  it("ended 缺省 false：还没有结局概念的老宿主行为不变", () => {
+    expect(stopAffordance(NO_STOP)).toEqual({ showContinueCard: false, clickToContinue: true });
+  });
+});
+
 describe("设置项读写", () => {
   function fakeStorage(seed: Record<string, string> = {}): Storage {
     const map = new Map(Object.entries(seed));

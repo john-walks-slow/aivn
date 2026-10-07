@@ -28,12 +28,14 @@ export const DSL_TAGS = [
   "sfx",
   "cg",
   "stop",
+  "ending",
+  "epilogue",
   "comment",
 ] as const;
 export type DslTag = (typeof DSL_TAGS)[number];
 
 /** 自闭合指令标签（无正文）。 */
-export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "sfx", "cg", "stop"]);
+export const VOID_TAGS: ReadonlySet<string> = new Set(["scene", "actor", "sfx", "cg", "stop", "ending"]);
 
 /**
  * 停止点标签——**剧本的最后一行**，这一拍就停在玩家能动手的地方：
@@ -49,6 +51,46 @@ export const STOP_TAG = "stop";
 
 /** 选项分隔符：`<stop options="甲 | 乙"/>`。选项是短句，正文里不该出现它。 */
 export const STOP_OPTION_SEPARATOR = "|";
+
+/**
+ * 结局标签——**剧本的最后一行**，整部故事 / 这一条路线的终点（不是「这一轮的出口」）：
+ *
+ *     <ending id="true_sunrise" title="晨光" subtitle="这一次，她没有回头"/>
+ *
+ * 与 `<stop>` 的关系：普通轮用它自己交出出口，只有真正走到终点时才改用 `<ending>`——它**取代**
+ * 那一轮的 `<stop>`，所以轮尾仍然是助手消息（DSH 的分支 / 舞台重建都只认这种轮尾）。
+ *
+ * 到达结局后舞台进入**终局态**：不给任何按钮、无法继续，出口交给 DSH 的分支 / 新会话。
+ * `id` 是这条结局的身份（跨周目账本的键、多周目引用的名字），**必须能稳定复用**；它之后的内容
+ * 引擎一律丢弃（终局必须是确定的，不靠模型自觉停笔）。
+ */
+export const ENDING_TAG = "ending";
+
+/**
+ * 结局属性。
+ *
+ * 只保留最小三分：`id` 是身份，`title`/`subtitle` 是结局卡上的两行字。三者之外不加字段——
+ * 结局的类型学（good/bad/true）是未来画廊排序 / 配色的需要，届时以可缺省白名单增量加入。
+ */
+export interface EndingAttrs {
+  /** 结局 id：字母或数字开头，不含空白与路径分隔符——账本的键。 */
+  id: string;
+  /** 结局卡主标题；缺省回落 id。 */
+  title?: string;
+  /** 结局卡副标题：一句氛围 / 主题短句。 */
+  subtitle?: string;
+}
+
+/**
+ * 收束散文标签——结局**之后额外一轮**生成的整段回顾，展示在结局卡上：
+ *
+ *     <epilogue>这一趟走到这里……</epilogue>
+ *
+ * 形如 `<narrate>` 的包裹标签（正文为原生文本、可换行）。它是独立一轮的输出，**不能**塞进结局
+ * 那一轮（那一轮正在收笔，且必须保持「结局是最后一行」）；单独成一轮，也让它在舞台重建时能被
+ * 稳定还原成终局卡的一部分。
+ */
+export const EPILOGUE_TAG = "epilogue";
 
 /**
  * 注释标签——**不产出任何 IR 事件**（解析器吞掉正文）。

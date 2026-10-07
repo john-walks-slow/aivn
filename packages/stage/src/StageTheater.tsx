@@ -67,6 +67,11 @@ interface StageTheaterProps {
   /** 点舞台即开新轮：等到内容演完且存在 pause 停止点时成立（不再单列「继续」按钮）。 */
   canContinue: boolean;
   onContinue: () => void;
+  /**
+   * 已到达结局（终局态）：点舞台不再推进任何东西。结局卡由宿主经 `overlay` 摆出，
+   * 这一位只负责把舞台自身残留的「继续」入口关死。缺省 false（无结局概念的老宿主照旧）。
+   */
+  ended?: boolean;
   /** 快进档：按住 Ctrl 期间为 true，松开/失焦回 false。 */
   onTurbo: (on: boolean) => void;
   /**
@@ -338,6 +343,7 @@ voiceState,
   onView,
   canContinue,
   onContinue,
+  ended = false,
   onTurbo,
   overlay,
   directorBar = true,
@@ -412,6 +418,8 @@ voiceState,
       setHideUi(false);
       return;
     }
+    // 终局态：点舞台什么都不做（只剩「翻句」也不会真翻出内容——播放头已到末尾）。
+    if (ended) return;
     if (scrubbed) scrub(1);
     // 正在显示标题卡时，点击只归标题卡自己（翻下一句 / 末句读完离开 / 流式未闭合时等它写完）。
     // 优先级必须高于「继续生成」：标题卡若是这一拍最后一条内容，继续出口会把它一click跳过，
@@ -419,7 +427,7 @@ voiceState,
     else if (isTitle) advance();
     else if (canContinue) onContinue();
     else advance();
-  }, [onUnlock, hideUi, scrubbed, scrub, isTitle, canContinue, onContinue, advance]);
+  }, [onUnlock, hideUi, ended, scrubbed, scrub, isTitle, canContinue, onContinue, advance]);
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→ 往回追；空格 = 点舞台。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);

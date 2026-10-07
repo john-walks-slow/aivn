@@ -9,6 +9,8 @@ export { StageTheater, BacklogView } from "./StageTheater.js";
 export type { DirectorTargets, VoiceState } from "./StageTheater.js";
 
 export { StopPanel } from "./StopPanel.js";
+export { EndingCard } from "./EndingCard.js";
+export type { EndingCardData } from "./EndingCard.js";
 export { StageModes } from "./StageModes.js";
 export { ToastStack, useToasts } from "./toast.js";
 export type { Toast, ToastKind, Toaster } from "./toast.js";

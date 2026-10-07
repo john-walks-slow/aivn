@@ -231,6 +231,14 @@ export interface PlayConfig {
   image?: PlayImageConfig;
   /** 两个 agent 的运行设置（工坊「Agent」页签）。整个对象可缺省。 */
   agents?: AgentConfig;
+  /**
+   * 多周目开关（缺省 false）。
+   *
+   * 开启后，**新周目**（同工作区里一个空会话面的新会话）的开头，引擎会把此前已达成的结局
+   * （工作区根的 `endings.json`）注入剧作家的提示词，让它据此安排多周目要素。这是一条
+   * **提示词级约定**：引擎只保证账本可见，不强制解锁任何内容——怎么用完全由剧作家决定。
+   */
+  newGamePlus?: boolean;
 }
 
 /** 剧目内两个 agent 的设置：剧作家（演出）与工坊（搭台）。 */
@@ -273,6 +281,7 @@ export function parsePlayConfig(raw: unknown): PlayConfig {
     ...(craft ? { craft } : {}),
     ...(image ? { image } : {}),
     ...(agents ? { agents } : {}),
+    ...(data.newGamePlus === true ? { newGamePlus: true } : {}),
   };
 }
 
