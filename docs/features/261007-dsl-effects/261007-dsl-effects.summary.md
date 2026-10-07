@@ -40,7 +40,7 @@
   4 例预存在失败，属别的改动范围，与 fx 无关）。
 - 检视：`reviewer` 子代理通道不可用（`User location is not supported for the API use`，两次探测均失败），
   本轮以自查代替，结论**准入（条件：实机验收）**；自查修复了回看误触发、抖动时长、reduced-motion、dead CSS。
-- 实机验证项见 `261007-dsl-effects.validation.md`（待用户填写）。
+- 实机验证见 `261007-dsl-effects.validation.md`：**用户 2026-10-07 验收通过**。
 
 ## 交付后修复（用户实机验证发现）
 
