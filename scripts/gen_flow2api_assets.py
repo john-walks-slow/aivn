@@ -21,7 +21,7 @@ from make_transparent import process_image_transparency
 
 FLOW_API_URL = os.environ.get("FLOW_API_URL", "http://127.0.0.1:38000/v1/chat/completions")
 FLOW_API_KEY = os.environ["FLOW_API_KEY"]
-IMAGE_MODEL = "gemini-3.1-flash-image-portrait-2k"
+IMAGE_MODEL = "gemini-3.0-pro-image"
 MUSIC_MODEL = "flow-music"
 PROXY = os.environ.get("FLOW_API_PROXY", "")
 

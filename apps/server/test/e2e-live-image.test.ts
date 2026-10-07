@@ -26,7 +26,7 @@ import { IMAGE_ASPECTS, IMAGE_SIZES, aspectMatches } from "../src/imageBackend.j
 
 const LIVE = process.env.STAGE_E2E_LIVE === "1";
 const BASE_URL = process.env.STAGE_IMAGE_BASE_URL ?? "http://127.0.0.1:38000";
-const MODEL = "gemini-3.1-flash-image";
+const MODEL = "gemini-3.0-pro-image";
 
 /** 读图幅：PNG 走 IHDR，JPEG 走 SOFn 扫描。认不出就返回 null（不因此判失败）。 */
 function imageSizeOf(buf: Buffer): { width: number; height: number } | null {

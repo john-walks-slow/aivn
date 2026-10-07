@@ -243,7 +243,7 @@ data/
   "format": "gemini",
   "baseUrl": "http://127.0.0.1:38000",
   "apiKey": "<your-api-key>",
-  "model": "gemini-3.1-flash-image",   // 别名怎么挑见下
+  "model": "gemini-3.0-pro-image",   // 别名怎么挑见下
   "size": "1K",
   "reference": "neutral"
 }
@@ -293,7 +293,8 @@ data/
 档位算出来的尺寸越过 `3840x2160` 会在发请求前报错（`4K` 在 openai 格式下必超），不会白发出去。
 
 > 2026-10-01 实测可用的组合：flow2api（`http://127.0.0.1:38000`）与 cpa 网关（`http://127.0.0.1:9999`）都认 Gemini 原生端点——`:generateContent` 回 `inlineData`，画幅与档位都生效（`1K`/`16:9` → 1376x768，`2K` → 2752x1536，`4:3` → 1200x896，`21:9` → 1584x672，与 Google 官方分辨率表逐条吻合）；cpa 另可走 `openai` 格式的 `gpt-image-2` / `seedream-5.0-lite`。
-> flow2api 的**别名**模型名（`gemini-3.1-flash-image-portrait-2k`）把画幅档位写死在名字里，`imageConfig` 会被忽略（实测：传 `9:16` 仍回 1376x768）；裸名 `gemini-3.1-flash-image` 吃 `imageConfig`（实测 `9:16` → 768x1376）。
+> flow2api 的**别名**模型名（`gemini-3.0-pro-image-portrait-2k`）把画幅档位写死在名字里，`imageConfig` 会被忽略（实测：传 `9:16` 仍回 1376x768）；裸名 `gemini-3.0-pro-image` 吃 `imageConfig`（实测 `9:16` → 768x1376）。
+> **`gemini-3.1-flash-image` 系列已被 Flow 上游下线**（2026-10-06 实测：模型表里 15 个 NARWHAL 条目全在、调了必报 `ogiZ0b code=[5]`），生图一律用 `gemini-3.0-pro-image`。
 > `seedream-5.0-lite` 走 openai 格式时上游要求 **≥3686400 像素**，`1K` 档换算出来不够，会报 400。
 
 垫图（参考图）策略 `image.reference`：
@@ -308,7 +309,7 @@ data/
 
 > 画幅：cpa 走真 Gemini，官方 14 个取值（`1:1 / 1:4 / 1:8 / 2:3 / 3:2 / 3:4 / 4:1 / 4:3 / 4:5 / 5:4 / 8:1 / 9:16 / 16:9 / 21:9`）都能按预期出（实测 `4:3` → 1200x896、`21:9` → 1584x672，与官方表一致）。本站用到 `16:9`（背景/CG）与立绘的 `9:16`（全身）/ `3:4`（半身）/ `1:1`（方形，非人主体）；flow2api 的别名模型名把画幅写死、与 `aspectRatio` 冲突时以别名为准。工坊在落盘前一律核对实际画幅，不符就报错不写文件。
 
-**分辨率与耗时**（2026-10-01 本机实测，**flow2api** 上 `gemini-3.1-flash-image`，一次一张、串行）：
+**分辨率与耗时**（2026-10-01 本机实测，**flow2api** 上 `gemini-3.1-flash-image`，一次一张、串行；该模型现已下线，此表留作耗时量级参考，现役 `gemini-3.0-pro-image` 实测 1K 约 62s）：
 
 | 出图档位 | 16:9 背景 | 9:16 立绘（全身；半身 3:4 / 方形 1:1） | 成图像素 |
 | --- | --- | --- | --- |

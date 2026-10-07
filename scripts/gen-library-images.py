@@ -18,7 +18,7 @@ import urllib.request
 
 BASE = os.environ.get("IMAGE_BASE_URL", "http://127.0.0.1:38000")
 KEY = os.environ["IMAGE_API_KEY"]
-MODEL = "gemini-3.1-flash-image"  # 别名：只有别名才会解析 imageConfig 的画幅/尺寸
+MODEL = "gemini-3.0-pro-image"  # 别名：只有别名才会解析 imageConfig 的画幅/尺寸
 
 # 背景：无人场景，画面描述要能直接当 <scene bg> 的语义用
 BACKGROUNDS = {

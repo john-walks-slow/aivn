@@ -30,7 +30,7 @@ from make_transparent import process_image_transparency
 
 CPA_URL = os.getenv("CPA_URL", "http://127.0.0.1:9999/v1/chat/completions")
 CPA_API_KEY = os.getenv("CPA_API_KEY", "sk-1234")
-MODEL_NAME = os.getenv("IMAGE_MODEL", "gemini-3.1-flash-image")
+MODEL_NAME = os.getenv("IMAGE_MODEL", "gemini-3.0-pro-image")
 
 DEFAULT_CHARACTER = {
     "name": "koharu",

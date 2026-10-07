@@ -103,7 +103,7 @@ function liveBackend(): ImageBackend {
   return new GeminiImageGen({
     baseUrl: process.env.STAGE_IMAGE_BASE_URL ?? "http://127.0.0.1:38000",
     apiKey: process.env.STAGE_IMAGE_API_KEY ?? "",
-    model: process.env.STAGE_IMAGE_MODEL ?? "gemini-3.1-flash-image",
+    model: process.env.STAGE_IMAGE_MODEL ?? "gemini-3.0-pro-image",
     size: SIZE,
     timeoutMs: 300_000,
   });

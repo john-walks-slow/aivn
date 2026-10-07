@@ -192,10 +192,10 @@ export function settingsFromEnv(env: NodeJS.ProcessEnv): ServerConfig {
     beatTimeoutMs: parsePositiveInt("STAGE_BEAT_TIMEOUT_MS", env.STAGE_BEAT_TIMEOUT_MS, 240_000),
     image: {
       enabled: env.STAGE_IMAGE_ENABLED !== "false",
-      format: parseEnum("STAGE_IMAGE_FORMAT", env.STAGE_IMAGE_FORMAT, ["gemini", "openai", "modelslab"] as const, "openai"),
+      format: parseEnum("STAGE_IMAGE_FORMAT", env.STAGE_IMAGE_FORMAT, ["gemini", "openai", "modelslab"] as const, "gemini"),
       baseUrl: env.STAGE_IMAGE_BASE_URL ?? "http://127.0.0.1:9999",
       apiKey: env.STAGE_IMAGE_API_KEY ?? "",
-      model: env.STAGE_IMAGE_MODEL ?? "gpt-image-2",
+      model: env.STAGE_IMAGE_MODEL ?? "gemini-3.0-pro-image",
       size: imageSizeText(parseImageSize(env.STAGE_IMAGE_SIZE ?? "1K")),
       concurrency: parsePositiveInt("STAGE_IMAGE_CONCURRENCY", env.STAGE_IMAGE_CONCURRENCY, 6),
       timeoutMs: parsePositiveInt("STAGE_IMAGE_TIMEOUT_MS", env.STAGE_IMAGE_TIMEOUT_MS, 180_000),

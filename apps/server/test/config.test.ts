@@ -86,13 +86,14 @@ describe("新装默认值", () => {
 });
 
 describe("旧 .env 的迁移语义", () => {
-  it("生图/语音/联网默认开、指向本机网关（与迁移前逐字一致）", () => {
+  it("生图/语音/联网默认开、指向本机网关", () => {
     const config = settingsFromEnv({});
     expect(config.baseUrl).toBe("http://127.0.0.1:9999/v1");
     expect(config.apiKey).toBe("sk-1234");
     expect(config.image.enabled).toBe(true);
     expect(config.image.baseUrl).toBe("http://127.0.0.1:9999");
-    expect(config.image.format).toBe("openai");
+    expect(config.image.format).toBe("gemini");
+    expect(config.image.model).toBe("gemini-3.0-pro-image");
     expect(config.tts.enabled).toBe(true);
     expect(config.tts.proxy).toBe("");
     expect(config.exa.enabled).toBe(true);
