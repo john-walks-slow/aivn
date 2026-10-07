@@ -41,6 +41,17 @@
   本轮以自查代替，结论**准入（条件：实机验收）**；自查修复了回看误触发、抖动时长、reduced-motion、dead CSS。
 - 实机验证项见 `261007-dsl-effects.validation.md`（待用户填写）。
 
+## 交付后修复（用户实机验证发现）
+
+- **差分交叉淡化此前是失效的**：旧图那层复用了 `.entering`（`sprite-in` 从透明起步）又带
+  `.sprite-out{opacity:0}`，一挂上就全透明；且旧图没带定位变量。改为「新图在下、旧图在上，
+  用 `sprite-fade-out` 关键帧淡出」并复用同一份 style。
+- **根因是 CSS 变量漏单位**：`--fade-ms: 220`（无单位）让 `.theater-sprite` 的整条 `transition`
+  简写**整体失效**（浏览器实测 `transitionDuration: 0s`），连带 `sprite-fade-out` 时长为 0。
+  修成 `220ms`；`--hover-ms` 同样漏单位，一并修。**顺带恢复了运镜(transform)/压暗(filter)/退场
+  的过渡**——它们共用同一条 transition 声明，之前都被判无效而瞬跳。
+- 实机验证（headless Chromium）：旧图 opacity `1.00→0.64→0.35→0.11→0.00`，约 200ms，真交叉淡化。
+
 ## 已知非阻塞项
 
 - 从回看返回现场时，换层过渡会重放一次（栈以 `seq` 为 key 导致重挂）；不影响正确性，Phase 2 可改 nonce 重启动画。

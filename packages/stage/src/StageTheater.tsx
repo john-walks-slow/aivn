@@ -313,8 +313,19 @@ function Sprite({
   };
   return (
     <>
-      {outgoing && <img className={`${cls} sprite-out`} style={{ zIndex }} src={outgoing} alt="" aria-hidden />}
+      {/* 十字淡化：新图在下、旧图在上；旧图淡出即露出新图。旧图必须复用同一份 style
+          （定位/运镜变量），且**不带 .entering**——带了就会被 sprite-in 从透明起步，
+          等于一挂上就没了（旧实现的交叉淡化就是这么失效的）。 */}
       <img className={cls} style={style} src={current} alt={name} onError={onError} />
+      {outgoing && (
+        <img
+          className={`theater-sprite pos-${pos} sprite-out${dim ? " dim" : ""}`}
+          style={style}
+          src={outgoing}
+          alt=""
+          aria-hidden
+        />
+      )}
     </>
   );
 }

@@ -107,19 +107,19 @@
   --type-ms: 35; /* 每字毫秒 */
   --pause-short-ms: 120; /* 逗号类额外停顿 */
   --pause-long-ms: 240; /* 句号类额外停顿 */
-  --fade-ms: 220; /* 立绘差分 / 背景切换 */
+  --fade-ms: 220ms; /* 立绘差分 / 背景切换 */
   --move-ms: 380ms; /* 立绘换位、换景别（运镜）——比差分慢，走过去不是瞬移 */
   --act-ms: 520ms; /* 行为词演出时长（点一次头、抖一下） */
   /* 缓动：起步快、尾巴长。站位与运镜都是「一个演员走过去」的观感，
      ease-in-out 匀加速匀减速最像。 */
   --move-ease: cubic-bezier(0.33, 0, 0.2, 1);
-  --hover-ms: 140;
+  --hover-ms: 140ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root {
     --type-ms: 0;
-    --fade-ms: 0;
+    --fade-ms: 0ms;
     --move-ms: 0ms;
     --act-ms: 0ms;
   }

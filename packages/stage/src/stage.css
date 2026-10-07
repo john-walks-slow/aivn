@@ -114,7 +114,7 @@
   --type-ms: 35; /* 每字毫秒 */
   --pause-short-ms: 120; /* 逗号类额外停顿 */
   --pause-long-ms: 240; /* 句号类额外停顿 */
-  --fade-ms: 220; /* 立绘差分 / 背景切换 */
+  --fade-ms: 220ms; /* 立绘差分 / 背景切换 */
   --move-ms: 380ms; /* 立绘换位、换景别（运镜）——比差分慢，走过去不是瞬移 */
   --act-ms: 520ms; /* 行为词演出时长（点一次头、抖一下） */
   --trans-ms: 560ms; /* 换层过渡（转场 cross-fade / fade） */
@@ -122,13 +122,13 @@
   /* 缓动：起步快、尾巴长。站位与运镜都是「一个演员走过去」的观感，
      ease-in-out 匀加速匀减速最像。 */
   --move-ease: cubic-bezier(0.33, 0, 0.2, 1);
-  --hover-ms: 140;
+  --hover-ms: 140ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .stage-root {
     --type-ms: 0;
-    --fade-ms: 0;
+    --fade-ms: 0ms;
     --move-ms: 0ms;
     --act-ms: 0ms;
     --trans-ms: 0ms;
@@ -677,9 +677,20 @@ html[data-stage-theme="light"] .stage-root {
   }
 }
 
-/* 表情差分：旧像留在下层淡出，新像从透明叠上来 */
+/* 表情差分：旧像叠在新像之上淡出，露出下面的新像——真正的交叉淡化。
+   用关键帧而不是 transition：旧像是挂载即带 .sprite-out，transition 不会从 1 起步。 */
 .theater-sprite.sprite-out {
   opacity: 0;
+  animation: sprite-fade-out var(--fade-ms) ease forwards;
+}
+
+@keyframes sprite-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }
 
 /* 登场：淡入。退场靠 .leaving（见下）而不是直接卸载——直接卸载没有过渡可播。 */
