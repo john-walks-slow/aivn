@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ActorAction, ActorAnchor, ActorShot, FxTarget, ReadPos } from "@aivn/core";
+import type { ActorAction, ActorAnchor, ActorShot, ReadPos } from "@aivn/core";
 import {
   DEFAULT_TRANSITION,
   isActorAction,
@@ -326,18 +326,12 @@ export function applyVisualCue(visual: VisualState, cue: Cue): VisualState {
   }
 }
 
-/** `release`：清空某 target 上的全部持续效果。 */
-function releaseFxTarget(fx: FxState, target: FxTarget): FxState {
-  return target === "camera" ? { ...fx, camera: {} } : { ...fx, screen: {} };
-}
-
 /**
  * 一条 `<fx>` 对舞台效果状态的改动。seq 自增 = 重播信号——同一个效果连写两次要能重来，
  * 与 SpriteSlot.actionSeq 同一套（渲染层只认 seq 变化，不认绝对序号）。
  */
 export function applyFxCue(visual: VisualState, cue: Extract<Cue, { kind: "fx" }>): VisualState {
   const fx = visual.fx;
-  if (cue.release === true) return { ...visual, fx: releaseFxTarget(fx, cue.target) };
   const value = cue.value ?? "";
   switch (cue.effect) {
     case "flash":

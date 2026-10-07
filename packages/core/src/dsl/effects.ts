@@ -1,41 +1,21 @@
 /**
- * Stage DSL 演出效果注册表 —— 动效 / 转场的唯一真相源。
+ * Stage DSL 演出效果注册表 —— `<fx>` 词表的唯一真相源。
  *
- * 一个演出效果 = 目标（谁）+ 生命周期（一次性 / 持续保持）+ 固定配方。剧本只写效果词，
- * 永远碰不到时长、曲线、坐标（见 docs/features/261007-dsl-effects/）。
- *
- * 本文件只登记**舞台级**效果（走 `<fx>`）；绑定到某个角色的效果（`action` / `shot` / `variant` /
- * `anchor`）写在 `<actor>` 上，由 spec.ts / spriteAction.ts 校验，不进这里的 `<fx>` 目标集
- * ——`<fx>` 不点名具体角色，绕开「一个目标到底指谁」的歧义。
+ * `<fx>` 是**舞台级全局效果**：作用于整幅画面，不点名任何主体；针对某个主体的
+ * `action` / `shot` / `variant` / `anchor` 写在 `<actor>` 上（由 spec.ts / spriteAction.ts
+ * 校验）。剧本只写效果词与取值，永远碰不到时长、曲线、坐标，也不用关心效果落在哪一层
+ * ——每个效果的实现层（画面内容变换层 `camera` / 屏幕遮罩层 `screen`）是引擎内部的事
+ * （见 director.ts 的 FxState）。详见 docs/features/261007-dsl-effects/。
  *
  * 生命周期：
  *  - `trigger` 一次性：播完即止，靠单调 seq 重播（见 director.ts）。
- *  - `state` 持续保持：写进 VisualState，直到被改写或 `<fx target="…" release/>` 清空。
+ *  - `state` 持续保持：写进 VisualState，用 `value="off"` 关掉。
  */
 
-/**
- * `<fx>` 的两个目标，语义不同：
- *  - `camera` —— **画面内容的变换层**：效果让画面本身动（背景/立绘/CG 一起），例如抖动。
- *  - `screen` —— **屏幕遮罩层**：效果是叠加在画面之上的层（闪光、黑边、暗角），画面内容不动。
- * 每个效果只挂一个自然目标，不提供「同效果挂多个目标」。
- */
-export const FX_TARGETS = ["camera", "screen"] as const;
-export type FxTarget = (typeof FX_TARGETS)[number];
-
-export function isFxTarget(value: unknown): value is FxTarget {
-  return typeof value === "string" && (FX_TARGETS as readonly string[]).includes(value);
-}
-
-/**
- * `<fx target="…" effect="…" value="…"/>` 的载荷（value 已由解析器按注册表归一化）。
- * `release` 缺省表示「停掉该 target 上的全部持续效果」——它**不是**一个 effect，
- * 所以 release 时没有 effect/value。
- */
+/** `<fx effect="…" value="…"/>` 的载荷（value 已由解析器按注册表归一化）。 */
 export interface FxAttrs {
-  target: FxTarget;
-  effect?: string;
+  effect: string;
   value?: string;
-  release?: boolean;
 }
 
 export type EffectLifecycle = "trigger" | "state";
@@ -43,8 +23,6 @@ export type EffectLifecycle = "trigger" | "state";
 export interface EffectSpec {
   name: string;
   lifecycle: EffectLifecycle;
-  /** 合法目标集；`<fx>` 只认其中的 FxTarget，越界即丢弃（不猜）。 */
-  targets: readonly FxTarget[];
   /** 封闭取值；不给 = 该效果不接受 value。 */
   values?: readonly string[];
   /** 缺省取值（`value` 省略或非法时回落到它）。 */
@@ -56,7 +34,6 @@ export const EFFECTS: Readonly<Record<string, EffectSpec>> = {
   flash: {
     name: "flash",
     lifecycle: "trigger",
-    targets: ["screen"],
     values: ["white", "red", "black"],
     defaultValue: "white",
   },
@@ -64,7 +41,6 @@ export const EFFECTS: Readonly<Record<string, EffectSpec>> = {
   shake: {
     name: "shake",
     lifecycle: "trigger",
-    targets: ["camera"],
     values: ["light", "heavy"],
     defaultValue: "light",
   },
@@ -72,7 +48,6 @@ export const EFFECTS: Readonly<Record<string, EffectSpec>> = {
   letterbox: {
     name: "letterbox",
     lifecycle: "state",
-    targets: ["screen"],
     values: ["on", "off"],
     defaultValue: "on",
   },
@@ -80,7 +55,6 @@ export const EFFECTS: Readonly<Record<string, EffectSpec>> = {
   vignette: {
     name: "vignette",
     lifecycle: "state",
-    targets: ["screen"],
     values: ["on", "off"],
     defaultValue: "on",
   },

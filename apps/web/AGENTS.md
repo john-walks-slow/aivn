@@ -52,5 +52,5 @@
   - `src/stage/loopAudio.ts` BGM/ambient 播放层（`LoopChannel` 双通道交叉淡入淡出 FADE_MS=1200、50ms 步进调 volume、dispose 停干净；`SfxPlayer` 一次性音效 MAX_SFX=6 挤掉最老）——**舞台不再直接持有 `<audio loop>`**，两条常驻通道都走 LoopChannel。
   - `director.ts` 的纯函数 `resolveAudio(current, cue)` 是「缺省=保持、`none`/`""`/大写 NONE=停止」的唯一真相源。
   - **时间类 CSS 变量必须带单位**：`--fade-ms`/`--move-ms`/`--trans-ms`/`--fx-ms`/`--hover-ms` 一律写 `220ms` 而不是 `220`。漏单位会让**用到它的整条 `transition`/`animation` 简写被浏览器判为无效**（`transitionDuration` 变 `0s`），且不报错——症状是「过渡/动画完全不生效」。`--fade-ms` 曾长期无单位，连带差分交叉淡化、运镜 transform、压暗 filter、退场淡出全部失效（2026-10-07 修）。注意 `app.css` 的 `:root` 覆盖 `stage.css` 的 `.stage-root`（`@import` 在前、`app.css` 自身的 `:root` 在后），两处都要改。
-  - 舞台级效果的词表/目标/生命周期在 `packages/core/src/dsl/effects.ts`（`<fx target="camera|screen" effect="flash|shake|letterbox|vignette" value="…"/>`，持续效果用 `<fx target="…" release/>` 停；`<scene transition="cut|dissolve|fade|fade-white">`）。
+  - 舞台级效果的词表/生命周期在 `packages/core/src/dsl/effects.ts`（`<fx effect="flash|shake|letterbox|vignette" value="…"/>`，舞台级全局效果；持续效果用 `value="off"` 停；`<scene transition="cut|dissolve|fade|fade-white">`）。效果落在哪一层（画面内容变换层 / 屏幕遮罩层）是引擎内部实现，剧本不写 target。
   - P1 文字视图复用为 log。

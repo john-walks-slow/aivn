@@ -16,9 +16,7 @@ import {
 } from "./spec.js";
 import {
   DEFAULT_TRANSITION,
-  FX_TARGETS,
   effectSpec,
-  isFxTarget,
   isTransition,
   type EffectSpec,
   type Transition,
@@ -290,22 +288,12 @@ export class StageDslParser {
         return;
       }
       case "fx": {
-        const target = attrs.get("target")?.trim();
-        if (!target || !isFxTarget(target)) {
-          return this.dropTag("fx", `target 非法或缺失: ${target ?? ""}（可用 ${FX_TARGETS.join("/")}）`);
-        }
-        // `release`：停掉该 target 上的全部持续效果，不是效果本身。
-        if (isTruthyFlag(attrs.get("release"))) {
-          this.emit({ kind: "fx", target, release: true });
-          return;
-        }
         const effect = attrs.get("effect")?.trim().toLowerCase();
-        if (!effect) return this.dropTag("fx", "缺 effect（或写 release 停掉持续效果）");
+        if (!effect) return this.dropTag("fx", "缺 effect");
         const spec = effectSpec(effect);
         if (!spec) return this.dropTag("fx", `未知 effect: ${effect}`);
-        if (!spec.targets.includes(target)) return this.dropTag("fx", `effect=${effect} 不适用于 target=${target}`);
         const value = this.pickEffectValue(attrs, spec);
-        this.emit({ kind: "fx", target, effect, ...(value !== undefined ? { value } : {}) });
+        this.emit({ kind: "fx", effect, ...(value !== undefined ? { value } : {}) });
         return;
       }
       case "actor": {

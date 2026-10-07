@@ -15,40 +15,32 @@ const visual = (partial: Partial<VisualState> = {}): VisualState => ({
 });
 
 const fx = (
-  partial: Partial<Extract<Cue, { kind: "fx" }>> & { target: Extract<Cue, { kind: "fx" }>["target"] },
-): Extract<Cue, { kind: "fx" }> => ({ key: "k", kind: "fx", ...partial });
+  cue: Omit<Extract<Cue, { kind: "fx" }>, "key" | "kind">,
+): Extract<Cue, { kind: "fx" }> => ({ key: "k", kind: "fx", ...cue });
 
 describe("applyFxCue：一次性效果 (trigger)", () => {
   it("flash 每次 seq +1（连写两次要能重播）", () => {
-    let v = applyFxCue(visual(), fx({ target: "screen", effect: "flash", value: "red" }));
+    let v = applyFxCue(visual(), fx({ effect: "flash", value: "red" }));
     expect(v.fx.screen.flash).toEqual({ value: "red", seq: 1 });
-    v = applyFxCue(v, fx({ target: "screen", effect: "flash", value: "white" }));
+    v = applyFxCue(v, fx({ effect: "flash", value: "white" }));
     expect(v.fx.screen.flash).toEqual({ value: "white", seq: 2 });
   });
 
   it("shake 落在 camera 上", () => {
-    const v = applyFxCue(visual(), fx({ target: "camera", effect: "shake", value: "heavy" }));
+    const v = applyFxCue(visual(), fx({ effect: "shake", value: "heavy" }));
     expect(v.fx.camera.shake).toEqual({ value: "heavy", seq: 1 });
   });
 });
 
-describe("applyFxCue：持续效果 (state) 与 release", () => {
-  it("letterbox / vignette 落在 screen", () => {
-    let v = applyFxCue(visual(), fx({ target: "screen", effect: "letterbox", value: "on" }));
-    v = applyFxCue(v, fx({ target: "screen", effect: "vignette", value: "on" }));
+describe("applyFxCue：持续效果 (state)", () => {
+  it("letterbox / vignette 各自独立开关", () => {
+    let v = applyFxCue(visual(), fx({ effect: "letterbox", value: "on" }));
+    v = applyFxCue(v, fx({ effect: "vignette", value: "on" }));
     expect(v.fx.screen.letterbox).toBe(true);
     expect(v.fx.screen.vignette).toBe(true);
-    v = applyFxCue(v, fx({ target: "screen", effect: "letterbox", value: "off" }));
+    v = applyFxCue(v, fx({ effect: "letterbox", value: "off" }));
     expect(v.fx.screen.letterbox).toBe(false);
-  });
-
-  it("release 清空该 target 的持续效果，不影响别的 target", () => {
-    let v = applyFxCue(visual(), fx({ target: "camera", effect: "shake", value: "light" }));
-    v = applyFxCue(v, fx({ target: "screen", effect: "letterbox", value: "on" }));
-    v = applyFxCue(v, fx({ target: "screen", effect: "vignette", value: "on" }));
-    v = applyFxCue(v, fx({ target: "screen", release: true }));
-    expect(v.fx.screen).toEqual({});
-    expect(v.fx.camera.shake).toEqual({ value: "light", seq: 1 });
+    expect(v.fx.screen.vignette).toBe(true);
   });
 });
 

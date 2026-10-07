@@ -4,12 +4,12 @@
 
 ## 做了什么
 
-给 Stage DSL 落了一套**统一的 Effect 抽象 + 应用目标**，并修好了转场的半成品。
+给 Stage DSL 落了一套**统一的 Effect 抽象**（舞台级全局效果），并修好了转场的半成品。
 
-- **统一模型**：一个 effect = 目标（`camera` 画面内容变换层 / `screen` 屏幕遮罩层）+ 生命周期
-  （trigger 一次性 / state 持续）+ 固定配方；剧本只写效果词。
-- **DSL 新面**：`<fx target="camera|screen" effect="…" value="…"/>`，效果词 `flash`/`shake`/
-  `letterbox`/`vignette`；持续效果用 `<fx target="…" release/>` 停。
+- **统一模型**：一个 effect = 生命周期（trigger 一次性 / state 持续）+ 封闭取值 + 固定配方；
+  剧本只写效果词与取值，效果落在哪一层（画面内容变换层 / 屏幕遮罩层）是引擎内部实现。
+- **DSL 新面**：`<fx effect="…" value="…"/>`，效果词 `flash`/`shake`/`letterbox`/`vignette`；
+  持续效果用 `value="off"` 停。
 - **转场只属 `<scene>`**：`transition="cut|dissolve|fade|fade-white"`（封闭枚举，缺省 `fade`）。
 - **修好旧 bug**：`<scene transition="cut">` 原来只落在无图占位 div、真背景固定走 `bg-fade` 淡入；
   改为旧/新双层栈：`cut` 硬切、`dissolve` 交叉溶解、`fade`/`fade-white` 经色场。
@@ -17,11 +17,11 @@
 
 ## 关键决策（用户 2026-10-07 定）
 
-1. **统一原语 + 应用目标**：动效与转场是同一抽象在不同轴上的取值；转场是 `dual`（需要旧画面快照）特例。
+1. **统一原语**：动效是舞台级全局效果（作用于整幅画面），与转场各自走 `<fx>` / `<scene transition>`。
 2. **不用 `mood`**，也**不做组合打包词**；持续氛围显式拼装（vignette + letterbox）。
-3. **目标收敛为 `camera`/`screen` 两个**，每个效果只挂一个自然目标（不再多目标）。
-4. **`shot` 只作 actor 属性**，不进 `<fx>`；**`transition` 只作 scene 属性**，不给 `<cg>`。
-5. **持续效果用 `release` 停**（target 级全清）。
+3. **不向写作者暴露 target**：每个效果只有一个自然层，让剧本写 `target` 是净负担；分层是引擎内部约定。
+4. **`shot`/`action`/`variant`/`anchor` 只作 actor 属性**，不进 `<fx>`；**`transition` 只作 scene 属性**，不给 `<cg>`。
+5. **持续效果用 `value="off"` 停**（每个效果独立开关）；不设 `release`。
 6. **trigger 用单调 seq 重播、state 走 CSS 变量 + transition**；明令禁止 indefinite-filling WAAPI 表达 hold。
 
 ## 落点
@@ -36,7 +36,8 @@
 
 ## 验证
 
-- `pnpm -r build`、`pnpm typecheck` 干净；core 206 / stage 43 / server 指定 157 用例全绿。
+- `pnpm -r build`、`pnpm typecheck` 干净；core 228 / stage 51 用例全绿（server 全量仅 `voice.test.ts`
+  4 例预存在失败，属别的改动范围，与 fx 无关）。
 - 检视：`reviewer` 子代理通道不可用（`User location is not supported for the API use`，两次探测均失败），
   本轮以自查代替，结论**准入（条件：实机验收）**；自查修复了回看误触发、抖动时长、reduced-motion、dead CSS。
 - 实机验证项见 `261007-dsl-effects.validation.md`（待用户填写）。
@@ -51,6 +52,14 @@
   修成 `220ms`；`--hover-ms` 同样漏单位，一并修。**顺带恢复了运镜(transform)/压暗(filter)/退场
   的过渡**——它们共用同一条 transition 声明，之前都被判无效而瞬跳。
 - 实机验证（headless Chromium）：旧图 opacity `1.00→0.64→0.35→0.11→0.00`，约 200ms，真交叉淡化。
+
+## 复查后的表达面收敛（2026-10-07）
+
+- 删除死代码与重复：`EffectTarget` 双份别名、0 引用的 `isEffectName`/`effectAppliesTo`、从未赋值的
+  `EffectSpec.dual`、从未被读的 `label`；转场同义词 `fade-black`（dev 级别名 + 重复 CSS）一并删。
+- **去掉 `<fx target>`**：效果全局面，分层实现内部化，剧本不再需要记忆「effect × target」搭配。
+- **去掉 `release`**：与 `value="off"` 二义；只保留逐个 `off`。
+- 默认转场以代码为准（`fade`），修正 prompt 里「dissolve 默认」的错述。
 
 ## 已知非阻塞项
 

@@ -35,7 +35,7 @@
 - **一个槽位叫 `variant`**：`<actor id="mio" variant="smile">`。`expression`（人写表情）与 `state`（非人的状态）是 261004 之前的两个旧名，解析器与谱系重放仍当别名收下，所以存量剧本与存档照常演出；但写给模型看的契约只有 `variant`。同一个 id 的立绘声明、差分、垫图基准都按它解析。
 - **全屏标题卡 `<title align="…" mode="block|lines">正文</title>`**（261007）：台词三类之外的第四种包裹标签，产出 `title_start / title_text / title_end` 三段 IR（不配音）。`lines`（缺省）按**非空物理行**逐句揭示、`block` 整段一次出；进 title 隐藏对话框、离开恢复。谱系落 `kind: "title"` 节点（attrs 存 `align`/`mode`），`lineageToEvents` 与 `rebuildStage` 照常重放；`lineageToBeats` 把它写回助手脚本体（`（标题）…`），并使它计为「有内容」（仅标题+停止点的一拍不被判废）。title **不可原地改写**（`EDITABLE_KINDS` 不含它）。
 - **`<scene bg>` 认纯色场**（261007）：`bg="black"`/`bg="white"`（大小写不敏感）与十六进制 `#rgb`/`#rrggbb` 由 core 的 `resolveSceneBg()` 判为纯色，客户端直接画一块底（不查素材表）；其余仍走 `assets/backgrounds/<id>`。谱系原样存 `bg` 值，重放自然带上。
-- **舞台效果与转场走封闭词表**（2026-10-07）：`<fx target="camera|screen" effect="flash|shake|letterbox|vignette" value="…"/>`（持续效果用 `<fx target="…" release/>` 停）、`<scene transition="cut|dissolve|fade|fade-white">`。唯一真相源是 core 的 `packages/core/src/dsl/effects.ts`（目标只有 `camera`=画面内容变换层、`screen`=屏幕遮罩层）；`shot`/`action` 只作 actor 属性、`transition` 只作 scene 属性。改词表要连带动 parser 校验、`lineage/replay`、`prompt.ts` 的 FORMAT_RULES 与测试。详见 `docs/features/261007-dsl-effects/`。
+- **舞台效果与转场走封闭词表**（2026-10-07）：`<fx effect="flash|shake|letterbox|vignette" value="…"/>`（舞台级全局效果，作用于整幅画面；持续效果用 `value="off"` 停）、`<scene transition="cut|dissolve|fade|fade-white">`。唯一真相源是 core 的 `packages/core/src/dsl/effects.ts`；效果落在哪一层（画面内容变换层 / 屏幕遮罩层）是引擎内部的事，剧本不写 target。`shot`/`action`/`variant`/`anchor` 只作 actor 属性、`transition` 只作 scene 属性。改词表要连带动 parser 校验、`lineage/replay`、`prompt.ts` 的 FORMAT_RULES 与测试。详见 `docs/features/261007-dsl-effects/`。
 
 ## 谱系原语（跳转 / 分岔 / 重写 / 删除）
 

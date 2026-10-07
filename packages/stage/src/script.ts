@@ -1,4 +1,4 @@
-import type { ActorAnchor, ActorShot, FxTarget, StageEvent, TitleAlign, TitleMode, Transition } from "@aivn/core";
+import type { ActorAnchor, ActorShot, StageEvent, TitleAlign, TitleMode, Transition } from "@aivn/core";
 
 /** 前端剧本行模型：StageEvent 流 → 渲染行（log 视图与舞台台词共用）。 */
 export interface ScriptLine {
@@ -56,11 +56,8 @@ export type Cue =
     }
   | { key: string; kind: "sfx"; src: string; volume?: number }
   | { key: string; kind: "cg"; id: string; caption?: string }
-  /**
-   * 舞台级效果（flash/shake/letterbox/vignette）：统一原语 + 应用目标。
-   * `release` 表示停掉该 target 上的全部持续效果（此时没有 effect/value）。
-   */
-  | { key: string; kind: "fx"; target: FxTarget; effect?: string; value?: string; release?: boolean }
+  /** 舞台级全局效果（flash/shake/letterbox/vignette）：效果词 + 取值，不指定作用层。 */
+  | { key: string; kind: "fx"; effect: string; value?: string }
   /** 生图预发射（D6）：只记「id 正在生成」，用于未就绪时的骨架占位。 */
   | { key: string; kind: "preload"; id: string; type: "bg" | "cg" | "sprite" }
   | { key: string; kind: "line"; lineKey: string };
@@ -124,10 +121,8 @@ export class ScriptBuilder {
         this.cues.push({
           key: key(),
           kind: "fx",
-          target: event.target,
-          ...(event.release === true
-            ? { release: true }
-            : { effect: event.effect, ...(event.value ? { value: event.value } : {}) }),
+          effect: event.effect,
+          ...(event.value ? { value: event.value } : {}),
         });
         return;
       case "actor":
