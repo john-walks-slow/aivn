@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { normalizeParts } from "@aivn/core";
 import type { ClientMessage, GeneratedAsset, WorkshopAssetView } from "@aivn/core";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
@@ -15,6 +15,9 @@ import { TurnParts } from "./TurnParts.js";
 import { WorkshopMarkdown } from "./WorkshopMarkdown.js";
 import { WorkshopSettings } from "./WorkshopSettings.js";
 import { useWorkshop } from "./useWorkshop.js";
+
+/** 离底部这么近就算「贴着底」：滚轮一格常常差几像素，卡上几个像素不该当成离开了底部。 */
+const TAIL_GAP = 24;
 
 const TABS: { id: WorkshopTab; label: string; icon: IconName }[] = [
   { id: "chat", label: "对话", icon: "chat" },
@@ -84,6 +87,28 @@ export function WorkshopPane({
   /** 压缩摘要是否展开（默认折叠成一行一句话）。 */
   const [digestOpen, setDigestOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  /** 视口是否贴着对话底部。离开底部就不再自动下拽——正读着上文的人不该被新一行拖走。 */
+  const [atTail, setAtTail] = useState(true);
+
+  /** 吸到最底下，并恢复贴底跟随。 */
+  const stickToTail = (): void => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setAtTail(true);
+  };
+
+  /** 回到会话顶部。 */
+  const goTop = (): void => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  /** 滚动位置的唯一真相：剩下的距离在 TAIL_GAP 以内就算贴着底。 */
+  const onChatScroll = (): void => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setAtTail(el.scrollHeight - el.scrollTop - el.clientHeight <= TAIL_GAP);
+  };
 
   // 面板一挂上就先订阅再报到（StrictMode 下会走两遍，报到幂等）
   useEffect(() => subscribe(workshop.onMessage), [subscribe, workshop.onMessage]);
@@ -104,16 +129,22 @@ export function WorkshopPane({
     setDigestOpen(false);
   }, [state.activeId]);
 
-  // 新消息/流式增量追随到底部
+  // 进对话页 / 切会话：落一次到底。用 layout effect 是为了别让人先看见会话开头、再被拽下去。
+  useLayoutEffect(() => {
+    if (tab === "chat") stickToTail();
+  }, [tab, state.activeId]);
+
+  // 新消息 / 流式增量 / 到货素材：跟着往下长。只贴着底时才跟。
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [state.messages.length, state.live, state.pendingAssets.length]);
+    if (atTail) stickToTail();
+  }, [atTail, state.messages.length, state.live, state.pendingAssets.length]);
 
   const submit = (): void => {
     const text = input.trim();
     if (text === "") return;
     workshop.chat(text);
+    // 自己发的话一定是最新一条：人先前翻上去了，这一句也把他带回底部
+    stickToTail();
     setInput("");
     setThreadsOpen(false);
   };
@@ -256,74 +287,88 @@ export function WorkshopPane({
             </div>
           )}
 
-          <div className="workshop-chat" ref={scrollRef}>
-            {state.messages.length === 0 && state.live.length === 0 && (
-              <div className="workshop-empty">
-                <p>说出你想要的世界、角色或改动。</p>
-                <p className="muted small">
-                  例如：「我想要一个赛博朋克侦探故事，主角是个记不住人脸的女高中生」
-                </p>
-              </div>
-            )}
-            {state.messages.map((msg, i) => (
-              <Fragment key={`${msg.at}-${i}`}>
-                {i === state.compaction?.cutAt && (
-                  <>
-                    <div className="chat-divider">
-                      <button className="ghost-btn tiny-btn" onClick={() => setDigestOpen(!digestOpen)}>
-                        早期 {state.compaction!.cutAt} 条对话已压缩
-                      </button>
-                      {!digestOpen && <span>{state.compaction!.oneLiner}</span>}
-                    </div>
-                    {digestOpen && (
-                      <div className="chat-digest">
-                        <WorkshopMarkdown
-                          text={state.compaction!.body}
-                          onOpen={(images, index) => setLightbox({ images, index })}
-                        />
+          {/* 滚动区外面套一层：只给「回到顶部」键一个定位锚点，键不跟着内容滚走 */}
+          <div className="chat-scroll">
+            <div className="workshop-chat" ref={scrollRef} onScroll={onChatScroll}>
+              {state.messages.length === 0 && state.live.length === 0 && (
+                <div className="workshop-empty">
+                  <p>说出你想要的世界、角色或改动。</p>
+                  <p className="muted small">
+                    例如：「我想要一个赛博朋克侦探故事，主角是个记不住人脸的女高中生」
+                  </p>
+                </div>
+              )}
+              {state.messages.map((msg, i) => (
+                <Fragment key={`${msg.at}-${i}`}>
+                  {i === state.compaction?.cutAt && (
+                    <>
+                      <div className="chat-divider">
+                        <button className="ghost-btn tiny-btn" onClick={() => setDigestOpen(!digestOpen)}>
+                          早期 {state.compaction!.cutAt} 条对话已压缩
+                        </button>
+                        {!digestOpen && <span>{state.compaction!.oneLiner}</span>}
                       </div>
-                    )}
-                  </>
-                )}
-                {msg.role === "user" ? (
-                  <div className="chat-bubble chat-user">
-                    <WorkshopMarkdown
-                      text={msg.text}
-                      onOpen={(images, index) => setLightbox({ images, index })}
-                    />
-                  </div>
-                ) : (
-                  <div className="chat-turn">
-                    <TurnParts
-                      parts={normalizeParts(msg)}
-                      live={false}
-                      onOpenMarkdown={(images, index) => setLightbox({ images, index })}
-                      onOpenAssets={openImage}
-                    />
-                    {msg.images && msg.images.length > 0 && (
-                      <AssetStrip assets={msg.images} onOpen={openImage} />
-                    )}
-                  </div>
-                )}
-              </Fragment>
-            ))}
-            {state.live.length > 0 && (
-              <div className="chat-turn">
-                <TurnParts
-                  parts={state.live}
-                  live
-                  onOpenMarkdown={(images, index) => setLightbox({ images, index })}
-                  onOpenAssets={openImage}
-                />
-              </div>
+                      {digestOpen && (
+                        <div className="chat-digest">
+                          <WorkshopMarkdown
+                            text={state.compaction!.body}
+                            onOpen={(images, index) => setLightbox({ images, index })}
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {msg.role === "user" ? (
+                    <div className="chat-bubble chat-user">
+                      <WorkshopMarkdown
+                        text={msg.text}
+                        onOpen={(images, index) => setLightbox({ images, index })}
+                      />
+                    </div>
+                  ) : (
+                    <div className="chat-turn">
+                      <TurnParts
+                        parts={normalizeParts(msg)}
+                        live={false}
+                        onOpenMarkdown={(images, index) => setLightbox({ images, index })}
+                        onOpenAssets={openImage}
+                      />
+                      {msg.images && msg.images.length > 0 && (
+                        <AssetStrip assets={msg.images} onOpen={openImage} />
+                      )}
+                    </div>
+                  )}
+                </Fragment>
+              ))}
+              {state.live.length > 0 && (
+                <div className="chat-turn">
+                  <TurnParts
+                    parts={state.live}
+                    live
+                    onOpenMarkdown={(images, index) => setLightbox({ images, index })}
+                    onOpenAssets={openImage}
+                  />
+                </div>
+              )}
+              {/* 本轮出图即时可见：本轮话还没收束，图先摆在这儿，收束后并进上面那条消息 */}
+              {state.pendingAssets.length > 0 && (
+                <div className="asset-strip pending">
+                  <AssetStrip assets={state.pendingAssets} onOpen={openImage} bare />
+                </div>
+              )}
+              {state.busy && state.live.length === 0 && <div className="chat-activity">思考中…</div>}
+            </div>
+            {!atTail && (
+              <button
+                type="button"
+                className="chat-top-btn"
+                onClick={goTop}
+                title="回到顶部"
+                aria-label="回到顶部"
+              >
+                <Icon name="up" size={15} />
+              </button>
             )}
-            {/* 本轮出图即时可见：本轮话还没收束，图先摆在这儿，收束后并进上面那条消息 */}
-            {state.pendingAssets.length > 0 && (
-              <div className="asset-strip pending">
-                <AssetStrip assets={state.pendingAssets} onOpen={openImage} bare />
-              </div>
-            )}
-            {state.busy && state.live.length === 0 && <div className="chat-activity">思考中…</div>}
           </div>
 
           <footer className="workshop-input">
