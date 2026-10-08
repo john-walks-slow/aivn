@@ -330,8 +330,13 @@ function imageGuide(ctx: WorkshopPromptContext): string {
       ? `- **本剧目免审批出图**（Agent 页里设的「出图审批」= 自动）：不用等用户点头，该出就出——
   但仍然**一次只出真正需要的那几张**，出完把图贴给他看。`
       : `- **用户没点头之前一张都不要开跑**——出图要花钱、立绘一张要等 100 秒起。`;
+  const skillRule = ctx.can.skill
+    ? `- **第一次出图前先 read_skill("galgame-visual-craft")**：画风锚点、提示词写法、抠底调参都在那份全文里，
+  不读就按默认审美出图 = 整套素材返工。调 generate_bgm 前同样先 read_skill("galgame-bgm")。每轮想不起来就再读一次，别凭印象。
+`
+    : "";
   return `${approval}
-- **generate_image 只出草稿，不进素材表**：回执给 \`draftId\` 与预览图，要采用它再调 \`commit_asset\`。
+${skillRule}- **generate_image 只出草稿，不进素材表**：回执给 \`draftId\` 与预览图，要采用它再调 \`commit_asset\`。
   没被采用的草稿留在临时草稿区（一周后自动清），素材页与素材表里看不到它。
 - **先出 neutral 定妆照给用户看，而且是 3 张候选**：同一角色首次定妆时按 \`variant="neutral"\` 调 3 次 \`generate_image\`
   （prompt 各不相同），把三张预览一起摆给用户挑；用户挑定后**只 commit 那一张**——\`commit_asset(draftId=…)\` 就把它绑成正式定妆照。
