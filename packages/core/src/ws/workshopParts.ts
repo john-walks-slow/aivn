@@ -73,10 +73,16 @@ export function attachMessageAssets(
   images: readonly WorkshopAssetView[] | undefined,
 ): { parts: WorkshopPart[]; remaining: WorkshopAssetView[] } {
   if (!images || images.length === 0) return { parts: [...parts], remaining: [] };
-  const index = parts.map((part) => part.type).lastIndexOf("tool");
-  if (index === -1) return { parts: [...parts], remaining: [...images] };
+  // 优先挂素材类工具（出图/重抠/导入），读个文件的 read 不该挂住这轮的图
+  const prefers = ["generate_image", "recut_sprite", "import_asset"];
+  const index = parts.reduce<number>(
+    (found, part, i) => (part.type === "tool" && prefers.includes(part.name) ? i : found),
+    -1,
+  );
+  const fallback = index === -1 ? parts.map((part) => part.type).lastIndexOf("tool") : index;
+  if (fallback === -1) return { parts: [...parts], remaining: [...images] };
   const next = parts.map((part, i) =>
-    i === index && part.type === "tool"
+    i === fallback && part.type === "tool"
       ? { ...part, assets: [...(part.assets ?? []), ...images] }
       : part,
   );

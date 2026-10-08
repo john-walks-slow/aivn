@@ -41,6 +41,7 @@ import {
 } from "./compaction.js";
 import { createAgentKit, enabledCapabilitiesFor, type AgentKit } from "./agentkit/kit.js";
 import type { PlayAssets } from "./playAssets.js";
+import type { PlayConfig } from "@aivn/core";
 import type { GenerateMusicRequest, PlayMusic } from "./playMusic.js";
 import { WorkshopThreads, type ThreadCompaction, type WorkshopThread } from "./workshopThreads.js";
 
@@ -53,8 +54,8 @@ export interface WorkshopSessionOptions {
   playId: string;
   store: PlayStore;
   streamFn: StreamFn;
-  /** 现取模型：Agent 页改完模型下一轮即生效（工坊实例不随 runtime 重建）。 */
-  getModel: () => Model<Api> | Promise<Model<Api>>;
+  /** 单轮开跑前现取一次：模型/工坊设置/剧目配置（工坊实例不随 runtime 重建，改完即生效）。 */
+  getRunConfig: () => Promise<{ model: Model<Api>; agents?: AgentSettings; play: PlayConfig }>;
   getApiKey: () => string | undefined;
   /** 向本剧目所有 WS 客户端广播。 */
   emit: (msg: ServerMessage) => void;
@@ -81,8 +82,6 @@ export interface WorkshopSessionOptions {
   exa?: Exa;
   /** 网络图下载器；没有它 `view_image` 只认本地路径。 */
   webImage?: WebImageFetcher;
-  /** 工坊 agent 的运行设置（play.json 的 agents.workshop）：思考档位与能力开关。现取，与 getModel 同理。 */
-  getAgents?: () => AgentSettings | undefined | Promise<AgentSettings | undefined>;
   /** 线程压缩参数（工坊可用自己的 STAGE_WORKSHOP_* 一组 env）；不给 = 不压缩。 */
   compaction?: {
     contextWindow: number;
@@ -107,6 +106,8 @@ export class WorkshopSession {
   private running = false;
   /** 当前轮的中止闸：`stop()` 扳它，runWorkshopTurn 监听它。 */
   private turnAbort: AbortController | null = null;
+  /** 正在跑这一轮的线程：广播与异常落盘都归到它，不认「面板当前看哪条」。 */
+  private runningThreadId: string | null = null;
   /** 剧目被改动过（agent 写盘、素材到货、bash 跑过、文件页手改）：置脏只走 `markChanged`。 */
   private changedDuringTurn = false;
   /** 攒下的改动里有 bash：它的写绕开 `PlayFiles`，play.json 的结构校验一道都没过。 */
@@ -139,8 +140,10 @@ export class WorkshopSession {
   }
 
   /** 每轮开跑前按 play.json 现取模型与工坊设置，重装 kit——用户刚在 Agent 页改完立刻生效。 */
+  private turnPlay?: PlayConfig;
   private async freshTurnContext(): Promise<{ model: Model<Api>; agents?: AgentSettings }> {
-    const [model, agents] = await Promise.all([this.opts.getModel(), this.opts.getAgents?.()]);
+    const { model, agents, play } = await this.opts.getRunConfig();
+    this.turnPlay = play;
     this.kit = createAgentKit({
       role: "workshop",
       playId: this.opts.playId,
@@ -225,6 +228,7 @@ export class WorkshopSession {
       if (!thread) thread = await this.threads.create(deriveThreadTitle(content));
       const active = thread;
       this.activeId = active.id;
+      this.runningThreadId = active.id;
 
       const history = await this.threads.messages(active.id);
       // 开跑前先看要不要压：压了才不等到这轮请求直接被窗口撑爆。
@@ -315,7 +319,7 @@ export class WorkshopSession {
       // 就清空现场，这些只会闪一下就没了，刷新后连闪的资格都没有。
       const settled = this.settleAssets(parts);
       const message = error instanceof Error ? error.message : String(error);
-      const activeId = this.activeId ?? threadId ?? "";
+      const activeId = this.runningThreadId ?? this.activeId ?? threadId ?? "";
       if (settled.parts.length > 0 || settled.images.length > 0) {
         const note =
           settled.images.length > 0
@@ -339,6 +343,8 @@ export class WorkshopSession {
     } finally {
       this.running = false;
       this.turnAbort = null;
+      // 轮次已收束：广播/落盘恢复走浏览态 activeId
+      this.runningThreadId = null;
       // 一轮里可能写了好几个文件、出了好几张图：收束后只重建一次（保存即生效）
       await this.applyChanges();
       await this.snapshot();
@@ -409,10 +415,11 @@ export class WorkshopSession {
 
   /** 写盘事件广播（只当刷新信号，各页重拉）；runtime 重建由 `applyChanges` 统一收束。 */
   private broadcastWrite(write: PlayFileWrite): void {
+    const threadId = this.runningThreadId ?? this.activeId;
     this.markChanged();
     this.opts.emit({
       type: "workshop_write",
-      threadId: this.activeId ?? "",
+      threadId: threadId ?? "",
       path: write.path,
     });
   }
@@ -437,11 +444,12 @@ export class WorkshopSession {
 
   /** 素材到货：先瞬态播报（对话流立刻可见，带调用号的挂到那次调用的行上），收束时并入段落。 */
   private broadcastAsset(asset: WorkshopAssetView, replaced = false, toolCallId?: string): void {
+    const threadId = this.runningThreadId ?? this.activeId;
     this.markChanged();
     this.pendingAssets.push({ ...asset, replaced, toolCallId });
     this.opts.emit({
       type: "workshop_asset",
-      threadId: this.activeId ?? "",
+      threadId: threadId ?? "",
       toolCallId,
       kind: asset.kind,
       path: asset.path,
@@ -567,7 +575,7 @@ export class WorkshopSession {
 
   private async systemPrompt(digest?: string): Promise<string> {
     const [play, files, readiness] = await Promise.all([
-      this.opts.store.loadPlay(),
+      this.turnPlay ? Promise.resolve(this.turnPlay) : this.opts.store.loadPlay(),
       this.files.list(),
       this.opts.store.readiness(),
     ]);

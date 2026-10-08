@@ -188,6 +188,7 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
   const clearState = useCallback((): void => {
     setState((prev) => ({
       ...prev,
+      activeId: null,
       messages: [],
       compaction: null,
       live: [],

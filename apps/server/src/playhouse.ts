@@ -1369,11 +1369,14 @@ export class PlayHouse {
       playId: play.id,
       store,
       streamFn: this.streamFn,
-      getModel: async () => {
+      getRunConfig: async () => {
         const fresh = await store.loadPlay();
-        return this.modelFor(fresh.agents?.workshop?.model);
+        return {
+          model: this.modelFor(fresh.agents?.workshop?.model),
+          agents: fresh.agents?.workshop,
+          play: fresh,
+        };
       },
-      getAgents: async () => (await store.loadPlay()).agents?.workshop,
       getApiKey: () => this.config.apiKey,
       emit: (msg) => this.broadcast(play.id, msg),
       onFilesChanged: () => void this.reloadAfterWorkshopWrite(play.id),

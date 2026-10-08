@@ -197,7 +197,7 @@ export function SettingsScreen() {
                 onRetry={() => loadModels(true)}
               />
             </Field>
-            <Field label="限制级（NSFW）专用模型" hint="当剧作家调用 enter_nsfw 时切换至此模型。留空时：剧目自己的 nsfwModel → 本全局设置 → 剧作家主模型。">
+            <Field label="限制级（NSFW）专用模型" hint="当剧作家调用 enter_nsfw 时切换至此模型。剧目未单独指定时生效；此处也留空则跟随该剧目的主模型。">
               <ModelSelect
                 value={draft.model.nsfwModelId ?? ""}
                 models={models}
