@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Limiter } from "../src/limiter.js";
@@ -45,7 +45,8 @@ async function realImage(aspect: ImageAspect, mimeType: string): Promise<Buffer>
     .png()
     .toBuffer();
   const composed = await sharp({
-    create: { width, height, channels: 3, background: "#f0f2f5" },
+    // 纯绿色键底：抠底会体检底色，白底/灰底直接报错（见 cutout.ts 的 assertKeyBackground）。
+    create: { width, height, channels: 3, background: "#00ff00" },
   })
     .composite([{ input: figure, left: Math.round(width * 0.25), top: Math.round(height * 0.15) }])
     .png()
@@ -351,6 +352,70 @@ describe("PlayAssets：工坊素材落盘", () => {
     await writeManifest(store.dir, { mio: { framing: "half" } });
     await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "p");
     expect(calls[0]!.aspectRatio).toBe("3:4");
+  });
+
+  /**
+   * 差分与定妆照**必须**都点名色键底。
+   *
+   * 这条是被真事故逼出来的：差分曾经只写「跟参考图同色」，而差分的参考图是**已抠底的
+   * 透明 PNG**（没有颜色），模型把透明还原成白底，纯色键于是把角色身上一切接近白的像素
+   * 判成背景——白袜、白衬衫、银发被整块抠穿，立绘打成镂空。
+   * 见 `docs/issues/261008-sprite-variant-dirty-cutout/`。
+   */
+  it("出图后缀：定妆照与差分走同一个出口，两边都必须点名色键底", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "p");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "smile" }, "p");
+    const neutralPrompt = calls[0]!.prompt;
+    const variantPrompt = calls[1]!.prompt;
+    for (const [label, prompt] of [
+      ["定妆照", neutralPrompt],
+      ["差分", variantPrompt],
+    ] as const) {
+      expect(prompt, `${label}缺色键底要求`).toMatch(/single flat solid colour used as a chroma key/i);
+      expect(prompt, `${label}缺绿幕色值`).toMatch(/#00FF00/);
+      // 绿系角色才换品红：这条也得在
+      expect(prompt, `${label}缺换色规则`).toMatch(/#FF00FF/);
+      // 「跟参考图同色」是错的那一句——参考图可能是透明 PNG，同色等于没规定
+      expect(prompt, `${label}又写回了「跟参考图同色」`).not.toMatch(/same single flat solid background colour/i);
+      expect(prompt, `${label}缺不许渐变的约束`).toMatch(/no gradient/i);
+    }
+  });
+
+  it("出图后缀：片段拼接不产生双句点", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "p");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "smile" }, "p");
+    // 手拼标点时期实测 57 条差分 prompt 里 30 条带着 `..`
+    for (const call of calls) expect(call.prompt).not.toMatch(/\.\./);
+  });
+
+  /** 差分垫图必须是**带色键底的原片**，不是已抠底的透明 PNG（透明图正是白底事故的源头）。 */
+  it("差分垫图：有留底原片就用原片，没有（用户导入的立绘）才退回抠好的 PNG", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "p");
+    const source = files.absoluteOf("media-cache/sprite-sources/mio/neutral.jpg");
+    expect(existsSync(source), "出图应当留下原片").toBe(true);
+
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "smile" }, "p");
+    const ref = calls[calls.length - 1]!.references?.[0];
+    expect(ref, "差分必须垫图").toBeTruthy();
+    // 原片是绿底 JPEG；退回去的那张是抠好的 PNG（本身没有颜色）
+    const isCutPng = (await sharp(ref!.data).metadata()).hasAlpha === true;
+    expect(isCutPng, "差分垫的是已抠底的透明 PNG——它会诱导模型把透明还原成白底").toBe(false);
+
+    // 没有原片的（用户导入）退回抠好的 PNG，且不许报错
+    await rm(source, { force: true });
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "worried" }, "p");
+    const fallback = calls[calls.length - 1]!.references?.[0];
+    expect(fallback, "没有原片时仍要垫图").toBeTruthy();
+    expect((await sharp(fallback!.data).metadata()).hasAlpha).toBe(true);
   });
 
   it("立绘取景：差分级的覆盖优先于立绘级，出图不改已有的声明", async () => {
@@ -683,11 +748,17 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(calls[0]!.references).toEqual([]);
     // 自动补的定妆照前置了一条中性描述，压住差分那条 prompt 里的表情词
     expect(calls[0]!.prompt).toMatch(/neutral-expression/i);
-    // 垫图就是盘上那张抠过底的定妆照
+    // 垫图是**抠底前的原片**（带色键底的那张 JPEG），不是盘上抠好的透明 PNG——
+    // 垫透明图会让模型把透明还原成白底，纯色键随即把角色打穿。
+    // 见 `docs/issues/261008-sprite-variant-dirty-cutout/`。
     expect(calls[1]!.references).toHaveLength(1);
-    expect(calls[1]!.references![0]!.mimeType).toBe("image/png");
-    expect(calls[1]!.references![0]!.data.equals(await readFile(files.absoluteOf("assets/sprites/mio/neutral.png")))).toBe(
+    expect(calls[1]!.references![0]!.mimeType).toBe("image/jpeg");
+    expect(calls[1]!.references![0]!.data.equals(await readFile(files.absoluteOf("media-cache/sprite-sources/mio/neutral.jpg")))).toBe(
       true,
+    );
+    // 而盘上那张抠好的 PNG 与垫图不是同一份（垫图带底色，PGN 透明）
+    expect(calls[1]!.references![0]!.data.equals(await readFile(files.absoluteOf("assets/sprites/mio/neutral.png")))).toBe(
+      false,
     );
     expect(calls[1]!.prompt).toContain("Same character as the reference image");
 

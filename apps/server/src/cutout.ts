@@ -130,12 +130,44 @@ export function resolveTuning(override?: Partial<CutoutTuning>): CutoutTuning {
   return { ...defaultTuning(), ...override };
 }
 
+/**
+ * 底色体检：整圈边框量出来的「底色」必须真是一个**色键色**，否则当场报错。
+ *
+ * 为什么必须有这一条：纯色键抠底的前提是「底色是出图时选定的、不与角色撞色的纯色」。
+ * 这条前提一旦被破坏，算法**不会**报错——它会安安静静地把角色身上一切接近底色的像素
+ * 判成背景。最坏的情况是白底：白袜、白衬衫、银发全被抠穿，一张立绘打成镂空，
+ * 而且一路静默入库，只有用户肉眼看得出来（`docs/issues/261008-sprite-variant-dirty-cutout/`）。
+ *
+ * 判据是**通道极差**而不是「白不白」：色键色（纯绿 #00FF00、纯品红 #FF00FF）必然是三通道
+ * 差得极开的纯色，实测合法底色极差 191~255；而白底、浅灰底、照片底这类都在 8 以下。
+ * 不写死白名单色值，是因为底色由模型画、JPEG 一路抖过来本就不可能逐位精确，
+ * 而「饱和的纯色」这个性质是稳的。
+ *
+ * 门槛 96 取得很宽：真正要拦的是「无色相」的白/灰（极差 ≈ 0），
+ * 留足余量给浅色但仍是色键的底（比如纯蓝 #0000FF 极差 255、稍脏的绿幕也有 190+）。
+ */
+const MIN_KEY_SATURATION = 96;
+
+function assertKeyBackground(rgba: Buffer, width: number, height: number, channels: number): void {
+  const bg = borderMedian(rgba, width, height, channels);
+  const spread = Math.max(...bg) - Math.min(...bg);
+  if (spread >= MIN_KEY_SATURATION) return;
+  throw new Error(
+    `抠底失败：整圈边框量出的底色是 (${bg.join(", ")})，通道极差只有 ${spread}——` +
+      "这是一个白底或灰底，不是色键色。纯色键会把角色身上接近这个颜色的部分整块判成背景" +
+      "（白袜、白衬衫、银发会被直接抠穿），落盘就是一张镂空的立绘。" +
+      "根因是出图那一步没按色键底出图：让立绘提示词带上单一纯色底要求" +
+      "（默认纯绿 #00FF00，绿系角色用纯品红 #FF00FF）再重出，不要靠调 tolerance 去救。",
+  );
+}
+
 export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise<CutoutResult> {
   const canvasHeight = options.canvasHeight ?? CANVAS_HEIGHT;
   const canvasWidth = Math.round((canvasHeight * 9) / 16);
   const { data: rgba, info } = await sharp(data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width, height, channels } = info;
   if (width < 8 || height < 8) throw new Error("图太小，抠底没有意义");
+  assertKeyBackground(rgba, width, height, channels);
 
   const tuning = resolveTuning(options);
   // 掩膜与像素分开处理：环纹污染的是掩膜的**形状**（轮廓被啃出几段噪声台阶），

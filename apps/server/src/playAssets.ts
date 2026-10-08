@@ -376,15 +376,31 @@ export class PlayAssets {
   }
 
   private async readSpriteSource(spec: AssetSpec): Promise<Buffer> {
-    const dir = this.deps.store.spriteSourceDir(spec.spriteId!);
-    for (const ext of IMAGE_EXTS) {
-      const file = join(dir, `${spec.stem}${ext}`);
-      if (existsSync(file)) return readFile(file);
+    const rel = this.spriteSourcePath(spec.spriteId, spec.stem);
+    if (!rel) {
+      throw new Error(
+        `${spec.spriteId}/${spec.stem} 没有留底原片（抠底前那一张），没法原地重抠。` +
+          "留底是出图时顺手写的：更早出的图、用户自己上传的立绘都没有——那种只能重新出图。",
+      );
     }
-    throw new Error(
-      `${spec.spriteId}/${spec.stem} 没有留底原片（抠底前那一张），没法原地重抠。` +
-        "留底是出图时顺手写的：更早出的图、用户自己上传的立绘都没有——那种只能重新出图。",
-    );
+    return readFile(this.deps.files.absoluteOf(rel));
+  }
+
+  /**
+   * 该 stem 的留底原片（抠底前那一张）的剧目内相对路径，没有则 null。
+   *
+   * 两个用处，**传的 stem 不一样**：`recut` 传当前 stem 重抠自己；
+   * 差分传 `NEUTRAL`——差分的身份基准恒为定妆照，拿差分自己的原片当基准是换脸。
+   * 原片在 `media-cache/` 下——那目录不进 git，换机器后老图就没有原片了，
+   * 这条路径会返回 null，调用方各自退回自己的兜底。
+   */
+  private spriteSourcePath(spriteId: string | undefined, stem: string): string | null {
+    if (!spriteId) return null;
+    for (const ext of IMAGE_EXTS) {
+      const rel = `media-cache/sprite-sources/${spriteId}/${stem}${ext}`;
+      if (existsSync(this.deps.files.absoluteOf(rel))) return rel;
+    }
+    return null;
   }
 
   /** 目标是否已有图（工坊/剧作家跳过重复出图用）。 */
@@ -833,13 +849,34 @@ export class PlayAssets {
             "要换基准就重新出一次 neutral（那一次可以带 references），再派生差分。",
         );
       }
-      const neutral = await this.existingPath(spec.kindPath, NEUTRAL);
-      return neutral ? [await this.loadReference(neutral)] : [];
+      const reference = await this.neutralReferenceOf(spec);
+      return reference ? [await this.loadReference(reference)] : [];
     }
 
     const refs = [];
     for (const ref of explicit) refs.push(await this.loadReference(ref.source));
     return refs;
+  }
+
+  /**
+   * 差分垫的那张 neutral：**优先用留底原片，没有才退回已抠底的 PNG**。
+   *
+   * 留底原片（`media-cache/sprite-sources/<id>/neutral.jpg`）带着出图时的色键底，
+   * 而 `assets/sprites/<id>/neutral.png` 是**已经抠过底的透明 PNG**。给模型垫一张透明图，
+   * 它会自行把透明还原成白底，而差分提示词里「底色跟参考图一致」这句就落到了白底上——
+   * 纯色键随即把角色身上一切接近白的像素（白袜、白制服、银发）判成背景，
+   * 整张立绘被打成镂空（见 `docs/issues/261008-sprite-variant-dirty-cutout/`）。
+   * 垫带底的原片，模型的参照物与提示词描述的是同一件事。
+   *
+   * 但**不能无条件换成原片**：用户自己导入的立绘（`assetImport.ts`）直接落 `assets/sprites/`，
+   * 不留原片——那种主体只有抠好的 PNG 可垫，退回它。
+   */
+  private async neutralReferenceOf(spec: AssetSpec): Promise<string | null> {
+    // 找的必须是 **neutral** 的原片，不是当前差分的：身份基准恒为定妆照。
+    // 差分自己那张原片是另一个表情，拿它当基准就是换脸。
+    const source = this.spriteSourcePath(spec.spriteId, NEUTRAL);
+    if (source) return source;
+    return this.existingPath(spec.kindPath, NEUTRAL);
   }
 
   /**
@@ -1017,14 +1054,9 @@ function suffixFor(spec: AssetSpec, prompt: string, sentReferences: number): str
     // 包含通用参考图或混合参考
     return `${prompt}. ${genericReferenceSuffix(spec.explicitReferences ?? [])}`;
   }
-  if (spec.variant === NEUTRAL) {
-    // 定妆照垫图：先给色键底抠底的构图约束，再点明这是哪张参考图的同一个人。
-    // 顺序不能反——参考图会带背景与景别，构图约束压后面才盖得住它。
-    return sentReferences > 0
-      ? `${prompt}, ${neutralSuffix(spec.framing)} ${neutralReferenceTail(spec.framing)}`
-      : `${prompt}, ${neutralSuffix(spec.framing)}`;
-  }
-  return `${prompt}. ${identitySuffix(spec.framing)}`;
+  // 定妆照与差分走同一个出口：抠底底色、画风、不留杂物这几条必须两条分支一致，
+  // 分开写就一定会漂（见 `spriteSuffix`）。
+  return `${prompt}. ${spriteSuffix(spec.framing, spec.variant, sentReferences)}`;
 }
 
 /**
@@ -1051,17 +1083,18 @@ function genericReferenceSuffix(refs: ResolvedReference[]): string {
 /**
  * 定妆照的参考图尾注：拼在构图后缀**之后**，点明这一张要长得像参考图里的那个人。
  *
- * 与 `identitySuffix`（差分那条）分工不同——差分垫的是自家 neutral，说的是「只改表情」；
- * 这里垫的是外部图（用户给的既有角色图、原画），要的是「把那个人的样子搬到这张定妆照上」。
- * 姿势、底色、画风仍由 `neutralSuffix` 管，这一段只补身份。
+ * 与差分的 `HUMAN_IDENTITY` / `PROP_IDENTITY` 分工不同——差分垫的是自家 neutral，
+ * 说的是「只改表情」；这里垫的是外部图（用户给的既有角色图、原画），
+ * 要的是「把那个人的样子搬到这张定妆照上」。姿势、底色、画风仍由 `spriteSuffix` 管，
+ * 这一段只补身份。**不带句尾标点**：拼接由 `join(". ")` 统一负责。
  */
 function neutralReferenceTail(framing: SpriteFraming | undefined): string {
   if ((framing ?? DEFAULT_SPRITE_FRAMING) === "square") {
-    return "Based on the attached reference image: the same subject with identical colors, markings and features.";
+    return "Based on the attached reference image: the same subject with identical colors, markings and features";
   }
   return (
     "Based on the attached reference image: the same character — identical face, hairstyle, hair color, " +
-    "eye color and outfit — redrawn in the pose and framing described above."
+    "eye color and outfit — redrawn in the pose and framing described above"
   );
 }
 
@@ -1085,6 +1118,14 @@ function referenceSuffix(characters: ReferenceSprite[]): string {
 
 
 /**
+ * 画风句。定妆照与差分共用同一份——两边各写一句时，两句话只要有一处措辞不同，
+ * 出来就是两张画风不同的画，而「同一个人」正是靠这套词锁的。
+ */
+const STYLE =
+  "Japanese anime style 2D illustration, flat cel shading with clean crisp lineart, " +
+  "NOT a 3D render, no 3D CGI look";
+
+/**
  * 抠底底色：**单一纯色，且这个颜色不出现在角色身上**。
  *
  * 抠底（`src/cutout.ts`）是纯色键：离底色够近的像素一律算背景，不分内外、不看连通性。
@@ -1095,31 +1136,22 @@ function referenceSuffix(characters: ReferenceSprite[]): string {
  * 抠完的边最干净。**只有角色配色本身就是绿色系（绿发/绿衣/绿瞳）时才换**成纯品红 #FF00FF
  * 或纯蓝 #0000FF。换了哪个抠底端不需要知道：它从整圈边框量出实际底色。
  *
- * 不许渐变、投影、纹理、装饰：色键只认一种颜色，任何过渡都是抠不干净的白边。
+ * **这一句是底线，定妆照与差分都走它。** 别在别的分支里另写一句「跟参考图同色」——
+ * 差分曾经就是这么写的，而差分的垫图是**已经抠过底的透明 PNG**（没有颜色），
+ * 模型把透明还原成白底，色键于是把角色身上一切接近白的像素（白袜、白制服、银发）
+ * 判成背景，整张立绘被打成镂空。约束被复制就会只改一份，只改一份就是线上事故。
  */
 const KEY_BACKGROUND =
   "Background is one single flat solid colour used as a chroma key, chosen to appear nowhere on the " +
   "character themselves; always use pure green #00FF00, unless the character's own colouring is " +
-  "greenish (green hair, green clothing, green eyes), in which case use pure magenta #FF00FF instead. " +
-  "No gradient, no shadow, no texture, no decoration, no text.";
+  "greenish (green hair, green clothing, green eyes), in which case use pure magenta #FF00FF instead";
 
 /**
- * 立绘后缀：**只写与主体是人还是物无关的构图与画风约束**。
- *
- * 人形专属的那一小段（手臂留白、头顶留白）由 `POSE_TAIL` 单独提供，只在人形取景时拼；
- * 非人走 `square`，不碰它——给猫套上「手臂与躯干不能留窄缝」只会得到一只人形猫。
- *
- * 这一段留白给抠底：后半段不是修饰词是硬约束，`src/cutout.ts` 的全局色键抠底要求
- * 2D 平涂 + **单一纯色底**（3D 渲染的渐变与投影会让底色散成一片灰，色键抠不干净）；
- * 剪影连成一片就没法分割人物与底色。
- *
- * 它也不描述任何人物特征——每个词都会被当成设定印进图里。早先这里写的是
- * 「between the twin tails」（为了发梢与身体之间留底），等于给所有角色定了个双马尾：
- * 实测 prompt 里明写 pink long straight hair，出来的仍是双马尾。要什么发型由角色卡说。
+ * 不许渐变、投影、纹理、装饰：色键只认一种颜色，任何过渡都是抠不干净的白边。
+ * 与画风句、底色句一样，只此一份——先前 `IDENTITY_TAIL` 手里抄了一份
+ * （`no text, no shadow, no gradient.`），两句还只对上了三个词。
  */
-const COMMON_TAIL =
-  ". Japanese anime style 2D illustration, flat cel shading with clean crisp lineart, NOT a 3D render, " +
-  "no 3D CGI look. " + KEY_BACKGROUND;
+const NO_ARTIFACTS = "No gradient, no shadow, no texture, no decoration, no text";
 
 /**
  * 留白约束：人形专属。舞台按统一头顶留白摆位（见 app.css 的 .theater-sprite）。
@@ -1133,7 +1165,7 @@ const COMMON_TAIL =
  * 人会被拆成两块轮廓（要么贴住，要么彻底分开、让底色能灌进去）。
  */
 const POSE_TAIL =
-  ", arms either resting against the body or clearly separated from it, never with a narrow sliver of " +
+  "arms either resting against the body or clearly separated from it, never with a narrow sliver of " +
   "background trapped between an arm and the torso" +
   // 人物矮的那一头空间本来就该空得多，不点明的话模型会把所有角色都顶到画幅上沿，
   // 矮个子的头顶就直接贴边了。
@@ -1141,33 +1173,14 @@ const POSE_TAIL =
   "so every character keeps some space above the head rather than touching the top edge of the frame";
 
 /**
- * 主体为人（full/half）时的立绘后缀：景别措辞 + 人形留白 + 通用约束。
- *
- * 开头换的是 `SPRITE_FRAMING_SHOT` 而不是写死的 "full body"：写死时取景是半身的角色
- * 照样会被画成全身，出图与舞台声明对不上，站位又得重新量。
- * 这不是对 `framing` 的重复声明——`framing` 决定画幅（像素）与舞台摆位（CSS），
- * 两者都传不进提示词；模型唯一能知道「画到哪儿」的通道就是措辞。
- */
-function humanSuffix(framing: SpriteFraming | undefined): string {
-  return SPRITE_FRAMING_SHOT[framing ?? DEFAULT_SPRITE_FRAMING] + POSE_TAIL + COMMON_TAIL;
-}
-
-/**
- * 主体非人（`square`）时的立绘后缀：只说「完整入画 + 四周留白」。
+ * 主体非人（`square`）时的留白约束：只说「完整入画 + 四周留白」。
  *
  * 抠底靠的是「主体四周有一圈底色」，这与人形无关，所以留白这句留着；
  * 姿态与「头顶留白」都去掉——猫没有双臂，吊灯没有头顶。
  */
 const PROP_TAIL =
-  ", the entire subject fully inside the frame with clear empty background space all around it, " +
+  "the entire subject fully inside the frame with clear empty background space all around it, " +
   "nothing cropped by the frame edges";
-
-function neutralSuffix(framing: SpriteFraming | undefined): string {
-  const f = framing ?? DEFAULT_SPRITE_FRAMING;
-  // square 是「非人主体」的唯一入口，所以它同时决定了后缀走哪一套。
-  // 人与非人的差别只有一处：姿势与头顶留白（人形专属），其余构图与画风约束两边通用。
-  return f === "square" ? SPRITE_FRAMING_SHOT[f] + PROP_TAIL + COMMON_TAIL : humanSuffix(f);
-}
 
 /**
  * 定妆照的前置中性描述：压住角色卡里的表情词（那一条只对当前差分有效）。
@@ -1188,14 +1201,10 @@ const NEUTRAL_LEAD: Record<SpriteFraming, string> = {
 
 /**
  * 差分：只改**表情/状态**，身份特征一律锁死——垫图之外的第二道保险。
- * 画风要求与定妆照一字不差，否则两个人。
  *
  * 「facial expression」也是人形词，猫的差分（睡着的/炸毛的）说「只改面部表情」会让模型
  * 认真去找那张猫脸。所以非人那套说的是「只改状态」。
  */
-const IDENTITY_TAIL =
-  "Same 2D flat cel-shaded anime illustration style, NOT a 3D render, " +
-  "same single flat solid background colour as the reference image, no text, no shadow, no gradient.";
 const HUMAN_IDENTITY =
   "Same character as the reference image: identical hairstyle, hair color, eye color, outfit and body type. " +
   "Change only the facial expression.";
@@ -1203,12 +1212,39 @@ const PROP_IDENTITY =
   "The same subject as the reference image, in the same pose and same colours. Change only its state.";
 
 /**
- * 差分也要点明景别：垫图（neutral 定妆照）是全身时，模型很容易照着垫图把一条
- * 半身差分也画成全身。不点明的代价是图出来了取景对不上，舞台按半身摆却是张全身像。
+ * 立绘提示词的**唯一出口**：定妆照与差分拼的是同一个片段序列，差别只在「身份」那一段。
+ *
+ * 这么写是为了让「底色 / 画风 / 不留杂物」这几条**不可能只在一条分支上生效**——
+ * 它们曾经分居两处（`COMMON_TAIL` 与 `IDENTITY_TAIL`），绿幕改造只改了前者，
+ * 差分就此带着白底出图、被色键打成镂空（见 `docs/issues/261008-sprite-variant-dirty-cutout/`）。
+ * 片段之间统一由 `join(". ")` 拼，标点不再手写——手拼时出过 `one arm.. Same character` 这种双句点。
+ *
+ * 顺序有讲究：景别与构图在前，身份在后，底色与画风压轴。垫图会带自己的背景与景别，
+ * 约束放在它后面才盖得住。
  */
-function identitySuffix(framing: SpriteFraming | undefined): string {
+function spriteSuffix(
+  framing: SpriteFraming | undefined,
+  variant: string | undefined,
+  sentReferences: number,
+): string {
   const f = framing ?? DEFAULT_SPRITE_FRAMING;
-  const shot = SPRITE_FRAMING_SHOT[f];
-  const lead = f === "square" ? PROP_IDENTITY : HUMAN_IDENTITY;
-  return `${lead} ${shot}. ${f === "square" ? PROP_TAIL + ". " : ""}${IDENTITY_TAIL}`;
+  // square 是「非人主体」的唯一入口，所以它同时决定了后缀走哪一套。
+  // 人与非人的差别只有一处：姿势与头顶留白（人形专属），其余构图与画风约束两边通用。
+  const human = f !== "square";
+  const neutral = variant === NEUTRAL;
+  const parts = [
+    // 差分也要点明景别：垫图（neutral 定妆照）是全身时，模型很容易照着垫图把一条
+    // 半身差分也画成全身。不点明的代价是图出来了取景对不上，舞台按半身摆却是张全身像。
+    neutral ? SPRITE_FRAMING_SHOT[f] : human ? HUMAN_IDENTITY : PROP_IDENTITY,
+    ...(neutral ? [] : [SPRITE_FRAMING_SHOT[f]]),
+    human ? POSE_TAIL : PROP_TAIL,
+    STYLE,
+    KEY_BACKGROUND,
+    NO_ARTIFACTS,
+  ];
+  // 定妆照垫图时补一句「这就是参考图里那个人」，压在最后：参考图带背景与景别，压后才盖得住。
+  if (neutral && sentReferences > 0) parts.push(neutralReferenceTail(f));
+  // 标点由这一处说了算：片段自带的尾句点一律削掉再拼，否则 `expression.` 撞上 `". "`
+  // 就是 `expression..`——片段各写各的标点时实测出过 30/57 条带双句点的提示词。
+  return `${parts.map((p) => p.trim().replace(/\.+$/, "")).join(". ")}.`;
 }

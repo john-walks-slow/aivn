@@ -2,12 +2,17 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { cutout } from "../src/cutout.js";
 
-/** 合成一张测试图：浅灰底 + 一个深色人形 + 胸口一块贴近底色的白衬衫（不与边界连通）。 */
+/**
+ * 合成一张测试图：纯绿底色 + 一个深色人形 + 胸口一块贴近底色的白衬衫（不与边界连通）。
+ *
+ * 底色必须是**色键色**（这里纯绿 #00FF00）——`cutout` 现在会体检整圈边框量出的底色，
+ * 白底/灰底直接报错（那种底色会把角色身上接近白的部分整块判成背景）。
+ */
 async function synth(width = 240, height = 320): Promise<{ data: Buffer; shirt: [number, number] }> {
   const px = (x: number, y: number): [number, number, number] => {
     if (x > 90 && x < 150 && y > 120 && y < 200) return [246, 246, 248];
     if (y > 40 && y < 280 && x > 60 && x < 180) return [60, 70, 120];
-    return [240, 242, 245];
+    return [0, 255, 0];
   };
   const raw = Buffer.alloc(width * height * 3);
   for (let y = 0; y < height; y++) {
@@ -31,7 +36,7 @@ async function alphaAt(data: Buffer, x: number, y: number): Promise<number> {
 }
 
 /**
- * 色键夹具：纯白底 + 一块深色人形，人形里埋四块「离底色不同远近」的封闭口袋。
+ * 色键夹具：纯绿底 + 一块深色人形，人形里埋四块「离底色不同远近」的封闭口袋。
  * 四个都贴不到画面边——纯色键不看连通性，贴不贴边不改变任何事：
  * A 离底色 4 格、B 20 格、C 42 格、D 60 格（走 PNG，JPEG 的色振铃会把摆好的色差搅没）。
  * 容差小到几格时它们都还是「角色身上的浅色」，放宽才一块块被当成底色吃进去。
@@ -49,12 +54,19 @@ async function keyedPockets(): Promise<Buffer> {
       }
     }
   };
-  const raw = Buffer.alloc(width * height * 3).fill(255);
+  const BG: [number, number, number] = [0, 255, 0];
+  // 离底色 4 / 20 / 42 / 60 格：只动绿以外的一路，极差就是那个距离
+  const raw = Buffer.alloc(width * height * 3).fill(0);
+  for (let i = 0; i < width * height; i++) {
+    raw[i * 3] = BG[0];
+    raw[i * 3 + 1] = BG[1];
+    raw[i * 3 + 2] = BG[2];
+  }
   paint(40, 20, 160, 280, [40, 50, 80]);
-  paint(60, 40, 99, 79, [251, 251, 252]); // A：离底色 4 格
-  paint(100, 40, 139, 79, [235, 235, 237]); // B：20 格
-  paint(60, 100, 99, 139, [213, 213, 216]); // C：42 格
-  paint(100, 100, 139, 139, [195, 195, 197]); // D：60 格
+  paint(60, 40, 99, 79, [4, 251, 4]); // A：离底色 4 格
+  paint(100, 40, 139, 79, [20, 235, 20]); // B：20 格
+  paint(60, 100, 99, 139, [42, 213, 42]); // C：42 格
+  paint(100, 100, 139, 139, [60, 195, 60]); // D：60 格
   return sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
 }
 
@@ -105,24 +117,30 @@ describe("cutout", () => {
   });
 
   it("与底色同色的封闭块照抠不误——「别撞色」是出图那一步的责任", async () => {
-    // 纯白底 + 深色人形，胸口一块**与底色逐位同色**的封闭矩形：白袜子/白衬衫的极端形态。
+    // 纯绿底 + 深色人形，胸口一块**与底色逐位同色**的封闭矩形：绿衣角色的极端形态。
     // 纯色键不分内外、不看连通性，它就是底色，整块抠掉。想保住它只有一条路——
     // 出图时把底色选成角色身上没有的颜色（playAssets.ts 的 KEY_BACKGROUND）。
     const width = 200;
     const height = 300;
-    const raw = Buffer.alloc(width * height * 3).fill(255);
-    const paint = (x0: number, y0: number, x1: number, y1: number, c: number) => {
+    const BG: [number, number, number] = [0, 255, 0];
+    const raw = Buffer.alloc(width * height * 3);
+    for (let i = 0; i < width * height; i++) {
+      raw[i * 3] = BG[0];
+      raw[i * 3 + 1] = BG[1];
+      raw[i * 3 + 2] = BG[2];
+    }
+    const paint = (x0: number, y0: number, x1: number, y1: number, c: [number, number, number]) => {
       for (let y = y0; y <= y1; y++) {
         for (let x = x0; x <= x1; x++) {
           const o = (y * width + x) * 3;
-          raw[o] = c;
-          raw[o + 1] = c;
-          raw[o + 2] = c;
+          raw[o] = c[0];
+          raw[o + 1] = c[1];
+          raw[o + 2] = c[2];
         }
       }
     };
-    paint(40, 20, 160, 280, 40); // 人形
-    paint(80, 130, 120, 190, 255); // 白袜子：与底色逐位同色、2501px、封闭
+    paint(40, 20, 160, 280, [40, 20, 60]); // 人形
+    paint(80, 130, 120, 190, BG); // 与底色逐位同色的封闭块：2501px、封闭
     const data = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
 
     // 白袜子中心 (100,160) 映射到输出画布（人物外框 + 等比缩放 + 底部居中）
@@ -162,7 +180,7 @@ describe("cutout", () => {
   });
 
   it("边界带的 alpha 是反解出来的真实覆盖率，不是钉死的 128 地板", async () => {
-    // 立绘左缘的三段抗锯齿，覆盖率分别 20% / 50% / 80%，深处是实心深色，底是纯白。
+    // 立绘左缘的三段抗锯齿，覆盖率分别 20% / 50% / 80%，深处是实心深色，底是纯绿色键。
     // 旧公式是 max(色差项, dist/2)，而 dist/2 恒等于 0.5 —— 边界带每一像素的 alpha
     // 下限被钉死在 128，深色舞台底上就是一圈白边晕。闭式解 a=(B−I)/(B−F) 给出真实覆盖率。
     //
@@ -171,19 +189,30 @@ describe("cutout", () => {
     // 而不是覆盖率（实测同一夹具在 8x 下旧新都读 172），这个尺寸是能测准的前提。
     const width = 400;
     const height = 2120;
-    const raw = Buffer.alloc(width * height * 3).fill(255);
-    const bands: { y: number; coverage: number; value: number }[] = [
-      { y: 200, coverage: 0.2, value: 212 },
-      { y: 800, coverage: 0.5, value: 148 },
-      { y: 1400, coverage: 0.8, value: 83 },
+    const BG: [number, number, number] = [0, 255, 0];
+    const FG: [number, number, number] = [40, 40, 40];
+    /** 底色与前景按覆盖率线性混合——模型抗锯齿画出来的就是这条线上的像素。 */
+    const mix = (a: number): [number, number, number] =>
+      FG.map((v, c) => Math.round(a * v + (1 - a) * BG[c]!)) as [number, number, number];
+    const raw = Buffer.alloc(width * height * 3);
+    for (let i = 0; i < width * height; i++) {
+      raw[i * 3] = BG[0];
+      raw[i * 3 + 1] = BG[1];
+      raw[i * 3 + 2] = BG[2];
+    }
+    const bands: { y: number; coverage: number }[] = [
+      { y: 200, coverage: 0.2 },
+      { y: 800, coverage: 0.5 },
+      { y: 1400, coverage: 0.8 },
     ];
     for (let y = 100; y < 2020; y++) {
       for (let x = 100; x < 300; x++) {
         const o = (y * width + x) * 3;
-        const v = x === 100 ? (bands.find((b) => y >= b.y && y < b.y + 500)?.value ?? 40) : 40;
-        raw[o] = v;
-        raw[o + 1] = v;
-        raw[o + 2] = v;
+        const coverage = x === 100 ? (bands.find((b) => y >= b.y && y < b.y + 500)?.coverage ?? 1) : 1;
+        const [r, g, b] = mix(coverage);
+        raw[o] = r;
+        raw[o + 1] = g;
+        raw[o + 2] = b;
       }
     }
     const result = await cutout(await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer());
@@ -255,25 +284,87 @@ describe("cutout", () => {
   it("底色只占边框一圈（描边/晕影）时抛错而不是落半残图", async () => {
     // 色键的底色是从整圈边框量出来的，它必须真是整片底色。模型给画面描了一圈边、
     // 或加了晕影时，量出来的颜色只覆盖边框那一圈，其余全被判成前景 → 报「底色没抠干净」。
+    // 边框是纯绿（过得了底色体检），里面是纯品红——两种都是合法色键色，
+    // 所以挡住它的只能是「底色没铺满」这条，不是体检那条。
     const width = 200;
     const height = 200;
-    const raw = Buffer.alloc(width * height * 3).fill(255);
+    const raw = Buffer.alloc(width * height * 3);
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        if (x !== 0 && y !== 0 && x !== width - 1 && y !== height - 1) continue;
         const o = (y * width + x) * 3;
-        raw[o] = 0;
-        raw[o + 1] = 0;
-        raw[o + 2] = 0;
+        const onRing = x === 0 || y === 0 || x === width - 1 || y === height - 1;
+        raw[o] = onRing ? 0 : 255;
+        raw[o + 1] = onRing ? 255 : 0;
+        raw[o + 2] = onRing ? 0 : 255;
       }
     }
-    const bordered = await sharp(raw, { raw: { width, height, channels: 3 } }).jpeg().toBuffer();
+    // 不走 JPEG：1px 的边框经 JPEG 一抖就和内部糊成灰绿，底色体检会先把它拦下，
+    // 那样测的就不是这两条判据了。
+    const bordered = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
     await expect(cutout(bordered)).rejects.toThrow(/底色没抠干净/);
+  });
+
+  it("底色不是色键色（白底/灰底）时当场抛错，不落一张打穿的立绘", async () => {
+    // 这是本仓最贵的一次教训：差分曾经带着**白底**出图（提示词漏了色键底要求），
+    // 纯色键于是把角色身上一切接近白的像素（白袜、白衬衫、银发）判成背景，
+    // 整张立绘被打成镂空，而且一路静默入库，只有用户肉眼看得出来。
+    // 见 docs/issues/261008-sprite-variant-dirty-cutout/。
+    const width = 200;
+    const height = 300;
+    for (const [name, bg] of [
+      ["纯白", [255, 255, 255]],
+      ["浅灰", [196, 196, 196]],
+    ] as const) {
+      const raw = Buffer.alloc(width * height * 3);
+      for (let i = 0; i < width * height; i++) {
+        raw[i * 3] = bg[0];
+        raw[i * 3 + 1] = bg[1];
+        raw[i * 3 + 2] = bg[2];
+      }
+      // 深色人形，形状完全正常——问题不在角色，在底色
+      for (let y = 20; y < 280; y++) {
+        for (let x = 40; x < 160; x++) {
+          const o = (y * width + x) * 3;
+          raw[o] = 40;
+          raw[o + 1] = 50;
+          raw[o + 2] = 80;
+        }
+      }
+      const image = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
+      await expect(cutout(image), `${name}底应当被体检拦下`).rejects.toThrow(/不是色键色/);
+    }
+  });
+
+  it("色键底照常放行：纯绿与纯品红都不该被体检误伤", async () => {
+    const width = 200;
+    const height = 300;
+    for (const bg of [
+      [0, 255, 0],
+      [255, 0, 255],
+    ] as const) {
+      const raw = Buffer.alloc(width * height * 3);
+      for (let i = 0; i < width * height; i++) {
+        raw[i * 3] = bg[0];
+        raw[i * 3 + 1] = bg[1];
+        raw[i * 3 + 2] = bg[2];
+      }
+      for (let y = 20; y < 280; y++) {
+        for (let x = 40; x < 160; x++) {
+          const o = (y * width + x) * 3;
+          raw[o] = 40;
+          raw[o + 1] = 50;
+          raw[o + 2] = 80;
+        }
+      }
+      const image = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
+      const result = await cutout(image);
+      expect(await alphaAt(result.data, 2, 2)).toBe(0);
+    }
   });
 
 });
 
-/** 纯色底 + 一个站立人形。fillW/fillH 是人物占格的比例：模型在矮格子里会把人撑得又宽又矮。 */
+/** 纯绿色键底 + 一个站立人形。fillW/fillH 是人物占格的比例：模型在矮格子里会把人撑得又宽又矮。 */
 async function standing(w: number, h: number, fillW = 0.36, fillH = 0.9): Promise<Buffer> {
   const raw = Buffer.alloc(w * h * 3);
   const bw = Math.round(w * fillW);
@@ -282,9 +373,9 @@ async function standing(w: number, h: number, fillW = 0.36, fillH = 0.9): Promis
     for (let x = 0; x < w; x++) {
       const o = (y * w + x) * 3;
       const inBody = x > (w - bw) / 2 && x < (w + bw) / 2 && y > top && y < top + Math.round(h * fillH);
-      raw[o] = inBody ? 50 : 245;
-      raw[o + 1] = inBody ? 60 : 245;
-      raw[o + 2] = inBody ? 120 : 245;
+      raw[o] = inBody ? 50 : 0;
+      raw[o + 1] = inBody ? 60 : 255;
+      raw[o + 2] = inBody ? 120 : 0;
     }
   }
   return sharp(raw, { raw: { width: w, height: h, channels: 3 } }).jpeg().toBuffer();
@@ -324,19 +415,26 @@ describe("人物高度：不同格子制式下必须一致", () => {
     // 判据：越过 F 的通道当噪声丢掉（还剩别的通道就继续解），三路都越界才认输。
     const width = 200;
     const height = 300;
-    const raw = Buffer.alloc(width * height * 3).fill(255);
+    const BG: [number, number, number] = [0, 255, 0];
+    const FG: [number, number, number] = [60, 70, 120];
+    const raw = Buffer.alloc(width * height * 3);
+    for (let i = 0; i < width * height; i++) {
+      raw[i * 3] = BG[0];
+      raw[i * 3 + 1] = BG[1];
+      raw[i * 3 + 2] = BG[2];
+    }
     for (let y = 20; y < 280; y++) {
       for (let x = 40; x < 160; x++) {
         const o = (y * width + x) * 3;
-        // 前景深色主体，右缘一条 1px 的近黑描线，再往右是 8px 的白色渐变带
-        raw[o] = 60;
-        raw[o + 1] = 70;
-        raw[o + 2] = 120;
+        // 前景深色主体，右缘一条 1px 的近黑描线，再往右是 8px 的渐变带（前景 → 底色）
+        raw[o] = FG[0];
+        raw[o + 1] = FG[1];
+        raw[o + 2] = FG[2];
         if (x >= 156) {
           const a = (x - 155) / 9;
-          raw[o] = Math.round(60 + 195 * a);
-          raw[o + 1] = Math.round(70 + 185 * a);
-          raw[o + 2] = Math.round(120 + 135 * a);
+          raw[o] = Math.round(FG[0] + (BG[0] - FG[0]) * a);
+          raw[o + 1] = Math.round(FG[1] + (BG[1] - FG[1]) * a);
+          raw[o + 2] = Math.round(FG[2] + (BG[2] - FG[2]) * a);
         }
         // 描线：比前景还深，覆盖率算出来是负数
         if (x === 155) {
