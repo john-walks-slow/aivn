@@ -100,10 +100,41 @@
 2. **终局态（不摆停止点 / 不记第二遍账 / 分支冷开重建）在本仓应用里验证不了**，必须等 dsh-aivn
    侧任务落地后在插件实例上验。用户验证文档已按此调整，只留一条本仓可验的普通演出回归。
 
-## 顺带发现（非本次引入，未修）
+## 顺带发现（非本次引入）
 
-worktree 预览实例的 `scripts/init-worktree.sh` 把 `plays/*` **软链**进 worktree，而
-`PlayLibrary.list()`（`apps/server/src/store.ts:448`）用 `Dirent.isDirectory()` 过滤——**软链的
-`isDirectory()` 为 false**，于是软链剧目在「我的剧目」里一个都不显示，预览实例开箱即空。
-本次验证时临时把 `plays/stub` 换成真实副本绕开。要长期可用应改那个脚本（`cp -r` 或让 `list()`
-跟随软链），但那不在本任务范围，留作后续。
+### 1. worktree 预览实例的剧目列表恒为空（已修）
+
+**症状**：起 worktree 预览实例后，「我的剧目」一个都没有，`GET /api/plays` 返回 `[]`。
+
+**根因**：两处设计各自合理、合起来就坏了——`scripts/init-worktree.sh` 把主仓的 `plays/*` **软链**进
+worktree（`plays/*` 不进 git，数据目录本就属于本机，多 worktree 共用同一份数据是**有意**的），
+而 `PlayLibrary.list()`（`apps/server/src/store.ts`）用 `Dirent.isDirectory()` 过滤。`readdir(withFileTypes)`
+报的是**链接自身**的类型，链接的 `isDirectory()` 恒为 `false` → 软链剧目全部被跳过，而且**失败是静默的**
+（`catch` 吞掉、列表就是空的），排查起来毫无线索。
+
+**修法**：**改 app，不改脚本的软链设计**——软链共享数据是本机约定，该适配的是读取方。新增
+`isDirOrLinkToDir()`（真目录直接过，否则 `statSync` 跟随链接再判一次类型；断链/竞态当不可用跳过，
+不拖垮整个列表），接进 `list()`。补回归用例：目录软链照常列出、断链不影响其余条目。
+
+> 只改了根目录这处枚举。`assets/sprites/<主体>/` 那几处 `isDirectory()` 不用跟——它们在**链接目标**里
+> 递归，读到的已是真目录。
+
+### 2. inotify instance 上限被吃光，vite 起不来（已修，环境侧）
+
+**症状**：`./scripts/dev-worktree.sh` 里 server 起得来、web（vite）启动即死：
+`Error: EMFILE: too many open files, watch '/…/apps/web/vite.config.ts'`。
+
+**根因**：报错长得像 fd 上限问题，但 `ulimit -n` 是 32768，**不是它**。卡住的是
+`/proc/sys/fs/inotify/max_user_instances`（默认 128），而容器里常驻进程已把它吃光（实测 ~147 个
+inotify fd：mi_thermald、mihomo、system_server 残留、pcmanfm/LXDE 桌面、若干 node 服务）。
+**instance 数 ≠ watch 数**——实测一个 vite dev server 只用 **1** 个 instance、339 个 watch，
+所以抬 instance 上限就够了。
+
+**修法**：容器侧 `/opt/start-services.sh` 新增 `apply_inotify_tuning()`，在 supervisord 启动**之前**
+写 `max_user_instances=1024` / `max_user_watches=524288`（幂等，各自失败降级为 WARN）。放在这个脚本里
+的理由与内存护栏同类：`/proc/sys/fs/inotify/*` 是**内核全局可调参数，不是挂载**，因此不受「挂载只有
+宿主 `00-container.sh` 一个权威」的约束——mount 表归宿主脚本，内核 tunable 归容器脚本（与同一脚本里
+既有的 `vm.swappiness` / `vm.page-cluster` 写入是同一条先例）。`/etc/sysctl.d/` 那套在本容器无效
+（无 systemd、非独立 mount namespace，boot 后会被 Android 宿主重置），必须每次 boot 重设。
+
+已把根因、排查命令与「ECFILE ≠ ulimit」这条误导写进 `container-ops` 技能（新增 §4.5 + §3.2 速查表一行）。

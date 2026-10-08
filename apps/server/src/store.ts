@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join, resolve, sep, dirname } from "node:path";
 import { unzipSync, zipSync } from "fflate";
 import {
@@ -419,6 +419,25 @@ export class PlayStore {
 
 /** 剧目库（plays/ 根）：列表/导入/导出。 */
 
+/**
+ * 像目录吗：真目录，或**指向目录的符号链接**。
+ *
+ * `readdir(withFileTypes)` 报的是链接本身的类型，链接的 `isDirectory()` 恒为 false——而
+ * `scripts/init-worktree.sh` 正是把主仓的 `plays/*` 软链进 worktree，让多个 worktree 共用同一份
+ * 剧目数据（`plays/*` 不进 git，数据目录本就属于本机）。只看 `isDirectory()` 会让软链进来的剧目
+ * 一个都不显示，预览实例开箱即空，且失败是静默的。这里跟随链接再判一次类型（statSync 跟随链接，
+ * 对真目录等价于 isDirectory()，不额外付出语义代价）。
+ */
+function isDirOrLinkToDir(fullPath: string, isDirent: boolean): boolean {
+  if (isDirent) return true;
+  try {
+    return statSync(fullPath).isDirectory();
+  } catch {
+    // 断链 / 竞态删除：当成不可用，跳过而不是拖垮整个列表
+    return false;
+  }
+}
+
 /** 新剧目落盘：play.json + 两份最基础的设定文件。 */
 const CRAFT_PATH = "memory/always/craft.md";
 const PREMISE_PATH = "memory/always/premise.md";
@@ -450,7 +469,8 @@ export class PlayLibrary {
     if (!existsSync(this.root)) return [];
     const summaries: PlaySummary[] = [];
     for (const entry of await readdir(this.root, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !existsSync(join(this.root, entry.name, "play.json"))) continue;
+      if (!isDirOrLinkToDir(join(this.root, entry.name), entry.isDirectory())) continue;
+      if (!existsSync(join(this.root, entry.name, "play.json"))) continue;
       try {
         const store = this.store(entry.name);
         const play = await store.loadPlay();

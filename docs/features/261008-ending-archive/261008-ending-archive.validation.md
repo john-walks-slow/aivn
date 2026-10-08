@@ -41,11 +41,12 @@
 - **终局场景（上表 2–4）依赖 dsh-aivn 侧任务**：那边落地后需回到本表补验。dsh-aivn 的跟进项
   （提示词 `title`→`name`、删 `<epilogue>` 收束轮次、删 `EndingCard` 接线、账本 `summary` 取值路径）
   见 `261008-ending-archive.summary.md` 的「遗留 / 交接到 dsh-aivn 任务」。
-- **worktree 预览实例的已知坑（非本次改动引入）**：`scripts/init-worktree.sh` 把 `plays/*` **软链**进
-  worktree，而 `PlayLibrary.list()`（`apps/server/src/store.ts:448`）用 `Dirent.isDirectory()` 过滤，
-  **软链的 isDirectory() 为 false**，所以软链剧目在「我的剧目」里一个都不显示。本次验证时已把
-  `plays/stub` 换成真实副本以绕开。要长期可用应修那个脚本（改成 `cp -r` 或让 `list()` 跟随软链），
-  但那不在本任务范围。
+- **worktree 预览实例的两个环境问题都已修**，实例现在开箱可用：
+  1. `PlayLibrary.list()` 不认软链目录（`readdir(withFileTypes)` 报链接自身类型的坑）→ 已改为跟随链接再判类型，
+     剧目列表正常显示 8 个剧目（均为软链）。回归用例见 `apps/server/test/store.test.ts`。
+  2. vite 起不来（`EMFILE: too many open files, watch …`）→ 根因是 inotify **instance** 上限（128）被容器
+     常驻进程吃光，与 `ulimit -n` 无关；已在容器侧 `/opt/start-services.sh` 加 `apply_inotify_tuning()`
+     （每次 boot 重设 `max_user_instances=1024`）。细节见 summary 与 `container-ops` 技能 §4.5。
 - `apps/web` 有 5 条既有测试失败（`useWorkshopTurn.test.tsx` / `useWorkshopNewThread.test.tsx`），
   已在主干 `2f70dee1` 复现，与本次改动无关，不在本次验证范围。
 

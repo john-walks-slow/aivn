@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zipSync } from "fflate";
@@ -42,6 +42,21 @@ describe("PlayLibrary 剧目包导入与删除", () => {
     expect(id).toBe("p1");
     expect(existsSync(join(root, "p1", "assets", "backgrounds", "bg.png"))).toBe(true);
     expect((await library.list()).map((p) => p.id)).toEqual(["p1"]);
+  });
+
+  /**
+   * `scripts/init-worktree.sh` 把主仓的 `plays/*` 软链进 worktree（`plays/*` 不进 git，数据目录属于
+   * 本机），于是 `list()` 面对的是符号链接。`readdir(withFileTypes)` 报的是链接自身的类型，链接的
+   * `isDirectory()` 恒为 false——只看它会让软链剧目全部静默消失。
+   */
+  it("软链剧目可见：目录软链照常列出，断链不拖垮整个列表", async () => {
+    const real = join(root, "real-plays", "linked");
+    await mkdir(real, { recursive: true });
+    await writeFile(join(real, "play.json"), PLAY_JSON("linked"));
+    await symlink(join(root, "real-plays", "linked"), join(root, "linked"));
+    await symlink(join(root, "real-plays", "gone"), join(root, "dangling"));
+
+    expect((await library.list()).map((p) => p.id)).toEqual(["linked"]);
   });
 
   it("Zip Slip：路径穿越条目被拒，且零残留（先全量校验再落盘）", async () => {
