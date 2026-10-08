@@ -444,6 +444,8 @@ export interface WorkshopAgentOptions {
   systemPrompt: string;
   /** 思考档位（play.json 的 agents.workshop.thinking，缺省跟随服务商默认）。 */
   thinkingLevel?: ThinkingLevel;
+  /** 用户主动停止：中止当前一轮。 */
+  signal?: AbortSignal;
 }
 
 /** 单条工具回执落进对话流的上限：read 一个几十 KB 文件的全文进线程文件没有意义。 */
@@ -491,6 +493,8 @@ export async function runWorkshopTurn(
     },
   });
   const timer = setTimeout(() => agent.abort(), TURN_TIMEOUT_MS);
+  const onUserStop = (): void => agent.abort();
+  opts.signal?.addEventListener("abort", onUserStop, { once: true });
   let streamed = "";
   const startedAt = new Map<string, number>();
   agent.subscribe((event: AgentEvent) => {
@@ -521,11 +525,16 @@ export async function runWorkshopTurn(
     await agent.waitForIdle();
   } finally {
     clearTimeout(timer);
+    opts.signal?.removeEventListener("abort", onUserStop);
   }
   // agent_end 的完整消息优先：流式增量可能因重试/工具轮次而拼接不全
   const last = lastAssistant(agent.state.messages);
   if (last && (last.stopReason === "error" || last.stopReason === "aborted")) {
-    throw new Error(last.errorMessage ?? "工坊请求失败（模型未返回内容）");
+    throw new Error(
+      opts.signal?.aborted
+        ? "已停止生成"
+        : (last.errorMessage ?? "工坊请求失败（模型未返回内容）"),
+    );
   }
   const text = (last?.text ?? streamed).trim();
   if (text === "") throw new Error("工坊请求失败（模型返回空内容）");

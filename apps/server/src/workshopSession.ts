@@ -104,6 +104,8 @@ export class WorkshopSession {
   private activeId: string | null = null;
   /** 一轮对话在飞：拒绝并发发问（工坊对话是串行的）。 */
   private running = false;
+  /** 当前轮的中止闸：`stop()` 扳它，runWorkshopTurn 监听它。 */
+  private turnAbort: AbortController | null = null;
   /** 剧目被改动过（agent 写盘、素材到货、bash 跑过、文件页手改）：置脏只走 `markChanged`。 */
   private changedDuringTurn = false;
   /** 攒下的改动里有 bash：它的写绕开 `PlayFiles`，play.json 的结构校验一道都没过。 */
@@ -184,6 +186,8 @@ export class WorkshopSession {
     this.changedDuringTurn = false;
     this.bashDuringTurn = false;
     this.pendingAssets = [];
+    const turnAbort = new AbortController();
+    this.turnAbort = turnAbort;
     // 本轮的段落流。声明在 try 外面：中途抛错时它得留着——用户至少要看得见它读了哪些文件、
     // 卡在哪一步，而不是一段文字全没了。
     let parts: WorkshopPart[] = [];
@@ -212,6 +216,7 @@ export class WorkshopSession {
           tools: this.kit.tools,
           thinkingLevel: this.kit.thinking,
           systemPrompt: prompt,
+          signal: turnAbort.signal,
         },
         visible,
         content,
@@ -306,10 +311,16 @@ export class WorkshopSession {
       });
     } finally {
       this.running = false;
+      this.turnAbort = null;
       // 一轮里可能写了好几个文件、出了好几张图：收束后只重建一次（保存即生效）
       await this.applyChanges();
       await this.snapshot();
     }
+  }
+
+  /** 用户主动停止当前一轮生成：扳动中止闸，进行中的流/工具调用会尽快收束。 */
+  stop(): void {
+    this.turnAbort?.abort();
   }
 
   /**

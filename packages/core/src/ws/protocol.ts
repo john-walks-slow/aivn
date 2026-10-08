@@ -398,6 +398,8 @@ export type ClientMessage =
   | { type: "workshop_activate"; threadId: string }
   /** 发一条工坊消息；不带 threadId 则新建线程。 */
   | { type: "workshop_chat"; threadId?: string; text: string }
+  /** 停止当前正在生成的工坊一轮。 */
+  | { type: "workshop_stop" }
   | { type: "workshop_archive"; threadId: string; archived: boolean }
   | { type: "workshop_delete"; threadId: string };
 

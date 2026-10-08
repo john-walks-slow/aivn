@@ -339,9 +339,15 @@ export function WorkshopPane({
                 }
               }}
             />
-            <button className="primary" disabled={state.busy || input.trim() === ""} onClick={submit}>
-              发送
-            </button>
+            {state.busy ? (
+              <button className="primary" onClick={workshop.stop}>
+                停止
+              </button>
+            ) : (
+              <button className="primary" disabled={input.trim() === ""} onClick={submit}>
+                发送
+              </button>
+            )}
           </footer>
         </>
       )}

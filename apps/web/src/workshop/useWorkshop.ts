@@ -208,6 +208,11 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
     [send],
   );
 
+  /** 停止当前一轮生成。 */
+  const stop = useCallback((): void => {
+    send({ type: "workshop_stop" });
+  }, [send]);
+
   return {
     state,
     freshThread,
@@ -215,6 +220,7 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
     open,
     onDisconnected,
     chat,
+    stop,
     newThread,
     clearState,
     activate,
