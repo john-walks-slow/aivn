@@ -69,8 +69,8 @@ interface StageTheaterProps {
   canContinue: boolean;
   onContinue: () => void;
   /**
-   * 已到达结局（终局态）：点舞台不再推进任何东西。结局卡由宿主经 `overlay` 摆出，
-   * 这一位只负责把舞台自身残留的「继续」入口关死。缺省 false（无结局概念的老宿主照旧）。
+   * 已到达结局（终局态）：点舞台不再推进任何东西。这一位只负责把舞台自身残留的「继续」入口
+   * 关死——终幕画面由剧作家自己写进剧本，引擎不摆任何结局卡。缺省 false（无结局概念的老宿主照旧）。
    */
   ended?: boolean;
   /** 快进档：按住 Ctrl 期间为 true，松开/失焦回 false。 */

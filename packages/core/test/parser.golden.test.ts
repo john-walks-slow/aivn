@@ -23,8 +23,7 @@ function mergeDeltas(events: StageEvent[]): StageEvent[] {
       (event.kind === "say_text" ||
         event.kind === "narrate_text" ||
         event.kind === "thought_text" ||
-        event.kind === "title_text" ||
-        event.kind === "epilogue_text") &&
+        event.kind === "title_text") &&
       prev !== undefined &&
       prev.kind === event.kind
     ) {
@@ -39,7 +38,7 @@ function mergeDeltas(events: StageEvent[]): StageEvent[] {
 /** 聚合某类 text 事件的完整文本。 */
 function fullText(
   events: StageEvent[],
-  kind: "say_text" | "narrate_text" | "thought_text" | "epilogue_text",
+  kind: "say_text" | "narrate_text" | "thought_text" | "title_text",
 ): string {
   return mergeDeltas(events)
     .filter((e) => e.kind === kind)
@@ -548,19 +547,26 @@ describe("全屏标题卡 <title>", () => {
 });
 
 describe("结局 <ending>", () => {
-  it("三字段原样产出，作为末行", () => {
+  it("四字段原样产出，作为末行", () => {
     const { events, parser } = collect();
     parser.feed(
-      '<narrate>她在晨光里回头。</narrate>\n<ending id="true_sunrise" title="晨光" subtitle="这一次，她没有回头"/>',
+      '<narrate>她在晨光里回头。</narrate>\n<ending id="true_sunrise" name="晨光" subtitle="这一次，她没有回头"' +
+        ' summary="她把三年的沉默一次说完，然后走进了那片光里。"/>',
     );
     parser.endMessage();
     expect(events.filter((e) => e.kind === "ending")).toEqual([
-      { kind: "ending", id: "true_sunrise", title: "晨光", subtitle: "这一次，她没有回头" },
+      {
+        kind: "ending",
+        id: "true_sunrise",
+        name: "晨光",
+        subtitle: "这一次，她没有回头",
+        summary: "她把三年的沉默一次说完，然后走进了那片光里。",
+      },
     ]);
     expect(parser.warnings).toEqual([]);
   });
 
-  it("title / subtitle 可缺省，id 照旧", () => {
+  it("name / subtitle / summary 可缺省，id 照旧", () => {
     const { events, parser } = collect();
     parser.feed('<ending id="bad_end"/>');
     parser.endMessage();
@@ -570,7 +576,7 @@ describe("结局 <ending>", () => {
 
   it("缺 id / id 非法：整条丢弃 + 告警", () => {
     const missing = collect();
-    missing.parser.feed("<ending title=\"无名\"/>");
+    missing.parser.feed('<ending name="无名"/>');
     missing.parser.endMessage();
     expect(missing.events).toEqual([]);
     expect(missing.parser.warnings.some((w) => w.type === "malformed_tag")).toBe(true);
@@ -602,7 +608,7 @@ describe("结局 <ending>", () => {
   });
 
   it("撕裂喂入与整段喂入语义等价", () => {
-    const source = '她笑了。<ending id="e1" title="终"/>';
+    const source = '她笑了。<ending id="e1" name="终"/>';
     const whole = collect();
     whole.parser.feed(source);
     whole.parser.endMessage();
@@ -615,34 +621,117 @@ describe("结局 <ending>", () => {
   });
 });
 
-describe("收束散文 <epilogue>", () => {
-  it("包裹正文照常流出，换行保真", () => {
+/**
+ * 引号感知定界：属性值是自由文本（收束散文、生图 prompt），一个 ">" 若让标签头提前截断，
+ * 整条结局会被丢掉——终局态丢失 = 账本不记账 = 那一轮没有停止点，游戏静默走过结局。
+ */
+describe("<ending> 属性值里的 < 与 >", () => {
+  it("summary 含 > 不截断标签头，整条结局照常产出", () => {
     const { events, parser } = collect();
-    parser.feed("<epilogue>这一趟走到这里。\n谢谢你陪我到最后。</epilogue>");
+    parser.feed('<ending id="e1" summary="他想起那句 a > b，然后笑了。"/>');
     parser.endMessage();
-    expect(events.map((e) => e.kind)).toEqual(["epilogue_start", "epilogue_text", "epilogue_end"]);
-    expect(fullText(events, "epilogue_text")).toBe("这一趟走到这里。\n谢谢你陪我到最后。");
+    expect(events).toEqual([{ kind: "ending", id: "e1", summary: "他想起那句 a > b，然后笑了。" }]);
     expect(parser.warnings).toEqual([]);
   });
 
-  it("不需要 id，未闭合在消息边界自动闭合", () => {
+  it("summary 含「<」与中文引号照常", () => {
     const { events, parser } = collect();
-    parser.feed("<epilogue>她再也没有回来……");
+    parser.feed('<ending id="e1" summary="她说「a < b 才对」，然后合上了书。"/>');
     parser.endMessage();
-    expect(events.map((e) => e.kind)).toEqual(["epilogue_start", "epilogue_text", "epilogue_end"]);
+    expect(events).toEqual([{ kind: "ending", id: "e1", summary: "她说「a < b 才对」，然后合上了书。" }]);
+    expect(parser.warnings).toEqual([]);
   });
 
-  it("撕裂喂入与整段喂入等价", () => {
-    const source = "<epilogue>风停了。\n灯灭了。</epilogue>";
+  it("单引号声明的 summary 可以含双引号", () => {
+    const { events, parser } = collect();
+    parser.feed("<ending id='e1' summary='他说\"走吧\"，就再没回头。'/>");
+    parser.endMessage();
+    expect(events).toEqual([{ kind: "ending", id: "e1", summary: '他说"走吧"，就再没回头。' }]);
+    expect(parser.warnings).toEqual([]);
+  });
+
+  it("数百字的 summary 原样保留", () => {
+    const long = `第${"很长的归档散文。".repeat(40)}末了。`;
+    expect(long.length).toBeGreaterThan(300);
+    const { events, parser } = collect();
+    parser.feed(`<ending id="e1" name="长夜" summary="${long}"/>`);
+    parser.endMessage();
+    expect(events).toEqual([{ kind: "ending", id: "e1", name: "长夜", summary: long }]);
+    expect(parser.warnings).toEqual([]);
+  });
+
+  it("撕裂喂入含 > 的属性值：引号未闭合时等待更多数据，语义与整段等价", () => {
+    const source = '<ending id="e1" summary="风声先停，随后是 a > b 的静默。"/>';
     const whole = collect();
     whole.parser.feed(source);
     whole.parser.endMessage();
-    for (const chunkSize of [1, 2, 3, 5]) {
+    for (const chunkSize of [1, 2, 3, 5, 7]) {
+      const torn = collect();
+      feedTorn(torn.parser, source, chunkSize);
+      // 撕裂中途不得提前消费：喂到引号内的 ">" 之前，结局还没到齐
+      torn.parser.endMessage();
+      expect(torn.events).toEqual(whole.events);
+      expect(torn.parser.warnings).toEqual([]);
+    }
+  });
+
+  it("引号内未闭合（撕裂只喂到引号中段）时保持等待，不产出半个标签", () => {
+    const { events, parser } = collect();
+    parser.feed('<ending id="e1" summary="还没写完');
+    expect(events).toEqual([]);
+    // 引号仍未闭合：连标签头都没收尾，缓冲区照旧等着
+    parser.feed("，后面还有一个 > 号。\"");
+    expect(events).toEqual([]);
+    parser.feed("/>");
+    expect(events).toEqual([{ kind: "ending", id: "e1", summary: "还没写完，后面还有一个 > 号。" }]);
+  });
+
+  it("既有标签同样受益：属性值含 > 不再截断", () => {
+    const { events, parser } = collect();
+    parser.feed('<scene bg="school > gate"/><say id="mio">到了。</say>');
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["scene", "say_start", "say_text", "say_end"]);
+    expect((events[0] as { bg: string }).bg).toBe("school > gate");
+    expect(parser.warnings).toEqual([]);
+  });
+
+  it("既有标签行为不变：双引号属性值照常，撕裂喂入等价", () => {
+    const source = '<scene bg="hallway" bgm="piano"/><say id="mio" mood="pout">太慢了！</say>';
+    const whole = collect();
+    whole.parser.feed(source);
+    whole.parser.endMessage();
+    for (const chunkSize of [1, 2, 4]) {
       const torn = collect();
       feedTorn(torn.parser, source, chunkSize);
       torn.parser.endMessage();
       expect(mergeDeltas(torn.events)).toEqual(mergeDeltas(whole.events));
       expect(torn.parser.warnings).toEqual([]);
     }
+  });
+});
+
+describe("结局字段改名与旧标签降级", () => {
+  it("旧字段 title 被忽略，且挂告警提示已更名为 name", () => {
+    const { events, parser } = collect();
+    parser.feed('<ending id="e1" title="晨光"/>');
+    parser.endMessage();
+    expect(events).toEqual([{ kind: "ending", id: "e1" }]);
+    expect(parser.warnings.some((w) => w.type === "malformed_tag" && w.detail.includes("name"))).toBe(true);
+  });
+
+  it("旧 <epilogue> 整条丢弃 + legacy 告警，不按台词演出", () => {
+    const { events, parser } = collect();
+    parser.feed("<epilogue>这一趟走到这里。</epilogue>");
+    parser.endMessage();
+    expect(events).toEqual([]);
+    expect(parser.warnings.some((w) => w.type === "legacy_tag")).toBe(true);
+  });
+
+  it("包裹标签里的旧 <epilogue> 同样丢弃，不漏进台词", () => {
+    const { events, parser } = collect();
+    parser.feed('<say id="mio">走吧。<epilogue>这段不该被念出来。</epilogue></say>');
+    parser.endMessage();
+    expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end"]);
+    expect(fullText(events, "say_text")).toBe("走吧。");
   });
 });

@@ -40,7 +40,7 @@ export interface ParserWarning {
 }
 
 interface OpenWrap {
-  tag: "say" | "narrate" | "thought" | "title" | "epilogue";
+  tag: "say" | "narrate" | "thought" | "title";
   id?: string;
   mood?: string;
   name?: string;
@@ -64,6 +64,29 @@ const CLOSE_TAG_RE = /^<\/([a-z_]+)\s*>/;
 const ATTR_RE = /^\s*([a-z_]+)\s*=\s*(?:"([^"]*)"|'([^']*)')\s*/;
 /** 无值属性（`<scene bg="x" clear/>` 的 `clear`）：出现即成立，不用写 `="…"`。 */
 const BARE_ATTR_RE = /^\s*([a-z_]+)(?=[\s\/]|$)/;
+
+/**
+ * 标签头收尾：从 `<tag` 之后找第一个**不在引号内**的 `>`，返回其下标；引号未闭合则 -1（等更多数据）。
+ *
+ * 定界必须感知引号：属性值是自由文本（收束散文、生图 prompt），一个 ">" 就会让 `indexOf(">")`
+ * 提前截断标签头，后果是**整条标签被丢弃**。结局尤其不能这样丢——终局态丢失 = 账本不记账 =
+ * 那一轮没有停止点，游戏会静默地走过结局。
+ *
+ * 引号没有转义语法：双引号声明的值里不能再含双引号，含 `"` 的正文改用单引号声明（见 spec.ts 文件头）。
+ */
+function findTagEnd(buffer: string): number {
+  let quote: '"' | "'" | null = null;
+  for (let i = 1; i < buffer.length; i++) {
+    const ch = buffer[i]!;
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === ">") return i;
+  }
+  return -1;
+}
 
 function parseAttrs(source: string): Map<string, string> | null {
   const attrs = new Map<string, string>();
@@ -92,13 +115,16 @@ function parseAttrs(source: string): Map<string, string> | null {
  * - endMessage() 消息边界：未完成标签丢弃，未闭合包裹标签自动闭合（保留已流出台词）；
  * - <comment> 正文整体吞掉、不产出事件（注释是模型的出口，不是演出内容）；
  * - 未知标签按字面文本输出（不丢用户可见内容），残缺标签/属性才丢弃；
- * - 已从 DSL 迁进工具的旧标签（option/preload_asset）**静默丢弃**（见 spec.ts 的 LEGACY_TAGS）。
+ * - 已作废的旧标签（option/preload_asset/epilogue）**静默丢弃**（见 spec.ts 的 LEGACY_TAGS），
+ *   其中包裹型的 epilogue 连正文一起吞——否则它的正文会漏进外层台词被念出来。
  */
 export class StageDslParser {
   private buffer = "";
   private openWrap: OpenWrap | null = null;
   /** 正在一条 <comment> 里：正文吞掉，且除 </comment> 外的标签都不许开工。 */
   private commentParse = false;
+  /** 正在一条作废的包裹旧标签（epilogue）里：正文吞掉到它自己的 </epilogue> 为止。 */
+  private legacyWrap: string | null = null;
   /**
    * 本条消息里已经交出过结局：其后的任何剧本内容一律丢弃。
    *
@@ -132,8 +158,9 @@ export class StageDslParser {
       }
     }
     this.buffer = "";
-    // 注释不跨消息：边界即结束，正文已经吞完，剩下的残句也一并丢掉
+    // 注释与作废的包裹旧标签都不跨消息：边界即结束，正文已经吞完，剩下的残句也一并丢掉
     this.commentParse = false;
+    this.legacyWrap = null;
     this.endedInMessage = false;
     if (this.openWrap) this.closeWrap();
   }
@@ -141,6 +168,7 @@ export class StageDslParser {
   resetBeat(): void {
     this.openWrap = null;
     this.commentParse = false;
+    this.legacyWrap = null;
     this.endedInMessage = false;
     this.buffer = "";
   }
@@ -186,7 +214,7 @@ export class StageDslParser {
         this.buffer = this.buffer.slice(1);
         continue;
       }
-      const gt = this.buffer.indexOf(">");
+      const gt = findTagEnd(this.buffer);
       if (gt === -1) return;
       this.consumeOpenTag(name, gt);
     }
@@ -212,6 +240,10 @@ export class StageDslParser {
     this.buffer = this.buffer.slice(match[0].length);
     if (this.commentParse && name === COMMENT_TAG) {
       this.commentParse = false;
+      return false;
+    }
+    if (this.legacyWrap !== null && name === this.legacyWrap) {
+      this.legacyWrap = null;
       return false;
     }
     if (this.openWrap && name === this.openWrap.tag) {
@@ -246,9 +278,12 @@ export class StageDslParser {
       this.warn("content_after_ending", `<${name}> 出现在结局之后，丢弃`);
       return;
     }
-    // 已迁进工具的旧标签：整条丢弃 + 一条 warning（不按未知标签原样输出，见 isKnownTag）
+    // 已作废的旧标签：整条丢弃 + 一条 warning（不按未知标签原样输出，见 isKnownTag）
     if (LEGACY_TAGS.has(name)) {
-      this.warn("legacy_tag", `<${name}> 已改为工具调用，丢弃: ${preview(this.rawOf(name, attrs, selfClosing))}`);
+      this.warn("legacy_tag", `<${name}> 已作废，丢弃: ${preview(this.rawOf(name, attrs, selfClosing))}`);
+      // 包裹型的旧标签（epilogue）要把正文一起吞掉，否则正文会漏进外层台词被念出来。
+      // 自闭合形态没有正文可吞。
+      if (!selfClosing) this.legacyWrap = name;
       return;
     }
     if (this.commentParse) {
@@ -265,6 +300,12 @@ export class StageDslParser {
     }
     if (VOID_TAGS.has(name) && !selfClosing) {
       this.warn("malformed_tag", `<${name}> 为指令标签，应为自闭合（其正文将按裸文本丢弃）`);
+    }
+    // 作废的包裹旧标签里：其余标签一律不开工——正文已经在吞，再摆一个空台词行只会脏了舞台。
+    // 与 <comment> 同一条口径：吞到它自己的闭合标签或本条消息结束。
+    if (this.legacyWrap !== null) {
+      this.warn("malformed_tag", `<${name}> 出现在作废的 <${this.legacyWrap}> 内，丢弃`);
+      return;
     }
     switch (name) {
       case COMMENT_TAG: {
@@ -347,15 +388,21 @@ export class StageDslParser {
         const id = attrs.get("id")?.trim() ?? "";
         if (id === "") return this.dropTag("ending", "缺 id");
         if (!ENDING_ID_RE.test(id)) return this.dropTag("ending", `id 非法: ${id}`);
-        const title = attrs.get("title")?.trim();
+        // `title` 是改名前的旧字段：静默丢掉会让模型以为自己写对了，挂条告警让它下一轮改回来。
+        if (attrs.has("title")) {
+          this.warn("malformed_tag", "ending 的 title 已更名为 name，本轮的 title 被忽略");
+        }
+        const name = attrs.get("name")?.trim();
         const subtitle = attrs.get("subtitle")?.trim();
+        const summary = attrs.get("summary")?.trim();
         // 先置终局标记再发射：其后本条消息的内容一律丢弃。
         this.endedInMessage = true;
         this.emit({
           kind: "ending",
           id,
-          ...(title ? { title } : {}),
+          ...(name ? { name } : {}),
           ...(subtitle ? { subtitle } : {}),
+          ...(summary ? { summary } : {}),
         });
         return;
       }
@@ -404,12 +451,10 @@ export class StageDslParser {
       }
       case "say":
       case "narrate":
-      case "thought":
-      case "epilogue": {
+      case "thought": {
         if (selfClosing) return this.dropTag(name, "包裹标签不能自闭合");
         const id = attrs.get("id");
-        // epilogue 与 narrate 一样不需要 id：它不是某个人说的话，是收束旁白。
-        if (name !== "narrate" && name !== "epilogue" && !id) return this.dropTag(name, "缺 id");
+        if (name !== "narrate" && !id) return this.dropTag(name, "缺 id");
         if (this.openWrap) {
           this.warn("nested_wrap", `<${name}> 打开时 <${this.openWrap.tag}> 未闭合，自动闭合前者`);
           this.closeWrap();
@@ -417,7 +462,6 @@ export class StageDslParser {
         this.openWrap = { tag: name, id, mood: attrs.get("mood"), name: attrs.get("name") };
         if (name === "say") this.emit({ kind: "say_start", id: id!, ...(attrs.get("mood") ? { mood: attrs.get("mood") } : {}), ...(attrs.get("name") ? { name: attrs.get("name") } : {}) });
         else if (name === "narrate") this.emit({ kind: "narrate_start" });
-        else if (name === "epilogue") this.emit({ kind: "epilogue_start" });
         else this.emit({ kind: "thought_start", id: id! });
         return;
       }
@@ -493,6 +537,8 @@ export class StageDslParser {
     if (text === "") return;
     // 注释优先于一切：连 openWrap 也轮不到（comment 不会与包裹标签并存，见 handleTag）
     if (this.commentParse) return;
+    // 作废的包裹旧标签（epilogue）：正文吞掉，不漏进外层台词
+    if (this.legacyWrap !== null) return;
     // 结局之后：连包裹标签里的正文也一并丢掉（本条消息到此为止）。
     if (this.endedInMessage) return;
     if (this.openWrap) {
@@ -500,7 +546,6 @@ export class StageDslParser {
       if (wrap.tag === "say") this.emit({ kind: "say_text", delta: text });
       else if (wrap.tag === "narrate") this.emit({ kind: "narrate_text", delta: text });
       else if (wrap.tag === "thought") this.emit({ kind: "thought_text", delta: text });
-      else if (wrap.tag === "epilogue") this.emit({ kind: "epilogue_text", delta: text });
       else this.emitTitleText(wrap, text);
       return;
     }
@@ -528,7 +573,6 @@ export class StageDslParser {
     if (wrap.tag === "say") this.emit({ kind: "say_end" });
     else if (wrap.tag === "narrate") this.emit({ kind: "narrate_end" });
     else if (wrap.tag === "thought") this.emit({ kind: "thought_end" });
-    else if (wrap.tag === "epilogue") this.emit({ kind: "epilogue_end" });
     else if (wrap.started === true) this.emit({ kind: "title_end" });
     else this.warn("malformed_tag", "空 <title> 丢弃（正文为空白）");
   }

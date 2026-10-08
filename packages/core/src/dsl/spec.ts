@@ -14,8 +14,12 @@
  * 轮尾重新是助手消息，舞台重建（只重放助手文本）也带得上停止点。
  * `preload_asset` 仍由 `generate_image` 工具承载——它确实是对宿主说的话，不是剧本。
  *
- * 已知限制（v1 接受）：属性值含 ">" 会使标签头提前截断（解析按首个 ">" 定界，不感知引号）——
- * 受影响的主要是生图 prompt 等自由文本字段，触发时该标签整体降级丢弃（有 warning），可回喂自修正。
+ * 属性值定界：标签头按**引号之外的首个 ">"** 收尾（`packages/core/src/dsl/parser.ts` 的
+ * `findTagEnd`），所以属性值里出现 ">" 不会截断标签——收束散文这类长自由文本可以照写。
+ * 引号本身没有转义语法：属性值用双引号声明时不能含双引号，要写含 `"` 的正文请改用单引号
+ * （`summary='他说"走吧"'`）。中文散文用「」是常态，不构成阻塞。
+ * 单引号这个出口只给**自由文本**（`summary` 这类人会读的话）——`id`/`bg`/`src` 等由宿主拿去
+ * 查表键控的属性仍应写成双引号 + 不含 `"` 的值，否则引号会被当成键的一部分。
  */
 
 import type { Transition } from "./effects.js";
@@ -32,7 +36,6 @@ export const DSL_TAGS = [
   "cg",
   "stop",
   "ending",
-  "epilogue",
   "comment",
 ] as const;
 export type DslTag = (typeof DSL_TAGS)[number];
@@ -58,10 +61,15 @@ export const STOP_OPTION_SEPARATOR = "|";
 /**
  * 结局标签——**剧本的最后一行**，整部故事 / 这一条路线的终点（不是「这一轮的出口」）：
  *
- *     <ending id="true_sunrise" title="晨光" subtitle="这一次，她没有回头"/>
+ *     <ending id="true_sunrise" name="晨光" subtitle="这一次，她没有回头"
+ *              summary="她在晨光里回头，把三年的沉默一次说完。"/>   ← 属性值可含 ">"，见文件头
  *
  * 与 `<stop>` 的关系：普通轮用它自己交出出口，只有真正走到终点时才改用 `<ending>`——它**取代**
  * 那一轮的 `<stop>`，所以轮尾仍然是助手消息（DSH 的分支 / 舞台重建都只认这种轮尾）。
+ *
+ * **它不产生任何画面。** 末行一写就是「这个故事到此为止」的账目：引擎据此落账、拒绝继续、
+ * 不让「点舞台继续」冒出来；终幕画面（若有）由剧作家用现成的 `<scene>` / `<title>` / `<narrate>`
+ * 自己搭——每部戏想要的终幕本来就不一样。
  *
  * 到达结局后舞台进入**终局态**：不给任何按钮、无法继续，出口交给 DSH 的分支 / 新会话。
  * `id` 是这条结局的身份（跨周目账本的键、多周目引用的名字），**必须能稳定复用**；它之后的内容
@@ -70,30 +78,22 @@ export const STOP_OPTION_SEPARATOR = "|";
 export const ENDING_TAG = "ending";
 
 /**
- * 结局属性。
+ * 结局属性：**全部只用于归档，一条都不上屏**。
  *
- * 只保留最小三分：`id` 是身份，`title`/`subtitle` 是结局卡上的两行字。三者之外不加字段——
- * 结局的类型学（good/bad/true）是未来画廊排序 / 配色的需要，届时以可缺省白名单增量加入。
+ * 只保留最小三分：`id` 是身份、`name` 是账本里的人话名、`summary` 是整部剧 / 整条路线的归纳；
+ * 另有 `subtitle` 作为可选的补充短句。四者之外不加字段——结局的类型学（good/bad/true）是未来
+ * 画廊排序 / 配色的需要，届时以可缺省白名单增量加入，不预埋。
  */
 export interface EndingAttrs {
   /** 结局 id：字母或数字开头，不含空白与路径分隔符——账本的键。 */
   id: string;
-  /** 结局卡主标题；缺省回落 id。 */
-  title?: string;
-  /** 结局卡副标题：一句氛围 / 主题短句。 */
+  /** 账本里给这条结局看的人话名；缺省回落 id。归档用，不上屏。 */
+  name?: string;
+  /** 补充短句（一句氛围 / 主题）；归档用，不上屏。 */
   subtitle?: string;
+  /** 归档摘要：对整部剧、整条路线的归纳。归档用，不上屏。 */
+  summary?: string;
 }
-
-/**
- * 收束散文标签——结局**之后额外一轮**生成的整段回顾，展示在结局卡上：
- *
- *     <epilogue>这一趟走到这里……</epilogue>
- *
- * 形如 `<narrate>` 的包裹标签（正文为原生文本、可换行）。它是独立一轮的输出，**不能**塞进结局
- * 那一轮（那一轮正在收笔，且必须保持「结局是最后一行」）；单独成一轮，也让它在舞台重建时能被
- * 稳定还原成终局卡的一部分。
- */
-export const EPILOGUE_TAG = "epilogue";
 
 /**
  * 注释标签——**不产出任何 IR 事件**（解析器吞掉正文）。
@@ -107,14 +107,19 @@ export const EPILOGUE_TAG = "epilogue";
 export const COMMENT_TAG = "comment";
 
 /**
- * 已从 DSL 迁进工具的旧标签——**静默降级，不按未知标签原样输出**。
+ * 已作废的旧标签——**静默降级，不按未知标签原样输出**。
  *
  * 模型对旧形态有肌肉记忆，硬判成未知标签会把 `<option>…</option>` 当台词原样吐到舞台上，
  * 那比丢掉糟得多。命中即丢弃并挂一条 warning：一次调用静默失效，模型下一轮自己改正。
- * 退出说明：`<option>` 子标签随停止点回到 DSL 一起作废（新写法是 `<stop options="…"/>`），
+ *
+ * `epilogue` 是这条规则最新的成员：它随结局改口径（`<ending>` 退化为纯归档标签、收束散文改走
+ * `summary` 属性）一起作废。它尤其不能走未知标签分支——包裹标签里的正文会被**当台词演出来**，
+ * 而 orphan_text 告警也不如 legacy_tag 说得明白。
+ *
+ * 其余退出说明：`<option>` 子标签随停止点回到 DSL 一起作废（新写法是 `<stop options="…"/>`），
  * `preload_asset` 改由 `generate_image` 工具承载。
  */
-export const LEGACY_TAGS: ReadonlySet<string> = new Set(["option", "preload_asset"]);
+export const LEGACY_TAGS: ReadonlySet<string> = new Set(["option", "preload_asset", "epilogue"]);
 
 /**
  * 场景指令属性。

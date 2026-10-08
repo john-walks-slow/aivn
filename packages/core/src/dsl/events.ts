@@ -50,14 +50,11 @@ export type StageEvent =
   | ({ kind: "cg" } & CgAttrs)
   | { kind: "stop"; stopType: StopType; options?: StopOption[]; placeholder?: string }
   /**
-   * 结局：整部故事 / 这一条路线的终点（`<ending …/>`，剧本末行）。与 `stop` 同构地由剧本产出，
-   * 但**终局**——客户端据此进入终局态（无按钮、不可继续），引擎据此落账。
+   * 结局：整部故事 / 这一条路线的终点（`<ending …/>`，剧本末行）。**不产生任何画面**——
+   * 引擎据此落账、拒绝继续、收掉「点舞台继续」；终幕画面由剧作家自己用 `<scene>` / `<title>`
+   * 搭。属性全部只用于归档，见 `EndingAttrs`。
    */
   | ({ kind: "ending" } & EndingAttrs)
-  /** 收束散文（`<epilogue>…</epilogue>`）：结局之后额外一轮的整段回顾，拆三段支撑流式。 */
-  | { kind: "epilogue_start"; nodeId?: string }
-  | { kind: "epilogue_text"; delta: string }
-  | { kind: "epilogue_end" }
   | { kind: "player_input"; text: string };
 
 /** 线上格式：编排器为事件标序后经 WS 下发，重连凭 seq 重放。 */

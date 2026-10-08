@@ -231,10 +231,7 @@ export class ScriptBuilder {
       case "stop":
         return; // 停止点由 StopPanel 渲染
       case "ending":
-      case "epilogue_start":
-      case "epilogue_text":
-      case "epilogue_end":
-        return; // 结局与收束散文由结局卡渲染，不进台词时间线
+        return; // 结局是纯归档标签，不产生任何画面，也不进台词时间线
     }
   }
 }
