@@ -343,11 +343,13 @@ export class WorkshopSession {
     } finally {
       this.running = false;
       this.turnAbort = null;
-      // 轮次已收束：广播/落盘恢复走浏览态 activeId
-      this.runningThreadId = null;
       // 一轮里可能写了好几个文件、出了好几张图：收束后只重建一次（保存即生效）
+      // applyChanges/snapshot 期间广播仍归本轮线程（如 bash 弄坏 play.json 的告警）
       await this.applyChanges();
       await this.snapshot();
+      // 轮次已收束：广播/落盘恢复走浏览态 activeId
+      this.runningThreadId = null;
+      this.turnPlay = undefined;
     }
   }
 

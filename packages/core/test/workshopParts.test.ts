@@ -57,6 +57,18 @@ describe("工坊段落流拼装", () => {
     expect(attachMessageAssets(parts, undefined).remaining).toEqual([]);
   });
 
+  it("先出图后读文件：消息级素材挂生图那个工具卡，不挂 read", () => {
+    let parts = startTool([], { id: "c1", name: "generate_image", args: {} });
+    parts = endTool(parts, { id: "c1", result: "ok", isError: false, ms: 5 });
+    parts = startTool(parts, { id: "c2", name: "read", args: {} });
+    parts = endTool(parts, { id: "c2", result: "内容", isError: false, ms: 5 });
+    const merged = attachMessageAssets(parts, [ASSET]);
+    const c1 = merged.parts[0] as { assets?: unknown[] };
+    const c2 = merged.parts[1] as { assets?: unknown[] };
+    expect(c1.assets).toEqual([ASSET]);
+    expect(c2.assets).toBeUndefined();
+  });
+
   it("旧消息（只有 text）归一成一段正文，空消息归一成空的", () => {
     expect(normalizeParts({ text: "你好" })).toEqual([{ type: "text", text: "你好" }]);
     expect(
