@@ -23,6 +23,7 @@ import {
   type ParserWarning,
   type ParserWarningType,
   type ThinkingLevel,
+  toPiThinkingLevel,
 } from "@aivn/core";
 import type { ServerMessage } from "@aivn/core";
 export type { ReadPos } from "@aivn/core";
@@ -284,7 +285,7 @@ export interface OrchestratorOptions {
   nsfwPrompt?: string;
   /**
    * 剧作家的 agent 设置（play.json 的 agents.playwriter）：模型由宿主解析成 opts.model 传进来，
-   * 这里只用思考档位与工具开关。缺省即「思考 off、工具全开」。
+   * 这里只用思考档位与工具开关。缺省即「思考跟随服务商默认、工具全开」。
    */
   agents?: AgentSettings;
 }
@@ -633,7 +634,7 @@ export class PlaywrightOrchestrator {
           activeCast: this.recentCast(),
         }),
         model,
-        thinkingLevel,
+        thinkingLevel: toPiThinkingLevel(thinkingLevel),
         tools: this.kit.tools,
         messages: finalMessages,
       },

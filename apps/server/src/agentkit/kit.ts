@@ -418,7 +418,7 @@ export function createAgentKit(deps: AgentKitDeps & { thinking?: ThinkingLevel }
     role: deps.role,
     tools,
     can: capabilitiesOf(deps.role, deps.capabilities, tools),
-    thinking: deps.thinking ?? "off",
+    thinking: deps.thinking ?? "default",
   };
 }
 
