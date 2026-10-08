@@ -67,10 +67,14 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
             pendingAssets: [],
           };
         case "workshop_chunk":
+          // 只认当前线程的流式片段：切到别的会话看时，后台那条线程的 token 不能串进来
+          if (msg.threadId !== prev.activeId) return prev;
           return { ...prev, live: appendText(prev.live, msg.delta), busy: true, error: null };
         case "workshop_thinking":
+          if (msg.threadId !== prev.activeId) return prev;
           return { ...prev, live: appendThinking(prev.live, msg.delta), busy: true, error: null };
         case "workshop_tool_start":
+          if (msg.threadId !== prev.activeId) return prev;
           return {
             ...prev,
             live: startTool(prev.live, { id: msg.id, name: msg.name, args: msg.args }),
@@ -78,6 +82,7 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
             error: null,
           };
         case "workshop_tool_end":
+          if (msg.threadId !== prev.activeId) return prev;
           return {
             ...prev,
             live: endTool(prev.live, {
@@ -91,6 +96,7 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
           // 只当刷新信号：各页据此重拉，写了什么不需要在对话里再摆一条
           return { ...prev, revision: prev.revision + 1 };
         case "workshop_asset": {
+          if (msg.threadId !== prev.activeId) return prev;
           const view: WorkshopAssetView = { kind: msg.kind, path: msg.path, url: msg.url };
           if (msg.toolCallId) {
             return { ...prev, live: attachToolAssets(prev.live, msg.toolCallId, [view]), busy: true };
@@ -98,6 +104,8 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
           return { ...prev, pendingAssets: [...prev.pendingAssets, view], busy: true };
         }
         case "workshop_done":
+          // 别的线程的收束不改当前现场：回到那条线程时 history 会带完整结果
+          if (msg.threadId !== prev.activeId) return { ...prev, busy: false, live: [] };
           return {
             ...prev,
             messages: [
@@ -117,6 +125,9 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
         case "workshop_error":
           // 本轮出过的图与跑到一半的段落不能跟着错误一起消失——图是真金白银，段落是刚发生的事。
           // 服务端随后补发的 history 会带上它们，live 只是那之前的过渡，不会重影。
+          if (msg.threadId && msg.threadId !== prev.activeId) {
+            return { ...prev, busy: false, live: [], pendingAssets: [] };
+          }
           return {
             ...prev,
             error: msg.message,

@@ -53,7 +53,8 @@ export interface WorkshopSessionOptions {
   playId: string;
   store: PlayStore;
   streamFn: StreamFn;
-  model: Model<Api>;
+  /** 现取模型：Agent 页改完模型下一轮即生效（工坊实例不随 runtime 重建）。 */
+  getModel: () => Model<Api> | Promise<Model<Api>>;
   getApiKey: () => string | undefined;
   /** 向本剧目所有 WS 客户端广播。 */
   emit: (msg: ServerMessage) => void;
@@ -80,8 +81,8 @@ export interface WorkshopSessionOptions {
   exa?: Exa;
   /** 网络图下载器；没有它 `view_image` 只认本地路径。 */
   webImage?: WebImageFetcher;
-  /** 工坊 agent 的运行设置（play.json 的 agents.workshop）：思考档位与能力开关。 */
-  agents?: AgentSettings;
+  /** 工坊 agent 的运行设置（play.json 的 agents.workshop）：思考档位与能力开关。现取，与 getModel 同理。 */
+  getAgents?: () => AgentSettings | undefined | Promise<AgentSettings | undefined>;
   /** 线程压缩参数（工坊可用自己的 STAGE_WORKSHOP_* 一组 env）；不给 = 不压缩。 */
   compaction?: {
     contextWindow: number;
@@ -99,7 +100,7 @@ interface PendingAsset extends WorkshopAssetView {
 export class WorkshopSession {
   readonly files: PlayFiles;
   private readonly threads: WorkshopThreads;
-  private readonly kit: AgentKit;
+  private kit: AgentKit;
   /** 当前线程（面板现场；服务端持有，任何客户端连上都看到同一条）。 */
   private activeId: string | null = null;
   /** 一轮对话在飞：拒绝并发发问（工坊对话是串行的）。 */
@@ -119,8 +120,8 @@ export class WorkshopSession {
     this.kit = createAgentKit({
       role: "workshop",
       playId: opts.playId,
-      capabilities: enabledCapabilitiesFor("workshop", opts.agents?.capabilities),
-      thinking: opts.agents?.thinking,
+      capabilities: enabledCapabilitiesFor("workshop", undefined),
+      thinking: undefined,
       files: this.files,
       store: opts.store,
       onWrite: (write) => this.broadcastWrite(write),
@@ -135,6 +136,31 @@ export class WorkshopSession {
       exa: opts.exa,
       webImage: opts.webImage,
     });
+  }
+
+  /** 每轮开跑前按 play.json 现取模型与工坊设置，重装 kit——用户刚在 Agent 页改完立刻生效。 */
+  private async freshTurnContext(): Promise<{ model: Model<Api>; agents?: AgentSettings }> {
+    const [model, agents] = await Promise.all([this.opts.getModel(), this.opts.getAgents?.()]);
+    this.kit = createAgentKit({
+      role: "workshop",
+      playId: this.opts.playId,
+      capabilities: enabledCapabilitiesFor("workshop", agents?.capabilities),
+      thinking: agents?.thinking,
+      files: this.files,
+      store: this.opts.store,
+      onWrite: (write) => this.broadcastWrite(write),
+      onAsset: (asset, replaced, toolCallId) => this.broadcastAsset(asset, replaced, toolCallId),
+      playAssets: this.opts.playAssets,
+      playMusic: this.opts.playMusic,
+      queueMusic: this.opts.queueMusic,
+      saves: this.opts.saves,
+      saveStore: this.opts.saveStore,
+      assetLibrary: this.opts.assetLibrary,
+      voices: this.opts.voices,
+      exa: this.opts.exa,
+      webImage: this.opts.webImage,
+    });
+    return { model, agents };
   }
 
   /** 面板打开 / 线程变动：回线程列表与当前现场消息。 */
@@ -202,7 +228,8 @@ export class WorkshopSession {
 
       const history = await this.threads.messages(active.id);
       // 开跑前先看要不要压：压了才不等到这轮请求直接被窗口撑爆。
-      const { visible, prompt } = await this.maybeCompact(active, history);
+      const { model } = await this.freshTurnContext();
+      const { visible, prompt } = await this.maybeCompact(active, history, model);
       const userMessage: WorkshopMessage = { role: "user", text: content, at: Date.now() };
       // 首条消息定标题：线程可能是刚建的占位，也可能是空的历史线程
       await this.threads.append(active.id, userMessage, history.length === 0 ? { title: deriveThreadTitle(content) } : {});
@@ -211,7 +238,7 @@ export class WorkshopSession {
       const turn = await runWorkshopTurn(
         {
           streamFn: this.opts.streamFn,
-          model: this.opts.model,
+          model,
           getApiKey: this.opts.getApiKey,
           tools: this.kit.tools,
           thinkingLevel: this.kit.thinking,
@@ -477,6 +504,7 @@ export class WorkshopSession {
   private async maybeCompact(
     thread: WorkshopThread,
     history: readonly WorkshopMessage[],
+    model: Model<Api>,
   ): Promise<{ visible: WorkshopMessage[]; prompt: string }> {
     const compaction = thread.compaction ?? null;
     const view = compaction?.cutAt ?? 0;
@@ -484,7 +512,15 @@ export class WorkshopSession {
     const scale = thread.tokenScale ?? 1;
     const prompt = await this.systemPrompt(compaction?.body);
 
-    const limit = this.opts.compaction;
+    const limit = this.opts.compaction
+      ? {
+          ...this.opts.compaction,
+          contextWindow: Math.min(
+            this.opts.compaction.contextWindow,
+            model?.contextWindow ?? Infinity,
+          ),
+        }
+      : undefined;
     if (!limit) return { visible, prompt };
     const used = estimateThreadTokens(prompt, historyToMessages(visible), scale);
     if (used <= Math.floor(limit.contextWindow * limit.triggerRatio)) return { visible, prompt };
@@ -497,7 +533,7 @@ export class WorkshopSession {
       digest = await summarizeThread(
         {
           streamFn: this.opts.streamFn,
-          model: this.opts.model,
+          model,
           getApiKey: this.opts.getApiKey,
         },
         head,
@@ -549,7 +585,7 @@ export class WorkshopSession {
       can: this.kit.can,
       digest,
       // 从当轮现读的 play.json 取，不吃构造时的快照：用户刚在 Agent 页改完就发下一轮消息，
-      // 那条就该带新提示词（模型/工具开关走 opts.agents，改动会重建 runtime 才生效）。
+      // 那条就该带新提示词（模型/工具开关在每轮开跑前现取并重装 kit，立即生效）。
       customPrompt: play.agents?.workshop?.prompt,
     });
   }

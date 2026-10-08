@@ -1268,7 +1268,6 @@ export class PlayHouse {
     const model = this.modelFor(play.agents?.playwriter?.model);
     const nsfwModelId = play.agents?.playwriter?.nsfwModel || this.config.nsfwModelId;
     const nsfwModel = nsfwModelId ? this.modelFor(nsfwModelId) : model;
-    const workshopModel = this.modelFor(play.agents?.workshop?.model);
     const tts = this.tts;
     // 剧目记忆（D7 三层）：craft/premise/index 随 runtime 重建读入（工坊热改走 reload 即时生效）
     const memory = await PlayMemory.load(store);
@@ -1370,17 +1369,18 @@ export class PlayHouse {
       playId: play.id,
       store,
       streamFn: this.streamFn,
-      model: workshopModel,
+      getModel: async () => {
+        const fresh = await store.loadPlay();
+        return this.modelFor(fresh.agents?.workshop?.model);
+      },
+      getAgents: async () => (await store.loadPlay()).agents?.workshop,
       getApiKey: () => this.config.apiKey,
       emit: (msg) => this.broadcast(play.id, msg),
       onFilesChanged: () => void this.reloadAfterWorkshopWrite(play.id),
       // 线程压缩：工坊可用自己那组 env（缺省沿用全局），再与工坊模型自带的窗口取小——
       // 模型元数据不可信，但只用来收紧预算不会更糟。
       compaction: {
-        contextWindow: Math.min(
-          this.config.workshopContext.contextWindow,
-          workshopModel.contextWindow ?? Infinity,
-        ),
+        contextWindow: this.config.workshopContext.contextWindow,
         triggerRatio: this.config.workshopContext.compactRatio,
         keepRecentTokens: this.config.workshopContext.keepRecentTokens,
       },
@@ -1393,7 +1393,6 @@ export class PlayHouse {
       voices: this.voices,
       exa: this.exa ?? undefined,
       webImage: this.webImage,
-      agents: play.agents?.workshop,
     });
     return {
       orchestrator,

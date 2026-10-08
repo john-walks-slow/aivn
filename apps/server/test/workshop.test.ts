@@ -749,7 +749,7 @@ describe("WorkshopSession：一轮对话", () => {
       playId: "test",
       store,
       streamFn: extra.streamFn,
-      model: {} as never,
+      getModel: () => ({} as never),
       getApiKey: () => "test-key",
       emit: extra.emit,
       onFilesChanged: extra.onFilesChanged ?? (() => {}),
@@ -878,7 +878,7 @@ describe("WorkshopSession：一轮对话", () => {
         { text: "", toolCalls: [{ name: "generate_image", args: { kind: "background", name: "rooftop", prompt: "黄昏天台" } }] },
         { text: "" },
       ]),
-      model: {} as never,
+      getModel: () => ({} as never),
       getApiKey: () => "test-key",
       emit: (msg) => emitted.push(msg),
       onFilesChanged: () => {},
@@ -947,7 +947,7 @@ describe("WorkshopSession：一轮对话", () => {
       const session = new WorkshopSession({
         playId: "test",
         store,
-        model: {} as never,
+        getModel: () => ({} as never),
         getApiKey: () => "test-key",
         streamFn: (model, context, options) => {
           contexts.push(JSON.stringify(context));
@@ -1065,7 +1065,7 @@ describe("WorkshopSession：一轮对话", () => {
         },
         { text: "顺手改了一下。" },
       ]),
-      model: {} as never,
+      getModel: () => ({} as never),
       getApiKey: () => "test-key",
       emit: (msg) => emitted.push(msg),
       onFilesChanged: () => {
@@ -1074,7 +1074,7 @@ describe("WorkshopSession：一轮对话", () => {
       saves: new PlaySaves(store.dir),
       saveStore: (saveId) => new PlayStore(store.dir, saveId),
       // bash 默认关，这里显式勾上——测的就是勾上之后那条没有校验的路
-      agents: { capabilities: [...defaultCapabilitiesFor("workshop"), "shell"] },
+      getAgents: () => ({ capabilities: [...defaultCapabilitiesFor("workshop"), "shell"] }),
     });
     await session.chat("把 play.json 改坏");
 
@@ -1106,7 +1106,7 @@ describe("whenIdle：工坊热改等轮边界", () => {
         });
         return stream;
       },
-      model: {} as never,
+      getModel: () => ({} as never),
       getApiKey: () => "test-key",
       play: PLAY,
       // 编排器装配文件工具要 store.dir（PlayFiles 的白名单根），不落盘的用例给个字符串即可

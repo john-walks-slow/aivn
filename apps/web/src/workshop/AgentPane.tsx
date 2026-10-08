@@ -150,12 +150,13 @@ export function AgentPane({ playId }: { playId: string }) {
                     value={settings.nsfwModel ?? ""}
                     models={models}
                     error={modelError}
-                    emptyLabel={`跟随剧作家主模型${settings.model ? `（${settings.model}）` : ""}`}
+                    emptyLabel={`跟随全局设置（全局也空则跟随主模型）`}
                     onChange={(id) => patch(role.id, (s) => setOrClear(s, "nsfwModel", id, ""))}
                     onRetry={() => loadModels(true)}
                   />
                   <p className="muted small">
-                    当剧作家调用 enter_nsfw 进入亲密/限制级剧情时切换为此模型执笔。退出时切回主模型并注入 SFW 摘要。
+                    当剧作家调用 enter_nsfw 进入亲密/限制级剧情时切换为此模型执笔。留空时：剧目覆盖 → 全局设置（nsfwModelId）→
+                    剧作家主模型。退出时切回主模型并注入 SFW 摘要。
                   </p>
                 </label>
 

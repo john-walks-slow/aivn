@@ -63,3 +63,22 @@ export function normalizeParts(message: { text: string; parts?: WorkshopPart[] }
   if (message.parts) return message.parts;
   return message.text === "" ? [] : [{ type: "text", text: message.text }];
 }
+
+/**
+ * 历史消息级素材归位：旧线程 / 无调用号的素材挂在消息级 `images` 上，
+ * 渲染时并回最后一个工具调用（这批图正是那次调用的产出）；没有工具段时留在原处交给调用方兜底。
+ */
+export function attachMessageAssets(
+  parts: readonly WorkshopPart[],
+  images: readonly WorkshopAssetView[] | undefined,
+): { parts: WorkshopPart[]; remaining: WorkshopAssetView[] } {
+  if (!images || images.length === 0) return { parts: [...parts], remaining: [] };
+  const index = parts.map((part) => part.type).lastIndexOf("tool");
+  if (index === -1) return { parts: [...parts], remaining: [...images] };
+  const next = parts.map((part, i) =>
+    i === index && part.type === "tool"
+      ? { ...part, assets: [...(part.assets ?? []), ...images] }
+      : part,
+  );
+  return { parts: next, remaining: [] };
+}

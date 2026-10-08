@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendText,
   appendThinking,
+  attachMessageAssets,
   attachToolAssets,
   endTool,
   normalizeParts,
@@ -40,6 +41,20 @@ describe("工坊段落流拼装", () => {
     const parts = startTool([], { id: "c1", name: "read", args: {} });
     expect(endTool(parts, { id: "c9", result: "别人的", isError: true, ms: 1 })).toEqual(parts);
     expect(attachToolAssets(parts, "c9", [ASSET])).toEqual(parts);
+  });
+
+  it("消息级素材并回最后一个工具段；没有工具段就原样留着", () => {
+    let parts = startTool([], { id: "c1", name: "generate_image", args: {} });
+    parts = endTool(parts, { id: "c1", result: "ok", isError: false, ms: 5 });
+    parts = appendText(parts, "好了");
+    const merged = attachMessageAssets(parts, [ASSET]);
+    expect(merged.remaining).toEqual([]);
+    const tool = merged.parts.find((p) => p.type === "tool");
+    expect((tool as { assets: unknown[] }).assets).toEqual([ASSET]);
+
+    const bare = attachMessageAssets([{ type: "text" as const, text: "hi" }], [ASSET]);
+    expect(bare.remaining).toEqual([ASSET]);
+    expect(attachMessageAssets(parts, undefined).remaining).toEqual([]);
   });
 
   it("旧消息（只有 text）归一成一段正文，空消息归一成空的", () => {

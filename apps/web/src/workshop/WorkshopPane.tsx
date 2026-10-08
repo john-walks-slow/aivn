@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { normalizeParts } from "@aivn/core";
+import { attachMessageAssets, normalizeParts } from "@aivn/core";
 import type { ClientMessage, GeneratedAsset, WorkshopAssetView } from "@aivn/core";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
 import { Icon, type IconName, type WorkshopTab } from "@aivn/stage";
@@ -328,13 +328,16 @@ export function WorkshopPane({
                   ) : (
                     <div className="chat-turn">
                       <TurnParts
-                        parts={normalizeParts(msg)}
+                        parts={attachMessageAssets(normalizeParts(msg), msg.images).parts}
                         live={false}
                         onOpenMarkdown={(images, index) => setLightbox({ images, index })}
                         onOpenAssets={openImage}
                       />
-                      {msg.images && msg.images.length > 0 && (
-                        <AssetStrip assets={msg.images} onOpen={openImage} />
+                      {attachMessageAssets(normalizeParts(msg), msg.images).remaining.length > 0 && (
+                        <AssetStrip
+                          assets={attachMessageAssets(normalizeParts(msg), msg.images).remaining}
+                          onOpen={openImage}
+                        />
                       )}
                     </div>
                   )}
