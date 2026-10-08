@@ -12,7 +12,7 @@ coverage/
 # 运行期状态（saves/ 故事树、active.json 指针、memory/archive/ 与 memory/index/arcs/ 的纪元产物、
 # workshop/ 线程、soak/ 报告）本来就在剧目目录里，一并由这条覆盖。
 plays/*
-media-cache/
+media-cache
 # 运行期设置与数据目录（开发时设置文件落在仓库根，打包后在 exe 同级的 data/）
 settings.json
 data/

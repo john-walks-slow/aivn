@@ -56,6 +56,15 @@ if [ -n "$MAIN_ROOT" ] && [ -d "$MAIN_ROOT/plays" ]; then
   done
 fi
 
+# settings.json / media-cache：与 plays 同理——主仓库有的话软链过来，预览实例免重配
+if [ -n "$MAIN_ROOT" ]; then
+  for f in settings.json media-cache; do
+    if [ ! -e "$f" ] && [ -e "$MAIN_ROOT/$f" ]; then
+      ln -s "$MAIN_ROOT/$f" "$f" 2>/dev/null || true
+    fi
+  done
+fi
+
 pids=()
 
 # 公网入口走 [[dev-tunnel]] 的 quick tunnel（免登录、URL 随机、进程关了即失效）。

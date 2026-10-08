@@ -44,4 +44,13 @@ for p in "$MAIN_ROOT"/plays/*; do
   fi
 done
 
+# settings.json / media-cache：运行期设置与可重建缓存同样软链——预览实例用与主仓库
+# 同一份设置（模型网关、TTS 等），换 worktree 不等于重配一遍。
+for f in settings.json media-cache; do
+  if [ ! -e "$f" ] && [ -e "$MAIN_ROOT/$f" ]; then
+    ln -s "$MAIN_ROOT/$f" "$f"
+    echo "→ $f → $MAIN_ROOT/$f"
+  fi
+done
+
 echo "✓ 就绪：./scripts/dev-worktree.sh 启动本 worktree 的 server + web"
