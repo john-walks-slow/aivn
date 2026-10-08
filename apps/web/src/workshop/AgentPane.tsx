@@ -21,6 +21,7 @@ const ROLES: { id: keyof AgentConfig; name: string }[] = [
 ];
 
 const THINKING_LABEL: Record<ThinkingLevel, string> = {
+  default: "跟随服务商默认",
   off: "不思考",
   low: "浅思考（low）",
   medium: "中思考（medium）",
@@ -130,8 +131,8 @@ export function AgentPane({ playId }: { playId: string }) {
             <label className="field">
               <span>思考档位</span>
               <select
-                value={settings.thinking ?? "off"}
-                onChange={(e) => patch(role.id, (s) => setOrClear(s, "thinking", e.target.value, "off"))}
+                value={settings.thinking ?? "default"}
+                onChange={(e) => patch(role.id, (s) => setOrClear(s, "thinking", e.target.value, "default"))}
               >
                 {THINKING_LEVELS.map((level) => (
                   <option key={level} value={level}>
@@ -161,8 +162,8 @@ export function AgentPane({ playId }: { playId: string }) {
                 <label className="field">
                   <span>限制级（NSFW）思考档位</span>
                   <select
-                    value={settings.nsfwThinking ?? "off"}
-                    onChange={(e) => patch(role.id, (s) => setOrClear(s, "nsfwThinking", e.target.value, "off"))}
+                    value={settings.nsfwThinking ?? "default"}
+                    onChange={(e) => patch(role.id, (s) => setOrClear(s, "nsfwThinking", e.target.value, "default"))}
                   >
                     {THINKING_LEVELS.map((level) => (
                       <option key={level} value={level}>
@@ -170,7 +171,7 @@ export function AgentPane({ playId }: { playId: string }) {
                       </option>
                     ))}
                   </select>
-                  <p className="muted small">限制级剧情通道下的独立思考档位。默认不思考。</p>
+                  <p className="muted small">限制级剧情通道下的独立思考档位。默认跟随服务商默认。</p>
                 </label>
               </>
             )}

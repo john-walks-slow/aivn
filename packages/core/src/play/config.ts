@@ -113,14 +113,26 @@ export function resolveCraft(craft?: CraftParams): EffectiveCraft {
     },
   };
 }
-/** 思考档位（pi 的 thinkingLevel）。剧作家与工坊各自独立。 */
-export const THINKING_LEVELS = ["off", "low", "medium", "high"] as const;
+/**
+ * 思考档位。剧作家与工坊各自独立。
+ * `default` = 不下发 reasoning 参数，跟随服务商默认（也是缺省值）。
+ */
+export const THINKING_LEVELS = ["default", "off", "low", "medium", "high"] as const;
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+/**
+ * 应用层档位 → pi-agent-core 的 thinkingLevel。
+ * pi 没有「跟随默认」的档位，它对 "off" 直接不下发 reasoning 字段——
+ * 那正是服务商默认的语义，所以 default 归并到 pi 的 "off"。
+ */
+export function toPiThinkingLevel(level: ThinkingLevel): "off" | "low" | "medium" | "high" {
+  return level === "default" ? "off" : level;
+}
 
 /**
  * 单个 agent 的运行设置（工坊「Agent」页签编辑，落在 play.json）。
  *
- * 缺字段即默认：模型回落到服务端配置的默认模型，思考档位 off，能力走该角色的默认集。
+ * 缺字段即默认：模型回落到服务端配置的默认模型，思考档位跟随服务商默认，能力走该角色的默认集。
  * 这三项都是**逐剧目**的——按量计费时工坊跑便宜模型、剧作家跑强模型是常态，
  * 而某部剧目不想让 agent 自己花钱生图时只关这一个剧目的「生图」能力即可。
  */

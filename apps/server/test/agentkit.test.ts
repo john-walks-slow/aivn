@@ -218,9 +218,9 @@ describe("agent kit：两个角色的暴露面", () => {
   });
 
   it("思考档位缺省 off，给了就透出", () => {
-    expect(playwriter().thinking).toBe("off");
-    expect(workshop().thinking).toBe("off");
-    expect(workshop({}, []).thinking).toBe("off");
+    expect(playwriter().thinking).toBe("default");
+    expect(workshop().thinking).toBe("default");
+    expect(workshop({}, []).thinking).toBe("default");
     const kit = createAgentKit({ ...workshopDeps({ thinking: "high" }) });
     expect(kit.thinking).toBe("high");
   });

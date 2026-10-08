@@ -1,7 +1,7 @@
 import type { AgentEvent, AgentMessage, AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { languageLabel } from "@aivn/core";
+import { languageLabel, toPiThinkingLevel } from "@aivn/core";
 import type { EffectiveCraft, ImageApproval, ThinkingLevel, WorkshopAssetView, WorkshopPart } from "@aivn/core";
 import { capDigest, renderTranscriptAs, splitSummary, calibrateTokenScale, type EpochSummary } from "./compaction.js";
 import { completeText, type OneShotOptions } from "./llm.js";
@@ -442,7 +442,7 @@ export interface WorkshopAgentOptions {
   /** 统一基座装好的工具（见 `createAgentKit`）。 */
   tools: AgentTool<any>[];
   systemPrompt: string;
-  /** 思考档位（play.json 的 agents.workshop.thinking，缺省 off）。 */
+  /** 思考档位（play.json 的 agents.workshop.thinking，缺省跟随服务商默认）。 */
   thinkingLevel?: ThinkingLevel;
 }
 
@@ -485,7 +485,7 @@ export async function runWorkshopTurn(
     initialState: {
       systemPrompt: opts.systemPrompt,
       model: opts.model,
-      thinkingLevel: opts.thinkingLevel ?? "off",
+      thinkingLevel: toPiThinkingLevel(opts.thinkingLevel ?? "default"),
       tools: opts.tools,
       messages: historyToMessages(history),
     },
