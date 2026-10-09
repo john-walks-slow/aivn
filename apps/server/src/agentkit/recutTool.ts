@@ -1,6 +1,9 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "@earendil-works/pi-ai";
+import { cutoutTuningFields, pick, tighten } from "@aivn/agent";
+import type { CutoutTuning } from "@aivn/agent";
 import type { PlayAssets } from "../playAssets.js";
+import { toPi } from "./schema.js";
 import { linesResult, reason, textResult } from "./result.js";
 
 /**
@@ -15,22 +18,21 @@ import { linesResult, reason, textResult } from "./result.js";
  * 重新出图做不到这三条，它出来的是另一张画。
  */
 
-/** 抠底调参：0–255 的通道色差 / 像素宽度（见 cutout.ts）。不给就整套用默认值。 */
-const cutoutTuning = Type.Object(
-  {
-    /** 色键容差 0–128：离底色不超过它的像素一律算背景。**调大 = 抠得更狠**。默认 48。 */
-    tolerance: Type.Optional(Type.Integer({ minimum: 0, maximum: 128 })),
-    /** 掩膜降噪 0–8：色键跑在一张高斯模糊副本上（alpha 仍从原图解），专治 JPEG 环纹把轮廓咬出缺口。调大抗缺口、代价是边缘略毛。默认 0.8。 */
-    keySmooth: Type.Optional(Type.Number({ minimum: 0, maximum: 8 })),
-    /** 反解带宽 1–32：源图抗锯齿过渡带有多宽就得设多宽；不够宽会把渐变像素钉成实心，深色底上是一圈白块。默认 4。 */
-    edgeBand: Type.Optional(Type.Integer({ minimum: 1, maximum: 32 })),
-    /** 限色强度 0–255：把底色峰值通道压到另两路之上多少。动颜色不动 alpha，发丝一根不少。默认 20。 */
-    spill: Type.Optional(Type.Integer({ minimum: 0, maximum: 255 })),
-    /** 实心判据 0–255：胶着带里的像素离「底色↔邻近前景色」这条线超过它就算实心（护住细描边）。调小 = 更多像素当真；0 = 关掉这条。默认 48。 */
-    solidResidual: Type.Optional(Type.Integer({ minimum: 0, maximum: 255 })),
-  },
-  { additionalProperties: false },
-);
+/**
+ * 抠底调参：0–255 的通道色差 / 像素宽度（见包里的 `media/cutout.ts`）。
+ *
+ * 五个旋钮的**字段与说明**在 `@aivn/agent` 的 `image.cutout`（与插件的 `cut` 同一份）；
+ * 这里只加服务端这一面的范围收紧——pi 运行时硬校验，DSH 的 schema 子集不认。
+ */
+const CUTOUT_FACE = tighten(pick(cutoutTuningFields, ["tolerance", "keySmooth", "edgeBand", "spill", "solidResidual"]), {
+  tolerance: { minimum: 0, maximum: 128 },
+  keySmooth: { minimum: 0, maximum: 8 },
+  edgeBand: { minimum: 1, maximum: 32 },
+  spill: { minimum: 0, maximum: 255 },
+  solidResidual: { minimum: 0, maximum: 255 },
+});
+
+const cutoutTuning = toPi(CUTOUT_FACE);
 
 const recutParams = Type.Object(
   {
@@ -86,7 +88,7 @@ export function createRecutSpriteTool(deps: RecutDeps): AgentTool<typeof recutPa
             spriteId: params.spriteId.trim(),
             variant: params.variant?.trim() || "neutral",
           },
-          params.cutout,
+          params.cutout as Partial<CutoutTuning> | undefined,
         );
         deps.onAsset(asset.path, asset.url, asset.kind, asset.replaced, toolCallId);
         return linesResult([

@@ -29,6 +29,16 @@ export {
   MAX_IMAGE_REFERENCES,
   resolveImageRefs,
 } from "./capabilities/image/generate.js";
+export type { CutoutRequest, ImageCutoutDeps } from "./capabilities/media/cutout.js";
+export {
+  CUTOUT_TUNING_GUIDE,
+  cutoutTuningFields,
+  IMAGE_CUTOUT_DOC,
+  imageCutout,
+  imageCutoutFields,
+  type CutoutResult as ImageCutoutResult,
+  tuningOf as cutoutTuningOf,
+} from "./capabilities/media/cutout.js";
 export type { MusicGenerateDeps, MusicGenerateRequest } from "./capabilities/music/generate.js";
 export {
   musicGenerate,
