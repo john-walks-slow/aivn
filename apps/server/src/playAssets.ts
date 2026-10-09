@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  ASSET_DRAFT_RETENTION_DAYS,
   DEFAULT_SPRITE_FRAMING,
   DEFAULT_SPRITE_STATURE,
   SPRITE_FRAMING_ASPECT,
@@ -67,7 +68,7 @@ export function assertAssetStem(value: string, label: string): string {
 const NEUTRAL = "neutral";
 
 /** 草稿区的保鲜期：超过这个时间没动过的草稿目录，在下一次出图时顺手清掉。 */
-const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DRAFT_TTL_MS = ASSET_DRAFT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 /**
  * 立绘主体 id 的合法形状：它就是 `assets/sprites/` 下的目录名。

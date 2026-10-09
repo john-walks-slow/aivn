@@ -14,6 +14,7 @@ export * from "./play/spriteStage.js";
 export * from "./play/spriteAction.js";
 export * from "./play/spriteVariants.js";
 export * from "./play/assets.js";
+export * from "./play/assetLifecycle.js";
 export * from "./play/characterCard.js";
 export * from "./speech/chunker.js";
 export * from "./speech/voices.js";

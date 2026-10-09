@@ -977,4 +977,29 @@ describe("PlayAssets：出图与入库解耦（草稿 → 采用）", () => {
     await assets.commit(neutral.draftId);
     await expect(assets.draft({ kind: "sprite", spriteId: "mio", variant: "smile" }, "笑")).resolves.toBeTruthy();
   });
+
+  it("重复采用同一张草稿是幂等的：还是那一份素材，不产生第二份也不报错", async () => {
+    const store = await makeStore();
+    const { assets, files } = makeAssets(store, stubBackend().backend);
+    const draft = await assets.draft({ kind: "background", name: "rooftop" }, "天台");
+    const first = await assets.commit(draft.draftId);
+    const again = await assets.commit(draft.draftId);
+
+    // 契约里 adopted → adopted 是一条合法边（见 @aivn/core 的素材生命周期表）：重复采用
+    // 不是错误。幂等说的是**产出**——同一个路径、台账里还是那一条，不会多出第二份。
+    expect(again.path).toBe(first.path);
+    const ledger = JSON.parse(await files.read("assets/generated.json")) as Record<string, unknown>;
+    expect(Object.keys(ledger)).toEqual(["rooftop"]);
+    // `replaced` 不是幂等位，它是如实回执：第一次是新建，第二次确实覆盖了上一次写的那份。
+    expect(first.replaced).toBe(false);
+    expect(again.replaced).toBe(true);
+  });
+
+  it("保留期常量来自共享契约：本地天数改了会与工坊对用户的承诺脱钩", async () => {
+    // 这条钉的不是数字本身，而是「两边说的是同一件事」——DRAFT_TTL_MS 必须由
+    // @aivn/core 的 ASSET_DRAFT_RETENTION_DAYS 推出来，不许再手写一遍。
+    const source = await readFile(new URL("../src/playAssets.ts", import.meta.url), "utf8");
+    expect(source).toContain("ASSET_DRAFT_RETENTION_DAYS");
+    expect(source).not.toMatch(/DRAFT_TTL_MS\s*=\s*\d/);
+  });
 });
