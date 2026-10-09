@@ -1668,18 +1668,8 @@ select:focus {
   border-color: var(--accent);
 }
 
-/* 标签 chips 行：从当前窗口统计出的高频标签，多选并集（Fish 的多 tag 就是并集）。
-   与语言下拉是两个维度——行内标签是「什么嗓子」，下拉是「说什么语言」。 */
-.picker-tags {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px 10px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-}
-
+/* 标签 chips：音色库面板不放（太占地方），剩下的是立绘差分多选那一处。
+   与语言下拉是两个维度——标签是「什么嗓子」，下拉是「说什么语言」。 */
 .chip-btn {
   padding: 2px 10px;
   font-size: 12px;

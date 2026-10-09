@@ -1,5 +1,5 @@
 import type { FieldMap } from "../../schema/ir.js";
-import type { VoiceEntry } from "@aivn/core";
+import { VOICE_TAG_GROUPS, type VoiceEntry } from "@aivn/core";
 import type { VoiceQuery } from "../../voice/catalog.js";
 import type { Capability } from "../capability.js";
 
@@ -47,12 +47,15 @@ export const voiceListFields = {
   },
 } as const satisfies FieldMap;
 
+/** 常用词表摊成一句话：与面板 chips 同一份 `VOICE_TAG_GROUPS`，两边不许各写一套。 */
+const TAG_GROUPS = VOICE_TAG_GROUPS.map((group) => `${group.label} ${group.tags.join(" / ")}`).join("；");
+
 export const VOICE_LIST_DOC = `从公共音色库里挑一个给角色配 voice（Fish Audio 公共库；角色卡 frontmatter 的 \`voice\` 字段填的就是这里的 id）。
 
 **建角色卡时必须先查这里**：id 是 32 位 hex，猜不出来；填错不报错，演出时那句台词会静默没有声音。
 每个查询组合各有一个 1000 条窗口，按需抓取（首次几秒，之后走本机缓存）：
 - \`language\`（ja / en / zh，小写）：**先按剧目的语音语言筛**——台词会译成那个语言再送 TTS（未设语音语言时就是剧本原文），选一个不支持它的嗓子，整段台词会带着那个音色的口音念出来。
-- \`tags\`（并集；Fish 作者自己打的，**大小写敏感、猜错就是 0 条**）：二次元/角色向用 \`["anime","character-voice"]\`。**照抄下面这批，别自己造词**——性别年龄 female / male / young / middle-aged / old；语气 energetic / calm / confident / cheerful / bright / serious / dramatic / expressive / friendly；质感 deep / clear / smooth / high / measured；用途 narration / storytelling / advertisement / social-media / entertainment / educational；画风 animated。语言别当 tag（Japanese / Mandarin 是作者顺手打的，语言维度走 \`language\`）。
+- \`tags\`（并集；Fish 作者自己打的，**大小写敏感、猜错就是 0 条**）：二次元/角色向用 \`["anime","character-voice"]\`。**照抄下面这批，别自己造词**——${TAG_GROUPS}。语言别当 tag（Japanese / Mandarin 是作者顺手打的，语言维度走 \`language\`）。
 - \`query\`：按名字全库搜索（雷姆、Frieren、Hatsune Miku），比翻热门榜单准。
 - \`gender\`：male / female。
 每行是：id | 名称 | 语言 | 标签 | 收藏数 | 描述。收藏数是热度，同条件下优先挑高的；结果按热度降序分页返回，这一页没有合适的就把末尾给的下一页页码填进 \`page\`。

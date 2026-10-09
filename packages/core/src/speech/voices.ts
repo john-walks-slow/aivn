@@ -32,6 +32,32 @@ export interface VoiceCatalog {
   stale: boolean;
 }
 
+/**
+ * Fish 音色的常用标签，分五组——`list_voices` 的描述靠它教模型「照抄这批、别自己造词」。
+ * 标签筛选本身仍在（`GET /api/voices` 的 `tag` 与工具的 `tags`），只是音色库面板不摆
+ * chips（手机上那排要占五六行，挑音色靠搜索与试听更直接）。
+ *
+ * 词表是拿全局与日语两个 1000 条窗口**现数出来**的：靠印象写会写出 0 条的词（曾写
+ * `cute`，两个窗口都搜不到）。标签大小写敏感，这里是数据里真实出现过的写法；
+ * 语言名（Japanese / Mandarin）不算 tag——那个维度走 `language`。
+ */
+export const VOICE_TAG_GROUPS: { label: string; tags: string[] }[] = [
+  { label: "画风", tags: ["anime", "animated", "character-voice"] },
+  { label: "性别年龄", tags: ["female", "male", "young", "middle-aged", "old"] },
+  {
+    label: "语气",
+    tags: [
+      "energetic", "calm", "confident", "cheerful", "bright",
+      "serious", "dramatic", "expressive", "friendly",
+    ],
+  },
+  { label: "质感", tags: ["deep", "clear", "smooth", "high", "measured"] },
+  {
+    label: "用途",
+    tags: ["narration", "storytelling", "advertisement", "social-media", "entertainment", "educational"],
+  },
+];
+
 /** ISO 639-1 → 中文显示名。语音语言下拉与音色库语言轨共用；未收录的代码原样显示。 */
 export const LANGUAGE_LABELS: Record<string, string> = {
   ar: "العربية / 阿拉伯语",

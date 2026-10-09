@@ -392,10 +392,9 @@ export const api = {
     }),
 
   /** 音色查询：条件发给服务端现拉 Fish 对应窗口（空条件 = 基础热门目录）。 */
-  voiceCatalog: (query: { language?: string; tags?: string[]; title?: string; refresh?: boolean } = {}) => {
+  voiceCatalog: (query: { language?: string; title?: string; refresh?: boolean } = {}) => {
     const params = new URLSearchParams();
     if (query.language) params.set("language", query.language);
-    for (const tag of query.tags ?? []) params.append("tag", tag);
     if (query.title) params.set("q", query.title);
     if (query.refresh) params.set("refresh", "1");
     const qs = params.toString();
