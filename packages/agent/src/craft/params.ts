@@ -1,9 +1,8 @@
 /**
- * 写作参数（`craft`）的两份说法与补丁语义，两个宿主共用一份。
+ * 写作参数（`craft`）的两份说法，两个宿主共用一份。
  *
  * - `renderCraftParams` 写给**剧作家**（该怎么写），永远是提示词里的一段；
- * - `describeCraftParams` 写给**工坊与用户**（现在是什么），不带祈使句、只报值；
- * - `mergeCraftParams` 是 `set_craft` 的三态补丁（省略 = 保持、`null` = 回默认）。
+ * - `describeCraftParams` 写给**工坊与用户**（现在是什么），不带祈使句、只报值。
  *
  * 停止点的**措辞由宿主注入**：工具面调 `beat_done(options=…)` 与 DSL 写 `<stop options="…"/>`
  * 是两个宿主的有意差异（前者是工具调用，后者是剧本最后一行的一个标签），除此之外整段逐字相同。
@@ -15,14 +14,10 @@ import {
   CRAFT_CG_SOURCES,
   CRAFT_SPRITE_SOURCES,
   CRAFT_STOP_OPTIONS,
-  DEFAULT_CRAFT,
-  resolveCraft,
-  type CraftAssetSources,
   type CraftAudioSource,
   type CraftBackgroundSource,
   type CraftBeatLength,
   type CraftCgSource,
-  type CraftParams,
   type CraftSpriteSource,
   type CraftStopOptions,
   type EffectiveCraft,
@@ -181,58 +176,6 @@ export function describeCraftParams(craft: EffectiveCraft): string {
     `停止点选项：${STOP_OPTIONS_LABEL[craft.stopOptions]}`,
     `素材来源：背景 ${BACKGROUND_LABEL[assets.background]}；插图 ${CG_LABEL[assets.cg]}；立绘 ${SPRITE_LABEL[assets.sprite]}；音效 ${AUDIO_LABEL[assets.audio]}`,
   ].join("\n");
-}
-
-/**
- * `set_craft` 的补丁：字段省略 = 保持现状，显式 `null` = 恢复默认。
- *
- * 三态是刻意的——「把篇幅设回中等」和「以后端默认值为准」是两件事：前者写进 play.json 变成
- * 一个固定值，后者让这个字段从文件里消失，日后引擎默认值改了它跟着改。
- */
-export interface CraftPatch {
-  beatLength?: CraftBeatLength | null;
-  stopOptions?: CraftStopOptions | null;
-  /** `null` = 素材来源四项一起恢复默认；对象里逐项 `null` = 只恢复那一项。 */
-  assets?: {
-    background?: CraftBackgroundSource | null;
-    cg?: CraftCgSource | null;
-    sprite?: CraftSpriteSource | null;
-    audio?: CraftAudioSource | null;
-  } | null;
-}
-
-/** 应用补丁，并只留下与默认值不同的字段——play.json 里「没写」就是「用默认」。 */
-export function mergeCraftParams(current: CraftParams | undefined, patch: CraftPatch): CraftParams | undefined {
-  const now = resolveCraft(current);
-  const assetsPatch = patch.assets === null ? null : patch.assets;
-  const pick = <T>(value: T | null | undefined, fallback: T, currentValue: T): T =>
-    value === undefined ? currentValue : (value ?? fallback);
-  const assets = {
-    background:
-      assetsPatch === null
-        ? DEFAULT_CRAFT.assets.background
-        : pick(assetsPatch?.background, DEFAULT_CRAFT.assets.background, now.assets.background),
-    cg: assetsPatch === null ? DEFAULT_CRAFT.assets.cg : pick(assetsPatch?.cg, DEFAULT_CRAFT.assets.cg, now.assets.cg),
-    sprite:
-      assetsPatch === null
-        ? DEFAULT_CRAFT.assets.sprite
-        : pick(assetsPatch?.sprite, DEFAULT_CRAFT.assets.sprite, now.assets.sprite),
-    audio:
-      assetsPatch === null ? DEFAULT_CRAFT.assets.audio : pick(assetsPatch?.audio, DEFAULT_CRAFT.assets.audio, now.assets.audio),
-  };
-  const beatLength = pick(patch.beatLength, DEFAULT_CRAFT.beatLength, now.beatLength);
-  const stopOptions = pick(patch.stopOptions, DEFAULT_CRAFT.stopOptions, now.stopOptions);
-
-  const out: CraftParams = {};
-  if (beatLength !== DEFAULT_CRAFT.beatLength) out.beatLength = beatLength;
-  if (stopOptions !== DEFAULT_CRAFT.stopOptions) out.stopOptions = stopOptions;
-  const assetOut: CraftAssetSources = {};
-  if (assets.background !== DEFAULT_CRAFT.assets.background) assetOut.background = assets.background;
-  if (assets.cg !== DEFAULT_CRAFT.assets.cg) assetOut.cg = assets.cg;
-  if (assets.sprite !== DEFAULT_CRAFT.assets.sprite) assetOut.sprite = assets.sprite;
-  if (assets.audio !== DEFAULT_CRAFT.assets.audio) assetOut.audio = assets.audio;
-  if (Object.keys(assetOut).length > 0) out.assets = assetOut;
-  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /** 取值白名单取 core 那一份：工具 schema 与 `validate_play` 都从它派生，别在别处再抄一遍。 */

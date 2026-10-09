@@ -24,7 +24,7 @@ user-invocable: true
    （本剧目若在 Agent 页设了「出图审批 = 自动」，则可以列完直接出——但仍只出真正需要的那几张。）
    出图要钱也要时间。
 4. **落盘后同步记忆**：premise 写进 `memory/always/premise.md`，创作口径写进 `memory/always/craft.md`，
-   写作参数用 `set_craft`（见下「写作参数 vs 创作口径」，两者装的东西不同，不要混）。
+   写作参数用 `edit` 改 `play.json` 的 `craft` 段（见下「写作参数 vs 创作口径」，两者装的东西不同，不要混）。
    落盘不是说完就算——文件里没有的，下一轮剧作家就看不见。
 
 > 本剧目**没给**你改剧目文件的能力时（Agent 页关掉了「改剧目文件」）：
@@ -35,9 +35,10 @@ user-invocable: true
 
 两者都影响剧作家怎么写，但装的东西**不重叠**，写两处必然打架。
 
-**写作参数**（`play.json` 的 `craft` 段，用 `set_craft` 工具改）：有确定取值的那三件——
+**写作参数**（`play.json` 的 `craft` 段，用 `edit` 定点改）：有确定取值的那三件——
 **每轮篇幅**、**停止点给几条选项**、**素材来源**（背景／插图／立绘／音效逐类）。
-改完立刻生效，用户也能在「剧目」页看到同一份值。别手写 play.json，也别在 craft.md 里再写一遍。
+改完立刻生效，用户也能在「剧目」页看到同一份值。**只改 `craft` 这一段**，别整篇重写 play.json，也别在 craft.md 里再写一遍。
+改完跑一次 `validate_play`：craft 的取值白名单不在写口上（写口只查 JSON 结构），写错值只有它会报出来。
 
 **创作口径**（`memory/always/craft.md`）：剧作家每一轮怎么写，听这一份，但它只装**拿话说的那部分**——
 文风与禁忌、称呼与口癖、叙述视角与节奏感、场景转换的偏好、
@@ -47,7 +48,7 @@ user-invocable: true
 这个文件空着，剧作家就少一层口径可听；跟用户对齐完文风就落进去，不要只在对话里说一句「知道了」。
 只写风格条目，不要往里写 DSL 格式或工具用法，那些由引擎保证。
 
-用户改主意时：**「文风再冷一点」改 craft.md；「节奏太快」「选项给太多」「每段写短点」「背景别自己画」用 `set_craft`。**
+用户改主意时：**「文风再冷一点」改 craft.md；「节奏太快」「选项给太多」「每段写短点」「背景别自己画」用 `edit` 改 `play.json` 的 `craft` 段。**
 
 ## 三、各文件写什么
 
@@ -75,7 +76,7 @@ user-invocable: true
 - `voiceLanguage`（语音语言，ISO 639-1 如 `"ja"`；不写 = 台词按剧本原文配音）
 - `defaultVoiceId`（无名角色、临时角色的兜底音色，32 位 hex）
 - `cover`（封面图）、`initialState` / `initialScene`（开局状态）
-- `craft`（写作参数，用 `set_craft` 改，**不要手写**）
+- `craft`（写作参数，用 `edit` 定点改，**别整篇重写 play.json**）
 - `image`（逐剧目的生图 model / size，不写跟服务端全局）
 - `agents`（两个 agent 的 model / thinking / capabilities / imageApproval）
 

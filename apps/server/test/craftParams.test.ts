@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CRAFT, resolveCraft } from "@aivn/core";
-import { describeCraftParams, mergeCraftParams, renderCraftParams } from "../src/craftParams.js";
+import { describeCraftParams, renderCraftParams } from "../src/craftParams.js";
 
 const FULL = { image: true, library: true };
 const NO_IMAGE = { image: false, library: true };
@@ -54,38 +54,5 @@ describe("describeCraftParams：现状清单", () => {
 
   it("自由输入那档写成「固定自由输入」而不是「每次 N 条」", () => {
     expect(describeCraftParams(resolveCraft({ stopOptions: "free" }))).toContain("停止点选项：固定自由输入");
-  });
-});
-
-describe("mergeCraftParams：三态补丁", () => {
-  it("省略 = 保持现状", () => {
-    expect(mergeCraftParams({ beatLength: "long" }, {})).toEqual({ beatLength: "long" });
-    expect(mergeCraftParams({ beatLength: "long" }, { stopOptions: "two" })).toEqual({
-      beatLength: "long",
-      stopOptions: "two",
-    });
-  });
-
-  it("只留与默认不同的字段：写回默认值 = 那一行从文件里消失", () => {
-    expect(mergeCraftParams(undefined, { stopOptions: "three" })).toBeUndefined();
-    expect(mergeCraftParams({ beatLength: "long" }, { beatLength: "medium" })).toBeUndefined();
-    expect(mergeCraftParams({ assets: { background: "generate" } }, {})).toEqual({ assets: { background: "generate" } });
-  });
-
-  it("null = 恢复默认，不动同层其它字段", () => {
-    const current = { beatLength: "long" as const, stopOptions: "two" as const, assets: { background: "generate" as const } };
-    expect(mergeCraftParams(current, { beatLength: null })).toEqual({
-      stopOptions: "two",
-      assets: { background: "generate" },
-    });
-    expect(mergeCraftParams(current, { assets: { background: null } })).toEqual({
-      beatLength: "long",
-      stopOptions: "two",
-    });
-  });
-
-  it("assets 整个给 null：四项一起回默认", () => {
-    const current = { assets: { background: "generate" as const, cg: "off" as const, audio: "off" as const } };
-    expect(mergeCraftParams(current, { assets: null })).toBeUndefined();
   });
 });

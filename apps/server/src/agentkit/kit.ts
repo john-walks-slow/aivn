@@ -8,7 +8,6 @@ import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "./deps.js
 import { createPiBashTool, createPiFileTools } from "./piTools.js";
 import { PlayEnv } from "./playEnv.js";
 import { createValidatePlayTool } from "./validatePlayTool.js";
-import { createSetCraftTool } from "./craftTool.js";
 import { createGenerateImageTool } from "./imageTool.js";
 import { createAnnotateTool } from "./annotateTool.js";
 import { createGenerateAssetTool } from "./assetTool.js";
@@ -136,7 +135,7 @@ const CATALOG_ROWS = [
     desc: "自己把世界设定记成卡，并能翻找往事。",
     group: "writing",
     roles: ["playwriter"],
-    tools: ["write", "edit", "read_memory_detail", "search_archive"],
+    tools: ["write", "edit", "search_archive"],
     writeScopes: ["memory"],
   },
   {
@@ -145,7 +144,7 @@ const CATALOG_ROWS = [
     desc: "直接读写角色卡、记忆卡、play.json 与写作参数。",
     group: "writing",
     roles: ["workshop"],
-    tools: ["write", "edit", "set_craft"],
+    tools: ["write", "edit"],
     writeScopes: ["characters", "memory", "config"],
   },
   {
@@ -278,7 +277,6 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   enter_nsfw: { label: "进入限制级剧情", roles: ["playwriter"] },
   exit_nsfw: { label: "退出限制级剧情", roles: ["playwriter"] },
   update_state: { label: "提议状态更新", roles: ["playwriter"] },
-  read_memory_detail: { label: "读记忆卡详情", roles: ["playwriter"] },
   search_archive: { label: "检索历史往事", roles: ["playwriter"] },
   generate_image: { label: "出候选图", roles: ["playwriter", "workshop"] },
   // 只装工坊：剧作家一次调用就声明了最终 id，宿主把出图与入库一次做完（见 imageTool）。
@@ -290,7 +288,6 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   // 只装工坊：剧作家那条路是「引用即导入」（剧本里写个 id，宿主去库里取），不自己登记。
   import_asset: { label: "登记素材", roles: ["workshop"] },
   read_skill: { label: "读技能库", roles: ["workshop"] },
-  set_craft: { label: "设置写作参数", roles: ["workshop"] },
   list_voices: { label: "查音色库", roles: ["workshop"] },
   web_search: { label: "联网检索", roles: ["playwriter", "workshop"] },
   read: { label: "读文件", roles: ["playwriter", "workshop"] },
@@ -437,7 +434,7 @@ function envOf(role: AgentRole, files: AgentKitDeps["files"], capabilities: Read
     {
       writeScopes: writeScopesFor(role, capabilities),
       // 工坊要能读用户手上的剧目全貌；剧作家的通用读口不认引擎产物（别的世界线的纪元摘要），
-      // 往事走 read_memory_detail / search_archive 这两个带分支过滤的工具。
+      // 往事走 search_archive 这个带分支过滤的工具。记忆卡本身是普通剧目文件，read 拿得到。
       readGenerated: role === "workshop",
     },
     onWrite,
@@ -528,7 +525,6 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
     }),
     createAnnotateTool({ playAssets: deps.playAssets, playMusic: deps.playMusic }),
     createReadSkillTool(),
-    createSetCraftTool(deps),
     ...createLineageTools(deps),
     // 没配 TTS 就不注册：查不出来的工具只会诱使模型空转
     ...createVoiceTool(deps.voices),

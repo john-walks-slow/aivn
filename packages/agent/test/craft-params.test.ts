@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CRAFT_ENUMS, describeCraftParams, mergeCraftParams, renderCraftParams } from "../src/index.js";
-import { DEFAULT_CRAFT, resolveCraft, type EffectiveCraft } from "@aivn/core";
+import { CRAFT_ENUMS, describeCraftParams, renderCraftParams } from "../src/index.js";
+import { resolveCraft, type EffectiveCraft } from "@aivn/core";
 
 /**
- * 写作参数的两份说法与补丁语义。停止点的措辞由宿主注入（工具面 `beat_done` / DSL `<stop/>`），
+ * 写作参数的两份说法。停止点的措辞由宿主注入（工具面 `beat_done` / DSL `<stop/>`），
  * 所以这里用一个显眼的假实现，确认整段其余部分逐字来自包。
  */
 
@@ -63,21 +63,3 @@ describe("工坊那份清单", () => {
   });
 });
 
-describe("补丁三态", () => {
-  it("省略 = 保持现状，null = 回默认", () => {
-    const current = { beatLength: "long" as const, stopOptions: "four" as const };
-    expect(mergeCraftParams(current, {})).toEqual(current);
-    expect(mergeCraftParams(current, { beatLength: null })).toEqual({ stopOptions: "four" });
-  });
-
-  it("素材四项可以整块回默认，也可以只回一项", () => {
-    const current = { assets: { background: "library" as const, cg: "off" as const } };
-    expect(mergeCraftParams(current, { assets: null })).toBeUndefined();
-    expect(mergeCraftParams(current, { assets: { cg: null } })).toEqual({ assets: { background: "library" } });
-  });
-
-  it("只留下与默认值不同的字段；全默认就是 undefined（play.json 里等于没写）", () => {
-    expect(mergeCraftParams(undefined, { beatLength: DEFAULT_CRAFT.beatLength })).toBeUndefined();
-    expect(mergeCraftParams(undefined, { beatLength: "short" })).toEqual({ beatLength: "short" });
-  });
-});

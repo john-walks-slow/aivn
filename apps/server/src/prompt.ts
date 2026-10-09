@@ -404,7 +404,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       ? `\n${renderMemoryIndex(
           cards,
           ctx.can.memory
-            ? "需要某条完整内容时调用 read_memory_detail 工具（传名称），也可以直接 read 每行括号里的路径。历史往事用 search_archive 检索。"
+            ? "需要某条完整内容时 read 每行括号里的路径。历史往事用 search_archive 检索。"
             : "需要某条完整内容时 read 每行括号里的路径；过往剧情问用户，或让工坊在记忆页查。",
         )}\n`
       : "";

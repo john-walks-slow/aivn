@@ -72,7 +72,7 @@ export interface MemoryIndexCard {
  * 记忆索引：每行带 `[分类]` 前缀与**这张卡自己的路径**。
  *
  * 标题与文件名可以不一样，路径推不出来，只能这里给——模型要按需 read 详情。
- * 末尾那句引导语按各宿主的工具面写（服务端有 `read_memory_detail` / `search_archive`，
+ * 末尾那句引导语按各宿主的工具面写（服务端多一个 `search_archive` 检索往事，
  * 插件只有 read），所以由调用方传进来；没有卡时整段不出现。
  */
 export function renderMemoryIndex(cards: readonly MemoryIndexCard[], tail: string): string {

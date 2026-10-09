@@ -994,22 +994,18 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
     expect(engine.affinity.mio).toBe(28);
   });
 
-  it("update_state 写 stateFiles；read_memory_detail 命中与未命中", async () => {
+  it("update_state 写 stateFiles；记忆组只剩 update_state / search_archive", async () => {
     const engine = { turn: 1, affinity: {}, flags: {} };
     const { tools, stateFiles } = makeTools(engine);
     const write = tools.find((t) => t.name === "update_state")!;
-    const read = tools.find((t) => t.name === "read_memory_detail")!;
 
     await write.execute("t1", {
       threads: "伏笔：旧约定未兑现",
     });
     expect(stateFiles.threads).toBe("伏笔：旧约定未兑现");
 
-    const hit = await read.execute("t2", { name: "旧约定" });
-    expect(textOf(hit)).toContain("文化祭");
-    const miss = await read.execute("t3", { name: "不存在" });
-    expect(textOf(miss)).toContain("未找到");
-    expect(textOf(miss)).toContain("旧约定");
+    // 读一张卡的全文走通用 read（A 区索引每行都带路径），不再有专用口
+    expect(tools.map((t) => t.name).sort()).toEqual(["search_archive", "update_state"]);
   });
 
   it("search_archive：命中格式化 + 防剧透过滤", async () => {
@@ -1328,12 +1324,12 @@ describe("长会话装配", () => {
   });
 
   it("记忆工具轮次不撕裂轮：先查记忆→再写剧本→beat_done 仍是同一轮", async () => {
-    // 真实高频路径：模型先 read_memory_detail / search_archive 拿资料，再续写剧本
+    // 真实高频路径：模型先 search_archive 拿资料，再续写剧本
     const { orchestrator, messages } = setup(
       [
         {
           text: "",
-          toolCalls: [{ name: "read_memory_detail", args: { name: "旧约定" } }],
+          toolCalls: [{ name: "search_archive", args: { query: "文化祭" } }],
         },
         {
           text: "",
@@ -1359,7 +1355,7 @@ describe("长会话装配", () => {
       [
         {
           text: "",
-          toolCalls: [{ name: "read_memory_detail", args: { name: "旧约定" } }],
+          toolCalls: [{ name: "search_archive", args: { query: "旧约定" } }],
         },
         { text: "", beatDone: true },
       ],

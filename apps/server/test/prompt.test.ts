@@ -376,7 +376,7 @@ describe("能力位与提示词的一致性：没开的能力不教它调", () =
     const prompt = build({ ...base, can: { memory: true, characters: true } });
     expect(prompt).toContain("要人设或音色才建档（write）");
     expect(prompt).toContain("## 记忆卡（memory/index/）");
-    expect(prompt).toContain("read_memory_detail");
+    expect(prompt).toContain("需要某条完整内容时 read 每行括号里的路径");
     expect(prompt).toContain("search_archive");
   });
 
@@ -393,14 +393,12 @@ describe("能力位与提示词的一致性：没开的能力不教它调", () =
   it("记忆关、管理角色开：记忆卡格式与检索工具收走，建档那一章原样", () => {
     const prompt = build({ ...base, can: { memory: false, characters: true } });
     expect(prompt).not.toContain("## 记忆卡（memory/index/）");
-    expect(prompt).not.toContain("read_memory_detail");
     expect(prompt).not.toContain("search_archive");
     expect(prompt).toContain("要人设或音色才建档（write）");
   });
 
   it("两个都关：只剩「read 每行括号里的路径」这条路，且不出现任何工具名", () => {
     const prompt = build({ ...base, can: { memory: false, characters: false } });
-    expect(prompt).not.toContain("read_memory_detail");
     expect(prompt).not.toContain("search_archive");
     expect(prompt).toContain("需要某条完整内容时 read 每行括号里的路径；过往剧情问用户");
   });

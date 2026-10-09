@@ -53,7 +53,10 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
       stageAi: "AgentKit 的 beat_done / update_state 与独立版编排器。",
       dshAivn: "剧本 <stop> 标签与 DSH 会话投影；状态由文件工具维护。",
       backendDependency: "无额外后端依赖。",
-      intentionalDifference: "停止点来源不同，但两边都归一到同一 Stage IR。",
+      intentionalDifference:
+        "停止点的**载体必须不同**：服务端要工具 terminate 来收束轮边界（编排器按它判 beatClosed），" +
+        "插件必须是剧本末行标签——DSH 的「在新对话中分支」与舞台重建只认助手消息轮尾；两边归一到同一 Stage IR。" +
+        "状态那一格同样是载体差异：服务端 update_state 进引擎真值（随谱系快照回滚），插件写 memory/always/state/ 三份文件。",
     },
   },
   {
@@ -66,7 +69,9 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
       stageAi: "独立版编排器维护 nsfw 通道、摘要和谱系标记。",
       dshAivn: "不暴露该能力；由 DSH 宿主策略决定会话安全边界。",
       backendDependency: "独立版需配置限制级模型/提示词链路。",
-      intentionalDifference: "DSH 当前不模拟独立版的双模型与谱系状态机。",
+      intentionalDifference:
+        "限制级通道是**运行时换模型**（服务端双模型 + SFW 摘要 + 谱系标记），文件里写个 flag 换不动它；" +
+        "插件没有这条通道——会话安全边界归 DSH 宿主。",
     },
   },
   {
@@ -108,7 +113,10 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
       stageAi: "记忆卡经 PlayFiles 写入，状态经谱系快照回滚。",
       dshAivn: "通过 DSH 的文件工具维护工作区文件（两个预设都装），历史由宿主会话提供。",
       backendDependency: "无额外后端依赖。",
-      intentionalDifference: "独立版有分支过滤和 archive 工具（read_memory_detail / search_archive）；DSH 用原生文件视图，memory 那一格的角色也只有服务端有。",
+      intentionalDifference:
+        "往事检索的**载体必须不同**：服务端的 search_archive 带分支过滤（pathSet）+ NSFW 过滤 + 相关性排序，" +
+        "而它读的 memory/archive/ 是引擎产物；插件没有 archive 数据（往事 = 宿主会话历史），文件化拿不到同样的语义。" +
+        "记忆卡本身是普通剧目文件，两边都 read（服务端原先的 read_memory_detail 已于 2026-10-10 删除）。",
     },
   },
   {
@@ -119,13 +127,12 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     equivalence: "semantic-only",
     hosts: {
       stageAi:
-        "pi read/write/edit 经 PlayEnv 白名单与结构校验；另有一个 set_craft——它要拿 withPlayConfigLock " +
-        "改 play.json 的 craft 段（整体性 + 串行写），所以不能走通用的 edit。",
+        "pi read/write/edit 经 PlayEnv 白名单与结构校验；play.json 的 craft 段也用 edit 改。",
       dshAivn: "DSH 原生 fs 工具在会话 workspace 内读写（两个预设都有，含工坊的 characters 写面）。",
       backendDependency: "无额外后端依赖。",
       intentionalDifference:
         "独立版按角色收写面（characters / memory / config）；DSH 由宿主 workspace 权限控制。" +
-        "set_craft 是服务端独有的一条（play.json 整体写 + 串行队列），插件改 craft 走通用文件工具。",
+        "写作参数两边都用通用文件工具改（2026-10-10 起，服务端删掉了 set_craft）。",
     },
   },
   {
@@ -195,8 +202,10 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
         "它没有 list_library（插件不假定跨剧目资源库）。",
       backendDependency: "独立版需本地 library 目录；DSH 无此依赖。",
       intentionalDifference:
-        "资源库是独立版产品能力，不能把其目录状态复制进 DSH。两边的 import_asset 曾长期同名不同义，" +
-        "2026-10-09 把服务端那个改名 library_import（P4 清理清单第 1 条），插件那份保留原名。",
+        "资源库是独立版产品能力（跨剧目 library/ 目录），不能把它的目录状态复制进 DSH：插件不假定有库，" +
+        "list_library / library_import 在插件侧也没有对应物。两边的 import_asset 曾长期同名不同义，" +
+        "2026-10-09 把服务端那个改名 library_import（P4 清理清单第 1 条），插件那份保留原名——" +
+        "两者仍不同义（前者按库 kind/entryId 复制，后者是路径/URL/草稿的登记），合并只省服务端代码，不算统一。",
     },
   },
   {
@@ -223,7 +232,9 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
       stageAi: "独立版 saves、session 和 LineageTree 的只读 AgentKit 工具。",
       dshAivn: "不复制 LineageTree；使用 DSH 原生会话历史与 fork。",
       backendDependency: "独立版需剧目 saves 数据。",
-      intentionalDifference: "DSH 是线性会话优先，路线树/周目不是插件责任。",
+      intentionalDifference:
+        "周目与故事树是独立版产品概念（saves/ + LineageTree）：list_saves / read_lineage 回的是按存档、路径过滤、" +
+        "分页与 kind 渲染过的树，不是一次文件读取。插件是线性会话优先（宿主 fork 就是它的分支），不复制这条数据。",
     },
   },
   {
@@ -237,8 +248,10 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
       dshAivn: "DSH 的技能行（skill-filesystem / tool-skill）暴露插件 skills 目录，两个预设都装。",
       backendDependency: "随包技能文件。",
       intentionalDifference:
-        "技能加载时机和宿主工具不同。**音频技能已收敛**：正文一份在包里（packages/agent/skills/aivn-audio.md），" +
-        "两份 SKILL.md 由包内 sync-skills.mjs 生成、各仓守卫盯着；play-setup / visual-craft 仍是同题重写的两份。",
+        "**通道归宿主、正文同源**：服务端走 read_skill（只读 apps/server/skills/ + 守卫），插件走 realm 隔离的" +
+        "预设行与宿主 available_skills——把技能变成文件读取只会搅乱「哪份技能在哪个通道可见」这条宿主规则。" +
+        "正文层已收敛：音频技能一份在包里（packages/agent/skills/aivn-audio.md），两份 SKILL.md 由 sync-skills.mjs" +
+        "生成、各仓守卫盯着；play-setup / visual-craft 仍是同题重写的两份。",
     },
   },
   {
@@ -327,7 +340,6 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
   enter_nsfw: { ...READ_ONLY, read_only: false, reversible: true },
   exit_nsfw: { ...READ_ONLY, read_only: false, reversible: true },
   update_state: { ...READ_ONLY, read_only: false, reversible: true, idempotent: false },
-  read_memory_detail: READ_ONLY,
   search_archive: READ_ONLY,
   // 只产候选：烧一次配额、落草稿区，**不写 assets/**（采用是 import_asset 的事）。
   generate_image: { ...READ_ONLY, read_only: false, external_request: true, asset_create: true, idempotent: false },
@@ -365,7 +377,6 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
     idempotent: true,
   },
   read_skill: READ_ONLY,
-  set_craft: { ...READ_ONLY, read_only: false, workspace_write: true, reversible: true },
   list_voices: { ...READ_ONLY, external_request: true },
   web_search: { ...READ_ONLY, external_request: true },
   read: READ_ONLY,

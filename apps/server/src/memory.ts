@@ -94,15 +94,6 @@ export class PlayMemory {
     }));
   }
 
-  /** 按标题、相对路径或文件名读 index 卡详情（read_memory_detail 工具后端）。 */
-  readCard(name: string): string | null {
-    const key = name.replace(/\.md$/, "");
-    const card = this.cards.find(
-      (c) => c.name === key || c.file === key || c.file.split("/").pop() === key,
-    );
-    return card ? card.detail : null;
-  }
-
   /**
    * archive 检索（search_archive 工具后端）：MiniSearch 全文命中 → 防剧透过滤（祖先链 ⊆ 当前分支路径）。
    * allowed = tree.pathSet()——兄弟/废弃分支的切片不可召回。
@@ -149,7 +140,7 @@ export class PlayMemory {
   }
 }
 
-/** index 卡：首行 `# 标题`，次行一句话摘要，其余为详情（read_memory_detail 返回全文）。 */
+/** index 卡：首行 `# 标题`，次行一句话摘要，其余为详情（全文由模型按 A 区索引里的路径 read）。 */
 export interface IndexCard {
   /** 相对 `memory/index/` 的子目录路径（顶层卡为空串），只作提示词里的分类标签。 */
   layer: string;

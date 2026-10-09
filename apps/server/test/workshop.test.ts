@@ -1127,9 +1127,9 @@ describe("工坊：写作参数与创作口径的交接，以及自定义提示�
     ...over,
   });
 
-  it("教搭台助手：节奏与素材来源走 set_craft，craft.md 只留能拿话说的", async () => {
+  it("教搭台助手：节奏与素材来源改 play.json，craft.md 只留能拿话说的", async () => {
     const prompt = await buildWorkshopPrompt(ctx());
-    expect(prompt).toContain("set_craft");
+    expect(prompt).toContain("用 `edit` 定点改");
     expect(prompt).toContain("文风与禁忌");
     // 现值摆在提示词里，工坊回答「现在是什么节奏」不用去读 play.json
     expect(prompt).toContain("每轮篇幅：中等");

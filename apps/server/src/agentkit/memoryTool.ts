@@ -21,8 +21,6 @@ const updateStateParams = Type.Object(
   { additionalProperties: false },
 );
 
-const readMemoryDetailParams = Type.Object({ name: Type.String() }, { additionalProperties: false });
-
 const searchArchiveParams = Type.Object(
   {
     query: Type.String({ maxLength: 200 }),
@@ -32,11 +30,13 @@ const searchArchiveParams = Type.Object(
 );
 
 /**
- * 剧作家的记忆工具组：update_state（引擎校验）/ read_memory_detail / search_archive。
+ * 剧作家的记忆工具组：update_state（引擎校验）/ search_archive。
  * 引擎拥有状态真值，stateFiles 随谱系快照走——工具只改传进来的对象，不自己落盘。
  *
- * **写口不在这里**：角色卡与记忆卡都是普通剧目文件，走 read / write / edit（见 `kit.ts`）。
- * 留在这里的三个都有文件工具替代不了的语义——状态随谱系快照回滚、详情/历史按当前分支过滤。
+ * **读写口都不在这里**：角色卡与记忆卡都是普通剧目文件，走 read / write / edit（见 `kit.ts`）；
+ * A 区《记忆索引》每行都带路径，读一张卡的全文就是 `read` 那一条路径（原先的
+ * `read_memory_detail` 已于 2026-10-10 删除，理由见 P6 轴：通用工具能做好就不留专用口）。
+ * 留下的两个都有文件工具替代不了的语义——状态随谱系快照回滚、往事按当前分支过滤。
  */
 export function createMemoryTools(
   deps: Pick<
@@ -94,25 +94,6 @@ export function createMemoryTools(
     },
   };
 
-  const readMemoryDetail: AgentTool<typeof readMemoryDetailParams> = {
-    name: "read_memory_detail",
-    label: "读记忆卡详情",
-    description:
-      "读取记忆索引中某条卡的完整内容（系统提示词「记忆索引」列表里的名称，或 [分类] 后的相对路径如 locations/旧校舍）。" +
-      "涉及某地点/设定/旧章节时先查再写，避免与既有设定矛盾。",
-    parameters: readMemoryDetailParams,
-    execute: async (_toolCallId, params: Static<typeof readMemoryDetailParams>) => {
-      const { name } = params;
-      const detail = deps.memory.readCard(name);
-      if (detail) return textResult(detail);
-      const available = deps.memory
-        .visibleContext()
-        .map((c) => c.name)
-        .join("、");
-      return textResult(`未找到「${name}」。可用条目：${available || "（无）"}。`);
-    },
-  };
-
   const searchArchive: AgentTool<typeof searchArchiveParams> = {
     name: "search_archive",
     label: "检索历史往事",
@@ -130,5 +111,5 @@ export function createMemoryTools(
     },
   };
 
-  return [updateState, readMemoryDetail, searchArchive];
+  return [updateState, searchArchive];
 }

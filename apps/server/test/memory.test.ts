@@ -49,10 +49,9 @@ describe("PlayMemory", () => {
     expect(memory.cards).toHaveLength(1);
     expect(memory.cards[0]!.name).toBe("旧校舍拆除");
     expect(memory.cards[0]!.summary).toBe("旧校舍将在文化祭后拆除，具体日期未定。");
-    expect(memory.readCard("旧校舍拆除")).toContain("具体日期未定");
-    expect(memory.readCard("旧校舍拆除.md")).toContain("具体日期未定"); // 文件名亦可
-    expect(memory.readCard("lore/旧校舍拆除")).toContain("具体日期未定"); // 相对 index/ 的路径亦可
-    expect(memory.readCard("不存在")).toBeNull();
+    // 读全文走通用 read：A 区索引给出的就是这个路径（2026-10-10 起不再有 read_memory_detail）
+    expect(memory.visibleContext()[0]!.path).toBe("memory/index/lore/旧校舍拆除.md");
+    expect(memory.cards[0]!.detail).toContain("具体日期未定");
   });
 
   it("load：index 收任意子目录（含多层嵌套），layer 是相对 index/ 的路径", async () => {
@@ -77,15 +76,14 @@ describe("PlayMemory", () => {
     expect(memory.cards.map((c) => c.file)).toEqual(["locations/旧校舍", "lore/结界/代价", "旧约定"]);
   });
 
-  it("卡没写 # 标题时用文件名，读详情认文件名/相对路径/标题三种写法", async () => {
+  it("卡没写 # 标题时用文件名，索引里的路径照样给得出来", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stage-memory-"));
     await mkdir(join(dir, "memory", "index", "locations"), { recursive: true });
     await writeFile(join(dir, "memory", "index", "locations", "school.md"), "没有标题行，只有正文。\n", "utf8");
     const memory = await PlayMemory.load(new PlayStore(dir));
     expect(memory.cards[0]!.name).toBe("school");
-    expect(memory.readCard("school")).toContain("没有标题行");
-    expect(memory.readCard("school.md")).toContain("没有标题行");
-    expect(memory.readCard("locations/school")).toContain("没有标题行");
+    expect(memory.visibleContext()[0]!.path).toBe("memory/index/locations/school.md");
+    expect(memory.cards[0]!.detail).toContain("没有标题行");
   });
 
   it("search_archive：命中 + 防剧透（祖先链 ⊆ 当前分支路径）", () => {
@@ -174,7 +172,7 @@ describe("PlayMemory", () => {
     await writeFile(join(dir, "memory", "index", "zzz.md"), "# 末位\n最后一张。\n", "utf8");
 
     const memory = await PlayMemory.load(new PlayStore(dir));
-    expect(memory.readCard("天文台")).toContain("顶楼");
+    expect(memory.cards.find((c) => c.name === "天文台")!.detail).toContain("顶楼");
     // readdir 次序由文件系统给，行序漂移会让整个前缀缓存失效——整段按 file 排死
     expect(memory.cards.map((c) => c.file)).toEqual(["locations/天文台", "zzz"]);
     expect(memory.visibleContext().map((c) => c.name)).toEqual(["天文台", "末位"]);

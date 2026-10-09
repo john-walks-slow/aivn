@@ -189,7 +189,6 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
       "generate_image",
       "list_library",
       "read",
-      "read_memory_detail",
       "search_archive",
       "update_state",
       "write",

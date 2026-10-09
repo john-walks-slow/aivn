@@ -173,11 +173,10 @@ export {
 export type { PlayReadiness } from "./readiness/play.js";
 export { readPlayReadiness, renderReadiness } from "./readiness/play.js";
 
-export type { AssetCapabilities, CraftPatch, StopDirective } from "./craft/params.js";
+export type { AssetCapabilities, StopDirective } from "./craft/params.js";
 export {
   CRAFT_ENUMS,
   describeCraftParams,
-  mergeCraftParams,
   renderCraftParams,
 } from "./craft/params.js";
 

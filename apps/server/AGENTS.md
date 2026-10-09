@@ -111,7 +111,7 @@
 
 ## 提示词装配
 
-- **工具知识只写在工具描述里，系统提示词不复述**（同一规则写两处必然漂移——生图那几条已经漂移过一次）。**一处明确例外**：pi 的内建 read / write / edit 没有描述覆写入口，角色卡 frontmatter 与记忆卡格式只能落在 A 区（`prompt.ts` 的 `newCharacterRules(can.characters)` / `MEMORY_RULES`）——它们同时要求模型「先 read 再 edit」，格式本身以 `parseCharacterCard` 的解析结果为准。两句**各归各的能力位**：`can.characters`（= 剧作家开着「管理角色」）为假时建档章换成「本剧目没给你改卡的口，新角色直接上台」，`can.memory` 为假时记忆章与 `read_memory_detail` / `search_archive` 的教法一起收走。
+- **工具知识只写在工具描述里，系统提示词不复述**（同一规则写两处必然漂移——生图那几条已经漂移过一次）。**一处明确例外**：pi 的内建 read / write / edit 没有描述覆写入口，角色卡 frontmatter 与记忆卡格式只能落在 A 区（`prompt.ts` 的 `newCharacterRules(can.characters)` / `MEMORY_RULES`）——它们同时要求模型「先 read 再 edit」，格式本身以 `parseCharacterCard` 的解析结果为准。两句**各归各的能力位**：`can.characters`（= 剧作家开着「管理角色」）为假时建档章换成「本剧目没给你改卡的口，新角色直接上台」，`can.memory` 为假时记忆章与 `search_archive` 的教法一起收走。
 - **A 区把可写文件的路径给全**（2026-10-04）：角色表每张卡带 `characters/<id>.md`（`characterCardPath`）、记忆索引每行带 `memory/index/<相对路径>.md`（`PlayMemory.visibleContext` 的 `path`）——通用 read / write / edit 上手，模型不该为了改一张卡去推路径。记忆卡尤其必须：行首是 `# 标题`（`parseCard`），**与文件名可以不一样**，路径推不出来。
 - **`can` 的键就是能力 id**（`characters` / `memory` / `image` / `library` / `search` / `lineage` / `skill` / `view` / `readiness` / `voice` / `files` / `shell` / `nsfw` / `stage`，非适用角色的位恒为 false）——两个角色的提示词读 `createAgentKit` 现算的同一个对象，不会各算各的。工坊侧同样逐处收条件（`workshop.ts` 的 `responsibilityRules(can.files)` / `talkRules` / `lineageGuide` / `writingPoints` / `setupFlow` / `skillsPrompt`），关掉一项就没有教它调不存在工具的章节。
 - `prompt.ts` 的 `imageChapter` 只留工具本身与后果（发起即返回、这一轮就引用到它则先上骨架占位），调用写法（走函数调用不是文本标签、id 命名、prompt 后缀串）全在 `QUEUED_DESCRIPTION`。
@@ -195,12 +195,12 @@
 
 ## 创作口径与剧目记忆
 
-- **写作参数与创作口径分开**（2026-10-04）：`play.json` 的 `craft` 段承载**有确定取值**的三件事——每轮篇幅（short/medium/long）、停止点选项数（two/three/four/free）、素材来源（背景/插图/立绘/音效逐类），类型与 `DEFAULT_CRAFT` 在 core 的 `play/config.ts`，渲染与合并全部收在 `apps/server/src/craftParams.ts`（`renderCraftParams` 给剧作家、`describeCraftParams` 给工坊与回执、`mergeCraftParams` 给工具）。`memory/always/craft.md` 只剩**只能拿话说的**（文风、禁忌、称呼、视角），每轮原样注入。
+- **写作参数与创作口径分开**（2026-10-04）：`play.json` 的 `craft` 段承载**有确定取值**的三件事——每轮篇幅（short/medium/long）、停止点选项数（two/three/four/free）、素材来源（背景/插图/立绘/音效逐类），类型与 `DEFAULT_CRAFT` 在 core 的 `play/config.ts`，渲染收在 `apps/server/src/craftParams.ts`（`renderCraftParams` 给剧作家、`describeCraftParams` 给工坊）。`memory/always/craft.md` 只剩**只能拿话说的**（文风、禁忌、称呼、视角），每轮原样注入。
 - 引擎**自带默认值**（`DEFAULT_CRAFT`：medium / 三条 / 背景库优先、插图与立绘出图、音效取库）。这推翻了 2026-10-03 的「引擎不自带任何创作口径」：新剧目看不到也改不动任何东西，而「每轮多长」本来就该有个能一眼看见的答案。`play.json` 只存与默认不同的字段——卡片里选「默认」= 那一行从文件里消失。
-- `set_craft`（`agentkit/craftTool.ts`，只装工坊）改 `craft` 段：省略字段 = 不变、`null` = 恢复默认；读-合并-写整体包在 `withPlayConfigLock` 里（与引用即导入、文件页共用一条队列）。写回用**原始对象只换 `craft` 一个键**，不整篇 `parsePlayConfig` + 序列化（那会顺手丢掉引擎不认识的手写字段）。
+- **写作参数用通用文件工具改**（2026-10-10 起）：工坊用 `edit` 定点改 `play.json` 的 `craft` 段，改完跑一次 `validate_play`——写口 `assertPlayConfig` 只查 JSON 结构，`craft` 的取值白名单由 `readiness/play.ts` 的 `strayCraftValues` 事后报出来。原先的 `set_craft` 工具（嵌套三态 schema + `withPlayConfigLock` + 结构化回执）已删除，理由见 `docs/features/261009-aivn-agent-package/261009-aivn-agent-package.p6.plan.md`：模型本来就能 `edit` play.json，加锁只保护服务端内部事务，对「上游 stale read + 全量写」无效。
 - 素材来源的能力降级在 `craftParams.ts` 里做：`can.image` / `can.library` 决定那几行怎么写（没生图就说「用旁白交代」，没配库就不提清单），**工具没装时提示词不教它调**。文风与禁忌一律留在 `craft.md`，不参数化。
 - 剧本语言 `scriptLanguage`（play.json）与语音语言 `voiceLanguage` 是两件事：前者决定正文/旁白/选项用什么语言写（不设 = 跟随玩家输入），后者是 TTS 的翻译目标。两份提示词都读它（剧作家那段在 `prompt.ts`，工坊那段在 `workshop.ts` 的 `playLanguageNote`）。
-- `memory/always/craft.md` **空着剧作家就少一层口径可听**（写作参数照旧生效），所以工坊「设定流程」第 4 步仍硬性要求把对齐结果落盘——但落的是哪一份要看内容：文风进 craft.md，节奏与素材来源用 `set_craft`。
+- `memory/always/craft.md` **空着剧作家就少一层口径可听**（写作参数照旧生效），所以工坊「设定流程」第 4 步仍硬性要求把对齐结果落盘——但落的是哪一份要看内容：文风进 craft.md，节奏与素材来源改 `play.json` 的 `craft` 段。
 - **设定卡与角色卡都是普通剧目文件，走通用 `write` / `edit`**（2026-10-04 收掉了 `write_memory` / `create_character`：同一件事不必各来一份 schema 与守卫，通用工具还多给「先 read 再定点 edit」）。设定卡写 `memory/index/<分类>/<名字>.md`（首行 `# 标题`、次行一句话摘要），角色卡写 `characters/<id>.md`（frontmatter 机器字段 + 正文人设）。`always/` 是每轮注入层（可写），`index/` 是设定卡（可写），`archive/` 是机器产物（只读，见上）。
 - **写完排一次轮边界重建才进 A 区**：`PlayEnv.writeFile` 落盘后回调 `onPlayFilesChanged` → `playhouse.onPlayFileWritten` → `rebuildAtBeatBoundary`（与工坊写盘、引用即导入同一条延迟重建）。A 区在纪元内冻结，不排重建的话「下一轮进 A 区索引 / 角色表」就是空话。当轮想知道自己刚写了什么，直接 `read` 那个文件——内存里的 `cards` 不再有第二条写入口。
 - **卡片行序即提示词前缀**：不变量是「按 file localeCompare」，由 `loadCards` 的整段 sort 建立，`PlayMemory.load` 每次重建都照它来——readdir 的次序由文件系统给，漂一次整个前缀缓存就失效。

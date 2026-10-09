@@ -60,10 +60,11 @@ describe("工坊提示词：工具知识不在这里重复", () => {
 });
 
 describe("工坊提示词：写作参数这一维的写法指导", () => {
-  it("现值摆在提示词里，并明确「这些走 set_craft，不写进 craft.md」", async () => {
+  it("现值摆在提示词里，并明确「这些改 play.json，不写进 craft.md」", async () => {
     const prompt = await buildWorkshopPrompt({ ...CTX, can: caps() });
     expect(prompt).toContain("写作参数");
-    expect(prompt).toContain("set_craft");
+    expect(prompt).toContain("用 `edit` 定点改");
+    expect(prompt).toContain("validate_play");
     expect(prompt).toContain("每轮篇幅：中等");
     expect(prompt).toContain("素材来源：背景 资源库优先");
     expect(prompt).toContain("文风与禁忌");
@@ -102,11 +103,11 @@ describe("工坊提示词：play.json 的字段面", () => {
 });
 
 describe("工坊提示词：能力关掉之后不再教它调那个工具", () => {
-  it("「改剧目文件」关：写口那一整套（对话风格 / play.json 字段表 / set_craft）收走", async () => {
+  it("「改剧目文件」关：写口那一整套（对话风格 / play.json 字段表 / 写作参数）收走", async () => {
     const prompt = await buildWorkshopPrompt({ ...CTX, can: caps({ files: false }) });
     // 讲的全是「怎么改文件」的章节整章收走
     expect(prompt).not.toContain("# 对话风格");
-    expect(prompt).not.toContain("set_craft");
+    expect(prompt).not.toContain("用 `edit` 定点改");
     expect(prompt).not.toContain("defaultVoiceId");
     expect(prompt).not.toContain("assets/manifest.json");
     // 产出物与落盘方式换成清单式：要改就交给用户

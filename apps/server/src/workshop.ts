@@ -183,7 +183,7 @@ function playLanguageNote(ctx: WorkshopPromptContext): string {
  *
  * 留在正文里的只有**门控与分叉**：skill 恒可见、没有能力位门控，所以「本剧目有没有写口」
  * 「要不要审批」这些随实例变化的话必须由提示词说，否则没配写口的实例会从 skill 里
- * 读到教它 `set_craft` 的正文。
+ * 读到教它自己改写作参数的正文。
  */
 function setupFlow(ctx: WorkshopPromptContext): string {
   const approval = ctx.imageApproval === "auto" ? "（本剧目免审批，列完直接出）" : "**用户没点头之前，一张都不要 generate_image。**";
@@ -228,7 +228,7 @@ function voicePickHint(ctx: WorkshopPromptContext): string {
  *
  * 与 setupFlow 同一套理由（那 50 行「往哪个文件哪个字段写什么」只在落盘那一刻用得上）。
  * 留在这里的是**随实例变化的门控**与**当前生效值**：
- * - 没开「改剧目文件」时换成清单式 fallback，别教它用 `set_craft`、也别教它手写 play.json；
+ * - 没开「改剧目文件」时换成清单式 fallback，别教它去改 play.json；
  * - 写作参数的当前值由 A 区现读注入（`craftNow`），skill 里给不了这个。
  */
 function writingPoints(ctx: WorkshopPromptContext): string {
@@ -245,9 +245,10 @@ ${ctx.can.skill
 **全文在 skill \`galgame-play-setup\` 里**（read_skill 读它）；这里只说本剧目当下生效的口径：`
     : `本剧目没开「技能库」，「各文件写什么」的全文读不到；下面只说本剧目当下生效的口径，拿不准就问用户：`}
 
-- 写作参数（play.json 的 \`craft\` 段，**用 \`set_craft\` 工具改**）当前生效值：
+- 写作参数（play.json 的 \`craft\` 段，**用 \`edit\` 定点改**）当前生效值：
 ${craftNow(ctx)}
-  改完立刻生效，用户也能在「剧目」页看到同一份值。**别手写 play.json，也别在 craft.md 里再写一遍。**
+  改完立刻生效，用户也能在「剧目」页看到同一份值。**只改 \`craft\` 这一段**，别整篇重写 play.json，也别在 craft.md 里再写一遍。
+  **改完跑一次 \`validate_play\`**：写口只查 JSON 结构，craft 的取值白名单不在那儿——写错值只有它会报出来。
 - 创作口径（memory/always/craft.md）装的是**拿话说的那部分**：文风与禁忌、称呼与口癖、叙述视角与节奏感、
   场景转换的偏好、**主角的呈现**。每轮多长、选项几条、素材从哪来**不要写这里**（那是写作参数）。
 - 角色卡在 \`characters/<id>.md\`（角色的一切都在这张卡里，play.json 不再存角色数据）；

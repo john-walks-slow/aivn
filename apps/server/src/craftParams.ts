@@ -1,21 +1,19 @@
 import {
   CRAFT_ENUMS,
   describeCraftParams,
-  mergeCraftParams,
   renderCraftParams as renderCraft,
   type AssetCapabilities,
-  type CraftPatch,
 } from "@aivn/agent";
 import type { CraftStopOptions, EffectiveCraft } from "@aivn/core";
 
 export { resolveCraft } from "@aivn/core";
-export { CRAFT_ENUMS, describeCraftParams, mergeCraftParams };
-export type { AssetCapabilities, CraftPatch };
+export { CRAFT_ENUMS, describeCraftParams };
+export type { AssetCapabilities };
 
 /**
  * 写作参数（`craft`）。
  *
- * 两份说法（给剧作家的「该怎么写」、给工坊的「现在是什么」）、补丁三态与取值白名单都在
+ * 两份说法（给剧作家的「该怎么写」、给工坊的「现在是什么」）与取值白名单都在
  * `@aivn/agent` 的 `craft/params.ts`（与 DSH 插件共用一份）；本文件只留**停止点的措辞**：
  * 这里调工具 `beat_done(options=[…])`，插件把停止点写进剧本最后一行 `<stop options="…"/>`，
  * 同一件事两种表达，这是有意的差异。
