@@ -236,8 +236,11 @@ P1/P2 落地时对计划的收紧（都是实测出来的，不是改主意）�
   `kind` 由 anyOf-const 变 enum（编译器本来就偏好 StringEnum）、数组**元素**级的长度收紧
   （`references` items 的 minLength/maxLength）表达不了，只保住了数组级的 minItems/maxItems。
   编译器顺带修一处：字面量分支原先丢了 description（framing/stature/keyColor 三格的逐取值说明）。
-  **插件侧（`generate_asset` 的 face）与那 12 格描述文案的合并还没做**——插件的
-  `media/generate-tool.ts` 仍是第二份拷贝，下一轮接上。
+  **插件侧也接上了**：`generate_asset` 改成 `image.generate` 的 face（参数面 pick 11 格 + 宿主自己的
+  `description`），插件的 `media/generate-tool.ts` 只剩三种回执的组装。**12 格描述文案逐条合并**
+  （取两边更全的那份：如 `spriteId` 的「没有角色卡也能出」、`references` 的「最多 6 张、顺序即
+  第一张第二张」、`keyColor` 的「只决定 neutral 底色、差分跟垫图走」），`variant` 的差分清单改从
+  core 的 `COMMON_SPRITE_VARIANTS` 展开（不再手抄一份）。
   原计划描述：服务端一个工具扛草稿/排产/绑 target 三种语义，按策略拆两个 face；插件的
   `generate_asset` 是 `image.generate` + `asset.commit` 的组合 face）⑤ `asset.commit` / `image.cutout`
   （`cut` 与 `recut_sprite` 同域异名）⑥ `play.readiness`（`validate_play` 与 `get_readiness` 的判定

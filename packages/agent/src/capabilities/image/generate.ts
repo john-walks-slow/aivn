@@ -1,3 +1,5 @@
+import { COMMON_SPRITE_VARIANTS } from "@aivn/core";
+
 import type { FieldMap } from "../../schema/ir.js";
 import type { Capability } from "../capability.js";
 
@@ -19,25 +21,38 @@ export const imageGenerateFields = {
     type: "string",
     enum: ["background", "cg", "sprite"],
     required: true,
+    description: "要落成什么剧目素材：背景 background / 事件插图 cg / 立绘 sprite。",
   },
   name: {
     type: "string",
+    description: "背景与插图的素材 id（剧本里 `<scene bg=\"…\">` / `<cg id=\"…\">` 引用的就是它）。kind=background/cg 时必填。",
   },
   spriteId: {
     type: "string",
-    description: "立绘目录名，剧本里 <actor id> 引用的就是它。有角色卡时读卡上人设写外观；卡上写了 sprite: 时用那个目录名（A 区角色表标着「立绘（目录 …）」），别拿角色 id 去撞。",
+    description:
+      "立绘的主体 id：`assets/sprites/<spriteId>/` 的目录名，也是 `<actor id>` / `<say id>` 引用的名字。" +
+      "有角色卡时读卡上人设写外观；卡上写了 `sprite:` 时立绘在那个目录里（A 区角色表标着「立绘（目录 …）」），别拿角色 id 去撞。" +
+      "**没有角色卡也能出**（机甲、道具、猫、只出现一轮的路人都这样）。kind=sprite 时必填。",
   },
   variant: {
     type: "string",
-    description: "常见差分名：neutral / smile / laugh / angry / sad / cry / surprised / shy / serious / worried / thinking / sleepy / pain / damaged。非人主体按状态取，如机甲的 damaged、猫的 sleepy。",
+    description:
+      `立绘差分名（${COMMON_SPRITE_VARIANTS.join(" / ")}，也可以自己按状态取名）。不给按 neutral。` +
+      "**要几个差分就分几次调用**，每张写自己的 prompt（一批共用一个 prompt 只会出成同一张图）。" +
+      "非人主体同样用这个槽位，名字按状态取，如机甲的 damaged、猫的 sleepy。",
   },
   references: {
     type: "array",
-    items: { type: "string" },
+    items: { type: "string", description: "主体 id、剧目内相对路径，或 http(s) 网址" },
+    description:
+      "垫图（最多 6 张，顺序即提示词里「第一张、第二张」）：给主体 id 会自动用它的 neutral 立绘；" +
+      "给剧目内相对路径（如 assets/backgrounds/ref.png）或 http(s) 网址直接当参考图。" +
+      "**非 neutral 的立绘不用给**——身份基准恒为该主体的 neutral。",
   },
   referenceCharacters: {
     type: "array",
     items: { type: "string" },
+    description: "兼容别名：等同 references 中传入主体 id 列表。",
   },
   framing: {
     oneOf: [
@@ -45,6 +60,7 @@ export const imageGenerateFields = {
       { type: "string", const: "half", description: "半身：到腰。对话时人物更大更清楚" },
       { type: "string", const: "square", description: "方形：正方画幅、主体完整入画。给猫、道具这类非人主体" },
     ],
+    description: "立绘取景（只对 kind=sprite 生效）：决定画幅与舞台站位，同一主体保持同一档；不给沿用素材表里的声明，再不给是全身。",
   },
   stature: {
     oneOf: [
@@ -53,6 +69,7 @@ export const imageGenerateFields = {
       { type: "string", const: "large", description: "大：比人高一档" },
       { type: "string", const: "huge", description: "巨大：机甲、巨物，顶天立地" },
     ],
+    description: "立绘体量（只对 kind=sprite 生效）：只管台上多大，与取景是两件事；不给按 normal。",
   },
   title: {
     type: "string",
@@ -63,14 +80,18 @@ export const imageGenerateFields = {
       { type: "string", const: "green", description: "纯绿 #00FF00，默认。除下面那种情况都用它" },
       { type: "string", const: "magenta", description: "纯品红 #FF00FF，**主体自己就是绿色系（绿发 / 绿衣 / 绿瞳）时必须给**" },
     ],
+    description:
+      "立绘的色键底色（只对 kind=sprite 生效）：抠底是纯色键，底色与角色配色撞上就会把角色身上那块一起抠掉。" +
+      "这一项只决定定妆照（neutral）的底色，差分跟着垫图的底色走；**别在 prompt 里自己写底色**。",
   },
   style: {
     type: "string",
+    description: "画风锚点（可选），如「厚涂写实电影感」「赛璐璐动画」。不给就不预设风格，按画面描述走。",
   },
   prompt: {
     type: "string",
-    description: "英文出图提示词，描述画面本身（不含负面词）",
     required: true,
+    description: "英文出图提示词，只描述画面本身（不写负面词、不写画幅与抠底要求）。",
   },
 } as const satisfies FieldMap;
 
