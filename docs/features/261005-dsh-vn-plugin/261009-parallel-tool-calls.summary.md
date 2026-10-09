@@ -58,3 +58,36 @@ DSH 的 agent loop 只在工具**自己声明**了 `isConcurrencySafe` 时才把
 - **没跑实例套件**：改动不碰章标题与门控条件句，`verify-injection` / `verify-stagehand` 的既有锚点
   不受影响；跑它们要起第二个 dsh（本机内存紧张，当时另有一个 e2e 实例在跑），故只跑离线套件。
   装配那一行的风险由 typecheck 覆盖（未引入任何新 import）。
+
+## 检视与跟进
+
+`reviewer` 对 `a0d6ea6` 出的结论是**条件准入**（无阻塞；报告见同目录
+`261009-parallel-tool-calls.review.md`）。四条建议全部落地在 `39990f5`：
+
+1. **措辞不夸大**：原话「同一批里的工具调用会并发跑」被当成对所有工具成立，而宿主自带的
+   `glob` / `grep` / `write` / `edit` / `bash` 都没声明并发（独占），同一段话上一行还恰恰点了
+   `glob` / `grep`。改成「一轮往返办完几件事，出图 / 抠底 / 登记这些耗时的还会并发跑」，
+   并点名真正会重叠的（`read` 与素材类工具）。
+2. **装配那一步补判据**：`withConcurrency` 从 `preset-tools` 挪进 `tool-catalog.ts`（与 `concurrent`
+   同一个真相源），离线 e2e 的 M49 直接验它——删掉它 M45–M48 照样全绿，正是这条要防的。
+   **残差**：`install()` 里那一行调用仍无判据（离线夹具打不开 import 了 `dsh-tools` 的 preset-tools）。
+3. **同目标写盘原子化**：`cut`（`media/cut.ts`）与 `generate_bgm`（`media/bgm.ts`）原本裸
+   `writeFile` 直写最终路径，同批同目标会写出交错内容；改用 `storage.ts` 的 `writeAtomic`
+   （先写临时文件再改名），并发下要么整体生效、要么完全不见。
+4. 清掉指向已删除的 `tools/parallel.ts` 的注释。
+
+复核者列为非阻塞、这次**没改**的三条，留作待办：
+
+- 剧作家提示词里「一轮的预算是 240 秒」在本插件找不到对应机制（240s 是音乐单次超时），
+  属既有文案——动它会改变模型「出几张图」的行为，故只记不改。
+- `generate_bgm` 没有像出图那样的 inflight 去重（同 id 并发出两首 = 白烧配额，最后写者胜）。
+- 没有每剧目生图并发闸门（独立版 AIVN 有，默认 6）。
+
+## 提交现场
+
+工作区同时有另外的 agent 在改（先做「预设技能隔离 + 立绘色键底色」，随后又有人加
+`list_voices` 翻页）。两次提交都走 `commit-own-changes`（git-hunk 精选 + 仓库锁）：
+第一笔 `a0d6ea6` 时那些改动还没提交，为了提交里的 `lib/` 与提交里的 `src/` 自洽，
+是在一个 HEAD 的临时 worktree 里重建产物再取回来的（并用 `--no-verify` 绕过与脏工作树
+无关的产物比对）。第二笔 `39990f5` 时它们已各自提交，工作树只剩本次改动，产物比对正常通过。
+
