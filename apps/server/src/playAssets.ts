@@ -36,6 +36,7 @@ import {
   writeDraft as writeDraftTo,
   type AssetIo,
   type AssetLocation,
+  type AssetRefParts,
   type AssetSource,
   type AssetManifest,
   type DraftPlan,
@@ -182,6 +183,8 @@ export interface GeneratedPlayAsset {
   autoNeutral: boolean;
   /** 立绘抠底**前**原片的留底路径（`media-cache/sprite-sources/…`）；没有留底则缺省。 */
   sourcePath?: string;
+  /** 刚跑过的抠底体检（只有抠底路径会带）：前景占比与主体高度，回执据此提示「是不是抠穿了」。 */
+  cutout?: { coverage: number; figureHeight: number };
 }
 
 /**
@@ -413,6 +416,72 @@ export class PlayAssets {
     };
   }
 
+  /** 剧目内相对路径 → 静态服务 URL（回执里给模型看图用）。 */
+  urlOf(rel: string): string {
+    return `/plays/${this.playId}/${rel}`;
+  }
+
+  /**
+   * 抠底：把一张纯色底图变成透明 PNG。源两种寻址，与 `image.cutout` 对齐：
+   *
+   * - **素材引用**（`sprite:<主体id>[/<差分>]`）：拿它的抠底前原片重跑；不给 `output` 就**原地重抠**
+   *   （覆盖素材那张、顺带补素材表声明）；给了 `output` 就写到那儿。
+   * - **剧目内路径**：读 `assets/` 下的图，写到 `output`（本宿主没有模型读得回的候选区，所以必须给）。
+   */
+  async cut(request: {
+    source?: string;
+    target?: AssetRefParts;
+    output?: string;
+    tuning?: Partial<CutoutTuning>;
+  }): Promise<GeneratedPlayAsset & { absPath: string }> {
+    const tuning = resolveTuning(request.tuning);
+    const output = request.output?.trim();
+
+    if (request.target) {
+      if (request.target.kind !== "sprite") throw new Error("只有立绘需要抠底（素材引用请给 sprite:<主体id>）");
+      const spec = await this.resolve({
+        kind: "sprite",
+        spriteId: request.target.spriteId ?? request.target.name,
+        variant: request.target.variant ?? "neutral",
+      });
+      const { data, coverage, figureHeight } = await cutout(await this.readSpriteSource(spec), tuning);
+      const cutoutInfo = { coverage, figureHeight };
+      if (!output) {
+        const asset = await this.persist(spec, data, ".png");
+        return { ...asset, autoNeutral: false, absPath: this.deps.files.absoluteOf(asset.path), cutout: cutoutInfo };
+      }
+      const existed = existsSync(this.deps.files.absoluteOf(output));
+      const rel = await this.deps.files.writeBinary(output, data);
+      return {
+        kind: "sprite",
+        path: rel,
+        url: this.urlOf(rel),
+        absPath: this.deps.files.absoluteOf(rel),
+        replaced: existed,
+        autoNeutral: false,
+        cutout: cutoutInfo,
+      };
+    }
+
+    const source = request.source?.trim();
+    if (!source) throw new Error("抠底要 source（一张纯色底图的路径，或 sprite:<主体id> 这样的素材引用）");
+    if (!output) throw new Error("抠底要 output（本宿主没有候选区：透明 PNG 写到哪里请显式给一个 assets/ 下的路径）");
+    const abs = this.deps.files.pathOf(source, "read");
+    if (!existsSync(abs)) throw new Error(`抠底的源图找不到：${source}`);
+    const existed = existsSync(this.deps.files.absoluteOf(output));
+    const { data, coverage, figureHeight } = await cutout(await readFile(abs), tuning);
+    const rel = await this.deps.files.writeBinary(output, data);
+    return {
+      kind: rel.startsWith("assets/backgrounds/") ? "background" : rel.startsWith("assets/cg/") ? "cg" : "sprite",
+      path: rel,
+      url: this.urlOf(rel),
+      absPath: this.deps.files.absoluteOf(rel),
+      replaced: existed,
+      autoNeutral: false,
+      cutout: { coverage, figureHeight },
+    };
+  }
+
   /** 读一张来源图：剧目内路径走 `PlayFiles` 白名单，http(s) 走带 SSRF 防护的下载器。 */
   private async readSource(source: string, what: string): Promise<AssetSource> {
     const src = source.trim();
@@ -456,8 +525,8 @@ export class PlayAssets {
     if (!(await this.existingPath(spec.kindPath, spec.stem))) {
       throw new Error(`${spec.spriteId}/${spec.stem} 还没有抠底图，先 generate_image 出图再来重抠。`);
     }
-    const { data } = await cutout(await this.readSpriteSource(spec), resolveTuning(tuning));
-    return { ...(await this.persist(spec, data, ".png")), autoNeutral: false };
+    const { data, coverage, figureHeight } = await cutout(await this.readSpriteSource(spec), resolveTuning(tuning));
+    return { ...(await this.persist(spec, data, ".png")), autoNeutral: false, cutout: { coverage, figureHeight } };
   }
 
   private async readSpriteSource(spec: AssetSpec): Promise<Buffer> {

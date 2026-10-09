@@ -1195,3 +1195,53 @@ describe("PlayAssets：登记外来图（import_asset）", () => {
     await expect(assets.register("assets/cg/x.png", { kind: "cg" })).rejects.toThrow(/name/);
   });
 });
+
+describe("PlayAssets：cut（素材引用寻址）", () => {
+  it("引用 + 不给 output = 原地重抠：重跑一遍抠底、覆盖素材那张，回执带体检", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
+    expect(calls).toHaveLength(1);
+
+    const cut = await assets.cut({ target: { kind: "sprite", spriteId: "mio", variant: "neutral" }, tuning: { tolerance: 20 } });
+    expect(calls).toHaveLength(1); // 没重新出图
+    expect(cut.path).toBe("assets/sprites/mio/neutral.png");
+    expect(cut.url).toBe("/plays/test/assets/sprites/mio/neutral.png");
+    expect(cut.replaced).toBe(true);
+    expect(cut.cutout.coverage).toBeGreaterThan(0);
+    expect((await sharp(await readFile(files.absoluteOf(cut.path))).metadata()).hasAlpha).toBe(true);
+
+    // 素材表一个字没动（原地重抠不改声明）
+    const manifest = await files.read("assets/manifest.json").catch(() => "{}");
+    expect(manifest).not.toContain("smile");
+  });
+
+  it("引用 + 给了 output：抠到指定位置，不动素材那张", async () => {
+    const store = await makeStore();
+    const { assets, files } = makeAssets(store, stubBackend().backend);
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
+
+    const cut = await assets.cut({
+      target: { kind: "sprite", spriteId: "mio", variant: "neutral" },
+      output: "assets/cg/mio_cut.png",
+    });
+    expect(cut.path).toBe("assets/cg/mio_cut.png");
+    expect(cut.replaced).toBe(false);
+    expect(existsSync(files.absoluteOf("assets/sprites/mio/neutral.png"))).toBe(true);
+  });
+
+  it("路径寻址：抠 assets/ 里的一张图到 output；没给 output 就明说本宿主没有候选区", async () => {
+    const store = await makeStore();
+    const { assets, files } = makeAssets(store, stubBackend().backend);
+    await mkdir(join(store.dir, "assets", "cg"), { recursive: true });
+    await writeFile(join(store.dir, "assets", "cg", "raw.png"), await realImage("16:9", "image/png"));
+
+    const cut = await assets.cut({ source: "assets/cg/raw.png", output: "assets/backgrounds/clean.png" });
+    expect(cut.kind).toBe("background");
+    expect(existsSync(files.absoluteOf(cut.path))).toBe(true);
+
+    await expect(assets.cut({ source: "assets/cg/raw.png" })).rejects.toThrow(/要 output/);
+    await expect(assets.cut({ target: { kind: "background", name: "x" } })).rejects.toThrow(/只有立绘/);
+  });
+});

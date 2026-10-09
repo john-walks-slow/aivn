@@ -37,18 +37,18 @@ describe("能力位：能力开着、且它声明的工具都装上，这一位�
     expect(half.image).toBe(false);
     const stillHalf = capabilitiesOf("workshop", new Set(["image"]), [
       { name: "generate_image" },
-      { name: "recut_sprite" },
+      { name: "cut" },
     ]);
     expect(stillHalf.image).toBe(false);
     const stillHalf2 = capabilitiesOf("workshop", new Set(["image"]), [
       { name: "generate_image" },
-      { name: "recut_sprite" },
+      { name: "cut" },
       { name: "commit_asset" },
     ]);
     expect(stillHalf2.image).toBe(false);
     const full = capabilitiesOf("workshop", new Set(["image"]), [
       { name: "generate_image" },
-      { name: "recut_sprite" },
+      { name: "cut" },
       { name: "commit_asset" },
       { name: "import_asset" },
     ]);

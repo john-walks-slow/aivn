@@ -21,7 +21,7 @@ import { linesResult, reason, textResult } from "./result.js";
  * | 立绘主体 | 给 spriteId 即可（有没有角色卡都行） | 同左 |
  *
  * 抠底参数不在这里：填它得先看过成图，而出图那一刻没人看过图。改抠底是工坊在用户面前
- * 看到脏边之后的事，走单独的 `recut_sprite`（原地重抠，不重新出图）。
+ * 看到脏边之后的事，走单独的 `cut`（`source` 给 `sprite:<主体id>[/<差分>]`，拿留底原片原地重抠，不重新出图）。
  *
  * 落点是**草稿区**：工坊出的是草稿（挑中了才由 `commit_asset` 入库），剧作家的后台预发射
  * 直接 `draft + commit` 一次做完——那边没有「让用户在候选里挑」这回事，工具调用本身就声明了最终 id。
@@ -89,7 +89,7 @@ const SYNC_DESCRIPTION = [
   IMAGE_PROMPT_RULES,
   IMAGE_REFERENCE_RULE,
   "一次工具调用只出一张图；要出多个候选或差分就在同一个批次里多次调用本工具，它们是并行的。",
-  "抠底不用你管：引擎自动抠；用户看了成图说抠得不干净时用 recut_sprite 原地重抠，别重新出图（recut 只认已入库的立绘）。",
+  "抠底不用你管：引擎自动抠；用户看了成图说抠得不干净时用 cut 原地重抠（source 给 `sprite:<主体id>`，别重新出图——重新出图出来的是另一张画）。",
 ].join("");
 
 const QUEUED_DESCRIPTION = [

@@ -1,5 +1,6 @@
 import type { FieldMap } from "../../schema/ir.js";
 import type { CutoutTuning } from "../../media/cutout.js";
+import { ASSET_REF_HINT, parseAssetRef, type AssetRefParts } from "../../media/asset-ref.js";
 import type { Capability } from "../capability.js";
 
 /**
@@ -58,9 +59,16 @@ export const CUTOUT_TUNING_GUIDE = [
   "- 只在底色残留明显时才加 `tolerance`：它会连发丝一起啃掉。",
 ].join("\n");
 
-/** 抠底要的那点输入：源图（剧目内相对路径）、输出位置（不给就落候选区）、一次性调参。 */
+/**
+ * 抠底要的那点输入：源图、输出位置（不给就落候选区）、一次性调参。
+ *
+ * 源图给两种寻址之一：`source`（剧目内相对路径）或 `target`（**素材引用**解出来的身份，
+ * 宿主据此去找那张图——留底原片、已入库素材都归它管）。**两者只会有一个**：引用的解析在能力里做完，
+ * 宿主不必再认语法。
+ */
 export interface CutoutRequest {
-  source: string;
+  source?: string;
+  target?: AssetRefParts;
   output?: string;
   tuning?: Partial<CutoutTuning>;
 }
@@ -87,18 +95,22 @@ export const imageCutoutFields = {
   source: {
     type: "string",
     required: true,
-    description: "要抠的源图（剧目内相对路径）：纯色底，且底色不与主体撞色。",
+    description: `要抠的源图：剧目内相对路径，或素材引用。纯色底，且底色不与主体撞色。${ASSET_REF_HINT}`,
   },
   output: {
     type: "string",
-    description: "透明 PNG 写到哪里（剧目内相对路径）；不给就落候选区，回执给路径。",
+    description:
+      "透明 PNG 写到哪里（剧目内相对路径）。不给就用宿主的默认落点：源是素材引用时写回**素材那张**" +
+      "（= 原地重抠），源是路径时落候选区——候选区不可读的宿主会要求你显式给 output，回执会说清写到哪。",
   },
   ...cutoutTuningFields,
 } as const satisfies FieldMap;
 
 export const IMAGE_CUTOUT_DOC = [
   "抠底：把一张**纯色底**的图（通常是要当立绘的主体）转成透明 PNG，回执给输出路径与抠底体检。",
+  "源图给路径，或给 `sprite:<主体id>[/<差分名>]` 这样的**素材引用**——引用由宿主去找（立绘会优先用抠底前留的原片，那是最干净的一次抠底）。",
   "**只写输出、不改源图**；也不登记素材（登记另走一步）。源图要留着：抠脏了就对着同一张再调参跑一次。",
+  "**原地重抠已入库的立绘**：源给 `sprite:<主体id>[/<差分名>]`、不给 `output`——宿主拿它的抠底前原片重跑，画面一个像素不变，只改透明边缘。",
   "**源图的底色必须是饱和的色键色**（纯绿 #00FF00 / 纯品红 #FF00FF）：整圈边框量出的底色若通道极差 <96（白底、浅灰底、照片底这类），当场报错——白底当色键会把浅色处抠穿、把画面压灰，不是调参能救的。",
 ].join("\n");
 
@@ -125,10 +137,12 @@ export const imageCutout: Capability<typeof imageCutoutFields, ImageCutoutDeps, 
   doc: IMAGE_CUTOUT_DOC,
   async execute(args, deps) {
     const source = args.source.trim();
-    if (source === "") throw new Error("抠底要 source（一张纯色底图的路径）");
+    if (source === "") throw new Error("抠底要 source（一张纯色底图的路径，或素材引用）");
     const tuning = tuningOf(args);
+    // 引用与路径在这里分岔一次：命中引用就只把身份交给宿主，宿主不必再认字符串语法。
+    const target = parseAssetRef(source);
     return deps.cut({
-      source,
+      ...(target ? { target } : { source }),
       ...(args.output?.trim() ? { output: args.output.trim() } : {}),
       ...(Object.keys(tuning).length > 0 ? { tuning } : {}),
     });

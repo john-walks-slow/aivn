@@ -223,7 +223,7 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     for (const key of ["variant", "spriteId", "references"]) expect(props(a)).toContain(key);
     expect(a.parameters).toBe(b.parameters);
     expect(a.description).not.toBe(b.description);
-    expect(b.description).toContain("recut_sprite"); // 工坊同步出图：抠底脏了原地重抠，不重新出图
+    expect(b.description).toContain("cut"); // 工坊同步出图：抠底脏了原地重抠，不重新出图
     expect(a.description).toContain("后台排产");
     expect(b.description).toContain("referenceCharacters");
     expect(a.description).toContain("referenceCharacters");
@@ -256,7 +256,7 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
       for (const rule of rules) expect(desc).toContain(rule);
     }
     // 流程与验收仍各归各的：工坊管抠底重抠，剧作家多一句「图还没到时先上骨架」
-    expect(workshop().tools.find((t) => t.name === "generate_image")!.description).toContain("recut_sprite");
+    expect(workshop().tools.find((t) => t.name === "generate_image")!.description).toContain("cut");
     const queued = withImage.tools.find((t) => t.name === "generate_image")!.description;
     expect(queued).toContain("骨架");
     // 「提前 3–5 句」是拍脑袋的经验值（流式下只给图 3–5 秒头，真要一分多钟），已随风格一起撤掉
@@ -421,7 +421,7 @@ describe("agent kit：能力 → 工具与文件面", () => {
     expect(capabilityTools(image, "playwriter")).toEqual(["generate_image"]);
     expect(capabilityTools(image, "workshop")).toEqual([
       "generate_image",
-      "recut_sprite",
+      "cut",
       "commit_asset",
       "import_asset",
     ]);

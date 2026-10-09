@@ -16,7 +16,7 @@ import { createLineageTools } from "./lineageTool.js";
 import { createGenerateMusicTool } from "./musicTool.js";
 import { createMemoryTools } from "./memoryTool.js";
 import { createImportAssetTool } from "./registerTool.js";
-import { createRecutSpriteTool } from "./recutTool.js";
+import { createCutTool } from "./cutTool.js";
 import { createViewImageTool } from "./viewTool.js";
 import { createVoiceTool } from "./voiceTool.js";
 import { createWebSearchTool } from "./searchTool.js";
@@ -154,7 +154,7 @@ const CATALOG_ROWS = [
     desc: "缺背景 / 立绘时自己画，后台出图不阻塞台词。",
     group: "assets",
     roles: ["playwriter", "workshop"],
-    tools: ["generate_image", "recut_sprite", "commit_asset", "import_asset"],
+    tools: ["generate_image", "cut", "commit_asset", "import_asset"],
     needs: "image",
     unavailableNote: "服务端没配生图后端，暂不生效",
   },
@@ -285,7 +285,7 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   commit_asset: { label: "采用草稿入库", roles: ["workshop"] },
   // 只装工坊：一首 ~175s 的曲子要 84s，剧作家的一轮等不起；音乐又是制作资产。
   generate_bgm: { label: "生成 BGM", roles: ["workshop"] },
-  recut_sprite: { label: "重抠立绘底", roles: ["workshop"] },
+  cut: { label: "抠底", roles: ["workshop"] },
   // 只装工坊：剧作家那条路是「引用即导入」（剧本里写个 id，宿主去库里取），不自己登记。
   import_asset: { label: "登记素材", roles: ["workshop"] },
   read_skill: { label: "读技能库", roles: ["workshop"] },
@@ -509,7 +509,7 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
       onAsset: (path, url, kind, replaced, toolCallId) =>
         deps.onAsset({ kind, path, url }, replaced, toolCallId),
     }),
-    createRecutSpriteTool({
+    createCutTool({
       playAssets: deps.playAssets,
       onAsset: (path, url, kind, replaced, toolCallId) =>
         deps.onAsset({ kind, path, url }, replaced, toolCallId),
