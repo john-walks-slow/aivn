@@ -115,9 +115,19 @@ A 区《记忆索引》每行都带路径，读得到。
   `read_lineage` / `list_library` 逐条补一句「为什么载体必须不同」。
 - 本文件 + §9 的更正 banner + P5 plan 的「实施进度」表。
 
-### P6-d · `update_state` → 状态文件 + watcher（**只出设计**）
+### P6-d · `update_state` → 状态文件（**设计定稿 + 原型已落**，迁移待做）
 
-设计稿：`261009-p6-d-update-state.design.md`。迁移必须单独确认，不在本轴实施。
+设计稿：`261009-p6-d-update-state.design.md`（§3 / §5 / §6 定稿，经 auto-human 复核后修了
+「B 区 vs A 区」的术语与双写基准两处）。**原型已提交**（`69d467fd`）：
+
+- 三个状态文件成为工作态载体：B 区【状态】区每轮现读、收束存快照、jump/fork/restore 与
+  冷启动/切档用快照回写、新档用 `initialState` 播种；
+- 顺带修掉「服务端根本没有代码写这三个文件、剧作家 read 会 ENOENT」的现状缺陷；
+- `update_state` 过渡期双写、以文件为基准；
+- 三条原型判据已绿（直接 write → 下一轮可见 / 跳回旧轮回写 / 文件为基准不 clobber）。
+
+**迁移（待做）**：删 `update_state` + 改提示词与测试面 + 把 readiness 的 `stateProblem`
+接进 B 区（设计稿 §6 的反馈路径）+ 补「切档 / 工坊保存后文件与该枝一致」的判据（§7 判据 4）。
 
 ### P6-c · `library_import`（**移出**）
 
