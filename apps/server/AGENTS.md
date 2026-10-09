@@ -97,7 +97,6 @@
 
 - 生图后端本机默认走 flow2api（「生图地址」填 `http://127.0.0.1:38000`，账号 credits 计费、额度 988 起）：cpa 网关几分钟就撞一次 429 额度耗尽，做不了连续出图与对照实验。
 - **模型只填 `gemini-3.0-pro-image`**（裸别名，吃 `imageConfig`）。`gemini-3.1-flash-image` 系列已被 Flow 上游下线（2026-10-06 实测：模型表里条目还在，调了必报 `ogiZ0b code=[5]`），别再填。裸名与 `.env` / `settings.json` / `scripts/gen-*.py` 几处默认值已统一。
-- 两套后端的协议形状一样，换回去只改设置页里那几项。
 
 ## 音色库（Fish 窗口语义）
 
@@ -149,7 +148,6 @@
 - 库里没有就静默降级**不回话给模型**。
 - 这条链路是剧作家的**默认**导入路径，不需要开任何工具——但**剧作家提示词里要写这条契约**（`prompt.ts` 的 `LIBRARY_REF`，按 `can.library` 注入）：不告诉它，它就只剩「缺素材就自己画」这一条路，把本该从库里拿的背景全烧成配额。
 - 库里也没有的那一段尤其要写明「静默降级、不回话给模型」，否则它会换个 id 反复重写同一个引用。
-- 垫图让单张从 69s 变 138s 而像素一样（「垫图策略」设 `none` 可掐掉，默认保一致性）。
 
 ## 出图内核与手动生图
 
@@ -171,6 +169,7 @@
   - `enhance_prompt` 与 `safety_checker` 两条显式写死 `false`：前者默认 true 会重写提示词，而我们的是 tag 结构（`masterpiece, best quality, 1girl, …`），改写会打散它。
   - `status: processing`（异步队列）本层不接轮询与 webhook，直接报错让部署方换端点——同 `imageFactory` 那条「不为异常做失败降级」的规矩。
 - **逐剧目覆盖**：`play.json` 的 `image`（`model` / `size`）覆盖部署级的 `STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`。`ImageRequest` 带可选的 `model?` / `size?`，三个实现取 `req.x ?? this.x`；`PlayAssets` **每次出图现读 play.json**（不是构造时取快照——`PlayAssets` 按剧目缓存、进程内不重建，快照会让「设置页改了模型，出图还是老模型」）。格式不认这个值就直接报错，不静默退回全局。
+- **逐类目覆盖**（2026-10-10）：`image.kinds.<background|cg|sprite>` 各覆盖 `format`/`baseUrl`/`apiKey`/`model`/`size`/`reference`/`timeoutMs`，空 = 回落基础那份（回落只在 `config.ts` 的 `imageConfigFor` 一处）。
 - 画幅白名单取三款接口的交集（Gemini 官方 14 个取值，减去 OpenAI 不收的 1:4/4:1/1:8/8:1）——换一家 Gemini 或 OpenAI 生图只改地址与模型名，不动代码。
 
 ## 服务入口、端点与记账

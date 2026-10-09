@@ -3057,6 +3057,26 @@ select:focus {
   gap: 0 18px;
 }
 
+/* 生图按类目覆盖（背景 / CG / 立绘）：三个可折叠小节，留空即跟随基础那份 */
+.settings-kinds-note {
+  margin: 12px 0 4px;
+}
+
+.settings-kind {
+  border-top: 1px solid var(--line);
+}
+
+.settings-kind > summary {
+  cursor: pointer;
+  padding: 5px 0;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+
+.settings-kind-body {
+  padding: 2px 0 8px;
+}
+
 .row {
   display: flex;
   flex-wrap: wrap;

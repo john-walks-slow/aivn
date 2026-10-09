@@ -4,10 +4,34 @@
  * 这一层只做两件事——**凭据掩码**与**提交形态归一**；校验与落盘全在 store 里。
  * 面板只有一个保存入口，任何凭据都不许有绕过它单独落盘的通道。
  */
-import { parseModelList, type BootstrapConfig, type ServerConfig, type SettingsPatch } from "./config.js";
+import {
+  parseModelList,
+  type BootstrapConfig,
+  type ImageKindOverride,
+  type ImageKindPatch,
+  type ImageSettingsPatch,
+  type ServerConfig,
+  type SettingsPatch,
+} from "./config.js";
+import { IMAGE_KINDS, type ImageKind } from "./imageBackend.js";
 import { resolveHost } from "./lanAccess.js";
 import { lanAddresses } from "./startup.js";
 import type { SettingsStore } from "./settingsStore.js";
+
+/** 逐类目生图覆盖的读视图：`apiKey` 只回掩码，`apiKeySet` 说这一格有没有被覆盖。 */
+export interface ImageKindView extends ImageKindOverride {
+  apiKey?: string;
+  apiKeySet: boolean;
+}
+
+/** 逐类目生图覆盖的写形态：空串 = 清掉这一格（回到跟随基础）；`apiKeySet` 是读侧字段，写侧忽略。 */
+export type ImageKindPatchView = ImageKindPatch & { apiKeySet?: boolean };
+
+/** 生图块的写形态：类目覆盖单独放宽（见 `ImageKindPatch`）。 */
+export type ImagePatchView = Omit<ImageSettingsPatch, "kinds"> & {
+  apiKeySet?: boolean;
+  kinds?: Partial<Record<ImageKind, ImageKindPatchView>>;
+};
 
 /** 多 key 凭据字段（语音 / 联网）的传输面。 */
 export interface KeyListView {
@@ -60,8 +84,13 @@ export interface SettingsView {
   passwordSet: boolean;
   /** 允许局域网访问：开着监听 0.0.0.0（显式 --host / STAGE_HOST 优先于它）。 */
   lanAccess: boolean;
-  /** 生图（格式 + 连接 + 档位）：key 只回掩码。 */
-  image: ServerConfig["image"] & { apiKeySet: boolean };
+  /** 生图（格式 + 连接 + 档位 + 逐类目覆盖）：key 只回掩码。 */
+  image: Omit<ServerConfig["image"], "apiKey" | "kinds"> & {
+    /** 掩码；空串 = 未配置。 */
+    apiKey: string;
+    apiKeySet: boolean;
+    kinds: Record<ImageKind, ImageKindView>;
+  };
   /** 音乐生成（BGM）：地址与 key 留空 = 跟生图同一个网关（见 musicConnectionOf）。 */
   music: Omit<ServerConfig["music"], "apiKey"> & { apiKey: string; apiKeySet: boolean };
   tts: Omit<ServerConfig["tts"], "keys"> & KeyListView;
@@ -76,7 +105,7 @@ export interface SettingsViewPatch {
   model?: Partial<SettingsView["model"]>;
   workshopContext?: Partial<SettingsView["workshopContext"]>;
   beatTimeoutMs?: number;
-  image?: Partial<SettingsView["image"]>;
+  image?: ImagePatchView;
   music?: Partial<SettingsView["music"]>;
   tts?: Partial<SettingsView["tts"]>;
   exa?: Partial<SettingsView["exa"]>;
@@ -122,7 +151,12 @@ export class SettingsApi {
       password: mask(config.password),
       passwordSet: config.password !== "",
       lanAccess: config.lanAccess,
-      image: { ...config.image, apiKey: mask(config.image.apiKey), apiKeySet: config.image.apiKey !== "" },
+      image: {
+        ...config.image,
+        apiKey: mask(config.image.apiKey),
+        apiKeySet: config.image.apiKey !== "",
+        kinds: readKinds(config.image.kinds),
+      },
       music: { ...config.music, apiKey: mask(config.music.apiKey), apiKeySet: config.music.apiKey !== "" },
       tts: { ...withoutKeys(config.tts), ...keyListView(config.tts.keys) },
       exa: { ...withoutKeys(config.exa), ...keyListView(config.exa.keys) },
@@ -154,9 +188,24 @@ export class SettingsApi {
     if (patch.lanAccess !== undefined) next.lanAccess = patch.lanAccess;
     const image = patch.image;
     if (image) {
-      next.image = { ...image };
+      const { kinds, apiKeySet: _apiKeySet, ...base } = image;
+      next.image = { ...base };
       // 掩码是显示值，不该被当作新密钥写回去
-      if (image.apiKey === undefined || image.apiKey === mask(config.image.apiKey)) delete next.image.apiKey;
+      if (base.apiKey === undefined || base.apiKey === mask(config.image.apiKey)) delete next.image.apiKey;
+      if (kinds) {
+        const out: Partial<Record<ImageKind, ImageKindPatch>> = {};
+        for (const kind of IMAGE_KINDS) {
+          const over = kinds[kind];
+          if (!over) continue;
+          const { apiKeySet: _kindKeySet, ...rest } = over;
+          // 逐类目同理：掩码回传 = 不改这一类目的 Key；清空 = 回落基础那一把
+          if (rest.apiKey !== undefined && rest.apiKey === mask(config.image.kinds[kind].apiKey ?? "")) {
+            delete rest.apiKey;
+          }
+          out[kind] = rest;
+        }
+        next.image.kinds = out;
+      }
     }
     const music = patch.music;
     if (music) {
@@ -203,6 +252,19 @@ export function mask(secret: string): string {
 
 function keyListView(keys: string[]): KeyListView {
   return { keys: "", masked: keys.map(mask), keyCount: keys.length };
+}
+
+/** 逐类目覆盖的读视图：key 只回掩码，`apiKeySet` 说这一格有没有被覆盖。 */
+function readKinds(kinds: Record<ImageKind, ImageKindOverride>): Record<ImageKind, ImageKindView> {
+  return Object.fromEntries(
+    IMAGE_KINDS.map((kind) => {
+      const over = kinds[kind];
+      return [
+        kind,
+        { ...over, apiKey: over.apiKey ? mask(over.apiKey) : "", apiKeySet: over.apiKey !== undefined },
+      ];
+    }),
+  ) as Record<ImageKind, ImageKindView>;
 }
 
 function withoutKeys<T extends { keys: string[] }>(block: T): Omit<T, "keys"> {

@@ -10,7 +10,13 @@ import { PlayFiles } from "../src/playFiles.js";
 import { PlayStore } from "../src/store.js";
 import { PlayAssets } from "../src/playAssets.js";
 import { parseCharacterCard, serializeCharacterCard, type CharacterDocument } from "@aivn/core";
-import type { GeneratedImage, ImageAspect, ImageBackend, ImageRequest } from "../src/imageBackend.js";
+import type {
+  GeneratedImage,
+  ImageAspect,
+  ImageBackend,
+  ImageBackends,
+  ImageRequest,
+} from "../src/imageBackend.js";
 import type { PlayFileWrite } from "../src/workshop.js";
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
@@ -109,7 +115,8 @@ function stubBackend(mimeType = "image/jpeg"): { backend: ImageBackend; calls: I
 
 function makeAssets(
   store: PlayStore,
-  backend: ImageBackend,
+  /** 单个后端 = 三类共用（多数用例）；给一整组则按类目分别出图（验类目路由）。 */
+  backend: ImageBackend | ImageBackends,
   concurrency = 2,
   reference?: "none" | "neutral",
   fetchImage?: (url: string) => Promise<{ data: Buffer; mimeType: string }>,
@@ -120,15 +127,19 @@ function makeAssets(
 } {
   const files = new PlayFiles(store);
   const writes: PlayFileWrite[] = [];
+  const backends: ImageBackends = "generate" in backend
+    ? { background: backend, cg: backend, sprite: backend }
+    : backend;
+  const policy = reference ?? "neutral";
   return {
     files,
     writes,
     assets: new PlayAssets("test", {
       store,
       files,
-      backend,
+      backends,
       limiter: new Limiter(concurrency),
-      ...(reference ? { reference } : {}),
+      reference: { background: policy, cg: policy, sprite: policy },
       ...(fetchImage ? { fetchImage } : {}),
       onWrite: (w) => writes.push(w),
       // 自动注册临时角色走这条；用例不接时就是「当前环境不能自动建卡」
@@ -1243,5 +1254,56 @@ describe("PlayAssets：cut（素材引用寻址）", () => {
 
     await expect(assets.cut({ source: "assets/cg/raw.png" })).rejects.toThrow(/要 output/);
     await expect(assets.cut({ target: { kind: "background", name: "x" } })).rejects.toThrow(/只有立绘/);
+  });
+});
+
+describe("PlayAssets：按类目取后端", () => {
+  it("背景 / CG / 立绘各走自己那只后端，画幅仍按素材类目给", async () => {
+    const store = await makeStore();
+    const bg = stubBackend("image/png");
+    const cg = stubBackend("image/png");
+    const sprite = stubBackend("image/png");
+    const { assets } = makeAssets(store, {
+      background: bg.backend,
+      cg: cg.backend,
+      sprite: sprite.backend,
+    });
+
+    await assets.generate({ kind: "background", name: "rooftop" }, "黄昏天台");
+    await assets.generate({ kind: "cg", name: "kiss" }, "屋顶接吻");
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
+
+    expect(bg.calls).toHaveLength(1);
+    expect(cg.calls).toHaveLength(1);
+    expect(sprite.calls).toHaveLength(1);
+    expect(bg.calls[0]!.aspectRatio).toBe("16:9");
+    expect(cg.calls[0]!.aspectRatio).toBe("16:9");
+    expect(sprite.calls[0]!.aspectRatio).toBe("9:16");
+  });
+
+  it("垫图策略逐类目读：立绘这一类关掉垫图，差分就不带参考图（开着时会带一张）", async () => {
+    const store = await makeStore();
+    const make = (spriteReference: "none" | "neutral"): { assets: PlayAssets; calls: ImageRequest[] } => {
+      const stub = stubBackend("image/png");
+      const assets = new PlayAssets("test", {
+        store,
+        files: new PlayFiles(store),
+        backends: { background: stub.backend, cg: stub.backend, sprite: stub.backend },
+        limiter: new Limiter(2),
+        reference: { background: "neutral", cg: "neutral", sprite: spriteReference },
+        onWrite: () => {},
+      });
+      return { assets, calls: stub.calls };
+    };
+
+    const off = make("none");
+    await off.assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
+    await off.assets.generate({ kind: "sprite", spriteId: "mio", variant: "smile" }, "少女微笑");
+    expect(off.calls[1]!.references?.length ?? 0).toBe(0);
+
+    // 差分已入库，这一类目开着 neutral：差分以定妆照为身份基准，带一张参考图
+    const on = make("neutral");
+    await on.assets.generate({ kind: "sprite", spriteId: "mio", variant: "smile" }, "少女微笑");
+    expect(on.calls[0]!.references).toHaveLength(1);
   });
 });

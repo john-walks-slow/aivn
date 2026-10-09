@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@aivn/stage";
-import { api, type GatewayModel, type Settings } from "../api.js";
+import { api, type GatewayModel, type ImageKind, type Settings } from "../api.js";
 import { navigate } from "../router.jsx";
 import { ModelSelect, modelSourceHint } from "../ui/ModelSelect.js";
 import {
@@ -20,6 +20,46 @@ import {
 const UI_MODE_KEY = "aivn:ui-theme-mode";
 const STAGE_MODE_KEY = "aivn:stage-theme-mode";
 
+/** 生图类目的展示顺序与名字（词表与服务端 `IMAGE_KINDS` 同表）。 */
+const KIND_ORDER: ImageKind[] = ["background", "cg", "sprite"];
+const KIND_TITLES: Record<ImageKind, string> = { background: "背景", cg: "CG", sprite: "立绘" };
+
+/** 一类目的覆盖草稿：输入框一律是字符串，空串 = 跟随基础。 */
+type ImageKindDraft = {
+  format: "" | Settings["image"]["format"];
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  size: string;
+  reference: "" | Settings["image"]["reference"];
+  timeoutMs: string;
+};
+
+function kindDraftOf(over: Settings["image"]["kinds"][ImageKind]): ImageKindDraft {
+  return {
+    format: over.format ?? "",
+    baseUrl: over.baseUrl ?? "",
+    apiKey: over.apiKey ?? "",
+    model: over.model ?? "",
+    size: over.size ?? "",
+    reference: over.reference ?? "",
+    timeoutMs: over.timeoutMs === undefined ? "" : String(over.timeoutMs),
+  };
+}
+
+/** 这一格填了几项（摘要上显示「已覆盖 N 项」）。 */
+function kindOverrideCount(draft: ImageKindDraft): number {
+  return [
+    draft.format,
+    draft.baseUrl,
+    draft.apiKey,
+    draft.model,
+    draft.size,
+    draft.reference,
+    draft.timeoutMs,
+  ].filter((value) => value !== "").length;
+}
+
 function storedMode(key: string, fallback: ThemeMode): ThemeMode {
   const val = localStorage.getItem(key);
   return val === "system" || val === "light" || val === "dark" ? val : fallback;
@@ -31,7 +71,7 @@ type Draft = {
   model: Settings["model"];
   workshopContext: Settings["workshopContext"];
   beatTimeoutMs: number;
-  image: Settings["image"];
+  image: Omit<Settings["image"], "kinds"> & { kinds: Record<ImageKind, ImageKindDraft> };
   music: Settings["music"];
   tts: Omit<Settings["tts"], "keys"> & { keys: string };
   exa: Omit<Settings["exa"], "keys"> & { keys: string };
@@ -51,7 +91,14 @@ function draftOf(next: Settings): Draft {
     model: { ...next.model },
     workshopContext: { ...next.workshopContext },
     beatTimeoutMs: next.beatTimeoutMs,
-    image: { ...next.image },
+    image: {
+      ...next.image,
+      kinds: {
+        background: kindDraftOf(next.image.kinds.background),
+        cg: kindDraftOf(next.image.kinds.cg),
+        sprite: kindDraftOf(next.image.kinds.sprite),
+      },
+    },
     music: { ...next.music },
     tts: { ...next.tts, keys: "" },
     exa: { ...next.exa, keys: "" },
@@ -404,6 +451,36 @@ export function SettingsScreen() {
                 onChange={(v) => setDraft({ ...draft, image: { ...draft.image, timeoutMs: v } })}
               />
             </div>
+
+            <p className="settings-hint settings-kinds-note">
+              按类目覆盖：留空 = 跟随上面那份基础配置。立绘的画面档位下限是 2K（抠底要分辨率），
+              这一类填 1K 也会按 2K 出图。
+            </p>
+            {KIND_ORDER.map((kind) => (
+              <details className="settings-kind" key={kind}>
+                <summary>
+                  {KIND_TITLES[kind]}
+                  <span className="muted">
+                    {kindOverrideCount(draft.image.kinds[kind]) > 0
+                      ? `　已覆盖 ${kindOverrideCount(draft.image.kinds[kind])} 项`
+                      : "　跟随基础"}
+                  </span>
+                </summary>
+                <KindOverrideFields
+                  value={draft.image.kinds[kind]}
+                  base={draft.image}
+                  onChange={(patch) =>
+                    setDraft({
+                      ...draft,
+                      image: {
+                        ...draft.image,
+                        kinds: { ...draft.image.kinds, [kind]: { ...draft.image.kinds[kind], ...patch } },
+                      },
+                    })
+                  }
+                />
+              </details>
+            ))}
           </Group>
 
           <Group title="音乐生成">
@@ -722,6 +799,87 @@ function KeyField(props: {
         onChange={(e) => props.onChange(e.target.value)}
       />
     </Field>
+  );
+}
+
+/**
+ * 一类目的 7 个覆盖输入：**留空 = 跟随基础**，placeholder 显示当前继承到的值。
+ *
+ * 草稿里的值一律是字符串（空串即跟随），保存时原样交给服务端——那边把空串当作「清掉这一格」
+ * （见 `config.ts` 的 `mergeKindOverride`）。
+ */
+function KindOverrideFields(props: {
+  value: ImageKindDraft;
+  base: Omit<Settings["image"], "kinds">;
+  onChange: (patch: Partial<ImageKindDraft>) => void;
+}) {
+  const { value, base } = props;
+  const inherited = (text: string): string => `跟随基础${text ? `（${text}）` : ""}`;
+  return (
+    <div className="settings-kind-body">
+      <Field label="接口格式">
+        <select
+          value={value.format}
+          onChange={(e) => props.onChange({ format: e.target.value as ImageKindDraft["format"] })}
+        >
+          <option value="">{inherited(base.format)}</option>
+          <option value="gemini">gemini</option>
+          <option value="modelslab">modelslab</option>
+          <option value="openai">openai</option>
+        </select>
+      </Field>
+      <Field label="生图地址">
+        <input
+          value={value.baseUrl}
+          placeholder={inherited(base.baseUrl)}
+          onChange={(e) => props.onChange({ baseUrl: e.target.value })}
+        />
+      </Field>
+      <Field
+        label="生图 Key"
+        hint={value.apiKey ? "掩码——保持原样即不改，清空 = 跟随基础那把" : "留空 = 跟随基础那把"}
+      >
+        <input
+          type="password"
+          value={value.apiKey}
+          placeholder={inherited(base.apiKeySet ? base.apiKey : "")}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => props.onChange({ apiKey: e.target.value })}
+        />
+      </Field>
+      <Field label="出图模型">
+        <input
+          value={value.model}
+          placeholder={inherited(base.model)}
+          onChange={(e) => props.onChange({ model: e.target.value })}
+        />
+      </Field>
+      <Field label="出图档位">
+        <input
+          value={value.size}
+          placeholder={inherited(base.size)}
+          onChange={(e) => props.onChange({ size: e.target.value })}
+        />
+      </Field>
+      <Field label="垫图策略">
+        <select
+          value={value.reference}
+          onChange={(e) => props.onChange({ reference: e.target.value as ImageKindDraft["reference"] })}
+        >
+          <option value="">{inherited(base.reference)}</option>
+          <option value="neutral">neutral（保一致性）</option>
+          <option value="none">none（只文生图，更快）</option>
+        </select>
+      </Field>
+      <Field label="出图超时 ms" hint="立绘走 2K，常需要比背景更宽">
+        <input
+          inputMode="numeric"
+          value={value.timeoutMs}
+          placeholder={inherited(String(base.timeoutMs))}
+          onChange={(e) => props.onChange({ timeoutMs: e.target.value })}
+        />
+      </Field>
+    </div>
   );
 }
 

@@ -1,6 +1,60 @@
 import { resolve } from "node:path";
-import { parseImageSize, imageSizeText } from "./imageBackend.js";
+import {
+  IMAGE_FORMATS,
+  IMAGE_KINDS,
+  IMAGE_REFERENCES,
+  imageSizeText,
+  parseImageSize,
+  type ImageFormat,
+  type ImageKind,
+  type ImageReference,
+} from "./imageBackend.js";
 import { DEFAULT_MAX_QUEUE } from "./limiter.js";
+
+/**
+ * 逐类目的生图覆盖：**只写与基础那份不同的字段**，缺省 / 空串 = 跟随基础。
+ *
+ * 场景是三类素材的现实诉求不一样：立绘要 2K 与 flow2api 的裸别名模型（抠底要分辨率），
+ * 背景与 CG 可以走别家、更便宜的模型。回落发生在 {@link imageConfigFor} 一处。
+ */
+export interface ImageKindOverride {
+  format?: ImageFormat;
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  size?: string;
+  reference?: ImageReference;
+  timeoutMs?: number;
+}
+
+/**
+ * 逐类目覆盖的**提交形态**（设置页送来的）：
+ * 字段缺席 = 不改这一项；空串 / `null` = 清空这一项，回到跟随基础。
+ */
+export interface ImageKindPatch {
+  format?: ImageFormat | "" | null;
+  baseUrl?: string | null;
+  apiKey?: string | null;
+  model?: string | null;
+  size?: string | null;
+  reference?: ImageReference | "" | null;
+  /** 数字或数字串都收（输入框天然给字符串）；空 = 清空。 */
+  timeoutMs?: number | string | null;
+}
+
+/** 生图配置块的提交形态：类目覆盖单独放宽（见 {@link ImageKindPatch}）。 */
+export interface ImageSettingsPatch {
+  enabled?: boolean;
+  format?: ImageFormat;
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  size?: string;
+  concurrency?: number;
+  timeoutMs?: number;
+  reference?: ImageReference;
+  kinds?: Partial<Record<ImageKind, ImageKindPatch>>;
+}
 
 /**
  * 启动期参数：进程起来时读一次，改了要重启。只有这三项留在环境变量里——
@@ -62,14 +116,16 @@ export interface ServerConfig {
   beatTimeoutMs: number;
   image: {
     enabled: boolean;
-    format: "gemini" | "openai" | "modelslab";
+    format: ImageFormat;
     baseUrl: string;
     apiKey: string;
     model: string;
     size: string;
     concurrency: number;
     timeoutMs: number;
-    reference: "none" | "neutral";
+    reference: ImageReference;
+    /** 逐类目覆盖（背景 / CG / 立绘）：空对象 = 三类都用上面这份基础配置。 */
+    kinds: Record<ImageKind, ImageKindOverride>;
   };
   /**
    * 音乐生成（BGM）。
@@ -133,6 +189,7 @@ export function freshSettings(): ServerConfig {
       concurrency: 6,
       timeoutMs: 180_000,
       reference: "neutral",
+      kinds: { background: {}, cg: {}, sprite: {} },
     },
     music: {
       enabled: false,
@@ -192,14 +249,16 @@ export function settingsFromEnv(env: NodeJS.ProcessEnv): ServerConfig {
     beatTimeoutMs: parsePositiveInt("STAGE_BEAT_TIMEOUT_MS", env.STAGE_BEAT_TIMEOUT_MS, 240_000),
     image: {
       enabled: env.STAGE_IMAGE_ENABLED !== "false",
-      format: parseEnum("STAGE_IMAGE_FORMAT", env.STAGE_IMAGE_FORMAT, ["gemini", "openai", "modelslab"] as const, "gemini"),
+      format: parseEnum("STAGE_IMAGE_FORMAT", env.STAGE_IMAGE_FORMAT, IMAGE_FORMATS, "gemini"),
       baseUrl: env.STAGE_IMAGE_BASE_URL ?? "http://127.0.0.1:9999",
       apiKey: env.STAGE_IMAGE_API_KEY ?? "",
       model: env.STAGE_IMAGE_MODEL ?? "gemini-3.0-pro-image",
       size: imageSizeText(parseImageSize(env.STAGE_IMAGE_SIZE ?? "1K")),
       concurrency: parsePositiveInt("STAGE_IMAGE_CONCURRENCY", env.STAGE_IMAGE_CONCURRENCY, 6),
       timeoutMs: parsePositiveInt("STAGE_IMAGE_TIMEOUT_MS", env.STAGE_IMAGE_TIMEOUT_MS, 180_000),
-      reference: parseEnum("STAGE_IMAGE_REFERENCE", env.STAGE_IMAGE_REFERENCE, ["none", "neutral"] as const, "neutral"),
+      reference: parseEnum("STAGE_IMAGE_REFERENCE", env.STAGE_IMAGE_REFERENCE, IMAGE_REFERENCES, "neutral"),
+      // 旧 .env 面没有逐类目这一说：迁过来的部署一律走上面这份基础配置
+      kinds: { background: {}, cg: {}, sprite: {} },
     },
     tts: {
       enabled: env.STAGE_TTS_ENABLED !== "false",
@@ -261,7 +320,7 @@ export interface SettingsPatch {
   keepRecentTokens?: number;
   workshopContext?: Partial<ServerConfig["workshopContext"]>;
   beatTimeoutMs?: number;
-  image?: Partial<ServerConfig["image"]>;
+  image?: ImageSettingsPatch;
   music?: Partial<ServerConfig["music"]>;
   tts?: Partial<ServerConfig["tts"]>;
   exa?: Partial<ServerConfig["exa"]>;
@@ -335,7 +394,7 @@ export function applyPatch(base: ServerConfig, patch: SettingsPatch): { next: Se
   if (image) {
     if (image.enabled !== undefined) putIn("image", "enabled", image.enabled);
     if (image.format !== undefined) {
-      putIn("image", "format", parseEnum("生图接口格式", image.format, ["gemini", "openai", "modelslab"] as const, "gemini"));
+      putIn("image", "format", parseEnum("生图接口格式", image.format, IMAGE_FORMATS, "gemini"));
     }
     if (image.baseUrl !== undefined) putIn("image", "baseUrl", image.baseUrl.trim().replace(/\/$/, ""));
     if (image.apiKey !== undefined) putIn("image", "apiKey", image.apiKey.trim());
@@ -344,7 +403,22 @@ export function applyPatch(base: ServerConfig, patch: SettingsPatch): { next: Se
     if (image.concurrency !== undefined) putIn("image", "concurrency", positiveInt("出图并发", image.concurrency));
     if (image.timeoutMs !== undefined) putIn("image", "timeoutMs", positiveInt("出图超时", image.timeoutMs));
     if (image.reference !== undefined) {
-      putIn("image", "reference", parseEnum("垫图策略", image.reference, ["none", "neutral"] as const, "neutral"));
+      putIn("image", "reference", parseEnum("垫图策略", image.reference, IMAGE_REFERENCES, "neutral"));
+    }
+    if (image.kinds) {
+      // 深拷一层再改：`next.image` 只是浅拷贝，直接改它的 kinds 会把 base 那份一起写掉
+      const kinds = Object.fromEntries(
+        IMAGE_KINDS.map((kind) => [kind, { ...base.image.kinds[kind] }]),
+      ) as Record<ImageKind, ImageKindOverride>;
+      for (const kind of IMAGE_KINDS) {
+        const incoming = image.kinds[kind];
+        if (!incoming) continue;
+        const merged = mergeKindOverride(kinds[kind], incoming);
+        if (JSON.stringify(merged) === JSON.stringify(base.image.kinds[kind])) continue;
+        kinds[kind] = merged;
+        changed.push(`image.kinds.${kind}`);
+      }
+      next.image.kinds = kinds;
     }
   }
 
@@ -389,6 +463,51 @@ export function applyPatch(base: ServerConfig, patch: SettingsPatch): { next: Se
     }
   }
   return { next, changed };
+}
+
+/**
+ * 合并一类目的覆盖补丁：缺席 = 不改，空串 / null = 清掉这一格（回到跟随基础）。
+ *
+ * 空串走「清掉」而不是「写一个空值」：设置页把一个输入框清空，想表达的就是「跟随基础」，
+ * 与 `music.baseUrl` / `music.apiKey` 留空回落同一条口径。
+ */
+function mergeKindOverride(current: ImageKindOverride, patch: ImageKindPatch): ImageKindOverride {
+  const next: ImageKindOverride = { ...current };
+
+  if (patch.format !== undefined) {
+    if (patch.format === "" || patch.format === null) delete next.format;
+    else next.format = parseEnum("生图接口格式", patch.format, IMAGE_FORMATS, "gemini");
+  }
+  if (patch.reference !== undefined) {
+    if (patch.reference === "" || patch.reference === null) delete next.reference;
+    else next.reference = parseEnum("垫图策略", patch.reference, IMAGE_REFERENCES, "neutral");
+  }
+  if (patch.baseUrl !== undefined) {
+    const url = patch.baseUrl?.trim().replace(/\/$/, "") ?? "";
+    if (url === "") delete next.baseUrl;
+    else next.baseUrl = url;
+  }
+  if (patch.apiKey !== undefined) {
+    const key = patch.apiKey?.trim() ?? "";
+    if (key === "") delete next.apiKey;
+    else next.apiKey = key;
+  }
+  if (patch.model !== undefined) {
+    const model = patch.model?.trim() ?? "";
+    if (model === "") delete next.model;
+    else next.model = model;
+  }
+  if (patch.size !== undefined) {
+    const raw = patch.size?.trim() ?? "";
+    if (raw === "") delete next.size;
+    else next.size = imageSizeText(parseImageSize(raw));
+  }
+  if (patch.timeoutMs !== undefined) {
+    const raw = patch.timeoutMs === null ? "" : String(patch.timeoutMs).trim();
+    if (raw === "") delete next.timeoutMs;
+    else next.timeoutMs = positiveInt("出图超时", Number(raw));
+  }
+  return next;
 }
 
 /** `provider/modelId` 形态校验：pi-ai 内置目录里查不到的具体名字由 provider 构造时点名。 */
@@ -468,16 +587,47 @@ function dedupe(parts: readonly string[]): string[] {
 }
 
 /**
+ * 一类目实际生效的生图连接参数：逐字段取该类目的覆盖，空 / 缺省回落到基础那份。
+ *
+ * **回落只在这一处发生**——`imageFactory` 按它装配三个后端实例，界面与配置文件里
+ * 始终是「类目自己那几项」，不在别处再写一遍 `?? base`。
+ */
+export function imageConfigFor(config: ServerConfig, kind: ImageKind): {
+  format: ImageFormat;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  size: string;
+  reference: ImageReference;
+  timeoutMs: number;
+} {
+  const base = config.image;
+  const over = base.kinds[kind];
+  return {
+    format: over.format ?? base.format,
+    baseUrl: over.baseUrl?.trim() || base.baseUrl,
+    apiKey: over.apiKey?.trim() || base.apiKey,
+    model: over.model?.trim() || base.model,
+    size: over.size?.trim() || base.size,
+    reference: over.reference ?? base.reference,
+    timeoutMs: over.timeoutMs ?? base.timeoutMs,
+  };
+}
+
+/**
  * 一次预发射真正可能花多久（毫秒）：客户端拿它当「通知永远不来」的兜底上界，
  * 随 hello 下发（见 `ws/protocol.ts` 的 assetsTtlMs）。写死 45s 时的后果是
  * 正在生成的骨架被自己撤掉——生图默认 150s 才超时，骨架从来活不到图到货。
  *
- * 最坏情况 = 自己一次超时 + 排在并发闸门队尾的时间（队列上限 12，按并发折成几批）。
+ * 最坏情况 = 最慢那一类的一次超时 + 排在并发闸门队尾的时间（队列上限 12，按并发折成几批）。
+ * 超时取基础与三个类目里的最大值：立绘那一档常被单独调宽（2K 更慢），
+ * 只看基础那份会让骨架在立绘还没回来时就被撤掉。
  * 这只是兜底上界：正常的图一两分钟就到，届时 asset_ready 已经把占位摘了。
  */
 export function imagePendingTtlMs(image: ServerConfig["image"]): number {
   const batches = Math.ceil(DEFAULT_MAX_QUEUE / Math.max(1, image.concurrency));
-  return image.timeoutMs * (1 + batches);
+  const slowest = Math.max(image.timeoutMs, ...IMAGE_KINDS.map((kind) => image.kinds[kind].timeoutMs ?? 0));
+  return slowest * (1 + batches);
 }
 
 /**
