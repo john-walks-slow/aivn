@@ -356,6 +356,8 @@ export class LineageTree {
   beatEndFrom(headId: string, prefer?: string | null): string | null {
     let current = this.requireNode(headId);
     if (current.kind === "root") return current.id;
+    // 岔口上要判「prefer 在谁的子树里」，先把它的祖先链一次算成集合（含自身）
+    const walked = prefer ? this.pathSet(prefer) : null;
     for (;;) {
       if (current.kind === "beat_end") return current.id;
       const kids = this.childrenOf(current.id);
@@ -366,7 +368,7 @@ export class LineageTree {
         continue;
       }
       const next =
-        (prefer ? kids.find((kid) => kid.id === prefer || this.isAncestor(kid.id, prefer)) : undefined) ??
+        (walked ? kids.find((kid) => walked.has(kid.id)) : undefined) ??
         kids.find((kid) => kid.kind === "beat_end") ??
         kids.find((kid) => kid.kind !== "fork");
       if (!next) return null;
