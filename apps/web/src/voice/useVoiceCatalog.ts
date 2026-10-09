@@ -2,17 +2,36 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { VoiceCatalog, VoiceEntry } from "@aivn/core";
 import { api } from "../api.js";
 
-/** 一次音色筛选（三者 AND，tags 内部 OR）；全空 = 基础热门目录。 */
+/** 一次音色筛选（两个条件 AND）；全空 = 基础热门目录。 */
 export interface VoiceFilter {
   language: string;
-  tags: string[];
   title: string;
 }
 
-export const EMPTY_VOICE_FILTER: VoiceFilter = { language: "", tags: [], title: "" };
+export const EMPTY_VOICE_FILTER: VoiceFilter = { language: "", title: "" };
 
 function hasCondition(filter: VoiceFilter): boolean {
-  return filter.language !== "" || filter.tags.length > 0 || filter.title !== "";
+  return filter.language !== "" || filter.title !== "";
+}
+
+/**
+ * 生效的语言筛。语言下拉有两种身份，必须分开：
+ *
+ * - **用户显式挑的**是真筛选——「日语里的雷姆」就该只出日语那几条，与关键词是 AND。
+ * - **系统语言**只是打开面板时的浏览起点，不是筛选条件。关键词一出现就把它摘掉，
+ *   否则英文环境的用户搜「雷姆」拿到的是「英语窗口里的雷姆」= 0 条，他看到的是
+ *   「搜不到」而不是「语言没选对」——全库标题搜索的意义正好被它吃掉。
+ */
+export function effectiveVoiceLanguage(input: {
+  /** 用户挑过的语言；null = 还没挑过（下拉此刻显示的是系统语言）。 */
+  picked: string | null;
+  /** 系统语言（不在基础目录里时为 undefined）。 */
+  system: string | undefined;
+  /** 关键词（防抖后的值）；非空 = 这次是搜索，语言默认不参与。 */
+  keyword: string;
+}): string {
+  if (input.picked !== null) return input.picked;
+  return input.keyword.trim() === "" ? (input.system ?? "") : "";
 }
 
 /** 音色目录状态：基础目录 + 查询窗口，角色卡（解析当前音色名）与音色库面板共用。 */
@@ -27,7 +46,7 @@ export interface VoiceCatalogState {
   result: VoiceCatalog | null;
   searching: boolean;
   searchError: string | null;
-  /** 换筛选条件：语言/标签/关键词变化时调用（关键词的防抖由调用方做）。 */
+  /** 换筛选条件：语言/关键词变化时调用（关键词的防抖由调用方做）。 */
   search: (filter: VoiceFilter) => void;
   /** 强制重抓：有筛选重抓当前窗口，没筛选重抓基础目录。 */
   refresh: () => void;
@@ -88,7 +107,6 @@ export function useVoiceCatalog(): VoiceCatalogState {
     api
       .voiceCatalog({
         language: next.language || undefined,
-        tags: next.tags,
         title: next.title || undefined,
         refresh,
       })

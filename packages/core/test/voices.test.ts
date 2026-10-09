@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { countVoicesByLanguage, isVoiceId, languageLabel, type VoiceEntry } from "../src/speech/voices.js";
+import {
+  countVoicesByLanguage,
+  isVoiceId,
+  languageLabel,
+  VOICE_TAG_GROUPS,
+  type VoiceEntry,
+} from "../src/speech/voices.js";
 
 function entry(id: string, languages: string[], likes = 0): VoiceEntry {
   return { id, title: id, description: "", languages, tags: [], likes, cover: "" };
@@ -26,6 +32,15 @@ describe("语言显示名", () => {
 
   it("未收录代码原样返回（小语种不能显示成空白）", () => {
     expect(languageLabel("xyz")).toBe("xyz");
+  });
+});
+
+describe("常用标签词表（list_voices 描述照它教模型）", () => {
+  it("分组齐、词不重（重复词会让描述教出两遍同一个 tag）", () => {
+    const flat = VOICE_TAG_GROUPS.flatMap((group) => group.tags);
+    expect(flat).toContain("anime");
+    expect(new Set(flat).size).toBe(flat.length);
+    expect(VOICE_TAG_GROUPS.every((group) => group.label !== "" && group.tags.length > 0)).toBe(true);
   });
 });
 
