@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CRAFT } from "@aivn/core";
 import { buildWorkshopPrompt } from "../src/workshop.js";
+import { readSkill } from "../src/skills.js";
 import type { AgentCapabilities } from "../src/agentkit/kit.js";
 
 /**
@@ -81,14 +82,22 @@ describe("工坊提示词：写作参数这一维的写法指导", () => {
 });
 
 describe("工坊提示词：play.json 的字段面", () => {
-  it("列出会被静默降级的字段，并要求定点改而不是整篇覆盖", async () => {
+  it("提示词只留指针，字段表（含会被静默降级的字段）在 skill 里", async () => {
     const prompt = await buildWorkshopPrompt({ ...CTX, can: caps(), voiceLanguage: "ja" });
     expect(prompt).toContain("play.json");
-    expect(prompt).toContain("defaultVoiceId");
-    expect(prompt).toContain("voiceLanguage");
-    expect(prompt).toContain("不要整篇 `write` 覆盖");
-    // 缺省字段不在文件里，read 也读不出来——代价得写在提示词里
-    expect(prompt).toContain("静默消失");
+    // 字段表已下沉到 skill：提示词钉指针，「全文还在」由下面那条配对用例守。
+    // （只删不补 = 把「挪层」写成「删除」，正是 8a08d4fc 漏改这条用例时留下的坑。）
+    expect(prompt).toContain("galgame-play-setup");
+    expect(prompt).not.toContain("defaultVoiceId");
+    // 「改既有文件用 edit 定点改」这条规矩仍在提示词正文里
+    expect(prompt).toContain("别整篇 `write` 覆盖");
+  });
+
+  it("下沉的那份 skill 真能被读到，字段面的关键语义一条不少", async () => {
+    const skill = await readSkill("galgame-play-setup");
+    for (const wanted of ["defaultVoiceId", "voiceLanguage", "静默消失", "不要整篇 `write` 覆盖"]) {
+      expect(skill.content).toContain(wanted);
+    }
   });
 });
 
@@ -102,7 +111,8 @@ describe("工坊提示词：能力关掉之后不再教它调那个工具", () =
     expect(prompt).not.toContain("assets/manifest.json");
     // 产出物与落盘方式换成清单式：要改就交给用户
     expect(prompt).toContain("这条路上没有给你写口");
-    expect(prompt).toContain("**交给用户落盘**");
+    expect(prompt).toContain("**本剧目没给你写口**");
+    expect(prompt).toContain("清单交给用户");
     expect(prompt).toContain("不许说\"已写入\"");
     // 出图那部分不受影响
     expect(prompt).toContain("先出 neutral 定妆照");

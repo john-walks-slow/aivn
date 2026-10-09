@@ -1,39 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { createAssistantMessageEventStream, type AssistantMessage, type Message } from "@earendil-works/pi-ai";
 import { LineageTree, type PlayConfig, type ServerMessage } from "@aivn/core";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { PlayMemory } from "../src/memory.js";
+import { createFakeStreamFn } from "./helpers.js";
 import type { TtsSynthFn } from "../src/voice.js";
-
-/** 与 orchestrator.test.ts 同构的假 LLM 流（单轮文本直出）。 */
-function fakeStream(text: string): StreamFn {
-  return () => {
-    const stream = createAssistantMessageEventStream();
-    const partial = { role: "assistant", content: [] } as AssistantMessage;
-    queueMicrotask(() => {
-      stream.push({ type: "start", partial });
-      stream.push({ type: "text_start", contentIndex: 0, partial });
-      for (const delta of text.match(/[\s\S]{1,5}/g) ?? []) {
-        stream.push({ type: "text_delta", contentIndex: 0, delta, partial });
-      }
-      stream.push({ type: "text_end", contentIndex: 0, content: text, partial });
-      const finalMessage: AssistantMessage = {
-        role: "assistant",
-        content: [{ type: "text", text }],
-        api: "openai-completions",
-        provider: "fake",
-        model: "fake-test",
-        usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-        stopReason: "stop",
-        timestamp: Date.now(),
-      };
-      stream.push({ type: "done", message: finalMessage });
-      stream.end(finalMessage);
-    });
-    return stream;
-  };
-}
 
 const PLAY: PlayConfig = {
   id: "voice-test",
@@ -67,7 +37,7 @@ function setup({ dsl, synth }: SetupOpts) {
       return { url: `/tts/${voiceId}/${encodeURIComponent(text)}` };
     });
   const orchestrator = new PlaywrightOrchestrator({
-    streamFn: fakeStream(dsl),
+    streamFn: createFakeStreamFn([{ text: dsl, beatDone: true }]),
     model: {} as never,
     getApiKey: () => "test-key",
     play: PLAY,
@@ -161,7 +131,7 @@ describe("语音管线（D5）", () => {
   it("TTS 失败 → 告警跳过该句，不阻塞事件流（风险#3）", async () => {
     const messages: ServerMessage[] = [];
     const orchestrator = new PlaywrightOrchestrator({
-      streamFn: fakeStream('<say id="mio">会失败。没事。</say>'),
+      streamFn: createFakeStreamFn([{ text: '<say id="mio">会失败。没事。</say>', beatDone: true }]),
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,

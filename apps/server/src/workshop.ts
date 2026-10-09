@@ -189,11 +189,15 @@ function setupFlow(ctx: WorkshopPromptContext): string {
   const fallback = ctx.can.files
     ? ""
     : `\n\n**本剧目没给你写口**（Agent 页关了「改剧目文件」）：把 premise、创作口径、写作参数、角色卡整理成一份「改哪个文件、写什么」的清单交给用户，让他在工坊里自己改；不要把清单当成已经写进去了。`;
+  const setupSkill = ctx.can.skill
+    ? `用户要开新剧目、或要改现有剧目的设定时，**先 read_skill("galgame-play-setup") 再动手**——
+四步走、premise／角色卡／记忆卡／素材表各写什么、play.json 有哪些字段、写作参数与创作口径
+怎么分，全在那份全文里。别凭印象开写。`
+    : `用户要开新剧目、或要改现有剧目的设定时，按下面的四步走自己来——本剧目没开「技能库」，
+那份「四步走怎么写」的全文读不到，先把骨架与文件分工问清楚再动手。`;
   return `# 设定流程（这是你的工作方式，不是可选建议）
 
-用户要开新剧目、或要改现有剧目的设定时，**先 read_skill("galgame-play-setup") 再动手**——
-四步走、premise／角色卡／记忆卡／素材表各写什么、play.json 有哪些字段、写作参数与创作口径
-怎么分，全在那份全文里。别凭印象开写。
+${setupSkill}
 
 一句话概括：**先问清骨架 → 给完整提案等用户点头 → 列图单（${approval}）→ 落盘后同步记忆。**
 
@@ -235,8 +239,10 @@ function writingPoints(ctx: WorkshopPromptContext): string {
   }
   return `# 剧目写作要点
 
-premise、角色卡、记忆卡、素材描述表各写什么、play.json 有哪些字段、写作参数与创作口径怎么分，
-**全文在 skill \`galgame-play-setup\` 里**（read_skill 读它）；这里只说本剧目当下生效的口径：
+${ctx.can.skill
+    ? `premise、角色卡、记忆卡、素材描述表各写什么、play.json 有哪些字段、写作参数与创作口径怎么分，
+**全文在 skill \`galgame-play-setup\` 里**（read_skill 读它）；这里只说本剧目当下生效的口径：`
+    : `本剧目没开「技能库」，「各文件写什么」的全文读不到；下面只说本剧目当下生效的口径，拿不准就问用户：`}
 
 - 写作参数（play.json 的 \`craft\` 段，**用 \`set_craft\` 工具改**）当前生效值：
 ${craftNow(ctx)}
