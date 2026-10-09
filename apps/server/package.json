@@ -11,9 +11,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aivn/agent": "workspace:*",
+    "@aivn/core": "workspace:*",
     "@earendil-works/pi-agent-core": "^0.87.1",
     "@earendil-works/pi-ai": "^0.87.1",
-    "@aivn/core": "workspace:*",
     "fflate": "^0.8.3",
     "minisearch": "^7.2.0",
     "sharp": "^0.35.5",

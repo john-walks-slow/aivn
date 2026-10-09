@@ -1,17 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { Exa } from "../src/exa.js";
+import { Exa, type FetchLike } from "../src/index.js";
 
 /** 假 fetch：记录每次请求，按序吐响应（用完就停）。 */
-function fakeFetch(
-  responses: (() => Response | Promise<Response>)[],
-): { fetchImpl: never; calls: { url: string; key: string; body: Record<string, unknown> }[] } {
+function fakeFetch(responses: (() => Response | Promise<Response>)[]): {
+  fetchImpl: FetchLike;
+  calls: { url: string; key: string; body: Record<string, unknown> }[];
+} {
   const calls: { url: string; key: string; body: Record<string, unknown> }[] = [];
-  const fetchImpl = (async (url: string, init: { headers: Record<string, string>; body: string }) => {
-    calls.push({ url, key: init.headers["x-api-key"] ?? "", body: JSON.parse(init.body) });
+  const fetchImpl: FetchLike = async (url, init) => {
+    calls.push({ url, key: init.headers["x-api-key"] ?? "", body: JSON.parse(init.body) as Record<string, unknown> });
     const next = responses[calls.length - 1];
     if (!next) throw new Error("假 fetch 收到的请求比预期多");
     return next();
-  }) as unknown as never;
+  };
   return { fetchImpl, calls };
 }
 
@@ -23,12 +24,12 @@ const okBody = {
   ],
 };
 
-const opts = { keys: ["key-1", "key-2"], baseUrl: "https://api.exa.ai", timeoutMs: 1000 };
+const base = { keys: ["key-1", "key-2"], baseUrl: "https://api.exa.ai", timeoutMs: 1000 };
 
 describe("Exa 检索客户端", () => {
   it("一次 /search 连正文一起取回；正文预算按条数摊分", async () => {
     const { fetchImpl, calls } = fakeFetch([() => new Response(JSON.stringify(okBody), { status: 200 })]);
-    const results = await new Exa(opts, fetchImpl).search("昭和喫茶店 内装", 5);
+    const results = await new Exa({ ...base, fetchImpl }).search("昭和喫茶店 内装", 5);
 
     expect(calls[0]!.url).toBe("https://api.exa.ai/search");
     expect(calls[0]!.key).toBe("key-1");
@@ -45,7 +46,7 @@ describe("Exa 检索客户端", () => {
 
   it("条数少时单条正文上限抬高，但封顶 6000", async () => {
     const { fetchImpl, calls } = fakeFetch([() => new Response(JSON.stringify({ results: [] }), { status: 200 })]);
-    await new Exa(opts, fetchImpl).search("x", 1);
+    await new Exa({ ...base, fetchImpl }).search("x", 1);
     expect(calls[0]!.body).toMatchObject({ contents: { text: { maxCharacters: 6000 } } });
   });
 
@@ -55,7 +56,7 @@ describe("Exa 检索客户端", () => {
       () => new Response(JSON.stringify(okBody), { status: 200 }),
       () => new Response(JSON.stringify(okBody), { status: 200 }),
     ]);
-    const exa = new Exa(opts, fetchImpl);
+    const exa = new Exa({ ...base, fetchImpl });
     expect((await exa.search("a", 5)).length).toBe(2);
     // 第二轮直接从 key-1 起步（成功后光标推到「生效那把」的下一把，两把 key 就是回环）
     await exa.search("b", 5);
@@ -69,13 +70,13 @@ describe("Exa 检索客户端", () => {
       },
       () => new Response(JSON.stringify(okBody), { status: 200 }),
     ]);
-    expect((await new Exa(opts, fetchImpl).search("x", 5)).length).toBe(2);
+    expect((await new Exa({ ...base, fetchImpl }).search("x", 5)).length).toBe(2);
     expect(calls.map((c) => c.key)).toEqual(["key-1", "key-2"]);
   });
 
   it("持久错误（400）不轮换 key：换一把也一样失败，只白烧往返", async () => {
     const { fetchImpl, calls } = fakeFetch([() => new Response("bad query", { status: 400 })]);
-    await expect(new Exa(opts, fetchImpl).search("x", 5)).rejects.toThrow(/HTTP 400: bad query/);
+    await expect(new Exa({ ...base, fetchImpl }).search("x", 5)).rejects.toThrow(/HTTP 400: bad query/);
     expect(calls.length).toBe(1);
   });
 
@@ -84,7 +85,7 @@ describe("Exa 检索客户端", () => {
       () => new Response("nope", { status: 401 }),
       () => new Response("nope", { status: 429 }),
     ]);
-    await expect(new Exa(opts, fetchImpl).search("x", 5)).rejects.toThrow(/全部 key 失败.*HTTP 429/);
+    await expect(new Exa({ ...base, fetchImpl }).search("x", 5)).rejects.toThrow(/全部 key 失败.*HTTP 429/);
     expect(calls.length).toBe(2);
   });
 });

@@ -1,22 +1,38 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { type Static, Type } from "@earendil-works/pi-ai";
-import type { Exa, ExaResult } from "../exa.js";
-import { reason, textResult } from "./result.js";
+import type { TSchema } from "@earendil-works/pi-ai";
+import { pick, tighten, webSearch, webSearchFields, type Exa, type InferArgs } from "@aivn/agent";
+import { textResult } from "./result.js";
+import { toPi } from "./schema.js";
 
 /**
- * 联网检索（两个角色共用）。
+ * 联网检索（两个角色共用）——**服务端的 face**。
  *
- * 这张牌只打给**剧目之外的事实**：年代与地域的真实细节、某类职业/题材的常见桥段、
- * 生图要用的英文画风词。剧目内部的一切（角色、地点、前情、已定画风）在剧目文件与记忆里。
- * 没配 Exa key 就不注册——装一个必然失败的工具只会诱使模型反复空转。
+ * 能力（参数真相源、描述正文、实现）在 `@aivn/agent` 的 `web.search`；这里只声明服务端这一面：
+ * 露哪几格、叫什么名字、以及 pi 运行时认得的范围收紧（DSH 侧的 schema 子集不认 minLength，
+ * 所以这类收紧按规约写在宿主这一侧，不进共享字段）。
  */
-const webSearchParams = Type.Object(
-  {
-    query: Type.String({ minLength: 1, maxLength: 400 }),
-    numResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
-  },
-  { additionalProperties: false },
-);
+
+/** 工具面：两个参数都露，`numResults` 的范围由 pi 硬校验。 */
+const FACE = tighten(pick(webSearchFields, ["query", "numResults"]), {
+  query: { minLength: 1, maxLength: 400 },
+  numResults: { minimum: 1, maximum: 10 },
+});
+
+const PARAMETERS: TSchema = toPi(FACE);
+
+type WebSearchArgs = InferArgs<typeof webSearchFields>;
+
+/** 联网检索工具：Exa 一次调用同时给结果与正文，模型不必再单独抓页。 */
+export function createWebSearchTool(exa: Exa): AgentTool<TSchema> {
+  return {
+    name: "web_search",
+    label: "联网检索",
+    description: webSearch.doc,
+    parameters: PARAMETERS,
+    // 参数类型由能力的 fields 反推（`InferArgs`），运行期校验由上面编译出来的 TypeBox 承担。
+    execute: async (_toolCallId, params) => textResult(await webSearch.execute(params as WebSearchArgs, exa)),
+  };
+}
 
 /** 提示词里的联网章节（两个角色共用一份话术，配了 Exa key 才注入）。 */
 export const SEARCH_GUIDE = `# 联网检索（web_search）
@@ -31,34 +47,3 @@ export const SEARCH_GUIDE = `# 联网检索（web_search）
 - 引用了就给出链接（\`标题 <url>\`），用户要能溯源。
 - 命中的页面多半是外文（实测日文居多）：**写进剧目文件的内容一律用中文**，别跟着源页的语言走。
 `;
-
-/** 联网检索工具：Exa 一次调用同时给结果与正文，模型不必再单独抓页。 */
-export function createWebSearchTool(exa: Exa): AgentTool<typeof webSearchParams> {  return {
-    name: "web_search",
-    label: "联网检索",
-    description:
-      "搜互联网并把结果正文一起读回来（一次调用同时完成搜索与取信息）。" +
-      "只在**剧目之外的事实**上用它：年代与地域的真实细节、某类职业/题材的常见桥段、生图要用的英文画风词、" +
-      "用户丢给你的链接讲了什么。剧目内部的一切（角色、地点、前情、已定画风）在剧目文件与记忆里，先读那些。" +
-      "query 写成一句自然语言描述你想要的页面（这是语义检索），不是关键词堆砌。",
-    parameters: webSearchParams,
-    execute: async (_toolCallId, params: Static<typeof webSearchParams>) => {
-      try {
-        return textResult(renderSearchResults(params.query, await exa.search(params.query, params.numResults ?? 5)));
-      } catch (error) {
-        return textResult(`检索失败：${reason(error)}`);
-      }
-    },
-  };
-}
-
-/** 检索结果渲染：一条结果一段（标题 + 链接 + 日期 + 正文），来源 URL 一定要带上——模型要靠它回话。 */
-export function renderSearchResults(query: string, results: ExaResult[]): string {
-  if (results.length === 0) return `「${query}」没有结果。换个说法再试一次，或者放弃这条线。`;
-  return results
-    .map((r, i) => {
-      const date = r.publishedDate ? `　${r.publishedDate.slice(0, 10)}` : "";
-      return `${i + 1}. ${r.title}\n${r.url}${date}\n${r.text.trim() || "（这条没有正文，只有标题与链接）"}`;
-    })
-    .join("\n\n");
-}
