@@ -195,7 +195,9 @@ P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进�
 | P5-d | ✅ 完成：包新增 `asset.annotate`（元数据一个家 `meta.ts`）、`music.generate` 收到 4 格、`declareMeta` 成唯一写口；服务端新 face `annotate_asset`（三类图走 PlayAssets、配乐走 PlayMusic），`generate_bgm` 3 格、只写来源标记；插件新工具（9→10）、技能与 README 跟上 | — |
 | P5-e | ✅ 完成（D3 = 换完整报告）：包里新增能力 `play.readiness`（判据与渲染同源），服务端 `get_readiness` → `validate_play`（描述与报告都取能力），工坊提示词《当前状态》改用同一份；插件 `validate_play` 也切到能力 | — |
 | P5-f | ✅ 完成：服务端 `view_image` 整段删掉（本地图走 pi `read`、网图 bash 抓回来再读），`webImage` 缓存管线与 `view` 能力行一并清掉；**插件不补工具**——两边都把看图交还宿主文件工具 | — |
-| P5-g…i | 待做 | — |
+| P5-g 配置工具形状统一 | ⛔ 作废（D4 结论：删工具，不是统一形状 → 见 P6-b） | — |
+| P5-h 插件 BGM 异步化 | ⏸ 用户 2026-10-10 定「先不做」——同步异步与队列整体再看 | — |
+| P5-i 契约与文档收尾 | 🔄 部分完成：能力矩阵已按 P5-c…f 的新形态重写；§9 已按复核更正；守卫第 10 项（face 参数必须由 pick 声明）未做，另行评估 | — |
 
 **排序理由**：a 是 c 的前置且纯加法（低风险先做）；c 是收益最大的一步（消灭同名不同义 + 拆复合动词），
 但要用 a/b 铺路；d 依赖 c（宏的第三步是 register）；e/g/h 都是「形状统一」而非「能力共享」，价值递减、
@@ -514,8 +516,11 @@ cd /root/projects/dsh-aivn-shared && npm run typecheck && node build.mjs --check
 **验证**：`pnpm --filter @aivn/server exec vitest run test/craftTool.test.ts test/craftParams.test.ts test/workshop*.test.ts`；
 插件 `e2e:media` + `e2e:style` 套件（`node e2e/run.mjs style` 不含真 LLM 的那几条）。
 
-**停止点**：D4 —— 值不值得为形状一致牺牲 pi 的硬校验。**若用户说不值，这一段整段删掉**，
-把「形状不一致」登记进契约矩阵的 `intentionalDifference`。
+**停止点**：D4 —— 值不值得为形状一致牺牲 pi 的硬校验。
+
+> **2026-10-10 结论：整段作废。** 用户的追问（「这类工具不能用文件工具代替吗」）把题换了：
+> 正确的方向不是统一形状，而是**删掉 `set_craft`**（服务端也用 `edit` 改 play.json）。
+> 该结论落在 **P6-b**（见 `261009-aivn-agent-package.p6.plan.md`），已随本轴实施完成。
 
 ---
 
@@ -535,6 +540,8 @@ cd /root/projects/dsh-aivn-shared && npm run typecheck && node build.mjs --check
 
 **停止点**：D5 —— 先确认「到货播报落在哪个轮边界」是否可接受（最坏情况：玩家下一轮才看见）。
 **若用户不接受，本段整段不做**：同步等待是**真宿主机制**下的合理选择，不是错误。
+
+> **2026-10-10 结论：用户定「先不做」**（原话：同步异步还有队列的问题后面我们整体再看）。整段搁置。
 
 ---
 
@@ -627,6 +634,15 @@ cd /root/projects/dsh-aivn-shared
 
 ## 9. P6 轴：宿主流程工具文件化（范围分析，2026-10-09）
 
+> **2026-10-10 更正（expert 独立复核 + 用户拍板）**：本节有三处论断被推翻，**以下文为准**：
+> ① 服务端工具面是 **25** 项不是 24（12 宿主流程 + **13** 其它，`kit.ts:276-305`），插件目录是 **10** 不是 9；
+> ② 「`stateFiles` 随快照走，所以搬进 `state.json` 不损回滚语义」**不成立**——`engine` 与 `stateFiles`
+>    是分开快照、分开恢复的，普通文件不会自动 branch-local；
+> ③ 「工坊文件页与 `set_craft` 共用一条写队列」**不成立**——文件页 PUT 走 `workshop.writeFile` →
+>    `playFiles.ts:220-240`，不经 `withPlayConfigLock`，事实是**锁与无锁写者并存**。
+> 另：`library_import` 与插件 `import_asset` **不同义**，不计统一收益。
+> 复核全文见 `261009-p6-scope-review.md`；执行计划与四问结论见 `261009-aivn-agent-package.p6.plan.md`。
+
 > **这一节只回答一个问题**：服务端那 12 个**宿主流程工具**能不能用文件工具
 > （`read` / `write` / `edit` / `grep` / DSL 标签）替代；替代之后两个宿主的工具面是否就统一了。
 >
@@ -637,7 +653,7 @@ cd /root/projects/dsh-aivn-shared
 >   **4 个能文件化但统一收益为 0**（`search_archive` / `list_saves` / `read_lineage` / `list_library`
 >   —— 数据确实在盘上，但插件侧**没有对应物**，文件化只是服务端内部重构）；
 >   **4 个不该动**（`beat_done` / `enter_nsfw` / `exit_nsfw` / `read_skill`）。
-> - 这一块两边**今天完全不统一**（插件 9 个工具里一个流程工具都没有，`src/tool-catalog.ts:53-118`；
+> - 这一块两边**今天完全不统一**（插件 10 个工具里一个流程工具都没有，`src/tool-catalog.ts:53-125`；
 >   e2e 反向钉死：`e2e/verify-injection.mjs:151/162` 的 A12/A13b、`e2e/verify-stagehand.mjs:170` 的 S14）。
 > - 正确的统一方式是**数据面**而不是**工具面**：领域数据以**剧目文件**为真相源（插件已经这样），
 >   工具只在「它动的是运行时」时才存在；**这 12 个里恰好有一半动的是运行时**，文件化不了也不该文件化。
@@ -677,7 +693,9 @@ cd /root/projects/dsh-aivn-shared
 **形态**：删工具。`state.json` 承载 `{affinity, flags}`，`scene.md` / `threads.md` 不变。
 **关键前提（这条真能做，靠它）**：`stateFiles` **本来就是「随快照走的文件内容」**
 （`orchestrator.ts:2105-2112` 的 `SnapshotFacts.stateFiles`，回滚走 `:1594-1595`），
-所以把 `affinity` / `flags` 从 `engine` 搬进 `state.json` **不损回滚语义**——
+所以把 `affinity` / `flags` 从 `engine` 搬进 `state.json` 的队伍里有这样一条希望——**但它不成立**
+（2026-10-10 更正：两者是分开快照、分开恢复的，普通文件不会自动 branch-local，见
+`261009-p6-scope-review.md` §5）——
 今天它们只是恰好存在 `engine` 里而不是文件里（`orchestrator.ts:1706` 的
 `renderStateSection(engine, scene, stateFiles)` 把两者拼在一起渲染）。
 
@@ -716,8 +734,10 @@ A 区索引带路径，模型 `read memory/index/<层>/<名>.md`。
 
 **代价与风险**：
 
-- **并发是真损失**：`withPlayConfigLock`（`craftTool.ts:14-16`）是与「引用即导入」、工坊文件页
-  共用的写队列；模型手写 `edit` 撞上另一个写者会**静默丢更新**。这不是审美问题。
+- **并发**（2026-10-10 更正）：`withPlayConfigLock` 保护的是**服务端内部**的读改写事务；文件页 PUT
+  与模型的 `write`/`edit` 本来就在锁外，且是「上游 stale read + 全量写」——加目录锁也挡不住。
+  所以删掉 `set_craft` 是「少一个受锁写者」，**不是新增一类竞态**；「人 vs 模型」的冲突要另走
+  乐观并发（见 `docs/issues/261010-play-json-write-conflict/`）。
 - **硬校验降级**：pi 的 `Type.Literal` 当场拒非法取值 → 退化成 `validate_play` 事后报
   （插件 `validate_play` 的职责里已含「craft 取值对不对」，`src/tool-catalog.ts:60-66`）。
 - 提示词 3 处（`apps/server/src/workshop.ts:185, 230, 247`）；测试 `test/craftTool.test.ts`、
@@ -757,12 +777,13 @@ grep 读不到这个标记）；
 
 ### 9.5 统一后的目标形态
 
-**工具面算术**（今天 24 = 12 宿主流程 + 12 其它；`kit.ts:275-303`）：
+**工具面算术**（2026-10-10 更正：P5-a…f 落地后是 **25 = 12 宿主流程 + 13 其它**；`kit.ts:276-305`）：
 
 | 口径 | 结果 |
 | --- | --- |
-| 全部文件化的**理论下限** | 24 → **12**（不采纳：4 条零收益 + 4 条不能） |
-| **建议做** | 删 4（`update_state` / `read_memory_detail` / `set_craft` ＋ `library_import` 并入 P5-a 的 `import_asset`）→ 24 → **20**；宿主流程工具 12 → **8** |
+| 全部文件化的**理论下限** | 25 → **13**（不采纳：4 条零收益 + 4 条不能） |
+| **实际执行**（P6-a + P6-b） | 删 2（`read_memory_detail` / `set_craft`）→ 25 → **23**；宿主流程工具 12 → **10** |
+| `library_import` 并入 `import_asset` | 只省服务端代码，**不计统一收益**（两者不同义） |
 | **叠加 P5 末态** | P5 净 +1（+`import_asset` +`annotate_asset` −`commit_asset`，末态 26；若 P5-f 也删 `view_image` 则 25）→ **26 → 22** |
 
 **保留的 8 个宿主流程工具**（`beat_done` / `enter_nsfw` / `exit_nsfw` / `read_skill` /
@@ -783,7 +804,8 @@ grep 读不到这个标记）；
 
 ### 9.6 建议的切法
 
-**结论：单独立 P6，不进 P5（不作为 P5-j）。** 三个理由：
+**结论：单独立 P6，不进 P5（不作为 P5-j）。** 三个理由（2026-10-10 起 P6 已立：
+执行计划与四问结论在 `261009-aivn-agent-package.p6.plan.md`，本节判定表按该文件的 §2 与 §6 读）：
 
 1. **与 P5 无耦合**：P5 收的是「同一动作两侧不同写法」（face 层），这一轴收的是「工具该不该存在」
    （存在性）。混在一份计划里，P5-c 那次「唯一改服务端操作流程」的停止点会被这一轴淹没。
