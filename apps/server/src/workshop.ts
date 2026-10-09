@@ -174,23 +174,30 @@ function playLanguageNote(ctx: WorkshopPromptContext): string {
 }
 
 /**
- * 设定流程：第 3 步查资源库那句按库是否可用收条件（工具没注册就别在提示词里教它调），
- * 第 3 步的「拿到批准」与第 4 步的落盘去处都按本剧目的设置分叉。
+ * 设定流程的**指针**：四步做法与各文件写法的全文在 skill `galgame-play-setup` 里。
+ *
+ * 为什么只留指针：那段全文（四步走、premise/角色卡/记忆卡/素材表各写什么、play.json 字段表）
+ * 有 100 多行，每轮对话都在为它付 token，而它只在「起新剧目 / 改设定」那一刻用得上——
+ * 正是渐进披露该下沉的东西。DSH 那条线早就这么做了（`aivn-play-setup`），这里是补齐。
+ *
+ * 留在正文里的只有**门控与分叉**：skill 恒可见、没有能力位门控，所以「本剧目有没有写口」
+ * 「要不要审批」这些随实例变化的话必须由提示词说，否则没配写口的实例会从 skill 里
+ * 读到教它 `set_craft` 的正文。
  */
 function setupFlow(ctx: WorkshopPromptContext): string {
   const approval = ctx.imageApproval === "auto" ? "（本剧目免审批，列完直接出）" : "**用户没点头之前，一张都不要 generate_image。**";
+  const fallback = ctx.can.files
+    ? ""
+    : `\n\n**本剧目没给你写口**（Agent 页关了「改剧目文件」）：把 premise、创作口径、写作参数、角色卡整理成一份「改哪个文件、写什么」的清单交给用户，让他在工坊里自己改；不要把清单当成已经写进去了。`;
   return `# 设定流程（这是你的工作方式，不是可选建议）
 
-用户要开新剧目、或要改现有剧目的设定时，按下面四步走，**不要跳步**：
+用户要开新剧目、或要改现有剧目的设定时，**先 read_skill("galgame-play-setup") 再动手**——
+四步走、premise／角色卡／记忆卡／素材表各写什么、play.json 有哪些字段、写作参数与创作口径
+怎么分，全在那份全文里。别凭印象开写。
 
-1. **先问清再动手**：一轮里问 3~5 个问题就把骨架定下来——故事类型与基调、时代与地点、主角是谁、主角想要什么/被什么困住、核心角色 1~2 位、画风与文风、**节奏（想让人物一口气演一段，还是每轮都给玩家选择）**。**每个问题都带上你的具体默认提案**（用户点一下"就按你说的来"就能继续），别让人从零填空。
-2. **给完整提案再落盘**：把理解成的 premise（3~6 句）、角色卡、创作口径、写作参数、还缺哪些视觉素材一次性摆给用户看，等一句"可以/就这样"再落盘。
-3. **${ctx.imageApproval === "auto" ? "列图单、免审批出图" : "列图单、拿到批准才出图"}**：${ctx.can.library ? "先查资源库（\`list_library\`），" : ""}再告诉用户"接下来要出这几张图：背景 A（说清是什么场景）、立绘 \`<角色id>/neutral\`、…，各是什么画面、为什么要"。${approval}出图要钱也要时间。
-${
-    ctx.can.files
-      ? `4. **落盘后同步记忆**：premise 写进 memory/always/premise.md，**创作口径写进 memory/always/craft.md**、**写作参数用 \`set_craft\`**（下面「剧目写作要点」里说清两者分别装什么；不是只在对话里说一句）。`
-      : `4. **交给用户落盘**：本剧目没给你写口——把 premise、创作口径、写作参数、角色卡整理成一份「改哪个文件、写什么」的清单交给用户，让他自己在工坊里改；不要把清单当成已经写进去了。`
-  }`;
+一句话概括：**先问清骨架 → 给完整提案等用户点头 → 列图单（${approval}）→ 落盘后同步记忆。**
+
+出图那一步${ctx.imageApproval === "auto" ? "免审批" : "要批准"}；${ctx.can.library ? "列图单前先查资源库（`list_library`）看有没有现成的。" : "本剧目查不了资源库，按需要出。"}${fallback}`;
 }
 
 /**
@@ -212,10 +219,12 @@ function voicePickHint(ctx: WorkshopPromptContext): string {
 }
 
 /**
- * 剧目写作要点：正文里的音色 / 资源库导入两句按能力位收条件。
+ * 剧目写作要点的**指针**：各文件写什么的全文在 skill `galgame-play-setup` 里。
  *
- * 整章讲的都是「往哪个文件的哪个字段写什么」，没开「改剧目文件」时只剩讨论的价值——
- * 换成一份清单式 fallback，别教它用 `set_craft`、也别教它手写 play.json。
+ * 与 setupFlow 同一套理由（那 50 行「往哪个文件哪个字段写什么」只在落盘那一刻用得上）。
+ * 留在这里的是**随实例变化的门控**与**当前生效值**：
+ * - 没开「改剧目文件」时换成清单式 fallback，别教它用 `set_craft`、也别教它手写 play.json；
+ * - 写作参数的当前值由 A 区现读注入（`craftNow`），skill 里给不了这个。
  */
 function writingPoints(ctx: WorkshopPromptContext): string {
   if (!ctx.can.files) {
@@ -226,46 +235,19 @@ function writingPoints(ctx: WorkshopPromptContext): string {
   }
   return `# 剧目写作要点
 
-- premise：3~6 句，交代世界、主角处境、核心张力；不要写成大纲列表。
-- 写作参数（play.json 的 \`craft\` 段，**用 \`set_craft\` 工具改**）：**每轮篇幅**、**停止点给几条选项**、
-  **素材来源**（背景/插图/立绘/音效逐类）——这三件有确定取值的事。改完立刻生效，用户也能在「剧目」页
-  看到同一份值，所以别手写 play.json，也别在 craft.md 里再写一遍。当前生效值：
+premise、角色卡、记忆卡、素材描述表各写什么、play.json 有哪些字段、写作参数与创作口径怎么分，
+**全文在 skill \`galgame-play-setup\` 里**（read_skill 读它）；这里只说本剧目当下生效的口径：
+
+- 写作参数（play.json 的 \`craft\` 段，**用 \`set_craft\` 工具改**）当前生效值：
 ${craftNow(ctx)}
-- 创作口径（memory/always/craft.md）：**剧作家每一轮怎么写，听这一份**，但它只装**拿话说的那部分**——
-  文风与禁忌、称呼与口癖、叙述视角与节奏感、场景转换的偏好、
-  **主角的呈现**（主角是藏在台后，还是也上台露面、也有立绘与配音）。
-  **每轮多长、选项几条、素材从哪来不要写在这里**（那是写作参数，写两处必然打架）。
-  这个文件空着，剧作家就少一层口径可听；跟用户对齐完文风就落进去，不要只在对话里说一句「知道了」。
-  只写风格条目，不要往里写 DSL 格式或工具用法，那些由引擎保证。
-  用户改主意时——「文风再冷一点」改这个文件，「节奏太快」「选项给太多」「每段写短点」「背景别自己画」用 \`set_craft\`。
-- 角色卡（\`characters/<id>.md\`，角色的一切都在这张卡里，play.json 不再存角色数据）：
-  头部 frontmatter 放机器字段（id / name / sprite / voice / voiceId），正文写具体的人（年龄/关系/说话方式/在意的点）。
-  \`sprite\` 是可省的立绘绑定：这个角色用 \`assets/sprites/<这个名字>/\` 那套立绘，不写就是与卡同名——要复用别处画好的一整套才写它。
-  ${voicePickHint(ctx)}
-  ${ctx.can.library ? "库里已有合适的角色可以先 \`import_asset\`（kind=characters）导进来再改，别从零重写。" : ""}
-  玩家扮演的主角也是一张普通角色卡，id 固定 \`protagonist\`（\`characters/protagonist.md\`）：要改主角设定就改这张，别另建。
-- play.json（剧目配置，「剧目」页改的也是它）就这些字段：
-  \`title\`、\`opening\`（开局指令）、\`scriptLanguage\`（剧本语言，ISO 639-1 如 "ja"；不写 = 跟随玩家输入）、
-  \`voiceLanguage\`（语音语言，ISO 639-1 如 "ja"；不写 = 台词按剧本原文配音）、
-  \`defaultVoiceId\`（无名角色、临时角色的兜底音色，32 位 hex）、
-  \`cover\`（封面图，写法见「出图要点」）、\`initialState\` / \`initialScene\`（开局状态）、
-  \`craft\`（写作参数，用 \`set_craft\` 改，不要手写）、\`image\`（逐剧目的生图 model / size，不写跟服务端全局）、
-  \`agents\`（两个 agent 的 model / thinking / capabilities / imageApproval）。
-  除 \`id\` / \`title\` 外全是可选字段：缺一个不报错，只是那份效果静默消失（缺 \`defaultVoiceId\` 无名角色没声音、
-  缺 \`scriptLanguage\` 跟随玩家输入、缺 \`craft\` 走引擎默认、缺 \`agents\` 能力开关回默认）。
-  **改它只用 \`edit\` 改点名的字段，不要整篇 \`write\` 覆盖。**
-- 记忆卡（memory/index/<名字>.md）：首行 \`# 标题\`，次行一句话摘要，其余是详情。
-  index 下可以建子目录分门别类，**建议** \`locations/\` 放地点、\`lore/\` 放世界设定（不是硬要求，
-  但分类后 A 区里每行都带 [分类] 前缀，剧作家更容易知道该去哪张卡里查）。
-- 记忆卡是给演出用的：写具体可用的设定（地点长什么样、约定是什么），不写"待补充"。
-- 素材描述表（assets/manifest.json）：\`{"文件名去扩展名": "画面里有什么"}\`。剧作家只看得懂 id 认不出画面，
-  背景/插图/立绘差分配一句具体描述（色调、时间、氛围），差分名与画面不符时在描述里点明。
-  立绘差分的键写 \`<角色id>/<差分名>\`（如 \`角色A/neutral\`），出图那一轮就补上，别攒到下次。
-  补描述用 \`edit\` 定点改那一条：oldText 抄**那一个键所在的完整一行**（带键名和引号），
-  别拿别的条目的行当锚点——替换的是整行，锚错一条就等于抹掉一条描述
-  （实测：补 neutral 时把 normal 的描述整行替掉了）。也别整篇覆盖这张表。
-  出图用的 prompt 原文由引擎记在 assets/generated.json（你读得到、也改不动）：要重出同一张图，
-  先 read 看上一版是怎么写的，在它基础上改，别每次从零重编。`;
+  改完立刻生效，用户也能在「剧目」页看到同一份值。**别手写 play.json，也别在 craft.md 里再写一遍。**
+- 创作口径（memory/always/craft.md）装的是**拿话说的那部分**：文风与禁忌、称呼与口癖、叙述视角与节奏感、
+  场景转换的偏好、**主角的呈现**。每轮多长、选项几条、素材从哪来**不要写这里**（那是写作参数）。
+- 角色卡在 \`characters/<id>.md\`（角色的一切都在这张卡里，play.json 不再存角色数据）；
+  主角固定 \`characters/protagonist.md\`。${voicePickHint(ctx)}
+  ${ctx.can.library ? "库里已有合适的角色可以先 `import_asset`（kind=characters）导进来再改，别从零重写。" : ""}
+- **改既有文件用 \`edit\` 定点改，别整篇 \`write\` 覆盖**：那会抹掉你没提到的机器字段
+  （角色卡的 \`voiceId\`、素材表别的条目）。`;
 }
 
 /** 压缩摘要的 A 区回注段：告诉搭台者「这些早前就定了」，否则它会重问一遍已经答过的问题。 */

@@ -216,6 +216,41 @@ check("能力矩阵与能力目录一一对应", () => {
   return problems;
 });
 
+check("恒列 skill 的 description 保持能力中立", () => {
+  // skill 的 name + description 是**恒列**进提示词的（模型靠它决定要不要读全文），
+  // 而 skill 本身没有能力位门控。所以 description 里不能点名那些「没配后端就不注册」的工具——
+  // 否则没配音乐后端的实例也会从清单里读到「用 generate_bgm 出曲」，然后去找一个不存在的工具。
+  // 正文里点名可以，但必须条件化（先说清楚本剧目配没配）。
+  const GATED_TOOLS = ["generate_bgm", "generate_image", "generate_asset", "list_voices", "web_search"];
+  const problems = [];
+  const skillRoot = join(ROOT, "apps/server/skills");
+  for (const name of readdirSync(skillRoot)) {
+    const file = join(skillRoot, name, "SKILL.md");
+    let source;
+    try {
+      source = readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    const fm = source.match(/^---\n([\s\S]*?)\n---/);
+    if (!fm) {
+      problems.push(`${name}/SKILL.md 没有 frontmatter`);
+      continue;
+    }
+    const descLine = fm[1].split("\n").find((l) => l.startsWith("description:"));
+    if (!descLine) {
+      problems.push(`${name}/SKILL.md 的 frontmatter 没有 description`);
+      continue;
+    }
+    for (const tool of GATED_TOOLS) {
+      if (descLine.includes(tool)) {
+        problems.push(`${name} 的 description 点名了门控工具「${tool}」——它会在没配后端的实例上恒列`);
+      }
+    }
+  }
+  return problems;
+});
+
 if (process.argv.includes("--list")) {
   for (const { name } of checks) console.log(`- ${name}`);
   process.exit(0);

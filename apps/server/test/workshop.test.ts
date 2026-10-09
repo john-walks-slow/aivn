@@ -19,6 +19,7 @@ import { buildWorkshopPrompt, deriveThreadTitle, type WorkshopPromptContext } fr
 import type { WorkshopKitDeps } from "../src/agentkit/deps.js";
 import { createAgentKit, defaultCapabilitiesFor, type AgentCapabilities } from "../src/agentkit/kit.js";
 import { renderReadiness } from "../src/agentkit/readiness.js";
+import { readSkill, skillsPrompt } from "../src/skills.js";
 import { Exa } from "../src/exa.js";
 import { createFakeStreamFn, BEAT_1, BEAT_2, PLAY } from "./helpers.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
@@ -393,12 +394,26 @@ describe("工坊 prompt 与工具", () => {
     expect(prompt).toContain("用户没点头之前一张都不要开跑");
     expect(prompt).toContain("先出 neutral 定妆照给用户看");
     expect(prompt).toContain("出图失败把接口原话带给用户");
-    // 描述表：立绘差分的键与剧作家查表一致；补描述只许定点改，别拿别的条目当锚点（实测抹掉过一条）
-    expect(prompt).toContain("<角色id>/<差分名>");
-    expect(prompt).toContain("别拿别的条目的行当锚点");
-    // 出图留痕：引擎写、agent 只读，重出前先看上一版 prompt
-    expect(prompt).toContain("assets/generated.json");
-    expect(prompt).toContain("先 read 看上一版是怎么写的");
+    // 各文件写法（素材描述表怎么补、立绘差分键怎么写、出图留痕怎么重出）已下沉到
+    // skill `galgame-play-setup`——这里断言**指针在**，全文由下面那条 skill 用例守。
+    expect(prompt).toContain("galgame-play-setup");
+  });
+
+  it("下沉的那份 skill 真能被读到，且保住了迁走的关键语义", async () => {
+    // 提示词只留指针，全文必须有地方可读——否则「下沉」等于删除。
+    // 这条与上一条配对：指针在提示词，语义在 skill。
+    const skill = await readSkill("galgame-play-setup");
+    // 迁走的三条最容易丢的语义，逐条钉住（它们此前由 prompt 断言守着）
+    expect(skill.content).toContain("<角色id>/<差分名>");
+    expect(skill.content).toContain("别拿别的条目的行当锚点");
+    expect(skill.content).toContain("assets/generated.json");
+    expect(skill.content).toContain("先 `read` 看上一版是怎么写的");
+    // 四步流程与写作参数/创作口径的分工，是这次迁移的主体
+    expect(skill.content).toContain("不要跳步");
+    expect(skill.content).toContain("写作参数 vs 创作口径");
+    expect(skill.content).toContain("不要写进 craft.md");
+    // skill 清单里真的列得出它（恒驻 name+description 是可发现性的前提）
+    expect(await skillsPrompt()).toContain("galgame-play-setup");
   });
 
   it("工坊 prompt：生图不可用时给替代路径，不教它调工具", async () => {
@@ -1170,8 +1185,12 @@ describe("工坊：写作参数与创作口径的交接，以及自定义提示�
     // 现值摆在提示词里，工坊回答「现在是什么节奏」不用去读 play.json
     expect(prompt).toContain("每轮篇幅：中等");
     expect(prompt).toContain("素材来源：背景 资源库优先");
-    // 别再让它把节奏写进 craft.md——写两处必然打架
-    expect(prompt).toContain("不要写在这里");
+    // 别再让它把节奏写进 craft.md——写两处必然打架。
+    // 措辞随语义一起收敛过：提示词里保留分工（「不要写这里」），详细写法在 skill 里。
+    expect(prompt).toContain("不要写这里");
+    // 这条分工的全文归 skill：那里逐字写着「不要写进 craft.md」
+    const skill = await readSkill("galgame-play-setup");
+    expect(skill.content).toContain("不要写进 craft.md");
   });
 
   it("写作参数现值跟着 play.json 走，报的是生效值不是默认值", async () => {

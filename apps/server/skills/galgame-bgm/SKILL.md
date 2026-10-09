@@ -1,6 +1,6 @@
 ---
 name: galgame-bgm
-description: 给 galgame / 视觉小说写 AI 生成 BGM 的英文提示词速查。含配器选型表、情绪走向写法、无缝循环怎么写进提示词、无人声/纯器乐约束、和弦色彩与「日系钢琴/八音盒/弦乐」这类具体风格的措辞、反例词表，以及 mood/scene 标签必须对齐素材库既有词表。当要给剧目生成 BGM（generate_bgm）、要把中文情绪翻成英文提示词、要生成的曲子风格不对、或要填 mood/scene/loop/volume 这些声明时使用。
+description: 给 galgame / 视觉小说写 AI 生成 BGM 的英文提示词速查。含配器选型表、情绪走向写法、无缝循环怎么写进提示词、无人声/纯器乐约束、和弦色彩与「日系钢琴/八音盒/弦乐」这类具体风格的措辞、反例词表，以及 mood/scene 标签必须对齐素材库既有词表。当要把中文情绪翻成英文提示词、要生成的曲子风格不对、或要填 mood/scene/loop/volume 这些声明时使用（本剧目配了音乐后端时才用得上）。
 user-invocable: true
 ---
 
