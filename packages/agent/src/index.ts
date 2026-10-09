@@ -17,8 +17,33 @@ export { CAPABILITIES } from "./capabilities/index.js";
 export type { SearchDeps } from "./capabilities/web/search.js";
 export { DEFAULT_RESULT_COUNT, renderSearchResults, webSearch, WEB_SEARCH_DOC, webSearchFields } from "./capabilities/web/search.js";
 
-export type { ExaOptions, FetchInitLike, FetchLike, FetchResponseLike, SearchResult } from "./search/exa.js";
+export type { FetchInitLike, FetchLike, FetchResponseLike } from "./http.js";
+export { defaultFetch } from "./http.js";
+export type { ExaOptions, SearchResult } from "./search/exa.js";
 export { Exa } from "./search/exa.js";
 
 export type { CutoutOptions, CutoutResult, CutoutTuning } from "./media/cutout.js";
 export { cutout, DEFAULT_TUNING, tuningFromEnv } from "./media/cutout.js";
+
+export type {
+  GeneratedImage,
+  ImageAspect,
+  ImageBackend,
+  ImageRequest,
+  ImageSize,
+  ImageSizeSpec,
+} from "./media/image.js";
+export {
+  aspectMatches,
+  extOf,
+  higherTier,
+  IMAGE_ASPECTS,
+  IMAGE_EXTS,
+  IMAGE_SIZES,
+  imageSizeText,
+  mimeForExt,
+  parseImageSize,
+  sizeOfImage,
+  sniffImageMime,
+  tierArea,
+} from "./media/image.js";

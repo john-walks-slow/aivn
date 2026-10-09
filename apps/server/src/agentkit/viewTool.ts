@@ -4,7 +4,7 @@ import { extname, join } from "node:path";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { extOf } from "../imageBackend.js";
-import { IMAGE_EXTS, mimeForExt, sniffImageMime } from "../imageMime.js";
+import { IMAGE_EXTS, mimeForExt, sniffImageMime } from "@aivn/agent";
 import { MAX_WEB_IMAGE_BYTES, type WebImage, type WebImageFetcher, webImageBase } from "../webImage.js";
 import { reason, textResult } from "./result.js";
 

@@ -2,7 +2,7 @@ import { lookup } from "node:dns/promises";
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { fetch as undiciFetch, ProxyAgent } from "undici";
-import { sniffImageMime } from "./imageMime.js";
+import { sniffImageMime } from "@aivn/agent";
 
 /**
  * 网络图片下载（工坊 `view_image` 的网络分支）。

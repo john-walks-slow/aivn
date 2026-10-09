@@ -13,6 +13,8 @@
  * - **代理不自己配**：包只认一个注入的 `fetch`。服务端的代理（undici ProxyAgent）与插件的
  *   环境变量代理都在各自的接线处烘进 `fetchImpl`——包不认识 undici（规约 R5）。
  */
+import { defaultFetch, type FetchLike } from "../http.js";
+
 export interface SearchResult {
   title: string;
   url: string;
@@ -20,23 +22,6 @@ export interface SearchResult {
   publishedDate?: string;
   text: string;
 }
-
-/** 注入的 fetch 只需要这么多：包不绑定任何一种 fetch 实现。 */
-export interface FetchInitLike {
-  readonly method: string;
-  readonly headers: Record<string, string>;
-  readonly body: string;
-  readonly signal: AbortSignal;
-}
-
-export interface FetchResponseLike {
-  readonly ok: boolean;
-  readonly status: number;
-  text(): Promise<string>;
-  json(): Promise<unknown>;
-}
-
-export type FetchLike = (url: string, init: FetchInitLike) => Promise<FetchResponseLike>;
 
 export interface ExaOptions {
   /** 至少一把；空数组是调用方的错，不是这里的运行状态。 */
@@ -61,7 +46,7 @@ export class Exa {
   private keyCursor = 0;
 
   constructor(private readonly opts: ExaOptions) {
-    this.fetchImpl = opts.fetchImpl ?? ((url, init) => globalThis.fetch(url, init));
+    this.fetchImpl = opts.fetchImpl ?? defaultFetch;
   }
 
   /** 语义检索：query 写成一句自然语言描述，不是关键词堆砌。 */

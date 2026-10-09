@@ -17,7 +17,7 @@ import {
 } from "@aivn/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
-import { IMAGE_EXTS, mimeForExt, sniffImageMime } from "./imageMime.js";
+import { IMAGE_EXTS, mimeForExt, sniffImageMime } from "@aivn/agent";
 import type { Limiter } from "./limiter.js";
 import { PlayMemory } from "./memory.js";
 import { errorText, jobIdForImage, type PendingJobs } from "./pendingJobs.js";
