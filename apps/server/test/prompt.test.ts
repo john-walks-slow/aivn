@@ -155,7 +155,7 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
     });
     expect(prompt).toContain("# 已生成的图");
     expect(prompt).toContain("bg_town_dusk（bg）—— small town at dusk, anime background");
-    expect(prompt).toContain("不要再 generate_image");
+    expect(prompt).toContain("不要再 generate_asset");
   });
 
   it("记忆索引：带 [分类] 前缀与这张卡自己的路径，顶层卡不打空括号", () => {
@@ -322,7 +322,7 @@ describe("buildSystemPrompt：写作参数与创作口径", () => {
     // 同一个规则写两遍，两处就会各自漂移——生图那几条已经漂移过一次了。
     const prompt = build({ play: PLAY, can: { image: true } });
     expect(prompt).not.toContain("<call:generate_image");
-    expect(prompt).toContain("看 generate_image 的工具说明");
+    expect(prompt).toContain("看 generate_asset 的工具说明");
   });
 
   it("schema 统一后，剧作家的引入新角色章不再说它没有 expression 参数", () => {
@@ -385,7 +385,7 @@ describe("能力位与提示词的一致性：没开的能力不教它调", () =
     expect(prompt).not.toContain("要人设或音色才建档（write）");
     expect(prompt).toContain("建档这条路本剧目没有给你");
     // 收掉的是「怎么调 write 建卡」，不是「怎么引入角色」这件事本身
-    expect(prompt).toContain('**2. 生立绘（generate_image kind="sprite"）**');
+    expect(prompt).toContain('**2. 生立绘（generate_asset kind="sprite"）**');
     expect(prompt).toContain("**3. 临时角色（一次性 NPC）**");
     expect(prompt).toContain("## 记忆卡（memory/index/）");
   });

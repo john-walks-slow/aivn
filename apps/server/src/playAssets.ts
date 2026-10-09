@@ -27,6 +27,7 @@ import {
   loadDraft as loadDraftFrom,
   markCommitted as markCommittedIn,
   mimeForExt,
+  readDraftImage,
   NEUTRAL_LEAD,
   newDraftId,
   persistAsset,
@@ -327,7 +328,7 @@ export class PlayAssets {
     // 事后换掉基准等于整套差分换人）。要出差分先出定妆照候选、挑一张入库。
     if (spec.kind === "sprite" && spec.variant !== NEUTRAL && !(await this.existingPath(spec.kindPath, NEUTRAL))) {
       throw new Error(
-        `${spec.spriteId} 还没有入库的 ${NEUTRAL} 定妆照：先出定妆照候选、挑一张用 commit_asset 采用，再派生差分。`,
+        `${spec.spriteId} 还没有入库的 ${NEUTRAL} 定妆照：先出定妆照候选、挑一张用 import_asset 采用（立绘先 cut），再派生差分。`,
       );
     }
     return this.produce(spec, prompt, style);
@@ -356,6 +357,12 @@ export class PlayAssets {
     });
     // 落位、素材表声明、台账、留底、留痕的编排在包里（与插件共用一份）；
     // 这里只把本层的 IO 口（`PlayFiles` 白名单 + 剧目锁 + notify）接上去。
+    // 候选不抠底（P5-c）：立绘的透明那一刀在**入库**时补上——入库那张必须是透明 PNG，
+    // 舞台靠 alpha 叠在场景上。
+    const imageOverride =
+      spec.kind === "sprite"
+        ? { bytes: (await cutout(await readDraftImage(this.deps.store.dir, draft.draftId, draft.imageExt), resolveTuning())).data, ext: ".png" }
+        : undefined;
     const adopted = await adoptDraft(
       {
         playDir: this.deps.store.dir,
@@ -365,6 +372,7 @@ export class PlayAssets {
       },
       draft,
       spec,
+      imageOverride,
     );
     return {
       kind: spec.kind,
@@ -464,12 +472,11 @@ export class PlayAssets {
     }
 
     const source = request.source?.trim();
-    if (!source) throw new Error("抠底要 source（一张纯色底图的路径，或 sprite:<主体id> 这样的素材引用）");
+    if (!source) throw new Error("抠底要 source（一张纯色底图的路径、draft:<草稿id>，或 sprite:<主体id> 这样的素材引用）");
     if (!output) throw new Error("抠底要 output（本宿主没有候选区：透明 PNG 写到哪里请显式给一个 assets/ 下的路径）");
-    const abs = this.deps.files.pathOf(source, "read");
-    if (!existsSync(abs)) throw new Error(`抠底的源图找不到：${source}`);
+    const read = await this.readSource(source, "抠底的源图");
     const existed = existsSync(this.deps.files.absoluteOf(output));
-    const { data, coverage, figureHeight } = await cutout(await readFile(abs), tuning);
+    const { data, coverage, figureHeight } = await cutout(read.bytes, tuning);
     const rel = await this.deps.files.writeBinary(output, data);
     return {
       kind: rel.startsWith("assets/backgrounds/") ? "background" : rel.startsWith("assets/cg/") ? "cg" : "sprite",
@@ -482,10 +489,29 @@ export class PlayAssets {
     };
   }
 
-  /** 读一张来源图：剧目内路径走 `PlayFiles` 白名单，http(s) 走带 SSRF 防护的下载器。 */
+  /**
+   * 读一张来源图。三种寻址：
+   *
+   * - `draft:<草稿id>`：**引擎自己的草稿**（刚出的候选）。句柄由本层解析——模型拿不到任意路径，
+   *   也就跨不出白名单；这也是「采用 = `import_asset(source=候选)`」在服务端唯一的走法。
+   * - 剧目内路径：走 `PlayFiles` 白名单（agent 读得到的只有 `assets/` 那几个面）。
+   * - http(s)：走带 SSRF 防护的下载器。
+   */
   private async readSource(source: string, what: string): Promise<AssetSource> {
     const src = source.trim();
-    if (src === "") throw new Error(`登记素材要 ${what}（剧目内相对路径 / http(s) 网址）`);
+    if (src === "") throw new Error(`${what} 要给（draft:<草稿id> / 剧目内相对路径 / http(s) 网址）`);
+
+    const draftId = /^draft:(\S+)$/.exec(src)?.[1];
+    if (draftId) {
+      const draft = await this.loadDraft(draftId).catch(() => {
+        throw new Error(`${what} 指的草稿不存在或已过期：${src}（草稿是中间物，会被定期清理）`);
+      });
+      const bytes = await readDraftImage(this.deps.store.dir, draft.draftId, draft.imageExt);
+      const mime = sniffImageMime(bytes);
+      if (!mime) throw new Error(`${what} 不是 png/jpeg/webp/gif 图片：${src}`);
+      return { bytes, ext: draft.imageExt };
+    }
+
     let bytes: Buffer;
     if (/^https?:\/\//i.test(src)) {
       if (!this.deps.fetchImage) throw new Error("外部网络图下载未配置（fetchImage 缺失），无法读 URL 图片。");
@@ -639,10 +665,10 @@ export class PlayAssets {
     }
     done?.();
     this.assertCanvas(spec, data);
-    // 立绘抠底成透明 PNG，同时把抠底前那张原片一起收进草稿——留底是抠底参数唯一的后悔药
-    // （见 `recut`），入库时跟着搬进 media-cache/sprite-sources/。
-    const bytes = spec.kind === "sprite" ? (await cutout(data, resolveTuning())).data : data;
-    return this.writeDraft(spec, fullPrompt, { image: bytes, raw: data, mimeType });
+    // **候选不抠底**（P5-c / D2）：抠底是显式的一步（`cut`），候选就是出图后端给的那张。
+    // 原片照样收进草稿（留底是抠底参数唯一的后悔药，见 `recut`），入库时跟着搬进
+    // media-cache/sprite-sources/。
+    return this.writeDraft(spec, fullPrompt, { image: data, raw: data, mimeType });
   }
 
   /**

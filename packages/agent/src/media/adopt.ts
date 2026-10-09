@@ -38,9 +38,19 @@ export interface AdoptedAsset {
   sourceRel: string | null;
 }
 
-/** 把一张草稿正式入库（调用方负责把草稿解析成落位规格）。 */
-export async function adoptDraft(host: AdoptHost, draft: DraftRecord, spec: AssetRef): Promise<AdoptedAsset> {
-  const bytes = await readDraftImage(host.playDir, draft.draftId, draft.imageExt);
+/**
+ * 把一张草稿正式入库（调用方负责把草稿解析成落位规格）。
+ *
+ * `imageOverride` 给「入库前还要对字节加工一道」的宿主用：服务端拿它给立绘补抠底
+ *（候选不抠底是 P5-c 定的，入库那张必须是透明 PNG）。
+ */
+export async function adoptDraft(
+  host: AdoptHost,
+  draft: DraftRecord,
+  spec: AssetRef,
+  imageOverride?: { bytes: Buffer; ext: string },
+): Promise<AdoptedAsset> {
+  const bytes = imageOverride?.bytes ?? (await readDraftImage(host.playDir, draft.draftId, draft.imageExt));
   // 留底跟着入库：重抠只认 media-cache/sprite-sources/ 那一份。
   const sourceRel =
     spec.kind === "sprite" && draft.sourceExt
@@ -52,7 +62,7 @@ export async function adoptDraft(host: AdoptHost, draft: DraftRecord, spec: Asse
         )
       : null;
 
-  const written = await persistAsset(host.assets, spec, bytes, draft.imageExt);
+  const written = await persistAsset(host.assets, spec, bytes, imageOverride?.ext ?? draft.imageExt);
   if (spec.kind === "sprite") await host.updateManifest((manifest) => declareSprite(manifest, spec));
   // 台账记的是**这张图当初的 prompt 原文**，不是这次采用时又写的一句话。
   await host.recordLedger(ledgerEntryOf(spec, written.rel, draft.prompt, new Date().toISOString()));

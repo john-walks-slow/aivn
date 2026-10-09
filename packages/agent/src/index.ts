@@ -21,6 +21,7 @@ export type { AssetGenerateArgs, AssetGenerateDeps, AssetGenerateResult } from "
 export { ASSET_GENERATE_DOC, assetGenerate, assetGenerateFields } from "./capabilities/asset/generate.js";
 export { ASSET_REGISTER_DOC, assetRegister, assetRegisterFields } from "./capabilities/asset/register.js";
 export type {
+  ImageGenerateArgs,
   ProducedImage,
   ImageGenerateDeps,
   ImageGenerateRequest,

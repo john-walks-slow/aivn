@@ -1,4 +1,4 @@
-import { optional, type FieldMap } from "../../schema/ir.js";
+import { optional, type FieldMap, type InferArgs } from "../../schema/ir.js";
 import { assetTargetFields } from "../asset/target.js";
 import type { Capability } from "../capability.js";
 
@@ -194,6 +194,9 @@ export interface ProducedImage {
 export interface ImageGenerateDeps {
   run(request: ImageGenerateRequest): Promise<ProducedImage>;
 }
+
+/** 参数类型：由 `fields` 反推（宿主 face 的 `execute` 用它标注入参）。 */
+export type ImageGenerateArgs = InferArgs<typeof imageGenerateFields>;
 
 export const imageGenerate: Capability<typeof imageGenerateFields, ImageGenerateDeps, ProducedImage> = {
   id: "image.generate",

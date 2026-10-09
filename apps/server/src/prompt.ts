@@ -239,7 +239,7 @@ function newCharacterRules(canCharacters: boolean): string {
 - 建档后到下一轮边界，角色就出现在 A 区角色表里。
 - 玩家扮演的主角也是一张普通卡，id 固定 \`protagonist\`（\`characters/protagonist.md\`）：要改主角设定就改它，别另建一张。`
     : `**1. 建档这条路本剧目没有给你**（Agent 页没开「管理角色」）：新主体直接上台——出图时把立绘目录名与名牌
-按 \`generate_image\` 的工具说明填上（这两样引擎照它建立绘目录）；只出声不上台的用 \`say\` 的 \`name\` 属性。`;
+按 \`generate_asset\` 的工具说明填上（这两样引擎照它建立绘目录）；只出声不上台的用 \`say\` 的 \`name\` 属性。`;
 
   return `## 引入新角色
 
@@ -247,11 +247,11 @@ function newCharacterRules(canCharacters: boolean): string {
 
 ${step1}
 
-**2. 生立绘（generate_image kind="sprite"）**，后台出图，不阻塞台词：
+**2. 生立绘（generate_asset kind="sprite"）**，后台出图，不阻塞台词：
 
-    generate_image(kind="sprite", spriteId="xiaoyu", variant="neutral", framing="half", stature="normal", title="小雨", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view")
+    generate_asset(kind="sprite", spriteId="xiaoyu", variant="neutral", framing="half", stature="normal", title="小雨", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view")
 
-- 参数怎么填看 \`generate_image\` 的工具说明——这里不重述，免得两处各说各的
+- 参数怎么填看 \`generate_asset\` 的工具说明——这里不重述，免得两处各说各的
 - 非 neutral 的差分会自动垫该主体已有的 \`neutral\` 定妆照，所以是同一个人
 - \`title\` 是这个主体在名牌上显示的名字——**没有角色卡的主体必须给**，否则名牌只能显示 id
 - 立绘目录里**已有**的差分直接用 \`<actor id="xiaoyu" variant="smile">\`，不要为了凑表情去生成
@@ -368,7 +368,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 
   const generatedSection =
     generated.length > 0
-      ? `\n# 已生成的图（早已存在，直接引用 id，不要再 generate_image）\n\n${generated
+      ? `\n# 已生成的图（早已存在，直接引用 id，不要再 generate_asset）\n\n${generated
           .map((g) => `${g.id}（${g.type}）—— ${g.prompt}`)
           .join("\n")}\n`
       : "";
@@ -444,20 +444,20 @@ function imageChapter(can: boolean): string {
 
 本剧目没有开启生图：不要在剧本里引用清单之外的背景/插图/立绘差分，用旁白和台词交代画面。`;
   }
-  return `## 自己出图（generate_image）
+  return `## 自己出图（generate_asset / generate_image）
 
 哪些素材该出图、出哪几张，照剧目的创作口径。这里只讲这个工具：排一张**发起即返回**，不等它出完；
 这一轮就引用到它，舞台先上骨架占位，到货后自动淡入。
 
-    generate_image(kind="background", name="bg_classroom_dusk", prompt="abandoned classroom at dusk, warm sunset light through dusty windows, anime visual novel background, no text")
+    generate_asset(kind="background", name="bg_classroom_dusk", prompt="abandoned classroom at dusk, warm sunset light through dusty windows, anime visual novel background, no text")
     …若干句台词…
     <scene bg="bg_classroom_dusk" .../>
 
-调用的写法（id 怎么起名、prompt 怎么写、画面里有角色时怎么垫立绘）看 generate_image 的工具说明。
+调用的写法（id 怎么起名、prompt 怎么写、画面里有角色时怎么垫立绘）看 generate_asset 的工具说明。
 
 - **不要凭空造 id**：可用清单与「已生成的图」里已有的背景和插图直接引用，别重复生成；
 - **按描述选素材**：清单里带括号说明的是画面内容（差分的名字未必与画面相符），先看说明再挑 id。
-- **立绘差分**用 generate_image(kind="sprite") 出。某角色一张立绘都没有、又还没来得及出图时，
+- **立绘差分**用 generate_asset(kind="sprite") 出。某角色一张立绘都没有、又还没来得及出图时，
   别让 ta 上台——改用旁白/台词交代，或只写有立绘的角色。`;
 }
 

@@ -15,7 +15,7 @@ describe("素材生命周期：实现真实路径与契约的边界", () => {
 
   it("独立版工坊的同步出图：没有 pending，草稿采用是 draft → adopted", () => {
     step(null, "draft", "generate_image(sync) 直接产草稿");
-    step("draft", "adopted", "commit_asset 采用草稿");
+    step("draft", "adopted", "import_asset 采用草稿（source=draft:<草稿id>）");
   });
 
   it("独立版剧作家的后台排产：pending → adopted（draft + commit 一次做完）", () => {

@@ -137,12 +137,12 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     equivalence: "semantic-only",
     hosts: {
       stageAi:
-        "一个 generate_image 扛两种投递：工坊同步出草稿（入库另走 commit_asset）、剧作家后台排产直落；" +
-        "外来图 / 候选图登记走 import_asset、重抠走 cut（source 给 sprite:<主体id>，拿留底原片原地重跑抠底）。",
+        "出图分两件：generate_image 只产候选（草稿区），generate_asset 一步落成——工坊同步等图、剧作家后台排产；" +
+        "外来图 / 候选图登记走 import_asset（source 给 draft:<草稿id> / 路径 / 网址）、重抠走 cut（source 给 sprite:<主体id>）。",
       dshAivn:
         "插件的 generate_image 是**无剧目目标**的候选图（与服务端同名不同义），外来图登记走 import_asset，" +
         "一键入库走 generate_asset（出图 + 抠底 + 登记），文件级重抠走 cut。" +
-        "**插件没有 commit_asset 的等价物**（采用发生在 generate_asset 内部）；重抠两边都是同一个 cut（引用寻址）。",
+        "两边同一个 cut（引用寻址）、同一个 generate_asset（一键宏）；服务端一侧只有 generate_image 只产候选这一步不同（插件的候选区可读，服务端的采用要经 import_asset 的 draft: 句柄）。",
       backendDependency: "生图后端；抠底在两边都是包里的同一份实现。",
       intentionalDifference:
         "参数面、写 prompt 的硬约束、垫图规则与请求归一化同源（image.generate / image.cutout）；" +
@@ -328,18 +328,10 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
   update_state: { ...READ_ONLY, read_only: false, reversible: true, idempotent: false },
   read_memory_detail: READ_ONLY,
   search_archive: READ_ONLY,
-  // 两个角色都**产出**新图（所以 asset_create 恒真）；差别在下游：
-  // 剧作家一次调用就把图落进 assets/（draft + commit 一起做完）；工坊只落草稿，采用是另一步。
+  // 只产候选：烧一次配额、落草稿区，**不写 assets/**（采用是 import_asset 的事）。
   generate_image: { ...READ_ONLY, read_only: false, external_request: true, asset_create: true, idempotent: false },
-  commit_asset: {
-    ...READ_ONLY,
-    read_only: false,
-    workspace_write: true,
-    asset_adopt: true,
-    requires_confirmation: true,
-    reversible: false,
-    idempotent: true,
-  },
+  // 一步落成：出图 +（立绘）抠底 + 写 assets/ + 补素材表 + 记台账。
+  generate_asset: { ...READ_ONLY, read_only: false, workspace_write: true, external_request: true, asset_create: true, idempotent: false },
   generate_bgm: {
     ...READ_ONLY,
     read_only: false,
@@ -382,10 +374,10 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
 export function sideEffectsForTool(name: string, role?: AgentRole): ToolSideEffectMetadata {
   const metadata = TOOL_SIDE_EFFECT_CATALOG[name];
   if (!metadata) throw new Error(`Missing AgentKit side-effect metadata for tool: ${name}`);
-  // 剧作家走 queued：发起即返回、图到货时才落 assets/（见 imageTool.runQueued 与 playhouse）。
-  // 工坊走 sync：只产草稿，采用是另一步 commit_asset。
-  if (name === "generate_image" && role === "playwriter") {
-    return { ...metadata, workspace_write: true, background_job: true, asset_adopt: true };
+  // 剧作家走 queued：发起即返回、图到货时才落 assets/（见 assetTool.runQueued 与 playhouse）。
+  // 工坊走 sync：等图出完并入库，同一轮就能引用。
+  if (name === "generate_asset" && role === "playwriter") {
+    return { ...metadata, background_job: true, asset_adopt: true, requires_confirmation: false };
   }
   return metadata;
 }

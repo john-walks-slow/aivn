@@ -40,16 +40,10 @@ describe("能力位：能力开着、且它声明的工具都装上，这一位�
       { name: "cut" },
     ]);
     expect(stillHalf.image).toBe(false);
-    const stillHalf2 = capabilitiesOf("workshop", new Set(["image"]), [
-      { name: "generate_image" },
-      { name: "cut" },
-      { name: "commit_asset" },
-    ]);
-    expect(stillHalf2.image).toBe(false);
     const full = capabilitiesOf("workshop", new Set(["image"]), [
       { name: "generate_image" },
+      { name: "generate_asset" },
       { name: "cut" },
-      { name: "commit_asset" },
       { name: "import_asset" },
     ]);
     expect(full.image).toBe(true);
@@ -83,14 +77,14 @@ describe("两份提示词读同一套能力位", () => {
     const playwriter = buildSystemPrompt({ play: PLAY, can });
     const workshop = await buildWorkshopPrompt(workshopCtx(can));
     expect(playwriter).toContain("本剧目没有开启生图");
-    expect(playwriter).not.toContain("## 自己出图（generate_image）");
+    expect(playwriter).not.toContain("## 自己出图");
     expect(workshop).toContain("生图当前不可用");
     expect(workshop).not.toContain("先出 neutral 定妆照");
   });
 
   it("生图可用：两边都把出图那一章接回来", async () => {
     const can = caps({ image: true });
-    expect(buildSystemPrompt({ play: PLAY, can })).toContain("## 自己出图（generate_image）");
+    expect(buildSystemPrompt({ play: PLAY, can })).toContain("## 自己出图（generate_asset / generate_image）");
     expect(await buildWorkshopPrompt(workshopCtx(can))).toContain("先出 neutral 定妆照");
   });
 

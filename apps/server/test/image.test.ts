@@ -3,6 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PlayStore } from "../src/store.js";
+import { createGenerateAssetTool } from "../src/agentkit/assetTool.js";
 import { createGenerateImageTool } from "../src/agentkit/imageTool.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { LineageTree } from "@aivn/core";
@@ -15,7 +16,7 @@ async function makeStore(): Promise<PlayStore> {
   await writeFile(join(dir, "lineage.jsonl"), "");
   return new PlayStore(dir);
 }
-describe("剧作家 generate_image：后台排产（占住时间线位置，不等图）", () => {
+describe("剧作家 generate_asset：后台排产（占住时间线位置，不等图）", () => {
   it("bg/cg 预发射 + 发起后台生成，静态素材已有的跳过，立绘走 kickSprite", async () => {
     const store = await makeStore();
     const preloaded: string[] = [];
@@ -26,10 +27,10 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
         {
           text: "",
           toolCalls: [
-            { name: "generate_image", args: { kind: "background", prompt: "rainy station", name: "bg_station" } },
-            { name: "generate_image", args: { kind: "cg", prompt: "confession", name: "cg_01" } },
+            { name: "generate_asset", args: { kind: "background", prompt: "rainy station", name: "bg_station" } },
+            { name: "generate_asset", args: { kind: "cg", prompt: "confession", name: "cg_01" } },
             // 立绘：variant 缺省即 neutral（下面单测锁住 schema 统一）
-            { name: "generate_image", args: { kind: "sprite", prompt: "neutral portrait", spriteId: "mio" } },
+            { name: "generate_asset", args: { kind: "sprite", prompt: "neutral portrait", spriteId: "mio" } },
             // 工坊已经导入过这张：同一个 id 不该再烧一次配额
             {
               name: "generate_image",
@@ -49,7 +50,7 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
       scene: "走廊",
       persist: () => {},
       // 生图对剧作家默认关闭（Agent 页勾上才开），这里显式打开——默认集的另一条路另有用例锁
-      agents: { tools: ["beat_done", "generate_image"] },
+      agents: { tools: ["beat_done", "generate_asset"] },
       imageTools: {
         // 「剧目里有没有这张」一律问 PlayAssets（它查盘）：这条用例只关心排产决策，
         // 只有那张工坊导入过的背景答「有」
@@ -79,8 +80,8 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
     orchestrator.dispose();
   });
 
-  it("两个角色的 generate_image 是同一份 schema（垫图与差分都拿得到）", () => {
-    const queued = createGenerateImageTool({
+  it("generate_asset 两个角色是同一份 schema（垫图与差分都拿得到），generate_image 只有 produce 面", () => {
+    const queued = createGenerateAssetTool({
       mode: "queued",
       playAssets: undefined,
       emitPreload: () => {},
@@ -88,7 +89,11 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
       kickSprite: () => {},
       existingAssetUrl: async () => null,
     });
-    const sync = createGenerateImageTool({ mode: "sync", playAssets: undefined, onAsset: () => {} });
+    const sync = createGenerateAssetTool({
+      mode: "sync",
+      playAssets: undefined,
+      onAsset: () => {},
+    });
     const props = (t: { parameters: { properties?: Record<string, unknown> } }) => Object.keys(t.parameters.properties ?? {});
     // aspectRatio 只在「不给 kind 的通用候选」那条路上有意义，服务端两个角色都给出剧目素材，所以不露它
     for (const key of ["variant", "spriteId", "references", "framing", "stature", "title", "style"]) {
@@ -104,7 +109,7 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
 
   it("垫图参数透传到后台发起（剧作家出的 CG 也要锁得住角色）", () => {
     const kicked: Array<[string, string, string[] | undefined]> = [];
-    const tool = createGenerateImageTool({
+    const tool = createGenerateAssetTool({
       mode: "queued",
       playAssets: { exists: async () => false, existingUrl: async () => null } as never,
       emitPreload: () => {},

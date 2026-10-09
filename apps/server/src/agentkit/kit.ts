@@ -10,7 +10,7 @@ import { PlayEnv } from "./playEnv.js";
 import { createReadinessTool } from "./readinessTool.js";
 import { createSetCraftTool } from "./craftTool.js";
 import { createGenerateImageTool } from "./imageTool.js";
-import { createCommitAssetTool } from "./commitTool.js";
+import { createGenerateAssetTool } from "./assetTool.js";
 import { createLibraryTools } from "./libraryTool.js";
 import { createLineageTools } from "./lineageTool.js";
 import { createGenerateMusicTool } from "./musicTool.js";
@@ -154,7 +154,7 @@ const CATALOG_ROWS = [
     desc: "缺背景 / 立绘时自己画，后台出图不阻塞台词。",
     group: "assets",
     roles: ["playwriter", "workshop"],
-    tools: ["generate_image", "cut", "commit_asset", "import_asset"],
+    tools: ["generate_image", "generate_asset", "cut", "import_asset"],
     needs: "image",
     unavailableNote: "服务端没配生图后端，暂不生效",
   },
@@ -282,7 +282,7 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   search_archive: { label: "检索历史往事", roles: ["playwriter"] },
   generate_image: { label: "生成剧目素材", roles: ["playwriter", "workshop"] },
   // 只装工坊：剧作家一次调用就声明了最终 id，宿主把出图与入库一次做完（见 imageTool）。
-  commit_asset: { label: "采用草稿入库", roles: ["workshop"] },
+  generate_asset: { label: "生成剧目素材", roles: ["playwriter", "workshop"] },
   // 只装工坊：一首 ~175s 的曲子要 84s，剧作家的一轮等不起；音乐又是制作资产。
   generate_bgm: { label: "生成 BGM", roles: ["workshop"] },
   cut: { label: "抠底", roles: ["workshop"] },
@@ -459,6 +459,11 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
     ...createMemoryTools(deps),
     ...createPiFileTools(env),
     createGenerateImageTool({
+      playAssets: deps.playAssets,
+      onAsset: () => {},
+    }),
+    // 剧作家的排产路径就叫 generate_asset：同一个能力，投递方式不同（发起即返回、到货淡入）
+    createGenerateAssetTool({
       mode: "queued",
       playAssets: deps.playAssets,
       emitPreload: deps.emitPreload,
@@ -496,15 +501,16 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
       cacheDir: () => deps.store.webImageDir(),
       fetchImage: deps.webImage,
     }),
+    // 候选图：只产草稿（不抠底、不入库），采用走 import_asset
     createGenerateImageTool({
-      mode: "sync",
       playAssets: deps.playAssets,
       // 草稿也推气泡：候选图要摆在对话里让用户直接看见、点开对比
       onAsset: (path, url, kind, replaced, toolCallId) =>
         deps.onAsset({ kind, path, url }, replaced, toolCallId),
     }),
-    // 出图只产草稿，入库是另一步：候选挑中了才把那张提升成素材
-    createCommitAssetTool({
+    // 一步落成（出图 + 立绘抠底 + 登记）：工坊这一面是同步等待
+    createGenerateAssetTool({
+      mode: "sync",
       playAssets: deps.playAssets,
       onAsset: (path, url, kind, replaced, toolCallId) =>
         deps.onAsset({ kind, path, url }, replaced, toolCallId),

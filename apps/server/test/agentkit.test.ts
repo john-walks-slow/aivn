@@ -137,14 +137,13 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
       const kit = role === "playwriter" ? playwriter({ exa }) : workshop({ exa });
       assertToolContracts(kit.tools);
     }
+    // 只产候选：烧配额、写草稿区，但不写工作区、不入库——两个角色同义（P5-c）
     expect(sideEffectsForTool("generate_image", "playwriter")).toMatchObject({
       external_request: true,
       asset_create: true,
-      asset_adopt: true,
-      background_job: true,
-      // 剧作家一次调用就把图落进 assets/（draft + commit 一次做完），所以它确实写工作区；
-      // 工坊形态只落草稿，这一位必须是假——两者写法不同正是这个字段要表达的东西。
-      workspace_write: true,
+      asset_adopt: false,
+      background_job: false,
+      workspace_write: false,
     });
     expect(sideEffectsForTool("generate_image", "workshop")).toMatchObject({
       external_request: true,
@@ -153,12 +152,17 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
       background_job: false,
       workspace_write: false,
     });
-    expect(sideEffectsForTool("commit_asset")).toMatchObject({
+    // 一步落成：写工作区 + 入库；剧作家那条是后台排产（到货才写），所以按角色补两位
+    expect(sideEffectsForTool("generate_asset", "workshop")).toMatchObject({
       workspace_write: true,
+      asset_create: true,
+      external_request: true,
+      idempotent: false,
+    });
+    expect(sideEffectsForTool("generate_asset", "playwriter")).toMatchObject({
+      workspace_write: true,
+      background_job: true,
       asset_adopt: true,
-      requires_confirmation: true,
-      reversible: false,
-      idempotent: true,
     });
     expect(sideEffectsForTool("generate_bgm")).toMatchObject({
       external_request: true,
@@ -180,6 +184,7 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
       "edit",
       "enter_nsfw",
       "exit_nsfw",
+      "generate_asset",
       "generate_image",
       "list_library",
       "read",
@@ -206,7 +211,7 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     expect(names(kit)).toContain("write");
     expect(names(kit)).toContain("edit");
     expect(names(kit)).toContain("read_lineage");
-    expect(names(kit)).toContain("generate_image");
+    expect(names(kit)).toContain("generate_asset");
     expect(names(kit)).toContain("read_skill");
     expect(names(kit)).not.toContain("beat_done");
     expect(names(kit)).not.toContain("update_state");
@@ -215,19 +220,27 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     expect(kit.can.shell).toBe(false);
   });
 
-  it("generate_image 是同一个工具：schema 一模一样，只有描述与等待策略分叉", () => {
+  it("generate_image 两个角色完全同一份：schema 与描述都不分叉（只产候选）", () => {
     const a = playwriter().tools.find((t) => t.name === "generate_image")!;
     const b = workshop().tools.find((t) => t.name === "generate_image")!;
     // 垫图与差分两个角色都拿得到：参考立绘读的是 assets/sprites/，与谁调的无关
     const props = (t: typeof a) => Object.keys((t.parameters as { properties: Record<string, unknown> }).properties);
     for (const key of ["variant", "spriteId", "references"]) expect(props(a)).toContain(key);
     expect(a.parameters).toBe(b.parameters);
-    expect(a.description).not.toBe(b.description);
-    expect(b.description).toContain("cut"); // 工坊同步出图：抠底脏了原地重抠，不重新出图
-    expect(a.description).toContain("后台排产");
+    // P5-c：生命周期搬出 schema 之后，produce 面连描述都不分叉了
+    expect(a.description).toBe(b.description);
+    expect(b.description).toContain("draft:<草稿id>");
     // 兼容别名 referenceCharacters 已删（P5-c）：垫图只有 references 一个口
     expect(b.description).not.toContain("referenceCharacters");
-    expect(a.description).not.toContain("referenceCharacters");
+  });
+
+  it("generate_asset 一个 schema 两种投递：工坊同步等图、剧作家后台排产", () => {
+    const a = playwriter().tools.find((t) => t.name === "generate_asset")!;
+    const b = workshop().tools.find((t) => t.name === "generate_asset")!;
+    expect(a.parameters).toBe(b.parameters);
+    expect(a.description).not.toBe(b.description);
+    expect(a.description).toContain("后台排产");
+    expect(b.description).toContain("同步等图");
   });
 
   it("模型看得见的说明写在 schema 的 description 里，不是只写在 JSDoc 注释里", () => {
@@ -253,12 +266,12 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     ];
     const withImage = playwriter();
     for (const role of [() => withImage, workshop] as const) {
-      const desc = role().tools.find((t) => t.name === "generate_image")!.description;
+      const desc = role().tools.find((t) => t.name === "generate_asset")!.description;
       for (const rule of rules) expect(desc).toContain(rule);
     }
-    // 流程与验收仍各归各的：工坊管抠底重抠，剧作家多一句「图还没到时先上骨架」
-    expect(workshop().tools.find((t) => t.name === "generate_image")!.description).toContain("cut");
-    const queued = withImage.tools.find((t) => t.name === "generate_image")!.description;
+    // 流程与验收仍各归各的：工坊同步等图，剧作家是后台排产（先上骨架占位、到货淡入）
+    expect(workshop().tools.find((t) => t.name === "generate_asset")!.description).toContain("同步等图");
+    const queued = withImage.tools.find((t) => t.name === "generate_asset")!.description;
     expect(queued).toContain("骨架");
     // 「提前 3–5 句」是拍脑袋的经验值（流式下只给图 3–5 秒头，真要一分多钟），已随风格一起撤掉
     expect(queued).not.toContain("3–5 句");
@@ -275,6 +288,7 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
   it("play.json 的启用集最后一道过滤：装出来再摘掉，能力位跟着翻", () => {
     const kit = workshop({}, ["skill"]);
     expect(names(kit)).not.toContain("generate_image");
+    expect(names(kit)).not.toContain("generate_asset");
     expect(kit.can.image).toBe(false);
     expect(kit.can.library).toBe(false);
     expect(kit.can.search).toBe(false);
@@ -419,11 +433,11 @@ describe("agent kit：能力 → 工具与文件面", () => {
   it("同一个能力在两个角色上授权的工具按角色收：剧作家只拿 generate_image，登记与采用都归工坊", () => {
     const image = CAPABILITY_CATALOG.find((c) => c.id === "image")!;
     const library = CAPABILITY_CATALOG.find((c) => c.id === "library")!;
-    expect(capabilityTools(image, "playwriter")).toEqual(["generate_image"]);
+    expect(capabilityTools(image, "playwriter")).toEqual(["generate_image", "generate_asset"]);
     expect(capabilityTools(image, "workshop")).toEqual([
       "generate_image",
+      "generate_asset",
       "cut",
-      "commit_asset",
       "import_asset",
     ]);
     expect(capabilityTools(library, "playwriter")).toEqual(["list_library"]);

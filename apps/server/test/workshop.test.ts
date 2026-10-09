@@ -494,9 +494,9 @@ describe("工坊工具：generate_image", () => {
     const gen = tools.find((t) => t.name === "generate_image")!;
 
     const out = JSON.stringify(await gen.execute("c1", { kind: "background", name: "rooftop", prompt: "黄昏天台" }));
-    // 工坊出图只产草稿：不进 assets/、不碰素材表，回执给 draftId 让模型接着调 commit_asset
+    // 工坊出图只产草稿：不进 assets/、不碰素材表，回执给 draft:<id> 让模型接着调 import_asset / cut
     expect(out).toContain("草稿已出");
-    expect(out).toContain("commit_asset");
+    expect(out).toContain("import_asset");
     expect(existsSync(join(store.dir, "assets/backgrounds/rooftop.jpg"))).toBe(false);
     // 回执必须带 markdown 图片：agent 要靠这行把图贴给用户看，用户才谈得上验收
     expect(out).toMatch(/!\[[\w-]+\]\(\/plays\/test\/drafts\/[\w-]+\/image\.jpg\)/);

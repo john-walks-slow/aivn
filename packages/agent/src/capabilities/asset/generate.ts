@@ -1,7 +1,14 @@
 import type { FieldMap, InferArgs } from "../../schema/ir.js";
 import type { Capability } from "../capability.js";
 import { assetLocationOf, type AssetLocation } from "./target.js";
-import { imageGenerate, imageGenerateFields, imageTargetOf, type ImageGenerateDeps } from "../image/generate.js";
+import {
+  IMAGE_PROMPT_RULES,
+  IMAGE_REFERENCE_RULE,
+  imageGenerate,
+  imageGenerateFields,
+  imageTargetOf,
+  type ImageGenerateDeps,
+} from "../image/generate.js";
 import type { AssetRegisterExtra, AssetRegistration } from "./register.js";
 
 /**
@@ -34,6 +41,8 @@ export const ASSET_GENERATE_DOC = [
   "**同名素材已经有了就直接返回、不重出**（重出会覆盖同名文件）；要另出一张就换个 name / spriteId+variant。",
   "背景与插图给 name，立绘给 spriteId（可给 variant / framing / stature / title）；画幅跟着 kind 与 framing 走。",
   "立绘会自动抠底成透明 PNG（画面里要有纯色键底，配方见技能）；垫图与画风锚点见下面几条。",
+  IMAGE_PROMPT_RULES,
+  IMAGE_REFERENCE_RULE,
 ].join("\n");
 
 /** 宏的产物：出成没出、落成了什么。宿主据此组装自己的回执（它才有话术与预览 URL）。 */
