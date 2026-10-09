@@ -46,8 +46,8 @@
 | 4 | `exit_nsfw` | 不能 | 一致 | 不做，登记有意差异 |
 | 5 | `read_memory_detail` | 能文件化 | 一致 | **P6-a：删工具 → `read`** |
 | 6 | `search_archive` | 有条件能 | 一致 | **保留**（重审 2026-10-10，理由见 §6） |
-| 7 | `list_saves` | 能 | — | **已删**（2026-10-10，见 §6 甲） |
-| 8 | `read_lineage` | 能 | — | **已删**（2026-10-10，见 §6 甲） |
+| 7 | `list_saves` | 能 | — | **工具已删，能力保留**：改由只读的 `saves/` 面提供（2026-10-10，见 §6 甲） |
+| 8 | `read_lineage` | 能 | — | 同上 |
 | 9 | `list_library` | 能 | 一致 | **保留**（重审 2026-10-10，理由见 §6 乙） |
 | 10 | `library_import` | 有条件能并入 `import_asset` | **不一致**：与插件 `import_asset` 不同义 | **移出 P6**（服务端内部重构，另议） |
 | 11 | `read_skill` | 不能/不该 | 一致 | 不做，登记有意差异 |
@@ -87,18 +87,23 @@ jump/fork/restore/切档/冷启动回写、新档播种初值。
 **问 4 · `search_archive` / `list_library` → 保留（写真实理由）；`list_saves` / `read_lineage` → 已删。**
 2026-10-10 重审：不许再写「收益 0」，逐条给理由（见 §6）。
 
-**§6 甲 · `list_saves` / `read_lineage` —— 已删（2026-10-10）**
+**§6 甲 · `list_saves` / `read_lineage` —— 工具删、能力留（2026-10-10，当天更正）**
 
-判据两条都指向删：**这是界面动作**（舞台「路线」视图 `views/StageScreen.tsx` + `stage/LineagePanel.tsx`
-与 `#/play/:id/saves` 周目页读的是同一份数据，HTTP 面 `GET /api/plays/:id/{lineage,saves}` 都在），
-模型没有非它不可的场景；而它们回的又是「按存档、路径过滤、分页、kind 渲染过的树」这种**专用读法**，
-正是不该做成工具的那类。删掉：`agentkit/lineageTool.ts`、`lineage` 能力位、契约矩阵那一行、
-副作用目录两行、`WorkshopKitDeps` 的 `saves` / `saveStore`、工坊提示词里的工具教学（改成指界面）、
-web 两处工具标签。
+**读树是有意提供的能力**（用户当天明确）：模型要能回答「演到哪了」「这个角色出现过几次」。
+所以收掉的只是**两个专用动词**，能力改由**通用文件读口**提供——与「通用 Agent + 原子化工具」
+那条主线一致，也免得两宿主的工具面为此差两位（插件那边没有谱系数据，凑不出这对工具）。
 
-**代价（认账）**：没有 `bash` 的工坊会话失去了「自己读树」这条路。`saves/` 下的
-`session.json` / `lineage.jsonl` 本来就在文件工具白名单之外（`playFiles.ts`），
-所以「模型自己 read」不成立——这是**有意收窄**，不是遗漏。要看得清楚就去界面。
+- **工具面**：删 `agentkit/lineageTool.ts`、`lineage` 能力位、契约矩阵那一行、副作用目录两行、
+  `WorkshopKitDeps` 的 `saves` / `saveStore`、web 两处工具标签。
+- **能力面**（改由文件口提供）：`PlayFiles` 把周目目录开成**只读可见**——
+  `saves/**` 与剧目根的 `active.json`（看得见、改不动，与 `memory/archive/` 同一个口径），
+  `.jsonl` 认作文本（不认的话 `read` 会当二进制拒掉）。工坊提示词《读故事树》改成教
+  「哪份文件回答哪个问题」：`active.json` → 当前周目 id、`saves/<id>/meta.json` → 列周目、
+  `saves/<id>/lineage.jsonl` → **行级事件流**（`kind`/`text`/`turn`/`parentId`，分支看 parentId）、
+  `session.json` → 很大、按 offset/limit 分段读。
+
+**与旧工具的能力差（认账）**：旧工具默认只回**当前分支路径**并且渲染过；现在模型拿到的是原始行，
+分支要自己按 `parentId` 认。行数多时按 offset/limit 分段读（工坊开了命令行就直接 grep）。
 
 **§6 乙 · `search_archive` / `list_library` —— 保留**
 

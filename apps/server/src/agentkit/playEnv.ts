@@ -110,8 +110,7 @@ export class PlayEnv extends NodeExecutionEnv {
           "permission_denied",
           // 这条按路径的口对读写两件事都关着（write 也会先经过 absolutePath 解析路径），
           // 所以消息把两条都说清：引擎产物不是给人手改的，往事要走带分支过滤的工具。
-          `引擎产物走不了通用读写口：${clean}（往事走 read_memory_detail / search_archive，` +
-            `别按路径翻、也别手改）`,
+          `引擎产物走不了通用读写口：${clean}（往事走 search_archive，别按路径翻、也别手改）`,
           abs,
         );
       }

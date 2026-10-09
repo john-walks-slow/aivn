@@ -28,6 +28,11 @@ const NOT_WRITABLE = [
   // 只读素材面
   "assets/backgrounds/a.png",
   "assets/foo.json",
+  // 周目与故事树：有意开着的**只读**面（模型读树靠它）
+  "saves/s1/lineage.jsonl",
+  "saves/s1/session.json",
+  "saves/s1/meta.json",
+  "active.json",
   // 会话与缓存
   "session.json",
   "lineage.jsonl",
@@ -54,9 +59,21 @@ describe("playFiles：可写面的 scope 穷尽", () => {
   });
 
   it("读面不受 scope 影响：写了 scope 判定不改 PlayFiles 自己的分权", () => {
-    // assets/ 与引擎产物都是「读得到、写不了」——能力层收的是写面，不是可见面
-    for (const rel of ["assets/backgrounds/a.png", "memory/archive/turn-1.md"]) {
+    // assets/、引擎产物、周目与故事树都是「读得到、写不了」——能力层收的是写面，不是可见面
+    for (const rel of [
+      "assets/backgrounds/a.png",
+      "memory/archive/turn-1.md",
+      "saves/s1/lineage.jsonl",
+      "saves/s1/meta.json",
+      "active.json",
+    ]) {
       expect(() => files.pathOf(rel, "read"), rel).not.toThrow();
     }
+  });
+
+  it("周目与故事树是文本：行级事件流读得出来，不是「用预览查看」的二进制", () => {
+    // kindOf 认 .jsonl：不认的话 read() 会拿「不是文本文件」把读树这条路堵死
+    expect(() => files.pathOf("saves/s1/lineage.jsonl", "read")).not.toThrow();
+    expect(() => files.pathOf("saves/s1/session.json", "read")).not.toThrow();
   });
 });

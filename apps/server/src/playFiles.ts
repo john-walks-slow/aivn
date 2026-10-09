@@ -5,20 +5,30 @@ import { parsePlayConfig, CHARACTER_DIR } from "@aivn/core";
 import type { PlayStore } from "./store.js";
 
 /**
- * 剧目文件层（两个 agent 与文件浏览器共用）：剧目目录里**面向用户的可编辑面**。
+ * 剧目文件层（两个 agent 与文件浏览器共用）：剧目目录里**面向用户的面**。
  *
- * 白名单而非黑名单——会话日志（session.json/lineage.jsonl）、TTS 缓存、二进制素材都不在此层，
- * agent 与浏览器拿不到它们；越界路径一律拒绝，不做「尽力而为」的裁剪。
+ * 白名单而非黑名单，越界路径一律拒绝，不做「尽力而为」的裁剪。面分三层：
+ * **可编辑**（剧目定义、记忆卡、角色卡、素材描述表）、**只读可见**（素材、周目与故事树、
+ * 引擎产物）、**完全不可见**（TTS 缓存、候选区、二进制素材文件）。
+ *
+ * 周目（`saves/`）与活动档指针（`active.json`）是**有意开着的只读面**：模型回答「演到哪了」
+ * 「这个角色出现过几次」靠的就是读 `saves/<id>/lineage.jsonl`（一行一个事件，带 parentId 与 turn，
+ * 分支结构从 parentId 看）——2026-10-10 之前那是两个专用工具（list_saves / read_lineage），
+ * 收掉之后这条能力由通用文件读口提供。
  */
 
 /** 可编辑文本文件（agent 能改的面）。 */
 const EDITABLE_EXT = new Set([".md", ".json", ".txt"]);
-/** 只读可见目录（浏览器能看，agent 不写）。 */
-const READONLY_PREFIXES = ["assets/"];
+/** 文本类扩展名：可编辑的那几种，外加只读的样式表与引擎的行级事件流。 */
+const TEXT_EXT = new Set([...EDITABLE_EXT, ".css", ".jsonl"]);
+/** 只读可见目录（能看，不写）。 */
+const READONLY_PREFIXES = ["assets/", "saves/"];
+/** 只读可见的单文件（同样能看、不写）。`active.json` 是「当前进哪一周目」的指针。 */
+const READONLY_FILES = new Set(["active.json"]);
 /** 素材描述表（stem → 画面说明，注入剧作家提示词）——assets/ 里唯一可写的文本文件。 */
 const ASSET_MANIFEST = "assets/manifest.json";
 /** 允许下钻的顶层目录（其余目录整棵跳过，不进 readdir）。 */
-const DIR_ROOTS = ["memory", "assets", CHARACTER_DIR];
+const DIR_ROOTS = ["memory", "assets", CHARACTER_DIR, "saves"];
 /** 二进制可写面：仅图像素材（生图落盘）。 */
 const BINARY_WRITE_PREFIXES = ["assets/backgrounds/", "assets/cg/", "assets/sprites/"];
 /** 单图上限 16MB：2K 图 1–3MB，留足余量又挡得住写歪的产物。 */
@@ -33,7 +43,7 @@ const AUDIO_EXT = new Set([".mp3", ".ogg", ".wav", ".m4a", ".flac", ".aac"]);
 
 function kindOf(rel: string): PlayFileKind {
   const ext = extOf(rel);
-  if (EDITABLE_EXT.has(ext) || ext === ".css") return "text";
+  if (TEXT_EXT.has(ext)) return "text";
   if (IMAGE_EXT.has(ext)) return "image";
   if (AUDIO_EXT.has(ext)) return "audio";
   return "binary";
@@ -97,9 +107,9 @@ function isEditable(rel: string): boolean {
   return EDITABLE_EXT.has(extOf(rel));
 }
 
-/** 只读可见面：素材目录（浏览器预览）与引擎产物（文件页看得到、存不了）。 */
+/** 只读可见面：素材、周目与故事树、活动档指针，以及引擎产物（文件页看得到、存不了）。 */
 function isVisible(rel: string): boolean {
-  if (isEditable(rel) || isGenerated(rel)) return true;
+  if (isEditable(rel) || isGenerated(rel) || READONLY_FILES.has(rel)) return true;
   return READONLY_PREFIXES.some((prefix) => rel.startsWith(prefix));
 }
 

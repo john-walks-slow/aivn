@@ -118,11 +118,12 @@ describe("工坊提示词：能力关掉之后不再教它调那个工具", () =
     expect(prompt).toContain("先出 neutral 定妆照");
   });
 
-  it("读树那一章只讲去哪看，不教工具（2026-10-10 删掉那两个只读工具之后）", async () => {
+  it("读树那一章教的是读哪份文件（能力由只读的 saves/ 面提供，不再有专用工具）", async () => {
     const prompt = await buildWorkshopPrompt({ ...CTX, can: caps({}) });
     expect(prompt).not.toContain("list_saves");
     expect(prompt).not.toContain("read_lineage");
-    expect(prompt).toContain("让用户去舞台的「路线」视图");
+    expect(prompt).toContain("saves/<saveId>/lineage.jsonl");
+    expect(prompt).toContain("parentId");
   });
 
   it("「技能库」关：技能清单块整块不注入（清单里点名了 read_skill）", async () => {
