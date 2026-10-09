@@ -87,6 +87,22 @@ export {
   writeDraft,
 } from "./media/draft.js";
 
+export type { VoiceEntry } from "@aivn/core";
+export type { VoiceJsonFetcher, VoiceQuery, VoiceSample, VoiceWindow } from "./voice/catalog.js";
+export {
+  fetchVoiceWindow,
+  firstVoiceSample,
+  MAX_PAGES as VOICE_MAX_PAGES,
+  PAGE_SIZE as VOICE_PAGE_SIZE,
+  readVoiceSample,
+  toVoiceEntry,
+  VoiceClient,
+  VOICE_CACHE_TTL_MS,
+  voiceQueryKey,
+  voiceQuerySuffix,
+  WINDOW_CACHE_LIMIT as VOICE_WINDOW_CACHE_LIMIT,
+} from "./voice/catalog.js";
+
 export type { KeyBackgroundColor } from "./media/prompt.js";
 export {
   DEFAULT_KEY_COLOR,
