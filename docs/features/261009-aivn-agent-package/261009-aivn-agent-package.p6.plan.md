@@ -30,6 +30,8 @@
 进、`commit_asset` / `view_image` 出）。
 
 **本轴落地后的算术**：25 → **23**（`read_memory_detail` − 1、`set_craft` − 1）；宿主流程工具 **12 → 10**。
+**P6-d 迁移之后**：23 → **22**（`update_state` − 1），宿主流程工具 **10 → 9**（2026-10-10 实测
+`apps/server/src/agentkit/kit.ts:275-315` 22 行）。
 `library_import` 若日后并进 `import_asset`，是服务端内部重构，**不计入统一指标**（见 §6）。
 
 ---
