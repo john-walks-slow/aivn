@@ -35,7 +35,7 @@
 | 换模型 | `ctx.sessionController.selectForNextRequest(agent, {provider, model, reasoningEffort})`；进入前用 `selectionFor(agent).current` **记住玩家当前的选择**，退出时切回那一个（不是插件的默认值） | `src/index.ts:64` 已 inject `sessionController`；调用点放在进入/退出那一刻（`src/stage/stage-tap.ts` 的工具回调里） |
 | 限制级提示词 | `play-context.ts` 新增一段 `aivn:play-nsfw`，`text: () => 每轮现读`（照 `stagehandGuide` 的现读先例）；章节正文与合规声明**尽量与服务端同源**（写进 `packages/agent`，两边引同一份） | `src/play/play-context.ts:146-162`、`src/playwriter/prompt.ts:240-251` |
 | 合规前置轮次 | 插件不塞假消息：**在进入后的第一拍用 `agent.inject` 投一条「设定合规说明」的系统/上下文消息**（`next-step` 语义，落 `agent/inbox/inserted` 并按 `message.id` 登记摘除，见 `src/injected.ts`） | `src/injected.ts:33`（按 id 摘除的现成做法） |
-| 事件打标 | `hub.ts` 的帧类型加 `nsfw` 字段；`stage-tap.ts` 推帧时带上当前态；客户端帧类型同步 | `src/hub.ts:41-48`、`src/stage/stage-tap.ts:84-88`、`src/client/stage-view.tsx:67-77` |
+| 事件打标 | **独立帧** `{kind:'nsfw',active}`（值变化时推一次，重建末尾无条件补一帧）；段起止本身靠会话面里的 `tool/result` 配对重推 | `src/hub.ts`、`src/stage/stage-tap.ts`、`src/stage/stage-log.ts`、`src/client/stage-view.tsx` |
 | 退出摘要 | 优先用工具参数 `summary`；没给就 `agent.followup` 单开一轮要一段（结局之后要 `epilogue` 已有先例），落 `beat_end` 载荷的 `nsfwSummary` | `followup` 先例：`src/stage/director.ts:87`、`src/routes.ts:272` |
 | **模型可见面替换** | **`session.append(type, data, { surfaceOp: { op: 'replace', startSeq, endSeq } })`**——DSH 的会话面替换机制（compaction 就用它）：模型侧看到摘要，**人类转写照旧是原文**。`startSeq` = 进入那一刻的消息 seq，`endSeq` = 退出那一拍的 seq | `node_modules/@deepseek-ai/dsh-session/lib/types/types.d.ts:455-462`、`index.d.ts:219`；插件已有 `session` 句柄（`src/stage/stage-log.ts:108`） |
 | 分支 / 重建恢复 | 从会话日志**重推**：`stage-log.ts` 的重建路径扫 `tool/call` 里的 `enter_nsfw` / `exit_nsfw` 与 `nsfwSummary`，恢复「当前在不在段内」；不额外落盘 | `src/stage/stage-log.ts:94-153`、`src/stage/stage-tap.ts:257-264` |
@@ -48,7 +48,9 @@
 
 - **D1 · 换模型按「下一请求」生效**：`selectForNextRequest` 的语义与服务端「下一拍生效」一致——**进入那一拍仍由主模型演**（它只写到「即将发生」为止），下一拍才是限制级模型。退出同理：**退出那一拍仍由限制级模型收尾**，之后才切回。
 - **D2 · 进入前记住玩家的模型选择**：退出切回的是 `selectionFor(agent).current` 记下的那一个，不是插件的默认模型；玩家在段内手动换过模型时，以退出那一刻的现值为准（**不覆盖玩家的选择**）。
-- **D3 · 没配 `nsfwModel` 就不装这两个工具**：与 `can.image` 一类门控同一条路（`tool-catalog.ts:17-27` 的 gate / `:144-159` 的 `gateSatisfied`）——提示词里也不提这条通道（否则等于教模型调一个不存在的工具）。
+- **D3 · 不按配置门控（2026-10-10 实施时改）**：原稿写的是「没配 `nsfwModel` 就不装这两个工具」，实读服务端后推翻——服务端那一位能力（`kit.ts` 的 `nsfw` 行）**没有 `needs`**，只在能力面上默认开，`nsfwModel` 没配时回落到主模型（`playhouse.ts:1292-1293`），通道照旧成立。所以插件也不门控：装了才有「切不了模型但通道还在」这条路。另外两条一并定下：
+  - **只给剧作家**（`ToolSpec.playwriterOnly`）：服务端那一位 `roles: ["playwriter"]`，搭台助手不写剧情，给它两个开关没有意义；
+  - **独占**（`concurrent: false`）：两头翻的是会话态、还要广播，与同样翻旗标的 `set_stage_style` 同类；它们一拍才调一次，串行没有代价。
 - **D4 · 合规声明用 `inject` 一条消息**，不学服务端塞一对假 user/assistant 消息：DSH 的会话面有自己的形状，塞假助手消息会污染转写与重建；`inject` 落的是可摘除的 inserted 消息。
 - **D5 · 摘要优先取工具参数**：`exit_nsfw(summary=…)` 是剧作家自己给的那一句（最懂剧情），引擎只在它缺席时补一轮；服务端是反过来（引擎必摘要、参数只当参考）——**这条差异要不要抹平，请拍板**（抹平 = 插件也无条件跑一次摘要，代价是多一次模型调用）。
 
@@ -82,7 +84,7 @@
 
 ## 6. 验收判据（可检查）
 
-1. **门控**：未配 `nsfwModel` 时两个工具**不注册**，提示词里也没有这条通道的章节；
+1. **工具面**：剧作家装 `enter_nsfw` / `exit_nsfw`，搭台助手不装；不按配置门控（模型没配时回落主模型）；
 2. **换模型**：`enter_nsfw` 之后的下一拍，实际请求用的是配置里的限制级模型；`exit_nsfw` 之后切回**进入前的那一个**；
 3. **提示词**：进入后的系统提示词含限制级章 + 合规声明；退出后不再含；
 4. **面替换**：退出后**模型可见面**里已无露骨原文（只剩摘要），而**人类转写**照旧含原文；
@@ -100,3 +102,26 @@
 5. **重建恢复**：判据 6 绿（rebuild 套件）；
 6. **配置面 + README 双语 + e2e 全量 + `lib/` 重建**；
 7. **reviewer 检视 + 落地 main**。
+
+---
+
+## 8. 实施进度
+
+### 第 1 步 · 工具 + 门控 + 打标 + 标识 —— **已完成**（2026-10-10，插件 worktree `326840a` 之后）
+
+落地：`src/tools/enter-nsfw.ts` / `exit-nsfw.ts`（描述逐字照服务端）、`tools/context.ts` 的
+`NsfwControl` / `NsfwHost`、`tool-catalog.ts` 两行（`playwriterOnly` + 独占）、`preset-tools.ts`
+按预设过滤、`stage-tap.ts` 的 per-session 态（`active || pendingEnter` 口径、值变才推帧）、
+`hub.ts` 新帧、`stage-log.ts` 从 `tool/result` 配对重推、客户端角标 + 样式。
+
+**验证**：`npm run typecheck` ✓、`npm run build` ✓、`node build.mjs --check` 产物一致 ✓、
+`node e2e/run.mjs rebuild` **17/17** ✓——其中 R14–R16 是这一步新加的三条永久判据
+（段内重建要亮、出了段要灭、被回退抹掉的调用不算数）。这一步**不需要实例、不花 LLM**。
+
+**顺带修的环境问题**：插件 worktree 的 `node_modules/@deepseek-ai/` 缺 `dsh-scope`（主检出不缺），
+`rebuild` 套件因此 import 期就炸；补软链即可（node_modules 不入库）。
+
+### 待办
+
+第 2 步换模型 → 第 3 步限制级提示词章与合规声明 → 第 4 步退出摘要 + 模型可见面替换 →
+第 5 步重建（R14–R16 已先立） → 第 6 步配置面与 README 双语 → 第 7 步 reviewer + 落地。
