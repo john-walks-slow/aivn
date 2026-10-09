@@ -166,7 +166,7 @@
 
 ## 生图配置（接口格式、画幅与尺寸）
 
-- **生图配置按接口格式而不是按产品名**：`image.format` 选 `gemini|modelslab|openai|comfyui` 四种协议形状（`geminiImage.ts` = `/v1beta/models/{model}:generateContent`，垫图走 `inlineData`；`modelslabImage.ts` = `/images/text2img` 与 `/images/img2img`，垫图先传 `base64_to_url` 换托管链接；`openaiImage.ts` = `/v1/images/generations`，接口没有参考图入参、带垫图直接报错；`comfyuiImage.ts` = 原生 `/prompt` + `/history` + `/view`，固定 txt2img/img2img 模板，最多支持一张垫图），地址/模型/尺寸统一读 `image.baseUrl` / `image.model` / `image.size`——后者说的是两种官方词汇：`1K`/`2K`/`4K` 是 Gemini `imageConfig.imageSize` 的原词（**K 必须大写，官方拒小写**；语义是总像素量级 1K≈1024²），gemini 侧原样透传。
+- **生图配置按接口格式而不是按产品名**：`image.format` 选 `gemini|modelslab|openai|comfyui|novelai` 五种协议形状（`geminiImage.ts` = `/v1beta/models/{model}:generateContent`，垫图走 `inlineData`；`modelslabImage.ts` = `/images/text2img` 与 `/images/img2img`，垫图先传 `base64_to_url` 换托管链接；`openaiImage.ts` = `/v1/images/generations`，接口没有参考图入参、带垫图直接报错；`comfyuiImage.ts` = 原生 `/prompt` + `/history` + `/view`，固定 txt2img/img2img 模板，最多支持一张垫图；`novelaiImage.ts` = `/ai/generate-image`，Bearer 持久化 token、响应是 ZIP、画布必须 64 的倍数），地址/模型/尺寸统一读 `image.baseUrl` / `image.model` / `image.size`——后者说的是两种官方词汇：`1K`/`2K`/`4K` 是 Gemini `imageConfig.imageSize` 的原词（**K 必须大写，官方拒小写**；语义是总像素量级 1K≈1024²），gemini 侧原样透传。
 - openai 侧的 `size` 是字面 `WxH`，所以档位由 `canvasFor` 按画幅换算（16:9 的 `1K` → `1360x768`），也可以直接写字面尺寸 `1536x1024` 喂只认标准尺寸的老模型。
 - **modelslab 侧三条自带的口子**（`modelslabImage.ts`，别把它当「换个 baseUrl 的 openai」）：
   - 垫图走**两步**——本地字节只能当 base64 data URI 发给 `/image_editing/base64_to_url` 换一条临时托管链接（官方 `upload_image` 要自备 S3，免 S3 的路子只有这一条），再把链接塞进 `init_image`。所以每次带垫图的出图是两次 HTTP。
@@ -180,6 +180,10 @@
   - **最多支持一张垫图**：走 `/upload/image`，再用 `LoadImage → ImageScale（目标画幅、中心裁切）→ VAEEncode` 接入固定 img2img 模板；多张直接报错，ComfyUI `input/` 文件由运维清理。
   - **尺寸要能被 8 整除**：档位按总像素量级换算（`tierCanvasFor`，两边对齐 8），字面像素照发但先判掉非 8 的倍数——latent 以 8 像素为一格，不判就会被 ComfyUI 悄悄截断（回图尺寸与要的对不上，而 12% 的画幅容差察觉不到）。
   - **`/view` 的字节认不出图片类型就报错**（`sniffImageMime`，不看响应头）：反代拦下 `/view` 时会回一页 HTML/JSON，默认当 PNG 收下就会静默落一张坏素材（素材层对认不出尺寸的字节只告警）。失败诊断三处都带原文：`/prompt` 400 的 `node_errors`（checkpoint 名写错最常见）、`/history` 的 `status_str=error` 消息、以及超时（预算 = 排队 + 出图，从 `generate` 入口算起，提交与每次轮询共用）。
+- **novelai 侧三条自带的口子**（`novelaiImage.ts`，别把它当「换个 baseUrl 的 gemini」）：
+  - **响应是 ZIP 不是图片字节**（内含 `image_0.png`），用已在依赖里的 `fflate` 解；解出来按字节认 mime，不是 ZIP 时退回「整段就是一张图」。
+  - **提示词结构按模型名前缀分代**：`nai-diffusion-4*` / `-5*` 走 `v4_prompt` + `v4_negative_prompt`（**两个必须同时在场**，缺一个上游回 500 而不是 400），更早的走 `prompt` + `uc`（V4+ 不发 `uc`，与 novelai-bridge 的 wire 一致）。
+  - **垫图必须先落到画布上**：上游要求图生图源图与画布同尺寸、收 base64 PNG，而我们的垫图常是 JPEG 原片（`sprite-sources/<id>/neutral.jpg`）——`fitToCanvas()` 用 sharp `contain` 等比缩放到画布内、居中、补不透明黑再编码 PNG（照 novelai-bridge 的 `fit_image_to_canvas`）。**只吃一张**（多张报错）。画布另受「64 的倍数、单边 ≤2048、总面积 ≤3,145,728」约束。
 - **逐剧目覆盖**：`play.json` 的 `image`（`model` / `size`）覆盖部署级的 `STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`。`ImageRequest` 带可选的 `model?` / `size?`，三个实现取 `req.x ?? this.x`；`PlayAssets` **每次出图现读 play.json**（不是构造时取快照——`PlayAssets` 按剧目缓存、进程内不重建，快照会让「设置页改了模型，出图还是老模型」）。格式不认这个值就直接报错，不静默退回全局。
 - **逐类目覆盖**（2026-10-10）：`image.kinds.<background|cg|sprite>` 各覆盖 `format`/`baseUrl`/`apiKey`/`model`/`size`/`reference`/`timeoutMs`，空 = 回落基础那份（回落只在 `config.ts` 的 `imageConfigFor` 一处）。
 - 画幅白名单取三款接口的交集（Gemini 官方 14 个取值，减去 OpenAI 不收的 1:4/4:1/1:8/8:1）——换一家 Gemini 或 OpenAI 生图只改地址与模型名，不动代码。

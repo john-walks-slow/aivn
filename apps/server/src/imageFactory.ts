@@ -5,13 +5,14 @@ import type { ImageBackend, ImageBackends, ImageKind } from "./imageBackend.js";
 import { GeminiImageGen } from "./geminiImage.js";
 import { ModelsLabImageGen } from "./modelslabImage.js";
 import { ComfyUiImageGen } from "./comfyuiImage.js";
+import { NovelAiImageGen } from "./novelaiImage.js";
 import { OpenAiImageGen } from "./openaiImage.js";
 
 /**
  * 按**接口格式**装配生图后端；`image.enabled=false` 返回 null（预发射只记谱系不发起）。
  *
  * 本层不认识产品名：接的是官方 API、flow2api 还是 cpa 由 `image.baseUrl` 决定，
- * 格式只描述线上跑的是什么协议形状。三款格式的能力差见 README 的「生图接口格式」。
+ * 格式只描述线上跑的是什么协议形状。五款格式的能力差见 README 的「生图接口格式」。
  *
  * **逐类目各一份实例**（背景 / CG / 立绘）：类目可以覆盖接口格式、地址、Key、模型、档位与超时
  * （见 `config.ts` 的 `imageConfigFor`），所以每类自己装一个后端，而不是一个实例被三类共用。
@@ -36,5 +37,6 @@ function createBackend(config: ServerConfig, kind: ImageKind): ImageBackend {
   if (format === "gemini") return new GeminiImageGen(options, fetchImpl);
   if (format === "modelslab") return new ModelsLabImageGen(options, fetchImpl);
   if (format === "comfyui") return new ComfyUiImageGen(options, fetchImpl);
+  if (format === "novelai") return new NovelAiImageGen(options);
   return new OpenAiImageGen(options, fetchImpl);
 }

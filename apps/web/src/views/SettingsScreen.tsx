@@ -613,7 +613,7 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
               </Field>
               <Field
                 label="接口格式"
-                hint="gemini 支持多张垫图，modelslab 与 comfyui 只吃一张，openai 不支持"
+                hint="gemini 支持多张垫图，modelslab / comfyui / novelai 只吃一张，openai 不支持"
               >
                 <select
                   value={draft.image.format}
@@ -629,6 +629,7 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
                 >
                   <option value="gemini">gemini</option>
                   <option value="modelslab">modelslab</option>
+                  <option value="novelai">novelai</option>
                   <option value="openai">openai</option>
                   <option value="comfyui">comfyui</option>
                 </select>
@@ -1273,6 +1274,7 @@ function KindOverrideFields(props: {
           <option value="">{inherited(base.format)}</option>
           <option value="gemini">gemini</option>
           <option value="modelslab">modelslab</option>
+          <option value="novelai">novelai</option>
           <option value="openai">openai</option>
           <option value="comfyui">comfyui</option>
         </select>
