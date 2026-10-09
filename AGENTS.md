@@ -12,11 +12,7 @@
 
 - 数据目录（打包态 = exe 同级 `data/`，开发态 = 仓库根）—— `plays/` 剧目、`library/` 素材库、`media-cache/` 可重建缓存、`settings.json` 运行期设置。**整个数据目录不进 git**；仓库也不发任何样例剧目，新装打开就是一座空剧场，由「新建剧目」/「导入剧目包」起步。
 
-- 其他：`packages/core` —— Stage DSL 规范、流式解析器、IR 事件、WS 协议与谱系数据模型；`scripts/` —— 开发与打包脚本；`apps/server/skills/` —— 跨剧目的通用做法速查（只给工坊的 `read_skill`，随包只读；**技能库只此一处**，别在仓库根另建 `skills/`——那里不会被加载，改了不生效）；`docs/` —— 需求、问题与规范记录。
-
-- **两条发行线**：本仓是 AIVN 的领域与完整产品线；`dsh-aivn`（兄弟仓）是同一套领域在 DSH 宿主上的适配线。两仓共享 `packages/core` 与 `packages/stage`——**改共享包会静默传到 DSH**（构建期打进它的 `lib/`），所以改完必须双边验证。**改了什么该跑什么**见 [`docs/references/261009-cross-host-verification.md`](docs/references/261009-cross-host-verification.md)。
-
-- 提示词/工具/能力位的漂移守卫：`pnpm check:agent-contract`（改 `prompt.ts`、`workshop.ts`、`agentkit/**` 或 `skills/**` 后跑）。
+- 其他：`packages/core` —— Stage DSL 规范、流式解析器、IR 事件、WS 协议与谱系数据模型；`scripts/` —— 开发与打包脚本；`skills/` —— 跨剧目的通用做法速查（只给工坊的 `read_skill`，随包只读）；`docs/` —— 需求、问题与规范记录。
 
 ## 开发与调试
 

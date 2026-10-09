@@ -251,23 +251,6 @@ check("恒列 skill 的 description 保持能力中立", () => {
   return problems;
 });
 
-check("技能库只有 apps/server/skills 这一处", () => {
-  // 曾有过一份受跟踪的仓库根 `skills/galgame-audio/`：内容与运行期那份不同、
-  // 没有任何代码引用它（打包脚本带的是 apps/server/skills）。改那份不生效，
-  // 而它看起来完全像"就是这里"——这类「改了不生效的副本」正是守卫该拦的。
-  const problems = [];
-  const rootSkills = join(ROOT, "skills");
-  try {
-    const entries = readdirSync(rootSkills);
-    if (entries.length > 0) {
-      problems.push(`仓库根有 skills/（${entries.join(" / ")}）——它不会被加载，改了不生效；技能库只看 apps/server/skills/`);
-    }
-  } catch {
-    // 不存在即正确
-  }
-  return problems;
-});
-
 if (process.argv.includes("--list")) {
   for (const { name } of checks) console.log(`- ${name}`);
   process.exit(0);
