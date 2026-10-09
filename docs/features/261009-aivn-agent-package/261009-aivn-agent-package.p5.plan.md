@@ -197,7 +197,7 @@ P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进�
 | P5-f | ✅ 完成：服务端 `view_image` 整段删掉（本地图走 pi `read`、网图 bash 抓回来再读），`webImage` 缓存管线与 `view` 能力行一并清掉；**插件不补工具**——两边都把看图交还宿主文件工具 | — |
 | P5-g 配置工具形状统一 | ⛔ 作废（D4 结论：删工具，不是统一形状 → 见 P6-b） | — |
 | P5-h 插件 BGM 异步化 | ⏸ 用户 2026-10-10 定「先不做」——同步异步与队列整体再看 | — |
-| P5-i 契约与文档收尾 | 🔄 部分完成：能力矩阵已按 P5-c…f 的新形态重写；§9 已按复核更正；守卫第 10 项（face 参数必须由 pick 声明）未做，另行评估 | — |
+| P5-i 契约与文档收尾 | ✅ 完成（见下方「P5-i 实际做了什么」）：能力矩阵按新形态重写、技能正文与界面工具表跟上 P5 的改名/删除、守卫**扩到技能正文**；守卫第 10 项（face 必须由 pick 声明）经评估**不做** | — |
 
 **排序理由**：a 是 c 的前置且纯加法（低风险先做）；c 是收益最大的一步（消灭同名不同义 + 拆复合动词），
 但要用 a/b 铺路；d 依赖 c（宏的第三步是 register）；e/g/h 都是「形状统一」而非「能力共享」，价值递减、
@@ -552,7 +552,23 @@ cd /root/projects/dsh-aivn-shared && npm run typecheck && node build.mjs --check
 | 文件 | 动作 |
 | --- | --- |
 | `apps/server/src/agentkit/contract.ts` | `CAPABILITY_MATRIX` 按新形态重写：`image` 行拆成 `image`（produce）/`asset`（register+annotate+宏）；`music` 行的差异只剩投递方式；`readiness` 行改成「同名同能力，报告按读者分两份」 |
-| `scripts/check-agent-contract.mjs` | 新增第 10 项：**face 参数面必须由 `pick` 声明**（扫 `apps/server/src/agentkit/*Tool.ts` 与插件 `src/tools/*.ts`，出现 `Type.Object({…})` 手写参数面且不在白名单里就红） |
+| `scripts/check-agent-contract.mjs` | 第 1 项**扩到技能正文**（`apps/server/skills/*/SKILL.md`）；原先计划的第 10 项（face 必须由 `pick` 声明）**不做**，理由见下 |
+
+**P5-i 实际做了什么（2026-10-10）**
+
+- 能力矩阵：`memory` / `files` 两行按 P6-a/b 改写；`stage` / `nsfw` / `skill` / `library` / `lineage` 五行
+  补上「为什么载体必须不同」（P6-e）。
+- **技能正文跟上**：`galgame-visual-craft` 还在教 `commit_asset` / `view_image` / `recut_sprite` 与嵌套的
+  `cutout` 参数——P5-b/c/f 删工具、改名时漏改，**技能是模型按需加载的提示词层，属于同一类漂移**，
+  已改为 `import_asset(source="draft:…")` / `generate_asset` / `cut` / 通用 `read`。
+- **界面工具表跟上**：`apps/web/src/workshop/TurnParts.tsx` 的 `TOOL_LABEL` 与 `toolSummary` 也停在旧工具名
+  （`get_readiness` / `recut_sprite` / `view_image` / `set_craft`），用户看到的工具行会退化成裸 id——已重排。
+- **守卫扩一条**：第 1 项「提示词点名的工具都在装配面上」原先只扫三个 TS 提示词文件，**技能正文不在其中**，
+  所以上面那处漂移没有任何检查拦得住。现在把 `apps/server/skills/*/SKILL.md` 一起扫（扩充当天就抓到一处
+  `view_image` 的残留提法）。
+- 守卫第 10 项**不做**：它要维护一份「哪些 face 允许手写」的白名单，而共享能力的 face 由 `pick`/`tighten`
+  在构造上保证同源；剩下手写 schema 的恰好是那批**宿主流程工具**（`update_state` / `search_archive` /
+  `beat_done` / `nsfw`）——它们的形态本来就由宿主机制决定（见 P6 轴）。为它们养一张白名单，成本高于收益。
 | 两侧 README + `AGENTS.md` | 工具表、提示词地图、e2e 锚点表 |
 | 本 plan 的「实施进度」表 | 每阶段落地后追加提交号 |
 

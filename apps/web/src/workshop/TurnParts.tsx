@@ -11,18 +11,25 @@ const TOOL_LABEL: Record<string, string> = {
   write: "写入文件",
   edit: "定点编辑",
   bash: "跑命令",
-  get_readiness: "检查就绪条件",
-  generate_image: "出图",
-  recut_sprite: "重抠立绘底",
+  beat_done: "结束本轮",
+  update_state: "改状态",
+  enter_nsfw: "进入限制级",
+  exit_nsfw: "退出限制级",
+  validate_play: "检查开演条件",
+  generate_image: "出候选图",
+  generate_asset: "生成素材",
+  generate_bgm: "生成 BGM",
+  annotate_asset: "标注素材",
+  cut: "抠底",
+  import_asset: "登记素材",
   list_library: "查素材资源库",
-  import_asset: "从资源库导入素材",
-  view_image: "看图",
+  library_import: "从资源库导入",
   read_skill: "读技能库",
   list_saves: "查看周目",
   read_lineage: "读故事树",
+  list_voices: "查音色库",
   web_search: "联网检索",
   search_archive: "搜历史切片",
-  set_craft: "改写作参数",
 };
 
 /** 一行里能看见的那点参数：路径、命令、查询词。完整参数在展开态里。 */
@@ -48,18 +55,25 @@ export function toolSummary(name: string, args: unknown): string {
     case "bash":
       return firstLine(text("command"));
     case "generate_image":
-      return truncate(text("prompt"), 48);
-    case "recut_sprite":
-      return [text("characterId"), text("expression")].filter(Boolean).join(" · ");
+    case "generate_asset":
+      return truncate(text("prompt", "name", "spriteId"), 48);
+    case "generate_bgm":
+      return truncate(text("name", "prompt"), 48);
+    case "annotate_asset":
+      return [text("kind"), text("name")].filter(Boolean).join(" · ");
+    case "cut":
+      return text("source", "output");
+    case "import_asset":
+      return [text("kind"), text("source", "name", "spriteId")].filter(Boolean).join(" · ");
+    case "library_import":
+      return [text("kind"), text("entryId")].filter(Boolean).join(" · ");
     case "list_library":
       return [text("kind"), text("query")].filter(Boolean).join(" · ");
-    case "import_asset":
-      return [text("kind"), text("entryId")].filter(Boolean).join(" · ");
     case "web_search":
     case "search_archive":
       return text("query");
-    case "view_image":
-      return text("source", "path", "url");
+    case "list_voices":
+      return [text("language"), text("query")].filter(Boolean).join(" · ");
     case "read_skill":
     case "read_lineage":
     case "list_saves":

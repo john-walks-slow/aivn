@@ -31,6 +31,16 @@ const AGENTKIT = join(ROOT, "apps/server/src/agentkit");
  */
 const PROMPT_FILES = ["apps/server/src/prompt.ts", "apps/server/src/workshop.ts", "apps/server/src/craftParams.ts"];
 
+/**
+ * 服务端的技能正文（`apps/server/skills/<name>/SKILL.md`）——它们也是给模型看的提示词层，
+ * 只是走 `read_skill` 按需加载。**2026-10-10 加进这条检查**：P5-b/c/f 删掉 / 改名了
+ * `recut_sprite` / `commit_asset` / `view_image`，技能正文漏改，而当时这条检查只扫三个 TS 文件，
+ * 于是「教模型调不存在的工具」在技能里挂了整整一天没人拦。
+ */
+const SKILL_FILES = ["galgame-play-setup", "galgame-audio", "galgame-bgm", "galgame-visual-craft"].map(
+  (name) => `apps/server/skills/${name}/SKILL.md`,
+);
+
 /** persona 里只许讲「何时用」，参数细节归 DESCRIPTION——这些是参数词汇，不该出现在提示词正文。 */
 const PARAM_VOCAB = [
   "additionalProperties",
@@ -127,7 +137,7 @@ function check(name, run) {
 check("提示词点名的工具都在装配面上", () => {
   const installed = installedToolNames();
   const problems = [];
-  for (const rel of PROMPT_FILES) {
+  for (const rel of [...PROMPT_FILES, ...SKILL_FILES]) {
     for (const name of toolNamesMentionedIn(rel)) {
       if (installed.has(name)) continue;
       // 反引号里什么都可能是（英文单词、文件名、字段名），只有**像个工具名**的才比。

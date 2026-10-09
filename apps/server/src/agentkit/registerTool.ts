@@ -43,7 +43,11 @@ export function createImportAssetTool(deps: ImportAssetDeps): AgentTool<typeof i
   return {
     name: "import_asset",
     label: "登记素材",
-    description: assetRegister.doc,
+    // 共享描述是宿主中立的，`draft:` 句柄是服务端这一面独有的机制，在这里补上：
+    // 它是「采用刚出的候选」唯一走法（候选区路径模型拿不到）。
+    description:
+      `${assetRegister.doc}\n` +
+      "服务端还可给 `draft:<草稿id>`——\`generate_image\` 刚出的候选，回执里给的就是这个句柄；采用候选只能这么写。",
     parameters: importParams,
     execute: async (toolCallId, params: Static<typeof importParams>) => {
       if (!deps.playAssets) return textResult("素材未启用（STAGE_ASSETS_ENABLED=false）。");

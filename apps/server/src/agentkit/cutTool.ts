@@ -48,7 +48,10 @@ export function createCutTool(deps: CutDeps): AgentTool<typeof cutParams> {
   return {
     name: "cut",
     label: "抠底",
-    description: imageCutout.doc,
+    // 同 import_asset：`draft:` 句柄是服务端这一面的机制（共享描述只讲宿主中立的路径与素材引用）。
+    description:
+      `${imageCutout.doc}\n` +
+      "服务端还可给 `source=\"draft:<草稿id>\"`——抠 `generate_image` 刚出的那张候选。",
     parameters: cutParams,
     execute: async (toolCallId, params: Static<typeof cutParams>) => {
       if (!deps.playAssets) return textResult("生图未启用（STAGE_IMAGE_ENABLED=false 或后端缺凭据）。");

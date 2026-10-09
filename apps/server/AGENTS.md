@@ -22,7 +22,7 @@
 - 剧作家走通用 `write` 时，同一步（`orchestrator.onPlayFileWritten` → `playhouse.onPlayFileWritten`）按 `characterIdOfPath(write.path)` 认角色卡并登记，两条路汇到同一处。
 - **无名角色音色**：`<say id="passerby" name="路人甲">` 这种一次性角色没有角色卡、而音色挂在角色卡的 voiceId 上，于是永远没声音。
 - 两处兜底都在 `orchestrator`：`voiceOf` 取卡的 voiceId、没有卡就落剧目级 `defaultVoiceId`（工坊「剧目」页挑）；名字取卡的 `name` → `<say name>` → 素材表 `title`（素材页的「名牌」）→ id。
-- **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `recut_sprite`——立绘**入库时**把抠底前的原片留一份到 `media-cache/sprite-sources/<主体 id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
+- **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `cut`（`source="sprite:<主体id>[/<差分名>]"`，不给 `output` 就是原地重抠）——立绘**入库时**把抠底前的原片留一份到 `media-cache/sprite-sources/<主体 id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
 - 没有留底的（更早出的图、用户上传的）直接报错，只能重新出图。
 - `library_import` 现在**只装给工坊**（`TOOL_CATALOG` 的 `roles` 只留 `workshop`）——剧作家的默认导入路径是引用即导入（见下），给它留一个自己搬素材的口是重复路径，只是多一个谁都够不到的工具。工坊那边它挂在「素材资源库」能力下（`libraryTool` 的 `importAsset` 开关，剧作家侧传 `false`）。
 
@@ -72,7 +72,7 @@
 ## 素材、出图与台账
 
 - 出图**只有一层**：`PlayAssets` 是工坊与剧作家共用的唯一实现（工坊走 `draft` + 显式 `cut` / `import_asset`，剧作家在后台 `kick` 一次做完），同一张图在飞去重只烧一次配额。
-- `ImageAssets`（media-cache 里的 bg/cg 内容寻址缓存）已删——`media-cache/` 现在只剩 TTS 音频、立绘留底原片（sprite-sources/）、`view_image` 下载的网图（web-images/）与出图草稿区（drafts/）——全是可重建的中间物。
+- `ImageAssets`（media-cache 里的 bg/cg 内容寻址缓存）已删——`media-cache/` 现在只剩 TTS 音频、立绘留底原片（sprite-sources/）、取网图时下载的图（web-images/）与出图草稿区（drafts/）——全是可重建的中间物。
 - 代价是内容寻址去重没了：同一句提示词生成两次会真出两张图，剧作家侧改由工具自己判「剧目里已有同名素材就跳过」（`playAssets.existingUrl()`）。
 - CG 页的生成台账只有 `assets/generated.json` 一份（`generatedLedger.ts` 的 `readPlayLedgerEntries`）。
 - **一张表一个写者**：`assets/manifest.json`（素材描述）归工坊与用户，`assets/generated.json`（站内出图这次用的 prompt 记录，进 git、只读）归引擎——两边都动一张表时，工坊补一条中文描述就能把引擎记的 prompt 整条替换掉（2026-10-01 实测）。
@@ -130,12 +130,15 @@
 - `beat_done` 的三种停法只在「## 结束轮」与 `beatTool.ts` 的 `BEAT_DONE_DESCRIPTION` 各写一遍（契约 vs 工具说明），`# 你怎么工作` 不再复述第三遍。
 - 搭台提示词里**不写死 UI 入口清单**（曾列出「玩家能打字的五处界面」，界面一改即成假信息），只说清要改什么、让用户自己找入口。
 
-## 看图（view_image）
+## 看图与取网图（2026-10-10 起没有 view_image）
 
-- **看图是一个能力不是一道流程**：`view_image`（只装给工坊，能力页上的「看图」一行，分组「搭台辅助」）把图读成 image attachment，`source` 吃两种来源——剧目内路径（PlayFiles 白名单）或图片网址（`webImage.ts` 下载，按 URL 摘要缓存到 `media-cache/web-images/`，不进 git）。
+- **看图交还通用文件口**：pi 的 `read` 自己就带图片支持（`detectSupportedImageMimeType` → `{type:"image"}` 附件），
+  本地图直接 `read`；要看网页上的图，先用 `bash` 抓下来再 `read`。所以 `view_image` 已整段删除
+  （本地分支对 `read` 冗余，网址分支由下面那条接管），`contract.ts` 的 `view` 矩阵行一并去掉。
+- **取网图 = `import_asset(source=<http(s) 网址>)`**：把网图登记成剧目素材，`webImage.ts` 按 URL 摘要缓存到
+  `media-cache/web-images/`（不进 git）。地址是模型给的，所以下载前解析域名并拒掉回环/私网/链路本地/云元数据、
+  每跳重定向重判、非 http(s) 直接拒。
 - **系统提示词里不写「出完图看一遍」**——每张都看只是白烧一轮，看不看得由模型自己判断。
-- 网址分支的地址是模型给的，所以 `webImage.ts` 在下载前解析域名并拒掉回环/私网/链路本地/云元数据、每跳重定向重判、非 http(s) 直接拒。
-- 出口代理读标准的 `HTTP_PROXY`/`HTTPS_PROXY` 环境变量（取第一个非空的），不另开配置项——代理本来就是环境的事。
 
 ## 引用即导入（资源库）
 
