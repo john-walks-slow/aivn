@@ -1413,8 +1413,6 @@ export class PlayHouse {
       playAssets,
       playMusic: this.playMusicFor(play.id, store),
       queueMusic: (req) => this.queueMusic(play.id, store, req),
-      saves: this.library.saves(play.id),
-      saveStore: (saveId) => this.library.saveStore(play.id, saveId),
       assetLibrary: this.assetLibrary,
       voices: this.voices,
       exa: this.exa ?? undefined,

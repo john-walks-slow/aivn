@@ -207,21 +207,6 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     },
   },
   {
-    id: "lineage",
-    profile: "preset-specific",
-    domainSemantic: "读取演出周目、故事树与当前分支记录。",
-    roles: ["workshop"],
-    equivalence: "intentional-difference",
-    hosts: {
-      stageAi: "独立版 saves、session 和 LineageTree 的只读 AgentKit 工具。",
-      dshAivn: "不复制 LineageTree；使用 DSH 原生会话历史与 fork。",
-      backendDependency: "独立版需剧目 saves 数据。",
-      intentionalDifference:
-        "周目与故事树是独立版产品概念（saves/ + LineageTree）：list_saves / read_lineage 回的是按存档、路径过滤、" +
-        "分页与 kind 渲染过的树，不是一次文件读取。插件是线性会话优先（宿主 fork 就是它的分支），不复制这条数据。",
-    },
-  },
-  {
     id: "skill",
     profile: "shared",
     domainSemantic: "按需读取跨剧目的制作技能。",
@@ -368,8 +353,6 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
   validate_play: READ_ONLY,
   list_library: READ_ONLY,
   library_import: { ...READ_ONLY, read_only: false, workspace_write: true, asset_adopt: true, reversible: false, idempotent: false },
-  list_saves: READ_ONLY,
-  read_lineage: READ_ONLY,
 };
 
 export function sideEffectsForTool(name: string, role?: AgentRole): ToolSideEffectMetadata {

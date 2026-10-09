@@ -11,7 +11,6 @@ import { createGenerateImageTool } from "./imageTool.js";
 import { createAnnotateTool } from "./annotateTool.js";
 import { createGenerateAssetTool } from "./assetTool.js";
 import { createLibraryTools } from "./libraryTool.js";
-import { createLineageTools } from "./lineageTool.js";
 import { createGenerateMusicTool } from "./musicTool.js";
 import { createArchiveTool } from "./archiveTool.js";
 import { createImportAssetTool } from "./registerTool.js";
@@ -182,14 +181,6 @@ const CATALOG_ROWS = [
     unavailableNote: "服务端没配联网检索，暂不生效",
   },
   {
-    id: "lineage",
-    label: "故事树",
-    desc: "翻周目与分支记录。",
-    group: "research",
-    roles: ["workshop"],
-    tools: ["list_saves", "read_lineage"],
-  },
-  {
     id: "skill",
     label: "技能库",
     desc: "查跨剧目的通用做法。",
@@ -282,8 +273,6 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   list_library: { label: "浏览素材资源库", roles: ["playwriter", "workshop"] },
   // 剧作家不走它：剧本里写个 id，宿主会去库里导入（引用即导入），自己搬一遍是重复路径。
   library_import: { label: "从资源库导入", roles: ["workshop"] },
-  list_saves: { label: "列出周目", roles: ["workshop"] },
-  read_lineage: { label: "读故事树", roles: ["workshop"] },
 };
 
 /**
@@ -510,7 +499,6 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
     }),
     createAnnotateTool({ playAssets: deps.playAssets, playMusic: deps.playMusic }),
     createReadSkillTool(),
-    ...createLineageTools(deps),
     // 没配 TTS 就不注册：查不出来的工具只会诱使模型空转
     ...createVoiceTool(deps.voices),
     ...createLibraryTools({

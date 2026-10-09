@@ -45,10 +45,10 @@
 | 3 | `enter_nsfw` | 不能 | 一致 | 不做，登记有意差异 |
 | 4 | `exit_nsfw` | 不能 | 一致 | 不做，登记有意差异 |
 | 5 | `read_memory_detail` | 能文件化 | 一致 | **P6-a：删工具 → `read`** |
-| 6 | `search_archive` | 有条件但收益 0 | 一致（不建议做） | 不做，登记有意差异 |
-| 7 | `list_saves` | 能但收益 0 | 一致 | 不做，登记有意差异 |
-| 8 | `read_lineage` | 不建议 | 一致 | 不做，登记有意差异 |
-| 9 | `list_library` | 能但收益 0 | 一致 | 不做，登记有意差异 |
+| 6 | `search_archive` | 有条件能 | 一致 | **保留**（重审 2026-10-10，理由见 §6） |
+| 7 | `list_saves` | 能 | — | **已删**（2026-10-10，见 §6 甲） |
+| 8 | `read_lineage` | 能 | — | **已删**（2026-10-10，见 §6 甲） |
+| 9 | `list_library` | 能 | 一致 | **保留**（重审 2026-10-10，理由见 §6 乙） |
 | 10 | `library_import` | 有条件能并入 `import_asset` | **不一致**：与插件 `import_asset` 不同义 | **移出 P6**（服务端内部重构，另议） |
 | 11 | `read_skill` | 不能/不该 | 一致 | 不做，登记有意差异 |
 | 12 | `set_craft` | 能文件化 | 有条件能；锁的那条描述有误 | **P6-b：删工具 → `edit play.json`** |
@@ -84,8 +84,31 @@
 2026-10-10 实施：删 `update_state`、三文件成为工作态载体、B 区每轮现读、收束进快照、
 jump/fork/restore/切档/冷启动回写、新档播种初值。
 
-**问 4 · `search_archive` / `list_saves` / `read_lineage` / `list_library` → 不删不做。**
-登记理由要写**具体三项损失**（见 §6），不要写「收益 0」。
+**问 4 · `search_archive` / `list_library` → 保留（写真实理由）；`list_saves` / `read_lineage` → 已删。**
+2026-10-10 重审：不许再写「收益 0」，逐条给理由（见 §6）。
+
+**§6 甲 · `list_saves` / `read_lineage` —— 已删（2026-10-10）**
+
+判据两条都指向删：**这是界面动作**（舞台「路线」视图 `views/StageScreen.tsx` + `stage/LineagePanel.tsx`
+与 `#/play/:id/saves` 周目页读的是同一份数据，HTTP 面 `GET /api/plays/:id/{lineage,saves}` 都在），
+模型没有非它不可的场景；而它们回的又是「按存档、路径过滤、分页、kind 渲染过的树」这种**专用读法**，
+正是不该做成工具的那类。删掉：`agentkit/lineageTool.ts`、`lineage` 能力位、契约矩阵那一行、
+副作用目录两行、`WorkshopKitDeps` 的 `saves` / `saveStore`、工坊提示词里的工具教学（改成指界面）、
+web 两处工具标签。
+
+**代价（认账）**：没有 `bash` 的工坊会话失去了「自己读树」这条路。`saves/` 下的
+`session.json` / `lineage.jsonl` 本来就在文件工具白名单之外（`playFiles.ts`），
+所以「模型自己 read」不成立——这是**有意收窄**，不是遗漏。要看得清楚就去界面。
+
+**§6 乙 · `search_archive` / `list_library` —— 保留**
+
+- `search_archive`（仅剧作家）：它回的不是「读文件拿得到的东西」——**相关性排序 + 分支 pathSet 过滤 +
+  NSFW 过滤**（限制级切片只以 SFW 摘要进入检索）+ 跨存档历史。插件侧根本没有归档层，这条能力
+  无法用通用文件工具等价替代；删了等于把「想起前面某一幕说过什么」从剧作家手里拿走。
+- `list_library`：素材资源库是**应用级**数据，在剧目根之外（用户自己的库目录，HTTP 面
+  `/library/<kind>/<id>/<file>` 只读服务它），文件工具按白名单够不到。它是「引用即导入」那条路的
+  发现入口——模型得先知道库里有什么，才能在剧本里写下那个 id。要删得先把库目录开进文件白名单，
+  那是把读面铺得更大，不划算。
 
 **开工前的三处更正**（已落进 §1 与 §6）：工具面 25 不是 24；插件目录 10 不是 9；
 §9 的「工坊文件页与 `set_craft` 共用写锁」论断是错的——事实是**锁与无锁写者并存**。

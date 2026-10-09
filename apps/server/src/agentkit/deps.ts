@@ -97,10 +97,6 @@ export interface WorkshopKitDeps extends KitCommonDeps {
   playMusic?: PlayMusic;
   /** 后台发起 BGM 生成（宿主记账与到货广播）。没配音乐后端时工具压根不注册。 */
   queueMusic?: (req: GenerateMusicRequest) => string;
-  /** 周目（存档）枚举——读故事树前先让 agent 知道有哪几棵。 */
-  saves: PlaySaves;
-  /** 按 saveId 取存档级操作面（会话面），供 read_lineage 读树。 */
-  saveStore: (saveId: string) => PlayStore;
   /** 应用级素材资源库（只读浏览 + 导入）。未配置时不注册这两个工具。 */
   assetLibrary?: AssetLibrary;
   /** 联网检索（未配置 key 时为 undefined：工具不注册，prompt 里也不提联网）。 */

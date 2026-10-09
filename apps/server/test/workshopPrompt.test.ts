@@ -30,7 +30,6 @@ const caps = (over: Partial<AgentCapabilities> = {}): AgentCapabilities => ({
   search: true,
   library: true,
   files: true,
-  lineage: true,
   skill: true,
   view: true,
   readiness: true,
@@ -119,11 +118,11 @@ describe("工坊提示词：能力关掉之后不再教它调那个工具", () =
     expect(prompt).toContain("先出 neutral 定妆照");
   });
 
-  it("「故事树」关：读树那一章换成让用户去路线视图看", async () => {
-    const prompt = await buildWorkshopPrompt({ ...CTX, can: caps({ lineage: false }) });
+  it("读树那一章只讲去哪看，不教工具（2026-10-10 删掉那两个只读工具之后）", async () => {
+    const prompt = await buildWorkshopPrompt({ ...CTX, can: caps({}) });
     expect(prompt).not.toContain("list_saves");
     expect(prompt).not.toContain("read_lineage");
-    expect(prompt).toContain("本剧目没开「故事树」");
+    expect(prompt).toContain("让用户去舞台的「路线」视图");
   });
 
   it("「技能库」关：技能清单块整块不注入（清单里点名了 read_skill）", async () => {

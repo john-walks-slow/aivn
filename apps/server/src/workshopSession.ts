@@ -22,7 +22,6 @@ import type { Exa } from "./exa.js";
 import { PlayFiles } from "./playFiles.js";
 import type { AssetLibrary } from "./library.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
-import type { PlaySaves } from "./saves.js";
 import type { PlayStore } from "./store.js";
 import {
   buildWorkshopPrompt,
@@ -70,10 +69,7 @@ export interface WorkshopSessionOptions {
   playMusic?: PlayMusic;
   /** 后台发起 BGM 生成：宿主记账与到货广播，工具那边不等它（未启用音乐生成时不传）。 */
   queueMusic?: (req: GenerateMusicRequest) => string;
-  /** 周目（存档）管理面：read_lineage 前先列周目。 */
-  saves: PlaySaves;
-  /** 按 saveId 取存档级操作面（读故事树只走磁盘 session.json，不建 runtime）。 */
-  saveStore: (saveId: string) => PlayStore;
+
   /** 应用级素材资源库：工坊 agent 可浏览与导入（只读，库本身由用户在本地目录维护）。 */
   assetLibrary?: AssetLibrary;
   /** 公共音色库客户端：list_voices 走它。没配 TTS 时为 undefined，工具不注册。 */
@@ -128,8 +124,6 @@ export class WorkshopSession {
       playAssets: opts.playAssets,
       playMusic: opts.playMusic,
       queueMusic: opts.queueMusic,
-      saves: opts.saves,
-      saveStore: opts.saveStore,
       assetLibrary: opts.assetLibrary,
       voices: opts.voices,
       exa: opts.exa,
@@ -153,8 +147,6 @@ export class WorkshopSession {
       playAssets: this.opts.playAssets,
       playMusic: this.opts.playMusic,
       queueMusic: this.opts.queueMusic,
-      saves: this.opts.saves,
-      saveStore: this.opts.saveStore,
       assetLibrary: this.opts.assetLibrary,
       voices: this.opts.voices,
       exa: this.opts.exa,

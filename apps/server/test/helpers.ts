@@ -65,7 +65,6 @@ export function caps(over: Partial<AgentCapabilities> = {}): AgentCapabilities {
     search: false,
     voice: false,
     files: false,
-    lineage: false,
     skill: false,
     view: false,
     readiness: false,

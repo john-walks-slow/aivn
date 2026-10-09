@@ -156,7 +156,6 @@ const caps = (over: Record<string, boolean> = {}): AgentCapabilities => ({
   voice: true,
   shell: false,
   files: true,
-  lineage: true,
   skill: true,
   view: true,
   readiness: true,

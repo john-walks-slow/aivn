@@ -69,7 +69,7 @@ describe("PlayEnv：read / write / edit 的路径白名单", () => {
     const ok = (await call(read, { path: "play.json" })) as { content: { text: string }[] };
     expect(ok.content[0]!.text).toContain("测试剧目");
 
-    // session.json 是演出状态，工坊看不见（它有 list_saves / read_lineage 走另一条路）
+    // session.json 是演出状态，工坊的文件工具看不见（读树的两个工具 2026-10-10 删了，改由界面看）
     await expect(call(read, { path: "session.json" })).rejects.toThrow(/不在剧目可读范围/);
     await expect(call(read, { path: "../../etc/passwd" })).rejects.toThrow(/不在剧目目录内|不在剧目可读范围/);
     expect(writes).toEqual([]);

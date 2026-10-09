@@ -196,20 +196,19 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     expect(names(kit)).not.toContain("create_character");
     expect(names(kit)).not.toContain("write_memory");
     expect(names(kit)).not.toContain("bash");
-    expect(names(kit)).not.toContain("read_lineage");
+    expect(names(kit)).not.toContain("read_lineage"); // 2026-10-10 这两位删了：读树归界面的「路线」视图
     // 用户在 Agent 页关掉生图，下一轮就装不进去（策略随之失效）
     expect(names(playwriter({}, defaultCapabilitiesFor("playwriter").filter((id) => id !== "image")))).not.toContain(
       "generate_image",
     );
   });
 
-  it("工坊拿剧目文件、故事树与技能库，不拿轮收束与演出记忆", () => {
+  it("工坊拿剧目文件、素材与技能库，不拿轮收束与演出记忆", () => {
     const kit = workshop();
     // read / write / edit 是 pi 的内建工具，两个角色同一套，白名单在 PlayEnv 里收口
     expect(names(kit)).toContain("read");
     expect(names(kit)).toContain("write");
     expect(names(kit)).toContain("edit");
-    expect(names(kit)).toContain("read_lineage");
     expect(names(kit)).toContain("generate_asset");
     expect(names(kit)).toContain("read_skill");
     expect(names(kit)).not.toContain("beat_done");
@@ -377,7 +376,6 @@ describe("agent kit：能力目录（设置页的数据源）", () => {
       "music",
       "library",
       "search",
-      "lineage",
       "skill",
       "readiness",
       "shell",

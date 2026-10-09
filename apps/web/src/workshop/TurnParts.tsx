@@ -24,8 +24,6 @@ const TOOL_LABEL: Record<string, string> = {
   list_library: "查素材资源库",
   library_import: "从资源库导入",
   read_skill: "读技能库",
-  list_saves: "查看周目",
-  read_lineage: "读故事树",
   list_voices: "查音色库",
   web_search: "联网检索",
   search_archive: "搜历史切片",
@@ -74,9 +72,7 @@ export function toolSummary(name: string, args: unknown): string {
     case "list_voices":
       return [text("language"), text("query")].filter(Boolean).join(" · ");
     case "read_skill":
-    case "read_lineage":
-    case "list_saves":
-      return text("name", "id", "saveId");
+      return text("name", "id");
     default: {
       // 兜底：第一个短字符串字段，多半就是这句话的主语
       for (const value of Object.values(record)) {

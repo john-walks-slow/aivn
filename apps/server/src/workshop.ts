@@ -70,8 +70,8 @@ function responsibilityRules(canFiles: boolean): string {
 ${produced}
 - 你不做的事：不写台词、不排戏、不替玩家表态。演出由另一套系统负责，与你的对话无关。
 ${mustWrite}
-- 故事树（story tree / lineage）你**只能读**。分岔、编辑台词、重写这些结构操作要走舞台的「路线」视图——
-  那是玩家的四个动词，不该由你在背后动。需要调整剧情结构时，把节点 id 和你的建议告诉用户去操作。
+- 故事树（story tree / lineage）不归你动：分岔、编辑台词、重写都是玩家的四个动词，走舞台的「路线」视图。
+  需要调整剧情结构时，把要改什么说清楚，让用户自己去操作。
 - **「路线」视图里没有输入框**，只有「回到这里」和「由此分岔」两个按钮，别说「去路线视图里输入…」。
   玩家能打字的地方都在舞台与工坊对话里；不确定界面上哪里有入口时，就说清要改什么，让用户自己找地方操作。`;
 }
@@ -110,27 +110,15 @@ const IMAGE_BASICS = `- **把图给用户看**：\`generate_image\` 的回执里
   决定剧目库那张牌与标题画面的底图。不设就自动取第一张背景、没有则第一张插图。
   用户说「拿这张当封面」时写进去；换图后记得跟着改，被删掉的图会自动回落到自动挑选。`;
 
-/** 读故事树：演出的行级日志怎么查（`list_saves` / `read_lineage`）；没开这一位时不教它调。 */
-function lineageGuide(ctx: WorkshopPromptContext): string {
-  if (!ctx.can.lineage) {
-    return `# 读故事树
+/**
+ * 读故事树这一章只讲「去哪看」，不教工具——2026-10-10 删掉了那两个只读的「读树」工具（见
+ * `agentkit/kit.ts`）：那是**界面动作**（舞台的「路线」视图与周目页都会读同一份数据），
+ * 而且 `saves/` 下的会话日志本来就在文件工具的白名单之外，模型读不到，不如让用户自己看。
+ */
+const LINEAGE_GUIDE = `# 读故事树
 
-本剧目没开「故事树」：演到哪了、某个角色出现过几次这类问题，请用户去舞台的「路线」视图自己看。`;
-  }
-  return LINEAGE_GUIDE;
-}
-
-const LINEAGE_GUIDE = `# 读故事树（list_saves / read_lineage）
-
-演出的每一行都落在周目（存档）的故事树里一棵。用户在工坊里问「演到哪了」「那个角色后来怎么了」
-「这个角色出现过几次」这类问题，读树比读文件准得多。
-
-- list_saves 拿 saveId（标「当前活动档」的是玩家正在看的那个，通常先读它）。
-- read_lineage 默认只返回**当前分支路径**上的节点；用户问「有没有走过的另一条线」才加 allBranches=true。
-- 节点很多时按 offset 翻页（默认 60 条一页），别指望一次读完。
-- 节点 id 是操作故事树的凭据，回复用户时带上 id，他才能去「路线」视图里定位。
-- 树是行级事件日志：say 是台词、narrate 旁白、thought 心理、player 玩家表态、stop 停止点、beat_end 本轮收束。
-  统计「某角色说了几句」就是数 say 节点。`;
+演出的每一行都落在周目（存档）的故事树里一棵。演到哪了、某个角色出现过几次这类问题，
+让用户去舞台的「路线」视图（或周目页）自己看——那里有完整的分支、翻页与节点定位。`;
 
 /** 工坊 system prompt：搭台不唱戏；先问后写；出图前先过审。 */
 export async function buildWorkshopPrompt(ctx: WorkshopPromptContext): Promise<string> {
@@ -153,7 +141,7 @@ ${skills}
 ${writingPoints(ctx)}
 
 ${workspaceSection(ctx)}${ctx.can.search ? SEARCH_GUIDE : ""}
-${lineageGuide(ctx)}
+${LINEAGE_GUIDE}
 
 # 当前状态
 
