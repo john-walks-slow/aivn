@@ -45,7 +45,11 @@ function toPiNode(node: PiNode): TSchema {
     case "boolean":
       return node.const !== undefined ? Type.Literal(node.const) : Type.Boolean(annotations);
     case "array":
-      return Type.Array(node.items ? toPiNode(node.items) : Type.Unknown(), annotations);
+      return Type.Array(node.items ? toPiNode(node.items) : Type.Unknown(), {
+        ...annotations,
+        ...(node.minItems !== undefined ? { minItems: node.minItems } : {}),
+        ...(node.maxItems !== undefined ? { maxItems: node.maxItems } : {}),
+      });
     case "object":
       return Type.Object(
         Object.fromEntries(Object.entries(node.properties).map(([name, field]) => [name, toPiNode(field)])),

@@ -14,6 +14,14 @@ export { assertCommonSubset, pick, tighten } from "./schema/ir.js";
 export type { Capability } from "./capabilities/capability.js";
 export type { CapabilityEntry } from "./capabilities/index.js";
 export { CAPABILITIES } from "./capabilities/index.js";
+export type { VoiceListDeps } from "./capabilities/voice/list.js";
+export {
+  renderVoiceRow,
+  VOICE_LIST_DOC,
+  voiceList,
+  voiceListFields,
+  VOICES_PER_PAGE,
+} from "./capabilities/voice/list.js";
 export type { SearchDeps } from "./capabilities/web/search.js";
 export { DEFAULT_RESULT_COUNT, renderSearchResults, webSearch, WEB_SEARCH_DOC, webSearchFields } from "./capabilities/web/search.js";
 

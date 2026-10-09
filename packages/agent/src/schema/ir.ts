@@ -94,8 +94,10 @@ export type InferValue<N> = N extends { readonly oneOf: readonly (infer Branch)[
           ? number
           : N extends { readonly type: "boolean" }
             ? boolean
-            : N extends { readonly type: "array" }
-              ? unknown[]
+            : N extends { readonly type: "array"; readonly items: infer Item }
+              ? InferValue<Item>[]
+              : N extends { readonly type: "array" }
+                ? unknown[]
               : N extends { readonly type: "object" }
                 ? Record<string, unknown>
                 : N extends { readonly type: "json" }
@@ -124,6 +126,8 @@ export interface HostTightening {
   readonly maxLength?: number;
   readonly minimum?: number;
   readonly maximum?: number;
+  readonly minItems?: number;
+  readonly maxItems?: number;
 }
 
 export type HostField = Field & HostTightening;

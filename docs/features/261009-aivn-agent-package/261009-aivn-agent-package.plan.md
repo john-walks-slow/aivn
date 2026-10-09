@@ -96,7 +96,7 @@ packages/agent/src/
 | P3 · 提示词第一批（Stage DSL 共用正文 4 块） | ✅ 完成 | `1ecc844a` / `5f57f4e` |
 | P3 · 提示词其余（A 区渲染进包；不做 facts 装配层） | ✅ 完成 | `bc5165c8` `f5c40879` / `01105d7` `d8ac9ae` |
 | P3 · 技能正文（audio 两份 86% 重合） | ✅ 完成 | `f952ac7a` `1dbfeb15` / `f24f924` |
-| P4 工具面全量迁移与契约重建 | 进行中（清理清单第 1 条 ✅：服务端 `library_import`） | `7cce64c7` / — |
+| P4 工具面全量迁移与契约重建 | 进行中（`library_import` ✅；首个 face：`voice.list` ✅） | `7cce64c7` `待补` / `待补` |
 
 **P2 完成**（媒体与素材面：抠底 / 生图契约 / 三协议 / 网络图下载 / 后缀 / 草稿 / 落位留底 /
 采用 / 台账 / 音色库 / craft / readiness + 素材清单；「导入」经判定不共享，尾部已抽）。
@@ -216,6 +216,12 @@ P1/P2 落地时对计划的收紧（都是实测出来的，不是改主意）�
   `recut_sprite`、`get_readiness`/`validate_play` 的判定部分）。
 - 按清理清单改名；`CAPABILITY_MATRIX` 改由包内能力表**派生**；`check-agent-contract.mjs` 同步改路径。
 - 判据：两边工具面测试全绿；插件 e2e 全量（真 LLM 那几拍按 `E2E_PHASES` 只跑相关段）。
+- **进度（face 逐个迁）**：`web.search`（P1）之后第一个是 `voice.list` —— 参数真相源、描述正文、
+  一页 25 条的分页与筛选、空结果话术、快照旧了的提示全进包；两边的 face 只剩「叫什么名、
+  注入哪个目录客户端、回执怎么包」。**两侧有意收敛**：服务端原先没有 `page`（一次只列前 25 条、
+  说「用 query/tags 收窄」），现在与插件同一套分页；描述取服务端那份更全的词表版并补上翻页那句。
+  要紧的是这带来两条基础改动：IR 的 `InferValue` 现在会看 `items`（数组参数不再退化成 `unknown[]`）、
+  `HostTightening` 多了 `minItems`/`maxItems`（pi 认、DSH 不认，插件编译器当场拒）。
 
 ## 风险与对策
 
