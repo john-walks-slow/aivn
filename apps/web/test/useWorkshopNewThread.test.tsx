@@ -54,9 +54,11 @@ describe("点「新会话」后旧历史不残留", () => {
     expect(api().state.messages).toEqual([]);
     expect(api().state.live).toEqual([]);
     expect(api().state.busy).toBe(false);
-    // 会话层不能跟着消失：列表与当前会话要留着；写盘只涨 revision，不留记录
+    // 会话层不能跟着消失：列表要留着；写盘只涨 revision，不留记录
     expect(api().state.threads).toEqual([THREAD]);
-    expect(api().state.activeId).toBe("t1");
+    // activeId 按设计被清空（f58381e1 的 BLK-01 收敛）：新会话的第一条消息因此不带 threadId，
+    // 而旧线程运行中到达的 chunk / done 会被 `threadId !== activeId` 拦下，不再穿透进新会话现场
+    expect(api().state.activeId).toBeNull();
     expect(api().state.revision).toBe(1);
   });
 

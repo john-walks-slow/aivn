@@ -26,3 +26,20 @@
 ## 验收
 
 见 [261008-workshop-session-fixes.validation.md](261008-workshop-session-fixes.validation.md)。
+
+## 后续（261009）：前端单测补课
+
+这次改动动了前端的**线程过滤**与 `clearState` 语义，但当时没有跟着改 `apps/web/test/`，
+于是 `useWorkshopTurn.test.tsx`（4 条）与 `useWorkshopNewThread.test.tsx`（1 条）
+从 2026-10-08 起一直红着，被误当成「预存无关失败」：
+
+- `useWorkshopTurn` 的四个用例没有先走握手（线程列表 + 当前线程历史），`activeId` 还是 `null`，
+  所有 `workshop_*` 下行事件都被 `threadId !== activeId` 拦下——测的其实是「什么都收不到」。
+  已补 `openThread()` 夹具。
+- `useWorkshopNewThread` 的「clearState 清掉聊天区但保住线程列表」仍按旧语义断言
+  `activeId === "t1"`；BLK-01 收敛后它按设计清空，已改为 `toBeNull()`。
+- 同时补上检视报告 **SUG-02 第 3 条**点名缺的那条回归：当前会话是 t1 时，t2 的
+  chunk / thinking / tool / asset / done 一律不落进现场（`useWorkshopTurn.test.tsx` 的
+  「别的线程的片段不串进当前会话」）。
+
+`pnpm --filter @aivn/web test`：33 个文件 / 219 例全绿。
