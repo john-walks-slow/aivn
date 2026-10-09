@@ -56,6 +56,23 @@ pnpm --filter @aivn/web dev         # 开发态前端：:5180，/api /plays /ws 
 
 **卸载会连数据一起删。** 剧目、素材库、`settings.json`、语音与图片缓存全在数据目录下（安装版 `%LOCALAPPDATA%\AIVN\data\`，免安装版是解压目录的 `data\`），卸载程序会一并清掉。删之前先把 `data\` 复制出来。
 
+## 两种用法
+
+AIVN 有两条发行线，**引擎与领域是同一套**（共享 `packages/core` 与 `packages/stage`），差别只在宿主：
+
+| | **本仓库**（独立版） | [`dsh-aivn`](https://github.com/john-walks-slow/dsh-aivn)（DSH 插件） |
+| --- | --- | --- |
+| 形态 | 自包含桌面应用 / 独立 Web 站，装上就能玩 | 挂在 DSH 里的一个插件（`dsh plugin add github:john-walks-slow/dsh-aivn`） |
+| 适合 | 想要完整产品体验、把剧目当作品做 | 已经在用 DSH、想要 AIVN 能力而不另开一个应用 |
+| 独有 | 路线树、分支/重写、周目存档、完整工坊、独立桌面壳 | DSH 原生会话历史、文件侧栏、技能机制、后台任务 |
+| 会话 | 自己的 `PlayHouse` + 持久化事件 | DSH 会话与 workspace |
+
+**新用户请用本仓库这一条。** DSH 插件面向已经在用 DSH 的极客用户，它的会话、设置与文件都由 DSH 托管。
+
+两条线**不追求功能逐项对齐**——路线树、周目、完整工坊是独立版的产品能力，不会搬进插件；
+DSH 的原生会话能力也不在独立版里重造。判断一个新功能该进哪条线的规则见
+[`docs/features/261008-aivn-dual-host/261008-aivn-dual-host.plan.md`](docs/features/261008-aivn-dual-host/261008-aivn-dual-host.plan.md)。
+
 ## 权限与隐私
 
 - **数据全在本机，没有遥测。** 剧目、素材、存档、设置都在数据目录里；引擎不装任何埋点、不上报任何数据，也不会自己连一个你没配过的服务。
