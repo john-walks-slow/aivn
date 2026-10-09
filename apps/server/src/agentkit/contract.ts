@@ -180,13 +180,13 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     id: "skill",
     profile: "shared",
     domainSemantic: "按需读取跨剧目的制作技能。",
-    roles: ["workshop"],
+    roles: ["playwriter", "workshop"],
     equivalence: "semantic-only",
     hosts: {
-      stageAi: "read_skill 只读 apps/server/skills。",
+      stageAi: "read_skill 只读 apps/server/skills，两个角色都装。",
       dshAivn: "DSH skill-filesystem/tool-skill 暴露插件 skills。",
       backendDependency: "随包技能文件。",
-      intentionalDifference: "技能加载时机和宿主工具不同，技能内容需保持领域语义一致。",
+      intentionalDifference: "技能加载时机和宿主工具不同，技能内容需保持领域语义一致；剧作家侧是否装得上由宿主决定。",
     },
   },
   {

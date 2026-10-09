@@ -198,7 +198,7 @@ const CATALOG_ROWS = [
     label: "技能库",
     desc: "查跨剧目的通用做法。",
     group: "stagecraft",
-    roles: ["workshop"],
+    roles: ["playwriter", "workshop"],
     tools: ["read_skill"],
   },
   {
@@ -285,7 +285,7 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   // 只装工坊：一首 ~175s 的曲子要 84s，剧作家的一轮等不起；音乐又是制作资产。
   generate_bgm: { label: "生成 BGM", roles: ["workshop"] },
   recut_sprite: { label: "重抠立绘底", roles: ["workshop"] },
-  read_skill: { label: "读技能库", roles: ["workshop"] },
+  read_skill: { label: "读技能库", roles: ["playwriter", "workshop"] },
   set_craft: { label: "设置写作参数", roles: ["workshop"] },
   list_voices: { label: "查音色库", roles: ["workshop"] },
   web_search: { label: "联网检索", roles: ["playwriter", "workshop"] },
@@ -472,6 +472,8 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
       importAsset: false,
     }),
     ...(deps.exa ? [createWebSearchTool(deps.exa)] : []),
+    // 技能库：写这一拍时手边可查的通用手艺（与工坊读的是同一批文件、同一个工具）
+    createReadSkillTool(),
   ];
 }
 

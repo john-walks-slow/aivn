@@ -17,6 +17,7 @@ import { VoiceCatalogService } from "./voiceCatalog.js";
 import { attachTransport } from "./transport.js";
 import { WebGate } from "./webAuth.js";
 import { serveWebBundle } from "./webStatic.js";
+import { preloadSkills } from "./skills.js";
 
 export async function main(): Promise<void> {
   const packaged = isPackaged();
@@ -42,6 +43,9 @@ export async function main(): Promise<void> {
   // 设置：第一次启动把旧 .env 迁成 data/settings.json，此后它就是运行期设置的唯一真相源
   const store = SettingsStore.open(bootstrap.dataRoot, process.env);
   const config = new SettingsApi(store, bootstrap);
+
+  // 技能清单要在起服务前载好：剧作家的 A 区是同步装配的，没预载就只能拿到空串
+  await preloadSkills();
 
   const library = new PlayLibrary(join(bootstrap.dataRoot, "plays"));
   // 素材资源库：跨剧目复用的本地素材目录，用户在本地增删改，这里只读

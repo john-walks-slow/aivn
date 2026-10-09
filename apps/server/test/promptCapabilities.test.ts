@@ -103,4 +103,27 @@ describe("两份提示词读同一套能力位", () => {
     const noisy = buildSystemPrompt({ play: PLAY, can: caps({ voice: true, shell: true }) });
     expect(noisy).toBe(base);
   });
+
+  it("技能库：能力开着且清单已预载才注入那一段，清单为空时整章不出现", () => {
+    const block = "<available_skills>\n  <skill>\n    <name>some-skill</name>\n  </skill>\n</available_skills>";
+    const on = buildSystemPrompt({ play: PLAY, can: caps({ skill: true }), skills: block });
+    expect(on).toContain("# 技能库（跨剧目的通用做法）");
+    expect(on).toContain("<available_skills>");
+
+    // 能力关掉，或清单没预载过（空串）：两种都不注入
+    expect(buildSystemPrompt({ play: PLAY, can: caps({ skill: false }), skills: block })).not.toContain("技能库（跨剧目的通用做法）");
+    expect(buildSystemPrompt({ play: PLAY, can: caps({ skill: true }) })).not.toContain("技能库（跨剧目的通用做法）");
+  });
+
+  it("技能库对工坊与剧作家是同一个能力位：两边一起变", async () => {
+    const can = caps({ skill: true });
+    const block = "<available_skills></available_skills>";
+    expect(buildSystemPrompt({ play: PLAY, can, skills: block })).toContain("技能库（跨剧目的通用做法）");
+    expect(buildSystemPrompt({ play: PLAY, can: caps({ skill: false }), skills: block })).not.toContain(
+      "技能库（跨剧目的通用做法）",
+    );
+    // 工坊那侧：清单块同样只由这一位决定（关掉时技能名不再进提示词）
+    expect(await buildWorkshopPrompt(workshopCtx(can))).toContain("galgame-visual-craft");
+    expect(await buildWorkshopPrompt(workshopCtx(caps({ skill: false })))).not.toContain("galgame-visual-craft");
+  });
 });

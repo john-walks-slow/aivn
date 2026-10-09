@@ -37,6 +37,7 @@ import type { VoiceCatalogService } from "./voiceCatalog.js";
 import type { PlayStore } from "./store.js";
 import { refFromActor, refFromCg, refFromSfx, refsFromScene, type AssetRefResolver } from "./assetRef.js";
 import { CAST_SCAN_EVENTS, buildSystemPrompt, renderStateSection, type AssetManifest, type AssetNotes, type GeneratedNote } from "./prompt.js";
+import { skillsPromptBlock } from "./skills.js";
 import { lineageToBeats, lineageToEvents, stopFromEvent, type RebuiltBeat } from "./rebuild.js";
 import {
   EPOCH_SUMMARY_SYSTEM,
@@ -640,6 +641,7 @@ export class PlaywrightOrchestrator {
           can: this.kit.can,
           nsfwMode: isNsfw,
           nsfwPrompt: opts.nsfwPrompt,
+          skills: skillsPromptBlock(),
           activeCast: this.recentCast(),
         }),
         model,
