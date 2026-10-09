@@ -385,10 +385,19 @@ html[data-stage-theme="light"] .stage-root {
   will-change: transform;
 }
 
+/* 背景栈自成层叠上下文：栈内的 z-index（1/2/4）是「新图压旧图」这件事的内部排序，
+   出了这层就毫无意义。栈自己只是 position:absolute + z-index:auto，**不成上下文**，
+   于是这两个数值会冒泡到最近的那个祖先上下文里，与同为该上下文成员的
+   `.theater-sprites`（z-index: 0）直接比大小——2 > 0，整组背景压住立绘，
+   换过一次底之后立绘再也看不见（2026-10-08 修）。`isolation` 把这份排序关回层内，
+   与 `.theater-sprites` 用 `z-index: 0` 自成一层是同一手法。
+   别改成「隔离 .theater-camera」：它已经因 `will-change: transform` 自成上下文（实测），
+   在它上面再加一层不会改变栈内数值与立绘层比大小的关系，实测无效——要在数值所在的那层收口。 */
 .theater-stack {
   position: absolute;
   inset: 0;
   overflow: hidden;
+  isolation: isolate;
 }
 
 .theater-stack .theater-stack-new {
@@ -399,12 +408,18 @@ html[data-stage-theme="light"] .stage-root {
   z-index: 1;
 }
 
-.theater-stack-veil {
+/* ── 转场纯色场（fade / fade-white 专用） ─────────────
+   它是**屏幕级**的东西：要「整屏过黑」把立绘与 CG 一起盖住，再揭开已经就位的新背景。
+   所以它挂在镜头容器下、立绘与 CG 之上（z-index 4），而不是待在背景栈里——关进栈里
+   就只能盖住背景，人物会浮在黑场里不动。
+   只在 fade 那两次换层时渲染（调用方按 `seq` 换 key 重挂 = 重播动画），平时不入 DOM。 */
+.theater-fade-veil {
   position: absolute;
   inset: 0;
-  z-index: 5;
+  z-index: 4;
   opacity: 0;
   pointer-events: none;
+  animation: fx-veil var(--trans-ms) ease forwards;
 }
 
 /* 栈内的层不要吃 .theater-bg 那条常驻 bg-fade——否则旧层也会淡入一次。 */
@@ -433,11 +448,6 @@ html[data-stage-theme="light"] .stage-root {
 .theater-stack.trans-fade .theater-stack-new,
 .theater-stack.trans-fade-white .theater-stack-new {
   z-index: 1;
-}
-
-.theater-stack.trans-fade .theater-stack-veil,
-.theater-stack.trans-fade-white .theater-stack-veil {
-  animation: fx-veil var(--trans-ms) ease forwards;
 }
 
 @keyframes fx-fade-in {
@@ -723,12 +733,14 @@ html[data-stage-theme="light"] .stage-root {
 
 /* 回看（滚轮翻历史台词）时舞台上放的是「那一刻的画面」，不是一次新的演出：
    换景不淡入、立绘不登场、行为词不重演、站位不补间。少了这一条，滚轮每翻一句
-   就是一次全场闪烁。松手回到播放头时这些规则不再命中，画面按平时的过渡归位。 */
+   就是一次全场闪烁。松手回到播放头时这些规则不再命中，画面按平时的过渡归位。
+   纯色场要单列：它是镜头容器的孩子（不在背景栈里），`> *` 那一条够不着它。 */
 .theater-stage.rewinding .theater-bg,
 .theater-stage.rewinding .theater-bg-in,
 .theater-stage.rewinding .theater-cg-in,
 .theater-stage.rewinding .theater-sprite,
 .theater-stage.rewinding .theater-camera,
+.theater-stage.rewinding .theater-fade-veil,
 .theater-stage.rewinding .theater-stack,
 .theater-stage.rewinding .theater-stack > * {
   animation: none;

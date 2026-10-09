@@ -747,7 +747,6 @@ voiceState,
             ) : (
               <div className={`theater-bg theater-stack-new theater-bg-fallback${bgPending ? " theater-bg-pending" : ""}`} />
             )}
-            {bgVeil && <span className="theater-stack-veil" style={{ background: bgVeil }} />}
           </div>
         ) : (
           <div
@@ -799,6 +798,14 @@ voiceState,
           <div className="theater-cg theater-cg-pending" aria-label="插图生成中">
             {visual.cg?.caption && <p className="theater-cg-caption">{visual.cg.caption}</p>}
           </div>
+        )}
+
+        {/* 转场纯色场：fade / fade-white 要「整屏过黑」，所以它压在立绘与 CG 之上、
+            而不是待在背景栈里（关进栈里就只能盖住背景，人物会浮在黑场里不动）。
+            按 seq 换 key 重挂 = 重播一次；`fade` 之外没有纯色场，元素直接不入 DOM。
+            key 带前缀：它与背景栈是兄弟，光用 seq 会撞成同一个 key。 */}
+        {bgVeil && bgStack && (
+          <span key={`veil-${bgStack.seq}`} className="theater-fade-veil" style={{ background: bgVeil }} />
         )}
         </div>
 
