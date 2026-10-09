@@ -78,7 +78,14 @@ const TRANSITION_KEYS: ReadonlySet<string> = new Set(
   ASSET_LIFECYCLE_TRANSITIONS.map((t) => `${t.from ?? ""}>${t.to}`),
 );
 
-/** 这一步转换合法吗。`from` 给 `null` 表示「这份素材此前不存在」。 */
+/**
+ * 这一步转换合法吗。`from` 给 `null` 表示「这份素材此前不存在」。
+ *
+ * **当前无实现消费者**（2026-10-09 检视 N1 记录）：两个宿主都没接它——独立版走
+ * `PlayAssets` 自己的状态流转，DSH 同步出图没有可选转换。留着是因为
+ * **领域规则的真相源该在这一层**，而接线时机很明确，见文件末的「接线计划」。
+ * 在真的接上之前，不要再往这里加 API——没有消费者的图画得越大越难改。
+ */
 export function canTransitionAsset(
   from: AssetLifecycleState | null,
   to: AssetLifecycleState,
@@ -86,15 +93,30 @@ export function canTransitionAsset(
   return TRANSITION_KEYS.has(`${from ?? ""}>${to}`);
 }
 
-/** 到了就不会再变的状态（宿主据此决定还要不要继续记账 / 发到货广播）。 */
+/** 到了就不会再变的状态（宿主据此决定还要不要继续记账 / 发到货广播）。当前无实现消费者，见上。 */
 export function isTerminalAssetState(state: AssetLifecycleState): boolean {
   return ASSET_LIFECYCLE_TERMINAL.has(state);
 }
 
-/** 只有入库的素材能被剧本引用（`<scene bg>` / `<actor>` 指向的都是 adopted）。 */
+/** 只有入库的素材能被剧本引用（`<scene bg>` / `<actor>` 指向的都是 adopted）。当前无实现消费者，见上。 */
 export function isAssetReferencable(state: AssetLifecycleState): boolean {
   return state === "adopted";
 }
+
+/**
+ * 接线计划（写给将来接的人，别让这三个函数一直悬着）：
+ *
+ * - `isAssetReferencable` → 接在**引用校验**上：剧本里出现 `<scene bg="x">` / `<actor id="x">`
+ *   而 `x` 只有草稿、没有 adopted 素材时，给一条明确的诊断（现在是静默引用不到）。
+ *   独立版的落点是 `playAssets.existingUrl()` 那一带；DSH 是 `validate_play` 的一条检查。
+ * - `isTerminalAssetState` → 接在**记账收尾**上：`PendingJobs` 的完成/失败退场、
+ *   DSH 的到货广播，判断"这份素材还会不会再变"。
+ * - `canTransitionAsset` → 接在**重复采用**上：`commit` 前判一次 `adopted → adopted`
+ *   是合法幂等边而不是错误（当前靠注释与测试表达，接上后是运行期事实）。
+ *
+ * 三条都不是紧急项：现在各自有行为正确的实现，只是**判定散在代码里**而不是取自契约。
+ * 接线时以契约为准、并删掉散落的判定。
+ */
 
 /**
  * 草稿保留期：超过它没被动过的草稿整份删掉（独立版 `DRAFT_TTL_MS` 的领域侧常量）。
