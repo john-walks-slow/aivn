@@ -280,7 +280,7 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   update_state: { label: "提议状态更新", roles: ["playwriter"] },
   read_memory_detail: { label: "读记忆卡详情", roles: ["playwriter"] },
   search_archive: { label: "检索历史往事", roles: ["playwriter"] },
-  generate_image: { label: "生成剧目素材", roles: ["playwriter", "workshop"] },
+  generate_image: { label: "出候选图", roles: ["playwriter", "workshop"] },
   // 只装工坊：剧作家一次调用就声明了最终 id，宿主把出图与入库一次做完（见 imageTool）。
   generate_asset: { label: "生成剧目素材", roles: ["playwriter", "workshop"] },
   // 只装工坊：一首 ~175s 的曲子要 84s，剧作家的一轮等不起；音乐又是制作资产。
