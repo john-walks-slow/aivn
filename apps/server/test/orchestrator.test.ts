@@ -2141,6 +2141,76 @@ describe("回到旧轮走原路（同一个动作不重写一遍）", () => {
     expect(tree.leafId).not.toBe(beat2End);
   });
 
+  it("跳开端（哨兵）再按继续：走回第一拍，不是重新开一局", async () => {
+    const responses: FakeResponse[] = [
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+      { text: '<say id="mio">……重开一局。</say>', beatDone: true },
+    ];
+    const { orchestrator, messages, tree, calls } = countingSetup(responses);
+    const { beat1End } = await playTwoBeats(orchestrator, tree);
+    const called = calls.n;
+
+    await orchestrator.jumpTo("root", { playFrom: "start" });
+    expect(tree.leafId).toBe("root");
+    await orchestrator.playerAction({ kind: "continue" });
+
+    expect(calls.n).toBe(called);
+    expect(tree.leafId).toBe(beat1End);
+    expect(lastRebase(messages).note).toBe("顺着原路继续");
+    // 起点下面没有多出第二个孩子（没有从零重写一枝）
+    expect(tree.childrenOf("root")).toHaveLength(1);
+  });
+
+  it("旧路下一拍以「插一句」开头时，按继续照样走回那一拍", async () => {
+    const responses: FakeResponse[] = [
+      { text: BEAT_1, beatDone: true },
+      { text: BEAT_2, beatDone: true },
+      { text: '<say id="mio">……新写的一拍。</say>', beatDone: true },
+    ];
+    const { orchestrator, messages, tree, calls } = countingSetup(responses);
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    // 第一拍末尾插一句再继续：第二拍因此以 prompt 节点开头
+    await orchestrator.playerAction({ kind: "prompt", text: "让气氛冷一点" });
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.whenIdle();
+    const ends = tree
+      .ancestorChain(tree.leafId)
+      .map((id) => tree.get(id)!)
+      .filter((event) => event.kind === "beat_end");
+    const called = calls.n;
+
+    await orchestrator.jumpTo(ends[0]!.id, { playFrom: "start" });
+    await orchestrator.playerAction({ kind: "continue" });
+
+    expect(calls.n).toBe(called);
+    expect(tree.leafId).toBe(ends[1]!.id);
+    expect(lastRebase(messages).note).toBe("顺着原路继续");
+  });
+
+  it("旧路在拍中间岔过（重写落在拍内）：继续顺到真正的 beat_end，不停在半拍上", async () => {
+    const responses: FakeResponse[] = [
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+      { text: '<say id="mio">……重写过的一拍。</say>', beatDone: true },
+    ];
+    const { orchestrator, tree, calls } = countingSetup(responses);
+    const { beat1End, beat2End } = await playTwoBeats(orchestrator, tree);
+    // 在第二拍的第一句上重写：这一拍从此有一个拍中岔口
+    const chain = tree.ancestorChain(beat2End);
+    const beat2First = chain[chain.indexOf(beat1End) + 1]!;
+    await orchestrator.forkTo(beat2First, { resume: true });
+    await orchestrator.whenIdle();
+    const called = calls.n;
+
+    await orchestrator.jumpTo(beat1End, { playFrom: "start" });
+    await orchestrator.playerAction({ kind: "continue" });
+
+    expect(calls.n).toBe(called);
+    expect(tree.get(tree.leafId!)!.kind).toBe("beat_end");
+  });
+
   it("轮中被锚定时「继续」不认旧路：子节点是本轮的下一句，接回去等于接回自己后半截", async () => {
     const responses: FakeResponse[] = [
       { text: BEAT_1, beatDone: BEAT_1_STOP },
