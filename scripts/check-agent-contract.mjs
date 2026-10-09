@@ -227,10 +227,36 @@ check("能力矩阵与能力目录一一对应", () => {
   for (const id of catalogIds) {
     if (!matrixIds.includes(id)) problems.push(`能力「${id}」在 CAPABILITY_CATALOG 里，却不在 CAPABILITY_MATRIX 里`);
   }
+  // 宿主独有的行（`hostOnly: "dsh-aivn"`，如插件的 set_stage_style）在服务端目录里本来就查无此项
+  const hostOnly = new Set(
+    [...contract.matchAll(/id: "([a-z]+)",\s*\n\s*profile: "[a-z-]+",\s*\n\s*hostOnly:/g)].map((m) => m[1]),
+  );
   for (const id of matrixIds) {
-    if (!catalogIds.includes(id)) problems.push(`能力「${id}」在 CAPABILITY_MATRIX 里，却不在 CAPABILITY_CATALOG 里`);
+    if (catalogIds.includes(id) || hostOnly.has(id)) continue;
+    problems.push(`能力「${id}」在 CAPABILITY_MATRIX 里，却不在 CAPABILITY_CATALOG 里（宿主独有的行要标 hostOnly）`);
   }
   return problems;
+});
+
+check("跨宿主矩阵挂上了包里的共享能力", () => {
+  // 矩阵每一行可以声明「这份能力由包里的哪个能力实现」（capabilities: [...]）。
+  // 守卫两个方向：包里的每个能力都必须在某一行出现（共享面不许漏登记）；
+  // 每一格写的 id 也必须在包里存在（不许写一个包没有的能力）。
+  const contract = read("apps/server/src/agentkit/contract.ts");
+  const linked = [...contract.matchAll(/capabilities: \[([^\]]*)\]/g)].flatMap((m) =>
+    [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]),
+  );
+  return import("../packages/agent/dist/index.js").then(({ CAPABILITIES }) => {
+    const packaged = CAPABILITIES.map((c) => c.id);
+    const problems = [];
+    for (const id of packaged) {
+      if (!linked.includes(id)) problems.push(`包里的能力「${id}」没有挂进 CAPABILITY_MATRIX 的任何一行`);
+    }
+    for (const id of linked) {
+      if (!packaged.includes(id)) problems.push(`矩阵挂了「${id}」，但包里没有这个能力`);
+    }
+    return problems;
+  });
 });
 
 check("恒列 skill 的 description 保持能力中立", () => {

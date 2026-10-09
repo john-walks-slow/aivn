@@ -18,6 +18,16 @@ export interface CapabilityHostContract {
 export interface CrossHostCapabilityContract {
   id: string;
   profile: CapabilityProfile;
+  /**
+   * 这份能力由包里的哪个能力实现（`@aivn/agent` 的 `CAPABILITIES` 里的 id）。
+   *
+   * 有这一格的行，两边的参数面 / 描述 / 领域实现是**同一份源码**；没有的行说明共享面还没到
+   * 那一层（或本来就只有一边有）。守卫盯着它：包里的每个能力都必须在某一行出现，
+   * 每一格写的 id 也必须在包里存在。
+   */
+  capabilities?: readonly string[];
+  /** 只有一边有的能力：这一格写哪一边，守卫据此跳过「服务端能力目录里也得有它」那条。 */
+  hostOnly?: "dsh-aivn";
   domainSemantic: string;
   roles: readonly AgentRole[];
   equivalence: CapabilityEquivalence;
@@ -75,14 +85,17 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
   {
     id: "voice",
     profile: "shared",
+    capabilities: ["voice.list"],
     domainSemantic: "查询音色并为角色选择可用 voiceId。",
     roles: ["workshop"],
     equivalence: "required",
     hosts: {
-      stageAi: "AgentKit list_voices 查询 VoiceCatalogService。",
-      dshAivn: "DSH list_voices 查询插件 VoiceCatalog。",
+      stageAi: "AgentKit list_voices 查 VoiceCatalogService（总数与「磁盘快照」标记由它给）。",
+      dshAivn: "插件 list_voices 查插件的 VoiceCatalog（出网那一层：多 key 轮询与超时）。",
       backendDependency: "Fish Audio key 与可用音色目录。",
-      intentionalDifference: "独立版设置由 settings.json 管理，DSH 由插件配置管理。",
+      intentionalDifference:
+        "参数面、筛选、分页与渲染同源（voice.list）；服务端另加 pi 侧的长度收紧（query ≤60 / tags ≤4），" +
+        "出网层各是各的（服务端本地目录服务 vs 插件多 key 轮询）。设置也各由各自宿主管理。",
     },
   },
   {
@@ -93,9 +106,9 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     equivalence: "semantic-only",
     hosts: {
       stageAi: "记忆卡经 PlayFiles 写入，状态经谱系快照回滚。",
-      dshAivn: "通过 DSH 文件工具维护工作区文件，历史由宿主会话提供。",
+      dshAivn: "通过 DSH 的文件工具维护工作区文件（两个预设都装），历史由宿主会话提供。",
       backendDependency: "无额外后端依赖。",
-      intentionalDifference: "独立版有分支过滤和 archive 工具；DSH 使用原生历史/文件视图。",
+      intentionalDifference: "独立版有分支过滤和 archive 工具（read_memory_detail / search_archive）；DSH 用原生文件视图，memory 那一格的角色也只有服务端有。",
     },
   },
   {
@@ -105,36 +118,50 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     roles: ["workshop"],
     equivalence: "semantic-only",
     hosts: {
-      stageAi: "pi read/write/edit 经 PlayEnv 白名单与结构校验。",
-      dshAivn: "DSH 原生 fs 工具在会话 workspace 内读写。",
+      stageAi:
+        "pi read/write/edit 经 PlayEnv 白名单与结构校验；另有一个 set_craft——它要拿 withPlayConfigLock " +
+        "改 play.json 的 craft 段（整体性 + 串行写），所以不能走通用的 edit。",
+      dshAivn: "DSH 原生 fs 工具在会话 workspace 内读写（两个预设都有，含工坊的 characters 写面）。",
       backendDependency: "无额外后端依赖。",
-      intentionalDifference: "独立版有角色/能力级写面；DSH 由宿主 workspace 权限控制。",
+      intentionalDifference:
+        "独立版按角色收写面（characters / memory / config）；DSH 由宿主 workspace 权限控制。" +
+        "set_craft 是服务端独有的一条（play.json 整体写 + 串行队列），插件改 craft 走通用文件工具。",
     },
   },
   {
     id: "image",
     profile: "shared",
+    capabilities: ["image.generate", "image.cutout"],
     domainSemantic: "生成、审阅、采用或修整剧目图像资产。",
     roles: ["playwriter", "workshop"],
     equivalence: "semantic-only",
     hosts: {
-      stageAi: "独立版支持 queued generate_image、workshop draft/commit_asset 与 recut_sprite。",
-      dshAivn: "DSH 使用 generate_image 候选、generate_asset 一键入库和 cut。",
-      backendDependency: "生图后端；独立版另需本地抠底能力。",
-      intentionalDifference: "独立版把候选与采用拆成显式生命周期；DSH 可按工具选择同步或一键流程。",
+      stageAi:
+        "一个 generate_image 扛两种投递：工坊同步出草稿（入库另走 commit_asset）、剧作家后台排产直落；" +
+        "重抠走 recut_sprite（拿留底原片原地重跑抠底）。",
+      dshAivn:
+        "插件的 generate_image 是**无剧目目标**的候选图（与服务端同名不同义），一键入库走 generate_asset（出图 + 抠底 + 登记），" +
+        "文件级重抠走 cut。**插件没有 commit_asset / recut_sprite 的等价物**：采用发生在 generate_asset 内部，重抠对着源图跑 cut。",
+      backendDependency: "生图后端；抠底在两边都是包里的同一份实现。",
+      intentionalDifference:
+        "参数面、写 prompt 的硬约束、垫图规则与请求归一化同源（image.generate / image.cutout）；" +
+        "差别在生命周期：服务端把「候选 → 采用」拆成两个显式工具、并按角色分同步/排产，插件把候选与一键入库分成两个工具、一律同步等待。",
     },
   },
   {
     id: "music",
     profile: "preset-specific",
+    capabilities: ["music.generate"],
     domainSemantic: "生成并登记一首可供剧本引用的 BGM。",
     roles: ["workshop"],
     equivalence: "semantic-only",
     hosts: {
-      stageAi: "独立版 pending job 后台排产并通过 asset_ready 到货。",
-      dshAivn: "DSH generate_bgm 使用宿主/插件媒体任务管线。",
-      backendDependency: "音乐生成后端。",
-      intentionalDifference: "两边任务生命周期由各自宿主管理，不互相模拟队列。",
+      stageAi: "generate_bgm = deps.kick → 后台排产 → pendingJobs 记账 + asset_ready 到货（发起即返回）。",
+      dshAivn: "generate_bgm = **同步 await** PlayAssets.generateBgm——插件没有「回合之外」的注入通道，等就是等。**没有任务管线。**",
+      backendDependency: "音乐生成后端（协议在包里的 media/music.ts）。",
+      intentionalDifference:
+        "投递方式不同（后台排产 vs 同步等待），参数真相源、查重口径与回执文案同源（music.generate）；" +
+        "插件只露 name / prompt / model / overwrite 四格，元数据落表由宿主自己的素材路径写。",
     },
   },
   {
@@ -144,15 +171,20 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     roles: ["playwriter", "workshop"],
     equivalence: "intentional-difference",
     hosts: {
-      stageAi: "应用级 library/ 资源库与引用即导入；工坊可显式 library_import。",
-      dshAivn: "不假定独立版跨剧目 library；DSH 仅处理当前 workspace 的素材工具。",
+      stageAi: "应用级 library/ 资源库 + 引用即导入；工坊可显式 library_import（从库按 entryId 复制进剧目）。",
+      dshAivn:
+        "插件有一个**同名不同义**的 import_asset：把本地路径 / URL 登记成剧目素材（asset.register），不是从应用级库导入；" +
+        "它没有 list_library（插件不假定跨剧目资源库）。",
       backendDependency: "独立版需本地 library 目录；DSH 无此依赖。",
-      intentionalDifference: "资源库是独立版产品能力，不能把其目录状态复制进 DSH。",
+      intentionalDifference:
+        "资源库是独立版产品能力，不能把其目录状态复制进 DSH。两边的 import_asset 曾长期同名不同义，" +
+        "2026-10-09 把服务端那个改名 library_import（P4 清理清单第 1 条），插件那份保留原名。",
     },
   },
   {
     id: "search",
     profile: "shared",
+    capabilities: ["web.search"],
     domainSemantic: "向外部检索服务请求现实资料。",
     roles: ["playwriter", "workshop"],
     equivalence: "required",
@@ -184,9 +216,25 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     equivalence: "semantic-only",
     hosts: {
       stageAi: "read_skill 只读 apps/server/skills。",
-      dshAivn: "DSH skill-filesystem/tool-skill 暴露插件 skills。",
+      dshAivn: "DSH 的技能行（skill-filesystem / tool-skill）暴露插件 skills 目录，两个预设都装。",
       backendDependency: "随包技能文件。",
-      intentionalDifference: "技能加载时机和宿主工具不同，技能内容需保持领域语义一致。",
+      intentionalDifference:
+        "技能加载时机和宿主工具不同。**音频技能已收敛**：正文一份在包里（packages/agent/skills/aivn-audio.md），" +
+        "两份 SKILL.md 由包内 sync-skills.mjs 生成、各仓守卫盯着；play-setup / visual-craft 仍是同题重写的两份。",
+    },
+  },
+  {
+    id: "style",
+    profile: "preset-specific",
+    hostOnly: "dsh-aivn",
+    domainSemantic: "改舞台皮肤（配色令牌与主题）。",
+    roles: ["workshop"],
+    equivalence: "intentional-difference",
+    hosts: {
+      stageAi: "**没有这个能力**：独立版的舞台外观由前端主题与剧目 theme.json 决定，没有给 agent 的改皮肤口。",
+      dshAivn: "插件的 set_stage_style 按令牌白名单改 theme.json（style-tokens 校验，写坏了当场拒）。",
+      backendDependency: "无额外后端依赖。",
+      intentionalDifference: "插件独有的产品面（用户在对话里说「换个配色」就能改），服务端没有对应实现，也没有必要模拟。",
     },
   },
   {
@@ -194,12 +242,14 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     profile: "preset-specific",
     domainSemantic: "把剧目内或外部图片读给 Agent 判断。",
     roles: ["workshop"],
-    equivalence: "semantic-only",
+    equivalence: "intentional-difference",
     hosts: {
-      stageAi: "view_image 读本地素材或安全下载的网页图片。",
-      dshAivn: "由 DSH 客户端/文件工具提供图片查看，不复制独立版下载缓存。",
+      stageAi: "view_image 读本地素材，或安全下载网页图片（带 SSRF 防护）后读回。",
+      dshAivn:
+        "**目前是有意省略，不是等价实现**：插件 9 个工具里没有看图工具，插件仓内也查不到它依赖的「宿主 view 能力」。" +
+        "需要看图时走宿主自身能力（2026-10-09 逐项实读代码的结论）。",
       backendDependency: "外部网址来源需要联网出口。",
-      intentionalDifference: "独立版需要服务端图片附件适配；DSH 使用宿主 view 能力。",
+      intentionalDifference: "独立版有本地与外链两个分支；DSH 侧未落地。",
     },
   },
   {
@@ -209,10 +259,14 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     roles: ["workshop"],
     equivalence: "semantic-only",
     hosts: {
-      stageAi: "get_readiness 复用独立版 readiness 报告。",
-      dshAivn: "validate_play 检查 workspace 剧目文件和素材一致性。",
+      stageAi: "get_readiness 只报 premise / 立绘 / 背景三行（工坊面板那份口径）。",
+      dshAivn:
+        "validate_play 是**超集**：play.json 读不读得出来（坏在哪一行）、craft 取值、世界状态、" +
+        "premise、角色数、立绘、背景、素材清单、生图台账对账。",
       backendDependency: "无额外后端依赖。",
-      intentionalDifference: "独立版检查运行时就绪门，DSH 检查插件可理解的 workspace 契约。",
+      intentionalDifference:
+        "判定同源（包里的 readPlayReadiness）；报告按读者分两份——工坊面板那份四行留在服务端，" +
+        "agent 面的完整报告在包里（插件的 validate_play 用它）。服务端没有 craft / 台账对账那几项。",
     },
   },
   {
