@@ -14,6 +14,21 @@ export { assertCommonSubset, pick, tighten } from "./schema/ir.js";
 export type { Capability } from "./capabilities/capability.js";
 export type { CapabilityEntry } from "./capabilities/index.js";
 export { CAPABILITIES } from "./capabilities/index.js";
+export type {
+  ImageGenerateDeps,
+  ImageGenerateRequest,
+  ImageTarget,
+} from "./capabilities/image/generate.js";
+export {
+  IMAGE_GENERATE_DOC,
+  IMAGE_PROMPT_RULES,
+  IMAGE_REFERENCE_RULE,
+  imageGenerate,
+  imageGenerateFields,
+  imageTargetOf,
+  MAX_IMAGE_REFERENCES,
+  resolveImageRefs,
+} from "./capabilities/image/generate.js";
 export type { MusicGenerateDeps, MusicGenerateRequest } from "./capabilities/music/generate.js";
 export {
   musicGenerate,

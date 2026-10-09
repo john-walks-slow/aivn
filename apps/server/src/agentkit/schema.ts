@@ -30,7 +30,8 @@ function toPiNode(node: PiNode): TSchema {
   if ("oneOf" in node) return Type.Union(node.oneOf.map(toPiNode));
   switch (node.type) {
     case "string":
-      if (node.const !== undefined) return Type.Literal(node.const);
+      // 字面量也要带注解：立绘的取景/体量/底色三格是「每个取值一句说明」的形状
+      if (node.const !== undefined) return Type.Literal(node.const, annotations);
       // 字符串枚举走 pi 的 StringEnum：它直接写 `enum` 关键字，避开部分 provider 不认 anyOf/const 的坑。
       if (node.enum) return StringEnum(node.enum, annotations);
       return Type.String({

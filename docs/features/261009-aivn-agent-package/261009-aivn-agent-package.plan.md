@@ -96,7 +96,7 @@ packages/agent/src/
 | P3 · 提示词第一批（Stage DSL 共用正文 4 块） | ✅ 完成 | `1ecc844a` / `5f57f4e` |
 | P3 · 提示词其余（A 区渲染进包；不做 facts 装配层） | ✅ 完成 | `bc5165c8` `f5c40879` / `01105d7` `d8ac9ae` |
 | P3 · 技能正文（audio 两份 86% 重合） | ✅ 完成 | `f952ac7a` `1dbfeb15` / `f24f924` |
-| P4 工具面全量迁移与契约重建 | 进行中（`library_import` ✅；face：`voice.list` ✅、`music.generate` ✅） | `7cce64c7` `17c66286` `9e0fcb6a` / `19764fe` `03983af` |
+| P4 工具面全量迁移与契约重建 | 进行中（`library_import` ✅；face：`voice.list` ✅、`music.generate` ✅、`image.generate`（服务端侧）✅） | `7cce64c7` `17c66286` `9e0fcb6a` `待补` / `19764fe` `03983af` |
 
 **P2 完成**（媒体与素材面：抠底 / 生图契约 / 三协议 / 网络图下载 / 后缀 / 草稿 / 落位留底 /
 采用 / 台账 / 音色库 / craft / readiness + 素材清单；「导入」经判定不共享，尾部已抽）。
@@ -229,7 +229,16 @@ P1/P2 落地时对计划的收紧（都是实测出来的，不是改主意）�
 
   迁移顺序（按「同名同域 → 同域异名 → 单宿主」）：① `web.search` ✅ ② `voice.list` ✅
   ③ `music.generate`（服务端 10 参 + 排产 vs 插件 3 参 + 同步：排产/同步进 face，参数取并集）
-  ④ `image.generate`（服务端一个工具扛草稿/排产/绑 target 三种语义，按策略拆两个 face；插件的
+  ④ `image.generate` **服务端侧完成**：13 格参数（IR 从原 TypeBox 逐字段搬，描述逐字节核对过）、
+  `IMAGE_PROMPT_RULES` / `IMAGE_REFERENCE_RULE`（原先只在服务端的工具描述里）、参考图合并去重、
+  落位归一化（立绘要 spriteId / 背景 CG 要 name 这两条必填合并成一句）都进包；服务端的两个 face
+  保留各自的「头」（工坊说草稿、剧作家说排产）+ 共享硬约束。**两处已知的 schema 差**（有意接受）：
+  `kind` 由 anyOf-const 变 enum（编译器本来就偏好 StringEnum）、数组**元素**级的长度收紧
+  （`references` items 的 minLength/maxLength）表达不了，只保住了数组级的 minItems/maxItems。
+  编译器顺带修一处：字面量分支原先丢了 description（framing/stature/keyColor 三格的逐取值说明）。
+  **插件侧（`generate_asset` 的 face）与那 12 格描述文案的合并还没做**——插件的
+  `media/generate-tool.ts` 仍是第二份拷贝，下一轮接上。
+  原计划描述：服务端一个工具扛草稿/排产/绑 target 三种语义，按策略拆两个 face；插件的
   `generate_asset` 是 `image.generate` + `asset.commit` 的组合 face）⑤ `asset.commit` / `image.cutout`
   （`cut` 与 `recut_sprite` 同域异名）⑥ `play.readiness`（`validate_play` 与 `get_readiness` 的判定
   早在包里，只剩 face）⑦ 素材清单/资源库一族 ⑧ 最后派生 `CAPABILITY_MATRIX`。
