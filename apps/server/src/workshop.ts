@@ -201,7 +201,7 @@ function setupFlow(ctx: WorkshopPromptContext): string {
 ${setupSkill}
 
 那份管的是**流程**；设定本身怎么想才扎实——前提要具体到能被证明、人物的伤痛与三种弧光、
-关系网、多条攻略线各要什么、伏笔怎么挂怎么收——在 skill `galgame-story-design` 里，
+关系网、多条攻略线各要什么、伏笔怎么挂怎么收——在 skill \`galgame-story-design\` 里，
 动笔写 premise 与角色卡之前读它。
 
 一句话概括：**先问清骨架 → 给完整提案等用户点头 → 列图单（${approval}）→ 落盘后同步记忆。**
