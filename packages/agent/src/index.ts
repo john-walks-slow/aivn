@@ -54,3 +54,6 @@ export type { OpenAiImageOptions } from "./media/openai.js";
 export { canvasFor as openAiCanvasFor, OpenAiImageGen } from "./media/openai.js";
 export type { ModelsLabImageOptions } from "./media/modelslab.js";
 export { canvasFor as modelsLabCanvasFor, ModelsLabImageGen } from "./media/modelslab.js";
+
+export type { WebImage, WebImageFetcher, WebImageOptions } from "./media/web-image.js";
+export { fetchWebImage, MAX_WEB_IMAGE_BYTES, readCapped, webImageBase } from "./media/web-image.js";

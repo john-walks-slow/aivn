@@ -19,7 +19,7 @@ import { createMusicBackend } from "./musicFactory.js";
 import type { ImageBackend } from "./imageBackend.js";
 import type { MusicBackend } from "./musicBackend.js";
 import { createExa, type Exa } from "./exa.js";
-import { WebImageFetcherImpl, type WebImageFetcher } from "./webImage.js";
+import { createWebImageFetcher, type WebImageFetcher } from "./webImage.js";
 import { readPlayLedgerEntries, type GeneratedLedgerEntry } from "./generatedLedger.js";
 import { PlayAssets, assertAssetStem, assertSpriteId } from "./playAssets.js";
 import { PlayMusic, type GenerateMusicRequest } from "./playMusic.js";
@@ -221,7 +221,7 @@ export class PlayHouse {
     /** 公共音色库客户端（index.ts 构造时注入）：工坊的 list_voices 走它。没配 TTS 时可以是 undefined。 */
     private readonly voices?: VoiceCatalogService,
   ) {
-    this.webImage = new WebImageFetcherImpl().fetchImage;
+    this.webImage = createWebImageFetcher();
     // StreamFn 契约是 SimpleStreamOptions（reasoning 字段）——须接 streamSimple 做换算；
     // 错接完整版 stream 会丢弃 reasoning，thinking 档位全部失效。
     // 它每次调用现取 this.provider：重建之后这条闭包自动指向新 provider。

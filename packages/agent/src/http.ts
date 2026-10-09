@@ -10,6 +10,8 @@ export interface FetchInitLike {
   readonly headers?: Record<string, string>;
   readonly body?: string;
   readonly signal?: AbortSignal;
+  /** 跳转自己管（每一跳都要重判地址）。 */
+  readonly redirect?: "follow" | "manual" | "error";
 }
 
 /** 判据、取字节、认 content-type 都用得上，所以这几样都在契约里。 */
@@ -17,6 +19,8 @@ export interface FetchResponseLike {
   readonly ok: boolean;
   readonly status: number;
   readonly headers: { get(name: string): string | null };
+  /** 流式读体：大小上限要边收边判（`content-length` 只是声明）。 */
+  readonly body: ReadableStream<Uint8Array> | null;
   text(): Promise<string>;
   json(): Promise<unknown>;
   arrayBuffer(): Promise<ArrayBuffer>;
