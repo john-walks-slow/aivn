@@ -191,7 +191,7 @@ P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进�
 | --- | --- | --- |
 | P5-a `asset.register` 落包 + 服务端 `import_asset` | ✅ 完成 | `3234a72f` / `c2d836b` |
 | P5-b `image.cutout` 素材引用寻址；服务端 `recut_sprite` → `cut` | ✅ 完成 | `6f4605ec` / `f9d0f19` |
-| P5-c 出图拆 produce + 显式宏 | ✅ 代码完成（`a0d236e4` `fcc236cb` / `75117b5` `8996e05`）；README 与 live e2e 待补 | — |
+| P5-c 出图拆 produce + 显式宏 | ✅ 完成（`a0d236e4` `fcc236cb` `cb73e4dd` `fffaf298` / `75117b5` `8996e05` `7f8000f`）：包 188 绿、服务端 702 绿、守卫 9/9、插件 e2e:media 55/55、live injection 20/20 + stagehand 22/22 | — |
 | P5-d…i | 待做 | — |
 
 **排序理由**：a 是 c 的前置且纯加法（低风险先做）；c 是收益最大的一步（消灭同名不同义 + 拆复合动词），
