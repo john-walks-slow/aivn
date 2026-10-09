@@ -1236,6 +1236,10 @@ describe("长会话装配", () => {
       "黄昏，教室只剩两人",
     );
 
+    // 把文件写脏（模拟另一条枝 / 另一个档在这份剧目目录上写过的残留）：
+    // 恢复出来的编排器要自己把它对齐回快照，而不是等调用方先写过一遍（reviewer S1）
+    writePlayStateText(dir, { scene: "别的枝的场景\n", threads: "", state: '{"affinity":{},"flags":{}}\n' });
+
     const contexts: { messages: { role: string }[] }[] = [];
     const restored = new PlaywrightOrchestrator({
       streamFn: ((model: never, context: unknown, options: unknown) => {
@@ -1254,6 +1258,9 @@ describe("长会话装配", () => {
       persist: () => {},
       restored: first.orchestrator.runtimeState,
     });
+
+    // 构造那一刻就已经回写好了：盘上是这一枝的原文，不是脏文件
+    expect(readPlayStateText(dir).scene).toContain("黄昏，教室只剩两人");
 
     await restored.playerAction({ kind: "continue" });
 

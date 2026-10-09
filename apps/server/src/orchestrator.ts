@@ -527,10 +527,12 @@ export class PlaywrightOrchestrator {
     this.historyRecorder = new HistoryRecorder(opts.restoredHistory);
     this.parser = new StageDslParser((event) => this.onStageEvent(event));
     if (opts.restored) {
-      // 恢复会话：纪元压缩记录从路径最近快照回填（谱系级记忆）；
-      // 剧内状态三个文件由 `playhouse.buildRuntime` 按同一份快照回写（P6-d）
+      // 恢复会话：纪元压缩记录从路径最近快照回填（谱系级记忆）
       const snapshot = opts.tree.latestSnapshotOnPath(opts.tree.leafId);
       this.compaction = snapshot?.compaction ?? null;
+      // 剧内状态三个文件也对齐到这一枝：`playhouse.buildRuntime` 已经写过一遍（幂等），
+      // 这里再做一次是为了让**编排器自身**在重启恢复语义上自包含——不依赖调用方先写过盘。
+      if (snapshot) this.writeStateFilesFrom(snapshot.stateFiles, snapshot.engine);
       // 已有事件早已落过 JSONL，不重复补推
       for (const event of opts.tree.export().events) this.loggedIds.add(event.id);
       if (opts.restored.nsfw) {
@@ -1579,6 +1581,23 @@ export class PlaywrightOrchestrator {
   }
 
   /** 分支状态回退：把 nodeId 路径上的状态整体装回现场（跳转/分岔/编辑/重写共用）。 */
+  /**
+   * 把剧内状态三个文件对齐到一份快照（P6-d §3：快照是分支 / 存档真值，文件是工作态）。
+   *
+   * 旧档快照里可能没有 `state` 那份原文（P6-d 之前的快照只存 scene/threads），
+   * 这时用同一份快照的 engine 现生成——**不退化成 initialState**，否则开发中的档好感度会被清零。
+   */
+  private writeStateFilesFrom(
+    stateFiles: Record<string, string>,
+    engine: NonNullable<PlayConfig["initialState"]>,
+  ): void {
+    writePlayStateText(this.opts.store.dir, {
+      scene: stateFiles.scene ?? "",
+      threads: stateFiles.threads ?? "",
+      state: stateFiles.state ?? playStateJson({ affinity: engine.affinity, flags: engine.flags }),
+    });
+  }
+
   private restoreBranchState(nodeId: string | null): void {
     const state = this.stateAt(nodeId);
     const engine = this.opts.engine;
@@ -1586,13 +1605,7 @@ export class PlaywrightOrchestrator {
     engine.affinity = { ...state.engine.affinity };
     engine.flags = { ...state.engine.flags };
     // 快照是分支 / 存档真值：回写到剧内状态文件，否则模型下一轮 read 到的是上一枝的残留（P6-d §3）
-    writePlayStateText(this.opts.store.dir, {
-      scene: state.stateFiles.scene ?? "",
-      threads: state.stateFiles.threads ?? "",
-      state:
-        state.stateFiles.state ??
-        playStateJson({ affinity: state.engine.affinity, flags: state.engine.flags }),
-    });
+    this.writeStateFilesFrom(state.stateFiles, state.engine);
     this.compaction = state.compaction;
     this.beatNo = engine.turn;
     this.opts.scene = state.scene;
