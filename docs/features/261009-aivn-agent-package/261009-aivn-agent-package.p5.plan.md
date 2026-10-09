@@ -191,7 +191,7 @@ P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进�
 | --- | --- | --- |
 | P5-a `asset.register` 落包 + 服务端 `import_asset` | ✅ 完成 | `3234a72f` / `c2d836b` |
 | P5-b `image.cutout` 素材引用寻址；服务端 `recut_sprite` → `cut` | ✅ 完成 | `6f4605ec` / `f9d0f19` |
-| P5-c 出图拆 produce + 显式宏 | 待做（D2 已定：服务端候选不再自动抠底） | — |
+| P5-c 出图拆 produce + 显式宏 | **进行中**：包与插件已落地（`a0d236e4` / `75117b5`）；服务端工具换名、删 `commit_asset`、提示词/e2e/README 待做 | — |
 | P5-d…i | 待做 | — |
 
 **排序理由**：a 是 c 的前置且纯加法（低风险先做）；c 是收益最大的一步（消灭同名不同义 + 拆复合动词），
@@ -352,6 +352,9 @@ cd /root/projects/dsh-aivn-shared && npm run typecheck && npm run build && node 
 dsh-e2e start --patch <provider patch> && E2E_PHASES=first dsh-e2e run e2e/verify-injection.mjs   # 20/20
 E2E_PHASES=first dsh-e2e run e2e/verify-stagehand.mjs                                             # 22/22
 ```
+
+**已完成（2026-10-09 夜）**：包内 `image.generate` 转 produce 语义（`kind` 可选、`aspectRatio` 进共享字段、删 `referenceCharacters`、结果改成结构化的 `ProducedImage`）、新能力 `asset.generate`（显式宏：出图 →（立绘）抠底 → 登记，同名跳过写在文档里）、插件 `generate_asset` 已切到宏（行为不变）、服务端 face 去掉兼容别名。
+**待做**：服务端 `generate_image` 只产候选 / 新增 `generate_asset`（剧作家排产、工坊同步）/ 删 `commit_asset`（采用 = `import_asset(source="draft:<草稿id>")`，句柄由宿主解析）/ `draft()` 不再对 sprite 自动抠底；插件 `generate_image` 转 produce face；两侧提示词、e2e 锚点、README。
 
 **停止点**：D2（服务端候选立绘是否不再自动抠底）；以及**这一步做完就要停下来找用户确认**
 ——它是 P5 唯一一次改变服务端**操作流程**的阶段（模型要连调两个工具），确认后再进 d。
