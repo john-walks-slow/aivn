@@ -1,6 +1,5 @@
-import { COMMON_SPRITE_VARIANTS } from "@aivn/core";
-
 import type { FieldMap } from "../../schema/ir.js";
+import { assetTargetFields } from "../asset/target.js";
 import type { Capability } from "../capability.js";
 
 /**
@@ -17,30 +16,9 @@ import type { Capability } from "../capability.js";
 
 /** 参数真相源：服务端的两个角色与插件的 `generate_asset` 都 pick 这些格（服务端另加长度收紧）。 */
 export const imageGenerateFields = {
-  kind: {
-    type: "string",
-    enum: ["background", "cg", "sprite"],
-    required: true,
-    description: "要落成什么剧目素材：背景 background / 事件插图 cg / 立绘 sprite。",
-  },
-  name: {
-    type: "string",
-    description: "背景与插图的素材 id（剧本里 `<scene bg=\"…\">` / `<cg id=\"…\">` 引用的就是它）。kind=background/cg 时必填。",
-  },
-  spriteId: {
-    type: "string",
-    description:
-      "立绘的主体 id：`assets/sprites/<spriteId>/` 的目录名，也是 `<actor id>` / `<say id>` 引用的名字。" +
-      "有角色卡时读卡上人设写外观；卡上写了 `sprite:` 时立绘在那个目录里（A 区角色表标着「立绘（目录 …）」），别拿角色 id 去撞。" +
-      "**没有角色卡也能出**（机甲、道具、猫、只出现一轮的路人都这样）。kind=sprite 时必填。",
-  },
-  variant: {
-    type: "string",
-    description:
-      `立绘差分名（${COMMON_SPRITE_VARIANTS.join(" / ")}，也可以自己按状态取名）。不给按 neutral。` +
-      "**要几个差分就分几次调用**，每张写自己的 prompt（一批共用一个 prompt 只会出成同一张图）。" +
-      "非人主体同样用这个槽位，名字按状态取，如机甲的 damaged、猫的 sleepy。",
-  },
+  // 落位七格与 `asset.register` 共用一份措辞（见 `capabilities/asset/target.ts`）——同一件事
+  // 在两个工具里说法不同，模型就得学两遍。
+  ...assetTargetFields,
   references: {
     type: "array",
     items: { type: "string", description: "主体 id、剧目内相对路径，或 http(s) 网址" },
@@ -53,27 +31,6 @@ export const imageGenerateFields = {
     type: "array",
     items: { type: "string" },
     description: "兼容别名：等同 references 中传入主体 id 列表。",
-  },
-  framing: {
-    oneOf: [
-      { type: "string", const: "full", description: "全身：主体到脚。人物立绘的常规选择" },
-      { type: "string", const: "half", description: "半身：到腰。对话时人物更大更清楚" },
-      { type: "string", const: "square", description: "方形：正方画幅、主体完整入画。给猫、道具这类非人主体" },
-    ],
-    description: "立绘取景（只对 kind=sprite 生效）：决定画幅与舞台站位，同一主体保持同一档；不给沿用素材表里的声明，再不给是全身。",
-  },
-  stature: {
-    oneOf: [
-      { type: "string", const: "small", description: "小：猫、小道具，贴地面站" },
-      { type: "string", const: "normal", description: "标准：与人同高" },
-      { type: "string", const: "large", description: "大：比人高一档" },
-      { type: "string", const: "huge", description: "巨大：机甲、巨物，顶天立地" },
-    ],
-    description: "立绘体量（只对 kind=sprite 生效）：只管台上多大，与取景是两件事；不给按 normal。",
-  },
-  title: {
-    type: "string",
-    description: "立绘标题（只对 kind=sprite 生效）。**没有角色卡的主体必须给**：舞台名牌显示的就是它，不给就只剩一个 id 摆在那儿。",
   },
   keyColor: {
     oneOf: [

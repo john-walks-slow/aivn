@@ -22,7 +22,7 @@ type _Args = Expect<
     {
       query: string;
       numResults?: number;
-      tags?: unknown[];
+      tags?: string[];
       mode?: "fast" | "deep";
       exact?: "只此一种";
       nested?: Record<string, unknown>;

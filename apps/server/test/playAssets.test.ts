@@ -1103,3 +1103,95 @@ describe("PlayAssets：出图与入库解耦（草稿 → 采用）", () => {
     expect(here).not.toMatch(/DRAFT_TTL_MS\s*=\s*\d/);
   });
 });
+
+describe("PlayAssets：登记外来图（import_asset）", () => {
+  /** 往剧目里放一张源图（素材目录是 agent 唯一读得到的地方）。 */
+  async function putSource(store: PlayStore, rel: string, bytes: Buffer): Promise<void> {
+    await mkdir(join(store.dir, rel, ".."), { recursive: true });
+    await writeFile(join(store.dir, rel), bytes);
+  }
+
+  it("从剧目内的一张图登记成另一个落位：写 assets/、记台账、回执给 URL 与覆盖真相", async () => {
+    const store = await makeStore();
+    const { backend } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    const source = await realImage("16:9", "image/png");
+    await putSource(store, "assets/cg/old.png", source);
+
+    const first = await assets.register("assets/cg/old.png", { kind: "background", name: "rooftop" }, { prompt: "雨后的天台" });
+    expect(first.kind).toBe("background");
+    expect(first.path).toBe("assets/backgrounds/rooftop.png");
+    expect(first.replaced).toBe(false);
+    expect(first.url).toBe("/plays/test/assets/backgrounds/rooftop.png");
+    expect(existsSync(join(store.dir, first.path))).toBe(true);
+
+    const ledger = JSON.parse(await files.read("assets/generated.json")) as Record<string, { prompt: string }>;
+    expect(ledger.rooftop!.prompt).toBe("雨后的天台");
+
+    // 同一个落位再登记一次 = 覆盖（如实回执），不是错误。
+    const again = await assets.register("assets/cg/old.png", { kind: "background", name: "rooftop" });
+    expect(again.replaced).toBe(true);
+    expect(again.path).toBe(first.path);
+  });
+
+  it("立绘登记：素材表补呈现声明，original 留底成可重抠的原片", async () => {
+    const store = await makeStore();
+    const { backend } = stubBackend();
+    const { assets, files } = makeAssets(store, backend);
+    const cut = await realImage("3:4", "image/png");
+    const raw = await realImage("3:4", "image/jpeg");
+    await putSource(store, "assets/cg/cut.png", cut);
+    await putSource(store, "assets/cg/raw.jpg", raw);
+
+    const sprite = await assets.register(
+      "assets/cg/cut.png",
+      { kind: "sprite", spriteId: "mio", variant: "smile", framing: "half", stature: "normal", title: "澪" },
+      { description: "笑着的澪", original: "assets/cg/raw.jpg" },
+    );
+    expect(sprite.path).toBe("assets/sprites/mio/smile.png");
+    expect(sprite.sourcePath).toBe("media-cache/sprite-sources/mio/smile.jpg");
+    expect(existsSync(join(store.dir, sprite.sourcePath!))).toBe(true);
+
+    // 呈现声明的并表规则：title 落在立绘级；framing/stature 只在 **neutral** 落在立绘级，
+    // 非 neutral 的差分只在自己与立绘级不同时写一条差分级覆盖（见包内 declareSprite）。
+    const manifest = JSON.parse(await files.read("assets/manifest.json")) as Record<string, Record<string, unknown>>;
+    expect(manifest.mio!.title).toBe("澪");
+    expect(manifest.mio!.framing).toBeUndefined();
+    expect(manifest["mio/smile"]!.framing).toBe("half");
+    expect(manifest["mio/smile"]!.description).toBe("笑着的澪");
+
+    // 留底就是为了重抠：拿它原地重跑抠底，画面零变化。
+    const recut = await assets.recut({ kind: "sprite", spriteId: "mio", variant: "smile" });
+    expect(recut.path).toBe(sprite.path);
+  });
+
+  it("来源是网图走下载器，越界路径与读不到的文件当场拒绝", async () => {
+    const store = await makeStore();
+    const { backend } = stubBackend();
+    const seen: string[] = [];
+    const { assets } = makeAssets(store, backend, 2, undefined, async (url) => {
+      seen.push(url);
+      return { data: await realImage("16:9", "image/jpeg"), mimeType: "image/jpeg" };
+    });
+
+    const fromWeb = await assets.register("https://example.com/a.jpg", { kind: "background", name: "sky" });
+    expect(seen).toEqual(["https://example.com/a.jpg"]);
+    expect(fromWeb.path).toBe("assets/backgrounds/sky.jpg");
+
+    await expect(assets.register("../../../etc/passwd", { kind: "background", name: "x" })).rejects.toThrow(
+      /非法路径|越界/,
+    );
+    await expect(assets.register("assets/cg/missing.png", { kind: "background", name: "x" })).rejects.toThrow(/找不到/);
+    await expect(
+      assets.register("assets/cg/old.png", { kind: "sprite", spriteId: "mio", variant: "neutral" }),
+    ).rejects.toThrow(/找不到/);
+  });
+
+  it("立绘缺 spriteId / 背景缺 name：落位归一化当场拒绝，不去猜宿主路径", async () => {
+    const store = await makeStore();
+    const { backend } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await expect(assets.register("assets/cg/x.png", { kind: "sprite" })).rejects.toThrow(/spriteId/);
+    await expect(assets.register("assets/cg/x.png", { kind: "cg" })).rejects.toThrow(/name/);
+  });
+});

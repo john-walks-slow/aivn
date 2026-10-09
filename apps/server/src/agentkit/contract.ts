@@ -131,17 +131,18 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
   {
     id: "image",
     profile: "shared",
-    capabilities: ["image.generate", "image.cutout"],
+    capabilities: ["image.generate", "image.cutout", "asset.register"],
     domainSemantic: "生成、审阅、采用或修整剧目图像资产。",
     roles: ["playwriter", "workshop"],
     equivalence: "semantic-only",
     hosts: {
       stageAi:
         "一个 generate_image 扛两种投递：工坊同步出草稿（入库另走 commit_asset）、剧作家后台排产直落；" +
-        "重抠走 recut_sprite（拿留底原片原地重跑抠底）。",
+        "外来图 / 候选图登记走 import_asset、重抠走 recut_sprite（拿留底原片原地重跑抠底）。",
       dshAivn:
-        "插件的 generate_image 是**无剧目目标**的候选图（与服务端同名不同义），一键入库走 generate_asset（出图 + 抠底 + 登记），" +
-        "文件级重抠走 cut。**插件没有 commit_asset / recut_sprite 的等价物**：采用发生在 generate_asset 内部，重抠对着源图跑 cut。",
+        "插件的 generate_image 是**无剧目目标**的候选图（与服务端同名不同义），外来图登记走 import_asset，" +
+        "一键入库走 generate_asset（出图 + 抠底 + 登记），文件级重抠走 cut。" +
+        "**插件没有 commit_asset / recut_sprite 的等价物**：采用发生在 generate_asset 内部，重抠对着源图跑 cut。",
       backendDependency: "生图后端；抠底在两边都是包里的同一份实现。",
       intentionalDifference:
         "参数面、写 prompt 的硬约束、垫图规则与请求归一化同源（image.generate / image.cutout）；" +
@@ -351,6 +352,17 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
     idempotent: false,
   },
   recut_sprite: { ...READ_ONLY, read_only: false, workspace_write: true, reversible: false },
+  // 把一张外来的图落成素材：写 assets/ + 补素材表 + 记台账（来源可以是网图，所以也有对外请求）。
+  import_asset: {
+    ...READ_ONLY,
+    read_only: false,
+    workspace_write: true,
+    external_request: true,
+    asset_create: true,
+    requires_confirmation: true,
+    reversible: false,
+    idempotent: true,
+  },
   read_skill: READ_ONLY,
   set_craft: { ...READ_ONLY, read_only: false, workspace_write: true, reversible: true },
   list_voices: { ...READ_ONLY, external_request: true },

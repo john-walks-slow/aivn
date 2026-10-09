@@ -1,4 +1,5 @@
 import type { FieldMap } from "../schema/ir.js";
+import { assetRegister } from "./asset/register.js";
 import { imageGenerate } from "./image/generate.js";
 import { imageCutout } from "./media/cutout.js";
 import { musicGenerate } from "./music/generate.js";
@@ -16,4 +17,11 @@ export interface CapabilityEntry {
  * 包内能力表：宿主的契约（能力矩阵、工具面覆盖检查）从这里**派生**，不再手抄一份。
  * 新能力加进来时，这条清单是唯一要动的地方。
  */
-export const CAPABILITIES: readonly CapabilityEntry[] = [webSearch, voiceList, musicGenerate, imageGenerate, imageCutout];
+export const CAPABILITIES: readonly CapabilityEntry[] = [
+  assetRegister,
+  webSearch,
+  voiceList,
+  musicGenerate,
+  imageGenerate,
+  imageCutout,
+];

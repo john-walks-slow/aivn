@@ -32,7 +32,7 @@ describe("能力位：能力开着、且它声明的工具都装上，这一位�
     );
   });
 
-  it("能力声明了装不上的工具：那一位为 false（生图缺 recut_sprite / commit_asset 就不算开）", () => {
+  it("能力声明了装不上的工具：那一位为 false（生图少任何一件都不算开）", () => {
     const half = capabilitiesOf("workshop", new Set(["image"]), [{ name: "generate_image" }]);
     expect(half.image).toBe(false);
     const stillHalf = capabilitiesOf("workshop", new Set(["image"]), [
@@ -40,10 +40,17 @@ describe("能力位：能力开着、且它声明的工具都装上，这一位�
       { name: "recut_sprite" },
     ]);
     expect(stillHalf.image).toBe(false);
+    const stillHalf2 = capabilitiesOf("workshop", new Set(["image"]), [
+      { name: "generate_image" },
+      { name: "recut_sprite" },
+      { name: "commit_asset" },
+    ]);
+    expect(stillHalf2.image).toBe(false);
     const full = capabilitiesOf("workshop", new Set(["image"]), [
       { name: "generate_image" },
       { name: "recut_sprite" },
       { name: "commit_asset" },
+      { name: "import_asset" },
     ]);
     expect(full.image).toBe(true);
   });

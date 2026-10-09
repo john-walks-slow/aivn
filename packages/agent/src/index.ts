@@ -14,6 +14,10 @@ export { assertCommonSubset, pick, tighten } from "./schema/ir.js";
 export type { Capability } from "./capabilities/capability.js";
 export type { CapabilityEntry } from "./capabilities/index.js";
 export { CAPABILITIES } from "./capabilities/index.js";
+export type { AssetLocation, AssetLocationArgs } from "./capabilities/asset/target.js";
+export { assetLocationOf, assetTargetFields } from "./capabilities/asset/target.js";
+export type { AssetRegisterArgs, AssetRegisterDeps, AssetRegisterExtra, AssetRegistration } from "./capabilities/asset/register.js";
+export { ASSET_REGISTER_DOC, assetRegister, assetRegisterFields } from "./capabilities/asset/register.js";
 export type {
   ImageGenerateDeps,
   ImageGenerateRequest,
@@ -117,6 +121,8 @@ export {
 } from "./media/catalog.js";
 export type { AdoptedAsset, AdoptHost } from "./media/adopt.js";
 export { adoptDraft } from "./media/adopt.js";
+export type { AssetSource, RegisterAssetInput } from "./media/register.js";
+export { registerAsset } from "./media/register.js";
 export type { DraftedDraft, DraftFiles, DraftPlan, DraftRecord } from "./media/draft.js";
 export {
   DRAFT_TTL_MS,

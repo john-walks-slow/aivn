@@ -17,6 +17,7 @@ import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
 import {
   adoptDraft,
   assetMetaOf,
+  registerAsset,
   declareSprite as declareSpriteIn,
   genericReferenceSuffix,
   IMAGE_EXTS,
@@ -34,6 +35,8 @@ import {
   spriteSuffix,
   writeDraft as writeDraftTo,
   type AssetIo,
+  type AssetLocation,
+  type AssetSource,
   type AssetManifest,
   type DraftPlan,
   type DraftRecord,
@@ -177,6 +180,8 @@ export interface GeneratedPlayAsset {
   replaced: boolean;
   /** 落盘前没有 neutral 垫图，本轮先自动定了一张定妆照。 */
   autoNeutral: boolean;
+  /** 立绘抠底**前**原片的留底路径（`media-cache/sprite-sources/…`）；没有留底则缺省。 */
+  sourcePath?: string;
 }
 
 /**
@@ -365,6 +370,65 @@ export class PlayAssets {
       replaced: adopted.replaced,
       autoNeutral: false,
     };
+  }
+
+  /**
+   * 登记一张**外来的图**：调用方显式给的落位 + 剧目自己的 IO（白名单读、素材写口、两张表）。
+   *
+   * 与 `commit` 是姊妹：采用走草稿里记下的出图意图，登记走**显式给的落位**——于是「别的工具产出的图、
+   * 用户自己下的图、从资源库搬来的图」都走同一条入库路。入库流水线（写 `assets/`、素材表声明与描述、
+   * 台账、原片留底）在包内 `registerAsset`，与插件共用一份；这里只接本层的 IO。
+   */
+  async register(
+    source: string,
+    location: AssetLocation,
+    extra: { description?: string; prompt?: string; original?: string } = {},
+  ): Promise<GeneratedPlayAsset> {
+    const spec = await this.resolve(location);
+    const image = await this.readSource(source, "source");
+    const original = extra.original?.trim() ? await this.readSource(extra.original.trim(), "original") : undefined;
+    const registered = await registerAsset(
+      {
+        playDir: this.deps.store.dir,
+        assets: this.assetIo(),
+        updateManifest: (mutate) => this.withManifest("workshop", mutate),
+        recordLedger: (entry) => this.saveLedger(entry),
+      },
+      spec,
+      {
+        // 立绘登记的一定是抠好的透明 PNG（换后端后的 jpg 候选得先抠底再登记）。
+        image: spec.kind === "sprite" ? { bytes: image.bytes, ext: ".png" } : image,
+        ...(original ? { original } : {}),
+        ...(extra.description ? { description: extra.description } : {}),
+        ...(extra.prompt ? { prompt: extra.prompt } : {}),
+      },
+    );
+    return {
+      kind: spec.kind,
+      path: registered.rel,
+      url: `/plays/${this.playId}/${registered.rel}`,
+      replaced: registered.replaced,
+      autoNeutral: false,
+      ...(registered.sourceRel ? { sourcePath: registered.sourceRel } : {}),
+    };
+  }
+
+  /** 读一张来源图：剧目内路径走 `PlayFiles` 白名单，http(s) 走带 SSRF 防护的下载器。 */
+  private async readSource(source: string, what: string): Promise<AssetSource> {
+    const src = source.trim();
+    if (src === "") throw new Error(`登记素材要 ${what}（剧目内相对路径 / http(s) 网址）`);
+    let bytes: Buffer;
+    if (/^https?:\/\//i.test(src)) {
+      if (!this.deps.fetchImage) throw new Error("外部网络图下载未配置（fetchImage 缺失），无法读 URL 图片。");
+      bytes = (await this.deps.fetchImage(src)).data;
+    } else {
+      const abs = this.deps.files.pathOf(src, "read");
+      if (!existsSync(abs)) throw new Error(`${what} 找不到：${src}（剧目里没有这个文件）`);
+      bytes = await readFile(abs);
+    }
+    const mime = sniffImageMime(bytes);
+    if (!mime) throw new Error(`${what} 不是 png/jpeg/webp/gif 图片：${src}`);
+    return { bytes, ext: extOf(mime) };
   }
 
   private loadDraft(draftId: string): Promise<DraftRecord> {
