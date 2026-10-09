@@ -144,7 +144,7 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     roles: ["playwriter", "workshop"],
     equivalence: "intentional-difference",
     hosts: {
-      stageAi: "应用级 library/ 资源库与引用即导入；工坊可显式 import_asset。",
+      stageAi: "应用级 library/ 资源库与引用即导入；工坊可显式 library_import。",
       dshAivn: "不假定独立版跨剧目 library；DSH 仅处理当前 workspace 的素材工具。",
       backendDependency: "独立版需本地 library 目录；DSH 无此依赖。",
       intentionalDifference: "资源库是独立版产品能力，不能把其目录状态复制进 DSH。",
@@ -308,7 +308,7 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
   get_readiness: READ_ONLY,
   view_image: { ...READ_ONLY, read_only: false, external_request: true },
   list_library: READ_ONLY,
-  import_asset: { ...READ_ONLY, read_only: false, workspace_write: true, asset_adopt: true, reversible: false, idempotent: false },
+  library_import: { ...READ_ONLY, read_only: false, workspace_write: true, asset_adopt: true, reversible: false, idempotent: false },
   list_saves: READ_ONLY,
   read_lineage: READ_ONLY,
 };

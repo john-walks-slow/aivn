@@ -69,7 +69,7 @@ packages/agent/src/
 
 | 现值 | 问题 | 改成 |
 | --- | --- | --- |
-| 服务端 `import_asset` | 从应用级资源库按 `entryId` 导入，与插件的本地登记**同名不同义** | `library_import`（能力：`library.import`） |
+| 服务端 `import_asset` ✅ 已改名 `library_import` | 从应用级资源库按 `entryId` 导入，与插件的本地登记**同名不同义** | `library_import`（能力：`library.import`） |
 | 插件 `import_asset` | 本地路径/URL 登记入库 | 名字保留（能力：`asset.register`） |
 | 服务端 `generate_image` | 一个 id 扛三种语义（工坊草稿 / 剧作家排产直落 / 绑 target） | 能力 `image.generate(target?)`；工坊 face（draft 策略）与剧作家 face（queued 策略）分开声明，**策略进 face、不进文案分支** |
 | 插件 `generate_asset` | 一键（生成+抠底+登记） | 保留为**宿主便利 face**：由 `image.generate` + `asset.commit` 两个能力组合（实现仍在包里） |

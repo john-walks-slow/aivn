@@ -38,7 +38,7 @@ const caps = (over: Partial<AgentCapabilities> = {}): AgentCapabilities => ({
 });
 
 describe("工坊提示词：工具知识不在这里重复", () => {
-  it("资源库用法只由 list_library / import_asset 的描述承担", async () => {
+  it("资源库用法只由 list_library / library_import 的描述承担", async () => {
     const prompt = await buildWorkshopPrompt({ ...CTX, can: caps() });
     // 「先查资源库」是工作方法，留着；条目怎么解释、角色包怎么处理，归工具描述
     expect(prompt).not.toContain("# 素材资源库");
@@ -49,7 +49,7 @@ describe("工坊提示词：工具知识不在这里重复", () => {
   it("库不可用时连「先查资源库」也不提——那两个工具压根没注册", async () => {
     const prompt = await buildWorkshopPrompt({ ...CTX, can: caps({ library: false }) });
     expect(prompt).not.toContain("list_library");
-    expect(prompt).not.toContain("import_asset");
+    expect(prompt).not.toContain("library_import");
   });
 
   it("生图不可用时换一句降级说明，不教它调工具", async () => {

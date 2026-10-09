@@ -8,7 +8,7 @@ import { reason, textResult } from "./result.js";
  *
  * **只装给工坊**：曲子一分钟上下（实测 ~176s 的片子要 84s），剧作家的一轮只有 240s，
  * 把它塞进演出回路等于整轮都在等一首歌落盘。BGM 又是制作资产——同一套理由让剧作家的
- * `import_asset` 也拿掉了（那个由「引用即导入」这条默认路径顶替，音乐这里由工坊先备好）。
+ * `library_import` 也拿掉了（那个由「引用即导入」这条默认路径顶替，音乐这里由工坊先备好）。
  *
  * **后台排产，不在回合里等**：与 `generate_image` 的 queued 形态同一套口径——发起即返回，
  * 记账挂进 `pendingJobs`（面板上看得见在等什么），跑完经 `asset_ready` 广播，客户端重拉素材页。
@@ -55,7 +55,7 @@ const musicParams = Type.Object(
 
 const DESCRIPTION = [
   "后台生成一首 BGM 并落进 `assets/bgm/<name>`（**发起即返回，不等曲子**），之后剧本里用 `<scene bgm=\"name\" />` 引用。",
-  "**要曲子先查库**（`list_library`，kind=bgm）：库里已有的直接 `import_asset` 导进来更快、还免得占生成配额；",
+  "**要曲子先查库**（`list_library`，kind=bgm）：库里已有的直接 `library_import` 导进来更快、还免得占生成配额；",
   "库里确实没有合适的（缺那个情绪、或用户明确要一首专属的）才生成。**剧目里已有同名曲子会直接跳过**——",
   "用户明确说要重做那一首时才带 `overwrite=true`，那会覆盖同名那首，动手前先跟用户说清楚。",
   "提示词写英文，按「配器 + 情绪走向 + 速度与循环 + 用途」四段写；`seamless loop` 别省（galgame 的 BGM 要反复铺在对话下面，",

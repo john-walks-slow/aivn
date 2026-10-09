@@ -216,7 +216,7 @@ export interface OrchestratorOptions {
   generatedAssets?: GeneratedNote[];
   /** 剧目目录：素材类工具要往这里写。 */
   store: PlayStore;
-  /** 应用级素材资源库（给了才装 list_library / import_asset）。 */
+  /** 应用级素材资源库（给了才装 list_library / library_import）。 */
   assetLibrary?: AssetLibrary;
   /** 公共音色库客户端：工坊 list_voices 用。没配 TTS 时为 undefined，工具不注册。 */
   voices?: VoiceCatalogService;

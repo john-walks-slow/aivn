@@ -453,7 +453,7 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
   });
 });
 
-describe("import_asset 工具：单个与批量", () => {
+describe("library_import 工具：单个与批量", () => {
   let libRoot: string;
   let playsRoot: string;
   let library: AssetLibrary;
@@ -471,7 +471,7 @@ describe("import_asset 工具：单个与批量", () => {
     await rm(playsRoot, { recursive: true, force: true });
   });
 
-  /** 只取 import_asset：批量入口在工具层，assetImport 只认单条目。 */
+  /** 只取 library_import：批量入口在工具层，assetImport 只认单条目。 */
   function importTool(onAsset?: (asset: { path: string }) => void) {
     const tools = createLibraryTools({
       playId: "p1",
@@ -479,7 +479,7 @@ describe("import_asset 工具：单个与批量", () => {
       library,
       onAsset: onAsset as never,
     });
-    return tools.find((t) => t.name === "import_asset")!;
+    return tools.find((t) => t.name === "library_import")!;
   }
 
   const textOf = (result: { content: unknown[] }): string => (result.content[0] as { text: string }).text;

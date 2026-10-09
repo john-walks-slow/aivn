@@ -9,7 +9,7 @@ import type { PlayFileWrite } from "./deps.js";
 import { reason, textResult } from "./result.js";
 
 /**
- * 素材资源库的两个工具：`list_library`（只读浏览）与 `import_asset`（复制进剧目）。
+ * 素材资源库的两个工具：`list_library`（只读浏览）与 `library_import`（复制进剧目）。
  *
  * 两个角色的依赖是**同一份**：`onWrite` 是写盘后的刷新信号（各页重拉），`onAsset` 往工坊对话流
  * 推素材气泡。剧作家那条线上没有对话流可挂，宿主给空实现——工具照常能用，只是没有气泡可看。
@@ -72,7 +72,7 @@ export interface LibraryToolDeps {
   /** 素材落盘回调：推给工坊对话流，挂到产出它的那次调用上。 */
   onAsset?: (asset: WorkshopAssetView, replaced?: boolean, toolCallId?: string) => void;
   /**
-   * 装不装 `import_asset`（缺省装）。
+   * 装不装 `library_import`（缺省装）。
    *
    * 剧作家侧不装：它的默认导入路径是**引用即导入**（剧本里写个 id，宿主去库里搬），
    * 自己动手搬一遍是同一件事的第二条路。`TOOL_CATALOG` 里这一项也标了 workshop。
@@ -90,13 +90,13 @@ export function createLibraryTools(deps?: LibraryToolDeps): AgentTool<any>[] {
     description:
       "浏览应用级素材资源库（跨剧目复用的本地素材目录，由用户在本地维护，你只读不写）。\n" +
       "**要素材先查库**。用户说「弄张教室的图」「配首忧伤的音乐」「来个门响的音效」「找个角色」「有台机甲的立绘吗」，先用本工具" +
-      "（可以带 kind 或 query 关键词）看有没有现成的，有就 import_asset 导入（挑中的同类条目一次传数组导完）。库里有就**不要**再 generate_image。\n" +
+      "（可以带 kind 或 query 关键词）看有没有现成的，有就 library_import 导入（挑中的同类条目一次传数组导完）。库里有就**不要**再 generate_image。\n" +
       "可给 kind 过滤类别（backgrounds/cg/sprites/characters/bgm/sfx），可给 query 按关键词搜描述与标签。\n" +
       "每行是：id | 类别 | 标题 | 描述（立绘类目还会列出可用差分名，角色包还标了是否主角）。\n" +
       "**kind=characters 是角色包**（角色卡 + 可选立绘）、**kind=sprites 是纯立绘**（机甲、道具、猫——台上任何不是人的主体）：" +
       "两者都会把立绘复制进 `assets/sprites/<id>/`，条目带 `meta.character` 时还会写一张角色卡；只声明了图的条目**不建空壳卡**。" +
       "条目 id 就是立绘目录名，导入后 `<actor id=\"…\" variant=\"…\">` 直接可用。\n" +
-      "**库和剧目各存一份**：import_asset 是把文件复制进本剧目的 assets/，删库不影响剧目；但资源库里的" +
+      "**库和剧目各存一份**：library_import 是把文件复制进本剧目的 assets/，删库不影响剧目；但资源库里的" +
       "素材不会自动出现在别的剧目里，要用就得各导一次。\n" +
       "导入素材的元数据（描述、标签、音乐的情绪/适用场景/时长/是否可循环）会一并写进剧目素材表，" +
       "剧作家据此选曲选图——所以库里的描述写得准不准，直接影响演出效果。\n" +
@@ -135,7 +135,7 @@ export function createLibraryTools(deps?: LibraryToolDeps): AgentTool<any>[] {
   };
 
   const importAsset: AgentTool<typeof importAssetParams> = {
-    name: "import_asset",
+    name: "library_import",
     label: "从资源库导入",
     description:
       "把资源库里的条目复制进本剧目（写进 assets/ 与角色表）。" +

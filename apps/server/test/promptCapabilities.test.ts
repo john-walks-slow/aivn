@@ -48,7 +48,7 @@ describe("能力位：能力开着、且它声明的工具都装上，这一位�
     expect(full.image).toBe(true);
   });
 
-  it("只要求这个角色装得上的那些：剧作家开资源库不需要 import_asset", () => {
+  it("只要求这个角色装得上的那些：剧作家开资源库不需要 library_import", () => {
     expect(capabilitiesOf("playwriter", new Set(["library"]), [{ name: "list_library" }]).library).toBe(true);
     expect(capabilitiesOf("workshop", new Set(["library"]), [{ name: "list_library" }]).library).toBe(false);
   });
@@ -68,7 +68,7 @@ describe("两份提示词读同一套能力位", () => {
     expect(playwriter).not.toContain("list_library");
     expect(playwriter).not.toContain("引用一个剧目里还没有的 id");
     expect(workshop).not.toContain("list_library");
-    expect(workshop).not.toContain("import_asset");
+    expect(workshop).not.toContain("library_import");
   });
 
   it("生图不可用：两边都换成降级说明，不给出图那套做法", async () => {

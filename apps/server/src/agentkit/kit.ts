@@ -173,7 +173,7 @@ const CATALOG_ROWS = [
     desc: "查库里有哪些素材，也能把现成的搬进本剧目。",
     group: "assets",
     roles: ["playwriter", "workshop"],
-    tools: ["list_library", "import_asset"],
+    tools: ["list_library", "library_import"],
   },
   {
     id: "search",
@@ -297,7 +297,7 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   view_image: { label: "看图", roles: ["workshop"] },
   list_library: { label: "浏览素材资源库", roles: ["playwriter", "workshop"] },
   // 剧作家不走它：剧本里写个 id，宿主会去库里导入（引用即导入），自己搬一遍是重复路径。
-  import_asset: { label: "从资源库导入", roles: ["workshop"] },
+  library_import: { label: "从资源库导入", roles: ["workshop"] },
   list_saves: { label: "列出周目", roles: ["workshop"] },
   read_lineage: { label: "读故事树", roles: ["workshop"] },
 };
@@ -464,7 +464,7 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
       existingAssetUrl: deps.existingAssetUrl,
     }),
     // 剧作家这边没有对话流可挂，onWrite/onAsset 就不给：工具照常能用，只是没有气泡可看；
-    // import_asset 也不装——它的默认导入路径是引用即导入。
+    // library_import 也不装——它的默认导入路径是引用即导入。
     ...createLibraryTools({
       playId: deps.playId,
       store: deps.store,
