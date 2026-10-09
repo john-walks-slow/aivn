@@ -28,6 +28,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
+    "sync:skills": "node scripts/sync-agent-skills.mjs",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",

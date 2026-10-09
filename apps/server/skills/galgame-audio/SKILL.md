@@ -4,7 +4,7 @@ description: 为视觉小说剧目找免费 BGM 与音效（SFX）的选源速�
 user-invocable: true
 ---
 
-# galgame-audio（免费 BGM 与音效素材获取）
+# 免费 BGM 与音效素材获取（选源速查）
 
 剧目里的音频有两个来路：**找现成的**（免费素材源）与**自己生成**（配了音乐后端时的 `generate_bgm`）。
 这份速查解决前一条路上的两件事：**去哪个源找**、**这个源的素材能不能用在剧目里**——
@@ -121,13 +121,14 @@ HowWorks Music 约 275 首。**AI 生成曲上架 Steam 需做 AI 内容披露�
 工具配了音乐后端才注册；它**后台排产**（发起即返回，一首约 175 秒的曲子实测 84 秒到货），
 所以不会卡住这一轮对话，但结果也不是马上能听的。
 
+- 剧目里已有同名曲子时 `generate_bgm` 会**直接跳过**：用户明确说要重做那一首时才带 `overwrite=true`。
+- 具体措辞与反例词表另见 BGM 那份 skill。
+
 - **一类场景一首**：别为同一情绪反复出；出之前先读 `assets/manifest.json` 看 `bgm` 里已有什么。
 - **上游固定给约 176 秒、没有时长参数**：要它适合循环就在 prompt 里写 `seamless loop, no fade out`——循环意图只能靠提示词表达。
 - **prompt 写清四件事**：情绪（quiet / tense / bittersweet）、乐器（piano / strings / synth）、节奏（slow / mid-tempo）、用途（rainy afternoon scene）。
-  具体措辞与反例词表见 skill `galgame-bgm`。
 - **落库后补一句适用场景**（素材表的描述）——剧作家挑曲子看的就是它。
 - 能从上面的免费源拿到现成的（尤其整部剧目需要十几首时）就别一律烧配额；AI 曲上架 Steam 需做 AI 内容披露。
-- 剧目里已有同名曲子时 `generate_bgm` 会**直接跳过**：用户明确说要重做那一首时才带 `overwrite=true`。
 
 ## 10. 落地红线
 
@@ -139,3 +140,7 @@ HowWorks Music 约 275 首。**AI 生成曲上架 Steam 需做 AI 内容披露�
 4. **AI 训练条款**：魔王魂、OtoLogic、煉獄庭園、Sonniss、効果音辞典均**禁 AI 学习取用**——
    不要把下载的素材喂给模型；作为剧目内播放素材无碍。
 5. **18 禁限制**：効果音ラボ、効果音辞典禁成人作品；魔王魂、OpenTracks、OtoLogic 允许。
+   承接成人内容时 SE 主力换 OpenTracks SE、OtoLogic、くらげ工匠。
+6. **平台锁定源规避**：YouTube 音频库（仅 YouTube）、Mixkit 音乐（禁游戏）不要入库。
+7. **来源留档**：按「源站名／授权」记进 `assets/manifest.json` 的描述里，
+   别让剧目的一首曲子日后说不清出处。

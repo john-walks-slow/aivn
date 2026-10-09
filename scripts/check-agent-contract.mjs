@@ -19,7 +19,7 @@
  *
  * 退出码：0 全过，1 有漂移。
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -207,6 +207,17 @@ check("生命周期常量由共享契约推导", () => {
   return [];
 });
 
+check("共享技能正文与宿主副本一致", () => {
+  // 技能是 markdown、两个宿主各读各的目录，所以「一份正文」靠生成维持：
+  // 服务端这份必须等于 packages/agent/skills/ 用 server 变量渲染出来的结果。
+  // （插件那份由插件仓自己的 build.mjs --check 盯，那个仓库才够得着它。）
+  return import("./sync-agent-skills.mjs").then(({ renderSkill }) => {
+    const { file, text } = renderSkill("aivn-audio", "server", ROOT);
+    const onDisk = existsSync(file) ? readFileSync(file, "utf8") : null;
+    return onDisk === text ? [] : [`${file} 与 packages/agent/skills/aivn-audio.md 不一致（跑 pnpm sync:skills）`];
+  });
+});
+
 check("能力矩阵与能力目录一一对应", () => {
   const kit = read("apps/server/src/agentkit/kit.ts");
   const contract = read("apps/server/src/agentkit/contract.ts");
@@ -314,7 +325,8 @@ let failed = 0;
 for (const { name, run } of checks) {
   let problems;
   try {
-    problems = run();
+    // 检查可以是同步的，也可以返回 Promise（比如要去渲染一份生成物来比对）
+    problems = await run();
   } catch (error) {
     problems = [`检查本身出错：${error.message}`];
   }
