@@ -10,7 +10,8 @@
 
 ## 改动
 
-分支 `feat/voice-pagination`，worktree `/root/projects/dsh-aivn-voice-pagination`（未合入）。
+分支 `feat/voice-pagination`，worktree `/root/projects/dsh-aivn-voice-pagination`。
+已合入 master：`d8ff40d`（变基到 `2a998c6` 之上后 ff-only）。
 
 | 文件 | 改动 |
 | --- | --- |
@@ -62,3 +63,8 @@
   这两个只是本次工作的脚手架。
 - 本仓库的 worktree **不放 `.worktrees/`**：多两层会改变 `lib/` 里的源码路径注释，
   撞上 `build.mjs --check` 硬判。放仓库父目录下（同层）即可。
+- 合并时主检出正有另一个会话的进行中改动（`merge-to-main` 因此以 exit 4 拒绝）。按用户指示
+  替它提交为 `2a998c6`（立绘色键底色 `keyColor` + 两个预设不吃宿主的技能与指令；提交前
+  `typecheck` 与 `build.mjs --check` 均通过），随后本分支变基到它之上再 ff-only 合入。
+  合并后 master 上 `build.mjs --check` 仍一致——`lib/index.js` 两处改动落在 bundle 的
+  不相交区段，文本三方合并的结果与重新构建逐字节相同。
