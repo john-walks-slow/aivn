@@ -7,7 +7,6 @@ import {
   DEFAULT_SPRITE_FRAMING,
   DEFAULT_SPRITE_STATURE,
   SPRITE_FRAMING_ASPECT,
-  SPRITE_FRAMING_SHOT,
   spriteDeclarationOf,
   type ActorAnchor,
   type CharacterDocument,
@@ -17,7 +16,17 @@ import {
 } from "@aivn/core";
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
-import { IMAGE_EXTS, mimeForExt, sniffImageMime } from "@aivn/agent";
+import {
+  genericReferenceSuffix,
+  IMAGE_EXTS,
+  isKeyBackgroundColor,
+  mimeForExt,
+  NEUTRAL_LEAD,
+  referenceSuffix,
+  sniffImageMime,
+  spriteSuffix,
+  type KeyBackgroundColor,
+} from "@aivn/agent";
 import type { Limiter } from "./limiter.js";
 import { PlayMemory } from "./memory.js";
 import { errorText, jobIdForImage, type PendingJobs } from "./pendingJobs.js";
@@ -71,7 +80,7 @@ export function assertAssetStem(value: string, label: string): string {
  */
 function assertKeyColor(value: unknown): KeyBackgroundColor | undefined {
   if (value === undefined || value === null) return undefined;
-  if (value === "green" || value === "magenta") return value;
+  if (isKeyBackgroundColor(value)) return value;
   throw new Error(`色键底色「${String(value)}」非法：只有 green / magenta`);
 }
 
@@ -108,7 +117,7 @@ export type AssetKind = "background" | "cg" | "sprite";
  * 「算不算绿色系」是个判断，藏在措辞里交给生图模型，绿瞳、绿配饰都会被算进去，底色就不可预期
  * （2026-10-09 实测：一个金发红瞳、身上一点绿都没有的角色被模型判成了绿色系，给了洋红底）。
  */
-export type KeyBackgroundColor = "green" | "magenta";
+export type { KeyBackgroundColor };
 
 export interface AssetTarget {
   kind: AssetKind;
@@ -1073,217 +1082,23 @@ function labelFor(spec: AssetSpec): string {
   return spec.kind === "background" ? `背景 ${spec.stem}` : `CG ${spec.stem}`;
 }
 
+/**
+ * 后缀的调度：背景 / CG 按「垫图是不是全为具名角色」二选一，立绘一律走包内的 `spriteSuffix`。
+ *
+ * 提示词正文（画风、色键底、留白、身份锁、序号锚点）全在 `@aivn/agent` 的 `media/prompt.ts` 里，
+ * 与 DSH 插件共用一份；这里只负责把本层的 `AssetSpec` 翻译成那几个原语。
+ */
 function suffixFor(spec: AssetSpec, prompt: string, sentReferences: number): string {
   if (spec.kind !== "sprite") {
     if (sentReferences <= 0) return prompt;
     // 如果全部为具名角色
     if (spec.referenceSprites?.length && spec.referenceSprites.length === sentReferences) {
-      return `${prompt}. ${referenceSuffix(spec.referenceSprites)}`;
+      return `${prompt}. ${referenceSuffix(spec.referenceSprites.map((c) => c.name))}`;
     }
     // 包含通用参考图或混合参考
-    return `${prompt}. ${genericReferenceSuffix(spec.explicitReferences ?? [])}`;
+    return `${prompt}. ${genericReferenceSuffix((spec.explicitReferences ?? []).map((r) => r.name ?? null))}`;
   }
   // 定妆照与差分走同一个出口：抠底底色、画风、不留杂物这几条必须两条分支一致，
-  // 分开写就一定会漂（见 `spriteSuffix`）。
-  return `${prompt}. ${spriteSuffix(spec.framing, spec.variant, sentReferences, spec.keyColor)}`;
-}
-
-/**
- * 通用参考图后缀：用于背景、CG 或未全具名角色的垫图场景。
- */
-function genericReferenceSuffix(refs: ResolvedReference[]): string {
-  const named = refs.filter((r) => !!r.name);
-  if (named.length > 0) {
-    const roster = refs
-      .map((r, i) => `${i + 1}) ${r.name ? r.name : "reference image"}`)
-      .join(", ");
-    return (
-      `The attached reference images are, in this exact order: ${roster}. ` +
-      "Maintain consistent visual appearance, character identity, hairstyle, facial features, and design elements " +
-      "as depicted in the corresponding reference images while adapting them to the scene."
-    );
-  }
-  return (
-    "Follow the attached reference image(s) for visual appearance, design details, " +
-    "color palette and overall aesthetic while rendering the described scene."
-  );
-}
-
-/**
- * 定妆照的参考图尾注：拼在构图后缀**之后**，点明这一张要长得像参考图里的那个人。
- *
- * 与差分的 `HUMAN_IDENTITY` / `PROP_IDENTITY` 分工不同——差分垫的是自家 neutral，
- * 说的是「只改表情」；这里垫的是外部图（用户给的既有角色图、原画），
- * 要的是「把那个人的样子搬到这张定妆照上」。姿势、底色、画风仍由 `spriteSuffix` 管，
- * 这一段只补身份。**不带句尾标点**：拼接由 `join(". ")` 统一负责。
- */
-function neutralReferenceTail(framing: SpriteFraming | undefined): string {
-  if ((framing ?? DEFAULT_SPRITE_FRAMING) === "square") {
-    return "Based on the attached reference image: the same subject with identical colors, markings and features";
-  }
-  return (
-    "Based on the attached reference image: the same character — identical face, hairstyle, hair color, " +
-    "eye color and outfit — redrawn in the pose and framing described above"
-  );
-}
-
-/**
- * 参考立绘在提示词里的**序号锚点**。
- *
- * 非可省：`geminiImage.ts` 把垫图按 `references` 的顺序一个个 push 成 inlineData，
- * 图片本身没有名字，模型只看到「第一张、第二张……」。不点明谁是谁，多人 CG 就会各画各的，
- * 而且是**看起来完全正常**地画错——不会报错，图也好看，只是七濑长成了澪。
- *
- * 编号从 1 起、顺序与 references 数组严格一致；名字取角色卡的 `name`（没写就退回 id）。
- */
-function referenceSuffix(characters: ReferenceSprite[]): string {
-  const roster = characters.map((c, i) => `${i + 1}) ${c.name}`).join(", ");
-  return (
-    `The attached reference images are, in this exact order: ${roster}. ` +
-    "Keep each of them recognisably that same person — identical face, hairstyle, hair color, " +
-    "eye color and outfit — while placing them in the new scene. Do not merge them into one person."
-  );
-}
-
-
-/**
- * 画风句。定妆照与差分共用同一份——两边各写一句时，两句话只要有一处措辞不同，
- * 出来就是两张画风不同的画，而「同一个人」正是靠这套词锁的。
- */
-const STYLE =
-  "Japanese anime style 2D illustration, flat cel shading with clean crisp lineart, " +
-  "NOT a 3D render, no 3D CGI look";
-
-/**
- * 抠底底色：**单一纯色，且这个颜色不出现在角色身上**。
- *
- * 抠底（`src/cutout.ts`）是纯色键：离底色够近的像素一律算背景，不分内外、不看连通性。
- * 所以底色一旦和角色撞色，角色身上那块就跟着被抠穿——「纯白底 + 白袜子」就是撞色的极端，
- * 算法救不了，是出图这一步的责任：底色必须选成角色配色里没有的颜色。
- *
- * **默认纯绿 #00FF00，颜色由调用方显式给**（`keyColor`）——绿幕对深色描边、暖色皮肤、深发色
- * 都是最远的色距，抠完的边最干净；**只有角色配色本身就是绿色系（绿发/绿衣/绿瞳）时才给
- * `magenta`** 换纯品红 #FF00FF。不留「除非角色是绿色系就换一个」这种要生图模型自己判断的分支：
- * 模型会把绿瞳、绿配饰也算成绿色系，底色变得不可预期。换了哪个抠底端不需要知道：
- * 它从整圈边框量出实际底色（`cutout.ts` 还会体检底色是不是真色键色，白底 / 灰底直接报错）。
- *
- * **这一句是底线，定妆照与差分都走它。** 别在别的分支里另写一句「跟参考图同色」——
- * 差分曾经就是这么写的，而差分的垫图是**已经抠过底的透明 PNG**（没有颜色），
- * 模型把透明还原成白底，色键于是把角色身上一切接近白的像素（白袜、白制服、银发）
- * 判成背景，整张立绘被打成镂空。约束被复制就会只改一份，只改一份就是线上事故。
- */
-const KEY_BACKGROUND_WORD: Record<KeyBackgroundColor, string> = {
-  green: "pure green #00FF00",
-  magenta: "pure magenta #FF00FF",
-};
-
-function keyBackground(color: KeyBackgroundColor | undefined): string {
-  return (
-    "Background is one single flat solid colour used as a chroma key, chosen to appear nowhere on the " +
-    `character themselves; use ${KEY_BACKGROUND_WORD[color ?? "green"]}`
-  );
-}
-
-/**
- * 不许渐变、投影、纹理、装饰：色键只认一种颜色，任何过渡都是抠不干净的白边。
- * 与画风句、底色句一样，只此一份——先前 `IDENTITY_TAIL` 手里抄了一份
- * （`no text, no shadow, no gradient.`），两句还只对上了三个词。
- */
-const NO_ARTIFACTS = "No gradient, no shadow, no texture, no decoration, no text";
-
-/**
- * 留白约束：人形专属。舞台按统一头顶留白摆位（见 app.css 的 .theater-sprite）。
- *
- * **姿势不在这里规定。** 早先这一段写死 `front-facing standing pose, both arms held slightly away
- * from the body`，于是每个角色、每张定妆照都是同一个正面对称站桩；而定妆照是所有差分的垫图基准，
- * 姿势就此终身固定。站姿还是坐姿、什么机位，属于角色气质，由调用方写（`imageTool.ts` 的
- * PROMPT_RULES 已经要求「姿势、机位、景别都要显式写」），引擎不覆盖。
- *
- * 留在这里的是抠底真要的那条：手臂与躯干之间**不能留窄缝**——色键够不着那条窄缝，
- * 人会被拆成两块轮廓（要么贴住，要么彻底分开、让底色能灌进去）。
- */
-const POSE_TAIL =
-  "arms either resting against the body or clearly separated from it, never with a narrow sliver of " +
-  "background trapped between an arm and the torso" +
-  // 人物矮的那一头空间本来就该空得多，不点明的话模型会把所有角色都顶到画幅上沿，
-  // 矮个子的头顶就直接贴边了。
-  ". Shorter characters may leave more empty space above the head, and taller characters may leave less, " +
-  "so every character keeps some space above the head rather than touching the top edge of the frame";
-
-/**
- * 主体非人（`square`）时的留白约束：只说「完整入画 + 四周留白」。
- *
- * 抠底靠的是「主体四周有一圈底色」，这与人形无关，所以留白这句留着；
- * 姿态与「头顶留白」都去掉——猫没有双臂，吊灯没有头顶。
- */
-const PROP_TAIL =
-  "the entire subject fully inside the frame with clear empty background space all around it, " +
-  "nothing cropped by the frame edges";
-
-/**
- * 定妆照的前置中性描述：压住角色卡里的表情词（那一条只对当前差分有效）。
- *
- * **只说表情与气质，不说姿势**：姿势归调用方。这里写死站姿时，调用方写在 prompt 里的任何姿势
- * 都会被压掉——定妆照要能当这个角色的基本立绘用，姿势本身就得是表达气质的一部分。
- *
- * **按取景取词，不是一句通吃**：给非人主体（`square`）说 portrait 会得到「猫的肖像照」——
- * portrait 是人形概念，套到猫/道具身上语义不通，模型要么给你一只坐着的人形猫，要么干脆画个人。
- * `square` 用「完整入画、中性状态」，不提姿势也不提表情。
- */
-const NEUTRAL_LEAD: Record<SpriteFraming, string> = {
-  full: "a calm neutral-expression portrait of the character, in a natural pose that expresses their personality.",
-  half:
-    "a calm neutral-expression portrait of the character, in a natural pose that expresses their personality, waist up.",
-  square: "the subject shown whole, in a neutral state.",
-};
-
-/**
- * 差分：只改**表情/状态**，身份特征一律锁死——垫图之外的第二道保险。
- *
- * 「facial expression」也是人形词，猫的差分（睡着的/炸毛的）说「只改面部表情」会让模型
- * 认真去找那张猫脸。所以非人那套说的是「只改状态」。
- */
-const HUMAN_IDENTITY =
-  "Same character as the reference image: identical hairstyle, hair color, eye color, outfit and body type. " +
-  "Change only the facial expression.";
-const PROP_IDENTITY =
-  "The same subject as the reference image, in the same pose and same colours. Change only its state.";
-
-/**
- * 立绘提示词的**唯一出口**：定妆照与差分拼的是同一个片段序列，差别只在「身份」那一段。
- *
- * 这么写是为了让「底色 / 画风 / 不留杂物」这几条**不可能只在一条分支上生效**——
- * 它们曾经分居两处（`COMMON_TAIL` 与 `IDENTITY_TAIL`），绿幕改造只改了前者，
- * 差分就此带着白底出图、被色键打成镂空（见 `docs/issues/261008-sprite-variant-dirty-cutout/`）。
- * 片段之间统一由 `join(". ")` 拼，标点不再手写——手拼时出过 `one arm.. Same character` 这种双句点。
- *
- * 顺序有讲究：景别与构图在前，身份在后，底色与画风压轴。垫图会带自己的背景与景别，
- * 约束放在它后面才盖得住。
- */
-function spriteSuffix(
-  framing: SpriteFraming | undefined,
-  variant: string | undefined,
-  sentReferences: number,
-  keyColor: KeyBackgroundColor | undefined,
-): string {
-  const f = framing ?? DEFAULT_SPRITE_FRAMING;
-  // square 是「非人主体」的唯一入口，所以它同时决定了后缀走哪一套。
-  // 人与非人的差别只有一处：姿势与头顶留白（人形专属），其余构图与画风约束两边通用。
-  const human = f !== "square";
-  const neutral = variant === NEUTRAL;
-  const parts = [
-    // 差分也要点明景别：垫图（neutral 定妆照）是全身时，模型很容易照着垫图把一条
-    // 半身差分也画成全身。不点明的代价是图出来了取景对不上，舞台按半身摆却是张全身像。
-    neutral ? SPRITE_FRAMING_SHOT[f] : human ? HUMAN_IDENTITY : PROP_IDENTITY,
-    ...(neutral ? [] : [SPRITE_FRAMING_SHOT[f]]),
-    human ? POSE_TAIL : PROP_TAIL,
-    STYLE,
-    keyBackground(keyColor),
-    NO_ARTIFACTS,
-  ];
-  // 定妆照垫图时补一句「这就是参考图里那个人」，压在最后：参考图带背景与景别，压后才盖得住。
-  if (neutral && sentReferences > 0) parts.push(neutralReferenceTail(f));
-  // 标点由这一处说了算：片段自带的尾句点一律削掉再拼，否则 `expression.` 撞上 `". "`
-  // 就是 `expression..`——片段各写各的标点时实测出过 30/57 条带双句点的提示词。
-  return `${parts.map((p) => p.trim().replace(/\.+$/, "")).join(". ")}.`;
+  // 分开写就一定会漂。
+  return `${prompt}. ${spriteSuffix(spec.framing, spec.variant === NEUTRAL, sentReferences, spec.keyColor)}`;
 }

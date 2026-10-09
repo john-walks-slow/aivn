@@ -55,5 +55,16 @@ export { canvasFor as openAiCanvasFor, OpenAiImageGen } from "./media/openai.js"
 export type { ModelsLabImageOptions } from "./media/modelslab.js";
 export { canvasFor as modelsLabCanvasFor, ModelsLabImageGen } from "./media/modelslab.js";
 
+export type { KeyBackgroundColor } from "./media/prompt.js";
+export {
+  DEFAULT_KEY_COLOR,
+  genericReferenceSuffix,
+  isKeyBackgroundColor,
+  KEY_BACKGROUND_COLORS,
+  NEUTRAL_LEAD,
+  referenceSuffix,
+  spriteSuffix,
+} from "./media/prompt.js";
+
 export type { WebImage, WebImageFetcher, WebImageOptions } from "./media/web-image.js";
 export { fetchWebImage, MAX_WEB_IMAGE_BYTES, readCapped, webImageBase } from "./media/web-image.js";
