@@ -182,7 +182,7 @@ export class PlayHouse {
   private musicBackend!: MusicBackend | null;
   /** 工坊联网检索（无 key 为 null：工坊少一个工具）。与 TTS 一样是进程级客户端，不随 runtime 重建。 */
   private exa!: Exa | null;
-  /** 网络图下载器（`view_image` 的网址分支）。进程级：无状态，按剧目给的缓存目录不同。 */
+  /** 网络图下载器（`import_asset` 的 http(s) 来源走它）。进程级：无状态。 */
   private readonly webImage: WebImageFetcher;
   /**
    * 生图并发闸门，按剧目缓存。
@@ -1399,7 +1399,6 @@ export class PlayHouse {
       assetLibrary: this.assetLibrary,
       voices: this.voices,
       exa: this.exa ?? undefined,
-      webImage: this.webImage,
     });
     return {
       orchestrator,

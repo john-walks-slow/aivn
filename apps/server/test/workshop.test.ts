@@ -506,71 +506,14 @@ describe("工坊工具：generate_image", () => {
     expect(existsSync(join(store.dir, events[0]!.path))).toBe(true);
   });
 
-  it("view_image：剧目内的图以 image attachment 交给模型（抠底质量只有眼睛能判）", async () => {
-    await setup();
-    await mkdir(join(store.dir, "assets", "sprites", "mio"), { recursive: true });
-    const png = await sharp({
-      create: { width: 8, height: 8, channels: 4, background: "#ff00aaff" },
-    })
-      .png()
-      .toBuffer();
-    await writeFile(join(store.dir, "assets", "sprites", "mio", "neutral.png"), png);
-
-    const tools = createWorkshopTools(deps());
-    const view = tools.find((t) => t.name === "view_image")!;
-    const result = await view.execute("c1", { source: "assets/sprites/mio/neutral.png" });
-    const image = result.content.find((c) => c.type === "image");
-    expect(image).toBeDefined();
-    expect(image!.type === "image" && image!.mimeType).toBe("image/png");
-    const data = image!.type === "image" ? Buffer.from(image!.data, "base64") : Buffer.alloc(0);
-    expect(data.equals(png)).toBe(true);
-
-    const missing = await view.execute("c2", { source: "assets/sprites/mio/nope.png" });
-    expect(JSON.stringify(missing)).toContain("读图失败");
-  });
-
-  it("view_image：非图片字节不塞进模型，省得白烧一轮", async () => {
+  // 看图不再是一个工具（P5-f）：本地图交给宿主文件工具（pi 的 read 自带图片支持，
+  // 插件的 read_image 同理），外部图需要时先下载到剧目内再读。这条守着「别再长回来」。
+  it("看图工具不存在：本地图与网图都交还宿主文件工具", async () => {
     await setup();
     const tools = createWorkshopTools(deps());
-    const view = tools.find((t) => t.name === "view_image")!;
-    const out = await view.execute("c1", { source: "play.json" });
-    expect(out.content.some((c) => c.type === "image")).toBe(false);
-    expect(JSON.stringify(out)).toContain("不是一张能看的图");
-  });
-
-  it("view_image：网址分支下载后读进来，并缓存到剧目的 media-cache", async () => {
-    await setup();
-    const jpeg = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#3366aa" } })
-      .jpeg()
-      .toBuffer();
-    const asked: string[] = [];
-    const tools = createWorkshopTools(
-      deps({ webImage: async (url: string) => (asked.push(url), { data: jpeg, mimeType: "image/jpeg" }) }),
-    );
-    const view = tools.find((t) => t.name === "view_image")!;
-    const url = "https://example.com/ref/hero.jpg";
-    const result = await view.execute("c1", { source: url });
-    expect(asked).toEqual([url]);
-    const image = result.content.find((c) => c.type === "image");
-    expect(image!.type === "image" && image!.mimeType).toBe("image/jpeg");
-    expect(Buffer.from(image!.type === "image" ? image!.data : "", "base64").equals(jpeg)).toBe(true);
-    // 回执里带网址：模型要能引用用户给的链接
-    expect(JSON.stringify(result)).toContain(url);
-    // 落在剧目的 media-cache 下，不进 assets/（外部图不是剧目素材）
-    const cached = readdirSync(store.webImageDir());
-    expect(cached).toHaveLength(1);
-    expect(cached[0]).toMatch(/\.jpg$/);
-
-    // 再看一次同一个网址不再重新下载
-    await view.execute("c2", { source: url });
-    expect(asked).toHaveLength(1);
-  });
-
-  it("view_image：没有下载器时只认本地路径（不装一个必然失败的能力）", async () => {
-    await setup();
-    const view = createWorkshopTools(deps()).find((t) => t.name === "view_image")!;
-    const out = await view.execute("c1", { source: "https://example.com/ref.jpg" });
-    expect(JSON.stringify(out)).toContain("看网络图未启用");
+    expect(tools.some((t) => t.name === "view_image")).toBe(false);
+    // 网图先抓到剧目内再 read；这条守着「别再长回来」
+    expect(tools.some((t) => t.name === "web_search")).toBe(false);
   });
 
   it("抠底参数不在 generate_image 上（出图时没人看过图，填了也是默认值）", async () => {

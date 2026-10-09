@@ -256,21 +256,6 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     },
   },
   {
-    id: "view",
-    profile: "preset-specific",
-    domainSemantic: "把剧目内或外部图片读给 Agent 判断。",
-    roles: ["workshop"],
-    equivalence: "intentional-difference",
-    hosts: {
-      stageAi: "view_image 读本地素材，或安全下载网页图片（带 SSRF 防护）后读回。",
-      dshAivn:
-        "**目前是有意省略，不是等价实现**：插件 9 个工具里没有看图工具，插件仓内也查不到它依赖的「宿主 view 能力」。" +
-        "需要看图时走宿主自身能力（2026-10-09 逐项实读代码的结论）。",
-      backendDependency: "外部网址来源需要联网出口。",
-      intentionalDifference: "独立版有本地与外链两个分支；DSH 侧未落地。",
-    },
-  },
-  {
     id: "readiness",
     profile: "shared",
     capabilities: ["play.readiness"],
@@ -388,7 +373,6 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
   edit: { ...READ_ONLY, read_only: false, workspace_write: true, reversible: false, idempotent: false },
   bash: { ...READ_ONLY, read_only: false, workspace_write: true, external_request: true, reversible: false, idempotent: false },
   validate_play: READ_ONLY,
-  view_image: { ...READ_ONLY, read_only: false, external_request: true },
   list_library: READ_ONLY,
   library_import: { ...READ_ONLY, read_only: false, workspace_write: true, asset_adopt: true, reversible: false, idempotent: false },
   list_saves: READ_ONLY,

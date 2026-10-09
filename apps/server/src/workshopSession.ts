@@ -19,7 +19,6 @@ import {
   startTool,
 } from "@aivn/core";
 import type { Exa } from "./exa.js";
-import type { WebImageFetcher } from "./webImage.js";
 import { PlayFiles } from "./playFiles.js";
 import type { AssetLibrary } from "./library.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
@@ -81,8 +80,6 @@ export interface WorkshopSessionOptions {
   voices?: VoiceCatalogService;
   /** 联网检索客户端；未配置则 `web_search` 工具不注册、prompt 不提联网。 */
   exa?: Exa;
-  /** 网络图下载器；没有它 `view_image` 只认本地路径。 */
-  webImage?: WebImageFetcher;
   /** 线程压缩参数（工坊可用自己的 STAGE_WORKSHOP_* 一组 env）；不给 = 不压缩。 */
   compaction?: {
     contextWindow: number;
@@ -136,7 +133,6 @@ export class WorkshopSession {
       assetLibrary: opts.assetLibrary,
       voices: opts.voices,
       exa: opts.exa,
-      webImage: opts.webImage,
     });
   }
 
@@ -162,7 +158,6 @@ export class WorkshopSession {
       assetLibrary: this.opts.assetLibrary,
       voices: this.opts.voices,
       exa: this.opts.exa,
-      webImage: this.opts.webImage,
     });
     return { model, agents };
   }

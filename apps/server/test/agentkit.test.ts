@@ -376,7 +376,6 @@ describe("agent kit：能力目录（设置页的数据源）", () => {
       "search",
       "lineage",
       "skill",
-      "view",
       "readiness",
       "shell",
     ]);

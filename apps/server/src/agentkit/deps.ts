@@ -10,7 +10,6 @@ import type {
 import type { AssetLibrary } from "../library.js";
 import type { VoiceCatalogService } from "../voiceCatalog.js";
 import type { Exa } from "../exa.js";
-import type { WebImageFetcher } from "../webImage.js";
 import type { AssetTarget, PlayAssets } from "../playAssets.js";
 import type { GenerateMusicRequest, PlayMusic } from "../playMusic.js";
 import type { PlayFiles } from "../playFiles.js";
@@ -121,8 +120,6 @@ export interface WorkshopKitDeps extends KitCommonDeps {
   assetLibrary?: AssetLibrary;
   /** 联网检索（未配置 key 时为 undefined：工具不注册，prompt 里也不提联网）。 */
   exa?: Exa;
-  /** 网络图下载（`view_image` 的网址分支）。没有它工具只认本地路径。 */
-  webImage?: WebImageFetcher;
 }
 
 export type AgentKitDeps = PlaywriterKitDeps | WorkshopKitDeps;

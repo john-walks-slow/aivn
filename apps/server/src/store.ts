@@ -258,11 +258,6 @@ export class PlayStore {
     return join(this.dir, "media-cache", "sprite-sources", ...segments);
   }
 
-  /** 网络图缓存目录（media-cache/web-images）：`view_image` 下载的外部图片，按 URL 摘要落名。 */
-  webImageDir(): string {
-    return join(this.dir, "media-cache", "web-images");
-  }
-
   /**
    * 生图草稿区（media-cache/drafts/<draftId>/）：出图与入库之间的半临时落脚点。
    *

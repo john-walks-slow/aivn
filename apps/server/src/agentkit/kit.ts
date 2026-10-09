@@ -18,7 +18,6 @@ import { createGenerateMusicTool } from "./musicTool.js";
 import { createMemoryTools } from "./memoryTool.js";
 import { createImportAssetTool } from "./registerTool.js";
 import { createCutTool } from "./cutTool.js";
-import { createViewImageTool } from "./viewTool.js";
 import { createVoiceTool } from "./voiceTool.js";
 import { createWebSearchTool } from "./searchTool.js";
 import { createReadSkillTool } from "./skillTool.js";
@@ -212,14 +211,6 @@ const CATALOG_ROWS = [
     tools: ["read_skill"],
   },
   {
-    id: "view",
-    label: "看图",
-    desc: "把生成出来的图读进来说实话。",
-    group: "stagecraft",
-    roles: ["workshop"],
-    tools: ["view_image"],
-  },
-  {
     id: "readiness",
     label: "检查开演条件",
     desc: "开演前查还缺什么。",
@@ -307,7 +298,6 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   edit: { label: "编辑文件", roles: ["playwriter", "workshop"] },
   bash: { label: "命令行", roles: ["workshop"] },
   validate_play: { label: "检查开演条件", roles: ["workshop"] },
-  view_image: { label: "看图", roles: ["workshop"] },
   list_library: { label: "浏览素材资源库", roles: ["playwriter", "workshop"] },
   // 剧作家不走它：剧本里写个 id，宿主会去库里导入（引用即导入），自己搬一遍是重复路径。
   library_import: { label: "从资源库导入", roles: ["workshop"] },
@@ -506,12 +496,6 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
     ...createPiFileTools(env),
     createPiBashTool(env),
     createValidatePlayTool(deps),
-    // 看图始终装（本地素材不依赖网络）；网址分支没有下载器时工具自己回「未启用」
-    createViewImageTool({
-      pathOf: (path) => deps.files.pathOf(path, "read"),
-      cacheDir: () => deps.store.webImageDir(),
-      fetchImage: deps.webImage,
-    }),
     // 候选图：只产草稿（不抠底、不入库），采用走 import_asset
     createGenerateImageTool({
       playAssets: deps.playAssets,
