@@ -6,7 +6,7 @@
  * 资源库指引，插件有「素材清单」的引言与空清单提示）、记忆索引末尾那句按各自工具面写的
  * 引导语，都留在宿主手里拼，这里只出中间那段。
  */
-import { describeAsset, type AssetMeta } from "@aivn/core";
+import { characterCardPath, describeAsset, isProtagonist, type AssetMeta } from "@aivn/core";
 
 /**
  * 配乐与音效的编排规则。**只在真有 bgm/sfx 时注入**（清单是空的还讲怎么用，等于白烧 token）。
@@ -79,4 +79,63 @@ export function renderMemoryIndex(cards: readonly MemoryIndexCard[], tail: strin
   if (cards.length === 0) return "";
   const rows = cards.map((c) => `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}（${c.path}）：${c.summary}`);
   return `# 记忆索引（按需查详情）\n\n${rows.join("\n")}\n\n${tail}`;
+}
+
+/** 角色表里的标题行：id、卡路径、是否玩家扮演都给全（模型不该为了改一张卡去推路径）。 */
+export function castTitle(id: string, name?: string): string {
+  return `${name ?? id}（id: ${id}，卡片 ${characterCardPath(id)}${isProtagonist(id) ? "，玩家扮演" : ""}）`;
+}
+
+/** 角色表里的一张全卡所需的全部数据（宿主各自去凑：服务端从运行期对象、插件从盘上读）。 */
+export interface CastCardView {
+  id: string;
+  name?: string;
+  body: string;
+  voice?: string;
+  /** 立绘目录名：卡上显式绑定优先，与卡不同名时要写出来——出图与差分都以目录名寻址。 */
+  spriteDir: string;
+  /** 该目录里已有的差分名（不含扩展名）。 */
+  variants: readonly string[];
+}
+
+/** 一张全卡：标题 + 正文 + 音色 + 立绘差分（没有的空行不留，差分项带素材表里的说明）。 */
+export function renderCastCard(
+  card: CastCardView,
+  meta: (id: string, charId?: string) => AssetMeta,
+): string {
+  const variants = card.variants.map((variant) => {
+    const detail = describeAsset(meta(variant, card.spriteDir));
+    return detail ? `${variant}（${detail}）` : variant;
+  });
+  return [
+    `### ${castTitle(card.id, card.name)}`,
+    card.body.trim(),
+    card.voice ? `音色：${card.voice}` : "",
+    variants.length > 0
+      ? `立绘${card.spriteDir === card.id ? "" : `（目录 ${card.spriteDir}）`}差分 variant：${variants.join(" | ")}`
+      : "",
+  ]
+    .filter((part) => part !== "")
+    .join("\n");
+}
+
+/**
+ * 只有立绘、没有角色卡的主体（机甲、猫、道具）：它们进不了角色表——角色表就是角色卡目录，
+ * 但剧作家得知道它们存在、能按 variant 上台。不给这份清单，它就只会重新出图或干脆不用。
+ */
+export function renderBareSprites(
+  dirs: readonly string[],
+  variantsOf: (spriteDir: string) => readonly string[],
+  meta: (id: string, charId?: string) => AssetMeta,
+): string {
+  if (dirs.length === 0) return "";
+  const rows = dirs.map((dir) => {
+    const title = meta(dir).title;
+    const variants = variantsOf(dir).map((variant) => {
+      const detail = describeAsset(meta(variant, dir));
+      return detail ? `${variant}（${detail}）` : variant;
+    });
+    return `- ${title ? `${dir}（${title}）` : dir}：variant ${variants.join(" | ")}`;
+  });
+  return `\n\n# 台上其它主体（有立绘，没有角色卡）\n\n${rows.join("\n")}\n\n它们与角色同权：\`<actor id="…" variant="…">\` 直接上台，不用建档。`;
 }

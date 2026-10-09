@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { AUDIO_RULES, renderAssetSections, renderMemoryIndex } from "../src/prompt/a-zone.js";
+import {
+  AUDIO_RULES,
+  castTitle,
+  renderAssetSections,
+  renderBareSprites,
+  renderCastCard,
+  renderMemoryIndex,
+} from "../src/prompt/a-zone.js";
 
 describe("renderAssetSections", () => {
   it("空类目不出现，四个类目的顺序与位置写死", () => {
@@ -54,5 +61,48 @@ describe("renderMemoryIndex", () => {
 
   it("没有卡就整段不出现（不是留个空标题）", () => {
     expect(renderMemoryIndex([], "任意")).toBe("");
+  });
+});
+
+describe("角色表", () => {
+  it("标题给全 id、卡路径与「玩家扮演」——模型不该为了改卡去推路径", () => {
+    expect(castTitle("mio", "澪")).toBe("澪（id: mio，卡片 characters/mio.md）");
+    expect(castTitle("protagonist", "你")).toBe("你（id: protagonist，卡片 characters/protagonist.md，玩家扮演）");
+    expect(castTitle("mecha")).toBe("mecha（id: mecha，卡片 characters/mecha.md）");
+  });
+
+  it("全卡：正文修边、音色与差分各占一行；差分项带说明", () => {
+    const out = renderCastCard(
+      {
+        id: "mio",
+        name: "澪",
+        body: "天文社社长。\n第二行。\n",
+        voice: "v_mio",
+        spriteDir: "mio_alt",
+        variants: ["smile", "sad"],
+      },
+      (id) => (id === "smile" ? { description: "微笑" } : {}),
+    );
+    expect(out).toBe(
+      [
+        "### 澪（id: mio，卡片 characters/mio.md）",
+        "天文社社长。\n第二行。",
+        "音色：v_mio",
+        "立绘（目录 mio_alt）差分 variant：smile（微笑） | sad",
+      ].join("\n"),
+    );
+  });
+
+  it("没有音色与差分时不留空行；目录与卡同名时不写目录", () => {
+    const out = renderCastCard({ id: "rin", body: " 老师。 ", spriteDir: "rin", variants: [] }, () => ({}));
+    expect(out).toBe("### rin（id: rin，卡片 characters/rin.md）\n老师。");
+  });
+
+  it("「台上其它主体」只在真有裸立绘目录时出现，标题取自素材表", () => {
+    const meta = (id: string) => (id === "mecha" ? { title: "机甲" } : id === "damaged" ? { description: "受损" } : {});
+    expect(renderBareSprites([], () => [], meta)).toBe("");
+    expect(renderBareSprites(["mecha"], () => ["normal", "damaged"], meta)).toBe(
+      "\n\n# 台上其它主体（有立绘，没有角色卡）\n\n- mecha（机甲）：variant normal | damaged（受损）\n\n它们与角色同权：`<actor id=\"…\" variant=\"…\">` 直接上台，不用建档。",
+    );
   });
 });

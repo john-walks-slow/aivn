@@ -1,7 +1,5 @@
 import {
-  characterCardPath,
   describeAsset,
-  isProtagonist,
   languageLabel,
   resolveCraft,
   spriteIdOf,
@@ -11,10 +9,13 @@ import {
 import {
   ACTOR_RULES,
   AUDIO_RULES,
+  castTitle,
   COMMENT_HEAD,
   CONTRACT_INTRO,
   DIALOGUE_TAGS,
   renderAssetSections,
+  renderBareSprites,
+  renderCastCard,
   renderMemoryIndex,
 } from "@aivn/agent";
 import type { PlayConfig } from "@aivn/core";
@@ -308,11 +309,6 @@ export function buildSystemPrompt(ctx: PromptContext): string {
    */
   const metaOf = (id: string, charId?: string): AssetMeta =>
     charId ? { ...notes[id], ...notes[`${charId}/${id}`] } : (notes[id] ?? {});
-  /** 清单项渲染：把描述、标签、情绪、时长都摆出来，让剧作家按画面/情境选而不是猜文件名。 */
-  const label = (name: string, charId?: string): string => {
-    const detail = describeAsset(metaOf(name, charId));
-    return detail ? `${name}（${detail}）` : name;
-  };
   // 角色表 = 角色卡目录，与 play.json 无关。每张卡都是一份完整设定：
   // 正文是人设，frontmatter 只有名字/音色/立绘目录——立绘是另一件可选附件，差分即目录里的文件名。
   // 分级（角色数 ≥ CAST_GRADING_MIN_SIZE 且给了 activeCast）：在场全卡全文，不在场只注一行
@@ -331,25 +327,18 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     const dir = spriteIdOf(id, card);
     const variants = variantsOf(dir);
     // 路径写进标题：卡的 id 与文件名同源，但模型不该为了改一张卡去推路径——A 区给全，read / edit 直接用
-    const title = `${card.name ?? id}（id: ${id}，卡片 ${characterCardPath(id)}${
-      isProtagonist(id) ? "，玩家扮演" : ""
-    }）`;
     if (active && !active.has(id)) {
       const firstLine = card.body.split("\n").map((l) => l.trim()).find((l) => l !== "") ?? "";
       roster.push(
-        `- ${title}：${firstLine.length > CAST_SUMMARY_CHARS ? `${firstLine.slice(0, CAST_SUMMARY_CHARS)}…` : firstLine}`,
+        `- ${castTitle(id, card.name)}：${firstLine.length > CAST_SUMMARY_CHARS ? `${firstLine.slice(0, CAST_SUMMARY_CHARS)}…` : firstLine}`,
       );
       continue;
     }
-    // 立绘不与卡同名时把目录名写出来：出图与差分都以目录名寻址，模型不该拿角色 id 去猜
     fullCards.push(
-      `### ${title}\n${card.body}${card.voice ? `\n音色：${card.voice}` : ""}${
-        variants.length > 0
-          ? `\n立绘${dir === id ? "" : `（目录 ${dir}）`}差分 variant：${variants
-              .map((v) => label(v, dir))
-              .join(" | ")}`
-          : ""
-      }`,
+      renderCastCard(
+        { id, name: card.name, body: card.body, voice: card.voice, spriteDir: dir, variants },
+        metaOf,
+      ),
     );
   }
   // 在场全卡在前、折叠名册在后：两类形状不同，混排一段读起来是碎的。
@@ -364,15 +353,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     .filter((dir) => !bound.has(dir))
     .sort((a, b) => a.localeCompare(b));
   const bareSection =
-    bare.length > 0
-      ? `\n\n# 台上其它主体（有立绘，没有角色卡）\n\n${bare
-          .map((id) => {
-            const labelText = notes[id]?.title;
-            const head = labelText ? `${id}（${labelText}）` : id;
-            return `- ${head}：variant ${variantsOf(id).map((v) => label(v, id)).join(" | ")}`;
-          })
-          .join("\n")}\n\n它们与角色同权：\`<actor id="…" variant="…">\` 直接上台，不用建档。\n`
-      : "";
+    bare.length > 0 ? `${renderBareSprites(bare, variantsOf, metaOf)}\n` : "";
   // A 区在纪元内冻结：不因「谁上场了」重建——所以这里只讲事实：
   // 折叠行对已经退场的老角色够用（那是它们上一段戏的存档），
   // 新角色按《引入新角色》建档，轮边界重建后会自动带全卡。

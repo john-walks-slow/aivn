@@ -94,7 +94,7 @@ packages/agent/src/
 | P2 · craft（写作参数的两份说法与补丁） | ✅ 完成 | `0ebf6adf` / `db13168` |
 | P2 · readiness + 素材清单（剧目自查） | ✅ 完成 | `6816046d` / `bccea99` |
 | P3 · 提示词第一批（Stage DSL 共用正文 4 块） | ✅ 完成 | `1ecc844a` / `5f57f4e` |
-| P3 · 提示词其余（A 区快照模板 / facts 参数化 8 类） | 待做 | — |
+| P3 · 提示词其余（A 区渲染进包；不做 facts 装配层） | ✅ 完成 | `bc5165c8` `6ff1b0e9` / `01105d7` `2b43a1f` |
 | P3 · 技能正文（audio 两份 86% 重合） | ✅ 完成 | `f952ac7a` `1dbfeb15` / `f24f924` |
 | P4 工具面全量迁移与契约重建 | 待做 | — |
 
@@ -185,7 +185,18 @@ P1/P2 落地时对计划的收紧（都是实测出来的，不是改主意）�
 > 并补上插件独有的那条「只挑清单里真有的 id」；`<scene> 的 bg` 补回尖括号（服务端原来少了，
 > 与同一段的 `<scene bgm="none"/>` 不一致，`prompt.test.ts` 的断言随之改了）。
 > 服务端 48+119 条 prompt/orchestrator 测试与插件 e2e:media 53/53 均绿、渲染逐字节未变（除上面两处有意收敛）。
-> 还剩：角色表 / 状态区 / 结局段的渲染与 `composePlaywriter(facts)` 的装配顺序。
+> 角色表也进来了：`castTitle` / `renderCastCard`（标题 + 正文修边 + 音色 + 差分）/ `renderBareSprites`
+> （「台上其它主体」那一节）。服务端的**分级**（在场全卡、不在场一行）与它末尾那句按能力位分岔的
+> 提示、插件那张「卡是 frontmatter + 正文两段」的说明，都是宿主自己的形状，留在宿主拼。
+> 服务端改前改后**逐字节相同**（17299 字的样例提示词 diff 为空），插件那份也用同一份夹具离线比对过。
+>
+> **对计划的收紧（记账）**：`composePlaywriter/composeStagehand(facts)` 与「HostFacts 8 类」
+> 不再做——两侧的装配形状**结构上就不同**：服务端一次拼成单串（数据来自运行期对象：
+> `PlayMemory` / `EngineStateSnapshot` / `kit.can`），插件注册成多个 `systemPrompt.section`
+> 并按时序求值（数据来自盘上的 `PlaySnapshot`），`【状态】` 一个进 A 区、一个进 user 消息。
+> 强行套一层 facts 只会把两侧都改写成第三种装配，换不来共享——**能共享的已经是那几段纯渲染**
+> （这一轮抽完：素材清单、记忆索引、角色表、配乐规则、craft 参数、Stage DSL 正文）。
+> 状态区与结局段两边形状不同（见上），不动。
 >
 > 技能正文（audio）：正文收成 `packages/agent/skills/aivn-audio.md` 一份，两份 SKILL.md
 > 由包内 `skills/sync-skills.mjs` 生成（宿主差异只剩 frontmatter 与 `{{GEN_BGM}}` 一段）；

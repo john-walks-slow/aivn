@@ -95,8 +95,15 @@ export {
   CONTRACT_INTRO,
   DIALOGUE_TAGS,
 } from "./prompt/stage-dsl.js";
-export type { MemoryIndexCard } from "./prompt/a-zone.js";
-export { AUDIO_RULES, renderAssetSections, renderMemoryIndex } from "./prompt/a-zone.js";
+export type { CastCardView, MemoryIndexCard } from "./prompt/a-zone.js";
+export {
+  AUDIO_RULES,
+  castTitle,
+  renderAssetSections,
+  renderBareSprites,
+  renderCastCard,
+  renderMemoryIndex,
+} from "./prompt/a-zone.js";
 export type { PlayReadiness } from "./readiness/play.js";
 export { readPlayReadiness, renderReadiness } from "./readiness/play.js";
 
