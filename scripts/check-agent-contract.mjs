@@ -211,7 +211,7 @@ check("共享技能正文与宿主副本一致", () => {
   // 技能是 markdown、两个宿主各读各的目录，所以「一份正文」靠生成维持：
   // 服务端这份必须等于 packages/agent/skills/ 用 server 变量渲染出来的结果。
   // （插件那份由插件仓自己的 build.mjs --check 盯，那个仓库才够得着它。）
-  return import("./sync-agent-skills.mjs").then(({ renderSkill }) => {
+  return import("../packages/agent/skills/sync-skills.mjs").then(({ renderSkill }) => {
     const { file, text } = renderSkill("aivn-audio", "server", ROOT);
     const onDisk = existsSync(file) ? readFileSync(file, "utf8") : null;
     return onDisk === text ? [] : [`${file} 与 packages/agent/skills/aivn-audio.md 不一致（跑 pnpm sync:skills）`];
