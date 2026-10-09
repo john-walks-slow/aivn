@@ -380,15 +380,21 @@ export class PlayHouse {
     const scene = session?.scene ?? play.initialScene;
     // 剧内状态文件（memory/always/state/*）是工作态载体（P6-d）：恢复时用这一枝的快照回写，
     // 新存档用 play.json 的初值覆盖——否则新周目第一轮会读到上一周目的残留。
-    const stateSnapshot = tree.latestSnapshotOnPath(tree.leafId)?.stateFiles;
-    if (session && stateSnapshot) {
-      writePlayStateText(store.dir, {
-        scene: stateSnapshot.scene ?? "",
-        threads: stateSnapshot.threads ?? "",
-        state: stateSnapshot.state ?? playStateJson({ affinity: engine.affinity, flags: engine.flags }),
-      });
-    } else {
-      seedPlayState(store.dir, { scene, affinity: engine.affinity, flags: engine.flags });
+    //
+    // 但它们是**剧目级**的（一份、所有存档共用），所以只有**活动存档**的重建能写它：
+    // 给另一个档重建（写盘触发的 reload、后台任务回收等）时不许碰，否则会把活动档的播种盖掉。
+    const activeSaveId = await this.library.saves(playId).readActive();
+    if (saveId !== null && saveId === activeSaveId) {
+      const stateSnapshot = tree.latestSnapshotOnPath(tree.leafId)?.stateFiles;
+      if (session && stateSnapshot) {
+        writePlayStateText(store.dir, {
+          scene: stateSnapshot.scene ?? "",
+          threads: stateSnapshot.threads ?? "",
+          state: stateSnapshot.state ?? playStateJson({ affinity: engine.affinity, flags: engine.flags }),
+        });
+      } else {
+        seedPlayState(store.dir, { scene, affinity: engine.affinity, flags: engine.flags });
+      }
     }
     const save = {
       id: saveId ?? "",

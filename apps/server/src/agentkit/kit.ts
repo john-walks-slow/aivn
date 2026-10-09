@@ -1,7 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel } from "@aivn/core";
 import type { WriteScope } from "../playFiles.js";
-import { createBeatDoneTool } from "./beatTool.js";
 import { createNsfwTools } from "./nsfwTool.js";
 import { AGENT_ROLES, type AgentRole } from "./role.js";
 import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "./deps.js";
@@ -75,8 +74,6 @@ interface CapabilityEntry {
   tools: readonly string[];
   /** 这个能力开出来，agent 的手能改哪几类文件。 */
   writeScopes?: readonly WriteScope[];
-  /** 常开：界面不给开关，也不写进 play.json。 */
-  locked?: boolean;
   /** 默认关（用户要自己去勾）。 */
   defaultOff?: boolean;
   /** 依赖的服务端配置项；缺了这一项界面会补 `unavailableNote`。 */
@@ -92,15 +89,6 @@ interface CapabilityEntry {
  * 混在一起，用户想关掉其中一个就得连另外两个一起关。
  */
 const CATALOG_ROWS = [
-  {
-    id: "stage",
-    label: "轮收束",
-    desc: "结束本轮——演出本身的收束口，始终开启。",
-    group: "show",
-    roles: ["playwriter"],
-    tools: ["beat_done"],
-    locked: true,
-  },
   {
     id: "nsfw",
     label: "限制级通道",
@@ -241,8 +229,6 @@ export interface AgentCapabilityEntry {
   group: CapabilityGroup;
   /** 分组的中文名（分组键是英文，界面上不能直接摆出来）。 */
   groupLabel: string;
-  /** 常开：界面渲染成灰字，不给开关。 */
-  locked: boolean;
   /** 服务端现在配得出它的工具吗；false 时开关照旧能勾，配好后生效。 */
   available: boolean;
   /** `available: false` 时界面的那句说明。 */
@@ -259,7 +245,6 @@ export function capabilityCatalog(role: AgentRole, env: CapabilityEnv): AgentCap
       desc: cap.desc,
       group: cap.group,
       groupLabel: CAPABILITY_GROUPS[cap.group],
-      locked: Boolean(cap.locked),
       available,
       ...(available || !cap.unavailableNote ? {} : { unavailableNote: cap.unavailableNote }),
     };
@@ -273,7 +258,6 @@ export function capabilityCatalog(role: AgentRole, env: CapabilityEnv): AgentCap
  * 能力目录引用这里的 id；装一个没登记的 id 会当着测试红——所以装配不再需要第二份角色清单。
  */
 const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, ...AgentRole[]] }> = {
-  beat_done: { label: "结束本轮", roles: ["playwriter"] },
   enter_nsfw: { label: "进入限制级剧情", roles: ["playwriter"] },
   exit_nsfw: { label: "退出限制级剧情", roles: ["playwriter"] },
   search_archive: { label: "检索历史往事", roles: ["playwriter"] },
@@ -325,7 +309,7 @@ export function capabilityTools(cap: CapabilityEntry, role: AgentRole): string[]
 }
 
 /**
- * 各角色的默认启用集：能力目录里这个角色的那些，减掉常开与默认关的。
+ * 各角色的默认启用集：能力目录里这个角色的那些，减掉默认关的。
  *
  * 剧作家默认**关**「管理角色」：角色卡是制作资产（音色、立绘、取景都在卡上，工坊的地盘），
  * 而记忆卡是剧情事实（演出中自然长出来的）。代价写进 README 与 validation：关着时戏里
@@ -336,27 +320,27 @@ export function capabilityTools(cap: CapabilityEntry, role: AgentRole): string[]
  */
 export function defaultCapabilitiesFor(role: AgentRole): string[] {
   return CAPABILITY_CATALOG.filter(
-    (cap) => cap.roles.includes(role) && !cap.locked && !cap.defaultOff,
+    (cap) => cap.roles.includes(role) && !cap.defaultOff,
   ).map((cap) => cap.id);
 }
 
-/** 用户配置解析后的最终启用集：play.json 给了就按它（未知 id 与常开项丢弃），没给走默认。 */
+/** 用户配置解析后的最终启用集：play.json 给了就按它（未知 id 丢弃），没给走默认。 */
 export function enabledCapabilitiesFor(
   role: AgentRole,
   configured?: readonly string[],
 ): ReadonlySet<string> {
   if (!configured) return new Set(defaultCapabilitiesFor(role));
   const known = new Set(
-    CAPABILITY_CATALOG.filter((cap) => cap.roles.includes(role) && !cap.locked).map((cap) => cap.id),
+    CAPABILITY_CATALOG.filter((cap) => cap.roles.includes(role)).map((cap) => cap.id),
   );
   return new Set(configured.filter((id) => known.has(id)));
 }
 
-/** 装上的工具 = 基座 ∪ 开着的能力授权的工具。常开的（`stage`）不看启用集。 */
+/** 装上的工具 = 基座 ∪ 开着的能力授权的工具。 */
 export function enabledToolsFor(role: AgentRole, capabilities: ReadonlySet<string>): Set<string> {
   const out = new Set<string>(BASE_TOOLS);
   for (const cap of CAPABILITY_CATALOG) {
-    if (!cap.roles.includes(role) || (!cap.locked && !capabilities.has(cap.id))) continue;
+    if (!cap.roles.includes(role) || !capabilities.has(cap.id)) continue;
     for (const tool of capabilityTools(cap, role)) out.add(tool);
   }
   return out;
@@ -366,7 +350,7 @@ export function enabledToolsFor(role: AgentRole, capabilities: ReadonlySet<strin
 export function writeScopesFor(role: AgentRole, capabilities: ReadonlySet<string>): WriteScope[] {
   const out: WriteScope[] = [];
   for (const cap of CAPABILITY_CATALOG) {
-    if (!cap.roles.includes(role) || (!cap.locked && !capabilities.has(cap.id))) continue;
+    if (!cap.roles.includes(role) || !capabilities.has(cap.id)) continue;
     for (const scope of cap.writeScopes ?? []) {
       if (!out.includes(scope)) out.push(scope);
     }
@@ -386,7 +370,7 @@ export function capabilitiesOf(
   const installed = new Set(tools.map((tool) => tool.name));
   return Object.fromEntries(
     CAPABILITY_CATALOG.map((cap) => {
-      const on = cap.roles.includes(role) && (Boolean(cap.locked) || capabilities.has(cap.id));
+      const on = cap.roles.includes(role) && capabilities.has(cap.id);
       return [cap.id, on && capabilityTools(cap, role).every((id) => installed.has(id))];
     }),
   ) as AgentCapabilities;
@@ -451,7 +435,6 @@ function envOf(role: AgentRole, files: AgentKitDeps["files"], capabilities: Read
 function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
   const env = envOf(deps.role, deps.files, deps.capabilities, deps.onWrite);
   return [
-    createBeatDoneTool(deps),
     ...createNsfwTools(deps),
     createArchiveTool(deps),
     ...createPiFileTools(env),

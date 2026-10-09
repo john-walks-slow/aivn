@@ -26,7 +26,7 @@ describe("nsfwTool：限制级剧情工具契约", () => {
     const exit = tools.find((t) => t.name === "exit_nsfw")!;
 
     expect(enter.description).toContain("即将发生亲密");
-    expect(exit.description).toContain("beat_done");
+    expect(exit.description).toContain("停止点标签");
   });
 
   it("enter_nsfw 在未开启时触发回调，开启后拒绝重复进入", async () => {

@@ -109,7 +109,6 @@ export interface AgentCapabilityEntry {
   /** 分组的中文名（服务端 CAPABILITY_GROUPS 的另一半），设置页表头直接用它。 */
   groupLabel: string;
   /** 常开：渲染成灰字，不给开关。 */
-  locked: boolean;
   /** 服务端现在配得出它吗；false 时开关照旧能勾，配好后生效。 */
   available: boolean;
   unavailableNote?: string;

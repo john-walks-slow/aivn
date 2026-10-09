@@ -1,6 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { calculateContextTokens, estimateContextTokens, estimateTokens } from "@earendil-works/pi-agent-core";
-import { renderBeatDone } from "./agentkit/beatTool.js";
 
 /**
  * 纪元压缩（epoch compaction）：长会话的上下文治理。
@@ -403,4 +402,18 @@ function turnTokens(turn: ThreadTurn): number {
 
 function textTokens(text: string): number {
   return localTextTokens(text);
+}
+
+/**
+ * 旧会话里的 `beat_done` 工具调用：渲染成一句人话给压缩摘要用。
+ *
+ * P6-e（2026-10-10）之后新会话不再有这条工具调用——停止点写在剧本末行的 `<stop …/>` 标签里，
+ * 本来就是正文的一部分。这个渲染器只为**迁移前**的记录保留，别再往里加新分支。
+ */
+function renderBeatDone(args: unknown): string {
+  const params = args as { options?: string[]; placeholder?: string } | undefined;
+  const options = params?.options ?? [];
+  if (options.length >= 2) return `[交给玩家选择：${options.join(" / ")}]`;
+  if (params?.placeholder) return `[交给玩家自由输入]`;
+  return "[本轮自然演完，没有停止点]";
 }

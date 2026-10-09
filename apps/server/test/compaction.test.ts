@@ -255,9 +255,10 @@ describe("编排器纪元压缩", () => {
     await orchestrator.playerAction({ kind: "continue" });
     await orchestrator.whenIdle();
 
-    // 一次都没压：没有压缩记录，也没有多出来那一次摘要补全（4 = 三拍 + SFW 摘要）
+    // 一次都没压：没有压缩记录，也没有多出来那一次摘要补全。
+    // 6 = 三拍各一次 + 两个带工具的收束轮各多一跳「停笔」 + SFW 摘要那次补全
     expect(tree.latestSnapshotOnPath(tree.leafId)?.compaction).toBeUndefined();
-    expect(contexts).toHaveLength(4);
+    expect(contexts).toHaveLength(6);
     // 非空证明：第 3 轮开轮前那段对话体确实远超预算（真压了的话 agent 会被重建，
     // 这里量到的就是重建后的种子，也就不会超）——所以「没压」是早退的结果，不是没到阈值
     const beforeBeat3 = (contexts[2] as { messages: AgentMessage[] }).messages;

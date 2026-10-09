@@ -181,7 +181,6 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     const kit = playwriter();
     expect(names(kit)).toEqual([
       "annotate_asset",
-      "beat_done",
       "edit",
       "enter_nsfw",
       "exit_nsfw",
@@ -309,11 +308,9 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     expect(names(withBash)).toContain("bash");
   });
 
-  it("舞台那两位常开：不给开关，也不写进 play.json", () => {
+  it("没有常开能力了：一个都不开 = 只剩基座（P6-e 删掉「轮收束」那一位之后）", () => {
     const kit = playwriter({}, []);
-    // 一个能力都不开 = 只剩常开与基座
-    expect(names(kit)).toEqual(["beat_done", "read"]);
-    expect(kit.can.stage).toBe(true);
+    expect(names(kit)).toEqual(["read"]);
     expect(kit.can.memory).toBe(false);
     expect(kit.can.characters).toBe(false);
   });
@@ -352,10 +349,9 @@ describe("agent kit：能力目录（设置页的数据源）", () => {
     }
   });
 
-  it("目录按角色出，每条有中文名字、一句后果与分组；常开行带 locked", () => {
+  it("目录按角色出，每条有中文名字、一句后果与分组", () => {
     const rows = capabilityCatalog("playwriter", FULL_ENV);
     expect(rows.map((r) => r.id)).toEqual([
-      "stage",
       "nsfw",
       "characters",
       "memory",
@@ -370,8 +366,6 @@ describe("agent kit：能力目录（设置页的数据源）", () => {
       expect(row.desc.length).toBeGreaterThan(0);
       expect(row.groupLabel.length).toBeGreaterThan(0);
     }
-    expect(rows.find((r) => r.id === "stage")!.locked).toBe(true);
-    expect(rows.find((r) => r.id === "characters")!.locked).toBe(false);
     // 界面不出现工具名：后果那句里不能有工具 id
     for (const row of rows) expect(row.desc).not.toMatch(/generate_image|annotate_asset|list_library|web_search|write\b/);
     // 工坊那张卡上不会有「结束本轮」
@@ -488,44 +482,5 @@ describe("agent kit：能力 → 工具与文件面", () => {
     const tb = b.tools.find((t) => t.name === "list_library")!;
     expect(ta.parameters).toBe(tb.parameters);
     expect(ta.description).toBe(tb.description);
-  });
-});
-
-describe("agent kit：剧作家工具真正动的是演出状态", () => {
-  it("beat_done 把参数 emit 成停止点载荷（选项两条）", async () => {
-    const stops: unknown[] = [];
-    const kit = playwriter({ emitStop: (stop) => stops.push(stop) });
-    const tool = kit.tools.find((t) => t.name === "beat_done")!;
-    const result = await tool.execute("c1", { options: ["道歉", "装傻"] });
-    expect(stops).toEqual([{ stopType: "choice", options: [{ text: "道歉" }, { text: "装傻" }] }]);
-    // terminate 必须为真：丢了它假流会无限重跑同一批工具
-    expect(result.terminate).toBe(true);
-  });
-
-  it("beat_done 的两种退化：只给 placeholder 停在自由输入，什么都不给就是自然演完", async () => {
-    const stops: { stopType: string }[] = [];
-    const kit = playwriter({ emitStop: (stop) => stops.push(stop) });
-    const tool = kit.tools.find((t) => t.name === "beat_done")!;
-    await tool.execute("c1", { placeholder: "想对他说什么？" });
-    await tool.execute("c2", {});
-    expect(stops).toEqual([{ stopType: "free", placeholder: "想对他说什么？" }]);
-  });
-
-  it("options 全是空白时报错让模型重写，不静默把这一轮变成没有停止点", async () => {
-    const stops: unknown[] = [];
-    const kit = playwriter({ emitStop: (stop) => stops.push(stop) });
-    const tool = kit.tools.find((t) => t.name === "beat_done")!;
-    // 逐条 trim 之后不足两条：schema 的 minItems 拦不住（每个元素 minLength=1 照样过）
-    await expect(tool.execute("c1", { options: ["   ", "道歉"] })).rejects.toThrow(/两条非空文本/);
-    expect(stops).toEqual([]);
-  });
-
-  it("options 与 placeholder 同时给：按 options 走，回执里说清 placeholder 不生效", async () => {
-    const stops: { stopType: string }[] = [];
-    const kit = playwriter({ emitStop: (stop) => stops.push(stop) });
-    const tool = kit.tools.find((t) => t.name === "beat_done")!;
-    const result = await tool.execute("c1", { options: ["道歉", "装傻"], placeholder: "想对他说什么？" });
-    expect(stops).toEqual([{ stopType: "choice", options: [{ text: "道歉" }, { text: "装傻" }] }]);
-    expect(result.content[0]?.text).toContain("placeholder 这轮不生效");
   });
 });

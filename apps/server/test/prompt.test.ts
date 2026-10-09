@@ -214,13 +214,13 @@ describe("buildSystemPrompt：写作参数与创作口径", () => {
     const prompt = build({ play: PLAY, memory: new PlayMemory({ craft: "   " }) });
     expect(prompt).toContain("# 写作参数（本剧目设定，照它写）");
     expect(prompt).toContain("一轮 8~15 句");
-    expect(prompt).toContain("beat_done(options=["); 
+    expect(prompt).toContain('<stop options="… | … | …"/>');
   });
 
   it("play.craft 改了就照改的渲染，不把默认值抄一遍", () => {
     const prompt = build({ play: { ...PLAY, craft: { beatLength: "long", stopOptions: "free" } } });
     expect(prompt).toContain("一轮 20~30 句");
-    expect(prompt).toContain('beat_done(placeholder="…")');
+    expect(prompt).toContain('<stop placeholder="…"/>');
     expect(prompt).not.toContain("一轮 8~15 句");
   });
 
@@ -238,28 +238,28 @@ describe("buildSystemPrompt：写作参数与创作口径", () => {
     expect(ja).toContain("不要跟随玩家的输入语言");
   });
 
-  it("选项给几条交给写作参数，但工具的三种收尾方式仍是硬契约", () => {
+  it("选项给几条交给写作参数，但三种停止点形态仍是硬契约", () => {
     const prompt = build({ play: PLAY });
     expect(prompt).toContain("给几条互斥的选项照《写作参数》");
-    expect(prompt).toContain("beat_done(placeholder=");
-    expect(prompt).toContain("beat_done()，两个参数都不给");
+    expect(prompt).toContain('<stop placeholder="…"/>');
+    expect(prompt).toContain("<stop/>");
   });
 
   it("演出契约单列为引擎规则，与可改的创作口径分开", () => {
     const prompt = build({ play: PLAY });
     expect(prompt).toContain("# 演出契约（引擎规则，不可改）");
-    // beat_done 独占批次是引擎事实，不属于用户可改口径
-    expect(prompt).toContain("beat_done");
+    // 「停止点是正文末行标签、写完就停笔」是引擎事实，不属于用户可改口径
+    expect(prompt).toContain("停止点标签");
   });
 
-  it("讲清工作方式：beat_done 是这一轮的出口，没有停止点时引擎接上下一轮", () => {
+  it("讲清工作方式：停止点是这一轮的出口，没有停止点时引擎接上下一轮", () => {
     const prompt = build({ play: PLAY });
     expect(prompt).toContain("# 你怎么工作");
     expect(prompt).toContain("停止点是这一轮的出口，不是故事的终点");
     expect(prompt).toContain("引擎接上的下一轮");
-    // 停止点不再是文本标签，教的是工具参数
-    expect(prompt).toContain("## 结束轮（beat_done）");
-    expect(prompt).not.toContain("<stop");
+    // P6-e 起两个宿主都教同一份正文：停止点写在剧本末行的标签里
+    expect(prompt).toContain("## 结束轮（停止点）");
+    expect(prompt).toContain('<stop options="去天台 | 回家"/>');
   });
 
   it("输出纯净写在不可改的契约里，且不再拿 <comment> 当出口来邀请", () => {

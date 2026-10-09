@@ -44,22 +44,6 @@ export interface CrossHostCapabilityContract {
  */
 export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
   {
-    id: "stage",
-    profile: "shared",
-    domainSemantic: "收束一轮并交出停止点；必要时提议本轮状态更新。",
-    roles: ["playwriter"],
-    equivalence: "semantic-only",
-    hosts: {
-      stageAi: "AgentKit 的 beat_done 与独立版编排器。",
-      dshAivn: "剧本 <stop> 标签与 DSH 会话投影；状态由文件工具维护。",
-      backendDependency: "无额外后端依赖。",
-      intentionalDifference:
-        "停止点的**载体必须不同**：服务端要工具 terminate 来收束轮边界（编排器按它判 beatClosed），" +
-        "插件必须是剧本末行标签——DSH 的「在新对话中分支」与舞台重建只认助手消息轮尾；两边归一到同一 Stage IR。" +
-        "状态那一格曾经是载体差异（工具写引擎真值 vs 写文件），2026-10-10 起两边同形：都写 memory/always/state/ 三份文件。",
-    },
-  },
-  {
     id: "nsfw",
     profile: "preset-specific",
     domainSemantic: "在全年龄与限制级剧情通道之间切换。",
@@ -336,7 +320,6 @@ const READ_ONLY: ToolSideEffectMetadata = {
 
 /** Declarative side-effect/lifecycle metadata for every AgentKit tool id. */
 export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMetadata>> = {
-  beat_done: { ...READ_ONLY, read_only: false, reversible: false, idempotent: false },
   enter_nsfw: { ...READ_ONLY, read_only: false, reversible: true },
   exit_nsfw: { ...READ_ONLY, read_only: false, reversible: true },
   search_archive: READ_ONLY,

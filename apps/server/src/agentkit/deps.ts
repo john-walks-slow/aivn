@@ -27,12 +27,6 @@ import type { AgentRole } from "./role.js";
  */
 
 /**
- * 模型交出的停止点（beat_done 的参数）。
- * 与 `StopPayload` 的区别：没有 "pause"——那是编排器自己造的（空轮重试入口、分岔截断），模型写不出来。
- */
-export type ModelStop = { stopType: StopType; options?: StopOption[]; placeholder?: string };
-
-/**
  * 一次剧目文件写盘。**两个 agent 共用**：工坊拿它推刷新信号（各页重拉），
  * 剧作家拿它认角色卡、排轮边界重建——写的是同一批文件、同一条白名单。
  */
@@ -66,8 +60,6 @@ export interface PlaywriterKitDeps extends KitCommonDeps {
    * 角色卡 id 登记、轮边界重建这类领域动作由宿主接在这里——文件工具本身不知道这些。
    */
   onWrite: (write: PlayFileWrite) => void;
-  /** 停止点载荷 → IR 事件（加 seq → 广播 → 落谱系，与解析器产出的事件同一条管道）。 */
-  emitStop: (stop: ModelStop) => void;
   /** 生图预发射 → IR 事件（骨架占位出现在时间线上那个位置）。 */
   emitPreload: (attrs: PreloadAssetAttrs) => void;
   /** 静态素材层（assets/，进 git）：立绘、背景、CG 都走它。未启用生图时为 undefined。 */

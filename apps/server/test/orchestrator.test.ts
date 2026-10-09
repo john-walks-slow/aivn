@@ -333,37 +333,14 @@ describe("PlaywrightOrchestrator 闭环", () => {
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(beatStartsBefore);
   });
 
-  it("漏调 beat_done 只追一次：有台词没收束 → 同轮追一句补上停止点", async () => {
+  it("末行没有停止点：一轮照常收成 no_stop，不追（P6-e 起没有「忘了调工具」这回事）", async () => {
     const contexts: { messages: { role: string }[] }[] = [];
-    const { orchestrator, messages } = setup(
-      [
-        // 首跑：有台词但没调 beat_done；追收束那一跑补上停止点
-        { text: BEAT_1 },
-        { text: "", beatDone: BEAT_1_STOP },
-      ],
-      { contexts },
-    );
+    const { orchestrator, messages } = setup([{ text: BEAT_1 }], { contexts });
 
     await orchestrator.playerAction({ kind: "free", text: "开局" });
 
-    // 追收束只多发一轮 provider 请求（首跑 + 追的那一跑），不是开新的一轮
-    expect(contexts).toHaveLength(2);
-    expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1);
-    const beatEnd = lastBeatEnd(messages);
-    expect(beatEnd).toMatchObject({ reason: "stop" });
-    if (beatEnd.type === "beat_end") expect(beatEnd.stop?.options).toHaveLength(2);
-    // 台词只演一遍：追的那一跑是空正文补 beat_done，不重复落台词
-    const script = messages.flatMap((m) => (m.type === "events" ? m.events : []));
-    expect(script.filter((e) => e.event.kind === "say_end")).toHaveLength(1);
-  });
-
-  it("追完还不交 beat_done 就不再追：按 no_stop 正常封轮", async () => {
-    const contexts: { messages: { role: string }[] }[] = [];
-    const { orchestrator, messages } = setup([{ text: BEAT_1 }, { text: BEAT_2 }], { contexts });
-
-    await orchestrator.playerAction({ kind: "free", text: "开局" });
-
-    expect(contexts).toHaveLength(2);
+    // 只跑一次 provider 请求：轮边界是 run 结束，没有「追一句让模型补交」那一跳
+    expect(contexts).toHaveLength(1);
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1);
     expect(lastBeatEnd(messages)).toMatchObject({ reason: "no_stop" });
   });
@@ -516,28 +493,17 @@ describe("PlaywrightOrchestrator 闭环", () => {
     expect(orchestrator.eventsAfter(total)).toHaveLength(0);
   });
 
-  it("beat_done 参数校验：单项选项被 schema 拒绝，这一轮不产生停止点（护栏从编排器移进 schema）", async () => {
-    // options 的 minItems=2 由 pi 的参数校验兜住：只写一条会拿到校验错误回执，模型重来一次。
-    // 编排器那条「choice 无选项 → 降级 free」的护栏随之删除，不再有"降级"这条路。
-    const base = createFakeStreamFn([
-      { text: '<narrate>她看了看表。</narrate>', beatDone: { options: ["走吧"] } },
-      { text: '<narrate>她还在等。</narrate>', beatDone: true },
+  it("停止点标签只给一条选项：解析器告警并当自然演完，这一轮不产生停止点", async () => {
+    // P6-e 之前这条护栏在工具 schema 里（minItems=2）；现在归解析器：不足两条 = 笔误，
+    // 告警回灌给模型，这一轮按「自然演完」收（不产生停止点，也不静默假装是选择）。
+    const { orchestrator, messages } = setup([
+      { text: '<narrate>她看了看表。</narrate>\n<stop options="走吧"/>' },
     ]);
-    let calls = 0;
-    const { orchestrator, messages } = setup([], {
-      streamFn: (model, context, options) => {
-        calls += 1;
-        return base(model, context, options);
-      },
-    });
     await orchestrator.playerAction({ kind: "free", text: "开局" });
 
-    expect(calls).toBe(2);
     const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
     expect(events.some((e) => e.kind === "stop")).toBe(false);
-    const beatEnd = lastBeatEnd(messages);
-    expect(beatEnd.type).toBe("beat_end");
-    if (beatEnd.type === "beat_end") expect(beatEnd.reason).toBe("no_stop");
+    expect(lastBeatEnd(messages)).toMatchObject({ reason: "no_stop" });
   });
 
   it("判废：零产出 → 回滚并原样重演一次，仍写不出来就退回输入之前报错（不静默伪装 no_stop，P0）", async () => {
@@ -1114,7 +1080,8 @@ describe("长会话装配", () => {
       const turn = call === 1 ? 1 : 2;
       void (async () => {
         if (turn === 1) await gate;
-        const text = turn === 1 ? BEAT_1 : BEAT_2;
+        // P6-e：停止点是正文末行的标签（原来是合成一次 beat_done 工具调用）
+        const text = turn === 1 ? `${BEAT_1}\n<stop options="道歉 | 装傻"/>` : `${BEAT_2}\n<stop/>`;
         stream.push({ type: "start", partial });
         stream.push({ type: "text_start", contentIndex: 0, partial });
         for (const delta of text.match(/[\s\S]{1,7}/g) ?? []) {
@@ -1128,15 +1095,7 @@ describe("长会话装配", () => {
         });
         const finalMessage: AssistantMessage = {
           role: "assistant",
-          content: [
-            { type: "text", text },
-            {
-              type: "toolCall",
-              id: `call-${turn}`,
-              name: "beat_done",
-              arguments: turn === 1 ? { options: ["道歉", "装傻"] } : {},
-            },
-          ],
+          content: [{ type: "text", text }],
           api: "openai-completions",
           provider: "fake",
           model: "fake-test",
@@ -1154,7 +1113,7 @@ describe("长会话装配", () => {
               total: 0,
             },
           },
-          stopReason: "toolUse",
+          stopReason: "stop",
           timestamp: Date.now(),
         };
         stream.push({ type: "done", message: finalMessage });
@@ -1322,29 +1281,25 @@ describe("长会话装配", () => {
     expect(orchestrator.isBusy).toBe(false);
   });
 
-  it("beat_done 与别的工具同批 → finishTurn 兜底收束（terminate 不被 batch 吞掉）", async () => {
+  it("标签与工具同轮：一拍只落一个 beat_end（轮边界是 run 结束，不是某个工具）", async () => {
+    // P6-e 之前这里是「beat_done 与别的工具同批 → terminate 被吞 → finishTurn 兜底」。
+    // 现在没有工具可吞：模型先写正文（末行带标签）再调工具，run 结束时收一拍。
     const { orchestrator, messages } = setup([
       {
         text: BEAT_1,
         beatDone: true,
-        toolCalls: [
-          {
-            name: "search_archive",
-            args: { query: "旧约定" },
-          },
-        ],
+        toolCalls: [{ name: "search_archive", args: { query: "旧约定" } }],
       },
+      { text: "" },
     ]);
+
     await orchestrator.playerAction({ kind: "free", text: "我到了" });
 
-    // 只演出一轮：同批调用没有让轮继续空转
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(1);
     expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(1);
     expect(orchestrator.isBusy).toBe(false);
   });
-});
 
-describe("对话尾接力（工坊改设定后重建 runtime）", () => {
   it("carryOver 取最近一段对话尾并带上设定已更新的说明", async () => {
     const { orchestrator } = setup([{ text: BEAT_2, beatDone: true }]);
     for (let i = 0; i < 6; i += 1) await orchestrator.playerAction({ kind: "continue" });
@@ -1666,9 +1621,10 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     await orchestrator.whenIdle();
 
     // 验证第 2 轮的上下文中包含了 NSFW 前置合规轮次
-    const nsfwContext = contexts[1]!;
-    const hasPreTurn = nsfwContext.messages.some(
-      (m) => typeof m.content === "string" && m.content.includes("20 周岁以上"),
+    // 带工具的那条收束响应会多一跳「停笔」模型调用（带工具 → 工具跑完还要再问一次），
+    // 所以不再按固定下标取：凡是这一趟发出去过的上下文，只要有一份带上了合规轮次就算注入成功
+    const hasPreTurn = contexts.some((c) =>
+      c.messages.some((m) => typeof m.content === "string" && m.content.includes("20 周岁以上")),
     );
     expect(hasPreTurn).toBe(true);
     // 兑现进入不翻标识：亮着的那盏不许闪一下；这一拍末尾同时调了 exit_nsfw，
@@ -1690,7 +1646,8 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     ]);
     expect(orchestrator.nsfwChannel).toBe(false);
     // 验证第 3 轮上下文：NSFW 前置合规轮次已被剥离，且包含了 SFW 摘要前情提要
-    const sfwContext = contexts[3]!;
+    // 第三轮就是最后一跳（中间那两跳「停笔」与摘要补全也是模型调用，按下标取会错位）
+    const sfwContext = contexts.at(-1)!;
     const stillHasPreTurn = sfwContext.messages.some(
       (m) => typeof m.content === "string" && m.content.includes("20 周岁以上"),
     );
@@ -1769,9 +1726,10 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     await orchestrator.whenIdle();
 
     expect(orchestrator.runtimeState.nsfw?.active).toBe(true);
-    const nsfwContext = contexts[1]!;
-    const hasPreTurn = nsfwContext.messages.some(
-      (m) => typeof m.content === "string" && m.content.includes("20 周岁以上"),
+    // 带工具的那条收束响应会多一跳「停笔」模型调用（带工具 → 工具跑完还要再问一次），
+    // 所以不再按固定下标取：凡是这一趟发出去过的上下文，只要有一份带上了合规轮次就算注入成功
+    const hasPreTurn = contexts.some((c) =>
+      c.messages.some((m) => typeof m.content === "string" && m.content.includes("20 周岁以上")),
     );
     expect(hasPreTurn).toBe(true);
   });
@@ -1911,7 +1869,8 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
 
     const running = orchestrator.playerAction({ kind: "continue" }); // 第 3 轮：退出那一拍
     // 摘要请求已发出（四个上下文 = 三拍 + 摘要补全）
-    await vi.waitFor(() => expect(contexts).toHaveLength(4));
+    // 6 = 一拍的三次调用（r1 → 停笔 → r2）+ 退出那一拍（r3 → 停笔）之后，摘要那次补全
+    await vi.waitFor(() => expect(contexts).toHaveLength(6));
     expect(messages.filter((m) => m.type === "beat_settled")).toHaveLength(settledBefore);
     expect(orchestrator.isBusy).toBe(true);
 
@@ -2050,7 +2009,8 @@ describe("限制级（NSFW）模式切换与上下文隔离", () => {
     const settledBefore = messages.filter((m) => m.type === "beat_settled").length;
 
     const running = orchestrator.playerAction({ kind: "continue" }); // 退出那一拍
-    await vi.waitFor(() => expect(contexts).toHaveLength(4));
+    // 6 = 一拍的三次调用（r1 → 停笔 → r2）+ 退出那一拍（r3 → 停笔）之后，摘要那次补全
+    await vi.waitFor(() => expect(contexts).toHaveLength(6));
     // 等摘要期间玩家又排了一句：收束若照常惊醒下一拍，这句话会带着新一轮落进谱系
     await orchestrator.playerAction({ kind: "prompt", text: "明天去海边吧。" });
     const nodesBefore = tree.materialize().length;

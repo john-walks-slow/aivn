@@ -17,6 +17,7 @@ import {
   renderBareSprites,
   renderCastCard,
   renderMemoryIndex,
+  STOP_TAG_RULES,
 } from "@aivn/agent";
 import type { PlayConfig } from "@aivn/core";
 import { renderCraftParams } from "./craftParams.js";
@@ -114,7 +115,7 @@ const ROLE_INTRO = `你是一部视觉小说的剧作家（playwriter），实�
 /** 工作循环：写完一轮就收束、拿回输入再接着写；停止点不是故事的终点。 */
 const HOW_I_WORK = `# 你怎么工作
 
-一轮一轮地写：写完这一轮 → 调 beat_done 收束（参数就是这一轮的停止点）→ 拿到玩家的回应、
+一轮一轮地写：写完这一轮 → 在正文末行写下停止点标签 → 拿到玩家的回应、
 或引擎接上的下一轮 → 接着写。一轮该写多长、给几条选项，都照本提示词的《写作参数》；
 文风、禁忌、称呼习惯照剧目的创作口径。
 
@@ -219,17 +220,8 @@ ${DIALOGUE_TAGS}
 
 ${COMMENT_HEAD}它不上舞台、不进谱系、不产出任何事件。
 
-## 结束轮（beat_done）
+${STOP_TAG_RULES}
 
-一轮到边界时你只做一个动作：**调用 beat_done 工具**，参数就是这一轮的出口。
-
-- 给玩家选项 → beat_done(options=["…","…"])，给几条互斥的选项照《写作参数》；
-  选项文本就是玩家面板上那一行，要短、要像玩家会说的话。
-- 想给一个自由回答的口子 → beat_done(placeholder="想对他说什么？")。
-- 这一段自然演完 → beat_done()，两个参数都不给。
-
-beat_done 通常**独占一次工具调用**（模式切换类的工具可以同批发出，不与 write / edit 等其他工具放在同一批里）。
-调完之后本轮就结束，不要再输出任何内容（没有停止点时也不要写收尾交代或过场说明）。
 轮与轮之间由引擎接续。`;
 
 /**
@@ -444,10 +436,10 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const nsfwGuidance = !ctx.can.nsfw
     ? ""
     : ctx.nsfwMode
-      ? `\n# 限制级（NSFW）创作指引\n\n你当前正处于限制级剧情通道。\n- 专注于亲密接触中的情感张力、双方的心理起伏、生理与感官细节反应的细腻刻画；\n- 保持角色一贯的性格与说话风格，将人设融入亲密互动中；\n- 结合 Stage DSL：合理使用 <actor action="..." variant="..."> 配合肢体反应与微表情，用 <sfx> 辅助营造氛围；\n- 当这段亲密情节告一段落、即将回归正常日常时，调用 exit_nsfw 退出限制级模式。exit_nsfw 可以与 beat_done 在同一批次工具调用中一同发出。\n${
+      ? `\n# 限制级（NSFW）创作指引\n\n你当前正处于限制级剧情通道。\n- 专注于亲密接触中的情感张力、双方的心理起伏、生理与感官细节反应的细腻刻画；\n- 保持角色一贯的性格与说话风格，将人设融入亲密互动中；\n- 结合 Stage DSL：合理使用 <actor action="..." variant="..."> 配合肢体反应与微表情，用 <sfx> 辅助营造氛围；\n- 当这段亲密情节告一段落、即将回归正常日常时，调用 exit_nsfw 退出限制级模式，并在这一轮正文末行照常写下停止点标签。\n${
           memory?.nsfw?.trim() ? `\n## 剧目限制级专属口径\n${memory.nsfw.trim()}\n` : ""
         }${ctx.nsfwPrompt?.trim() ? `\n## 补充限制级提示词\n${ctx.nsfwPrompt.trim()}\n` : ""}`
-      : `\n## 亲密/限制级剧情入口（enter_nsfw）\n\n当剧情推进至即将发生亲密、成人或限制级（NSFW）接触时，不要在当前模型下直接描写露骨细节。\n调用 \`enter_nsfw\` 开启限制级剧情通道。调用后完成本轮收束并调用 \`beat_done\`，下一轮起将由限制级专用模型和专属提示词接管展开细腻描写；亦可与 \`beat_done\` 在同一批次工具调用中一同发出。\n`;
+      : `\n## 亲密/限制级剧情入口（enter_nsfw）\n\n当剧情推进至即将发生亲密、成人或限制级（NSFW）接触时，不要在当前模型下直接描写露骨细节。\n调用 \`enter_nsfw\` 开启限制级剧情通道：调用后写完本轮正文与末行的停止点标签即可停笔，下一轮起将由限制级专用模型和专属提示词接管展开细腻描写。\n`;
   const cards = memory?.visibleContext() ?? [];
   // 每行带路径：卡的标题（`# 标题`）与文件名可以不一样，路径推不出来，只能这里给
   const indexSection =

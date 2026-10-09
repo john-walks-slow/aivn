@@ -83,9 +83,8 @@ export const CARD: IndexCard = {
 };
 
 /**
- * 第一轮的剧本正文。停止点不在这里——它由 beat_done 的工具参数交出（`beatDone` 字段）。
- * 旧写法的 `<option>` 子标签仍是遗留标签（静默丢弃），测试里不该再出现；剧本正文里要写停止点
- * 只有 `<stop options="甲 | 乙"/>` 这一种形态（DSH 插件侧走它，本体仍走工具）。
+ * 第一轮的剧本正文。停止点不在这里——夹具按 `beatDone` 字段把它渲染成末行的停止点标签
+ * （P6-e 起两个宿主都是这条；旧写法的 `<option>` 子标签仍是遗留标签、静默丢弃）。
  */
 export const BEAT_1 = [
   '<scene bg="corridor_dusk" bgm="melancholy" transition="fade"/>',
@@ -103,11 +102,38 @@ export const BEAT_2 = [
 ].join("\n");
 
 /** 假 LLM 流：按调用序号回放脚本，完整模拟 text 流 + tool_call + done。 */
+/**
+ * 把夹具里的 `beatDone` 渲染成剧本末行的停止点标签（P6-e）。
+ *
+ * 选项之间用 `|` 分隔、两端空白由解析器去掉——与真实写法一致。
+ */
+function stopTag(beatDone: true | { options?: string[]; placeholder?: string }): string {
+  if (beatDone === true) return "<stop/>";
+  if (beatDone.options) return `<stop options="${beatDone.options.join(" | ")}"/>`;
+  if (beatDone.placeholder) return `<stop placeholder="${beatDone.placeholder}"/>`;
+  return "<stop/>";
+}
+
 export function createFakeStreamFn(responses: FakeResponse[]): StreamFn {
   let call = 0;
+  // 一条响应同时带「收束」和工具调用时，真跑里 pi 拿到工具结果还会再问模型一次——
+  // 那一跳由夹具自动补一条空收尾（不占响应数组的下标），语义就是「模型写完、调了工具、停笔」。
+  let autoClose = false;
   return () => {
+    if (autoClose) {
+      autoClose = false;
+      return createFakeStreamFn([{ text: "" }])({} as never, {} as never, {} as never);
+    }
+    // 假流在响应数组用完之后**重放最后一条**。P6-e 之前 beat_done 的 terminate 一直在替
+    // 「最后一条带工具调用」的用例兜底收束；现在轮边界是「模型不再调工具」，重放会变成死循环。
+    // 这里给一个上限，把死循环变成一条看得见的失败（真跑不会这样：模型会停）。
+    if (call > 60) throw new Error("假流调用超过 60 次：最后一条响应带工具调用且被反复重放，这一轮收不了");
     const response = responses[Math.min(call, responses.length - 1)]!;
     call += 1;
+    // P6-e：停止点是剧本末行的标签（不是工具调用）。夹具照真实形态渲染，
+    // 用例仍然只表达「这一轮的出口是什么」——标签是 void 标签，不产生台词，零台词轮的语义不变。
+    const text = response.beatDone ? `${response.text}\n${stopTag(response.beatDone)}` : response.text;
+    if (response.beatDone && (response.toolCalls?.length ?? 0) > 0) autoClose = true;
     const stream = createAssistantMessageEventStream();
     const partial = { role: "assistant", content: [] } as AssistantMessage;
 
@@ -121,13 +147,13 @@ export function createFakeStreamFn(responses: FakeResponse[]): StreamFn {
       }
       const textIndex = response.thinking ? 1 : 0;
       stream.push({ type: "text_start", contentIndex: textIndex, partial });
-      for (const delta of response.text.match(/[\s\S]{1,7}/g) ?? []) {
+      for (const delta of text.match(/[\s\S]{1,7}/g) ?? []) {
         stream.push({ type: "text_delta", contentIndex: textIndex, delta, partial });
       }
       stream.push({
         type: "text_end",
         contentIndex: textIndex,
-        content: response.text,
+        content: text,
         partial,
       });
 
@@ -144,7 +170,7 @@ export function createFakeStreamFn(responses: FakeResponse[]): StreamFn {
             ...(response.thinking
               ? ([{ type: "thinking", thinking: response.thinking }] as AssistantMessage["content"])
               : []),
-            { type: "text", text: response.text },
+            { type: "text", text },
           ],
           api: "openai-completions",
           provider: "fake",
@@ -162,22 +188,6 @@ export function createFakeStreamFn(responses: FakeResponse[]): StreamFn {
           stopReason: "stop",
           timestamp: Date.now(),
         };
-        if (response.beatDone) {
-          finalMessage.content.push({
-            type: "toolCall",
-            id: "call-1",
-            name: "beat_done",
-            // 参数走工具 schema 校验（validateToolArguments），形状必须与真实调用一致
-            arguments:
-              response.beatDone === true
-                ? {}
-                : {
-                    ...(response.beatDone.options ? { options: response.beatDone.options } : {}),
-                    ...(response.beatDone.placeholder ? { placeholder: response.beatDone.placeholder } : {}),
-                  },
-          });
-          finalMessage.stopReason = "toolUse";
-        }
         let callNo = 2;
         for (const tool of response.toolCalls ?? []) {
           finalMessage.content.push({

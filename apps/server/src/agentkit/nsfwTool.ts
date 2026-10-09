@@ -31,7 +31,7 @@ export function createNsfwTools(deps: NsfwToolDeps): AgentTool<any>[] {
     description: [
       "在剧情推进到即将发生亲密、成人或限制级（NSFW）接触时调用。",
       "调用后将开启限制级剧情通道，由专用模型接管后续成人细节描写。",
-      "不要在普通日常模式下直接描写露骨细节。调用本工具后完成本轮收束并调用 beat_done，下一轮起将由专用模型展开描写；亦可与 beat_done 在同一批次工具调用中一同发出。",
+      "不要在普通日常模式下直接描写露骨细节。调用本工具后写完本轮正文与末行的停止点标签（`<stop …/>`）即可停笔，下一轮起将由专用模型展开描写。",
     ].join("\n"),
     parameters: enterNsfwParams,
     execute: async (_toolCallId, params: Static<typeof enterNsfwParams>) => {
@@ -40,7 +40,7 @@ export function createNsfwTools(deps: NsfwToolDeps): AgentTool<any>[] {
       }
       deps.onEnterNsfw(params.reason?.trim());
       return textResult(
-        "已请求进入限制级（NSFW）剧情通道。请继续完成本轮收束并调用 beat_done，下一轮起将由限制级专用模型与专属提示词接管展开细腻描写。",
+        "已请求进入限制级（NSFW）剧情通道。请写完本轮正文并在末行写下停止点标签，下一轮起将由限制级专用模型与专属提示词接管展开细腻描写。",
       );
     },
   };
@@ -50,7 +50,7 @@ export function createNsfwTools(deps: NsfwToolDeps): AgentTool<any>[] {
     label: "退出限制级剧情",
     description: [
       "在限制级（NSFW）亲密剧情告一段落、即将回归正常日常或主线情节时调用。",
-      "**明确支持且推荐与 beat_done 在同一批次工具调用中一同发出**（写完收尾台词后，同批调用 exit_nsfw + beat_done 交出停止点）。",
+      "**随时可以调用**（写完收尾台词后调用它，再在末行写下停止点标签收束本轮即可）。",
       "本轮收束时，系统将自动对该段限制级剧情提炼全年龄（SFW）含蓄摘要并切回主模型。主模型后续只保留剧情进展摘要，不包含露骨细节。",
     ].join("\n"),
     parameters: exitNsfwParams,
@@ -60,7 +60,7 @@ export function createNsfwTools(deps: NsfwToolDeps): AgentTool<any>[] {
       }
       deps.onExitNsfw(params.summary?.trim());
       return textResult(
-        "已请求退出限制级（NSFW）剧情通道。请调用 beat_done 收束本轮，本轮结束后系统将生成全年龄 SFW 摘要并切回主模型继续后续演出。",
+        "已请求退出限制级（NSFW）剧情通道。请写完本轮正文并在末行写下停止点标签，本轮结束后系统将生成全年龄 SFW 摘要并切回主模型继续后续演出。",
       );
     },
   };

@@ -28,10 +28,10 @@
 
 ## DSL、轮收束与 IR 事件
 
-- **DSL 是时间线、工具是副作用**：`beat_done`（轮收束 + 停止点载荷，`options` 若干条 / `placeholder` / 都不给；schema 只兜「至少两条非空」这个无效载荷，**给几条、何时给归剧目的写作参数**，见下）与 `generate_image` 产出 `stop` / `preload_asset` 两个 IR 事件，经 `emitStageEvent` 与解析器产出的事件走同一条路（加 seq → 广播 → 落谱系），client 侧一行不用改。
+- **DSL 是时间线、工具是副作用**：停止点是**剧本末行的 `<stop …/>`**（解析器产出 `stop` IR，`options` 若干条 / `placeholder` / 都不给三种形态；**给几条、何时给归剧目的写作参数**，见下），`generate_image` 产出 `preload_asset` IR——两者与其它事件走同一条路（加 seq → 广播 → 落谱系），client 侧一行不用改。停止点事件不在解析那一刻下发，由 `closeBeat` 统一补发（P6-e §2.1），位置永远是这一拍的最后一条。
 - **玩家输入也是这条管道的一等事件**（2026-10-04 回声层拆除）：`playerAction` 的选项/自由输入经 `onStageEvent({ kind: "player_input", text })` 广播，**先于 autostart 的 `beat_start`**——客户端「选完立刻见回执」靠这个时序，别改成先开拍再补发；`accumulateLineage` 把它落成带 `payload.seq` 的 prompt 节点（core 的 `lineageToEvents` 重放时还原成 `player_input` 事件）。NSFW 打标不变：`noteBeatInputs` 在事件发出前定，prompt 落谱系照走原路径。升级前的老档 prompt 节点没有 seq，客户端按路径顺序+同文本认回。
-- **判废只认「三无」轮**：无台词、无停止点、且没调用过带副作用的工具（`beat_done` 只是收束记账，不算）才判废回滚。纯工具轮——只调 `enter_nsfw` 交棒、只发起生图、只写记忆/角色卡——按 no_stop 正常收束：副作用已经发生，回滚会吞掉它们（`enter_nsfw` 的 pending 会被重置回日常模型）。DSL 控制指令（scene/actor）仍不算内容。
-- `<stop>` **回来了**（2026-10-06，DSH 插件侧要「轮尾是助手消息」才分得出支）：新形态是自闭合的 `<stop options="甲 | 乙"/>` / `<stop placeholder="…"/>` / `<stop/>`，与这里的 `beat_done` 工具产出同一帧 IR。旧形态 `<stop type="choice"> + <option>` 里的 `<option>` 子标签仍在 `LEGACY_TAGS`（连同 `preload_asset`），遇到只静默降级并记 `legacy_tag` 警告（照读会把标签念到舞台上）。
+- **判废只认「三无」轮**：无台词、无停止点、且没调用过工具才判废回滚。纯工具轮——只调 `enter_nsfw` 交棒、只发起生图、只写记忆/角色卡——按 no_stop 正常收束：副作用已经发生，回滚会吞掉它们（`enter_nsfw` 的 pending 会被重置回日常模型）。DSL 控制指令（scene/actor）仍不算内容。
+- `<stop>` 是**唯一**的停止点载体（2026-10-10 P6-e 起服务端也走它，与插件同一句话、同一帧 IR，正文在共享包 `packages/agent/src/prompt/stage-dsl.ts` 的 `STOP_TAG_RULES`）：自闭合的 `<stop options="甲 | 乙"/>` / `<stop placeholder="…"/>` / `<stop/>`。旧形态 `<stop type="choice"> + <option>` 里的 `<option>` 子标签仍在 `LEGACY_TAGS`（连同 `preload_asset`），遇到只静默降级并记 `legacy_tag` 警告（照读会把标签念到舞台上）。
 - **一个槽位叫 `variant`**：`<actor id="mio" variant="smile">`。`expression`（人写表情）与 `state`（非人的状态）是 261004 之前的两个旧名，解析器与谱系重放仍当别名收下，所以存量剧本与存档照常演出；但写给模型看的契约只有 `variant`。同一个 id 的立绘声明、差分、垫图基准都按它解析。
 - **全屏标题卡 `<title align="…" mode="block|lines">正文</title>`**（261007）：台词三类之外的第四种包裹标签，产出 `title_start / title_text / title_end` 三段 IR（不配音）。`lines`（缺省）按**非空物理行**逐句揭示、`block` 整段一次出；进 title 隐藏对话框、离开恢复。谱系落 `kind: "title"` 节点（attrs 存 `align`/`mode`），`lineageToEvents` 与 `rebuildStage` 照常重放；`lineageToBeats` 把它写回助手脚本体（`（标题）…`），并使它计为「有内容」（仅标题+停止点的一拍不被判废）。title **不可原地改写**（`EDITABLE_KINDS` 不含它）。
 - **`<scene bg>` 认纯色场**（261007）：`bg="black"`/`bg="white"`（大小写不敏感）与十六进制 `#rgb`/`#rrggbb` 由 core 的 `resolveSceneBg()` 判为纯色，客户端直接画一块底（不查素材表）；其余仍走 `assets/backgrounds/<id>`。谱系原样存 `bg` 值，重放自然带上。
@@ -127,7 +127,7 @@
 - 工具的可见性错配要当 bug 治：`list_voices` 只装给工坊、`read_lineage` 只装给工坊，提示词与工具描述里不能提对方才有的工具（2026-10-04 修：曾教剧作家去调它没有的 `list_voices`）。
 - 两份提示词的正文按章抽成模块常量（剧作家 `ROLE_INTRO` / `HOW_I_WORK` / `FORMAT_RULES` / `MEMORY_RULES` / `newCharacterRules()` / `CONTRACT_RULES`，搭台 `RESPONSIBILITY_RULES` / `TALK_RULES` / `IMAGE_BASICS` / `NO_IMAGE_GUIDE` / `LINEAGE_GUIDE`），带能力位的章走 `imageChapter` / `setupFlow` / `writingPoints`，装配模板只留顺序与开关——改一章不必在几百行里找位置。
 - 写作参数段（`renderCraftParams`）在 A 区里紧挨 `craftSection` **之前**、且**永远注入**（全默认值时也注入）：缺省口径不说出来，模型面对的就是「没人告诉它一轮写多长」，而它每轮都在做这个决定。
-- `beat_done` 的三种停法只在「## 结束轮」与 `beatTool.ts` 的 `BEAT_DONE_DESCRIPTION` 各写一遍（契约 vs 工具说明），`# 你怎么工作` 不再复述第三遍。
+- 三种停法只有**一处**正文：共享包的 `STOP_TAG_RULES`（两个宿主引同一份），`# 你怎么工作` 不复述。
 - 搭台提示词里**不写死 UI 入口清单**（曾列出「玩家能打字的五处界面」，界面一改即成假信息），只说清要改什么、让用户自己找入口。
 
 ## 看图与取网图（2026-10-10 起没有 view_image）
@@ -226,7 +226,7 @@
 ## 限制级（NSFW）通道
 
 - **入口由能力开关控制**：`can.nsfw` 位（能力「限制级通道」授权 `enter_nsfw` / `exit_nsfw`）决定 `prompt.ts` 注不注那两段（进/退指引）。2026-10-04 之前它是**恒注入**的——用户在 Agent 页摘掉那两个工具，提示词还在教它去调，只有空转。关掉这一项 = 本剧目不要限制级通道。
-- **限制级（NSFW）剧情通道**：剧作家主动调 `enter_nsfw` 开启限制级通道（切换至限制级专用模型、注入 20 岁以上虚拟合规轮次与 `memory/always/nsfw.md`），退出时调 `exit_nsfw`（推荐与 `beat_done` 同批发出）。
+- **限制级（NSFW）剧情通道**：剧作家主动调 `enter_nsfw` 开启限制级通道（切换至限制级专用模型、注入 20 岁以上虚拟合规轮次与 `memory/always/nsfw.md`），退出时调 `exit_nsfw`，并在这一轮正文末行照常写停止点标签。
 - **不变式：限制级内容对全年龄读者的唯一出口是它带出的 SFW 摘要。** 正文原文、段内玩家输入、段内每一拍的 `beat_end` 都只在限制级侧可见；前台舞台、`lineage.jsonl`、replay 一如既往保留全文（约束的是**模型读到的东西**，不是存档）。
 - **打标在事件上，不在轮次上**：`LineagePayload.nsfw` 由 `orchestrator.beatNsfw` 写进段内每个节点，取值来自 `beatChannelNsfw()` = `nsfwActive || nsfwPendingEnter`。判断依据必须是这个快照而不是当下的 `nsfwActive`：退出那一拍的 `beat_end` 在 `nsfwActive` 已翻成 false 之后才封，但它承载的仍是限制级原文。
 - **这一拍的通道在「注入这段输入时」就定**（`noteBeatInputs`，与 `startBeatWindow` 用同一个 `beatChannelNsfw()`）：prompt 节点落在开拍之前，而边界那一拍按「开拍时才知道的 `nsfwActive`」打标两头都错——进段的那句玩家输入会漏标（SFW 侧从树上重建时它作为普通输入回流），段后的第一句日常输入会误标（从树上重建时整句被吃掉）。所以不许读上一拍残留的 `beatNsfw`，也不许等 `runBeatTurn` 兑现 `nsfwPendingEnter` 之后再定。

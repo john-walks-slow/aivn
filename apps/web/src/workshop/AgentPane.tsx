@@ -187,24 +187,20 @@ export function AgentPane({ playId }: { playId: string }) {
                     .filter((c) => c.group === group)
                     .map((cap) => (
                       <label className="switch-row" key={cap.id}>
-                        {cap.locked ? (
-                          <span className="muted small">始终开启</span>
-                        ) : (
-                          <input
-                            type="checkbox"
-                            checked={enabled.has(cap.id)}
-                            onChange={(e) =>
-                              patch(role.id, (s) =>
-                                setCapabilityEnabled(
-                                  s,
-                                  cap.id,
-                                  e.target.checked,
-                                  capDefaults[role.id] ?? [],
-                                ),
-                              )
-                            }
-                          />
-                        )}
+                        <input
+                          type="checkbox"
+                          checked={enabled.has(cap.id)}
+                          onChange={(e) =>
+                            patch(role.id, (s) =>
+                              setCapabilityEnabled(
+                                s,
+                                cap.id,
+                                e.target.checked,
+                                capDefaults[role.id] ?? [],
+                              ),
+                            )
+                          }
+                        />
                         <span>
                           <b>{cap.label}</b>
                           <span className="muted small">{cap.desc}</span>

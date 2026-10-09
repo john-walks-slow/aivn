@@ -28,7 +28,7 @@ import {
 import type { ServerMessage } from "@aivn/core";
 export type { ReadPos } from "@aivn/core";
 import { createAgentKit, enabledCapabilitiesFor, type AgentKit } from "./agentkit/kit.js";
-import type { ModelStop, PlayFileWrite } from "./agentkit/deps.js";
+import type { PlayFileWrite } from "./agentkit/deps.js";
 import { PlayFiles } from "./playFiles.js";
 import { parsePlayState, playStateJson, readPlayStateText, readStateProblem, writePlayStateText } from "./playState.js";
 import type { Exa } from "./exa.js";
@@ -71,17 +71,6 @@ const MAX_FEEDBACK_WARNINGS = 8;
  * 只重试一次：同一段输入、同一个上下文，第三轮还写不出来就是写不出来。
  */
 const BEAT_RETRY_LIMIT = 1;
-
-/**
- * 漏调 beat_done 的同轮追收束（只追一次）：模型写完正文却没调 beat_done 时，
- * 直接封成 no_stop 等于把「忘了收束」当正常轮收了——下一轮变成纯状态续写，
- * 模型在那里面大概率空补一个零台词的 beat_done。追收束在同一轮里补一句指令，
- * 让它接着把 beat_done 交出来，而不是把问题推到下一轮。
- */
-const BEAT_DONE_NUDGE =
-  "这一轮的剧本正文已经写完，请现在调用 beat_done 收束本轮（参数就是这一轮的出口：" +
-  "给玩家选项就填 options，想给自由回答的口子就填 placeholder，这一段自然演完就空参数调用）。" +
-  "不要再写新的剧本内容，不要重写已经演出的部分。";
 
 /** 告警类型 → 模型看得懂的说法（英文枚举名对它没有诊断价值）。 */
 const WARNING_LABELS: Record<ParserWarningType, string> = {
@@ -402,12 +391,8 @@ export class PlaywrightOrchestrator {
   private beatSteers: PromptQueueItem[] = [];
   /** 上一轮 DSL 解析告警（已转成人话）：下一轮回灌给模型自修正，见 renderBeatWarnings。 */
   private beatWarnings: string[] = [];
-  /** 本 turn 调用了 beat_done → 轮在此收束（普通工具轮次不算边界，否则记忆查询会撕裂轮）。 */
-  private beatClosed = false;
-  /** 本轮已经追过一次 beat_done 收束：追收束只追一次，追完它还不交就按 no_stop 正常封轮。 */
-  private beatDoneNudged = false;
-  /** 本轮出现过带副作用的工具调用（beat_done 只是收束记账，不算）：纯工具轮（enter_nsfw / 生图 / 写卡）
-   * 没有台词也不是失败——副作用已经发生，回滚只会吞掉它。 */
+  /** 本轮出现过带副作用的工具调用：纯工具轮（enter_nsfw / 生图 / 写卡）没有台词也不是失败
+   * ——副作用已经发生，回滚只会吞掉它。 */
   private beatToolActivity = false;
   /**
    * 当前分支的纪元压缩记录（谱系级，随快照走）：切点之前的原文由这份摘要代表。
@@ -525,7 +510,19 @@ export class PlaywrightOrchestrator {
     this.beatTailId = opts.tree.leafId;
     this.seedLiveCharacterIds(opts.memory);
     this.historyRecorder = new HistoryRecorder(opts.restoredHistory);
-    this.parser = new StageDslParser((event) => this.onStageEvent(event));
+    // 停止点不当场下发（P6-e §2.1）：先缓存，收束时由 closeBeat 统一下发——念完末行标签
+    // 又去调工具的轮，客户端不该提前看到停止点；顺带让停止点在谱系里永远是这一拍的最后一条。
+    this.parser = new StageDslParser((event) => {
+      if (event.kind === "stop") {
+        this.pendingStop = {
+          stopType: event.stopType,
+          ...(event.options ? { options: event.options } : {}),
+          ...(event.placeholder ? { placeholder: event.placeholder } : {}),
+        };
+        return;
+      }
+      this.onStageEvent(event);
+    });
     if (opts.restored) {
       // 恢复会话：纪元压缩记录从路径最近快照回填（谱系级记忆）
       const snapshot = opts.tree.latestSnapshotOnPath(opts.tree.leafId);
@@ -569,7 +566,6 @@ export class PlaywrightOrchestrator {
       // read / write / edit 与工坊同一套：同一份 PlayFiles、同一个 PlayEnv 白名单
       files: new PlayFiles(opts.store),
       onWrite: (write) => this.onPlayFileWritten(write),
-      emitStop: (stop) => this.emitStop(stop),
       emitPreload: (attrs) => this.onStageEvent({ kind: "preload_asset", ...attrs }),
       playAssets: opts.imageTools?.playAssets,
       kick: opts.imageTools?.kick ?? (() => {}),
@@ -646,26 +642,6 @@ export class PlaywrightOrchestrator {
         messages: finalMessages,
       },
     });
-    // 批次收束兜底：pi 仅在「批内全部工具结果都 terminate」时收束 turn，模型若把 beat_done
-    // 与记忆工具同批调用，terminate 会被吞掉导致本轮继续空转——此时按 beat_done 显式收束 run。
-    agent.finishTurn = async (turn) => {
-      const calls = turn.message.content.filter((c) => c.type === "toolCall");
-      if (calls.some((c) => c.name === "beat_done")) {
-        this.beatClosed = true;
-        return calls.length > 1 ? { action: "end" as const } : undefined;
-      }
-      // 漏调 beat_done 的同轮追收束（只追一次）：模型写完正文却没调 beat_done 时，
-      // run 在这里直接收 run → 按 no_stop 封轮，问题被推到下一轮（纯状态续写里空补 beat_done）。
-      // 追一句让它在同一轮里把 beat_done 交出来。只追「有真实台词」的轮：裸散文/空轮
-      // 走判废重演那条路（追一句等于替它免了重演，还把拒答原文留进对话体）。
-      // 失败路径不追：error/aborted 的轮是中断不是忘了收束。
-      if (this.beatDoneNudged || this.beatClosed) return undefined;
-      if (turn.message.stopReason === "error" || turn.message.stopReason === "aborted") return undefined;
-      if (!this.busy || !this.beatHasLines) return undefined;
-      this.beatDoneNudged = true;
-      agent.steer({ role: "user", content: BEAT_DONE_NUDGE, timestamp: Date.now() });
-      return { action: "continue" as const };
-    };
     this.unsubscribeAgent = agent.subscribe((event) => void this.onAgentEvent(event));
     this.agent = agent;
     return agent;
@@ -2002,8 +1978,6 @@ export class PlaywrightOrchestrator {
     this.beatTimedOut = false;
     this.beatLines = [];
     this.beatToolActivity = false;
-    this.beatClosed = false;
-    this.beatDoneNudged = false;
     this.beatNsfw = this.beatChannelNsfw();
     this.beatClosing = false;
     this.opts.engine.turn = this.beatNo;
@@ -2033,21 +2007,19 @@ export class PlaywrightOrchestrator {
       if (event.message.errorMessage && !this.beatTimedOut) this.beatError = event.message.errorMessage;
       // 完整 assistant 消息：思考块与 toolCall 只在这里出现（流式增量拿不全），入史趁早
       if (this.busy) {
-        // beat_done 不算副作用：只叫 beat_done 却一个字没写，仍是零产出（P0 判废要拦的静默空轮）
-        if (event.message.content.some((c) => c.type === "toolCall" && c.name !== "beat_done")) {
+        if (event.message.content.some((c) => c.type === "toolCall")) {
           this.beatToolActivity = true;
         }
         this.historyRecorder.addAssistantMessage(this.beatNo, event.message, this.opts.tree.leafId);
       }
       this.parser.endMessage();
     } else if (event.type === "turn_start") {
-      // 一个 run 里可能拆成多个 turn（工具批次收束后继续）：每个新 turn 重开轮窗
-      if (!this.busy || this.beatClosed) this.startBeatWindow();
-    } else if (event.type === "turn_end") {
-      // 只在真实边界（beat_done）收束：同一轮内的记忆工具轮次（turn_end）必须继续流动
-      if (this.beatClosed) this.finishBeat();
+      // 一个 run 里可能拆成多个 turn（工具批次收束后继续）：每个新 turn 重开轮窗。
+      // 已经开着的那一拍不重开——一拍 = 一个 run（P6-e）。
+      if (!this.busy) this.startBeatWindow();
     } else if (event.type === "agent_end") {
-      // 正常路径已在 turn_end 收束；此处兜底异常/中止路径（幂等）
+      // 轮边界就是这里：模型不再调工具 → pi 收 run（P6-e 之后唯一的收束点）。
+      // 停止点由 closeBeat 从 pendingStop 补发；一整轮没有停止点就是 no_stop。
       this.finishBeat();
     }
   }
@@ -2123,6 +2095,19 @@ export class PlaywrightOrchestrator {
    *                    落在 beat_end 载荷上——此后任何按 SFW 重建/检索的读者只能看到它。
    */
   private closeBeat(stop: StopPayload | null, nsfwSummary?: string): void {
+    // 停止点在这一刻才下发（P6-e §2.1）：进事件缓冲 → 落谱系 → 广播，位置是这一拍的最后一条。
+    // 上面那次 onStageEvent 会把 pendingStop 再写一遍，这里清掉——否则它会落到下一拍。
+    // `pause` 是引擎内部的「停一下等输入」（失败退出/回放兜底），不是剧本里的停止点标签，
+    // 没有 IR 形态——只有 choice / free 才下发。
+    if (stop && stop.stopType !== "pause") {
+      this.onStageEvent({
+        kind: "stop",
+        stopType: stop.stopType,
+        ...(stop.options ? { options: stop.options } : {}),
+        ...(stop.placeholder ? { placeholder: stop.placeholder } : {}),
+      });
+      this.pendingStop = null;
+    }
     this.appendLineage("beat_end", {
       // seq 锚点：前端按它把行级事件切成一轮一张卡，且能精确跳到轮首行
       payload: {
@@ -2304,22 +2289,6 @@ export class PlaywrightOrchestrator {
     this.send({ type: "events", events: [sequenced] });
     this.accumulateLineage(event, this.seq);
     this.feedVoice(event, this.seq);
-  }
-
-  /**
-   * beat_done 交出的停止点 → stop IR 事件。
-   *
-   * 走的是与解析器产出完全同一条管道（加 seq → 广播 → 落谱系）：停止点在时间线上是可见的，
-   * 停止点重放、回看与分岔都靠谱系里那条 stop 事件，所以它不能是「工具的一个副作用」，
-   * 只能是「工具产出的一种事件」。选项数由 schema 的 minItems 兜住，这里不再兜第二手。
-   */
-  private emitStop(stop: ModelStop): void {
-    this.onStageEvent({
-      kind: "stop",
-      stopType: stop.stopType,
-      ...(stop.options ? { options: stop.options } : {}),
-      ...(stop.placeholder ? { placeholder: stop.placeholder } : {}),
-    });
   }
 
   /** 语音管线喂入（D5）：say 三段事件 → 分句预取。narrate/thought 不配音。 */

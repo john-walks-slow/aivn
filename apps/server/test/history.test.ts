@@ -79,12 +79,8 @@ describe("编排器历史累积", () => {
     const beats = orchestrator.history;
     expect(beats.map((b) => b.turn)).toEqual([1, 2]);
     // 思考块排在 content 数组最前：原样保留，不因「先文本后思考」的直觉重排
-    expect(beats[0]!.entries.map((e) => e.role)).toEqual([
-      "user",
-      "thinking",
-      "assistant",
-      "toolCall",
-    ]);
+    // P6-e：收束不再是工具调用，助手消息就是一条 assistant
+    expect(beats[0]!.entries.map((e) => e.role)).toEqual(["user", "thinking", "assistant"]);
     // 注入的 user 原文入史，且落在它真正开启的那轮：首轮 = 开场词 + 状态区，其后每轮同形
     expect(beats[0]!.entries[0]).toMatchObject({ beat: 1, seq: 1, role: "user" });
     expect(beats[0]!.entries[0]!.text.startsWith(PLAY.opening)).toBe(true);
@@ -94,8 +90,10 @@ describe("编排器历史累积", () => {
     expect(beats[1]!.entries[0]!.text).toContain("【状态】");
     expect(beats[1]!.entries[0]!.text).not.toContain("【用户输入】");
     // 原始 DSL 不解析不裁剪
-    expect(beats[0]!.entries[2]).toMatchObject({ role: "assistant", text: BEAT_2 });
-    expect(beats[1]!.entries.map((e) => e.seq)).toEqual([1, 2, 3]);
+    // 停止点标签也在正文里（原始 DSL 原样落史，不在这一层剥）
+    expect(beats[0]!.entries[2]).toMatchObject({ role: "assistant", text: `${BEAT_2}\n<stop/>` });
+    // 两条：这一轮的 user 消息 + 助手正文（P6-e 之后没有 beat_done 那条 toolCall）
+    expect(beats[1]!.entries.map((e) => e.seq)).toEqual([1, 2]);
   });
 
   it("toolCall：name 与 args 原样落位", async () => {
@@ -112,8 +110,8 @@ describe("编排器历史累积", () => {
     await orchestrator.playerAction({ kind: "continue" });
 
     const calls = orchestrator.history.flatMap((b) => b.entries).filter((e) => e.role === "toolCall");
-    expect(calls.map((c) => c.name)).toEqual(["beat_done", "search_archive"]);
-    expect(calls[1]).toMatchObject({
+    expect(calls.map((c) => c.name)).toEqual(["search_archive"]);
+    expect(calls[0]).toMatchObject({
       role: "toolCall",
       name: "search_archive",
       args: { query: "旧约定" },

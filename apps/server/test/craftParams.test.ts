@@ -11,7 +11,7 @@ describe("renderCraftParams：剧作家的写作参数段", () => {
     const text = renderCraftParams(DEFAULT_CRAFT, FULL);
     expect(text).toContain("# 写作参数（本剧目设定，照它写）");
     expect(text).toContain("一轮 8~15 句");
-    expect(text).toContain('beat_done(options=["…", "…", "…"])');
+    expect(text).toContain('<stop options="… | … | …"/>');
     expect(text).toContain(" - 背景：优先用素材资源库里现成的");
     expect(text).toContain('立绘：自己 generate_image（kind="sprite"）出。');
     expect(text).toContain("音乐与音效：只用素材资源库里现成的 bgm/sfx。");
@@ -20,8 +20,8 @@ describe("renderCraftParams：剧作家的写作参数段", () => {
   it("改成短轮 + 自由输入：不再提 options，改提 placeholder", () => {
     const text = renderCraftParams(resolveCraft({ beatLength: "short", stopOptions: "free" }), FULL);
     expect(text).toContain("一轮 3~6 句");
-    expect(text).toContain('beat_done(placeholder="…")');
-    expect(text).not.toContain("options=[");
+    expect(text).toContain('<stop placeholder="…"/>');
+    expect(text).not.toContain('<stop options=');
   });
 
   it("没有生图能力：一条 generate_image 都不提，换成旁白交代", () => {

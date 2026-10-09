@@ -26,10 +26,8 @@ describe("能力位：能力开着、且它声明的工具都装上，这一位�
     const empty = capabilitiesOf("playwriter", new Set(), []);
     expect(Object.keys(empty).sort()).toEqual(CAPABILITY_CATALOG.map((c) => c.id).sort());
     expect(Object.values(empty).every((on) => on === false)).toBe(true);
-    // 舞台那边是常开位：只要工具在，不看启用集
-    expect(capabilitiesOf("playwriter", new Set(), [{ name: "beat_done" }]).stage).toBe(
-      true,
-    );
+    // 没有常开位了（P6-e 删掉「轮收束」之后）：启用集为空时，装了什么工具都不翻位
+    expect(capabilitiesOf("playwriter", new Set(), [{ name: "search_archive" }]).memory).toBe(false);
   });
 
   it("能力声明了装不上的工具：那一位为 false（生图少任何一件都不算开）", () => {
