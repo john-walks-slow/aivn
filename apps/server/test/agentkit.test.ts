@@ -119,7 +119,13 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
       expect(entry!.hosts.intentionalDifference.length).toBeGreaterThan(0);
       expect(entry!.roles).toEqual(expect.arrayContaining(capability.roles));
     }
-    expect(matrix.size).toBe(CAPABILITY_CATALOG.length);
+    // 矩阵是**跨宿主**契约：服务端能力目录里每一项都要有行，另外允许登记宿主独有的行
+    //（`hostOnly: "dsh-aivn"`，如插件的 set_stage_style）——那种行必须在服务端目录里查无此项。
+    const hostOnly = CAPABILITY_MATRIX.filter((entry) => entry.hostOnly !== undefined);
+    expect(matrix.size).toBe(CAPABILITY_CATALOG.length + hostOnly.length);
+    for (const entry of hostOnly) {
+      expect(CAPABILITY_CATALOG.some((c) => c.id === entry.id), `宿主独有的行 ${entry.id} 和服务端能力目录撞了`).toBe(false);
+    }
   });
 
   it("所有实际工具都有九项副作用元数据，且关键生命周期声明明确", () => {
