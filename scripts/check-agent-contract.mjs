@@ -161,7 +161,7 @@ check("素材状态词只用共享契约那一套", () => {
   const files = [
     ...PROMPT_FILES,
     "apps/server/src/playAssets.ts",
-    "apps/server/src/agentkit/commitTool.ts",
+    "apps/server/src/agentkit/assetTool.ts",
     "apps/server/src/agentkit/imageTool.ts",
   ];
   // 认的是**生命周期动作的状态式形态**（裸词也认，不要求带引号；实测带引号的写法拦不住
