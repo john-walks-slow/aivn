@@ -13,6 +13,7 @@ describe("play.readiness", () => {
       background: false,
       assets: 0,
       danglingAssets: ["bg_gone"],
+      undescribed: ["rooftop"],
     };
     const text = await playReadiness.execute({}, { read: () => blank });
     expect(text).toBe(renderReadiness(blank));
@@ -20,6 +21,7 @@ describe("play.readiness", () => {
     expect(text).toContain("这还不是一座剧目");
     expect(text).toContain("craft.beatLength");
     expect(text).toContain("bg_gone");
+    expect(text).toContain("rooftop");
   });
 
   it("缺什么都能开演：这句话必须在报告里（它不是闸门）", async () => {
@@ -35,6 +37,7 @@ describe("play.readiness", () => {
           background: false,
           assets: 0,
           danglingAssets: [],
+          undescribed: [],
         }),
       },
     );

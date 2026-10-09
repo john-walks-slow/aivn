@@ -360,6 +360,7 @@ describe("工坊 prompt 与工具", () => {
       background: false,
       assets: 0,
       danglingAssets: [],
+      undescribed: [],
     };
     const noImages = renderReadiness(blank);
     expect(noImages).toContain("没有硬门槛");

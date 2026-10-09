@@ -95,6 +95,30 @@ describe("判据", () => {
     await write("assets/generated.json", "{ 坏 }");
     expect(readPlayReadiness(play).danglingAssets).toEqual([]);
   });
+
+  it("漏标：assets/ 里有图、素材表里没描述，就报出来（立绘级描述可兜住差分）", async () => {
+    await write("play.json", PLAY_JSON);
+    await write("assets/backgrounds/rooftop.jpg", "x");
+    await write("assets/cg/event1.png", "x");
+    await write("assets/sprites/mio/neutral.png", "x");
+    await write("assets/sprites/mio/smile.png", "x");
+    await write(
+      "assets/manifest.json",
+      JSON.stringify({ event1: { description: "文化祭的黄昏" }, mio: { description: "主角的立绘" } }),
+    );
+    const r = readPlayReadiness(play);
+    expect(r.undescribed).toEqual(["rooftop"]); // event1 有描述；mio 的差分由立绘级描述兜住
+    expect(renderReadiness(r)).toContain("素材描述");
+    expect(renderReadiness(r)).toContain("annotate_asset");
+  });
+
+  it("漏标：旧格式（值直接是一句话）也算有描述；没有素材表时不报", async () => {
+    await write("play.json", PLAY_JSON);
+    await write("assets/backgrounds/rooftop.jpg", "x");
+    expect(readPlayReadiness(play).undescribed).toEqual([]); // 没有素材表 = 无从谈起，不误报
+    await write("assets/manifest.json", JSON.stringify({ rooftop: "屋顶的黄昏" }));
+    expect(readPlayReadiness(play).undescribed).toEqual([]);
+  });
 });
 
 describe("素材清单", () => {

@@ -16,6 +16,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parsePlayConfig } from "@aivn/core";
 import { CRAFT_ENUMS } from "../craft/params.js";
+import { assetMetaKey, type AssetManifest } from "../media/catalog.js";
 import { listPlayAssets } from "../media/asset-index.js";
 
 const IMAGE = /\.(png|jpe?g|webp)$/i;
@@ -46,6 +47,13 @@ export interface PlayReadiness {
    * 这种状态说明素材被挪走/删掉、或台账被手改坏了；空数组 = 都对得上。
    */
   danglingAssets: string[];
+  /**
+   * **漏标**的素材：`assets/` 里有图、素材表里却没有一句话画面描述的（背景 / 插图 / 立绘 / BGM）。
+   *
+   * 描述是剧作家挑素材的唯一依据，而生成工具只负责产图、标注是显式的一步
+   * （`annotate_asset`）——所以这条是**漏标的兜底**：不报的话，一张没描述的图在剧本里等于不存在。
+   */
+  undescribed: string[];
 }
 
 /** 读盘判据：一座剧目现在是什么样（同步，见文件头）。 */
@@ -71,6 +79,7 @@ export function readPlayReadiness(dir: string, playFile = PLAY_FILE): PlayReadin
     background: hasAnyImage(join(dir, "assets", "backgrounds")),
     assets: Object.values(index).reduce((total, files) => total + files.length, 0),
     danglingAssets: danglingAssets(dir),
+    undescribed: undescribedAssets(dir),
   };
 }
 
@@ -88,6 +97,9 @@ export function renderReadiness(r: PlayReadiness): string {
     r.stateProblem ? `- 世界状态：${r.stateProblem}` : null,
     r.danglingAssets.length > 0
       ? `- 素材对账：台账里有登记但文件不在——${r.danglingAssets.join("、")}（重新登记那张图，或删掉台账那几条）`
+      : null,
+    r.undescribed.length > 0
+      ? `- 素材描述：这些还没有一句话画面描述——${r.undescribed.join("、")}（剧作家挑素材靠它，用 annotate_asset 补上）`
       : null,
   ]
     .filter(Boolean)
@@ -176,6 +188,42 @@ function strayCraftValues(dir: string, playFile: string): string[] {
   return slots
     .filter(([, value, allowed]) => value !== undefined && value !== null && !allowed.includes(String(value)))
     .map(([path, value, allowed]) => `craft.${path} = ${JSON.stringify(value)}（只认 ${allowed.join(" / ")}）`);
+}
+
+/**
+ * 素材表里的描述：值是元数据对象时看 `description`，旧格式直接写一句说明的字符串也算。
+ * 立绘的差分可以只靠**立绘级**（`<主体id>`）那条描述兜住——差分通常只覆盖取景。
+ */
+function undescribedAssets(dir: string): string[] {
+  const raw = readText(join(dir, "assets", "manifest.json"));
+  if (raw.trim() === "") return [];
+  let manifest: AssetManifest;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+    manifest = parsed as AssetManifest;
+  } catch {
+    return []; // 素材表坏掉由别处说（登记时会重来），这里不重复报
+  }
+  const described = (key: string): boolean => {
+    const meta = manifest[key];
+    if (typeof meta === "string") return meta.trim() !== "";
+    return typeof meta?.description === "string" && meta.description.trim() !== "";
+  };
+
+  const out: string[] = [];
+  for (const [kind, files] of Object.entries(listPlayAssets(dir))) {
+    // 音效表不在这份口径里：它没有描述这一格（也不是 annotate 认的 kind）。
+    if (kind === "sfx") continue;
+    const spriteId = kind.startsWith("sprites/") ? kind.slice("sprites/".length) : undefined;
+    for (const file of files) {
+      const stem = file.replace(/\.[^.]+$/, "");
+      const key = assetMetaKey(stem, spriteId ? { spriteId, variant: stem } : undefined);
+      if (described(key) || (spriteId && described(spriteId))) continue;
+      out.push(key);
+    }
+  }
+  return out.sort((a, b) => a.localeCompare(b));
 }
 
 /**
