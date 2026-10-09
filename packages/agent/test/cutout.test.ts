@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { cutout } from "../src/cutout.js";
+import { cutout } from "../src/index.js";
 
 /**
  * 合成一张测试图：纯绿底色 + 一个深色人形 + 胸口一块贴近底色的白衬衫（不与边界连通）。

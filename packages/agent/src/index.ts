@@ -19,3 +19,6 @@ export { DEFAULT_RESULT_COUNT, renderSearchResults, webSearch, WEB_SEARCH_DOC, w
 
 export type { ExaOptions, FetchInitLike, FetchLike, FetchResponseLike, SearchResult } from "./search/exa.js";
 export { Exa } from "./search/exa.js";
+
+export type { CutoutOptions, CutoutResult, CutoutTuning } from "./media/cutout.js";
+export { cutout, DEFAULT_TUNING, tuningFromEnv } from "./media/cutout.js";
