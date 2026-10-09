@@ -1,7 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { COMMON_SPRITE_VARIANTS, type PreloadAssetAttrs, type SpriteFraming, type SpriteStature } from "@aivn/core";
-import type { AssetTarget, PlayAssets } from "../playAssets.js";
+import type { AssetTarget, KeyBackgroundColor, PlayAssets } from "../playAssets.js";
 import { linesResult, reason, textResult } from "./result.js";
 /**
  * `generate_image`：两个 agent 共用的**同一份实现与 schema**。
@@ -92,6 +92,19 @@ const generateImageParams = Type.Object(
           "立绘标题（只对 kind=sprite 生效）。**没有角色卡的主体必须给**：舞台名牌显示的就是它，不给就只剩一个 id 摆在那儿。",
       }),
     ),
+    /**
+     * 立绘的色键底色（只对 kind=sprite 生效）：不给按纯绿。
+     *
+     * 抠底是纯色键，底色与角色配色撞上就会把角色身上那块一起抠掉（绿发/绿衣/绿瞳撞纯绿底）。
+     */
+    keyColor: Type.Optional(
+      Type.Union([
+        Type.Literal("green", { description: "纯绿 #00FF00，默认。除下面那种情况都用它" }),
+        Type.Literal("magenta", {
+          description: "纯品红 #FF00FF，**主体自己就是绿色系（绿发 / 绿衣 / 绿瞳）时必须给**",
+        }),
+      ]),
+    ),
     /** 画风锚点（可选），如「厚涂写实电影感」「赛璐珞动画」。不给就不预设风格，按角色描述走。 */
     style: Type.Optional(Type.String({ maxLength: 200 })),
     prompt: Type.String({ minLength: 1, maxLength: 4000, description: "英文出图提示词，描述画面本身（不含负面词）" }),
@@ -126,7 +139,8 @@ const PROMPT_RULES = [
   "立绘的**体量用 stature 参数声明**（small 猫/小道具，normal 与人同高，large 高一档，huge 机甲/巨物）：" +
   "它只管台上多大，与取景是两件事——机甲是「全身取景 + 巨大」，猫是「方形取景 + 小」。不给按 normal。",
   "立绘的抠底构图与画风后缀（单一纯色底、平涂、哪里要留白）由引擎自动拼在 prompt 末尾，别在 prompt 里",
-  "重复也别改写它；主体配色与默认的纯绿底撞色时，才在 prompt 里点名换一个纯色底。背景与 CG 没有这层后缀，构图要求要自己写。",
+  "重复也别改写它；**底色默认纯绿，主体自己就是绿色系（绿发 / 绿衣 / 绿瞳）时用 keyColor 参数点名 " +
+    "「magenta」**——撞色的后果是角色身上那片绿色被一起抠掉，不要在 prompt 里自己写底色。背景与 CG 没有这层后缀，构图要求要自己写。",
 ].join("");
 
 /** 垫图规则：两个角色都拿得到 `references` 与 `referenceCharacters`，所以它属于共享的工具契约。 */
@@ -200,7 +214,16 @@ export interface QueuedImageDeps {
   /** 后台发起 bg/cg（宿主负责到货广播 asset_ready / 失败 asset_failed）。 */
   kick: (type: "bg" | "cg", prompt: string, id: string, references?: string[]) => void;
   /** 后台发起立绘：同上的失败广播。references 只在出 neutral 定妆照时有意义。 */
-  kickSprite: (target: { spriteId: string; variant: string; prompt: string; framing?: SpriteFraming; stature?: SpriteStature; title?: string; references?: string[] }) => void;
+  kickSprite: (target: {
+    spriteId: string;
+    variant: string;
+    prompt: string;
+    framing?: SpriteFraming;
+    stature?: SpriteStature;
+    title?: string;
+    keyColor?: KeyBackgroundColor;
+    references?: string[];
+  }) => void;
   /** 这个目标在剧目里已有素材的静态 URL（用户导入的或之前生成的）——有就不烧配额。 */
   existingAssetUrl: (target: AssetTarget) => Promise<string | null>;
 }
@@ -267,6 +290,7 @@ async function runSync(
       framing: params.framing,
       stature: params.stature,
       title: typeof params.title === "string" ? params.title : undefined,
+      keyColor: params.keyColor,
       references,
       referenceCharacters: references,
     },
@@ -303,6 +327,7 @@ async function runQueued(
       framing: params.framing,
       stature: params.stature,
       title: typeof params.title === "string" ? params.title.trim() || undefined : undefined,
+      keyColor: params.keyColor,
       references,
     });
     return textResult(

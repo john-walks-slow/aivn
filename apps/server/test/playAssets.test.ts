@@ -376,12 +376,38 @@ describe("PlayAssets：工坊素材落盘", () => {
     ] as const) {
       expect(prompt, `${label}缺色键底要求`).toMatch(/single flat solid colour used as a chroma key/i);
       expect(prompt, `${label}缺绿幕色值`).toMatch(/#00FF00/);
-      // 绿系角色才换品红：这条也得在
-      expect(prompt, `${label}缺换色规则`).toMatch(/#FF00FF/);
+      // 底色是**显式给**的：不给就是不提品红（否则「除非角色是绿色系就换一个」又回到生图模型手里）
+      expect(prompt, `${label}默认底色里混进了品红`).not.toMatch(/#FF00FF/);
       // 「跟参考图同色」是错的那一句——参考图可能是透明 PNG，同色等于没规定
       expect(prompt, `${label}又写回了「跟参考图同色」`).not.toMatch(/same single flat solid background colour/i);
       expect(prompt, `${label}缺不许渐变的约束`).toMatch(/no gradient/i);
     }
+  });
+
+  /**
+   * 底色的口子在 `keyColor`：绿系主体（绿发 / 绿衣 / 绿瞳）撞纯绿底时，色键会把角色身上
+   * 那片绿一起抠掉。不带 `keyColor` 时**不能**有品红——那意味着又让生图模型自己判断了。
+   */
+  it("色键底色：keyColor=magenta 换纯品红，顺手补的定妆照跟同一个底色", async () => {
+    const store = await makeStore();
+    const { backend, calls } = stubBackend();
+    const { assets } = makeAssets(store, backend);
+    await assets.generate({ kind: "sprite", spriteId: "midori", variant: "neutral", keyColor: "magenta" }, "p");
+    expect(calls[0]!.prompt, "点了品红却仍写着纯绿").toMatch(/#FF00FF/);
+    expect(calls[0]!.prompt, "点了品红还带着绿幕色值").not.toMatch(/#00FF00/);
+
+    // 差分路径：该主体一个差分都没有时顺手补的定妆照，是**所有差分的垫图基准**
+    await assets.generate({ kind: "sprite", spriteId: "aoba", variant: "smile", keyColor: "magenta" }, "p");
+    const autoNeutral = calls.find((c) => /calm neutral-expression|neutral/i.test(c.prompt));
+    expect(autoNeutral?.prompt, "顺手补的定妆照没跟同一个底色").toMatch(/#FF00FF/);
+
+    let rejected = "";
+    try {
+      await assets.generate({ kind: "sprite", spriteId: "kiiro", variant: "neutral", keyColor: "blue" as never }, "p");
+    } catch (error) {
+      rejected = error instanceof Error ? error.message : String(error);
+    }
+    expect(rejected, "非法底色没被拒").toMatch(/色键底色/);
   });
 
   it("出图后缀：片段拼接不产生双句点", async () => {

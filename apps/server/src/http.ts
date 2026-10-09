@@ -584,6 +584,7 @@ export async function handleHttp(
         framing?: string;
         stature?: string;
         title?: string;
+        keyColor?: string;
         referenceCharacters?: string[];
         instruction?: string;
       };
@@ -598,6 +599,7 @@ export async function handleHttp(
         framing: body.framing as any,
         stature: body.stature as any,
         title: body.title,
+        keyColor: body.keyColor as any,
         referenceCharacters: Array.isArray(body.referenceCharacters) ? body.referenceCharacters : undefined,
         instruction: body.instruction,
       });

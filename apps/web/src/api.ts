@@ -325,6 +325,8 @@ export const api = {
       framing?: string;
       stature?: string;
       title?: string;
+      /** 立绘的抠底底色，只对 kind=sprite 有意义：不给按纯绿。 */
+      keyColor?: string;
       referenceCharacters?: string[];
       instruction?: string;
     },

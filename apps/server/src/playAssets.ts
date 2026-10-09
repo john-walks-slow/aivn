@@ -65,6 +65,16 @@ export function assertAssetStem(value: string, label: string): string {
   return trimmed;
 }
 
+/**
+ * 色键底色的白名单：工具 schema 与设置页只会给这两个值，但 REST 入口搬的是裸字符串，
+ * 值域在这里收口——放过去的话提示词里会拼出「use undefined」。
+ */
+function assertKeyColor(value: unknown): KeyBackgroundColor | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (value === "green" || value === "magenta") return value;
+  throw new Error(`色键底色「${String(value)}」非法：只有 green / magenta`);
+}
+
 const NEUTRAL = "neutral";
 
 /** 草稿区的保鲜期：超过这个时间没动过的草稿目录，在下一次出图时顺手清掉。 */
@@ -91,6 +101,15 @@ export type AssetNotify = "workshop" | "silent" | "manual";
 
 export type AssetKind = "background" | "cg" | "sprite";
 
+/**
+ * 立绘的色键底色：纯绿（默认）或纯品红（主体自己就是绿色系时）。
+ *
+ * **由调用方显式给**（`generate_image` / 手动生图的 `keyColor`），不由模型在提示词里自己挑：
+ * 「算不算绿色系」是个判断，藏在措辞里交给生图模型，绿瞳、绿配饰都会被算进去，底色就不可预期
+ * （2026-10-09 实测：一个金发红瞳、身上一点绿都没有的角色被模型判成了绿色系，给了洋红底）。
+ */
+export type KeyBackgroundColor = "green" | "magenta";
+
 export interface AssetTarget {
   kind: AssetKind;
   /** 背景/CG 的素材 id（同时是文件名主体）。 */
@@ -110,6 +129,10 @@ export interface AssetTarget {
   stature?: SpriteStature;
   /** 立绘标题：写进素材表的立绘级声明，无卡主体靠它出名牌。给了卡就跟着卡走。 */
   title?: string;
+  /**
+   * 立绘的色键底色：不给按纯绿。只影响定妆照（neutral）那条后缀——差分跟着垫图的底色走。
+   */
+  keyColor?: KeyBackgroundColor;
   /**
    * 参考图列表（通用垫图）：可填角色 id（自动引用其立绘）、剧目内相对路径或 http(s) URL。
    */
@@ -202,6 +225,8 @@ interface AssetSpec {
   stature?: SpriteStature;
   /** 无卡主体的标题：写进素材表的立绘级声明，名牌回落链的第三档。 */
   title?: string;
+  /** 这次的色键底色（解析结果，出后缀用）。 */
+  keyColor?: KeyBackgroundColor;
   /** 立绘级取景（不含差分覆盖）：自动补的定妆照按它出，不按当前差分那档。
    *  定妆照是所有差分的垫图基准，一个「全身主体 + 一条 closeup 差分」不该把基准也变成胸像。 */
   baseFraming?: SpriteFraming;
@@ -767,6 +792,7 @@ export class PlayAssets {
     const declared = spriteDeclarationOf(manifest, spriteId, variant);
     const framing = target.framing ?? declared.framing ?? DEFAULT_SPRITE_FRAMING;
     const stature = target.stature ?? declared.stature ?? DEFAULT_SPRITE_STATURE;
+    const keyColor = assertKeyColor(target.keyColor);
     return {
       kind: "sprite",
       kindPath: `sprites/${spriteId}`,
@@ -777,6 +803,7 @@ export class PlayAssets {
       framing,
       stature,
       ...(target.title ? { title: target.title.trim() } : {}),
+      ...(keyColor ? { keyColor } : {}),
       // 自动补的定妆照按**立绘级**取景走，不按这条差分的覆盖：它是所有差分的基准，
       // 跟着一条 closeup 出会把这个主体整体带近（见 ensureNeutral）。
       baseFraming: spriteDeclarationOf(manifest, spriteId).framing ?? DEFAULT_SPRITE_FRAMING,
@@ -817,6 +844,8 @@ export class PlayAssets {
         framing: neutralFraming,
         ...(spec.stature ? { stature: spec.stature } : {}),
         ...(spec.title ? { title: spec.title } : {}),
+        // 顺手补的这张定妆照跟本次调用同一个底色：底色是**主体级**的选择，差分只是跟着垫图走。
+        ...(spec.keyColor ? { keyColor: spec.keyColor } : {}),
       },
       `${NEUTRAL_LEAD[neutralFraming]} ${prompt}`,
       undefined,
@@ -1056,7 +1085,7 @@ function suffixFor(spec: AssetSpec, prompt: string, sentReferences: number): str
   }
   // 定妆照与差分走同一个出口：抠底底色、画风、不留杂物这几条必须两条分支一致，
   // 分开写就一定会漂（见 `spriteSuffix`）。
-  return `${prompt}. ${spriteSuffix(spec.framing, spec.variant, sentReferences)}`;
+  return `${prompt}. ${spriteSuffix(spec.framing, spec.variant, sentReferences, spec.keyColor)}`;
 }
 
 /**
@@ -1132,19 +1161,28 @@ const STYLE =
  * 所以底色一旦和角色撞色，角色身上那块就跟着被抠穿——「纯白底 + 白袜子」就是撞色的极端，
  * 算法救不了，是出图这一步的责任：底色必须选成角色配色里没有的颜色。
  *
- * 默认纯绿 #00FF00，不再让模型自由挑色——绿幕对深色描边、暖色皮肤、深发色都是最远的色距，
- * 抠完的边最干净。**只有角色配色本身就是绿色系（绿发/绿衣/绿瞳）时才换**成纯品红 #FF00FF
- * 或纯蓝 #0000FF。换了哪个抠底端不需要知道：它从整圈边框量出实际底色。
+ * **默认纯绿 #00FF00，颜色由调用方显式给**（`keyColor`）——绿幕对深色描边、暖色皮肤、深发色
+ * 都是最远的色距，抠完的边最干净；**只有角色配色本身就是绿色系（绿发/绿衣/绿瞳）时才给
+ * `magenta`** 换纯品红 #FF00FF。不留「除非角色是绿色系就换一个」这种要生图模型自己判断的分支：
+ * 模型会把绿瞳、绿配饰也算成绿色系，底色变得不可预期。换了哪个抠底端不需要知道：
+ * 它从整圈边框量出实际底色（`cutout.ts` 还会体检底色是不是真色键色，白底 / 灰底直接报错）。
  *
  * **这一句是底线，定妆照与差分都走它。** 别在别的分支里另写一句「跟参考图同色」——
  * 差分曾经就是这么写的，而差分的垫图是**已经抠过底的透明 PNG**（没有颜色），
  * 模型把透明还原成白底，色键于是把角色身上一切接近白的像素（白袜、白制服、银发）
  * 判成背景，整张立绘被打成镂空。约束被复制就会只改一份，只改一份就是线上事故。
  */
-const KEY_BACKGROUND =
-  "Background is one single flat solid colour used as a chroma key, chosen to appear nowhere on the " +
-  "character themselves; always use pure green #00FF00, unless the character's own colouring is " +
-  "greenish (green hair, green clothing, green eyes), in which case use pure magenta #FF00FF instead";
+const KEY_BACKGROUND_WORD: Record<KeyBackgroundColor, string> = {
+  green: "pure green #00FF00",
+  magenta: "pure magenta #FF00FF",
+};
+
+function keyBackground(color: KeyBackgroundColor | undefined): string {
+  return (
+    "Background is one single flat solid colour used as a chroma key, chosen to appear nowhere on the " +
+    `character themselves; use ${KEY_BACKGROUND_WORD[color ?? "green"]}`
+  );
+}
 
 /**
  * 不许渐变、投影、纹理、装饰：色键只认一种颜色，任何过渡都是抠不干净的白边。
@@ -1226,6 +1264,7 @@ function spriteSuffix(
   framing: SpriteFraming | undefined,
   variant: string | undefined,
   sentReferences: number,
+  keyColor: KeyBackgroundColor | undefined,
 ): string {
   const f = framing ?? DEFAULT_SPRITE_FRAMING;
   // square 是「非人主体」的唯一入口，所以它同时决定了后缀走哪一套。
@@ -1239,7 +1278,7 @@ function spriteSuffix(
     ...(neutral ? [] : [SPRITE_FRAMING_SHOT[f]]),
     human ? POSE_TAIL : PROP_TAIL,
     STYLE,
-    KEY_BACKGROUND,
+    keyBackground(keyColor),
     NO_ARTIFACTS,
   ];
   // 定妆照垫图时补一句「这就是参考图里那个人」，压在最后：参考图带背景与景别，压后才盖得住。

@@ -13,6 +13,15 @@ import { Modal, RefCharacterPicker, type RefCandidate, toggleReference } from "@
 const STEM = /^[a-z][a-z0-9_]{0,39}$/;
 const NEUTRAL = "neutral";
 
+/**
+ * 立绘的抠底底色。抠底是纯色键，底色撞上角色配色就会把角色身上那块一起抠掉——
+ * 所以主体自己就是绿色系（绿发 / 绿衣 / 绿瞳）时选品红。
+ */
+const KEY_COLORS = [
+  { value: "green" as const, label: "纯绿 #00FF00" },
+  { value: "magenta" as const, label: "纯品红 #FF00FF（绿色系角色）" },
+];
+
 export type ImageGenTarget =
   | {
       kind: "sprite";
@@ -91,6 +100,7 @@ export function ImageGenDialog({
   const [stature, setStature] = useState<SpriteStature>(
     target.kind === "sprite" ? target.initialStature ?? "normal" : "normal",
   );
+  const [keyColor, setKeyColor] = useState<"green" | "magenta">("green");
   const [instruction, setInstruction] = useState("");
   const [selectedRefs, setSelectedRefs] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -263,6 +273,7 @@ export function ImageGenDialog({
         variant: target.kind === "sprite" ? trimmed : undefined,
         framing: target.kind === "sprite" ? framing : undefined,
         stature: target.kind === "sprite" ? stature : undefined,
+        keyColor: target.kind === "sprite" ? keyColor : undefined,
         title: target.kind === "sprite" ? target.spriteTitle : undefined,
         referenceCharacters: canPickRefs && selectedRefs.length > 0 ? selectedRefs : undefined,
         instruction: instruction.trim() || undefined,
@@ -507,6 +518,18 @@ export function ImageGenDialog({
                   {SPRITE_STATURES.map((s) => (
                     <option key={s} value={s}>
                       {SPRITE_STATURE_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  title="抠底底色：主体自己是绿色系（绿发 / 绿衣 / 绿瞳）时选纯品红，否则纯绿"
+                  value={keyColor}
+                  disabled={submitting || hasPending}
+                  onChange={(e) => setKeyColor(e.target.value as "green" | "magenta")}
+                >
+                  {KEY_COLORS.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
                     </option>
                   ))}
                 </select>

@@ -43,7 +43,7 @@ import {
   MIN_IMAGE_PROMPT_WORDS,
   type ImagePromptKind,
 } from "./imagePrompt.js";
-import type { AssetTarget } from "./playAssets.js";
+import type { AssetTarget, KeyBackgroundColor } from "./playAssets.js";
 import type { Model } from "@earendil-works/pi-ai";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -600,6 +600,7 @@ export class PlayHouse {
       framing?: SpriteFraming;
       stature?: SpriteStature;
       title?: string;
+      keyColor?: KeyBackgroundColor;
       references?: string[];
     },
   ): Promise<void> {
@@ -621,6 +622,7 @@ export class PlayHouse {
           framing: target.framing,
           stature: target.stature,
           title: target.title,
+          keyColor: target.keyColor,
           references: target.references,
         },
         target.prompt,
@@ -1076,6 +1078,7 @@ export class PlayHouse {
       framing?: SpriteFraming;
       stature?: SpriteStature;
       title?: string;
+      keyColor?: KeyBackgroundColor;
       referenceCharacters?: string[];
       instruction?: string;
     },
@@ -1114,6 +1117,7 @@ export class PlayHouse {
         framing: req.framing,
         stature: req.stature,
         title: req.title,
+        keyColor: req.keyColor,
       };
 
       prompt = await composeImagePrompt(
