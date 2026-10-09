@@ -15,7 +15,8 @@
 P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进了 `packages/agent`；P5 收**face 层**：
 让两个宿主的同名工具同义、让复合动词全部显式化、把「生成 / 落成 / 图像处理 / 元数据」四件事拆成原子面，
 把生命周期与角色分叉收回宿主策略。方向是**服务端向插件的形态靠**（用户已定），插件则补它缺的两件：
-`view_image`（看图）与素材元数据口（`annotate_asset`）——插件今天这两件事都没有工具面。
+素材元数据口（`annotate_asset`）——插件今天没有它，BGM 元数据一格都进不了素材表。
+（`view_image` 曾列为「插件该补的第十个工具」，经复核**作废**：DSH 宿主自带 `read_image`，见 P5-f。）
 
 ---
 
@@ -34,7 +35,7 @@ P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进�
 
 ### 1.2 目标工具面（同名即同义）
 
-**共享原子面（两条宿主都有，同名、同能力、同描述正文）**
+**共享原子面（两条宿主都有，同名、同能力、同描述正文）——9 个**
 
 | 工具 | 能力 | 干什么 | 参数面 | 返回 |
 | --- | --- | --- | --- | --- |
@@ -47,7 +48,6 @@ P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进�
 | `list_voices` | `voice.list` | 查音色库 | 5 格（`query/language/gender/tags/page`） | 文本清单 |
 | `web_search` | `web.search` | 联网检索 | `query, numResults` | 结果 + 正文 |
 | `validate_play` | `play.readiness`（**新增能力**） | 剧目自查（agent 面完整报告） | 无 | 文本报告 |
-| `view_image` | `image.view`（**新增**） | 把一张图读进模型上下文 | `source`（剧目内路径 / http(s)） | 文本 + image 内容块 |
 
 **宿主专有面（只在契约矩阵里登记，不进能力表）**
 
@@ -55,6 +55,7 @@ P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进�
 | --- | --- | --- |
 | 服务端 | `beat_done` `update_state` `enter_nsfw` `exit_nsfw` `read_memory_detail` `search_archive` `list_saves` `read_lineage` `list_library` `library_import` `read_skill` `set_craft` | 宿主机制（见 §3） |
 | 插件 | `set_stage_style` | 插件独有产品面（`contract.ts:227-238` 已登记 `hostOnly`） |
+| 两侧 | 看图（`read` / `read_image`） | **宿主自带**，不共享、不自建（见 P5-f） |
 | 两侧基座 | 服务端 `read/write/edit/bash`（pi 内建 + `PlayEnv`）；插件预设行 `tool-fs` / `tool-fs-search` / `tool-bash` | 宿主机制（见 §3） |
 
 ### 1.3 「服务端改什么 / 插件改什么」
@@ -68,7 +69,7 @@ P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进�
 | `annotate_asset` | **新增** | **新增**（补上插件今天缺的元数据接线口） |
 | `generate_bgm` | 10 → 4 格（元数据搬去 `annotate_asset`） | 4 格不变，但元数据有了出口 |
 | `get_readiness` | 改名 `validate_play`，报告换成 agent 面那份完整报告（**决策门 D3**） | 已是 `validate_play`（迁到 `play.readiness` 能力） |
-| `view_image` | 不变（迁到 `image.view` 能力） | **新增** |
+| `view_image` | **收窄**成只收 http(s) 的抓取（本地图交给 pi `read`）；不新增共享能力 | **不动**（宿主 `read_image` 已覆盖，见 P5-f） |
 | `set_craft` / `set_stage_style` | 形状统一成「一个 patch 对象 + 数据白名单」（**决策门 D4**） | 同左（17 条 `oneOf` 收成一个对象） |
 
 **不做**：不为「两边对称」而新增工具面（服务端**不**加它不需要的 target-free 通用出图）；
@@ -92,7 +93,8 @@ P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进�
    P4 之后两边都 pick 同一套 5 格（服务端只是多一层 `tighten`），服务端也已经有 `keyColor`。
    复核证据：`apps/server/src/agentkit/voiceTool.ts:21`、`imageTool.ts:37-50`（12 格含 `keyColor`），
    插件 `src/tools/list-voices.ts:22`、`generate-asset.ts:28-40`。
-2. 任务书 §2.3 说「补齐主要是接线」——对 `view_image` 成立（包内 `media/web-image.ts` 已有 SSRF 防护与
+2. 任务书 §2.3 说插件「补 view_image 只是接线」——**错**，见 P5-f 的修订（宿主自带 `read_image`；
+   服务端那个 `view_image` 对本地图也被 pi 的 `read` 覆盖）。包内 `media/web-image.ts` 的 SSRF 防护与
    缓存键，插件 `src/media/web-image.ts` 也已在用），但**插件侧还差一样**：DSH 工具的回执要能带 image 内容块。
    现有 9 个工具全部是纯文本 `textOutput`（`src/tools/list-voices.ts:13-16`），要新增一个带 image 的 render。
 3. 任务书 §3.3 说「插件那边元数据还没接线口（等于缺功能）」——**确认为缺功能**，见上表 #3。
@@ -178,7 +180,7 @@ P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进�
 | P5-c | **5** | 3 | a,b | 出图拆成 produce + 显式宏；删 `commit_asset`；`generate_asset` 两边同名同义 |
 | P5-d | 4 | 2 | c | 元数据出生成工具：`asset.annotate`；`generate_bgm` 两侧收到 4 格 |
 | P5-e | 3 | 2 | d | `play.readiness` 能力 + `validate_play` 两侧同名（决策门 D3） |
-| P5-f | 3 | 3 | — | `image.view` 能力 + 插件补 `view_image`（可与其他阶段并行） |
+| P5-f | 2 | 1 | — | 收窄服务端 `view_image`（本地图交给 pi `read`）；**不新增工具** |
 | P5-g | 2 | 3 | f | 配置工具形状统一成 patch 对象（决策门 D4） |
 | P5-h | 2 | **4** | — | 插件 `generate_bgm` 异步化（决策门 D5，可整段砍掉） |
 | P5-i | 3 | 1 | a~g | 契约矩阵按新形态重修 + 守卫加一条 + 文档收尾 |
@@ -410,38 +412,39 @@ cd /root/projects/dsh-aivn-shared && npm run typecheck && node build.mjs --check
 
 ---
 
-### P5-f · `image.view` 能力 + 插件补 `view_image`（可并行）
+### P5-f · 收窄服务端的 `view_image`（**插件不补工具**，2026-10-09 修订）
 
-**为什么这么做**：任务书 §2.3 —— 服务端有 `view_image`、插件没有，而**实现已经在包里**
-（`media/web-image.ts` 的 `fetchWebImage` / `readCapped` / `webImageBase`，插件 `src/media/web-image.ts`
-已在用它下载垫图）。补齐是接线，不是新功能。它同时是「插件那一版更完整」的最后一格（10 个工具）。
+**原方案作废**：原计划让插件补一个 `view_image`，理由是「任务书说实现已在包里、补齐只是接线」。
+用户指出插件不需要它，实读复核后**确认用户对、任务书错**：
+
+- **DSH 宿主自带看图**：`@deepseek-ai/dsh-tool-fs` 同时提供 `read`（文本）与 `read_image`
+  （PNG/JPEG/WebP/GIF，magic-byte 校验，见 `dsh-tool-fs/lib/index.js:778-795`），
+  而插件预设已经装了 `tool-fs` 行（`dsh-aivn-shared/src/playwriter/preset.ts:51`）。
+  插件再补一个 `view_image` = 与宿主能力重复。
+- **服务端的 `view_image` 对本地图同样冗余**：pi 的 `read` 自己就带图片支持——
+  `detectSupportedImageMimeType` + 以 `{type:"image", data, mimeType}` 附件送出
+  （`pi-agent-core/dist/harness/tools/read.js:15` 的描述与 `:51-53` 的实现），
+  而服务端的 `read` 已经常装（`BASE_TOOLS`）。它**唯一**还站得住的增值是
+  「http(s) → 本地缓存 → 读进上下文」这一段（SSRF 防护 + `.part` 原子落盘）。
+
+**改成什么**：把 `view_image` 收窄成只收 http(s) 的 `fetch_image`
+（URL → `media-cache/web-images/` 落盘 → 返回路径），看图交给两侧宿主的 `read` / `read_image`；
+**不新增共享能力**，也不给插件加工具。若 P5-a 的 `import_asset(source=http)` 落地后
+「把网图登记成素材」已经覆盖了主要用法，这一步可以整段砍掉。
 
 **改动文件**
 
 | 文件 | 动作 |
 | --- | --- |
-| `packages/agent/src/capabilities/image/view.ts` | 新增：fields `source`；deps `{ load(source): Promise<{data, mimeType, caption}> }`；doc 取服务端 `viewTool.ts:38-43` 那份 |
-| `apps/server/src/agentkit/viewTool.ts` | 迁到能力（`pathOf` / `cacheDir` / `fetchImage` 就是它的 deps） |
-| `dsh-aivn-shared/src/tools/view-image.ts` | 新增 face：路径解析走会话工作目录（`PlayContext.playDir()`），网图走现有 `fetchWebImage` + `media-cache/web-images` |
-| `dsh-aivn-shared/src/tools/output.ts`（或 `media/generate-tool.ts`） | 新增一个**带 image 的 render**（现有 9 个工具全是 `textOutput`，`ContentBlock` 的 image 分支要接上） |
-| `dsh-aivn-shared/src/tool-catalog.ts` | 加一项（`gate: 'none'`，`concurrent: true`） |
-| `dsh-aivn-shared/e2e/verify-injection.mjs:153-157`（A13） | 工具面断言加 `view_image` |
-| `dsh-aivn-shared/README.md` / `README.en.md` / `src/client/settings-card.tsx` | 工具表 / 能力说明 |
+| `apps/server/src/agentkit/viewTool.ts` | 收窄：`source` 只收 http(s)（本地路径交给 pi `read`）；描述里点名「本地图直接 `read`」 |
+| `apps/server/src/agentkit/kit.ts` / `contract.ts` | 工具名与矩阵行同步（若改名 `fetch_image`，守卫 1 会拦住漏改） |
+| `apps/server/src/agentkit/contract.ts` | `view` 行的说明改成事实描述（今天写的「DSH 用宿主看图能力」其实**是对的**，只是当时没查证） |
 
-**影响面**：插件 9 → 10 个工具；persona 不加新章（它没有能力位门控的必要，`gate: 'none'`）。
+**验证**：`pnpm --filter @aivn/server typecheck` + 受影响子集（`test/agentkit.test.ts` 等）；
+守卫 `node scripts/check-agent-contract.mjs` 仍 9/9。
 
-**验证**
-
-```bash
-cd /root/projects/dsh-aivn-shared && npm run typecheck && npm run build && node build.mjs --check
-npm run e2e:media                                       # 53/53（M19/M20 的门控断言要确认没被打破）
-dsh-e2e start --patch <provider patch>
-E2E_PHASES=first dsh-e2e run e2e/verify-injection.mjs    # 20/20
-E2E_PHASES=first dsh-e2e run e2e/verify-stagehand.mjs    # 22/22
-```
-
-**停止点**：无（纯补齐）。若 `ContentBlock` 的 image 分支在 DSH 侧有限制，就地降级成
-「只报文件信息」并记进 plan 的「反悔点」。
+**停止点**：无。反悔点：若模型实际需要「看外链图」，就把 `fetch_image` 保留；
+若它只用来读本地图，直接删掉。
 
 ---
 
