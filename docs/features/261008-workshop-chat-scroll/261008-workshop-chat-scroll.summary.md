@@ -38,7 +38,7 @@
 
 ## 实机验收（Chromium，420×820，stub 剧目）
 
-脚本 `check-chat-scroll.mjs`（用法 `node check-chat-scroll.mjs <web 地址>`）的实测值：
+脚本 `e2e/chat-scroll.mjs`（用法 `pnpm e2e:chat-scroll <web 地址> [输出前缀]`，已收拢到集中 e2e 目录）的实测值：
 
 | 步骤 | `scrollTop` | 离底 | 「回到顶部」键 |
 | --- | --- | --- | --- |

@@ -1,10 +1,12 @@
 // 工坊对话页滚动的实机验收：进页面落底、翻上去露「回到顶部」键、点了回顶、发话吸底。
-import { chromium } from '/usr/lib/node_modules/@playwright/cli/node_modules/playwright-core/index.mjs';
+// 用法：node e2e/chat-scroll.mjs [base-url] [输出前缀]
+// 统一走 e2e/lib/browser.mjs，headless 由该处集中控制（默认 true）。
+import { launchChromium } from './lib/browser.mjs';
 
 const BASE = process.argv[2] ?? 'http://127.0.0.1:40774';
 const OUT = process.argv[3] ?? '/tmp/aivn-chat-scroll';
 
-const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+const browser = await launchChromium();
 const page = await browser.newPage({ viewport: { width: 420, height: 820 } });
 const shot = async (name) => page.screenshot({ path: `${OUT}-${name}.png` });
 

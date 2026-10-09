@@ -34,7 +34,8 @@
     "soak": "node scripts/soak.mjs",
     "exe": "node scripts/build-exe.mjs",
     "desktop": "node scripts/build-desktop.mjs",
-    "icon": "node scripts/make-app-icon.mjs"
+    "icon": "node scripts/make-app-icon.mjs",
+    "e2e:chat-scroll": "node e2e/chat-scroll.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.87.1",
