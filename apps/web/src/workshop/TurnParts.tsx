@@ -12,7 +12,6 @@ const TOOL_LABEL: Record<string, string> = {
   edit: "定点编辑",
   bash: "跑命令",
   beat_done: "结束本轮",
-  update_state: "改状态",
   enter_nsfw: "进入限制级",
   exit_nsfw: "退出限制级",
   validate_play: "检查开演条件",
