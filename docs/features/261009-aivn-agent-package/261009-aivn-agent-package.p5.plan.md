@@ -190,7 +190,7 @@ P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进�
 | 阶段 | 状态 | 提交（stage-ai / dsh-aivn） |
 | --- | --- | --- |
 | P5-a `asset.register` 落包 + 服务端 `import_asset` | ✅ 完成 | `3234a72f` / `c2d836b` |
-| P5-b `image.cutout` 素材引用寻址 | 待做（D1 已定：字符串约定 `sprite:<id>/<variant>`） | — |
+| P5-b `image.cutout` 素材引用寻址；服务端 `recut_sprite` → `cut` | ✅ 完成 | `6f4605ec` / `f9d0f19` |
 | P5-c 出图拆 produce + 显式宏 | 待做（D2 已定：服务端候选不再自动抠底） | — |
 | P5-d…i | 待做 | — |
 
