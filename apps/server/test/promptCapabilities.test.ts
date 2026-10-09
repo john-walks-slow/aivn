@@ -27,7 +27,7 @@ describe("能力位：能力开着、且它声明的工具都装上，这一位�
     expect(Object.keys(empty).sort()).toEqual(CAPABILITY_CATALOG.map((c) => c.id).sort());
     expect(Object.values(empty).every((on) => on === false)).toBe(true);
     // 舞台那边是常开位：只要工具在，不看启用集
-    expect(capabilitiesOf("playwriter", new Set(), [{ name: "beat_done" }, { name: "update_state" }]).stage).toBe(
+    expect(capabilitiesOf("playwriter", new Set(), [{ name: "beat_done" }]).stage).toBe(
       true,
     );
   });

@@ -14,7 +14,7 @@ import { createGenerateAssetTool } from "./assetTool.js";
 import { createLibraryTools } from "./libraryTool.js";
 import { createLineageTools } from "./lineageTool.js";
 import { createGenerateMusicTool } from "./musicTool.js";
-import { createMemoryTools } from "./memoryTool.js";
+import { createArchiveTool } from "./archiveTool.js";
 import { createImportAssetTool } from "./registerTool.js";
 import { createCutTool } from "./cutTool.js";
 import { createVoiceTool } from "./voiceTool.js";
@@ -94,11 +94,11 @@ interface CapabilityEntry {
 const CATALOG_ROWS = [
   {
     id: "stage",
-    label: "轮与状态",
-    desc: "结束本轮、提议状态更新——演出本身的收束口，始终开启。",
+    label: "轮收束",
+    desc: "结束本轮——演出本身的收束口，始终开启。",
     group: "show",
     roles: ["playwriter"],
-    tools: ["beat_done", "update_state"],
+    tools: ["beat_done"],
     locked: true,
   },
   {
@@ -276,7 +276,6 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   beat_done: { label: "结束本轮", roles: ["playwriter"] },
   enter_nsfw: { label: "进入限制级剧情", roles: ["playwriter"] },
   exit_nsfw: { label: "退出限制级剧情", roles: ["playwriter"] },
-  update_state: { label: "提议状态更新", roles: ["playwriter"] },
   search_archive: { label: "检索历史往事", roles: ["playwriter"] },
   generate_image: { label: "出候选图", roles: ["playwriter", "workshop"] },
   // 只装工坊：剧作家一次调用就声明了最终 id，宿主把出图与入库一次做完（见 imageTool）。
@@ -454,7 +453,7 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
   return [
     createBeatDoneTool(deps),
     ...createNsfwTools(deps),
-    ...createMemoryTools(deps),
+    createArchiveTool(deps),
     ...createPiFileTools(env),
     createGenerateImageTool({
       playAssets: deps.playAssets,

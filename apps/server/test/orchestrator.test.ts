@@ -7,7 +7,7 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { LineageTree, characterIdOfPath, type LineageEvent, type ServerMessage } from "@aivn/core";
 import { PlaywrightOrchestrator, type OrchestratorRuntimeState } from "../src/orchestrator.js";
-import { createMemoryTools } from "../src/agentkit/memoryTool.js";
+import { createArchiveTool } from "../src/agentkit/archiveTool.js";
 import { defaultCapabilitiesFor } from "../src/agentkit/kit.js";
 import { PlayMemory } from "../src/memory.js";
 import { PlayFiles } from "../src/playFiles.js";
@@ -25,6 +25,8 @@ function setup(
     beatTimeoutMs?: number;
     streamFn?: StreamFn;
     restored?: OrchestratorRuntimeState;
+    /** 需要真目录的用例（剧内状态文件）自己给一个；不给就用不落盘的占位路径。 */
+    dir?: string;
   } = {},
 ): {
   orchestrator: PlaywrightOrchestrator;
@@ -49,7 +51,7 @@ function setup(
     model: {} as never,
     getApiKey: () => "test-key",
     play: PLAY,
-    store: TEST_STORE,
+    store: (opts.dir ? { dir: opts.dir } : TEST_STORE) as never,
     memory: opts.memory ?? new PlayMemory({ cards: [CARD] }),
     tree,
     engine: { ...PLAY.initialState },
@@ -936,19 +938,8 @@ function fullText(
     .join("");
 }
 
-describe("记忆工具组（createMemoryTools，D7）", () => {
-  function makeTools(
-    engine: {
-      turn: number;
-      affinity: Record<string, number>;
-      flags: Record<string, string | number | boolean>;
-    },
-    arcIds: readonly string[] = [],
-    isNsfw: () => boolean = () => false,
-  ) {
-    const stateFiles: Record<string, string> = {};
-    // P6-d 起 update_state 以**状态文件**为基准（engine 只是镜像），所以这里要有真目录
-    const dir = mkdtempSync(join(tmpdir(), "stage-state-"));
+describe("往事检索（search_archive，D7）", () => {
+  function makeTool(isNsfw: () => boolean = () => false) {
     // 切片挂在当前分支叶子上：search_archive 以 pathSet() 过滤，脱离分支即不可见
     const tree = new LineageTree();
     const e1 = tree.append("scene", {
@@ -958,69 +949,15 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
       cards: [CARD],
       slices: [{ entryId: e1.id, turn: 1, at: 0, summary: "澪在走廊提到了旧约定" }],
     });
-    const tools = createMemoryTools({
-      engine,
-      characterIds: new Set(["mio"]),
-      memory,
-      tree,
-      stateFiles,
-      files: new PlayFiles({ dir } as never),
-      arcIds: () => arcIds,
-      isNsfw,
-    });
-    return { tools, stateFiles, memory, dir };
+    return createArchiveTool({ memory, tree, isNsfw });
   }
 
   function textOf(result: { content: { type: string; text?: string }[] }): string {
     return result.content.map((c) => (c.type === "text" ? (c.text ?? "") : "")).join("\n");
   }
 
-  it("update_state：合法增量生效；非法增量/未知角色被拒；值域夹紧", async () => {
-    const engine = { turn: 1, affinity: { mio: 10 }, flags: {} };
-    const { tools, dir } = makeTools(engine);
-    // 文件是基准：先落一份现值（与 engine 镜像一致）
-    writePlayStateText(dir, { scene: "", threads: "", state: playStateJson({ affinity: { mio: 10 }, flags: {} }) });
-    const update = tools.find((t) => t.name === "update_state")!;
-
-    const ok = await update.execute("t1", { affinity: { mio: 3 } });
-    expect(engine.affinity.mio).toBe(13);
-    expect(textOf(ok)).toContain("mio +3（10→13）");
-
-    const mixed = await update.execute("t2", {
-      affinity: { mio: -99, ghost: 1 },
-      flags: { met: true },
-    });
-    expect(engine.affinity.mio).toBe(13); // -99 被拒，不生效
-    expect(textOf(mixed)).toContain("被拒绝");
-    expect(textOf(mixed)).toContain("ghost");
-    expect(engine.flags.met).toBe(true);
-
-    await update.execute("t3", { affinity: { mio: 5 } });
-    await update.execute("t4", { affinity: { mio: 5 } });
-    expect(engine.affinity.mio).toBe(23);
-    await update.execute("t5", { affinity: { mio: 5 } }); // 23+5=28
-    expect(engine.affinity.mio).toBe(28);
-  });
-
-  it("update_state 写 stateFiles；记忆组只剩 update_state / search_archive", async () => {
-    const engine = { turn: 1, affinity: {}, flags: {} };
-    const { tools, stateFiles } = makeTools(engine);
-    const write = tools.find((t) => t.name === "update_state")!;
-
-    await write.execute("t1", {
-      threads: "伏笔：旧约定未兑现",
-    });
-    expect(stateFiles.threads).toBe("伏笔：旧约定未兑现");
-
-    // 读一张卡的全文走通用 read（A 区索引每行都带路径），不再有专用口
-    expect(tools.map((t) => t.name).sort()).toEqual(["search_archive", "update_state"]);
-  });
-
   it("search_archive：命中格式化 + 防剧透过滤", async () => {
-    const engine = { turn: 1, affinity: {}, flags: {} };
-    const { tools } = makeTools(engine);
-    const search = tools.find((t) => t.name === "search_archive")!;
-
+    const search = makeTool();
     const hit = await search.execute("t1", { query: "旧约定" });
     expect(textOf(hit)).toContain("第 1 轮");
     expect(textOf(hit)).toContain("澪在走廊提到了旧约定");
@@ -1028,52 +965,40 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
     expect(textOf(miss)).toContain("无命中");
   });
 
-  it("同轮写下 characters/<id>.md 后，update_state 就能写这个角色的好感度", async () => {
-    // 编排器的角色表 = 构造时的快照 + 写盘回调的增量：回调拿 write.path 认角色卡，
-    // 认出 id 就加进同一个集合（characterIdOfPath + onPlayFileWritten 那一步）。
-    const ids = new Set(["mio"]);
-    const engine = { turn: 1, affinity: {}, flags: {} };
-    const tools = createMemoryTools({
-      engine,
-      characterIds: ids,
-      memory: new PlayMemory({ cards: [] }),
-      tree: new LineageTree(),
-      stateFiles: {},
-      files: new PlayFiles({ dir: mkdtempSync(join(tmpdir(), "stage-state-")) } as never),
-      arcIds: () => [],
-    });
-    const update = tools.find((t) => t.name === "update_state")!;
-    const before = await update.execute("t1", { affinity: { newcomer: 2 } });
-    expect(textOf(before)).toContain("不是本剧角色");
-
-    ids.add(characterIdOfPath("characters/newcomer.md")!); // = onPlayFileWritten 那一步
-    const after = await update.execute("t2", { affinity: { newcomer: 2 } });
-    expect(textOf(after)).toContain("newcomer +2");
-    expect(engine.affinity.newcomer).toBe(2);
+  it("记忆组只剩 search_archive：update_state 与 read_memory_detail 都没了", () => {
+    // P6-d：世界状态改由剧目文件承载（memory/always/state/ 三个文件，B 区每轮现读），
+    // P6-a：卡片全文走通用 read（A 区索引每行都带路径）——两个专用口都没有存在的理由了。
+    expect(makeTool().name).toBe("search_archive");
   });
 
-  it("跨轮端到端：write 建卡 → 下一轮 update_state 就认这个角色", async () => {
-    // 「管理角色」默认关着（角色卡是制作资产），这条链路要它开着才谈得上写卡
-    // 走完整链路：PlayEnv 落盘 → onWrite → orchestrator.onPlayFileWritten → liveCharacterIdsValue。
-    // 分两轮写而不是同批发，是因为同一批工具调用是并发的，断言顺序会变成掷骰子。
-    // 每轮再拆成「工具批次 + beat_done 批次」——beat_done 与别的工具同批会把 terminate 吞掉。
+  it("跨轮端到端：write 建卡 + 写 state.json → 下一轮的【状态】区认这个角色", async () => {
+    // 「管理角色」默认关着（角色卡是制作资产），这条链路要它开着才谈得上写卡。
+    // 走完整链路：PlayEnv 落盘 → onWrite → orchestrator.onPlayFileWritten → liveCharacterIdsValue；
+    // 而【状态】区只渲染 state.json 里**角色表认得**的 id——两件事合起来才算接通。
     const dir = await mkdtemp(join(tmpdir(), "stage-play-files-"));
-    const engine = { turn: 0, affinity: {}, flags: {} };
+    const contexts: { messages: { role: string }[] }[] = [];
+    const base = createFakeStreamFn([
+      {
+        text: BEAT_1,
+        toolCalls: [
+          {
+            name: "write",
+            args: { path: "characters/newcomer.md", content: "---\nname: 新人\n---\n刚转来的。\n" },
+          },
+          {
+            name: "write",
+            args: { path: "memory/always/state/state.json", content: '{"affinity":{"newcomer":3},"flags":{}}\n' },
+          },
+        ],
+      },
+      { text: "", beatDone: BEAT_1_STOP },
+      { text: BEAT_2 },
+    ]);
     const orchestrator = new PlaywrightOrchestrator({
-      streamFn: createFakeStreamFn([
-        {
-          text: BEAT_1,
-          toolCalls: [
-            {
-              name: "write",
-              args: { path: "characters/newcomer.md", content: "---\nname: 新人\n---\n刚转来的。\n" },
-            },
-          ],
-        },
-        { text: "", beatDone: BEAT_1_STOP },
-        { text: BEAT_2, toolCalls: [{ name: "update_state", args: { affinity: { newcomer: 3 } } }] },
-        { text: "", beatDone: true },
-      ]),
+      streamFn: (model, context, options) => {
+        contexts.push(context as { messages: { role: string }[] });
+        return base(model, context, options);
+      },
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,
@@ -1082,7 +1007,7 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
       store: { dir } as never,
       memory: new PlayMemory(),
       tree: new LineageTree(),
-      engine,
+      engine: { turn: 0, affinity: {}, flags: {} },
       scene: PLAY.initialScene,
       onServerMessage: () => {},
       persist: () => {},
@@ -1090,11 +1015,11 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
 
     await orchestrator.playerAction({ kind: "free", text: "有人推门进来" });
     expect(await readFile(join(dir, "characters", "newcomer.md"), "utf8")).toContain("刚转来的");
-    expect(engine.affinity.newcomer).toBeUndefined();
+    // 第一轮的提示是在这两次写盘**之前**发出去的：那时角色表还不认 newcomer，这一行不该出现
+    expect(JSON.stringify(contexts[0])).not.toContain("newcomer 3");
 
     await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
-    // 盘上那张卡在构造期并不存在（memory 是空注入），这里是回调登记那一步真的生效了
-    expect(engine.affinity.newcomer).toBe(3);
+    expect(JSON.stringify(contexts.at(-1))).toContain("newcomer 3");
   });
 
   it("characterIdOfPath 只认角色卡本身：子目录、非 md、别的目录一律不算", () => {
@@ -1103,7 +1028,7 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
     expect(characterIdOfPath("characters/sub/x.md")).toBeNull();
     expect(characterIdOfPath("characters/x.txt")).toBeNull();
     expect(characterIdOfPath("characters/.md")).toBeNull();
-    expect(characterIdOfPath("memory/index/lore/x.md")).toBeNull();
+    expect(characterIdOfPath("memory/characters/x.md")).toBeNull();
   });
 });
 
@@ -1291,21 +1216,25 @@ describe("长会话装配", () => {
     expect(settledQueue?.type === "prompt_queue" && settledQueue.items).toEqual([]);
   });
 
-  it("update_state 落谱系快照 → 恢复后注入【状态】（服务器重启续演）", async () => {
-    // 记忆工具与 beat_done 分处两个 turn（beat_done 必须独占批次，否则 terminate 被吞）
-    const first = setup([
-      {
-        text: BEAT_1,
-        toolCalls: [
-          {
-            name: "update_state",
-            args: { scene: "黄昏，教室只剩两人" },
-          },
-        ],
-      },
-      { text: "", beatDone: true },
-    ]);
+  it("剧内状态落谱系快照 → 恢复后注入【状态】（服务器重启续演）", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stage-state-"));
+    // 剧作家直接写文件；收束时把三个文件的**原文**存进快照（P6-d §3）
+    const first = setup(
+      [
+        {
+          text: BEAT_1,
+          toolCalls: [
+            { name: "write", args: { path: "memory/always/state/scene.md", content: "黄昏，教室只剩两人\n" } },
+          ],
+        },
+        { text: "", beatDone: true },
+      ],
+      { dir },
+    );
     await first.orchestrator.playerAction({ kind: "free", text: "开局" });
+    expect(first.tree.latestSnapshotOnPath(first.tree.leafId)?.stateFiles.scene).toContain(
+      "黄昏，教室只剩两人",
+    );
 
     const contexts: { messages: { role: string }[] }[] = [];
     const restored = new PlaywrightOrchestrator({
@@ -1316,7 +1245,7 @@ describe("长会话装配", () => {
       model: {} as never,
       getApiKey: () => "test-key",
       play: PLAY,
-      store: TEST_STORE,
+      store: { dir } as never,
       memory: new PlayMemory({ cards: [CARD] }),
       tree: first.tree,
       engine: { ...PLAY.initialState },
@@ -1386,15 +1315,15 @@ describe("长会话装配", () => {
     expect(orchestrator.isBusy).toBe(false);
   });
 
-  it("beat_done 与记忆工具同批 → finishTurn 兜底收束（terminate 不被 batch 吞掉）", async () => {
+  it("beat_done 与别的工具同批 → finishTurn 兜底收束（terminate 不被 batch 吞掉）", async () => {
     const { orchestrator, messages } = setup([
       {
         text: BEAT_1,
         beatDone: true,
         toolCalls: [
           {
-            name: "update_state",
-            args: { threads: "伏笔：旧约定" },
+            name: "search_archive",
+            args: { query: "旧约定" },
           },
         ],
       },
@@ -2601,24 +2530,24 @@ describe("P6-d 原型：状态文件是工作态载体", () => {
     expect(readPlayStateText(dir).state).toContain("11");
   });
 
-  it("update_state 以**文件**为基准：模型直接写的值不会被 engine 镜像盖回去", async () => {
+  it("state.json 写坏了不拦写：下一轮的【状态】区把问题点出来", async () => {
+    // P6-d §6：不加写口校验、不做提议队列、不加 watcher——把包里那份判据（与 validate_play 同源）
+    // 接在状态区末尾，模型每一轮都看得见，直到改好。
     const dir = await mkdtemp(join(tmpdir(), "stage-state-"));
-    const engine = { turn: 1, affinity: { mio: 5 }, flags: {} };
-    // 模型直接写了 state.json（引擎镜像还是旧的 mio=5）
-    writePlayStateText(dir, { scene: "", threads: "", state: playStateJson({ affinity: { mio: 30 }, flags: {} }) });
-    const tools = createMemoryTools({
-      engine,
-      characterIds: new Set(["mio"]),
-      memory: new PlayMemory({ cards: [] }),
-      tree: new LineageTree(),
-      stateFiles: {},
-      files: new PlayFiles({ dir } as never),
-      arcIds: () => [],
-    });
-    const update = tools.find((t) => t.name === "update_state")!;
-    await update.execute("t1", { affinity: { mio: 1 } });
+    const contexts: { messages: { role: string }[] }[] = [];
+    const { orchestrator } = makeStateOrchestrator(
+      [
+        { text: BEAT_1, toolCalls: [writeState('{"affinity":{"mio":999},"flags":{}}\n')] },
+        { text: "", beatDone: BEAT_1_STOP },
+        { text: BEAT_2 },
+      ],
+      dir,
+      contexts,
+    );
 
-    expect(readPlayStateText(dir).state).toContain("31"); // 30 + 1，不是 5 + 1
-    expect(engine.affinity.mio).toBe(31);
+    await orchestrator.playerAction({ kind: "free", text: "开场" });
+    await orchestrator.playerAction({ kind: "free", text: "继续" });
+
+    expect(JSON.stringify(contexts.at(-1))).toContain("好感度只认 0~100 的整数");
   });
 });

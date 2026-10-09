@@ -30,7 +30,7 @@ export type { ReadPos } from "@aivn/core";
 import { createAgentKit, enabledCapabilitiesFor, type AgentKit } from "./agentkit/kit.js";
 import type { ModelStop, PlayFileWrite } from "./agentkit/deps.js";
 import { PlayFiles } from "./playFiles.js";
-import { parsePlayState, playStateJson, readPlayStateText, writePlayStateText } from "./playState.js";
+import { parsePlayState, playStateJson, readPlayStateText, readStateProblem, writePlayStateText } from "./playState.js";
 import type { Exa } from "./exa.js";
 import type { KeyBackgroundColor, PlayAssets } from "./playAssets.js";
 import type { AssetLibrary } from "./library.js";
@@ -409,8 +409,6 @@ export class PlaywrightOrchestrator {
   /** 本轮出现过带副作用的工具调用（beat_done 只是收束记账，不算）：纯工具轮（enter_nsfw / 生图 / 写卡）
    * 没有台词也不是失败——副作用已经发生，回滚只会吞掉它。 */
   private beatToolActivity = false;
-  /** always/state 活跃状态文件内容（谱系级，随快照走；update_state 工具维护）。 */
-  private stateFiles: Record<string, string> = {};
   /**
    * 当前分支的纪元压缩记录（谱系级，随快照走）：切点之前的原文由这份摘要代表。
    * 压缩因此是分支状态的一部分——跳转/分岔自动跟着换，不存在「撤销压缩」这回事。
@@ -477,19 +475,18 @@ export class PlaywrightOrchestrator {
   }
 
   /**
-   * 本纪元内存活的角色 id 集（update_state 好感度成员校验用）。
+   * 本纪元内存活的角色 id 集（B 区【状态】区按它过滤好感度：删掉的角色不留残影）。
    * 构造时从角色卡目录装一份，之后只增：剧作家同轮写下 characters/<id>.md 即 add。
    */
   private readonly liveCharacterIdsValue = new Set<string>();
 
   /** 从角色卡目录播种上面那个集合（纪元内冻结的初始角色表）。 */
-  private seedLiveCharacterIds(memory: PlayMemory): Set<string> {
+  private seedLiveCharacterIds(memory: PlayMemory): void {
     for (const id of memory.characters.keys()) this.liveCharacterIdsValue.add(id);
-    return this.liveCharacterIdsValue;
   }
 
   /**
-   * 剧作家的文件工具写盘之后：新角色卡要当轮就能写好感度（A 区全文仍等轮边界重建）。
+   * 剧作家的文件工具写盘之后：新角色卡当轮就进角色表（A 区全文仍等轮边界重建）。
    * 其余交给 `onPlayFilesChanged`——runtime 与素材层的事编排器不该知道。
    */
   private onPlayFileWritten(write: PlayFileWrite): void {
@@ -526,12 +523,13 @@ export class PlaywrightOrchestrator {
     this.opts = opts;
     // 输入锚点从当前叶起算：恢复会话时它就是上一轮收束的地方（空树上是 null = 无处可退）
     this.beatTailId = opts.tree.leafId;
+    this.seedLiveCharacterIds(opts.memory);
     this.historyRecorder = new HistoryRecorder(opts.restoredHistory);
     this.parser = new StageDslParser((event) => this.onStageEvent(event));
     if (opts.restored) {
-      // 恢复会话：活跃状态文件与纪元压缩记录从路径最近快照回填（谱系级记忆）
+      // 恢复会话：纪元压缩记录从路径最近快照回填（谱系级记忆）；
+      // 剧内状态三个文件由 `playhouse.buildRuntime` 按同一份快照回写（P6-d）
       const snapshot = opts.tree.latestSnapshotOnPath(opts.tree.leafId);
-      this.stateFiles = snapshot?.stateFiles ?? {};
       this.compaction = snapshot?.compaction ?? null;
       // 已有事件早已落过 JSONL，不重复补推
       for (const event of opts.tree.export().events) this.loggedIds.add(event.id);
@@ -564,13 +562,8 @@ export class PlaywrightOrchestrator {
       voices: opts.voices,
       thinking: opts.agents?.thinking,
       engine: opts.engine,
-      // 角色清单来自角色卡目录，不是 play.json 那份元数据。
-      // 可变集合：同轮写下 characters/<id>.md 后由 onWrite 即 add，update_state 当轮就能写新角色的
-      // 好感度（A 区全文仍等轮边界重建，纪元内冻结不变）。
-      characterIds: this.seedLiveCharacterIds(opts.memory),
       memory: opts.memory,
       tree: opts.tree,
-      stateFiles: this.stateFiles,
       // read / write / edit 与工坊同一套：同一份 PlayFiles、同一个 PlayEnv 白名单
       files: new PlayFiles(opts.store),
       onWrite: (write) => this.onPlayFileWritten(write),
@@ -1592,10 +1585,6 @@ export class PlaywrightOrchestrator {
     engine.turn = state.engine.turn;
     engine.affinity = { ...state.engine.affinity };
     engine.flags = { ...state.engine.flags };
-    // 原地换内容而不是换对象：状态工具闭包持有的是这个对象，
-    // 换引用的话分岔之后记忆工具会写到一个没人再读的对象上去（状态区再也不更新）。
-    for (const key of Object.keys(this.stateFiles)) delete this.stateFiles[key];
-    Object.assign(this.stateFiles, state.stateFiles);
     // 快照是分支 / 存档真值：回写到剧内状态文件，否则模型下一轮 read 到的是上一枝的残留（P6-d §3）
     writePlayStateText(this.opts.store.dir, {
       scene: state.stateFiles.scene ?? "",
@@ -1721,12 +1710,16 @@ export class PlaywrightOrchestrator {
     const affinity = Object.fromEntries(
       Object.entries(stateLive.affinity).filter(([id]) => known.size === 0 || known.has(id)),
     );
+    // 状态文件自己写、自己读，写坏了没人拦（P6-d §6：不加写口校验、不加 watcher）——
+    // 把包里那份判据（readiness 的 stateProblem，与 validate_play 同源）接在状态区末尾，
+    // 模型每一轮都看得见，直到改好。
+    const stateProblem = readStateProblem(this.opts.store.dir);
     const sections = [
       `【状态】\n${renderStateSection(
         { ...this.opts.engine, affinity, flags: stateLive.flags },
         this.opts.scene,
         { scene: stateText.scene, threads: stateText.threads },
-      )}`,
+      )}${stateProblem ? `\n⚠︎ ${stateProblem}` : ""}`,
     ];
     if (warnings.length > 0) sections.push(renderBeatWarnings(warnings));
     for (const text of inputs) sections.push(`【用户输入】\n${text}`);

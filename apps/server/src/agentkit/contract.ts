@@ -50,13 +50,13 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     roles: ["playwriter"],
     equivalence: "semantic-only",
     hosts: {
-      stageAi: "AgentKit 的 beat_done / update_state 与独立版编排器。",
+      stageAi: "AgentKit 的 beat_done 与独立版编排器。",
       dshAivn: "剧本 <stop> 标签与 DSH 会话投影；状态由文件工具维护。",
       backendDependency: "无额外后端依赖。",
       intentionalDifference:
         "停止点的**载体必须不同**：服务端要工具 terminate 来收束轮边界（编排器按它判 beatClosed），" +
         "插件必须是剧本末行标签——DSH 的「在新对话中分支」与舞台重建只认助手消息轮尾；两边归一到同一 Stage IR。" +
-        "状态那一格同样是载体差异：服务端 update_state 进引擎真值（随谱系快照回滚），插件写 memory/always/state/ 三份文件。",
+        "状态那一格曾经是载体差异（工具写引擎真值 vs 写文件），2026-10-10 起两边同形：都写 memory/always/state/ 三份文件。",
     },
   },
   {
@@ -339,7 +339,6 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
   beat_done: { ...READ_ONLY, read_only: false, reversible: false, idempotent: false },
   enter_nsfw: { ...READ_ONLY, read_only: false, reversible: true },
   exit_nsfw: { ...READ_ONLY, read_only: false, reversible: true },
-  update_state: { ...READ_ONLY, read_only: false, reversible: true, idempotent: false },
   search_archive: READ_ONLY,
   // 只产候选：烧一次配额、落草稿区，**不写 assets/**（采用是 import_asset 的事）。
   generate_image: { ...READ_ONLY, read_only: false, external_request: true, asset_create: true, idempotent: false },

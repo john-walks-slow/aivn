@@ -8,6 +8,7 @@ import { PlayLibrary } from "../src/store.js";
 import { AssetLibrary } from "../src/library.js";
 import { settingsFromEnv } from "../src/config.js";
 import { settingsStoreFor, createFakeStreamFn, BEAT_1, BEAT_1_STOP } from "./helpers.js";
+import { readPlayStateText, writePlayStateText } from "../src/playState.js";
 
 const PLAY_JSON = JSON.stringify({
   id: "p1",
@@ -16,6 +17,7 @@ const PLAY_JSON = JSON.stringify({
   characters: [],
   opening: "（开始）",
   initialScene: "s",
+  initialState: { turn: 0, affinity: { mio: 1 }, flags: {} },
 });
 
 const engine = { flags: {}, sceneDetails: {}, activeThreads: [] };
@@ -137,6 +139,37 @@ describe("PlayHouse 周目作用域：逛不建、连舞台也不建，开演才
     } finally {
       globalThis.fetch = original;
     }
+  });
+
+  it("P6-d：新档播种初值，切档把三个状态文件回写成该档的值", async () => {
+    // 第一档：跑一拍，剧作家直接写文件（不走工具），收束时原文进快照
+    (house as any).streamFn = createFakeStreamFn([
+      {
+        text: BEAT_1,
+        toolCalls: [
+          {
+            name: "write",
+            args: { path: "memory/always/state/state.json", content: '{"affinity":{"mio":7},"flags":{}}\n' },
+          },
+        ],
+      },
+      { text: "", beatDone: BEAT_1_STOP },
+    ]);
+    const first = await house.begin("p1");
+    await first.orchestrator.playerAction({ kind: "free", text: "开场" });
+    // 文件就是模型写下的原文（引擎只在收束时抄一份进快照）
+    expect(readPlayStateText(join(root, "p1")).state).toContain('"mio":7');
+
+    // 第二档是新周目：没有 session，所以三个文件被 play.json 的初值**覆盖**
+    const second = await library.saves("p1").create("第二档");
+    await house.switchSave("p1", second.id);
+    const seeded = readPlayStateText(join(root, "p1"));
+    expect(seeded.scene.trim()).toBe("s");
+    expect(seeded.state).toContain('"mio": 1');
+
+    // 切回第一档：文件回写成那一档快照里的值（而不是留在第二档的初值）
+    await house.switchSave("p1", first.save.id);
+    expect(readPlayStateText(join(root, "p1")).state).toContain('"mio":7');
   });
 });
 
@@ -337,4 +370,5 @@ describe("导演生图：前置守卫（都不该碰生图后端）", () => {
     expect(sent).toContain("铃音");
     expect(sent).toContain("金发狐耳少女");
   });
+
 });

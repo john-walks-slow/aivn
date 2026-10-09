@@ -228,7 +228,7 @@ ${COMMENT_HEAD}它不上舞台、不进谱系、不产出任何事件。
 - 想给一个自由回答的口子 → beat_done(placeholder="想对他说什么？")。
 - 这一段自然演完 → beat_done()，两个参数都不给。
 
-beat_done 通常**独占一次工具调用**（模式切换类的工具可以同批发出，不与 update_state、write / edit 等其他工具放在同一批里）。
+beat_done 通常**独占一次工具调用**（模式切换类的工具可以同批发出，不与 write / edit 等其他工具放在同一批里）。
 调完之后本轮就结束，不要再输出任何内容（没有停止点时也不要写收尾交代或过场说明）。
 轮与轮之间由引擎接续。`;
 
@@ -309,14 +309,39 @@ const MEMORY_RULES = `## 记忆卡（memory/index/）
 - **改既有卡先 read、再用 edit 定点改**，整篇 write 容易把没提到的内容抹掉。
 - 写完要到下一轮边界才进 A 区记忆索引；当轮想知道内容就直接 read 那个文件。
 - 写具体可用的设定（地点长什么样、约定是什么），不写「待补充」。
-- 角色不在这里，走 \`characters/<id>.md\`（见《引入新角色》）；当前状态走 update_state。
+- 角色不在这里，走 \`characters/<id>.md\`（见《引入新角色》）；当前状态写 \`memory/always/state/\`
+  的三个文件（见《世界状态》）。
 - \`memory/always/\`（每轮注入层）与 \`memory/archive/\`（引擎产物，写不进去）不要动。`;
+
+/**
+ * 剧内状态三个文件怎么写（\`memory/always/state/\`）。
+ *
+ * 与记忆卡同一类例外：写口是通用 write / edit，没有工具描述可挂，格式只能放 A 区。
+ * 好感度按**绝对值**写（先 read 现值、加上这一轮的变化再写回）——2026-10-10 起不再是
+ * 工具参数那种「增量补丁」，与插件同一套规矩。
+ */
+const STATE_RULES = `## 世界状态（memory/always/state/）
+
+当前局势不是记忆卡，是三个文件——**你自己写，也是你自己读**：开写前 read 一遍当最新世界状态，
+有实质推进才改（别每轮都动）：
+
+    memory/always/state/scene.md      当前场景：地点、在场的人、时间（一两行，全文覆盖）
+    memory/always/state/threads.md    活跃剧情线与悬念（要点列表，全文覆盖）
+    memory/always/state/state.json    { "affinity": { "<角色 id>": 数字 }, "flags": { "名": 值 } }
+
+- 好感度写在 \`affinity\` 里，**键是角色 id**（\`characters/<id>.md\` 的文件名），值是 **0~100 的整数**；
+  每次推进的**变化量不超过 5**——先 read 现值，加上这一轮的变化再写回去，别把它写成别的意思。
+- 旗标写目标值（字符串/数字/布尔）。只动要改的键，别把整个 state.json 重写成你不确定的样子。
+- 这三个文件随**分支与存档**走：跳转 / 分岔 / 切存档时引擎把它们回写成那一枝的状态，你写下的值
+  在收束那一刻进快照。所以别把「本轮改过」当成「以后一直是这样」。
+- 写坏了不报错、只会悄悄少几行：下一轮 B 区【状态】区会把问题点出来。`;
 
 /** 演出契约：引擎认的硬规则，用户不可改（节奏与素材来源见《写作参数》，文风与禁忌见剧目 craft.md）。 */
 const CONTRACT_RULES = `# 演出契约（引擎规则，不可改）
 
 ${CONTRACT_INTRO}
-3. 每轮 user 消息顶部有【状态】区（好感度/场景/进度），信任它作为最新世界状态。
+3. 每轮 user 消息顶部有【状态】区（好感度/场景/进度），它由 \`memory/always/state/\` 的三个文件渲染而来
+   ——那三个文件是你自己写、自己读的最新世界状态（格式见《世界状态》）。
 4. 【用户输入】以「OOC」开头 = 导演指示，据此调整接下来的演出方向，但不要复述它、不要跳出戏外回应它；
    否则 = 其中某个角色（可能就是主角，也可能是别人）的行动、话语或心理，照字面意思演成该角色的言行。
    两种都不要在剧本里复述这段文字本身。
@@ -453,6 +478,7 @@ ${FORMAT_RULES}
 ${imageChapter(ctx.can.image)}
 ${ctx.can.search ? SEARCH_GUIDE : ""}
 ${ctx.can.memory ? MEMORY_RULES : ""}
+${ctx.can.memory ? STATE_RULES : ""}
 ${newCharacterRules(ctx.can.characters)}
 
 ${CONTRACT_RULES}`;
@@ -505,6 +531,7 @@ export function renderStateSection(
     `进度：第 ${state.turn} 轮`,
     stateFiles.scene?.trim() ? `场景细节：${stateFiles.scene.trim()}` : null,
     stateFiles.threads?.trim() ? `活跃剧情线：${stateFiles.threads.trim()}` : null,
+    "（这些就是 memory/always/state/ 那三个文件的内容，由你自己维护。）",
   ]
     .filter(Boolean)
     .join("\n");

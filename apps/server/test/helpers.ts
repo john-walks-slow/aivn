@@ -29,7 +29,7 @@ export interface FakeResponse {
    * 给对象就是交出停止点（选项/自由输入），与模型真调工具时的参数同形。
    */
   beatDone?: boolean | { options?: string[]; placeholder?: string };
-  /** 额外工具调用（与 beat_done 同批：如 update_state / write）。 */
+  /** 额外工具调用（与 beat_done 同批：如 search_archive / write）。 */
   toolCalls?: { name: string; args: Record<string, unknown> }[];
   /** 闸门：正文照发，但 done 押后到 gate 兑现——用来把某一轮卡在「演出中」。 */
   gate?: Promise<unknown>;

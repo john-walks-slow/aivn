@@ -191,7 +191,6 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
       "read",
       "read_skill",
       "search_archive",
-      "update_state",
       "write",
     ]);
     // 角色卡与记忆卡都是普通剧目文件，没有第二个写口（create_character / write_memory 已收掉）
@@ -215,7 +214,7 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     expect(names(kit)).toContain("generate_asset");
     expect(names(kit)).toContain("read_skill");
     expect(names(kit)).not.toContain("beat_done");
-    expect(names(kit)).not.toContain("update_state");
+    expect(names(kit)).not.toContain("update_state");  // P6-d：状态改由剧目文件承载
     // bash 默认关：它以服务进程的权限跑，不是随手开的东西
     expect(names(kit)).not.toContain("bash");
     expect(kit.can.shell).toBe(false);
@@ -313,7 +312,7 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
   it("舞台那两位常开：不给开关，也不写进 play.json", () => {
     const kit = playwriter({}, []);
     // 一个能力都不开 = 只剩常开与基座
-    expect(names(kit)).toEqual(["beat_done", "read", "update_state"]);
+    expect(names(kit)).toEqual(["beat_done", "read"]);
     expect(kit.can.stage).toBe(true);
     expect(kit.can.memory).toBe(false);
     expect(kit.can.characters).toBe(false);

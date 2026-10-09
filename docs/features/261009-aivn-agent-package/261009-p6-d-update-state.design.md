@@ -1,6 +1,6 @@
 # P6-d 设计 · `update_state` → 状态文件（设计定稿 + 原型/迁移指引）
 
-日期：2026-10-10 · 状态：**设计定稿**（§3 / §5 / §6 已定；实施按 §7 三段走）
+日期：2026-10-10 · 状态：**已实施**（§3 / §5 / §6 定稿 → 原型 → 迁移全部落地）
 上游：`261009-aivn-agent-package.p6.plan.md` §3 / §4；复核依据 `261009-p6-scope-review.md` §5
 
 ---
@@ -171,10 +171,10 @@ A 区是 system prompt，纪元内必须逐 token 稳定才命中前缀缓存（
 | 1 | 剧作家**直接 `write` state.json**（不走 `update_state`）→ 下一轮 B 区【状态】区就按文件渲染 | 两个 beat 的 fake 流，断言第二个 beat 的 context 里有 `mio 42` |
 | 2 | 收束 → 跳回旧轮 → **三个文件回写成那一枝的值** | 两轮各写一次好感度，`jumpTo` 第一轮末尾后断言文件回到 `11` |
 | 3 | `update_state` 以**文件**为基准，不把模型直接写的值盖回 engine 旧值 | 文件里 `mio:30`、engine 镜像 `mio:5`，调 `+1` 后断言文件与镜像都是 `31` |
-| 4 | 切存档 / 工坊保存 play.json 之后，三个文件与该枝对照一致；工坊保存**不回退**未收束的写入 | 迁移阶段补（需要 playhouse 级的夹具） |
+| 4 | 切存档 / 冷启动后，三个文件与该档该枝对照一致（新档被初值覆盖） | `playhouse.test.ts`「P6-d：新档播种初值，切档把三个状态文件回写成该档的值」|
 
-**两条已知小账**：① `update_state` 现在走 `writePlayStateText`（raw 落盘），不吃
-`onPlayFilesChanged`——原型期可接受，迁移删掉工具后自动消失；② 旧档迁移一律用
+**两条已知小账**：① （已消失）~~`update_state` 走 raw 落盘、不吃 `onPlayFilesChanged`~~——
+工具在迁移里删掉了；② 旧档迁移一律用
 `snapshot.stateFiles`（新）→ `snapshot.engine.affinity/flags`（旧档兜底）→ `session.engine`（冷启动兜底）
 这条链，**不许退化成 `initialState`**，否则开发中的档好感度会被清零（`orchestrator.ts:1600-1607`
 与 `playhouse.ts` 的 else 支都要保持这个优先级）。

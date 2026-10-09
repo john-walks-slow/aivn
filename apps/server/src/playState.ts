@@ -15,6 +15,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+/**
+ * 状态文件的体检（包内 readiness 那份，与 `validate_play` 同源）：转出来供 B 区【状态】区直接用，
+ * 免得服务端自己再写一份判据。
+ */
+export { readStateProblem } from "@aivn/agent";
+
 /** 剧内状态目录（剧目根相对路径）。 */
 export const PLAY_STATE_DIR = "memory/always/state";
 

@@ -9,8 +9,9 @@
 ## 0. 一句话
 
 服务端那 12 个**宿主流程工具**里，只有 4 个文件化之后能换来两个宿主的**真收敛**。本轴做其中 3 个
-（`read_memory_detail` / `set_craft` / 矩阵登记），把 `library_import` 移出（它换不来统一），
-`update_state` 只出设计；其余 4 条登记为**有意差异**，不删不做。
+（`read_memory_detail` / `set_craft` / 矩阵登记），把 `library_import` 移出（它换不来统一）；
+`update_state` 原先只出设计，2026-10-10 按 P6-d **已迁移**（状态改由剧目文件承载）；
+其余 4 条登记为**有意差异**，不删不做。
 
 方向（用户 2026-10-10 原话）：
 
@@ -38,7 +39,7 @@
 | # | 工具 | §9 判定 | 复核后判定 | 本轴处置 |
 | --- | --- | --- | --- | --- |
 | 1 | `beat_done` | 不能/不该 | 一致 | 不做，登记有意差异 |
-| 2 | `update_state` | 有条件能 | 有条件能，但**「不损回滚」不成立** | **只出设计**（见 `261009-p6-d-update-state.design.md`） |
+| 2 | `update_state` | 有条件能 | 有条件能，但**「不损回滚」不成立** | **已迁移**：删工具，状态改由 `memory/always/state/` 三文件承载（`261009-p6-d-update-state.design.md`） |
 | 3 | `enter_nsfw` | 不能 | 一致 | 不做，登记有意差异 |
 | 4 | `exit_nsfw` | 不能 | 一致 | 不做，登记有意差异 |
 | 5 | `read_memory_detail` | 能文件化 | 一致 | **P6-a：删工具 → `read`** |
@@ -74,10 +75,12 @@
 理由：b 原先挂的依赖是「等写锁」，问 1 定了不修锁，依赖消失、b 变便宜；a 与 b 才是真正的收敛收益，
 第一阶段不做 b，P6 就没什么统一收益。顺序：a → e → b 收尾。c 不计入统一指标。
 
-**问 3 · `update_state` → 本次只出设计。**
-设计必须写实四件事：分支真值（文件是输入/缓存、快照才是分支真值）、观察与回执（先盘清**已有**钩子，
-插件侧 `post-execute` / `workspaceFiles.changes` 必须实测）、失败语义（坏 JSON / 未知角色 / 部分成功 /
-并发）、以及「什么结果下这条不做」的可检查判据。
+**问 3 · `update_state` → 已迁移（P6-d）。**
+设计稿 `261009-p6-d-update-state.design.md` 定稿四件事：分支真值（快照是分支/存档真值、文件是工作态）、
+校验与回执（不往写口加校验、不做提议队列、不加 watcher——把 readiness 的 `stateProblem` 接进 B 区）、
+失败语义（坏 JSON 只少两行、好感度改绝对值）、以及「什么结果下这条不做」的可检查判据。
+2026-10-10 实施：删 `update_state`、三文件成为工作态载体、B 区每轮现读、收束进快照、
+jump/fork/restore/切档/冷启动回写、新档播种初值。
 
 **问 4 · `search_archive` / `list_saves` / `read_lineage` / `list_library` → 不删不做。**
 登记理由要写**具体三项损失**（见 §6），不要写「收益 0」。
@@ -115,7 +118,7 @@ A 区《记忆索引》每行都带路径，读得到。
   `read_lineage` / `list_library` 逐条补一句「为什么载体必须不同」。
 - 本文件 + §9 的更正 banner + P5 plan 的「实施进度」表。
 
-### P6-d · `update_state` → 状态文件（**设计定稿 + 原型已落**，迁移待做）
+### P6-d · `update_state` → 状态文件（**已完成**）
 
 设计稿：`261009-p6-d-update-state.design.md`（§3 / §5 / §6 定稿，经 auto-human 复核后修了
 「B 区 vs A 区」的术语与双写基准两处）。**原型已提交**（`69d467fd`）：
@@ -126,8 +129,10 @@ A 区《记忆索引》每行都带路径，读得到。
 - `update_state` 过渡期双写、以文件为基准；
 - 三条原型判据已绿（直接 write → 下一轮可见 / 跳回旧轮回写 / 文件为基准不 clobber）。
 
-**迁移（待做）**：删 `update_state` + 改提示词与测试面 + 把 readiness 的 `stateProblem`
-接进 B 区（设计稿 §6 的反馈路径）+ 补「切档 / 工坊保存后文件与该枝一致」的判据（§7 判据 4）。
+**迁移（已落）**：删 `update_state` + `memoryTool.ts` 收成 `archiveTool.ts`（只剩 `search_archive`）；
+提示词新增《世界状态》章、`beat_done` 与记忆卡两处指路改写；readiness 的 `stateProblem` 接进 B 区
+（包内导出，与 `validate_play` 同源）；测试面重做（`orchestrator` 89、`playhouse` 21，含
+「新档播种初值 + 切档回写」那条判据 4）。
 
 ### P6-c · `library_import`（**移出**）
 

@@ -256,7 +256,7 @@ function danglingAssets(dir: string): string[] {
  * 状态文件由剧作家自己写，注入的【状态】区会照读、坏的那几行悄悄少掉——所以这里替它说出来。
  * 单次变化幅度（|Δ|≤5）没法从一份文件里看出来，那条只能靠提示词。
  */
-function readStateProblem(dir: string): string | undefined {
+export function readStateProblem(dir: string): string | undefined {
   const raw = readText(join(dir, "memory", "always", "state", "state.json"));
   if (raw.trim() === "") return undefined;
   let affinity: Record<string, unknown>;

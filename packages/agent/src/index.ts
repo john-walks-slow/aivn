@@ -171,7 +171,7 @@ export {
   renderMemoryIndex,
 } from "./prompt/a-zone.js";
 export type { PlayReadiness } from "./readiness/play.js";
-export { readPlayReadiness, renderReadiness } from "./readiness/play.js";
+export { readPlayReadiness, readStateProblem, renderReadiness } from "./readiness/play.js";
 
 export type { AssetCapabilities, StopDirective } from "./craft/params.js";
 export {

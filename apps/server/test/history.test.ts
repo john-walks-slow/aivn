@@ -104,7 +104,7 @@ describe("编排器历史累积", () => {
         text: BEAT_2,
         beatDone: true,
         toolCalls: [
-          { name: "update_state", args: { affinity: { mio: 2 }, flags: { promised: true } } },
+          { name: "search_archive", args: { query: "旧约定" } },
         ],
       },
     ]);
@@ -112,11 +112,11 @@ describe("编排器历史累积", () => {
     await orchestrator.playerAction({ kind: "continue" });
 
     const calls = orchestrator.history.flatMap((b) => b.entries).filter((e) => e.role === "toolCall");
-    expect(calls.map((c) => c.name)).toEqual(["beat_done", "update_state"]);
+    expect(calls.map((c) => c.name)).toEqual(["beat_done", "search_archive"]);
     expect(calls[1]).toMatchObject({
       role: "toolCall",
-      name: "update_state",
-      args: { affinity: { mio: 2 }, flags: { promised: true } },
+      name: "search_archive",
+      args: { query: "旧约定" },
     });
   });
 
@@ -190,7 +190,7 @@ describe("PlayStore 历史读面", () => {
         turn: 1,
         entries: [
           { beat: 1, seq: 1, role: "user", text: "我来了" },
-          { beat: 1, seq: 2, role: "toolCall", name: "update_state", args: { flags: { a: 1 } } },
+          { beat: 1, seq: 2, role: "toolCall", name: "search_archive", args: { query: "a" } },
         ],
       },
     ] as const;

@@ -57,15 +57,8 @@ export interface KitCommonDeps {
 export interface PlaywriterKitDeps extends KitCommonDeps {
   role: "playwriter";
   engine: EngineStateSnapshot;
-  /**
-   * 角色 id 集合（来自角色卡目录）：update_state 的好感度按它做成员校验。
-   * 纪元内只增不减——剧作家同轮写下 characters/<id>.md 后由写盘回调 add，新角色当轮就能写好感。
-   */
-  characterIds: ReadonlySet<string>;
   memory: PlayMemory;
   tree: LineageTree;
-  /** 引擎状态真值在这里，update_state 的 scene/threads 直接改它（谱系级，随快照走）。 */
-  stateFiles: Record<string, string>;
   /** 剧目文件层：read / write / edit 的白名单与落盘收口，与工坊**同一份**。 */
   files: PlayFiles;
   /**
