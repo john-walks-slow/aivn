@@ -325,7 +325,7 @@ function imageGuide(ctx: WorkshopPromptContext): string {
     : "";
   return `${approval}
 ${skillRule}- **generate_image 只出草稿，不进素材表**：回执里带预览图和采用它要用的那个 id（参数名见工具说明），
-  要采用它再调 \`commit_asset\`。没被采用的草稿留在临时草稿区（一周后自动清），素材页与素材表里看不到它。
+  要采用它就调 \`import_asset(source="draft:<草稿id>", kind=…)\`（立绘先 \`cut\` 抠底再登记那张）。没被采用的草稿留在临时草稿区（一周后自动清），素材页与素材表里看不到它。
 - **先出 neutral 定妆照给用户看，而且是 3 张候选**：同一角色首次定妆时按 \`variant="neutral"\` 调 3 次 \`generate_image\`
   （prompt 各不相同），把三张预览一起摆给用户挑；用户挑定后**只 commit 那一张**——它就成了正式定妆照。
 - **定妆照采用之后再派生差分**：非 neutral 的差分自动垫上**已入库的** neutral，同一个角色才是同一个人。

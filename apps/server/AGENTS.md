@@ -6,13 +6,13 @@
 
 ## agentkit：两个 agent 的共用基座
 
-- **两个 agent 共用一套基座**：`src/agentkit/` 是唯一工具实现面（`kit.ts` 按 `role: "playwriter" | "workshop"` 装配，`deps.ts` 用判别联合收窄依赖），同一工具**同一份 schema 与实现，只有 description + 等待策略 + 注入依赖不同**（`generate_image`：工坊 sync 等图并回 markdown 图片、剧作家 queued 后台排产只占时间线位置）。
+- **两个 agent 共用一套基座**：`src/agentkit/` 是唯一工具实现面（`kit.ts` 按 `role: "playwriter" | "workshop"` 装配，`deps.ts` 用判别联合收窄依赖），同一工具**同一份 schema 与实现，只有 description + 等待策略 + 注入依赖不同**（`generate_asset`：工坊 sync 等图并回 markdown 图片、剧作家 queued 后台排产只占时间线位置；`generate_image` 两个角色连描述都不分叉——它只产候选）。
 - **两套目录，一份语汇**：`kit.ts` 的 `CAPABILITY_CATALOG` 是**用户语汇的唯一真相源**（一行写清：界面名字、一句后果、分组、给哪些角色、授权哪些工具 id、开出来能动哪几类文件、常开还是默认关）——Agent 页、`play.json`、`kit.can`、提示词章节一律说能力。`TOOL_CATALOG`（id + 中文名 + 谁装得上）留在工具层当**角色可见性的真相源**，能力只**引用**工具 id；装一个没登记的 id 或加一个谁都够不到的工具，用例当场红。play.json 的 `agents.<role>.capabilities` 存**启用集**（白名单，不是禁用集），缺省走 `defaultCapabilitiesFor(role)`（搭台 = 目录里属于它的能力减 `shell`——新增能力不会静默漏装；剧作家 = 常开的 `stage` 加 `memory`/`image`/`library`/`search`/`nsfw`，**`characters` 默认关**：角色卡是制作资产、记忆卡是剧情事实）。
-- **两条推导都在 `createAgentKit` 一处**：装上的工具 = 基座 `read` ∪ 开着的能力授权的工具（再按 `TOOL_CATALOG.roles` 与我方依赖面收一道，没配 Exa / TTS / 生图就装不出来）；`can` 位 = **该能力开着且它授权的工具都装上了**（键就是能力 id）——能力声明了一个装不出来的工具，这一位就是假，提示词不会教模型去调它没有的东西。同一个能力在两个角色上授权的口可以不同（`image`：剧作家只要 `generate_image`，工坊还要 `recut_sprite`；`library`：工坊多一个 `library_import`，实现上是 `libraryTool` 的 `importAsset: false`）。
-- `generate_image` 的两个角色**同一份 schema**（`spriteId`/`variant`/`title` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只差 description 与等待策略。**垫图入口只有一个 `references`**（每项可以是主体 id、剧目内相对路径或 http(s) 网址，1–6 张；`referenceCharacters` 保留为只吃主体 id 的兼容别名，两者在工具层合并去重）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该主体的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
-- **卡是可选的，出图也不替谁建卡**：`generate_image` 只按 `spriteId`（主体 id）往 `assets/sprites/<id>/` 落文件——机甲、道具、猫本来就没有卡。名字从哪来：卡 `name` → `<say name>` → 素材表 `title`（`generate_image` 的 `title` 参数就是给无卡主体落名牌用的）→ id；无卡主体的 TTS 走剧目级 `defaultVoiceId`。
+- **两条推导都在 `createAgentKit` 一处**：装上的工具 = 基座 `read` ∪ 开着的能力授权的工具（再按 `TOOL_CATALOG.roles` 与我方依赖面收一道，没配 Exa / TTS / 生图就装不出来）；`can` 位 = **该能力开着且它授权的工具都装上了**（键就是能力 id）——能力声明了一个装不出来的工具，这一位就是假，提示词不会教模型去调它没有的东西。同一个能力在两个角色上授权的口可以不同（`image`：两个角色都要 `generate_image` / `generate_asset`，工坊还要 `cut` / `import_asset`；`library`：工坊多一个 `library_import`，实现上是 `libraryTool` 的 `importAsset: false`）。
+- `generate_image` 是两个角色**同一份 schema、同一段描述**（`spriteId`/`variant`/`title` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只产候选；`generate_asset` 是同一个宏、两种投递。**垫图入口只有一个 `references`**（每项可以是主体 id、剧目内相对路径或 http(s) 网址，1–6 张）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该主体的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
+- **卡是可选的，出图也不替谁建卡**：`generate_image` 只按 `spriteId`（主体 id）往 `assets/sprites/<id>/` 落文件——机甲、道具、猫本来就没有卡。名字从哪来：卡 `name` → `<say name>` → 素材表 `title`（`generate_asset` 的 `title` 参数就是给无卡主体落名牌用的）→ id；无卡主体的 TTS 走剧目级 `defaultVoiceId`。
 - **出图与入库拆成两步**（2026-10-05）：`PlayAssets.draft()` 只出图，落 `media-cache/drafts/<draftId>/`（成图 + 立绘抠底前的原片 + `draft.json` 记出图意图），**不写 `assets/`、不碰素材表、不记台账**；`commit(draftId)` 才落 `assets/`、补呈现声明、记 `assets/generated.json`、把原片搬进 `media-cache/sprite-sources/`（重抠要用）。
-  - 工坊的 `generate_image` 走 `draft`：回执给 `draftId` 与预览，候选图也走 `onAsset` 推气泡（不推的话默认折叠的工具行把候选藏起来了）；采用是显式的下一步 `commit_asset(draftId)`（只装工坊，挂在「生图」能力下）。
+  - 工坊的 `generate_image` 走 `draft`（只产候选，不抠底）：回执给 `draft:<草稿id>` 与预览，候选图也走 `onAsset` 推气泡（不推的话默认折叠的工具行把候选藏起来了）；采用是显式的下一步 `import_asset(source="draft:<草稿id>", …)`（立绘先 `cut`），句柄由 `PlayAssets.readSource` 解析。
   - 剧作家与素材页的手动生图走 `generate()` = `draft` + `commit` 一次做完——那边的 id 是调用时就定下的，没有「让用户在候选里挑」这回事，时间线的骨架占位 → `asset_ready` 语义不变。
   - **草稿不是身份基准**：非 neutral 的立绘要求该主体有**已入库的** neutral（`generate()` 里那套自动补定妆照照旧，它补出来的是真素材）。`draft()` 不去重——同一目标并发出三张候选正是这条流程要的；`inflight` 去重只在 `generate()` 那层。
   - 草稿超过 7 天，由下一次出图顺手清掉；预览走 `/plays/:id/drafts/<draftId>/<file>` 静态路由（`WorkshopMarkdown` 的 `assetUrl` 同时认 `assets/` 与 `drafts/`）。
@@ -71,7 +71,7 @@
 
 ## 素材、出图与台账
 
-- 出图**只有一层**：`PlayAssets` 是工坊与剧作家共用的唯一实现（工坊走 `draft` + `commit_asset`，剧作家在后台 `generate()` 一次做完），同一张图在飞去重只烧一次配额。
+- 出图**只有一层**：`PlayAssets` 是工坊与剧作家共用的唯一实现（工坊走 `draft` + 显式 `cut` / `import_asset`，剧作家在后台 `kick` 一次做完），同一张图在飞去重只烧一次配额。
 - `ImageAssets`（media-cache 里的 bg/cg 内容寻址缓存）已删——`media-cache/` 现在只剩 TTS 音频、立绘留底原片（sprite-sources/）、`view_image` 下载的网图（web-images/）与出图草稿区（drafts/）——全是可重建的中间物。
 - 代价是内容寻址去重没了：同一句提示词生成两次会真出两张图，剧作家侧改由工具自己判「剧目里已有同名素材就跳过」（`playAssets.existingUrl()`）。
 - CG 页的生成台账只有 `assets/generated.json` 一份（`generatedLedger.ts` 的 `readPlayLedgerEntries`）。
