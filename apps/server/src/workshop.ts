@@ -7,10 +7,10 @@ import { capDigest, renderTranscriptAs, splitSummary, calibrateTokenScale, type 
 import { completeText, type OneShotOptions } from "./llm.js";
 import { skillsPrompt } from "./skills.js";
 import { SEARCH_GUIDE } from "./agentkit/searchTool.js";
-import { renderReadiness } from "./agentkit/readiness.js";
+
 import { describeCraftParams } from "./craftParams.js";
 import type { AgentCapabilities } from "./agentkit/kit.js";
-import type { Readiness } from "./store.js";
+
 
 /**
  * 工坊会话层：提示词 + 一轮对话的执行与回灌。
@@ -27,7 +27,8 @@ export interface WorkshopPromptContext {
   title: string;
   /** 剧目文件清单（每行「可写/只读 路径（sizeB）」）。 */
   files: string;
-  readiness: Readiness;
+  /** agent 面自查的完整报告：与 `validate_play` 工具同一份（包里的 `play.readiness`）。 */
+  readinessReport: string;
   /**
    * 能力位（`kit.can`）：提示词按它决定注不注某一章。
    * 逐个布尔摆在这一层等于把 `kit.can` 的字段名抄一遍，加一位就要改三处（kit / 会话 / 这里）。
@@ -159,7 +160,7 @@ ${lineageGuide(ctx)}
 剧目文件：
 ${ctx.files || "（空）"}
 
-${renderReadiness(ctx.readiness)}${digestSection(ctx.digest)}${customSection(ctx.customPrompt)}`;
+${ctx.readinessReport}${digestSection(ctx.digest)}${customSection(ctx.customPrompt)}`;
 }
 
 /**

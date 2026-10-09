@@ -18,7 +18,7 @@ import { DEFAULT_CRAFT, resolveCraft } from "@aivn/core";
 import { buildWorkshopPrompt, deriveThreadTitle, type WorkshopPromptContext } from "../src/workshop.js";
 import type { WorkshopKitDeps } from "../src/agentkit/deps.js";
 import { createAgentKit, defaultCapabilitiesFor, type AgentCapabilities } from "../src/agentkit/kit.js";
-import { renderReadiness } from "../src/agentkit/readiness.js";
+import { renderReadiness, type PlayReadiness } from "@aivn/agent";
 import { readSkill, skillsPrompt } from "../src/skills.js";
 import { Exa } from "../src/exa.js";
 import { createFakeStreamFn, BEAT_1, BEAT_2, PLAY } from "./helpers.js";
@@ -190,7 +190,7 @@ describe("工坊 prompt 与工具", () => {
   const promptCtx = (over: Partial<WorkshopPromptContext> = {}): WorkshopPromptContext => ({
     title: "测试剧目",
     files: "- play.json",
-    readiness: { ready: true, premise: true, sprites: false, background: false, saves: 0 },
+    readinessReport: "开演条件：没有硬门槛，缺什么都能开演。",
     craft: DEFAULT_CRAFT,
     can: caps(),
     ...over,
@@ -349,23 +349,24 @@ describe("工坊 prompt 与工具", () => {
     expect(second).toContain("第 3 句");
   });
 
+  // agent 面自查（`play.readiness`）的报告文本在包里，服务端与插件同一份（P5-e）
   it("没有硬门槛：前提与图都只是「还没有」", () => {
-    const noImages = renderReadiness({
+    const blank: PlayReadiness = {
+      play: true,
+      strayCraft: [],
       premise: true,
+      characters: 0,
       sprites: false,
       background: false,
-      saves: 0,
-    });
+      assets: 0,
+      danglingAssets: [],
+    };
+    const noImages = renderReadiness(blank);
     expect(noImages).toContain("没有硬门槛");
-    expect(noImages).toContain("缺（建议补）");
-    expect(noImages).toContain("不是门槛");
+    expect(noImages).toContain("缺（assets/sprites/<主体id>/）");
+    expect(noImages).toContain("改用旁白交代");
 
-    const noPremise = renderReadiness({
-      premise: false,
-      sprites: true,
-      background: true,
-      saves: 0,
-    });
+    const noPremise = renderReadiness({ ...blank, premise: false, sprites: true, background: true });
     // 说人话，不吐字段名：玩家与模型都该看到「缺故事前提」，而不是 `premise`
     expect(noPremise).toContain("不写也行");
     expect(noPremise).toContain("memory/always/premise.md");
@@ -1162,7 +1163,7 @@ describe("工坊：写作参数与创作口径的交接，以及自定义提示�
   const ctx = (over: Partial<WorkshopPromptContext> = {}): WorkshopPromptContext => ({
     title: "测试剧目",
     files: "- play.json",
-    readiness: { ready: true, premise: true, sprites: false, background: false, saves: 0 },
+    readinessReport: "开演条件：没有硬门槛，缺什么都能开演。",
     craft: DEFAULT_CRAFT,
     can: {
       stage: false,

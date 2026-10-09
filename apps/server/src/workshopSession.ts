@@ -1,3 +1,4 @@
+import { readPlayReadiness, renderReadiness } from "@aivn/agent";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type {
@@ -576,16 +577,16 @@ export class WorkshopSession {
   }
 
   private async systemPrompt(digest?: string): Promise<string> {
-    const [play, files, readiness] = await Promise.all([
+    const [play, files] = await Promise.all([
       this.turnPlay ? Promise.resolve(this.turnPlay) : this.opts.store.loadPlay(),
       this.files.list(),
-      this.opts.store.readiness(),
     ]);
     const listing = files.map((f) => `${f.writable ? "可写" : "只读"} ${f.path}（${f.size}B）`).join("\n");
     return buildWorkshopPrompt({
       title: play.title,
       files: listing,
-      readiness,
+      // agent 面自查：判据与报告文本都在包里（与 validate_play 工具同一份）
+      readinessReport: renderReadiness(readPlayReadiness(this.opts.store.dir)),
       // 同样现读：用户刚在设定页换完语音语言，下一轮挑音色就该按新值筛
       voiceLanguage: play.voiceLanguage,
       scriptLanguage: play.scriptLanguage,

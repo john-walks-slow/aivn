@@ -30,6 +30,8 @@ export type {
   AssetAnnotateDeps,
   AssetSubject,
 } from "./capabilities/asset/annotate.js";
+export { PLAY_READINESS_DOC, playReadiness, playReadinessFields } from "./capabilities/play/readiness.js";
+export type { PlayReadinessDeps } from "./capabilities/play/readiness.js";
 export { assetMetaFields, assetMetaPatchOf } from "./capabilities/asset/meta.js";
 export type { AssetMetaPatch, AssetMetaPatchArgs } from "./capabilities/asset/meta.js";
 export { ASSET_GENERATE_DOC, assetGenerate, assetGenerateFields } from "./capabilities/asset/generate.js";

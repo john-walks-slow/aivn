@@ -5,6 +5,7 @@ import { assetRegister } from "./asset/register.js";
 import { imageGenerate } from "./image/generate.js";
 import { imageCutout } from "./media/cutout.js";
 import { musicGenerate } from "./music/generate.js";
+import { playReadiness } from "./play/readiness.js";
 import { voiceList } from "./voice/list.js";
 import { webSearch } from "./web/search.js";
 
@@ -26,6 +27,7 @@ export const CAPABILITIES: readonly CapabilityEntry[] = [
   webSearch,
   voiceList,
   musicGenerate,
+  playReadiness,
   imageGenerate,
   imageCutout,
 ];

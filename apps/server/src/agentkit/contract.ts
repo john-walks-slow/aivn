@@ -273,18 +273,17 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
   {
     id: "readiness",
     profile: "shared",
-    domainSemantic: "检查剧目是否满足开演或备料条件。",
+    capabilities: ["play.readiness"],
+    domainSemantic: "检查剧目是否读得出来、还缺什么（agent 面自查）。",
     roles: ["workshop"],
     equivalence: "semantic-only",
     hosts: {
-      stageAi: "get_readiness 只报 premise / 立绘 / 背景三行（工坊面板那份口径）。",
-      dshAivn:
-        "validate_play 是**超集**：play.json 读不读得出来（坏在哪一行）、craft 取值、世界状态、" +
-        "premise、角色数、立绘、背景、素材清单、生图台账对账。",
+      stageAi: "validate_play（原 get_readiness）：判据、报告文本与插件同一份（包里的 play.readiness）。",
+      dshAivn: "validate_play：同一份能力、同一份报告（play.json 能否解析、craft 取值、世界状态、premise、角色数、立绘、背景、素材清单、台账对账）。",
       backendDependency: "无额外后端依赖。",
       intentionalDifference:
-        "判定同源（包里的 readPlayReadiness）；报告按读者分两份——工坊面板那份四行留在服务端，" +
-        "agent 面的完整报告在包里（插件的 validate_play 用它）。服务端没有 craft / 台账对账那几项。",
+        "零差异：判定（readPlayReadiness）与渲染（renderReadiness）都在包里。" +
+        "工坊面板 / 剧目卡那份四行底数仍留在服务端——读者是用户，不走 agent 面。",
     },
   },
   {
@@ -388,7 +387,7 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
   write: { ...READ_ONLY, read_only: false, workspace_write: true, reversible: false, idempotent: false },
   edit: { ...READ_ONLY, read_only: false, workspace_write: true, reversible: false, idempotent: false },
   bash: { ...READ_ONLY, read_only: false, workspace_write: true, external_request: true, reversible: false, idempotent: false },
-  get_readiness: READ_ONLY,
+  validate_play: READ_ONLY,
   view_image: { ...READ_ONLY, read_only: false, external_request: true },
   list_library: READ_ONLY,
   library_import: { ...READ_ONLY, read_only: false, workspace_write: true, asset_adopt: true, reversible: false, idempotent: false },

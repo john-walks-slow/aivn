@@ -7,7 +7,7 @@ import { AGENT_ROLES, type AgentRole } from "./role.js";
 import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "./deps.js";
 import { createPiBashTool, createPiFileTools } from "./piTools.js";
 import { PlayEnv } from "./playEnv.js";
-import { createReadinessTool } from "./readinessTool.js";
+import { createValidatePlayTool } from "./validatePlayTool.js";
 import { createSetCraftTool } from "./craftTool.js";
 import { createGenerateImageTool } from "./imageTool.js";
 import { createAnnotateTool } from "./annotateTool.js";
@@ -225,7 +225,7 @@ const CATALOG_ROWS = [
     desc: "开演前查还缺什么。",
     group: "stagecraft",
     roles: ["workshop"],
-    tools: ["get_readiness"],
+    tools: ["validate_play"],
   },
   {
     id: "shell",
@@ -306,7 +306,7 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   write: { label: "写文件", roles: ["playwriter", "workshop"] },
   edit: { label: "编辑文件", roles: ["playwriter", "workshop"] },
   bash: { label: "命令行", roles: ["workshop"] },
-  get_readiness: { label: "检查开演条件", roles: ["workshop"] },
+  validate_play: { label: "检查开演条件", roles: ["workshop"] },
   view_image: { label: "看图", roles: ["workshop"] },
   list_library: { label: "浏览素材资源库", roles: ["playwriter", "workshop"] },
   // 剧作家不走它：剧本里写个 id，宿主会去库里导入（引用即导入），自己搬一遍是重复路径。
@@ -505,7 +505,7 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
   return [
     ...createPiFileTools(env),
     createPiBashTool(env),
-    createReadinessTool(deps),
+    createValidatePlayTool(deps),
     // 看图始终装（本地素材不依赖网络）；网址分支没有下载器时工具自己回「未启用」
     createViewImageTool({
       pathOf: (path) => deps.files.pathOf(path, "read"),
