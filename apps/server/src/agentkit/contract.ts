@@ -273,7 +273,8 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
   update_state: { ...READ_ONLY, read_only: false, reversible: true, idempotent: false },
   read_memory_detail: READ_ONLY,
   search_archive: READ_ONLY,
-  // 工坊形态只落草稿（不碰 assets/）；剧作家形态由 sideEffectsForTool 补 workspace_write 与 asset_adopt。
+  // 两个角色都**产出**新图（所以 asset_create 恒真）；差别在下游：
+  // 剧作家一次调用就把图落进 assets/（draft + commit 一起做完）；工坊只落草稿，采用是另一步。
   generate_image: { ...READ_ONLY, read_only: false, external_request: true, asset_create: true, idempotent: false },
   commit_asset: {
     ...READ_ONLY,

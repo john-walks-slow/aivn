@@ -223,6 +223,20 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     expect(a.description).toContain("referenceCharacters");
   });
 
+  it("模型看得见的说明写在 schema 的 description 里，不是只写在 JSDoc 注释里", () => {
+    // 这条是检视 S5 的固化：`title` 与 `spriteId` 的说明曾经只写在 JSDoc 注释里，
+    // 而 parameters 是运行时 TypeBox 对象——注释不进模型可见的 JSON schema，
+    // 于是「机制归 DESCRIPTION」在语义上成立、在事实上落空。
+    const tool = playwriter().tools.find((t) => t.name === "generate_image")!;
+    const props = (tool.parameters as { properties: Record<string, { description?: string }> }).properties;
+    for (const key of ["title", "spriteId", "variant", "prompt"]) {
+      expect(props[key]?.description, `${key} 没有模型可见的 description`).toBeTruthy();
+    }
+    // 两条最容易丢的语义，逐字钉住
+    expect(props.title!.description).toContain("没有角色卡的主体必须给");
+    expect(props.spriteId!.description).toContain("sprite:");
+  });
+
   it("写 prompt 的硬约束两个角色同一份（只写在工坊提示词里，等于剧作家那份没修）", () => {
     const rules = [
       "逐条带上角色卡的外貌",
@@ -303,6 +317,16 @@ describe("agent kit：能力目录（设置页的数据源）", () => {
     for (const id of catalog) {
       if ((BASE_TOOLS as readonly string[]).includes(id)) continue;
       expect(granted.has(id), `工具 ${id} 没有被任何能力授权，谁都勾不到`).toBe(true);
+    }
+  });
+
+  it("工具目录里的每个 id 都有副作用声明——两个方向都不许有孤儿", () => {
+    // 反向对账：上面那条查「能力↔工具目录」，这条查「工具目录↔副作用目录」。
+    // 少了它，新增一个工具却忘了在 TOOL_SIDE_EFFECT_CATALOG 里登记，只要这一轮没装到它
+    // 就永远不会红——而契约声明的是「每个工具九项声明」。
+    const sideEffects = new Set(Object.keys(TOOL_SIDE_EFFECT_CATALOG));
+    for (const id of allToolIds()) {
+      expect(sideEffects.has(id), `工具 ${id} 在工具目录里，却没有副作用声明`).toBe(true);
     }
   });
 

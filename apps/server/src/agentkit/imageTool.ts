@@ -35,7 +35,13 @@ const generateImageParams = Type.Object(
      * 路人没有卡也能出图上台。有角色卡时会读卡上的人设来写外观；卡上写了 `sprite:` 时
      * 这个主体的立绘在它指的那个目录里（A 区角色表标着「立绘（目录 …）」），别拿角色 id 去撞。
      */
-    spriteId: Type.Optional(Type.String({ maxLength: 40 })),
+    spriteId: Type.Optional(
+      Type.String({
+        maxLength: 40,
+        description:
+          "立绘目录名，剧本里 <actor id> 引用的就是它。有角色卡时读卡上人设写外观；卡上写了 sprite: 时用那个目录名（A 区角色表标着「立绘（目录 …）」），别拿角色 id 去撞。",
+      }),
+    ),
     /**
      * 立绘差分名，如 neutral / smile / damaged。不给按 neutral。
      *
@@ -79,7 +85,13 @@ const generateImageParams = Type.Object(
       ]),
     ),
     /** 立绘标题（只对 kind=sprite 生效）：没有角色卡时，舞台名牌显示它。 */
-    title: Type.Optional(Type.String({ maxLength: 40 })),
+    title: Type.Optional(
+      Type.String({
+        maxLength: 40,
+        description:
+          "立绘标题（只对 kind=sprite 生效）。**没有角色卡的主体必须给**：舞台名牌显示的就是它，不给就只剩一个 id 摆在那儿。",
+      }),
+    ),
     /** 画风锚点（可选），如「厚涂写实电影感」「赛璐珞动画」。不给就不预设风格，按角色描述走。 */
     style: Type.Optional(Type.String({ maxLength: 200 })),
     prompt: Type.String({ minLength: 1, maxLength: 4000, description: "英文出图提示词，描述画面本身（不含负面词）" }),

@@ -42,8 +42,16 @@ const PARAM_VOCAB = [
   "Type.Object",
 ];
 
-/** 共享契约里的素材状态词。各宿主实现可以有自己的内部名字，但对外说法必须出自这一套。 */
-const LIFECYCLE_STATES = ["pending", "draft", "adopted", "expired", "failed"];
+/**
+ * 共享契约里的素材状态词——**从 core 源码现读**，不在这里再抄一份。
+ * 抄一份就等于「两边各写一套状态名」在守卫自己身上重演。
+ */
+function lifecycleStates() {
+  const source = read("packages/core/src/play/assetLifecycle.ts");
+  const match = source.match(/ASSET_LIFECYCLE_STATES\s*=\s*\[([^\]]+)\]/);
+  if (!match) throw new Error("读不出 ASSET_LIFECYCLE_STATES——契约文件改结构了？");
+  return new Set([...match[1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]));
+}
 
 /** 不许再出现的旧词：它们曾经各自被当成状态，实际不是（见 core 的 assetLifecycle）。 */
 const FORBIDDEN_LIFECYCLE_WORDS = ["rejected", "已否决", "被拒绝的候选"];
@@ -59,22 +67,22 @@ function installedToolNames() {
     if (!file.endsWith(".ts")) continue;
     const source = readFileSync(join(AGENTKIT, file), "utf8");
     for (const match of source.matchAll(/name:\s*"([a-z_]+)"/g)) names.add(match[1]);
-    // 工具目录里登记但工厂在别的文件里的（pi 的内建 read/write/edit/bash）
+    // 工具目录里登记的（含 pi 的内建 read/write/edit/bash，它们没有 name: "..." 字面量）
     for (const match of source.matchAll(/^\s{2}([a-z_]+):\s*\{\s*label:/gm)) names.add(match[1]);
   }
-  for (const builtin of ["read", "write", "edit", "bash"]) names.add(builtin);
   return names;
 }
 
-/** 提示词正文里被反引号括起来的形如工具名的词。 */
+/**
+ * 提示词正文里被反引号括起来、看起来像工具名的词。
+ *
+ * **两类都收**：带下划线的（`generate_image`）与短名（`read` / `write` / `edit` / `bash`）。
+ * 早先只收前者，于是「内建工具也在检查范围内」是句空话——`read` 这类永远不会进入比对。
+ */
 function toolNamesMentionedIn(rel) {
   const source = read(rel);
   const found = new Set();
-  for (const match of source.matchAll(/`([a-z][a-z_]{2,})`/g)) {
-    const name = match[1];
-    // 只认「看起来像工具名」的：带下划线，或命中已知工具词根
-    if (name.includes("_")) found.add(name);
-  }
+  for (const match of source.matchAll(/`([a-z][a-z_]{0,30})`/g)) found.add(match[1]);
   return found;
 }
 
@@ -104,6 +112,13 @@ function paramTokensIn(rel) {
   return found;
 }
 
+/**
+ * 无下划线的短名工具词：靠词根前缀判不出来，只能列出来。
+ * 这两个词（read / write…）本身也是普通英文与文件动词，所以**只按精确相等**认，
+ * 且必须整词被反引号括着才算（见 `toolNamesMentionedIn`）。
+ */
+const SHORT_TOOL_WORDS = new Set(["read", "write", "edit", "bash", "grep", "glob"]);
+
 const checks = [];
 function check(name, run) {
   checks.push({ name, run });
@@ -115,10 +130,13 @@ check("提示词点名的工具都在装配面上", () => {
   for (const rel of PROMPT_FILES) {
     for (const name of toolNamesMentionedIn(rel)) {
       if (installed.has(name)) continue;
-      // 排除明显不是工具名的（文件路径、字段名等带下划线的普通词）
-      if (!/^(generate|commit|import|list|read|search|set|get|view|recut|enter|exit|update|beat|web)_/.test(name)) {
-        continue;
-      }
+      // 反引号里什么都可能是（英文单词、文件名、字段名），只有**像个工具名**的才比。
+      // 判据：带下划线且命中工具词根，或本身就是个短名工具词（read/write/edit/bash）。
+      const looksLikeTool =
+        (/^(generate|commit|import|list|read|search|set|get|view|recut|enter|exit|update|beat|web)_/.test(name) &&
+          name.includes("_")) ||
+        SHORT_TOOL_WORDS.has(name);
+      if (!looksLikeTool) continue;
       problems.push(`${rel} 提到 \`${name}\`，但装配面上没有这个工具`);
     }
   }
@@ -137,16 +155,36 @@ check("提示词不承载工具参数细节", () => {
 
 check("素材状态词只用共享契约那一套", () => {
   const problems = [];
+  const states = lifecycleStates();
+  // 防呆：契约文件要是被读空了，白名单校验会「全部通过」——那不叫通过，叫失效。
+  if (states.size < 5) problems.push(`从 core 只读到 ${states.size} 个状态词，契约文件可能改结构了`);
   const files = [
     ...PROMPT_FILES,
     "apps/server/src/playAssets.ts",
     "apps/server/src/agentkit/commitTool.ts",
     "apps/server/src/agentkit/imageTool.ts",
   ];
+  // 认的是**生命周期动作的状态式形态**（裸词也认，不要求带引号；实测带引号的写法拦不住
+  // 实际代码与文案里的裸词，那等于没生效）。
+  //
+  // 能力边界（别把这条读成「拦一切拼写错误」）：正则靠词根匹配，`adpoted` 这种**拼错**的词
+  // 匹配不到，拦不住。它拦的是「用了一个契约外的、拼写正常的状态词」（如 `rejected`）——
+  // 那才是真正会发生的漂移（另一个宿主自己发明了状态名）。
+  // 两个收窄是被误报逼出来的：不认 `committed`（内部实现词），排除 CamelCase 里的片段
+  // （`markCommitted` 不该因为含 Committed 中枪）。
+  const stateLike = /\b(?<![A-Za-z])(adopt\w*|reject\w*|expir\w+|pend\w*|fail\w*)\b/gi;
   for (const rel of files) {
-    const source = read(rel);
+    const source = stripComments(read(rel));
     for (const word of FORBIDDEN_LIFECYCLE_WORDS) {
       if (source.includes(word)) problems.push(`${rel} 用了契约里不存在的状态词「${word}」`);
+    }
+    for (const match of source.matchAll(stateLike)) {
+      const word = match[1].toLowerCase();
+      if (states.has(word)) continue;
+      // 只认状态式的形态：全小写、以 -ed 收尾（adopted / rejected / expired）。
+      // 放过动词与动名词（adopt / adopting），否则每处正常英文都会中枪。
+      if (!/^[a-z]+(?:ed|ted)$/.test(word)) continue;
+      problems.push(`${rel} 出现状态式词「${word}」，不在共享契约的 ${[...states].join("/")} 里`);
     }
   }
   return problems;
