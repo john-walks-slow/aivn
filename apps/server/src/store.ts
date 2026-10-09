@@ -19,6 +19,7 @@ import {
   type AssetMeta,
   type PlayConfig,
 } from "@aivn/core";
+import { listPlayAssets, readPlayReadiness } from "@aivn/agent";
 import type { LedgerEntry as PlayLedgerEntry } from "@aivn/agent";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
 import { parseHistory, type HistoryBeat } from "./history.js";
@@ -210,12 +211,11 @@ export class PlayStore {
     } catch {
       return { premise: false, sprites: false, background: false, saves: 0 };
     }
-    // 立绘齐备 = 有任意一个主体目录且里面有图。主体不必有角色卡（机甲、道具就只有立绘），
-    // 所以判据在目录上，不在卡上——卡是可选附件。
-    const spritesDir = join(this.dir, "assets/sprites");
-    const sprites = await this.hasAnySprite(spritesDir);
-    const bgDir = join(this.dir, "assets/backgrounds");
-    const background = existsSync(bgDir) && (await readdir(bgDir)).some((f) => /\.(png|jpe?g|webp)$/i.test(f));
+    // 立绘齐备 / 有背景图这两条判据在共享包（与 DSH 插件同一份实现）：
+    // 主体不必有角色卡（机甲、道具就只有立绘），所以判据在目录上，不在卡上——卡是可选附件。
+    const facts = readPlayReadiness(this.dir);
+    const sprites = facts.sprites;
+    const background = facts.background;
     const saves = await countSaves(this.dir);
     // 世界观前提的唯一真相源：memory/always/premise.md。
     const premise = (await this.premise()).trim() !== "";
@@ -225,17 +225,6 @@ export class PlayStore {
       background,
       saves,
     };
-  }
-
-  /** 立绘目录里有没有图：每个主体一个目录，任一目录里有一张就算齐备。 */
-  private async hasAnySprite(root: string): Promise<boolean> {
-    if (!existsSync(root)) return false;
-    for (const entry of await readdir(root, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-      const files = await readdir(join(root, entry.name));
-      if (files.some((f) => /\.(png|jpe?g|webp)$/i.test(f))) return true;
-    }
-    return false;
   }
 
   /** 素材绝对路径（静态服务；kindPath 已白名单校验，如 "sprites/角色id/neutral.png"）。 */
@@ -383,27 +372,12 @@ export class PlayStore {
   }
 
   /** 列出素材树（素材管理页）。 */
+  /**
+   * 素材清单（实现在共享包）：键是类别，立绘按主体拆成 `sprites/<id>`。
+   * 排序在包里定死——编排器找不到指定差分时按第一张兜底，顺序不定会让兜底每次挑到不同的脸。
+   */
   async listAssets(): Promise<Record<string, string[]>> {
-    const root = join(this.dir, "assets");
-    const out: Record<string, string[]> = {};
-    if (!existsSync(root)) return out;
-    for (const kind of ["backgrounds", "cg", "sprites", "sfx", "bgm"]) {
-      const kindDir = join(root, kind);
-      if (!existsSync(kindDir)) continue;
-      if (kind === "sprites") {
-        for (const char of await readdir(kindDir, { withFileTypes: true })) {
-          if (!char.isDirectory()) continue;
-          const files = await readdir(join(kindDir, char.name));
-          // 排序：编排器在找不到指定差分时取 files[0] 兜底，readdir 顺序不定会让兜底每次挑到不同的脸
-          out[`sprites/${char.name}`] = files
-            .filter((f) => /\.(png|jpe?g|webp)$/i.test(f))
-            .sort((a, b) => a.localeCompare(b));
-        }
-      } else {
-        out[kind] = (await readdir(kindDir)).filter((f) => /\.(png|jpe?g|webp|mp3|ogg|wav|m4a)$/i.test(f));
-      }
-    }
-    return out;
+    return listPlayAssets(this.dir);
   }
 }
 

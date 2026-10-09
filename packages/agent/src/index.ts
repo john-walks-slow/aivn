@@ -87,6 +87,11 @@ export {
   writeDraft,
 } from "./media/draft.js";
 
+export type { AssetIndex } from "./media/asset-index.js";
+export { listPlayAssets, MEDIA_EXT } from "./media/asset-index.js";
+export type { PlayReadiness } from "./readiness/play.js";
+export { readPlayReadiness, renderReadiness } from "./readiness/play.js";
+
 export type { AssetCapabilities, CraftPatch, StopDirective } from "./craft/params.js";
 export {
   CRAFT_ENUMS,
