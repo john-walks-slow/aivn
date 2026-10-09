@@ -89,7 +89,7 @@
 
 ## 4. 阶段
 
-### P6-a · `read_memory_detail` → `read`（已完成）
+### P6-a · `read_memory_detail` → `read`（已完成 · `5c0adfeb`）
 
 删工具（`memoryTool.ts`）、删它的能力位引用（`kit.ts` 的 `TOOL_CATALOG` 与 `memory` 能力行）、
 删 `TOOL_SIDE_EFFECT_CATALOG` 与矩阵里的对应行/说法；`PlayMemory.readCard` 随工具一起删（三条命名
@@ -98,7 +98,7 @@
 **代价**：丢掉标题/路径/文件名三种写法的容错与「未命中时列可用条目」的回执——两样插件侧本来就没有，
 A 区《记忆索引》每行都带路径，读得到。
 
-### P6-b · `set_craft` → `edit play.json`（已完成）
+### P6-b · `set_craft` → `edit play.json`（已完成 · `5c0adfeb`）
 
 删工具（`agentkit/craftTool.ts`）、删 `apps/server/test/craftTool.test.ts`、从能力行与
 `TOOL_SIDE_EFFECT_CATALOG` / 矩阵说法里摘掉；`mergeCraftParams` / `CraftPatch` 随工具成为死代码，
@@ -108,7 +108,7 @@ A 区《记忆索引》每行都带路径，读得到。
 **代价**：丢 pi 的 enum 当场拒（退化为 `validate_play` 事后报，包里 `strayCraftValues` 已就位）、
 丢结构化回执；并发上不再多一个受锁写者，但那一类竞态今天已存在（模型 `edit` 从来就在锁外）。
 
-### P6-e · 矩阵登记与文档收尾（本阶段）
+### P6-e · 矩阵登记与文档收尾（已完成 · `40e53b0d` `31aacae9`）
 
 - `contract.ts` 的 `CAPABILITY_MATRIX`：`memory` / `files` 两行的 `intentionalDifference` 改写；
   `beat_done` / `enter_nsfw` / `exit_nsfw` / `read_skill` / `search_archive` / `list_saves` /
@@ -128,12 +128,16 @@ A 区《记忆索引》每行都带路径，读得到。
 
 ## 5. 验证
 
-| 范围 | 命令 | 判据 |
+| 范围 | 命令 | 结果（2026-10-10 实跑） |
 | --- | --- | --- |
-| 包 | `cd packages/agent && pnpm typecheck && pnpm build && pnpm exec vitest run` | 全绿（P6 前 196 → P6-a/b 后 193） |
-| 服务端 | `pnpm --filter @aivn/server typecheck`；`apps/server` 下定向 `vitest run test/agentkit.test.ts test/orchestrator.test.ts test/prompt.test.ts test/memory.test.ts test/workshop*.test.ts` | 全绿 |
-| 契约 | `node scripts/check-agent-contract.mjs` | 9/9 |
-| 插件 | 本轴不动插件代码 | 不跑（改动面为零） |
+| 包 | `cd packages/agent && pnpm typecheck && pnpm build && pnpm exec vitest run` | 27 文件 / **195** 通过（P6 前 196：删 3 条补丁用例、增 2 条漏标自查用例） |
+| 服务端 | `pnpm --filter @aivn/server typecheck`；全量 `vitest run` | typecheck ✓；**689 通过 / 3 跳过 / 0 失败** |
+| 契约 | `node scripts/check-agent-contract.mjs` | **9/9**（第 1 项已扩到技能正文） |
+| Web | `pnpm --filter @aivn/web typecheck`；`vitest run` | typecheck ✓；**219 通过** |
+| 插件 | `npm run typecheck`、`build.mjs --check`、`npm run e2e:media` | 全绿；**58/58**；lib 354.9 KiB（随包重建一次） |
+
+**提交**：服务端/包 `5c0adfeb`（P6-a/b 代码）→ `40e53b0d`（文档）→ `31aacae9`（P5-i 技能/界面/守卫）
+→ `e4025191`（readiness 漏标自查）；插件 `f5c77c0`（lib 随包重建）。
 
 ---
 

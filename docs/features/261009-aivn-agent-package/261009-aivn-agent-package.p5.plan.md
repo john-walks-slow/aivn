@@ -586,7 +586,7 @@ cd /root/projects/dsh-aivn-shared && npm run typecheck && node build.mjs --check
 | D3 | 服务端 agent 报告换成完整版（改提示词《当前状态》与既有断言） | P5-e | 可只做重命名与能力化，报告文本不动（那就把它登记为 `intentionalDifference`） |
 | D4 | 服务端失去 pi 的 enum 硬校验 | P5-g | 整段可砍 |
 | D5 | 插件 BGM 异步化改回合语义 | P5-h | 整段可砍（同步等待是合理选择） |
-| D6 | 元数据的三个承载体可能让模型漏标 | P5-d | 承载体收敛为一个共享类型 + 一份文档；P5-i 考虑给两侧自查报告加「缺描述的素材」一项 |
+| D6 | 元数据的三个承载体可能让模型漏标 | P5-d | 承载体收敛为一个共享类型 + 一份文档；**P5-i 已加**「缺描述的素材」自查项（`e4025191`，包内 `play.readiness`，两边报告同时生效） |
 | R-prompt | 改名牵动提示词与 e2e 锚点（`IMAGE_POINTER`、A13/A14、M19/M20、`prompt.ts`、`workshop.ts`） | 每个阶段 | 守卫 1 会拦住漏改；改名批次各自独立成阶段，不与其他语义变更混在一起 |
 | R-lib | 插件 `lib/` 是受跟踪产物；`node_modules/@aivn/*` 是手动软链 | 每个插件阶段 | 改完 `npm run build` 再 `node build.mjs --check`；**别在 worktree 跑 `npm install`**；合并前把软链指回 canonical `../stage-ai` 再重建（plan 的风险 R2） |
 | R-e2e | live e2e 要 provider patch，且本机内存紧张 | 每个碰提示词的阶段 | 只用 `E2E_PHASES` 挑相关段；单点跑不给验收结论 |
