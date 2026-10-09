@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { assetMetaFields } from "../src/capabilities/asset/meta.js";
 import { assetLocationOf, assetTargetFields } from "../src/capabilities/asset/target.js";
 import { assetRegister, type AssetRegisterDeps } from "../src/capabilities/asset/register.js";
 
@@ -70,11 +71,13 @@ describe("asset.register", () => {
     await expect(assetRegister.execute({ source: "  ", kind: "background", name: "rooftop" }, fake)).rejects.toThrow(/source/);
   });
 
-  it("落位七格与出图共用同一份字段定义（不是抄一份）", () => {
-    for (const key of ["kind", "name", "spriteId", "variant", "framing", "stature", "title"]) {
-      expect(assetRegister.fields[key as keyof typeof assetRegister.fields]).toBe(
-        assetTargetFields[key as keyof typeof assetTargetFields],
-      );
+  it("落位与元数据的字段定义与出图共用同一份（不是抄一份）", () => {
+    for (const key of ["kind", "name", "spriteId", "variant", "framing", "stature"] as const) {
+      expect(assetRegister.fields[key]).toBe(assetTargetFields[key]);
+    }
+    // title / description / tags 是**元数据**（与 annotate_asset 同一份），落成那一步能一次给全
+    for (const key of ["title", "description", "tags"] as const) {
+      expect(assetRegister.fields[key]).toBe(assetMetaFields[key]);
     }
   });
 });

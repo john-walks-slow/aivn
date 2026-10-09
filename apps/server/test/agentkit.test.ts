@@ -180,6 +180,7 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
   it("剧作家拿轮收束、记忆与剧目文件，不拿命令行与故事树", () => {
     const kit = playwriter();
     expect(names(kit)).toEqual([
+      "annotate_asset",
       "beat_done",
       "edit",
       "enter_nsfw",
@@ -254,6 +255,7 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     }
     // 两条最容易丢的语义，逐字钉住
     expect(props.title!.description).toContain("没有角色卡的主体必须给");
+    // 元数据的措辞与 annotate_asset 同一份（title 住在 meta.ts，出图只是 pick 了它）
     expect(props.spriteId!.description).toContain("sprite:");
   });
 
@@ -353,7 +355,7 @@ describe("agent kit：能力目录（设置页的数据源）", () => {
 
   it("目录按角色出，每条有中文名字、一句后果与分组；常开行带 locked", () => {
     const rows = capabilityCatalog("playwriter", FULL_ENV);
-    expect(rows.map((r) => r.id)).toEqual(["stage", "nsfw", "characters", "memory", "image", "library", "search"]);
+    expect(rows.map((r) => r.id)).toEqual(["stage", "nsfw", "characters", "memory", "image", "annotate", "library", "search"]);
     for (const row of rows) {
       expect(row.label.length).toBeGreaterThan(0);
       expect(row.desc.length).toBeGreaterThan(0);
@@ -362,12 +364,13 @@ describe("agent kit：能力目录（设置页的数据源）", () => {
     expect(rows.find((r) => r.id === "stage")!.locked).toBe(true);
     expect(rows.find((r) => r.id === "characters")!.locked).toBe(false);
     // 界面不出现工具名：后果那句里不能有工具 id
-    for (const row of rows) expect(row.desc).not.toMatch(/generate_image|list_library|web_search|write\b/);
+    for (const row of rows) expect(row.desc).not.toMatch(/generate_image|annotate_asset|list_library|web_search|write\b/);
     // 工坊那张卡上不会有「结束本轮」
     expect(capabilityCatalog("workshop", FULL_ENV).map((r) => r.id)).toEqual([
       "voice",
       "files",
       "image",
+      "annotate",
       "music",
       "library",
       "search",

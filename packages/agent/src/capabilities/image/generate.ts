@@ -1,4 +1,5 @@
 import { optional, type FieldMap, type InferArgs } from "../../schema/ir.js";
+import { assetMetaFields } from "../asset/meta.js";
 import { assetTargetFields } from "../asset/target.js";
 import type { Capability } from "../capability.js";
 
@@ -19,6 +20,7 @@ export const imageGenerateFields = {
   // 落位七格与 `asset.register` 共用一份措辞（见 `capabilities/asset/target.ts`）——同一件事
   // 在两个工具里说法不同，模型就得学两遍。
   ...assetTargetFields,
+  title: assetMetaFields.title,
   // 差别只有一处：**出图允许不给 kind**（通用候选，不绑剧目落位）；宏 `asset.generate` 再把它收紧回必填。
   kind: optional(assetTargetFields.kind),
   references: {

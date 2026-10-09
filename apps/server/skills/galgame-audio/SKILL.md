@@ -114,7 +114,7 @@ HowWorks Music 约 275 首。**AI 生成曲上架 Steam 需做 AI 内容披露�
 
 找到的素材落进剧目后要**在 `assets/manifest.json` 里登记**：素材 id 是文件名去扩展名，
 描述写清「什么场景／什么情绪」——剧作家挑曲子看的就是它，文件名看不出来。
-写 `bgm` 时把 `mood` / `scene` 照库里既有的词表填。
+写 `bgm` 时把 `mood` / `scene` 照库里既有的词表填（手写或调 `annotate_asset` 都行）。
 
 ## 9. 用 `generate_bgm` 出曲（配了音乐后端时）
 
@@ -123,6 +123,9 @@ HowWorks Music 约 275 首。**AI 生成曲上架 Steam 需做 AI 内容披露�
 
 - 剧目里已有同名曲子时 `generate_bgm` 会**直接跳过**：用户明确说要重做那一首时才带 `overwrite=true`。
 - 具体措辞与反例词表另见 BGM 那份 skill。
+
+- **出完立刻标注**：`generate_bgm` 只写一条来源标记（标题、描述、mood、scene、loop 都不在这一步），
+  用 `annotate_asset(kind="bgm", name=…)` 补上——剧作家是按 mood / scene 选曲的，不标等于库里查不到这首。
 
 - **一类场景一首**：别为同一情绪反复出；出之前先读 `assets/manifest.json` 看 `bgm` 里已有什么。
 - **上游固定给约 176 秒、没有时长参数**：要它适合循环就在 prompt 里写 `seamless loop, no fade out`——循环意图只能靠提示词表达。

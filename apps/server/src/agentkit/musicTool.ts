@@ -16,29 +16,12 @@ import { toPi } from "./schema.js";
  * 把它塞进演出回路等于整轮都在等一首歌落盘。BGM 又是制作资产。
  */
 
-/** 工具面：除 `model` 外都露（服务端还没有剧目级音乐模型的接线口），范围由 pi 硬校验。 */
+/** 工具面只剩「要哪首、怎么出、要不要覆盖」：元数据（标题/描述/mood/scene）走 `annotate_asset`（P5-d）。 */
 const FACE = tighten(
-  pick(musicGenerateFields, [
-    "name",
-    "prompt",
-    "title",
-    "description",
-    "tags",
-    "mood",
-    "scene",
-    "loop",
-    "volume",
-    "overwrite",
-  ]),
+  pick(musicGenerateFields, ["name", "prompt", "overwrite"]),
   {
     name: { minLength: 1, maxLength: 40 },
     prompt: { minLength: 1, maxLength: 2000 },
-    title: { maxLength: 40 },
-    description: { maxLength: 300 },
-    tags: { maxItems: 8 },
-    mood: { maxItems: 8 },
-    scene: { maxItems: 8 },
-    volume: { minimum: 0, maximum: 1 },
   },
 );
 

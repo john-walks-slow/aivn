@@ -16,6 +16,11 @@ import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend 
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
 import {
   adoptDraft,
+  assetMetaKey,
+  declareMeta,
+  existingAssetName,
+  type AssetMetaPatch,
+  type AssetSubject,
   assetMetaOf,
   registerAsset,
   declareSprite as declareSpriteIn,
@@ -427,6 +432,39 @@ export class PlayAssets {
   /** 剧目内相对路径 → 静态服务 URL（回执里给模型看图用）。 */
   urlOf(rel: string): string {
     return `/plays/${this.playId}/${rel}`;
+  }
+
+  /**
+   * 标注：给**已经入库**的素材补 / 改元数据（`asset.annotate`）。
+   *
+   * 与出图无关：图片类的元数据可以在登记时一次给全，这个口子负责事后改，也是 BGM 唯一的元数据出口
+   *（曲子没有登记那一步，生成只落一条来源标记）。素材必须**真的在**——写一条指向空气的元数据，
+   * 素材页与剧作家都会照着它找不存在的文件。
+   */
+  async annotate(
+    subject: AssetSubject,
+    patch: AssetMetaPatch,
+  ): Promise<{ path: string; url: string }> {
+    // 配乐归 `PlayMusic`（曲子有自己的落盘与清旧扩展名），本层只认三类图。
+    if (subject.kind === "bgm") throw new Error("配乐的元数据走 PlayMusic.annotate：图片与音频两个落盘面不混。");
+    const found = await this.locate(subject);
+    if (!found) {
+      throw new Error(`剧目里没有这份素材：${subject.spriteId ? `${subject.spriteId}/${subject.variant ?? NEUTRAL}` : subject.name}（先出图 / 出曲或导入，再标注）`);
+    }
+    await this.withManifest("workshop", (current) => declareMeta(current, found.key, patch));
+    return { path: found.path, url: `/plays/${this.playId}/${found.path}` };
+  }
+
+  /** 按主体找那一份素材：立绘找 `<主体>/<差分>.png`，其余按 stem 找任意扩展名的文件。 */
+  private async locate(subject: AssetSubject): Promise<{ key: string; path: string } | null> {
+    const dir = subject.kind === "sprite" ? `sprites/${subject.spriteId}` : subject.kind === "cg" ? "cg" : "backgrounds";
+    const stem = subject.kind === "sprite" ? (subject.variant ?? NEUTRAL) : subject.name!;
+    const abs = this.deps.files.absoluteOf(`assets/${dir}`);
+    if (!existsSync(abs)) return null;
+    const wanted = await readdir(abs);
+    const file = existingAssetName(wanted, stem);
+    if (!file) return null;
+    return { key: subject.kind === "sprite" ? `${subject.spriteId}/${stem}` : stem, path: `assets/${dir}/${file}` };
   }
 
   /**

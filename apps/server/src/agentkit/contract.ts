@@ -140,9 +140,9 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
         "出图分两件：generate_image 只产候选（草稿区），generate_asset 一步落成——工坊同步等图、剧作家后台排产；" +
         "外来图 / 候选图登记走 import_asset（source 给 draft:<草稿id> / 路径 / 网址）、重抠走 cut（source 给 sprite:<主体id>）。",
       dshAivn:
-        "插件的 generate_image 是**无剧目目标**的候选图（与服务端同名不同义），外来图登记走 import_asset，" +
+        "插件的 generate_image 与服务端同名同义（只产候选，给了 kind 就走剧目感知落位），外来图登记走 import_asset，" +
         "一键入库走 generate_asset（出图 + 抠底 + 登记），文件级重抠走 cut。" +
-        "两边同一个 cut（引用寻址）、同一个 generate_asset（一键宏）；服务端一侧只有 generate_image 只产候选这一步不同（插件的候选区可读，服务端的采用要经 import_asset 的 draft: 句柄）。",
+        "两边同一个 cut（引用寻址）、同一个 generate_image / generate_asset；差别只在采用候选这一步：插件的候选区可读（给路径即可），服务端的采用要经 import_asset 的 draft: 句柄。",
       backendDependency: "生图后端；抠底在两边都是包里的同一份实现。",
       intentionalDifference:
         "参数面、写 prompt 的硬约束、垫图规则与请求归一化同源（image.generate / image.cutout）；" +
@@ -150,10 +150,27 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     },
   },
   {
+    id: "annotate",
+    profile: "shared",
+    capabilities: ["asset.annotate"],
+    domainSemantic: "给已入库的素材补 / 改元数据（标题、描述、标签、情绪、场景、循环、音量）。",
+    roles: ["playwriter", "workshop"],
+    equivalence: "semantic-only",
+    hosts: {
+      stageAi:
+        "annotate_asset 走 PlayAssets.annotate（三类图）与 PlayMusic.annotate（配乐），素材必须真的在；" +
+        "图片类的元数据也可以在 import_asset / generate_asset 落成那一步一次给全。",
+      dshAivn:
+        "annotate_asset 走包里的 asset.annotate + declareMeta，落成步（register / generate_asset）同样能带 title / description / tags。",
+      backendDependency: "无额外后端依赖（只写 assets/manifest.json）。",
+      intentionalDifference: "同一份字段与描摹、同一份写口（declareMeta）；宿主只差各自的文件锁。",
+    },
+  },
+  {
     id: "music",
     profile: "preset-specific",
     capabilities: ["music.generate"],
-    domainSemantic: "生成并登记一首可供剧本引用的 BGM。",
+    domainSemantic: "生成并登记一首可供剧本引用的 BGM（元数据另走 asset.annotate）。",
     roles: ["workshop"],
     equivalence: "semantic-only",
     hosts: {
@@ -342,6 +359,14 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
     background_job: true,
     reversible: false,
     idempotent: false,
+  },
+  // 标注只动素材表 `assets/manifest.json` 里那几格：写工作区、可逆、幂等（同一份补丁写两遍一个样）
+  annotate_asset: {
+    ...READ_ONLY,
+    read_only: false,
+    workspace_write: true,
+    reversible: true,
+    idempotent: true,
   },
   cut: { ...READ_ONLY, read_only: false, workspace_write: true, reversible: false },
   // 把一张外来的图落成素材：写 assets/ + 补素材表 + 记台账（来源可以是网图，所以也有对外请求）。

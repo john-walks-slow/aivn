@@ -18,6 +18,20 @@ export type { AssetLocation, AssetLocationArgs } from "./capabilities/asset/targ
 export { assetLocationOf, assetTargetFields } from "./capabilities/asset/target.js";
 export type { AssetRegisterArgs, AssetRegisterDeps, AssetRegisterExtra, AssetRegistration } from "./capabilities/asset/register.js";
 export type { AssetGenerateArgs, AssetGenerateDeps, AssetGenerateResult } from "./capabilities/asset/generate.js";
+export {
+  ASSET_ANNOTATE_DOC,
+  assetAnnotate,
+  assetAnnotateFields,
+  assetSubjectFields,
+  assetSubjectOf,
+} from "./capabilities/asset/annotate.js";
+export type {
+  AssetAnnotateArgs,
+  AssetAnnotateDeps,
+  AssetSubject,
+} from "./capabilities/asset/annotate.js";
+export { assetMetaFields, assetMetaPatchOf } from "./capabilities/asset/meta.js";
+export type { AssetMetaPatch, AssetMetaPatchArgs } from "./capabilities/asset/meta.js";
 export { ASSET_GENERATE_DOC, assetGenerate, assetGenerateFields } from "./capabilities/asset/generate.js";
 export { ASSET_REGISTER_DOC, assetRegister, assetRegisterFields } from "./capabilities/asset/register.js";
 export type {
@@ -109,6 +123,8 @@ export {
   declareDescription,
   declareSprite,
   existingAssetName,
+  assetMetaKey,
+  declareMeta,
   keepSpriteSource,
   ledgerEntryOf,
   ledgerIdOf,

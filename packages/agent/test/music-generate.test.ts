@@ -17,26 +17,9 @@ describe("music.generate", () => {
 
   it("请求先归一化：id 与 prompt 修边，空串与空白项剔掉（别把空标签写进素材表）", async () => {
     const fake = deps();
-    await musicGenerate.execute(
-      {
-        name: "  bgm_a  ",
-        prompt: "  solo piano ",
-        title: "  心意渐明  ",
-        mood: ["温柔", "  ", ""],
-        tags: [],
-        scene: ["告白"],
-      },
-      fake,
-    );
-    expect(fake.started).toEqual([
-      {
-        name: "bgm_a",
-        prompt: "solo piano",
-        title: "心意渐明",
-        mood: ["温柔"],
-        scene: ["告白"],
-      },
-    ]);
+    await musicGenerate.execute({ name: "  bgm_a  ", prompt: "  solo piano ", overwrite: false }, fake);
+    // 元数据（title / mood / tags / scene…）不在这条路上：出完用 annotate_asset 标
+    expect(fake.started).toEqual([{ name: "bgm_a", prompt: "solo piano", overwrite: false }]);
   });
 
   it("剧目里已有同名曲子默认跳过（不烧那一分半），回执说清怎么重做", async () => {

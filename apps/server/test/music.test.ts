@@ -120,13 +120,27 @@ describe("PlayMusic：落盘与素材表", () => {
   });
 
   // 剧作家看不见音频，只能按素材表里的情绪与场景选曲——这层不写元数据等于曲子进了黑箱
-  it("情绪、场景、可循环与出处写进素材表", async () => {
+  // 生成这一步只写来源标记：元数据没有出口了（P5-d），全靠 annotate 那一步
+  it("生成只写来源标记，不带元数据", async () => {
     const store = await playDir();
-    await musicAt(store).generate({
-      name: "bgm_confession",
-      prompt: "piano",
+    await musicAt(store).generate({ name: "bgm_confession", prompt: "piano" });
+    const meta = await store.assetMeta();
+    expect(meta.bgm_confession!.source).toContain("站内生成");
+    expect(meta.bgm_confession!.mood).toBeUndefined();
+    expect(meta.bgm_confession!.title).toBeUndefined();
+  });
+
+  it("标注补上选取用的元数据，来源与别人写的格一个字不动", async () => {
+    const store = await playDir();
+    await mkdir(join(store.dir, "assets"), { recursive: true });
+    await writeFile(
+      join(store.dir, "assets/manifest.json"),
+      JSON.stringify({ bgm_confession: { description: "用户手写的说明" } }, null, 2),
+    );
+    const music = musicAt(store);
+    await music.generate({ name: "bgm_confession", prompt: "piano" });
+    await music.annotate("bgm_confession", {
       title: "心意渐明",
-      description: "告白的过场",
       mood: ["温柔", "心动"],
       scene: ["告白"],
       loop: true,
@@ -134,26 +148,17 @@ describe("PlayMusic：落盘与素材表", () => {
     const meta = await store.assetMeta();
     expect(meta.bgm_confession).toMatchObject({
       title: "心意渐明",
-      description: "告白的过场",
       mood: ["温柔", "心动"],
       scene: ["告白"],
       loop: true,
+      description: "用户手写的说明",
     });
     expect(meta.bgm_confession!.source).toContain("站内生成");
   });
 
-  // 描述归工坊与用户，这一层只补自己知道的格：整表覆盖会把用户写的说明抹掉
-  it("已有描述一个字不动，只补自己那几格", async () => {
+  it("标注不存在的曲子当场报错（别写一条指向空气的元数据）", async () => {
     const store = await playDir();
-    await mkdir(join(store.dir, "assets"), { recursive: true });
-    await writeFile(
-      join(store.dir, "assets/manifest.json"),
-      JSON.stringify({ bgm_confession: { description: "用户手写的说明" } }, null, 2),
-    );
-    await musicAt(store).generate({ name: "bgm_confession", prompt: "p", title: "新标题" });
-    const meta = await store.assetMeta();
-    expect(meta.bgm_confession!.description).toBe("用户手写的说明");
-    expect(meta.bgm_confession!.title).toBe("新标题");
+    await expect(musicAt(store).annotate("bgm_ghost", { title: "x" })).rejects.toThrow(/没有这首曲子/);
   });
 
   // 同 stem 换扩展名时旧的还在，素材索引按 stem 认——会挑到上一首
@@ -167,14 +172,15 @@ describe("PlayMusic：落盘与素材表", () => {
   });
 
   // 同名重生成不该把用户在素材页调过的音量拨回缺省——曲子是新的，音量是用户调的
-  it("同名重生成保留用户调过的音量，显式给了才改", async () => {
+  it("同名重生成不动用户调过的音量；要改只能显式标注", async () => {
     const store = await playDir();
     await mkdir(join(store.dir, "assets"), { recursive: true });
     await writeFile(join(store.dir, "assets/manifest.json"), JSON.stringify({ bgm_x: { volume: 0.2 } }));
-    await musicAt(store).generate({ name: "bgm_x", prompt: "p" });
+    const music = musicAt(store);
+    await music.generate({ name: "bgm_x", prompt: "p" });
     expect((await store.assetMeta()).bgm_x!.volume).toBe(0.2);
 
-    await musicAt(store).generate({ name: "bgm_x", prompt: "p", volume: 0.55 });
+    await music.annotate("bgm_x", { volume: 0.55 });
     expect((await store.assetMeta()).bgm_x!.volume).toBe(0.55);
   });
 
@@ -308,19 +314,11 @@ describe("generate_bgm：后台排产形态", () => {
     expect(kicked[0]).toMatchObject({ name: "bgm_a", overwrite: true });
   });
 
-  it("空白的 mood/scene/tags 项剔掉再传给宿主（别把空串当声明写进素材表）", async () => {
-    const { tool, kicked } = toolWith(async () => null);
-    await run(tool, {
-      name: "bgm_a",
-      prompt: "p",
-      mood: ["温柔", "  ", ""],
-      scene: ["告白"],
-      tags: ["日系", " "],
-      title: "  心意渐明  ",
-    });
-    expect(kicked[0].mood).toEqual(["温柔"]);
-    expect(kicked[0].tags).toEqual(["日系"]);
-    expect(kicked[0].title).toBe("心意渐明");
+  // 元数据不在生成工具上（P5-d）：这一面只剩「要哪首、怎么出、要不要覆盖」
+  it("参数面只剩三格：元数据格一个都不露", async () => {
+    const { tool } = toolWith(async () => null);
+    const props = Object.keys((tool.parameters as { properties: Record<string, unknown> }).properties);
+    expect(props.sort()).toEqual(["name", "overwrite", "prompt"]);
   });
 
   it("没配后端就整个不注册（装一个必然失败的工具只会诱使模型空转）", () => {
@@ -328,19 +326,30 @@ describe("generate_bgm：后台排产形态", () => {
     expect(createGenerateMusicTool({})).toEqual([]);
   });
 
-  it("元数据参数交宿主后原样带下去：loop / volume / 描述都要送", async () => {
-    const { tool, kicked } = toolWith(async () => null);
-    await run(tool, {
+  it("标注工具把补丁原样交下去，空值不留（别把空串当声明写进素材表）", async () => {
+    const { createAnnotateTool } = await import("../src/agentkit/annotateTool.js");
+    const patches: Array<{ subject: unknown; patch: unknown }> = [];
+    const tool = createAnnotateTool({
+      playAssets: {
+        annotate: async () => ({ path: "assets/backgrounds/x.png", url: "/u" }),
+      } as never,
+      playMusic: {
+        annotate: async (name: string, patch: Record<string, unknown>) => {
+          patches.push({ subject: name, patch });
+          return { path: "assets/bgm/bgm_a.m4a", url: "/u" };
+        },
+      } as never,
+    });
+    const result = await tool.execute("call-1", {
+      kind: "bgm",
       name: "bgm_a",
-      prompt: "p",
+      mood: ["温柔", "  ", ""],
+      tags: [],
+      title: "  心意渐明  ",
       loop: false,
-      volume: 0.35,
-      description: "垫底用，音量压低不盖台词",
-    });
-    expect(kicked[0]).toMatchObject({
-      loop: false,
-      volume: 0.35,
-      description: "垫底用，音量压低不盖台词",
-    });
+    } as never);
+    const text = result.content.map((c) => (c as { text: string }).text).join("");
+    expect(patches).toEqual([{ subject: "bgm_a", patch: { title: "心意渐明", mood: ["温柔"], loop: false } }]);
+    expect(text).toContain("assets/bgm/bgm_a.m4a");
   });
 });

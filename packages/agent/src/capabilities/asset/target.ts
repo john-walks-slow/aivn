@@ -51,10 +51,6 @@ export const assetTargetFields = {
     ],
     description: "立绘体量（只对 kind=sprite 生效）：只管台上多大，与取景是两件事；不给按 normal。",
   },
-  title: {
-    type: "string",
-    description: "立绘标题（只对 kind=sprite 生效）。**没有角色卡的主体必须给**：舞台名牌显示的就是它，不给就只剩一个 id 摆在那儿。",
-  },
 } as const satisfies FieldMap;
 
 /** 归一化之后的落位：只留真正给了的字段（空串丢掉），不认识的 kind 当场拒绝。 */

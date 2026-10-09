@@ -8,6 +8,7 @@
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AssetMeta, SpriteFraming, SpriteStature } from "@aivn/core";
+import type { AssetMetaPatch } from "../capabilities/asset/meta.js";
 
 /** 素材类目：背景、事件插图、立绘。 */
 export type AssetKind = "background" | "cg" | "sprite";
@@ -114,10 +115,24 @@ export function declareSprite(manifest: AssetManifest, spec: AssetRef): AssetMan
   return next;
 }
 
+/** 素材表的键：立绘落到 `<主体id>/<差分>`，背景 / 插图 / BGM 落到文件主体名。 */
+export function assetMetaKey(stem: string, subject?: { spriteId?: string; variant?: string }): string {
+  return subject?.spriteId && subject.variant ? `${subject.spriteId}/${subject.variant}` : stem;
+}
+
+/**
+ * 把一段元数据并进素材表（只并给出的那几格，其余原样保留）。
+ *
+ * 元数据的写口只有这一个：登记 / 宏（落成那一步）与 `asset.annotate`（事后改）都从这里走。
+ */
+export function declareMeta(manifest: AssetManifest, key: string, patch: AssetMetaPatch): AssetManifest {
+  if (Object.keys(patch).length === 0) return manifest;
+  return { ...manifest, [key]: { ...assetMetaOf(manifest, key), ...patch } };
+}
+
 /** 素材表里的一句话画面描述：剧作家挑素材全靠它。立绘落到 `<主体>/<差分>` 键上。 */
 export function declareDescription(manifest: AssetManifest, spec: AssetRef, description: string): AssetManifest {
-  const key = spec.kind === "sprite" ? `${spec.spriteId}/${spec.variant}` : spec.stem;
-  return { ...manifest, [key]: { ...assetMetaOf(manifest, key), description } };
+  return declareMeta(manifest, assetMetaKey(spec.stem, spec), { description });
 }
 
 /** BGM 的素材表来源标记（曲子没有立绘那套呈现声明，只记一条「哪来的」）。 */

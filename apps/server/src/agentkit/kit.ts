@@ -10,6 +10,7 @@ import { PlayEnv } from "./playEnv.js";
 import { createReadinessTool } from "./readinessTool.js";
 import { createSetCraftTool } from "./craftTool.js";
 import { createGenerateImageTool } from "./imageTool.js";
+import { createAnnotateTool } from "./annotateTool.js";
 import { createGenerateAssetTool } from "./assetTool.js";
 import { createLibraryTools } from "./libraryTool.js";
 import { createLineageTools } from "./lineageTool.js";
@@ -159,6 +160,14 @@ const CATALOG_ROWS = [
     unavailableNote: "服务端没配生图后端，暂不生效",
   },
   {
+    id: "annotate",
+    label: "标注素材",
+    desc: "给已入库的素材补 / 改标题、描述、情绪、场景——生成工具不承载元数据，BGM 全靠这一步。",
+    group: "assets",
+    roles: ["playwriter", "workshop"],
+    tools: ["annotate_asset"],
+  },
+  {
     id: "music",
     label: "生成 BGM",
     desc: "库里没有合适的曲子时自己写一首，垫到剧目里。",
@@ -285,6 +294,7 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   generate_asset: { label: "生成剧目素材", roles: ["playwriter", "workshop"] },
   // 只装工坊：一首 ~175s 的曲子要 84s，剧作家的一轮等不起；音乐又是制作资产。
   generate_bgm: { label: "生成 BGM", roles: ["workshop"] },
+  annotate_asset: { label: "标注素材", roles: ["playwriter", "workshop"] },
   cut: { label: "抠底", roles: ["workshop"] },
   // 只装工坊：剧作家那条路是「引用即导入」（剧本里写个 id，宿主去库里取），不自己登记。
   import_asset: { label: "登记素材", roles: ["workshop"] },
@@ -471,6 +481,7 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
       kickSprite: deps.kickSprite,
       existingAssetUrl: deps.existingAssetUrl,
     }),
+    createAnnotateTool({ playAssets: deps.playAssets, playMusic: deps.playMusic }),
     // 剧作家这边没有对话流可挂，onWrite/onAsset 就不给：工具照常能用，只是没有气泡可看；
     // library_import 也不装——它的默认导入路径是引用即导入。
     ...createLibraryTools({
@@ -531,6 +542,7 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
       // 后台发起：工具不等曲子，宿主那边记账并到货广播
       kick: (req) => deps.queueMusic?.(req) ?? "音乐生成未启用。",
     }),
+    createAnnotateTool({ playAssets: deps.playAssets, playMusic: deps.playMusic }),
     createReadSkillTool(),
     createSetCraftTool(deps),
     ...createLineageTools(deps),

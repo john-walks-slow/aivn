@@ -108,7 +108,7 @@ HowWorks Music 约 275 首。**AI 生成曲上架 Steam 需做 AI 内容披露�
 
 找到的素材落进剧目后要**在 `assets/manifest.json` 里登记**：素材 id 是文件名去扩展名，
 描述写清「什么场景／什么情绪」——剧作家挑曲子看的就是它，文件名看不出来。
-写 `bgm` 时把 `mood` / `scene` 照库里既有的词表填。
+写 `bgm` 时把 `mood` / `scene` 照库里既有的词表填（手写或调 `annotate_asset` 都行）。
 
 ## 9. 用 `generate_bgm` 出曲（配了音乐后端时）
 

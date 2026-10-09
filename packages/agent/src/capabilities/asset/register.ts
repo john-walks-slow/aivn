@@ -1,5 +1,6 @@
 import type { FieldMap, InferArgs } from "../../schema/ir.js";
 import type { Capability } from "../capability.js";
+import { assetMetaFields, assetMetaPatchOf, type AssetMetaPatch } from "./meta.js";
 import { assetLocationOf, assetTargetFields, type AssetLocation } from "./target.js";
 import type { AssetKind } from "../../media/catalog.js";
 
@@ -22,10 +23,10 @@ export const assetRegisterFields = {
     description: "图片来源：剧目内相对路径，或 http(s) 网址（出的候选、别的工具产出的图、下载的图都行）。",
   },
   ...assetTargetFields,
-  description: {
-    type: "string",
-    description: "一句话画面描述，写进素材表；剧作家挑素材全靠它。",
-  },
+  // 落成那一步能一次给的元数据（余下的 mood / scene / loop / volume 是音乐属性，走 annotate）
+  title: assetMetaFields.title,
+  description: assetMetaFields.description,
+  tags: assetMetaFields.tags,
   prompt: {
     type: "string",
     description: "台账里留档的「当初用什么描述出的」（可省）。",
@@ -60,8 +61,7 @@ export interface AssetRegistration {
   sourcePath?: string;
 }
 
-export interface AssetRegisterExtra {
-  description?: string;
+export interface AssetRegisterExtra extends AssetMetaPatch {
   prompt?: string;
   original?: string;
 }
@@ -79,7 +79,7 @@ export const assetRegister: Capability<typeof assetRegisterFields, AssetRegister
     const source = args.source.trim();
     if (!source) throw new Error("登记素材要 source（剧目内相对路径 / http(s) 网址）");
     return deps.register(source, assetLocationOf(args), {
-      ...(args.description?.trim() ? { description: args.description.trim() } : {}),
+      ...assetMetaPatchOf(args),
       ...(args.prompt?.trim() ? { prompt: args.prompt.trim() } : {}),
       ...(args.original?.trim() ? { original: args.original.trim() } : {}),
     });

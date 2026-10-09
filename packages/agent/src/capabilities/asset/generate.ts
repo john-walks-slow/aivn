@@ -1,5 +1,6 @@
 import type { FieldMap, InferArgs } from "../../schema/ir.js";
 import type { Capability } from "../capability.js";
+import { assetMetaPatchOf } from "./meta.js";
 import { assetLocationOf, type AssetLocation } from "./target.js";
 import {
   IMAGE_PROMPT_RULES,
@@ -32,6 +33,11 @@ export const assetGenerateFields = {
   description: {
     type: "string",
     description: "一句话画面描述，写进素材表；剧作家挑素材全靠它。",
+  },
+  tags: {
+    type: "array",
+    items: { type: "string", description: "一个标签，原样写" },
+    description: "若干标签（如 anime / interior）。",
   },
 } as const satisfies FieldMap;
 
@@ -85,7 +91,7 @@ export const assetGenerate: Capability<typeof assetGenerateFields, AssetGenerate
     // 立绘要透明 PNG 才叠得上舞台：候选先过一遍抠底，原片作为留底一起交给登记。
     const cut = target.kind === "sprite" && deps.cut ? await deps.cut({ source: produced.path }) : undefined;
     const registration = await deps.register(cut?.path ?? produced.path, target, {
-      ...(args.description?.trim() ? { description: args.description.trim() } : {}),
+      ...assetMetaPatchOf(args),
       prompt: args.prompt,
       ...(cut ? { original: produced.path } : {}),
     });

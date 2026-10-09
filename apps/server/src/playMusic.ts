@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import type { AssetMeta } from "@aivn/core";
+import { declareMeta, type AssetManifest, type AssetMetaPatch } from "@aivn/agent";
 import type { MusicBackend } from "./musicBackend.js";
 import { assertAssetStem } from "./playAssets.js";
 import type { PlayFiles } from "./playFiles.js";
@@ -35,15 +36,6 @@ export interface GenerateMusicRequest {
   /** 素材 id：剧本里 `<scene bgm="id">` 引用的就是它。 */
   name: string;
   prompt: string;
-  title?: string;
-  description?: string;
-  tags?: string[];
-  mood?: string[];
-  scene?: string[];
-  /** 是否适合循环播放（剧目素材表的一格，也是选曲时的一维）。 */
-  loop?: boolean;
-  /** 建议默认音量（0–1）。不给按 0.4（垫底 BGM 的常规起点）。 */
-  volume?: number;
   /**
    * 剧目里已有同名曲子时仍然重生成（覆盖它）。
    *
@@ -95,10 +87,15 @@ export class PlayMusic {
    * （实测上游回 `audio/mp4`，落 `.m4a`，但库里手传的可能是 `.mp3`）。
    */
   async existingUrl(name: string): Promise<string | null> {
+    const file = await this.existingFile(name);
+    return file ? `/plays/${this.deps.playId}/assets/bgm/${file}` : null;
+  }
+
+  /** 这首曲子落盘的文件名（按扩展名逐个试）；没有则 null。 */
+  private async existingFile(name: string): Promise<string | null> {
     const id = assertAssetStem(name, "BGM 素材名");
     for (const ext of AUDIO_EXTS) {
-      const rel = `assets/bgm/${id}${ext}`;
-      if (existsSync(this.deps.store.assetPath(`bgm/${id}${ext}`))) return `/plays/${this.deps.playId}/${rel}`;
+      if (existsSync(this.deps.store.assetPath(`bgm/${id}${ext}`))) return `${id}${ext}`;
     }
     return null;
   }
@@ -112,8 +109,28 @@ export class PlayMusic {
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, music.bytes);
     const url = `/plays/${this.deps.playId}/${rel}`;
-    await this.declareMeta(id, req);
+    await this.declareSource(id);
     return { id, path: rel, url, replaced };
+  }
+
+  /**
+   * 标注：给已入库的曲子补 / 改选取用的元数据（`annotate_asset` 的配乐那一支）。
+   *
+   * 生成那条路只写来源标记（`declareSource`），元数据全从这儿进——只并给出的那几格。
+   */
+  async annotate(id: string, patch: AssetMetaPatch): Promise<{ path: string; url: string }> {
+    const file = await this.existingFile(id);
+    if (!file) throw new Error(`剧目里没有这首曲子：${id}（先生成或先在素材页导入，再标注）`);
+    await withPlayConfigLock(this.deps.store.dir, async () => {
+      const raw = await this.deps.files.read("assets/manifest.json").catch(() => "");
+      const current = parseManifest(raw);
+      const after = `${JSON.stringify(declareMeta(current, id, patch), null, 2)}\n`;
+      if (after === raw) return;
+      await this.deps.files.write("assets/manifest.json", after);
+      this.deps.onWrite({ path: "assets/manifest.json" });
+    });
+    const rel = `assets/bgm/${file}`;
+    return { path: rel, url: `/plays/${this.deps.playId}/${rel}` };
   }
 
   /** 同一 stem 下别的扩展名要清掉：素材索引按 stem 认，留着旧的会挑到上一首。 */
@@ -131,51 +148,41 @@ export class PlayMusic {
   }
 
   /**
-   * 把选取用的元数据写进素材表（走与生图同一把剧目配置锁）。
+   * 出曲只往素材表写一条**来源标记**（走与生图同一把剧目配置锁）。
    *
-   * **描述归工坊与用户**：请求没带新描述就原样保留既有那句，这一层不主动抹；
-   * 只有这一层确知的几格（标题、情绪、场景、可循环、时长、出处）才写。
+   * 选取用的元数据（标题、描述、mood、scene、loop、volume）不在生成这一步——生成工具不承载
+   * 元数据，出完由模型调 `annotate_asset` 标一遍（P5-d）。既有那几格原样保留，这一层不抹。
    */
-  private declareMeta(id: string, req: GenerateMusicRequest): Promise<void> {
+  private declareSource(id: string): Promise<void> {
     return withPlayConfigLock(this.deps.store.dir, async () => {
       const raw = await this.deps.files.read("assets/manifest.json").catch(() => "");
-      const current: Record<string, unknown> =
-        raw && raw.trim()
-          ? (() => {
-              try {
-                const parsed: unknown = JSON.parse(raw);
-                return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-                  ? (parsed as Record<string, unknown>)
-                  : {};
-              } catch {
-                return {};
-              }
-            })()
-          : {};
+      const current = parseManifest(raw);
       const prev = current[id];
-      const meta: Record<string, unknown> =
+      const meta: AssetMeta =
         prev && typeof prev === "object" && !Array.isArray(prev)
-          ? { ...(prev as Record<string, unknown>) }
+          ? { ...prev }
           : typeof prev === "string"
             ? { description: prev }
             : {};
-      if (req.title) meta.title = req.title;
-      if (req.description) meta.description = req.description;
-      if (req.tags?.length) meta.tags = req.tags;
-      if (req.mood?.length) meta.mood = req.mood;
-      if (req.scene?.length) meta.scene = req.scene;
-      if (req.loop !== undefined) meta.loop = req.loop;
-      // 音量默认只在没有过既有值时给：同名重生成不该把用户调过的 0.2 拨回 0.4
-      if (req.volume !== undefined) meta.volume = req.volume;
-      else if (typeof meta.volume !== "number") meta.volume = 0.4;
       // 出处是「站内生成」，与素材库里逐条抄来的许可信息同一栏，但这一栏写的是生成不是授权
       meta.source = "站内生成（音乐生成后端）";
-      current[id] = meta satisfies AssetMeta;
+      current[id] = meta;
 
       const after = `${JSON.stringify(current, null, 2)}\n`;
       if (after === raw) return;
       await this.deps.files.write("assets/manifest.json", after);
       this.deps.onWrite({ path: "assets/manifest.json" });
     });
+  }
+
+}
+/** 素材表原始文本 → 对象：解析失败或形状不对一律当空表（与生图那条路同一口径）。 */
+function parseManifest(raw: string): AssetManifest {
+  if (!raw || !raw.trim()) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as AssetManifest) : {};
+  } catch {
+    return {};
   }
 }
