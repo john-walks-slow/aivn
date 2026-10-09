@@ -87,6 +87,14 @@ export {
   writeDraft,
 } from "./media/draft.js";
 
+export type { AssetCapabilities, CraftPatch, StopDirective } from "./craft/params.js";
+export {
+  CRAFT_ENUMS,
+  describeCraftParams,
+  mergeCraftParams,
+  renderCraftParams,
+} from "./craft/params.js";
+
 export type { VoiceEntry } from "@aivn/core";
 export type { VoiceJsonFetcher, VoiceQuery, VoiceSample, VoiceWindow } from "./voice/catalog.js";
 export {
