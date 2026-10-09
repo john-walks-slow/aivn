@@ -411,6 +411,23 @@ cd /root/projects/dsh-aivn-shared && npm run typecheck && node build.mjs --check
 **停止点（决策门 D6）**：元数据的三个承载体是否接受；以及**插件不新增「缺描述的素材」自查项**这条
 （我建议在 P5-i 加，作为漏标的兜底）。
 
+**实施清单（2026-10-10 盘清，待 D6 放行——落点逐条核对过代码）**
+
+| # | 动作 | 落点 |
+| --- | --- | --- |
+| 1 | 新能力 `asset.annotate`：`target`（`AssetTarget` 扩 `bgm`）+ `meta`（`AssetMetaPatch` = title/description/tags/mood/scene/loop/volume） | 新文件 `packages/agent/src/capabilities/asset/annotate.ts`；`AssetTarget` 现有 kind 三态在 `media/target.ts` |
+| 2 | `music.generate` 删 8 格，只留 `name / prompt / model / overwrite` | `capabilities/music/generate.ts:25-48`；`MusicGenerateRequest` 与 `requestOf` 跟着收 |
+| 3 | 元数据写口泛化：`declareDescription` → `declareMeta`（前者成特例） | `media/catalog.ts:118` |
+| 4 | 服务端 FACE 收到 4 格 | `apps/server/src/agentkit/musicTool.ts:18-42`（现在 10 格） |
+| 5 | 服务端新 face `annotate_asset` + 登记/副作用/矩阵 | 新 `apps/server/src/agentkit/annotateTool.ts`；`kit.ts:276+`、`contract.ts:330+` |
+| 6 | BGM 生成只写来源 + 台账，元数据走 annotate | `apps/server/src/playMusic.ts:160-172` |
+| 7 | 插件新 face `annotate_asset`（9→10） | 新 `dsh-aivn-shared/src/tools/annotate-asset.ts`；`src/tool-catalog.ts`；`e2e/verify-injection.mjs` A14 |
+| 8 | 插件剧目文件说明改「用 `annotate_asset`」 | `dsh-aivn-shared/src/play/play-files.ts:73-78` |
+| 9 | 提示词：服务端剧作家「生成完顺手标注」 | `apps/server/src/prompt.ts` 配乐段 |
+
+**D6 要拍的两问**：(a) 元数据三个承载体（`annotate_asset` 独立面 / register·宏上的 `meta?` /
+生成工具**不**承载）接受吗？(b) 漏标的兜底自查项放 P5-i 加，还是不要？
+
 ---
 
 ### P5-e · `play.readiness` 能力 + 两侧 `validate_play`（决策门 D3）
