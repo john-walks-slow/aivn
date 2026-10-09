@@ -96,12 +96,7 @@ packages/agent/src/
 | P3 · 提示词第一批（Stage DSL 共用正文 4 块） | ✅ 完成 | `1ecc844a` / `5f57f4e` |
 | P3 · 提示词其余（A 区渲染进包；不做 facts 装配层） | ✅ 完成 | `bc5165c8` `f5c40879` / `01105d7` `d8ac9ae` |
 | P3 · 技能正文（audio 两份 86% 重合） | ✅ 完成 | `f952ac7a` `1dbfeb15` / `f24f924` |
-| P4 工具面全量迁移与契约重建 | ✅ 完成（改名 ✅；能力按序落地 ✅；矩阵按实测重修 + 挂上包内能力 ✅；插件 live e2e ✅）（live e2e **全绿**：`injection` 20/20、`stagehand` 22/22、`handmade-play` 4/4；
-  离线 `e2e:media` 53/53。`handmade-play` 一开始 1/4 是 **e2e home 的环境缺一条模型路由**——
-  最小组合里没有 provider 适配器，默认路由又落在没 key 的 `deepseek-official` 上（失败在任何工具调用之前）。
-  修法：`dsh-e2e start --patch <临时 yml>`，那份 patch 把主 profile 的 `llm-pi-ai`（含 cpa 的模型目录）
-  与 `agent-default-model: {provider: cpa, model: omni}` 搬进 profile 用户层；临时文件不进仓库，
-  wipe 后重放即可复现） | 见下各行 |
+| P4 工具面全量迁移与契约重建 | ✅ 完成（改名 / 能力按序落地 / 矩阵按实测重修 / 插件 live e2e 全绿） | 见下各行 |
 
 **P2 完成**（媒体与素材面：抠底 / 生图契约 / 三协议 / 网络图下载 / 后缀 / 草稿 / 落位留底 /
 采用 / 台账 / 音色库 / craft / readiness + 素材清单；「导入」经判定不共享，尾部已抽）。
@@ -273,6 +268,12 @@ P1/P2 落地时对计划的收紧（都是实测出来的，不是改主意）�
 | 服务端 | `pnpm --filter @aivn/server build|test`、`pnpm check:agent-contract` |
 | 插件 | `npm run typecheck`、`npm run build` + `node build.mjs --check`、`npm run e2e:media`、按改动面选 `dsh-e2e` 套件 |
 | 交叉 | 「两侧技能副本与包内 md 逐字一致」「两侧提示词均从 compose 派生」「能力表覆盖两边全部 face」 |
+
+**live e2e 的环境前提（本轮实测）**：`dsh-e2e` 的最小组合里没有 provider 适配器，默认路由又落在
+没 key 的 `deepseek-official` 上，真模型那几拍会在任何工具调用之前以 `NO_ADAPTER` / `MISSING_CREDENTIAL`
+失败。修法是把主 profile 的 `llm-pi-ai`（含 cpa 的模型目录）与 `agent-default-model: {provider: cpa, model: omni}`
+拼成一份 patch，`dsh-e2e start --patch <临时 yml>` 起实例；patch 是临时文件、不进仓库。
+加上这条之后 `injection` 20/20、`stagehand` 22/22、`handmade-play` 4/4 全绿。
 
 ## 与既有 ADR 的关系
 
