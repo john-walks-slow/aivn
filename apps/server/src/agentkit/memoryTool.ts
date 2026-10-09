@@ -2,6 +2,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { textResult } from "./result.js";
 import type { PlaywriterKitDeps } from "./deps.js";
+import { parsePlayState, playStateJson, readPlayStateText, writePlayStateText } from "../playState.js";
 
 /** 好感度单次增量上限与值域（引擎校验，模型只可提议）。 */
 const AFFINITY_DELTA_CAP = 5;
@@ -41,7 +42,7 @@ const searchArchiveParams = Type.Object(
 export function createMemoryTools(
   deps: Pick<
     PlaywriterKitDeps,
-    "engine" | "memory" | "tree" | "stateFiles" | "isNsfw"
+    "engine" | "memory" | "tree" | "stateFiles" | "files" | "isNsfw"
   > & { characterIds: ReadonlySet<string> },
 ): AgentTool<any>[] {
   const updateState: AgentTool<typeof updateStateParams> = {
@@ -57,6 +58,11 @@ export function createMemoryTools(
     parameters: updateStateParams,
     execute: async (_toolCallId, params: Static<typeof updateStateParams>) => {
       const { affinity, flags, scene, threads } = params;
+      // P6-d 原型：三个状态文件是工作态载体——**文件是基准**，engine / stateFiles 只做镜像。
+      // （迁移那一步工具本身会删掉，这段一起消失；此处双写只为了让现有调用方与测试平滑过渡。）
+      const dir = deps.files.root;
+      const text = readPlayStateText(dir);
+      const live = parsePlayState(text.state);
       const applied: string[] = [];
       const rejected: string[] = [];
       for (const [charId, delta] of Object.entries(affinity ?? {})) {
@@ -68,21 +74,29 @@ export function createMemoryTools(
           rejected.push(`${charId} 增量须为整数且 |Δ|≤${AFFINITY_DELTA_CAP}（收到 ${delta}）`);
           continue;
         }
-        const current = deps.engine.affinity[charId] ?? 0;
+        const current = live.affinity[charId] ?? 0;
         const next = Math.max(0, Math.min(AFFINITY_MAX, current + delta));
-        deps.engine.affinity[charId] = next;
+        live.affinity[charId] = next;
         applied.push(`${charId} ${delta >= 0 ? "+" : ""}${delta}（${current}→${next}）`);
       }
       for (const [key, value] of Object.entries(flags ?? {})) {
-        deps.engine.flags[key] = value;
+        live.flags[key] = value;
         applied.push(`旗标 ${key}=${String(value)}`);
       }
       for (const [key, value] of [["scene", scene], ["threads", threads]] as const) {
         if (value === undefined) continue;
-        deps.stateFiles[key] = value.trim();
+        text[key] = value.trim();
         applied.push(`${key}.md 已重写`);
       }
       if (applied.length === 0 && rejected.length === 0) return textResult("未提供任何更新。");
+      writePlayStateText(dir, { scene: text.scene, threads: text.threads, state: playStateJson(live) });
+      // 镜像：原地换内容而不换对象——状态工具的闭包与快照读的是同一个对象
+      for (const key of Object.keys(deps.engine.affinity)) delete deps.engine.affinity[key];
+      Object.assign(deps.engine.affinity, live.affinity);
+      for (const key of Object.keys(deps.engine.flags)) delete deps.engine.flags[key];
+      Object.assign(deps.engine.flags, live.flags);
+      deps.stateFiles.scene = text.scene;
+      deps.stateFiles.threads = text.threads;
       return textResult(
         [
           applied.length > 0 ? `已生效：${applied.join("；")}` : null,

@@ -3,6 +3,7 @@ import type { ServerMessage } from "@aivn/core";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
 import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, characterCardPath, characterIdOfPath, characterOfSprite, PROTAGONIST_ID, spriteDeclarationOf, spriteIdOf, spriteTitlesOf, type CharacterDocument, type EngineStateSnapshot, type ActorAnchor, type SpriteFraming, type SpriteStature } from "@aivn/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
+import { playStateJson, seedPlayState, writePlayStateText } from "./playState.js";
 import { withPlayConfigLock } from "./store.js";
 import type { AssetLibrary } from "./library.js";
 import { AssetRefResolver, characterIdsOf } from "./assetRef.js";
@@ -377,6 +378,18 @@ export class PlayHouse {
       ...play.initialState,
     };
     const scene = session?.scene ?? play.initialScene;
+    // 剧内状态文件（memory/always/state/*）是工作态载体（P6-d）：恢复时用这一枝的快照回写，
+    // 新存档用 play.json 的初值覆盖——否则新周目第一轮会读到上一周目的残留。
+    const stateSnapshot = tree.latestSnapshotOnPath(tree.leafId)?.stateFiles;
+    if (session && stateSnapshot) {
+      writePlayStateText(store.dir, {
+        scene: stateSnapshot.scene ?? "",
+        threads: stateSnapshot.threads ?? "",
+        state: stateSnapshot.state ?? playStateJson({ affinity: engine.affinity, flags: engine.flags }),
+      });
+    } else {
+      seedPlayState(store.dir, { scene, affinity: engine.affinity, flags: engine.flags });
+    }
     const save = {
       id: saveId ?? "",
       name: saveId ? await this.library.saves(playId).nameOf(saveId) : "",

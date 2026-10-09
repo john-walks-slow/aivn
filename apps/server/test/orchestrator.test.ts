@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
@@ -9,6 +10,8 @@ import { PlaywrightOrchestrator, type OrchestratorRuntimeState } from "../src/or
 import { createMemoryTools } from "../src/agentkit/memoryTool.js";
 import { defaultCapabilitiesFor } from "../src/agentkit/kit.js";
 import { PlayMemory } from "../src/memory.js";
+import { PlayFiles } from "../src/playFiles.js";
+import { playStateJson, readPlayStateText, writePlayStateText } from "../src/playState.js";
 import { BEAT_1, BEAT_1_STOP, BEAT_2, CARD, PLAY, createFakeStreamFn, type FakeResponse } from "./helpers.js";
 
 /** 编排器只用到 store.dir（`PlayFiles` 的白名单根）——不落盘的用例不必建真目录。 */
@@ -944,6 +947,8 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
     isNsfw: () => boolean = () => false,
   ) {
     const stateFiles: Record<string, string> = {};
+    // P6-d 起 update_state 以**状态文件**为基准（engine 只是镜像），所以这里要有真目录
+    const dir = mkdtempSync(join(tmpdir(), "stage-state-"));
     // 切片挂在当前分支叶子上：search_archive 以 pathSet() 过滤，脱离分支即不可见
     const tree = new LineageTree();
     const e1 = tree.append("scene", {
@@ -959,10 +964,11 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
       memory,
       tree,
       stateFiles,
+      files: new PlayFiles({ dir } as never),
       arcIds: () => arcIds,
       isNsfw,
     });
-    return { tools, stateFiles, memory };
+    return { tools, stateFiles, memory, dir };
   }
 
   function textOf(result: { content: { type: string; text?: string }[] }): string {
@@ -971,7 +977,9 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
 
   it("update_state：合法增量生效；非法增量/未知角色被拒；值域夹紧", async () => {
     const engine = { turn: 1, affinity: { mio: 10 }, flags: {} };
-    const { tools } = makeTools(engine);
+    const { tools, dir } = makeTools(engine);
+    // 文件是基准：先落一份现值（与 engine 镜像一致）
+    writePlayStateText(dir, { scene: "", threads: "", state: playStateJson({ affinity: { mio: 10 }, flags: {} }) });
     const update = tools.find((t) => t.name === "update_state")!;
 
     const ok = await update.execute("t1", { affinity: { mio: 3 } });
@@ -1031,6 +1039,7 @@ describe("记忆工具组（createMemoryTools，D7）", () => {
       memory: new PlayMemory({ cards: [] }),
       tree: new LineageTree(),
       stateFiles: {},
+      files: new PlayFiles({ dir: mkdtempSync(join(tmpdir(), "stage-state-")) } as never),
       arcIds: () => [],
     });
     const update = tools.find((t) => t.name === "update_state")!;
@@ -2516,5 +2525,100 @@ describe("删除一段及其后代", () => {
 
     expect(tree.get(beat2Prompt)).toBeUndefined();
     expect(tree.leafId).toBe(other);
+  });
+});
+
+describe("P6-d 原型：状态文件是工作态载体", () => {
+  /** 有真目录的编排器（状态区现读 `memory/always/state/*`，不走 update_state）。 */
+  function makeStateOrchestrator(responses: FakeResponse[], dir: string, contexts: unknown[] = []) {
+    const tree = new LineageTree();
+    const base = createFakeStreamFn(responses);
+    const orchestrator = new PlaywrightOrchestrator({
+      streamFn: (model, context, options) => {
+        contexts.push(context);
+        return base(model, context, options);
+      },
+      model: {} as never,
+      getApiKey: () => "test-key",
+      play: PLAY,
+      store: { dir } as never,
+      memory: new PlayMemory({ cards: [CARD] }),
+      tree,
+      engine: { turn: 0, affinity: { ...PLAY.initialState.affinity }, flags: {} },
+      scene: PLAY.initialScene,
+      onServerMessage: () => {},
+      persist: () => {},
+    });
+    return { orchestrator, tree };
+  }
+
+  const writeState = (content: string) => ({
+    name: "write",
+    args: { path: "memory/always/state/state.json", content },
+  });
+
+  it("剧作家直接 write state.json：下一轮的【状态】区就按文件渲染", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stage-state-"));
+    const contexts: { messages: { role: string }[] }[] = [];
+    const { orchestrator } = makeStateOrchestrator(
+      [
+        { text: BEAT_1, toolCalls: [writeState('{"affinity":{"mio":42},"flags":{"met":true}}\n')] },
+        { text: "", beatDone: BEAT_1_STOP },
+        { text: BEAT_2 },
+      ],
+      dir,
+      contexts,
+    );
+
+    await orchestrator.playerAction({ kind: "free", text: "开场" });
+    await orchestrator.playerAction({ kind: "free", text: "继续" });
+
+    // 状态区在每轮发出去的那一串 user 消息里（B 区），整份 context 里找
+    const text = JSON.stringify(contexts.at(-1));
+    expect(text).toContain("mio 42");
+    expect(text).toContain("met=true");
+    expect(readPlayStateText(dir).state).toContain("42");
+  });
+
+  it("跳回旧轮：三个文件回写成那一枝的值（快照是分支真值）", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stage-state-"));
+    const { orchestrator, tree } = makeStateOrchestrator(
+      [
+        { text: BEAT_1, toolCalls: [writeState('{"affinity":{"mio":11},"flags":{}}\n')] },
+        { text: "", beatDone: BEAT_1_STOP },
+        { text: BEAT_2, toolCalls: [writeState('{"affinity":{"mio":99},"flags":{}}\n')] },
+        { text: "", beatDone: true },
+      ],
+      dir,
+    );
+
+    await orchestrator.playerAction({ kind: "free", text: "一" });
+    await orchestrator.playerAction({ kind: "free", text: "二" });
+    expect(readPlayStateText(dir).state).toContain("99");
+
+    const firstEnd = tree.export().events.find((e) => e.kind === "beat_end" && e.id !== tree.leafId)!;
+    await orchestrator.jumpTo(firstEnd.id, { playFrom: "end" });
+    expect(readPlayStateText(dir).state).toContain("11");
+  });
+
+  it("update_state 以**文件**为基准：模型直接写的值不会被 engine 镜像盖回去", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stage-state-"));
+    const engine = { turn: 1, affinity: { mio: 5 }, flags: {} };
+    // 模型直接写了 state.json（引擎镜像还是旧的 mio=5）
+    writePlayStateText(dir, { scene: "", threads: "", state: playStateJson({ affinity: { mio: 30 }, flags: {} }) });
+    const tools = createMemoryTools({
+      engine,
+      characterIds: new Set(["mio"]),
+      memory: new PlayMemory({ cards: [] }),
+      tree: new LineageTree(),
+      stateFiles: {},
+      files: new PlayFiles({ dir } as never),
+      arcIds: () => [],
+    });
+    const update = tools.find((t) => t.name === "update_state")!;
+    await update.execute("t1", { affinity: { mio: 1 } });
+
+    expect(readPlayStateText(dir).state).toContain("31"); // 30 + 1，不是 5 + 1
+    expect(engine.affinity.mio).toBe(31);
   });
 });

@@ -30,6 +30,7 @@ export type { ReadPos } from "@aivn/core";
 import { createAgentKit, enabledCapabilitiesFor, type AgentKit } from "./agentkit/kit.js";
 import type { ModelStop, PlayFileWrite } from "./agentkit/deps.js";
 import { PlayFiles } from "./playFiles.js";
+import { parsePlayState, playStateJson, readPlayStateText, writePlayStateText } from "./playState.js";
 import type { Exa } from "./exa.js";
 import type { KeyBackgroundColor, PlayAssets } from "./playAssets.js";
 import type { AssetLibrary } from "./library.js";
@@ -1595,6 +1596,14 @@ export class PlaywrightOrchestrator {
     // 换引用的话分岔之后记忆工具会写到一个没人再读的对象上去（状态区再也不更新）。
     for (const key of Object.keys(this.stateFiles)) delete this.stateFiles[key];
     Object.assign(this.stateFiles, state.stateFiles);
+    // 快照是分支 / 存档真值：回写到剧内状态文件，否则模型下一轮 read 到的是上一枝的残留（P6-d §3）
+    writePlayStateText(this.opts.store.dir, {
+      scene: state.stateFiles.scene ?? "",
+      threads: state.stateFiles.threads ?? "",
+      state:
+        state.stateFiles.state ??
+        playStateJson({ affinity: state.engine.affinity, flags: state.engine.flags }),
+    });
     this.compaction = state.compaction;
     this.beatNo = engine.turn;
     this.opts.scene = state.scene;
@@ -1704,8 +1713,20 @@ export class PlaywrightOrchestrator {
     // 上一轮的解析告警只在这里用一次：这一轮发出去就作废，免得旧问题反复骚扰
     const warnings = this.beatWarnings;
     this.beatWarnings = [];
+    // 状态区现读剧内状态文件（P6-d §3：文件是工作态的唯一载体，引擎不养镜像）。
+    // 好感度按**已知角色 id** 过滤（插件同款）：删掉的角色不该在状态区留下残留。
+    const stateText = readPlayStateText(this.opts.store.dir);
+    const stateLive = parsePlayState(stateText.state);
+    const known = this.liveCharacterIdsValue;
+    const affinity = Object.fromEntries(
+      Object.entries(stateLive.affinity).filter(([id]) => known.size === 0 || known.has(id)),
+    );
     const sections = [
-      `【状态】\n${renderStateSection(this.opts.engine, this.opts.scene, this.stateFiles)}`,
+      `【状态】\n${renderStateSection(
+        { ...this.opts.engine, affinity, flags: stateLive.flags },
+        this.opts.scene,
+        { scene: stateText.scene, threads: stateText.threads },
+      )}`,
     ];
     if (warnings.length > 0) sections.push(renderBeatWarnings(warnings));
     for (const text of inputs) sections.push(`【用户输入】\n${text}`);
@@ -2109,7 +2130,8 @@ export class PlaywrightOrchestrator {
     const engine = this.opts.engine;
     const facts: SnapshotFacts = {
       engine: { ...engine, affinity: { ...engine.affinity }, flags: { ...engine.flags } },
-      stateFiles: { ...this.stateFiles },
+      // 剧内状态三个文件的**原文**（P6-d §3：收束是「文件 → 快照」的唯一时刻）
+      stateFiles: { ...readPlayStateText(this.opts.store.dir) },
       ...(this.compaction ? { compaction: this.compaction } : {}),
       nsfw: this.nsfwActive,
     };
