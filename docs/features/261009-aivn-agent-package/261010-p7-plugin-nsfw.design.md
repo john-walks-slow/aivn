@@ -177,6 +177,25 @@
 （新增 R18 折叠之后原文照渲、R19 标记不被念成玩家台词）。「模型真的只看得到摘要」要真实例 + 真模型，
 留第 7 步。
 
+### 第 6 步 · 配置面与 README 双语 —— **已完成**
+
+- **插件级两格**（`src/index.ts` 的 `Config`）：`nsfwModel`（限制级专用模型，`provider/model`
+  最稳，光一个 id 去已注册的 provider 里找）与 `nsfwPrompt`（补充提示词）。**逐剧目那份
+  `play.json` 优先**，插件配置只当缺省——与服务端「play 覆盖实例配置」同一个次序。
+- 接线：`nsfwModel` 走 `installStageTap(..., {nsfwModel: () => config.nsfwModel.get()})`（getter，
+  配置可改）；`nsfwPrompt` 进 `Runtime` → `play-context` 的 `readPlaySnapshot(dir, canImage, default)`
+  第三参。另把「解析不出模型」由**缓存 null** 改成**不缓存**：先把模型配好再进通道、进过一次再配好，
+  两条路都能生效。
+- 设置卡两格（P1 组，text）；README 中文 + 英文：配置表加两行、字段数 19 → 21、配置示例加两行、
+  新增「限制级（NSFW）通道」一节（含「模型只看得到摘要、人类这边什么都不藏」这句）、
+  上下文注入表加一行、工具表加 `enter_nsfw` / `exit_nsfw` 两行、独占那句改成「`set_stage_style`
+  与限制级那两位」。
+- e2e 的设置套件断言逐字段（S5–S8），不枚举全部字段，所以新增两格不需要改它。
+
+**验证**：`typecheck` / `build` / `build.mjs --check` 全绿；`rebuild` 20/20；
+一次**不入库**的探针验了配置次序 **3/3**（play.json 没配 → 插件缺省；配了 → 以它为准；
+插件没配 → 仍以 play.json 为准）。
+
 ### 待办
 
-第 6 步配置面与 README 双语 → 第 7 步 e2e 全量（含 A14c）+ reviewer + 落地。
+第 7 步 e2e 全量（含 A14c）+ reviewer 检视 + 落地（插件侧还卡在主检出那份未提交的 `lib/index.js`）。
