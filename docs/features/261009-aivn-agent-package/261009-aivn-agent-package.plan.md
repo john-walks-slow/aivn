@@ -96,10 +96,12 @@ packages/agent/src/
 | P3 · 提示词第一批（Stage DSL 共用正文 4 块） | ✅ 完成 | `1ecc844a` / `5f57f4e` |
 | P3 · 提示词其余（A 区渲染进包；不做 facts 装配层） | ✅ 完成 | `bc5165c8` `f5c40879` / `01105d7` `d8ac9ae` |
 | P3 · 技能正文（audio 两份 86% 重合） | ✅ 完成 | `f952ac7a` `1dbfeb15` / `f24f924` |
-| P4 工具面全量迁移与契约重建 | 代码侧 ✅（改名 ✅；能力按序落地 ✅；矩阵按实测重修 + 挂上包内能力 ✅）——**待跑**插件 live e2e（`injection` ✅ 20/20、`stagehand` ✅ 22/22 跑过；`verify-handmade-play` **卡在环境**：最小组合
-  既没有 provider 适配器、默认路由又落在**没 key 的** `deepseek-official/deepseek-flash` 上，
-  失败发生在任何工具调用之前（NO_ADAPTER / MISSING_CREDENTIAL），与本次改动无关。
-  要跑它得先给 e2e home 配一条能用的模型路由） | 见下各行 |
+| P4 工具面全量迁移与契约重建 | ✅ 完成（改名 ✅；能力按序落地 ✅；矩阵按实测重修 + 挂上包内能力 ✅；插件 live e2e ✅）（live e2e **全绿**：`injection` 20/20、`stagehand` 22/22、`handmade-play` 4/4；
+  离线 `e2e:media` 53/53。`handmade-play` 一开始 1/4 是 **e2e home 的环境缺一条模型路由**——
+  最小组合里没有 provider 适配器，默认路由又落在没 key 的 `deepseek-official` 上（失败在任何工具调用之前）。
+  修法：`dsh-e2e start --patch <临时 yml>`，那份 patch 把主 profile 的 `llm-pi-ai`（含 cpa 的模型目录）
+  与 `agent-default-model: {provider: cpa, model: omni}` 搬进 profile 用户层；临时文件不进仓库，
+  wipe 后重放即可复现） | 见下各行 |
 
 **P2 完成**（媒体与素材面：抠底 / 生图契约 / 三协议 / 网络图下载 / 后缀 / 草稿 / 落位留底 /
 采用 / 台账 / 音色库 / craft / readiness + 素材清单；「导入」经判定不共享，尾部已抽）。
