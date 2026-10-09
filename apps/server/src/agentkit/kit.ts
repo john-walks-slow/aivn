@@ -20,6 +20,7 @@ import { createViewImageTool } from "./viewTool.js";
 import { createVoiceTool } from "./voiceTool.js";
 import { createWebSearchTool } from "./searchTool.js";
 import { createReadSkillTool } from "./skillTool.js";
+import { assertToolContracts, attachToolContract, type AgentToolWithContract } from "./contract.js";
 
 /**
  * 统一 agent 基座的装配入口：`createAgentKit(deps)` 一个函数出两套 agent。
@@ -393,8 +394,8 @@ export function capabilitiesOf(
 
 export interface AgentKit {
   role: AgentRole;
-  /** 装好的工具（已按能力启用集过滤）。 */
-  tools: AgentTool<any>[];
+  /** 装好的工具（已按能力启用集过滤）；每一项都带 `sideEffects` 契约。 */
+  tools: AgentToolWithContract<AgentTool<any>>[];
   can: AgentCapabilities;
   /** 思考档位（宿主解析后透出，提示词与 UI 用）。 */
   thinking: ThinkingLevel;
@@ -414,9 +415,13 @@ export function createAgentKit(deps: AgentKitDeps & { thinking?: ThinkingLevel }
   const installable = roleTools(deps);
   const wanted = enabledToolsFor(deps.role, deps.capabilities);
   const tools = installable.filter((tool) => wanted.has(tool.name));
+  const contractedTools: AgentToolWithContract<AgentTool<any>>[] = tools.map((tool) =>
+    attachToolContract(tool, deps.role),
+  );
+  assertToolContracts(contractedTools);
   return {
     role: deps.role,
-    tools,
+    tools: contractedTools,
     can: capabilitiesOf(deps.role, deps.capabilities, tools),
     thinking: deps.thinking ?? "default",
   };

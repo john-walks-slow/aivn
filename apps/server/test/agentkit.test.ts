@@ -16,6 +16,12 @@ import {
   type AgentKit,
   type CapabilityEnv,
 } from "../src/agentkit/kit.js";
+import {
+  CAPABILITY_MATRIX,
+  TOOL_SIDE_EFFECT_CATALOG,
+  assertToolContracts,
+  sideEffectsForTool,
+} from "../src/agentkit/contract.js";
 import { PlayFiles } from "../src/playFiles.js";
 import { AGENT_ROLES } from "../src/agentkit/role.js";
 import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "../src/agentkit/deps.js";
@@ -101,7 +107,66 @@ const FULL_ENV: CapabilityEnv = { search: true, voice: true, image: true, music:
 /** 工具层的全集：把每个角色的可装清单并起来就是目录本身。 */
 const allToolIds = (): string[] => [...new Set(AGENT_ROLES.flatMap((role) => installableTools(role)))].sort();
 
-describe("agent kit：两个角色的暴露面", () => {
+describe("agent kit：跨宿主能力与副作用契约", () => {
+  it("矩阵覆盖每个能力目录项，并记录两宿主实现与依赖", () => {
+    const matrix = new Map(CAPABILITY_MATRIX.map((entry) => [entry.id, entry]));
+    for (const capability of CAPABILITY_CATALOG) {
+      const entry = matrix.get(capability.id);
+      expect(entry, `能力 ${capability.id} 没有跨宿主矩阵记录`).toBeDefined();
+      expect(entry!.hosts.stageAi.length).toBeGreaterThan(0);
+      expect(entry!.hosts.dshAivn.length).toBeGreaterThan(0);
+      expect(entry!.hosts.backendDependency.length).toBeGreaterThan(0);
+      expect(entry!.hosts.intentionalDifference.length).toBeGreaterThan(0);
+      expect(entry!.roles).toEqual(expect.arrayContaining(capability.roles));
+    }
+    expect(matrix.size).toBe(CAPABILITY_CATALOG.length);
+  });
+
+  it("所有实际工具都有九项副作用元数据，且关键生命周期声明明确", () => {
+    const exa = { search: async () => [] } as never;
+    const deps = { playwriter: playwriterDeps({ exa }), workshop: workshopDeps({ exa }) };
+    const tools = AGENT_ROLES.flatMap((role) => roleTools(deps[role]));
+    assertToolContracts(tools.map((tool) => ({ name: tool.name, sideEffects: TOOL_SIDE_EFFECT_CATALOG[tool.name] })));
+    for (const role of AGENT_ROLES) {
+      const kit = role === "playwriter" ? playwriter({ exa }) : workshop({ exa });
+      assertToolContracts(kit.tools);
+    }
+    expect(sideEffectsForTool("generate_image", "playwriter")).toMatchObject({
+      external_request: true,
+      asset_create: true,
+      asset_adopt: true,
+      background_job: true,
+      // 剧作家一次调用就把图落进 assets/（draft + commit 一次做完），所以它确实写工作区；
+      // 工坊形态只落草稿，这一位必须是假——两者写法不同正是这个字段要表达的东西。
+      workspace_write: true,
+    });
+    expect(sideEffectsForTool("generate_image", "workshop")).toMatchObject({
+      external_request: true,
+      asset_create: true,
+      asset_adopt: false,
+      background_job: false,
+      workspace_write: false,
+    });
+    expect(sideEffectsForTool("commit_asset")).toMatchObject({
+      workspace_write: true,
+      asset_adopt: true,
+      requires_confirmation: true,
+      reversible: false,
+      idempotent: true,
+    });
+    expect(sideEffectsForTool("generate_bgm")).toMatchObject({
+      external_request: true,
+      asset_create: true,
+      background_job: true,
+    });
+  });
+
+  it("契约校验拒绝缺失或非布尔副作用字段", () => {
+    expect(() => assertToolContracts([{ name: "missing" }])).toThrow(/no side-effect contract/);
+    expect(() =>
+      assertToolContracts([{ name: "broken", sideEffects: { ...TOOL_SIDE_EFFECT_CATALOG.read, read_only: "yes" as never } }]),
+    ).toThrow(/invalid side-effect field read_only/);
+  });
   it("剧作家拿轮收束、记忆与剧目文件，不拿命令行与故事树", () => {
     const kit = playwriter();
     expect(names(kit)).toEqual([
