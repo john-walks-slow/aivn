@@ -75,6 +75,31 @@ packages/agent/src/
 | 插件 `generate_asset` | 一键（生成+抠底+登记） | 保留为**宿主便利 face**：由 `image.generate` + `asset.commit` 两个能力组合（实现仍在包里） |
 | `CAPABILITY_MATRIX` 6 处误记 + 2 处缺失 | 契约与代码不符 | 由包内能力表**派生**，矩阵不再手写 |
 
+## 实施进度
+
+| 阶段 | 状态 | 提交（stage-ai / dsh-aivn） |
+| --- | --- | --- |
+| P0 清红 | ✅ 完成 | `3ea5876e` |
+| P1 结构 + `web_search` 端到端 | ✅ 完成 | `05633171` / `ecb8ae6` |
+| P2 媒体与素材 · 抠底 | ✅ 完成 | `e4149c80` / `a0305ce` |
+| P2 媒体与素材 · 生图契约 | ✅ 完成 | `2a7ce34e` / `ef14bc7` |
+| P2 媒体与素材 · 三协议（gemini / openai / modelslab） | 待做 | — |
+| P2 媒体与素材 · 素材落库 / 导入 / 台账 / 草稿 | 待做 | — |
+| P3 提示词与技能正文 | 待做 | — |
+| P4 工具面全量迁移与契约重建 | 待做 | — |
+
+P1/P2 落地时对计划的收紧（都是实测出来的，不是改主意）：
+
+- **schema 编译器住在宿主里**，不在包里（原布局图把 `toPi`/`toDsh` 画进了包内，与 R5 冲突）。
+  包出 IR，宿主各自翻译；由此定下一条硬规矩：共享字段只能用两个宿主都表达得出的共同子集，
+  `minLength` 这类只有 pi 认得的收紧写在宿主 face 上（包单测 `assertCommonSubset` 盯着）。
+- **调参从哪来是宿主的事**：抠底算法的五个旋钮改成包内冻结常量 + `tuningFromEnv(prefix)`，
+  宿主只给前缀（`STAGE_CUTOUT` / `DSH_AIVN_CUTOUT`）——包不读 env。
+- **报错正文宿主中立**：上游正文里点的工具名 / 配置键 / 文件路径（`generate_asset`、
+  `STAGE_IMAGE_FORMAT`、`PlayAssets.assertCanvas`）不进包——「怎么给色键底」是各宿主
+  DESCRIPTION 的事。
+- **一个 fetch 抽象**（`http.ts`）：出图后端与 Exa 共用 `FetchLike`，代理烘在宿主那一层。
+
 ## 实施
 
 ### P0 · 前置：把那 7 条红清掉（其中 1 条是真回归）——**已完成**（`3ea5876e`）
