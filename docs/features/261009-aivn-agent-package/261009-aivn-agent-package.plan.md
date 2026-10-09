@@ -96,7 +96,7 @@ packages/agent/src/
 | P3 · 提示词第一批（Stage DSL 共用正文 4 块） | ✅ 完成 | `1ecc844a` / `5f57f4e` |
 | P3 · 提示词其余（A 区渲染进包；不做 facts 装配层） | ✅ 完成 | `bc5165c8` `f5c40879` / `01105d7` `d8ac9ae` |
 | P3 · 技能正文（audio 两份 86% 重合） | ✅ 完成 | `f952ac7a` `1dbfeb15` / `f24f924` |
-| P4 工具面全量迁移与契约重建 | 进行中（`library_import` ✅；face：`voice.list` ✅、`music.generate` ✅、`image.generate`（服务端侧）✅） | `7cce64c7` `17c66286` `9e0fcb6a` `cb84f49a` / `19764fe` `03983af` `feb4830` |
+| P4 工具面全量迁移与契约重建 | 进行中（`library_import` ✅；face：`voice.list` ✅、`music.generate` ✅、`image.generate`（服务端侧）✅） | `7cce64c7` `17c66286` `9e0fcb6a` `cb84f49a` `c6570437` / `19764fe` `03983af` `feb4830` `17903d5` |
 
 **P2 完成**（媒体与素材面：抠底 / 生图契约 / 三协议 / 网络图下载 / 后缀 / 草稿 / 落位留底 /
 采用 / 台账 / 音色库 / craft / readiness + 素材清单；「导入」经判定不共享，尾部已抽）。
