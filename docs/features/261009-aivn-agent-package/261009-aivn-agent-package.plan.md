@@ -220,6 +220,13 @@ P1/P2 落地时对计划的收紧（都是实测出来的，不是改主意）�
   一页 25 条的分页与筛选、空结果话术、快照旧了的提示全进包；两边的 face 只剩「叫什么名、
   注入哪个目录客户端、回执怎么包」。**两侧有意收敛**：服务端原先没有 `page`（一次只列前 25 条、
   说「用 query/tags 收窄」），现在与插件同一套分页；描述取服务端那份更全的词表版并补上翻页那句。
+  迁移顺序（按「同名同域 → 同域异名 → 单宿主」）：① `web.search` ✅ ② `voice.list` ✅
+  ③ `music.generate`（服务端 10 参 + 排产 vs 插件 3 参 + 同步：排产/同步进 face，参数取并集）
+  ④ `image.generate`（服务端一个工具扛草稿/排产/绑 target 三种语义，按策略拆两个 face；插件的
+  `generate_asset` 是 `image.generate` + `asset.commit` 的组合 face）⑤ `asset.commit` / `image.cutout`
+  （`cut` 与 `recut_sprite` 同域异名）⑥ `play.readiness`（`validate_play` 与 `get_readiness` 的判定
+  早在包里，只剩 face）⑦ 素材清单/资源库一族 ⑧ 最后派生 `CAPABILITY_MATRIX`。
+  单宿主工具（服务端 13 / 插件 4）的实现若已有第二次拷贝就下沉，没有的留在宿主，只在矩阵里登记。
   要紧的是这带来两条基础改动：IR 的 `InferValue` 现在会看 `items`（数组参数不再退化成 `unknown[]`）、
   `HostTightening` 多了 `minItems`/`maxItems`（pi 认、DSH 不认，插件编译器当场拒）。
 
