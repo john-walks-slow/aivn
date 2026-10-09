@@ -1,9 +1,7 @@
-import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  ASSET_DRAFT_RETENTION_DAYS,
   DEFAULT_SPRITE_FRAMING,
   DEFAULT_SPRITE_STATURE,
   SPRITE_FRAMING_ASPECT,
@@ -17,14 +15,27 @@ import {
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
 import {
+  assetMetaOf,
+  declareSprite as declareSpriteIn,
   genericReferenceSuffix,
   IMAGE_EXTS,
   isKeyBackgroundColor,
+  ledgerEntryOf,
+  loadDraft as loadDraftFrom,
+  markCommitted as markCommittedIn,
   mimeForExt,
   NEUTRAL_LEAD,
+  newDraftId,
+  pruneDrafts as pruneDraftsFrom,
+  readDraftImage,
+  readDraftSource,
   referenceSuffix,
   sniffImageMime,
   spriteSuffix,
+  writeDraft as writeDraftTo,
+  type AssetManifest,
+  type DraftPlan,
+  type DraftRecord,
   type KeyBackgroundColor,
 } from "@aivn/agent";
 import type { Limiter } from "./limiter.js";
@@ -85,9 +96,6 @@ function assertKeyColor(value: unknown): KeyBackgroundColor | undefined {
 }
 
 const NEUTRAL = "neutral";
-
-/** 草稿区的保鲜期：超过这个时间没动过的草稿目录，在下一次出图时顺手清掉。 */
-const DRAFT_TTL_MS = ASSET_DRAFT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 /**
  * 立绘主体 id 的合法形状：它就是 `assets/sprites/` 下的目录名。
@@ -187,27 +195,6 @@ export interface DraftedAsset {
 /** `commit` 的选项：事件去向（工坊要素材气泡，剧作家的后台链路一律静默）。 */
 export interface CommitOptions {
   notify?: AssetNotify;
-}
-
-/** 草稿目录里的 draft.json：出图那一刻的意图，`commit` 不在同一个回合也能拿回来。 */
-interface DraftRecord {
-  draftId: string;
-  kind: AssetKind;
-  name?: string;
-  spriteId?: string;
-  variant?: string;
-  framing?: SpriteFraming;
-  stature?: SpriteStature;
-  title?: string;
-  /** 出图时的画幅（提交时按目标重算，这里只作留痕）。 */
-  aspect: ImageAspect;
-  prompt: string;
-  /** 成图扩展名（含点）；立绘是抠底后的 .png。 */
-  imageExt: string;
-  /** 抠底前原片的扩展名（立绘才有）。 */
-  sourceExt?: string;
-  createdAt: string;
-  committedAt?: string;
 }
 
 /** 一张要垫给模型的参考图规格：可能是剧目内立绘，也可能是指定路径或网络图片。 */
@@ -347,6 +334,7 @@ export class PlayAssets {
   async commit(draftId: string, options?: CommitOptions): Promise<GeneratedPlayAsset> {
     const notify = options?.notify ?? "workshop";
     const draft = await this.loadDraft(draftId);
+    if (!draft.kind) throw new Error(`草稿 ${draftId} 没有剧目目标（通用出图），不能入库`);
     const spec = await this.resolve({
       kind: draft.kind,
       name: draft.name,
@@ -356,11 +344,10 @@ export class PlayAssets {
       stature: draft.stature,
       title: draft.title,
     });
-    const dir = this.deps.store.draftDir(draftId);
-    const bytes = await readFile(join(dir, `image${draft.imageExt}`));
+    const bytes = await readDraftImage(this.deps.store.dir, draftId, draft.imageExt);
     // 留底跟着入库：`recut_sprite` 只认 media-cache/sprite-sources/ 那一份。
     if (spec.kind === "sprite" && draft.sourceExt) {
-      await this.keepSpriteSource(spec, await readFile(join(dir, `source${draft.sourceExt}`)), draft.sourceExt);
+      await this.keepSpriteSource(spec, await readDraftSource(this.deps.store.dir, draftId, draft.sourceExt), draft.sourceExt);
     }
     const written = await this.persist(spec, bytes, draft.imageExt);
     if (spec.kind === "sprite") await this.declareSprite(spec, notify);
@@ -369,24 +356,13 @@ export class PlayAssets {
     return { ...written, autoNeutral: false };
   }
 
-  private async loadDraft(draftId: string): Promise<DraftRecord> {
-    const id = draftId.trim();
-    if (!/^[\w-]{1,64}$/.test(id)) throw new Error(`草稿 id「${draftId}」非法`);
-    const file = join(this.deps.store.draftDir(id), "draft.json");
-    if (!existsSync(file)) {
-      throw new Error(`找不到草稿 ${id}：它可能已被清理，或者 id 记错了——重新出一次图。`);
-    }
-    return JSON.parse(await readFile(file, "utf8")) as DraftRecord;
+  private loadDraft(draftId: string): Promise<DraftRecord> {
+    return loadDraftFrom(this.deps.store.dir, draftId);
   }
 
   /** 入库留痕（best-effort）：草稿目录迟早会被清理，这一笔只为当下看得出「已经采用过」。 */
-  private async markCommitted(draftId: string, draft: DraftRecord): Promise<void> {
-    try {
-      const file = join(this.deps.store.draftDir(draftId), "draft.json");
-      await writeFile(file, `${JSON.stringify({ ...draft, committedAt: new Date().toISOString() }, null, 2)}\n`);
-    } catch {
-      // 素材已经落好了，为一条留痕报错不值
-    }
+  private markCommitted(draftId: string, draft: DraftRecord): Promise<void> {
+    return markCommittedIn(this.deps.store.dir, draftId, draft);
   }
 
   /**
@@ -535,61 +511,36 @@ export class PlayAssets {
     prompt: string,
     bytes: { image: Buffer; raw: Buffer; mimeType: string },
   ): Promise<DraftedAsset> {
-    const draftId = randomUUID();
-    const dir = this.deps.store.draftDir(draftId);
-    await mkdir(dir, { recursive: true });
+    const draftId = newDraftId();
     const imageExt = spec.kind === "sprite" ? ".png" : extOf(bytes.mimeType);
     const sourceExt = spec.kind === "sprite" ? extOf(bytes.mimeType) : undefined;
-    await writeFile(join(dir, `image${imageExt}`), bytes.image);
-    if (sourceExt) await writeFile(join(dir, `source${sourceExt}`), bytes.raw);
-    const intent =
-      spec.kind === "sprite"
+    const plan: DraftPlan = {
+      draftId,
+      kind: spec.kind,
+      ...(spec.kind === "sprite"
         ? {
             spriteId: spec.spriteId,
             variant: spec.variant,
             framing: spec.framing,
             stature: spec.stature,
-            ...(spec.title ? { title: spec.title } : {}),
           }
-        : { name: spec.stem };
-    const record: DraftRecord = {
-      draftId,
-      kind: spec.kind,
-      ...intent,
+        : { name: spec.stem }),
+      ...(spec.title ? { title: spec.title } : {}),
       aspect: spec.aspect,
       prompt,
-      imageExt,
-      ...(sourceExt ? { sourceExt } : {}),
       createdAt: new Date().toISOString(),
     };
-    await writeFile(join(dir, "draft.json"), `${JSON.stringify(record, null, 2)}\n`);
-    await this.pruneDrafts();
+    const drafted = await writeDraftTo(this.deps.store.dir, plan, {
+      image: bytes.image,
+      imageExt,
+      ...(sourceExt ? { source: { data: bytes.raw, ext: sourceExt } } : {}),
+    });
     return {
-      draftId,
+      draftId: drafted.draftId,
       kind: spec.kind,
-      path: `media-cache/drafts/${draftId}/image${imageExt}`,
-      url: `/plays/${this.playId}/drafts/${draftId}/image${imageExt}`,
+      path: drafted.path,
+      url: `/plays/${this.playId}/drafts/${drafted.draftId}/image${imageExt}`,
     };
-  }
-
-  /** 清掉过期草稿：超过 `DRAFT_TTL_MS` 没动过的整份目录删掉。删不掉就算了，不打断出图。 */
-  private async pruneDrafts(): Promise<void> {
-    const root = this.deps.store.draftsDir();
-    if (!existsSync(root)) return;
-    const cutoff = Date.now() - DRAFT_TTL_MS;
-    try {
-      for (const entry of await readdir(root, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const dir = join(root, entry.name);
-        try {
-          if ((await stat(dir)).mtimeMs < cutoff) await rm(dir, { recursive: true, force: true });
-        } catch {
-          // 单份草稿删不掉不该影响这次出图
-        }
-      }
-    } catch {
-      // 草稿区列不出来同理
-    }
   }
 
   /**
@@ -645,16 +596,13 @@ export class PlayAssets {
    * 并发差分同时记账要走剧目锁，否则后写的会冲掉先写的记录。
    */
   private async recordPrompt(spec: AssetSpec, path: string, prompt: string): Promise<void> {
-    const id = spec.kind === "sprite" ? `${spec.spriteId}/${spec.stem}` : spec.stem;
-    const kind = spec.kind === "background" ? "background" : spec.kind;
+    const entry = ledgerEntryOf(spec, path, prompt, new Date().toISOString());
     try {
-      await withPlayConfigLock(this.deps.store.dir, () =>
-        this.deps.store.saveLedgerEntry({ id, kind, path, prompt, at: new Date().toISOString() }),
-      );
+      await withPlayConfigLock(this.deps.store.dir, () => this.deps.store.saveLedgerEntry(entry));
     } catch (error) {
       // 图已经落盘了，为一条记账把一次成功的出图报成失败更糟；这里出声，图与 prompt 对不上时能查到。
       console.warn(
-        `[aivn] 出图 prompt 未记进 assets/generated.json（${id}）: ${error instanceof Error ? error.message : String(error)}`,
+        `[aivn] 出图 prompt 未记进 assets/generated.json（${entry.id}）: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -967,17 +915,17 @@ export class PlayAssets {
    */
   private withManifest(
     notify: AssetNotify,
-    edit: (current: Record<string, unknown>, asMeta: (key: string) => Record<string, unknown>) => void,
+    edit: (current: AssetManifest) => AssetManifest | void,
   ): Promise<void> {
     return withPlayConfigLock(this.deps.store.dir, async () => {
       const raw = await this.deps.files.read("assets/manifest.json").catch(() => "");
-      const current: Record<string, unknown> =
+      const current: AssetManifest =
         raw && raw.trim()
           ? (() => {
               try {
                 const parsed: unknown = JSON.parse(raw);
                 return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-                  ? (parsed as Record<string, unknown>)
+                  ? (parsed as AssetManifest)
                   : {};
               } catch {
                 return {};
@@ -985,15 +933,9 @@ export class PlayAssets {
             })()
           : {};
 
-      const asMeta = (key: string): Record<string, unknown> => {
-        const value = current[key];
-        if (value && typeof value === "object" && !Array.isArray(value)) return { ...(value as Record<string, unknown>) };
-        return typeof value === "string" ? { description: value } : {};
-      };
+      const next = edit(current) ?? current;
 
-      edit(current, asMeta);
-
-      const after = `${JSON.stringify(current, null, 2)}\n`;
+      const after = `${JSON.stringify(next, null, 2)}\n`;
       if (after === raw) return;
       await this.deps.files.write("assets/manifest.json", after);
       this.deps.onWrite({ path: "assets/manifest.json" }, notify);
@@ -1004,26 +946,11 @@ export class PlayAssets {
    * 出图后把呈现声明补进素材表：文件在盘上但没人声明取景与体量时，
    * 舞台只能拿缺省档去套——一张半身图会被按全身摆位，机甲会被画成一人高。
    *
-   * 只写它知道的那几格：`framing`（neutral 那次作为立绘级基准；与基准不同的差分写差分级覆盖）、
-   * `stature`、`title`（无卡主体的名牌）。**描述一个字不动**——那是工坊与用户的账。
+   * 并表规则（立绘级取景以 neutral 为准、差分级只写不同那一档、描述一个字不动）在
+   * `@aivn/agent` 的 `media/catalog.ts`，与插件共用一份。
    */
   private declareSprite(spec: AssetSpec, notify: AssetNotify): Promise<void> {
-    const spriteId = spec.spriteId!;
-    const variant = spec.variant!;
-    return this.withManifest(notify, (current, asMeta) => {
-      const base = asMeta(spriteId);
-      // 立绘级取景以 neutral 那次为准：它是所有差分的垫图基准，一条 closeup 不该把基准带跑
-      if (variant === NEUTRAL && spec.framing) base.framing = spec.framing;
-      if (spec.stature) base.stature = spec.stature;
-      if (spec.title) base.title = spec.title;
-      current[spriteId] = base;
-
-      // 差分级的取景只在与立绘级不同时才写一条覆盖：与基准一致时留空表，文件才读得下去
-      const baseFraming = base.framing;
-      if (spec.framing && variant !== NEUTRAL && spec.framing !== baseFraming) {
-        current[`${spriteId}/${variant}`] = { ...asMeta(`${spriteId}/${variant}`), framing: spec.framing };
-      }
-    });
+    return this.withManifest(notify, (current) => declareSpriteIn(current, spec));
   }
 
   /**
@@ -1046,14 +973,16 @@ export class PlayAssets {
   ): Promise<void> {
     const id = assertSpriteId(spriteId);
     const key = variant && variant.trim() !== "" ? `${id}/${variant.trim()}` : id;
-    return this.withManifest(notify, (current, asMeta) => {
-      const meta = asMeta(key);
+    return this.withManifest(notify, (current) => {
+      const meta = assetMetaOf(current, key) as Record<string, unknown>;
       for (const [field, value] of Object.entries(patch)) {
         if (value === null || value === "") delete meta[field];
         else if (value !== undefined) meta[field] = value;
       }
-      if (Object.keys(meta).length === 0) delete current[key];
-      else current[key] = meta;
+      const next: AssetManifest = { ...current };
+      if (Object.keys(meta).length === 0) delete next[key];
+      else next[key] = meta as AssetManifest[string];
+      return next;
     });
   }
 

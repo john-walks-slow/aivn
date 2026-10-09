@@ -1093,10 +1093,13 @@ describe("PlayAssets：出图与入库解耦（草稿 → 采用）", () => {
   });
 
   it("保留期常量来自共享契约：本地天数改了会与工坊对用户的承诺脱钩", async () => {
-    // 这条钉的不是数字本身，而是「两边说的是同一件事」——DRAFT_TTL_MS 必须由
-    // @aivn/core 的 ASSET_DRAFT_RETENTION_DAYS 推出来，不许再手写一遍。
-    const source = await readFile(new URL("../src/playAssets.ts", import.meta.url), "utf8");
-    expect(source).toContain("ASSET_DRAFT_RETENTION_DAYS");
-    expect(source).not.toMatch(/DRAFT_TTL_MS\s*=\s*\d/);
+    // 这条钉的不是数字本身，而是「两边说的是同一件事」——草稿寿命必须由 @aivn/core 的
+    // ASSET_DRAFT_RETENTION_DAYS 推出来，不许再手写一遍。推导已经下沉到共享包
+    //（`@aivn/agent` 的 `media/draft.ts`），所以这里改盯包源码：本层不再自己算天数。
+    const pkg = await readFile(new URL("../../../packages/agent/src/media/draft.ts", import.meta.url), "utf8");
+    expect(pkg).toContain("ASSET_DRAFT_RETENTION_DAYS");
+    expect(pkg).not.toMatch(/DRAFT_TTL_MS\s*=\s*\d/);
+    const here = await readFile(new URL("../src/playAssets.ts", import.meta.url), "utf8");
+    expect(here).not.toMatch(/DRAFT_TTL_MS\s*=\s*\d/);
   });
 });

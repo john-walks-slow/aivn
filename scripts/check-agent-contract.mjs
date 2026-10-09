@@ -191,12 +191,18 @@ check("素材状态词只用共享契约那一套", () => {
 });
 
 check("生命周期常量由共享契约推导", () => {
-  const source = read("apps/server/src/playAssets.ts");
-  if (!source.includes("ASSET_DRAFT_RETENTION_DAYS")) {
-    return ["playAssets.ts 的保留期不再来自 @aivn/core 的 ASSET_DRAFT_RETENTION_DAYS"];
+  // 推导已经下沉到共享包（`@aivn/agent` 的 `media/draft.ts`），两个宿主都吃它——
+  // 所以这里盯包源码，另外确认宿主没有又自己算一遍。
+  const pkg = read("packages/agent/src/media/draft.ts");
+  if (!pkg.includes("ASSET_DRAFT_RETENTION_DAYS")) {
+    return ["draft.ts 的保留期不再来自 @aivn/core 的 ASSET_DRAFT_RETENTION_DAYS"];
   }
-  if (/DRAFT_TTL_MS\s*=\s*\d/.test(source)) {
-    return ["playAssets.ts 把手写天数又写回来了——两边对同一条承诺会各说各的"];
+  if (/DRAFT_TTL_MS\s*=\s*\d/.test(pkg)) {
+    return ["把手写天数又写回来了——两边对同一条承诺会各说各的"];
+  }
+  const server = read("apps/server/src/playAssets.ts");
+  if (/DRAFT_TTL_MS\s*=\s*\d/.test(server)) {
+    return ["playAssets.ts 又自己算了一遍草稿寿命"];
   }
   return [];
 });

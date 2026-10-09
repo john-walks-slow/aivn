@@ -19,6 +19,7 @@ import {
   type AssetMeta,
   type PlayConfig,
 } from "@aivn/core";
+import type { LedgerEntry as PlayLedgerEntry } from "@aivn/agent";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
 import { parseHistory, type HistoryBeat } from "./history.js";
 import { countSaves, readSaveMeta, saveDirOf, writeSaveMeta, assertSaveId, PlaySaves, type SaveMeta } from "./saves.js";
@@ -45,18 +46,12 @@ export interface PlaySummary {
   readiness: Readiness;
 }
 
-/** 出图台账的一条记录（assets/generated.json，引擎写、其余只读）。 */
-export interface PlayLedgerEntry {
-  /** 素材 id：背景/CG 用文件名主体，立绘用 `<角色id>/<差分名>`（与 prompt.ts 查表同一种键）。 */
-  id: string;
-  kind: "background" | "cg" | "sprite";
-  /** 剧目内相对路径。文件是权威：图没了这条记录就不算数。 */
-  path: string;
-  /** 实际发给模型的 prompt 原文（含引擎拼的画风与构图后缀），原样留档。 */
-  prompt: string;
-  /** 记账时刻（ISO），给人看溯源用。 */
-  at: string;
-}
+/**
+ * 出图台账的一条记录（`assets/generated.json`，引擎写、其余只读）。
+ *
+ * 形状来自共享包 `@aivn/agent` 的 `media/catalog.ts`——插件与独立服务端写的是同一张表。
+ */
+export type { LedgerEntry as PlayLedgerEntry } from "@aivn/agent";
 
 /**
  * 剧目配置文件的读改写互斥队列，按剧目目录绝对路径索引。
@@ -287,11 +282,6 @@ export class PlayStore {
    */
   draftDir(draftId: string): string {
     return join(this.dir, "media-cache", "drafts", draftId);
-  }
-
-  /** 草稿根目录（清理过期草稿时列目录用）。 */
-  draftsDir(): string {
-    return join(this.dir, "media-cache", "drafts");
   }
 
 

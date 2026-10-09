@@ -1,0 +1,134 @@
+/**
+ * 素材落库与记账的**规则层**（两个宿主共用一份）：落位路径、旧扩展名清理、素材表声明、出图台账。
+ *
+ * 只放规则不放 IO：写盘、加锁、推刷新信号都是宿主的事（服务端的 `PlayFiles` 是权限边界，
+ * 插件的锁挂在模块级的 `withFileLock` 上）。这里全是纯函数，两个宿主各自的 read-modify-write
+ * 里调用它们。
+ */
+import type { AssetMeta, SpriteFraming, SpriteStature } from "@aivn/core";
+
+/** 素材类目：背景、事件插图、立绘。 */
+export type AssetKind = "background" | "cg" | "sprite";
+/** 台账的键按类目多一位音乐。 */
+export type LedgerKind = AssetKind | "bgm";
+/** 立绘定妆照的差分名（所有差分的垫图基准）。 */
+export const NEUTRAL = "neutral";
+
+/** 素材表 `assets/manifest.json`：值是元数据对象；旧格式里直接写一句说明的字符串也收。 */
+export type AssetManifest = Record<string, AssetMeta | string>;
+
+/**
+ * 规则层要的那几个字段。
+ *
+ * 刻意不叫 `AssetSpec`：两个宿主的规格各自有别的字段（服务端带解析后的垫图列表，
+ * 插件带 `absPath`），结构上满足这里就够——包不认识宿主规格的全貌。
+ */
+export interface AssetRef {
+  kind: AssetKind;
+  /** `assets/` 下的目录：`backgrounds` / `cg` / `sprites/<spriteId>`。 */
+  kindPath: string;
+  /** 文件名主体（立绘是差分名）。 */
+  stem: string;
+  spriteId?: string;
+  variant?: string;
+  framing?: SpriteFraming;
+  stature?: SpriteStature;
+  /** 立绘级标题（无卡主体靠它出名牌）。 */
+  title?: string;
+}
+
+/** `assets/generated.json` 的一条：这张图当初用什么描述生成、落在哪。 */
+export interface LedgerEntry {
+  /** 素材 id：背景 / CG 用文件名主体，立绘用 `<主体id>/<差分名>`。 */
+  id: string;
+  kind: LedgerKind;
+  /** 剧目内相对路径。文件是权威：图没了这条记录就不算数。 */
+  path: string;
+  /** 实际发给模型的 prompt 原文（含引擎拼的画风与构图后缀），原样留档。 */
+  prompt: string;
+  /** 记账时刻（ISO）。 */
+  at: string;
+  model?: string;
+}
+
+/** 素材落位的剧目内相对路径（`assets/<kindPath>/<stem><ext>`）。 */
+export function assetRel(spec: AssetRef, ext: string): string {
+  return `assets/${spec.kindPath}/${spec.stem}${ext}`;
+}
+
+/** 抠底前原片的留底路径；非立绘给 null（背景 / CG 没有原片这回事）。 */
+export function spriteSourceRel(spec: AssetRef, ext: string): string | null {
+  if (!spec.spriteId) return null;
+  return `media-cache/sprite-sources/${spec.spriteId}/${spec.stem}${ext}`;
+}
+
+/**
+ * 同一个 stem 下**该清掉**的旧文件名。
+ *
+ * 换个生图后端，同一张图可能从 `.jpg` 变成 `.png`：留着旧的那份，素材页会看见两张、
+ * 垫图会一直命中先找到的那张。所以写新文件时把同 stem 的其它扩展名一并删掉。
+ */
+export function staleSiblings(entries: readonly string[], stem: string, keep: string): string[] {
+  return entries.filter((entry) => entry !== keep && entry.replace(/\.\w+$/, "") === stem);
+}
+
+/**
+ * 素材表里某个键的元数据副本。
+ *
+ * 旧格式 `{id: "一句说明"}` 与元数据对象两种都收——表是给人读也给人写的，
+ * 字符串等价于只有 `description` 的元数据。**不做字段过滤**：表里有的字段一个都不能丢。
+ */
+export function assetMetaOf(manifest: AssetManifest, key: string): AssetMeta {
+  const value: AssetMeta | string | undefined = manifest[key];
+  if (value && typeof value === "object") return { ...value };
+  return typeof value === "string" ? { description: value } : {};
+}
+
+/**
+ * 出图后把呈现声明补进素材表：只写它知道的那几格。
+ *
+ * 立绘级取景以**定妆照**那一次为准：它是所有差分的垫图基准，一条 closeup 不该把基准带跑；
+ * 差分与基准不同才写一条差分级覆盖（与基准一致时留空表，文件才读得下去）。
+ * `title` 是无卡主体的名牌（名牌回落链的第三档）。**描述一个字不动**——那是工坊与用户的账。
+ */
+export function declareSprite(manifest: AssetManifest, spec: AssetRef): AssetManifest {
+  if (!spec.spriteId) return manifest;
+  const key = spec.spriteId;
+  const level = assetMetaOf(manifest, key);
+  const neutral = spec.variant === NEUTRAL;
+  const next: AssetManifest = {
+    ...manifest,
+    [key]: {
+      ...level,
+      ...(spec.title ? { title: spec.title } : {}),
+      ...(neutral && spec.framing ? { framing: spec.framing } : {}),
+      ...(neutral && spec.stature ? { stature: spec.stature } : {}),
+    },
+  };
+  if (!neutral && spec.framing && spec.framing !== level.framing && spec.variant) {
+    const variantKey = `${spec.spriteId}/${spec.variant}`;
+    next[variantKey] = { ...assetMetaOf(next, variantKey), framing: spec.framing };
+  }
+  return next;
+}
+
+/** 素材表里的一句话画面描述：剧作家挑素材全靠它。立绘落到 `<主体>/<差分>` 键上。 */
+export function declareDescription(manifest: AssetManifest, spec: AssetRef, description: string): AssetManifest {
+  const key = spec.kind === "sprite" ? `${spec.spriteId}/${spec.variant}` : spec.stem;
+  return { ...manifest, [key]: { ...assetMetaOf(manifest, key), description } };
+}
+
+/** BGM 的素材表来源标记（曲子没有立绘那套呈现声明，只记一条「哪来的」）。 */
+export function declareBgmSource(manifest: AssetManifest, stem: string): AssetManifest {
+  return { ...manifest, [stem]: { ...assetMetaOf(manifest, stem), source: "AI 生成（本插件）" } };
+}
+
+/** 台账的键：与提示词查表一致——背景 / CG 用文件名主体，立绘用 `<主体id>/<差分名>`。 */
+export function ledgerIdOf(spec: AssetRef): string {
+  return spec.kind === "sprite" ? `${spec.spriteId}/${spec.variant}` : spec.stem;
+}
+
+/** 台账条目：条目自己带 id，`prompt` 是这张图实际发出去的那份原文。 */
+export function ledgerEntryOf(spec: AssetRef, path: string, prompt: string, at: string): LedgerEntry {
+  return { id: ledgerIdOf(spec), kind: spec.kind, path, prompt, at };
+}

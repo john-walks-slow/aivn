@@ -55,6 +55,33 @@ export { canvasFor as openAiCanvasFor, OpenAiImageGen } from "./media/openai.js"
 export type { ModelsLabImageOptions } from "./media/modelslab.js";
 export { canvasFor as modelsLabCanvasFor, ModelsLabImageGen } from "./media/modelslab.js";
 
+export type { AssetKind, AssetManifest, AssetRef, LedgerEntry, LedgerKind } from "./media/catalog.js";
+export {
+  assetMetaOf,
+  assetRel,
+  declareBgmSource,
+  declareDescription,
+  declareSprite,
+  ledgerEntryOf,
+  ledgerIdOf,
+  NEUTRAL,
+  spriteSourceRel,
+  staleSiblings,
+} from "./media/catalog.js";
+export type { DraftedDraft, DraftFiles, DraftPlan, DraftRecord } from "./media/draft.js";
+export {
+  DRAFT_TTL_MS,
+  draftDir,
+  draftsDir,
+  loadDraft,
+  markCommitted,
+  newDraftId,
+  pruneDrafts,
+  readDraftImage,
+  readDraftSource,
+  writeDraft,
+} from "./media/draft.js";
+
 export type { KeyBackgroundColor } from "./media/prompt.js";
 export {
   DEFAULT_KEY_COLOR,
