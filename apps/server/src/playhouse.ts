@@ -11,13 +11,13 @@ import { PlaywrightOrchestrator, type CarryOver, type OrchestratorRuntimeState }
 import type { SaveInfo } from "./saves.js";
 import type { PlayConfig } from "@aivn/core";
 import type { ServerConfig } from "./config.js";
-import { imagePendingTtlMs } from "./config.js";
+import { imageConfigFor, imagePendingTtlMs } from "./config.js";
 import type { SettingsStore } from "./settingsStore.js";
 import { createCpaProvider, fetchGatewayModels, resolveCpaModel, supportedModels, type GatewayModel } from "./provider.js";
 import { createTts } from "./tts.js";
-import { createImageBackend } from "./imageFactory.js";
+import { createImageBackends } from "./imageFactory.js";
 import { createMusicBackend } from "./musicFactory.js";
-import type { ImageBackend } from "./imageBackend.js";
+import type { ImageBackends } from "./imageBackend.js";
 import type { MusicBackend } from "./musicBackend.js";
 import { createExa, type Exa } from "./exa.js";
 import { createWebImageFetcher, type WebImageFetcher } from "./webImage.js";
@@ -178,7 +178,7 @@ export class PlayHouse {
   /** 按剧目解析出来的模型缓存（agents 段选了什么 id → 那个模型对象）。 */
   private readonly modelCache = new Map<string, Model<"openai-completions">>();
   private tts!: ReturnType<typeof createTts>;
-  private imageBackend!: ImageBackend | null;
+  private imageBackends!: ImageBackends | null;
   /** 音乐生成后端（无配置为 null：工坊少一个工具）。进程级，与生图同一套「设置一改就地重建」。 */
   private musicBackend!: MusicBackend | null;
   /** 工坊联网检索（无 key 为 null：工坊少一个工具）。与 TTS 一样是进程级客户端，不随 runtime 重建。 */
@@ -241,7 +241,7 @@ export class PlayHouse {
   private rebuildClients(): void {
     ({ provider: this.provider, model: this.model } = createCpaProvider(this.config));
     this.tts = createTts(this.config);
-    this.imageBackend = createImageBackend(this.config);
+    this.imageBackends = createImageBackends(this.config);
     this.musicBackend = createMusicBackend(this.config);
     this.exa = createExa(this.config);
   }
@@ -426,15 +426,19 @@ export class PlayHouse {
 
   /** 剧目级素材层（首次调用时装配；未启用生图为 undefined）。 */
   private playAssetsFor(playId: string, store: PlayStore): PlayAssets | undefined {
-    if (!this.imageBackend) return undefined;
+    if (!this.imageBackends) return undefined;
     const cached = this.playAssets.get(playId);
     if (cached) return cached;
     const assets = new PlayAssets(playId, {
       store,
       files: new PlayFiles(store),
-      backend: this.imageBackend,
+      backends: this.imageBackends,
       limiter: this.limiterFor(playId),
-      reference: this.config.image.reference,
+      reference: {
+        background: imageConfigFor(this.config, "background").reference,
+        cg: imageConfigFor(this.config, "cg").reference,
+        sprite: imageConfigFor(this.config, "sprite").reference,
+      },
       pending: this.pendingFor(playId),
       fetchImage: this.webImage,
       // 工坊要刷新信号与素材气泡，剧作家在拍内预发射一样都不产——按 notify 分流。
@@ -884,7 +888,7 @@ export class PlayHouse {
     const env: CapabilityEnv = {
       search: this.exa !== null,
       voice: this.voices !== undefined,
-      image: this.imageBackend !== null,
+      image: this.imageBackends !== null,
       music: this.musicBackend !== null,
     };
     return {
@@ -993,7 +997,7 @@ export class PlayHouse {
     },
   ): Promise<void> {
     const runtime = await this.get(playId);
-    if (!this.imageBackend) {
+    if (!this.imageBackends) {
       throw new Error("生图未启用（STAGE_IMAGE_ENABLED=false 或后端缺凭据）");
     }
     const assets = this.playAssetsFor(playId, runtime.store);
@@ -1103,7 +1107,7 @@ export class PlayHouse {
     },
   ): Promise<{ target: string; path: string; prompt: string }> {
     const runtime = await this.get(playId);
-    if (!this.imageBackend) {
+    if (!this.imageBackends) {
       throw new Error("生图未启用（STAGE_IMAGE_ENABLED=false 或后端缺凭据）");
     }
     const assets = this.playAssetsFor(playId, runtime.store);

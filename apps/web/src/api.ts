@@ -138,6 +138,24 @@ export interface HistoryBeat {
   entries: HistoryEntry[];
 }
 
+/** 生图类目：三类素材各有一份可覆盖的出图配置（与服务端 `imageBackend.ts` 的 IMAGE_KINDS 同表）。 */
+export type ImageKind = "background" | "cg" | "sprite";
+
+/**
+ * 逐类目生图覆盖：**缺省 = 跟随基础那份**。
+ * `apiKey` 只回掩码（`apiKeySet` 说这一格有没有被覆盖），清空即回落基础那一把。
+ */
+export interface ImageKindSettings {
+  format?: "gemini" | "openai" | "modelslab";
+  baseUrl?: string;
+  apiKey?: string;
+  apiKeySet: boolean;
+  model?: string;
+  size?: string;
+  reference?: "none" | "neutral";
+  timeoutMs?: number;
+}
+
 /** 设置面板数据（P6）：敏感值只回掩码，原样回传视为「不改」。 */
 export interface Settings {
   /**
@@ -183,6 +201,11 @@ export interface Settings {
     concurrency: number;
     timeoutMs: number;
     reference: "none" | "neutral";
+    /**
+     * 逐类目覆盖（背景 / CG / 立绘）：只存与基础那份不同的字段，没写的跟随基础。
+     * `apiKey` 是掩码（`apiKeySet` 说这一格有没有被覆盖），其余字段缺省 = 跟随。
+     */
+    kinds: Record<ImageKind, ImageKindSettings>;
   };
   /**
    * 音乐生成（BGM）。`baseUrl` / `apiKey` 留空 = 回落到上面 `image` 那一份

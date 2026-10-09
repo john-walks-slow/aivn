@@ -8,6 +8,7 @@ import { PlayFiles } from "../src/playFiles.js";
 import { PlayStore } from "../src/store.js";
 import { PlayAssets } from "../src/playAssets.js";
 import type { ImageBackend } from "../src/imageBackend.js";
+import { NEUTRAL_REFERENCE, sharedBackends } from "./helpers.js";
 
 /**
  * 柚子社《千恋＊万花》四角色的**真实生图**端到端演练——走的是工坊出图的那条完整管线
@@ -136,8 +137,9 @@ async function setup(): Promise<{ assets: PlayAssets; playDir: string }> {
   const assets = new PlayAssets("senren", {
     store,
     files,
-    backend: liveBackend(),
+    backends: sharedBackends(liveBackend()),
     limiter: new Limiter(Number(process.env.STAGE_IMAGE_CONCURRENCY ?? 6)),
+    reference: NEUTRAL_REFERENCE,
     onWrite: () => {},
   });
   // 落盘到固定目录，方便事后翻图

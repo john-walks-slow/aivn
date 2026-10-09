@@ -339,29 +339,39 @@ export class LineageTree {
   }
 
   /**
-   * 这一拍的末节点：从首节点沿唯一子节点往下走，与前端切轮规则同构
-   * （`apps/web/src/stage/beats.ts` 的 traceBeat）。
+   * 这一拍的末节点：从首节点沿「这一拍自己」的子链往下走，走到 `beat_end` 为止。
    *
-   * 三种停法：踩到 `beat_end`；下一个是 `fork` 标记（分岔标记属于下一段，不在本轮内）；
-   * 子节点不唯一（轮中被截断）或没有子节点（这一拍就到此为止）——都停在当前节点。
+   * **岔口不再一律刹车**。旧实现在岔口原地停下，于是轮中分岔（重写落在拍内、轮内分叉）
+   * 会把落点留在拍中间——玩家按「继续」时挂载点不是 `beat_end`，复用规则不认，
+   * 又长出一条新枝。现在岔口按「顺着这条世界线」挑一条继续走：
    *
-   * 唯一无解的情形：`headId` 自己是 fork 标记，而它的子节点不是恰好一个
-   * （没有子节点 = 空壳，多个孩子 = 一个岔口）。这时返回 `null`，调用方必须处理。
+   * 1. `prefer`（上一次结构操作前世界线所在的那个节点）落在谁的子树里就走谁——重写枝也算；
+   * 2. 否则优先 `beat_end` 孩子（这一拍正经的收束）；
+   * 3. 否则取最早落笔的非 fork 孩子（fork 标记是「下一段从这里重写」，它自己的子树才是内容）。
+   *
+   * 停法只剩下三种：踩到 `beat_end`；这一拍写到这里就没有下一句了（返回当前节点——
+   * 腰斩/未收束的半拍也算这一拍的末节点，调用方据此原地接着写）；空壳 fork 的子树
+   * 被剪光了（返回 `null`，这条枝不是一拍，调用方必须处理）。
    */
-  beatEndFrom(headId: string): string | null {
+  beatEndFrom(headId: string, prefer?: string | null): string | null {
     let current = this.requireNode(headId);
     if (current.kind === "root") return current.id;
-    if (current.kind === "fork") {
-      const kids = this.childrenOf(current.id);
-      if (kids.length !== 1) return null;
-      current = kids[0]!;
-    }
+    // 岔口上要判「prefer 在谁的子树里」，先把它的祖先链一次算成集合（含自身）
+    const walked = prefer ? this.pathSet(prefer) : null;
     for (;;) {
       if (current.kind === "beat_end") return current.id;
       const kids = this.childrenOf(current.id);
-      if (kids.length !== 1) return current.id;
-      const next = kids[0]!;
-      if (next.kind === "fork") return current.id;
+      // 空壳 fork（子树被剪光的重写标记）不是一拍：拿 null 当「这条路走不通」
+      if (kids.length === 0) return current.kind === "fork" ? null : current.id;
+      if (kids.length === 1) {
+        current = kids[0]!;
+        continue;
+      }
+      const next =
+        (walked ? kids.find((kid) => walked.has(kid.id)) : undefined) ??
+        kids.find((kid) => kid.kind === "beat_end") ??
+        kids.find((kid) => kid.kind !== "fork");
+      if (!next) return null;
       current = next;
     }
   }

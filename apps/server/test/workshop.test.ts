@@ -21,7 +21,7 @@ import { createAgentKit, defaultCapabilitiesFor, type AgentCapabilities } from "
 import { renderReadiness, type PlayReadiness } from "@aivn/agent";
 import { readSkill, skillsPrompt } from "../src/skills.js";
 import { Exa } from "../src/exa.js";
-import { createFakeStreamFn, BEAT_1, BEAT_2, PLAY } from "./helpers.js";
+import { createFakeStreamFn, sharedBackends, NEUTRAL_REFERENCE, BEAT_1, BEAT_2, PLAY } from "./helpers.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { LineageTree } from "@aivn/core";
 import { PlayMemory } from "../src/memory.js";
@@ -403,8 +403,9 @@ describe("工坊工具：generate_image", () => {
     const assets = new PlayAssets("test", {
       store,
       files: new PlayFiles(store),
-      backend: { generate: async () => ({ data: Buffer.from("x"), mimeType: "image/jpeg" }) },
+      backends: sharedBackends({ generate: async () => ({ data: Buffer.from("x"), mimeType: "image/jpeg" }) }),
       limiter: new Limiter(1),
+      reference: NEUTRAL_REFERENCE,
       onWrite: () => {},
     });
     const tools = createWorkshopTools(deps({ playAssets: assets, onAsset: (a) => events.push(a) }));
@@ -497,12 +498,13 @@ describe("工坊工具：generate_image", () => {
     const assets = new PlayAssets("test", {
       store,
       files: new PlayFiles(store),
-      backend: {
+      backends: sharedBackends({
         generate: async () => {
           throw new Error("生图失败 HTTP 503：auth_unavailable");
         },
-      },
+      }),
       limiter: new Limiter(1),
+      reference: NEUTRAL_REFERENCE,
       onWrite: () => {},
     });
     const gen = createWorkshopTools(deps({ playAssets: assets })).find((t) => t.name === "generate_image")!;
@@ -749,8 +751,9 @@ describe("WorkshopSession：一轮对话", () => {
       playAssets: new PlayAssets("test", {
         store,
         files: new PlayFiles(store),
-        backend: { generate: async () => ({ data: png, mimeType: "image/png" }) },
+        backends: sharedBackends({ generate: async () => ({ data: png, mimeType: "image/png" }) }),
         limiter: new Limiter(1),
+        reference: NEUTRAL_REFERENCE,
         onWrite: () => {},
       }),
       // 第一轮：先出一张背景图；下一轮回空内容触发错误路径

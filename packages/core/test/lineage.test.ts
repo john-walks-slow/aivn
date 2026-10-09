@@ -409,26 +409,32 @@ describe("childrenOf / beatEndFrom（一拍的末节点）", () => {
     expect(tree.beatEndFrom(prompt.id)).toBe(end.id);
   });
 
-  it("分岔标记属于下一段：走到 fork 前就停", () => {
+  it("岔口顺着这条世界线走：fork 标记自己不是内容，接着它的子树走到底", () => {
     const tree = new LineageTree();
     const head = tree.append("say", { text: "第一句" });
     tree.recordFork(head.id);
     tree.append("say", { text: "重写出来的那句" });
+    const end = tree.append("beat_end", { payload: { reason: "stop" } });
 
-    expect(tree.beatEndFrom(head.id)).toBe(head.id);
+    expect(tree.beatEndFrom(head.id)).toBe(end.id);
   });
 
-  it("轮中被截断（子节点不唯一）就停在截断处", () => {
+  it("岔口优先走到 beat_end 的那条：轮中分岔不再停在拍中间", () => {
     const tree = new LineageTree();
     const head = tree.append("say", { text: "分岔点" });
-    tree.append("say", { text: "旧的后半截" });
+    const oldTail = tree.append("say", { text: "旧的后半截" });
+    const oldEnd = tree.append("beat_end", { payload: { reason: "stop" } });
     tree.jumpTo(head.id);
-    tree.append("say", { text: "新的后半截" });
+    const newTail = tree.append("say", { text: "新的后半截" });
 
-    expect(tree.beatEndFrom(head.id)).toBe(head.id);
+    // 没有偏好：认 beat_end 那条（这才是这一拍正经的收束）
+    expect(tree.beatEndFrom(head.id)).toBe(oldEnd.id);
+    // 有偏好：跟着上次去过的那条走
+    expect(tree.beatEndFrom(head.id, newTail.id)).toBe(newTail.id);
+    expect(tree.beatEndFrom(head.id, oldTail.id)).toBe(oldEnd.id);
   });
 
-  it("没有子节点就是这一拍的末尾", () => {
+  it("没有子节点就是这一拍的末尾（腰斩的半拍也算它的末节点）", () => {
     const tree = new LineageTree();
     tree.append("beat_end", { payload: { reason: "no_stop" } });
     const tail = tree.append("say", { text: "写到一半" });
@@ -444,20 +450,25 @@ describe("childrenOf / beatEndFrom（一拍的末节点）", () => {
     expect(tree.beatEndFrom(fork.id)).toBe(end.id);
   });
 
-  it("空壳 fork 与岔口 fork 都无解（返回 null），调用方必须处理", () => {
+  it("空壳 fork 无解（返回 null），调用方必须处理", () => {
     const tree = new LineageTree();
     const anchor = tree.append("beat_end", { payload: { reason: "stop" } });
-
-    // 空壳：子树被剪光之后剩下的那个标记
     const shell = tree.recordFork(anchor.id, { origin: "input:X" });
-    expect(tree.beatEndFrom(shell.id)).toBeNull();
 
-    // 岔口：一个 fork 底下长出两条枝，没有「唯一的一拍」
-    tree.jumpTo(shell.id);
-    tree.append("say", { text: "第一版" });
-    tree.jumpTo(shell.id);
-    tree.append("say", { text: "第二版" });
     expect(tree.beatEndFrom(shell.id)).toBeNull();
+  });
+
+  it("重写标记底下有多条枝：按偏好走，没有偏好取最早落笔的那条", () => {
+    const tree = new LineageTree();
+    const anchor = tree.append("beat_end", { payload: { reason: "stop" } });
+    const shell = tree.recordFork(anchor.id, { origin: "input:X" });
+    tree.jumpTo(shell.id);
+    const first = tree.append("say", { text: "第一版" });
+    tree.jumpTo(shell.id);
+    const second = tree.append("say", { text: "第二版" });
+
+    expect(tree.beatEndFrom(shell.id)).toBe(first.id);
+    expect(tree.beatEndFrom(shell.id, second.id)).toBe(second.id);
   });
 });
 

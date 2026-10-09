@@ -142,8 +142,31 @@ DSH 的原生会话能力也不在独立版里重造。判断一个新功能该�
 | 出图模型 | `image.model` | 空 | 出图模型名，按所选格式与网关填（`modelslab` 填社区模型的 `model_id`） |
 | 出图档位 | `image.size` | `1K` | `1K` / `2K` / `4K`（**K 大写**，官方拒小写）= 总像素量级；也可直接写字面像素 `1536x1024`（openai 格式专用）。`modelslab` 没有档位概念，一律按长边 1024 落地 |
 | 垫图策略 | `image.reference` | `neutral` | 派生立绘差分时是否拿该主体的 `neutral` 定妆照当参考图。**`gemini` 与 `modelslab` 格式有效**（后者只吃一张，且出图画幅随垫图走） |
-| 出图并发 | `image.concurrency` | `6` | 并发出图上限。每张图 15–140s，并发太小会拖穿预发射窗口 |
+| 出图并发 | `image.concurrency` | `6` | 并发出图上限。每张图 15–140s，并发太小会拖穿预发射窗口。**按部署一份**，不进类目 |
 | 出图超时 ms | `image.timeoutMs` | `180000` | 单图超时。超时按失败处理，舞台保持降级视觉 |
+
+**按类目覆盖**（可选）：上面那几项是三类素材公用的基础配置；背景、CG、立绘可以各自覆盖 `format` / `baseUrl` / `apiKey` / `model` / `size` / `reference` / `timeoutMs` 七项，没写的字段跟随基础那份。
+
+```json
+"kinds": {
+  "background": {},
+  "cg": { "format": "openai", "baseUrl": "http://127.0.0.1:9999", "model": "gpt-image-2", "size": "2K" },
+  "sprite": { "size": "2K", "timeoutMs": 300000 }
+}
+```
+
+| 字段 | JSON 键 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| 背景覆盖 | `image.kinds.background.*` | `{}` | 留空的字段跟随基础配置 |
+| CG 覆盖 | `image.kinds.cg.*` | `{}` | 同上 |
+| 立绘覆盖 | `image.kinds.sprite.*` | `{}` | 同上。立绘的画面档位下限固定是 2K（抠底要分辨率），这一类填 `1K` 也会按 `2K` 出图 |
+
+合并规则与优先级：
+
+- 逐字段合并，空串 / 缺省 = 取基础那份（与 `music.baseUrl` / `music.apiKey` 的回落同一条口径）。
+- `enabled`（总开关）与 `concurrency`（并发闸门按剧目一个）不进类目。
+- 优先级：`play.json` 的 `image.model` / `image.size`（请求级，作用于全部类目）> `image.kinds.<kind>` > `image` 基础。
+- 设置页把这三个小节折起来放在「出图」组末尾；输入框留空即跟随，placeholder 显示当前继承到的值。
 
 **音乐生成**（可选，不开则工坊没有「生成 BGM」这一手，只能从资源库导入）
 
@@ -251,7 +274,7 @@ data/
 
 缺背景或插图时，剧作家可以自己画：调 `generate_image` 工具提前几轮把生图请求打出去（后台排产，发起即返回），图回来之前舞台上先上骨架占位，台词照常演，图到货后淡入替换。已经在 `assets/` 里的素材不会被覆盖。
 
-字段、默认值与 JSON 键见上面的「设置页字段总表 → 出图」。两种常见后端的配法（在设置页逐项填，或直接写进 `settings.json`）：
+字段、默认值与 JSON 键见上面的「设置页字段总表 → 出图」。几种常见后端的配法（在设置页逐项填，或直接写进 `settings.json`）：
 
 ```json
 // 示例 A：本机 flow2api（Google Flow 逆向网关，Gemini 原生端点，支持垫图）
@@ -287,6 +310,29 @@ data/
   "apiKey": "<your-api-key>",
   "model": "<model_id>",                       // 社区模型或自训模型的 id
   "size": "1K"                                 // 档位对它无意义，单边上限 1024
+}
+```
+
+```jsonc
+// 示例 D：三类素材分开走——立绘保本机 flow2api 的 2K，背景与 CG 走另一家更便宜的网关
+"image": {
+  "enabled": true,
+  "format": "gemini",
+  "baseUrl": "http://127.0.0.1:38000",
+  "apiKey": "<your-api-key>",
+  "model": "gemini-3.0-pro-image",
+  "size": "1K",
+  "reference": "neutral",
+  "kinds": {
+    "background": {},                                     // 空对象 = 全跟随基础
+    "cg": {
+      "format": "openai",
+      "baseUrl": "http://127.0.0.1:9999",
+      "model": "gpt-image-2",
+      "size": "2K"
+    },
+    "sprite": { "size": "2K", "timeoutMs": 300000 }        // 立绘更慢，超时放宽
+  }
 }
 ```
 
@@ -380,7 +426,7 @@ data/
 - 某主体要出差分却缺 `neutral`、而它已经有别的差分时**直接报错**——否则新图和旧差分不是同一个人，演出中会静默换脸
 - **背景与 CG 可以垫参考立绘**：说「这张 CG 里要有澪和小春」，工坊会把这两个角色的立绘（优先 `neutral`，没有就退回该角色任意一张差分）按顺序垫给模型，**数组顺序就是提示词里「第一张、第二张」的顺序**。引擎会自动在提示词末尾点名「第 1 张是澪、第 2 张是小春」——垫图本身没有名字，不点名模型只会画出两个长得一样的人，而且画错得毫无痕迹
   - 点名的主体既没有立绘、也没有角色卡时会**直接报错**，不出一张少人的图（主体 = `assets/sprites/<id>/` 或 `characters/<id>.md`，有其一即可）
-  - 垫图会让单张从 69s 变 138s（实测）。垫图策略（`image.reference`）是全局开关，设成 `none` 会把显式点名要的参考立绘一起关掉
+  - 垫图会让单张从 69s 变 138s（实测）。垫图策略（`image.reference`，可按类目覆盖）设成 `none` 会把显式点名要的参考立绘一起关掉
   - `gemini` 与 `modelslab` 格式下可用（`openai` 格式的 `/v1/images/generations` 没有参考图入参，带垫图直接报错）：`modelslab` 的 `img2img` 只吃**一张**垫图，给多张直接报错；且它的出图画幅**随垫图走**（官方文档写死「生成尺寸与 init_image 相同」），所以垫图本身的画幅要对
   - 垫图读的是 `assets/sprites/`，与谁调的无关，**谁都能用**：工坊在前台看着出，剧作家后台排产也一样垫
 - **画风没有默认值**：工坊会主动问你想要什么画风，定下来写进 `memory/always/craft.md` 长期生效。也可以直接说「用赛璐珞动画风」，之后所有出图都按它来

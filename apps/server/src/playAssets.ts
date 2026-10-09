@@ -12,7 +12,15 @@ import {
   type SpriteStature,
   type WorkshopAssetView,
 } from "@aivn/core";
-import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
+import {
+  aspectMatches,
+  extOf,
+  sizeOfImage,
+  type ImageAspect,
+  type ImageBackends,
+  type ImageKind,
+  type ImageReference,
+} from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
 import {
   adoptDraft,
@@ -128,7 +136,7 @@ export function assertSpriteId(value: string): string {
 /** 谁触发的这次出图。工坊要素材气泡，剧作家在拍内预发射一样都不产。manual 为用户从工坊面板手动触发（不产生对话流气泡，也不排队自动重建）。 */
 export type AssetNotify = "workshop" | "silent" | "manual";
 
-export type AssetKind = "background" | "cg" | "sprite";
+export type AssetKind = ImageKind;
 
 /**
  * 立绘的色键底色：纯绿（默认）或纯品红（主体自己就是绿色系时）。
@@ -257,10 +265,11 @@ interface ReferenceSprite {
 export interface PlayAssetsDeps {
   store: PlayStore;
   files: PlayFiles;
-  backend: ImageBackend;
+  /** 三类素材各自的后端（背景 / CG / 立绘可以走不同的网关、模型、档位）。 */
+  backends: ImageBackends;
   limiter: Limiter;
-  /** 垫图策略：不传 = 派生差分时用该角色的 neutral 定妆照垫图（保角色一致性）；none = 不传参考图。 */
-  reference?: "none" | "neutral";
+  /** 逐类目的垫图策略：`none` = 不传参考图（见 `referencesFor`）。 */
+  reference: Record<ImageKind, ImageReference>;
   /** 在生成的事（面板上那一行）：出图期间让玩家看得见在忙什么、等了多久。 */
   pending?: PendingJobs;
   /** 网络图下载（可选，外部 URL 参考图需要它）。 */
@@ -686,7 +695,8 @@ export class PlayAssets {
     try {
       ({ data, mimeType } = await this.deps.limiter.run(
         () =>
-          this.deps.backend.generate({
+          // 按素材类目取后端：背景 / CG / 立绘可以各走一个网关、模型与档位（见 imageConfigFor）。
+          this.deps.backends[spec.kind].generate({
             prompt: fullPrompt,
             aspectRatio: spec.aspect,
             references,
@@ -1043,10 +1053,11 @@ export class PlayAssets {
    *   不带就是纯文生图。
    * - **背景 / CG**：按 references 垫图（角色立绘、剧目内路径、网络图都行）。
    *
-   * `STAGE_IMAGE_REFERENCE=none` 是全局开关，显式指定的参考图同样归它管，否则这个开关形同虚设。
+   * `image.reference` 是逐类目的开关（背景 / CG / 立绘各可关），显式指定的参考图同样归它管，
+   * 否则这个开关形同虚设。
    */
   private async referencesFor(spec: AssetSpec) {
-    if (this.deps.reference === "none") return [];
+    if (this.deps.reference[spec.kind] === "none") return [];
     const explicit = spec.explicitReferences ?? [];
 
     if (spec.kind === "sprite" && spec.variant !== NEUTRAL) {

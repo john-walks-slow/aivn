@@ -933,11 +933,21 @@ export class PlaywrightOrchestrator {
   }
 
   /**
-   * 走回原路：当前挂载点下若已经有一条**同来源**的下一拍，就把世界线接进去，不生成新内容。
+   * 走回原路：当前挂载点下若已经有一条**现成的下一拍**，就把世界线接进去，不生成新内容。
    *
-   * 判据见计划 §一：只在轮边界（挂载点是 beat_end）上认；候选要来源标签相同、且
-   * 得是一条「有内容的一拍」（`beatEndFrom` 解得出来——被剪空的枝不算）；
-   * 多条同来源的枝里挑最后去过的那条。
+   * 只在**轮边界**上认：挂载点是 `beat_end`（这一拍演完了）或 `root`（故事起点，
+   * 哨兵卡「跳转」落的就是它）。轮中被锚定（jump 到某一句、轮内分岔的 pause 出口）时不认：
+   * 那时子节点是本轮的下一句，认了会把「继续」接回自己这一轮的后半截。
+   *
+   * 本次动作的**来源标签**（`originOfBeat`）决定认哪条枝：
+   * - 带输入的动作（选项 / 自由输入）逐字匹配——选同一个选项走原路，选不同选项才分岔；
+   * - 「继续」不带任何新意图，**不按来源标签筛**：旧路的下一拍是不是以选项 / 插一句开头
+   *   都照走（玩家回到旧轮按继续，要的就是接着上次那条枝读下去），多条同来源的枝里
+   *   按「最后去过的那条」挑。
+   *
+   * 候选必须是**走得通的一拍**（`beatEndFrom` 解得出末节点；子树被剪光的空壳 fork 不算）。
+   * `beatEndFrom` 见岔口会顺着这条世界线走（`prevLeafId` 优先），所以落点正常是一个
+   * `beat_end`，不会停在拍中间。
    *
    * 接的方式是**一拍拍接**（挂到这一拍的末节点、播放头钉在这一拍开头），不是一口气
    * 跳到这条枝的末梢：轮与轮之间的停止点因此重新摆出来，玩家可以在任何一拍改选别的选项
@@ -950,14 +960,12 @@ export class PlaywrightOrchestrator {
     const anchorId = tree.leafId;
     if (anchorId === null) return false;
     const anchor = tree.get(anchorId);
-    // 轮中被锚定（jump 到某一句、轮内分岔的 pause 出口）时不认：那时子节点是本轮的下一句，
-    // 认了会把「继续」接回自己这一轮的后半截
-    if (!anchor || anchor.kind !== "beat_end") return false;
-    const key = resolved ? `input:${resolved.text}` : "continue";
+    if (!anchor || (anchor.kind !== "beat_end" && anchor.kind !== "root")) return false;
+    const key = resolved ? `input:${resolved.text}` : null;
     const candidates = tree
       .childrenOf(anchorId)
-      .filter((child) => originOfBeat(child) === key)
-      .map((child) => ({ child, endId: tree.beatEndFrom(child.id) }))
+      .filter((child) => key === null || originOfBeat(child) === key)
+      .map((child) => ({ child, endId: tree.beatEndFrom(child.id, this.prevLeafId) }))
       .filter((entry): entry is { child: LineageEvent; endId: string } => entry.endId !== null);
     if (candidates.length === 0) return false;
     const hit = this.lastVisited(candidates.map((entry) => entry.child));

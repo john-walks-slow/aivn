@@ -7,7 +7,23 @@ import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServerConfig } from "../src/config.js";
+import type { ImageBackend, ImageBackends, ImageKind, ImageReference } from "../src/imageBackend.js";
 import { SettingsStore } from "../src/settingsStore.js";
+
+/**
+ * 三类共用一只桩后端：只关心一条出图链路的用例用它；
+ * 要验类目路由的用例自己给一整组（见 `playAssets.test.ts`）。
+ */
+export function sharedBackends(backend: ImageBackend): ImageBackends {
+  return { background: backend, cg: backend, sprite: backend };
+}
+
+/** 三类都走 neutral 垫图（PlayHouse 的缺省策略同此）。 */
+export const NEUTRAL_REFERENCE: Record<ImageKind, ImageReference> = {
+  background: "neutral",
+  cg: "neutral",
+  sprite: "neutral",
+};
 
 /**
  * 测试用的设置源：只带一份配置，不落盘也不起监视。

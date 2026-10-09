@@ -104,6 +104,28 @@ describe("设置面板的传输面", () => {
     expect(read()).toBe("");
   });
 
+  it("写：类目覆盖的 Key 同样只认「回传掩码 = 不改、清空 = 回落基础」", () => {
+    const { api, root } = fixture();
+    const kinds = (): Record<string, { apiKey?: string } | undefined> =>
+      JSON.parse(readFileSync(settingsPath(root), "utf8")).image.kinds;
+
+    expect(api.write({ image: { kinds: { sprite: { apiKey: "sprite-key-1111" } } } })).toEqual([
+      "image.kinds.sprite",
+    ]);
+    expect(kinds().sprite?.apiKey).toBe("sprite-key-1111");
+
+    // 读视图只回掩码；掩码原样回传 = 不改
+    const view = api.read().image.kinds.sprite;
+    expect(view.apiKey).toBe(mask("sprite-key-1111"));
+    expect(view.apiKeySet).toBe(true);
+    expect(api.write({ image: { kinds: { sprite: { apiKey: view.apiKey } } } })).toEqual([]);
+    expect(kinds().sprite?.apiKey).toBe("sprite-key-1111");
+
+    // 清空 = 回落基础那把（这一格从文件里消失，不是存一个空串）
+    expect(api.write({ image: { kinds: { sprite: { apiKey: "" } } } })).toEqual(["image.kinds.sprite"]);
+    expect(kinds().sprite?.apiKey).toBeUndefined();
+  });
+
   it("写：值没变就不算改动，也不碰盘上那份", () => {
     const { api, root } = fixture();
     const before = readFileSync(settingsPath(root), "utf8");

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyPatch,
   freshSettings,
+  imageConfigFor,
   imagePendingTtlMs,
   loadBootstrap,
   parseKeyList,
@@ -195,5 +196,67 @@ describe("骨架兜底上界", () => {
     // 超时变长、并发变小 → 上界跟着变长（写死 45s 时这两条都无从谈起）
     expect(imagePendingTtlMs({ ...base, timeoutMs: 60_000 })).toBe(180_000);
     expect(imagePendingTtlMs({ ...base, concurrency: 12 })).toBe(360_000);
+  });
+
+  it("类目单独调宽超时 → 上界取最慢的那一类", () => {
+    const base = freshSettings().image;
+    const slow = { ...base, kinds: { ...base.kinds, sprite: { timeoutMs: 900_000 } } };
+    // 并发 6 / 队列 12 → 1 + 2 批 = 3 倍
+    expect(imagePendingTtlMs(slow)).toBe(2_700_000);
+  });
+});
+
+describe("生图按类目覆盖（背景 / CG / 立绘）", () => {
+  it("只写覆盖项，其余字段回落基础那份", () => {
+    const { next } = applyPatch(freshSettings(), {
+      image: {
+        format: "gemini",
+        baseUrl: "http://127.0.0.1:38000/",
+        apiKey: "flow-key",
+        model: "gemini-3.0-pro-image",
+        size: "1K",
+        kinds: { sprite: { size: "2K", timeoutMs: 300_000 } },
+      },
+    });
+    expect(next.image.kinds.sprite).toEqual({ size: "2K", timeoutMs: 300_000 });
+    expect(next.image.kinds.background).toEqual({});
+
+    const sprite = imageConfigFor(next, "sprite");
+    expect(sprite.size).toBe("2K");
+    expect(sprite.timeoutMs).toBe(300_000);
+    expect(sprite.model).toBe("gemini-3.0-pro-image");
+    expect(sprite.baseUrl).toBe("http://127.0.0.1:38000");
+    expect(imageConfigFor(next, "cg").size).toBe("1K");
+  });
+
+  it("空串 / null 清掉这一格，回到跟随基础", () => {
+    const withSprite = applyPatch(freshSettings(), {
+      image: { kinds: { sprite: { model: "m1", size: "2K" } } },
+    }).next;
+    expect(withSprite.image.kinds.sprite).toEqual({ model: "m1", size: "2K" });
+
+    const cleared = applyPatch(withSprite, { image: { kinds: { sprite: { model: "", size: null } } } }).next;
+    expect(cleared.image.kinds.sprite).toEqual({});
+    expect(imageConfigFor(cleared, "sprite").model).toBe("");
+  });
+
+  it("类目里的格式与档位同样过白名单与归一化", () => {
+    const { next, changed } = applyPatch(freshSettings(), {
+      image: { kinds: { cg: { format: "openai", size: "1k" } } },
+    });
+    expect(next.image.kinds.cg).toEqual({ format: "openai", size: "1K" });
+    expect(changed).toEqual(["image.kinds.cg"]);
+
+    expect(() => applyPatch(freshSettings(), { image: { kinds: { cg: { format: "png" as never } } } })).toThrow(
+      /生图接口格式/,
+    );
+    expect(() => applyPatch(freshSettings(), { image: { kinds: { cg: { size: "huge" } } } })).toThrow(/生图尺寸/);
+  });
+
+  it("改类目不动 base 那一份（浅拷贝会把 base 的 kinds 一起写掉）", () => {
+    const base = freshSettings();
+    const { next } = applyPatch(base, { image: { kinds: { sprite: { model: "m" } } } });
+    expect(base.image.kinds.sprite).toEqual({});
+    expect(next.image.kinds.sprite).toEqual({ model: "m" });
   });
 });
