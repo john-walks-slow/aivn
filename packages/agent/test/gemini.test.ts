@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { GeminiImageGen } from "../src/geminiImage.js";
-import type { GeminiImageOptions } from "../src/geminiImage.js";
+import { GeminiImageGen } from "../src/index.js";
+import type { GeminiImageOptions } from "../src/index.js";
 
 /** 抓下请求并回放脚本化的响应；不打真网关。 */
 function fakeFetch(

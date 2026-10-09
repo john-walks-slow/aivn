@@ -6,17 +6,20 @@
  * 服务端 `undiciFetch + ProxyAgent`、插件直接给带环境代理的全局 fetch。
  */
 export interface FetchInitLike {
-  readonly method: string;
-  readonly headers: Record<string, string>;
-  readonly body: string;
-  readonly signal: AbortSignal;
+  readonly method?: string;
+  readonly headers?: Record<string, string>;
+  readonly body?: string;
+  readonly signal?: AbortSignal;
 }
 
+/** 判据、取字节、认 content-type 都用得上，所以这几样都在契约里。 */
 export interface FetchResponseLike {
   readonly ok: boolean;
   readonly status: number;
+  readonly headers: { get(name: string): string | null };
   text(): Promise<string>;
   json(): Promise<unknown>;
+  arrayBuffer(): Promise<ArrayBuffer>;
 }
 
 export type FetchLike = (url: string, init: FetchInitLike) => Promise<FetchResponseLike>;

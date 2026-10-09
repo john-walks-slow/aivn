@@ -47,3 +47,10 @@ export {
   sniffImageMime,
   tierArea,
 } from "./media/image.js";
+
+export type { GeminiImageOptions } from "./media/gemini.js";
+export { GeminiImageGen } from "./media/gemini.js";
+export type { OpenAiImageOptions } from "./media/openai.js";
+export { canvasFor as openAiCanvasFor, OpenAiImageGen } from "./media/openai.js";
+export type { ModelsLabImageOptions } from "./media/modelslab.js";
+export { canvasFor as modelsLabCanvasFor, ModelsLabImageGen } from "./media/modelslab.js";

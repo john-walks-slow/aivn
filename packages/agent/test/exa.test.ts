@@ -8,7 +8,7 @@ function fakeFetch(responses: (() => Response | Promise<Response>)[]): {
 } {
   const calls: { url: string; key: string; body: Record<string, unknown> }[] = [];
   const fetchImpl: FetchLike = async (url, init) => {
-    calls.push({ url, key: init.headers["x-api-key"] ?? "", body: JSON.parse(init.body) as Record<string, unknown> });
+    calls.push({ url, key: init.headers?.["x-api-key"] ?? "", body: JSON.parse(init.body ?? "{}") as Record<string, unknown> });
     const next = responses[calls.length - 1];
     if (!next) throw new Error("假 fetch 收到的请求比预期多");
     return next();

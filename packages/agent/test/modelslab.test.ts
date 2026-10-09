@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ModelsLabImageGen, canvasFor } from "../src/modelslabImage.js";
-import type { ModelsLabImageOptions } from "../src/modelslabImage.js";
+import { ModelsLabImageGen, modelsLabCanvasFor as canvasFor } from "../src/index.js";
+import type { ModelsLabImageOptions } from "../src/index.js";
 
 const HOSTED = "https://cdn.modelslab.com/tmp/init.png";
 const IMG = "https://cdn.modelslab.com/out/result.png";
