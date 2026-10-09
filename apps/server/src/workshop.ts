@@ -336,10 +336,10 @@ function imageGuide(ctx: WorkshopPromptContext): string {
 `
     : "";
   return `${approval}
-${skillRule}- **generate_image 只出草稿，不进素材表**：回执给 \`draftId\` 与预览图，要采用它再调 \`commit_asset\`。
-  没被采用的草稿留在临时草稿区（一周后自动清），素材页与素材表里看不到它。
+${skillRule}- **generate_image 只出草稿，不进素材表**：回执里带预览图和采用它要用的那个 id（参数名见工具说明），
+  要采用它再调 \`commit_asset\`。没被采用的草稿留在临时草稿区（一周后自动清），素材页与素材表里看不到它。
 - **先出 neutral 定妆照给用户看，而且是 3 张候选**：同一角色首次定妆时按 \`variant="neutral"\` 调 3 次 \`generate_image\`
-  （prompt 各不相同），把三张预览一起摆给用户挑；用户挑定后**只 commit 那一张**——\`commit_asset(draftId=…)\` 就把它绑成正式定妆照。
+  （prompt 各不相同），把三张预览一起摆给用户挑；用户挑定后**只 commit 那一张**——它就成了正式定妆照。
 - **定妆照采用之后再派生差分**：非 neutral 的差分自动垫上**已入库的** neutral，同一个角色才是同一个人。
 - **出图失败把接口原话带给用户**：回执里带 503 / 额度 / 模型名 / 被拒的尺寸，照抄。
   「生图服务暂时不可用」等于什么都没说，用户没法判断是自己的额度还是网关挂了。`;

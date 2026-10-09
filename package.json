@@ -35,7 +35,8 @@
     "exe": "node scripts/build-exe.mjs",
     "desktop": "node scripts/build-desktop.mjs",
     "icon": "node scripts/make-app-icon.mjs",
-    "e2e:chat-scroll": "node e2e/chat-scroll.mjs"
+    "e2e:chat-scroll": "node e2e/chat-scroll.mjs",
+    "check:agent-contract": "node scripts/check-agent-contract.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.87.1",

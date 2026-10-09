@@ -281,8 +281,8 @@ function newCharacterRules(canCharacters: boolean): string {
 - **改既有卡先 read、再用 edit 定点改**：整篇 write 会把你没提到的机器字段（voiceId）抹掉。
 - 建档后到下一轮边界，角色就出现在 A 区角色表里。
 - 玩家扮演的主角也是一张普通卡，id 固定 \`protagonist\`（\`characters/protagonist.md\`）：要改主角设定就改它，别另建一张。`
-    : `**1. 建档这条路本剧目没有给你**（Agent 页没开「管理角色」）：新主体直接上台——出图时给 \`spriteId\`
-与 \`title\`（名牌），引擎照它建立绘目录；只出声不上台的用 \`say\` 的 \`name\` 属性。`;
+    : `**1. 建档这条路本剧目没有给你**（Agent 页没开「管理角色」）：新主体直接上台——出图时把立绘目录名与名牌
+按 \`generate_image\` 的工具说明填上（这两样引擎照它建立绘目录）；只出声不上台的用 \`say\` 的 \`name\` 属性。`;
 
   return `## 引入新角色
 
@@ -294,10 +294,8 @@ ${step1}
 
     generate_image(kind="sprite", spriteId="xiaoyu", variant="neutral", framing="half", stature="normal", title="小雨", prompt="2D anime flat illustration, a 16-year-old girl with long black hair in a high ponytail, teal eyes, freckles on her left cheek, wearing the navy-and-white sailor uniform with a red neckerchief, a beige pleated skirt, black knee-high socks and brown loafers, holding a stack of notebooks, standing, front view")
 
-- \`spriteId\` 是立绘目录名：通常就是剧本里 \`<actor id="…">\` 用的 id，卡上写了 \`sprite:\` 时是那个目录名（A 区角色表里标着「立绘（目录 …）」）；\`variant\` 是这一张差分（不给按 \`neutral\`）
+- 参数怎么填看 \`generate_image\` 的工具说明——这里不重述，免得两处各说各的
 - 非 neutral 的差分会自动垫该主体已有的 \`neutral\` 定妆照，所以是同一个人
-- \`framing\` 是图里画到哪儿（full 全身 / half 半身 / square 方形，默认 full），\`stature\` 是台上站多大
-  （small / normal / large / huge，默认 normal）：机甲是 framing="full" + stature="huge"，猫是 square + small
 - \`title\` 是这个主体在名牌上显示的名字——**没有角色卡的主体必须给**，否则名牌只能显示 id
 - 立绘目录里**已有**的差分直接用 \`<actor id="xiaoyu" variant="smile">\`，不要为了凑表情去生成
 
