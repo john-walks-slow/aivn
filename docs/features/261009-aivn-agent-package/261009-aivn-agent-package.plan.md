@@ -96,7 +96,7 @@ packages/agent/src/
 | P3 · 提示词第一批（Stage DSL 共用正文 4 块） | ✅ 完成 | `1ecc844a` / `5f57f4e` |
 | P3 · 提示词其余（A 区渲染进包；不做 facts 装配层） | ✅ 完成 | `bc5165c8` `f5c40879` / `01105d7` `d8ac9ae` |
 | P3 · 技能正文（audio 两份 86% 重合） | ✅ 完成 | `f952ac7a` `1dbfeb15` / `f24f924` |
-| P4 工具面全量迁移与契约重建 | 进行中（`library_import` ✅；首个 face：`voice.list` ✅） | `7cce64c7` `17c66286` / `19764fe` |
+| P4 工具面全量迁移与契约重建 | 进行中（`library_import` ✅；face：`voice.list` ✅、`music.generate` ✅） | `7cce64c7` `17c66286` `待补` / `19764fe` `待补` |
 
 **P2 完成**（媒体与素材面：抠底 / 生图契约 / 三协议 / 网络图下载 / 后缀 / 草稿 / 落位留底 /
 采用 / 台账 / 音色库 / craft / readiness + 素材清单；「导入」经判定不共享，尾部已抽）。
@@ -220,6 +220,13 @@ P1/P2 落地时对计划的收紧（都是实测出来的，不是改主意）�
   一页 25 条的分页与筛选、空结果话术、快照旧了的提示全进包；两边的 face 只剩「叫什么名、
   注入哪个目录客户端、回执怎么包」。**两侧有意收敛**：服务端原先没有 `page`（一次只列前 25 条、
   说「用 query/tags 收窄」），现在与插件同一套分页；描述取服务端那份更全的词表版并补上翻页那句。
+  ③ `music.generate` ✅：协议（`GeminiMusicGen` + `EXT_BY_MIME` + 解析）进 `media/music.ts`，
+  两个宿主的 `musicBackend.ts` / `media/music.ts` 退化成转出；能力管参数面、描述、查重与请求归一化，
+  **投递方式由 face 的 `deps.start` 注入**（服务端 `kick` 发起即返回、插件同步等完），回执文案各写各的。
+  插件因此也拿到了「同名默认跳过、要重做才带 overwrite」这条口径（原先不查重、静默覆盖）。
+  两侧共同收敛：描述取服务端那份（去掉服务端专有的 `list_library`/`library_import` 点名）、
+  §「带上的元数据…」措辞让只露三格的插件 face 也说得通。
+
   迁移顺序（按「同名同域 → 同域异名 → 单宿主」）：① `web.search` ✅ ② `voice.list` ✅
   ③ `music.generate`（服务端 10 参 + 排产 vs 插件 3 参 + 同步：排产/同步进 face，参数取并集）
   ④ `image.generate`（服务端一个工具扛草稿/排产/绑 target 三种语义，按策略拆两个 face；插件的

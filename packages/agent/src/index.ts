@@ -14,6 +14,14 @@ export { assertCommonSubset, pick, tighten } from "./schema/ir.js";
 export type { Capability } from "./capabilities/capability.js";
 export type { CapabilityEntry } from "./capabilities/index.js";
 export { CAPABILITIES } from "./capabilities/index.js";
+export type { MusicGenerateDeps, MusicGenerateRequest } from "./capabilities/music/generate.js";
+export {
+  musicGenerate,
+  musicGenerateFields,
+  MUSIC_GENERATE_DOC,
+  requestOf as musicRequestOf,
+  skipReceipt as musicSkipReceipt,
+} from "./capabilities/music/generate.js";
 export type { VoiceListDeps } from "./capabilities/voice/list.js";
 export {
   renderVoiceRow,
@@ -29,6 +37,9 @@ export type { FetchInitLike, FetchLike, FetchResponseLike } from "./http.js";
 export { defaultFetch } from "./http.js";
 export type { ExaOptions, SearchResult } from "./search/exa.js";
 export { Exa } from "./search/exa.js";
+
+export type { GeneratedMusic, GeminiMusicOptions, MusicBackend, MusicRequest } from "./media/music.js";
+export { GeminiMusicGen, MUSIC_EXT_BY_MIME, parseMusic } from "./media/music.js";
 
 export type { CutoutOptions, CutoutResult, CutoutTuning } from "./media/cutout.js";
 export { cutout, DEFAULT_TUNING, tuningFromEnv } from "./media/cutout.js";
