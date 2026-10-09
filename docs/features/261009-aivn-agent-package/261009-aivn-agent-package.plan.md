@@ -178,6 +178,15 @@ P1/P2 落地时对计划的收紧（都是实测出来的，不是改主意）�
 > 进度：第一批（Stage DSL 共用正文 4 块：ACTOR_RULES / DIALOGUE_TAGS / COMMENT_HEAD /
 > CONTRACT_INTRO）已抽，判据是「把常量代回源码与改前逐行相同」——渲染一字未变。
 > `renderCraftParams` 模板随 P2 的 craft 一并落包。剩：A 区快照模板、8 类宿主事实参数化、
+> A 区已抽两块（都是「两份本来就是同一份拷贝」的部分）：素材清单四段
+> （`renderAssetSections`，含配乐规则的注入时机）与记忆索引
+> （`renderMemoryIndex`，行格式与结构进包、末尾引导语按宿主工具面传参）。
+> 顺带收敛：`AUDIO_RULES` 取服务端那份（更全：情绪/适用场景/时长、"每拍重写 bgm" 那条），
+> 并补上插件独有的那条「只挑清单里真有的 id」；`<scene> 的 bg` 补回尖括号（服务端原来少了，
+> 与同一段的 `<scene bgm="none"/>` 不一致，`prompt.test.ts` 的断言随之改了）。
+> 服务端 48+119 条 prompt/orchestrator 测试与插件 e2e:media 53/53 均绿、渲染逐字节未变（除上面两处有意收敛）。
+> 还剩：角色表 / 状态区 / 结局段的渲染与 `composePlaywriter(facts)` 的装配顺序。
+>
 > 技能正文（audio）：正文收成 `packages/agent/skills/aivn-audio.md` 一份，两份 SKILL.md
 > 由包内 `skills/sync-skills.mjs` 生成（宿主差异只剩 frontmatter 与 `{{GEN_BGM}}` 一段）；
 > 服务端契约守卫第 8 项与插件 `build.mjs --check` 各盯自己那份，漂了就红。

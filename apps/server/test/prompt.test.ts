@@ -188,7 +188,8 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
   it("没有描述表时清单退化为纯 id，行为与从前一致", () => {
     const prompt = build({ play: PLAY, assets: { backgrounds: ["bg_dusk.jpg"] } });
     expect(prompt).toContain("- bg_dusk\n");
-    expect(prompt).toContain("scene 的 bg 优先取这些 id。");
+    // 收敛到共享正文时改回 DSL 标签写法（原来这里少了尖括号，和同一段里的 <scene bgm="none"/> 不一致）
+    expect(prompt).toContain("<scene> 的 bg 优先取这些 id。");
     expect(prompt).not.toContain("# 已生成的图");
     // 没有音素材就不灌编排规则，避免教模型用不存在的功能
     expect(prompt).not.toContain("# 配乐与音效（怎么用）");

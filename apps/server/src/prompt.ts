@@ -8,7 +8,15 @@ import {
   type AssetMeta,
   type EngineStateSnapshot,
 } from "@aivn/core";
-import { ACTOR_RULES, COMMENT_HEAD, CONTRACT_INTRO, DIALOGUE_TAGS } from "@aivn/agent";
+import {
+  ACTOR_RULES,
+  AUDIO_RULES,
+  COMMENT_HEAD,
+  CONTRACT_INTRO,
+  DIALOGUE_TAGS,
+  renderAssetSections,
+  renderMemoryIndex,
+} from "@aivn/agent";
 import type { PlayConfig } from "@aivn/core";
 import { renderCraftParams } from "./craftParams.js";
 import type { AgentCapabilities } from "./agentkit/kit.js";
@@ -23,19 +31,6 @@ export type AssetManifest = Record<string, string[]>;
  * 引擎行为是：bgm/ambient 缺省保持当前、`none` 停；换曲与停乐一律自动交叉淡入淡出。
  * 这些必须写死给模型看——「换场景顺手重写一遍 bgm」是它最常犯的毛病。
  */
-const AUDIO_RULES = `
-# 配乐与音效（怎么用）
-
-- **缺省 = 保持当前**：<scene> 不写 bgm/ambient 就继续放现在这首。换场景通常不换乐，
-  只有情绪或地点真的变了才换 id；每拍都重写一遍 bgm 是最常见的毛病。
-- 想停：<scene bgm="none"/>，ambient 同理（静默场面、回忆结束、进入字幕）。
-- 音量自己给：<scene bgm_volume="0.4"/>、<scene ambient_volume="0.3"/>、<sfx src="…" volume="0.6"/>。
-  音乐与音效都给台词让位——拿不准就把音量调小。
-- 换曲与停乐会自动交叉淡入淡出，不用自己写淡出。
-- ambient 是持续的环境底噪（雨、风、人声、车流），比 bgm 轻，一场戏给一次就够。
-- sfx 放在动作发生的那一行之前：开门、转身、翻书、东西落地，一个动作一条，别连着堆。
-- 按描述和情绪选：清单里带情绪、适用场景、时长的条目，挑与这一拍情绪对得上的那条。
-`;
 
 /**
  * 引用即导入的契约（引擎事实，不是创作口径）。
@@ -390,26 +385,16 @@ export function buildSystemPrompt(ctx: PromptContext): string {
         }）\n`
       : "";
 
-  const stems = (key: string): string[] => (ctx.assets?.[key] ?? []).map((f) => f.replace(/\.\w+$/, ""));
-  const section = (heading: string, kind: string, tail = ""): string => {
-    const list = stems(kind);
-    return list.length > 0 ? `\n# ${heading}\n\n${list.map((id) => `- ${label(id)}`).join("\n")}${tail}\n` : "";
-  };
   const generatedSection =
     generated.length > 0
       ? `\n# 已生成的图（早已存在，直接引用 id，不要再 generate_image）\n\n${generated
           .map((g) => `${g.id}（${g.type}）—— ${g.prompt}`)
           .join("\n")}\n`
       : "";
-  // 配乐/音效的编排规则：清单给了元数据之后，怎么用还是得讲清楚——
-  // 「缺省保持」这条尤其重要，模型换景时顺手重写 bgm 是最常见的失误。
-  const audioRule = stems("bgm").length > 0 || stems("sfx").length > 0 ? AUDIO_RULES : "";
+  // 段与段之间的块状渲染在包里（两个宿主同一份）；这里只加服务端自己的两段：
+  // 「已生成的图」与资源库指引。
   const assetSection = [
-    section("可用背景 bg", "backgrounds", "\nscene 的 bg 优先取这些 id。"),
-    section("可用音乐 bgm", "bgm"),
-    section("可用音效 sfx", "sfx"),
-    audioRule,
-    section("已有插图 cg", "cg"),
+    renderAssetSections(ctx.assets ?? {}, (id) => metaOf(id), { audioRules: AUDIO_RULES }),
     generatedSection,
     ctx.can.library ? LIBRARY_REF : "",
   ].join("");
@@ -433,15 +418,14 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       : `\n## 亲密/限制级剧情入口（enter_nsfw）\n\n当剧情推进至即将发生亲密、成人或限制级（NSFW）接触时，不要在当前模型下直接描写露骨细节。\n调用 \`enter_nsfw\` 开启限制级剧情通道。调用后完成本轮收束并调用 \`beat_done\`，下一轮起将由限制级专用模型和专属提示词接管展开细腻描写；亦可与 \`beat_done\` 在同一批次工具调用中一同发出。\n`;
   const cards = memory?.visibleContext() ?? [];
   // 每行带路径：卡的标题（`# 标题`）与文件名可以不一样，路径推不出来，只能这里给
-  const cardLine = (c: { layer: string; name: string; summary: string; path: string }): string =>
-    `- ${c.layer ? `[${c.layer}] ` : ""}${c.name}（${c.path}）：${c.summary}`;
   const indexSection =
     cards.length > 0
-      ? `\n# 记忆索引（按需查详情）\n\n${cards.map(cardLine).join("\n")}\n\n${
-        ctx.can.memory
-          ? "需要某条完整内容时调用 read_memory_detail 工具（传名称），也可以直接 read 每行括号里的路径。历史往事用 search_archive 检索。"
-          : "需要某条完整内容时 read 每行括号里的路径；过往剧情问用户，或让工坊在记忆页查。"
-      }\n`
+      ? `\n${renderMemoryIndex(
+          cards,
+          ctx.can.memory
+            ? "需要某条完整内容时调用 read_memory_detail 工具（传名称），也可以直接 read 每行括号里的路径。历史往事用 search_archive 检索。"
+            : "需要某条完整内容时 read 每行括号里的路径；过往剧情问用户，或让工坊在记忆页查。",
+        )}\n`
       : "";
 
   return `${ROLE_INTRO}
