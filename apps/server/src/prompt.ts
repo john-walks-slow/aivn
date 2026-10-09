@@ -79,6 +79,11 @@ export interface PromptContext {
   can: AgentCapabilities;
   /** 当前处于限制级（NSFW）剧情通道中。 */
   nsfwMode?: boolean;
+  /**
+   * 技能清单块（`skillsPromptBlock()` 的产物）：剧作家手边可查的通用做法。
+   * 启动期预载过一次，装配时同步取用；没预载过就是空串、整章不注入。
+   */
+  skills?: string;
   /** 限制级（NSFW）系统提示词自定义扩展。 */
   nsfwPrompt?: string;
   /**
@@ -129,6 +134,27 @@ function scriptLanguageSection(scriptLanguage: string | undefined): string {
 
 正文、旁白、选项，以及角色卡与记忆卡里写的设定，一律用${languageLabel(scriptLanguage)}写，
 **不要跟随玩家的输入语言**。角色 id、素材 id、DSL 标签名保持原样（英文/拼音）。
+`;
+}
+
+/**
+ * 技能清单：写这一拍时手边可查的跨剧目做法。
+ *
+ * 与工坊读的是同一个技能库、同一段清单（`skillsPrompt` 产出），差别只在开头那句：
+ * 工坊是被要求「动手前先读」，剧作家是「想不清楚怎么写时读」——它每一轮都在写，
+ * 不能每轮都去读一遍全文。
+ *
+ * **不点名任何一份技能**：清单里有什么就读什么。写死一个名字，那份技能改名、下线
+ * 或还没写出来时，这里就成了一句指向空气的指路。
+ */
+function skillSection(skills: string, can: boolean): string {
+  if (!can || !skills.trim()) return "";
+  return `
+# 技能库（跨剧目的通用做法）
+
+写这一拍之前想不清楚怎么落笔、或者要确认某个做法时，读相关的那些份再动手：
+
+${skills}
 `;
 }
 
@@ -412,6 +438,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   return `${ROLE_INTRO}
 ${scriptLanguageSection(play.scriptLanguage)}
 ${HOW_I_WORK}
+${skillSection(ctx.skills ?? "", ctx.can.skill)}
 
 # 剧目设定
 

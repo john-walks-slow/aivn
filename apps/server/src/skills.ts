@@ -20,6 +20,14 @@ const SKILLS_DIR = workshopSkillsDirOf(import.meta.url);
 /** 技能是仓库里的静态文件：进程内只加载一次，system prompt 每轮重建也不用重读盘。 */
 let cache: Map<string, Skill> | null = null;
 
+/**
+ * 清单块（`<available_skills>` 那段）的进程内快照。
+ *
+ * 读盘是异步的，而剧作家的 A 区是**同步装配**的（`buildSystemPrompt` 在 `buildAgent` 里被直接调），
+ * 所以清单必须在启动期先载一次，装配那一刻取现成的那份——见 `preloadSkills` / `skillsPromptBlock`。
+ */
+let promptBlock: string | null = null;
+
 async function load(): Promise<Map<string, Skill>> {
   if (cache) return cache;
   const env = new NodeExecutionEnv({ cwd: SKILLS_DIR });
@@ -33,8 +41,23 @@ async function load(): Promise<Map<string, Skill>> {
 
 /** 注入 system prompt 的技能清单块（只有 name/description/路径，模型按需再读全文）。 */
 export async function skillsPrompt(): Promise<string> {
+  if (promptBlock !== null) return promptBlock;
   const skills = [...(await load()).values()];
-  return skills.length > 0 ? formatSkillsForSystemPrompt(skills) : "";
+  promptBlock = skills.length > 0 ? formatSkillsForSystemPrompt(skills) : "";
+  return promptBlock;
+}
+
+/**
+ * 启动期预载技能清单。两个 agent 的 A 区都是同步装配的，不先载一次，
+ * 剧作家那一侧就只能拿到空串（症状是技能清单静默不出现）。
+ */
+export async function preloadSkills(): Promise<void> {
+  await skillsPrompt();
+}
+
+/** 已预载的技能清单块；没预载过返回空串（测试与不走启动链的装配）。 */
+export function skillsPromptBlock(): string {
+  return promptBlock ?? "";
 }
 
 /** 技能全文；名字不在清单里就报错（把「有哪些」摆给模型自己挑）。 */

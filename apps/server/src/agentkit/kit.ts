@@ -206,7 +206,7 @@ const CATALOG_ROWS = [
     label: "技能库",
     desc: "查跨剧目的通用做法。",
     group: "stagecraft",
-    roles: ["workshop"],
+    roles: ["playwriter", "workshop"],
     tools: ["read_skill"],
   },
   {
@@ -287,7 +287,8 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   cut: { label: "抠底", roles: ["workshop"] },
   // 只装工坊：剧作家那条路是「引用即导入」（剧本里写个 id，宿主去库里取），不自己登记。
   import_asset: { label: "登记素材", roles: ["workshop"] },
-  read_skill: { label: "读技能库", roles: ["workshop"] },
+  // 两个角色都装：写这一拍时手边可查的通用手艺（2026-10-10 起对剧作家开放）。
+  read_skill: { label: "读技能库", roles: ["playwriter", "workshop"] },
   list_voices: { label: "查音色库", roles: ["workshop"] },
   web_search: { label: "联网检索", roles: ["playwriter", "workshop"] },
   read: { label: "读文件", roles: ["playwriter", "workshop"] },
@@ -478,6 +479,8 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
       importAsset: false,
     }),
     ...(deps.exa ? [createWebSearchTool(deps.exa)] : []),
+    // 技能库：写这一拍时手边可查的通用手艺（与工坊读的是同一批文件、同一个工具）
+    createReadSkillTool(),
   ];
 }
 

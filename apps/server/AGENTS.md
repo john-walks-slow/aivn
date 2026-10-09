@@ -7,7 +7,7 @@
 ## agentkit：两个 agent 的共用基座
 
 - **两个 agent 共用一套基座**：`src/agentkit/` 是唯一工具实现面（`kit.ts` 按 `role: "playwriter" | "workshop"` 装配，`deps.ts` 用判别联合收窄依赖），同一工具**同一份 schema 与实现，只有 description + 等待策略 + 注入依赖不同**（`generate_asset`：工坊 sync 等图并回 markdown 图片、剧作家 queued 后台排产只占时间线位置；`generate_image` 两个角色连描述都不分叉——它只产候选）。
-- **两套目录，一份语汇**：`kit.ts` 的 `CAPABILITY_CATALOG` 是**用户语汇的唯一真相源**（一行写清：界面名字、一句后果、分组、给哪些角色、授权哪些工具 id、开出来能动哪几类文件、常开还是默认关）——Agent 页、`play.json`、`kit.can`、提示词章节一律说能力。`TOOL_CATALOG`（id + 中文名 + 谁装得上）留在工具层当**角色可见性的真相源**，能力只**引用**工具 id；装一个没登记的 id 或加一个谁都够不到的工具，用例当场红。play.json 的 `agents.<role>.capabilities` 存**启用集**（白名单，不是禁用集），缺省走 `defaultCapabilitiesFor(role)`（搭台 = 目录里属于它的能力减 `shell`——新增能力不会静默漏装；剧作家 = 常开的 `stage` 加 `memory`/`image`/`library`/`search`/`nsfw`，**`characters` 默认关**：角色卡是制作资产、记忆卡是剧情事实）。
+- **两套目录，一份语汇**：`kit.ts` 的 `CAPABILITY_CATALOG` 是**用户语汇的唯一真相源**（一行写清：界面名字、一句后果、分组、给哪些角色、授权哪些工具 id、开出来能动哪几类文件、常开还是默认关）——Agent 页、`play.json`、`kit.can`、提示词章节一律说能力。`TOOL_CATALOG`（id + 中文名 + 谁装得上）留在工具层当**角色可见性的真相源**，能力只**引用**工具 id；装一个没登记的 id 或加一个谁都够不到的工具，用例当场红。play.json 的 `agents.<role>.capabilities` 存**启用集**（白名单，不是禁用集），缺省走 `defaultCapabilitiesFor(role)`（搭台 = 目录里属于它的能力减 `shell`——新增能力不会静默漏装；剧作家 = 常开的 `stage` 加 `memory`/`image`/`library`/`search`/`skill`/`nsfw`，**`characters` 默认关**：角色卡是制作资产、记忆卡是剧情事实）。
 - **两条推导都在 `createAgentKit` 一处**：装上的工具 = 基座 `read` ∪ 开着的能力授权的工具（再按 `TOOL_CATALOG.roles` 与我方依赖面收一道，没配 Exa / TTS / 生图就装不出来）；`can` 位 = **该能力开着且它授权的工具都装上了**（键就是能力 id）——能力声明了一个装不出来的工具，这一位就是假，提示词不会教模型去调它没有的东西。同一个能力在两个角色上授权的口可以不同（`image`：两个角色都要 `generate_image` / `generate_asset`，工坊还要 `cut` / `import_asset`；`library`：工坊多一个 `library_import`，实现上是 `libraryTool` 的 `importAsset: false`）。
 - `generate_image` 是两个角色**同一份 schema、同一段描述**（`spriteId`/`variant`/`title` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只产候选；`generate_asset` 是同一个宏、两种投递。**垫图入口只有一个 `references`**（每项可以是主体 id、剧目内相对路径或 http(s) 网址，1–6 张）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该主体的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
 - **卡是可选的，出图也不替谁建卡**：`generate_image` 只按 `spriteId`（主体 id）往 `assets/sprites/<id>/` 落文件——机甲、道具、猫本来就没有卡。名字从哪来：卡 `name` → `<say name>` → 素材表 `title`（`generate_asset` 的 `title` 参数就是给无卡主体落名牌用的）→ id；无卡主体的 TTS 走剧目级 `defaultVoiceId`。
@@ -183,7 +183,9 @@
 
 ## 技能库与新剧目初始状态
 
-- 技能库（**`apps/server/skills/<name>/SKILL.md`** + frontmatter）只装**跨剧目的通用做法速查**，只给工坊（`read_skill`，角色标记 `workshop`）——这部剧自己的画风锚点与创作口径一律留在剧目记忆里（`memory/always/craft.md` 与设定卡，每轮本来就注入），不给剧作家开技能通道：教模型调一个装不进去的工具，它只会反复空转烧 token。
+- 技能库（**`apps/server/skills/<name>/SKILL.md`** + frontmatter）只装**跨剧目的通用做法速查**，两个角色都装 `read_skill`（能力「技能库」，`roles: ["playwriter", "workshop"]`）——这部剧自己的画风锚点与创作口径一律留在剧目记忆里（`memory/always/craft.md` 与设定卡，每轮本来就注入）。
+- **剧作家的技能清单要预载**：`read_skill` 的清单块（`skillsPrompt`）是异步读盘的，而 A 区是同步装配的（`buildSystemPrompt` 在 `buildAgent` 里直接调），所以 `index.ts` 启动时先 `await preloadSkills()`，装配那一刻取 `skillsPromptBlock()`——没预载过就是空串、整个《技能库》章静默不注入（工坊那边仍走 `await skillsPrompt()`）。**那一章不点名任何一份技能**：技能改名、下线或还没写出来时，写死的名字就是一句指向空气的指路。
+- **`skill` 能力对剧作家默认开**：默认集里多一项，A 区多一段清单。关掉它 = 那个剧目里剧作家看不到技能库（清单与指针一起收走）。
 - **技能只认 `apps/server/skills/`**：目录由 `paths.ts` 的 `workshopSkillsDirOf` 从模块位置反推，打包时按 `apps/server/skills` 这条仓库相对路径进快照（`scripts/build-exe.mjs` 的随包资源清单）。**仓库根那个 `skills/` 不参与打包、`read_skill` 也读不到**（根目录那份 `galgame-audio` 是选题与授权调研记录，写给人看的，不是技能文件）——新技能放错目录的症状很安静：不报错，`skillsPrompt()` 就是不列它。
 - **新剧目的 premise 与 craft 落盘就是空文件**（`createEmpty` 不再写模板）：premise 空着开不了演（就绪门），craft.md 空着只是少一层口径（节奏与素材来源走 `DEFAULT_CRAFT`）。引导文案只放在前端输入框 placeholder 里——模板正文写进文件会让人以为「已经填过了」，还会让就绪门把一份空模板判成前提已就位。
 

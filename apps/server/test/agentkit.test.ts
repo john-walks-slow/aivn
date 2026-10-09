@@ -189,6 +189,7 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
       "generate_image",
       "list_library",
       "read",
+      "read_skill",
       "search_archive",
       "update_state",
       "write",
@@ -354,7 +355,17 @@ describe("agent kit：能力目录（设置页的数据源）", () => {
 
   it("目录按角色出，每条有中文名字、一句后果与分组；常开行带 locked", () => {
     const rows = capabilityCatalog("playwriter", FULL_ENV);
-    expect(rows.map((r) => r.id)).toEqual(["stage", "nsfw", "characters", "memory", "image", "annotate", "library", "search"]);
+    expect(rows.map((r) => r.id)).toEqual([
+      "stage",
+      "nsfw",
+      "characters",
+      "memory",
+      "image",
+      "annotate",
+      "library",
+      "search",
+      "skill",
+    ]);
     for (const row of rows) {
       expect(row.label.length).toBeGreaterThan(0);
       expect(row.desc.length).toBeGreaterThan(0);
