@@ -89,6 +89,12 @@ export {
 
 export type { AssetIndex } from "./media/asset-index.js";
 export { listPlayAssets, MEDIA_EXT } from "./media/asset-index.js";
+export {
+  ACTOR_RULES,
+  COMMENT_HEAD,
+  CONTRACT_INTRO,
+  DIALOGUE_TAGS,
+} from "./prompt/stage-dsl.js";
 export type { PlayReadiness } from "./readiness/play.js";
 export { readPlayReadiness, renderReadiness } from "./readiness/play.js";
 

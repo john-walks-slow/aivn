@@ -8,6 +8,7 @@ import {
   type AssetMeta,
   type EngineStateSnapshot,
 } from "@aivn/core";
+import { ACTOR_RULES, COMMENT_HEAD, CONTRACT_INTRO, DIALOGUE_TAGS } from "@aivn/agent";
 import type { PlayConfig } from "@aivn/core";
 import { renderCraftParams } from "./craftParams.js";
 import type { AgentCapabilities } from "./agentkit/kit.js";
@@ -154,41 +155,7 @@ const FORMAT_RULES = `# 剧本格式（Stage DSL，必须严格遵守）
 其余值仍按素材 id 查背景表。章节转场、标题卡前的留白、回忆收束常用它。
 换底方式（只属于 scene）认这几个：cut（硬切）、dissolve（交叉溶解）、fade（经黑场淡入淡出，默认）、fade-white（经白场）。
 
-**位置不用你写。** 引擎按在场人数自动分配，第二个人进场第一个人自动让开。
-只有在你想钉死某个人（比如主角固定在中间）时才写 pos="center"。
-
-### 立绘的四个可选属性
-
-| 属性 | 取值 | 什么时候用 |
-|---|---|---|
-| variant | 立绘目录里已有的差分 id | 换表情、换状态。机甲受损、猫炸毛与人的笑同样是它 |
-| shot | wide normal close extreme | 镜头远近。**不给就是全身**，用近景只是把镜头推近 |
-| action | 见下表 | 角色的一个反应动作，演一次就结束 |
-| leave | fade | 这一场里这个人先走一步（开新场用 scene 的 clear 一次清，不用逐个 leave） |
-
-**台上的一切同权**：人、机甲、猫、道具都按同一个 id 寻址，换图一律走 \`variant\`——没有「人的 expression」
-与「非人的 state」之分（这两个旧属性名引擎照读，但新写的剧本一律用 variant）。人的笑、机甲的 damaged、
-猫的 puffed 都只是某个 id 的一个差分。
-
-立绘取景与体量（图里画到哪儿、台上站多大）是**素材自己的声明**，写在素材表里，剧本不用管；
-它们决定这个主体出场时占多大、贴不贴地。垂直对齐同理有素材级声明，
-想在某一句里改（比如让悬浮物飘到画面中间）才写 anchor="center"——只认
-bottom（贴地，默认）、center（居中悬空）、top（从上垂下）。
-
-**行为词**——写「她怎么动」，不写动画参数：
-
-| 词 | 什么场合 |
-|---|---|
-| nudge | 有点动摇、犹豫 |
-| stagger | 被吓到、踉跄 |
-| jump | 兴奋、雀跃 |
-| nod | 点头、同意 |
-| bow | 鞠躬、道歉 |
-| turn | 背过身去 |
-| shake | 发抖、生气 |
-| sway | 放松、犯困 |
-
-同一时刻只给一个人一个行为词。
+${ACTOR_RULES}
 
 ## 舞台效果（fx）
 
@@ -210,9 +177,7 @@ bottom（贴地，默认）、center（居中悬空）、top（从上垂下）�
 
 ## 台词（正文为原生文本，不要转义）
 
-<say id="角色id" mood="情绪">台词正文，可以换行。</say>
-<narrate>旁白正文。</narrate>
-<thought id="角色id">（内心独白）</thought>
+${DIALOGUE_TAGS}
 
 ## 全屏标题卡（title，第四种台词标签）
 
@@ -230,11 +195,7 @@ bottom（贴地，默认）、center（居中悬空）、top（从上垂下）�
 - 常与纯色场配合：先 \`<scene bg="black"/>\`，再写 <title>…</title>。
 - 标题卡是一段演出内容，不是停止点；它之后照常按《结束轮》收束。
 
-## 注释（不产生活动内容）
-
-<comment>正文</comment>
-
-它不上舞台、不进谱系、不产出任何事件。
+${COMMENT_HEAD}它不上舞台、不进谱系、不产出任何事件。
 
 ## 结束轮（beat_done）
 
@@ -332,11 +293,7 @@ const MEMORY_RULES = `## 记忆卡（memory/index/）
 /** 演出契约：引擎认的硬规则，用户不可改（节奏与素材来源见《写作参数》，文风与禁忌见剧目 craft.md）。 */
 const CONTRACT_RULES = `# 演出契约（引擎规则，不可改）
 
-你是剧本引擎，不是助手：输出里只有剧本本身。不聊天、不寒暄、不称呼玩家本人、不解释自己在做什么、
-不报告剧本或引擎的状态、不在结尾提问或提议下一步。
-
-1. 指令先于台词：先铺场景/立绘，再写这一轮的台词。
-2. 角色情绪/表情变化时，用 actor 指令同步切换 variant 差分——say 的 mood 只是文字标注，不驱动立绘。
+${CONTRACT_INTRO}
 3. 每轮 user 消息顶部有【状态】区（好感度/场景/进度），信任它作为最新世界状态。
 4. 【用户输入】以「OOC」开头 = 导演指示，据此调整接下来的演出方向，但不要复述它、不要跳出戏外回应它；
    否则 = 其中某个角色（可能就是主角，也可能是别人）的行动、话语或心理，照字面意思演成该角色的言行。
