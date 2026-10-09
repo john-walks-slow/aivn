@@ -95,7 +95,7 @@ packages/agent/src/
 | P2 · readiness + 素材清单（剧目自查） | ✅ 完成 | `6816046d` / `bccea99` |
 | P3 · 提示词第一批（Stage DSL 共用正文 4 块） | ✅ 完成 | `1ecc844a` / `5f57f4e` |
 | P3 · 提示词其余（A 区快照模板 / facts 参数化 8 类） | 待做 | — |
-| P3 · 技能正文（audio 两份 86% 重合） | 待做 | — |
+| P3 · 技能正文（audio 两份 86% 重合） | ✅ 完成 | `f952ac7a` `1dbfeb15` / `f24f924` |
 | P4 工具面全量迁移与契约重建 | 待做 | — |
 
 **P2 完成**（媒体与素材面：抠底 / 生图契约 / 三协议 / 网络图下载 / 后缀 / 草稿 / 落位留底 /
@@ -178,7 +178,10 @@ P1/P2 落地时对计划的收紧（都是实测出来的，不是改主意）�
 > 进度：第一批（Stage DSL 共用正文 4 块：ACTOR_RULES / DIALOGUE_TAGS / COMMENT_HEAD /
 > CONTRACT_INTRO）已抽，判据是「把常量代回源码与改前逐行相同」——渲染一字未变。
 > `renderCraftParams` 模板随 P2 的 craft 一并落包。剩：A 区快照模板、8 类宿主事实参数化、
-> 技能正文（audio 两份 86% 重合）。
+> 技能正文（audio）：正文收成 `packages/agent/skills/aivn-audio.md` 一份，两份 SKILL.md
+> 由包内 `skills/sync-skills.mjs` 生成（宿主差异只剩 frontmatter 与 `{{GEN_BGM}}` 一段）；
+> 服务端契约守卫第 8 项与插件 `build.mjs --check` 各盯自己那份，漂了就红。
+> play-setup / visual-craft 是同题重写的两份，按计划本届不动。
 
 - 第一批只抽**逐字相同/近逐字**的：1848 字那批 + `renderCraftParams` 13 行模板 + A 区快照模板。
 - `composePlaywriter/composeStagehand(facts)`；`HostFacts` 落地 8 类；3 处有意差异登记进能力表旁。
