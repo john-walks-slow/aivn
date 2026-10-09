@@ -251,6 +251,54 @@ check("恒列 skill 的 description 保持能力中立", () => {
   return problems;
 });
 
+check("技能文件都放在 read_skill 读得到的地方", () => {
+  // **不是**「仓库根不许有 skills/」——根目录那份 `skills/galgame-audio/` 是写给人看的
+  // 选题与授权速查（见 apps/server/AGENTS.md 技能库一节），有意保留，删它是错的
+  // （我犯过这个错，见 git log 的 revert）。
+  //
+  // 拦的是另一件事：把**技能文件**放错地方。`read_skill` 只读 `apps/server/skills/`，
+  // 放别处**不报错**、`skillsPrompt()` 就是不列它——症状安静得查不出来。
+  const problems = [];
+  const skillRoot = join(ROOT, "apps/server/skills");
+  for (const name of readdirSync(skillRoot)) {
+    const file = join(skillRoot, name, "SKILL.md");
+    let source;
+    try {
+      source = readFileSync(file, "utf8");
+    } catch {
+      problems.push(`apps/server/skills/${name}/ 下没有 SKILL.md`);
+      continue;
+    }
+    // frontmatter 的第一行就是 `---`，name 紧跟着——别写成要求中间还有别的行。
+    if (!/^---\r?\nname:\s*\S/.test(source)) {
+      problems.push(`apps/server/skills/${name}/SKILL.md 的 frontmatter 缺 name`);
+    }
+  }
+  // 别处出现 SKILL.md = 放错了（那里读不到）。根目录那份人读速查**显式承认**——
+  // 它长得跟技能一模一样，形状本身分不出来，所以在代码里登记它的用途。
+  const KNOWN_NON_SKILL = new Set(["skills/galgame-audio"]);
+  for (const dir of ["skills", "apps/server/src/skills"]) {
+    let entries;
+    try {
+      entries = readdirSync(join(ROOT, dir), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries.filter((e) => e.isDirectory())) {
+      if (KNOWN_NON_SKILL.has(`${dir}/${entry.name}`)) continue;
+      try {
+        readFileSync(join(ROOT, dir, entry.name, "SKILL.md"), "utf8");
+        problems.push(
+          `${dir}/${entry.name}/SKILL.md 放错了——read_skill 只读 apps/server/skills/，放这里不生效`,
+        );
+      } catch {
+        // 没有 SKILL.md 就不是技能文件，正常
+      }
+    }
+  }
+  return problems;
+});
+
 if (process.argv.includes("--list")) {
   for (const { name } of checks) console.log(`- ${name}`);
   process.exit(0);
