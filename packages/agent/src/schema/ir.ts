@@ -134,6 +134,16 @@ export type HostField = Field & HostTightening;
 export type HostFieldMap = { readonly [name: string]: HostField };
 
 /** face 的 pick：露出哪几格由 face 声明，文案与类型仍只有能力那一份。 */
+/**
+ * 把一份字段变**可选**：IR 里「必填」只认 `required: true` 这一种写法，所以要可选就得让这个键不存在
+ *（写 `required: false` 不是 IR 的一部分，编译器会当场拒绝）。
+ */
+export function optional<F extends Field>(field: F): Omit<F, "required"> {
+  const { required, ...rest } = field;
+  void required;
+  return rest;
+}
+
 export function pick<F extends FieldMap, const K extends readonly (keyof F)[]>(
   fields: F,
   keys: K,

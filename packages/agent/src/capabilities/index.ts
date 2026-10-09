@@ -1,4 +1,5 @@
 import type { FieldMap } from "../schema/ir.js";
+import { assetGenerate } from "./asset/generate.js";
 import { assetRegister } from "./asset/register.js";
 import { imageGenerate } from "./image/generate.js";
 import { imageCutout } from "./media/cutout.js";
@@ -18,6 +19,7 @@ export interface CapabilityEntry {
  * 新能力加进来时，这条清单是唯一要动的地方。
  */
 export const CAPABILITIES: readonly CapabilityEntry[] = [
+  assetGenerate,
   assetRegister,
   webSearch,
   voiceList,

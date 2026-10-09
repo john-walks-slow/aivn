@@ -131,7 +131,7 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
   {
     id: "image",
     profile: "shared",
-    capabilities: ["image.generate", "image.cutout", "asset.register"],
+    capabilities: ["image.generate", "image.cutout", "asset.register", "asset.generate"],
     domainSemantic: "生成、审阅、采用或修整剧目图像资产。",
     roles: ["playwriter", "workshop"],
     equivalence: "semantic-only",

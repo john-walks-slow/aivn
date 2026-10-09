@@ -22,12 +22,9 @@ describe("image.generate", () => {
     expect(IMAGE_REFERENCE_RULE).toContain("非 neutral 的立绘差分不吃 references");
   });
 
-  it("两个参考图参数合并去重、修边、封顶 6 张", () => {
+  it("垫图去重、修边、封顶 6 张（兼容别名 referenceCharacters 已删）", () => {
     expect(resolveImageRefs({})).toBeUndefined();
-    expect(resolveImageRefs({ references: [" mio ", "mio", ""], referenceCharacters: ["rin", "mio"] })).toEqual([
-      "mio",
-      "rin",
-    ]);
+    expect(resolveImageRefs({ references: [" mio ", "mio", "", "rin"] })).toEqual(["mio", "rin"]);
     const many = Array.from({ length: 8 }, (_, i) => `r${i}`);
     expect(resolveImageRefs({ references: many })).toHaveLength(6);
   });
@@ -43,17 +40,32 @@ describe("image.generate", () => {
     expect(imageTargetOf({ kind: "cg", name: " cg_01 " })).toEqual({ kind: "cg", name: "cg_01" });
     expect(() => imageTargetOf({ kind: "sprite" })).toThrow(/spriteId/);
     expect(() => imageTargetOf({ kind: "background" })).toThrow(/name/);
+    // 不给 kind = 通用候选：没有落位，不报错
+    expect(imageTargetOf({})).toBeUndefined();
   });
 
   it("execute 只把参数收成请求，出图与落库交给宿主的 run（同步/排产/一条龙都是这一格）", async () => {
     const seen: unknown[] = [];
-    const text = await imageGenerate.execute(
+    const produced = await imageGenerate.execute(
       { kind: "sprite", spriteId: "mio", prompt: "  a girl ", style: " 赛璐珞 ", references: ["rin"] },
-      { run: async (request) => { seen.push(request); return "已入库"; } },
+      {
+        run: async (request) => {
+          seen.push(request);
+          return { path: "media-cache/drafts/a/image.png", adopted: false };
+        },
+      },
     );
     expect(seen).toEqual([
       { target: { kind: "sprite", spriteId: "mio", variant: "neutral" }, prompt: "  a girl ", style: "赛璐珞", references: ["rin"] },
     ]);
-    expect(text).toBe("已入库");
+    expect(produced).toEqual({ path: "media-cache/drafts/a/image.png", adopted: false });
+
+    // 通用候选：没有 target，画幅跟着 aspectRatio 走
+    const generic: unknown[] = [];
+    await imageGenerate.execute(
+      { prompt: "a cat", aspectRatio: "1:1" },
+      { run: async (request) => { generic.push(request); return { path: "media-cache/drafts/b/image.png", adopted: false }; } },
+    );
+    expect(generic).toEqual([{ prompt: "a cat", aspectRatio: "1:1" }]);
   });
 });

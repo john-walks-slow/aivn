@@ -90,7 +90,8 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
     });
     const sync = createGenerateImageTool({ mode: "sync", playAssets: undefined, onAsset: () => {} });
     const props = (t: { parameters: { properties?: Record<string, unknown> } }) => Object.keys(t.parameters.properties ?? {});
-    for (const key of ["variant", "spriteId", "references", "referenceCharacters", "framing", "stature", "title", "style"]) {
+    // aspectRatio 只在「不给 kind 的通用候选」那条路上有意义，服务端两个角色都给出剧目素材，所以不露它
+    for (const key of ["variant", "spriteId", "references", "framing", "stature", "title", "style"]) {
       expect(props(queued)).toContain(key);
       expect(props(sync)).toContain(key);
     }
@@ -112,7 +113,7 @@ describe("剧作家 generate_image：后台排产（占住时间线位置，不�
       existingAssetUrl: async () => null,
     });
     return tool
-      .execute("t1", { kind: "cg", name: "cg_01", prompt: "p", referenceCharacters: ["mio", "rin"] } as never)
+      .execute("t1", { kind: "cg", name: "cg_01", prompt: "p", references: ["mio", "rin"] } as never)
       .then(() => expect(kicked).toEqual([["cg", "cg_01", ["mio", "rin"]]]));
   });
 });

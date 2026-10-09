@@ -225,8 +225,9 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     expect(a.description).not.toBe(b.description);
     expect(b.description).toContain("cut"); // 工坊同步出图：抠底脏了原地重抠，不重新出图
     expect(a.description).toContain("后台排产");
-    expect(b.description).toContain("referenceCharacters");
-    expect(a.description).toContain("referenceCharacters");
+    // 兼容别名 referenceCharacters 已删（P5-c）：垫图只有 references 一个口
+    expect(b.description).not.toContain("referenceCharacters");
+    expect(a.description).not.toContain("referenceCharacters");
   });
 
   it("模型看得见的说明写在 schema 的 description 里，不是只写在 JSDoc 注释里", () => {

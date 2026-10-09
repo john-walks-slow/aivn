@@ -40,7 +40,6 @@ const FACE = tighten(
     "spriteId",
     "variant",
     "references",
-    "referenceCharacters",
     "framing",
     "stature",
     "title",
@@ -53,7 +52,6 @@ const FACE = tighten(
     spriteId: { maxLength: 40 },
     variant: { maxLength: 40 },
     references: { minItems: 1, maxItems: 6 },
-    referenceCharacters: { minItems: 1, maxItems: 6 },
     title: { maxLength: 40 },
     style: { maxLength: 200 },
     prompt: { minLength: 1, maxLength: 4000 },
@@ -190,10 +188,12 @@ async function runSync(
   toolCallId: string,
 ): Promise<ReturnType<typeof linesResult>> {
   const assets = deps.playAssets!;
+  const kind = params.kind;
+  if (!kind) throw new Error("出剧目素材要 kind（background / cg / sprite）");
   const references = resolveImageRefs(params);
   const draft = await assets.draft(
     {
-      kind: params.kind,
+      kind,
       name: params.name,
       spriteId: typeof params.spriteId === "string" ? params.spriteId : undefined,
       variant: typeof params.variant === "string" ? params.variant : undefined,
@@ -202,7 +202,6 @@ async function runSync(
       title: typeof params.title === "string" ? params.title : undefined,
       keyColor: params.keyColor,
       references,
-      referenceCharacters: references,
     },
     params.prompt,
     params.style,
@@ -222,7 +221,9 @@ async function runQueued(
 ): Promise<ReturnType<typeof linesResult>> {
   const assets = deps.playAssets!;
   const references = resolveImageRefs(params);
-  if (params.kind === "sprite") {
+  const kind = params.kind;
+  if (!kind) throw new Error("出剧目素材要 kind（background / cg / sprite）");
+  if (kind === "sprite") {
     const spriteId = params.spriteId?.trim() ?? "";
     if (!spriteId) throw new Error("立绘必须给 spriteId（主体 id，剧本里 <actor id> 引用的那个名字）");
     const variant = params.variant?.trim() || "neutral";
@@ -247,11 +248,11 @@ async function runQueued(
   }
   const id = params.name?.trim() ?? "";
   if (!id) throw new Error("背景/CG 必须给 name（素材 id，剧本里的 bg/cg id 就是它）");
-  const type = params.kind === "background" ? "bg" : "cg";
+  const type = kind === "background" ? "bg" : "cg";
   const label = type === "bg" ? "背景" : "插图";
   // 骨架占位只在图**真的要来**的时候占位：剧目里已有同名素材（用户导入或之前生成的）时，
   // 占位等不到 asset_ready，只会白闪到超时。
-  if (await deps.existingAssetUrl({ kind: params.kind, name: id })) {
+  if (await deps.existingAssetUrl({ kind, name: id })) {
     return textResult(`剧目里已经有同名${label}，跳过生成，直接引用 ${id}。`);
   }
   deps.emitPreload({ type, id, prompt: params.prompt });

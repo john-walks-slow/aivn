@@ -1,4 +1,4 @@
-import type { FieldMap } from "../../schema/ir.js";
+import { optional, type FieldMap } from "../../schema/ir.js";
 import { assetTargetFields } from "../asset/target.js";
 import type { Capability } from "../capability.js";
 
@@ -19,6 +19,8 @@ export const imageGenerateFields = {
   // 落位七格与 `asset.register` 共用一份措辞（见 `capabilities/asset/target.ts`）——同一件事
   // 在两个工具里说法不同，模型就得学两遍。
   ...assetTargetFields,
+  // 差别只有一处：**出图允许不给 kind**（通用候选，不绑剧目落位）；宏 `asset.generate` 再把它收紧回必填。
+  kind: optional(assetTargetFields.kind),
   references: {
     type: "array",
     items: { type: "string", description: "主体 id、剧目内相对路径，或 http(s) 网址" },
@@ -26,11 +28,6 @@ export const imageGenerateFields = {
       "垫图（最多 6 张，顺序即提示词里「第一张、第二张」）：给主体 id 会自动用它的 neutral 立绘；" +
       "给剧目内相对路径（如 assets/backgrounds/ref.png）或 http(s) 网址直接当参考图。" +
       "**非 neutral 的立绘不用给**——身份基准恒为该主体的 neutral。",
-  },
-  referenceCharacters: {
-    type: "array",
-    items: { type: "string" },
-    description: "兼容别名：等同 references 中传入主体 id 列表。",
   },
   keyColor: {
     oneOf: [
@@ -40,6 +37,11 @@ export const imageGenerateFields = {
     description:
       "立绘的色键底色（只对 kind=sprite 生效）：抠底是纯色键，底色与角色配色撞上就会把角色身上那块一起抠掉。" +
       "这一项只决定定妆照（neutral）的底色，差分跟着垫图的底色走；**别在 prompt 里自己写底色**。",
+  },
+  aspectRatio: {
+    type: "string",
+    enum: ["16:9", "3:4", "1:1", "9:16", "4:3"],
+    description: "画幅（**只有不给 kind 的通用候选才用它**）：默认 16:9。剧目素材的画幅跟着 kind 与 framing 走，别用它覆盖。",
   },
   style: {
     type: "string",
@@ -75,9 +77,9 @@ export const IMAGE_PROMPT_RULES = [
     "「magenta」**——撞色的后果是角色身上那片绿色被一起抠掉，不要在 prompt 里自己写底色。背景与 CG 没有这层后缀，构图要求要自己写。",
 ].join("");
 
-/** 垫图规则：两个角色都拿得到 `references` 与 `referenceCharacters`，所以它属于共享的工具契约。 */
+/** 垫图规则：两个角色都拿得到 `references`，所以它属于共享的工具契约。 */
 export const IMAGE_REFERENCE_RULE =
-  "画面里需要依据既有形象或素材时用 **references**（或兼容易懂的 referenceCharacters）垫图（可给主体 id、剧目内相对路径或 http(s) 网址；数组顺序即提示词里的先后顺序）：" +
+  "画面里需要依据既有形象或素材时用 **references** 垫图（可给主体 id、剧目内相对路径或 http(s) 网址；数组顺序即提示词里的先后顺序）：" +
   "出 **neutral 定妆照**时传 references，以给定参考图为基准生成主体初始立绘；" +
   "背景与 CG 里有人物时传入对应立绘或参考图，出来的脸和设定才对得上。" +
   "**非 neutral 的立绘差分不吃 references**——它的身份基准恒为该主体的 neutral 定妆照，要换基准就把 neutral 重出一遍。" +
@@ -90,6 +92,7 @@ export const IMAGE_REFERENCE_RULE =
  *（外貌锚点那条就只加过工坊，剧作家出的第一张立绘照样不贴角色卡）。
  */
 export const IMAGE_GENERATE_DOC = [
+  "**不给 `kind` = 通用候选**：只出一张图给自己看（垫图、试画风），不绑剧目落位、不入库；要落成剧目素材就给 `kind`（或用一键的 `generate_asset`）。",
   "出一张剧目素材（背景 kind=background / CG kind=cg / 立绘 kind=sprite）的图。",
   "背景与 CG 给 name；立绘给 spriteId + variant（variant 不给按 neutral）。",
   IMAGE_PROMPT_RULES,
@@ -99,19 +102,11 @@ export const IMAGE_GENERATE_DOC = [
 /** 垫图张数上限（Gemini 3 系上限 14，这里按产品口径收到 6）。 */
 export const MAX_IMAGE_REFERENCES = 6;
 
-/**
- * 合并两个参考图参数（`references` 与兼容别名 `referenceCharacters`）成一份有序列表。
- *
- * 去重与封顶都在这里做：两个字段各自合法时合并起来可能超出生图后端的入参上限。
- */
-export function resolveImageRefs(args: {
-  references?: readonly string[];
-  referenceCharacters?: readonly string[];
-}): string[] | undefined {
+/** 垫图归一化：去空、去重、封顶（超出后端的入参上限时截断）。 */
+export function resolveImageRefs(args: { references?: readonly string[] }): string[] | undefined {
   const merged: string[] = [];
-  for (const field of [args.references, args.referenceCharacters]) {
-    if (!Array.isArray(field)) continue;
-    for (const item of field) {
+  if (Array.isArray(args.references)) {
+    for (const item of args.references) {
       if (typeof item !== "string") continue;
       const value = item.trim();
       if (value && !merged.includes(value)) merged.push(value);
@@ -139,7 +134,7 @@ export interface ImageTarget {
  * 挡不住的后果是出图后端拿一个空名字去落文件。
  */
 export function imageTargetOf(args: {
-  kind: "background" | "cg" | "sprite";
+  kind?: "background" | "cg" | "sprite";
   name?: string;
   spriteId?: string;
   variant?: string;
@@ -147,8 +142,10 @@ export function imageTargetOf(args: {
   stature?: "small" | "normal" | "large" | "huge";
   title?: string;
   keyColor?: "green" | "magenta";
-}): ImageTarget {
+}): ImageTarget | undefined {
   const clean = (value?: string): string | undefined => (value?.trim() ? value.trim() : undefined);
+  // 不给 kind = 通用候选（一张不绑剧目的图）。produce 面允许它，宏不允许（宏的 kind 必填）。
+  if (!args.kind) return undefined;
   if (args.kind === "sprite") {
     const spriteId = clean(args.spriteId);
     if (!spriteId) throw new Error("立绘必须给 spriteId（主体 id，剧本里 <actor id> 引用的那个名字）");
@@ -167,12 +164,25 @@ export function imageTargetOf(args: {
   return { kind: args.kind, name };
 }
 
-/** 一次出图要的全部输入：落位（归一化后）+ prompt 正文 + 垫图 + 画风锚点。 */
+/** 一次出图要的全部输入：落位（归一化后；通用候选没有）+ prompt 正文 + 垫图 + 画风锚点 + 画幅。 */
 export interface ImageGenerateRequest {
-  target: ImageTarget;
+  target?: ImageTarget;
   prompt: string;
   style?: string;
   references?: string[];
+  aspectRatio?: string;
+}
+
+/**
+ * 出图这一步的产物：**一张图落在哪儿**（剧目内相对路径）。
+ *
+ * 只回路径、不回话术——回执怎么写是宿主的事（同步说草稿、排产说已排产、宏说已入库），
+ * 而宏（`asset.generate`）需要的正是这条路径：拿到它才能接着抠底、登记。
+ */
+export interface ProducedImage {
+  path: string;
+  /** 宿主已经把它落成剧目素材了（排产直落 / 宏的最后一步）；produce 面一律 false。 */
+  adopted: boolean;
 }
 
 /**
@@ -182,20 +192,22 @@ export interface ImageGenerateRequest {
  * 等待方式与落不落库都在这一格后面，共享文案不分叉。
  */
 export interface ImageGenerateDeps {
-  run(request: ImageGenerateRequest): Promise<string>;
+  run(request: ImageGenerateRequest): Promise<ProducedImage>;
 }
 
-export const imageGenerate: Capability<typeof imageGenerateFields, ImageGenerateDeps, string> = {
+export const imageGenerate: Capability<typeof imageGenerateFields, ImageGenerateDeps, ProducedImage> = {
   id: "image.generate",
   fields: imageGenerateFields,
   doc: IMAGE_GENERATE_DOC,
   async execute(args, deps) {
     const references = resolveImageRefs(args);
+    const target = imageTargetOf(args);
     return deps.run({
-      target: imageTargetOf(args),
+      ...(target ? { target } : {}),
       prompt: args.prompt,
       ...(args.style?.trim() ? { style: args.style.trim() } : {}),
       ...(references ? { references } : {}),
+      ...(args.aspectRatio ? { aspectRatio: args.aspectRatio } : {}),
     });
   },
 };

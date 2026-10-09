@@ -9,7 +9,7 @@
  *   任何宿主 SDK 的类型（`ContentBlock` / TypeBox / `defineTool`）。
  */
 export type { Field, FieldMap, HostField, HostFieldMap, HostTightening, InferArgs, InferValue, SchemaNode } from "./schema/ir.js";
-export { assertCommonSubset, pick, tighten } from "./schema/ir.js";
+export { assertCommonSubset, optional, pick, tighten } from "./schema/ir.js";
 
 export type { Capability } from "./capabilities/capability.js";
 export type { CapabilityEntry } from "./capabilities/index.js";
@@ -17,8 +17,11 @@ export { CAPABILITIES } from "./capabilities/index.js";
 export type { AssetLocation, AssetLocationArgs } from "./capabilities/asset/target.js";
 export { assetLocationOf, assetTargetFields } from "./capabilities/asset/target.js";
 export type { AssetRegisterArgs, AssetRegisterDeps, AssetRegisterExtra, AssetRegistration } from "./capabilities/asset/register.js";
+export type { AssetGenerateArgs, AssetGenerateDeps, AssetGenerateResult } from "./capabilities/asset/generate.js";
+export { ASSET_GENERATE_DOC, assetGenerate, assetGenerateFields } from "./capabilities/asset/generate.js";
 export { ASSET_REGISTER_DOC, assetRegister, assetRegisterFields } from "./capabilities/asset/register.js";
 export type {
+  ProducedImage,
   ImageGenerateDeps,
   ImageGenerateRequest,
   ImageTarget,
@@ -73,14 +76,8 @@ export { GeminiMusicGen, MUSIC_EXT_BY_MIME, parseMusic } from "./media/music.js"
 export type { CutoutOptions, CutoutResult, CutoutTuning } from "./media/cutout.js";
 export { cutout, DEFAULT_TUNING, tuningFromEnv } from "./media/cutout.js";
 
-export type {
-  GeneratedImage,
-  ImageAspect,
-  ImageBackend,
-  ImageRequest,
-  ImageSize,
-  ImageSizeSpec,
-} from "./media/image.js";
+export type { ImageAspect, ImageBackend, ImageRequest, ImageSize, ImageSizeSpec } from "./media/image.js";
+export type { GeneratedImage } from "./media/image.js";
 export {
   aspectMatches,
   extOf,
