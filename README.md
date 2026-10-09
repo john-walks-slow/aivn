@@ -136,23 +136,13 @@ DSH 的原生会话能力也不在独立版里重造。判断一个新功能该�
 | 字段 | JSON 键 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | 启用生图 | `image.enabled` | `false` | 生图总开关（关 = 只用导入素材，不发起任何生图） |
-<<<<<<< HEAD
-| 接口格式 | `image.format` | `gemini` | **协议形状，不是产品名**：`gemini` = Google 原生 `:generateContent`（垫图走 `inlineData`，最多几张都行）；`modelslab` = `/images/text2img` + `/images/img2img`（垫图先传 base64 换托管链接，**只吃一张**）；`openai` = 标准 `/v1/images/generations`；`comfyui` = ComfyUI 原生 `/prompt` + `/history` + `/view`（本站发固定 txt2img/img2img 模板，最多一张参考图）。接官方 API、flow2api 还是别的网关由地址决定 |
-| 生图 Key | `image.apiKey` | 空 | `gemini` 走 `x-goog-api-key`，`openai` 与 `comfyui` 走 `Authorization: Bearer`，`modelslab` 走请求体里的 `key` |
-| 生图地址 | `image.baseUrl` | 空 | 生图服务根地址。**别带 `/v1` 或 `/v1beta`**，版本段按格式自己拼（`modelslab` 填到 `/api/v6` 为止；`comfyui` 填 ComfyUI 根地址，如 `http://127.0.0.1:8188`） |
-| 出图模型 | `image.model` | 空 | 出图模型名，按所选格式与网关填（`modelslab` 填社区模型的 `model_id`；`comfyui` 填 checkpoint **文件名**，即 `CheckpointLoaderSimple.ckpt_name`） |
-| 出图档位 | `image.size` | `1K` | `1K` / `2K` / `4K`（**K 大写**，官方拒小写）= 总像素量级；也可直接写字面像素 `1536x1024`（openai / comfyui 格式用，后者要求两边都是 8 的倍数）。`modelslab` 没有档位概念，一律按长边 1024 落地 |
-| 垫图策略 | `image.reference` | `neutral` | 派生立绘差分时是否拿该主体的 `neutral` 定妆照当参考图。**`gemini`、`modelslab` 与 `comfyui` 格式有效**（`modelslab` 只吃一张且画幅随垫图走；`comfyui` 只吃一张，先上传并按目标画幅中心裁切缩放）；`openai` 带垫图直接报错 |
+| 接口格式 | `image.format` | `gemini` | **协议形状，不是产品名**：`gemini` = Google 原生 `:generateContent`（垫图走 `inlineData`，最多几张都行）；`openai` = 标准 `/v1/images/generations`；`modelslab` = `/images/text2img` + `/images/img2img`（垫图先传 base64 换托管链接，**只吃一张**）；`comfyui` = ComfyUI 原生 `/prompt` + `/history` + `/view`（本站发固定 txt2img/img2img 模板，最多一张参考图）；`novelai` = `/ai/generate-image`（画布必须 64 的倍数，**只吃一张垫图**）。接官方 API、flow2api 还是别的网关由地址决定 |
+| 生图 Key | `image.apiKey` | 空 | `gemini` 走 `x-goog-api-key`，`openai` / `comfyui` / `novelai` 走 `Authorization: Bearer`（novelai 填**持久化 API token**，`pst-` 开头，不是登录拿到的那把 30 天 access token），`modelslab` 走请求体里的 `key` |
+| 生图地址 | `image.baseUrl` | 空 | 生图服务根地址。**别带 `/v1` 或 `/v1beta`**，版本段按格式自己拼（`modelslab` 填到 `/api/v6` 为止；`comfyui` 填 ComfyUI 根地址，如 `http://127.0.0.1:8188`；`novelai` 填 `https://image.novelai.net`——**不是** `api.novelai.net`） |
+| 出图模型 | `image.model` | 空 | 出图模型名，按所选格式与网关填（`modelslab` 填社区模型的 `model_id`；`comfyui` 填 checkpoint **文件名**；`novelai` 填 `nai-diffusion-5-full` / `nai-diffusion-4-5-full` / `nai-diffusion-3` 这类模型 id——**V5/V4.x 与 V3 的请求结构不同，本层按名字前缀自己分代**） |
+| 出图档位 | `image.size` | `1K` | `1K` / `2K` / `4K`（**K 大写**，官方拒小写）= 总像素量级；也可直接写字面像素 `1536x1024`（openai / comfyui / novelai 格式用，comfyui 要求 8 的倍数、novelai 要求 64 的倍数）。`modelslab` 没有档位概念，一律按长边 1024 落地；`novelai` 的档位当目标面积展开，单图封顶 3,145,728 像素（约 2048x1536），所以 `2K`/`4K` 都会顶到上限 |
+| 垫图策略 | `image.reference` | `neutral` | 派生立绘差分时是否拿该主体的 `neutral` 定妆照当参考图。**`gemini`、`modelslab`、`comfyui` 与 `novelai` 格式有效**（后三者都只吃一张）；`openai` 带垫图直接报错 |
 | 出图并发 | `image.concurrency` | `6` | 并发出图上限。每张图 15–140s，并发太小会拖穿预发射窗口。**按部署一份**，不进类目。同一剧目内工坊与剧作家共用一个闸门；排队区容量是代码里的常量（30，并发 6 的五批），一批发超过它的那部分会直接报「生图队列已满」——所以一次多出几张、分批发都行，别把几十张堆成一批 |
-=======
-| 接口格式 | `image.format` | `gemini` | **协议形状，不是产品名**：`gemini` = Google 原生 `:generateContent`（垫图走 `inlineData`，最多几张都行）；`openai` = 标准 `/v1/images/generations`；`modelslab` = `/images/text2img` + `/images/img2img`（垫图先传 base64 换托管链接，**只吃一张**）；`novelai` = `/ai/generate-image`（画布必须 64 的倍数，**只吃一张垫图**）。接官方 API、flow2api 还是别的网关由地址决定 |
-| 生图 Key | `image.apiKey` | 空 | `gemini` 走 `x-goog-api-key`，`openai` 与 `novelai` 走 `Authorization: Bearer`（novelai 填**持久化 API token**，`pst-` 开头，不是登录拿到的那把 30 天 access token），`modelslab` 走请求体里的 `key` |
-| 生图地址 | `image.baseUrl` | 空 | 生图服务根地址。**别带 `/v1` 或 `/v1beta`**，版本段按格式自己拼（`modelslab` 填到 `/api/v6` 为止，`novelai` 填 `https://image.novelai.net`——**不是** `api.novelai.net`，后者对生图回 `model must be a valid enum value`） |
-| 出图模型 | `image.model` | 空 | 出图模型名，按所选格式与网关填（`modelslab` 填社区模型的 `model_id`；`novelai` 填 `nai-diffusion-5-full` / `nai-diffusion-4-5-full` / `nai-diffusion-3` 这类模型 id——**V5/V4.x 与 V3 的请求结构不同，本层按名字前缀自己分代**） |
-| 出图档位 | `image.size` | `1K` | `1K` / `2K` / `4K`（**K 大写**，官方拒小写）= 总像素量级；也可直接写字面像素 `1536x1024`（openai / novelai 格式用，novelai 要求两边都是 64 的倍数）。`modelslab` 没有档位概念，一律按长边 1024 落地；`novelai` 的档位当目标面积展开，单图封顶 3,145,728 像素（约 2048x1536），所以 `2K`/`4K` 都会顶到上限 |
-| 垫图策略 | `image.reference` | `neutral` | 派生立绘差分时是否拿该主体的 `neutral` 定妆照当参考图。**`gemini` 与 `modelslab` / `novelai` 格式有效**（后两者只吃一张：modelslab 的出图画幅随垫图走，novelai 走 img2img 且画布仍由我们定） |
-| 出图并发 | `image.concurrency` | `6` | 并发出图上限。每张图 15–140s，并发太小会拖穿预发射窗口 |
->>>>>>> a33e3512 (feat(server): 生图接口新增 novelai 格式)
 | 出图超时 ms | `image.timeoutMs` | `180000` | 单图超时。超时按失败处理，舞台保持降级视觉 |
 
 **按类目覆盖**（可选）：上面那几项是三类素材公用的基础配置；背景、CG、立绘可以各自覆盖 `format` / `baseUrl` / `apiKey` / `model` / `size` / `reference` / `timeoutMs` 七项，没写的字段跟随基础那份。
@@ -385,11 +375,16 @@ data/
 > `nai-diffusion-3` 这类更早的走 `prompt` + `uc`。采样器 / 步数 / CFG / 负面词取官方站点默认
 > （`k_euler_ancestral`、28 步、CFG 5、`karras`），目前没有对应的设置项。
 >
-> **用这一档前先看两条官方的账。** 一是**自动化限制**：官方《Using the API》写明请求应由用户发起、
-> 不要用脚本自动连发，并要求一次只发一个请求，违规可能导致账号被终止或免费额度被停——本引擎是
-> 剧作家后台排产 + 默认并发 6，个人少量出图通常没问题，**跑批量实验请把「出图并发」调到 1**。
-> 二是 **Anlas**：Opus 的免费带是「单张、≤1,048,576 像素、≤28 步」。`1K` 的背景/CG 约 1,032,192 像素，
-> 正好在带内；**立绘固定要 `2K`（1152x2048 ≈ 2,359,296 像素），每一张都会消耗 Anlas**。
+> **用这一档前先看三条账。**
+> 一是**并发**：上游同一个账号同一时刻只允许**一个**生成任务，多发的直接 `429 Too Many Requests`
+> （第三方实现的实测结论），官方也要求一次只发一个请求；本引擎默认并发 6，用这一档请把「出图并发」
+> 调成 **1**。
+> 二是**自动化**：官方《Using the API》写明请求应由用户发起、不要用脚本自动连发，违规可能导致账号
+> 被终止或免费额度被停。
+> 三是 **Anlas 免费带**：Opus 的免费生成要**同时**满足「单张、≤1,048,576 像素、≤28 步、不吃任何垫图」
+> ——官方原文是 without any other image used as a base，所以 **img2img 一律计费**。`1K` 的背景是
+> 1,032,192 像素，文生图正好免费；**立绘固定要 `2K`（1152x2048 ≈ 2,359,296 像素）、差分又要垫
+> neutral 走 img2img，这两条都会消耗 Anlas**。V4.5 及更早的模型不占 V5 那条用量电池，重活优先用它。
 
 **出图档位（`image.size`）的两种写法**：档位 `1K` / `2K` / `4K`（= 总像素量级，1K ≈ 1024²；官方 Gemini
 另有一个 `512`（0.5K，仅 3.1 Flash Image），本配置没开放），或字面像素 `1536x1024`。档位只对
