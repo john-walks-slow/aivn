@@ -121,7 +121,62 @@
 **顺带修的环境问题**：插件 worktree 的 `node_modules/@deepseek-ai/` 缺 `dsh-scope`（主检出不缺），
 `rebuild` 套件因此 import 期就炸；补软链即可（node_modules 不入库）。
 
+### 第 2 步 · 换模型 —— **已完成**（同一 worktree，接在第 1 步之后）
+
+- **读选择**：`sessionController.projections({sessionId}, signal)` 的 `modelSelection.next ?? lastUsed`
+  （公开投影）。**换模型**：`sessionController.selectModel({sessionId, provider, model, reasoningEffort?})`
+  ——GUI 里手动换模型走的就是这一条。原稿写的 `selectForNextRequest` / `selectionFor` 在
+  `ApiSessionAgentController` 上，公开的 `sessionController` 服务类型里**没有**它们（只有内部类有），
+  所以改用公开面（本稿 §2 那一行随之作废）。
+- **模型 id 解析**：`agents.playwriter.nsfwModel` 两种写法都收——`provider/model` 直接拆；光一个 id 就去
+  `ctx.llm.listProviders()` × `listModels()` 里找。找不到**出声告警**并继续用主模型（通道照旧，
+  与服务端没配 `nsfwModel` 时的行为一致）。`nsfwThinking` → `reasoningEffort`（`default` 等于不指定）。
+- **时机**：切换放在**两拍之间**（这一拍收完、下一拍还没开笔）。`selectModel` 是异步的，放这里就与下一拍
+  的提示词装配没有竞态；要问 provider 目录的解析再提前到工具那一拍（`enter` 是异步工具）。
+- **回路**：换之前读到的现值记成「回来的位置」；**段内重建**时改用日志里**进段之前**那条
+  `model/selection`（冷开时现值可能就是限制级模型本身，认不出来）。
+- 同一拍里既进又退（模型自己写反）不换：这个通道从头到尾没真开过。
+
+**验证**：`typecheck` ✓；`node e2e/run.mjs rebuild` **18/18** ✓（新增 R17：段内重建要记住进段前的主模型）。
+「真的换过去了没有」要真实例才验得了，留给第 7 步的 e2e 判据（§6 判据 2）。
+
+### 第 3 步 · 限制级提示词章与合规声明 —— **已完成**
+
+- 两段正文写进 `src/playwriter/prompt.ts`（`nsfwEntryPointer` / `nsfwGuidance`），与服务端
+  `prompt.ts` 那两段**逐字同源**：没进通道时给入口指针（教它什么时候调 `enter_nsfw`），
+  开着时给创作指引 +（有的话）剧目自己的 `memory/always/nsfw.md` 与 `agents.playwriter.nsfwPrompt`。
+- 挂成 `aivn:play-nsfw` 段（order 210，尾段之后），`text: () =>` **逐轮现读**通道现值，所以中途
+  进出会立刻换文本。快照多了 `nsfwMemory` / `nsfwPrompt` 两格（跟着 A 区那份 TTL 缓存走）。
+- **指令面联动**：这两位被用户在配置里禁掉时，连入口指针也不出现（提示词不能教一个不存在的工具），
+  判据取的是工具面那份过滤的同一条（`disabled.has('enter_nsfw')`）。
+- **合规声明**（D4 落地）：`NSFW_COMPLIANCE` 一条，在这一段第一次开笔时用 `agent.inject` 投
+  （`next-step`、整批认领，与开局指令同一条路），并登记进 `injected`——玩家台词条上不该出现
+  一句他没说过的话。同一段只投一次，退出时清标记，下次进来再投。**与服务端的差异**：服务端塞的是
+  一对假 user/assistant（声明 + 确认），插件只投声明那一条（D4 的取舍，见 §3）。
+
+**验证**：`typecheck` ✓；一次性探针（不入库、不起实例）**8/8**——`nsfw.md` / `nsfwPrompt` 进快照、
+入口指针与指引互不串味、没有 `nsfw.md` 时不出现空章。注入套件新增判据 **A14c**（没进通道时只有入口
+指针、不泄漏通道内指引）；**它还等着跑**：本机可用内存只剩 1.3 GB，起实例 + 浏览器会打爆，留到第 7 步
+与其余 e2e 一起跑一次。
+
+### 第 4 步 · 退出摘要 + 模型可见面替换 —— **已完成**
+
+- **摘要**（D5 按 A 落）：剧作家在 `exit_nsfw(summary=…)` 给的那句当**参考**；这一段有台词时用
+  **主模型**跑一次一次性补全（`ctx.llm.stream` + 与服务端同源的 SFW 系统提示），没有台词就直接用
+  参考、再退到兜底句——没有原文可改写时不再花一次模型调用。失败只告警并退到参考/兜底（服务端同款）。
+- **折叠**：走 DSH 的会话面替换 `surfaceOp: { op: 'replace', startSeq, endSeq }`（与导演重写同一条路），
+  标记消息的来源种类用自定义的 `dsh-aivn-nsfw-fold`（**不是** `user`）——模型此后只看得到那句摘要。
+- **人类那一侧照旧**（这一步最容易漏的一条）：DSH 的面替换是**模型侧**机制，而插件的舞台本来就是
+  会话面的投影——只认面的话，冷开 / 分支之后这一段就从舞台上消失了。所以重建帧流时认出折叠标记、
+  把被挡掉的原文**渲回去**；判据是来源种类，与导演重写那种「真该藏」的替换区分开。
+- 顺序：先切回主模型（摘要要用主模型写）→ 生成摘要 → 折叠。
+- 共用的那一点（来源种类 + 标记正文）单独放 `src/stage/nsfw.ts`：写（`stage-tap`）读（`stage-log`）
+  两侧必须认同一份。
+
+**验证**：`typecheck` / `build` / `build.mjs --check` 全绿；`node e2e/run.mjs rebuild` **20/20**
+（新增 R18 折叠之后原文照渲、R19 标记不被念成玩家台词）。「模型真的只看得到摘要」要真实例 + 真模型，
+留第 7 步。
+
 ### 待办
 
-第 2 步换模型 → 第 3 步限制级提示词章与合规声明 → 第 4 步退出摘要 + 模型可见面替换 →
-第 5 步重建（R14–R16 已先立） → 第 6 步配置面与 README 双语 → 第 7 步 reviewer + 落地。
+第 6 步配置面与 README 双语 → 第 7 步 e2e 全量（含 A14c）+ reviewer + 落地。
