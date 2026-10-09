@@ -185,9 +185,21 @@ P0~P4 把**能力**（参数真相源 + 描述正文 + 请求归一化）抽进�
 | P5-h | 2 | **4** | — | 插件 `generate_bgm` 异步化（决策门 D5，可整段砍掉） |
 | P5-i | 3 | 1 | a~g | 契约矩阵按新形态重修 + 守卫加一条 + 文档收尾 |
 
+**实施进度**
+
+| 阶段 | 状态 | 提交（stage-ai / dsh-aivn） |
+| --- | --- | --- |
+| P5-a `asset.register` 落包 + 服务端 `import_asset` | ✅ 完成 | `3234a72f` / `c2d836b` |
+| P5-b `image.cutout` 素材引用寻址 | 待做（D1 已定：字符串约定 `sprite:<id>/<variant>`） | — |
+| P5-c 出图拆 produce + 显式宏 | 待做（D2 已定：服务端候选不再自动抠底） | — |
+| P5-d…i | 待做 | — |
+
 **排序理由**：a 是 c 的前置且纯加法（低风险先做）；c 是收益最大的一步（消灭同名不同义 + 拆复合动词），
 但要用 a/b 铺路；d 依赖 c（宏的第三步是 register）；e/g/h 都是「形状统一」而非「能力共享」，价值递减、
 风险递增，全部排在后面并各带决策门。f 与主链无耦合，任何时候可做。
+
+> 另一条与 P5 无耦合、也**不并进 P5** 的轴——**宿主流程工具文件化**（用户 2026-10-09 提出）——
+> 单列于 **§9**：范围分析、逐工具判定、替代形态草案，建议单独立 P6。
 
 ---
 
@@ -273,6 +285,16 @@ cd /root/projects/dsh-aivn-shared && npm run typecheck && node build.mjs --check
 ---
 
 ### P5-c · 出图拆成 produce + 显式宏；删 `commit_asset`；`generate_asset` 两边同名同义
+
+> **P5-a 落地时发现的 P5-c 前置（必须在这阶段解决）**：服务端 agent 的**可读面只有 `assets/`**
+> （`apps/server/src/playFiles.ts:17` 的 `READONLY_PREFIXES`，另加可编辑面与 `memory/archive/`），
+> 而候选图落在 `media-cache/drafts/`。所以「采用 = `import_asset(source=<候选路径>)`」这条在服务端
+> **今天跑不通**——模型给的 `media-cache/...` 路径会被白名单当场拒掉。
+> 两个可选形态（都属于 C6「对已入库/引擎持有的东西用引用，不让模型拼路径」）：
+> **(a) 句柄语法** `source="draft:<draftId>"`（与 D1 定的 `sprite:<id>/<variant>` 同族，宿主用自己的
+> IO 解析句柄，模型拿不到任意路径）；**(b) 只读源面**：把候选目录加进可读前缀。推荐 (a)：
+> 它不放松任何权限边界，且与 D1 的形状一致。这一条要在 P5-c 动工前定下来（记进决策门）。
+
 
 **为什么这么切**：这是收益最大的一步，也是 P5 的主干。
 - 服务端 `generate_image` 一个 id 两种语义（`imageTool.ts:79`/`:95`）、插件 `generate_image` 是**另一个动作**
@@ -577,3 +599,193 @@ cd /root/projects/dsh-aivn-shared
   插件 `import_asset` 保留原名、服务端 `library_import` 已改名（P5 不动这两个名字）。
 - 若 P5-c 落地，`261009-tool-surface-map.md` 的 §3 判定表需按新形态重出一版
   （它的 HEAD 是 P4 前，本计划 §2 已列出它过时的两行）。
+
+---
+
+## 9. P6 轴：宿主流程工具文件化（范围分析，2026-10-09）
+
+> **这一节只回答一个问题**：服务端那 12 个**宿主流程工具**能不能用文件工具
+> （`read` / `write` / `edit` / `grep` / DSL 标签）替代；替代之后两个宿主的工具面是否就统一了。
+>
+> **结论先行**：
+>
+> - **不能靠它统一工具面。** 12 个里，**只有 4 个**文件化之后能换来真实的两边收敛
+>   （`update_state` / `read_memory_detail` / `set_craft` / `library_import`）；
+>   **4 个能文件化但统一收益为 0**（`search_archive` / `list_saves` / `read_lineage` / `list_library`
+>   —— 数据确实在盘上，但插件侧**没有对应物**，文件化只是服务端内部重构）；
+>   **4 个不该动**（`beat_done` / `enter_nsfw` / `exit_nsfw` / `read_skill`）。
+> - 这一块两边**今天完全不统一**（插件 9 个工具里一个流程工具都没有，`src/tool-catalog.ts:53-118`；
+>   e2e 反向钉死：`e2e/verify-injection.mjs:151/162` 的 A12/A13b、`e2e/verify-stagehand.mjs:170` 的 S14）。
+> - 正确的统一方式是**数据面**而不是**工具面**：领域数据以**剧目文件**为真相源（插件已经这样），
+>   工具只在「它动的是运行时」时才存在；**这 12 个里恰好有一半动的是运行时**，文件化不了也不该文件化。
+
+### 9.1 判定口径
+
+| 判定 | 含义 | 「有收益」的判据 |
+| --- | --- | --- |
+| **能文件化** | 已有的文件工具就能表达同一动作且**不丢语义**；插件侧今天**已经**是这么做 | 插件用文件工具做同一件事 → 真收敛 |
+| **有条件** | 能，但要引擎侧新增东西（watcher / 校验 / 把状态落成文件） | 收益 = 换来的统一程度 − 新增机制的成本 |
+| **不能 / 不该** | 它动的不是数据而是**运行时**（模型通道、轮收束、宿主通道），或统一收益为 0 | — |
+
+唯一的「有收益」判据是**插件侧今天是否用文件工具做同一件事**。不是 → 文件化只是服务端内部重构，
+两边照样不一样，不该为它付引擎机制的成本。
+
+### 9.2 逐工具判定表（12 个）
+
+| # | 工具 | 领域动作 | 依赖的宿主 / 引擎状态（file:line） | 插件今天的对应做法 | 判定 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `beat_done` | 本轮收束 + 交出停止点 | `deps.emitStop(ModelStop)` → IR → 广播 → 落谱系（`beatTool.ts:66-74`）；pi `terminate` 收束 turn，批内兜底在 `orchestrator.ts:651-661`；漏调追收束 `orchestrator.ts:74-80`；刻意保留的理由自陈在 **`beatTool.ts:6-17`** | **DSL 标签**：剧本末行 `<stop options="…"/>` / `<stop placeholder="…"/>` / `<stop/>`（`src/preset-tools.ts:36-38`；解析器在 `packages/core`） | **不能**（不该） |
+| 2 | `update_state` | 提议世界状态更新（好感度增量 / 旗标 / 场景 / 剧情线） | `deps.engine.affinity`/`flags`（`memoryTool.ts:71-77`）+ `deps.stateFiles`（`:82`）；校验：成员 id / 整数 / \|Δ\|≤5 / clamp 0–100（`memoryTool.ts:7-8, 62-74`）；真值随谱系快照回滚（`orchestrator.ts:1565-1599` 的 `stateAt`/`restoreBranchState`，快照 `:2105-2112`） | **文件工具**：`write`/`edit` 三个文件 `memory/always/state/{scene.md,threads.md,state.json}`（提示词 `src/playwriter/prompt.ts:145-165`；读回 `src/play/play-context.ts:298-330`；周目边界重置 `src/play/play-state.ts`） | **有条件能**（真收益） |
+| 3 | `enter_nsfw` | 请求进入限制级通道 | **换模型**：`const model = isNsfw && opts.nsfwModel ? opts.nsfwModel : opts.model`（`orchestrator.ts:625`）＋ pending 三态（`:447-452`）＋ 提示词整段切换（`apps/server/src/prompt.ts:393-399`） | **无**（插件没有这条通道，`src/capabilities.ts:14-18` 里也没有它） | **不能** |
+| 4 | `exit_nsfw` | 请求退出限制级通道（+ SFW 摘要） | 同 3；退出提交 `orchestrator.ts:2065-2069`；SFW 摘要由专用模型另跑 | **无** | **不能** |
+| 5 | `read_memory_detail` | 读一张记忆卡的全文 | `PlayMemory.readCard(name)`（按标题 / 相对路径 / 文件名三种写法容错，`apps/server/src/memory.ts:97-105`）+ `visibleContext()` 分支可见集（`memoryTool.ts:104-112`） | **`read`**：A 区《记忆索引》每行都带路径，模型直接读（`src/play/play-context.ts:248-266`） | **能文件化**（真收益） |
+| 6 | `search_archive` | 全文检索**本分支**历史演出 | MiniSearch + CJK bigram + `tree.pathSet()` 防剧透过滤（`memoryTool.ts:120-127`；`memory.ts:107-131`）；数据**已落盘**在 `memory/archive/events.jsonl`（`memory.ts:15, 37-38, 69, 140-148`），每片带 `entryId`（分支过滤键，`:164-174`） | **无**（往事 = DSH 会话历史，模型没有可 grep 的文件） | **有条件**（数据是文件，但收益 0） |
+| 7 | `list_saves` | 列周目（存档） | `PlaySaves.list()`（`lineageTool.ts:38-51`）；数据是文件：`<playDir>/saves/*/meta.json` + `active.json`（`apps/server/src/saves.ts:10-12, 39-47`） | **无**（插件无周目概念；跨周目只有 `endings.json` 账本，且不暴露工具） | **能（数据是文件）但收益 0** |
+| 8 | `read_lineage` | 只读某周目的故事树 | `assertSaveId` + `saveStore(saveId).loadSession()` + `LineageTree.describe()`（`lineageTool.ts:58-71`）；渲染含 onPath 过滤 / 快照计数 / 分页 / 中文 kind 标签（`:100-134`） | **无** | **不建议**（渲染语义重，grep 替代不了；收益 0） |
+| 9 | `list_library` | 浏览跨剧目素材资源库 | `AssetLibrary.list()` + `libraryEntryMatches` + 截断 40（`libraryTool.ts:104-140`）；库根 `STAGE_LIBRARY_ROOT` | **无，且越界**：插件能力面 `library` **恒假**（`src/capabilities.ts:14`「两者都已出范围」）；`e2e/verify-injection.mjs:151` 的 A12 反向钉死 | **能（库是目录）但收益 0** |
+| 10 | `library_import` | 把库条目复制进剧目（写素材表 / 角色卡） | `importFromLibrary`（`libraryTool.ts:157-186`）+ 写盘回调 | **同名不同义**的 `import_asset`（`src/tools/import-asset.ts`）；P5-a 已把它升成共享能力 `asset.register` | **有条件能**（搭 P5-a 便车） |
+| 11 | `read_skill` | 读技能全文 | `readSkill(name)` 只读 `apps/server/skills/`（`skillTool.ts:6-12, 18-35`）；守卫 `scripts/check-agent-contract.mjs:297-343` | **宿主技能通道**：预设行 realm（`src/playwriter/preset.ts:63-94`）+ `skill` 工具 | **不能**（不该） |
+| 12 | `set_craft` | 改 `play.json` 的 `craft` 段 | `withPlayConfigLock` 串行 + `mergeCraftParams` + **只换 craft 一个键**（`craftTool.ts:12-17, 117-140`）；非法取值由 pi `Type.Literal` 当场拒（`:22-96`） | **文件工具**：`write`/`edit` `play.json`（提示词明写「想改就 edit 这一格」，`src/play/play-context.ts:112-114`） | **能文件化**（真收益） |
+
+### 9.3 「能文件化」的替代形态草案
+
+#### 9.3.1 `update_state` → 写 `memory/always/state/` + 引擎校验 watcher
+
+**形态**：删工具。`state.json` 承载 `{affinity, flags}`，`scene.md` / `threads.md` 不变。
+**关键前提（这条真能做，靠它）**：`stateFiles` **本来就是「随快照走的文件内容」**
+（`orchestrator.ts:2105-2112` 的 `SnapshotFacts.stateFiles`，回滚走 `:1594-1595`），
+所以把 `affinity` / `flags` 从 `engine` 搬进 `state.json` **不损回滚语义**——
+今天它们只是恰好存在 `engine` 里而不是文件里（`orchestrator.ts:1706` 的
+`renderStateSection(engine, scene, stateFiles)` 把两者拼在一起渲染）。
+
+**需要补的观察机制**（DSH 侧两条现成的，**不用自己写 chokidar**）：
+
+- `ctx.tools` 的 **`tools/post-execute`** 瀑布（`@deepseek-ai/dsh-tools/lib/types/index.d.ts:70`）：
+  拦 `write` / `edit` 的 `args.path`，命中 `memory/always/state/` 就跑校验。
+- `ctx.workspaceFiles.changes(scope, path, signal)` 目录级文件观察 + `fs/observed` 失效通知
+  （`@deepseek-ai/dsh-api-workspace-files/lib/types/index.d.ts:30, 117`）。
+
+**代价与风险**：
+
+- **回执依赖者**：`update_state` 的「已生效 / 被拒绝（请修正后重试）」是模型自纠的抓手
+  （`memoryTool.ts:86-93`）。文件化后这个回执要由 watcher 造；不造的话模型改错了好感度**不会知道**。
+- **提示词教学点**：服务端 2 处点名（`apps/server/src/prompt.ts:205, 286`）；
+  插件侧 `src/playwriter/prompt.ts:145-165` 已是一整章《世界状态》的写法（可整段搬过去）。
+- **测试 / e2e 锚点**：`apps/server/test/agentkit.test.ts`（28 处）、`orchestrator.test.ts`（48 处）、
+  `prompt.test.ts`（24 处）；插件侧 A13b / S14 断言「没有 `update_state`」。
+
+#### 9.3.2 `read_memory_detail` → `read`
+
+**形态**：删工具。记忆卡**本来就是剧目文件**（`memoryTool.ts:38` 自陈「写口不在这里」）；
+A 区索引带路径，模型 `read memory/index/<层>/<名>.md`。
+**这已经半教过了**：服务端提示词自己写着「也可以直接 read 每行括号里的路径」
+（`apps/server/src/prompt.ts:407`）。
+
+**代价与风险**：丢两样**服务端独有**的便利——`readCard` 的三种写法容错（`memory.ts:97-105`）、
+未命中时列出可用条目（`memoryTool.ts:108-111`）；两样在插件侧本来就没有，靠 A 区索引兜。
+提示词 1 处（`prompt.ts:407`）。测试锚点 `test/memory.test.ts`。
+**这是三条里最干净的一条。**
+
+#### 9.3.3 `set_craft` → 直接 edit `play.json` + 保留校验
+
+**形态**：删工具（或先按 P5-g 收成 patch 形状，再删）。插件今天就是这么做的
+（`src/play/play-context.ts:112-114`）。
+
+**代价与风险**：
+
+- **并发是真损失**：`withPlayConfigLock`（`craftTool.ts:14-16`）是与「引用即导入」、工坊文件页
+  共用的写队列；模型手写 `edit` 撞上另一个写者会**静默丢更新**。这不是审美问题。
+- **硬校验降级**：pi 的 `Type.Literal` 当场拒非法取值 → 退化成 `validate_play` 事后报
+  （插件 `validate_play` 的职责里已含「craft 取值对不对」，`src/tool-catalog.ts:60-66`）。
+- 提示词 3 处（`apps/server/src/workshop.ts:185, 230, 247`）；测试 `test/craftTool.test.ts`、
+  `craftParams.test.ts`；插件 S14 forbidden 列表含 `set_craft`（`e2e/verify-stagehand.mjs:170`）。
+
+#### 9.3.4 `search_archive` → `grep memory/archive/events.jsonl` + 分支路径集合
+
+**形态**（**只在服务端内部重构，不换来统一**）：切片已是 JSONL，每片带 `entryId`（分支过滤键）。
+要补两样：(a) 把**当前分支的节点集合**给到模型（一个注入段或一个只读文件）；
+(b) 用 `grep` 替 MiniSearch —— 中文**子串匹配**对「找一个词」这类查询不输 bigram 分词。
+
+**代价与风险**：**排序与 limit 语义丢了**（MiniSearch 是相关性排序，grep 是文件顺序）；
+**NSFW 过滤丢了**（`memory.ts:132` 的 `opts.nsfw === true || slice.nsfw !== true` 跳过露骨切片，
+grep 读不到这个标记）；
+**统一收益 = 0**（插件没有 archive 数据，`src/capabilities.ts:14` 里 `lineage` 恒假）。
+**真正的价值不在删除**：哪天真要在插件侧补「往事检索」，正确做法就是「引擎逐轮落切片文件 + `grep`」，
+而不是把 MiniSearch 移植过去 —— 那是**机制层的统一**，不是工具面的收敛。
+
+#### 9.3.5 `library_import` → `import_asset(source=<库内路径>)`（搭 P5-a 的便车）
+
+**形态**：P5-a 的 `asset.register` 已把「把一张外来的图登记成素材」变成共享原子口；
+`library_import` 退化成「源在库目录」的 register + 批量循环，可整条塌进 `import_asset`。
+**代价与风险**：库根在 `PlayEnv` 白名单之外（写面只放 characters/memory/config，
+`kit.ts:366-375`；库是**只读源**，要另开一条只读源路径面）；测试锚点 `test/assetLibrary.test.ts`。
+**插件侧不因此新增工具**（它没有库，`src/capabilities.ts:14`）。
+
+### 9.4 不该文件化的 4 条：依据与「有意差异」登记
+
+| 工具 | 为什么不该文件化 | 登记为 |
+| --- | --- | --- |
+| `beat_done` | **服务端需要 `terminate` 语义**：工具 terminate 之后没有文本位置可写，且「本轮结束」是编排器判轮边界的信号（`orchestrator.ts:403-407` 的 `beatClosed`、`:651-661` 的 `finishTurn` 批内兜底、`:74-80` 的漏调追收束）。改回标签 = 把 `beatTool.ts:6-17` 里逐条列出的代价（解析器状态机、minItems 校验、提示词约束）重新买一遍。**插件侧之所以是标签，是因为 DSH 的「在新对话中分支」与舞台重建只认助手消息轮尾**——两边 IR 同构、**载体必须不同** | `intentionalDifference`：停止点载体（工具 vs 剧本标签），IR 同构 |
+| `enter_nsfw` / `exit_nsfw` | 它换的是**运行时模型**（`orchestrator.ts:625`），不是数据。文件里写个 flag 不会换模型；要新增 watcher + 轮边界切换时机。**且插件侧根本没有这条通道**，文件化对统一零收益 | `intentionalDifference`：限制级通道（服务端双模型 + SFW 摘要；插件无） |
+| `read_skill` | 技能**通道**归宿主（服务端只读 `apps/server/skills/` + 守卫；插件是 realm 隔离的预设行）。**正文层已经统一**（`packages/agent/skills/` + `sync-skills.mjs`，见 §3.2）；文件化只会把「哪份技能在哪个通道可见」这条宿主规则搞乱 | `intentionalDifference`：技能通道（工具 vs 宿主 `available_skills`），正文同源 |
+
+> 这 4 条（含 `enter_nsfw`/`exit_nsfw` 两条）今天在 `contract.ts` 的矩阵里**已有行**，
+> P5-i 重修矩阵时把它们从「待定」定成「已定」，并给每行补一句「为什么载体必须不同」。
+
+### 9.5 统一后的目标形态
+
+**工具面算术**（今天 24 = 12 宿主流程 + 12 其它；`kit.ts:275-303`）：
+
+| 口径 | 结果 |
+| --- | --- |
+| 全部文件化的**理论下限** | 24 → **12**（不采纳：4 条零收益 + 4 条不能） |
+| **建议做** | 删 4（`update_state` / `read_memory_detail` / `set_craft` ＋ `library_import` 并入 P5-a 的 `import_asset`）→ 24 → **20**；宿主流程工具 12 → **8** |
+| **叠加 P5 末态** | P5 净 +1（+`import_asset` +`annotate_asset` −`commit_asset`，末态 26；若 P5-f 也删 `view_image` 则 25）→ **26 → 22** |
+
+**保留的 8 个宿主流程工具**（`beat_done` / `enter_nsfw` / `exit_nsfw` / `read_skill` /
+`search_archive` / `list_saves` / `read_lineage` / `list_library`）继续各按宿主机制走，
+在契约矩阵里逐条登记为有意差异。
+
+**插件侧要不要跟着动**：**基本不动，只动一处**。
+
+- `read_memory_detail` / `set_craft` / `update_state` 本来就是**插件没有的工具** →
+  服务端删掉 = 两边天然对齐（`src/preset-tools.ts:36-45` 已写「模型用文件工具就能做的一律不装」）。
+- `library_import` → 插件**不加**新工具（它没有库）。
+- 所以「两边越像越好」在这一块的落点**不是工具名对齐**，而是这条约定：
+  **领域数据一律落在剧目文件里，工具只在「数据是运行时」时才存在** —— 插件今天已经符合，
+  服务端做那三条就是向它靠。
+- **反向提醒**：不要为「两边像」给插件补 `list_saves` / `read_lineage` / `list_library` /
+  `search_archive`。`src/capabilities.ts:14` 已把 library / lineage 判为「**出范围**」，
+  那是有意的产品定位差异（复用 §3.3 的结论），不是缺口。
+
+### 9.6 建议的切法
+
+**结论：单独立 P6，不进 P5（不作为 P5-j）。** 三个理由：
+
+1. **与 P5 无耦合**：P5 收的是「同一动作两侧不同写法」（face 层），这一轴收的是「工具该不该存在」
+   （存在性）。混在一份计划里，P5-c 那次「唯一改服务端操作流程」的停止点会被这一轴淹没。
+2. **风险画像不同**：P5 的风险在提示词与 e2e 锚点（可机械兜住）；这一轴的风险在**引擎状态真值**
+   （回滚 / 校验 / 写锁），要的是另一套验证（服务端 orchestrator 测试面，不是插件 live e2e）。
+3. **有一半条目注定不做**：4 条不能 + 4 条零收益。单独立计划才能把「讨论过并决定不做」写清楚；
+   挂在 P5 里会看起来像没做完。
+
+**排序**（收益 / 风险，1–5）：
+
+| 序 | 条目 | 收益 | 风险 | 依赖 |
+| --- | --- | --- | --- | --- |
+| P6-a | `read_memory_detail` → `read` | 3 | 1 | — |
+| P6-b | `set_craft` → `edit play.json` | 3 | 2 | **与 P5-g 共用决策门 D4** |
+| P6-c | `library_import` → `import_asset(source=库路径)` | 2 | 2 | **P5-a 必须先落地** |
+| P6-d | `update_state` → 状态文件 + watcher | **4** | **4** | 引擎 watcher + 校验回执 |
+| P6-e | 矩阵登记 4 条有意差异 + 本轴结论收尾 | 2 | 1 | — |
+| — | `search_archive` / `list_saves` / `read_lineage` / `list_library` | 0 | — | **不做**，只登记 |
+
+**必须停下来找用户确认的点**：
+
+1. **P6 要不要立**，以及是否只做零机制成本的三条（P6-a/b/e）先看效果。
+2. **P6-d 的代价是动服务端领域模型**：把好感度 / 旗标从 `engine` 真值搬进 `state.json`，
+   等于**放弃「引擎拥有状态真值」这条服务端原则**（`memoryTool.ts:36-39` 明写这是它保留工具的理由）。
+   与 P5-c 同级，必须单独确认。
+3. **`set_craft` 的并发锁**：接受「模型手写 `edit` 可能丢更新」吗？
+   若 P5-g 的 D4 结论是「保留 pi 硬校验」，那 P6-b 也应保留工具、整条不做。
+4. **`search_archive` 的排序丢失**：若用户在意「检索按相关性排序」，这条连内部重构都不做。
