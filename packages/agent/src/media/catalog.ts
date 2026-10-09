@@ -5,6 +5,8 @@
  * 插件的锁挂在模块级的 `withFileLock` 上）。这里全是纯函数，两个宿主各自的 read-modify-write
  * 里调用它们。
  */
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { AssetMeta, SpriteFraming, SpriteStature } from "@aivn/core";
 
 /** 素材类目：背景、事件插图、立绘。 */
@@ -121,6 +123,72 @@ export function declareDescription(manifest: AssetManifest, spec: AssetRef, desc
 /** BGM 的素材表来源标记（曲子没有立绘那套呈现声明，只记一条「哪来的」）。 */
 export function declareBgmSource(manifest: AssetManifest, stem: string): AssetManifest {
   return { ...manifest, [stem]: { ...assetMetaOf(manifest, stem), source: "AI 生成（本插件）" } };
+}
+
+/**
+ * `assets/` 下那一步 IO 的口子：宿主的权限边界与原子写在实现里。
+ *
+ * 服务端实现落到 `PlayFiles`（agent 的写权限面就收在那里），插件实现落到 `writeAtomic`
+ * 与模块级的文件锁；包只按这几步编排。
+ */
+export interface AssetIo {
+  /** `assets/<kindPath>/` 下的文件名（覆盖判定与清旧扩展名用）。 */
+  list(kindPath: string): Promise<string[]>;
+  /** 写一张素材（剧目内相对路径）。 */
+  write(rel: string, data: Buffer): Promise<void>;
+  /** 删一张素材（换扩展名时清旧图）。 */
+  remove(rel: string): Promise<void>;
+}
+
+/** 同一 stem 下已有的素材文件名（任一扩展名）；没有则 null。 */
+export function existingAssetName(entries: readonly string[], stem: string): string | null {
+  return entries.find((entry) => entry.replace(/\.\w+$/, "") === stem) ?? null;
+}
+
+/**
+ * 把一份字节写进 `assets/`：写新的、删同 stem 的旧扩展名，返回落位与「此前已有」。
+ *
+ * `replaced` 是给人看的：目标此前已有素材（可能是用户导入的）时，覆盖这件事要说出来。
+ */
+export async function persistAsset(
+  io: AssetIo,
+  spec: AssetRef,
+  bytes: Buffer,
+  ext: string,
+): Promise<{ rel: string; replaced: boolean }> {
+  const entries = await io.list(spec.kindPath);
+  const previous = existingAssetName(entries, spec.stem);
+  const rel = assetRel(spec, ext);
+  await io.write(rel, bytes);
+  for (const stale of staleSiblings(entries, spec.stem, `${spec.stem}${ext}`)) {
+    await io.remove(`assets/${spec.kindPath}/${stale}`);
+  }
+  return { rel, replaced: previous !== null };
+}
+
+/**
+ * 抠底前原片留一份到 `media-cache/sprite-sources/`：抠底参数唯一的后悔药。
+ *
+ * 透明 PNG 一落盘底色就没了，之后想改抠底只剩「重新出图」——而重新出图出来的是另一张画。
+ * 留底是跑批产物（不进 git）：换机器后老图没法重抠，这是有意的取舍。
+ * 返回剧目内相对路径；背景 / CG 没有原片这回事，返回 null。
+ */
+export async function keepSpriteSource(
+  playDir: string,
+  spec: AssetRef,
+  data: Buffer,
+  ext: string,
+): Promise<string | null> {
+  const rel = spriteSourceRel(spec, ext);
+  if (!rel) return null;
+  const dir = join(playDir, "media-cache", "sprite-sources", spec.spriteId!);
+  await mkdir(dir, { recursive: true });
+  const entries = await readdir(dir).catch(() => [] as string[]);
+  for (const stale of staleSiblings(entries, spec.stem, `${spec.stem}${ext}`)) {
+    await rm(join(dir, stale), { force: true });
+  }
+  await writeFile(join(dir, `${spec.stem}${ext}`), data);
+  return rel;
 }
 
 /** 台账的键：与提示词查表一致——背景 / CG 用文件名主体，立绘用 `<主体id>/<差分名>`。 */

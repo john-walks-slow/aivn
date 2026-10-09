@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   DEFAULT_SPRITE_FRAMING,
@@ -15,28 +15,30 @@ import {
 import { aspectMatches, extOf, sizeOfImage, type ImageAspect, type ImageBackend } from "./imageBackend.js";
 import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
 import {
+  adoptDraft,
   assetMetaOf,
   declareSprite as declareSpriteIn,
   genericReferenceSuffix,
   IMAGE_EXTS,
   isKeyBackgroundColor,
+  keepSpriteSource as keepSpriteSourceIn,
   ledgerEntryOf,
   loadDraft as loadDraftFrom,
   markCommitted as markCommittedIn,
   mimeForExt,
   NEUTRAL_LEAD,
   newDraftId,
-  pruneDrafts as pruneDraftsFrom,
-  readDraftImage,
-  readDraftSource,
+  persistAsset,
   referenceSuffix,
   sniffImageMime,
   spriteSuffix,
   writeDraft as writeDraftTo,
+  type AssetIo,
   type AssetManifest,
   type DraftPlan,
   type DraftRecord,
   type KeyBackgroundColor,
+  type LedgerEntry,
 } from "@aivn/agent";
 import type { Limiter } from "./limiter.js";
 import { PlayMemory } from "./memory.js";
@@ -344,16 +346,25 @@ export class PlayAssets {
       stature: draft.stature,
       title: draft.title,
     });
-    const bytes = await readDraftImage(this.deps.store.dir, draftId, draft.imageExt);
-    // 留底跟着入库：`recut_sprite` 只认 media-cache/sprite-sources/ 那一份。
-    if (spec.kind === "sprite" && draft.sourceExt) {
-      await this.keepSpriteSource(spec, await readDraftSource(this.deps.store.dir, draftId, draft.sourceExt), draft.sourceExt);
-    }
-    const written = await this.persist(spec, bytes, draft.imageExt);
-    if (spec.kind === "sprite") await this.declareSprite(spec, notify);
-    await this.recordPrompt(spec, written.path, draft.prompt);
-    await this.markCommitted(draftId, draft);
-    return { ...written, autoNeutral: false };
+    // 落位、素材表声明、台账、留底、留痕的编排在包里（与插件共用一份）；
+    // 这里只把本层的 IO 口（`PlayFiles` 白名单 + 剧目锁 + notify）接上去。
+    const adopted = await adoptDraft(
+      {
+        playDir: this.deps.store.dir,
+        assets: this.assetIo(),
+        updateManifest: (mutate) => this.withManifest(notify, mutate),
+        recordLedger: (entry) => this.saveLedger(entry),
+      },
+      draft,
+      spec,
+    );
+    return {
+      kind: spec.kind,
+      path: adopted.rel,
+      url: `/plays/${this.playId}/${adopted.rel}`,
+      replaced: adopted.replaced,
+      autoNeutral: false,
+    };
   }
 
   private loadDraft(draftId: string): Promise<DraftRecord> {
@@ -544,6 +555,24 @@ export class PlayAssets {
   }
 
   /**
+   * 素材写口：包里按 `list / write / remove` 三步编排落位，本层只接上 `PlayFiles`——
+   * 「agent 的素材写都在白名单内」这条铁律仍然生效（包不绕过它）。
+   */
+  private assetIo(): AssetIo {
+    return {
+      list: async (kindPath) => {
+        const dir = this.deps.files.absoluteOf(`assets/${kindPath}`);
+        if (!existsSync(dir)) return [];
+        return (await readdir(dir)).filter((name) => IMAGE_EXTS.some((ext) => name.endsWith(ext)));
+      },
+      write: async (rel, data) => {
+        await this.deps.files.writeBinary(rel, data);
+      },
+      remove: (rel) => this.deps.files.removeAsset(rel),
+    };
+  }
+
+  /**
    * 把抠底前的原片留一份到 `media-cache/sprite-sources/`：抠底参数唯一的后悔药。
    *
    * 透明 PNG 一落盘底色就没了，之后想改抠底只剩「重新出图」——而重新出图出来的是另一张画，
@@ -553,15 +582,8 @@ export class PlayAssets {
    */
   private async keepSpriteSource(spec: AssetSpec, data: Buffer, ext: string): Promise<void> {
     if (!spec.spriteId) return;
-    const dir = this.deps.store.spriteSourceDir(spec.spriteId);
     try {
-      await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, `${spec.stem}${ext}`), data);
-      // 换后端后同一张图可能从 jpg 变成 png：留着旧的那份，readSpriteSource 会一直命中它，
-      // 重抠出来的是上一张画。与 persist() 清 assets 旧扩展名是同一条理由。
-      await Promise.all(
-        IMAGE_EXTS.filter((other) => other !== ext).map((other) => rm(join(dir, `${spec.stem}${other}`), { force: true })),
-      );
+      await keepSpriteSourceIn(this.deps.store.dir, spec, data, ext);
     } catch (error) {
       console.warn(
         `[aivn] 立绘 ${spec.spriteId}/${spec.stem} 的留底原片没写成（之后没法原地重抠）：` +
@@ -572,15 +594,12 @@ export class PlayAssets {
 
   /** 落盘 + 清掉同 stem 的旧扩展名。抠底输出恒为 PNG，扩展名变了旧的 .jpg 必须清掉。 */
   private async persist(spec: AssetSpec, bytes: Buffer, ext: string): Promise<Omit<GeneratedPlayAsset, "autoNeutral">> {
-    const rel = `assets/${spec.kindPath}/${spec.stem}${ext}`;
-    const previous = await this.existingPath(spec.kindPath, spec.stem);
-    await this.deps.files.writeBinary(rel, bytes);
-    if (previous && previous !== rel) await this.deps.files.removeAsset(previous);
+    const { rel, replaced } = await persistAsset(this.assetIo(), spec, bytes, ext);
     return {
       kind: spec.kind,
       path: rel,
       url: `/plays/${this.playId}/${rel}`,
-      replaced: previous !== null,
+      replaced,
     };
   }
 
@@ -596,11 +615,17 @@ export class PlayAssets {
    * 并发差分同时记账要走剧目锁，否则后写的会冲掉先写的记录。
    */
   private async recordPrompt(spec: AssetSpec, path: string, prompt: string): Promise<void> {
-    const entry = ledgerEntryOf(spec, path, prompt, new Date().toISOString());
+    await this.saveLedger(ledgerEntryOf(spec, path, prompt, new Date().toISOString()));
+  }
+
+  /**
+   * 台账写一条：图已经落盘了，为一条记账把一次成功的出图报成失败更糟——这里出声，
+   * 图与 prompt 对不上时能查到。并发差分同时记账要走剧目锁，否则后写的会冲掉先写的记录。
+   */
+  private async saveLedger(entry: LedgerEntry): Promise<void> {
     try {
       await withPlayConfigLock(this.deps.store.dir, () => this.deps.store.saveLedgerEntry(entry));
     } catch (error) {
-      // 图已经落盘了，为一条记账把一次成功的出图报成失败更糟；这里出声，图与 prompt 对不上时能查到。
       console.warn(
         `[aivn] 出图 prompt 未记进 assets/generated.json（${entry.id}）: ${error instanceof Error ? error.message : String(error)}`,
       );
