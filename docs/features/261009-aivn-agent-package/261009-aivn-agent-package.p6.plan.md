@@ -170,7 +170,7 @@ A 区《记忆索引》每行都带路径，读得到。
 （包内导出，与 `validate_play` 同源）；测试面重做（`orchestrator` 89、`playhouse` 21，含
 「新档播种初值 + 切档回写」那条判据 4）。
 
-### P6-c · `library_import`（**移出**）
+### P6-c · `library_import`（**已并入** `import_asset`，2026-10-10）
 
 与插件的 `import_asset` **不同义**（前者按库 kind/entryId 复制 + 写角色卡/素材，后者是路径/URL/草稿的
 登记）。将来若做，是「服务端库导入重构」，省的是服务端代码，**不计统一收益**。
