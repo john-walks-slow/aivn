@@ -98,7 +98,6 @@ export type { GeneratedImage } from "./media/image.js";
 export {
   aspectMatches,
   extOf,
-  higherTier,
   IMAGE_ASPECTS,
   IMAGE_EXTS,
   IMAGE_SIZES,

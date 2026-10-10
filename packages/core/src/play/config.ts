@@ -179,8 +179,8 @@ export type ImageApproval = (typeof IMAGE_APPROVALS)[number];
 /**
  * 逐剧目的生图设置：覆盖服务端全局的出图模型与档位（`STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`）。
  *
- * 全局配置是「这台机器默认怎么出图」，但一部剧的立绘要 2K 抠底、另一部的小剧场插图
- * 1K 就够，或者一部用 flow2api 的别名模型、另一部走官方——这些是剧目自己的事。
+ * 全局配置是「这台机器默认怎么出图」，但一部剧要高分辨率、另一部的小剧场插图 1K 就够，
+ * 或者一部用 flow2api 的别名模型、另一部走官方——这些是剧目自己的事。
  * 留空即跟随全局；两个字段都只覆盖自己那一个，不整份替换。
  */
 export interface PlayImageConfig {

@@ -59,17 +59,6 @@ describe("GeminiImageGen：Gemini 原生生图", () => {
     expect(config.imageSize).toBe("2K");
   });
 
-  it("请求声明的档位下限会抬高档位，但不会把配置降下来", async () => {
-    const at = async (cfg: string, minTier?: "2K" | "4K") => {
-      const { fetchImpl, calls } = fakeFetch(() => inlineResponse());
-      await new GeminiImageGen({ ...opts, size: cfg }, fetchImpl as never).generate({ prompt: "x", minTier });
-      return (calls[0]!.body.generationConfig as { imageConfig: Record<string, string> }).imageConfig.imageSize;
-    };
-    expect(await at("1K", "2K")).toBe("2K"); // 立绘抠底：1K 抬到 2K
-    expect(await at("4K", "2K")).toBe("4K"); // 配置更高时不动
-    expect(await at("1K")).toBe("1K"); // 背景与 CG 不声明，跟着配置
-  });
-
   it("逐剧目覆盖：请求里带了 model / size 就压过构造期那份配置", async () => {
     // 设置页改的是 play.json 的 image 段，构造期的 opts 来自 .env，优先级看的是请求。
     const { fetchImpl, calls } = fakeFetch(() => inlineResponse());

@@ -31,7 +31,7 @@ const ASSET_MANIFEST = "assets/manifest.json";
 const DIR_ROOTS = ["memory", "assets", CHARACTER_DIR, "saves"];
 /** 二进制可写面：仅图像素材（生图落盘）。 */
 const BINARY_WRITE_PREFIXES = ["assets/backgrounds/", "assets/cg/", "assets/sprites/"];
-/** 单图上限 16MB：2K 图 1–3MB，留足余量又挡得住写歪的产物。 */
+/** 单图上限 16MB：高清图实测 1–3MB，留足余量又挡得住写歪的产物。 */
 const MAX_BINARY_BYTES = 16 * 1024 * 1024;
 
 /** 预览方式：binary 文件不进编辑器，前端按 kind 决定渲染预览还是播放。 */

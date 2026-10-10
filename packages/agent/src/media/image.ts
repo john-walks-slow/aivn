@@ -73,7 +73,7 @@ export interface ImageRequest {
   /**
    * 本次出图用哪个模型 / 什么尺寸：覆盖部署配置里的模型与尺寸。
    *
-   * 来自剧目的 `play.json`（`image` 段），由调用方现读现传——一部剧的立绘要 2K 抠底、
+   * 来自剧目的 `play.json`（`image` 段），由调用方现读现传——一部剧要 2K、
    * 另一部的小剧场插图 1K 就够，或者一部走 flow2api 的别名模型、另一部走官方。
    * 不传 = 跟部署配置；格式不认这个值时报错，不静默退回全局（用户改了设置却出成老样子最难查）。
    */
@@ -83,20 +83,9 @@ export interface ImageRequest {
   aspectRatio?: ImageAspect;
   /** 参考图（垫图）：角色一致性的唯一可靠手段，prompt 措辞锁不住脸。 */
   references?: { mimeType: string; data: Buffer }[];
-  /**
-   * 档位下限，只声明「不能低于这个」，实际档位由后端与配置共同决定（取两者更高）。
-   *
-   * 立绘要抠底，而抠底的锯齿是模型画在源图轮廓上的——提高源图分辨率是唯一有效的软化手段
-   * （形态学平滑实测反而把 1px 缺口从 3385 推到 4419）。所以立绘请求声明 2K 下限，
-   * 背景与 CG 不声明，跟着配置走。
-   */
-  minTier?: ImageSize;
 }
 
-/** 两个档位取更高的那个（`IMAGE_SIZES` 已按低到高排列）。 */
-export function higherTier(a: ImageSize, b: ImageSize): ImageSize {
-  return IMAGE_SIZES.indexOf(a) >= IMAGE_SIZES.indexOf(b) ? a : b;
-}
+
 
 export interface GeneratedImage {
   data: Buffer;

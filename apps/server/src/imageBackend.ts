@@ -9,7 +9,6 @@ import type { ImageBackend } from "@aivn/agent";
 export {
   aspectMatches,
   extOf,
-  higherTier,
   IMAGE_ASPECTS,
   IMAGE_SIZES,
   imageSizeText,

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   aspectMatches,
   extOf,
-  higherTier,
   imageSizeText,
   mimeForExt,
   parseImageSize,
@@ -27,11 +26,6 @@ describe("生图契约：尺寸参数", () => {
     expect(imageSizeText({ kind: "px", width: 1, height: 2 })).toBe("1x2");
   });
 
-  it("档位取更高的那个", () => {
-    expect(higherTier("1K", "2K")).toBe("2K");
-    expect(higherTier("4K", "2K")).toBe("4K");
-    expect(higherTier("2K", "2K")).toBe("2K");
-  });
 });
 
 describe("生图契约：字节层", () => {

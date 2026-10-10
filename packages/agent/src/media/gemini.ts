@@ -2,7 +2,6 @@ import { defaultFetch, type FetchLike } from "../http.js";
 import {
   IMAGE_ASPECTS,
   IMAGE_SIZES,
-  higherTier,
   imageSizeText,
   parseImageSize,
   type GeneratedImage,
@@ -74,12 +73,11 @@ export class GeminiImageGen implements ImageBackend {
   }
 
   /**
-   * 档位 = 本次请求的尺寸（剧目覆盖或部署配置）与本次请求下限里更高的那个
-   * （立绘要 2K 抠底，背景/CG 跟配置）。
+   * 档位 = 本次请求的尺寸（剧目覆盖）或部署配置——**没有任何按素材类目的自动抬档**：
+   * 分辨率是用户的配置，引擎不替他改（2026-10-10 去掉了原来立绘那条 2K 下限）。
    */
   private tierOf(req: ImageRequest): string {
-    const base = req.size ? geminiTier(req.size) : (this.tier as ImageSize);
-    return req.minTier ? higherTier(base, req.minTier) : base;
+    return req.size ? geminiTier(req.size) : (this.tier as ImageSize);
   }
 
   async generate(req: ImageRequest): Promise<GeneratedImage> {
