@@ -339,6 +339,17 @@ describe("buildSystemPrompt：写作参数与创作口径", () => {
   });
 });
 
+describe("buildSystemPrompt：剧作家的补充要求", () => {
+  it("原样进 A 区、排在引擎契约之前；空值一点痕迹都不留", () => {
+    const prompt = build({ play: PLAY, customPrompt: "这部作品不说日语。" });
+    expect(prompt).toContain("# 本剧目的补充要求");
+    expect(prompt).toContain("这部作品不说日语。");
+    expect(prompt.indexOf("# 本剧目的补充要求")).toBeLessThan(prompt.indexOf("# 演出契约"));
+    expect(build({ play: PLAY })).not.toContain("# 本剧目的补充要求");
+    expect(build({ play: PLAY, customPrompt: "   " })).not.toContain("# 本剧目的补充要求");
+  });
+});
+
 describe("buildSystemPrompt：素材从哪来", () => {
   it("有资源库时讲清引用即导入这条契约（引擎事实，不是创作口径）", () => {
     const prompt = build({ play: PLAY, assets: { backgrounds: ["bg_dusk.jpg"] }, can: { library: true } });

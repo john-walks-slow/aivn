@@ -2,7 +2,7 @@ import type { AgentEvent, AgentMessage, AgentTool, StreamFn } from "@earendil-wo
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { languageLabel, toPiThinkingLevel } from "@aivn/core";
-import type { EffectiveCraft, ImageApproval, ThinkingLevel, WorkshopAssetView, WorkshopPart } from "@aivn/core";
+import type { EffectiveCraft, ThinkingLevel, WorkshopAssetView, WorkshopPart } from "@aivn/core";
 import { capDigest, renderTranscriptAs, splitSummary, calibrateTokenScale, type EpochSummary } from "./compaction.js";
 import { completeText, type OneShotOptions } from "./llm.js";
 import { skillsPrompt } from "./skills.js";
@@ -43,8 +43,6 @@ export interface WorkshopPromptContext {
   scriptLanguage?: string;
   /** 当前生效的写作参数（已与默认值合成）：提示词里报现值，工坊据此回答「现在是什么」。 */
   craft: EffectiveCraft;
-  /** 出图审批模式（play.json 的 agents.workshop.imageApproval）：照它决定要不要先问用户。 */
-  imageApproval?: ImageApproval;
   /** 早期对话已压成的摘要（A 区回注）：非空即本线程发生过压缩。 */
   digest?: string;
   /** 逐剧目的自定义段（play.json 的 agents.workshop.prompt）：原样拼在固定提示词之后。 */
@@ -182,12 +180,10 @@ function playLanguageNote(ctx: WorkshopPromptContext): string {
  * 有 100 多行，每轮对话都在为它付 token，而它只在「起新剧目 / 改设定」那一刻用得上——
  * 正是渐进披露该下沉的东西。DSH 那条线早就这么做了（`aivn-play-setup`），这里是补齐。
  *
- * 留在正文里的只有**门控与分叉**：skill 恒可见、没有能力位门控，所以「本剧目有没有写口」
- * 「要不要审批」这些随实例变化的话必须由提示词说，否则没配写口的实例会从 skill 里
- * 读到教它自己改写作参数的正文。
+ * 留在正文里的只有**随实例变化的分叉**：skill 恒可见、没有能力位门控，所以「本剧目有没有写口」
+ * 这类话必须由提示词说，否则没配写口的实例会从 skill 里读到教它自己改写作参数的正文。
  */
 function setupFlow(ctx: WorkshopPromptContext): string {
-  const approval = ctx.imageApproval === "auto" ? "（本剧目免审批，列完直接出）" : "**用户没点头之前，一张都不要 generate_image。**";
   const fallback = ctx.can.files
     ? ""
     : `\n\n**本剧目没给你写口**（Agent 页关了「改剧目文件」）：把 premise、创作口径、写作参数、角色卡整理成一份「改哪个文件、写什么」的清单交给用户，让他在工坊里自己改；不要把清单当成已经写进去了。`;
@@ -205,9 +201,10 @@ ${setupSkill}
 关系网、多条攻略线各要什么、伏笔怎么挂怎么收——在 skill \`galgame-story-design\` 里，
 动笔写 premise 与角色卡之前读它。
 
-一句话概括：**先问清骨架 → 给完整提案等用户点头 → 列图单（${approval}）→ 落盘后同步记忆。**
+一句话概括：**先问清骨架 → 给完整提案 → 列图单 → 落盘后同步记忆。**
 
-出图那一步${ctx.imageApproval === "auto" ? "免审批" : "要批准"}；${ctx.can.library ? "列图单前先查资源库（`list_library`）看有没有现成的。" : "本剧目查不了资源库，按需要出。"}${fallback}`;
+出图这一步的实际情况：**花钱，立绘一张要等 100 秒起**，用户在图上桌之前看不到任何中间结果。
+所以惯例是**先列一张图单**——要出几张、分别是什么——跟他对一下再开跑。${ctx.can.library ? "列图单前先查资源库（`list_library`），库里现成的不用重复出。" : "本剧目查不了资源库，按需要出。"}${fallback}`;
 }
 
 /**
@@ -314,23 +311,20 @@ function workspaceSection(ctx: WorkshopPromptContext): string {
 /**
  * 出图章节（仅在生图可用时拼进 system prompt）。
  *
- * 只留**角色职责**：什么时候出图、要不要用户批准、出完怎么汇报。
+ * 只留**角色职责**：什么时候出图、出完怎么汇报。
  * 画幅、并发、垫图链路、差分命名都是工具契约，归 `imageTool.ts` 的描述管——
  * 这里曾把它们抄了一遍，于是 framing 改成三档之后这行还写着「立绘 9:16 竖构图全身」，
  * 一句抄错的画幅直接指挥模型按错误构图出图。
  */
 function imageGuide(ctx: WorkshopPromptContext): string {
-  const approval =
-    ctx.imageApproval === "auto"
-      ? `- **本剧目免审批出图**（Agent 页里设的「出图审批」= 自动）：不用等用户点头，该出就出——
-  但仍然**一次只出真正需要的那几张**，出完把图贴给他看。`
-      : `- **用户没点头之前一张都不要开跑**——出图要花钱、立绘一张要等 100 秒起。`;
+  const costNote = `- **出图花钱、也慢**：一张立绘 100 秒起，中途用户看不到画到哪一步。
+  所以**一次只出真正需要的那几张**，出完把图贴给他看。`;
   const skillRule = ctx.can.skill
     ? `- **第一次出图前先 read_skill("galgame-visual-craft")**：画风锚点、提示词写法、抠底调参都在那份全文里，
   不读就按默认审美出图 = 整套素材返工。调 generate_bgm 前同样先 read_skill("galgame-bgm")。每轮想不起来就再读一次，别凭印象。
 `
     : "";
-  return `${approval}
+  return `${costNote}
 ${skillRule}- **generate_image 只出草稿，不进素材表**：回执里带预览图和采用它要用的那个 id（参数名见工具说明），
   要采用它就调 \`import_asset(source="draft:<草稿id>", kind=…)\`（立绘先 \`cut\` 抠底再登记那张）。没被采用的草稿留在临时草稿区（一周后自动清），素材页与素材表里看不到它。
 - **先出 neutral 定妆照给用户看，而且是 3 张候选**：同一角色首次定妆时按 \`variant="neutral"\` 调 3 次 \`generate_image\`

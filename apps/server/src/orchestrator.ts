@@ -286,7 +286,8 @@ export interface OrchestratorOptions {
   nsfwPrompt?: string;
   /**
    * 剧作家的 agent 设置（play.json 的 agents.playwriter）：模型由宿主解析成 opts.model 传进来，
-   * 这里只用思考档位与工具开关。缺省即「思考跟随服务商默认、工具全开」。
+   * 这里用思考档位与工具开关；补充要求那段现从 `opts.play.agents.playwriter.prompt` 取
+   * （A 区装配在 `buildAgent` 里，跟着 epoch 走，不走这个引用）。
    */
   agents?: AgentSettings;
 }
@@ -635,6 +636,7 @@ export class PlaywrightOrchestrator {
           nsfwMode: isNsfw,
           nsfwPrompt: opts.nsfwPrompt,
           skills: skillsPromptBlock(),
+          customPrompt: opts.play.agents?.playwriter?.prompt,
           activeCast: this.recentCast(),
         }),
         model,

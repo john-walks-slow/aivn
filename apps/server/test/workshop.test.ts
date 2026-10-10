@@ -307,8 +307,8 @@ describe("工坊 prompt 与工具", () => {
     expect(prompt).not.toContain("逐条核对再汇报");
     expect(prompt).not.toContain("view_image");
     expect(prompt).not.toContain("inspect_asset");
-    // 留下的三件事都是职责：谁批准、先出哪张、失败怎么汇报
-    expect(prompt).toContain("用户没点头之前一张都不要开跑");
+    // 留下的都是职责：出图的花费与耗时、先出哪张、失败怎么汇报
+    expect(prompt).toContain("出图花钱、也慢");
     expect(prompt).toContain("先出 neutral 定妆照给用户看");
     expect(prompt).toContain("出图失败把接口原话带给用户");
     // 各文件写法（素材描述表怎么补、立绘差分键怎么写、出图留痕怎么重出）已下沉到
@@ -335,10 +335,10 @@ describe("工坊 prompt 与工具", () => {
 
   it("工坊 prompt：生图不可用时给替代路径，不教它调工具", async () => {
     const withGen = await buildWorkshopPrompt(promptCtx());
-    expect(withGen).toContain("用户没点头之前一张都不要开跑");
+    expect(withGen).toContain("出图花钱、也慢");
     // 没生图能力时别教它怎么出图，直接给替代路径，免得空转调一个必然失败的函数
     const withoutGen = await buildWorkshopPrompt(promptCtx({ can: caps({ image: false }) }));
-    expect(withoutGen).not.toContain("用户没点头之前一张都不要开跑");
+    expect(withoutGen).not.toContain("出图花钱、也慢");
     expect(withoutGen).toContain("生图当前不可用");
   });
 
@@ -1074,11 +1074,11 @@ describe("工坊：写作参数与创作口径的交接，以及自定义提示�
     expect(ja).toContain("日本語 / 日语");
   });
 
-  it("出图审批默认先问，设成 auto 就改成免审批", async () => {
-    expect(await buildWorkshopPrompt(ctx())).toContain("用户没点头之前一张都不要开跑");
-    const auto = await buildWorkshopPrompt(ctx({ imageApproval: "auto" }));
-    expect(auto).toContain("本剧目免审批出图");
-    expect(auto).not.toContain("用户没点头之前一张都不要开跑");
+  it("出图花钱耗时是讲清楚的事实，不写成等点头的门禁", async () => {
+    const prompt = await buildWorkshopPrompt(ctx());
+    expect(prompt).toContain("出图花钱、也慢");
+    expect(prompt).toContain("先列一张图单");
+    expect(prompt).not.toContain("用户没点头");
   });
 
   it("自定义提示词原样追加在固定段之后", async () => {

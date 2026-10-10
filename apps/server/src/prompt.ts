@@ -88,6 +88,11 @@ export interface PromptContext {
   /** 限制级（NSFW）系统提示词自定义扩展。 */
   nsfwPrompt?: string;
   /**
+   * 逐剧目的自定义段（play.json 的 agents.playwriter.prompt）：原样拼在 A 区，
+   * 紧挨引擎契约之前——契约是最后说的定论，用户这段讲的是这个剧目额外怎么做事。
+   */
+  customPrompt?: string;
+  /**
    * 本轮在场角色 id（含主角）：角色表按它分级——在场全卡全文，不在场只注一行。
    * 不传 = 不分级（小剧目/测试走这条）。
    */
@@ -473,9 +478,16 @@ ${imageChapter(ctx.can.image)}
 ${ctx.can.search ? SEARCH_GUIDE : ""}
 ${ctx.can.memory ? MEMORY_RULES : ""}
 ${ctx.can.memory ? STATE_RULES : ""}
-${newCharacterRules(ctx.can.characters)}
+${newCharacterRules(ctx.can.characters)}${customSection(ctx.customPrompt)}
 
 ${CONTRACT_RULES}`;
+}
+
+/** 用户自定义段（play.json 的 agents.playwriter.prompt）：原样拼，空值一点痕迹都不留。 */
+function customSection(custom: string | undefined): string {
+  const text = custom?.trim();
+  if (!text) return "";
+  return `\n\n# 本剧目的补充要求\n\n${text}`;
 }
 
 /**

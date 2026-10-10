@@ -23,9 +23,19 @@ import { useDirtyFlag } from "./dirtyGuard.js";
  * 就彻底装不进去（提示词里对应的章节也跟着收掉）。界面上不出现任何工具名。
  */
 
-const ROLES: { id: keyof AgentConfig; name: string }[] = [
-  { id: "playwriter", name: "剧作家" },
-  { id: "workshop", name: "搭台助手" },
+const ROLES: { id: keyof AgentConfig; name: string; placeholder: string }[] = [
+  {
+    id: "playwriter",
+    name: "剧作家",
+    placeholder:
+      "例：主角的心理活动多写一点，别只写对话；\n每轮结尾留一个悬念，别把冲突在这一轮收干净。",
+  },
+  {
+    id: "workshop",
+    name: "搭台助手",
+    placeholder:
+      "例：背景一律走写实厚涂，别用赛博朋克；\n生成素材的 id 用英文小写。",
+  },
 ];
 
 const THINKING_LABEL: Record<ThinkingLevel, string> = {
@@ -210,10 +220,7 @@ export function AgentPane({ playId }: { playId: string }) {
                     onRetry={() => loadModels(true)}
                   />
                   <p className="muted small">
-                    当剧作家调用 enter_nsfw
-                    进入亲密/限制级剧情时切换为此模型执笔。留空时：剧目覆盖 →
-                    全局设置（nsfwModelId）→
-                    剧作家主模型。退出时切回主模型并注入 SFW 摘要。
+                    进入限制级剧情时切换为此模型；退出时切回主模型。
                   </p>
                 </label>
 
@@ -288,44 +295,17 @@ export function AgentPane({ playId }: { playId: string }) {
               ))}
             </div>
 
-            {role.id === "workshop" && (
-              <label className="field">
-                <span>出图审批</span>
-                <select
-                  value={settings.imageApproval ?? "ask"}
-                  onChange={(e) =>
-                    patch(role.id, (s) =>
-                      setOrClear(s, "imageApproval", e.target.value, "ask"),
-                    )
-                  }
-                >
-                  <option value="ask">先问我（默认）</option>
-                  <option value="auto">直接出图</option>
-                </select>
-                <p className="muted small">
-                  工坊一次对话可能连着出好几张图，还要等一两分钟。「先问我」时它列完图单、等用户点头才开跑；
-                  选「直接出图」就跳过这一步——出图要钱，只在你放心的剧目上开。
-                </p>
-              </label>
-            )}
-
-            {role.id === "workshop" && (
-              <label className="field">
-                <span>补充要求</span>
-                <textarea
-                  rows={6}
-                  value={settings.prompt ?? ""}
-                  placeholder={
-                    "例：这部作品是慢热悬疑，每轮别写太长；\n涉及凶案的情节先问我一句再写。"
-                  }
-                  onChange={(e) =>
-                    patch(role.id, (s) =>
-                      setOrClear(s, "prompt", e.target.value),
-                    )
-                  }
-                />
-              </label>
-            )}
+            <label className="field">
+              <span>补充要求</span>
+              <textarea
+                rows={6}
+                value={settings.prompt ?? ""}
+                placeholder={role.placeholder}
+                onChange={(e) =>
+                  patch(role.id, (s) => setOrClear(s, "prompt", e.target.value))
+                }
+              />
+            </label>
           </section>
         );
       })}
@@ -348,8 +328,7 @@ function setOrClear<
     | "prompt"
     | "nsfwModel"
     | "nsfwThinking"
-    | "nsfwPrompt"
-    | "imageApproval",
+    | "nsfwPrompt",
 >(settings: AgentSettings, key: K, value: string, blank?: string): void {
   // 提示词是长文本，清空后多半只剩几个换行：只判空串会把它当成「用户真的写了内容」存进 play.json，
   // 服务端读回时又因 trim 为空丢掉——文件里留了一段永不生效的文本。

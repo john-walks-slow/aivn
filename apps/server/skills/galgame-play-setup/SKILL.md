@@ -20,9 +20,7 @@ user-invocable: true
 2. **给完整提案再落盘**：把理解成的 premise（3~6 句）、角色卡、创作口径、写作参数、
    还缺哪些视觉素材一次性摆给用户看，等一句「可以／就这样」再落盘。
 3. **列图单**：告诉用户「接下来要出这几张图：背景 A（说清是什么场景）、立绘 `<角色id>/neutral`、…，
-   各是什么画面、为什么要」，**用户没点头之前一张都不要出**。
-   （本剧目若在 Agent 页设了「出图审批 = 自动」，则可以列完直接出——但仍只出真正需要的那几张。）
-   出图要钱也要时间。
+   各是什么画面、为什么要」——出图要钱也要时间（一张立绘 100 秒起），先跟他对一下再开跑。
 4. **落盘后同步记忆**：premise 写进 `memory/always/premise.md`，创作口径写进 `memory/always/craft.md`，
    写作参数用 `edit` 改 `play.json` 的 `craft` 段（见下「写作参数 vs 创作口径」，两者装的东西不同，不要混）。
    落盘不是说完就算——文件里没有的，下一轮剧作家就看不见。
@@ -78,7 +76,7 @@ user-invocable: true
 - `cover`（封面图）、`initialState` / `initialScene`（开局状态）
 - `craft`（写作参数，用 `edit` 定点改，**别整篇重写 play.json**）
 - `image`（逐剧目的生图 model / size，不写跟服务端全局）
-- `agents`（两个 agent 的 model / thinking / capabilities / imageApproval）
+- `agents`（两个 agent 的 model / thinking / capabilities / prompt）
 
 除 `id` / `title` 外全是可选字段：缺一个不报错，只是那份效果静默消失
 （缺 `defaultVoiceId` 无名角色没声音、缺 `scriptLanguage` 跟随玩家输入、

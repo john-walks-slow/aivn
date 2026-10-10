@@ -24,16 +24,22 @@ describe("parsePlayConfig：agents 段的补充提示词", () => {
   const withPrompt = (role: "playwriter" | "workshop", prompt: string): unknown =>
     parsePlayConfig({ ...BASE, agents: { [role]: { prompt } } }).agents?.[role]?.prompt;
 
-  it("工坊保留原文（逐剧目追加段，不做 trim 改写）", () => {
+  it("两个角色都保留原文（逐剧目追加段，不做 trim 改写）", () => {
     expect(withPrompt("workshop", " 这部作品不说日语。 ")).toBe(" 这部作品不说日语。 ");
+    expect(withPrompt("playwriter", "每轮写短点")).toBe("每轮写短点");
   });
 
   it("纯空白当没写，不留空壳", () => {
     expect(withPrompt("workshop", "  \n ")).toBeUndefined();
+    expect(withPrompt("playwriter", "  \n ")).toBeUndefined();
   });
 
-  it("剧作家的那份直接丢：它没人读，留着只会让人以为生效了", () => {
-    expect(withPrompt("playwriter", "每轮写短点")).toBeUndefined();
+  it("已下线的 imageApproval 当没写，不留空壳", () => {
+    const agents = parsePlayConfig({
+      ...BASE,
+      agents: { workshop: { imageApproval: "auto" } },
+    }).agents;
+    expect(agents).toBeUndefined();
   });
 });
 
@@ -91,17 +97,6 @@ describe("parsePlayConfig：写作参数（craft）与逐剧目生图（image）
   it("scriptLanguage 与 voiceLanguage 同一套规矩：空白当没写", () => {
     expect(parsePlayConfig({ ...BASE, scriptLanguage: "  " }).scriptLanguage).toBeUndefined();
     expect(parsePlayConfig({ ...BASE, scriptLanguage: " ja " }).scriptLanguage).toBe("ja");
-  });
-
-  it("出图审批只认 ask / auto，且只留在工坊那张卡上", () => {
-    const workshop = (imageApproval: unknown): unknown =>
-      parsePlayConfig({ ...BASE, agents: { workshop: { imageApproval } } }).agents?.workshop?.imageApproval;
-    expect(workshop("auto")).toBe("auto");
-    expect(workshop("ask")).toBe("ask");
-    expect(workshop("直接出")).toBeUndefined();
-    expect(
-      parsePlayConfig({ ...BASE, agents: { playwriter: { imageApproval: "auto" } } }).agents?.playwriter,
-    ).toBeUndefined();
   });
 });
 

@@ -141,11 +141,12 @@ export interface AgentSettings {
   model?: string;
   thinking?: ThinkingLevel;
   /**
-   * 追加到系统提示词末尾的自定义段（**只有工坊装它**）。
+   * 追加到系统提示词的逐剧目自定义段（**两个角色都装**）。
    *
    * 引擎自带的提示词不可编辑也不该可编辑——它写的是引擎契约与能力边界，改了必然漂。
-   * 用户真正想逐剧目调的是「这个剧目的搭台助手该怎么做事」，落在这里。
-   * 存原文，注入时原样拼在固定提示词之后。
+   * 用户真正想逐剧目调的是「这个剧目的 agent 该怎么做事」，落在这里：
+   * 剧作家那张卡进 A 区（排在引擎契约之前），搭台助手那张卡拼在工坊提示词之后。
+   * 存原文，注入时原样拼接。
    */
   prompt?: string;
   /**
@@ -162,19 +163,7 @@ export interface AgentSettings {
   nsfwThinking?: ThinkingLevel;
   /** 限制级（NSFW）剧情通道专属系统提示词扩展。 */
   nsfwPrompt?: string;
-  /**
-   * 出图要不要先问过玩家（**只有工坊装它**，缺省 `ask`）。
-   *
-   * 问的是「这张图要不要花钱」：工坊一次对话可能连着出四五张，玩家离开一会儿回来发现
-   * 账单上是自己没点过头的图，比多问一句烦人得多。改成 `auto` 就是「这个剧目的图我放心，
-   * 别拦着」。剧作家那条线不走这里——它出的图进预发射缓存，玩家看不见也拦不住。
-   */
-  imageApproval?: ImageApproval;
 }
-
-/** 工坊出图审批：`ask` 每次出图前等玩家点头，`auto` 直接出。 */
-export const IMAGE_APPROVALS = ["ask", "auto"] as const;
-export type ImageApproval = (typeof IMAGE_APPROVALS)[number];
 
 /**
  * 逐剧目的生图设置：覆盖服务端全局的出图模型与档位（`STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`）。
@@ -360,8 +349,9 @@ function parseCharacter(card: CharacterCard): CharacterCard {
  * agents 段归一化：整段是可选的，逐字段丢弃非法值而不是让整份 play.json 读不出来。
  * 一条手滑的 thinking 档位不该让整部剧目打不开——那比退回默认值糟得多。
  *
- * `prompt` 只给工坊留：剧作家那边读了也没人用，留着只会让手写 play.json 的人
- * 以为「这段生效了」。剧作家要怎么写走 `memory/always/craft.md`。
+ * `prompt` 两个角色都留：工坊那张卡的自定义段拼在搭台提示词末尾，剧作家那张卡拼在
+ * A 区末尾（`buildSystemPrompt`）。剧作家长期写作口径仍走 `memory/always/craft.md`，
+ * 这里放的是「这个剧目的 agent 额外该怎么做事」。
  */
 function parseAgentConfig(raw: AgentConfig | undefined): AgentConfig | undefined {
   if (!raw || typeof raw !== "object") return undefined;
@@ -374,11 +364,9 @@ function parseAgentConfig(raw: AgentConfig | undefined): AgentConfig | undefined
     if (source.thinking && (THINKING_LEVELS as readonly string[]).includes(source.thinking)) {
       settings.thinking = source.thinking;
     }
-    if (role === "workshop" && typeof source.prompt === "string" && source.prompt.trim() !== "") {
+    if (typeof source.prompt === "string" && source.prompt.trim() !== "") {
       settings.prompt = source.prompt;
     }
-    const imageApproval = oneOf(IMAGE_APPROVALS, source.imageApproval);
-    if (role === "workshop" && imageApproval) settings.imageApproval = imageApproval;
     if (role === "playwriter") {
       if (typeof source.nsfwModel === "string" && source.nsfwModel.trim() !== "") {
         settings.nsfwModel = source.nsfwModel.trim();
