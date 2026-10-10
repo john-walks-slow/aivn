@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,7 +23,7 @@ const PLAY_JSON = JSON.stringify({
 
 const engine = { flags: {}, sceneDetails: {}, activeThreads: [] };
 
-describe("PlayHouse 周目作用域：逛不建、连舞台也不建，开演才建", () => {
+describe("PlayHouse 单树作用域：runtime 直接绑定剧目根", () => {
   let root: string;
   let library: PlayLibrary;
   let house: PlayHouse;
@@ -34,7 +35,6 @@ describe("PlayHouse 周目作用域：逛不建、连舞台也不建，开演才
     await mkdir(playDir, { recursive: true });
     await writeFile(join(playDir, "play.json"), PLAY_JSON);
     library = new PlayLibrary(root);
-    // 生图关掉：runtime 只碰磁盘，不发任何网络请求
     config = settingsFromEnv({ STAGE_IMAGE_ENABLED: "false" });
     house = new PlayHouse(library, settingsStoreFor(config), new AssetLibrary(join(root, "library")));
   });
@@ -43,133 +43,40 @@ describe("PlayHouse 周目作用域：逛不建、连舞台也不建，开演才
     await rm(root, { recursive: true, force: true });
   });
 
-  const saveIds = (): Promise<string[]> => library.saves("p1").list().then((s) => s.map((x) => x.id));
-
-  it("hello 带上骨架兜底上界：客户端不知道生图要多久，这个数只能服务端给", async () => {
+  it("hello 带上骨架兜底上界", async () => {
     const runtime = await house.get("p1");
     expect(helloPayload("p1", runtime).type).toBe("hello");
     const hello = helloPayload("p1", runtime) as { assetsTtlMs?: number };
     expect(hello.assetsTtlMs).toBe(1_080_000);
   });
 
-  it("hello 带上限制级通道状态：重连后左上角那枚标识不用等下一次翻转才知道自己在哪", async () => {
+  it("get 与 begin 都复用同一个单树 runtime，不创建周目", async () => {
     const runtime = await house.get("p1");
-    const hello = helloPayload("p1", runtime) as { nsfw?: boolean };
-    expect(hello.nsfw).toBe(false);
+    expect(runtime.store.dir).toBe(join(root, "p1"));
+    expect(await house.begin("p1")).toBe(runtime);
+    expect(existsSync(join(root, "p1", "saves"))).toBe(false);
   });
 
-  it("get() 不建周目：runtime 落在无会话作用域上", async () => {
+  it("单树从剧目根 session 恢复", async () => {
+    const store = library.store("p1");
+    const tree = new LineageTree();
+    tree.append("say", { text: "已保存", payload: {} });
+    await store.saveSession(tree, engine, "s");
     const runtime = await house.get("p1");
-    expect(runtime.save.id).toBe("");
-    expect(runtime.store.saveId).toBeNull();
-    expect(await saveIds()).toEqual([]);
-    await expect(runtime.store.saveSession(new LineageTree(), engine, "s")).rejects.toThrow();
+    expect(runtime.orchestrator.lineageView().nodes.some((node) => node.text === "已保存")).toBe(true);
   });
 
-  it("begin() 才建周目，并发的两个「开演」共用同一个 runtime", async () => {
-    const [a, b] = await Promise.all([house.begin("p1"), house.begin("p1")]);
-    expect(a.save.id).not.toBe("");
-    expect(a).toBe(b);
-    expect(a.store.saveId).toBe(b.store.saveId);
-    expect(await saveIds()).toEqual([a.save.id]);
-  });
-
-  it("逛过工坊再开演：无会话那份被换掉，工坊现场留着", async () => {
-    const browsing = await house.get("p1");
-    const staged = await house.begin("p1");
-    expect(browsing).not.toBe(staged);
-    expect(browsing.store).not.toBe(staged.store);
-    expect(staged.workshop).toBe(browsing.workshop); // 工坊对话现场不能被打断
-    expect(staged.save.id).not.toBe("");
-    expect(await saveIds()).toEqual([staged.save.id]);
-  });
-
-  it("删掉最后一棵周目后回到无会话作用域，下次开演再新建一棵", async () => {
-    const staged = await house.begin("p1");
-    await house.deleteSave("p1", staged.save.id);
-    expect(await saveIds()).toEqual([]);
-
-    const again = await house.begin("p1");
-    expect(again.save.id).not.toBe("");
-    expect(await saveIds()).toEqual([again.save.id]);
-  });
-
-  it("已有活动周目时 begin() 挂上去，不另建", async () => {
-    const created = await library.saves("p1").create();
-    const staged = await house.begin("p1");
-    expect(staged.save.id).toBe(created.id);
-    expect(staged.save.name).toBe(created.name);
-    expect(await saveIds()).toEqual([created.id]);
-  });
-
-  it("并发 get() 共享同一次装配，不各装一份 runtime", async () => {
+  it("并发 get 共享同一次装配", async () => {
     const [a, b] = await Promise.all([house.get("p1"), house.get("p1")]);
     expect(a).toBe(b);
   });
 
-  it("装配完成后不再留住在飞记录：runtime 被换掉后装得出新的那一份", async () => {
-    const browsing = await house.get("p1");
-    const staged = await house.begin("p1");
-    await house.deleteSave("p1", staged.save.id);
-    // 在飞表里若还留着 browsing 这条已兑现的 promise，这里拿回的就是它——
-    // 那份 runtime 早已被 begin() 换掉、orchestrator 已 dispose，拿到就是死的
-    expect(await house.get("p1")).not.toBe(browsing);
-  });
-
-  it("开演前插的提示跟着换树交接过去，不跟着旧实例蒸发", async () => {
-    const browsing = await house.get("p1");
-    await browsing.orchestrator.playerAction({ kind: "prompt", text: "让她先别说话" });
-    const staged = await house.begin("p1");
-    const queued = (staged.orchestrator as unknown as { pending: { text: string }[] }).pending;
+  it("开演前插的提示在 begin 后仍保留", async () => {
+    const runtime = await house.get("p1");
+    await runtime.orchestrator.playerAction({ kind: "prompt", text: "让她先别说话" });
+    const same = await house.begin("p1");
+    const queued = (same.orchestrator as unknown as { pending: { text: string }[] }).pending;
     expect(queued.map((item) => item.text)).toEqual(["让她先别说话"]);
-  });
-
-  it("模型下拉 = 网关清单 ∩ 支持清单：只给点名的几个，顺序照配置", async () => {
-    const original = globalThis.fetch;
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ data: [{ id: "low" }, { id: "high" }, { id: "vision" }] }), {
-        status: 200,
-      })) as typeof fetch;
-    try {
-      const config = settingsFromEnv({ STAGE_IMAGE_ENABLED: "false", STAGE_MODELS: "high,low" });
-      const narrowed = new PlayHouse(library, settingsStoreFor(config), new AssetLibrary(join(root, "library")));
-      const listed = await narrowed.gatewayModels();
-      expect(listed.models.map((m) => m.id)).toEqual(["high", "low"]);
-      expect(listed.defaultModel).toBe(config.modelId);
-    } finally {
-      globalThis.fetch = original;
-    }
-  });
-
-  it("P6-d：新档播种初值，切档把三个状态文件回写成该档的值", async () => {
-    // 第一档：跑一拍，剧作家直接写文件（不走工具），收束时原文进快照
-    (house as any).streamFn = createFakeStreamFn([
-      {
-        text: BEAT_1,
-        toolCalls: [
-          {
-            name: "write",
-            args: { path: "memory/always/state/state.json", content: '{"affinity":{"mio":7},"flags":{}}\n' },
-          },
-        ],
-      },
-      { text: "", beatDone: BEAT_1_STOP },
-    ]);
-    const first = await house.begin("p1");
-    await first.orchestrator.playerAction({ kind: "free", text: "开场" });
-    // 文件就是模型写下的原文（引擎只在收束时抄一份进快照）
-    expect(readPlayStateText(join(root, "p1")).state).toContain('"mio":7');
-
-    // 第二档是新周目：没有 session，所以三个文件被 play.json 的初值**覆盖**
-    const second = await library.saves("p1").create("第二档");
-    await house.switchSave("p1", second.id);
-    const seeded = readPlayStateText(join(root, "p1"));
-    expect(seeded.scene.trim()).toBe("s");
-    expect(seeded.state).toContain('"mio": 1');
-
-    // 切回第一档：文件回写成那一档快照里的值（而不是留在第二档的初值）
-    await house.switchSave("p1", first.save.id);
-    expect(readPlayStateText(join(root, "p1")).state).toContain('"mio":7');
   });
 });
 

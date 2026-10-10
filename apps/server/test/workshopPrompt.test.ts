@@ -118,11 +118,11 @@ describe("工坊提示词：能力关掉之后不再教它调那个工具", () =
     expect(prompt).toContain("先出 neutral 定妆照");
   });
 
-  it("读树那一章教的是读哪份文件（能力由只读的 saves/ 面提供，不再有专用工具）", async () => {
+  it("读树那一章教的是读取单树文件，不提供写树工具", async () => {
     const prompt = await buildWorkshopPrompt({ ...CTX, can: caps({}) });
     expect(prompt).not.toContain("list_saves");
     expect(prompt).not.toContain("read_lineage");
-    expect(prompt).toContain("saves/<saveId>/lineage.jsonl");
+    expect(prompt).toContain("lineage.jsonl");
     expect(prompt).toContain("parentId");
   });
 

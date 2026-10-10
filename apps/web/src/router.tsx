@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** hash 路由：#/ 、#/settings、#/play/:id、#/play/:id/saves、#/play/:id/stage。工坊是浮层，没有路由。 */
+/** hash 路由：#/ 、#/settings、#/play/:id、#/play/:id/stage。工坊是浮层，没有路由。 */
 export interface Route {
   path: string;
   segments: string[];

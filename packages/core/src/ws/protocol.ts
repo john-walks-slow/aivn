@@ -199,10 +199,6 @@ export type ServerMessage =
       /** 连上这一刻编排器就是空闲的（没有在跑的轮）。重连/刷新后客户端据此直接放开操作条，
        *  不用等一场本来不会到来的 beat_settled。 */
       idle?: boolean;
-      /** 当前挂着的存档（周目）id：换档后客户端据此认出新现场。 */
-      saveId?: string;
-      /** 当前存档的档名（舞台顶部显示；改名经 announce 续接）。 */
-      saveName?: string;
       /** 上次退出时读到的位置：老档没有这个字段，客户端退回「快进到本轮末尾」的老行为。 */
       readPos?: ReadPos;
       /** 此刻是否处在限制级（NSFW）剧情通道：舞台那枚常驻标识的起点，之后由 `nsfw` 消息更新。 */
@@ -336,6 +332,8 @@ export type ClientMessage =
   | { type: "resume"; lastSeq: number }
   /** 开演：空树的第一轮由玩家在舞台上按「开演」起，连接建立时不再自动开局。 */
   | { type: "start" }
+  /** 从根节点开一条新运行枝，不复用已有路线。 */
+  | { type: "restart" }
   | { type: "player_choice"; optionIndex: number }
   | { type: "player_free"; text: string }
   | { type: "continue" }

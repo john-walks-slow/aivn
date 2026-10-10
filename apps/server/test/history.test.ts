@@ -182,7 +182,7 @@ describe("PlayStore 历史读面", () => {
   });
 
   it("随 session 落盘并原样读回", async () => {
-    const save = await library.saves("p1").create();
+    const store = library.store("p1");
     const history = [
       {
         turn: 1,
@@ -192,24 +192,22 @@ describe("PlayStore 历史读面", () => {
         ],
       },
     ] as const;
-    await library
-      .saveStore("p1", save.id)
-      .saveSession(new LineageTree(), engine, "s", undefined, [...history]);
+    await store.saveSession(new LineageTree(), engine, "s", undefined, [...history]);
 
-    expect(await library.saveStore("p1", save.id).loadHistory()).toEqual([...history]);
+    expect(await store.loadHistory()).toEqual([...history]);
   });
 
   it("缺 session.json / JSON 坏了 / 字段不是数组 / 结构不对：都空表不抛错", async () => {
-    const save = await library.saves("p1").create();
-    const sessionPath = join(root, "p1", "saves", save.id, "session.json");
+    const store = library.store("p1");
+    const sessionPath = join(root, "p1", "session.json");
 
-    expect(await library.saveStore("p1", save.id).loadHistory()).toEqual([]);
+    expect(await store.loadHistory()).toEqual([]);
 
     await writeFile(sessionPath, "{ 半截 json");
-    expect(await library.saveStore("p1", save.id).loadHistory()).toEqual([]);
+    expect(await store.loadHistory()).toEqual([]);
 
     await writeFile(sessionPath, JSON.stringify({ history: "不是数组" }));
-    expect(await library.saveStore("p1", save.id).loadHistory()).toEqual([]);
+    expect(await store.loadHistory()).toEqual([]);
 
     // 坏条目被逐条丢弃，好条目仍读得到
     await writeFile(
@@ -221,12 +219,12 @@ describe("PlayStore 历史读面", () => {
         ],
       }),
     );
-    expect(await library.saveStore("p1", save.id).loadHistory()).toEqual([
+    expect(await store.loadHistory()).toEqual([
       { turn: 2, entries: [{ beat: 2, seq: 1, role: "user", text: "还在" }] },
     ]);
 
-    // 剧目级 store 没有存档作用域：会话面不存在，返回空表而不是抛错
-    expect(await library.store("p1").loadHistory()).toEqual([]);
+    // 单树 store 就是剧目根：坏条目过滤后保留合法历史
+    expect(await store.loadHistory()).toHaveLength(1);
   });
 });
 
@@ -245,9 +243,9 @@ describe("GET /api/plays/:id/history", () => {
   });
 
   it("读活动档：返回 { beats: [...] }，与 saveSession 写入的一致", async () => {
-    const save = await library.saves("p1").create();
+    const store = library.store("p1");
     const entries = [{ beat: 1, seq: 1, role: "user" as const, text: "我来了" }];
-    await library.saveStore("p1", save.id).saveSession(new LineageTree(), engine, "s", undefined, [
+    await store.saveSession(new LineageTree(), engine, "s", undefined, [
       { turn: 1, entries },
     ]);
 
@@ -256,18 +254,14 @@ describe("GET /api/plays/:id/history", () => {
     expect(JSON.parse(res.payload)).toEqual({ beats: [{ turn: 1, entries }] });
   });
 
-  it("非活动档的历史不串场：端点只读 active.json 指针那棵", async () => {
-    const first = await library.saves("p1").create("甲");
-    await library.saveStore("p1", first.id).saveSession(new LineageTree(), engine, "s", undefined, [
-      { turn: 1, entries: [{ beat: 1, seq: 1, role: "user", text: "甲的场" }] },
-    ]);
-    const second = await library.saves("p1").create("乙");
-    await library.saveStore("p1", second.id).saveSession(new LineageTree(), engine, "s", undefined, [
-      { turn: 1, entries: [{ beat: 1, seq: 1, role: "user", text: "乙的场" }] },
+  it("单树历史不串场：端点只读剧目根 session.json", async () => {
+    const store = library.store("p1");
+    await store.saveSession(new LineageTree(), engine, "s", undefined, [
+      { turn: 1, entries: [{ beat: 1, seq: 1, role: "user", text: "根树的场" }] },
     ]);
 
     expect(JSON.parse((await callApi(library, "/api/plays/p1/history")).payload)).toEqual({
-      beats: [{ turn: 1, entries: [{ beat: 1, seq: 1, role: "user", text: "乙的场" }] }],
+      beats: [{ turn: 1, entries: [{ beat: 1, seq: 1, role: "user", text: "根树的场" }] }],
     });
   });
 
@@ -276,8 +270,8 @@ describe("GET /api/plays/:id/history", () => {
     expect(none.statusCode).toBe(200);
     expect(JSON.parse(none.payload)).toEqual({ beats: [] });
 
-    const save = await library.saves("p1").create();
-    await writeFile(join(root, "p1", "saves", save.id, "session.json"), "崩了");
+    const store = library.store("p1");
+    await writeFile(join(root, "p1", "session.json"), "崩了");
     const broken = await callApi(library, "/api/plays/p1/history");
     expect(broken.statusCode).toBe(200);
     expect(JSON.parse(broken.payload)).toEqual({ beats: [] });

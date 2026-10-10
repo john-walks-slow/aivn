@@ -43,8 +43,6 @@ export interface StageSocket {
    * null = 服务端没给（旧协议），播放层回落到保守默认值。
    */
   assetsTtlMs: number | null;
-  /** 当前周目档名（舞台顶部显示；换档经 hello 续接）。 */
-  saveName: string | null;
   /** 上次退出时读到的位置（hello.readPos）：首屏据此 seek，而不是快进到本轮末尾。 */
   readPos: ReadPos | null;
   /** 插一句的待注入队列（右上角面板）：空闲时立刻落笔，演出中先排队等这一轮收束。 */
@@ -58,6 +56,8 @@ export interface StageSocket {
   sendContinue: () => void;
   /** 开演空树的第一轮。 */
   sendStart: () => void;
+  /** 从根节点创建新的运行枝。 */
+  sendRestart: () => void;
   sendPrompt: (text: string) => void;
   /** 排队面板：改一句 / 撤一句（都已注入的不认，服务端回 error）。 */
   sendPromptEdit: (id: string, text: string) => void;
@@ -143,7 +143,6 @@ export function useStageSocket(
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const [assetsTtlMs, setAssetsTtlMs] = useState<number | null>(null);
   const [epoch, setEpoch] = useState(0);
-  const [saveName, setSaveName] = useState<string | null>(null);
   const [readPos, setReadPos] = useState<ReadPos | null>(null);
   const [queue, setQueue] = useState<readonly PromptQueueItem[]>([]);
   const [pendingJobs, setPendingJobs] = useState<readonly PendingJob[]>([]);
@@ -161,16 +160,13 @@ export function useStageSocket(
   const lastSeqRef = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
-  /** 当前挂着的存档（周目）：换档 = 换了一棵树，本地缓冲整段作废。 */
-  const saveIdRef = useRef<string | null>(null);
   const handlersRef = useRef<StageSocketHandlers>({});
   handlersRef.current = handlers ?? {};
 
   useEffect(() => {
     let closed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    // workshopOnly：从标题页直达工坊时用。服务端据此跳过 autostart 也不建周目——
-    // 逛工坊不该把演出开起来，更不该凭空多出「第 1 周目」。
+    // workshopOnly：从标题页直达工坊时用。服务端据此跳过 autostart，逛工坊不该把演出开起来。
     const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?play=${encodeURIComponent(playId)}${
       opts?.workshopOnly ? "&workshop=1" : ""
     }`;
@@ -197,25 +193,18 @@ export function useStageSocket(
             // 限制级通道：重连即恢复，之后由 `nsfw` 消息翻转
             setNsfw(msg.nsfw ?? false);
             if (msg.assets) handlersRef.current.onAssets?.(msg.assets);
-            // 换了周目 = 换了一棵树：本地缓冲与新树无关，作废重放
+            // 单树运行时只按 epoch 判断结构性替换。
             const sync = helloSync({
               seen: seenHelloRef.current,
-              saveId: saveIdRef.current,
-              helloSaveId: msg.saveId,
               epoch: epochRef.current,
               helloEpoch: msg.epoch,
             });
             seenHelloRef.current = true;
-            const switched = sync.switched;
-            if (msg.saveId !== undefined) {
-              saveIdRef.current = msg.saveId;
-              // 空 saveId = 这棵剧目还没有周目（runtime 落在无会话作用域上）；空档名不显示成芯片
-              setSaveName(msg.saveName || msg.saveId || null);
-            }
+
             if (sync.adoptedEpoch !== undefined) epochRef.current = sync.adoptedEpoch;
             const restamped = sync.restamped;
-            if ((restamped || switched) && lastSeqRef.current > 0) {
-              if (restamped) setEpoch(sync.adoptedEpoch!);
+            if (restamped && lastSeqRef.current > 0) {
+              setEpoch(sync.adoptedEpoch!);
               lastSeqRef.current = 0;
               builderRef.current.reset();
               handlersRef.current.onReset?.();
@@ -223,7 +212,7 @@ export function useStageSocket(
               ws.send(JSON.stringify({ type: "resume", lastSeq: 0 } satisfies ClientMessage));
             }
             // 阅读位置跟着分支走：缓冲整段换过之后，上次的 seq 属于另一条世界线，不能拿来 seek
-            setReadPos(restamped || switched ? null : (msg.readPos ?? null));
+            setReadPos(restamped ? null : (msg.readPos ?? null));
             // hello 自报空闲（刷新进来的空闲现场）：直接落 stopped，不必等 beat_settled。
             // 注意不能先无条件把 connecting 提升为 streaming——stateRef 在渲染期赋值，
             // 同一次同步回调里读到的仍是旧值，那个判断永远不会成立，页面会卡死在 streaming。
@@ -369,6 +358,7 @@ export function useStageSocket(
   const sendFree = useCallback((text: string) => send({ type: "player_free", text }), [send]);
   const sendContinue = useCallback(() => send({ type: "continue" }), [send]);
   const sendStart = useCallback(() => send({ type: "start" }), [send]);
+  const sendRestart = useCallback(() => send({ type: "restart" }), [send]);
   const sendPrompt = useCallback((text: string) => send({ type: "prompt", text }), [send]);
   const sendPromptEdit = useCallback(
     (id: string, text: string) => send({ type: "prompt_edit", id, text }),
@@ -440,7 +430,6 @@ export function useStageSocket(
     epoch,
     voiceAvailable,
     assetsTtlMs,
-    saveName,
     readPos,
     queue,
     pendingJobs,
@@ -449,6 +438,7 @@ export function useStageSocket(
     sendFree,
     sendContinue,
     sendStart,
+    sendRestart,
     sendPrompt,
     sendPromptEdit,
     sendPromptDelete,

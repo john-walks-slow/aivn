@@ -386,7 +386,9 @@ describe("能力位与提示词的一致性：没开的能力不教它调", () =
   it("记忆与「管理角色」都开：建卡流程、记忆卡格式、检索工具都在", () => {
     const prompt = build({ ...base, can: { memory: true, characters: true } });
     expect(prompt).toContain("要人设或音色才建档（write）");
-    expect(prompt).toContain("## 记忆卡（memory/index/）");
+    expect(prompt).toContain("## 规则与设定（rules / lores；文件仍在 memory/index/）");
+    expect(prompt).toContain("当前路线优先");
+    expect(prompt).toContain("其他分支的事实、设定或未来不要带入当前路线");
     expect(prompt).toContain("需要某条完整内容时 read 每行括号里的路径");
     expect(prompt).toContain("search_archive");
   });
@@ -398,7 +400,9 @@ describe("能力位与提示词的一致性：没开的能力不教它调", () =
     // 收掉的是「怎么调 write 建卡」，不是「怎么引入角色」这件事本身
     expect(prompt).toContain('**2. 生立绘（generate_asset kind="sprite"）**');
     expect(prompt).toContain("**3. 临时角色（一次性 NPC）**");
-    expect(prompt).toContain("## 记忆卡（memory/index/）");
+    expect(prompt).toContain("## 规则与设定（rules / lores；文件仍在 memory/index/）");
+    expect(prompt).toContain("当前路线优先");
+    expect(prompt).toContain("其他分支的事实、设定或未来不要带入当前路线");
   });
 
   it("记忆关、管理角色开：记忆卡格式与检索工具收走，建档那一章原样", () => {

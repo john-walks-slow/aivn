@@ -37,8 +37,6 @@ const HELLO: ServerMessage = {
   cast: [],
   voice: false,
   idle: true,
-  saveId: "s1",
-  saveName: "第 1 周目",
 };
 
 beforeEach(() => {

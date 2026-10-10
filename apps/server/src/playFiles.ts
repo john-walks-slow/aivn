@@ -8,13 +8,12 @@ import type { PlayStore } from "./store.js";
  * 剧目文件层（两个 agent 与文件浏览器共用）：剧目目录里**面向用户的面**。
  *
  * 白名单而非黑名单，越界路径一律拒绝，不做「尽力而为」的裁剪。面分三层：
- * **可编辑**（剧目定义、记忆卡、角色卡、素材描述表）、**只读可见**（素材、周目与故事树、
+ * **可编辑**（剧目定义、记忆卡、角色卡、素材描述表）、**只读可见**（素材、故事树、
  * 引擎产物）、**完全不可见**（TTS 缓存、候选区、二进制素材文件）。
  *
- * 周目（`saves/`）与活动档指针（`active.json`）是**有意开着的只读面**：模型回答「演到哪了」
- * 「这个角色出现过几次」靠的就是读 `saves/<id>/lineage.jsonl`（一行一个事件，带 parentId 与 turn，
- * 分支结构从 parentId 看）——2026-10-10 之前那是两个专用工具（list_saves / read_lineage），
- * 收掉之后这条能力由通用文件读口提供。
+ * 单树故事状态是**有意开着的只读面**：模型回答「演到哪了」
+ * 「这个角色出现过几次」靠的就是读根目录 `lineage.jsonl`（一行一个事件，带 parentId 与 turn，
+ * 分支结构从 parentId 看），以及需要时分段读 `session.json`。
  */
 
 /** 可编辑文本文件（agent 能改的面）。 */
@@ -22,13 +21,13 @@ const EDITABLE_EXT = new Set([".md", ".json", ".txt"]);
 /** 文本类扩展名：可编辑的那几种，外加只读的样式表与引擎的行级事件流。 */
 const TEXT_EXT = new Set([...EDITABLE_EXT, ".css", ".jsonl"]);
 /** 只读可见目录（能看，不写）。 */
-const READONLY_PREFIXES = ["assets/", "saves/"];
-/** 只读可见的单文件（同样能看、不写）。`active.json` 是「当前进哪一周目」的指针。 */
-const READONLY_FILES = new Set(["active.json"]);
+const READONLY_PREFIXES = ["assets/"];
+/** 只读可见的单文件（同样能看、不写）。 */
+const READONLY_FILES = new Set(["lineage.jsonl", "session.json", "meta.json"]);
 /** 素材描述表（stem → 画面说明，注入剧作家提示词）——assets/ 里唯一可写的文本文件。 */
 const ASSET_MANIFEST = "assets/manifest.json";
 /** 允许下钻的顶层目录（其余目录整棵跳过，不进 readdir）。 */
-const DIR_ROOTS = ["memory", "assets", CHARACTER_DIR, "saves"];
+const DIR_ROOTS = ["memory", "assets", CHARACTER_DIR];
 /** 二进制可写面：仅图像素材（生图落盘）。 */
 const BINARY_WRITE_PREFIXES = ["assets/backgrounds/", "assets/cg/", "assets/sprites/"];
 /** 单图上限 16MB：高清图实测 1–3MB，留足余量又挡得住写歪的产物。 */

@@ -13,7 +13,6 @@ import type { Exa } from "../exa.js";
 import type { AssetTarget, PlayAssets } from "../playAssets.js";
 import type { GenerateMusicRequest, PlayMusic } from "../playMusic.js";
 import type { PlayFiles } from "../playFiles.js";
-import type { PlaySaves } from "../saves.js";
 import type { PlayStore } from "../store.js";
 import type { PlayMemory } from "../memory.js";
 import type { WorkshopAssetView } from "@aivn/core";

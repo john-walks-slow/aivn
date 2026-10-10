@@ -7,7 +7,6 @@ import { join } from "node:path";
 import type { ServerMessage } from "@aivn/core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { PlayFiles } from "../src/playFiles.js";
-import { PlaySaves } from "../src/saves.js";
 import { PlayStore } from "../src/store.js";
 import { Limiter } from "../src/limiter.js";
 import { PlayAssets } from "../src/playAssets.js";
@@ -75,8 +74,8 @@ describe("PlayFiles：剧目文件白名单", () => {
     expect(listed).toContain("memory/always/premise.md");
     expect(listed).toContain("memory/index/lore/旧约定.md");
     expect(listed).toContain("assets/backgrounds/corridor.png");
-    expect(listed).not.toContain("session.json");
-    expect(listed).not.toContain("lineage.jsonl");
+    expect(listed).toContain("session.json");
+    expect(listed).toContain("lineage.jsonl");
     expect((await files.list()).find((f) => f.path === "assets/backgrounds/corridor.png")?.writable).toBe(false);
     // 引擎产物（逐轮切片）：看得到、存不了——它的写主是演出收束，不是手
     const archive = (await files.list()).find((f) => f.path === "memory/archive/events.jsonl");
@@ -87,7 +86,7 @@ describe("PlayFiles：剧目文件白名单", () => {
 
   it("越界与非法路径一律拒绝（不裁剪、不尽力而为）", async () => {
     const files = new PlayFiles(await makeStore());
-    for (const bad of ["session.json", "lineage.jsonl", "../secret", "/etc/passwd", "memory/../session.json"]) {
+    for (const bad of ["../secret", "/etc/passwd", "memory/../session.json"]) {
       await expect(files.read(bad)).rejects.toThrow();
       await expect(files.write(bad, "x")).rejects.toThrow();
     }
@@ -196,7 +195,7 @@ describe("工坊 prompt 与工具", () => {
     ...over,
   });
 
-  /** 造一组带故事树读能力的工具：造一棵周目会话面（saves/<id>/session.json）。 */
+  /** 造一组带故事树读能力的工具：造一棵根目录单树会话面。 */
   async function makeToolset(): Promise<{
     store: PlayStore;
     tools: ReturnType<typeof createWorkshopTools>;
@@ -208,30 +207,19 @@ describe("工坊 prompt 与工具", () => {
       files: new PlayFiles(store),
       store,
       onWrite: (w) => writes.push(w.path),
-      saves: new PlaySaves(store.dir),
-      saveStore: (saveId) => new PlayStore(store.dir, saveId),
     });
     return { store, tools, writes };
   }
 
-  /** 造一棵有台词与分岔的树并落盘成周目。 */
-  async function seedSave(store: PlayStore, saveId: string): Promise<void> {
+  /** 造一棵有台词与分岔的树并落盘到剧目根单树。 */
+  async function seedSave(store: PlayStore): Promise<void> {
     const tree = new LineageTree();
     tree.append("scene", { payload: { attrs: { bg: "corridor" } } });
     tree.append("say", { text: "澪：早上好。", payload: { attrs: { who: "mio" } } });
     const branch = tree.append("player", { payload: { input: "我点头" } });
     tree.jumpTo(branch.id);
     tree.append("say", { text: "澪：你不说话呀。", payload: { attrs: { who: "mio" } } });
-    const save = new PlayStore(store.dir, saveId);
-    await save.saveSession(tree, { turn: 2, affinity: {}, flags: {} }, "走廊");
-    await writeFile(join(store.dir, "saves", saveId, "meta.json"), JSON.stringify({
-      id: saveId,
-      name: `周目 ${saveId}`,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      beats: 1,
-      preview: "澪：你不说话呀。",
-    }));
+    await store.saveSession(tree, { turn: 2, affinity: {}, flags: {} }, "走廊");
   }
 
   it("write 校验 play.json：坏结构不落盘并把错误回给模型", async () => {
@@ -260,8 +248,8 @@ describe("工坊 prompt 与工具", () => {
       content: { text: string }[];
     };
     expect(ok.content[0]!.text).toContain("测试剧目");
-    await expect(readTool.execute("c2", { path: "session.json" }, undefined as never)).rejects.toThrow(
-      /不在剧目可读范围/,
+    await expect(readTool.execute("c2", { path: "../secret" }, undefined as never)).rejects.toThrow(
+      /不在剧目可读范围|剧目目录内/,
     );
   });
 
@@ -531,8 +519,6 @@ describe("工坊工具：web_search", () => {
     store,
     onWrite: () => {},
     onAsset: () => {},
-    saves: new PlaySaves(store.dir),
-    saveStore: (saveId) => new PlayStore(store.dir, saveId),
     ...over,
   });
 
@@ -635,8 +621,6 @@ describe("WorkshopSession：一轮对话", () => {
       getApiKey: () => "test-key",
       emit: extra.emit,
       onFilesChanged: extra.onFilesChanged ?? (() => {}),
-      saves: new PlaySaves(store.dir),
-      saveStore: (saveId) => new PlayStore(store.dir, saveId),
     });
   }
 
@@ -840,8 +824,6 @@ describe("WorkshopSession：一轮对话", () => {
         },
         emit: (msg) => emitted.push(msg),
         onFilesChanged: () => {},
-        saves: new PlaySaves(store.dir),
-        saveStore: (saveId) => new PlayStore(store.dir, saveId),
         compaction,
       });
       return { session, contexts, emitted };
@@ -958,8 +940,6 @@ describe("WorkshopSession：一轮对话", () => {
       onFilesChanged: () => {
         reloads += 1;
       },
-      saves: new PlaySaves(store.dir),
-      saveStore: (saveId) => new PlayStore(store.dir, saveId),
       // bash 默认关，这里显式勾上——测的就是勾上之后那条没有校验的路
     });
     await session.chat("把 play.json 改坏");

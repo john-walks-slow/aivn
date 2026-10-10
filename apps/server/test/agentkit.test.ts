@@ -71,8 +71,6 @@ function workshopDeps(over: Partial<WorkshopKitDeps> = {}): WorkshopKitDeps {
     store: {} as never,
     onWrite: () => {},
     onAsset: () => {},
-    saves: {} as never,
-    saveStore: () => ({}) as never,
     assetLibrary: { list: async () => [] } as never,
     voices: { get: async () => ({ entries: [] }) } as never,
     // 音乐生成层：没配后端就不注册 generate_bgm（与 image / exa 同一套「配齐才装得上」）

@@ -1,7 +1,8 @@
 /**
- * 造若干棵 mock 谱系存档（给「周目」列表、「路线」视图与切拍逻辑看形状用，不烧真模型）。
- * 直接用 core 的 LineageTree 拼事件树，落成服务端能 load 的 saves/<saveId>/session.json。
- * 用法：node scripts/mockLineage.mjs [playId] [deep|flat] [周目数]
+ * 造一棵 mock 谱系树（给「路线」视图与切拍逻辑看形状用，不烧真模型）。
+ * 直接用 core 的 LineageTree 拼事件树，落成服务端能 load 的 plays/<playId>/session.json。
+ * 单树语义：每次运行替换当前树，不再制造多周目。
+ * 用法：node scripts/mockLineage.mjs [playId] [deep|flat]
  */
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
@@ -12,7 +13,6 @@ import { lineageToEvents, stopFromNode, toNodeView } from "../packages/core/dist
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const playId = process.argv[2] ?? "mock-deep";
 const pattern = process.argv[3] ?? "deep";
-const saveCount = Math.max(1, Number(process.argv[4] ?? 2) || 2);
 const dir = join(root, "plays", playId);
 
 const KOHARU = "koharu";
@@ -109,75 +109,63 @@ function buildTree(shape) {
   return tree;
 }
 
-/** 档元信息：拍数与最后一句与服务端 touchMeta 同一算法，周目列表直接读它。 */
-function metaOf(tree, id, name, now) {
+/** 树元信息：拍数与最后一句与服务端 touchMeta 同一算法。 */
+function metaOf(tree, now) {
   const chain = tree.chainEvents(tree.leafId);
   const beats = chain.filter((e) => e.kind === "beat_end").length;
   const last = [...chain].reverse().find((e) => PREVIEW_KINDS.has(e.kind) && e.text);
-  return { id, name, createdAt: now, updatedAt: now, beats, preview: (last?.text ?? "").slice(0, 60) };
+  return { updatedAt: now, beats, preview: (last?.text ?? "").slice(0, 40) };
 }
 
-await rm(join(dir, "saves"), { recursive: true, force: true });
-await rm(join(dir, "active.json"), { force: true });
+await rm(join(dir, "session.json"), { force: true });
+await rm(join(dir, "lineage.jsonl"), { force: true });
+await rm(join(dir, "meta.json"), { force: true });
 await mkdir(dir, { recursive: true });
 // play.json 只有 id/title 是必需的，其余缺省即不写（与 store.createEmpty 同一口径）
 await writeFile(join(dir, "play.json"), `${JSON.stringify({ id: playId, title: "Mock 剧目" }, null, 2)}\n`);
 
-const created = [];
-for (let i = 0; i < saveCount; i += 1) {
-  // 各档交替两种树形：切档时舞台上的最后一句必须不同，才看得出换没换树
-  const shape = i % 2 === 0 ? pattern : pattern === "deep" ? "flat" : "deep";
-  const tree = buildTree(shape);
-  // 时间也得像真的：路线卡左上角显示的是落笔时刻，整棵树钉在同一分钟就看不出先后。
-  // 最近一拍落在刚刚，往前每拍退 40 秒（比真演出快，但先后顺序与真跑一致）。
-  const now = Date.now() - i * 86_400_000;
-  const all = tree.export().events;
-  const events = all.map((event, j) => ({ ...event, createdAt: now - (all.length - j) * 40_000 }));
-  // 事件缓冲 = 客户端重放的那串 IR 事件。恢复档靠它在 hello 之后整段重放，
-  // 空缓冲的存档舞台连第一句都开不了场（路线视图只读树，看不出这个洞）。
-  const view = tree.chainEvents(tree.leafId).map(toNodeView);
-  const stopNode = [...view].reverse().find((n) => n.kind === "stop");
-  const runtime = {
-    events: lineageToEvents(view),
-    beatNo: view.filter((n) => n.kind === "beat_end").length,
-    lastStop: stopNode ? stopFromNode(stopNode) : null,
-    epoch: 1,
-  };
-  const id = `s${now.toString(36)}`;
-  const name = `第 ${i + 1} 周目`;
-  const saveDir = join(dir, "saves", id);
-  await mkdir(saveDir, { recursive: true });
-  await writeFile(join(saveDir, "meta.json"), JSON.stringify(metaOf(tree, id, name, now), null, 2));
-  await writeFile(
-    join(saveDir, "session.json"),
-    JSON.stringify(
-      {
-        version: 1,
-        lineage: { ...tree.export(), events },
-        engine: { flags: {}, sceneDetails: {}, activeThreads: [] },
-        scene: "黄昏的教室",
-        runtime,
-        savedAt: now,
-      },
-      null,
-      2,
-    ),
-  );
-  await rm(join(saveDir, "lineage.jsonl"), { force: true });
-  created.push({ id, name, events: events.length, leaf: tree.leafId });
-}
-
-await writeFile(join(dir, "active.json"), JSON.stringify({ saveId: created[0].id }, null, 2));
+const tree = buildTree(pattern);
+// 时间也得像真的：路线卡左上角显示的是落笔时刻。
+const now = Date.now();
+const all = tree.export().events;
+const events = all.map((event, j) => ({ ...event, createdAt: now - (all.length - j) * 40_000 }));
+// 事件缓冲 = 客户端重放的那串 IR 事件。恢复档靠它在 hello 之后整段重放，
+// 空缓冲的舞台连第一句都开不了场（路线视图只读树，看不出这个洞）。
+const view = tree.chainEvents(tree.leafId).map(toNodeView);
+const stopNode = [...view].reverse().find((n) => n.kind === "stop");
+const runtime = {
+  events: lineageToEvents(view),
+  beatNo: view.filter((n) => n.kind === "beat_end").length,
+  lastStop: stopNode ? stopFromNode(stopNode) : null,
+  epoch: 1,
+};
+await writeFile(join(dir, "meta.json"), JSON.stringify(metaOf(tree, now), null, 2));
+await writeFile(
+  join(dir, "session.json"),
+  JSON.stringify(
+    {
+      version: 1,
+      lineage: { ...tree.export(), events },
+      engine: { flags: {}, sceneDetails: {}, activeThreads: [] },
+      scene: "黄昏的教室",
+      runtime,
+      savedAt: now,
+    },
+    null,
+    2,
+  ),
+);
+await rm(join(dir, "lineage.jsonl"), { force: true });
 
 const counts = new Map();
-for (const e of buildTree(pattern).export().events) {
+for (const e of tree.export().events) {
   if (e.parentId) counts.set(e.parentId, (counts.get(e.parentId) ?? 0) + 1);
 }
 console.log(
-  `${playId}（${pattern}）：${saveCount} 个周目，当前档 ${created[0].name}/${created[0].id}；` +
-    `首档 ${created[0].events} 事件，leaf=${created[0].leaf.slice(0, 6)}，分叉点 ${[...counts]
+  `${playId}（${pattern}）：当前故事树 ${id}；` +
+    `${events.length} 事件，leaf=${tree.leafId.slice(0, 6)}，分叉点 ${[...counts]
       .filter(([, n]) => n > 1)
-      .map(([id, n]) => `${id.slice(0, 6)}(子${n})`)
+      .map(([forkId, n]) => `${forkId.slice(0, 6)}(子${n})`)
       .join(" ") || "无"}`,
 );
 

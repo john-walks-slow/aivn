@@ -8,7 +8,6 @@ import { withPlayConfigLock } from "./store.js";
 import type { AssetLibrary } from "./library.js";
 import { AssetRefResolver, characterIdsOf } from "./assetRef.js";
 import { PlaywrightOrchestrator, type CarryOver, type OrchestratorRuntimeState } from "./orchestrator.js";
-import type { SaveInfo } from "./saves.js";
 import type { PlayConfig } from "@aivn/core";
 import type { ServerConfig } from "./config.js";
 import { imageConfigFor, imagePendingTtlMs } from "./config.js";
@@ -54,8 +53,6 @@ export interface PlayRuntime {
   /** 工坊（D9）：与演出并行的一条独立 agent 通道，管剧目文件的创建与维护。 */
   workshop: WorkshopSession;
   store: PlayStore;
-  /** 当前挂着的存档（周目）——id 与档名。改名就地改这里，hello 才不会带旧名。 */
-  save: { id: string; name: string };
   /** hello 广播的角色名映射。 */
   cast: { id: string; name: string }[];
   /** 服务端 TTS 能力（配置了可用 key 才开；客户端据此显示语音开关）。 */
@@ -85,8 +82,6 @@ export function helloPayload(playId: string, runtime: PlayRuntime): ServerMessag
     assetsTtlMs: runtime.assetsTtlMs,
     epoch: runtime.orchestrator.currentEpoch,
     idle: !runtime.orchestrator.isBusy,
-    saveId: runtime.save.id,
-    saveName: runtime.save.name,
     readPos: runtime.orchestrator.readingPos ?? undefined,
     // 重连即恢复左上角那枚限制级通道标识；之后的翻转走 `nsfw` 消息
     nsfw: runtime.orchestrator.nsfwChannel,
@@ -207,10 +202,6 @@ export class PlayHouse {
   private readonly pendingRebuildNotes = new Map<string, string>();
   /** 网关模型清单缓存（网关上加了模型要能刷出来，故留了 TTL 而不是永久缓存）。 */
   private gatewayModelsCache: { models: GatewayModel[]; at: number } | null = null;
-  /** 正在建的周目（key=playId）：同剧目并发的「开演」共用一棵树，不会各建一棵。 */
-  private readonly ensuring = new Map<string, Promise<string>>();
-  /** 正在为「开演」换 runtime（key=playId）：同上，并发的开演共用一次构建，不会各装一个编排器。 */
-  private readonly staging = new Map<string, Promise<PlayRuntime>>();
   /** 演出编排与润色/翻译旁路共用的流式调用入口。 */
   private readonly streamFn: StreamFn;
 
@@ -265,111 +256,28 @@ export class PlayHouse {
     console.log("[aivn] 运行期设置已更新（已加载的剧目将在下一个轮边界换用新设置）");
   }
 
-  /**
-   * 取或懒加载剧目 runtime。
-   *
-   * 剧目还没有任何周目时，runtime 落在**无会话作用域**的操作面上（saveId 为 null）：
-   * 逛工坊、读路线、列文件都不该凭空多出一个「第 1 周目」——建不建第一棵树是玩家的动作。
-   * 舞台连接走同一份：连上舞台也只读活动档，读不到就落在无会话作用域上，等他在舞台上按
-   * 「开演」时才由 {@link begin} 换到真树上。
-   */
+  /** 取或懒加载剧目 runtime；单树始终从剧目根恢复。 */
   async get(playId: string): Promise<PlayRuntime> {
     const existing = this.runtimes.get(playId);
     if (existing) return existing;
-    // 单飞：装配横跨 readActive / buildRuntime 两个 await，并发的第二个调用者若也往下走
-    // 会另装一份 runtime，后 set 的把先 set 的顶掉——先装那份 orchestrator 没人 dispose。
-    // 与 begin() 的 staging 表同一个道理，那边保的是周目不重复建，这边保的是 runtime 不重复装。
     const inflight = this.building.get(playId);
     if (inflight) return inflight;
-    const task = this.buildSessionless(playId).finally(() => this.building.delete(playId));
+    const task = this.buildRuntime(playId).then((runtime) => {
+      this.runtimes.set(playId, runtime);
+      return runtime;
+    }).finally(() => this.building.delete(playId));
     this.building.set(playId, task);
     return task;
   }
 
-  /** 无会话作用域的装配：只读活动档，读不到就落在 null 上，绝不替玩家建周目。 */
-  private async buildSessionless(playId: string): Promise<PlayRuntime> {
-    const saveId = await this.library.saves(playId).readActive();
-    const runtime = await this.buildRuntime(playId, saveId);
-    this.runtimes.set(playId, runtime);
-    return runtime;
-  }
-
-  /**
-   * 「开演」：这一刻才建第一棵故事树，并把 runtime 挪上去。
-   *
-   * 连上舞台与逛工坊拿到的是同一份 runtime（{@link get}）——没有活动档时它落在无会话作用域上，
-   * 而无会话作用域的 PlayStore 写不了盘（会话面直接抛），所以第一轮必须先换到真树上再 start。
-   * 已经挂在树上的原样返回：不换树，「继续」进来的每一拍都不该付一次重建的代价。
-   */
+  /** `start` 仍保留在协议中，但单树 runtime 已在连接时装配。 */
   async begin(playId: string): Promise<PlayRuntime> {
-    const existing = this.runtimes.get(playId);
-    if (existing && existing.save.id) return existing;
-    // 单飞：同剧目并发的两条「开演」共用一次构建，否则后完成的把先完成的顶掉，
-    // 先装出来的那份 orchestrator 没人 dispose（内存泄漏）。
-    const inflight = this.staging.get(playId);
-    if (inflight) return inflight;
-    const task = this.buildStageRuntime(playId).finally(() => this.staging.delete(playId));
-    this.staging.set(playId, task);
-    return task;
+    return this.get(playId);
   }
 
-  /** 把 runtime 换到一棵真实的故事树上（无会话作用域那份写不了盘）。 */
-  private async buildStageRuntime(playId: string): Promise<PlayRuntime> {
-    const saveId = await this.ensureSave(playId);
-    const current = this.runtimes.get(playId);
-    if (current && current.save.id === saveId) return current;
-    let carried: string[] = [];
-    if (current) {
-      // 等节拍边界：换 runtime 时演出进行中会让这一拍凭空消失
-      await current.orchestrator.whenIdle();
-      if (this.runtimes.get(playId) !== current) {
-        // 等期间已被切档/reload 换掉了，用现成那份
-        const fresh = this.runtimes.get(playId);
-        if (fresh) return fresh;
-      } else {
-        // 开演前插的提示只活在旧实例内存里：不接手就跟着 dispose 一起没了
-        carried = current.orchestrator.takePendingPrompts();
-        current.orchestrator.dispose();
-        this.runtimes.delete(playId);
-      }
-    }
-    const runtime = await this.buildRuntime(playId, saveId);
-    // 工坊实例不跟着换：换了会把玩家正在进行的对话与线程现场打断（同 reloadAfterWorkshopWrite）
-    const merged = current ? { ...runtime, workshop: current.workshop } : runtime;
-    this.runtimes.set(playId, merged);
-    this.announce(playId, merged);
-    for (const text of carried) void merged.orchestrator.playerAction({ kind: "prompt", text });
-    return merged;
-  }
-
-  /** 活动周目 id，没有就建一棵（并发连接只建一次：同剧目同时来的两个舞台连接共用一棵树）。 */
-  private async ensureSave(playId: string): Promise<string> {
-    const saves = this.library.saves(playId);
-    const active = await saves.readActive();
-    if (active) return active;
-    const inflight = this.ensuring.get(playId);
-    if (inflight) return inflight;
-    const task = saves
-      .create()
-      .then((created) => created.id)
-      .finally(() => this.ensuring.delete(playId));
-    this.ensuring.set(playId, task);
-    return task;
-  }
-
-  /** 丢掉 runtime（剧目一个周目都不剩时：回到无会话作用域，等舞台连上再建）。 */
-  private async dropRuntime(playId: string): Promise<void> {
-    const existing = this.runtimes.get(playId);
-    if (!existing) return;
-    await existing.orchestrator.whenIdle();
-    if (this.runtimes.get(playId) !== existing) return;
-    existing.orchestrator.dispose();
-    this.runtimes.delete(playId);
-  }
-
-  /** 从磁盘构建剧目 runtime（play.json + 指定存档的会话恢复；saveId 为 null = 无会话作用域）。 */
-  private async buildRuntime(playId: string, saveId: string | null, seed?: CarryOver): Promise<PlayRuntime> {
-    const store = saveId ? this.library.saveStore(playId, saveId) : this.library.store(playId);
+  /** 从磁盘构建剧目 runtime（play.json + 剧目根单树会话恢复）。 */
+  private async buildRuntime(playId: string, seed?: CarryOver): Promise<PlayRuntime> {
+    const store = this.library.store(playId);
     const play = await store.loadPlay();
     const session = await store.loadSession();
     const tree = new LineageTree();
@@ -380,27 +288,17 @@ export class PlayHouse {
     const scene = session?.scene ?? play.initialScene;
     // 剧内状态文件（memory/always/state/*）是工作态载体（P6-d）：恢复时用这一枝的快照回写，
     // 新存档用 play.json 的初值覆盖——否则新周目第一轮会读到上一周目的残留。
-    //
-    // 但它们是**剧目级**的（一份、所有存档共用），所以只有**活动存档**的重建能写它：
-    // 给另一个档重建（写盘触发的 reload、后台任务回收等）时不许碰，否则会把活动档的播种盖掉。
-    const activeSaveId = await this.library.saves(playId).readActive();
-    if (saveId !== null && saveId === activeSaveId) {
-      const stateSnapshot = tree.latestSnapshotOnPath(tree.leafId)?.stateFiles;
-      if (session && stateSnapshot) {
-        writePlayStateText(store.dir, {
-          scene: stateSnapshot.scene ?? "",
-          threads: stateSnapshot.threads ?? "",
-          state: stateSnapshot.state ?? playStateJson({ affinity: engine.affinity, flags: engine.flags }),
-        });
-      } else {
-        seedPlayState(store.dir, { scene, affinity: engine.affinity, flags: engine.flags });
-      }
+    const stateSnapshot = tree.latestSnapshotOnPath(tree.leafId)?.stateFiles;
+    if (session && stateSnapshot) {
+      writePlayStateText(store.dir, {
+        scene: stateSnapshot.scene ?? "",
+        threads: stateSnapshot.threads ?? "",
+        state: stateSnapshot.state ?? playStateJson({ affinity: engine.affinity, flags: engine.flags }),
+      });
+    } else {
+      seedPlayState(store.dir, { scene, affinity: engine.affinity, flags: engine.flags });
     }
-    const save = {
-      id: saveId ?? "",
-      name: saveId ? await this.library.saves(playId).nameOf(saveId) : "",
-    };
-    return this.createRuntime(store, play, tree, engine, scene, session?.runtime, save, seed);
+    return this.createRuntime(store, play, tree, engine, scene, session?.runtime, seed);
   }
 
   /** 剧目 WS 客户端集合（transport 连接注册，懒建）。 */
@@ -541,7 +439,7 @@ export class PlayHouse {
   async reload(playId: string): Promise<void> {
     const old = this.runtimes.get(playId);
     if (!old) return;
-    const fresh = await this.buildRuntime(playId, old.store.saveId ?? null, carryOverFrom(old, PLAY_RELOADED));
+    const fresh = await this.buildRuntime(playId, carryOverFrom(old, PLAY_RELOADED));
     old.orchestrator.dispose();
     this.runtimes.set(playId, fresh);
     this.announce(playId, fresh);
@@ -697,54 +595,6 @@ export class PlayHouse {
     this.rebuildAtBeatBoundary(playId, `剧作家写入了 ${write.path}`);
   }
 
-  /** 「开始新周目」：建一棵空树并切过去。旧档原封不动——不删任何事件日志。 */
-  async createSave(playId: string, name?: string): Promise<SaveInfo> {
-    const created = await this.library.saves(playId).create(name);
-    await this.switchSave(playId, created.id);
-    return created;
-  }
-
-  /** 改名：就地改档名标签，不动 id、不动树。 */
-  async renameSave(playId: string, saveId: string, name: string): Promise<SaveInfo> {
-    const info = await this.library.saves(playId).rename(saveId, name);
-    const runtime = this.runtimes.get(playId);
-    if (runtime?.save.id === saveId) runtime.save.name = info.name;
-    return info;
-  }
-
-  /** 删档：删的是当前档时切到最近更新的一档。一棵都不剩就退回无会话作用域——舞台连上时再新建。 */
-  async deleteSave(playId: string, saveId: string): Promise<void> {
-    const saves = this.library.saves(playId);
-    const wasActive = (await saves.readActive()) === saveId;
-    await saves.remove(saveId); // 删的是活动档时，指针已顺延到剩下的第一棵
-    if (!wasActive) return;
-    const next = await saves.readActive();
-    if (next) await this.switchSave(playId, next);
-    else await this.dropRuntime(playId);
-  }
-
-  /**
-   * 切档：只改活动档指针 + 重建 runtime。
-   * 等节拍边界再切——演出进行中换 runtime 会让这一拍凭空消失（与工坊写盘同一条铁律）。
-   */
-  async switchSave(playId: string, saveId: string): Promise<void> {
-    const saves = this.library.saves(playId);
-    const old = this.runtimes.get(playId);
-    if (!old) {
-      await saves.activate(saveId);
-      return;
-    }
-    if (old.save.id === saveId) return;
-    await old.orchestrator.whenIdle();
-    // 等期间可能已 reload 或被删剧目——只在原实例还在位时才替换
-    if (this.runtimes.get(playId) !== old) return;
-    await saves.activate(saveId);
-    const fresh = await this.buildRuntime(playId, saveId);
-    old.orchestrator.dispose();
-    this.runtimes.set(playId, fresh);
-    this.announce(playId, fresh);
-  }
-
   /** 删除剧目：停 runtime + 整目录移除（play.json/素材/会话，不可恢复）。 */
   async deletePlay(playId: string): Promise<void> {
     const runtime = this.runtimes.get(playId);
@@ -769,7 +619,7 @@ export class PlayHouse {
     await old.orchestrator.whenIdle();
     // 等待期间可能已 reload/切档/删除——只在原实例还在位时才替换
     if (this.runtimes.get(playId) !== old) return;
-    const fresh = await this.buildRuntime(playId, old.store.saveId, carryOverFrom(old, note));
+    const fresh = await this.buildRuntime(playId, carryOverFrom(old, note));
     const runtime = { ...fresh, workshop: old.workshop };
     old.orchestrator.dispose();
     this.runtimes.set(playId, runtime);
@@ -1287,7 +1137,6 @@ export class PlayHouse {
     engine: EngineStateSnapshot,
     scene: string,
     restored: OrchestratorRuntimeState | undefined,
-    save: { id: string; name: string },
     seed?: CarryOver,
   ): Promise<PlayRuntime> {
     // 两个 agent 各按剧目配置解析模型（Agent 页签改的就是 play.json 的 agents 段）；
@@ -1427,7 +1276,6 @@ export class PlayHouse {
       orchestrator,
       workshop,
       store,
-      save,
       // 角色表 = 角色卡目录（不是 play.json 那份元数据）+ 立绘级名牌里那些没有卡的主体：
       // 机甲、道具、一次性路人在舞台上挂的就是它，缺了这一段名牌只能显示裸 id
       cast: [

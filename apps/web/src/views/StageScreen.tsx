@@ -68,8 +68,6 @@ export function StageScreen({
   );
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [assets, setAssets] = useState<Record<string, string[]>>({});
-  /** 当前周目档名：侧栏底部的存档芯片，点它去周目页换一棵故事树。 */
-  const [saveName, setSaveName] = useState<string | null>(null);
   /** P6 缓冲换代：token 变化 = 事件缓冲被整段重放；resume 决定快进还是继续流式；
    *  seekTo 是跳转重读的播放头落点（换代后从那句起读，而不是快进到本轮末尾）。 */
   const [rebase, setRebase] = useState<{
@@ -222,6 +220,8 @@ export function StageScreen({
     pushToast("还没连上服务端，正在重连…", "error");
   }, [pushToast]);
 
+  const restartRequested = new URLSearchParams(search ?? "").get("new") === "1";
+  const restartSentRef = useRef(false);
   const stage = useStageSocket(
     playId,
     {
@@ -293,6 +293,14 @@ export function StageScreen({
     },
     { workshopOnly: workshopEntry },
   );
+
+  useEffect(() => {
+    if (!restartRequested || restartSentRef.current) return;
+    if (!stage.connected || !stage.settled || stage.fresh) return;
+    restartSentRef.current = true;
+    window.history.replaceState(null, "", `${location.pathname}#${location.hash.replace(/\?new=1$/, "")}`);
+    stage.sendRestart();
+  }, [playId, restartRequested, stage.connected, stage.fresh, stage.sendRestart, stage.settled]);
 
   // 渲染期回调绑定（N6：置于 stage 声明后，闭包引用才不踩未初始化的 TDZ）
   director.onNotify = () => setAudioTick((t) => t + 1);
@@ -387,10 +395,6 @@ export function StageScreen({
     api
       .listAssets(playId)
       .then(setAssets)
-      .catch(() => {});
-    api
-      .listSaves(playId)
-      .then((list) => setSaveName(list.find((s) => s.current)?.name ?? null))
       .catch(() => {});
     return () => director.dispose();
   }, [playId]);
@@ -888,7 +892,7 @@ export function StageScreen({
         <StagePanel
           variant="drawer"
           title="回顾"
-          subtitle={saveName ?? undefined}
+          subtitle={playTitle}
           actions={backlogActions}
           onClose={goStage}
         >

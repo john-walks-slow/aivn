@@ -1170,6 +1170,12 @@ export class PlaywrightOrchestrator {
     this.rebaseAt(nodeId, "已跳到这里", { mark: false, playFrom: opts?.playFrom });
   }
 
+  /** 从故事根节点重新开一轮：清空当前路线的续写位置后立即生成新的开场轮。 */
+  async restartFromRoot(): Promise<void> {
+    await this.whenIdle();
+    await this.forkTo(ROOT_ID, { resume: true });
+  }
+
   /**
    * 分岔：从任意节点开新分支。
    *
@@ -1595,7 +1601,7 @@ export class PlaywrightOrchestrator {
     engine.affinity = { ...state.engine.affinity };
     engine.flags = { ...state.engine.flags };
     // 快照是分支 / 存档真值：回写到剧内状态文件，否则模型下一轮 read 到的是上一枝的残留（P6-d §3）
-    this.writeStateFilesFrom(state.stateFiles, state.engine);
+    this.writeStateFilesFrom({ ...state.stateFiles, scene: state.stateFiles.scene ?? state.scene }, state.engine);
     this.compaction = state.compaction;
     this.beatNo = engine.turn;
     this.opts.scene = state.scene;

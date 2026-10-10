@@ -2,6 +2,13 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)，格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## 未发布
+
+### 变更
+
+- WS `hello` 不再携带 `saveId` / `saveName`；演出协议只同步当前单树的状态，首次演出仍由 `start` 开始。
+- README 与 mock 谱系脚本统一按单树与「新开始」说明；运行时树数据改为直接落在剧目根目录。
+
 ## [0.3.2] - 2026-10-06
 
 ### 修复

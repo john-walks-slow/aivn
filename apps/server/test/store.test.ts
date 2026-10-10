@@ -194,20 +194,17 @@ describe("PlayStore.saveSession 原子写", () => {
     root = await mkdtemp(join(tmpdir(), "aivn-session-"));
     library = new PlayLibrary(root);
     await library.createEmpty("p1", "剧目");
-    // create 自己会建目录并激活，返回带 id 的 SaveInfo
-    await library.saves("p1").create("第一周目");
+    // 单树会话直接落在剧目根目录
+    const store = library.store("p1");
+    await writeFile(join(root, "p1", "session.json"), "{}");
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  const saveDir = async (): Promise<string> => {
-    const id = await library.saves("p1").readActive();
-    return join(root, "p1", "saves", id!);
-  };
-  /** 会话面必须落在某一棵树上：按档取 store（剧目级 store 无 saveId）。 */
-  const sessionStore = async (): Promise<PlayStore> =>
-    library.saveStore("p1", (await library.saves("p1").readActive())!);
+  const saveDir = async (): Promise<string> => join(root, "p1");
+  /** 单树会话直接取剧目根 store。 */
+  const sessionStore = async (): Promise<PlayStore> => library.store("p1");
 
   const treeWithBeat = (): LineageTree => {
     const tree = new LineageTree();

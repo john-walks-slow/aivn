@@ -5,13 +5,12 @@ import { useTheme } from "./hooks/useTheme.js";
 import { LibraryView } from "./views/LibraryView.js";
 import { TitleView } from "./views/TitleView.js";
 import { StageScreen } from "./views/StageScreen.js";
-import { SavesView } from "./views/SavesView.js";
 import { SettingsScreen } from "./views/SettingsScreen.js";
 import { DirtyGuardProvider } from "./workshop/dirtyGuard.js";
 
 /**
  * hash 路由：#/ 剧目库 · #/settings 设置 · #/play/:id Title · #/play/:id/stage 舞台
- * （带 ?view=workshop[&tab=…][&workshop=1] 直达工坊）· #/play/:id/saves 周目。
+ * （带 ?view=workshop[&tab=…][&workshop=1] 直达工坊）。
  *
  * 工坊没有独立路由：它是舞台外壳的第四个视图。少一个路由就少一套顶栏——
  * 从标题页进工坊时页头整个换掉，正是这套外壳要收拾的毛病。
@@ -58,9 +57,6 @@ function Screens() {
         search={route.query.toString()}
       />
     );
-  }
-  if (head === "play" && playId && sub === "saves") {
-    return <SavesView playId={playId} />;
   }
   if (head === "play" && playId) {
     return <TitleView playId={playId} />;

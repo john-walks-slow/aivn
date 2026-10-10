@@ -11,7 +11,7 @@ const HISTORY_KIND: Record<HistoryEntry["role"], { label: string; cls: string }>
 };
 
 /**
- * 剧作家原始历史：活动周目最近若干轮的 session 快照（REST 只读，不建 runtime、不改状态）。
+ * 剧作家原始历史：当前故事树最近若干轮的 session 快照（REST 只读，不建 runtime、不改状态）。
  * 与回顾互补——回顾只给解析后的台词与选肢，这里给写出来之前的原文：注入上下文、
  * 思考、未经解析的原始 DSL、工具调用。空表不是错误：还没落盘（读盘落后一轮）
  * 或纪元压缩前没有留存。标题条由外层 BacklogView 统一给，这里只出内容。

@@ -174,6 +174,21 @@ describe("导演生图", () => {
     expect(logged.filter((e) => e.kind === "cg")).toHaveLength(1);
   });
 
+  it("restartFromRoot 从 root fork 并立刻开启新一轮", async () => {
+    const { orchestrator, messages, tree } = setup([
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+    ]);
+    await orchestrator.playerAction({ kind: "free", text: "先演一轮" });
+    await orchestrator.whenIdle();
+
+    await orchestrator.restartFromRoot();
+    await orchestrator.whenIdle();
+
+    expect(messages.filter((message) => message.type === "beat_start")).toHaveLength(2);
+    expect(tree.export().events.some((event) => event.kind === "fork" && event.parentId === "root")).toBe(true);
+  });
+
   it("空树：没有台词也没有场景可照", () => {
     const { orchestrator } = setup([]);
     expect(orchestrator.recentScript()).toEqual({ lines: [], scene: PLAY.initialScene });

@@ -1,5 +1,5 @@
 /**
- * 造一个专测**换层转场 × 立绘层叠**的 mock 存档（不烧模型、不触发真演出）。
+ * 造一个专测**换层转场 × 立绘层叠**的 mock 故事树（不烧模型、不触发真演出）。
  *
  * 为什么需要它：261008 那个 bug（背景双层栈的 z-index 逃出自己那一层、压住立绘）
  * 只在「换过一次底」之后才成立，而默认的 `fade` 转场又必须整屏过色。
@@ -81,14 +81,10 @@ const stopNode = [...view].reverse().find((n) => n.kind === "stop");
 // 阅读位置钉在第一句台词：不写这一格，恢复档会直接落在末尾，
 // 舞台上永远只有最后一场，「逐场看四种转场」就无从谈起。
 const firstLine = view.find((n) => n.kind === "say" || n.kind === "narrate");
-const saveId = "layers01";
-const saveDir = join(dir, "saves", saveId);
-await mkdir(saveDir, { recursive: true });
 await writeFile(
-  join(saveDir, "meta.json"),
+  join(dir, "meta.json"),
   JSON.stringify(
     {
-      id: saveId,
       name: "层叠验证",
       createdAt: now,
       updatedAt: now,
@@ -100,7 +96,7 @@ await writeFile(
   ),
 );
 await writeFile(
-  join(saveDir, "session.json"),
+  join(dir, "session.json"),
   JSON.stringify(
     {
       version: 1,
@@ -120,7 +116,5 @@ await writeFile(
     2,
   ),
 );
-await writeFile(join(dir, "active.json"), JSON.stringify({ saveId }, null, 2));
-
 const files = await readdir(join(ASSET_SRC, "backgrounds"));
-console.log(`${playId}：存档 ${saveId}，${TRANSITIONS.length} 种转场各一场 + 1 场 CG，立绘角色 ${CAST.map((c) => c.id).join("/")}，背景 ${files.length} 张`);
+console.log(`${playId}：当前故事树，${TRANSITIONS.length} 种转场各一场 + 1 场 CG，立绘角色 ${CAST.map((c) => c.id).join("/")}，背景 ${files.length} 张`);

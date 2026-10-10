@@ -4,10 +4,10 @@ import { helloPayload, type PlayHouse, type PlayRuntime } from "./playhouse.js";
 
 /**
  * WS 会话层（多剧目）：/ws?play=<id> 连接路由到剧目 runtime。
- * 新周目 = 建一棵空树，连接建立后 autostart 自己开轮，协议里没有「重开」消息；
+ * 单树：会话与谱系都在剧目根，连接建立后 autostart 自己开轮，协议里没有「重开」消息；
  * resume 增量重放；其余玩家动作。
  * 客户端集合挂在 PlayHouse（与 runtime 生命周期解耦）；每次派发现查 runtime——
- * 切档 switchSave / 配置保存 reload 重建后，活连接自动路由到新实例，不断线。
+ * 配置保存 reload 重建后，活连接自动路由到新实例，不断线。
  */
 export function attachTransport(wss: WebSocketServer, playhouse: PlayHouse): void {
   wss.on("connection", (ws, req) => {
@@ -76,8 +76,7 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage
   ws.on("error", drop);
 
   void (async () => {
-    // 舞台与工坊拿的是同一份 runtime：都只读活动档，读不到就落在无会话作用域上。
-    // 周目是玩家按「开演」时才建的（playhouse.begin），连上来看一眼不该凭空多出一档。
+    // 舞台与工坊拿的是同一份 runtime（单树：从剧目根恢复，无会话作用域概念）。
     // 剧目不存在时 loadPlay 会抛 ENOENT —— 这个 promise 没人接，整进程会被 unhandled
     // rejection 带走。残留的旧连接就能把整个 API 弄崩，所以在这里就地收场：
     // 先把观众计数还回去（drop 只在 close 时跑，那时已经把 dropped 置上、计数已还过），
@@ -137,12 +136,11 @@ async function routeMessage(
       return;
     }
     case "start":
-      // 开演这一刻才建周目：连上舞台读到的可能还是无会话作用域那份，写不了盘，
-      // 必须先换到真树上再开局。
-      {
-        const tree = await playhouse.begin(playId);
-        tree.orchestrator.start();
-      }
+      // 单树：runtime 在连接建立时已从剧目根装配，直接开局。
+      orchestrator.start();
+      return;
+    case "restart":
+      await orchestrator.restartFromRoot();
       return;
     case "player_choice":
       await orchestrator.playerAction({ kind: "choice", optionIndex: msg.optionIndex });

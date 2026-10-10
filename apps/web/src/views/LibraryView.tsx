@@ -68,12 +68,10 @@ export function LibraryView() {
     "all",
   );
 
-  // 筛选页签上的三个数：总数、已开演、草稿。原先顶栏还有一块「周目记录」，
-  // 四块指标板撤掉后不再需要那个数——周目数在周目页上看得更清楚。
   const counts = useMemo(() => {
     if (!plays) return { total: 0, active: 0, draft: 0 };
     const total = plays.length;
-    const active = plays.filter((p) => p.readiness.saves > 0).length;
+    const active = plays.filter((p) => p.readiness.started).length;
     return { total, active, draft: total - active };
   }, [plays]);
 
@@ -81,9 +79,9 @@ export function LibraryView() {
     if (!plays) return null;
     let list = plays;
     if (filterMode === "active")
-      list = list.filter((p) => p.readiness.saves > 0);
+      list = list.filter((p) => p.readiness.started);
     if (filterMode === "draft")
-      list = list.filter((p) => p.readiness.saves === 0);
+      list = list.filter((p) => !p.readiness.started);
     const q = search.trim().toLowerCase();
     if (!q) return list;
     return list.filter(
@@ -259,7 +257,7 @@ export function LibraryView() {
 
         <div className="library-grid">
           {(filtered ?? []).map((play) => {
-            const saves = play.readiness.saves;
+            const started = play.readiness.started;
             const cover = covers[play.id];
             const summary = plainSummary(play.premise, play.title, 80);
 
@@ -283,11 +281,11 @@ export function LibraryView() {
                     </div>
                   )}
                   <span className="play-card-id-tag">{play.id}</span>
-                  <div className={`play-badge ${saves > 0 ? "active" : ""}`}>
+                  <div className={`play-badge ${started ? "active" : ""}`}>
                     <span
-                      className={`status-pip ${saves > 0 ? "is-success" : "is-neutral"}`}
+                      className={`status-pip ${started ? "is-success" : "is-neutral"}`}
                     />
-                    <span>{saves > 0 ? `${saves} 周目` : "未开演"}</span>
+                    <span>{started ? "已开演" : "未开演"}</span>
                   </div>
                   <div className="play-card-hover-actions">
                     <span className="hover-play-btn">

@@ -30,8 +30,8 @@ export interface Readiness {
   premise: boolean;
   sprites: boolean;
   background: boolean;
-  /** 本剧目已有的周目数（0 = 还没开演）。 */
-  saves: number;
+  /** 本剧目是否已有演出历史。 */
+  started: boolean;
 }
 
 /**
@@ -63,17 +63,6 @@ export interface PlayFile {
   writable: boolean;
   /** 预览方式：text 进编辑器，image/audio 走静态 URL，其余为 binary。 */
   kind: "text" | "image" | "audio" | "binary";
-}
-
-/** 存档（周目）：一剧目并存 N 棵独立的谱系树。 */
-export interface SaveInfo {
-  id: string;
-  name: string;
-  createdAt: number;
-  updatedAt: number;
-  beats: number;
-  preview: string;
-  current: boolean;
 }
 
 export interface PlayDetail {
@@ -262,41 +251,11 @@ export const api = {
   lineage: (id: string) => request<LineageView>(`/api/plays/${id}/lineage`),
 
   /**
-   * 剧作家原始历史：活动周目最近若干轮的 session 快照（注入原文 / 思考 / 原始 DSL / 工具调用）。
+   * 剧作家原始历史：当前故事树最近若干轮的 session 快照（注入原文 / 思考 / 原始 DSL / 工具调用）。
    * 只读——不建 runtime、不改任何状态，所以它是「回看这场戏怎么写出来的」的唯一入口。
    * 读盘落后一轮（轮收束时才落盘），拿不到就回空表，不报错。
    */
   history: (id: string) => request<{ beats: HistoryBeat[] }>(`/api/plays/${id}/history`),
-
-  /** 存档（周目）列表：按最近更新倒序，current 标记当前活动档。 */
-  listSaves: (id: string) => request<SaveInfo[]>(`/api/plays/${id}/saves`),
-
-  /** 开始新周目：建一棵空树并切过去，旧档原封不动。 */
-  createSave: (id: string, name?: string) =>
-    request<SaveInfo>(`/api/plays/${id}/saves`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name }),
-    }),
-
-  /** 改名：只改档名标签，不动树。 */
-  renameSave: (id: string, saveId: string, name: string) =>
-    request<SaveInfo>(`/api/plays/${id}/saves/${saveId}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name }),
-    }),
-
-  deleteSave: (id: string, saveId: string) =>
-    request<{ ok: boolean }>(`/api/plays/${id}/saves/${saveId}`, { method: "DELETE" }),
-
-  /** 切档：改活动档指针并重建 runtime；演出进行中等当前一轮演完。 */
-  activateSave: (id: string, saveId: string) =>
-    request<{ ok: boolean }>(`/api/plays/${id}/active`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ saveId }),
-    }),
 
   createPlay: (id: string, title: string) =>
     request<{ id: string }>("/api/plays/create", {
