@@ -50,6 +50,9 @@ function view(): Settings {
       concurrency: 2,
       timeoutMs: 240000,
       reference: "neutral",
+      // 逐类目覆盖：三格都给上（空对象 = 全跟随基础那份）。读视图里这一格是必填，
+      // 少写它 `draftOf` 会在 `next.image.kinds.background` 上抛 TypeError。
+      kinds: { background: {}, cg: {}, sprite: {} },
     },
     tts: { enabled: false, proxy: "", baseUrl: "", concurrency: 2, keys: "", masked: [], keyCount: 0 },
     exa: { enabled: false, baseUrl: "", proxy: "", timeoutMs: 20000, keys: "", masked: [], keyCount: 0 },
@@ -78,8 +81,10 @@ describe("设置页凭据：掩码回填，未触碰不误清", () => {
   it("已配好的凭据以掩码填进输入框，保存时原样回传（不是空串）", async () => {
     render(<SettingsScreen />);
 
+    // 「生图 Key」这个标签在基座与三个按类目覆盖小节里都出现，取第一个 = 基座那份
+    // （按类目覆盖的小节排在基座字段之后，见 SettingsScreen 的出图组）。
     const modelKey = (await screen.findByLabelText(/API Key/)) as HTMLInputElement;
-    const imageKey = screen.getByLabelText(/生图 Key/) as HTMLInputElement;
+    const imageKey = screen.getAllByLabelText(/生图 Key/)[0] as HTMLInputElement;
     const password = screen.getByLabelText(/访问密码/) as HTMLInputElement;
     expect(modelKey.value).toBe("sk-s••••1234");
     expect(imageKey.value).toBe("flow••••9876");
@@ -95,7 +100,7 @@ describe("设置页凭据：掩码回填，未触碰不误清", () => {
     render(<SettingsScreen />);
 
     fireEvent.change(await screen.findByLabelText(/API Key/), { target: { value: "" } });
-    fireEvent.change(screen.getByLabelText(/生图 Key/), { target: { value: "" } });
+    fireEvent.change(screen.getAllByLabelText(/生图 Key/)[0] as HTMLElement, { target: { value: "" } });
     fireEvent.change(screen.getByLabelText(/访问密码/), { target: { value: "" } });
 
     const draft = await saveDraft();
