@@ -78,6 +78,29 @@ export function StopPanel({
   /** 有选项、或者剧本给的就是一个自由输入停止点：列表才摆出来。 */
   const listing = scripted.length > 0 || stop?.stopType === "free";
 
+  // 数字键 1-9 直选；输入框里不劫持。自由输入那张卡排在最后，数字是选项数 +1。
+  useEffect(() => {
+    if (!listing || freeOpen || disabled) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) {
+        return;
+      }
+      const num = Number.parseInt(e.key, 10);
+      if (Number.isNaN(num) || num < 1) return;
+      if (num <= scripted.length) {
+        e.preventDefault();
+        onChoice(num - 1);
+      } else if (num === scripted.length + 1) {
+        e.preventDefault();
+        setFreeOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [listing, freeOpen, disabled, scripted, onChoice]);
+
   const submitFree = (): void => {
     const text = draft.trim();
     if (text) {
@@ -124,10 +147,11 @@ export function StopPanel({
               disabled={disabled}
               onClick={() => onChoice(index)}
             >
+              <span className="choice-num">{index + 1}</span>
               <span className="choice-text">{option.text}</span>
               {seenChoices?.has(option.text) && (
                 <span className="choice-seen">
-                  <Icon name="check" /> 已选过
+                  <Icon name="check" size={13} /> 已选过
                 </span>
               )}
             </button>
@@ -139,6 +163,7 @@ export function StopPanel({
             onClick={() => setFreeOpen(true)}
             title="不说选项，以主角口吻自己写一句"
           >
+            <span className="choice-num">✎</span>
             <span className="choice-text">{FREE_CHOICE}</span>
           </button>
         </div>
@@ -148,6 +173,7 @@ export function StopPanel({
       {freeOpen && (
         <Modal
           title="自由输入"
+          kicker={null}
           hint="以主角口吻写一句。"
           width={560}
           onClose={() => setFreeOpen(false)}

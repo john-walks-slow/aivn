@@ -62,7 +62,7 @@ export function createCutTool(deps: CutDeps): AgentTool<typeof cutParams> {
           cut: async (request) => {
             const asset = await deps.playAssets!.cut(request);
             receipt = { kind: asset.kind, url: asset.url, replaced: asset.replaced };
-            const info = asset.cutout ?? { coverage: 0, figureHeight: 0 };
+            const info = asset.cutout ?? { coverage: 0, figureTop: 0, figureHeight: 0 };
             return { path: asset.path, absPath: asset.absPath, ...info };
           },
         });

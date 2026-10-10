@@ -16,6 +16,10 @@ export interface SpritePresentation {
   framing: SpriteFraming;
   stature: SpriteStature;
   anchor: ActorAnchor;
+  /** 人物头顶到立绘画布上沿的像素（画布高 1920）；缺省 = 存量素材，头顶就贴画布上沿。 */
+  figureTop?: number;
+  /** 人物实际像素高；与画布高之比决定这张图里的人本来多高（不同外框比的主体靠它可比）。 */
+  figureHeight?: number;
 }
 
 /** 素材名 → URL 解析（stem 无扩展名时按目录清单补全；缺素材返回 null 走降级）。 */
@@ -124,10 +128,14 @@ export function buildAssetIndex(
     },
     spritePresentation: (spriteId, variant) => {
       const declared = spriteDeclarationOf(manifest, spriteId, variant ?? undefined);
+      // figureTop / figureHeight 只带**声明过的**值：缺省不落键，返回形态与加字段之前逐位相同
+      // （存量素材一个字节不动，调用方也不必区分「没有这个字段」与「值为 undefined」）。
       return {
         framing: declared.framing ?? DEFAULT_SPRITE_FRAMING,
         stature: declared.stature ?? DEFAULT_SPRITE_STATURE,
         anchor: declared.anchor ?? "bottom",
+        ...(declared.figureTop !== undefined ? { figureTop: declared.figureTop } : {}),
+        ...(declared.figureHeight !== undefined ? { figureHeight: declared.figureHeight } : {}),
       };
     },
   };

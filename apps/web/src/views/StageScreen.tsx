@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GeneratedAsset, ReadPos } from "@aivn/core";
 import { api, type PlayDetail } from "../api.js";
 import { navigate } from "../router.jsx";
-import { useStageSocket, type WorkshopInbound } from "../stage/useStageSocket.js";
+import {
+  useStageSocket,
+  type WorkshopInbound,
+} from "../stage/useStageSocket.js";
 import {
   usePlayback,
   VoiceDirector,
@@ -17,6 +20,7 @@ import {
   stageViewFromQuery,
   workshopConnectionFromQuery,
   Icon,
+  buildScriptFeed,
   buildTranscript,
   type TranscriptEntry,
   ToastStack,
@@ -32,24 +36,38 @@ import {
   useEscape,
 } from "@aivn/stage";
 import { HistoryView } from "./HistoryView.js";
-import { RouteTree, useLineage, type LineageOps } from "../stage/LineagePanel.js";
+import {
+  RouteTree,
+  useLineage,
+  type LineageOps,
+} from "../stage/LineagePanel.js";
 import { CgView } from "../stage/CgView.js";
 import type { RouteControls } from "../stage/RouteCanvas.js";
-import { StageShell } from "../stage/StageShell.js";
+import { StagePanel } from "../stage/StagePanel.js";
+import { useLeaveGuard } from "../workshop/dirtyGuard.js";
 import { beatAtLine, buildBeats, editableNodeAtLine } from "../stage/beats.js";
 import { PromptQueuePanel } from "../stage/PromptQueuePanel.js";
+import { playThemeColor } from "../ui/text.js";
 import { WorkshopPane } from "../workshop/WorkshopPane.js";
 
 /** 阅读位置上报的防抖窗口：打字机逐字推进，1s 内只发最后一次位置。 */
 const READ_REPORT_MS = 1000;
 
 /** 演出屏：舞台（视觉层+打字机+导演栏）/ 回顾 / 路线 / CG / 工坊五视图，共用侧栏外壳。 */
-export function StageScreen({ playId, search }: { playId: string; /** 路由上的 query：?view=workshop[&tab=…]（标题页直达工坊）。 */ search?: string }) {
+export function StageScreen({
+  playId,
+  search,
+}: {
+  playId: string;
+  /** 路由上的 query：?view=workshop[&tab=…]（标题页直达工坊）。 */ search?: string;
+}) {
   const directorRef = useRef<VoiceDirector | null>(null);
   if (!directorRef.current) directorRef.current = new VoiceDirector();
   const director = directorRef.current;
   const [, setAudioTick] = useState(0); // 语音状态变化（hold 解除/解锁）触发重渲染
-  const [voiceOn, setVoiceOn] = useState(() => readFlag(localStorage, SETTING_VOICE, true));
+  const [voiceOn, setVoiceOn] = useState(() =>
+    readFlag(localStorage, SETTING_VOICE, true),
+  );
   /** 本轮写完时摆「（继续）」卡。默认关：点舞台就是续演，与翻下一句同一个动作。 */
   const [continueCard, setContinueCard] = useState(() =>
     readFlag(localStorage, SETTING_CONTINUE_CARD, false),
@@ -73,7 +91,9 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
    */
   const workshopEntry = workshopConnectionFromQuery(search);
   const [view, setView] = useState<StageView>(() => stageViewFromQuery(search));
-  const [workshopTab, setWorkshopTab] = useState(() => stageTabFromQuery(search));
+  const [workshopTab, setWorkshopTab] = useState(() =>
+    stageTabFromQuery(search),
+  );
 
   /**
    * 回到舞台。从标题页直达工坊时（workshop=1）那条连接不 autostart，本地切视图只会
@@ -94,21 +114,35 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
       if (workshopEntry) {
         // 换一条真舞台连接（重挂即 autostart）并落在目标视图；去舞台不要带 query，
         // 留着 ?view=stage 会让人以为这里还需要一个参数。
-        navigate(next === "stage" ? `/play/${playId}/stage` : `/play/${playId}/stage?view=${next}`);
+        navigate(
+          next === "stage"
+            ? `/play/${playId}/stage`
+            : `/play/${playId}/stage?view=${next}`,
+        );
         return;
       }
       setView(next);
     },
     [workshopEntry, playId],
   );
-  /** 回顾的第二视图：剧作家的原始历史（同一份内容区，切视图不换外壳）。默认给原始历史。 */
-  const [rawHistory, setRawHistory] = useState(true);
+  /**
+   * 回顾的第二视图：剧作家的原始历史（同一份内容区，切视图不换外壳）。
+   * 默认落在**台词**那一栏：点「Log」的是玩家，他要看的是自己走过的对话；
+   * 「原文」是排查用的快照，还得等一轮真生成完才有内容——默认给它等于开门见空态。
+   * （独立检视与 e2e 都提过这一条，2026-10-10 改。）
+   */
+  const [rawHistory, setRawHistory] = useState(false);
   const [historyNonce, setHistoryNonce] = useState(0);
   /** CG 页代次：每有一张图到货就自增——开着这一页时新图直接出现在网格里。 */
   const [cgNonce, setCgNonce] = useState(0);
   /** 路线画布把镜头操作交给侧栏（见 RouteCanvas 的 onControls）。 */
-  const [routeControls, setRouteControls] = useState<RouteControls | null>(null);
-  const setRouteControlsStable = useCallback((c: RouteControls) => setRouteControls(c), []);
+  const [routeControls, setRouteControls] = useState<RouteControls | null>(
+    null,
+  );
+  const setRouteControlsStable = useCallback(
+    (c: RouteControls) => setRouteControls(c),
+    [],
+  );
   /** 按住 Ctrl 的快进档：舞台层只报键，播放层管节奏。 */
   const [turbo, setTurbo] = useState(false);
   const toast = useToasts();
@@ -138,95 +172,133 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   }, [lineage.view]);
   // 工坊下行消息的订阅表：面板挂载时登记，卸载时注销（与舞台状态机解耦）
   const workshopHandlers = useRef(new Set<(msg: WorkshopInbound) => void>());
-  const subscribeWorkshop = useCallback((handler: (msg: WorkshopInbound) => void) => {
-    workshopHandlers.current.add(handler);
-    return () => {
-      workshopHandlers.current.delete(handler);
-    };
-  }, []);
+  const subscribeWorkshop = useCallback(
+    (handler: (msg: WorkshopInbound) => void) => {
+      workshopHandlers.current.add(handler);
+      return () => {
+        workshopHandlers.current.delete(handler);
+      };
+    },
+    [],
+  );
   // 手动生图结果监听（工坊手动生图对话框用）
   type ImageResult =
     | { target: string; ok: true; url: string; path: string }
     | { target: string; ok: false; message: string };
   const imageResultHandlers = useRef(new Set<(res: ImageResult) => void>());
-  const subscribeImageResult = useCallback((handler: (res: ImageResult) => void) => {
-    imageResultHandlers.current.add(handler);
-    return () => {
-      imageResultHandlers.current.delete(handler);
-    };
-  }, []);
+  const subscribeImageResult = useCallback(
+    (handler: (res: ImageResult) => void) => {
+      imageResultHandlers.current.add(handler);
+      return () => {
+        imageResultHandlers.current.delete(handler);
+      };
+    },
+    [],
+  );
   // 素材到货（舞台那边的引用即导入、助手的导入、后台出图）：工坊的面板拿它刷新自己的列表
   const assetReadyHandlers = useRef(new Set<(asset: GeneratedAsset) => void>());
-  const subscribeAssetReady = useCallback((handler: (asset: GeneratedAsset) => void) => {
-    assetReadyHandlers.current.add(handler);
-    return () => {
-      assetReadyHandlers.current.delete(handler);
-    };
-  }, []);
+  const subscribeAssetReady = useCallback(
+    (handler: (asset: GeneratedAsset) => void) => {
+      assetReadyHandlers.current.add(handler);
+      return () => {
+        assetReadyHandlers.current.delete(handler);
+      };
+    },
+    [],
+  );
   /** 角色页「管立绘」的落点：素材页滚到哪个主体。nonce 让同一个 id 再点一次也生效。 */
-  const [spriteFocus, setSpriteFocus] = useState<{ id: string; nonce: number } | null>(null);
+  const [spriteFocus, setSpriteFocus] = useState<{
+    id: string;
+    nonce: number;
+  } | null>(null);
   const manageSprites = useCallback((id: string) => {
     setWorkshopTab("assets");
     setSpriteFocus((cur) => ({ id, nonce: (cur?.nonce ?? 0) + 1 }));
   }, []);
   const { push: pushToast } = toast;
+  /** 当前视图：offlineAction 要按视图分流，而它是 useStageSocket 的入参（拿不到后面的 stage）。 */
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  /**
+   * 连接没就位时玩家按了动作：舞台没有常驻状态带，静默丢弃等于「点了没反应」。
+   * 工坊例外——那边内容区顶上已经挂着常驻的「连接断了」横幅，再弹一次只是盖在它上面重复。
+   */
+  const offlineAction = useCallback(() => {
+    if (viewRef.current === "workshop") return;
+    pushToast("还没连上服务端，正在重连…", "error");
+  }, [pushToast]);
 
-  const stage = useStageSocket(playId, {
-    onAudio: (ready) => director.handleAudio(ready),
-    onAudioPending: (pending) => director.markPending(pending.seq, pending.phrase),
-    onBeatStart: () => {
-      director.beatStarted();
-      setLineageNonce((n) => n + 1); // 上一轮的玩家表态进谱系了，选肢的「已选过」要跟上
+  const stage = useStageSocket(
+    playId,
+    {
+      onSendDropped: offlineAction,
+      onAudio: (ready) => director.handleAudio(ready),
+      onAudioPending: (pending) =>
+        director.markPending(pending.seq, pending.phrase),
+      onBeatStart: () => {
+        director.beatStarted();
+        setLineageNonce((n) => n + 1); // 上一轮的玩家表态进谱系了，选肢的「已选过」要跟上
+      },
+      onReset: () => director.reset(),
+      // 原地改写：缓冲已就地换字，谱系刷新把剧本/路线的标签换成新文本
+      onLineEdited: () => setLineageNonce((n) => n + 1),
+      // 回看中生图：图挂上了某一行，谱系刷新把那张图贴到那一行上
+      onCgAttached: () => setLineageNonce((n) => n + 1),
+      // P6 上下文重建：新分支整段到达——播放层复位，谱系视图跟着换
+      onRebase: ({ note, playFrom, resumeAt, busy: streaming, keepView }) => {
+        director.reset();
+        setRebase((cur) => ({
+          token: cur.token + 1,
+          resume: !streaming,
+          // 从本轮开头重读：把播放头钉在该轮首句（offset=0），不按终局快进
+          seekTo: playFrom === "start" && resumeAt ? resumeAt : null,
+        }));
+        setLineageNonce((n) => n + 1);
+        if (note) pushToast(note, "warn");
+        // 删除是在路线里整理分支：树上少一张卡就是反馈，不把玩家拽回舞台
+        if (!keepView) goStage();
+      },
+      // D6 生图：到货即登记（预解码后淡入），失败只提示——舞台视觉不因图卡住
+      onAssets: (list) => generated.add(list),
+      onAssetReady: (asset) => {
+        generated.add([asset]);
+        playbackRef.current?.settleAssets([asset.id]);
+        if (asset.type === "cg") setCgNonce((n) => n + 1); // CG 页开着就把它补进网格
+        for (const handler of assetReadyHandlers.current) handler(asset);
+        // 立绘到货 = 立绘目录里多了一张、素材表里多了一条声明（取景/体量/对齐都是出图那一刻写进去的）。
+        // 重拉这两份，舞台才会按新声明摆位——不重拉的话新差分只能按缺省站，与声明的体量对不上。
+        // BGM 到货同理：`<scene bgm="id">` 正是拿这张素材列表寻址的，不重拉的话它会一直按缺素材降级静音，
+        // 直到用户整页刷新。两者的理由不同，所以条件按类型分开写而不是图省事塞进同一支。
+        if (asset.type === "sprite" || asset.type === "bgm") {
+          api
+            .playDetail(playId)
+            .then(setDetail)
+            .catch(() => {});
+          api
+            .listAssets(playId)
+            .then(setAssets)
+            .catch(() => {});
+        }
+      },
+      onAssetFailed: (id, message) => {
+        playbackRef.current?.settleAssets([id]);
+        // 原始错误（状态码、模型名、provider、错误码）不是玩家能用的信息，也不该出现在
+        // 玩家界面上；它留给 console，toast 只说发生了什么、玩家下一步能做什么。
+        console.warn(`[aivn] 生图失败 ${id}: ${message}`);
+        pushToast(
+          "有一张图没生成出来，已用氛围底色顶上。可到剧目库「设置」里换出图后端。",
+          "warn",
+        );
+      },
+      onWorkshop: (msg) => {
+        for (const handler of workshopHandlers.current) handler(msg);
+      },
+      onImageResult: (res) => {
+        for (const handler of imageResultHandlers.current) handler(res);
+      },
     },
-    onReset: () => director.reset(),
-    // 原地改写：缓冲已就地换字，谱系刷新把剧本/路线的标签换成新文本
-    onLineEdited: () => setLineageNonce((n) => n + 1),
-    // 回看中生图：图挂上了某一行，谱系刷新把那张图贴到那一行上
-    onCgAttached: () => setLineageNonce((n) => n + 1),
-    // P6 上下文重建：新分支整段到达——播放层复位，谱系视图跟着换
-    onRebase: ({ note, playFrom, resumeAt, busy: streaming, keepView }) => {
-      director.reset();
-      setRebase((cur) => ({
-        token: cur.token + 1,
-        resume: !streaming,
-        // 从本轮开头重读：把播放头钉在该轮首句（offset=0），不按终局快进
-        seekTo: playFrom === "start" && resumeAt ? resumeAt : null,
-      }));
-      setLineageNonce((n) => n + 1);
-      if (note) pushToast(note, "warn");
-      // 删除是在路线里整理分支：树上少一张卡就是反馈，不把玩家拽回舞台
-      if (!keepView) goStage();
-    },
-    // D6 生图：到货即登记（预解码后淡入），失败只提示——舞台视觉不因图卡住
-    onAssets: (list) => generated.add(list),
-    onAssetReady: (asset) => {
-      generated.add([asset]);
-      playbackRef.current?.settleAssets([asset.id]);
-      if (asset.type === "cg") setCgNonce((n) => n + 1); // CG 页开着就把它补进网格
-      for (const handler of assetReadyHandlers.current) handler(asset);
-      // 立绘到货 = 立绘目录里多了一张、素材表里多了一条声明（取景/体量/对齐都是出图那一刻写进去的）。
-      // 重拉这两份，舞台才会按新声明摆位——不重拉的话新差分只能按缺省站，与声明的体量对不上。
-      // BGM 到货同理：`<scene bgm="id">` 正是拿这张素材列表寻址的，不重拉的话它会一直按缺素材降级静音，
-      // 直到用户整页刷新。两者的理由不同，所以条件按类型分开写而不是图省事塞进同一支。
-      if (asset.type === "sprite" || asset.type === "bgm") {
-        api.playDetail(playId).then(setDetail).catch(() => {});
-        api.listAssets(playId).then(setAssets).catch(() => {});
-      }
-    },
-    onAssetFailed: (id, message) => {
-      playbackRef.current?.settleAssets([id]);
-      // 原始错误（状态码、模型名、provider、错误码）不是玩家能用的信息，也不该出现在
-      // 玩家界面上；它留给 console，toast 只说发生了什么、玩家下一步能做什么。
-      console.warn(`[aivn] 生图失败 ${id}: ${message}`);
-      pushToast("有一张图没生成出来，已用氛围底色顶上。可到剧目库「设置」里换出图后端。", "warn");
-    },
-    onWorkshop: (msg) => {
-      for (const handler of workshopHandlers.current) handler(msg);
-    },
-    onImageResult: (res) => {
-      for (const handler of imageResultHandlers.current) handler(res);
-    },
-  }, { workshopOnly: workshopEntry });
+    { workshopOnly: workshopEntry },
+  );
 
   // 渲染期回调绑定（N6：置于 stage 声明后，闭包引用才不踩未初始化的 TDZ）
   director.onNotify = () => setAudioTick((t) => t + 1);
@@ -260,7 +332,12 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   };
 
   // 导演出口（P6）：senders 在 useStageSocket 内 useCallback 稳定，仅重连后换引用
-  const { sendFork: fork, sendJump: jump, sendEdit: edit, sendDelete: drop } = stage;
+  const {
+    sendFork: fork,
+    sendJump: jump,
+    sendEdit: edit,
+    sendDelete: drop,
+  } = stage;
 
   /**
    * 路线页上的三个动词。
@@ -281,7 +358,10 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
         jump(nodeId, opts);
         goStage();
       },
-      rewrite: (anchor: string, opts?: { replaced?: string; instruction?: string }) => {
+      rewrite: (
+        anchor: string,
+        opts?: { replaced?: string; instruction?: string },
+      ) => {
         fork(anchor, {
           resume: true,
           ...(opts?.replaced ? { replaced: opts.replaced } : {}),
@@ -294,18 +374,28 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     [jump, fork, drop, goStage],
   );
 
-
   // 走过的岔路口：玩家在这条线之外已经说过的选择，卡片上打「✓ 已选过」提醒存在多条命运
   const seenChoices = useMemo(
     () =>
-      new Set((lineage.view?.nodes ?? []).filter((n) => n.kind === "prompt" && n.text).map((n) => n.text)),
+      new Set(
+        (lineage.view?.nodes ?? [])
+          .filter((n) => n.kind === "prompt" && n.text)
+          .map((n) => n.text),
+      ),
     [lineage.view],
   );
 
   useEffect(() => {
-    api.playDetail(playId).then(setDetail).catch(() => {});
-    api.listAssets(playId).then(setAssets).catch(() => {});
-    api.listSaves(playId)
+    api
+      .playDetail(playId)
+      .then(setDetail)
+      .catch(() => {});
+    api
+      .listAssets(playId)
+      .then(setAssets)
+      .catch(() => {});
+    api
+      .listSaves(playId)
       .then((list) => setSaveName(list.find((s) => s.current)?.name ?? null))
       .catch(() => {});
     return () => director.dispose();
@@ -341,7 +431,13 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   const index: AssetIndex | null = useMemo(
     () =>
       detail
-        ? buildAssetIndex(playId, assets, generated.images, detail.manifest ?? {}, detail.cast)
+        ? buildAssetIndex(
+            playId,
+            assets,
+            generated.images,
+            detail.manifest ?? {},
+            detail.cast,
+          )
         : null,
     [detail, assets, playId, generated.images],
   );
@@ -350,18 +446,18 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   // 不含背景/音效/插图这些布景指令。回看游标与回顾列表读的是它，两处才不会各说各话。
   // revision 进依赖：缓冲是原地变更的稳定引用，谱系不轮询的窗口里（舞台视图生成中）
   // 刚落进缓冲的 input 行也要立刻进记录——「回顾 0 延迟见输入」靠的是它。
-  const transcript = useMemo(() => buildTranscript(lineage.view, stage.lines), [
-    lineage.view,
-    stage.lines,
-    stage.revision,
-  ]);
+  const transcript = useMemo(
+    () => buildTranscript(lineage.view, stage.lines),
+    [lineage.view, stage.lines, stage.revision],
+  );
+
 
   // 轮是谱系行级日志上的区间，跟舞台行用同一个 seq 对尺：任意一行反查回它的轮与台词节点，
   // 四原语就有着落点——不用跳到别的视图去找「刚才那一句」。
-  const cards = useMemo(() => (lineage.view ? buildBeats(lineage.view, stage.lines) : []), [
-    lineage.view,
-    stage.lines,
-  ]);
+  const cards = useMemo(
+    () => (lineage.view ? buildBeats(lineage.view, stage.lines) : []),
+    [lineage.view, stage.lines],
+  );
 
   const playback = usePlayback(stage.cues, stage.lines, {
     live: stage.state === "streaming",
@@ -380,7 +476,8 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     resumeAt: stage.readPos,
     // 跳转重读：换代后从这个落点起读（该轮首句 offset=0）
     seekTo: rebase.seekTo,
-    onLineStart: (line) => director.lineStarted(line?.seq, line?.type === "say"),
+    onLineStart: (line) =>
+      director.lineStarted(line?.seq, line?.type === "say"),
     onFastForward: () => director.fastForward(),
     onRead: (pos) => readPosRef.current?.(pos),
     cgByNode,
@@ -388,9 +485,14 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
   playbackRef.current = playback;
 
   // 轮收束后还要等编排器真正空闲（beat_settled），否则玩家点选项会被「演出进行中」挡回
-  const busy = stage.state === "streaming" || stage.state === "connecting" || !stage.settled;
+  const busy =
+    stage.state === "streaming" ||
+    stage.state === "connecting" ||
+    !stage.settled;
   // D4：先演完再交互——打字机未消费完前不露出停止点（防剧透/防提前发送）
-  const lineDone = playback.current === null || playback.shownLength >= playback.current.text.length;
+  const lineDone =
+    playback.current === null ||
+    playback.shownLength >= playback.current.text.length;
   const panelReady = !busy && playback.exhausted && lineDone;
 
   // 「继续」的出口形态：默认是点舞台（与翻下一句同一个动作），设置里打开才摆一张卡。
@@ -419,11 +521,13 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
 
   // Esc 回到舞台（侧栏是常驻的，不需要「关掉」它）。走 ui/escape.ts 的浮层栈：
   // 输入模态窗开着的那一下归它，视图栏只在自己是栈顶时才认领。
-  useEscape(() => goStage(), view !== "stage");
+  useEscape(() => guardLeave(goStage), view !== "stage");
 
   // 谱系定期拉取：路线视图开着时看得到直播的树；舞台停在停止点上也拉——
   // 此刻这一轮的事件才刚落库，导演栏的锚点要指得准。
   const { reload: reloadLineage } = lineage;
+  /** Esc 回舞台也要过未保存那一道闸（登记处挂在 App 外层，这里读得到）。 */
+  const guardLeave = useLeaveGuard();
   useEffect(() => {
     if (view === "stage" && !panelReady) return;
     const timer = setInterval(reloadLineage, 2500);
@@ -472,7 +576,10 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     [cards, lineage.view],
   );
 
-  const voiceState = useCallback((seq: number | null) => director.voiceState(seq), [director]);
+  const voiceState = useCallback(
+    (seq: number | null) => director.voiceState(seq),
+    [director],
+  );
   const replay = useCallback(
     (seq: number): void => {
       void director.replay(seq);
@@ -503,181 +610,339 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
     if (socketError) pushToast(socketError, "error");
   }, [socketError, pushToast]);
 
-  // 侧栏的工具段：当前视图自己才有的操作（回顾的第二个视图、路线的镜头）。
-  // 导航（舞台/回顾/路线/工坊）归侧栏本体，离开这场戏只有底栏「退出」一个出口。
-  const tools = view === "backlog" ? (
+  const playTitle = detail?.play.title ?? playId;
+  const exitToTitle = (): void => navigate(`/play/${playId}`);
+
+  // 回顾抽屉头上的分段：台词（玩家视角）与原始输出（剧作家写下的原文，排查用）
+  const backlogActions = (
     <>
-      <div className="side-tools-title">看哪一层</div>
-      <div className="seg side-seg" role="tablist">
+      <div className="seg seg-glass" role="tablist">
         <button
           type="button"
           role="tab"
           aria-selected={!rawHistory}
-          className={`seg-btn ${rawHistory ? "" : "active"}`.trim()}
+          className={`seg-btn${rawHistory ? "" : " active"}`}
           onClick={() => setRawHistory(false)}
+          title="这一场演到现在，剧本上落下的每一行（台词与舞台指令）"
         >
-          说过的话
+          剧本
         </button>
         <button
           type="button"
           role="tab"
           aria-selected={rawHistory}
-          className={`seg-btn ${rawHistory ? "active" : ""}`.trim()}
+          className={`seg-btn${rawHistory ? " active" : ""}`}
           onClick={() => setRawHistory(true)}
-          title="剧作家的原始记录"
+          title="剧作家写下的原文"
         >
-          原始历史
+          原文
         </button>
       </div>
       {rawHistory && (
         <button
           type="button"
-          className="side-tool-btn"
+          className="panel-icon-btn"
           onClick={() => setHistoryNonce((n) => n + 1)}
-          title="重新拉取（内容还没写进存档）"
+          title="重新载入"
+          aria-label="重新载入"
         >
           <Icon name="refresh" size={15} />
-          刷新
         </button>
       )}
     </>
-  ) : view === "route" ? (
-    routeControls && (
-      <>
-        <div className="side-tools-title">镜头</div>
-        <div className="side-seg" role="group" aria-label="时间方向">
-          <button
-            type="button"
-            className={`seg-btn ${routeControls.dir === "horizontal" ? "active" : ""}`.trim()}
-            onClick={() => routeControls.setDir("horizontal")}
-            title="从左到右读时间"
-          >
-            横向
-          </button>
-          <button
-            type="button"
-            className={`seg-btn ${routeControls.dir === "vertical" ? "active" : ""}`.trim()}
-            onClick={() => routeControls.setDir("vertical")}
-            title="从上到下读时间"
-          >
-            纵向
-          </button>
-        </div>
-        <div className="side-tool-grid">
-          <button type="button" className="side-tool-btn" onClick={routeControls.toRoot} title="回到开头">
-            <Icon name="prev" size={15} />
-            开头
-          </button>
-          <button
-            type="button"
-            className="side-tool-btn"
-            onClick={routeControls.toLatest}
-            disabled={!routeControls.canGoLatest}
-            title="跳到最新"
-          >
-            <Icon name="locate" size={15} />
-            最新
-          </button>
-          <button type="button" className="side-tool-btn" onClick={routeControls.zoomOut} title="缩小">
-            <Icon name="zoomOut" size={15} />
-            缩小
-          </button>
-          <button type="button" className="side-tool-btn" onClick={routeControls.zoomIn} title="放大">
-            <Icon name="zoomIn" size={15} />
-            放大
-          </button>
-          <button type="button" className="side-tool-btn wide" onClick={routeControls.fitAll} title="看全树">
-            <Icon name="expand" size={15} />
-            看全树
-          </button>
-        </div>
-        <p className="side-hint">拖动平移 · 滚轮缩放 · 每张卡右下角就管这一段</p>
-      </>
-    )
-  ) : null;
+  );
+
+  // 路线面板头上的镜头控制：原先挤在侧栏里，现在落到画布顶上
+  const routeActions = routeControls && (
+    <>
+      <div className="seg seg-glass" role="group" aria-label="时间方向">
+        <button
+          type="button"
+          className={`seg-btn${routeControls.dir === "horizontal" ? " active" : ""}`}
+          onClick={() => routeControls.setDir("horizontal")}
+          title="从左到右读时间"
+        >
+          横向
+        </button>
+        <button
+          type="button"
+          className={`seg-btn${routeControls.dir === "vertical" ? " active" : ""}`}
+          onClick={() => routeControls.setDir("vertical")}
+          title="从上到下读时间"
+        >
+          纵向
+        </button>
+      </div>
+      <div className="panel-btn-group">
+        <button
+          type="button"
+          className="panel-icon-btn"
+          onClick={routeControls.toRoot}
+          title="回到开头"
+        >
+          <Icon name="prev" size={15} />
+        </button>
+        <button
+          type="button"
+          className="panel-icon-btn"
+          onClick={routeControls.toLatest}
+          disabled={!routeControls.canGoLatest}
+          title="跳到最新"
+        >
+          <Icon name="locate" size={15} />
+        </button>
+        <button
+          type="button"
+          className="panel-icon-btn"
+          onClick={routeControls.zoomOut}
+          title="缩小"
+        >
+          <Icon name="zoomOut" size={15} />
+        </button>
+        <button
+          type="button"
+          className="panel-icon-btn"
+          onClick={routeControls.zoomIn}
+          title="放大"
+        >
+          <Icon name="zoomIn" size={15} />
+        </button>
+        <button
+          type="button"
+          className="panel-icon-btn"
+          onClick={routeControls.fitAll}
+          title="看全树"
+        >
+          <Icon name="expand" size={15} />
+        </button>
+      </div>
+    </>
+  );
+
+  const actorNames = useMemo(() => {
+    const map: Record<string, string> = { ...stage.names };
+    for (const c of detail?.cast ?? []) {
+      if (c.id && c.name) map[c.id] = c.name;
+    }
+    return map;
+  }, [detail, stage.names]);
+
+  // 剧本视图：台词 + 谱系里的布景指令（换景/立绘/音效/插图/效果/停止点）按演出顺序铺开。
+  // 名字表给它，立绘行的 id 才显示成人名。
+  const scriptFeed = useMemo(
+    () => buildScriptFeed(lineage.view, transcript, actorNames),
+    [lineage.view, transcript, actorNames],
+  );
+
+  const theme = playThemeColor(
+    playId,
+    (detail?.play as { themeColor?: string } | undefined)?.themeColor,
+  );
+
+  if (view === "workshop") {
+    return (
+      <div
+        className="screen stage-screen studio-screen"
+        style={
+          {
+            "--play-accent": theme.accent,
+            "--play-accent-glow": theme.glow,
+            "--play-accent-dark": theme.dark,
+          } as React.CSSProperties
+        }
+      >
+        <WorkshopPane
+          playId={playId}
+          playTitle={playTitle}
+          onBackToStage={goStage}
+          tab={workshopTab}
+          onTab={setWorkshopTab}
+          subscribe={subscribeWorkshop}
+          subscribeImageResult={subscribeImageResult}
+          subscribeAssetReady={subscribeAssetReady}
+          spriteFocus={spriteFocus}
+          onManageSprites={manageSprites}
+          send={stage.send}
+          connected={stage.connected}
+          voice={{
+            on: voiceOn,
+            available: stage.voiceAvailable,
+            onToggle: toggleVoice,
+          }}
+          continueCard={{ on: continueCard, onToggle: toggleContinueCard }}
+          queue={
+            <PromptQueuePanel
+              items={stage.queue}
+              jobs={stage.pendingJobs}
+              dock
+              onEdit={(id, text) => stage.sendPromptEdit(id, text)}
+              onDelete={(id) => stage.sendPromptDelete(id)}
+              onDismissJob={(jobId) => stage.sendPendingDismiss(jobId)}
+            />
+          }
+        />
+        <ToastStack toasts={toast.toasts} onDismiss={toast.dismiss} />
+      </div>
+    );
+  }
 
   return (
-    <div className="screen stage-screen">
-      <StageShell
-        view={view}
-        onView={goView}
-        title={detail?.play.title ?? playId}
-        saveName={saveName}
-        onSaves={() => navigate(`/play/${playId}/saves`)}
-        onExit={() => navigate(`/play/${playId}`)}
-        tools={tools}
-      >
-        {view === "stage" ? (
-          index ? (
-            <StageTheater
-              visual={playback.visual}
-              playback={playback}
-              live={stage.state === "streaming"}
-              fresh={stage.fresh}
-              names={stage.names}
-              index={index}
-              voiceAvailable={stage.voiceAvailable}
-              voiceOn={voiceOn}
-              onToggleVoice={toggleVoice}
-              busy={busy}
-              targets={targets}
-              onView={setView}
-              onPrompt={stage.sendPrompt}
-              onFork={fork}
-              onEdit={edit}
-              onGenerateCg={(instruction, opts) =>
-                stage.send({
-                  type: "generate_cg",
-                  ...(instruction ? { instruction } : {}),
-                  ...(opts?.referenceCharacters?.length ? { referenceCharacters: opts.referenceCharacters } : {}),
-                  ...(opts?.useHistory !== undefined ? { useHistory: opts.useHistory } : {}),
-                  // null 也要发出去：那是「在回看但这一行还没进谱系」，服务端据此明确拒绝
-                  ...(opts?.anchorNodeId !== undefined ? { anchorNodeId: opts.anchorNodeId } : {}),
-                })
-              }
-              onReplay={replay}
-              voiceState={voiceState}
-              onUnlock={unlockVoice}
-              onTurbo={setTurbo}
-              canContinue={canContinue}
-              onContinue={continueBeat}
-              overlay={
-                /* 回看中屏幕上摆的是历史台词，那一刻的决定早就做过了——
-                   选项摆出来会让人以为还能改，点了就是拿旧决定去覆盖新分支。 */
-                playback.scrubbed ? null : stage.fresh ? (
-                  /* 空树：摆一个「开演」，等玩家按第一下。第一轮不在连接建立时自动开局。 */
-                  <div className="choice-overlay" role="group" aria-label="开演">
-                    <div className="choices">
-                      <button type="button" className="choice" onClick={stage.sendStart}>
-                        <Icon name="play" />
-                        <span className="choice-text">开演</span>
-                      </button>
-                    </div>
-                  </div>
-                ) : panelReady ? (
-                  <StopPanel
-                    stop={stage.stop}
-                    isNoStop={stage.isNoStop}
-                    showContinue={affordance.showContinueCard}
-                    disabled={busy}
-                    seenChoices={seenChoices}
-                    onChoice={stage.sendChoice}
-                    onFree={stage.sendFree}
-                    onContinue={stage.sendContinue}
-                    onPolish={(text) => api.polish(playId, text).then(({ text: polished }) => polished)}
-                  />
-                ) : null
-              }
-            />
-          ) : (
-            <div className="overlay">正在连接舞台…</div>
-          )
-        ) : view === "backlog" ? (          rawHistory ? (
+    <div
+      className={`screen stage-screen${view !== "stage" ? " panel-open" : ""}`}
+      style={
+        {
+          "--play-accent": theme.accent,
+          "--play-accent-glow": theme.glow,
+          "--play-accent-dark": theme.dark,
+        } as React.CSSProperties
+      }
+    >
+      {index ? (
+        <StageTheater
+          visual={playback.visual}
+          playback={playback}
+          live={stage.state === "streaming"}
+          fresh={stage.fresh}
+          names={actorNames}
+          index={index}
+          voiceAvailable={stage.voiceAvailable}
+          voiceOn={voiceOn}
+          onToggleVoice={toggleVoice}
+          busy={busy}
+          targets={targets}
+          onView={goView}
+          onExit={exitToTitle}
+          onPrompt={stage.sendPrompt}
+          onFork={fork}
+          onEdit={edit}
+          onGenerateCg={(instruction, opts) =>
+            stage.send({
+              type: "generate_cg",
+              ...(instruction ? { instruction } : {}),
+              ...(opts?.referenceCharacters?.length
+                ? { referenceCharacters: opts.referenceCharacters }
+                : {}),
+              ...(opts?.useHistory !== undefined
+                ? { useHistory: opts.useHistory }
+                : {}),
+              // null 也要发出去：那是「在回看但这一行还没进谱系」，服务端据此明确拒绝
+              ...(opts?.anchorNodeId !== undefined
+                ? { anchorNodeId: opts.anchorNodeId }
+                : {}),
+            })
+          }
+          onReplay={replay}
+          voiceState={voiceState}
+          onUnlock={unlockVoice}
+          onTurbo={setTurbo}
+          canContinue={canContinue}
+          onContinue={continueBeat}
+          overlay={
+            /* 回看中屏幕上摆的是历史台词，那一刻的决定早就做过了——
+               选项摆出来会让人以为还能改，点了就是拿旧决定去覆盖新分支。 */
+            playback.scrubbed ? null : stage.fresh ? (
+              /* 空树：摆一个「开始」，等玩家按第一下。第一轮不在连接建立时自动开局。 */
+              <div className="choice-overlay" role="group" aria-label="开始">
+                <button
+                  type="button"
+                  className="choice choice-start"
+                  onClick={stage.sendStart}
+                >
+                  <span className="choice-num">
+                    <Icon name="play" size={13} />
+                  </span>
+                  <span className="choice-text">开始故事</span>
+                </button>
+              </div>
+            ) : panelReady ? (
+              <StopPanel
+                stop={stage.stop}
+                isNoStop={stage.isNoStop}
+                showContinue={affordance.showContinueCard}
+                disabled={busy}
+                seenChoices={seenChoices}
+                onChoice={stage.sendChoice}
+                onFree={stage.sendFree}
+                onContinue={stage.sendContinue}
+                onPolish={(text) =>
+                  api
+                    .polish(playId, text)
+                    .then(({ text: polished }) => polished)
+                }
+              />
+            ) : null
+          }
+        />
+      ) : (
+        <div className="stage-connecting">
+          <span className="stage-connecting-spinner" aria-hidden />
+          正在连接…
+        </div>
+      )}
+
+      {/* 舞台左上角：两段式模式切换（舞台 ⇄ 工坊）+ 常驻模式状态（NSFW/静音/Auto） */}
+      {view === "stage" && (
+        <div className="stage-top-left-cluster">
+          <div
+            className="stage-view-segmented"
+            role="tablist"
+            aria-label="模式切换"
+          >
+            <button
+              type="button"
+              className="stage-seg-btn is-active"
+              onClick={() => setView("stage")}
+              title="沉浸舞台模式"
+              aria-selected={true}
+            >
+              <Icon name="drama" size={13} />
+              <span>舞台</span>
+            </button>
+            <button
+              type="button"
+              className="stage-seg-btn"
+              onClick={() => setView("workshop")}
+              title="创作工坊模式"
+              aria-selected={false}
+            >
+              <Icon name="workshop" size={13} />
+              <span>工坊</span>
+            </button>
+          </div>
+          <StageModes
+            nsfw={stage.nsfw}
+            muted={stage.voiceAvailable && !voiceOn}
+            auto={playback.auto}
+          />
+        </div>
+      )}
+
+      {/* 待注入队列 + 正在生成的事：空则不占地方，浮在画面右上导演栏下方 */}
+      {view === "stage" && (
+        <PromptQueuePanel
+          items={stage.queue}
+          jobs={stage.pendingJobs}
+          onEdit={(id, text) => stage.sendPromptEdit(id, text)}
+          onDelete={(id) => stage.sendPromptDelete(id)}
+          onDismissJob={(jobId) => stage.sendPendingDismiss(jobId)}
+        />
+      )}
+
+      {view === "backlog" && (
+        <StagePanel
+          variant="drawer"
+          title="回顾"
+          subtitle={saveName ?? undefined}
+          actions={backlogActions}
+          onClose={goStage}
+        >
+          {rawHistory ? (
             <HistoryView playId={playId} nonce={historyNonce} />
           ) : (
             <BacklogView
               entries={playback.history}
-              names={stage.names}
+              feed={scriptFeed}
+              names={actorNames}
               headKey={playback.current?.key ?? null}
               busy={busy}
               voiceAvailable={stage.voiceAvailable}
@@ -691,12 +956,23 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
               onEdit={edit}
               onFork={fork}
             />
-          )
-        ) : view === "route" ? (
+          )}
+        </StagePanel>
+      )}
+
+      {view === "route" && (
+        <StagePanel
+          variant="full"
+          className="route-panel"
+          title="路线"
+          subtitle={playTitle}
+          actions={routeActions}
+          onClose={goStage}
+        >
           <RouteTree
             view={lineage.view}
             error={lineage.error}
-            names={stage.names}
+            names={actorNames}
             busy={busy}
             onReload={lineage.reload}
             ops={routeOps}
@@ -704,50 +980,29 @@ export function StageScreen({ playId, search }: { playId: string; /** 路由上�
             lines={stage.lines}
             onControls={setRouteControlsStable}
           />
-        ) : view === "cg" ? (
-          <CgView playId={playId} nonce={cgNonce} />
-        ) : (
-          <WorkshopPane
+        </StagePanel>
+      )}
+
+      {view === "cg" && (
+        <StagePanel
+          variant="full"
+          title="画廊"
+          subtitle={playTitle}
+          onClose={goStage}
+        >
+          <CgView
             playId={playId}
-            tab={workshopTab}
-            onTab={setWorkshopTab}
-            subscribe={subscribeWorkshop}
-            subscribeImageResult={subscribeImageResult}
-            subscribeAssetReady={subscribeAssetReady}
-            spriteFocus={spriteFocus}
-            onManageSprites={manageSprites}
-            send={stage.send}
-            connected={stage.connected}
-            voice={{ on: voiceOn, available: stage.voiceAvailable, onToggle: toggleVoice }}
-            continueCard={{ on: continueCard, onToggle: toggleContinueCard }}
+            nonce={cgNonce}
+            onBackToStage={goStage}
+            onOpenWorkshop={() => {
+              setWorkshopTab("assets");
+              goView("workshop");
+            }}
           />
-        )}
+        </StagePanel>
+      )}
 
-        {/* 提示一律走浮层 toast，不占内容区顶部的一条 */}
-        <ToastStack toasts={toast.toasts} onDismiss={toast.dismiss} />
-
-        {/* 常驻模式标识：左上角、与右上角的排队面板平齐；三种模式全关时整行不渲染 */}
-        {view === "stage" && (
-          <StageModes
-            nsfw={stage.nsfw}
-            muted={stage.voiceAvailable && !voiceOn}
-            auto={playback.auto}
-          />
-        )}
-
-        {/* 待注入队列 + 正在生成的事：空则不占地方。舞台里浮在画面上，工坊里贴内容区底部
-            （工坊右上角是各页自己的头，浮层会压住真按得着的东西） */}
-        {(view === "stage" || view === "workshop") && (
-          <PromptQueuePanel
-            items={stage.queue}
-            jobs={stage.pendingJobs}
-            dock={view === "workshop"}
-            onEdit={(id, text) => stage.sendPromptEdit(id, text)}
-            onDelete={(id) => stage.sendPromptDelete(id)}
-            onDismissJob={(jobId) => stage.sendPendingDismiss(jobId)}
-          />
-        )}
-      </StageShell>
+      <ToastStack toasts={toast.toasts} onDismiss={toast.dismiss} />
     </div>
   );
 }

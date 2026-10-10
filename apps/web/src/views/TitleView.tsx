@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
 import { Icon, Modal, workshopUrl } from "@aivn/stage";
-import { api, coverUrl, readinessAdvice, readinessMissing, type PlayDetail, type SaveInfo } from "../api.js";
+import {
+  api,
+  coverUrl,
+  readinessAdvice,
+  readinessMissing,
+  type PlayDetail,
+  type SaveInfo,
+} from "../api.js";
 import { navigate } from "../router.jsx";
+import { plainSummary, playThemeColor, relativeTime } from "../ui/text.js";
 
-/** Title Screen：背景 + 作品名 + 竖排动词菜单（开始/继续 / 工坊 / 导出 / 删除）。 */
+/**
+ * 标题画面：整屏封面 + 左下剧名 + 右下菜单。
+ *
+ * 菜单只有两层：玩的人按的（继续 / 新的周目 / 周目一览），与写的人按的（工坊、导出、删除）。
+ * 后者压成一排小字，不和「继续」抢视线。缺素材不是门槛，只在菜单底下给一行提示和去处。
+ */
 export function TitleView({ playId }: { playId: string }) {
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [saves, setSaves] = useState<SaveInfo[]>([]);
@@ -12,8 +25,7 @@ export function TitleView({ playId }: { playId: string }) {
   const [starting, setStarting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  // 底图与剧目库封面同一套解析（指定的那张，没有就第一张背景、其次第一张插图）：
-  // 同一张画在两个地方出现，就该由同一个函数说了算
+  // 底图与剧目库封面同一套解析（指定的那张，没有就第一张背景、其次第一张插图）
   const art = detail ? coverUrl(playId, detail.play.cover, assets) : null;
 
   const reload = useCallback((): void => {
@@ -33,9 +45,14 @@ export function TitleView({ playId }: { playId: string }) {
   useEffect(reload, [reload]);
 
   const readiness = detail?.readiness;
-  const missing = readiness ? readinessMissing(readiness) : [];
-  const advice = readiness ? readinessAdvice(readiness) : [];
+  const missing = readiness
+    ? [...readinessMissing(readiness), ...readinessAdvice(readiness)]
+    : [];
   const current = saves.find((s) => s.current) ?? null;
+  const cast = (detail?.cast ?? []).map((c) => c.name ?? c.id).filter(Boolean);
+  const summary = detail
+    ? plainSummary(detail.premise, detail.play.title, 96)
+    : "";
 
   /** 开始新周目：建一棵空树再进舞台，旧档不动。 */
   const startNew = (): void => {
@@ -49,10 +66,6 @@ export function TitleView({ playId }: { playId: string }) {
       });
   };
 
-  const removePlay = (): void => {
-    setConfirmingDelete(true);
-  };
-
   const doRemovePlay = (): void => {
     setConfirmingDelete(false);
     api
@@ -61,96 +74,184 @@ export function TitleView({ playId }: { playId: string }) {
       .catch((e: Error) => setError(e.message));
   };
 
+  // Esc 回剧目库：标题画面是剧目的「门」，退一步就是库
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape" && !confirmingDelete) navigate("/");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirmingDelete]);
+
+  const theme = playThemeColor(
+    playId,
+    (detail?.play as { themeColor?: string } | undefined)?.themeColor,
+  );
+
   return (
-    <div className={`screen title-screen${art ? " has-art" : ""}`}>
-      {art && <img className="title-art" src={art} alt="" />}
+    <div
+      className={`screen title-screen${art ? " has-art" : ""}`}
+      style={
+        {
+          "--play-accent": theme.accent,
+          "--play-accent-glow": theme.glow,
+          "--play-accent-dark": theme.dark,
+        } as React.CSSProperties
+      }
+    >
+      {art ? (
+        <img className="title-art" src={art} alt="" />
+      ) : (
+        <div className="title-art title-art-blank" />
+      )}
+      <div className="title-veil" aria-hidden />
+
+      <header className="title-top">
+        <button
+          type="button"
+          className="title-back"
+          onClick={() => navigate("/")}
+          title="回到剧目库（Esc）"
+        >
+          <Icon name="back" size={15} />
+          <span>剧目库</span>
+        </button>
+      </header>
 
       {error && (
-        <div className="error-banner" role="alert">
+        <div className="error-banner title-error" role="alert">
           {error}
+          <button
+            type="button"
+            className="notice-close"
+            aria-label="收起这条"
+            onClick={() => setError(null)}
+          >
+            <Icon name="close" size={12} />
+          </button>
         </div>
       )}
 
       {detail && (
-        <div className="title-body">
-          <div className="title-text">
+        <>
+          <section className="title-brand">
             <h1 className="title-name">{detail.play.title}</h1>
-            <p className="title-premise">{detail.premise || "（故事前提待补）"}</p>
-            <p className="title-chars">
-              {detail.cast.map((c) => c.name ?? c.id).filter(Boolean).join(" · ") || "（无角色）"}
-            </p>
+            {/* 一行剧情简介：这是玩家挑剧目的唯一线索。人物表不放这儿——
+                知道「谁登场」是玩进去之后的事，摆在门外只是剧透。 */}
+            {summary && <p className="title-premise">{summary}</p>}
+          </section>
 
-            {/* 缺什么都不是门槛，只是「还没有」。没写故事前提照样能开演，
-                剧作家会自由发挥——想让它自由发挥就什么都别写。 */}
-            {missing.length > 0 && (
-              <p className="title-note">
-                还没有{missing.join("、")}。现在开演，剧作家会自己发挥；想要一个确定的世界，去
-                <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "memory"))}>
-                  工坊的「记忆」
-                </button>
-                写「世界与人物设定」。
-              </p>
-            )}
-            {advice.length > 0 && (
-              <p className="title-note">
-                还没有 {advice.join("、")}。可以就这样开演（舞台只有氛围底色，没有立绘的角色不上台），也可以先去
-                <button className="link-btn" onClick={() => navigate(workshopUrl(playId, "assets"))}>
-                  工坊
-                </button>
-                生成底图和定妆照。
-              </p>
-            )}
-          </div>
-
-          {/* 游玩动作与剧目管理分两组：前者是玩家在标题画面上按的，后者是作者的日常操作 */}
-          <div className="title-right">
-            <nav className="title-menu">
-              {/* 没有周目时只显示「开始」，已有周目时只显示「继续」 */}
-              {current ? (
-                <button className="title-item main" onClick={() => navigate(`/play/${playId}/stage`)}>
-                  继续
-                </button>
-              ) : (
-                <button
-                  className="title-item main"
-                  disabled={starting}
-                  onClick={startNew}
-                >
-                  开始
-                </button>
-              )}
-            </nav>
-
-            <div className="title-manage">
-              <button className="title-item sub" onClick={() => navigate(workshopUrl(playId))}>
-                工坊
+          <nav className="title-menu atri-menu" aria-label="标题菜单">
+            {current && (
+              <button
+                type="button"
+                className="atri-item is-continue"
+                onClick={() => navigate(`/play/${playId}/stage`)}
+                autoFocus
+              >
+                <span className="atri-label">CONTINUE</span>
+                <span className="atri-sub">
+                  {current.name} · {relativeTime(current.updatedAt)}
+                </span>
               </button>
-              <a className="title-item sub" href={`/api/plays/${playId}/export`}>
-                导出剧目包
+            )}
+
+            <button
+              type="button"
+              className={`atri-item${!current ? " is-primary" : ""}`}
+              disabled={starting}
+              onClick={startNew}
+              autoFocus={!current}
+            >
+              <span className="atri-label">START</span>
+              {!current && <span className="atri-sub">NEW GAME</span>}
+            </button>
+
+            <button
+              type="button"
+              className={`atri-item${saves.length === 0 ? " is-disabled" : ""}`}
+              disabled={saves.length === 0}
+              onClick={() => navigate(`/play/${playId}/saves`)}
+            >
+              <span className="atri-label">LOAD</span>
+              <span className="atri-sub">{saves.length} SAVES</span>
+            </button>
+
+            <button
+              type="button"
+              className="atri-item"
+              onClick={() => navigate(workshopUrl(playId))}
+            >
+              <span className="atri-label">WORKSHOP</span>
+              <span className="atri-sub">STUDIO</span>
+            </button>
+
+            <button
+              type="button"
+              className="atri-item"
+              onClick={() => navigate("/settings")}
+            >
+              <span className="atri-label">SYSTEM</span>
+              <span className="atri-sub">CONFIG</span>
+            </button>
+
+            <button
+              type="button"
+              className="atri-item"
+              onClick={() => navigate("/")}
+            >
+              <span className="atri-label">EXIT</span>
+              <span className="atri-sub">LIBRARY</span>
+            </button>
+          </nav>
+
+          <footer className="title-footer">
+            <div className="title-ops">
+              <a
+                className="title-op-link"
+                href={`/api/plays/${playId}/export`}
+                title="导出剧目包"
+              >
+                <Icon name="download" size={13} />
+                <span>EXPORT</span>
               </a>
-              <button className="title-item sub" onClick={removePlay}>
-                删除剧目
+              <button
+                type="button"
+                className="title-op-btn danger"
+                onClick={() => setConfirmingDelete(true)}
+                title="删除剧目"
+              >
+                <Icon name="remove" size={13} />
+                <span>DELETE</span>
               </button>
             </div>
-          </div>
-        </div>
-      )}
+            <p className="title-copyright">
+              © AIVN Studio / Engine. All rights reserved.
+            </p>
+          </footer>
 
-      <footer className="title-foot">
-        <button className="ghost-btn" onClick={() => navigate("/")}>
-          <span className="btn-icon">
-            <Icon name="back" size={15} /> 剧目库
-          </span>
-        </button>
-        <span className="title-foot-id">{playId}</span>
-      </footer>
+          {missing.length > 0 && (
+            <div className="title-advice-capsule">
+              <span>未就绪：{missing.join("、")}（可直接开始）</span>
+              <button
+                type="button"
+                className="advice-link"
+                onClick={() => navigate(workshopUrl(playId))}
+              >
+                前往工坊补齐 →
+              </button>
+            </div>
+          )}
+        </>
+      )}
 
       {confirmingDelete && (
         <Modal
           title="删除剧目"
           hint={
             <>
-              删掉「{detail?.play.title ?? playId}」后，剧本、素材与全部 {saves.length} 个周目存档一并消失，无法恢复。
+              「{detail?.play.title ?? playId}」的剧本、素材与全部{" "}
+              {saves.length} 个周目会一并删除，无法恢复。
             </>
           }
           width={440}
@@ -159,12 +260,14 @@ export function TitleView({ playId }: { playId: string }) {
             <>
               <button onClick={() => setConfirmingDelete(false)}>取消</button>
               <button className="primary danger-btn" onClick={doRemovePlay}>
-                确认删除
+                删除
               </button>
             </>
           }
         >
-          <p className="muted small">要删的是这个剧目本身，不是某一个周目。</p>
+          <p className="muted small">
+            只想清掉某一次游玩，去「周目一览」里删那一个周目即可。
+          </p>
         </Modal>
       )}
     </div>

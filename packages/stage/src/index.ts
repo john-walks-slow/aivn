@@ -45,6 +45,8 @@ export type { AssetIndex, AssetIndexOptions, SpritePresentation } from "./assets
 
 export { buildTranscript, editableNodeId } from "./transcript.js";
 export type { TranscriptEntry, TranscriptKind } from "./transcript.js";
+export { buildScriptFeed } from "./scriptFeed.js";
+export type { ScriptDirection, ScriptFeedItem } from "./scriptFeed.js";
 
 export { useGeneratedAssets } from "./generatedAssets.js";
 export type { GeneratedImage } from "./generatedAssets.js";

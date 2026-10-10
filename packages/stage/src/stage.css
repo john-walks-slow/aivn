@@ -53,7 +53,9 @@
   --ink-soft: #5b5348;
   --ink-faint: #9a9081;
   --line: #ded5c4;
-  --accent: #3f6b93; /* 冷蓝 */
+  /* 主题蓝：与界面 --accent 同色相（ATRI 深海天蓝），舞台衬底深，明度提一档。
+     剧目的 theme.css 覆盖 --accent 时，对话框 / 快捷菜单 / 选肢 / 名牌一起换。 */
+  --accent: #2b6fae;
   --accent-ink: #f7fbff;
   --accent-soft: #dde7f0;
   --link: #2f5d7c;
@@ -65,49 +67,63 @@
     system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei",
     sans-serif;
 
-  /* ② 画面（暗色为默认基线；亮/暗两套舞台变量由 useTheme 在运行时改写同一批键） */
-  --stage-bg: #17130f; /* 舞台衬底（图片未到/加载中露出的底） */
-  --dialog-bg: linear-gradient(178deg, rgb(28 24 25 / 0.9), rgb(17 15 17 / 0.94));
-  --dialog-line: rgb(238 226 204 / 0.55);
-  --dialog-ink: #f2ebde;
-  --dialog-ink-soft: #c6bba9; /* 旁白 */
-  --dialog-ink-thought: #a9a6c4; /* 内心独白 */
-  --dialog-ink-faint: rgb(242 235 222 / 0.45); /* 次要提示：「回看中」「已选过」 */
-  /* 失败态的色：pending 面板上的失败行与收起徽标。深底上要够亮才认得出是警号，
-     不用 --ink-faint 那类压暗灰——那一档是「刚完成」，与「挂了」不能混。 */
-  --dialog-bad: #e8917f;
-  /* 浮层上的字一律带一层压暗投影：深底玻璃上这是唯一让字脱开底的办法。
-     浅色舞台底本来就亮，再压一层黑阴影只会糊掉笔画——那边整个置 none。 */
-  --dialog-text-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
-  --dir-text-shadow: 0 1px 2px rgb(0 0 0 / 0.55);
-  /* 浮层键的悬停/点亮底：半透明白，深底上像擦亮一层 */
-  --dialog-hover: rgb(242 235 222 / 0.12);
-  --dialog-veil: rgb(242 235 222 / 0.07);
-  --dialog-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
-  /* 全屏标题卡（<title>）：字色 / 字族 / 投影。对齐五档是剧本里的属性，不进令牌；
-     缺省字族与 --font-ui 同值（写成字面量，便于 dsh-aivn 的皮肤令牌表逐字对表）。 */
-  --title-ink: #f2ebde;
+  /* ② 画面（现代高质感 Galgame 玻璃层） */
+  --stage-bg: #090c12; /* 舞台衬底（图片未到/加载中露出的底） */
+  /* 主题色派生：舞台所有 chrome（台词条 / 快捷菜单 / 选肢 / 名牌描边 / 导演栏）都从
+     --accent 推出来，剧目换皮时只要改 --accent 一处。deep 是压在画面上的实体色，
+     wash 是它乘上 alpha 的雾。 */
+  --stage-accent-deep: color-mix(in srgb, var(--accent) 82%, #04101d);
+  --stage-accent-wash: color-mix(in srgb, var(--stage-accent-deep) 62%, transparent);
+  --stage-accent-edge: color-mix(in srgb, var(--accent) 55%, transparent);
+  --stage-accent-lit: color-mix(in srgb, var(--accent) 45%, #ffffff);
+  /* 舞台 chrome：左上模式切换 / 右上导演栏 / 右下快捷菜单共用的一套「玻璃条」。
+     改这里要同步 apps/web/src/app.css 的 :root（那边是同一组值的另一份，
+     给不在 .stage-root 里的舞台浮层用）。 */
+  --stage-chrome-h: 30px;
+  --stage-chrome-radius: 999px;
+  /* 比对话框更深、更灰：对话框是这场戏的一部分，工具栏是压在画面上的器具 */
+  --stage-chrome-deep: color-mix(in srgb, var(--accent) 52%, #060e1c);
+  --stage-chrome-bg: linear-gradient(180deg,
+    color-mix(in srgb, var(--stage-chrome-deep) 84%, transparent),
+    color-mix(in srgb, var(--stage-chrome-deep) 97%, transparent));
+  --stage-chrome-edge: color-mix(in srgb, var(--accent) 55%, rgba(255, 255, 255, 0.35));
+  --stage-chrome-gloss: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  /* 选肢的两档底：常态是一条压在画面上的白缎带（字走主题色），
+     悬停/选中直接换成主题色的实缎带（字走白）。
+     常态不给主题色底——一排浅蓝条压在画面上会跟立绘抢注意力，
+     主题色这时候由字和悬停态来承担。 */
+  --stage-choice-wash: #ffffff;
+  --stage-choice-solid: color-mix(in srgb, var(--accent) 92%, #ffffff);
+  --dialog-bg: linear-gradient(180deg, rgba(16, 21, 32, 0.86) 0%, rgba(9, 12, 19, 0.95) 100%);
+  --dialog-line: rgba(255, 255, 255, 0.16);
+  --dialog-ink: #f8fafc;
+  --dialog-ink-soft: #cbd5e1; /* 旁白 */
+  --dialog-ink-thought: #c4b5fd; /* 内心独白 */
+  --dialog-ink-faint: rgba(248, 250, 252, 0.55); /* 次要提示：「回看中」「已选过」 */
+  /* 失败态的色：pending 面板上的失败行与收起徽标。深底上要够亮才认得出是警号 */
+  --dialog-bad: #fb7185;
+  --dialog-text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  --dir-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --dialog-hover: rgba(255, 255, 255, 0.12);
+  --dialog-veil: rgba(255, 255, 255, 0.06);
+  --dialog-shadow: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --title-ink: #f8fafc;
   --title-font:
     system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei",
     sans-serif;
   --title-shadow: 0 2px 14px rgb(0 0 0 / 0.72);
-  /* 舞台浮层的圆角：台词条 + 画面上浮的那几块（导演工具栏 / 排队面板 / 侧栏唤出键）。
-     全局 --radius 是 2px（近直角，给页面里的卡片与键），但这几块是压在画面上的
-     「窗」，圆角大一点才跟画面脱开、读得出是浮在上面的一层。 */
-  --stage-radius: 10px;
-  /* 名牌跟着舞台深浅走：深底上是深牌浅字，浅底上是浅牌深字。压在背景图上时两种都得
-     自己带底，所以不取透明。描边两套主题都看得见，取固定的中性灰，不跟主色。 */
-  --nameplate-bg: rgb(24 21 23 / 0.92);
-  --nameplate-ink: #f2ebde;
-  --nameplate-line: rgb(238 226 204 / 0.4);
-  /* 亮色舞台（useTheme 的 stageLight）把 --stage-bg 压到 #fdfdfd：剧本还没配景时
-     露出的是空白画布，不会被读成「画面加载不出来」。这里的默认基线走暗色。 */
-  --sprite-dim: 0.55; /* 非发言人立绘压暗强度（.theater-sprite.dim 用） */
-  --choice-bg: rgb(24 21 23 / 0.92);
-  --choice-line: rgb(238 226 204 / 0.4);
-  --choice-ink: #f2ebde;
-  --choice-active-bg: color-mix(in srgb, var(--accent) 40%, transparent);
-  --choice-scrim: linear-gradient(180deg, transparent 24%, rgb(10 8 10 / 0.55));
+  /* 舞台浮层的圆角：台词条 + 画面上浮的那几块（导演工具栏 / 排队面板） */
+  --stage-radius: 12px;
+  /* 说话人名牌：白底 + 角色主题描边 + 优雅黑字 */
+  --nameplate-bg: rgba(255, 255, 255, 0.98);
+  --nameplate-ink: #0f172a;
+  --nameplate-line: var(--character-color, var(--accent, #3b82f6));
+  --sprite-dim: 0.55; /* 非发言人立绘压暗强度 */
+  --choice-bg: linear-gradient(180deg, rgba(22, 28, 42, 0.9) 0%, rgba(13, 17, 26, 0.96) 100%);
+  --choice-line: rgba(255, 255, 255, 0.18);
+  --choice-ink: #f8fafc;
+  --choice-active-bg: color-mix(in srgb, var(--accent) 35%, rgba(22, 28, 42, 0.95));
+  --choice-scrim: linear-gradient(180deg, transparent 20%, rgba(8, 10, 16, 0.65) 100%);
   --shadow: 0 6px 18px rgb(34 24 16 / 0.16);
 
   /* ③ 运动 */
@@ -235,6 +251,60 @@ html[data-stage-theme="light"] .stage-root {
   --title-shadow: 0 2px 12px rgb(255 255 255 / 0.6);
 }
 
+/* ── 浅色舞台：把 ATRI 那几块表面接回主题令牌 ──────────────────
+   台词条 / 正文 / 名牌 / 选肢在深色下是「白字压在深玻璃上」，浅色下必须整体翻过来：
+   底板做实（浅色没有压住画面的余地，半透明会被背景亮部吃掉），字走深墨。
+   深色那套一个字节都不动——下面每条都只挂在 html[data-stage-theme="light"] 下。
+   （重设计时这几块换成了写死的白字与主题色派生底，主题令牌没人读了，
+   于是「舞台主题」只剩几处小提示字在跟着变——这一节就是把它接回去。） */
+/* 底板照深色那套的结构（自上而下渐浓），只是换成纸白——直接铺 --dialog-bg
+   那条实心渐变会在画面上切出一条横线，像贴了张纸 */
+html[data-stage-theme="light"] .stage-root .theater-dialog {
+  background: linear-gradient(180deg,
+    rgb(252 250 246 / 0) 0%,
+    rgb(252 250 246 / 0.8) 18%,
+    rgb(240 236 228 / 0.94) 58%,
+    rgb(240 236 228 / 0.97) 100%);
+}
+
+html[data-stage-theme="light"] .stage-root .dialog-text {
+  color: var(--dialog-ink);
+  text-shadow: none;
+}
+
+html[data-stage-theme="light"] .stage-root .dialog-text.narrate {
+  color: var(--dialog-ink-soft);
+}
+
+html[data-stage-theme="light"] .stage-root .dialog-text.thought {
+  color: var(--dialog-ink-thought);
+}
+
+/* 名牌：浅色下翻成深墨 + 一圈白晕（深色那套是白字 + 深晕，两边对称） */
+html[data-stage-theme="light"] .stage-root .dialog-name {
+  color: var(--nameplate-ink);
+  text-shadow:
+    0 0 2px rgb(255 255 255 / 0.95),
+    0 0 8px rgb(255 255 255 / 0.85),
+    0 1px 3px rgb(255 255 255 / 0.9);
+}
+
+/* 选肢：浅色下换成浅底深字的一张实心卡（沿用 --choice-* 那三档） */
+html[data-stage-theme="light"] .stage-root .choice {
+  background: var(--choice-bg);
+  border: 1px solid var(--choice-line);
+  border-radius: 2px;
+  color: var(--choice-ink);
+}
+
+html[data-stage-theme="light"] .stage-root .choice:hover:not(:disabled),
+html[data-stage-theme="light"] .stage-root .choice:focus-visible {
+  background: var(--choice-active-bg);
+  border-color: var(--accent);
+  color: var(--ink);
+  text-shadow: none;
+}
+
 /* ── 舞台 ─────────────────────────────── */
 .theater {
   position: relative;
@@ -334,26 +404,31 @@ html[data-stage-theme="light"] .stage-root {
    一道描边 + 圆角。窗框内侧原先还走一道细白线（想造玻璃厚度），深色下那道线
    读起来是「窗里还有一圈框」，已删。 */
 .theater-dialog {
+  /* ATRI 台词条：底部通栏，透明 → 底边深海蓝的轻渐变，无边框、无硬分割、无大阴影 */
   position: absolute;
   z-index: 12;
-  left: 2.4%;
-  right: 2.4%;
-  max-width: 1180px;
-  margin: 0 auto;
-  bottom: calc(2.4% + var(--safe-b));
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  margin: 0;
   box-sizing: border-box;
-  background: var(--dialog-bg);
-  border: 1px solid var(--dialog-line);
-  border-radius: var(--stage-radius);
-  padding: 22px 30px 14px;
-  /* 预留三行（见 .dialog-text 的 min-height）：1~3 行的台词来回换时高度恒定，画面不再顶一下沉一下 */
-  min-height: 168px;
+  min-height: 25%;
+  padding: 52px 18% calc(40px + var(--safe-b, 0px)) 18%;
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
   gap: 4px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--stage-accent-deep) 0%, transparent) 0%,
+    color-mix(in srgb, var(--stage-accent-deep) 52%, transparent) 26%,
+    color-mix(in srgb, var(--stage-accent-deep) 78%, transparent) 62%,
+    color-mix(in srgb, var(--stage-accent-deep) 92%, transparent) 100%);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
   cursor: pointer;
-  box-shadow: var(--dialog-shadow);
-  backdrop-filter: blur(10px) saturate(1.05);
 }
 
 .theater-bg {
@@ -670,7 +745,12 @@ html[data-stage-theme="light"] .stage-root {
    浏览器就认成新动画从 0% 播起。**必须写成时间**（`-0.001s`）：delay 与 iteration-count
    位置相邻，写成裸数字就成了 `520ms ease 1 1` 这种两个数挨着，浏览器判不出哪个是哪个，
    整条 animation 被静默丢弃（animation-name 变 none，动画永远不启动）。 */
-.theater-sprite.acting {
+/* 选择器带两个状态类：`.entering` 是常驻的（见 StageTheater 的注释，它不摘），
+   而它的 animation 规则在本文件里排在后面——同为 (0,2,0) 时后写者赢，
+   于是行为词的 animation 会被入场动画整条盖掉、八个词一个都不演。
+   这里把特异性抬到 (0,3,0)，入场/退场期间也照样按行为词走。 */
+.theater-sprite.entering.acting,
+.theater-sprite.leaving.acting {
   --scale: 1;
   animation: var(--sprite-act) var(--act-ms) var(--move-ease) var(--act-nonce, 0s) 1;
 }
@@ -1090,50 +1170,54 @@ html[data-stage-theme="light"] .stage-root {
   font-size: 14px;
 }
 
-/* 说话人：台词条上方、跟窗连着的一块牌。它不是贴纸，是窗的一部分——所以
-   底色、描边、字色全都取台词条自己那套（--dialog-*），只把上缘两个角留圆、
-   下缘开口不描边：上圆下方 + 左侧描边，看起来就是从这块窗上长出来的一截。
-   骑在窗沿上会把名字切成两半，所以是「贴着」，不是「压着」。 */
+/* 说话人名牌：白底 + 角色主题描边，清晰典雅，不遮挡立绘 */
 .dialog-name {
+  /* 名牌：悬浮在正文左上方、无底色，纯白粗黑体 + 柔和深色外晕（ATRI「夏生」那一枚） */
   position: absolute;
-  bottom: 100%;
-  left: 10px;
-  padding: 4px 16px 5px;
-  border: 1px solid var(--dialog-line);
-  border-bottom: none;
-  border-radius: var(--stage-radius) var(--stage-radius) 0 0;
-  background: var(--dialog-bg);
-  color: var(--dialog-ink);
-  backdrop-filter: blur(10px) saturate(1.05);
+  top: 6px;
+  left: calc(18% - 2.2em);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: #ffffff;
   font-family: var(--font-ui);
-  font-weight: 600;
-  font-size: 13px;
-  letter-spacing: 0.14em;
-  line-height: 1.7;
+  font-weight: 800;
+  font-size: clamp(18px, 1.55vw, 28px);
+  letter-spacing: 0.06em;
+  line-height: 1.3;
   white-space: nowrap;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.85),
+    0 0 8px color-mix(in srgb, var(--stage-accent-deep) 85%, transparent),
+    0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .dialog-text {
   margin: 0;
   font-family: var(--font-ui);
-  font-size: 17px;
-  line-height: 2;
+  font-size: clamp(16px, 1.45vw, 26px);
+  font-weight: 600;
+  line-height: 1.6;
   letter-spacing: 0.03em;
   white-space: pre-wrap;
-  /* 恒定三行高：短台词不再让文本框忽高忽低（超过三行的长台词才自然长高） */
-  min-height: 6em;
-  color: var(--dialog-ink);
-  text-shadow: var(--dialog-text-shadow);
+  min-height: 3.2em;
+  color: #ffffff;
+  /* 1.5px 黑色微描边 + 一层软影：ATRI 正文在亮底/暗底上都靠它立住 */
+  -webkit-text-stroke: 0;
+  text-shadow:
+    1px 0 0 rgba(0, 0, 0, 0.55), -1px 0 0 rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(0, 0, 0, 0.55), 0 -1px 0 rgba(0, 0, 0, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.55);
 }
 
-/* 旁白只弱色，不居中：居中是排版式的分型，一段话被居中之后每行起点都在变，
-   眼睛要重新找行首，读长旁白反而费劲。跟台词一样左对齐，靠颜色分型就够。 */
 .dialog-text.narrate {
-  color: var(--dialog-ink-soft);
+  color: rgba(241, 245, 249, 0.92);
 }
 
 .dialog-text.thought {
-  color: var(--dialog-ink-thought);
+  color: #c4b5fd;
   font-style: italic;
 }
 
@@ -1185,7 +1269,23 @@ html[data-stage-theme="light"] .stage-root {
 }
 
 .dialog-next {
-  animation: bob 1.2s ease-in-out infinite;
+  display: inline-block;
+  color: var(--accent, #60a5fa);
+  font-size: 10px;
+  text-shadow: 0 0 8px var(--accent, #60a5fa);
+  animation: dialog-bob 1.2s ease-in-out infinite;
+}
+
+@keyframes dialog-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateY(3px);
+    opacity: 1;
+  }
 }
 
 .dialog-rewind {
@@ -1314,9 +1414,13 @@ html[data-stage-theme="light"] .stage-root {
 
 /* 「（继续）」那类无内容卡：走同一形制，只是不给主色标尺 */
 .choice.ghost {
-  color: var(--dialog-ink-soft);
-  font-size: 14px;
-  border-left-color: var(--choice-line);
+  color: color-mix(in srgb, var(--accent) 72%, #0b2545);
+  font-size: 14.5px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--stage-choice-wash) 0%, transparent) 0%,
+    color-mix(in srgb, var(--stage-choice-wash) 58%, transparent) 22%,
+    color-mix(in srgb, var(--stage-choice-wash) 58%, transparent) 78%,
+    color-mix(in srgb, var(--stage-choice-wash) 0%, transparent) 100%);
 }
 
 /* ── 漏搬的规则（2026-10-05 用 scripts/port-stage-css.py 从 app.css 抽出）───────
@@ -1360,20 +1464,21 @@ button.link-btn {
 
 .choice-overlay {
   position: absolute;
-  z-index: 15;
+  z-index: 25;
   inset: 0;
   display: flex;
   flex-direction: column;
-
-  justify-content: safe center;
-  gap: 12px;
-  padding-top: calc(var(--dir-h, 46px) + 14px + env(safe-area-inset-top, 0px));
-  padding-right: 16px;
-  padding-bottom: calc(var(--dialog-h, 168px) + 3% + var(--safe-b, 0px));
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  /* 选肢落在画面中下段：上缘让开立绘的脸（约画面上三成），下缘让开台词条 */
+  padding-top: max(calc(var(--dir-h, 46px) + 24px + env(safe-area-inset-top, 0px)), 30vh);
+  padding-bottom: calc(var(--dialog-h, 180px) + 28px + var(--safe-b, 0px));
   padding-left: 16px;
+  padding-right: 16px;
   overflow-y: auto;
-  animation: choice-in 0.22s ease-out;
   pointer-events: none;
+  animation: choice-in 0.22s ease-out;
 }
 
 .choice-overlay .choice {
@@ -1381,7 +1486,7 @@ button.link-btn {
 }
 
 .choice-text {
-  flex: 1;
+  flex: 0 1 auto;
 }
 
 @keyframes choice-in {
@@ -1391,39 +1496,108 @@ button.link-btn {
   }
 }
 
+/* 选肢卡：经典 Galgame 横向缎带光效卡片 */
 .choice {
+  /* ATRI 选项：居中一条半透明白缎带，深海蓝字，两端渐隐，无圆角大阴影 */
   position: relative;
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  width: min(560px, 86vw);
-  min-height: 54px;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: min(760px, 80vw);
+  min-height: 50px;
   margin: 0 auto;
-  padding: 12px 18px 12px 20px;
-  text-align: left;
+  padding: 12px 40px;
+  text-align: center;
   font-family: var(--font-ui);
-  font-size: 16px;
-  line-height: 1.7;
-  letter-spacing: 0.03em;
-  background: var(--choice-bg);
-  border: 1px solid var(--choice-line);
-  border-left: 3px solid var(--accent);
-  border-radius: 1px;
-  color: var(--choice-ink);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
-  transition:
-    transform var(--hover-ms) ease,
-    background-color var(--hover-ms) ease,
-    border-color var(--hover-ms) ease;
+  font-size: clamp(15px, 1.25vw, 20px);
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--stage-choice-wash) 0%, transparent) 0%,
+    color-mix(in srgb, var(--stage-choice-wash) 88%, transparent) 14%,
+    color-mix(in srgb, var(--stage-choice-wash) 94%, transparent) 50%,
+    color-mix(in srgb, var(--stage-choice-wash) 88%, transparent) 86%,
+    color-mix(in srgb, var(--stage-choice-wash) 0%, transparent) 100%);
+  border: none;
+  border-radius: 0;
+  color: color-mix(in srgb, var(--accent) 92%, #030e22);
+  text-shadow: none;
+  backdrop-filter: none;
+  box-shadow: none;
+  animation: choice-card-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 50ms);
+  transition: background 0.16s ease, color 0.16s ease, transform 0.2s ease;
+  cursor: pointer;
 }
 
-.choice:hover:not(:disabled) {
-  background: var(--choice-active-bg);
-  border-color: var(--accent);
-  border-left-color: var(--accent);
-  color: var(--choice-ink);
-  transform: translateX(6px);
+.choice-overlay .choice:nth-child(2) { --i: 1; }
+.choice-overlay .choice:nth-child(3) { --i: 2; }
+.choice-overlay .choice:nth-child(4) { --i: 3; }
+.choice-overlay .choice:nth-child(5) { --i: 4; }
+.choice-overlay .choice:nth-child(6) { --i: 5; }
+.choice-overlay .choice:nth-child(n + 7) { --i: 6; }
+
+@keyframes choice-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.choice:hover:not(:disabled),
+.choice:focus-visible {
+  transform: none;
+  color: #ffffff;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--stage-choice-solid) 0%, transparent) 0%,
+    color-mix(in srgb, var(--stage-choice-solid) 88%, transparent) 14%,
+    color-mix(in srgb, var(--stage-choice-solid) 96%, transparent) 50%,
+    color-mix(in srgb, var(--stage-choice-solid) 88%, transparent) 86%,
+    color-mix(in srgb, var(--stage-choice-solid) 0%, transparent) 100%);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 45%, #ffffff);
+  box-shadow: none;
+}
+
+.choice:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.choice:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* 序号徽：典雅数字光标 */
+.choice-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: color-mix(in srgb, var(--accent) 55%, #0b2545);
+  font-family: "Montserrat", "Inter", var(--font-ui);
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.choice:hover:not(:disabled) .choice-num,
+.choice:focus-visible .choice-num {
+  background: none;
+  color: rgba(255, 255, 255, 0.85);
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice {
+    animation: none;
+  }
 }
 
 .choices {
@@ -1468,6 +1642,11 @@ button.primary:hover:not(:disabled) {
   color: var(--panel);
 }
 
+/* ── 游戏系统窗：导演动作的输入与选择（轻盈融入、HUD 质感） ───────
+   舞台是深色的、流动的。弹窗不再是套框套层、顶着厚胶囊的网页对话框，
+   而是一块沉浸在舞台之上的精致微透 HUD 控制终端：
+   单层通透琉璃底板 + 顶部微光微边 + 内嵌极简标题栏 + 舒展充裕的多行输入区。 */
+
 .modal-scrim {
   position: fixed;
   inset: 0;
@@ -1475,92 +1654,383 @@ button.primary:hover:not(:disabled) {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px 16px calc(20px + var(--safe-b, 0px));
-  background: rgb(10 10 14 / 0.42);
-  animation: choice-in 0.16s ease-out;
+  padding: 24px 16px calc(24px + var(--safe-b, 0px));
+  background: radial-gradient(circle at 50% 45%, rgba(4, 12, 24, 0.58) 0%, rgba(1, 4, 10, 0.85) 100%);
+  backdrop-filter: blur(8px) saturate(1.15);
+  animation: modal-scrim-in 0.18s ease-out;
+}
+
+@keyframes modal-scrim-in {
+  from { opacity: 0; }
 }
 
 .modal-card {
   box-sizing: border-box;
+  position: relative;
   max-width: 100%;
-
-  max-height: min(78dvh, 640px);
+  max-height: min(84dvh, 660px);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px 18px 14px;
-  overflow-y: auto;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 18px 48px rgb(0 0 0 / 0.3);
+  padding: 18px 22px 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, rgba(255, 255, 255, 0.18));
+  border-radius: 8px;
+  background: linear-gradient(175deg,
+    color-mix(in srgb, var(--accent) 18%, rgba(6, 15, 30, 0.94)) 0%,
+    color-mix(in srgb, var(--accent) 10%, rgba(3, 8, 18, 0.97)) 100%);
+  backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 0 40px color-mix(in srgb, var(--accent) 24%, transparent),
+    0 24px 56px rgba(0, 0, 0, 0.65);
+  --panel: rgba(5, 14, 28, 0.65);
+  --bg: rgba(2, 6, 14, 0.5);
+  --line: color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.15));
+  --ink: #f8fafc;
+  --ink-soft: rgba(220, 235, 250, 0.8);
+  --ink-faint: rgba(180, 205, 230, 0.55);
+  --ink-muted: rgba(200, 220, 240, 0.68);
+  --accent-soft: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: var(--ink);
+  animation: modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
 }
 
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+/* 顶部微光线：通透科技质感的关键细部 */
+.modal-top-glow {
+  position: absolute;
+  top: 0;
+  left: 20px;
+  right: 20px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 80%, #ffffff), transparent);
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+/* 弹窗头部：整洁内嵌，不再顶在卡片外部 */
 .modal-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 6px;
+}
+
+.modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 左侧光点标点 */
+.modal-pip {
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 80%, #ffffff);
+  box-shadow: 0 0 8px var(--accent);
 }
 
 .modal-title {
   margin: 0;
-  font-size: 15.5px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
 
+/* 微小英文类别标 */
+.modal-kicker {
+  font-family: var(--font-mono, monospace);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: color-mix(in srgb, var(--accent) 65%, #ffffff);
+  opacity: 0.65;
+  transform: translateY(1px);
+}
+
+/* 关闭按钮：极简通透 */
+/* 关闭键与宿主那套同形：一个圆、无边框，悬停浮出一层同色薄底 */
 .modal-x {
-  flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
-  border-radius: var(--radius);
-  background: none;
-  color: var(--ink-faint);
-  font-size: 14px;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 13px;
   line-height: 1;
+  cursor: pointer;
+  transition: background-color var(--hover-ms) ease, color var(--hover-ms) ease;
 }
 
 .modal-x:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
 }
 
+.modal-x:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  color: #ffffff;
+}
+
+/* 说明文字：温和收敛 */
 .modal-hint {
-  margin: -4px 0 0;
-  color: var(--ink-soft);
-  font-size: 12.5px;
+  margin: 0 0 12px;
+  color: rgba(200, 222, 245, 0.72);
+  font-size: 12px;
   line-height: 1.5;
 }
 
+/* 内容区：告别臃肿的“内嵌黑凹槽”，回归自然舒展的无边框布局 */
 .modal-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
 }
 
+/* 提示窗工具条：引导/分岔 与 OOC 并列一行，像精密的控制台 */
+.prompt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.guide-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.14));
+  border-radius: 6px;
+  background: rgba(3, 8, 18, 0.55);
+}
+
+.guide-seg .seg-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--hover-ms) ease;
+}
+
+.guide-seg .seg-btn:hover {
+  color: #ffffff;
+}
+
+.guide-seg .seg-btn.active {
+  background: color-mix(in srgb, var(--accent) 70%, rgba(255, 255, 255, 0.15));
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* OOC 快捷模式切换键 */
+.ooc-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  background: rgba(3, 8, 18, 0.45);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all var(--hover-ms) ease;
+}
+
+.ooc-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transition: all var(--hover-ms) ease;
+}
+
+.ooc-shortcut:hover {
+  color: #ffffff;
+  border-color: color-mix(in srgb, var(--accent) 45%, rgba(255, 255, 255, 0.2));
+}
+
+.ooc-shortcut.on {
+  border-color: color-mix(in srgb, var(--accent) 65%, #ffffff);
+  background: color-mix(in srgb, var(--accent) 25%, rgba(3, 8, 18, 0.6));
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.ooc-shortcut.on .ooc-indicator {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+/* 输入区：大面积舒展输入 */
+.director-input {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.director-input textarea,
+.modal-body textarea,
+.route-modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 108px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.14));
+  border-radius: 6px;
+  background: rgba(2, 7, 16, 0.6);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.62;
+  letter-spacing: 0.015em;
+  outline: none;
+  resize: vertical;
+  transition: border-color var(--hover-ms) ease, box-shadow var(--hover-ms) ease;
+}
+
+.director-input textarea:focus,
+.modal-body textarea:focus,
+.route-modal-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 72%, #ffffff);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* 占位符：0.32 的白压在近黑输入框上实测只有 2.75:1（"写一句…"那种提示读不清）。
+   0.5 提到 ~4.6:1，仍然是「比正文淡」的层次。 */
+.director-input textarea::placeholder,
+.modal-body textarea::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* 生图选项组 */
+.cg-options-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 底部操作条：轻盈通透 */
 .modal-foot {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 22%, rgba(255, 255, 255, 0.08));
 }
 
-.modal-foot .free-back {
-  margin: 0 auto 0 0;
+.modal-foot > .free-back {
+  margin-right: auto;
 }
 
-.free-box {
-  display: flex;
-  gap: 8px;
+/* 键盘提示：放置在左侧 */
+.modal-card:has(textarea)::after {
+  content: "Ctrl / ⌘ + Enter 提交";
+  position: absolute;
+  bottom: 22px;
+  left: 22px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
 }
 
-.free-box input {
-  flex: 1;
+/* 窗内按钮：利落有力的游戏按键 */
+.modal-card button:not(.modal-x):not(.seg-btn):not(.ooc-shortcut):not(.ref-picker-chip) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all var(--hover-ms) ease;
+}
+
+.modal-card button:not(.modal-x):not(.seg-btn):not(.ooc-shortcut):not(.ref-picker-chip):hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+}
+
+/* 主按键（发送 / 确认 / 生成）：主题色明澈质感 */
+.modal-card button.primary:not(.modal-x) {
+  min-width: 96px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, #ffffff);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent) 84%, #ffffff) 0%,
+    color-mix(in srgb, var(--accent) 92%, #06152b) 100%);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 2px 10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.modal-card button.primary:not(.modal-x):hover:not(:disabled) {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent) 60%, #ffffff) 0%,
+    color-mix(in srgb, var(--accent) 84%, #041022) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 16px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.modal-card button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+/* 危险动作按钮（删除） */
+.modal-card button.danger-btn:not(.modal-x) {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+.modal-card button.danger-btn:not(.modal-x):hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.35);
+  border-color: rgba(239, 68, 68, 0.7);
+  color: #ffffff;
 }
 
 .ref-picker-grid {
@@ -1696,63 +2166,165 @@ button.primary:hover:not(:disabled) {
 }
 
 .dialog-foot {
+  /* 底缘：只剩左下的状态提示；快捷菜单被挪到右下角独立成条 */
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  margin-top: 4px;
-  padding-top: 7px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-height: 0;
 }
 
 .dialog-hint-foot {
-  min-height: 18px;
+  min-height: 20px;
 }
 
 .dialog-options {
+  /* ATRI 快捷菜单：屏幕右下角贴边的一条细胶囊，深海蓝底 + 1px 冰蓝描边，高 ~28px */
+  position: absolute;
+  right: 0;
+  bottom: var(--safe-b, 0px);
   display: flex;
   align-items: center;
   gap: 2px;
-  flex: 0 0 auto;
-  margin: -6px -12px -8px 0;
+  height: var(--stage-chrome-h, 30px);
+  padding: 0 10px 0 14px;
+  border: 1px solid var(--stage-chrome-edge, color-mix(in srgb, var(--accent) 55%, rgba(255, 255, 255, 0.35)));
+  border-right: none;
+  border-bottom: none;
+  border-radius: 15px 0 0 0;
+  background: var(--stage-chrome-bg, linear-gradient(180deg,
+    color-mix(in srgb, var(--stage-chrome-deep) 84%, transparent),
+    color-mix(in srgb, var(--stage-chrome-deep) 97%, transparent)));
+  box-shadow: var(--stage-chrome-gloss, inset 0 1px 0 rgba(255, 255, 255, 0.14));
 }
 
-.dialog-options .dir-btn {
-  text-transform: uppercase;
+.quick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  font: inherit;
+  font-family: "Montserrat", "Inter", var(--font-ui);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-shadow: none;
+  cursor: pointer;
+  transition: color 0.14s ease, background-color 0.14s ease;
+  user-select: none;
 }
 
-/* 导演工具栏：舞台右上角的一排导演动作（提示 / 改写 / 重写 / 生图 / 重听）。
-   底、描边、字色全跟台词条同一套深色玻璃：这几块都是压在画面上的「窗」，
-   用浅色卡片会跟画面里的亮处打架，也跟下面的台词条不像一家人。 */
+.quick-btn:hover:not(:disabled) {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+  text-shadow: 0 0 8px rgba(140, 210, 255, 0.9);
+}
+
+.quick-btn.tgl-on {
+  color: var(--accent, #38bdf8);
+  text-shadow: 0 0 8px var(--accent, #38bdf8);
+}
+
+.quick-btn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.quick-sep {
+  display: inline-block;
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.22);
+  margin: 0 2px;
+}
+
+/* 导演工具栏：横着放在右上角，微晶胶囊底，极简克制 */
 .theater-director {
   position: absolute;
   z-index: 45;
-  top: calc(8px + env(safe-area-inset-top, 0px));
-  right: 10px;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: 16px;
+  bottom: auto;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0;
-  /* 左上角是侧栏唤出键（38px + 左右各 8px），这一排不能横过去盖住它。
-     宁可自己换行——换行是往下长，不会压别人的键。 */
-  max-width: calc(100% - 60px);
-  padding: 0 3px;
-  border: 1px solid var(--dialog-line);
-  border-radius: var(--stage-radius);
-  background: var(--dialog-bg);
-  box-shadow: var(--dialog-shadow);
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  height: var(--stage-chrome-h, 30px);
+  box-sizing: border-box;
+  padding: 0 4px;
+  /* 一层很浅的主题色玻璃：导演栏是压在画面上的器具，不是这场戏的一部分。
+     主题色留给台词条、选肢与右下角快捷菜单——那是玩家在读、在选的东西；
+     只有某一档开着（`.on`）时才在这里点亮主题色。 */
+  border: 1px solid var(--stage-chrome-quiet-edge, rgba(255, 255, 255, 0.45));
+  border-radius: var(--stage-chrome-radius, 999px);
+  background: var(--stage-chrome-quiet-bg, linear-gradient(180deg,
+    color-mix(in srgb, var(--accent, #3b82f6) 13%, rgb(255 255 255 / 0.95)),
+    color-mix(in srgb, var(--accent, #3b82f6) 24%, rgb(255 255 255 / 0.84))));
+  backdrop-filter: blur(12px);
+  box-shadow: var(--stage-chrome-gloss, inset 0 1px 0 rgba(255, 255, 255, 0.14)), 0 2px 10px rgba(0, 0, 0, 0.35);
+  opacity: 0.94;
+  transition: opacity 0.2s ease;
+}
+
+.theater-director:hover,
+.theater-director:focus-within,
+.theater-director:has(.on) {
+  opacity: 1;
 }
 
 .theater-director .dir-btn {
-  color: var(--dialog-ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: calc(var(--stage-chrome-h, 30px) - 6px);
+  padding: 0 9px;
+  border: none;
+  border-radius: var(--stage-chrome-radius, 999px);
+  background: transparent;
+  /* 浅玻璃上写深字：掺了 accent 的墨蓝，跟这层底同源 */
+  color: var(--stage-chrome-quiet-ink, color-mix(in srgb, var(--accent, #3b82f6) 38%, #142138));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background-color 0.14s ease, color 0.14s ease;
 }
 
 .theater-director .dir-btn:hover:not(:disabled) {
-  background: var(--dialog-hover);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent);
+  color: color-mix(in srgb, var(--accent, #3b82f6) 55%, #0d1830);
 }
 
 .theater-director .dir-btn.on {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent) 82%, #ffffff);
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.theater-director .dir-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+@keyframes voice-blink {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .dir-btn {
@@ -1835,31 +2407,204 @@ button.primary:hover:not(:disabled) {
   cursor: pointer;
 }
 
-/* 移动端（≤720px）：台词条与选肢卡的紧凑尺寸，安全区由上面的 env() 兜 */
-@media (max-width: 720px) {
-  .theater-bar {
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 6px 10px;
-  }
-  .theater-scene {
-    order: 10;
-    width: 100%;
-  }
+/* 台词条在「窄」和「矮」两种情况下都要换一副骨架：竖屏手机（≤720px）与
+   横屏手机 / 矮窗口（≤460px 高）。桌面那副是「25% 高 + 52px 上留白」的固定带，
+   放到 390px 高的视口里，一行正文就被挤出画面了。
+   改成本地流式排布：姓名 / 正文从上往下写（与桌面同一个「字起在窗顶」的手感），
+   底缘那一行（状态提示 + 快捷菜单）用 margin-top: auto 压到窗底，
+   正文再长也只是把这条底板顶高；超长的还能滚。 */
+@media (max-width: 720px), (max-height: 460px) {
   .theater-dialog {
-    --dialog-pad-x: 14px;
-    padding: 10px var(--dialog-pad-x) 8px;
-    min-height: 96px;
+    /* 这两条是兜底值，真实尺寸由下面按「竖屏 / 矮视口」两端分别给：同一个百分比在
+       两块屏上差得远——30% 在 844 高的竖屏是 253px（够五行，正文悬在窗顶），
+       在 390 高的横屏只有 117px（一行多，窗又偏矮）。 */
+    min-height: 30%;
+    max-height: 62%;
+    padding: 40px 16px calc(6px + var(--safe-b, 0px));
+    justify-content: flex-start;
+    gap: 6px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
+
+  .dialog-name {
+    position: static;
+    left: auto;
+    top: auto;
+    margin-bottom: 2px;
+    font-size: 18px;
+  }
+
   .dialog-text {
     font-size: 15.5px;
+    min-height: 0;
   }
+
+  /* 底缘钉在窗底：正文只有一行时，快捷菜单不跟着往上浮；
+     正文长到顶满窗（超过 62%）时窗自己滚，这一行 sticky 住不被滚出视野——
+     否则一句超长台词会把回顾/路线/画廊那一排按钮顶到几百像素以外。
+     它底下必须有底：正文从下面经过时要被这层深色渐变盖住。 */
+  .dialog-foot {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-top: auto;
+    gap: 8px;
+    background: linear-gradient(180deg,
+      color-mix(in srgb, var(--stage-accent-deep) 0%, transparent) 0%,
+      color-mix(in srgb, var(--stage-accent-deep) 88%, transparent) 55%,
+      color-mix(in srgb, var(--stage-accent-deep) 97%, transparent) 100%);
+  }
+
+  /* 状态提示（回看中 / ▼ / 点击舞台继续生成）有内容时独占一行，不跟九个快捷入口
+     抢横向空间——它一挤，Title 就掉到第二行。`:has(> *)` 只在它真有东西时成立，
+     空的时候连那一行都不出现。 */
+  .dialog-foot:has(.dialog-hint-foot > *) {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .dialog-foot:has(.dialog-hint-foot > *) .dialog-hint-foot {
+    flex: 1 1 100%;
+  }
+
+  /* 快捷菜单不再浮在右下角压在字上：它是底缘那一行的右半，跟着正文一起流。
+     七个入口在 390 宽里排不满一行就折行，不硬挤。 */
+  .dialog-options {
+    position: static;
+    right: auto;
+    bottom: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    height: auto;
+    row-gap: 4px;
+    margin-left: auto;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  .quick-btn {
+    min-width: 28px;
+    height: 30px;
+    padding: 0 7px;
+    font-size: 13px;
+  }
+}
+
+/* 竖屏：窗高与上留白照桌面那副比例（25% + 52px）。40px 上留白落在 253px 的窗里
+   只有一成六，正文贴着窗顶、下面空一大片；按桌面比例放下来，正文落在窗高两成处，
+   与桌面一眼是同一个构图。 */
+@media (max-width: 720px) and (min-height: 461px) {
+  .theater-dialog {
+    min-height: 25%;
+    padding-top: 52px;
+  }
+
+  /* 有名牌时上留白收小：名牌自己就是贴着窗顶的那一行（桌面也是这么排的——
+     名牌 absolute 在窗顶 6px 处），再留 52px 只会把它和正文一起压到窗中间。
+     名牌的字重与外晕本来就为「压在透明窗顶」准备。 */
+  .theater-dialog:has(.dialog-name) {
+    padding-top: 10px;
+  }
+}
+
+/* 横屏手机 / 矮窗口：屏幕矮，25% 只有九十来像素。按「上留白 40 + 两行正文 + 底缘」
+   的绝对高度反推，给到 36%（390 高时 140px）——一行正文时也不至于只剩一条窄缝。 */
+@media (max-height: 460px) {
+  .theater-dialog {
+    min-height: 36%;
+    padding-top: 40px;
+  }
+
+  .theater-dialog:has(.dialog-name) {
+    padding-top: 8px;
+  }
+}
+
+/* 超窄屏（≤420px）：快捷菜单有九个入口（Auto / 前后翻 / Log / Route / CG / 隐藏 /
+   工坊 / Title），按默认 7px 内边距加起来比 360 还宽十来像素，Title 就被挤到第二行。
+   收窄内边距与间距，并把台词条左右边距收一档：一行排得下，也留得住状态提示的位置。 */
+@media (max-width: 420px) {
+  .theater-dialog {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .dialog-options {
+    gap: 1px;
+  }
+
+  .quick-btn {
+    padding: 0 5px;
+    font-size: 12.5px;
+  }
+}
+
+/* 320 宽的老机型（iPhone SE 一代那一档）：再收一档，九个入口也排得下 */
+@media (max-width: 350px) {
+  .dialog-options {
+    gap: 0;
+  }
+
+  .quick-btn {
+    padding: 0 4px;
+    font-size: 12px;
+  }
+}
+
+/* 手机窄屏的 chrome：导演栏与左上角「舞台 ⇄ 工坊」并排一行（图标化之后总共只占
+   两百多像素，390 宽的屏还剩一百多的空档），模式标识落到这一行下面。
+   横屏手机够宽，本来就同排。安全区一律由 env() 兜。 */
+@media (max-width: 720px) {
+  /* 与左上角「舞台 ⇄ 工坊」同一行、同一高度：两条 chrome 本来就该并排，
+     图标化之后总共只占 267px，390 宽的屏还剩一百多像素的空档。
+     max-width 兜住「多一颗重听键」和更窄的屏——超了让它自己横滑，不压到切换器上。 */
+  .theater-director {
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    right: 10px;
+    left: auto;
+    max-width: calc(100% - 172px);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .theater-director::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 模式标识（NSFW / 静音 / 自动）落到这一行下面 */
+  .stage-modes {
+    top: calc(46px + env(safe-area-inset-top, 0px));
+    left: 12px;
+  }
+
+  /* 手机上导演栏只留图标：四个动词的宽度差不多是半条画面，而这四个动作都有
+     aria-label / title，图标（对话/铅笔/重写/素材）各自认得出来。腾出的宽度
+     也让「提示 改写 重写 生图 重听」不至于挤成两行。 */
+  .theater-director .dir-label {
+    display: none;
+  }
+
+  .theater-director .dir-btn {
+    padding: 0 8px;
+  }
+
+  .stage-mode-nsfw {
+    font-size: 11px;
+  }
+
   .choice-overlay {
     gap: 8px;
     padding-right: 12px;
     padding-left: 12px;
+    padding-bottom: calc(var(--dialog-h, 180px) + 16px + var(--safe-b, 0px));
   }
+
   .choice {
+    width: min(760px, 100%);
     min-height: 46px;
     padding: 10px 12px;
   }
@@ -1885,21 +2630,66 @@ button.primary:hover:not(:disabled) {
 }
 
 .backlog-list, .backlog-empty, .backlog-panel > .muted {
-  max-width: 860px;
+  max-width: 780px;
   margin-inline: auto;
   width: 100%;
 }
 
-.backlog-list {
-  padding: 6px;
-  list-style: none;
+/* 剧本里的舞台指令行：比台词低一档的灰字，靠一条竖线挂在正文左侧——
+   它是「怎么演的」，不该和谁说了什么抢注意力，但一页剧本里不能没有它。 */
+.bl-dir {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 4px 0 4px 3px;
+  padding: 3px 8px 3px 10px;
+  border-left: 2px solid color-mix(in srgb, var(--dialog-ink-faint, rgb(255 255 255 / 0.3)) 70%, transparent);
+  color: var(--dialog-ink-faint);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
-.backlog-list b {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--accent);
-  font-size: 12.5px;
+.bl-dir-label {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--dialog-hover, rgb(255 255 255 / 0.08));
+  letter-spacing: 0.06em;
+}
+
+.bl-dir-detail {
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", monospace);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.bl-dir-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  flex-basis: 100%;
+}
+
+.bl-dir-option {
+  padding: 1px 7px;
+  border: 1px solid var(--dialog-line, rgb(255 255 255 / 0.22));
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+/* 停止点与本轮收束这类「等你」的位置：给一点强调，眼睛扫得到 */
+.bl-dir-stop {
+  border-left-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  color: var(--dialog-ink-soft);
+}
+
+.backlog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0;
+  list-style: none;
 }
 
 .director-input {
@@ -1984,50 +2774,120 @@ button.primary:hover:not(:disabled) {
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
 }
 
+/* 条目：一条台词一块。名字一行、正文一行，动词默认收起来，
+   鼠标停上去 / 键盘走进去才浮到右上角——流水要干净，操作要还在。 */
+.bl-line,
+.bl-narrate,
+.bl-input,
+.bl-player {
+  position: relative;
+  padding: 10px 14px;
+  border-radius: 6px;
+  transition: background-color var(--hover-ms) ease;
+}
+
+.bl-line:hover,
+.bl-input:hover,
+.bl-player:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.bl-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 20px;
+  margin-bottom: 3px;
+}
+
+.bl-actor {
+  color: color-mix(in srgb, var(--accent) 52%, #ffffff);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-shadow: var(--dialog-text-shadow);
+}
+
+/* 语音重播：名字左边一枚圆形徽章，点一下就出声 */
+.bl-voice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 78%, transparent);
+  color: #ffffff;
+  cursor: pointer;
+  transition: background-color var(--hover-ms) ease, transform var(--hover-ms) ease;
+}
+
+.bl-voice:hover {
+  background: var(--accent);
+  transform: scale(1.1);
+}
+
+/* 动词组：浮在条目右上角，静止时不占视觉重量 */
 .bl-tools {
+  position: absolute;
+  top: 6px;
+  right: 8px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 4px 6px 8px;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--hover-ms) ease;
+}
+
+.bl-line:hover > .bl-tools,
+.bl-line:focus-within > .bl-tools,
+.bl-input:hover > .bl-tools,
+.bl-input:focus-within > .bl-tools {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 触屏没有 hover：动词组常驻，否则功能够不着 */
+@media (hover: none) {
+  .bl-tools { opacity: 1; pointer-events: auto; }
 }
 
 .bl-tool {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: 30px;
-  padding: 5px 11px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
-  color: var(--ink-soft);
+  gap: 4px;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, rgba(255, 255, 255, 0.2));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 42%, rgba(6, 14, 26, 0.85));
+  backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.92);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.3;
   cursor: pointer;
   white-space: nowrap;
-  transition:
-    background-color var(--hover-ms) ease,
-    color var(--hover-ms) ease,
-    border-color var(--hover-ms) ease;
+  transition: background-color var(--hover-ms) ease, color var(--hover-ms) ease;
 }
 
 .bl-tool:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
 }
 
 .bl-tool:disabled {
-  color: var(--ink-faint);
-  background: var(--bg);
+  opacity: 0.45;
   cursor: default;
 }
 
 .bl-edit {
   display: flex;
   gap: 6px;
-  padding: 4px 6px 0;
+  padding: 6px 0 0;
 }
 
 .bl-edit input {
@@ -2041,22 +2901,63 @@ button.primary:hover:not(:disabled) {
    原文照抄，只在元素级选择器上加 `:where(.stage-root)` 圈作用域——`:where()`
    特异性为零，不改它与 `.choice` 这类类规则之间的胜负关系。 */
 
+/* 正文：大号、深描边。压在任何亮度的画面上都要读得清（CLANNAD 那条流水）。 */
 .bl-text {
-  padding: 6px 8px;
-  border-radius: calc(var(--radius) - 2px);
-  color: var(--ink);
-  font-size: 14.5px;
-  line-height: 1.7;
+  margin: 0;
+  color: #ffffff;
+  font-size: 17px;
+  line-height: 1.62;
+  letter-spacing: 0.02em;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 14px rgba(0, 0, 0, 0.55);
 }
 
-.bl-text.current {
-  background: var(--accent-soft);
-  outline: 1px solid var(--accent);
-}
-
-.bl-player .bl-text b, .bl-input .bl-text {
-  color: var(--ink-faint);
+/* 旁白：不是谁在说话，用轻微斜体与降一档的亮度区分 */
+.bl-narrate .bl-text {
+  color: rgba(255, 255, 255, 0.82);
   font-style: italic;
+}
+
+/* 玩家自己的话：主题色左线，读起来是「我插进去的那句」 */
+.bl-input .bl-text,
+.bl-player .bl-text {
   padding-left: 12px;
-  border-left: 2px solid var(--line);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* 正在看的那一句：主题色左线 + 一层很淡的主题底色 */
+.bl-line.is-current,
+.bl-narrate.is-current,
+.bl-input.is-current {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.bl-line.is-current::before,
+.bl-narrate.is-current::before,
+.bl-input.is-current::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+
+
+
+
+
+/* 弹窗底部的按键在手机上抬一档：32px 的方块对指头偏小，而这一排里坐着
+   「确认删除」这种按错回不来的动作。单独成一个块、放在文件末尾，
+   是为了不和上面那几段窄屏规则抢位置（同一份文件有多个写者）。 */
+@media (max-width: 720px) {
+  .modal-foot button {
+    min-height: 40px;
+    padding: 0 16px;
+  }
 }

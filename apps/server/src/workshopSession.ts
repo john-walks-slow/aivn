@@ -1,4 +1,5 @@
 import { readPlayReadiness, renderReadiness } from "@aivn/agent";
+import { rawIfRewritten, userFacingError } from "./errors.js";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type {
@@ -306,7 +307,12 @@ export class WorkshopSession {
       // 必须落进 threads——收束后的 snapshot 会带着它重放，否则前端一收到 history
       // 就清空现场，这些只会闪一下就没了，刷新后连闪的资格都没有。
       const settled = this.settleAssets(parts);
-      const message = error instanceof Error ? error.message : String(error);
+      const raw = error instanceof Error ? error.message : String(error);
+      // 内部机制（超时、连接断）抛出来的串（AbortError / Request aborted / fetch failed）
+      // 对用户没有信息量，换成一句人话，原文留给日志；认不出的照旧透传。
+      const message = userFacingError(raw);
+      const rest = rawIfRewritten(raw);
+      if (rest) console.warn("[aivn] 工坊这一轮失败：", rest);
       const activeId = this.runningThreadId ?? this.activeId ?? threadId ?? "";
       if (settled.parts.length > 0 || settled.images.length > 0) {
         const note =

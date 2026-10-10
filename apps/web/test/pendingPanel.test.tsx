@@ -31,21 +31,21 @@ function openPanel(jobs: PendingJob[], onDismissJob = vi.fn()) {
  * 收起成徽标时也要一眼看出有失败（那几行不会自己消失）。
  */
 describe("PromptQueuePanel 失败项", () => {
-  it("收起态：有失败就上警号图标，徽标也标成 failed", () => {
-    const view = render(
+  it("收起态：有失败就说「N 项失败」，状态点转成告警色", () => {
+    render(
       <PromptQueuePanel
         items={[]}
-        jobs={[job({ id: "img:cg:x", kind: "cg", label: "CG cg_x", state: "failed" })]}
+        jobs={[job({ id: "bg:1", kind: "bg", label: "背景", state: "failed", error: "额度用尽" })]}
         onEdit={() => {}}
         onDelete={() => {}}
         onDismissJob={() => {}}
       />,
     );
-    const badge = view.container.querySelector(".prompt-queue-badge");
+    const badge = document.querySelector(".prompt-queue-badge");
     expect(badge?.className).toContain("failed");
-    // 收起时是「出事了」的唯一线索，徽标得自己认得出来
-    expect(badge?.querySelector(".lucide-triangle-alert")).not.toBeNull();
-    expect(badge?.textContent).toContain("1");
+    // 收起态是「出事了」唯一看得见的地方：文字要说清几项，点要换成告警色
+    expect(badge?.textContent).toContain("失败");
+    expect(badge?.querySelector(".status-indicator-dot.is-failed")).not.toBeNull();
   });
 
   it("没有失败项时徽标照旧：只报在忙的几类，不挂警号", () => {

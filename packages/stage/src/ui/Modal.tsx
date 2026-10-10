@@ -23,14 +23,21 @@ import type { ReactNode } from "react";
  */
 export function Modal({
   title,
+  kicker = "DIRECTOR",
   hint,
   onClose,
   dismissible = true,
   children,
   footer,
-  width = 520,
+  width = 560,
 }: {
   title: string;
+  /**
+   * 标题右边那枚小字标签。默认 `DIRECTOR`（导演工具那几个弹窗的本色）。
+   * 传 `null` 表示这个弹窗是**玩家自己**的动作（选肢里的自由输入、删周目这类），
+   * 不该挂引擎词——玩家界面不放「导演/演出/引擎」这类内部说法。
+   */
+  kicker?: string | null;
   /** 一句话说明这个动作会做什么（放在标题下，不是 tooltip）。 */
   hint?: ReactNode;
   onClose: () => void;
@@ -41,7 +48,7 @@ export function Modal({
   dismissible?: boolean;
   children: ReactNode;
   footer?: ReactNode;
-  /** 卡片宽度。自由输入给窄一点，插一句给宽一点。 */
+  /** 卡片宽度。内容多（参考立绘、多行输入）就给宽一点。 */
   width?: number;
 }) {
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -50,9 +57,9 @@ export function Modal({
   // 导演栏的「OOC：」快捷前缀排在输入框前面，抢先拿到焦点就等于要先按一下 Tab。
   useEffect(() => {
     const card = cardRef.current;
-    const target = card?.querySelector<HTMLElement>("input, textarea, button");
+    const target = card?.querySelector<HTMLElement>("textarea, input, button");
     target?.focus();
-    if (target instanceof HTMLInputElement) target.select();
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) target.select();
   }, []);
 
   useEffect(() => {
@@ -90,11 +97,16 @@ export function Modal({
         ref={cardRef}
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="modal-top-glow" aria-hidden />
         <header className="modal-head">
-          <h2 className="modal-title">{title}</h2>
+          <div className="modal-title-group">
+            <span className="modal-pip" aria-hidden />
+            <h2 className="modal-title">{title}</h2>
+            {kicker && <span className="modal-kicker">{kicker}</span>}
+          </div>
           {dismissible && (
             <button type="button" className="modal-x" onClick={onClose} aria-label="关闭">
-              ✕
+              <span aria-hidden>✕</span>
             </button>
           )}
         </header>

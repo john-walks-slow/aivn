@@ -5,6 +5,7 @@ import {
   DEFAULT_SPRITE_FRAMING,
   DEFAULT_SPRITE_STATURE,
   SPRITE_FRAMING_ASPECT,
+  spriteAspectRatio,
   spriteDeclarationOf,
   type ActorAnchor,
   type CharacterDocument,
@@ -198,7 +199,7 @@ export interface GeneratedPlayAsset {
   /** 立绘抠底**前**原片的留底路径（`media-cache/sprite-sources/…`）；没有留底则缺省。 */
   sourcePath?: string;
   /** 刚跑过的抠底体检（只有抠底路径会带）：前景占比与主体高度，回执据此提示「是不是抠穿了」。 */
-  cutout?: { coverage: number; figureHeight: number };
+  cutout?: { coverage: number; figureTop: number; figureHeight: number };
 }
 
 /**
@@ -250,6 +251,9 @@ interface AssetSpec {
   /** 立绘级取景（不含差分覆盖）：自动补的定妆照按它出，不按当前差分那档。
    *  定妆照是所有差分的垫图基准，一个「全身主体 + 一条 closeup 差分」不该把基准也变成胸像。 */
   baseFraming?: SpriteFraming;
+  /** 抠图量出来的落位指标（头顶留白 / 人物像素高）：写进素材表的立绘级与差分级。 */
+  figureTop?: number;
+  figureHeight?: number;
   /** 解析后的显式参考图列表（按传入顺序）。 */
   explicitReferences?: ResolvedReference[];
   /** 参考图里的立绘主体（如果参考图中有角色）。 */
@@ -373,10 +377,18 @@ export class PlayAssets {
     // 这里只把本层的 IO 口（`PlayFiles` 白名单 + 剧目锁 + notify）接上去。
     // 候选不抠底（P5-c）：立绘的透明那一刀在**入库**时补上——入库那张必须是透明 PNG，
     // 舞台靠 alpha 叠在场景上。
-    const imageOverride =
+    const cut =
       spec.kind === "sprite"
-        ? { bytes: (await cutout(await readDraftImage(this.deps.store.dir, draft.draftId, draft.imageExt), resolveTuning())).data, ext: ".png" }
-        : undefined;
+        ? await cutout(await readDraftImage(this.deps.store.dir, draft.draftId, draft.imageExt), {
+            aspectRatio: spriteAspectRatio(spec.framing),
+            ...resolveTuning(),
+          })
+        : null;
+    // 抠图量出的头顶留白与人物高度只能借这一格进 adoptDraft → declareSprite：
+    // 入库是那条路，素材表里没有第二个写口。
+    const imageOverride = cut
+      ? { bytes: cut.data, ext: ".png", figureTop: cut.figureTop, figureHeight: cut.figureHeight }
+      : undefined;
     const adopted = await adoptDraft(
       {
         playDir: this.deps.store.dir,
@@ -499,10 +511,15 @@ export class PlayAssets {
         spriteId: request.target.spriteId ?? request.target.name,
         variant: request.target.variant ?? "neutral",
       });
-      const { data, coverage, figureHeight } = await cutout(await this.readSpriteSource(spec), tuning);
-      const cutoutInfo = { coverage, figureHeight };
+      const { data, coverage, figureTop, figureHeight } = await cutout(await this.readSpriteSource(spec), {
+        aspectRatio: spriteAspectRatio(spec.framing),
+        ...tuning,
+      });
+      const cutoutInfo = { coverage, figureTop, figureHeight };
       if (!output) {
         const asset = await this.persist(spec, data, ".png");
+        // 原地重抠改了头顶留白：素材表里的两个指标要跟着更新，否则舞台仍按旧值摆位。
+        await this.declareSprite({ ...spec, figureTop, figureHeight }, "workshop");
         return { ...asset, autoNeutral: false, absPath: this.deps.files.absoluteOf(asset.path), cutout: cutoutInfo };
       }
       const existed = existsSync(this.deps.files.absoluteOf(output));
@@ -523,7 +540,8 @@ export class PlayAssets {
     if (!output) throw new Error("抠底要 output（本宿主没有候选区：透明 PNG 写到哪里请显式给一个 assets/ 下的路径）");
     const read = await this.readSource(source, "抠底的源图");
     const existed = existsSync(this.deps.files.absoluteOf(output));
-    const { data, coverage, figureHeight } = await cutout(read.bytes, tuning);
+    // 路径分支拿不到取景声明，画幅走缺省（full = 9:16），与改动前一致。
+    const { data, coverage, figureTop, figureHeight } = await cutout(read.bytes, tuning);
     const rel = await this.deps.files.writeBinary(output, data);
     return {
       kind: rel.startsWith("assets/backgrounds/") ? "background" : rel.startsWith("assets/cg/") ? "cg" : "sprite",
@@ -532,7 +550,7 @@ export class PlayAssets {
       absPath: this.deps.files.absoluteOf(rel),
       replaced: existed,
       autoNeutral: false,
-      cutout: { coverage, figureHeight },
+      cutout: { coverage, figureTop, figureHeight },
     };
   }
 
@@ -598,8 +616,13 @@ export class PlayAssets {
     if (!(await this.existingPath(spec.kindPath, spec.stem))) {
       throw new Error(`${spec.spriteId}/${spec.stem} 还没有抠底图，先 generate_image 出图再来重抠。`);
     }
-    const { data, coverage, figureHeight } = await cutout(await this.readSpriteSource(spec), resolveTuning(tuning));
-    return { ...(await this.persist(spec, data, ".png")), autoNeutral: false, cutout: { coverage, figureHeight } };
+    const { data, coverage, figureTop, figureHeight } = await cutout(await this.readSpriteSource(spec), {
+      aspectRatio: spriteAspectRatio(spec.framing),
+      ...resolveTuning(tuning),
+    });
+    // 重抠就是重新量一次头顶：素材表跟着更新，否则舞台还照旧值摆。
+    await this.declareSprite({ ...spec, figureTop, figureHeight }, "workshop");
+    return { ...(await this.persist(spec, data, ".png")), autoNeutral: false, cutout: { coverage, figureTop, figureHeight } };
   }
 
   private async readSpriteSource(spec: AssetSpec): Promise<Buffer> {

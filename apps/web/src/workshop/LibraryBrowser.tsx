@@ -142,7 +142,7 @@ export function LibraryBrowser({
 
       {error && (
         <div className="error-banner" role="alert">
-          {error}
+          {error}<button type="button" className="notice-close" aria-label="收起这条" onClick={() => setError(null)}><Icon name="close" size={12} /></button>
         </div>
       )}
 

@@ -78,27 +78,39 @@ export function PromptQueuePanel({
   if (jobs.length === 0 && items.length === 0) return null;
 
   if (!open) {
-    // 收起态的徽标：分类图标照旧，有失败就压一枚 alert 在最前——收起时是唯一能看出
-    // 「出事了」的地方，那一行不会自己退场，徽标也不该若无其事地报个数。
     const failed = jobs.some((job) => job.state === "failed");
-    const icons = [
-      ...new Set(jobs.filter((job) => job.state !== "failed").map((job) => JOB_ICON[job.kind])),
-    ];
-    if (failed) icons.unshift("alert");
-    if (waiting.length > 0) icons.push("chat");
+    const runningJobs = jobs.filter((job) => job.state === "running");
+    let summaryText = "";
+    if (failed) {
+      summaryText = `${jobs.filter((j) => j.state === "failed").length} 项失败`;
+    } else if (runningJobs.length > 0) {
+      const first = runningJobs[0];
+      const kindNames: Record<string, string> = {
+        beat: "剧作家创作中",
+        bg: "背景生成中",
+        cg: "插图生成中",
+        sprite: "立绘生成中",
+        voice: "语音合成中",
+        bgm: "配乐生成中",
+      };
+      const name = first ? kindNames[first.kind] : "任务执行中";
+      summaryText = `${name ?? "任务执行中"}${runningJobs.length > 1 ? ` (${runningJobs.length})` : ""}`;
+    } else if (waiting.length > 0) {
+      summaryText = `${waiting.length} 条提示待注入`;
+    } else {
+      summaryText = `已就绪 (${rows.length + waiting.length})`;
+    }
+
     return (
       <button
         type="button"
-        className={`prompt-queue-badge${failed ? " failed" : ""}${dock ? " prompt-queue-docked" : ""}`}
+        className={`prompt-queue-badge is-capsule${failed ? " failed" : ""}${dock ? " prompt-queue-docked" : ""}`}
         onClick={() => setOpen(true)}
-        title={failed ? "有生成项失败了，点开看" : "看看正在生成什么"}
+        title={failed ? "有生成项失败了，点击展开详情" : "点击展开生成队列与待注入列表"}
       >
-        <span className="prompt-queue-badge-icons">
-          {icons.map((name) => (
-            <Icon key={name} name={name} />
-          ))}
-        </span>
-        <span>{rows.length + waiting.length}</span>
+        <span className={`status-indicator-dot${failed ? " is-failed" : " is-running"}`} />
+        <span className="prompt-queue-text">{summaryText}</span>
+        <Icon name="down" size={13} />
       </button>
     );
   }

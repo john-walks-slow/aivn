@@ -30,6 +30,10 @@ apps/desktop/src-tauri/binaries/
 
 # 本地验收截图
 .shots/
+# 开发过程中的实拍截图（每轮验证几十张 PNG，累积已 200MB+）：本机材料，不进 git。
+# 要复现就照 docs/features/ 里各轮的说明重跑 scripts/capture-ui.mjs。
+docs/screenshots/
+e2e/shots/
 # playwright-cli 会话产物
 .playwright-cli/
 # 素材管线的跑批产物（scripts/gen_*.py 的输出）不是仓库内容，跑一遍就有。

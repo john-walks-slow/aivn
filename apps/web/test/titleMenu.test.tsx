@@ -34,21 +34,21 @@ describe("TitleView 菜单项", () => {
     vi.restoreAllMocks();
   });
 
-  it("没有周目时：只显示「开始」，不显示「继续」「周目」「开始新周目」", async () => {
+  it("没有周目时：只有 START，没有 CONTINUE / LOAD", async () => {
     vi.spyOn(api, "listSaves").mockResolvedValue([]);
 
     render(<TitleView playId="demo" />);
 
     await waitFor(() => {
-      expect(screen.getByText("开始")).toBeTruthy();
+      expect(screen.getByText("START")).toBeTruthy();
     });
 
-    expect(screen.queryByText("继续")).toBeNull();
-    expect(screen.queryByText("周目")).toBeNull();
-    expect(screen.queryByText("开始新周目")).toBeNull();
+    // 菜单是一列纯字（ATRI 那一版）：没档就没有 CONTINUE，LOAD 也在没档时禁用
+    expect(screen.queryByText("CONTINUE")).toBeNull();
+    expect(screen.getByText("LOAD").closest("button")?.disabled).toBe(true);
   });
 
-  it("已有周目时：只显示「继续」，不显示「开始」「周目」「开始新周目」", async () => {
+  it("已有周目时：CONTINUE 在最前，START 与它并列但不再是首位", async () => {
     const mockSaves: SaveInfo[] = [
       { id: "s1", name: "第 1 周目", current: true, updatedAt: 123 },
     ];
@@ -57,11 +57,14 @@ describe("TitleView 菜单项", () => {
     render(<TitleView playId="demo" />);
 
     await waitFor(() => {
-      expect(screen.getByText("继续")).toBeTruthy();
-      expect(screen.queryByText("开始")).toBeNull();
+      expect(screen.getByText("CONTINUE")).toBeTruthy();
+      expect(screen.getByText("START")).toBeTruthy();
     });
 
-    expect(screen.queryByText("周目")).toBeNull();
-    expect(screen.queryByText("开始新周目")).toBeNull();
+    // CONTINUE 排在 START 之前：菜单顺序就是玩家的选择顺序
+    const menu = document.querySelector(".atri-menu");
+    const labels = [...(menu?.querySelectorAll(".atri-label") ?? [])].map((el) => el.textContent);
+    expect(labels.indexOf("CONTINUE")).toBeLessThan(labels.indexOf("START"));
+    expect(screen.getByText("LOAD").closest("button")?.disabled).toBe(false);
   });
 });

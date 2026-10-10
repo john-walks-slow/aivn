@@ -4,6 +4,7 @@ import type {
   AssetKind,
   AssetMeta,
   GeneratedAsset,
+  SpriteDeclaration,
   SpriteFraming,
   SpriteStature,
 } from "@aivn/core";
@@ -21,12 +22,20 @@ import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon, type RefCandidate } from "@aivn/stage";
 import { ImageLightbox } from "../ui/ImageLightbox.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
-import { ImageGenDialog, type ImageGenTarget, type SpriteDirState } from "./ImageGenDialog.js";
+import {
+  ImageGenDialog,
+  type ImageGenTarget,
+  type SpriteDirState,
+} from "./ImageGenDialog.js";
 
 const KINDS = ["backgrounds", "cg", "sfx", "bgm"] as const;
 
 /** 对齐基准的显示名（DSL 的 anchor 三档，人话版）。 */
-const ANCHOR_LABELS: Record<ActorAnchor, string> = { bottom: "贴底", center: "居中", top: "挂顶" };
+const ANCHOR_LABELS: Record<ActorAnchor, string> = {
+  bottom: "贴底",
+  center: "居中",
+  top: "挂顶",
+};
 
 /** 文件名去掉扩展名：素材表与文件名对不上时，仍能按 stem 找到描述。 */
 const stemOf = (name: string): string => name.replace(/\.\w+$/, "");
@@ -41,7 +50,9 @@ export function AssetsPanel({
   playId: string;
   subscribeImageResult?: (handler: (res: any) => void) => () => void;
   /** 注册素材到货回调（返回取消订阅）：助手/舞台那边导进来或画出来的素材，列表要当场跟上。 */
-  subscribeAssetReady?: (handler: (asset: GeneratedAsset) => void) => () => void;
+  subscribeAssetReady?: (
+    handler: (asset: GeneratedAsset) => void,
+  ) => () => void;
   /** 「管立绘」点名的主体：它排在立绘段最前（nonce 让同一个 id 再点一次也生效）。 */
   focus?: { id: string; nonce: number } | null;
 }) {
@@ -70,11 +81,17 @@ export function AssetsPanel({
         setSpritesRead(true);
       })
       .catch(() => {});
-    api.assetMeta(playId).then(setAssetMeta).catch(() => {});
+    api
+      .assetMeta(playId)
+      .then(setAssetMeta)
+      .catch(() => {});
   }, [playId]);
   useEffect(reload, [reload]);
   // 不是自己发起的到货也要跟上：助手导进来一包立绘、舞台那边引用即导入、后台画完一张
-  useEffect(() => subscribeAssetReady?.(() => reload()), [subscribeAssetReady, reload]);
+  useEffect(
+    () => subscribeAssetReady?.(() => reload()),
+    [subscribeAssetReady, reload],
+  );
 
   /**
    * 「管立绘」的落点：滚到那个主体的卡上。
@@ -120,9 +137,14 @@ export function AssetsPanel({
 
   const readiness = detail?.readiness;
   const missingAssets = readiness
-    ? [...(readiness.sprites ? [] : ["立绘"]), ...(readiness.background ? [] : ["背景图"])]
+    ? [
+        ...(readiness.sprites ? [] : ["立绘"]),
+        ...(readiness.background ? [] : ["背景图"]),
+      ]
     : [];
-  const spriteDirs = Object.keys(assets).filter((k) => k.startsWith("sprites/"));
+  const spriteDirs = Object.keys(assets).filter((k) =>
+    k.startsWith("sprites/"),
+  );
 
   /**
    * 「管立绘」点名的主体排在最前。
@@ -156,13 +178,15 @@ export function AssetsPanel({
     for (const card of detail?.cast ?? []) {
       if (!card.id) continue;
       const dir = spriteIdOf(card.id, card);
-      if (!map.has(dir)) map.set(dir, { id: card.id, name: card.name ?? card.id });
+      if (!map.has(dir))
+        map.set(dir, { id: card.id, name: card.name ?? card.id });
     }
     return map;
   }, [detail]);
   /** 名字表：有卡认下这个目录就以卡为准，没有卡就用素材表里的名牌，再没有才落目录名。 */
   const nameOf = useCallback(
-    (dir: string): string => spriteOwners.get(dir)?.name ?? spriteTitles[dir] ?? dir,
+    (dir: string): string =>
+      spriteOwners.get(dir)?.name ?? spriteTitles[dir] ?? dir,
     [spriteOwners, spriteTitles],
   );
   /**
@@ -178,16 +202,21 @@ export function AssetsPanel({
   /** 剧目里已有的条目：立绘按目录（目录名即条目 id），其余按 stem。 */
   const owned = useMemo(() => {
     const set = new Set<string>();
-    for (const kind of KINDS) for (const name of assets[kind] ?? []) set.add(`${kind}/${stemOf(name)}`);
-    for (const dir of spriteDirs) set.add(`sprites/${dir.slice("sprites/".length)}`);
+    for (const kind of KINDS)
+      for (const name of assets[kind] ?? []) set.add(`${kind}/${stemOf(name)}`);
+    for (const dir of spriteDirs)
+      set.add(`sprites/${dir.slice("sprites/".length)}`);
     return set;
   }, [assets, spriteDirs]);
 
-  const isImported = (kind: AssetKind, id: string): boolean => owned.has(`${kind}/${id}`);
+  const isImported = (kind: AssetKind, id: string): boolean =>
+    owned.has(`${kind}/${id}`);
   /** 素材行的副标题：素材表里的描述（剧作家在提示词里看到的是同一句）。 */
   const noteFor = (dir: string, name: string): string | null => {
     const stem = stemOf(name);
-    const key = dir.startsWith("sprites/") ? `${dir.slice("sprites/".length)}/${stem}` : stem;
+    const key = dir.startsWith("sprites/")
+      ? `${dir.slice("sprites/".length)}/${stem}`
+      : stem;
     return assetMeta[key]?.description ?? null;
   };
 
@@ -198,11 +227,14 @@ export function AssetsPanel({
         .map((dir) => {
           const id = dir.slice("sprites/".length);
           const files = assets[dir] ?? [];
-          const neutral = files.find((f) => stemOf(f) === "neutral") ?? files[0];
+          const neutral =
+            files.find((f) => stemOf(f) === "neutral") ?? files[0];
           return {
             id,
             name: nameOf(id),
-            spriteUrl: neutral ? assetUrl(playId, `sprites/${id}`, neutral) : null,
+            spriteUrl: neutral
+              ? assetUrl(playId, `sprites/${id}`, neutral)
+              : null,
           };
         })
         .filter((c): c is RefCandidate => Boolean(c.spriteUrl)),
@@ -225,15 +257,22 @@ export function AssetsPanel({
     <div className="workshop-tab-pane assets-pane">
       {readiness && (
         <div className="assets-pane-head">
+          {/* 「齐了」得说清是对谁而言：判据只有两条——立绘目录里有图、背景目录里有图。
+              缺了也不挡开演，所以这句是状态回显，不是警告。 */}
           <span className={`badge ${missingAssets.length === 0 ? "ok" : ""}`}>
-            {missingAssets.length === 0 ? "素材齐了" : `还没有 ${missingAssets.join("、")}`}
+            {missingAssets.length === 0
+              ? "立绘 ✓ 背景图 ✓"
+              : `还缺 ${missingAssets.join("、")}`}
+          </span>
+          <span className="muted small">
+            判据就这两条；缺了也能开演——没立绘的角色不上台，没背景时舞台落一层氛围底色。
           </span>
         </div>
       )}
 
       {error && (
         <div className="error-banner" role="alert">
-          {error}
+          {error}<button type="button" className="notice-close" aria-label="收起这条" onClick={() => setError(null)}><Icon name="close" size={12} /></button>
         </div>
       )}
 
@@ -242,7 +281,13 @@ export function AssetsPanel({
           <h3>立绘</h3>
           <button
             className="ghost-btn"
-            onClick={() => setGenTarget({ kind: "sprite", spriteId: "", initialVariant: "neutral" })}
+            onClick={() =>
+              setGenTarget({
+                kind: "sprite",
+                spriteId: "",
+                initialVariant: "neutral",
+              })
+            }
             title="为一个主体出图：目录名与角色卡同名即绑定，没有卡也行"
           >
             <span className="btn-icon">
@@ -251,7 +296,8 @@ export function AssetsPanel({
           </button>
         </div>
         <p className="muted small">
-          一个目录就是一个主体（人、机甲、猫、道具同权）：<code>assets/sprites/&lt;id&gt;/</code> 里的文件即差分。
+          一个目录就是一个主体（人、机甲、猫、道具同权）：
+          <code>assets/sprites/&lt;id&gt;/</code> 里的文件即差分。
           与角色卡同名就有名字与音色，没有卡也有名牌（下面填）。
         </p>
         <div className="row small">
@@ -259,7 +305,11 @@ export function AssetsPanel({
             className="small-input"
             placeholder="新立绘 id（a-z、数字、下划线）"
             value={newSpriteId}
-            onChange={(e) => setNewSpriteId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+            onChange={(e) =>
+              setNewSpriteId(
+                e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""),
+              )
+            }
           />
           <label className="btn-as-label small">
             上传
@@ -275,7 +325,9 @@ export function AssetsPanel({
               }}
             />
           </label>
-          <span className="muted small">文件名即差分名（如 neutral.png、smile.png）</span>
+          <span className="muted small">
+            文件名即差分名（如 neutral.png、smile.png）
+          </span>
         </div>
 
         {orderedDirs.map((dir) => {
@@ -292,10 +344,14 @@ export function AssetsPanel({
               <div className="assets-section-head">
                 <strong>
                   {label}
-                  {label !== spriteId && <span className="muted small"> {spriteId}</span>}
+                  {label !== spriteId && (
+                    <span className="muted small"> {spriteId}</span>
+                  )}
                   {/* 有卡时名字本来就从卡上来（按绑定反查的），不必再说一遍；没卡才是要讲清的状态。
                       卡绑去了别处时那句「只有立绘」是假话——已经有一张卡了，只是它不看这个目录 */}
-                  {!owner && !orphan && <span className="muted small"> 只有立绘</span>}
+                  {!owner && !orphan && (
+                    <span className="muted small"> 只有立绘</span>
+                  )}
                   {orphan && <span className="muted small"> ｜{orphan}</span>}
                 </strong>
                 <button
@@ -348,60 +404,82 @@ export function AssetsPanel({
                 </label>
               </div>
 
-              <div className="row small">
-                <span className="muted small">名牌</span>
-                <input
-                  className="small-input"
-                  placeholder="没有角色卡时的名字"
-                  defaultValue={decl.title ?? ""}
-                  onBlur={(e) => {
-                    const value = e.target.value.trim();
-                    if (value !== (decl.title ?? "")) declare(spriteId, { title: value || null });
-                  }}
-                />
-                <span className="muted small">取景</span>
-                <select
-                  value={decl.framing ?? ""}
-                  onChange={(e) =>
-                    declare(spriteId, { framing: (e.target.value || null) as SpriteFraming | null })
-                  }
-                >
-                  <option value="">未声明（全身）</option>
-                  {SPRITE_FRAMINGS.map((f) => (
-                    <option key={f} value={f}>
-                      {SPRITE_FRAMING_LABELS[f]}
-                    </option>
-                  ))}
-                </select>
-                <span className="muted small">体量</span>
-                <select
-                  value={decl.stature ?? ""}
-                  onChange={(e) =>
-                    declare(spriteId, { stature: (e.target.value || null) as SpriteStature | null })
-                  }
-                >
-                  <option value="">未声明（标准）</option>
-                  {SPRITE_STATURES.map((s) => (
-                    <option key={s} value={s}>
-                      {SPRITE_STATURE_LABELS[s]}
-                    </option>
-                  ))}
-                </select>
-                <span className="muted small">对齐</span>
-                <select
-                  value={decl.anchor ?? ""}
-                  onChange={(e) =>
-                    declare(spriteId, { anchor: (e.target.value || null) as ActorAnchor | null })
-                  }
-                >
-                  <option value="">未声明（贴底）</option>
-                  {ACTOR_ANCHORS.map((a) => (
-                    <option key={a} value={a}>
-                      {ANCHOR_LABELS[a]}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <details className="sprite-decl">
+                <summary>
+                  <Icon name="down" size={13} />
+                  <span>声明</span>
+                  <span className="muted small">
+                    {declarationSummary(decl)}
+                  </span>
+                </summary>
+                <div className="row small">
+                  <span className="muted small">名牌</span>
+                  <input
+                    className="small-input"
+                    placeholder="没有角色卡时的名字"
+                    defaultValue={decl.title ?? ""}
+                    onBlur={(e) => {
+                      const value = e.target.value.trim();
+                      if (value !== (decl.title ?? ""))
+                        declare(spriteId, { title: value || null });
+                    }}
+                  />
+                  <span className="muted small">取景</span>
+                  <select
+                    value={decl.framing ?? ""}
+                    onChange={(e) =>
+                      declare(spriteId, {
+                        framing: (e.target.value ||
+                          null) as SpriteFraming | null,
+                      })
+                    }
+                  >
+                    <option value="">未声明（全身）</option>
+                    {SPRITE_FRAMINGS.map((f) => (
+                      <option key={f} value={f}>
+                        {SPRITE_FRAMING_LABELS[f]}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="muted small">体量</span>
+                  <select
+                    value={decl.stature ?? ""}
+                    onChange={(e) =>
+                      declare(spriteId, {
+                        stature: (e.target.value ||
+                          null) as SpriteStature | null,
+                      })
+                    }
+                  >
+                    <option value="">未声明（标准）</option>
+                    {SPRITE_STATURES.map((s) => (
+                      <option key={s} value={s}>
+                        {SPRITE_STATURE_LABELS[s]}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="muted small">对齐</span>
+                  <select
+                    value={decl.anchor ?? ""}
+                    onChange={(e) =>
+                      declare(spriteId, {
+                        anchor: (e.target.value || null) as ActorAnchor | null,
+                      })
+                    }
+                  >
+                    <option value="">未声明（贴底）</option>
+                    {ACTOR_ANCHORS.map((a) => (
+                      <option key={a} value={a}>
+                        {ANCHOR_LABELS[a]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="muted small">
+                  留空＝不声明，落回引擎缺省（全身 / 标准体量 /
+                  贴底）。这几个只影响舞台上的摆位，不改画面。
+                </p>
+              </details>
 
               {files.length === 0 ? (
                 <p className="muted small">这一目录还没有图。</p>
@@ -409,19 +487,37 @@ export function AssetsPanel({
                 <ul className="asset-list">
                   {files.map((name) => {
                     const variant = stemOf(name);
-                    const override = spriteDeclarationOf(assetMeta, spriteId, variant).framing;
+                    const override = spriteDeclarationOf(
+                      assetMeta,
+                      spriteId,
+                      variant,
+                    ).framing;
                     return (
                       <li key={name} className="asset-row">
                         <button
                           className="asset-thumb"
-                          onClick={() => setZoom({ url: assetUrl(playId, dir, name), name: `${spriteId}/${name}` })}
+                          onClick={() =>
+                            setZoom({
+                              url: assetUrl(playId, dir, name),
+                              name: `${spriteId}/${name}`,
+                            })
+                          }
                           title="点击看大图"
                         >
-                          <img src={assetUrl(playId, dir, name)} alt={name} loading="lazy" />
+                          <img
+                            src={assetUrl(playId, dir, name)}
+                            alt={name}
+                            loading="lazy"
+                          />
                         </button>
-                        <span className="asset-name" title={noteFor(dir, name) ?? variant}>
+                        <span
+                          className="asset-name"
+                          title={noteFor(dir, name) ?? variant}
+                        >
                           {variant}
-                          {noteFor(dir, name) && <em className="asset-note">{noteFor(dir, name)}</em>}
+                          {noteFor(dir, name) && (
+                            <em className="asset-note">{noteFor(dir, name)}</em>
+                          )}
                         </span>
                         <select
                           value={override ?? ""}
@@ -429,7 +525,8 @@ export function AssetsPanel({
                           onChange={(e) =>
                             declare(spriteId, {
                               variant,
-                              framing: (e.target.value || null) as SpriteFraming | null,
+                              framing: (e.target.value ||
+                                null) as SpriteFraming | null,
                             })
                           }
                         >
@@ -447,9 +544,12 @@ export function AssetsPanel({
                             setGenTarget({
                               kind: "sprite",
                               spriteId,
-                              ...(decl.title ? { spriteTitle: decl.title } : {}),
+                              ...(decl.title
+                                ? { spriteTitle: decl.title }
+                                : {}),
                               initialVariant: variant,
-                              initialFraming: (override ?? decl.framing) ?? "full",
+                              initialFraming:
+                                override ?? decl.framing ?? "full",
                               initialStature: decl.stature ?? "normal",
                               fixedVariant: true,
                             })
@@ -457,7 +557,10 @@ export function AssetsPanel({
                         >
                           <Icon name="sparkles" size={13} />
                         </button>
-                        <button className="link-btn" onClick={() => remove(dir, name)}>
+                        <button
+                          className="link-btn"
+                          onClick={() => remove(dir, name)}
+                        >
                           删除
                         </button>
                       </li>
@@ -524,7 +627,9 @@ export function AssetsPanel({
                     name={name}
                     note={noteFor(kind, name)}
                     onRemove={() => remove(kind, name)}
-                    onZoom={() => setZoom({ url: assetUrl(playId, kind, name), name })}
+                    onZoom={() =>
+                      setZoom({ url: assetUrl(playId, kind, name), name })
+                    }
                   />
                 ))}
               </ul>
@@ -562,6 +667,17 @@ export function AssetsPanel({
       )}
     </div>
   );
+}
+
+/** 「声明」那一行的摘要：声明过什么就列什么，一条都没有就说缺省——折起来也要看得见状态。 */
+function declarationSummary(decl: SpriteDeclaration): string {
+  const bits = [
+    decl.title ? `名牌 ${decl.title}` : "",
+    decl.framing ? SPRITE_FRAMING_LABELS[decl.framing] : "",
+    decl.stature ? SPRITE_STATURE_LABELS[decl.stature] : "",
+    decl.anchor ? ANCHOR_LABELS[decl.anchor] : "",
+  ].filter(Boolean);
+  return bits.length > 0 ? bits.join(" · ") : "未声明，按引擎缺省摆位";
 }
 
 /** 素材行：图片给缩略图（点开看大图），音频给播放键，其余给占位图标。 */

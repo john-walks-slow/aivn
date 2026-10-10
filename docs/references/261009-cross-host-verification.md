@@ -97,12 +97,12 @@ dsh-e2e start --wait-ready && npm run e2e:stage && dsh-e2e stop   # 实例级
 | 素材生命周期（pending/draft/adopted/expired/failed） | `packages/core/src/play/assetLifecycle.ts` | 两条线的状态语义 |
 | 漂移守卫 | `scripts/check-agent-contract.mjs` | 独立版提示词/工具/能力位 |
 
-**镜像文件（不是共享包，但必须同步）**：`apps/server/src/cutout.ts` ↔ `dsh-aivn/src/media/cutout.ts`。
-抠底算法只有这一份实现，DSH 那边是**整份抄过去**的，只允许三处适配（env 前缀
-`STAGE_CUTOUT_*` → `DSH_AIVN_CUTOUT_*`、宿主侧措辞、上游那个没人用的 `CANVAS_WIDTH`），
-适配清单写在 DSH 那份的文件头。**改一边就要抄另一边**——2026-10-09 的漂移代价是：上游补了
-「底色必须是色键色」的底体检，DSH 那份滞后，于是白底原片被静默抠穿、入库一张镂空且发灰的立绘。
-同步方式就是重抄一遍，别在 DSH 那份里就地改算法。
+**镜像文件**：`dsh-aivn/src/media/cutout.ts` 现在只是**再导出** `@aivn/agent` 的 `cutout`
+（2026-10-10 起；上游那份是唯一实现，DSH 侧只保留 `DSH_AIVN_CUTOUT_*` 的调参前缀）。
+所以抠底算法的改动**不需要重抄**，重建 DSH 的 `lib/` 即可——文档先前写的「整份抄过去」
+已过时。真正要在 DSH 侧跟着改的，是**吃 `CutoutResult` 新字段的那几处**（类型 + 透传）：
+`src/media/types.ts` 的 `cutout?`、`src/media/cut.ts` / `src/media/generate-image.ts` 的
+`{coverage, figureHeight}` 构造、`src/tools/cut.ts` 的兜底值。
 
 **新增能力或工具时**：改契约 + 更新对应矩阵行 + 跑守卫。契约是「两边各自承诺了什么」的唯一记录，
 不是第二份工具注册表——别在 DSH 复制一份独立版的实现。

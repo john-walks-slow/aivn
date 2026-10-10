@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@aivn/stage";
 import { api, type GatewayModel, type ImageKind, type Settings } from "../api.js";
 import { navigate } from "../router.jsx";
@@ -7,7 +7,6 @@ import {
   ACCENT_CHANGED,
   ACCENT_PRESETS,
   DEFAULT_ACCENT_CUSTOM,
-  DEFAULT_STAGE_MODE,
   DEFAULT_UI_MODE,
   THEME_MODE_CHANGED,
   readAccent,
@@ -18,7 +17,19 @@ import {
 } from "../hooks/useTheme.js";
 
 const UI_MODE_KEY = "aivn:ui-theme-mode";
-const STAGE_MODE_KEY = "aivn:stage-theme-mode";
+
+/** 分区表：左侧导航与右侧 Group 共用一份 id，两边不会漂。顺序 = 页面上的顺序。 */
+const SECTIONS = [
+  { id: "model", label: "模型网关" },
+  { id: "workshop", label: "工坊线程" },
+  { id: "image", label: "出图" },
+  { id: "music", label: "音乐生成" },
+  { id: "voice", label: "语音" },
+  { id: "search", label: "联网检索" },
+  { id: "access", label: "访问与启动" },
+  { id: "lan", label: "局域网访问" },
+  { id: "appearance", label: "主题设置" },
+] as const;
 
 /** 生图类目的展示顺序与名字（词表与服务端 `IMAGE_KINDS` 同表）。 */
 const KIND_ORDER: ImageKind[] = ["background", "cg", "sprite"];
@@ -119,12 +130,13 @@ export function SettingsScreen() {
   const [firewallMsg, setFirewallMsg] = useState<string | null>(null);
   const [firewallBusy, setFirewallBusy] = useState(false);
 
-  // 主题模式状态（分别保存 UI 和 舞台）
-  const [uiMode, setUiMode] = useState<ThemeMode>(() => storedMode(UI_MODE_KEY, DEFAULT_UI_MODE));
-  const [stageMode, setStageMode] = useState<ThemeMode>(() =>
-    storedMode(STAGE_MODE_KEY, DEFAULT_STAGE_MODE),
+  // 主题模式状态：界面主题与主色。舞台主题暂时下线（舞台固定深色，见 useTheme.applyTheme）
+  const [uiMode, setUiMode] = useState<ThemeMode>(() =>
+    storedMode(UI_MODE_KEY, DEFAULT_UI_MODE),
   );
-  const [accent, setAccentState] = useState<{ id: AccentId; custom: string }>(() => readAccent());
+  const [accent, setAccentState] = useState<{ id: AccentId; custom: string }>(
+    () => readAccent(),
+  );
 
   const loadModels = useCallback((refresh = false): void => {
     api
@@ -133,7 +145,9 @@ export function SettingsScreen() {
         setModels(r.models);
         setModelError(null);
       })
-      .catch((err: unknown) => setModelError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) =>
+        setModelError(err instanceof Error ? err.message : String(err)),
+      );
   }, []);
 
   const load = useCallback(() => {
@@ -143,7 +157,9 @@ export function SettingsScreen() {
         setSettings(next);
         setDraft(draftOf(next));
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : String(err)),
+      );
     loadModels();
   }, [loadModels]);
 
@@ -153,8 +169,8 @@ export function SettingsScreen() {
   useEffect(() => {
     const handleStorage = (e: Event): void => {
       const key = (e as StorageEvent).key;
-      if (key === UI_MODE_KEY) setUiMode(storedMode(UI_MODE_KEY, DEFAULT_UI_MODE));
-      if (key === STAGE_MODE_KEY) setStageMode(storedMode(STAGE_MODE_KEY, DEFAULT_STAGE_MODE));
+      if (key === UI_MODE_KEY)
+        setUiMode(storedMode(UI_MODE_KEY, DEFAULT_UI_MODE));
       if (key === ACCENT_CHANGED) setAccentState(readAccent());
     };
     window.addEventListener("storage", handleStorage);
@@ -184,6 +200,13 @@ export function SettingsScreen() {
     }
   };
 
+  /** 保存成功那条是回执，不是状态：几秒后自己收起，不占着页头。 */
+  useEffect(() => {
+    if (!saved) return;
+    const timer = window.setTimeout(() => setSaved(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [saved]);
+
   const copyUrl = (url: string): void => {
     // 非安全上下文（例如手机上直接开局域网 http）里没有 clipboard，地址本身也在页面上可选中
     const clipboard = navigator.clipboard;
@@ -191,7 +214,10 @@ export function SettingsScreen() {
     void clipboard.writeText(url).then(
       () => {
         setCopiedUrl(url);
-        window.setTimeout(() => setCopiedUrl((current) => (current === url ? null : current)), 1500);
+        window.setTimeout(
+          () => setCopiedUrl((current) => (current === url ? null : current)),
+          1500,
+        );
       },
       () => setCopiedUrl(null),
     );
@@ -208,8 +234,52 @@ export function SettingsScreen() {
     }
   };
 
+  /** 设置内容很长，左侧导航要指出「现在读到哪一组」，否则那排字只是一堆锚点。 */
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [activeSection, setActiveSection] = useState<string>(SECTIONS[0].id);
+
+  useEffect(() => {
+    const root = bodyRef.current;
+    // 滚动跟随是渐进增强：环境没有这个 API（jsdom、很老的浏览器）就只是不高亮，
+    // 导航照样能点、设置照样能用
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const shown = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        const first = shown[0];
+        if (first) setActiveSection(first.target.id.replace("settings-", ""));
+      },
+      // 只认「落在视口上沿那一段」：底下的 70% 不参与，免得下一个组刚露头就抢走高亮
+      { root, rootMargin: "0px 0px -70% 0px", threshold: 0 },
+    );
+    for (const section of SECTIONS) {
+      const el = root.querySelector(`#settings-${section.id}`);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [draft !== null]);
+
+  /** 窄屏收起来的分组（宽屏这条状态不起作用，见 app.css 的 .settings-group-collapsed）。 */
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+
+  const toggleGroup = (id: string): void => {
+    setCollapsed((cur) =>
+      cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
+    );
+  };
+
+  const goSection = (id: string): void => {
+    // 导航点一组，那一组得是展开的——否则滚过去看见的只是一个标题
+    setCollapsed((cur) => cur.filter((x) => x !== id));
+    bodyRef.current
+      ?.querySelector(`#settings-${id}`)
+      ?.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+
   return (
-    <div className="screen">
+    <div className="screen settings-screen">
       <header className="screen-bar">
         <button className="ghost-btn" onClick={() => navigate("/")}>
           <span className="btn-icon">
@@ -217,557 +287,873 @@ export function SettingsScreen() {
           </span>
         </button>
         <h2>设置</h2>
-        <span className="muted">保存后立即生效（正在演的剧目会在本轮结束时换用新设置）</span>
       </header>
 
-      {error && (
-        <div className="error-banner" role="alert">
-          {error}
-        </div>
-      )}
-      {saved && (
-        <div className="warn-banner" role="status" onClick={() => setSaved(null)}>
-          已立即生效 {saved.length} 项：{saved.join("、")}
-        </div>
-      )}
+      <div className="notice-layer">
+        {error && (
+          <div className="error-banner" role="alert">
+            {error}
+            <button
+              type="button"
+              className="notice-close"
+              aria-label="收起这条"
+              onClick={() => setError(null)}
+            >
+              <Icon name="close" size={12} />
+            </button>
+          </div>
+        )}
+        {saved && (
+          <div
+            className="ok-banner"
+            role="status"
+            onClick={() => setSaved(null)}
+            title="点一下收起"
+          >
+            <Icon name="check" size={13} />
+            <span>
+              {saved.length === 0
+                ? "没有改动，不用保存。"
+                : `已保存并立即生效 ${saved.length} 项：${saved.join("、")}`}
+            </span>
+            <button
+              type="button"
+              className="notice-close"
+              aria-label="收起这条"
+              onClick={() => setSaved(null)}
+            >
+              <Icon name="close" size={12} />
+            </button>
+          </div>
+        )}
+      </div>
       {!draft || !settings ? (
         <div className="overlay">读取设置…</div>
       ) : (
-        <div className="settings-body">
-          <Group title="模型网关">
-            <Field label="模型 ID" hint={modelSourceHint(models ?? [], settings.model.models)}>
-              <ModelSelect
-                value={draft.model.modelId}
-                models={models}
-                error={modelError}
-                onChange={(id) => setDraft({ ...draft, model: { ...draft.model, modelId: id } })}
-                onRetry={() => loadModels(true)}
-              />
-            </Field>
-            <Field label="限制级（NSFW）专用模型" hint="当剧作家调用 enter_nsfw 时切换至此模型。剧目未单独指定时生效；此处也留空则跟随该剧目的主模型。">
-              <ModelSelect
-                value={draft.model.nsfwModelId ?? ""}
-                models={models}
-                error={modelError}
-                emptyLabel={`跟随主模型（${draft.model.modelId}）`}
-                onChange={(id) => setDraft({ ...draft, model: { ...draft.model, nsfwModelId: id } })}
-                onRetry={() => loadModels(true)}
-              />
-            </Field>
-            <Field
-              label="限制级专属提示词"
-              hint="进入限制级通道时追加到系统提示词末尾；留空则不加任何额外要求。与剧目自己的口径（memory/always/craft.md）无关"
-            >
-              <textarea
-                rows={3}
-                value={draft.model.nsfwPrompt ?? ""}
-                onChange={(e) => setDraft({ ...draft, model: { ...draft.model, nsfwPrompt: e.target.value } })}
-              />
-            </Field>
-            <Field label="支持的模型">
-              <input
-                value={draft.model.models}
-                onChange={(e) => setDraft({ ...draft, model: { ...draft.model, models: e.target.value } })}
-              />
-            </Field>
-            <Field label="元数据基座">
-              <input
-                value={draft.model.modelBase}
-                onChange={(e) => setDraft({ ...draft, model: { ...draft.model, modelBase: e.target.value } })}
-              />
-            </Field>
-            <Field label="网关地址">
-              <input
-                value={draft.model.baseUrl}
-                onChange={(e) => setDraft({ ...draft, model: { ...draft.model, baseUrl: e.target.value } })}
-              />
-            </Field>
-            <Field
-              label="API Key"
-              hint={
-                settings.model.apiKeySet
-                  ? `已存 ${settings.model.apiKey}——保持原样即不改，清空 = 删除，输入新值 = 替换`
-                  : "尚未配置——不填则播放会 401"
-              }
-            >
-              <input
-                type="password"
-                value={draft.model.apiKey}
-                placeholder={settings.model.apiKeySet ? "清空保存 = 删除这把 key" : "未配置"}
-                onFocus={(e) => e.target.select()}
-                onChange={(e) => setDraft({ ...draft, model: { ...draft.model, apiKey: e.target.value } })}
-              />
-            </Field>
-            <div className="settings-grid">
-              <NumField
-                label="输出上限"
-                hint="超过网关限制会返回 400，内容为空"
-                value={draft.model.maxTokens}
-                onChange={(v) => setDraft({ ...draft, model: { ...draft.model, maxTokens: v } })}
-              />
-              <NumField
-                label="上下文窗口"
-                value={draft.model.contextWindow}
-                onChange={(v) => setDraft({ ...draft, model: { ...draft.model, contextWindow: v } })}
-              />
-              <NumField
-                label="压缩阈值"
-                hint="占窗口比例 0–1"
-                step={0.05}
-                value={draft.model.compactRatio}
-                onChange={(v) => setDraft({ ...draft, model: { ...draft.model, compactRatio: v } })}
-              />
-              <NumField
-                label="保留上下文"
-                hint="必须小于压缩阈值"
-                value={draft.model.keepRecentTokens}
-                onChange={(v) => setDraft({ ...draft, model: { ...draft.model, keepRecentTokens: v } })}
-              />
-              <NumField
-                label="单轮超时 ms"
-                hint="一轮多久没写完就当失败"
-                step={1000}
-                value={draft.beatTimeoutMs}
-                onChange={(v) => setDraft({ ...draft, beatTimeoutMs: v })}
-              />
-            </div>
-          </Group>
-
-          <Group title="工坊线程">
-            <p className="settings-hint">
-              工坊可以和剧作家用不同的模型，压缩阈值因此另有一套；缺省与上面一致。
-            </p>
-            <div className="settings-grid">
-              <NumField
-                label="工坊上下文窗口"
-                value={draft.workshopContext.contextWindow}
-                onChange={(v) =>
-                  setDraft({ ...draft, workshopContext: { ...draft.workshopContext, contextWindow: v } })
-                }
-              />
-              <NumField
-                label="工坊压缩阈值"
-                hint="占窗口比例 0–1"
-                step={0.05}
-                value={draft.workshopContext.compactRatio}
-                onChange={(v) =>
-                  setDraft({ ...draft, workshopContext: { ...draft.workshopContext, compactRatio: v } })
-                }
-              />
-              <NumField
-                label="工坊保留上下文"
-                hint="必须小于压缩阈值"
-                value={draft.workshopContext.keepRecentTokens}
-                onChange={(v) =>
-                  setDraft({ ...draft, workshopContext: { ...draft.workshopContext, keepRecentTokens: v } })
-                }
-              />
-            </div>
-          </Group>
-
-          <Group title="出图">
-            <Field label="启用生图">
-              <input
-                type="checkbox"
-                checked={draft.image.enabled}
-                onChange={(e) => setDraft({ ...draft, image: { ...draft.image, enabled: e.target.checked } })}
-              />
-            </Field>
-            <Field label="接口格式" hint="gemini 支持垫图，modelslab 只吃一张，openai 不支持">
-              <select
-                value={draft.image.format}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    image: { ...draft.image, format: e.target.value as Settings["image"]["format"] },
-                  })
-                }
+        <div className="settings-shell">
+          <nav className="settings-nav" aria-label="设置分区">
+            {SECTIONS.map((section) => (
+              <button
+                key={section.id}
+                type="button"
+                className={`settings-nav-btn${activeSection === section.id ? " is-active" : ""}`}
+                aria-current={activeSection === section.id ? "true" : undefined}
+                onClick={() => goSection(section.id)}
               >
-                <option value="gemini">gemini</option>
-                <option value="modelslab">modelslab</option>
-                <option value="openai">openai</option>
-              </select>
-            </Field>
-            <Field
-              label="生图 Key"
-              hint={
-                settings.image.apiKeySet
-                  ? `已存 ${settings.image.apiKey}——保持原样即不改，清空 = 删除，输入新值 = 替换`
-                  : "尚未配置——出图会被网关拒"
-              }
-            >
-              <input
-                type="password"
-                value={draft.image.apiKey}
-                placeholder={settings.image.apiKeySet ? "清空保存 = 删除这把 key" : "未配置"}
-                onFocus={(e) => e.target.select()}
-                onChange={(e) => setDraft({ ...draft, image: { ...draft.image, apiKey: e.target.value } })}
-              />
-            </Field>
-            <Field label="生图地址" hint="服务根地址，不要带 /v1 或 /v1beta">
-              <input
-                value={draft.image.baseUrl}
-                onChange={(e) => setDraft({ ...draft, image: { ...draft.image, baseUrl: e.target.value } })}
-              />
-            </Field>
-            <Field label="出图模型" hint="flow2api 需把画幅档位写进别名，否则画幅被忽略">
-              <input
-                value={draft.image.model}
-                onChange={(e) => setDraft({ ...draft, image: { ...draft.image, model: e.target.value } })}
-              />
-            </Field>
-            <Field
-              label="垫图策略"
-              hint="派生立绘差分时是否拿 neutral 定妆照当参考图。关掉差分与定妆照就不是同一个人了；gemini 与 modelslab 格式有效"
-            >
-              <select
-                value={draft.image.reference}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    image: { ...draft.image, reference: e.target.value as Settings["image"]["reference"] },
-                  })
-                }
-              >
-                <option value="neutral">neutral（保一致性）</option>
-                <option value="none">none（只文生图，更快）</option>
-              </select>
-            </Field>
-            <div className="settings-grid">
-              <Field label="出图档位" hint="1K / 2K / 4K 或字面尺寸（如 1536x1024）">
-                <input
-                  value={draft.image.size}
-                  onChange={(e) => setDraft({ ...draft, image: { ...draft.image, size: e.target.value } })}
-                />
-              </Field>
-              <NumField
-                label="出图并发"
-                value={draft.image.concurrency}
-                onChange={(v) => setDraft({ ...draft, image: { ...draft.image, concurrency: v } })}
-              />
-              <NumField
-                label="出图超时 ms"
-                value={draft.image.timeoutMs}
-                onChange={(v) => setDraft({ ...draft, image: { ...draft.image, timeoutMs: v } })}
-              />
-            </div>
+                {section.label}
+              </button>
+            ))}
+          </nav>
 
-            <p className="settings-hint settings-kinds-note">
-              按类目覆盖：留空 = 跟随上面那份基础配置。立绘的画面档位下限是 2K（抠底要分辨率），
-              这一类填 1K 也会按 2K 出图。
-            </p>
-            {KIND_ORDER.map((kind) => (
-              <details className="settings-kind" key={kind}>
-                <summary>
-                  {KIND_TITLES[kind]}
-                  <span className="muted">
-                    {kindOverrideCount(draft.image.kinds[kind]) > 0
-                      ? `　已覆盖 ${kindOverrideCount(draft.image.kinds[kind])} 项`
-                      : "　跟随基础"}
-                  </span>
-                </summary>
-                <KindOverrideFields
-                  value={draft.image.kinds[kind]}
-                  base={draft.image}
-                  onChange={(patch) =>
+          <div className="settings-body" ref={bodyRef}>
+            <Group
+              id="model"
+              collapsed={collapsed.includes("model")}
+              onToggle={() => toggleGroup("model")}
+              title="模型网关"
+              desc="对话走哪个模型、走哪个网关。"
+            >
+              <Field
+                label="模型 ID"
+                hint={modelSourceHint(models ?? [], settings.model.models)}
+              >
+                <ModelSelect
+                  value={draft.model.modelId}
+                  models={models}
+                  error={modelError}
+                  onChange={(id) =>
                     setDraft({
                       ...draft,
-                      image: {
-                        ...draft.image,
-                        kinds: { ...draft.image.kinds, [kind]: { ...draft.image.kinds[kind], ...patch } },
+                      model: { ...draft.model, modelId: id },
+                    })
+                  }
+                  onRetry={() => loadModels(true)}
+                />
+              </Field>
+              <Field
+                label="限制级（NSFW）专用模型"
+                hint="当剧作家调用 enter_nsfw 时切换至此模型。剧目未单独指定时生效；此处也留空则跟随该剧目的主模型。"
+              >
+                <ModelSelect
+                  value={draft.model.nsfwModelId ?? ""}
+                  models={models}
+                  error={modelError}
+                  emptyLabel={`跟随主模型（${draft.model.modelId}）`}
+                  onChange={(id) =>
+                    setDraft({
+                      ...draft,
+                      model: { ...draft.model, nsfwModelId: id },
+                    })
+                  }
+                  onRetry={() => loadModels(true)}
+                />
+              </Field>
+              <Field
+                label="限制级专属提示词"
+                hint="进入限制级通道时追加到系统提示词末尾；留空则不加任何额外要求。与剧目自己的口径（memory/always/craft.md）无关"
+              >
+                <textarea
+                  rows={3}
+                  value={draft.model.nsfwPrompt ?? ""}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      model: { ...draft.model, nsfwPrompt: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="支持的模型">
+                <input
+                  value={draft.model.models}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      model: { ...draft.model, models: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="元数据基座">
+                <input
+                  value={draft.model.modelBase}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      model: { ...draft.model, modelBase: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="网关地址">
+                <input
+                  value={draft.model.baseUrl}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      model: { ...draft.model, baseUrl: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="API Key"
+                hint={
+                  settings.model.apiKeySet
+                    ? `已存 ${settings.model.apiKey}——保持原样即不改，清空 = 删除，输入新值 = 替换`
+                    : "尚未配置——不填则播放会 401"
+                }
+              >
+                <input
+                  type="password"
+                  value={draft.model.apiKey}
+                  placeholder={
+                    settings.model.apiKeySet
+                      ? "清空保存 = 删除这把 key"
+                      : "未配置"
+                  }
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      model: { ...draft.model, apiKey: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <div className="settings-grid">
+                <NumField
+                  label="输出上限"
+                  hint="超过网关限制会返回 400，内容为空"
+                  value={draft.model.maxTokens}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      model: { ...draft.model, maxTokens: v },
+                    })
+                  }
+                />
+                <NumField
+                  label="上下文窗口"
+                  value={draft.model.contextWindow}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      model: { ...draft.model, contextWindow: v },
+                    })
+                  }
+                />
+                <NumField
+                  label="压缩阈值"
+                  hint="占窗口比例 0–1"
+                  step={0.05}
+                  value={draft.model.compactRatio}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      model: { ...draft.model, compactRatio: v },
+                    })
+                  }
+                />
+                <NumField
+                  label="保留上下文"
+                  hint="必须小于压缩阈值"
+                  value={draft.model.keepRecentTokens}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      model: { ...draft.model, keepRecentTokens: v },
+                    })
+                  }
+                />
+                <NumField
+                  label="单轮超时 ms"
+                  hint="一轮多久没写完就当失败"
+                  step={1000}
+                  value={draft.beatTimeoutMs}
+                  onChange={(v) => setDraft({ ...draft, beatTimeoutMs: v })}
+                />
+              </div>
+            </Group>
+
+            <Group
+              id="workshop"
+              collapsed={collapsed.includes("workshop")}
+              onToggle={() => toggleGroup("workshop")}
+              title="工坊线程"
+              desc="工坊里跟剧作家聊天用的模型与压缩策略，可以和演出分开。"
+            >
+              <p className="settings-hint">
+                工坊可以和剧作家用不同的模型，压缩阈值因此另有一套；缺省与上面一致。
+              </p>
+              <div className="settings-grid">
+                <NumField
+                  label="工坊上下文窗口"
+                  value={draft.workshopContext.contextWindow}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      workshopContext: {
+                        ...draft.workshopContext,
+                        contextWindow: v,
                       },
                     })
                   }
                 />
-              </details>
-            ))}
-          </Group>
+                <NumField
+                  label="工坊压缩阈值"
+                  hint="占窗口比例 0–1"
+                  step={0.05}
+                  value={draft.workshopContext.compactRatio}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      workshopContext: {
+                        ...draft.workshopContext,
+                        compactRatio: v,
+                      },
+                    })
+                  }
+                />
+                <NumField
+                  label="工坊保留上下文"
+                  hint="必须小于压缩阈值"
+                  value={draft.workshopContext.keepRecentTokens}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      workshopContext: {
+                        ...draft.workshopContext,
+                        keepRecentTokens: v,
+                      },
+                    })
+                  }
+                />
+              </div>
+            </Group>
 
-          <Group title="音乐生成">
-            <Field label="启用音乐生成" hint="关掉后工坊不再有「生成 BGM」这一手，只能从资源库导入">
-              <input
-                type="checkbox"
-                checked={draft.music.enabled}
-                onChange={(e) => setDraft({ ...draft, music: { ...draft.music, enabled: e.target.checked } })}
-              />
-            </Field>
-            <Field label="音乐模型" hint="flow2api：flow-music-lyria-3.5 / flow-music-lyria-3-pro / musicfx">
-              <input
-                value={draft.music.model}
-                onChange={(e) => setDraft({ ...draft, music: { ...draft.music, model: e.target.value } })}
-              />
-            </Field>
-            <Field
-              label="音乐 Key"
-              hint={
-                draft.music.apiKey
-                  ? "已单独设置——留空则回落到「出图 Key」"
-                  : settings.image.apiKeySet
-                    ? `留空 = 跟出图同一个网关与 Key（当前 ${settings.image.apiKey}）`
-                    : "尚未配置——出图那把 Key 也没填"
-              }
+            <Group
+              id="image"
+              collapsed={collapsed.includes("image")}
+              onToggle={() => toggleGroup("image")}
+              title="出图"
+              desc="背景、插图与立绘由哪个生图后端出。"
             >
-              <input
-                type="password"
-                value={draft.music.apiKey}
-                placeholder="留空 = 用出图那把"
-                onFocus={(e) => e.target.select()}
-                onChange={(e) => setDraft({ ...draft, music: { ...draft.music, apiKey: e.target.value } })}
-              />
-            </Field>
-            <Field label="音乐地址" hint="留空 = 用出图地址。服务根地址，不要带 /v1 或 /v1beta">
-              <input
-                value={draft.music.baseUrl}
-                placeholder="留空 = 用出图地址"
-                onChange={(e) => setDraft({ ...draft, music: { ...draft.music, baseUrl: e.target.value } })}
-              />
-            </Field>
-            <NumField
-              label="音乐生成超时 ms"
-              value={draft.music.timeoutMs}
-              onChange={(v) => setDraft({ ...draft, music: { ...draft.music, timeoutMs: v } })}
-            />
-          </Group>
-
-          <Group title="语音">
-            <Field label="启用语音" hint="关掉只影响合成，文字照常">
-              <input
-                type="checkbox"
-                checked={draft.tts.enabled}
-                onChange={(e) => setDraft({ ...draft, tts: { ...draft.tts, enabled: e.target.checked } })}
-              />
-            </Field>
-            <Field label="服务地址" hint="fish-audio 兼容端点">
-              <input
-                value={draft.tts.baseUrl}
-                onChange={(e) => setDraft({ ...draft, tts: { ...draft.tts, baseUrl: e.target.value } })}
-              />
-            </Field>
-            <Field label="代理" hint="如 http://127.0.0.1:7890">
-              <input
-                value={draft.tts.proxy}
-                onChange={(e) => setDraft({ ...draft, tts: { ...draft.tts, proxy: e.target.value } })}
-              />
-            </Field>
-            <NumField
-              label="语音并发"
-              value={draft.tts.concurrency}
-              onChange={(v) => setDraft({ ...draft, tts: { ...draft.tts, concurrency: v } })}
-            />
-            <KeyField
-              label="语音密钥"
-              hint="多把 key 轮询；已存 {count} 把（留空=保持不变，填入=整组替换）"
-              value={draft.tts.keys}
-              masked={settings.tts.masked}
-              onChange={(keys) => setDraft({ ...draft, tts: { ...draft.tts, keys } })}
-            />
-          </Group>
-
-          <Group title="联网检索（Exa）">
-            <Field label="启用检索" hint="关掉后工坊只剩离线工具">
-              <input
-                type="checkbox"
-                checked={draft.exa.enabled}
-                onChange={(e) => setDraft({ ...draft, exa: { ...draft.exa, enabled: e.target.checked } })}
-              />
-            </Field>
-            <Field label="服务地址" hint="exa 兼容端点">
-              <input
-                value={draft.exa.baseUrl}
-                onChange={(e) => setDraft({ ...draft, exa: { ...draft.exa, baseUrl: e.target.value } })}
-              />
-            </Field>
-            <Field label="代理" hint="如 http://127.0.0.1:7890">
-              <input
-                value={draft.exa.proxy}
-                onChange={(e) => setDraft({ ...draft, exa: { ...draft.exa, proxy: e.target.value } })}
-              />
-            </Field>
-            <NumField
-              label="检索超时 ms"
-              value={draft.exa.timeoutMs}
-              onChange={(v) => setDraft({ ...draft, exa: { ...draft.exa, timeoutMs: v } })}
-            />
-            <KeyField
-              label="检索密钥"
-              hint="多把 key 轮询；已存 {count} 把（留空=保持不变，填入=整组替换）"
-              value={draft.exa.keys}
-              masked={settings.exa.masked}
-              onChange={(keys) => setDraft({ ...draft, exa: { ...draft.exa, keys } })}
-            />
-          </Group>
-
-          <Group title="访问与启动">
-            <Field
-              label="访问密码"
-              hint={
-                settings.passwordSet
-                  ? `已开启（HTTP Basic），当前 ${settings.password}——保持原样即不改；清空并保存 = 关闭设防`
-                  : "当前没有设防。挂到公网前务必设一个（局域网自用可以不设）"
-              }
-            >
-              <input
-                type="password"
-                placeholder={settings.passwordSet ? "清空保存 = 关闭设防" : "未设置"}
-                value={draft.password}
-                onFocus={(e) => e.target.select()}
-                onChange={(e) => setDraft({ ...draft, password: e.target.value })}
-              />
-            </Field>
-            <p className="settings-hint">
-              改密码会立即生效：此前发出的会话全部作废，刷新页面重新输一次即可。
-            </p>
-            <div className="settings-grid">
+              <Field label="启用生图">
+                <input
+                  type="checkbox"
+                  checked={draft.image.enabled}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      image: { ...draft.image, enabled: e.target.checked },
+                    })
+                  }
+                />
+              </Field>
               <Field
-                label="监听地址（只读）"
-                hint="当前实际在听的地址：由下面的「局域网访问」开关决定；显式写了 --host / STAGE_HOST 时以那个为准"
+                label="接口格式"
+                hint="gemini 支持垫图，modelslab 只吃一张，openai 不支持"
               >
-                <input value={settings.bootstrap.host} readOnly />
+                <select
+                  value={draft.image.format}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      image: {
+                        ...draft.image,
+                        format: e.target.value as Settings["image"]["format"],
+                      },
+                    })
+                  }
+                >
+                  <option value="gemini">gemini</option>
+                  <option value="modelslab">modelslab</option>
+                  <option value="openai">openai</option>
+                </select>
               </Field>
-              <Field label="端口（只读）" hint="改它要写 .env 再重启">
-                <input value={String(settings.bootstrap.port)} readOnly />
+              <Field
+                label="生图 Key"
+                hint={
+                  settings.image.apiKeySet
+                    ? `已存 ${settings.image.apiKey}——保持原样即不改，清空 = 删除，输入新值 = 替换`
+                    : "尚未配置——出图会被网关拒"
+                }
+              >
+                <input
+                  type="password"
+                  value={draft.image.apiKey}
+                  placeholder={
+                    settings.image.apiKeySet
+                      ? "清空保存 = 删除这把 key"
+                      : "未配置"
+                  }
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      image: { ...draft.image, apiKey: e.target.value },
+                    })
+                  }
+                />
               </Field>
-            </div>
-            <Field
-              label="数据目录（只读）"
-              hint="剧目、素材库、缓存与设置文件都在这里；换目录在 .env 里写 STAGE_DATA_DIR"
-            >
-              <input value={settings.bootstrap.dataRoot} readOnly />
-            </Field>
-          </Group>
-
-          <Group title="局域网访问">
-            <Field
-              label="允许局域网访问"
-              hint="打开后监听 0.0.0.0，同一个 Wi-Fi 下的手机/平板能连；关着只有本机能连。保存后立即生效，端口不变"
-            >
-              <input
-                type="checkbox"
-                checked={draft.lanAccess}
-                onChange={(e) => setDraft({ ...draft, lanAccess: e.target.checked })}
-              />
-            </Field>
-            <Field label="手机该连的地址">
-              {!settings.lanAccess ? (
-                <span className="muted">打开后这里会显示手机该连的地址</span>
-              ) : settings.bootstrap.lanUrls.length === 0 ? (
-                <span className="muted">这台机器没有可用的局域网地址</span>
-              ) : (
-                settings.bootstrap.lanUrls.map((url) => (
-                  <span className="row" key={url}>
-                    <code>{url}</code>
-                    <button type="button" className="ghost-btn" onClick={() => copyUrl(url)}>
-                      {copiedUrl === url ? "已复制" : "复制"}
-                    </button>
-                  </span>
-                ))
-              )}
-            </Field>
-            <div className="row">
-              <button
-                type="button"
-                className="ghost-btn"
-                disabled={firewallBusy}
-                onClick={() => void runFirewall()}
+              <Field label="生图地址" hint="服务根地址，不要带 /v1 或 /v1beta">
+                <input
+                  value={draft.image.baseUrl}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      image: { ...draft.image, baseUrl: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="出图模型"
+                hint="flow2api 需把画幅档位写进别名，否则画幅被忽略"
               >
-                允许局域网访问（Windows 防火墙）
-              </button>
-            </div>
-            <p className="settings-hint">
-              第一次打开开关时，系统会自己弹一次「是否允许访问网络」，点「允许」就够了。这个按钮是给「当时点了取消」或「根本没弹窗」兜底的：它会请求一次管理员权限，写一条按程序（而不是按端口）放行的入站规则，并清掉点「取消」时系统自己写下的那条阻止规则（显式阻止优先于放行，光加一条放行救不回来），重复点是同一条。
-            </p>
-            {firewallMsg && <p className="settings-hint">{firewallMsg}</p>}
-          </Group>
-
-          {/* 主题设置 */}
-          <Group title="主题设置">
-            <Field label="界面主题">
-              <select
-                value={uiMode}
-                onChange={(e) => {
-                  const val = e.target.value as ThemeMode;
-                  setUiMode(val);
-                  setThemeMode(UI_MODE_KEY, val);
-                }}
+                <input
+                  value={draft.image.model}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      image: { ...draft.image, model: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="垫图策略"
+                hint="派生立绘差分时是否拿 neutral 定妆照当参考图。关掉差分与定妆照就不是同一个人了；gemini 与 modelslab 格式有效"
               >
-                <option value="system">跟随系统</option>
-                <option value="light">浅色</option>
-                <option value="dark">深色</option>
-              </select>
-            </Field>
-            <Field label="主色">
-              <div className="accent-picker">
-                {ACCENT_PRESETS.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    className={`accent-swatch accent-${preset.id}${accent.id === preset.id ? " active" : ""}`}
-                    title={preset.label}
-                    aria-label={preset.label}
-                    aria-pressed={accent.id === preset.id}
-                    onClick={() => {
-                      setAccentState({ ...readAccent(), id: preset.id });
-                      setAccent(preset.id);
-                    }}
-                  />
-                ))}
-                <label
-                  className={`accent-custom${accent.id === "custom" ? " active" : ""}`}
-                  title="自己挑一个颜色"
+                <select
+                  value={draft.image.reference}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      image: {
+                        ...draft.image,
+                        reference: e.target
+                          .value as Settings["image"]["reference"],
+                      },
+                    })
+                  }
+                >
+                  <option value="neutral">neutral（保一致性）</option>
+                  <option value="none">none（只文生图，更快）</option>
+                </select>
+              </Field>
+              <div className="settings-grid">
+                <Field
+                  label="出图档位"
+                  hint="1K / 2K / 4K 或字面尺寸（如 1536x1024）"
                 >
                   <input
-                    type="color"
-                    value={accent.custom}
-                    aria-label="自己挑一个颜色"
-                    onChange={(e) => {
-                      setAccentState({ id: "custom", custom: e.target.value });
-                      setAccent("custom", e.target.value);
-                    }}
+                    value={draft.image.size}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        image: { ...draft.image, size: e.target.value },
+                      })
+                    }
                   />
-                  <span>自由</span>
-                </label>
-                {accent.custom !== DEFAULT_ACCENT_CUSTOM && (
-                  <button
-                    type="button"
-                    className="ghost-btn accent-reset"
-                    onClick={() => {
-                      setAccentState({ ...readAccent(), custom: DEFAULT_ACCENT_CUSTOM });
-                      setAccent(readAccent().id, DEFAULT_ACCENT_CUSTOM);
-                    }}
-                  >
-                    恢复默认色
-                  </button>
-                )}
+                </Field>
+                <NumField
+                  label="出图并发"
+                  value={draft.image.concurrency}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      image: { ...draft.image, concurrency: v },
+                    })
+                  }
+                />
+                <NumField
+                  label="出图超时 ms"
+                  value={draft.image.timeoutMs}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      image: { ...draft.image, timeoutMs: v },
+                    })
+                  }
+                />
               </div>
-            </Field>
-            <Field label="舞台主题">
-              <select
-                value={stageMode}
-                onChange={(e) => {
-                  const val = e.target.value as ThemeMode;
-                  setStageMode(val);
-                  setThemeMode(STAGE_MODE_KEY, val);
-                }}
+
+              <p className="settings-hint settings-kinds-note">
+                按类目覆盖：留空 = 跟随上面那份基础配置。立绘的画面档位下限是 2K（抠底要分辨率），
+                这一类填 1K 也会按 2K 出图。
+              </p>
+              {KIND_ORDER.map((kind) => (
+                <details className="settings-kind" key={kind}>
+                  <summary>
+                    {KIND_TITLES[kind]}
+                    <span className="muted">
+                      {kindOverrideCount(draft.image.kinds[kind]) > 0
+                        ? `　已覆盖 ${kindOverrideCount(draft.image.kinds[kind])} 项`
+                        : "　跟随基础"}
+                    </span>
+                  </summary>
+                  <KindOverrideFields
+                    value={draft.image.kinds[kind]}
+                    base={draft.image}
+                    onChange={(patch) =>
+                      setDraft({
+                        ...draft,
+                        image: {
+                          ...draft.image,
+                          kinds: { ...draft.image.kinds, [kind]: { ...draft.image.kinds[kind], ...patch } },
+                        },
+                      })
+                    }
+                  />
+                </details>
+              ))}
+            </Group>
+
+
+            <Group
+              id="music"
+              collapsed={collapsed.includes("music")}
+              onToggle={() => toggleGroup("music")}
+              title="音乐生成"
+              desc="BGM 与音效由哪个后端生成。"
+            >
+              <Field
+                label="启用音乐生成"
+                hint="关掉后工坊不再有「生成 BGM」这一手，只能从资源库导入"
               >
-                <option value="system">跟随系统</option>
-                <option value="light">浅色</option>
-                <option value="dark">深色</option>
-              </select>
-            </Field>
-          </Group>
+                <input
+                  type="checkbox"
+                  checked={draft.music.enabled}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      music: { ...draft.music, enabled: e.target.checked },
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="音乐模型"
+                hint="flow2api：flow-music-lyria-3.5 / flow-music-lyria-3-pro / musicfx"
+              >
+                <input
+                  value={draft.music.model}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      music: { ...draft.music, model: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="音乐 Key"
+                hint={
+                  draft.music.apiKey
+                    ? "已单独设置——留空则回落到「出图 Key」"
+                    : settings.image.apiKeySet
+                      ? `留空 = 跟出图同一个网关与 Key（当前 ${settings.image.apiKey}）`
+                      : "尚未配置——出图那把 Key 也没填"
+                }
+              >
+                <input
+                  type="password"
+                  value={draft.music.apiKey}
+                  placeholder="留空 = 用出图那把"
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      music: { ...draft.music, apiKey: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="音乐地址"
+                hint="留空 = 用出图地址。服务根地址，不要带 /v1 或 /v1beta"
+              >
+                <input
+                  value={draft.music.baseUrl}
+                  placeholder="留空 = 用出图地址"
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      music: { ...draft.music, baseUrl: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <NumField
+                label="音乐生成超时 ms"
+                value={draft.music.timeoutMs}
+                onChange={(v) =>
+                  setDraft({
+                    ...draft,
+                    music: { ...draft.music, timeoutMs: v },
+                  })
+                }
+              />
+            </Group>
+
+            <Group
+              id="voice"
+              collapsed={collapsed.includes("voice")}
+              onToggle={() => toggleGroup("voice")}
+              title="语音"
+              desc="台词语音合成用哪家服务、哪些音色。"
+            >
+              <Field label="启用语音" hint="关掉只影响合成，文字照常">
+                <input
+                  type="checkbox"
+                  checked={draft.tts.enabled}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      tts: { ...draft.tts, enabled: e.target.checked },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="服务地址" hint="fish-audio 兼容端点">
+                <input
+                  value={draft.tts.baseUrl}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      tts: { ...draft.tts, baseUrl: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="代理" hint="如 http://127.0.0.1:7890">
+                <input
+                  value={draft.tts.proxy}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      tts: { ...draft.tts, proxy: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <NumField
+                label="语音并发"
+                value={draft.tts.concurrency}
+                onChange={(v) =>
+                  setDraft({ ...draft, tts: { ...draft.tts, concurrency: v } })
+                }
+              />
+              <KeyField
+                label="语音密钥"
+                hint="多把 key 轮询；已存 {count} 把（留空=保持不变，填入=整组替换）"
+                value={draft.tts.keys}
+                masked={settings.tts.masked}
+                onChange={(keys) =>
+                  setDraft({ ...draft, tts: { ...draft.tts, keys } })
+                }
+              />
+            </Group>
+
+            <Group
+              id="search"
+              collapsed={collapsed.includes("search")}
+              onToggle={() => toggleGroup("search")}
+              title="联网检索（Exa）"
+              desc="剧作家查资料走哪个检索服务。"
+            >
+              <Field label="启用检索" hint="关掉后工坊只剩离线工具">
+                <input
+                  type="checkbox"
+                  checked={draft.exa.enabled}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      exa: { ...draft.exa, enabled: e.target.checked },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="服务地址" hint="exa 兼容端点">
+                <input
+                  value={draft.exa.baseUrl}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      exa: { ...draft.exa, baseUrl: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="代理" hint="如 http://127.0.0.1:7890">
+                <input
+                  value={draft.exa.proxy}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      exa: { ...draft.exa, proxy: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <NumField
+                label="检索超时 ms"
+                value={draft.exa.timeoutMs}
+                onChange={(v) =>
+                  setDraft({ ...draft, exa: { ...draft.exa, timeoutMs: v } })
+                }
+              />
+              <KeyField
+                label="检索密钥"
+                hint="多把 key 轮询；已存 {count} 把（留空=保持不变，填入=整组替换）"
+                value={draft.exa.keys}
+                masked={settings.exa.masked}
+                onChange={(keys) =>
+                  setDraft({ ...draft, exa: { ...draft.exa, keys } })
+                }
+              />
+            </Group>
+
+            <Group
+              id="access"
+              collapsed={collapsed.includes("access")}
+              onToggle={() => toggleGroup("access")}
+              title="访问与启动"
+              desc="端口、数据目录与访问密码。"
+            >
+              <Field
+                label="访问密码"
+                hint={
+                  settings.passwordSet
+                    ? `已开启（HTTP Basic），当前 ${settings.password}——保持原样即不改；清空并保存 = 关闭设防`
+                    : "当前没有设防。挂到公网前务必设一个（局域网自用可以不设）"
+                }
+              >
+                <input
+                  type="password"
+                  placeholder={
+                    settings.passwordSet ? "清空保存 = 关闭设防" : "未设置"
+                  }
+                  value={draft.password}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) =>
+                    setDraft({ ...draft, password: e.target.value })
+                  }
+                />
+              </Field>
+              <p className="settings-hint">
+                改密码会立即生效：此前发出的会话全部作废，刷新页面重新输一次即可。
+              </p>
+              <div className="settings-grid">
+                <Field
+                  label="监听地址（只读）"
+                  hint="当前实际在听的地址：由下面的「局域网访问」开关决定；显式写了 --host / STAGE_HOST 时以那个为准"
+                >
+                  <input value={settings.bootstrap.host} readOnly />
+                </Field>
+                <Field label="端口（只读）" hint="改它要写 .env 再重启">
+                  <input value={String(settings.bootstrap.port)} readOnly />
+                </Field>
+              </div>
+              <Field
+                label="数据目录（只读）"
+                hint="剧目、素材库、缓存与设置文件都在这里；换目录在 .env 里写 STAGE_DATA_DIR"
+              >
+                <input value={settings.bootstrap.dataRoot} readOnly />
+              </Field>
+            </Group>
+
+            <Group
+              id="lan"
+              collapsed={collapsed.includes("lan")}
+              onToggle={() => toggleGroup("lan")}
+              title="局域网访问"
+              desc="手机、平板怎么连到这台机器。"
+            >
+              <Field
+                label="允许局域网访问"
+                hint="打开后监听 0.0.0.0，同一个 Wi-Fi 下的手机/平板能连；关着只有本机能连。保存后立即生效，端口不变"
+              >
+                <input
+                  type="checkbox"
+                  checked={draft.lanAccess}
+                  onChange={(e) =>
+                    setDraft({ ...draft, lanAccess: e.target.checked })
+                  }
+                />
+              </Field>
+              <Field label="手机该连的地址">
+                {!settings.lanAccess ? (
+                  <span className="muted">打开后这里会显示手机该连的地址</span>
+                ) : settings.bootstrap.lanUrls.length === 0 ? (
+                  <span className="muted">这台机器没有可用的局域网地址</span>
+                ) : (
+                  settings.bootstrap.lanUrls.map((url) => (
+                    <span className="row" key={url}>
+                      <code>{url}</code>
+                      <button
+                        type="button"
+                        className="ghost-btn"
+                        onClick={() => copyUrl(url)}
+                      >
+                        {copiedUrl === url ? "已复制" : "复制"}
+                      </button>
+                    </span>
+                  ))
+                )}
+              </Field>
+              <div className="row">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  disabled={firewallBusy}
+                  onClick={() => void runFirewall()}
+                >
+                  允许局域网访问（Windows 防火墙）
+                </button>
+              </div>
+              <p className="settings-hint">
+                第一次打开开关时，系统会自己弹一次「是否允许访问网络」，点「允许」就够了。这个按钮是给「当时点了取消」或「根本没弹窗」兜底的：它会请求一次管理员权限，写一条按程序（而不是按端口）放行的入站规则，并清掉点「取消」时系统自己写下的那条阻止规则（显式阻止优先于放行，光加一条放行救不回来），重复点是同一条。
+              </p>
+              {firewallMsg && <p className="settings-hint">{firewallMsg}</p>}
+            </Group>
+
+            {/* 主题设置 */}
+            <Group
+              id="appearance"
+              collapsed={collapsed.includes("appearance")}
+              onToggle={() => toggleGroup("appearance")}
+              title="主题设置"
+              desc="界面明暗主题与全站主色。"
+            >
+              <Field label="界面主题">
+                <select
+                  value={uiMode}
+                  onChange={(e) => {
+                    const val = e.target.value as ThemeMode;
+                    setUiMode(val);
+                    setThemeMode(UI_MODE_KEY, val);
+                  }}
+                >
+                  <option value="system">跟随系统</option>
+                  <option value="light">浅色</option>
+                  <option value="dark">深色</option>
+                </select>
+              </Field>
+              <Field label="主色">
+                <div className="accent-picker">
+                  {ACCENT_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`accent-swatch accent-${preset.id}${accent.id === preset.id ? " active" : ""}`}
+                      title={preset.label}
+                      aria-label={preset.label}
+                      aria-pressed={accent.id === preset.id}
+                      onClick={() => {
+                        setAccentState({ ...readAccent(), id: preset.id });
+                        setAccent(preset.id);
+                      }}
+                    />
+                  ))}
+                  <label
+                    className={`accent-custom${accent.id === "custom" ? " active" : ""}`}
+                    title="自己挑一个颜色"
+                  >
+                    <input
+                      type="color"
+                      value={accent.custom}
+                      aria-label="自己挑一个颜色"
+                      onChange={(e) => {
+                        setAccentState({
+                          id: "custom",
+                          custom: e.target.value,
+                        });
+                        setAccent("custom", e.target.value);
+                      }}
+                    />
+                    <span>自由</span>
+                  </label>
+                  {accent.custom !== DEFAULT_ACCENT_CUSTOM && (
+                    <button
+                      type="button"
+                      className="ghost-btn accent-reset"
+                      onClick={() => {
+                        setAccentState({
+                          ...readAccent(),
+                          custom: DEFAULT_ACCENT_CUSTOM,
+                        });
+                        setAccent(readAccent().id, DEFAULT_ACCENT_CUSTOM);
+                      }}
+                    >
+                      恢复默认色
+                    </button>
+                  )}
+                </div>
+              </Field>
+            </Group>
+
+            <p className="settings-paths muted">
+              数据目录：{settings.bootstrap.dataRoot}　监听：
+              {settings.bootstrap.host}:{settings.bootstrap.port}
+            </p>
+          </div>
         </div>
       )}
       {draft && settings && (
         <div className="settings-footer">
-          <button className="primary-btn" onClick={() => void save()} disabled={saving}>
-            保存设置
+          <button
+            className="primary"
+            onClick={() => void save()}
+            disabled={saving}
+          >
+            {saving ? "保存中…" : "保存设置"}
           </button>
           <button className="ghost-btn" onClick={load}>
             放弃改动
           </button>
-          <span className="muted">
-            数据目录：{settings.bootstrap.dataRoot}　监听：{settings.bootstrap.host}:{settings.bootstrap.port}
-          </span>
         </div>
       )}
     </div>
@@ -775,10 +1161,46 @@ export function SettingsScreen() {
 }
 
 /* 其余辅助组件保持不变 */
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
+function Group({
+  id,
+  title,
+  desc,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  id: string;
+  title: string;
+  /** 一句「这一组管什么」。九个组排下来，标题本身说不清边界。 */
+  desc?: string;
+  /** 窄屏收起了这一组（宽屏不生效）。 */
+  collapsed?: boolean;
+  onToggle?: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="settings-group">
-      <h3>{title}</h3>
+    <section
+      className={`settings-group${collapsed ? " settings-group-collapsed" : ""}`}
+      id={`settings-${id}`}
+    >
+      <header className="settings-group-head">
+        <h3>
+          {onToggle ? (
+            <button
+              type="button"
+              className="settings-group-toggle"
+              aria-expanded={!collapsed}
+              onClick={onToggle}
+            >
+              {title}
+              <Icon name="down" size={14} />
+            </button>
+          ) : (
+            title
+          )}
+        </h3>
+        {desc && <p className="settings-group-desc">{desc}</p>}
+      </header>
       {children}
     </section>
   );
@@ -792,7 +1214,10 @@ function KeyField(props: {
   onChange: (value: string) => void;
 }) {
   return (
-    <Field label={props.label} hint={props.hint.replace("{count}", String(props.masked.length))}>
+    <Field
+      label={props.label}
+      hint={props.hint.replace("{count}", String(props.masked.length))}
+    >
       <input
         value={props.value}
         placeholder={props.masked.join("　") || "未配置"}

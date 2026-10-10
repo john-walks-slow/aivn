@@ -15,8 +15,15 @@ import type {
 import { DEFAULT_CRAFT, languageLabel, LANGUAGE_LABELS } from "@aivn/core";
 import { api, assetUrl } from "../api.js";
 import { Icon } from "@aivn/stage";
+import { notifyThemeChanged } from "../theme.js";
+import {
+  accentFromThemeCss,
+  PLAY_ACCENTS,
+  themeCssFor,
+} from "../ui/playTheme.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";
 import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
+import { useDirtyFlag } from "./dirtyGuard.js";
 
 /**
  * 剧目：这部剧作为一个整体是什么——标题、开局指令、语音语言、无名角色音色、封面。
@@ -26,6 +33,8 @@ import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
  */
 export function PlayPane({ playId, revision }: { playId: string; revision: number }) {
   const [draft, setDraft] = useState<PlayConfig | null>(null);
+  /** 盘上那一份：改没改过由它俩比出来（切页前要拦「还没保存」）。 */
+  const [onDisk, setOnDisk] = useState<PlayConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   /** 可当封面的图：剧目自己的背景与插图。 */
@@ -33,15 +42,39 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
   /** 音色库面板开着时为 true；剧目级兜底音色只在这一处选。 */
   const [pickingVoice, setPickingVoice] = useState(false);
   const voices = useVoiceCatalog();
+  /** 本剧主题色（theme.css 的 --accent）。null = 没覆盖，走引擎默认主题。 */
+  const [accent, setAccent] = useState<string | null>(null);
 
   const reload = useCallback((): void => {
     api
       .playDetail(playId)
-      .then((d) => setDraft(d.play))
+      .then((d) => {
+        setDraft(d.play);
+        setOnDisk(d.play);
+      })
       .catch((e: Error) => setError(e.message));
     api.listAssets(playId).then(setAssets).catch(() => {});
+    // theme.css 可能不存在（默认主题），404 是正常状态而不是错误
+    api
+      .readFile(playId, "theme.css")
+      .then((r) => setAccent(accentFromThemeCss(r.content)))
+      .catch(() => setAccent(null));
   }, [playId]);
   useEffect(reload, [reload, revision]);
+
+  /**
+   * 选一个主题色：立刻写 theme.css 并重挂样式表。
+   *
+   * 不并进 play.json 的保存按钮：换皮是「当场看见」的事，压在另一个文件的 Save 上，
+   * 用户点完色卡却什么都不变，只会以为坏了。
+   */
+  const pickAccent = (hex: string | null): void => {
+    setAccent(hex);
+    api
+      .saveFile(playId, "theme.css", themeCssFor(hex))
+      .then(() => notifyThemeChanged())
+      .catch((e: Error) => setError(e.message));
+  };
 
   const patch = (fn: (play: PlayConfig) => void): void => {
     if (!draft) return;
@@ -50,6 +83,9 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
     setDraft(next);
     setSaved(false);
   };
+
+  const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(onDisk);
+  useDirtyFlag("play", dirty);
 
   const savePlay = (): void => {
     if (!draft) return;
@@ -65,10 +101,10 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
   if (!draft) return <div className="workshop-tab-pane">读取中…</div>;
 
   return (
-    <div className="workshop-tab-pane">
+    <div className="workshop-tab-pane play-pane">
       {error && (
         <div className="error-banner" role="alert">
-          {error}
+          {error}<button type="button" className="notice-close" aria-label="收起这条" onClick={() => setError(null)}><Icon name="close" size={12} /></button>
         </div>
       )}
 
@@ -168,6 +204,44 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
       </section>
 
       <section className="panel">
+        <h3>主题色</h3>
+        <p className="muted small">
+          这部剧的专属色。标题的字、对话框、快捷菜单、选项、路线图与回顾流水都跟着它走——
+          它们本来就是同一个 --accent 推出来的。写进剧目的 theme.css，点一下即生效。
+        </p>
+        <div className="accent-picker" role="radiogroup" aria-label="剧目主题色">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={accent === null}
+            className={`accent-chip is-default${accent === null ? " on" : ""}`}
+            onClick={() => pickAccent(null)}
+            title="跟随引擎默认主题"
+          >
+            默认
+          </button>
+          {PLAY_ACCENTS.map((a) => {
+            const on = accent?.toLowerCase() === a.hex.toLowerCase();
+            return (
+              <button
+                key={a.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                className={`accent-chip${on ? " on" : ""}`}
+                style={{ "--chip": a.hex } as React.CSSProperties}
+                onClick={() => pickAccent(a.hex)}
+                title={a.label}
+              >
+                <span className="accent-chip-dot" />
+                {a.label}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="panel">
         <h3>写作参数</h3>
         <p className="muted small">
           这部剧每轮怎么写。选「默认」= 这一项从 play.json 里消失、跟着引擎默认走；
@@ -211,7 +285,7 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
         />
       </section>
 
-      <p className="row">
+      <p className="row save-row">
         <button className="primary" onClick={savePlay}>
           保存
         </button>

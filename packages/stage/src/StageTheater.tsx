@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
   actionAnimation,
@@ -18,6 +18,7 @@ import { speakerFocusId, type Playback, type VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
 import { LoopChannel, SfxPlayer } from "./loopAudio.js";
 import type { TranscriptEntry } from "./transcript.js";
+import type { ScriptFeedItem } from "./scriptFeed.js";
 import { Icon } from "./ui/Icon.js";
 import { escapeClaimed } from "./ui/escape.js";
 import { Modal } from "./ui/Modal.js";
@@ -66,6 +67,10 @@ interface StageTheaterProps {
   voiceState: (seq: number | null) => VoiceState;
   onUnlock: () => void;
   onView: (view: StageView) => void;
+  /** 可用视图列表；缺省全开放。插件等无对应视图落点的宿主可传入子集以隐藏无效快捷入口。 */
+  availableViews?: readonly StageView[];
+  /** 退出这场戏（回标题）。 */
+  onExit?: () => void;
   /** 点舞台即开新轮：等到内容演完且存在 pause 停止点时成立（不再单列「继续」按钮）。 */
   canContinue: boolean;
   onContinue: () => void;
@@ -231,6 +236,8 @@ function Sprite({
   stature,
   shot,
   anchor,
+  figureTop,
+  figureHeight,
   leaving,
   action,
   actionSeq,
@@ -244,6 +251,10 @@ function Sprite({
   stature: SpriteStature;
   shot: ActorShot | null;
   anchor: ActorAnchor;
+  /** 人物头顶到立绘画布上沿的像素（素材表声明的归一化产物）；缺省 = 存量素材，按图片盒上沿落位。 */
+  figureTop?: number;
+  /** 人物在立绘画布上的实际像素高（`figureTop + figureHeight = 画布高`）；缺省 = 存量素材，不做放大补偿。 */
+  figureHeight?: number;
   leaving: boolean;
   /** 行为词（剧本的 `action=`）：一次性演出，配方在 app.css 的 @keyframes。 */
   action: ActorAction | null;
@@ -303,7 +314,7 @@ function Sprite({
     acting ? " acting" : ""
   }${dim ? " dim" : ""}`;
   // 横竖屏两列都由 core 的表算好，媒体查询在 CSS 里挑一列——组件不必监听 resize
-  const stage = spriteStagePreset(framing, stature, anchor);
+  const stage = spriteStagePreset(framing, stature, anchor, figureTop, figureHeight);
   const style: CSSProperties = {
     zIndex,
     "--scale": SHOT_SCALE[shot ?? "normal"],
@@ -395,6 +406,8 @@ voiceState,
   onToggleVoice,
   onUnlock,
   onView,
+  availableViews,
+  onExit,
   canContinue,
   onContinue,
   ended = false,
@@ -550,6 +563,20 @@ voiceState,
       } else if (e.key === "l" || e.key === "L") {
         onView("backlog");
         e.preventDefault();
+      } else if (e.key === "f" || e.key === "F") {
+        onView("route");
+        e.preventDefault();
+      } else if (e.key === "g" || e.key === "G") {
+        onView("cg");
+        e.preventDefault();
+      } else if (e.key === "w" || e.key === "W") {
+        onView("workshop");
+        e.preventDefault();
+      } else if (e.key === "h" || e.key === "H") {
+        // 净画面：Quick Menu 里那颗「隐藏界面」的键写着「H，点画面恢复」，
+        // 规格也写「H 仅控制全局 UI 隐藏」——所以 H 是开关，不是只有退出那半边。
+        setHideUi(true);
+        e.preventDefault();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -688,6 +715,11 @@ voiceState,
     onFork(targets.lineSeq, text ? { instruction: text } : undefined);
   };
 
+  const canView = useCallback(
+    (v: StageView): boolean => !availableViews || availableViews.includes(v),
+    [availableViews],
+  );
+
   /** 当前显示行的语音状态：合成中也占一个喇叭位（闪烁），别让「正在生成」看起来像「没有语音」。 */
   const voice = voiceState(view?.seq ?? null);
 
@@ -790,6 +822,8 @@ voiceState,
                 stature={presentation.stature}
                 shot={slot.shot}
                 anchor={slot.anchor ?? presentation.anchor}
+                figureTop={presentation.figureTop}
+                figureHeight={presentation.figureHeight}
                 leaving={slot.leaving === true}
                 action={slot.action}
                 actionSeq={slot.actionSeq}
@@ -866,6 +900,10 @@ voiceState,
            不劫持舞台的继续/回看手势。分岔不在这里——它是「提示」面板里的一条岔
            （引导/分岔两选一），单独再挂一个键只是把同一个决定拆成两处。
            宿主没有落点（directorBar=false）时整块不渲染：没有工具栏，也就没有它开的那些面板。 */}
+      {/* 导演工具栏（提示/改写/重写/生图/重听）：舞台右上角常驻横排浮层。
+            与左上角模式切换同一套 chrome 语言（同高、同圆角、同主题色底），
+            两者左右对称地压在画面顶端。点击动作 stopPropagation，不劫持舞台手势。
+            宿主没有落点（directorBar=false）时整块不渲染。 */}
       {directorBar && (
         <div className="theater-director" ref={directorRef}>
           <button
@@ -879,8 +917,8 @@ voiceState,
               setDraft("");
             }}
           >
-            <Icon name="chat" size={17} />
-            提示
+            <Icon name="chat" size={14} />
+            <span className="dir-label">提示</span>
           </button>
           <button
             type="button"
@@ -894,8 +932,8 @@ voiceState,
               setDraft(targets.lineText);
             }}
           >
-            <Icon name="pencil" size={17} />
-            改写
+            <Icon name="pencil" size={14} />
+            <span className="dir-label">改写</span>
           </button>
           <button
             type="button"
@@ -909,31 +947,31 @@ voiceState,
               setDraft("");
             }}
           >
-            <Icon name="rewrite" size={17} />
-            重写
+            <Icon name="rewrite" size={14} />
+            <span className="dir-label">重写</span>
           </button>
           {showGenerate && (
-          <button
-            type="button"
-            className={`dir-btn ${action === "cg" ? "on" : ""}`}
-            title={fresh ? "还没有剧情可以入画" : "为这一幕生成一张插图（指令可留空）"}
-            aria-label="生成插图"
-            disabled={fresh}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (action === "cg") {
-                setAction(null);
-              } else {
-                setAction("cg");
-                setDraft("");
-                setSelectedRefs([]);
-                setUseHistory(true);
-              }
-            }}
-          >
-            <Icon name="assets" size={17} />
-            生图
-          </button>
+            <button
+              type="button"
+              className={`dir-btn ${action === "cg" ? "on" : ""}`}
+              title={fresh ? "还没有剧情可以入画" : "为这一幕生成一张插图（指令可留空）"}
+              aria-label="生成插图"
+              disabled={fresh}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (action === "cg") {
+                  setAction(null);
+                } else {
+                  setAction("cg");
+                  setDraft("");
+                  setSelectedRefs([]);
+                  setUseHistory(true);
+                }
+              }}
+            >
+              <Icon name="assets" size={14} />
+              <span className="dir-label">生图</span>
+            </button>
           )}
           {voiceAvailable && voice !== "none" && (
             <button
@@ -947,8 +985,8 @@ voiceState,
                 if (voice === "ready" && view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
               }}
             >
-              <Icon name="volume" size={17} />
-              重听
+              <Icon name="volume" size={14} />
+              <span className="dir-label">重听</span>
             </button>
           )}
         </div>
@@ -983,52 +1021,90 @@ voiceState,
               </>
             )}
           </div>
-          {/* 游戏选项：Auto / Voice / Back / Hide，落在对话框右下角。导演动作见舞台右上角的工具栏。
-              纯文字无图标：开关态由字面自己说（Auto/Manual、Voice/Muted），
-              不靠图标形状，也不用额外的状态标记。 */}
-          <div className="dialog-options">
+          {/* 快捷菜单（Quick Menu）：对话框右下角的一排游戏选项。开关态用高亮表示，
+              回顾 / 路线 / 画廊在舞台上就地展开，工坊与退出离开游戏画面。 */}
+          <div className="dialog-options" role="toolbar" aria-label="快捷菜单">
             <button
               type="button"
-              className={`dir-btn ${playback.auto ? "tgl-on" : ""}`}
-              title={playback.auto ? "Auto-play: on (tap to turn off)" : "Auto-play: off (tap to turn on)"}
+              className={`quick-btn${playback.auto ? " tgl-on" : ""}`}
+              title={playback.auto ? "自动播放：开（点击关闭）" : "自动播放：关（点击开启）"}
               aria-pressed={playback.auto}
               onClick={(e) => {
                 e.stopPropagation();
                 playback.setAuto(!playback.auto);
               }}
             >
-              {playback.auto ? "Auto" : "Manual"}
+              <span className="qm-label">Auto</span>
             </button>
             {voiceAvailable && (
               <button
                 type="button"
-                className={`dir-btn ${voiceOn ? "tgl-on" : ""}`}
-                title={voiceOn ? "Voice: on (tap to turn off)" : "Voice: off (tap to turn on)"}
+                className={`quick-btn${voiceOn ? " tgl-on" : ""}`}
+                title={voiceOn ? "语音：开（点击静音）" : "语音：静音（点击打开）"}
                 aria-pressed={voiceOn}
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleVoice();
                 }}
               >
-                {voiceOn ? "VOICE" : "MUTED"}
+                <Icon name={voiceOn ? "volume" : "volume-off"} size={14} />
               </button>
             )}
             <button
               type="button"
-              className="dir-btn"
-              title="Rewind one line (←)"
+              className="quick-btn"
+              title="回到上一句（←）"
               disabled={!scrubbed && playback.history.length === 0}
               onClick={(e) => {
                 e.stopPropagation();
                 scrub(-1);
               }}
             >
-              BACK
+              <Icon name="prev" size={14} />
             </button>
+            {canView("backlog") && (
+              <button
+                type="button"
+                className="quick-btn"
+                title="回顾说过的话（L）"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onView("backlog");
+                }}
+              >
+                <span className="qm-label">Log</span>
+              </button>
+            )}
+            {canView("route") && (
+              <button
+                type="button"
+                className="quick-btn"
+                title="故事路线（F）"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onView("route");
+                }}
+              >
+                <span className="qm-label">Route</span>
+              </button>
+            )}
+            {canView("cg") && (
+              <button
+                type="button"
+                className="quick-btn"
+                title="插图画廊（G）"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onView("cg");
+                }}
+              >
+                <span className="qm-label">CG</span>
+              </button>
+            )}
             <button
               type="button"
-              className="dir-btn"
-              title="Hide the interface — tap the picture or press H / Space to bring it back"
+              className="quick-btn"
+              title="隐藏界面（H，点画面恢复）"
               onClick={(e) => {
                 e.stopPropagation();
                 setAction(null);
@@ -1036,8 +1112,37 @@ voiceState,
                 setHideUi(true);
               }}
             >
-              HIDE
+              <Icon name="close" size={14} />
             </button>
+            {canView("workshop") && (
+              <>
+                <span className="quick-sep" aria-hidden />
+                <button
+                  type="button"
+                  className="quick-btn"
+                  title="打开工坊（W）"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onView("workshop");
+                  }}
+                >
+                  <Icon name="workshop" size={14} />
+                </button>
+              </>
+            )}
+            {onExit && (
+              <button
+                type="button"
+                className="quick-btn"
+                title="回到标题画面"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onExit();
+                }}
+              >
+                <span className="qm-label">Title</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1062,40 +1167,52 @@ voiceState,
               </>
             }
           >
-            {/* 「提示」的两条岔：引导 = 顺着这一轮写（排进待注入队列，停止点不动），
-                分岔 = 从正在看的这一行退开再落笔。两件事同一处决定，别拆成两个键。 */}
+            {/* 「提示」的工具栏：引导/分岔 模式切换与 OOC 快捷开关平排，形成操作台工具条 */}
             {action === "prompt" && (
-              <div className="seg guide-seg">
+              <div className="prompt-toolbar">
+                <div className="seg guide-seg" role="tablist">
+                  <button
+                    type="button"
+                    className={`seg-btn ${guideMode === "guide" ? "active" : ""}`.trim()}
+                    aria-pressed={guideMode === "guide"}
+                    title="跟下一轮一起发"
+                    onClick={() => setGuideMode("guide")}
+                  >
+                    引导
+                  </button>
+                  <button
+                    type="button"
+                    className={`seg-btn ${guideMode === altMode ? "active" : ""}`.trim()}
+                    aria-pressed={guideMode === altMode}
+                    title={altMode === "interrupt" ? GUIDE_HINT.interrupt : (forkBlock ?? "从这一行开新分支。")}
+                    disabled={altMode === "fork" && forkBlock !== null}
+                    onClick={() => setGuideMode(altMode)}
+                  >
+                    {altMode === "interrupt" ? "打断" : "分岔"}
+                  </button>
+                </div>
                 <button
                   type="button"
-                  className={`seg-btn ${guideMode === "guide" ? "active" : ""}`.trim()}
-                  aria-pressed={guideMode === "guide"}
-                  title="跟下一轮一起发"
-                  onClick={() => setGuideMode("guide")}
+                  className={`ooc-shortcut ${draft.startsWith(OOC_PREFIX) ? "on" : ""}`}
+                  title="以 OOC 开头 = 跳出角色，直接下指令"
+                  aria-label="以 OOC 前缀给剧作家下指令"
+                  onClick={() =>
+                    setDraft((prev) =>
+                      prev.startsWith(OOC_PREFIX) ? prev.slice(OOC_PREFIX.length) : OOC_PREFIX + prev,
+                    )
+                  }
                 >
-                  引导
-                </button>
-                <button
-                  type="button"
-                  className={`seg-btn ${guideMode === altMode ? "active" : ""}`.trim()}
-                  aria-pressed={guideMode === altMode}
-                  // 分岔要一个落点（正在看的这一行）；打断随时成立，没有可置灰的情形。
-                  title={altMode === "interrupt" ? GUIDE_HINT.interrupt : (forkBlock ?? "从这一行开新分支。")}
-                  disabled={altMode === "fork" && forkBlock !== null}
-                  onClick={() => setGuideMode(altMode)}
-                >
-                  {altMode === "interrupt" ? "打断" : "分岔"}
+                  <span className="ooc-indicator" aria-hidden />
+                  OOC 指令模式
                 </button>
               </div>
             )}
             {/* 生图选项：参考立绘（多选有序）+ 基于历史开关 */}
             {action === "cg" && (
-              <>
+              <div className="cg-options-group">
                 <div className="image-gen-field">
                   <span className="image-gen-label">参考立绘（按点选顺序垫图）：</span>
                   <RefCharacterPicker
-                    // 候选 = 有立绘的主体（目录扫出来的），不是角色表：机甲、道具没有卡也能垫。
-                    // 名字先问绑定它的那张卡（目录名与角色 id 可以不同名），再落舞台名牌、最后才是目录名
                     candidates={index.spriteIds
                       .map((id) => ({
                         id,
@@ -1115,30 +1232,17 @@ voiceState,
                   />
                   <span>基于刚才演到的剧情与场景</span>
                 </label>
-              </>
+              </div>
             )}
             <div className="director-input">
-              {action === "prompt" && (
-                <button
-                  type="button"
-                  className={`ooc-shortcut ${draft.startsWith(OOC_PREFIX) ? "on" : ""}`}
-                  title="以 OOC 开头 = 跳出角色，直接下指令"
-                  aria-label="以 OOC 前缀给剧作家下指令"
-                  onClick={() =>
-                    setDraft((prev) =>
-                      prev.startsWith(OOC_PREFIX) ? prev.slice(OOC_PREFIX.length) : OOC_PREFIX + prev,
-                    )
-                  }
-                >
-                  OOC：
-                </button>
-              )}
-              <input
+              <textarea
+                rows={4}
                 value={draft}
                 placeholder={action === "prompt" ? ACTION_META[modalAction].placeholder : ACTION_META[action].placeholder}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key !== "Enter") return;
+                  if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+                  e.preventDefault();
                   submitAction();
                 }}
               />
@@ -1161,6 +1265,7 @@ voiceState,
  */
 export function BacklogView({
   entries,
+  feed,
   names,
   headKey,
   busy,
@@ -1173,6 +1278,8 @@ export function BacklogView({
   onFork,
 }: {
   entries: readonly TranscriptEntry[];
+  /** 剧本视图：台词 + 舞台指令按演出顺序铺开（不传就只铺台词，宿主老行为不变）。 */
+  feed?: readonly ScriptFeedItem[];
   names: Readonly<Record<string, string>>;
   headKey: string | null;
   busy: boolean;
@@ -1189,32 +1296,76 @@ export function BacklogView({
   /** 改写就地改：点开编辑框在回顾里完成，不跳视图。 */
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const currentRef = useRef<HTMLLIElement | null>(null);
+
+  /** 进来先落在「你现在读到的那一句」上：几十条流水从头看起没有意义。 */
+  useEffect(() => {
+    currentRef.current?.scrollIntoView({ block: "center" });
+  }, [headKey, entries.length, feed]);
 
   return (
     <div className="backlog-panel">
       {entries.length === 0 ? (
-        <p className="backlog-empty">还没有说出口的话。</p>
+        <p className="backlog-empty">剧本还是空的。</p>
       ) : (
         <ol className="backlog-list">
-          {entries.map((item) => {
-            const beat = beatFor(item);
-            const editable = item.kind === "line" && item.nodeId !== null;
-            const playable = item.type === "say" && voiceAvailable && voiceState(item.seq) === "ready";
+          {(feed ?? entries.map((entry) => ({ kind: "line" as const, key: entry.key, entry }))).map((item) => {
+            if (item.kind === "direction") {
+              const d = item.direction;
+              return (
+                <li key={item.key} className={`bl-dir bl-dir-${d.type}`}>
+                  <span className="bl-dir-label">{d.label}</span>
+                  {d.detail && <span className="bl-dir-detail">{d.detail}</span>}
+                  {d.stopOptions && d.stopOptions.length > 0 && (
+                    <span className="bl-dir-options">
+                      {d.stopOptions.map((opt) => (
+                        <span key={opt.text} className="bl-dir-option">
+                          {opt.text}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </li>
+              );
+            }
+            const entry = item.entry;
+            const beat = beatFor(entry);
+            const editable = entry.kind === "line" && entry.nodeId !== null;
+            const playable = entry.type === "say" && voiceAvailable && voiceState(entry.seq) === "ready";
+            const isCurrent = entry.key === headKey;
             return (
-              <li key={item.key} className={`bl-${item.kind}`}>
-                <div className={item.key === headKey ? "bl-text current" : "bl-text"}>
-                  {item.actorId && <b>{actorName(names, item.actorId)}</b>}
-                  <span>{item.text}</span>
+              <li
+                key={entry.key}
+                ref={isCurrent ? currentRef : undefined}
+                className={`bl-${entry.kind}${isCurrent ? " is-current" : ""}`}
+                aria-current={isCurrent ? "true" : undefined}
+              >
+                {/* CLANNAD 式分栏：名字独立一行，语音重播收成名字左侧一枚圆形徽章。
+                    正文另起一行、大号字，读起来是「谁说了什么」的流水，不是表格行。 */}
+                <div className="bl-head">
+                  {playable && (
+                    <button
+                      type="button"
+                      className="bl-voice"
+                      title="这一句有语音，点一下重听"
+                      aria-label="重听这句"
+                      onClick={() => entry.seq !== null && onReplay(entry.seq)}
+                    >
+                      <Icon name="volume" size={12} />
+                    </button>
+                  )}
+                  {entry.actorId && <span className="bl-actor">{actorName(names, entry.actorId)}</span>}
                 </div>
-                {editing === item.key ? (
+                <p className="bl-text">{entry.text}</p>
+                {editing === entry.key ? (
                   <div className="bl-edit">
                     <input
                       value={draft}
                       autoFocus
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" && item.nodeId) {
-                          onEdit(item.nodeId, draft.trim());
+                        if (e.key === "Enter" && entry.nodeId) {
+                          onEdit(entry.nodeId, draft.trim());
                           setEditing(null);
                         } else if (e.key === "Escape") {
                           setEditing(null);
@@ -1225,8 +1376,8 @@ export function BacklogView({
                       type="button"
                       disabled={draft.trim() === ""}
                       onClick={() => {
-                        if (!item.nodeId) return;
-                        onEdit(item.nodeId, draft.trim());
+                        if (!entry.nodeId) return;
+                        onEdit(entry.nodeId, draft.trim());
                         setEditing(null);
                       }}
                     >
@@ -1244,30 +1395,19 @@ export function BacklogView({
                       type="button"
                       className="bl-tool"
                       title="在舞台上重看到这一句"
-                      onClick={() => onSeek(item.key)}
+                      onClick={() => onSeek(entry.key)}
                     >
                       <Icon name="prev" size={14} />
                       回到舞台
                     </button>
-                    {playable && (
-                      <button
-                        type="button"
-                        className="bl-tool"
-                        title="重听这句"
-                        onClick={() => item.seq !== null && onReplay(item.seq)}
-                      >
-                        <Icon name="play" size={14} />
-                        重听
-                      </button>
-                    )}
                     {editable && (
                       <button
                         type="button"
                         className="bl-tool"
                         title="就地改写这句"
                         onClick={() => {
-                          setEditing(item.key);
-                          setDraft(item.text);
+                          setEditing(entry.key);
+                          setDraft(entry.text);
                         }}
                       >
                         <Icon name="pencil" size={14} />

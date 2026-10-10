@@ -61,6 +61,23 @@ export const SPRITE_FRAMING_ASPECT: Record<SpriteFraming, string> = {
   square: "1:1",
 };
 
+/**
+ * 取景 → 抠图画布比（宽 / 高，数值）。
+ *
+ * 抠图的输出画布按它开：`aspectRatio` 必须 ≥ 该档主体的外框比，人物才缩得到
+ * 「画布高 × (1 − topPadding)」而宽度不先卡——square 的 1:1 源图被压进 9:16 画布，
+ * 就是 vxn 那张 41% 上边距的来源（1080 / 0.954 = 1132，与实测逐位吻合）。
+ *
+ * 换算只此一处。四个调用点各写一遍 `split(":")` 就是下次漂移的起点。
+ */
+export function spriteAspectRatio(framing?: SpriteFraming): number {
+  const [w, h] = SPRITE_FRAMING_ASPECT[framing ?? DEFAULT_SPRITE_FRAMING]
+    .split(":")
+    .map((part) => Number(part));
+  if (!w || !h || !Number.isFinite(w) || !Number.isFinite(h)) return 9 / 16;
+  return w / h;
+}
+
 /** 景别措辞：进 `NEUTRAL_SUFFIX` 的第一段，替代写死的 "full body"。 */
 export const SPRITE_FRAMING_SHOT: Record<SpriteFraming, string> = {
   full: "full body, head to toe, entire figure inside the frame",

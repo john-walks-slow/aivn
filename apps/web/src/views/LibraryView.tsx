@@ -1,22 +1,22 @@
-import { useEffect, useState } from "react";
-
-import {
-  api,
-  coverUrl,
-  type PlaySummary,
-} from "../api.js";
+import { useEffect, useMemo, useState } from "react";
+import { Icon } from "@aivn/stage";
+import { api, coverUrl, type PlaySummary } from "../api.js";
 import { navigate } from "../router.jsx";
+import { plainSummary } from "../ui/text.js";
+import { useDismissible } from "../ui/useDismissible.js";
 
-/** 应用首页 = 剧目库：作品牌 + 底部一条管理入口。 */
+/** 应用首页 = 剧目库（现代启动器风格）：作品牌网格 + 顶部搜索与管理 */
 export function LibraryView() {
   const [plays, setPlays] = useState<PlaySummary[] | null>(null);
   const [covers, setCovers] = useState<Record<string, string | null>>({});
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [newId, setNewId] = useState("");
   const [newTitle, setNewTitle] = useState("");
-  /** 首启引导：网关没配好就直说，别等用户开了一部剧才发现什么都跑不起来。 */
   const [setupIssue, setSetupIssue] = useState<string | null>(null);
+  /** 网关没配好这条只是提示，可以收起来。 */
+  const issueHidden = useDismissible(setupIssue);
 
   useEffect(() => {
     api
@@ -33,7 +33,13 @@ export function LibraryView() {
         void Promise.all(
           list.map((play) =>
             Promise.all([api.playDetail(play.id), api.listAssets(play.id)])
-              .then(([detail, assets]) => [play.id, coverUrl(play.id, detail.play.cover, assets)] as const)
+              .then(
+                ([detail, assets]) =>
+                  [
+                    play.id,
+                    coverUrl(play.id, detail.play.cover, assets),
+                  ] as const,
+              )
               .catch(() => [play.id, null] as const),
           ),
         ).then((pairs) => setCovers(Object.fromEntries(pairs)));
@@ -58,87 +64,326 @@ export function LibraryView() {
       .catch((e: Error) => setError(e.message));
   };
 
+  const [filterMode, setFilterMode] = useState<"all" | "active" | "draft">(
+    "all",
+  );
+
+  const counts = useMemo(() => {
+    if (!plays) return { total: 0, active: 0, draft: 0, saves: 0 };
+    const total = plays.length;
+    const active = plays.filter((p) => p.readiness.saves > 0).length;
+    const draft = total - active;
+    const saves = plays.reduce((acc, p) => acc + (p.readiness.saves || 0), 0);
+    return { total, active, draft, saves };
+  }, [plays]);
+
+  const filtered = useMemo(() => {
+    if (!plays) return null;
+    let list = plays;
+    if (filterMode === "active")
+      list = list.filter((p) => p.readiness.saves > 0);
+    if (filterMode === "draft")
+      list = list.filter((p) => p.readiness.saves === 0);
+    const q = search.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter(
+      (p) =>
+        p.title.toLowerCase().includes(q) ||
+        p.premise.toLowerCase().includes(q) ||
+        p.id.toLowerCase().includes(q),
+    );
+  }, [plays, search, filterMode]);
+
   return (
-    <div className="screen library">
-      <header className="screen-bar wordmark-bar">
-        <h1 className="wordmark">AIVN</h1>
-        <button className="ghost-btn" onClick={() => navigate("/settings")}>
-          设置
-        </button>
-      </header>
-
-      {error && (
-        <div className="error-banner" role="alert">
-          {error}
+    <div className="screen library-screen">
+      <header className="library-top">
+        <div className="library-brand">
+          <span className="library-logo">AIVN</span>
+          <span className="library-subtitle">CONSOLE</span>
         </div>
-      )}
 
-      {setupIssue && (
-        <div className="warn-banner" role="status">
-          还没配好模型网关：{setupIssue}{" "}
-          <button className="ghost-btn" onClick={() => navigate("/settings")}>
-            去设置
+        <div className="library-search-box">
+          <Icon name="search" size={14} />
+          <input
+            type="search"
+            className="library-search-input"
+            placeholder="搜索剧目标题、设定、ID…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        <div className="library-top-actions">
+          <button
+            type="button"
+            className="primary btn-compact"
+            onClick={() => setCreating(true)}
+          >
+            <Icon name="plus" size={13} /> 新建剧目
+          </button>
+
+          <label className="ghost-btn btn-compact library-upload-btn">
+            <Icon name="download" size={13} /> 导入
+            <input
+              type="file"
+              accept=".zip"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) importZip(file);
+              }}
+            />
+          </label>
+
+          <button
+            type="button"
+            className="ghost-btn btn-compact icon-only-btn"
+            onClick={() => navigate("/settings")}
+            title="全局系统设置"
+            aria-label="全局设置"
+          >
+            <Icon name="settings" size={15} />
           </button>
         </div>
-      )}
+      </header>
 
-      <div className="library-grid">
-        {(plays ?? []).map((play) => {
-          const saves = play.readiness.saves;
-          const cover = covers[play.id];
-          return (
-            <button key={play.id} className="card" onClick={() => navigate(`/play/${play.id}`)}>
-              <span className="card-cover">
-                {cover ? <img src={cover} alt="" loading="lazy" /> : <span className="card-cover-blank" />}
-                <span className={`badge ${saves > 0 ? "ok" : ""}`}>{saves > 0 ? `${saves} 周目` : "未开演"}</span>
-              </span>
-              <span className="card-body">
-                <strong className="card-name">{play.title}</strong>
-                <span className="card-premise">
-                  {play.premise.length > 72 ? `${play.premise.slice(0, 72)}…` : play.premise || "（故事前提待补）"}
-                </span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {/* OMC 风格全局指标指示栏：高信息密度、硬朗工业级 */}
+      <section className="library-metrics-bar" aria-label="剧目库概览指标">
+        <div className="metric-tile">
+          <span className="metric-tile-label">ALL PLAYS</span>
+          <div className="metric-tile-val">
+            <span className="metric-num">{counts.total}</span>
+            <span className="metric-sub">剧目</span>
+          </div>
+        </div>
 
-      {plays !== null && plays.length === 0 && <p className="muted library-empty">还没有剧目——建一个开始。</p>}
+        <div className="metric-tile">
+          <span className="metric-tile-label">ACTIVE PLAYS</span>
+          <div className="metric-tile-val">
+            <span className="metric-num">{counts.active}</span>
+            <span className="metric-pip is-success" />
+            <span className="metric-sub">已开演</span>
+          </div>
+        </div>
 
-      <footer className="library-manage">
-        {creating ? (
-          <div className="create-form">
-            <input placeholder="剧目 id（字母数字_-）" value={newId} onChange={(e) => setNewId(e.target.value)} />
-            <input placeholder="标题" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
-            <span className="row">
-              <button className="primary" onClick={create}>
-                建这个剧目
-              </button>
-              <button className="ghost-btn" onClick={() => setCreating(false)}>
-                取消
-              </button>
+        <div className="metric-tile">
+          <span className="metric-tile-label">TOTAL SAVES</span>
+          <div className="metric-tile-val">
+            <span className="metric-num">{counts.saves}</span>
+            <span className="metric-sub">周目记录</span>
+          </div>
+        </div>
+
+        <div className="metric-tile">
+          <span className="metric-tile-label">ENGINE STATUS</span>
+          <div className="metric-tile-val">
+            <span
+              className={`metric-pip ${setupIssue ? "is-warn" : "is-success"}`}
+            />
+            <span className="metric-status-text">
+              {setupIssue ? "GATEWAY WARN" : "ONLINE"}
             </span>
           </div>
-        ) : (
-          <>
-            <button className="library-verb" onClick={() => setCreating(true)}>
-              新建剧目
+        </div>
+      </section>
+
+      {/* OMC 风格紧凑工具栏：Segmented 选项卡 + 快捷计数 */}
+      <div className="library-toolbar">
+        <div className="library-filter-tabs" role="tablist">
+          <button
+            type="button"
+            className={`filter-tab-btn${filterMode === "all" ? " is-active" : ""}`}
+            onClick={() => setFilterMode("all")}
+          >
+            全部 <span className="tab-count">{counts.total}</span>
+          </button>
+          <button
+            type="button"
+            className={`filter-tab-btn${filterMode === "active" ? " is-active" : ""}`}
+            onClick={() => setFilterMode("active")}
+          >
+            已开演 <span className="tab-count">{counts.active}</span>
+          </button>
+          <button
+            type="button"
+            className={`filter-tab-btn${filterMode === "draft" ? " is-active" : ""}`}
+            onClick={() => setFilterMode("draft")}
+          >
+            草稿中 <span className="tab-count">{counts.draft}</span>
+          </button>
+        </div>
+
+        <span className="library-filter-summary">
+          显示 {filtered?.length ?? 0} 部剧目
+        </span>
+      </div>
+
+      <div className="notice-layer">
+        {error && (
+          <div className="error-banner" role="alert">
+            {error}
+            <button
+              type="button"
+              className="notice-close"
+              aria-label="收起这条"
+              onClick={() => setError(null)}
+            >
+              <Icon name="close" size={12} />
             </button>
-            <label className="library-verb">
-              导入剧目包
-              <input
-                type="file"
-                accept=".zip"
-                hidden
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) importZip(file);
-                }}
-              />
-            </label>
-          </>
+          </div>
         )}
-      </footer>
+
+        {setupIssue && !issueHidden.hidden && (
+          <div className="warn-banner" role="status">
+            <span>模型网关未配置或连接异常：{setupIssue}</span>
+            <button className="link-btn" onClick={() => navigate("/settings")}>
+              前往设置
+            </button>
+            <button
+              type="button"
+              className="notice-close"
+              aria-label="收起这条"
+              onClick={issueHidden.dismiss}
+            >
+              <Icon name="close" size={12} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <main className="library-content">
+        {creating && (
+          <div className="create-card-banner">
+            <div className="create-card-header">
+              <h3>新建剧目</h3>
+              <p className="muted small">
+                输入剧目唯一标识与标题，创建后即刻进入工坊创作世界。
+              </p>
+            </div>
+            <div className="create-form-row">
+              <input
+                className="input-text"
+                placeholder="剧目 ID（英文、数字、中划线，如 my-story）"
+                value={newId}
+                autoFocus
+                onChange={(e) => setNewId(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && create()}
+              />
+              <input
+                className="input-text"
+                placeholder="剧目标题（如《星海余晖》）"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && create()}
+              />
+              <div className="create-btns">
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={create}
+                  disabled={!newId.trim()}
+                >
+                  创建并前往
+                </button>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setCreating(false)}
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="library-grid">
+          {(filtered ?? []).map((play) => {
+            const saves = play.readiness.saves;
+            const cover = covers[play.id];
+            const summary = plainSummary(play.premise, play.title, 80);
+
+            return (
+              <div
+                key={play.id}
+                className="play-card"
+                onClick={() => navigate(`/play/${play.id}`)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && navigate(`/play/${play.id}`)
+                }
+              >
+                <div className="play-card-cover">
+                  {cover ? (
+                    <img src={cover} alt="" loading="lazy" />
+                  ) : (
+                    <div className="play-card-cover-blank">
+                      <Icon name="drama" size={28} />
+                    </div>
+                  )}
+                  <span className="play-card-id-tag">{play.id}</span>
+                  <div className={`play-badge ${saves > 0 ? "active" : ""}`}>
+                    <span
+                      className={`status-pip ${saves > 0 ? "is-success" : "is-neutral"}`}
+                    />
+                    <span>{saves > 0 ? `${saves} 周目` : "未开演"}</span>
+                  </div>
+                  <div className="play-card-hover-actions">
+                    <span className="hover-play-btn">
+                      <Icon name="play" size={14} /> 启动
+                    </span>
+                  </div>
+                </div>
+
+                <div className="play-card-body">
+                  <h3 className="play-card-title">{play.title}</h3>
+                  <p className="play-card-premise">
+                    {summary || "（点击进入设定世界观与故事背景）"}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {plays !== null && plays.length === 0 && (
+          <div className="library-empty-state">
+            <div className="empty-state-icon">
+              <Icon name="drama" size={48} />
+            </div>
+            <h3>剧场空空如也</h3>
+            <p>
+              还没有任何剧目。你可以新建一个原创剧目，或导入已有的剧目包开始体验。
+            </p>
+            <div className="empty-state-actions">
+              <button
+                type="button"
+                className="primary"
+                onClick={() => setCreating(true)}
+              >
+                <Icon name="plus" size={14} /> 新建第一个剧目
+              </button>
+            </div>
+          </div>
+        )}
+
+        {filtered !== null &&
+          filtered.length === 0 &&
+          plays &&
+          plays.length > 0 && (
+            <div className="library-empty-state">
+              <p>没有找到与“{search}”相关的剧目。</p>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => setSearch("")}
+              >
+                清除搜索
+              </button>
+            </div>
+          )}
+      </main>
     </div>
   );
 }

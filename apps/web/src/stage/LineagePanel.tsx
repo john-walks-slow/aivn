@@ -4,6 +4,8 @@ import { api } from "../api.js";
 import type { AssetIndex, ScriptLine } from "@aivn/stage";
 import { buildBeats } from "./beats.js";
 import { RouteCanvas, type RouteControls } from "./RouteCanvas.js";
+import { Icon } from "@aivn/stage";
+import { useDismissible } from "../ui/useDismissible.js";
 
 /**
  * 路线卡上的三个动词——这就是树上能做的全部世界线写操作。
@@ -25,13 +27,19 @@ export interface LineageOps {
    * `instruction` 是可选的一句交代，留空就是纯重写——填了的话它随这一岔一起发，是重写
    * 这一轮的第一条输入（与舞台导演栏的「重写」同一条路）。
    */
-  rewrite: (anchor: string, opts?: { replaced?: string; instruction?: string }) => void;
+  rewrite: (
+    anchor: string,
+    opts?: { replaced?: string; instruction?: string },
+  ) => void;
   /** 删除：剪掉这一段及其全部后代。确认弹窗在卡片那一层（见 RouteCanvas）。 */
   remove: (nodeId: string) => void;
 }
 
 /** 谱系拉取：打开视图与每次操作后刷新（树不随轮广播，避免每轮搬运全量节点）。 */
-export function useLineage(playId: string, nonce: number): {
+export function useLineage(
+  playId: string,
+  nonce: number,
+): {
   view: LineageView | null;
   error: string | null;
   reload: () => void;
@@ -45,7 +53,9 @@ export function useLineage(playId: string, nonce: number): {
         setView(next);
         setError(null);
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : String(err)),
+      );
   }, [playId]);
   useEffect(reload, [reload, nonce]);
   return { view, error, reload };
@@ -73,14 +83,36 @@ export function RouteTree(
   },
 ) {
   const { view, names, busy, ops } = props;
-  const cards = useMemo(() => (view ? buildBeats(view, props.lines) : []), [view, props.lines]);
+  const cards = useMemo(
+    () => (view ? buildBeats(view, props.lines) : []),
+    [view, props.lines],
+  );
+
+  /** 载入谱系失败这条可以收起来（重新载入成功会自己换掉）。 */
+  const dismissed = useDismissible(props.error ?? null);
 
   return (
     <div className="route-screen">
-      {props.error && <div className="error-banner">{props.error}</div>}
+      {props.error && !dismissed.hidden && (
+        <div className="error-banner" role="alert">
+          <span>{props.error}</span>
+          <button
+            type="button"
+            className="notice-close"
+            aria-label="收起这条"
+            onClick={dismissed.dismiss}
+          >
+            <Icon name="close" size={12} />
+          </button>
+        </div>
+      )}
       {!props.view || cards.length === 0 ? (
         <div className="route-blank">
-          <div className="overlay">{props.view ? "还没有剧情。演过之后这里才有可回看的分支。" : "读取路线…"}</div>
+          <div className="overlay">
+            {props.view
+              ? "还没有剧情。演过之后这里才有可回看的分支。"
+              : "读取路线…"}
+          </div>
         </div>
       ) : (
         <RouteCanvas

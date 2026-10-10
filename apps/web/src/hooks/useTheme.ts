@@ -2,19 +2,14 @@ import { useEffect } from "react";
 
 const STORAGE_KEY_PREFIX = "aivn:";
 const UI_MODE_KEY = STORAGE_KEY_PREFIX + "ui-theme-mode";
-const STAGE_MODE_KEY = STORAGE_KEY_PREFIX + "stage-theme-mode";
 const ACCENT_KEY = STORAGE_KEY_PREFIX + "accent";
 const ACCENT_CUSTOM_KEY = STORAGE_KEY_PREFIX + "accent-custom";
 
 /** 偏好：system=跟系统当场算，light/dark=写死。 */
 export type ThemeMode = "system" | "light" | "dark";
 
-/**
- * 两个开关各有各的默认：界面默认跟系统（白天纸面、夜里暗纸），
- * 舞台默认恒深——画面衬底本来就该压住背景图的亮部，跟系统走会在亮系统下读成白底空画布。
- */
+/** 界面主题默认跟系统（白天纸面、夜里暗纸）。 */
 export const DEFAULT_UI_MODE: ThemeMode = "system";
-export const DEFAULT_STAGE_MODE: ThemeMode = "dark";
 
 /** 本标签页改偏好时由设置页广播：storage 事件只发到别的标签页。 */
 export const THEME_MODE_CHANGED = "aivn:theme-mode-changed";
@@ -53,7 +48,10 @@ export function applyTheme(): void {
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const root = document.documentElement;
   root.dataset.uiTheme = actual(readMode(UI_MODE_KEY, DEFAULT_UI_MODE), prefersDark);
-  root.dataset.stageTheme = actual(readMode(STAGE_MODE_KEY, DEFAULT_STAGE_MODE), prefersDark);
+  // 舞台恒深色：画面衬底本来就该压住背景图的亮部，跟系统走会在亮系统下读成白底空画布。
+  // 2026-10-10 起设置项下线（舞台主题不再是用户可选项），属性照写——
+  // 浅色那套令牌与选择器还在 stage.css / app.css 里，等「舞台要不要保留明暗概念」定了再删。
+  root.dataset.stageTheme = "dark";
 }
 
 export function setThemeMode(key: string, mode: ThemeMode): void {
@@ -74,12 +72,54 @@ export function readAccent(): { id: AccentId; custom: string } {
  * 预设色走 app.css 的 [data-accent] 属性选择器；只有「自己挑的颜色」才写内联变量——
  * 剧目换皮挂的是 :root 覆盖，常驻内联会把整张主题表压掉，所以这个例外只给 custom。
  */
+const INK_LIGHT = "#ffffff";
+const INK_DARK = "#0e1a1b";
+
+function channel(v: number): number {
+  const s = v / 255;
+  return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+}
+
+/** 相对亮度；认不出的写法回 null（宁可回落到白字，也别把颜色改坏）。 */
+export function luminance(hex: string): number | null {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  const group = m?.[1];
+  if (!group) return null;
+  const raw = group.length === 3 ? group.split("").map((c) => c + c).join("") : group;
+  return (
+    0.2126 * channel(parseInt(raw.slice(0, 2), 16)) +
+    0.7152 * channel(parseInt(raw.slice(2, 4), 16)) +
+    0.0722 * channel(parseInt(raw.slice(4, 6), 16))
+  );
+}
+
+function contrast(a: number, b: number): number {
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+/**
+ * 自定义主色的配套墨色。预设色是成对的（`--accent` + `--accent-ink` 一起给），
+ * 自己挑的只有一个色——不给它配墨色，浅色主色上就是白字（实测 1.41:1，等于看不见）。
+ * 取白字与深字里更清楚的那个。
+ */
+export function readableInk(hex: string): string {
+  const lum = luminance(hex);
+  const dark = luminance(INK_DARK) ?? 0;
+  if (lum === null) return INK_LIGHT;
+  return contrast(lum, 1) >= contrast(lum, dark) ? INK_LIGHT : INK_DARK;
+}
+
 export function applyAccent(): void {
   const root = document.documentElement;
   const { id, custom } = readAccent();
   root.dataset.accent = id;
-  if (id === "custom") root.style.setProperty("--accent", custom);
-  else root.style.removeProperty("--accent");
+  if (id === "custom") {
+    root.style.setProperty("--accent", custom);
+    root.style.setProperty("--accent-ink", readableInk(custom));
+  } else {
+    root.style.removeProperty("--accent");
+    root.style.removeProperty("--accent-ink");
+  }
 }
 
 export function setAccent(id: AccentId, custom?: string): void {

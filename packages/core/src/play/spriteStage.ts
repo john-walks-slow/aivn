@@ -82,17 +82,68 @@ export function spriteStagePreset(
   framing?: SpriteFraming,
   stature?: SpriteStature,
   anchor: ActorAnchor = "bottom",
+  figureTop?: number,
+  figureHeight?: number,
 ): SpriteStagePreset {
   const row = STAGE_PRESETS[framing ?? DEFAULT_SPRITE_FRAMING][stature ?? DEFAULT_SPRITE_STATURE];
-  return { landscape: box(row.landscape, stature, anchor), portrait: box(row.portrait, stature, anchor) };
+  return {
+    landscape: box(row.landscape, stature, anchor, figureTop, figureHeight),
+    portrait: box(row.portrait, stature, anchor, figureTop, figureHeight),
+  };
 }
 
-function box(raw: Box, stature: SpriteStature | undefined, anchor: ActorAnchor): SpriteStageBox {
+/** 立绘画布高（抠图产物的固定高度，见 packages/agent 的 cutout.ts）。figureTop / figureHeight 都是相对它的像素数。 */
+const SPRITE_CANVAS_HEIGHT = 1920;
+
+/**
+ * `figureTop` = 人物头顶相对立绘画布上沿的像素数（抠图产物；缺省 0 = 头顶就贴画布上沿）。
+ *
+ * 图片盒的上沿在人物头顶**之上** figureTop 那么远，要让头顶落回 preset 声明的位置，
+ * 盒子就得**往上推**等量——推量按盒子自身高度等比缩放。
+ *
+ * 推出来的 top 为负是正确结果，不夹到 0：盒子本就可以伸到舞台顶以上，被裁掉的是盒内
+ * 空白、不是人物；夹到 0 反而把头顶又推回下面去。脏数据只在这一步收口：非有限数、
+ * 非正数、超过画布高的一律当 0（= 旧行为）。
+ */
+function headroom(height: number, figureTop: number | undefined): number {
+  if (figureTop === undefined || !Number.isFinite(figureTop) || figureTop <= 0) return 0;
+  return (Math.min(figureTop, SPRITE_CANVAS_HEIGHT) / SPRITE_CANVAS_HEIGHT) * height;
+}
+
+/** 补偿倍数的上界：图里的人物再小也不许把盒子撑到天上（脏数据兜底）。 */
+const MAX_FIGURE_SCALE = 4;
+
+/**
+ * `figureHeight` = 人物在立绘画布上的实际像素高（抠图产物；缺省或非法 = 1.0，逐位退回旧行为）。
+ *
+ * 同一档体量声明的是**人物在台上多高**，而盒高要乘上「画布高 / 人物像素高」才兑现得了：
+ * 人物只占画布 1132/1920 时，同样的盒高只能渲染出六成的高度（vxn 那类宽度先卡的图就是
+ * 这样矮下去的）。缺字段的老素材保持原样，不做静默放大。
+ */
+function figureScale(figureHeight: number | undefined): number {
+  if (figureHeight === undefined || !Number.isFinite(figureHeight) || figureHeight <= 0) return 1;
+  return Math.min(SPRITE_CANVAS_HEIGHT / figureHeight, MAX_FIGURE_SCALE);
+}
+
+function box(
+  raw: Box,
+  stature: SpriteStature | undefined,
+  anchor: ActorAnchor,
+  figureTop: number | undefined,
+  figureHeight: number | undefined,
+): SpriteStageBox {
   const grounded = (stature ?? DEFAULT_SPRITE_STATURE) === "small";
   const base: SpriteOrigin = grounded ? "bottom center" : "top center";
   const origin: SpriteOrigin = anchor === "center" ? "center" : anchor === "top" ? "top center" : base;
-  const top = anchor === "center" ? 50 - raw.height / 2 : anchor === "top" ? 0 : raw.top;
-  return { top: round2(top), height: round2(raw.height), origin };
+  // 先按人物实际占比把高度补回 preset 声明的观感，落位再用补过的高度算——
+  // 两处共用同一个 height：任何一处偷用原始 raw.height，人物与头顶就错开。
+  const height = round2(raw.height * figureScale(figureHeight));
+  let top: number;
+  if (anchor === "center") top = 50 - height / 2;
+  else if (anchor === "top") top = 0;
+  else if (grounded) top = 100 - height; // 贴地的小东西：脚不离地（top + height = 100）
+  else top = raw.top - headroom(height, figureTop);
+  return { top: round2(top), height, origin };
 }
 
 function round2(value: number): number {

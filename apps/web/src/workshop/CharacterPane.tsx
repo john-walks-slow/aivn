@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   characterCardPath,
   isProtagonist,
@@ -14,6 +14,7 @@ import { ImageLightbox } from "../ui/ImageLightbox.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";
 import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
+import { useDirtyFlag } from "./dirtyGuard.js";
 
 /** cast 里每个角色都有 id（服务端按文件名取的），这里只是把可选字段收成必填。 */
 type Role = CharacterDocument & { id: string };
@@ -46,7 +47,9 @@ export function CharacterPane({
   playId: string;
   revision: number;
   /** 注册素材到货回调（返回取消订阅）：导进来或刚画好的立绘要当场出现在缩略图上。 */
-  subscribeAssetReady?: (handler: (asset: GeneratedAsset) => void) => () => void;
+  subscribeAssetReady?: (
+    handler: (asset: GeneratedAsset) => void,
+  ) => () => void;
   /** 「打开立绘」：跳到素材页那个主体（这一页只管人格与音色，立绘归素材表）。 */
   onManageSprites?: (id: string) => void;
 }) {
@@ -80,11 +83,35 @@ export function CharacterPane({
   useEffect(reload, [reload, revision]);
 
   const reloadSprites = useCallback((): void => {
-    api.listAssets(playId).then(setSprites).catch(() => {});
+    api
+      .listAssets(playId)
+      .then(setSprites)
+      .catch(() => {});
   }, [playId]);
   useEffect(reloadSprites, [reloadSprites, revision]);
   // 素材到货：助手/舞台那边刚导进来或画出来的立绘，缩略图当场就能看见（切页才更新等于没更新）
-  useEffect(() => subscribeAssetReady?.(() => reloadSprites()), [subscribeAssetReady, reloadSprites]);
+  useEffect(
+    () => subscribeAssetReady?.(() => reloadSprites()),
+    [subscribeAssetReady, reloadSprites],
+  );
+
+  const errorRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * 错误条挂在滚动区顶上，而「新建角色」的表单在角色卡下面。角色一多，
+   * 人是滚下去填 id 的——那时顶上冒出来的红条在视野外，看起来就是「点了没反应」。
+   * 只在它跑到可视区上方时把滚动区拉回来（scrollIntoView 在 jsdom 里没有，别用）。
+   * 注意：这个 effect 必须待在上面那批 hook 里——本组件在 roles 为空时有早期 return，
+   * 放到它下面就会「这次的 hook 比上次多」。
+   */
+  useEffect(() => {
+    const el = errorRef.current;
+    const pane = el?.closest(".workshop-tab-pane");
+    if (!el || !pane) return;
+    const gap =
+      el.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+    if (gap < 0) pane.scrollTop += gap - 8;
+  }, [error]);
 
   /**
    * 一个角色的立绘目录：卡上显式绑定优先，没写就是同名（`spriteIdOf` 是唯一解析口）。
@@ -96,7 +123,8 @@ export function CharacterPane({
 
   const spriteThumb = (dir: string): string | null => {
     const files = variantsOf(dir);
-    const pick = files.find((f) => f.replace(/\.\w+$/, "") === "neutral") ?? files[0];
+    const pick =
+      files.find((f) => f.replace(/\.\w+$/, "") === "neutral") ?? files[0];
     return pick ? assetUrl(playId, `sprites/${dir}`, pick) : null;
   };
 
@@ -131,7 +159,13 @@ export function CharacterPane({
     const writes = [...dirtyRoles]
       .map((id) => roles.find((r) => r.id === id))
       .filter((r): r is Role => r !== undefined)
-      .map((r) => api.saveFile(playId, characterCardPath(r.id), serializeCharacterCard(r)));
+      .map((r) =>
+        api.saveFile(
+          playId,
+          characterCardPath(r.id),
+          serializeCharacterCard(r),
+        ),
+      );
     Promise.all(writes)
       .then(() => {
         setDirtyRoles(new Set());
@@ -173,7 +207,9 @@ export function CharacterPane({
 
   /** 移除角色 = 删那张角色卡，角色本身就在卡里，没有第二处要同步。 */
   const removeRole = (id: string): void => {
-    api.deleteFile(playId, characterCardPath(id)).catch((e: Error) => setError(e.message));
+    api
+      .deleteFile(playId, characterCardPath(id))
+      .catch((e: Error) => setError(e.message));
     setRoles((prev) => prev?.filter((r) => r.id !== id) ?? null);
     setDirtyRoles((prev) => {
       const next = new Set(prev);
@@ -183,33 +219,43 @@ export function CharacterPane({
     setOpen(PROTAGONIST_ID);
   };
 
+  const dirty = dirtyRoles.size > 0;
+  // hook 不能落在早退之后：先把「改没改过」登记上去，再决定渲染什么
+  useDirtyFlag("characters", dirty);
+
   if (!roles) return <div className="workshop-tab-pane">读取中…</div>;
 
   // 选中的那张一定在（主角卡在上面兜过底），兜底的 `roles[0]` 只防空卡目录
   const activeRole = roles.find((r) => r.id === open) ?? roles[0] ?? null;
-  const dirty = dirtyRoles.size > 0;
   /** 选中的角色用哪一套立绘（绑定优先、缺省同名）。 */
   const activeDir = activeRole ? dirOf(activeRole) : "";
   /**
    * 下拉的当前值：与角色同名（含手写的 `sprite: <自己的 id>` 那种卡）一律落在第一项——
    * 同名目录写与不写是同一件事，摆两个都能选「mio」的选项只会让人猜。
    */
-  const boundValue = activeRole?.sprite && activeRole.sprite !== activeRole.id ? activeRole.sprite : "";
+  const boundValue =
+    activeRole?.sprite && activeRole.sprite !== activeRole.id
+      ? activeRole.sprite
+      : "";
   /** 绑定下拉的候选：剧目里现有的目录 ∪ 当前绑定值（可能还没建、刚改成它）；同名那条由第一项代表。 */
-  const bindChoices = [...new Set([...spriteDirs, ...(boundValue ? [boundValue] : [])])]
+  const bindChoices = [
+    ...new Set([...spriteDirs, ...(boundValue ? [boundValue] : [])]),
+  ]
     .filter((dir) => dir !== activeRole?.id)
     .sort();
   /** 这个目录已经被谁用了：两个角色指向同一套立绘是合法的（同一人的两种身份），但选之前得看得见。 */
   const dirOwnerHint = (dir: string): string => {
-    const owner = roles.find((r) => r.id !== activeRole?.id && dirOf(r) === dir);
+    const owner = roles.find(
+      (r) => r.id !== activeRole?.id && dirOf(r) === dir,
+    );
     return owner ? `（${owner.name || owner.id} 在用）` : "";
   };
 
   return (
     <div className="workshop-tab-pane setting-cards-pane">
       {error && (
-        <div className="error-banner" role="alert">
-          {error}
+        <div className="error-banner" role="alert" ref={errorRef}>
+          {error}<button type="button" className="notice-close" aria-label="收起这条" onClick={() => setError(null)}><Icon name="close" size={12} /></button>
         </div>
       )}
 
@@ -230,7 +276,9 @@ export function CharacterPane({
               )}
               <span className="setting-card-title">{role.name || role.id}</span>
               <span className="setting-card-summary">
-                {isProtagonist(role.id) ? "玩家扮演" : role.body || "（还没写性格）"}
+                {isProtagonist(role.id)
+                  ? "玩家扮演"
+                  : role.body || "（还没写性格）"}
               </span>
             </button>
           );
@@ -246,7 +294,11 @@ export function CharacterPane({
           <span className="setting-card-title">从资源库导入</span>
           <span className="setting-card-summary">复制现成的角色卡与立绘</span>
         </button>
-        <button type="button" className="setting-card add" onClick={() => setCreating(true)}>
+        <button
+          type="button"
+          className="setting-card add"
+          onClick={() => setCreating(true)}
+        >
           <Icon name="plus" size={14} />
           <span className="setting-card-title">新建角色</span>
           <span className="setting-card-summary">指定 id，从空白开始写</span>
@@ -284,11 +336,15 @@ export function CharacterPane({
         <section className="panel">
           {/* 卡级动作在标题行（动的是整张卡）；字段级的东西在下面的编辑器里 */}
           <div className="assets-section-head">
-            <h3>{isProtagonist(activeRole.id) ? "主角卡（玩家扮演）" : "角色卡"}</h3>
+            <h3>
+              {isProtagonist(activeRole.id) ? "主角卡（玩家扮演）" : "角色卡"}
+            </h3>
             <button
               className="ghost-btn"
               onClick={() =>
-                setLibraryInto(isProtagonist(activeRole.id) ? PROTAGONIST_ID : activeRole.id)
+                setLibraryInto(
+                  isProtagonist(activeRole.id) ? PROTAGONIST_ID : activeRole.id,
+                )
               }
               title="从资源库导入一个角色的角色卡与立绘（落在条目对应的角色卡上，不是填这一张）"
             >
@@ -297,7 +353,10 @@ export function CharacterPane({
               </span>
             </button>
             {!isProtagonist(activeRole.id) && (
-              <button className="link-btn" onClick={() => removeRole(activeRole.id)}>
+              <button
+                className="link-btn"
+                onClick={() => removeRole(activeRole.id)}
+              >
                 移除角色
               </button>
             )}
@@ -315,7 +374,9 @@ export function CharacterPane({
                       type="button"
                       className="sprite-peek-item"
                       title="看大图"
-                      onClick={() => setZoom({ url, name: `${activeDir}/${name}` })}
+                      onClick={() =>
+                        setZoom({ url, name: `${activeDir}/${name}` })
+                      }
                     >
                       <img src={url} alt="" />
                       <span>{name.replace(/\.\w+$/, "")}</span>
@@ -333,7 +394,8 @@ export function CharacterPane({
                 onClick={() => onManageSprites(activeDir)}
               >
                 <span className="btn-icon">
-                  <Icon name="assets" size={13} /> {variantsOf(activeDir).length > 0 ? "管理立绘" : "创建立绘"}
+                  <Icon name="assets" size={13} />{" "}
+                  {variantsOf(activeDir).length > 0 ? "管理立绘" : "创建立绘"}
                 </span>
               </button>
             )}
@@ -359,7 +421,9 @@ export function CharacterPane({
               ))}
             </select>
             <span className="muted small">
-              {boundValue ? `assets/sprites/${activeDir}/` : "不写这一格＝用同名目录"}
+              {boundValue
+                ? `assets/sprites/${activeDir}/`
+                : "不写这一格＝用同名目录"}
             </span>
           </label>
 
@@ -375,7 +439,7 @@ export function CharacterPane({
       )}
 
       {activeRole && (
-        <p className="row">
+        <p className="row save-row">
           <button className="primary" onClick={saveCards} disabled={!dirty}>
             保存
           </button>

@@ -112,6 +112,12 @@ export interface StageSocketHandlers {
   onLineEdited?: (nodeId: string, text: string) => void;
   /** 一张插图挂上了某一行（回看中生图的旁注）：谱系重拉，翻到那一行就有图。 */
   onCgAttached?: (nodeId: string, id: string) => void;
+  /**
+   * 连接没建起来（或断了）时玩家还在按动作：这条消息发不出去。
+   * 舞台不像工坊那样有一条常驻状态带，静默丢弃会让人以为「游戏卡住了」——
+   * 由宿主弹一条 toast 说清楚。
+   */
+  onSendDropped?: () => void;
   /** 手动生图完成/失败通知（工坊对话框监听）。 */
   onImageResult?: (
     result:
@@ -353,7 +359,9 @@ export function useStageSocket(
     if (ws && ws.readyState === WebSocket.OPEN) {
       setError(null);
       ws.send(JSON.stringify(msg));
+      return;
     }
+    handlersRef.current.onSendDropped?.();
   }, []);
 
   // 稳定引用：四原语出口挂在导演视图上，引用抖动会让整棵子树反复重渲染

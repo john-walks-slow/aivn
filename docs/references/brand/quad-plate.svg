@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    AIVN 背板（quad plate）：圆角方块被中轴十字切成四块，四档灰，不含记号。
+
+    2026-10-10 从图标探索的 h3 档定下来存作品牌底。四块灰阶（依 1024 画布）：
+
+      左上 #ebedf1   右上 #f7f8fa
+      左下 #c9cfd8   右下 #e0e4e9
+
+    规矩：圆角 176（1024 的 17.2%）、十字交点即画布中心、四块无描边无阴影。
+    使用时把记号（蓝色空心菱形）压在上面；也可以只当底纹用。
+    说明与其它灰阶排布见 docs/references/261010-brand-plate.md。
+  -->
+  <defs>
+    <clipPath id="plate">
+      <rect width="1024" height="1024" rx="176" />
+    </clipPath>
+  </defs>
+  <g clip-path="url(#plate)">
+    <polygon points="0,0 512,0 512,512 0,512" fill="#ebedf1" />
+    <polygon points="512,0 1024,0 1024,512 512,512" fill="#f7f8fa" />
+    <polygon points="0,512 512,512 512,1024 0,1024" fill="#c9cfd8" />
+    <polygon points="512,512 1024,512 1024,1024 512,1024" fill="#e0e4e9" />
+  </g>
+</svg>

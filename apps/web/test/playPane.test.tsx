@@ -11,11 +11,19 @@ const { apiMock } = vi.hoisted(() => ({
     voiceCatalog: vi.fn(),
     voice: vi.fn(),
     ttsPreview: vi.fn(),
+    readFile: vi.fn(),
+    saveFile: vi.fn(),
   },
 }));
 vi.mock("../src/api.js", () => ({
   api: apiMock,
   assetUrl: (playId: string, kind: string, id: string) => `/assets/${playId}/${kind}/${id}`,
+}));
+vi.mock("../src/theme.js", () => ({
+  notifyThemeChanged: vi.fn(),
+  THEME_CHANGED: "aivn:theme-changed",
+  applyPlayTheme: vi.fn(),
+  reloadPlayTheme: vi.fn(),
 }));
 
 const { PlayPane } = await import("../src/workshop/PlayPane.js");
@@ -35,6 +43,9 @@ describe("剧目页：只写 play.json 这份", () => {
     apiMock.listAssets.mockResolvedValue({ backgrounds: ["bg_a", "bg_b"], cg: ["cg_x"] });
     apiMock.savePlay.mockResolvedValue({ ok: true });
     apiMock.voiceCatalog.mockResolvedValue({ entries: [] });
+    // 默认主题：theme.css 不存在，读取 404 是正常状态
+    apiMock.readFile.mockRejectedValue(new Error("未找到"));
+    apiMock.saveFile.mockResolvedValue({ ok: true });
   });
 
   afterEach(() => {
@@ -154,12 +165,39 @@ describe("剧目页：只写 play.json 这份", () => {
     expect(apiMock.savePlay.mock.calls[0]![0]).not.toHaveProperty("image");
   });
 
-  it("这一页不碰角色卡与记忆：写口只有 savePlay", async () => {
+  it("「保存」只写 play.json：主题色是另一条口，不会跟着保存一起落盘", async () => {
     render(<PlayPane playId="p1" revision={0} />);
     fireEvent.change(await screen.findByLabelText("标题"), { target: { value: "改一下" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(apiMock.savePlay).toHaveBeenCalled());
-    expect(apiMock.saveFile).toBeUndefined();
+    expect(apiMock.saveFile).not.toHaveBeenCalled();
+  });
+
+  it("点一枚主题色：立刻写 theme.css，不动 play.json", async () => {
+    render(<PlayPane playId="p1" revision={0} />);
+    fireEvent.click(await screen.findByRole("radio", { name: /樱粉/ }));
+
+    await waitFor(() => expect(apiMock.saveFile).toHaveBeenCalledTimes(1));
+    const [playId, path, css] = apiMock.saveFile.mock.calls[0]!;
+    expect(playId).toBe("p1");
+    expect(path).toBe("theme.css");
+    expect(css).toContain("#c2557f");
+    expect(apiMock.savePlay).not.toHaveBeenCalled();
+  });
+
+  it("选「默认」：theme.css 写成不覆盖任何令牌的一张空表", async () => {
+    apiMock.readFile.mockResolvedValue({
+      path: "theme.css",
+      content: "/* aivn-play-accent: #c2557f */\n:root { --accent: #c2557f; }",
+    });
+    render(<PlayPane playId="p1" revision={0} />);
+    await screen.findByRole("radio", { name: /樱粉/ });
+    await waitFor(() => expect(screen.getByRole("radio", { name: /樱粉/ })).toHaveProperty("ariaChecked", "true"));
+
+    fireEvent.click(screen.getByRole("radio", { name: "默认" }));
+    await waitFor(() => expect(apiMock.saveFile).toHaveBeenCalled());
+    const css = apiMock.saveFile.mock.calls[0]![2] as string;
+    expect(css).not.toContain("--accent:");
   });
 });

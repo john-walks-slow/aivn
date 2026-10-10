@@ -42,13 +42,14 @@ export interface AdoptedAsset {
  * 把一张草稿正式入库（调用方负责把草稿解析成落位规格）。
  *
  * `imageOverride` 给「入库前还要对字节加工一道」的宿主用：服务端拿它给立绘补抠底
- *（候选不抠底是 P5-c 定的，入库那张必须是透明 PNG）。
+ *（候选不抠底是 P5-c 定的，入库那张必须是透明 PNG），以及把抠底量出来的落位指标
+ *（`figureTop` / `figureHeight`）捎带进来——它们不是出图意图，draft.json 里没有位置放。
  */
 export async function adoptDraft(
   host: AdoptHost,
   draft: DraftRecord,
   spec: AssetRef,
-  imageOverride?: { bytes: Buffer; ext: string },
+  imageOverride?: { bytes: Buffer; ext: string; figureTop?: number; figureHeight?: number },
 ): Promise<AdoptedAsset> {
   const bytes = imageOverride?.bytes ?? (await readDraftImage(host.playDir, draft.draftId, draft.imageExt));
   // 留底跟着入库：重抠只认 media-cache/sprite-sources/ 那一份。
@@ -62,8 +63,15 @@ export async function adoptDraft(
         )
       : null;
 
+  // 落位指标只在抠图那一步量得出，而 spec 是「出图那一刻的意图」——把两者并在一次声明里，
+  // 素材表才写得进 normalize 后的头顶与人物实际高度。
+  const declared: AssetRef = {
+    ...spec,
+    ...(imageOverride?.figureTop !== undefined ? { figureTop: imageOverride.figureTop } : {}),
+    ...(imageOverride?.figureHeight !== undefined ? { figureHeight: imageOverride.figureHeight } : {}),
+  };
   const written = await persistAsset(host.assets, spec, bytes, imageOverride?.ext ?? draft.imageExt);
-  if (spec.kind === "sprite") await host.updateManifest((manifest) => declareSprite(manifest, spec));
+  if (spec.kind === "sprite") await host.updateManifest((manifest) => declareSprite(manifest, declared));
   // 台账记的是**这张图当初的 prompt 原文**，不是这次采用时又写的一句话。
   await host.recordLedger(ledgerEntryOf(spec, written.rel, draft.prompt, new Date().toISOString()));
   await markCommitted(host.playDir, draft.draftId, draft);

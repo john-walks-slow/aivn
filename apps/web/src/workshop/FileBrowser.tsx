@@ -3,9 +3,15 @@ import { notifyThemeChanged } from "../theme.js";
 import { api, fileUrl, type PlayFile } from "../api.js";
 import { Icon, type IconName } from "@aivn/stage";
 import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
+import { useDirtyFlag } from "./dirtyGuard.js";
 
 /** 二进制文件在树里的图标：一眼分出「能编辑」和「只能看」。 */
-const KIND_ICON: Record<string, IconName> = { text: "files", image: "assets", audio: "chat", binary: "files" };
+const KIND_ICON: Record<string, IconName> = {
+  text: "files",
+  image: "assets",
+  audio: "chat",
+  binary: "files",
+};
 
 /** 剧目文件浏览器（D9）：工坊目录树 + 文本编辑 + 图片/音频预览。可写面由服务端白名单裁定（PlayFiles）。 */
 export function FileBrowser({
@@ -24,7 +30,10 @@ export function FileBrowser({
   const [saved, setSaved] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
+  const [lightbox, setLightbox] = useState<{
+    images: LightboxImage[];
+    index: number;
+  } | null>(null);
 
   const reload = useCallback((): void => {
     api
@@ -74,11 +83,18 @@ export function FileBrowser({
 
   /** 新建文本文件：白名单由服务端裁定，越界会在这里报错。 */
   const create = useCallback((): void => {
-    const path = window.prompt("新文件路径（可写：play.json、memory/** 的 .md/.json/.txt）", "memory/index/lore/新条目.md");
+    const path = window.prompt(
+      "新文件路径（可写：play.json、memory/** 的 .md/.json/.txt）",
+      "memory/index/lore/新条目.md",
+    );
     if (!path) return;
     setError(null);
     api
-      .saveFile(playId, path, path.endsWith(".md") ? "# 新条目\n一句话摘要。\n\n详情。\n" : "")
+      .saveFile(
+        playId,
+        path,
+        path.endsWith(".md") ? "# 新条目\n一句话摘要。\n\n详情。\n" : "",
+      )
       .then(() => {
         reload();
         select(path);
@@ -119,39 +135,58 @@ export function FileBrowser({
   }, [files]);
 
   const dirty = open !== null && draft !== saved;
+  useDirtyFlag("file", dirty);
   const images = useMemo(
-    () => files.filter((f) => f.kind === "image").map((f) => ({ url: fileUrl(playId, f.path), caption: f.path })),
+    () =>
+      files
+        .filter((f) => f.kind === "image")
+        .map((f) => ({ url: fileUrl(playId, f.path), caption: f.path })),
     [files, playId],
   );
-  const selected = useMemo(() => files.find((f) => f.path === open), [files, open]);
+  const selected = useMemo(
+    () => files.find((f) => f.path === open),
+    [files, open],
+  );
 
   return (
     <div className="workshop-files">
       <div className="workshop-file-tree">
         <div className="file-tree-bar">
-          <button className="ghost-btn tiny-btn" onClick={create} title="新建文件">
+          <button
+            className="ghost-btn tiny-btn"
+            onClick={create}
+            title="新建文件"
+          >
             <span className="btn-icon">
               <Icon name="plus" size={13} /> 新建
             </span>
           </button>
-          <button className="ghost-btn tiny-btn icon-btn icon-btn-xs" onClick={reload} title="刷新">
+          <button
+            className="ghost-btn tiny-btn icon-btn icon-btn-xs"
+            onClick={reload}
+            title="刷新"
+          >
             <Icon name="refresh" size={13} />
           </button>
         </div>
-        {error && <div className="error-banner small">{error}</div>}
+        {error && <div className="error-banner small">{error}<button type="button" className="notice-close" aria-label="收起这条" onClick={() => setError(null)}><Icon name="close" size={12} /></button></div>}
         {tree.map(([dir, list]) => (
           <div key={dir} className="file-group">
-            <div className="file-group-name">{dir === "." ? "根目录" : dir}</div>
+            <div className="file-group-name">
+              {dir === "." ? "根目录" : dir}
+            </div>
             {list.map((file) => (
-              <div key={file.path} className={`file-row${open === file.path ? " active" : ""}`}>
+              <div
+                key={file.path}
+                className={`file-row${open === file.path ? " active" : ""}`}
+              >
                 <button
                   className="file-entry"
                   onClick={() => select(file.path, file.kind)}
                   title={file.writable ? "可编辑" : "只读"}
                 >
                   <Icon name={KIND_ICON[file.kind] ?? "files"} size={13} />
-                  {basename(file.path)}
-                  {!file.writable && <span className="muted"> 只读</span>}
+                  <span className="file-entry-name">{basename(file.path)}</span>
                 </button>
                 {file.writable && file.path !== "play.json" && (
                   <button
@@ -177,18 +212,41 @@ export function FileBrowser({
               path={open}
               kind={selected.kind}
               onZoom={(_, name) =>
-                setLightbox({ images, index: Math.max(0, images.findIndex((i) => i.caption === name)) })
+                setLightbox({
+                  images,
+                  index: Math.max(
+                    0,
+                    images.findIndex((i) => i.caption === name),
+                  ),
+                })
               }
             />
           ) : (
             <>
               <header className="file-editor-bar">
                 <span className="file-path">{open}</span>
-                <span className={`file-state${dirty ? " dirty" : ""}`}>{dirty ? "未保存" : "已保存"}</span>
-                <button className="primary small-btn" disabled={!dirty || busy} onClick={save}>
+                <span className="file-state">
+                  {selected?.writable === false ? "只读" : ""}
+                </span>
+                <span className={`file-state${dirty ? " dirty" : ""}`}>
+                  {selected?.writable === false
+                    ? ""
+                    : dirty
+                      ? "未保存"
+                      : "已保存"}
+                </span>
+                <button
+                  className="primary small-btn"
+                  disabled={!dirty || busy}
+                  onClick={save}
+                >
                   保存
                 </button>
-                <button className="ghost-btn small-btn" disabled={!dirty} onClick={() => setDraft(saved)}>
+                <button
+                  className="ghost-btn small-btn"
+                  disabled={!dirty}
+                  onClick={() => setDraft(saved)}
+                >
                   还原
                 </button>
               </header>
@@ -201,7 +259,16 @@ export function FileBrowser({
             </>
           )
         ) : (
-          <p className="muted small">选一个文件开始编辑。</p>
+          <div className="file-blank">
+            <Icon name="files" size={30} />
+            <p className="muted small">
+              从左边的树里选一个文件，这里就能看和改。
+            </p>
+            <p className="muted small">
+              <code>memory/**</code> 与 <code>characters/**</code>{" "}
+              下面的可以改；素材、剧本台账这些是引擎写的，打开只能看。
+            </p>
+          </div>
         )}
       </div>
 
@@ -233,7 +300,11 @@ function BinaryPreview({
   return (
     <div className="file-preview">
       {kind === "image" ? (
-        <button className="file-preview-image" onClick={() => onZoom(url, path)} title="点击看大图">
+        <button
+          className="file-preview-image"
+          onClick={() => onZoom(url, path)}
+          title="点击看大图"
+        >
           <img src={url} alt={path} />
         </button>
       ) : kind === "audio" ? (

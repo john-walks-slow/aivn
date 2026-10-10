@@ -51,6 +51,7 @@ import {
   withSeed,
 } from "./compaction.js";
 import { completeText } from "./llm.js";
+import { userFacingError } from "./errors.js";
 import { HistoryRecorder, type HistoryBeat } from "./history.js";
 import type { AgentSettings, PlayConfig } from "@aivn/core";
 import type { PlayMemory } from "./memory.js";
@@ -1830,7 +1831,7 @@ export class PlaywrightOrchestrator {
       // 腰斩之后醒过来的旧轮：报错记在它自己身上，不写进新分支那轮的账
       if (token !== this.beatToken) return;
       // prompt 抛错（网络/中断）：记入 beatError，由 finishBeat 的护栏统一收束
-      this.beatError = error instanceof Error ? error.message : String(error);
+      this.beatError = userFacingError(error instanceof Error ? error.message : String(error));
     } finally {
       if (timer) clearTimeout(timer);
       if (token !== this.beatToken) return;
@@ -2012,7 +2013,9 @@ export class PlaywrightOrchestrator {
     } else if (event.type === "message_end" && event.message.role === "assistant") {
       // pi agent 的 provider 失败不抛异常，而是 assistant message 带 errorMessage 正常收束——捕获之
       // 超时是我们主动 abort 的，随之而来的 AbortError 只是症状，保留说人话的那条
-      if (event.message.errorMessage && !this.beatTimedOut) this.beatError = event.message.errorMessage;
+      if (event.message.errorMessage && !this.beatTimedOut) {
+        this.beatError = userFacingError(event.message.errorMessage);
+      }
       // 完整 assistant 消息：思考块与 toolCall 只在这里出现（流式增量拿不全），入史趁早
       if (this.busy) {
         if (event.message.content.some((c) => c.type === "toolCall")) {

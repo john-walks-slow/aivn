@@ -73,6 +73,13 @@ export interface AssetMeta {
   stature?: SpriteStature;
   /** 垂直对齐：人贴底、悬空物居中、垂下物挂顶。差分不单独声明，随主体。 */
   anchor?: ActorAnchor;
+  /**
+   * 归一化后的头顶留白：人物头顶到画布上沿的像素数（画布高 1920）。
+   * 抠图时写死成「画布高 × topPadding」；缺省 undefined = 存量素材（图片盒上沿即头顶）。
+   */
+  figureTop?: number;
+  /** 人物在画布上的实际像素高（`figureTop + figureHeight = 画布高`）。 */
+  figureHeight?: number;
 }
 
 /**
@@ -198,6 +205,10 @@ export function parseAssetMeta(raw: unknown): AssetMeta {
   if (stature) meta.stature = stature;
   const anchor = anchorOf(data.anchor);
   if (anchor) meta.anchor = anchor;
+  const figureTop = num(data.figureTop);
+  if (figureTop !== undefined && figureTop >= 0) meta.figureTop = Math.round(figureTop);
+  const figureHeight = num(data.figureHeight);
+  if (figureHeight !== undefined && figureHeight > 0) meta.figureHeight = Math.round(figureHeight);
   return meta;
 }
 
@@ -223,6 +234,10 @@ export interface SpriteDeclaration {
   framing?: SpriteFraming;
   stature?: SpriteStature;
   anchor?: ActorAnchor;
+  /** 归一化头顶留白（画布高 1920 的像素数）；undefined = 存量素材，按图片盒上沿落位。 */
+  figureTop?: number;
+  /** 人物实际像素高；与 figureTop 一起落位（宽度先卡时它会小于画布高）。 */
+  figureHeight?: number;
   /** 无卡主体的名牌：角色卡没有 name 时用它顶上。 */
   title?: string;
 }
@@ -246,6 +261,8 @@ export function spriteDeclarationOf(
     if (meta.framing) out.framing = meta.framing;
     if (meta.stature) out.stature = meta.stature;
     if (meta.anchor) out.anchor = meta.anchor;
+    if (meta.figureTop !== undefined) out.figureTop = meta.figureTop;
+    if (meta.figureHeight !== undefined) out.figureHeight = meta.figureHeight;
     if (meta.title) out.title = meta.title;
   };
   apply(manifest[id]);

@@ -1,11 +1,12 @@
 import type { BeatCard } from "./beats.js";
 
-/** 节点盒子：固定尺寸才能算整齐的树，卡面内容超出就截断。
- *  高度 = 时刻行 + 三行正文 + 底行动词（三个动词带字样，宽度按最长一组留够）。 */
-export const NODE_W = 300;
-export const NODE_H = 128;
-/** 流向、兄弟两个方向上相邻盒子之间的空隙。 */
-export const GAP = 64;
+/** 节点方块：整棵树静止时就是一张流程图，方块里只放这一拍的画面与图标；
+ *  正文与动词收在悬停展开的浮层里（宽 268px，不参与布局）。
+ *  固定尺寸才能算整齐的树。 */
+export const NODE_W = 132;
+export const NODE_H = 104;
+/** 流向、兄弟两个方向上相邻方块之间的空隙。 */
+export const GAP = 76;
 
 /** 树有两个流向：宽屏从左往右读时间，窄屏从上往下。哪个长用哪个。 */
 export type RouteDir = "horizontal" | "vertical";

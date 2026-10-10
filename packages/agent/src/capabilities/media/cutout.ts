@@ -78,6 +78,8 @@ export interface CutoutResult {
   path: string;
   absPath: string;
   coverage: number;
+  /** 人物头顶到画布上沿的像素数（归一化后恒为固定 padding）。 */
+  figureTop: number;
   figureHeight: number;
 }
 

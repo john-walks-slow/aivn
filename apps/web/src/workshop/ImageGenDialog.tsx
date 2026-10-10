@@ -8,7 +8,13 @@ import {
   spriteVariantChoices,
 } from "@aivn/core";
 import { api } from "../api.js";
-import { Modal, RefCharacterPicker, type RefCandidate, toggleReference } from "@aivn/stage";
+import {
+  Icon,
+  Modal,
+  RefCharacterPicker,
+  type RefCandidate,
+  toggleReference,
+} from "@aivn/stage";
 
 const STEM = /^[a-z][a-z0-9_]{0,39}$/;
 const NEUTRAL = "neutral";
@@ -90,15 +96,19 @@ export function ImageGenDialog({
 }) {
   const batch = target.kind === "sprite" && target.variantsBatch === true;
   const [name, setName] = useState(
-    target.kind === "sprite" ? target.initialVariant ?? "" : target.initialName ?? "",
+    target.kind === "sprite"
+      ? (target.initialVariant ?? "")
+      : (target.initialName ?? ""),
   );
   /** 立绘 id：新建时（给的是空串）在这里现填，与角色卡同名即绑定。 */
-  const [spriteId, setSpriteId] = useState(target.kind === "sprite" ? target.spriteId : "");
+  const [spriteId, setSpriteId] = useState(
+    target.kind === "sprite" ? target.spriteId : "",
+  );
   const [framing, setFraming] = useState<SpriteFraming>(
-    target.kind === "sprite" ? target.initialFraming ?? "full" : "full",
+    target.kind === "sprite" ? (target.initialFraming ?? "full") : "full",
   );
   const [stature, setStature] = useState<SpriteStature>(
-    target.kind === "sprite" ? target.initialStature ?? "normal" : "normal",
+    target.kind === "sprite" ? (target.initialStature ?? "normal") : "normal",
   );
   const [keyColor, setKeyColor] = useState<"green" | "magenta">("green");
   const [instruction, setInstruction] = useState("");
@@ -106,16 +116,22 @@ export function ImageGenDialog({
   const [submitting, setSubmitting] = useState(false);
   const [waitingTarget, setWaitingTarget] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ url: string; path: string } | null>(null);
+  const [result, setResult] = useState<{ url: string; path: string } | null>(
+    null,
+  );
   /** 批量：待生成清单与逐张进度。 */
   const [picked, setPicked] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [jobs, setJobs] = useState<BatchJob[]>([]);
 
-  const pending = jobs.filter((job) => job.status === "submitting" || job.status === "waiting").length;
+  const pending = jobs.filter(
+    (job) => job.status === "submitting" || job.status === "waiting",
+  ).length;
   const hasPending = pending > 0;
   const started = batch && jobs.length > 0;
-  const failedVariants = jobs.filter((job) => job.status === "failed").map((job) => job.variant);
+  const failedVariants = jobs
+    .filter((job) => job.status === "failed")
+    .map((job) => job.variant);
   /** 广播回调里要按「当前这批」认领，不能读闭包里的 jobs（那是订阅那一刻的快照）。 */
   const jobsRef = useRef<BatchJob[]>([]);
   useEffect(() => {
@@ -138,7 +154,12 @@ export function ImageGenDialog({
         return;
       }
       // 不是这一批的图（工坊别处或剧作家出的图也会广播）就不认领，也别顺手刷新父面板
-      if (!jobsRef.current.some((job) => job.target === msg.target && job.status === "waiting")) return;
+      if (
+        !jobsRef.current.some(
+          (job) => job.target === msg.target && job.status === "waiting",
+        )
+      )
+        return;
       setJobs((prev) =>
         prev.map((job) =>
           job.target === msg.target && job.status === "waiting"
@@ -172,7 +193,8 @@ export function ImageGenDialog({
       : "输入素材名称与描述，可选参考立绘垫图。";
 
   /** 输入框只收合法字符，非法字符当场吃掉（本体仍按 STEM 校一遍，给出解释而不是静默） */
-  const cleanStem = (value: string): string => value.toLowerCase().replace(/[^a-z0-9_]/g, "");
+  const cleanStem = (value: string): string =>
+    value.toLowerCase().replace(/[^a-z0-9_]/g, "");
 
   /**
    * 谁能垫参考图：背景/CG 随时可以，立绘只有 `neutral` 定妆照可以——
@@ -181,12 +203,19 @@ export function ImageGenDialog({
    */
   const canPickRefs = target.kind !== "sprite" || name.trim() === NEUTRAL;
 
-  const choices = useMemo(() => spriteVariantChoices(spriteDir?.variants ?? []), [spriteDir]);
+  const choices = useMemo(
+    () => spriteVariantChoices(spriteDir?.variants ?? []),
+    [spriteDir],
+  );
 
   const toggleVariant = (variant: string): void => {
     if (hasPending) return;
     setError(null);
-    setPicked((prev) => (prev.includes(variant) ? prev.filter((v) => v !== variant) : [...prev, variant]));
+    setPicked((prev) =>
+      prev.includes(variant)
+        ? prev.filter((v) => v !== variant)
+        : [...prev, variant],
+    );
   };
 
   const removeVariant = (variant: string): void => {
@@ -215,13 +244,20 @@ export function ImageGenDialog({
   const baseline = ((): { text: string; url?: string } | null => {
     // 目录现状由调用方给（新主体还没有目录，那时不说不确定的句）
     if (target.kind !== "sprite" || !spriteDir) return null;
-    const relevant = batch ? true : Boolean(name.trim()) && name.trim() !== NEUTRAL;
+    const relevant = batch
+      ? true
+      : Boolean(name.trim()) && name.trim() !== NEUTRAL;
     if (!relevant) return null;
     if (spriteDir.neutralUrl) {
-      return { text: "身份基准：neutral.png（差分都拿这张定妆照垫图，出来的才是同一个人）", url: spriteDir.neutralUrl };
+      return {
+        text: "身份基准：neutral.png（差分都拿这张定妆照垫图，出来的才是同一个人）",
+        url: spriteDir.neutralUrl,
+      };
     }
     if (spriteDir.variants.length === 0) {
-      return { text: "这个主体还没有定妆照：会先自动出一张 neutral，再出这张差分。" };
+      return {
+        text: "这个主体还没有定妆照：会先自动出一张 neutral，再出这张差分。",
+      };
     }
     return {
       text: `缺 neutral 定妆照（已有 ${spriteDir.variants.join("、")}）：请先单独出一次 neutral 再出差分，否则会与已有差分不是同一个人。`,
@@ -257,7 +293,9 @@ export function ImageGenDialog({
         return;
       }
       if (!STEM.test(id)) {
-        setError("立绘 id 只允许小写字母开头的 a-z、数字、下划线，最长 40 字符");
+        setError(
+          "立绘 id 只允许小写字母开头的 a-z、数字、下划线，最长 40 字符",
+        );
         return;
       }
     }
@@ -275,7 +313,8 @@ export function ImageGenDialog({
         stature: target.kind === "sprite" ? stature : undefined,
         keyColor: target.kind === "sprite" ? keyColor : undefined,
         title: target.kind === "sprite" ? target.spriteTitle : undefined,
-        referenceCharacters: canPickRefs && selectedRefs.length > 0 ? selectedRefs : undefined,
+        referenceCharacters:
+          canPickRefs && selectedRefs.length > 0 ? selectedRefs : undefined,
         instruction: instruction.trim() || undefined,
       });
       setWaitingTarget(res.target);
@@ -305,7 +344,11 @@ export function ImageGenDialog({
     }
     setError(null);
     const patch = (variant: string, next: Partial<BatchJob>): void =>
-      setJobs((prev) => prev.map((job) => (job.variant === variant ? { ...job, ...next } : job)));
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.variant === variant ? { ...job, ...next } : job,
+        ),
+      );
     setJobs((prev) => {
       const next = [...prev];
       for (const variant of variants) {
@@ -332,7 +375,10 @@ export function ImageGenDialog({
           patch(variant, { target: res.target, status: "waiting" });
         } catch (e) {
           // 受理就失败（校验不过、生图没启用）的当场记账，别让它拖住其余几张
-          patch(variant, { status: "failed", message: e instanceof Error ? e.message : String(e) });
+          patch(variant, {
+            status: "failed",
+            message: e instanceof Error ? e.message : String(e),
+          });
         }
       }),
     );
@@ -346,10 +392,18 @@ export function ImageGenDialog({
     void fireBatch([...picked]);
   };
 
-  const primary = ((): { label: string; onClick: () => void; disabled: boolean } => {
+  const primary = ((): {
+    label: string;
+    onClick: () => void;
+    disabled: boolean;
+  } => {
     if (batch) {
       if (hasPending) {
-        return { label: `生成中（${jobs.length - pending}/${jobs.length}）…`, onClick: () => {}, disabled: true };
+        return {
+          label: `生成中（${jobs.length - pending}/${jobs.length}）…`,
+          onClick: () => {},
+          disabled: true,
+        };
       }
       // 有失败的就先给重试的口子：失败大多是上游抽风，重发一次往往就过了
       if (failedVariants.length > 0) {
@@ -361,13 +415,18 @@ export function ImageGenDialog({
       }
       if (started) return { label: "完成", onClick: onClose, disabled: false };
       return {
-        label: picked.length > 0 ? `发起生成（${picked.length} 张）` : "发起生成",
+        label:
+          picked.length > 0 ? `发起生成（${picked.length} 张）` : "发起生成",
         onClick: submitBatch,
         disabled: picked.length === 0,
       };
     }
     return {
-      label: result ? "完成" : submitting ? "生成中（预计 1~2 分钟）…" : "发起生成",
+      label: result
+        ? "完成"
+        : submitting
+          ? "生成中（预计 1~2 分钟）…"
+          : "发起生成",
       onClick: () => void submit(),
       disabled: !canSubmit(),
     };
@@ -380,7 +439,12 @@ export function ImageGenDialog({
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="primary" onClick={primary.onClick} disabled={primary.disabled}>
+          <button
+            type="button"
+            className="primary"
+            onClick={primary.onClick}
+            disabled={primary.disabled}
+          >
             {primary.label}
           </button>
           <button
@@ -397,20 +461,32 @@ export function ImageGenDialog({
       {error && (
         <div className="error-banner small" role="alert">
           {error}
+          <button
+            type="button"
+            className="notice-close"
+            aria-label="收起这条"
+            onClick={() => setError(null)}
+          >
+            <Icon name="close" size={12} />
+          </button>
         </div>
       )}
 
       {result ? (
         <div className="image-gen-result-card">
           <img src={result.url} alt="生成结果" />
-          <div className="muted small">已保存至 <code>{result.path}</code></div>
+          <div className="muted small">
+            已保存至 <code>{result.path}</code>
+          </div>
         </div>
       ) : (
         <div className="modal-body">
           {target.kind === "sprite" ? (
             <>
               <div className="image-gen-field">
-                <span className="image-gen-label">立绘 id（谁/什么，与角色卡同名即绑定）：</span>
+                <span className="image-gen-label">
+                  立绘 id（谁/什么，与角色卡同名即绑定）：
+                </span>
                 <input
                   value={spriteId}
                   placeholder="如 xiaoyu、mecha_01、cat"
@@ -424,7 +500,9 @@ export function ImageGenDialog({
               {batch ? (
                 <>
                   <div className="image-gen-field">
-                    <span className="image-gen-label">差分（多选；标「已有」的是覆盖重出）：</span>
+                    <span className="image-gen-label">
+                      差分（多选；标「已有」的是覆盖重出）：
+                    </span>
                     <div className="variant-chips">
                       {choices.map((choice) => {
                         const on = picked.includes(choice.name);
@@ -456,7 +534,9 @@ export function ImageGenDialog({
                     />
                     {picked.length > 0 ? (
                       <>
-                        <span className="image-gen-label">待生成 {picked.length} 张（点一下去掉）：</span>
+                        <span className="image-gen-label">
+                          待生成 {picked.length} 张（点一下去掉）：
+                        </span>
                         <div className="variant-chips">
                           {picked.map((variant) => (
                             <button
@@ -473,13 +553,17 @@ export function ImageGenDialog({
                         </div>
                       </>
                     ) : (
-                      <span className="muted small">还没挑，点上面的差分名或自己敲一个</span>
+                      <span className="muted small">
+                        还没挑，点上面的差分名或自己敲一个
+                      </span>
                     )}
                   </div>
                 </>
               ) : (
                 <div className="image-gen-field">
-                  <span className="image-gen-label">差分名（a-z、数字、下划线）：</span>
+                  <span className="image-gen-label">
+                    差分名（a-z、数字、下划线）：
+                  </span>
                   <input
                     value={name}
                     placeholder="如 smile、angry、neutral"
@@ -493,7 +577,9 @@ export function ImageGenDialog({
               )}
               {baseline && (
                 <div className="image-gen-baseline">
-                  {baseline.url && <img src={baseline.url} alt="neutral 定妆照" />}
+                  {baseline.url && (
+                    <img src={baseline.url} alt="neutral 定妆照" />
+                  )}
                   <span className="muted small">{baseline.text}</span>
                 </div>
               )}
@@ -525,7 +611,9 @@ export function ImageGenDialog({
                   title="抠底底色：主体自己是绿色系（绿发 / 绿衣 / 绿瞳）时选纯品红，否则纯绿"
                   value={keyColor}
                   disabled={submitting || hasPending}
-                  onChange={(e) => setKeyColor(e.target.value as "green" | "magenta")}
+                  onChange={(e) =>
+                    setKeyColor(e.target.value as "green" | "magenta")
+                  }
                 >
                   {KEY_COLORS.map((c) => (
                     <option key={c.value} value={c.value}>
@@ -538,10 +626,16 @@ export function ImageGenDialog({
           ) : (
             <>
               <div className="image-gen-field">
-                <span className="image-gen-label">素材名称（id，a-z、数字、下划线）：</span>
+                <span className="image-gen-label">
+                  素材名称（id，a-z、数字、下划线）：
+                </span>
                 <input
                   value={name}
-                  placeholder={target.kind === "background" ? "如 classroom_sunset" : "如 rooftop_kiss"}
+                  placeholder={
+                    target.kind === "background"
+                      ? "如 classroom_sunset"
+                      : "如 rooftop_kiss"
+                  }
                   disabled={submitting}
                   onChange={(e) => {
                     setName(cleanStem(e.target.value));
@@ -554,11 +648,16 @@ export function ImageGenDialog({
 
           {canPickRefs && (
             <div className="image-gen-field">
-              <span className="image-gen-label">参考立绘（按点选顺序垫图）：</span>
+              <span className="image-gen-label">
+                参考立绘（按点选顺序垫图）：
+              </span>
               <RefCharacterPicker
                 candidates={refCandidates}
                 selected={selectedRefs}
-                onToggle={(id) => !submitting && setSelectedRefs((prev) => toggleReference(prev, id))}
+                onToggle={(id) =>
+                  !submitting &&
+                  setSelectedRefs((prev) => toggleReference(prev, id))
+                }
               />
             </div>
           )}
@@ -583,22 +682,36 @@ export function ImageGenDialog({
               {jobs.map((job) => (
                 <div key={job.variant} className="image-gen-job">
                   <span className="muted small">{job.variant}</span>
-                  {job.status === "submitting" && <span className="muted small">受理中…</span>}
-                  {job.status === "waiting" && <span className="muted small">生成中…</span>}
-                  {job.status === "failed" && <span className="error-text small">{job.message}</span>}
-                  {job.status === "done" && job.url && <img src={job.url} alt={job.variant} />}
+                  {job.status === "submitting" && (
+                    <span className="muted small">受理中…</span>
+                  )}
+                  {job.status === "waiting" && (
+                    <span className="muted small">生成中…</span>
+                  )}
+                  {job.status === "failed" && (
+                    <span className="error-text small">{job.message}</span>
+                  )}
+                  {job.status === "done" && job.url && (
+                    <img src={job.url} alt={job.variant} />
+                  )}
                 </div>
               ))}
             </div>
           )}
 
           {submitting && !batch && (
-            <div className="muted small" style={{ textAlign: "center", padding: "8px 0" }}>
+            <div
+              className="muted small"
+              style={{ textAlign: "center", padding: "8px 0" }}
+            >
               AI 正在绘制并抠底处理中，请稍候（不会阻塞其他操作）…
             </div>
           )}
           {hasPending && (
-            <div className="muted small" style={{ textAlign: "center", padding: "8px 0" }}>
+            <div
+              className="muted small"
+              style={{ textAlign: "center", padding: "8px 0" }}
+            >
               这一批还在画（每张约 1~2 分钟，并行数由设置页的出图并发决定）…
             </div>
           )}

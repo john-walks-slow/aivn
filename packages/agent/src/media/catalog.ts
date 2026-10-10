@@ -36,6 +36,10 @@ export interface AssetRef {
   variant?: string;
   framing?: SpriteFraming;
   stature?: SpriteStature;
+  /** 归一化头顶留白（画布高 1920 的像素数，抠图产物）：舞台据此把头顶钉回 preset 的位置。 */
+  figureTop?: number;
+  /** 人物实际像素高（抠图产物；宽度先卡时小于画布高）。 */
+  figureHeight?: number;
   /** 立绘级标题（无卡主体靠它出名牌）。 */
   title?: string;
 }
@@ -93,6 +97,9 @@ export function assetMetaOf(manifest: AssetManifest, key: string): AssetMeta {
  * 立绘级取景以**定妆照**那一次为准：它是所有差分的垫图基准，一条 closeup 不该把基准带跑；
  * 差分与基准不同才写一条差分级覆盖（与基准一致时留空表，文件才读得下去）。
  * `title` 是无卡主体的名牌（名牌回落链的第三档）。**描述一个字不动**——那是工坊与用户的账。
+ *
+ * `figureTop` / `figureHeight` 是抠图量出来的落位指标，逐文件：neutral 那次落立绘级，
+ * 非 neutral 另写一条差分级覆盖（同一主体换个表情，外框不一样，头顶位置就不一样）。
  */
 export function declareSprite(manifest: AssetManifest, spec: AssetRef): AssetManifest {
   if (!spec.spriteId) return manifest;
@@ -106,11 +113,19 @@ export function declareSprite(manifest: AssetManifest, spec: AssetRef): AssetMan
       ...(spec.title ? { title: spec.title } : {}),
       ...(neutral && spec.framing ? { framing: spec.framing } : {}),
       ...(neutral && spec.stature ? { stature: spec.stature } : {}),
+      ...(neutral && spec.figureTop !== undefined ? { figureTop: spec.figureTop } : {}),
+      ...(neutral && spec.figureHeight !== undefined ? { figureHeight: spec.figureHeight } : {}),
     },
   };
-  if (!neutral && spec.framing && spec.framing !== level.framing && spec.variant) {
+  // 指标是**逐文件**的（同一主体各差分的 alpha 外框不同），所以非 neutral 一律留一条差分级：
+  // 取景只在真的与立绘级不同时才写（原有的口径），指标照实写、不拿立绘级的数冒充。
+  if (!neutral && spec.variant) {
     const variantKey = `${spec.spriteId}/${spec.variant}`;
-    next[variantKey] = { ...assetMetaOf(next, variantKey), framing: spec.framing };
+    const override = { ...assetMetaOf(next, variantKey) };
+    if (spec.framing && spec.framing !== level.framing) override.framing = spec.framing;
+    if (spec.figureTop !== undefined) override.figureTop = spec.figureTop;
+    if (spec.figureHeight !== undefined) override.figureHeight = spec.figureHeight;
+    next[variantKey] = override;
   }
   return next;
 }

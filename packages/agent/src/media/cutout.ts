@@ -23,8 +23,9 @@ import sharp from "sharp";
  *    a = (B-I)/(B-F)。掩膜边界**两侧**各 `edgeBand` 像素都解一遍：纯底色解出 0，
  *    半覆盖解出中间值，边缘渗进去的底色被 `unblend` 扣掉。没有这一步，深色舞台底上
  *    就是一圈白边晕（旧公式给每圈边界像素垫了 128 的 alpha 地板）。
- * 4. **只留人物、落画布**：裁到人物外框、等比缩放、底部居中放进 9:16 画布，
- *    锚点 [0.5, 1.0]——引擎换表情时角色不会晃动。
+ * 4. **只留人物、落画布**：裁到人物外框、等比缩放到「画布高 × (1 − topPadding)」、
+ *    底部居中放进 `aspectRatio` 画布（跟着取景走），锚点 [0.5, 1.0]——引擎换表情时
+ *    角色不会晃动，头顶位置也不再随外框比漂。
  *
  * 反解与限色这两步管的是**颜色**不是抠得多狠：`tolerance` 才是抠得多狠的那个旋钮，
  * 调它会连发丝一起啃掉。想消掉边上的底色残留，走 `spill`，不要去拧 `tolerance`。
@@ -48,16 +49,34 @@ export interface CutoutResult {
   /** 前景像素占比。过低说明底色判错（整张被判成背景），过高说明底没抠干净。 */
   coverage: number;
   /**
-   * 人物落在画布上的实际高度。**同一个角色不管出自哪一批差分，这个值都必须一样**——
-   * 不一样就说明那批的面板格子太矮，模型只能把人物画矮了。低于画布高就说明格制式选错了。
+   * 人物落在画布上的实际高度（像素）。**同一个角色不管出自哪一批差分，这个值都必须一样**——
+   * 不一样就说明那批的面板格子太矮，模型只能把人物画矮了。
+   *
+   * 归一化之后它 = `画布高 × (1 − topPadding)`（宽度不先卡时），不再是外框比碰巧算出的余数。
    */
   figureHeight: number;
+  /**
+   * 人物头顶到画布上沿的像素数。立绘落位真正需要的是**人物头顶钩在哪**，而这个量一直被
+   * 当成「贴画布之后的剩余空间」丢掉。它落进素材表，舞台侧才不必再假设「图片盒上沿 = 头顶」。
+   */
+  figureTop: number;
 }
 
 /** 抠底调参。数值都是 0–255 的通道色差，不是比例——比色时直接用整数比较。 */
 export interface CutoutOptions {
-  /** 目标画布高（宽按 9:16 推）。 */
+  /** 目标画布高（宽按 `aspectRatio` 推）。 */
   canvasHeight?: number;
+  /**
+   * 画布宽高比（宽/高）。**跟着立绘取景走**（full 9/16、half 3/4、square 1），缺省 9/16。
+   * 外框比一旦超过它就会被宽度先卡、人物被压矮、余量全堆到顶部——实测 square 的 1:1 主体
+   * 被压进 9:16 时顶部空出了四成画布高。
+   */
+  aspectRatio?: number;
+  /**
+   * 顶部留白，占画布高的比例。人物缩放到「画布高 × (1 − topPadding)」再贴底，于是头顶到
+   * 画布上沿恒为 `画布高 × topPadding`——同一 preset 下不同素材的头顶位置不再随外框比漂。
+   */
+  topPadding?: number;
   /** 色键容差：逐通道最大差不超过它的像素一律算背景。调大 = 抠得更狠。 */
   tolerance?: number;
   /**
@@ -87,6 +106,9 @@ export interface CutoutTuning {
 }
 
 const CANVAS_HEIGHT = 1920;
+const CANVAS_ASPECT = 9 / 16;
+/** 顶部留白占画布高的比例：5% ≈ 96px。 */
+const TOP_PADDING = 0.05;
 const COVERAGE_MIN = 0.02;
 const COVERAGE_MAX = 0.97;
 
@@ -177,7 +199,8 @@ function assertKeyBackground(rgba: Buffer, width: number, height: number, channe
 
 export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise<CutoutResult> {
   const canvasHeight = options.canvasHeight ?? CANVAS_HEIGHT;
-  const canvasWidth = Math.round((canvasHeight * 9) / 16);
+  const canvasWidth = Math.round(canvasHeight * (options.aspectRatio ?? CANVAS_ASPECT));
+  const topPadding = options.topPadding ?? TOP_PADDING;
   const { data: rgba, info } = await sharp(data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width, height, channels } = info;
   if (width < 8 || height < 8) throw new Error("图太小，抠底没有意义");
@@ -222,11 +245,12 @@ export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise
     .extract(box)
     .png()
     .toBuffer();
-  // 缩放：等比塞进画布，哪个维度先卡住就由哪个决定人物大小。
-  // 因此「人物最终多高」取决于外框的长宽比——外框越胖，人物越矮。
-  // 单格制式（2 列 × ≤2 行）保证外框比 ≤ 0.558 < 画布的 0.5625，高度永远先卡，
-  // 人物恒为满高；一旦用 2x3 这种矮格，外框比 0.838 就会反过来由宽度卡，高度掉到 1287。
-  const scale = Math.min(canvasWidth / box.width, canvasHeight / box.height);
+  // 缩放：先把人物缩到「画布高 × (1 − topPadding)」，再看宽度会不会先卡住。
+  // 高度是目标量，宽度只是护栏——画布比按取景选对了（aspectRatio ≥ 该档外框比）时
+  // 宽度永远不卡，人物高度只由 topPadding 决定；外框比超了才退回宽度先卡。
+  // （旧行为：外框比 > 画布比就由宽度定高度，头顶余量 = 画布高 − 人物高，随图漂。）
+  const targetHeight = canvasHeight * (1 - topPadding);
+  const scale = Math.min(targetHeight / box.height, canvasWidth / box.width);
   const scaled = await sharp(figure)
     .resize({
       width: Math.max(1, Math.round(box.width * scale)),
@@ -250,12 +274,14 @@ export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise
     .png()
     .toBuffer();
 
+  const figureHeight = Math.round(box.height * scale);
   return {
     data: canvas,
     width: canvasWidth,
     height: canvasHeight,
     coverage,
-    figureHeight: Math.round(box.height * scale),
+    figureTop: canvasHeight - figureHeight,
+    figureHeight,
   };
 }
 

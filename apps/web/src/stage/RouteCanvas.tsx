@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useEscape, Icon, Modal, stamp, type AssetIndex } from "@aivn/stage";
+import { useEscape, Icon, Modal, stamp, type AssetIndex, type IconName } from "@aivn/stage";
 import type { BeatCard } from "./beats.js";
 import type { LineageOps } from "./LineagePanel.js";
 import { layoutRoute, NODE_H, NODE_W, type PlacedCard, type RouteDir } from "./routeTree.js";
@@ -384,6 +384,22 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
             />
           ))}
         </div>
+
+        {/* 图例：树上有三种线，扫一眼就知道哪条是走过来的、哪条还没去、哪条被废了 */}
+        <div className="route-legend" aria-hidden>
+          <span className="route-legend-row">
+            <span className="route-legend-key is-live" />
+            走过的路
+          </span>
+          <span className="route-legend-row">
+            <span className="route-legend-key is-todo" />
+            还没走到
+          </span>
+          <span className="route-legend-row">
+            <span className="route-legend-key is-dead" />
+            已废弃的枝
+          </span>
+        </div>
       </div>
 
       {asking?.kind === "rewrite" && (
@@ -402,13 +418,17 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
             </>
           }
         >
-          <input
+          {/* 多行：要求往往是一句话以上的交代。Enter 留给换行，提交走 Ctrl/Cmd + Enter。 */}
+          <textarea
             className="route-modal-input"
+            rows={3}
             value={draft}
             placeholder="（可留空）例如：让她的反应更冷淡一点"
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") submitRewrite();
+              if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+              e.preventDefault();
+              submitRewrite();
             }}
           />
         </Modal>
@@ -484,16 +504,25 @@ function Node({
     kin ? "kin" : "",
     doomed ? "doomed" : "",
     selected ? "selected" : "",
+    // 「从哪儿分出来的」在树上是节点自己的属性：分岔点画得跟主干不一样
+    card.forkedFrom !== null ? "forked" : "",
   ]
     .filter(Boolean)
     .join(" ");
   const who = card.isSentinel ? "" : card.speakers.map((id) => names[id] ?? id).join("、");
   const timeStamp = card.isSentinel ? "起点" : stamp(card.at);
   const text = card.preview || (card.isSentinel ? "开端" : "（无台词）");
-  // 画面：这一幕出过的 CG 优先于背景。CG 才是这一幕真正给玩家看的那张画，
-  // 拿背景顶上来等于告诉玩家「这一幕没出过图」。
+  // 画面：这一幕出过的 CG 优先于背景。CG 才是这一幕真正给玩家看的那张画。
   const bg = (card.cgId ? index?.cg(card.cgId) : null) ?? index?.bg(card.sceneBg) ?? null;
   const hint = busy ? "剧作家正在写，暂时不能动这一段" : "";
+  // 方块上那枚图标：一眼分出这是起点 / 分岔点 / 当前所在 / 已经走过的路
+  const mark: IconName = card.isSentinel
+    ? "drama"
+    : card.isLeaf
+      ? "locate"
+      : card.forkedFrom !== null
+        ? "fork"
+        : "chat";
 
   return (
     <div
@@ -502,49 +531,58 @@ function Node({
       onClick={() => onSelect(card.id)}
     >
       {bg && <img className="route-node-bg" src={bg} alt="" aria-hidden />}
-      <span className="route-node-head">
-        <span className="route-node-stamp">{timeStamp}</span>
-        <span className="route-node-who">{who}</span>
+      <span className="route-node-wash" aria-hidden />
+
+      <span className="route-node-mark" aria-hidden>
+        <Icon name={mark} size={17} />
       </span>
-      <span className="route-node-text">{text}</span>
-      <span className="route-node-foot">
-        <span className="route-node-tools">
-          <button
-            type="button"
-            className="route-node-tool"
-            disabled={busy}
-            title={hint || (card.isSentinel ? "跳转：回到故事的起点。" : "跳转：回到这一段的开头，从头演一遍。不重新生成，选项照旧。")}
-            onClick={() => ops.jump(card.endNodeId, { playFrom: "start" })}
-          >
-            <Icon name="return" />
-            跳转
-          </button>
-          {!card.isSentinel && (
-            <>
-              <button
-                type="button"
-                className="route-node-tool"
-                disabled={busy}
-                title={hint || "重写：退到这一段之前，让剧作家重新写一遍这一段（原有内容留作旧枝）。可以交代一句要求。"}
-                onClick={() => onRewrite(card)}
-              >
-                <Icon name="rewrite" />
-                重写
-              </button>
-              <button
-                type="button"
-                className="route-node-tool"
-                disabled={busy}
-                title={hint || "删除：剪掉这一段，以及它之后长出来的全部内容。会先让你确认。"}
-                onClick={() => onRemove(card)}
-              >
-                <Icon name="remove" />
-                删除
-              </button>
-            </>
-          )}
+      <span className="route-node-stamp">{timeStamp}</span>
+      {card.isLeaf && <span className="route-node-here" aria-hidden />}
+
+      {/* 悬停 / 选中才展开的详情：静止时整棵树只有方块与连线，像一张流程图；
+          要读某一拍说了什么、要对它动手，指针停上去就够。 */}
+      <div className="route-node-detail">
+        {who && <span className="route-node-who">{who}</span>}
+        <p className="route-node-text">{text}</p>
+        <span className="route-node-foot">
+          <span className="route-node-tools">
+            <button
+              type="button"
+              className="route-node-tool"
+              disabled={busy}
+              title={hint || (card.isSentinel ? "跳转：回到故事的起点。" : "跳转：回到这一段的开头，从头演一遍。不重新生成，选项照旧。")}
+              onClick={() => ops.jump(card.endNodeId, { playFrom: "start" })}
+            >
+              <Icon name="return" size={13} />
+              跳转
+            </button>
+            {!card.isSentinel && (
+              <>
+                <button
+                  type="button"
+                  className="route-node-tool"
+                  disabled={busy}
+                  title={hint || "重写：退到这一段之前，让剧作家重新写一遍这一段（原有内容留作旧枝）。可以交代一句要求。"}
+                  onClick={() => onRewrite(card)}
+                >
+                  <Icon name="rewrite" size={13} />
+                  重写
+                </button>
+                <button
+                  type="button"
+                  className="route-node-tool"
+                  disabled={busy}
+                  title={hint || "删除：剪掉这一段，以及它之后长出来的全部内容。会先让你确认。"}
+                  onClick={() => onRemove(card)}
+                >
+                  <Icon name="remove" size={13} />
+                  删除
+                </button>
+              </>
+            )}
+          </span>
         </span>
-      </span>
+      </div>
     </div>
   );
 }

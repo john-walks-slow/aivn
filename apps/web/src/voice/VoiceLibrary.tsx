@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { countVoicesByLanguage, languageLabel, type VoiceEntry } from "@aivn/core";
 import { api } from "../api.js";
 import { Icon, useEscape } from "@aivn/stage";
+import { useDismissible } from "../ui/useDismissible.js";
 import { effectiveVoiceLanguage, type VoiceCatalogState } from "./useVoiceCatalog.js";
 
 /** Fish 封面图 CDN（cover_image 是 `coverimage/<id>` 相对路径）。 */
@@ -36,6 +37,9 @@ export function VoiceLibrary({
   onClose: () => void;
 }) {
   const { catalog, error, loading, refresh, search, filter, result, searching, searchError } = voices;
+  // 两条横幅都能收起来：它们是失败回执，不是常驻状态。值一变（重试出新错）会自己再露出来。
+  const loadError = useDismissible(error);
+  const filterError = useDismissible(searchError);
   const [query, setQuery] = useState("");
   // null = 用户还没挑过，沿用系统语言；挑过之后以用户的选择为准
   const [picked, setPicked] = useState<string | null>(null);
@@ -140,13 +144,32 @@ export function VoiceLibrary({
         </button>
       </header>
 
-      {error ? (
+      {error && !loadError.hidden ? (
         <div className="error-banner" role="alert">
-          音色库加载失败：{error}
+          <span>音色库加载失败：{error}</span>
+          <button type="button" className="link-btn" onClick={() => void refresh()}>
+            重试
+          </button>
+          <button
+            type="button"
+            className="notice-close"
+            aria-label="收起这条"
+            onClick={loadError.dismiss}
+          >
+            <Icon name="close" size={12} />
+          </button>
         </div>
-      ) : searchError ? (
+      ) : searchError && !filterError.hidden ? (
         <div className="error-banner" role="alert">
-          筛选失败：{searchError}（可重试或换个条件）
+          <span>筛选失败：{searchError}（可重试或换个条件）</span>
+          <button
+            type="button"
+            className="notice-close"
+            aria-label="收起这条"
+            onClick={filterError.dismiss}
+          >
+            <Icon name="close" size={12} />
+          </button>
         </div>
       ) : (
         <div className="picker-grid">

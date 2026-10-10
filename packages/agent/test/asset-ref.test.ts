@@ -45,7 +45,7 @@ describe("image.cutout 的两种寻址", () => {
       deps: {
         cut: async (request: CutoutRequest) => {
           calls.push(request);
-          return { path: request.output ?? "media-cache/cut/x.png", absPath: "/tmp/x.png", coverage: 0.4, figureHeight: 900 };
+          return { path: request.output ?? "media-cache/cut/x.png", absPath: "/tmp/x.png", coverage: 0.4, figureTop: 1020, figureHeight: 900 };
         },
       },
     };

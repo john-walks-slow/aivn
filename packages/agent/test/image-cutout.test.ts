@@ -31,7 +31,7 @@ describe("image.cutout", () => {
       {
         cut: async (request) => {
           seen.push(request);
-          return { path: "assets/sprites/mio/neutral.png", absPath: "/tmp/x.png", coverage: 0.2, figureHeight: 1600 };
+          return { path: "assets/sprites/mio/neutral.png", absPath: "/tmp/x.png", coverage: 0.2, figureTop: 320, figureHeight: 1600 };
         },
       },
     );

@@ -153,7 +153,8 @@ describe("cutout", () => {
     const x = left + Math.round((100 - box.x0) * scale);
     const y = top + Math.round((160 - box.y0) * scale);
 
-    const result = await cutout(data, { ...NO_SMOOTH });
+    // 这条验的是色键与反解，不是落位：显式关掉顶部留白，回到旧行为逐位一致。
+    const result = await cutout(data, { ...NO_SMOOTH, topPadding: 0 });
     expect(await alphaAt(result.data, x, y)).toBe(0);
     // 人形自己没被连坐
     expect(await alphaAt(result.data, left + Math.round(2 * scale), y)).toBe(255);
@@ -215,7 +216,11 @@ describe("cutout", () => {
         raw[o + 2] = b;
       }
     }
-    const result = await cutout(await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer());
+    // 取样点按「满高、底对齐」写的：这条验的是反解覆盖率，落位不在这里，钉住 topPadding。
+    const result = await cutout(
+      await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer(),
+      { topPadding: 0 },
+    );
 
     // scale 恒等于 1，人形 200 宽居中落在 1080 画布的 x 440..639，底对齐
     const left = Math.round((1080 - 200) / 2);
@@ -259,8 +264,10 @@ describe("cutout", () => {
         raw[o + 2] = c[2]!;
       }
     }
+    // 同上：探针写死在 y=600 这类旧坐标上，这条只验反解出的边缘色。
     const result = await cutout(
       await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer(),
+      { topPadding: 0 },
     );
     const { data, info } = await sharp(result.data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     const at = (x: number, y: number) => {
@@ -381,20 +388,47 @@ async function standing(w: number, h: number, fillW = 0.36, fillH = 0.9): Promis
   return sharp(raw, { raw: { width: w, height: h, channels: 3 } }).jpeg().toBuffer();
 }
 
-describe("人物高度：不同格子制式下必须一致", () => {
-  it("2x1 切出的格子和 2x2 切出的格子，人物都落到满高 1920", async () => {
+describe("归一化：头顶留白与人物高度都由 topPadding 钉住", () => {
+  it("人物缩到「画布高 × (1 − topPadding)」，头顶恒为「画布高 × topPadding」", async () => {
+    // 三种细长外框（高度先卡）都必须落到同一组数——这正是归一化要买的东西。
+    for (const [w, h] of [[384, 1376], [384, 688], [160, 300]] as const) {
+      const r = await cutout(await standing(w, h));
+      expect(r.figureHeight).toBe(1824);
+      expect(r.figureTop).toBe(96);
+      expect(r.figureTop + r.figureHeight).toBe(r.height);
+    }
+  });
+
+  it("topPadding 可调：0 逐位退回旧行为（人物满高、头顶无留白）", async () => {
+    const r = await cutout(await standing(384, 1376), { topPadding: 0 });
+    expect(r.figureHeight).toBe(1920);
+    expect(r.figureTop).toBe(0);
+  });
+
+  it("外框比超过画布比时宽度先卡；画布比跟着取景换（square 用 1:1）才拿得回满高", async () => {
+    const raw = await standing(384, 458, 0.95, 0.98);
+    const narrow = await cutout(raw, { topPadding: 0 });
+    expect(narrow.figureHeight).toBeLessThan(1920);
+    const square = await cutout(raw, { topPadding: 0, aspectRatio: 1 });
+    expect(square.figureHeight).toBe(1920);
+    expect(square.figureTop).toBe(0);
+  });
+});
+
+describe("人物高度：同一 topPadding 下与格子制式无关", () => {
+  it("2x1 切出的格子和 2x2 切出的格子，人物都落到满高 1920（topPadding 0）", async () => {
     // 同一张 768x1376 原片，切 2x1 得 384x1376，切 2x2 得 384x688。
     // 这是同一个角色分两批出差分的情况——人物高度必须一样，否则舞台上忽高忽矮。
-    const tall = await cutout(await standing(384, 1376));
-    const short = await cutout(await standing(384, 688));
+    const tall = await cutout(await standing(384, 1376), { topPadding: 0 });
+    const short = await cutout(await standing(384, 688), { topPadding: 0 });
     expect(tall.figureHeight).toBe(1920);
     expect(short.figureHeight).toBe(1920);
     expect(tall.figureHeight).toBe(short.figureHeight);
   });
 
   it("模型把人画得比格子小也一样落到满高（缩放看的是外框，不是格子）", async () => {
-    const small = await cutout(await standing(384, 688));
-    const smaller = await cutout(await standing(160, 300));
+    const small = await cutout(await standing(384, 688), { topPadding: 0 });
+    const smaller = await cutout(await standing(160, 300), { topPadding: 0 });
     expect(small.figureHeight).toBe(smaller.figureHeight);
     expect(smaller.figureHeight).toBe(1920);
   });
@@ -402,8 +436,8 @@ describe("人物高度：不同格子制式下必须一致", () => {
   it("格制式选错导致外框太胖时，人物会矮下来——这正是砍掉 2x3 的理由", async () => {
     // 2x3 的单格是 384x458，模型在这种矮格子里只能把人物撑满整格，长宽比超过画布的 0.5625，
     // 缩放变成宽度先卡，人物矮一大截。断言这个数会掉下来，把砍掉 2x3 的结论钉在测试里。
-    const cramped = await cutout(await standing(384, 458, 0.95, 0.98));
-    const tall = await cutout(await standing(384, 1376));
+    const cramped = await cutout(await standing(384, 458, 0.95, 0.98), { topPadding: 0 });
+    const tall = await cutout(await standing(384, 1376), { topPadding: 0 });
     expect(tall.figureHeight).toBe(1920);
     expect(cramped.figureHeight).toBeLessThan(tall.figureHeight * 0.8);
   });

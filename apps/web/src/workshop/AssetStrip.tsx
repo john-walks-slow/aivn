@@ -1,4 +1,5 @@
 import type { WorkshopAssetView } from "@aivn/core";
+import { AudioPill } from "../ui/AudioPill.js";
 
 /** 素材类别 → 灯箱只看图：bgm/sfx 在对话流里给播放器，不进灯箱。 */
 const AUDIO_ASSET = new Set<WorkshopAssetView["kind"]>(["bgm", "sfx"]);
@@ -18,16 +19,12 @@ export function AssetStrip({
   bare?: boolean;
 }) {
   const pictures = assets.filter((a) => !AUDIO_ASSET.has(a.kind));
-  const body = assets.map((asset, j) =>
+  // 图先、音频后：一条 flex-wrap 里混排会变成「一张图一个播放器」的锯齿，
+  // 分两段排下来才是「先看图、再听声」。
+  const ordered = [...pictures, ...assets.filter((a) => AUDIO_ASSET.has(a.kind))];
+  const body = ordered.map((asset, j) =>
     AUDIO_ASSET.has(asset.kind) ? (
-      <audio
-        key={`${asset.path}-${j}`}
-        className="asset-audio"
-        src={asset.url}
-        controls
-        preload="none"
-        title={asset.path}
-      />
+      <AudioPill key={`${asset.path}-${j}`} src={asset.url} path={asset.path} />
     ) : (
       <button
         key={`${asset.path}-${j}`}
