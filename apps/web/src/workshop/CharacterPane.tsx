@@ -11,6 +11,7 @@ import { api, assetUrl, type PlayDetail } from "../api.js";
 import { Icon } from "@aivn/stage";
 import { CharacterEditor } from "./CharacterEditor.js";
 import { ImageLightbox } from "../ui/ImageLightbox.js";
+import { Loading } from "../ui/Loading.js";
 import { LibraryBrowser } from "./LibraryBrowser.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";
 import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
@@ -223,7 +224,12 @@ export function CharacterPane({
   // hook 不能落在早退之后：先把「改没改过」登记上去，再决定渲染什么
   useDirtyFlag("characters", dirty);
 
-  if (!roles) return <div className="workshop-tab-pane">读取中…</div>;
+  if (!roles)
+    return (
+      <div className="workshop-tab-pane">
+        <Loading />
+      </div>
+    );
 
   // 选中的那张一定在（主角卡在上面兜过底），兜底的 `roles[0]` 只防空卡目录
   const activeRole = roles.find((r) => r.id === open) ?? roles[0] ?? null;

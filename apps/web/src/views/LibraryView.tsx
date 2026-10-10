@@ -68,13 +68,13 @@ export function LibraryView() {
     "all",
   );
 
+  // 筛选页签上的三个数：总数、已开演、草稿。原先顶栏还有一块「周目记录」，
+  // 四块指标板撤掉后不再需要那个数——周目数在周目页上看得更清楚。
   const counts = useMemo(() => {
-    if (!plays) return { total: 0, active: 0, draft: 0, saves: 0 };
+    if (!plays) return { total: 0, active: 0, draft: 0 };
     const total = plays.length;
     const active = plays.filter((p) => p.readiness.saves > 0).length;
-    const draft = total - active;
-    const saves = plays.reduce((acc, p) => acc + (p.readiness.saves || 0), 0);
-    return { total, active, draft, saves };
+    return { total, active, draft: total - active };
   }, [plays]);
 
   const filtered = useMemo(() => {
@@ -146,46 +146,6 @@ export function LibraryView() {
           </button>
         </div>
       </header>
-
-      {/* OMC 风格全局指标指示栏：高信息密度、硬朗工业级 */}
-      <section className="library-metrics-bar" aria-label="剧目库概览指标">
-        <div className="metric-tile">
-          <span className="metric-tile-label">ALL PLAYS</span>
-          <div className="metric-tile-val">
-            <span className="metric-num">{counts.total}</span>
-            <span className="metric-sub">剧目</span>
-          </div>
-        </div>
-
-        <div className="metric-tile">
-          <span className="metric-tile-label">ACTIVE PLAYS</span>
-          <div className="metric-tile-val">
-            <span className="metric-num">{counts.active}</span>
-            <span className="metric-pip is-success" />
-            <span className="metric-sub">已开演</span>
-          </div>
-        </div>
-
-        <div className="metric-tile">
-          <span className="metric-tile-label">TOTAL SAVES</span>
-          <div className="metric-tile-val">
-            <span className="metric-num">{counts.saves}</span>
-            <span className="metric-sub">周目记录</span>
-          </div>
-        </div>
-
-        <div className="metric-tile">
-          <span className="metric-tile-label">ENGINE STATUS</span>
-          <div className="metric-tile-val">
-            <span
-              className={`metric-pip ${setupIssue ? "is-warn" : "is-success"}`}
-            />
-            <span className="metric-status-text">
-              {setupIssue ? "GATEWAY WARN" : "ONLINE"}
-            </span>
-          </div>
-        </div>
-      </section>
 
       {/* OMC 风格紧凑工具栏：Segmented 选项卡 + 快捷计数 */}
       <div className="library-toolbar">

@@ -21,6 +21,7 @@ import {
   PLAY_ACCENTS,
   themeCssFor,
 } from "../ui/playTheme.js";
+import { Loading } from "../ui/Loading.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";
 import { useVoiceCatalog } from "../voice/useVoiceCatalog.js";
 import { useDirtyFlag } from "./dirtyGuard.js";
@@ -98,7 +99,12 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
       .catch((e: Error) => setError(e.message));
   };
 
-  if (!draft) return <div className="workshop-tab-pane">读取中…</div>;
+  if (!draft)
+    return (
+      <div className="workshop-tab-pane">
+        <Loading />
+      </div>
+    );
 
   return (
     <div className="workshop-tab-pane play-pane">

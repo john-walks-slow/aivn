@@ -564,17 +564,7 @@ button.link-btn {
   gap: 6px;
 }
 
-/* OMC 风格全局指标指示栏：高信息密度、硬朗工业级、Quiet Chrome */
-.library-metrics-bar {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  width: 100%;
-  margin: 20px 0 0;
-  padding: 0 clamp(16px, 2.2vw, 44px);
-  box-sizing: border-box;
-}
-
+/* 指标板：周目页顶部那排（首页那四块已撤掉，样式留在这里给周目页用） */
 .metric-tile {
   display: flex;
   flex-direction: column;
@@ -3086,6 +3076,25 @@ select:focus {
   padding-bottom: 0;
 }
 
+/* 「数据还没到」的占位（ui/Loading）：一枚停在版心正中的 spinner。
+   外层是撑满内容区的 flex 列，所以这里 flex:1 拿满高度、再把自己居中。 */
+.pane-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pane-loading .spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  /* 淡主题色做轨道、亮主题色做那道转动的弧：单色圆环看不出在转 */
+  border: 2px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
 .save-row {
   position: sticky;
   bottom: 0;
@@ -3267,6 +3276,13 @@ select:focus {
   text-align: center;
   margin: auto 0;
   padding: 0 16px;
+}
+
+/* 空态那枚图标自己走 flex 居中：Icon 是 display:block 的方形 svg，
+   落在一层撑满整行的 div 里就往左贴——它下面两行字是居中的，图标得跟字同一条中轴。 */
+.workshop-empty .empty-icon {
+  display: flex;
+  justify-content: center;
 }
 
 .chat-bubble {
@@ -3737,7 +3753,12 @@ select:focus {
 }
 
 .workshop-input button.primary {
-  height: 44px;
+  /* 与输入框等高：输入框是两行高（62px 上下），一颗写死 44px 的键靠底对齐会矮一截。
+     上限 64px——输入框长到五六行时，一颗同高的「发送」比键本身还抢眼。 */
+  height: auto;
+  min-height: 48px;
+  max-height: 64px;
+  align-self: stretch;
   padding: 0 18px;
   border-radius: 8px;
   font-weight: 600;
@@ -4923,13 +4944,16 @@ select:focus {
   }
 }
 
-/* 普通页面给安全区留边；舞台是满幅画面，左右必须贴边，否则背景两侧露出页面底色 */
+/* 普通页面给安全区留边；舞台与首页是满幅画面，左右必须贴边，否则带底色的条
+   （舞台画面、首页顶栏与工具条）两侧会各留一条页面底色的缝，读起来是一圈白边 */
 .screen {
   padding-left: max(16px, env(safe-area-inset-left));
   padding-right: max(16px, env(safe-area-inset-right));
 }
 
-.stage-screen {
+/* 首页的横向留白归它自己的内容栏（顶栏 / 工具条 / 网格各自的内边距），不重叠两层 */
+.stage-screen,
+.library-screen {
   padding-left: 0;
   padding-right: 0;
 }
@@ -6547,14 +6571,7 @@ select:focus {
     max-width: none;
   }
 
-  /* 四块指标改成两行两列：一列一块会把「剧目 / 已开演」这些词竖着排 */
-  .library-metrics-bar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    margin-top: 14px;
-    padding: 0 14px;
-  }
-
+  /* 周目页顶部那排指标板：手机上两行两列，一列一块会把「个周目 / 轮推进」竖着排 */
   .metric-tile {
     padding: 10px 12px;
     gap: 5px;
@@ -6886,23 +6903,9 @@ select:focus {
     padding: 12px 14px;
   }
 
-  /* 发送键与输入框等高：手机上输入框常驻两行（占位文案就折行），
-     靠 flex-end 对齐会看到一高一矮两条边 */
   .workshop-input {
-    align-items: stretch;
     gap: 8px;
     padding: 8px 12px;
-  }
-
-  /* 基础规则给这两颗键写死了 height: 44px——显式高度让 align-self: stretch 失效，
-     所以这里要显式写回 auto，它才跟着输入框长。上限 64px：输入框长到五六行时
-     一颗同高的「发送」很怪，两行以内则完全对齐。 */
-  .workshop-input button.send-btn,
-  .workshop-input button.stop-btn {
-    height: auto;
-    min-height: 48px;
-    max-height: 64px;
-    align-self: stretch;
   }
 
   /* 手机底沿有手势条：给保存那一行补一段安全区 */

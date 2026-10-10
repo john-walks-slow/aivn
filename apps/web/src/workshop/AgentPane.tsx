@@ -8,6 +8,7 @@ import type {
 import { THINKING_LEVELS } from "@aivn/core";
 import { api, type AgentCapabilityEntry, type GatewayModel } from "../api.js";
 import { ModelSelect } from "../ui/ModelSelect.js";
+import { Loading } from "../ui/Loading.js";
 import { Icon } from "@aivn/stage";
 import { useDirtyFlag } from "./dirtyGuard.js";
 
@@ -128,7 +129,7 @@ export function AgentPane({ playId }: { playId: string }) {
             </button>
           </div>
         ) : (
-          <p className="muted small">读取剧目设置…</p>
+          <Loading />
         )}
       </div>
     );
