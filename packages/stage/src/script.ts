@@ -1,4 +1,4 @@
-import type { ActorAnchor, ActorShot, FxVerb, StageEvent, TitleAlign, TitleMode, Transition } from "@aivn/core";
+import type { ActorAnchor, ActorShot, FxVerb, StageEvent, TitleAlign, TitleBg, TitleInk, TitleMode, Transition } from "@aivn/core";
 
 /** 前端剧本行模型：StageEvent 流 → 渲染行（log 视图与舞台台词共用）。 */
 export interface ScriptLine {
@@ -16,6 +16,9 @@ export interface ScriptLine {
   /** title 专有：对齐与出法。 */
   align?: TitleAlign;
   mode?: TitleMode;
+  /** title 专有：底色与字色（缺省黑底白字；`bg="none"` 为透明叠层）。 */
+  bg?: TitleBg;
+  ink?: TitleInk;
   /** title 专有：正文已流完（收到 `</title>`）——未闭合前点击不离开，等它写完。 */
   closed?: boolean;
 }
@@ -185,6 +188,8 @@ export class ScriptBuilder {
           type: "title",
           align: event.align,
           mode: event.mode,
+          bg: event.bg,
+          ...(event.ink ? { ink: event.ink } : {}),
           seq,
           nodeId: event.nodeId,
           text: "",

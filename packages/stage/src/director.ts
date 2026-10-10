@@ -510,6 +510,8 @@ function lineEntry(line: ScriptLine): TranscriptEntry {
     seq: line.seq ?? null,
     nodeId: null,
     ...(line.type === "title" && line.align ? { align: line.align } : {}),
+    ...(line.type === "title" && line.bg ? { bg: line.bg } : {}),
+    ...(line.type === "title" && line.ink ? { ink: line.ink } : {}),
   };
 }
 /**

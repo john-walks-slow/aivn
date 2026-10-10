@@ -487,8 +487,37 @@ describe("全屏标题卡 <title>", () => {
     const { events, parser } = collect();
     parser.feed('<title align="top-right" mode="block">三日后</title>');
     parser.endMessage();
-    expect(events[0]).toEqual({ kind: "title_start", align: "top-right", mode: "block" });
+    expect(events[0]).toEqual({ kind: "title_start", align: "top-right", mode: "block", bg: "black" });
     expect(events[1]).toEqual({ kind: "title_text", delta: "三日后" });
+  });
+
+  it("缺省黑底白字：bg 落 black，ink 不落值（由渲染层按底色配对比色）", () => {
+    const { events, parser } = collect();
+    parser.feed("<title>风起</title>");
+    parser.endMessage();
+    expect(events[0]).toEqual({ kind: "title_start", align: "center", mode: "lines", bg: "black" });
+  });
+
+  it("显式 bg / ink 原样产出（色名与十六进制）", () => {
+    const { events, parser } = collect();
+    parser.feed('<title bg="White" ink="#1a1a2e">风起</title>');
+    parser.endMessage();
+    expect(events[0]).toMatchObject({ kind: "title_start", bg: "White", ink: "#1a1a2e" });
+  });
+
+  it('bg="none" 是显式透明，原样产出', () => {
+    const { events, parser } = collect();
+    parser.feed('<title bg="none">风起</title>');
+    parser.endMessage();
+    expect(events[0]).toMatchObject({ kind: "title_start", bg: "none" });
+  });
+
+  it("非法 bg / ink 落回默认并挂警告", () => {
+    const { events, parser } = collect();
+    parser.feed('<title bg="transparent" ink="亮白">风起</title>');
+    parser.endMessage();
+    expect(events[0]).toEqual({ kind: "title_start", align: "center", mode: "lines", bg: "black" });
+    expect(parser.warnings.filter((w) => w.type === "malformed_tag")).toHaveLength(2);
   });
 
   it("非法 align / mode 落回默认并挂警告", () => {

@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import {
   actionAnimation,
   resolveSceneBg,
+  resolveTitleStyle,
   spriteStagePreset,
   transitionVeilColor,
   type ActorAction,
@@ -185,6 +186,17 @@ function effectiveAction(action: DirectorAction | null, guideMode: GuideMode): D
 /** 输入态：输入框里的按键是文字的，不能被舞台的快捷键与快进档抢走。 */
 function isTyping(t: EventTarget | null): boolean {
   return t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
+}
+
+/**
+ * 标题卡的底色与字色。缺省黑底白字（模型看不到舞台皮肤的字色，默认观感必须是它能预判的）；
+ * `bg="none"` 是不铺底的叠层，那时才回到皮肤令牌 `--title-ink` / `--title-shadow`。
+ * 有实底就把投影摘掉——投影是为叠层可读性准备的，压在实底上是发光的糊字。
+ */
+function titleCardStyle(bg: string | undefined, ink: string | undefined): CSSProperties {
+  const card = resolveTitleStyle(bg, ink);
+  if (card.background === null) return card.ink ? { color: card.ink } : {};
+  return { background: card.background, textShadow: "none", ...(card.ink ? { color: card.ink } : {}) };
 }
 
 /** 插一句的快捷前缀：以它开头 = 明确指示，剧作家遵从但不跳出戏外回应。正文里也要认得这个。 */
@@ -824,7 +836,12 @@ voiceState,
         {/* 全屏标题卡：整屏铺文本，对话框让位（.theater.title-mode 里藏掉）。
             逐句模式下 `shown` 是导演按已揭示句数截出的前缀，这里只管按对齐铺出去。 */}
         {isTitle && view && (
-          <div className={`theater-title title-align-${view.align ?? "center"}`} role="heading" aria-level={1}>
+          <div
+            className={`theater-title title-align-${view.align ?? "center"}`}
+            style={titleCardStyle(view.bg, view.ink)}
+            role="heading"
+            aria-level={1}
+          >
             <p className="theater-title-text">{shown}</p>
             {titleReady && (
               <span className="theater-title-next" aria-hidden>

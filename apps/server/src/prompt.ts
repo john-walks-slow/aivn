@@ -214,8 +214,10 @@ ${DIALOGUE_TAGS}
 - align（对齐）五档：top-left / top-right / bottom-left / bottom-right / center，缺省 center。
 - mode（出法）：lines（缺省）每个非空物理行一个揭示单位，点一下出下一句，适合诗歌；
   block 整段一次出。
+- bg（底色）缺省 black：不写它就是一张**黑底白字**的标准卡，ink（字色）不写时按底色配对比色
+  （黑底白字、白底黑字）。底色可写 black / white / #rrggbb；想叠在场景画面上不铺底，
+  显式写 bg="none"——那时没有底色，字色回到舞台皮肤。
 - 进入 title 自动隐藏对话框，离开时恢复；离开靠玩家点击（末句读完后点一下），引擎不自动收。
-- 常与纯色场配合：先 \`<scene bg="black"/>\`，再写 <title>…</title>。
 - 标题卡是一段演出内容，不是停止点；它之后照常按《结束轮》收束。
 
 ${COMMENT_HEAD}它不上舞台、不进谱系、不产出任何事件。

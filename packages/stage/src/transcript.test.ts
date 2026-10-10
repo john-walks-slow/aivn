@@ -164,19 +164,30 @@ describe("buildTranscript 会话记录", () => {
     expect(new Set(entries.map((e) => e.key)).size).toBe(entries.length);
   });
 
-  it("标题卡进会话记录可回顾，带对齐，但不可改写", () => {
+  it("标题卡进会话记录可回顾，带对齐与底色/字色，但不可改写", () => {
     const entries = buildTranscript(
-      view([["t1", "title", 1, "第一章\n风起", { align: "top-left", mode: "lines" }]]),
+      view([["t1", "title", 1, "第一章\n风起", { align: "top-left", mode: "lines", bg: "white", ink: "#333333" }]]),
       [],
     );
-    expect(entries[0]).toMatchObject({ kind: "line", type: "title", text: "第一章\n风起", align: "top-left" });
+    expect(entries[0]).toMatchObject({
+      kind: "line",
+      type: "title",
+      text: "第一章\n风起",
+      align: "top-left",
+      bg: "white",
+      ink: "#333333",
+    });
     expect(editableNodeId(entries[0]!)).toBeNull();
   });
 
-  it("谱系未追上时，缓冲里的标题卡也进记录（对齐取缺省）", () => {
+  it("谱系未追上时，缓冲里的标题卡也进记录：行上有底色/字色就带上，没有就不凭空注入", () => {
     const entries = buildTranscript(null, [
       { key: "T1", seq: 1, text: "序章", type: "title", align: "center", mode: "block" } as ScriptLine,
+      { key: "T2", seq: 2, text: "风起", type: "title", align: "center", mode: "block", bg: "white", ink: "#333333" } as ScriptLine,
     ]);
     expect(entries[0]).toMatchObject({ kind: "line", type: "title", text: "序章", align: "center" });
+    expect(entries[0]).not.toHaveProperty("bg");
+    expect(entries[0]).not.toHaveProperty("ink");
+    expect(entries[1]).toMatchObject({ kind: "line", type: "title", text: "风起", bg: "white", ink: "#333333" });
   });
 });

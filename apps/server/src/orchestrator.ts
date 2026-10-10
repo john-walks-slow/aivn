@@ -2344,12 +2344,13 @@ export class PlaywrightOrchestrator {
         };
         return;
       case "title_start":
-        // 全屏标题卡的正文与普通台词同一套行聚合；对齐/出法落 attrs（重放与回看都读它）。
+        // 全屏标题卡的正文与普通台词同一套行聚合；对齐/出法/底色/字色落 attrs
+        // （重放与回看都读它）。
         this.openLine = {
           kind: "title",
           nodeId: event.nodeId,
           text: "",
-          attrs: { align: event.align, mode: event.mode },
+          attrs: { align: event.align, mode: event.mode, bg: event.bg, ...(event.ink ? { ink: event.ink } : {}) },
           seq,
         };
         return;

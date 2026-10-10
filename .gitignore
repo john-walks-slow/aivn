@@ -25,6 +25,8 @@ apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/binaries/
 .mnemon/
 .worktrees/
+# Claude Code 的本地设置与它自己开的工作树：本机工具链产物，不进仓库
+.claude/
 
 # 本地验收截图
 .shots/

@@ -1,5 +1,6 @@
 import type { SequencedEvent, StageEvent } from "../dsl/events.js";
 import { DEFAULT_TITLE_ALIGN, DEFAULT_TITLE_MODE, isTitleAlign, isTitleMode } from "../dsl/spec.js";
+import { TITLE_BG_DEFAULT, isTitleBg, isTitleInk } from "../dsl/titleStyle.js";
 import { isFxVerb } from "../dsl/effects.js";
 import type { StopOption, StopType } from "../ws/protocol.js";
 import type { LineageEvent, LineageNodeView } from "./model.js";
@@ -162,13 +163,16 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
         );
         break;
       case "title":
-        // title 的对齐/出法存在 attrs 里；重放时过一遍守卫，坏值落回默认（老档/手改的日志）。
+        // title 的对齐/出法/底色/字色存在 attrs 里；重放时过一遍守卫，坏值落回默认
+        // （老档/手改的日志）。
         pushLine(
           base,
           {
             kind: "title_start",
             align: isTitleAlign(attrs.align) ? attrs.align : DEFAULT_TITLE_ALIGN,
             mode: isTitleMode(attrs.mode) ? attrs.mode : DEFAULT_TITLE_MODE,
+            bg: isTitleBg(attrs.bg) ? attrs.bg.trim() : TITLE_BG_DEFAULT,
+            ...(isTitleInk(attrs.ink) ? { ink: attrs.ink.trim() } : {}),
             nodeId: node.id,
           },
           { kind: "title_text", delta: delta() },

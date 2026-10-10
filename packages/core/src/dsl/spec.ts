@@ -205,7 +205,7 @@ export interface CgAttrs {
 }
 
 /**
- * 全屏文本卡（章节标题 / 诗歌 / 独白）：`<title align="…" mode="…">正文</title>`。
+ * 全屏文本卡（章节标题 / 诗歌 / 独白）：`<title align="…" mode="…" bg="…" ink="…">正文</title>`。
  *
  * 进入 title 隐藏对话框，离开时恢复；正文是多行原生文本，`lines` 模式下每个**非空物理行**
  * 是一个揭示单位（点击出下一行）。句子边界取物理换行而不是标点切分：诗歌的"句"就是换行，
@@ -213,6 +213,10 @@ export interface CgAttrs {
  *
  * 缺省 `lines`：单行标题在 `lines` 下退化成一个揭示单位、与 `block` 等价，所以缺省 `lines`
  * 对标题场景零损失，却让诗歌不必显式声明；要"整段砸下来"才写 `mode="block"`。
+ *
+ * **底色与字色缺省黑底白字**：模型看不到舞台皮肤的 `--title-ink`，所以卡片的默认观感
+ * 必须是它能预判的。`bg` 取 `black`/`white`/`#rgb`/`#rrggbb`，或 `none` 显式透明
+ * （叠在场景上，字色回皮肤令牌）；`ink` 不写时按底色取对比色。取值与分流见 titleStyle.ts。
  */
 export const TITLE_ALIGNS = ["top-left", "top-right", "bottom-left", "bottom-right", "center"] as const;
 export type TitleAlign = (typeof TITLE_ALIGNS)[number];
