@@ -36,3 +36,16 @@
 - **跨线重建**：这次动了 `packages/core`，兄弟仓 `dsh-aivn` 的 `lib/` 里打包的是旧 core。`node build.mjs --check` 已报 `lib/index.js 不一致`，需要在那边 `npm run build` 后一并提交（本次未动兄弟仓——它当时有另一个 agent 的未提交改动）。DSH 线不读 `agents.playwriter.prompt`，功能上不受影响。
 - `dsh-aivn` 的 `npm run typecheck` 另有一处**与本次无关**的既有漂移：`src/tools/cut.ts` 没返回 core 新加的 `CutoutResult.figureTop`（来自 261010 的抠图归一化改动）。
 - `playhouse.reload()` 不 `await whenIdle()`，演出中从 Agent 页保存会重建 runtime——属既有行为，本次未改；README 里「不腰斩演出」这句话在这条链上没有代码保证。
+
+## 追加：出图并发提示（同日）
+
+只要模型肯在一条消息里发多个 `generate_image`，pi 就会并行执行（`toolExecution` 默认 `parallel`），闸门是宿主的 `Limiter`（并发 `image.concurrency`，按剧目一个，工坊与剧作家共用）。问题在于工坊完全不知道这件事，提示词里那句还是收敛语气。
+
+- `generate_image` 的描述加一条（`hostNote()`，现读 `deps.imageConcurrency`）：一批一起发就并发跑、这个部署同时最多几张、排队区最多几张、超出的部分直接失败要分批。
+- 排队上限 `DEFAULT_MAX_QUEUE` 12 → 30；`DEFAULT_IMAGE_CONCURRENCY = 6` 提到 `config.ts` 顶部一处定义（原先 `freshSettings` 与 env 回落各写一个 6）。
+- 工坊出图章节：改成「这一批要出的图在一条消息里一次全发出去」；定妆照那条改成「同一批发 3 条」。
+- 值经 `playhouse → orchestrator / workshopSession → createAgentKit → imageTool` 现读注入。
+
+验证：`pnpm -r build` 全绿；`pnpm check:agent-contract` 9/9；受影响用例 config（25）、agentkit（26，含新增「描述现读并发上限」）、limiter（8）、playhouse `-t 骨架兜底上界`（1）、workshop `-t 工坊 prompt`（11）全绿。`imagePendingTtlMs` 随队列变大：540s → 1080s（测试与 README 同步）。
+
+已知未接线：`Limiter` 的优先级（预发射 high 插工坊 normal 的队）当前所有调用都传 `"normal"`，注释里那句尚未兑现——本次只记录，未改。

@@ -318,7 +318,8 @@ function workspaceSection(ctx: WorkshopPromptContext): string {
  */
 function imageGuide(ctx: WorkshopPromptContext): string {
   const costNote = `- **出图花钱、也慢**：一张立绘 100 秒起，中途用户看不到画到哪一步。
-  所以**一次只出真正需要的那几张**，出完把图贴给他看。`;
+  所以这一批要出的图**在一条消息里一次全发出去**，引擎会并发跑，出完一起把图贴给他看。
+  一张一张等结果 = 把等待时间乘上张数；一批堆太多会被直接拒掉，张数多就分批发。`;
   const skillRule = ctx.can.skill
     ? `- **第一次出图前先 read_skill("galgame-visual-craft")**：画风锚点、提示词写法、抠底调参都在那份全文里，
   不读就按默认审美出图 = 整套素材返工。调 generate_bgm 前同样先 read_skill("galgame-bgm")。每轮想不起来就再读一次，别凭印象。
@@ -327,7 +328,7 @@ function imageGuide(ctx: WorkshopPromptContext): string {
   return `${costNote}
 ${skillRule}- **generate_image 只出草稿，不进素材表**：回执里带预览图和采用它要用的那个 id（参数名见工具说明），
   要采用它就调 \`import_asset(source="draft:<草稿id>", kind=…)\`（立绘先 \`cut\` 抠底再登记那张）。没被采用的草稿留在临时草稿区（一周后自动清），素材页与素材表里看不到它。
-- **先出 neutral 定妆照给用户看，而且是 3 张候选**：同一角色首次定妆时按 \`variant="neutral"\` 调 3 次 \`generate_image\`
+- **先出 neutral 定妆照给用户看，而且是 3 张候选**：同一角色首次定妆时按 \`variant="neutral"\` **同一批发 3 条** \`generate_image\`
   （prompt 各不相同），把三张预览一起摆给用户挑；用户挑定后**只 commit 那一张**——它就成了正式定妆照。
 - **定妆照采用之后再派生差分**：非 neutral 的差分自动垫上**已入库的** neutral，同一个角色才是同一个人。
 - **出完 BGM 顺手标一遍元数据**：\`generate_bgm\` 只写来源标记，标题 / 描述 / mood / scene / loop 走

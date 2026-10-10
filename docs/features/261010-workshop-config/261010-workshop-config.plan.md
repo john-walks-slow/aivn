@@ -66,3 +66,14 @@
 - 工坊提示词里搜不到「点头」「审批」这类门禁措辞，但出图的花费/耗时事实与列图单的惯例仍在。
 - `agents.playwriter.prompt` 能落到 A 区且排在演出契约之前；空值不留痕。
 - `pnpm typecheck` 与受影响的用例（core config、server prompt/workshop、web agentModelOptions）全绿。
+
+## 追加：出图并发提示（2026-10-10）
+
+工坊原本完全不知道出图是并发的，提示词里那句「一次只出真正需要的那几张」还是收敛语气；而 pi 默认并行执行同一条消息里的多个 tool call，模型只要肯一次发一批就是真并发。改动：
+
+- **`generate_image` 的描述**（`imageTool.ts` 的 `hostNote()`）加一条：一批一起发就并发跑；报出这个部署的并发上限（`image.concurrency`，缺省 `DEFAULT_IMAGE_CONCURRENCY = 6`）与排队区容量（`DEFAULT_MAX_QUEUE`）；一批里超出排队区的那部分直接报「生图队列已满」，张数多就分批发。
+- **排队区 12 → 30**：原来 12 只有两批，工坊一次把图整批发出来很容易撞上；30 = 并发 6 的五批。
+- **工坊出图章节**改成「这一批要出的图在一条消息里一次全发出去，引擎会并发跑」；定妆照那条改成「同一批发 3 条」。**提示词里不报数字**——同一规则写两处必然漂，数字只住在工具描述里。
+- 并发值经 `playhouse → orchestrator/workshopSession → createAgentKit → imageTool` 现读注入，设置页调了并发，模型下一次看到的数字就跟着变。
+
+连带：`imagePendingTtlMs`（骨架占位的兜底上界，随 hello 下发的 `assetsTtlMs`）按排队上限折算，队列变 30 后默认从 540s 变 1080s——排队区变大，最坏等待自然变长。

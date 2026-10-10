@@ -190,19 +190,19 @@ describe("设置补丁（设置页保存的那条路）", () => {
 describe("骨架兜底上界", () => {
   it("覆盖「自己超时 + 排队等到自己」最坏情况，且随生图配置缩放", () => {
     const base = freshSettings().image;
-    // 默认 180s 超时、并发 6、队列 12 → 自己一次 + 排在两批后面 = 540s
-    expect(imagePendingTtlMs(base)).toBe(540_000);
+    // 默认 180s 超时、并发 6、队列 30 → 自己一次 + 排在五批后面 = 1080s
+    expect(imagePendingTtlMs(base)).toBe(1_080_000);
 
     // 超时变长、并发变小 → 上界跟着变长（写死 45s 时这两条都无从谈起）
-    expect(imagePendingTtlMs({ ...base, timeoutMs: 60_000 })).toBe(180_000);
-    expect(imagePendingTtlMs({ ...base, concurrency: 12 })).toBe(360_000);
+    expect(imagePendingTtlMs({ ...base, timeoutMs: 60_000 })).toBe(360_000);
+    expect(imagePendingTtlMs({ ...base, concurrency: 12 })).toBe(720_000);
   });
 
   it("类目单独调宽超时 → 上界取最慢的那一类", () => {
     const base = freshSettings().image;
     const slow = { ...base, kinds: { ...base.kinds, sprite: { timeoutMs: 900_000 } } };
-    // 并发 6 / 队列 12 → 1 + 2 批 = 3 倍
-    expect(imagePendingTtlMs(slow)).toBe(2_700_000);
+    // 并发 6 / 队列 30 → 1 + 5 批 = 6 倍
+    expect(imagePendingTtlMs(slow)).toBe(5_400_000);
   });
 });
 

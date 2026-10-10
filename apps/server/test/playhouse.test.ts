@@ -49,7 +49,7 @@ describe("PlayHouse 周目作用域：逛不建、连舞台也不建，开演才
     const runtime = await house.get("p1");
     expect(helloPayload("p1", runtime).type).toBe("hello");
     const hello = helloPayload("p1", runtime) as { assetsTtlMs?: number };
-    expect(hello.assetsTtlMs).toBe(540_000);
+    expect(hello.assetsTtlMs).toBe(1_080_000);
   });
 
   it("hello 带上限制级通道状态：重连后左上角那枚标识不用等下一次翻转才知道自己在哪", async () => {

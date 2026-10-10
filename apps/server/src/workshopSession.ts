@@ -73,6 +73,8 @@ export interface WorkshopSessionOptions {
 
   /** 应用级素材资源库：工坊 agent 可浏览与导入（只读，库本身由用户在本地目录维护）。 */
   assetLibrary?: AssetLibrary;
+  /** 生图并发上限（部署配置 `image.concurrency`）：只用来写进 `generate_image` 的描述。 */
+  imageConcurrency?: number;
   /** 公共音色库客户端：list_voices 走它。没配 TTS 时为 undefined，工具不注册。 */
   voices?: VoiceCatalogService;
   /** 联网检索客户端；未配置则 `web_search` 工具不注册、prompt 不提联网。 */
@@ -123,6 +125,7 @@ export class WorkshopSession {
       onWrite: (write) => this.broadcastWrite(write),
       onAsset: (asset, replaced, toolCallId) => this.broadcastAsset(asset, replaced, toolCallId),
       playAssets: opts.playAssets,
+      imageConcurrency: opts.imageConcurrency,
       playMusic: opts.playMusic,
       queueMusic: opts.queueMusic,
       assetLibrary: opts.assetLibrary,
@@ -146,6 +149,7 @@ export class WorkshopSession {
       onWrite: (write) => this.broadcastWrite(write),
       onAsset: (asset, replaced, toolCallId) => this.broadcastAsset(asset, replaced, toolCallId),
       playAssets: this.opts.playAssets,
+      imageConcurrency: this.opts.imageConcurrency,
       playMusic: this.opts.playMusic,
       queueMusic: this.opts.queueMusic,
       assetLibrary: this.opts.assetLibrary,

@@ -1357,6 +1357,7 @@ export class PlayHouse {
       imageTools: playAssets
         ? {
             playAssets,
+            concurrency: this.config.image.concurrency,
             kick: (type, prompt, id, references) =>
               void this.preloadAsset(play.id, store, type, prompt, id, references),
             kickSprite: (target) => void this.preloadSprite(play.id, store, target),
@@ -1415,6 +1416,7 @@ export class PlayHouse {
         keepRecentTokens: this.config.workshopContext.keepRecentTokens,
       },
       playAssets,
+      imageConcurrency: this.config.image.concurrency,
       playMusic: this.playMusicFor(play.id, store),
       queueMusic: (req) => this.queueMusic(play.id, store, req),
       assetLibrary: this.assetLibrary,

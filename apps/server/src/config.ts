@@ -160,6 +160,14 @@ export interface ServerConfig {
 }
 
 /**
+ * 出图并发上限的缺省值（`image.concurrency`）。
+ *
+ * 一处定义、三处引用：`freshSettings` 的缺省、`STAGE_IMAGE_CONCURRENCY` 的回落，
+ * 以及 `generate_image` 描述里报给模型的「同时最多跑几张」——各写一个字面量必然漂。
+ */
+export const DEFAULT_IMAGE_CONCURRENCY = 6;
+
+/**
  * 新装默认值：网关留空（第一次打开要自己在设置页填），
  * 生图/语音/联网**一律关着**——默认对着 `127.0.0.1:9999` 打请求只会让人以为坏了。
  */
@@ -187,7 +195,7 @@ export function freshSettings(): ServerConfig {
       apiKey: "",
       model: "",
       size: "1K",
-      concurrency: 6,
+      concurrency: DEFAULT_IMAGE_CONCURRENCY,
       timeoutMs: 180_000,
       reference: "neutral",
       kinds: { background: {}, cg: {}, sprite: {} },
@@ -255,7 +263,7 @@ export function settingsFromEnv(env: NodeJS.ProcessEnv): ServerConfig {
       apiKey: env.STAGE_IMAGE_API_KEY ?? "",
       model: env.STAGE_IMAGE_MODEL ?? "gemini-3.0-pro-image",
       size: imageSizeText(parseImageSize(env.STAGE_IMAGE_SIZE ?? "1K")),
-      concurrency: parsePositiveInt("STAGE_IMAGE_CONCURRENCY", env.STAGE_IMAGE_CONCURRENCY, 6),
+      concurrency: parsePositiveInt("STAGE_IMAGE_CONCURRENCY", env.STAGE_IMAGE_CONCURRENCY, DEFAULT_IMAGE_CONCURRENCY),
       timeoutMs: parsePositiveInt("STAGE_IMAGE_TIMEOUT_MS", env.STAGE_IMAGE_TIMEOUT_MS, 180_000),
       reference: parseEnum("STAGE_IMAGE_REFERENCE", env.STAGE_IMAGE_REFERENCE, IMAGE_REFERENCES, "neutral"),
       // 旧 .env 面没有逐类目这一说：迁过来的部署一律走上面这份基础配置
@@ -620,7 +628,7 @@ export function imageConfigFor(config: ServerConfig, kind: ImageKind): {
  * 随 hello 下发（见 `ws/protocol.ts` 的 assetsTtlMs）。写死 45s 时的后果是
  * 正在生成的骨架被自己撤掉——生图默认 150s 才超时，骨架从来活不到图到货。
  *
- * 最坏情况 = 最慢那一类的一次超时 + 排在并发闸门队尾的时间（队列上限 12，按并发折成几批）。
+ * 最坏情况 = 最慢那一类的一次超时 + 排在并发闸门队尾的时间（队列上限 30，按并发折成几批）。
  * 超时取基础与三个类目里的最大值：立绘那一档常被单独调宽（档位更高更慢），
  * 只看基础那份会让骨架在立绘还没回来时就被撤掉。
  * 这只是兜底上界：正常的图一两分钟就到，届时 asset_ready 已经把占位摘了。

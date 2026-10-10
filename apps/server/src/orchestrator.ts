@@ -252,6 +252,8 @@ export interface OrchestratorOptions {
     }) => void;
     /** 联网检索（配了 key 才注册 web_search）。 */
     exa?: Exa;
+    /** 生图并发上限（部署配置 `image.concurrency`）：只用来写进 `generate_image` 的描述。 */
+    concurrency?: number;
   };
   /**
    * 引用即导入：剧本里写了一个剧目没有的 id，就去素材库里找同名条目补进来。
@@ -570,6 +572,7 @@ export class PlaywrightOrchestrator {
       onWrite: (write) => this.onPlayFileWritten(write),
       emitPreload: (attrs) => this.onStageEvent({ kind: "preload_asset", ...attrs }),
       playAssets: opts.imageTools?.playAssets,
+      imageConcurrency: opts.imageTools?.concurrency,
       kick: opts.imageTools?.kick ?? (() => {}),
       kickSprite: opts.imageTools?.kickSprite ?? (() => {}),
       existingAssetUrl: async (target) => (await opts.imageTools?.playAssets?.existingUrl(target)) ?? null,

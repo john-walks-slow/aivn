@@ -23,6 +23,8 @@ import {
   sideEffectsForTool,
 } from "../src/agentkit/contract.js";
 import { PlayFiles } from "../src/playFiles.js";
+import { DEFAULT_IMAGE_CONCURRENCY } from "../src/config.js";
+import { DEFAULT_MAX_QUEUE } from "../src/limiter.js";
 import { AGENT_ROLES } from "../src/agentkit/role.js";
 import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "../src/agentkit/deps.js";
 
@@ -230,6 +232,14 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     expect(b.description).toContain("draft:<草稿id>");
     // 兼容别名 referenceCharacters 已删（P5-c）：垫图只有 references 一个口
     expect(b.description).not.toContain("referenceCharacters");
+  });
+
+  it("generate_image 的描述现读并发上限：设置页调了并发，模型看到的数字跟着变", () => {
+    const six = playwriter().tools.find((t) => t.name === "generate_image")!;
+    expect(six.description).toContain(`同时最多跑 ${DEFAULT_IMAGE_CONCURRENCY} 张`);
+    expect(six.description).toContain(`排队区最多 ${DEFAULT_MAX_QUEUE} 张`);
+    const twelve = playwriter({ imageConcurrency: 12 }).tools.find((t) => t.name === "generate_image")!;
+    expect(twelve.description).toContain("同时最多跑 12 张");
   });
 
   it("generate_asset 一个 schema 两种投递：工坊同步等图、剧作家后台排产", () => {

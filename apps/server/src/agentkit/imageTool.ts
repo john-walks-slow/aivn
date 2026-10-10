@@ -9,6 +9,8 @@ import {
   type ImageGenerateArgs,
 } from "@aivn/agent";
 import type { PlayAssets } from "../playAssets.js";
+import { DEFAULT_IMAGE_CONCURRENCY } from "../config.js";
+import { DEFAULT_MAX_QUEUE } from "../limiter.js";
 import { toPi } from "./schema.js";
 import { linesResult, reason, textResult } from "./result.js";
 
@@ -48,16 +50,27 @@ const FACE = tighten(
 
 const generateImageParams = toPi(FACE);
 
-const HOST_NOTE = [
-  "",
-  "**候选不是素材**：这张图落在草稿区，回执给 `draft:<草稿id>` 与预览。要让它进剧目：",
-  "- 背景 / 插图：`import_asset(source=\"draft:<草稿id>\", kind=…, name=…)`；",
-  "- 立绘：先 `cut(source=\"draft:<草稿id>\", output=\"assets/sprites/<主体id>/<差分>.png\")` 抠成透明 PNG，再登记那张。",
-  "要一条龙（出图 + 立绘抠底 + 登记）直接用 `generate_asset`。",
-].join("\n");
+/**
+ * 宿主面那几条：草稿→采用的流程，以及**一批一起发就并发跑**。
+ *
+ * 并发数要现报给模型（`image.concurrency` 可在设置页改），所以这段是函数不是常量——
+ * 写死数字的那天起，「设置页调了并发、模型还按老数字分批发」这种漂移就来了。
+ */
+function hostNote(concurrency: number): string {
+  return [
+    "",
+    `**一批一起发就并发跑**：一条消息里的多个 generate_image 并行执行，不用一张一张等回执；这个部署同时最多跑 ${concurrency} 张，排队区最多 ${DEFAULT_MAX_QUEUE} 张，一批里超出排队上限的那部分直接失败（报「生图队列已满」），张数多就分批发。`,
+    "**候选不是素材**：这张图落在草稿区，回执给 `draft:<草稿id>` 与预览。要让它进剧目：",
+    "- 背景 / 插图：`import_asset(source=\"draft:<草稿id>\", kind=…, name=…)`；",
+    "- 立绘：先 `cut(source=\"draft:<草稿id>\", output=\"assets/sprites/<主体id>/<差分>.png\")` 抠成透明 PNG，再登记那张。",
+    "要一条龙（出图 + 立绘抠底 + 登记）直接用 `generate_asset`。",
+  ].join("\n");
+}
 
 export interface GenerateImageDeps {
   playAssets?: PlayAssets;
+  /** 生图并发上限（部署配置 `image.concurrency`）：只用来写进描述，限流在宿主的 Limiter 上。 */
+  imageConcurrency?: number;
   onAsset: (
     path: string,
     url: string,
@@ -71,7 +84,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps): AgentTool<type
   return {
     name: "generate_image",
     label: "出候选图",
-    description: `${imageGenerate.doc}${HOST_NOTE}`,
+    description: `${imageGenerate.doc}${hostNote(deps.imageConcurrency ?? DEFAULT_IMAGE_CONCURRENCY)}`,
     parameters: generateImageParams,
     execute: async (toolCallId, params: Static<typeof generateImageParams>) => {
       if (!deps.playAssets) {

@@ -18,8 +18,13 @@ interface Waiter {
 
 const RANK: Record<JobPriority, number> = { high: 1, normal: 0 };
 
-/** 排队上限：预发射与工坊出图都是「锦上添花」，队列爆掉直接失败降级，不无限吃内存。 */
-export const DEFAULT_MAX_QUEUE = 12;
+/**
+ * 排队上限：预发射与工坊出图都是「锦上添花」，队列爆掉直接失败降级，不无限吃内存。
+ *
+ * 30 = 并发 6 的五批。工坊一次把要出的图整批发出来是常态，排到 12 就拒会让「一次多出几张」
+ * 变成半途失败；上界也直接进 `imagePendingTtlMs`（骨架占位的兜底上界），调它会连带放宽那个值。
+ */
+export const DEFAULT_MAX_QUEUE = 30;
 
 export class Limiter {
   private running = 0;

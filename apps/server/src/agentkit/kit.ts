@@ -427,6 +427,7 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
     ...createPiFileTools(env),
     createGenerateImageTool({
       playAssets: deps.playAssets,
+      imageConcurrency: deps.imageConcurrency,
       onAsset: () => {},
     }),
     // 剧作家的排产路径就叫 generate_asset：同一个能力，投递方式不同（发起即返回、到货淡入）
@@ -463,6 +464,7 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
     // 候选图：只产草稿（不抠底、不入库），采用走 import_asset
     createGenerateImageTool({
       playAssets: deps.playAssets,
+      imageConcurrency: deps.imageConcurrency,
       // 草稿也推气泡：候选图要摆在对话里让用户直接看见、点开对比
       onAsset: (path, url, kind, replaced, toolCallId) =>
         deps.onAsset({ kind, path, url }, replaced, toolCallId),

@@ -45,6 +45,12 @@ export interface KitCommonDeps {
   assetLibrary?: AssetLibrary;
   /** Fish Audio 公共音色库客户端。未配置 TTS 时为 undefined，不注册 list_voices。 */
   voices?: VoiceCatalogService;
+  /**
+   * 出图并发上限（部署配置 `image.concurrency`）：只用来写进 `generate_image` 的描述。
+   * 闸门本身在宿主的 `Limiter` 上，工具不自己限流——这里要让模型知道「一批一起发就会并发跑、
+   * 同时最多几张」，否则它会一张一张等结果，把 6 路的闸门用成单路。
+   */
+  imageConcurrency?: number;
 }
 
 /** 剧作家侧：演出进行中，工具要动的是引擎状态、记忆与舞台事件流。 */

@@ -161,6 +161,8 @@
 - `AssetNotify` 的第三个值 `"manual"` 就是给它留的：刷新素材列表，但不产工坊气泡、不自动重建。
 - 素材名/差分名的白名单收在 `assertAssetStem`，立绘 id 另走 `assertSpriteId`（只挡路径分隔符、前导点与控制字符——id 就是目录名，大写字母合法），REST 入口与出图前各判一次——入口不判就会先返回一个非法 path，用户等一分多钟才在 WS 上收到失败。
 - 舞台那一路的参考立绘必须在**落时间线节点之前**校验（`assertReferences`），否则会留下一个永远填不上的骨架。
+- **出图闸门与排队区**：并发上限取 `image.concurrency`（部署级，默认 `DEFAULT_IMAGE_CONCURRENCY = 6`，一处定义三处引用），按剧目一个 `Limiter`，**工坊与剧作家共用**；排队上限 `DEFAULT_MAX_QUEUE = 30`（常量，同时进 `imagePendingTtlMs` 的骨架兜底上界——调它会连带放宽 `assetsTtlMs`）。pi 默认并行执行同一条消息里的多个 tool call，所以模型一次发多个 `generate_image` 就是真并发。**这两个数字只写在 `generate_image` 的描述里**（`imageTool.ts` 的 `hostNote()` 现读 `deps.imageConcurrency`）：工坊提示词只讲「这一批一次全发出去、别一张一张等」，不报数字——同一规则写两处必然漂。
+- 已知不完全准确：`Limiter` 的优先级机制（预发射 high 插工坊 normal 的队）当前**没有接线**——`playAssets.ts` 里唯一的 `limiter.run` 调用把优先级写死成 `"normal"`，注释里那句「预发射为 high」尚未兑现。
 
 ## 生图配置（接口格式、画幅与尺寸）
 
