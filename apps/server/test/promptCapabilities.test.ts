@@ -47,9 +47,12 @@ describe("能力位：能力开着、且它声明的工具都装上，这一位�
     expect(full.image).toBe(true);
   });
 
-  it("只要求这个角色装得上的那些：剧作家开资源库不需要 library_import", () => {
+  it("能力位只要求这个角色装得上的那些工具（库这一面两个角色都只有浏览）", () => {
+    // 往剧目里搬东西是 import_asset 的 `library:` 来源，那一格按角色装（剧作家不装），
+    // 所以它不进「素材资源库」这一位的要求——这一位要的是 list_library 装上了。
     expect(capabilitiesOf("playwriter", new Set(["library"]), [{ name: "list_library" }]).library).toBe(true);
-    expect(capabilitiesOf("workshop", new Set(["library"]), [{ name: "list_library" }]).library).toBe(false);
+    expect(capabilitiesOf("workshop", new Set(["library"]), [{ name: "list_library" }]).library).toBe(true);
+    expect(capabilitiesOf("workshop", new Set(["library"]), []).library).toBe(false);
   });
 });
 

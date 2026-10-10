@@ -443,10 +443,9 @@ describe("agent kit：能力 → 工具与文件面", () => {
       "cut",
       "import_asset",
     ]);
+    // 库这一面只剩浏览：从库往剧目里搬东西是 import_asset 的 `library:` 来源（按角色装）
     expect(capabilityTools(library, "playwriter")).toEqual(["list_library"]);
-    expect(capabilityTools(library, "workshop")).toEqual(["list_library", "library_import"]);
-    expect(installableTools("playwriter")).not.toContain("library_import");
-    expect(names(playwriter())).not.toContain("library_import");
+    expect(capabilityTools(library, "workshop")).toEqual(["list_library"]);
   });
 
   it("写面是能力的并集：剧作家记忆开着只有记忆卡，工坊拿到三位", () => {

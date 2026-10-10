@@ -49,7 +49,7 @@
 | 7 | `list_saves` | 能 | — | **工具已删，能力保留**：改由只读的 `saves/` 面提供（2026-10-10，见 §6 甲） |
 | 8 | `read_lineage` | 能 | — | 同上 |
 | 9 | `list_library` | 能 | 一致 | **保留**（重审 2026-10-10，理由见 §6 乙） |
-| 10 | `library_import` | 有条件能并入 `import_asset` | **不一致**：与插件 `import_asset` 不同义 | **移出 P6**（服务端内部重构，另议） |
+| 10 | `library_import` | 能并入 `import_asset` | 并入后**一致** | **已统一**（2026-10-10，见 §6 丙） |
 | 11 | `read_skill` | 不能/不该 | 一致 | 不做，登记有意差异 |
 | 12 | `set_craft` | 能文件化 | 有条件能；锁的那条描述有误 | **P6-b：删工具 → `edit play.json`** |
 
@@ -232,3 +232,29 @@ A 区《记忆索引》每行都带路径，读得到。
   compare-before-write）。今天文件页 PUT 与 HTTP 保存都是 stale read 全量写，能丢整份 JSON。
 - **`library_import` 服务端内部重构**：另议，不计统一指标。
 - **P6-d 迁移**：先看设计稿的结论与「不做」判据。
+
+
+---
+
+## §6 丙 · `library_import` → `import_asset(source="library:<kind>/<entryId>")`（已统一，2026-10-10）
+
+设计与取舍见 `261010-p6c-library-import.design.md`。落地形态：
+
+- **模型可见面**：入库只剩 `import_asset` 一个动词，来源是它的一格参数——剧目内路径 / http(s) 网址 /
+  （服务端）`draft:<id>` / **`library:<kind>/<entryId>`**。库来源那条路不走登记引擎（一个条目可能落
+  好几份文件：立绘包 = 若干差分 + 角色卡），直接调 `importFromLibrary` 并逐份列回执。
+- **落位与来源要对得上**：`kind=background` 只认 `backgrounds`、`kind=cg` 只认 `cg`、
+  `kind=sprite` 收 `sprites` 与 `characters`；对不上就顶回来，一个字节都不落。
+- **命名统一成 `as`**：原先 `target: "protagonist"` 是「改名」的特例，现在统一成 `as`（缺省条目 id），
+  主角就是 `as: PROTAGONIST_ID`——角色卡与立绘都落在同一个 id 下。HTTP 面的 wire 格式（`target`）没动。
+- **引擎那份保留全能力**：`importFromLibrary` 仍收 `variants` 与 `as`，HTTP 素材页按钮与
+  「引用即导入」（`assetRef.ts`）照用；`createLibraryTools` 收成只管 `list_library` 一件事。
+- **认账的两处收窄**：① 模型面不再能「只导某几条差分」（界面照旧能挑，模型面整包导更不容易出错）；
+  ② 音频（bgm / sfx）不从模型面导入 —— `import_asset` 是图像登记（共享能力 `asset.register` 只认
+  background / cg / sprite），音频入库走界面按钮与剧作家的「引用即导入」（`<scene bgm>` 会自动补）。
+- **共享正文**：`asset.register` 的 `source` 说明与 doc 补上这一格（宿主中立 + 条件化），
+  插件侧跟着重建 `lib/`。
+
+**验证**：服务端 typecheck ✓、契约守卫 9/9 ✓、全量 **695 通过 / 3 跳过 / 0 失败**
+（新增三条走模型面的用例：背景改名落盘 + 描述覆盖、角色包图与卡同落 `spriteId` 名下、
+库类别对不上时顶回来且不落盘）；矩阵里 `library` 那一行从「不一致」改成「只差一格来源，动词同义」。

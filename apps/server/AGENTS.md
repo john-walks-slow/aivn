@@ -8,7 +8,7 @@
 
 - **两个 agent 共用一套基座**：`src/agentkit/` 是唯一工具实现面（`kit.ts` 按 `role: "playwriter" | "workshop"` 装配，`deps.ts` 用判别联合收窄依赖），同一工具**同一份 schema 与实现，只有 description + 等待策略 + 注入依赖不同**（`generate_asset`：工坊 sync 等图并回 markdown 图片、剧作家 queued 后台排产只占时间线位置；`generate_image` 两个角色连描述都不分叉——它只产候选）。
 - **两套目录，一份语汇**：`kit.ts` 的 `CAPABILITY_CATALOG` 是**用户语汇的唯一真相源**（一行写清：界面名字、一句后果、分组、给哪些角色、授权哪些工具 id、开出来能动哪几类文件、常开还是默认关）——Agent 页、`play.json`、`kit.can`、提示词章节一律说能力。`TOOL_CATALOG`（id + 中文名 + 谁装得上）留在工具层当**角色可见性的真相源**，能力只**引用**工具 id；装一个没登记的 id 或加一个谁都够不到的工具，用例当场红。play.json 的 `agents.<role>.capabilities` 存**启用集**（白名单，不是禁用集），缺省走 `defaultCapabilitiesFor(role)`（搭台 = 目录里属于它的能力减 `shell`——新增能力不会静默漏装；剧作家 = 常开的 `stage` 加 `memory`/`image`/`library`/`search`/`skill`/`nsfw`，**`characters` 默认关**：角色卡是制作资产、记忆卡是剧情事实）。
-- **两条推导都在 `createAgentKit` 一处**：装上的工具 = 基座 `read` ∪ 开着的能力授权的工具（再按 `TOOL_CATALOG.roles` 与我方依赖面收一道，没配 Exa / TTS / 生图就装不出来）；`can` 位 = **该能力开着且它授权的工具都装上了**（键就是能力 id）——能力声明了一个装不出来的工具，这一位就是假，提示词不会教模型去调它没有的东西。同一个能力在两个角色上授权的口可以不同（`image`：两个角色都要 `generate_image` / `generate_asset`，工坊还要 `cut` / `import_asset`；`library`：工坊多一个 `library_import`，实现上是 `libraryTool` 的 `importAsset: false`）。
+- **两条推导都在 `createAgentKit` 一处**：装上的工具 = 基座 `read` ∪ 开着的能力授权的工具（再按 `TOOL_CATALOG.roles` 与我方依赖面收一道，没配 Exa / TTS / 生图就装不出来）；`can` 位 = **该能力开着且它授权的工具都装上了**（键就是能力 id）——能力声明了一个装不出来的工具，这一位就是假，提示词不会教模型去调它没有的东西。同一个能力在两个角色上授权的口可以不同（`image`：两个角色都要 `generate_image` / `generate_asset`，工坊还要 `cut` / `import_asset`；`library`：两个角色都只有 `list_library`，往剧目里搬东西走 `import_asset` 的 `library:` 来源，而那一格是按角色装的）。
 - `generate_image` 是两个角色**同一份 schema、同一段描述**（`spriteId`/`variant`/`title` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只产候选；`generate_asset` 是同一个宏、两种投递。**垫图入口只有一个 `references`**（每项可以是主体 id、剧目内相对路径或 http(s) 网址，1–6 张）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该主体的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
 - **卡是可选的，出图也不替谁建卡**：`generate_image` 只按 `spriteId`（主体 id）往 `assets/sprites/<id>/` 落文件——机甲、道具、猫本来就没有卡。名字从哪来：卡 `name` → `<say name>` → 素材表 `title`（`generate_asset` 的 `title` 参数就是给无卡主体落名牌用的）→ id；无卡主体的 TTS 走剧目级 `defaultVoiceId`。
 - **出图与入库拆成两步**（2026-10-05）：`PlayAssets.draft()` 只出图，落 `media-cache/drafts/<draftId>/`（成图 + 立绘抠底前的原片 + `draft.json` 记出图意图），**不写 `assets/`、不碰素材表、不记台账**；`commit(draftId)` 才落 `assets/`、补呈现声明、记 `assets/generated.json`、把原片搬进 `media-cache/sprite-sources/`（重抠要用）。
@@ -24,7 +24,7 @@
 - 两处兜底都在 `orchestrator`：`voiceOf` 取卡的 voiceId、没有卡就落剧目级 `defaultVoiceId`（工坊「剧目」页挑）；名字取卡的 `name` → `<say name>` → 素材表 `title`（素材页的「名牌」）→ id。
 - **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `cut`（`source="sprite:<主体id>[/<差分名>]"`，不给 `output` 就是原地重抠）——立绘**入库时**把抠底前的原片留一份到 `media-cache/sprite-sources/<主体 id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
 - 没有留底的（更早出的图、用户上传的）直接报错，只能重新出图。
-- `library_import` 现在**只装给工坊**（`TOOL_CATALOG` 的 `roles` 只留 `workshop`）——剧作家的默认导入路径是引用即导入（见下），给它留一个自己搬素材的口是重复路径，只是多一个谁都够不到的工具。工坊那边它挂在「素材资源库」能力下（`libraryTool` 的 `importAsset` 开关，剧作家侧传 `false`）。
+- **入库只有一个动词 `import_asset`**（2026-10-10 起）：来源是它的一格参数——剧目内路径 / http(s) 网址 /（服务端）`draft:<id>` / `library:<kind>/<entryId>`。从库导入原先是一个独立工具（`library_import`），收进这一格之后，模型可见面上就没有两个语义相同的动词了；引擎那份 `importFromLibrary` 保留全能力（HTTP 素材页与「引用即导入」照用）。
 
 ## DSL、轮收束与 IR 事件
 

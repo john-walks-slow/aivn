@@ -168,7 +168,7 @@ const CATALOG_ROWS = [
     desc: "查库里有哪些素材，也能把现成的搬进本剧目。",
     group: "assets",
     roles: ["playwriter", "workshop"],
-    tools: ["list_library", "library_import"],
+    tools: ["list_library"],
   },
   {
     id: "search",
@@ -271,8 +271,6 @@ const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, 
   bash: { label: "命令行", roles: ["workshop"] },
   validate_play: { label: "检查开演条件", roles: ["workshop"] },
   list_library: { label: "浏览素材资源库", roles: ["playwriter", "workshop"] },
-  // 剧作家不走它：剧本里写个 id，宿主会去库里导入（引用即导入），自己搬一遍是重复路径。
-  library_import: { label: "从资源库导入", roles: ["workshop"] },
 };
 
 /**
@@ -441,14 +439,9 @@ function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
       existingAssetUrl: deps.existingAssetUrl,
     }),
     createAnnotateTool({ playAssets: deps.playAssets, playMusic: deps.playMusic }),
-    // 剧作家这边没有对话流可挂，onWrite/onAsset 就不给：工具照常能用，只是没有气泡可看；
-    // library_import 也不装——它的默认导入路径是引用即导入。
-    ...createLibraryTools({
-      playId: deps.playId,
-      store: deps.store,
-      library: deps.assetLibrary,
-      importAsset: false,
-    }),
+    // 剧作家的默认导入路径是**引用即导入**（剧本里写个 id，宿主去库里搬），所以库这一面只有浏览；
+    // 从库往剧目里搬东西走 import_asset 的 `library:` 来源，它按角色装（剧作家不装）。
+    ...createLibraryTools({ library: deps.assetLibrary }),
     ...(deps.exa ? [createWebSearchTool(deps.exa)] : []),
     // 技能库：写这一拍时手边可查的通用手艺（与工坊读的是同一批文件、同一个工具）
     createReadSkillTool(),
@@ -488,6 +481,10 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
     }),
     createImportAssetTool({
       playAssets: deps.playAssets,
+      playId: deps.playId,
+      store: deps.store,
+      library: deps.assetLibrary,
+      onWrite: deps.onWrite,
       onAsset: (path, url, kind, replaced, toolCallId) =>
         deps.onAsset({ kind, path, url }, replaced, toolCallId),
     }),
@@ -501,13 +498,7 @@ function workshopTools(deps: WorkshopKitDeps): AgentTool<any>[] {
     createReadSkillTool(),
     // 没配 TTS 就不注册：查不出来的工具只会诱使模型空转
     ...createVoiceTool(deps.voices),
-    ...createLibraryTools({
-      playId: deps.playId,
-      store: deps.store,
-      library: deps.assetLibrary,
-      onWrite: deps.onWrite,
-      onAsset: deps.onAsset,
-    }),
+    ...createLibraryTools({ library: deps.assetLibrary }),
     ...(deps.exa ? [createWebSearchTool(deps.exa)] : []),
   ];
 }

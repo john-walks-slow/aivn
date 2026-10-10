@@ -66,7 +66,7 @@ user-invocable: true
 玩家扮演的主角也是一张普通角色卡，id 固定 `protagonist`（`characters/protagonist.md`）：
 要改主角设定就改这张，别另建。
 
-库里已有合适的角色时，先 `library_import`（`kind=characters`）导进来再改，别从零重写。
+库里已有合适的角色时，先 `import_asset(source="library:characters/<id>", kind=sprite)` 导进来再改，别从零重写。
 
 ### play.json（剧目配置，「剧目」页改的也是它）
 就这些字段：

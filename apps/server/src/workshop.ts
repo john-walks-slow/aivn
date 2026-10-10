@@ -258,7 +258,7 @@ ${craftNow(ctx)}
   场景转换的偏好、**主角的呈现**。每轮多长、选项几条、素材从哪来**不要写这里**（那是写作参数）。
 - 角色卡在 \`characters/<id>.md\`（角色的一切都在这张卡里，play.json 不再存角色数据）；
   主角固定 \`characters/protagonist.md\`。${voicePickHint(ctx)}
-  ${ctx.can.library ? "库里已有合适的角色可以先 `library_import`（kind=characters）导进来再改，别从零重写。" : ""}
+  ${ctx.can.library ? "库里已有合适的角色可以先 `import_asset(source=\"library:characters/<id>\", kind=sprite)` 导进来再改，别从零重写。" : ""}
 - **改既有文件用 \`edit\` 定点改，别整篇 \`write\` 覆盖**：那会抹掉你没提到的机器字段
   （角色卡的 \`voiceId\`、素材表别的条目）。`;
 }

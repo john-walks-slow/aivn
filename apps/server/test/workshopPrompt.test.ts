@@ -37,7 +37,7 @@ const caps = (over: Partial<AgentCapabilities> = {}): AgentCapabilities => ({
 });
 
 describe("工坊提示词：工具知识不在这里重复", () => {
-  it("资源库用法只由 list_library / library_import 的描述承担", async () => {
+  it("资源库用法只由工具描述承担（清单 / 导入怎么调都不在提示词里）", async () => {
     const prompt = await buildWorkshopPrompt({ ...CTX, can: caps() });
     // 「先查资源库」是工作方法，留着；条目怎么解释、角色包怎么处理，归工具描述
     expect(prompt).not.toContain("# 素材资源库");

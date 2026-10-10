@@ -180,16 +180,17 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     roles: ["playwriter", "workshop"],
     equivalence: "intentional-difference",
     hosts: {
-      stageAi: "应用级 library/ 资源库 + 引用即导入；工坊可显式 library_import（从库按 entryId 复制进剧目）。",
+      stageAi:
+        "应用级 library/ 资源库：`list_library` 只读浏览 + `import_asset(source=\"library:<kind>/<entryId>\")` 从库导入" +
+        "（条目自带的描述 / 差分 / 角色卡一并搬进来）；另有「引用即导入」——剧本里写个 id，宿主发现剧目里没有就去库里搬。",
       dshAivn:
-        "插件有一个**同名不同义**的 import_asset：把本地路径 / URL 登记成剧目素材（asset.register），不是从应用级库导入；" +
-        "它没有 list_library（插件不假定跨剧目资源库）。",
+        "插件不假定跨剧目资源库，所以没有 `list_library`，`import_asset` 的 `library:` 那一格也用不上；" +
+        "其余的来源（剧目内路径 / http(s) 网址）两边同义，参数与描述同源（`@aivn/agent` 的 `asset.register`）。",
       backendDependency: "独立版需本地 library 目录；DSH 无此依赖。",
       intentionalDifference:
-        "资源库是独立版产品能力（跨剧目 library/ 目录），不能把它的目录状态复制进 DSH：插件不假定有库，" +
-        "list_library / library_import 在插件侧也没有对应物。两边的 import_asset 曾长期同名不同义，" +
-        "2026-10-09 把服务端那个改名 library_import（P4 清理清单第 1 条），插件那份保留原名——" +
-        "两者仍不同义（前者按库 kind/entryId 复制，后者是路径/URL/草稿的登记），合并只省服务端代码，不算统一。",
+        "资源库是独立版产品能力（跨剧目 library/ 目录），不能把它的目录状态复制进 DSH——差的只是**一格来源**，" +
+        "不是两个动词：2026-10-10 把服务端的 `library_import` 并进了 `import_asset`（`source=\"library:<kind>/<entryId>\"`），" +
+        "入库动词两边就此同义。",
     },
   },
   {
@@ -352,7 +353,6 @@ export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMet
   bash: { ...READ_ONLY, read_only: false, workspace_write: true, external_request: true, reversible: false, idempotent: false },
   validate_play: READ_ONLY,
   list_library: READ_ONLY,
-  library_import: { ...READ_ONLY, read_only: false, workspace_write: true, asset_adopt: true, reversible: false, idempotent: false },
 };
 
 export function sideEffectsForTool(name: string, role?: AgentRole): ToolSideEffectMetadata {

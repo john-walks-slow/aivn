@@ -38,8 +38,14 @@ export interface ImportRequest {
   entryId: string;
   /** 立绘类目（characters / sprites）只导这几条差分（缺省全导）。 */
   variants?: string[];
-  /** 落点为固定 id 的主角（立绘与卡都落 `protagonist`）而不是以条目 id 命名。 */
-  target?: "protagonist";
+  /**
+   * 落进剧目的名字（单文件类别是文件名主体、立绘类目是 `assets/sprites/<id>/` 的目录名），
+   * 缺省用条目 id。原先是 `target: "protagonist"` 特判——那是「改名」的一个特例，
+   * 统一成这一格之后主角就是 `as: PROTAGONIST_ID`。
+   */
+  as?: string;
+  /** 补充/覆盖条目自带的素材表那几格（模型在登记时给的 title / description 用得上）。 */
+  meta?: AssetMeta;
 }
 
 export interface ImportResult {
@@ -154,14 +160,15 @@ export async function importFromLibrary(
   const files = new PlayFiles(store);
   const isSpritePack = entry.kind === "characters" || entry.kind === "sprites";
   // 立绘类目的 id 决定立绘放哪个目录；主角固定 id（其余用条目 id）
-  const spriteId = req.target === "protagonist" ? PROTAGONIST_ID : entry.id;
+  const landingId = req.as?.trim() || entry.id;
+  const spriteId = landingId;
   const result: ImportResult = {
     kind: entry.kind,
     id: entry.id,
     spriteId,
     files: [],
     characters: [],
-    protagonist: req.target === "protagonist",
+    protagonist: landingId === PROTAGONIST_ID,
     manifestKeys: [],
     writes: [],
   };
@@ -189,17 +196,17 @@ export async function importFromLibrary(
       if (Object.keys(own).length > 0) manifest.push([`${spriteId}/${variant}`, own]);
     }
     // 立绘级声明只在真有图时写：一张图都没有的主体没有摆位可声明
-    const base = spriteMeta(entry);
+    const base = { ...spriteMeta(entry), ...(req.meta ?? {}) };
     if (variants.length > 0 && Object.keys(base).length > 0) manifest.push([spriteId, base]);
   } else {
     // 单文件类别：背景 / CG / BGM / 音效
     const source = entry.files[0];
     if (source) {
       const ext = extname(source.name).toLowerCase();
-      await removeStaleSiblings(store, entry.kind, entry.id, `${entry.id}${ext}`);
-      await copyInto(await library.filePath(entry.kind, entry.id, source.name), store.assetPath(`${entry.kind}/${entry.id}${ext}`));
-      result.files.push(`assets/${entry.kind}/${entry.id}${ext}`);
-      manifest.push([entry.id, entry.meta]);
+      await removeStaleSiblings(store, entry.kind, landingId, `${landingId}${ext}`);
+      await copyInto(await library.filePath(entry.kind, entry.id, source.name), store.assetPath(`${entry.kind}/${landingId}${ext}`));
+      result.files.push(`assets/${entry.kind}/${landingId}${ext}`);
+      manifest.push([landingId, { ...entry.meta, ...(req.meta ?? {}) }]);
     }
   }
 

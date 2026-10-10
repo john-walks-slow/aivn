@@ -8,18 +8,7 @@ import { importFromLibrary } from "./assetImport.js";
 import { readPlayLedgerEntries } from "./generatedLedger.js";
 import type { PlayHouse } from "./playhouse.js";
 import type { SettingsApi } from "./configApi.js";
-import {
-  parsePlayConfig,
-  libraryEntryMatches,
-  ASSET_KINDS as ASSET_KINDS_LIST,
-  SPRITE_FRAMINGS,
-  SPRITE_STATURES,
-  ACTOR_ANCHORS,
-  type AssetKind,
-  type AssetMeta,
-  type CgEntry,
-  type GeneratedImageEntry,
-} from "@aivn/core";
+import { ACTOR_ANCHORS, ASSET_KINDS as ASSET_KINDS_LIST, PROTAGONIST_ID, SPRITE_FRAMINGS, SPRITE_STATURES, libraryEntryMatches, parsePlayConfig, type AssetKind, type AssetMeta, type CgEntry, type GeneratedImageEntry } from "@aivn/core";
 import { loadCharacterCards } from "./memory.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
 import { firewallAvailable, isLoopback, openFirewallRule } from "./lanAccess.js";
@@ -506,7 +495,7 @@ export async function handleHttp(
         ...(Array.isArray(body.variants) && body.variants.length > 0
           ? { variants: body.variants }
           : {}),
-        ...(body.target ? { target: "protagonist" as const } : {}),
+        ...(body.target ? { as: PROTAGONIST_ID } : {}),
       });
       await playhouse.reload(playId);
       return json(res, 200, result);

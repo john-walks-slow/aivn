@@ -41,7 +41,7 @@ export interface KitCommonDeps {
   capabilities: ReadonlySet<string>;
   /** 剧目目录：素材类工具要往这里写。 */
   store: PlayStore;
-  /** 应用级素材资源库（只读检索 + 导入）。未配置时不注册 list_library / library_import。 */
+  /** 应用级素材资源库（只读检索 + `import_asset` 的 `library:` 来源）。未配置时不注册 list_library，也不认那种来源。 */
   assetLibrary?: AssetLibrary;
   /** Fish Audio 公共音色库客户端。未配置 TTS 时为 undefined，不注册 list_voices。 */
   voices?: VoiceCatalogService;

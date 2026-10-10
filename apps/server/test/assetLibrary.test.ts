@@ -4,10 +4,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zipSync } from "fflate";
-import { libraryEntryMatches, parseCharacterCard, parsePlayAssetManifest } from "@aivn/core";
+import { libraryEntryMatches, parseCharacterCard, parsePlayAssetManifest, PROTAGONIST_ID } from "@aivn/core";
 import { AssetLibrary, assertEntryId } from "../src/library.js";
 import { importFromLibrary } from "../src/assetImport.js";
-import { createLibraryTools } from "../src/agentkit/libraryTool.js";
+import { createImportAssetTool } from "../src/agentkit/registerTool.js";
 import { PlayLibrary } from "../src/store.js";
 
 /**
@@ -236,6 +236,66 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     expect(await readCard(playsRoot, "p1", "mio")).not.toHaveProperty("framing");
   });
 
+  /* ── 模型面：登记这一个动词的 `library:<kind>/<entryId>` 来源 ───────────────── */
+
+  /** 装一次 import_asset（工坊那一份），拿到它的 execute 与气泡回调。 */
+  function importTool(store: ReturnType<PlayLibrary["store"]>) {
+    const bubbles: string[] = [];
+    const tool = createImportAssetTool({
+      playId: "p1",
+      store,
+      library,
+      onAsset: (path) => bubbles.push(path),
+    });
+    return { tool, bubbles };
+  }
+
+  it("library: 来源 —— 背景按落位给的名字落，条目描述进素材表", async () => {
+    await makeEntry(libRoot, "backgrounds", "classroom_dusk", { "bg.png": "像素" }, { description: "放学后的空教室" });
+    const { tool, bubbles } = importTool(plays.store("p1"));
+    const out = await tool.execute(
+      "c1",
+      { source: "library:backgrounds/classroom_dusk", kind: "background", name: "school", description: "校舍" },
+      undefined as never,
+    );
+    const text = JSON.stringify(out);
+    expect(text).toContain("assets/backgrounds/school.png");
+    expect(bubbles).toEqual(["assets/backgrounds/school.png"]);
+    const manifest = JSON.parse(await readFile(join(playsRoot, "p1", "assets", "manifest.json"), "utf8"));
+    // 条目自带的描述被登记时给的那句盖掉（模型补的描述更贴本剧目）
+    expect(manifest.school).toMatchObject({ description: "校舍" });
+  });
+
+  it("library: 来源 —— 角色包的图与卡都落在 spriteId 名下（改名不再靠 target 特判）", async () => {
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "smile.png": "s" }, {
+      character: { name: "澪", persona: "元气少女" },
+      variants: { neutral: { file: "neutral.png" }, smile: { file: "smile.png", description: "笑" } },
+    });
+    const { tool } = importTool(plays.store("p1"));
+    const out = await tool.execute(
+      "c2",
+      { source: "library:characters/mio", kind: "sprite", spriteId: "lin" },
+      undefined as never,
+    );
+    expect(JSON.stringify(out)).toContain("characters/lin.md");
+    expect((await readCard(playsRoot, "p1", "lin")).name).toBe("澪");
+    expect(existsSync(join(playsRoot, "p1", "assets", "sprites", "lin", "smile.png"))).toBe(true);
+    expect(existsSync(join(playsRoot, "p1", "characters", "mio.md"))).toBe(false);
+  });
+
+  it("library: 来源 —— 库类别与落位对不上就顶回来，一个字节都不落", async () => {
+    await makeEntry(libRoot, "bgm", "twilight", { "t.mp3": "音" });
+    const { tool, bubbles } = importTool(plays.store("p1"));
+    const out = await tool.execute(
+      "c3",
+      { source: "library:bgm/twilight", kind: "background", name: "twilight" },
+      undefined as never,
+    );
+    expect(JSON.stringify(out)).toContain("对不上");
+    expect(bubbles).toEqual([]);
+    expect(existsSync(join(playsRoot, "p1", "assets", "backgrounds", "twilight.mp3"))).toBe(false);
+  });
+
   it("立绘取景：只导一条差分不该把该主体其它差分的声明抹掉", async () => {
     const store = plays.store("p1");
     await mkdir(join(playsRoot, "p1", "assets"), { recursive: true });
@@ -298,7 +358,7 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     });
   });
 
-  it("target=protagonist 写固定 id 的主角卡：卡与立绘都落在 protagonist 名下，play.json 一个字节不动", async () => {
+  it("as=protagonist 写固定 id 的主角卡：卡与立绘都落在 protagonist 名下，play.json 一个字节不动", async () => {
     await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n" }, {
       character: { name: "理央", persona: "玩家扮演" },
       variants: { neutral: { file: "neutral.png" } },
@@ -310,7 +370,7 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     );
     const before = await readFile(join(playsRoot, "p1", "play.json"), "utf8");
 
-    const result = await importFromLibrary(library, store, { kind: "characters", entryId: "rio", target: "protagonist" });
+    const result = await importFromLibrary(library, store, { kind: "characters", entryId: "rio", as: PROTAGONIST_ID });
 
     expect(result.protagonist).toBe(true);
     expect(result.characters).toEqual(["protagonist"]);
@@ -450,89 +510,5 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
     const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
     const paths = result.writes.map((w) => w.path).sort();
     expect(paths).toEqual(["assets/manifest.json", "characters/mio.md"]);
-  });
-});
-
-describe("library_import 工具：单个与批量", () => {
-  let libRoot: string;
-  let playsRoot: string;
-  let library: AssetLibrary;
-  let plays: PlayLibrary;
-
-  beforeEach(async () => {
-    libRoot = await mkdtemp(join(tmpdir(), "aivn-lib-"));
-    playsRoot = await mkdtemp(join(tmpdir(), "aivn-plays-"));
-    library = new AssetLibrary(libRoot);
-    plays = new PlayLibrary(playsRoot);
-    await plays.importZip(zipOf({ "play.json": PLAY_JSON("p1") }));
-  });
-  afterEach(async () => {
-    await rm(libRoot, { recursive: true, force: true });
-    await rm(playsRoot, { recursive: true, force: true });
-  });
-
-  /** 只取 library_import：批量入口在工具层，assetImport 只认单条目。 */
-  function importTool(onAsset?: (asset: { path: string }) => void) {
-    const tools = createLibraryTools({
-      playId: "p1",
-      store: plays.store("p1"),
-      library,
-      onAsset: onAsset as never,
-    });
-    return tools.find((t) => t.name === "library_import")!;
-  }
-
-  const textOf = (result: { content: unknown[] }): string => (result.content[0] as { text: string }).text;
-
-  it("entryId 传单个字符串照旧：一条一个 id", async () => {
-    await makeEntry(libRoot, "backgrounds", "hall", { "a.png": "甲" });
-    const text = textOf(await importTool().execute("t1", { kind: "backgrounds", entryId: "hall" } as never));
-    expect(text).toContain("已导入 hall → assets/backgrounds/hall.png");
-    expect(text).toContain('<scene bg="hall" />');
-  });
-
-  it("entryId 传数组：一趟导完同类条目，回执合成一份而不是逐条复述", async () => {
-    await makeEntry(libRoot, "backgrounds", "hall", { "a.png": "甲" }, { description: "走廊" });
-    await makeEntry(libRoot, "backgrounds", "yard", { "b.png": "乙" }, { description: "后院" });
-    const assets: string[] = [];
-    const text = textOf(
-      await importTool((a) => assets.push(a.path)).execute("t1", {
-        kind: "backgrounds",
-        entryId: ["hall", "yard"],
-      } as never),
-    );
-    expect(text).toContain("已导入 2 条：");
-    expect(text).toContain("hall → assets/backgrounds/hall.png");
-    expect(text).toContain('<scene bg="yard" />');
-    // 素材表说明只说一次
-    expect(text.match(/素材描述已写进/g)).toHaveLength(1);
-    expect(assets).toEqual(["assets/backgrounds/hall.png", "assets/backgrounds/yard.png"]);
-    const manifest = JSON.parse(await readFile(join(playsRoot, "p1", "assets", "manifest.json"), "utf8"));
-    expect(Object.keys(manifest).sort()).toEqual(["hall", "yard"]);
-  });
-
-  it("批量里有一条不存在：其余照常落盘，回执点名那一条", async () => {
-    await makeEntry(libRoot, "backgrounds", "hall", { "a.png": "甲" });
-    const text = textOf(
-      await importTool().execute("t1", { kind: "backgrounds", entryId: ["hall", "nope"] } as never),
-    );
-    expect(text).toContain("已导入 hall → assets/backgrounds/hall.png");
-    expect(text).toContain("这 1 条没导进来");
-    expect(text).toContain("nope");
-    expect(existsSync(join(playsRoot, "p1", "assets", "backgrounds", "hall.png"))).toBe(true);
-  });
-
-  it("target=protagonist 配批量：直接拒绝，一张卡都不写", async () => {
-    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" });
-    await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n" });
-    const text = textOf(
-      await importTool().execute("t1", {
-        kind: "characters",
-        entryId: ["mio", "rio"],
-        target: "protagonist",
-      } as never),
-    );
-    expect(text).toContain("只配单个条目");
-    expect(existsSync(join(playsRoot, "p1", "characters", "protagonist.md"))).toBe(false);
   });
 });
