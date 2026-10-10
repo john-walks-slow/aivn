@@ -3,6 +3,7 @@ export * from "./dsl/effects.js";
 export * from "./dsl/events.js";
 export * from "./dsl/parser.js";
 export * from "./dsl/sceneBg.js";
+export * from "./dsl/titleStyle.js";
 export * from "./ws/protocol.js";
 export * from "./ws/workshopParts.js";
 export * from "./lineage/model.js";

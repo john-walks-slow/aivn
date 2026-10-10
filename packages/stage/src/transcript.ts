@@ -1,5 +1,5 @@
-import type { LineageNodeView, LineageView, TitleAlign } from "@aivn/core";
-import { DEFAULT_TITLE_ALIGN, isTitleAlign } from "@aivn/core";
+import type { LineageNodeView, LineageView, TitleAlign, TitleBg, TitleInk } from "@aivn/core";
+import { DEFAULT_TITLE_ALIGN, isTitleAlign, isTitleBg, isTitleInk, TITLE_BG_DEFAULT } from "@aivn/core";
 import type { ScriptLine } from "./script.js";
 
 /** 会话记录里的一条：角色台词，或玩家发来的一句话。 */
@@ -21,6 +21,9 @@ export interface TranscriptEntry {
   nodeId: string | null;
   /** title 专有：对齐（缺省居中）。 */
   align?: TitleAlign;
+  /** title 专有：底色与字色（缺省黑底白字）。 */
+  bg?: TitleBg;
+  ink?: TitleInk;
 }
 
 /** 只有台词三件套 + 标题卡算「会话里出现过的话」；其余（场景/音效/CG/立绘/停止点/本轮收束/生图预发射）都是布景。 */
@@ -69,6 +72,8 @@ function fromLine(line: ScriptLine): TranscriptEntry {
     seq: line.seq ?? null,
     nodeId: null,
     ...(line.type === "title" && line.align ? { align: line.align } : {}),
+    ...(line.type === "title" && line.bg ? { bg: line.bg } : {}),
+    ...(line.type === "title" && line.ink ? { ink: line.ink } : {}),
   };
 }
 
@@ -98,7 +103,11 @@ function fromView(view: LineageView, lines: readonly ScriptLine[]): TranscriptEn
         seq: node.seq ?? null,
         nodeId: node.id,
         ...(node.kind === "title"
-          ? { align: isTitleAlign(node.attrs.align) ? node.attrs.align : DEFAULT_TITLE_ALIGN }
+          ? {
+              align: isTitleAlign(node.attrs.align) ? node.attrs.align : DEFAULT_TITLE_ALIGN,
+              bg: isTitleBg(node.attrs.bg) ? node.attrs.bg.trim() : TITLE_BG_DEFAULT,
+              ...(isTitleInk(node.attrs.ink) ? { ink: node.attrs.ink.trim() } : {}),
+            }
           : {}),
       });
       continue;

@@ -12,14 +12,7 @@
  * 只有渲染层需要在这里分流。
  */
 
-/** 保留色名 → 规范色值。写死一张小表，不做任意 CSS 关键字识别。 */
-const COLOR_NAMES: Readonly<Record<string, string>> = {
-  black: "#000000",
-  white: "#ffffff",
-};
-
-/** CSS 十六进制色：3 位或 6 位（不认带 alpha 的 4/8 位——那是素材色的语法，不是背景演出词）。 */
-const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+import { parseColorValue } from "./color.js";
 
 export type SceneBg =
   | { kind: "color"; color: string }
@@ -30,8 +23,6 @@ export function resolveSceneBg(bg: string | undefined): SceneBg {
   if (bg === undefined) return null;
   const value = bg.trim();
   if (value === "") return null;
-  const named = COLOR_NAMES[value.toLowerCase()];
-  if (named !== undefined) return { kind: "color", color: named };
-  if (HEX_RE.test(value)) return { kind: "color", color: value };
-  return { kind: "asset", id: value };
+  const color = parseColorValue(value);
+  return color !== null ? { kind: "color", color } : { kind: "asset", id: value };
 }

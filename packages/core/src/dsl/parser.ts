@@ -23,6 +23,13 @@ import {
   type FxVerb,
   type Transition,
 } from "./effects.js";
+import {
+  TITLE_BG_DEFAULT,
+  isTitleBg,
+  isTitleInk,
+  type TitleBg,
+  type TitleInk,
+} from "./titleStyle.js";
 
 export type ParserWarningType =
   | "orphan_text"
@@ -47,6 +54,9 @@ interface OpenWrap {
   /** title 专有：对齐与出法。 */
   align?: TitleAlign;
   mode?: TitleMode;
+  /** title 专有：底色与字色（缺省黑底白字，见 titleStyle.ts）。 */
+  bg?: TitleBg;
+  ink?: TitleInk;
   /** title 专有：正文是否已经开始产出事件（空标题不产出）。 */
   started?: boolean;
   /** title 专有：尚未见非空白字符时先攒着，见 emitText。 */
@@ -444,9 +454,21 @@ export class StageDslParser {
         if (modeRaw !== undefined && modeRaw !== mode) {
           this.warn("malformed_tag", `title mode 非法，取默认 ${mode}: ${preview(modeRaw)}`);
         }
+        // 缺省黑底白字：卡片观感必须是模型能预判的（它看不到舞台皮肤的 --title-ink）。
+        // bg 原样存（十六进制大小写照写），ink 缺省不落值——由渲染层按底色取对比色。
+        const bgRaw = attrs.get("bg");
+        const inkRaw = attrs.get("ink");
+        const bg = isTitleBg(bgRaw) ? bgRaw.trim() : TITLE_BG_DEFAULT;
+        const ink = isTitleInk(inkRaw) ? inkRaw.trim() : undefined;
+        if (bgRaw !== undefined && !isTitleBg(bgRaw)) {
+          this.warn("malformed_tag", `title bg 非法，取默认 ${TITLE_BG_DEFAULT}: ${preview(bgRaw)}`);
+        }
+        if (inkRaw !== undefined && !isTitleInk(inkRaw)) {
+          this.warn("malformed_tag", `title ink 非法，改用底色对比色: ${preview(inkRaw)}`);
+        }
         // title_start 延后到第一段非空白正文再发（见 emitText）：空 <title> 不该凭空
         // 制造一个要点掉的全屏空屏。这里只记挂起态。
-        this.openWrap = { tag: "title", align, mode, started: false };
+        this.openWrap = { tag: "title", align, mode, bg, ink, started: false };
         return;
       }
       case "say":
@@ -558,7 +580,7 @@ export class StageDslParser {
       wrap.pending = (wrap.pending ?? "") + text;
       if (wrap.pending.trim() === "") return;
       wrap.started = true;
-      this.emit({ kind: "title_start", align: wrap.align!, mode: wrap.mode! });
+      this.emit({ kind: "title_start", align: wrap.align!, mode: wrap.mode!, bg: wrap.bg!, ...(wrap.ink ? { ink: wrap.ink } : {}) });
       this.emit({ kind: "title_text", delta: wrap.pending });
       wrap.pending = "";
       return;

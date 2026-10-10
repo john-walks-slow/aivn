@@ -855,15 +855,18 @@ name: 你
 
 - `align`（对齐）五档：`top-left` / `top-right` / `bottom-left` / `bottom-right` / `center`（缺省 `center`）。
 - `mode`（出法）：`lines`（缺省）每个非空物理行一个揭示单位，点一下出下一句，适合诗歌；`block` 整段一次出。
+- `bg`（底色）：`black`（缺省）/ `white` / `#rgb` / `#rrggbb`；`bg="none"` = 不铺底，叠在场景画面上。
+- `ink`（字色）：`black` / `white` / `#rgb` / `#rrggbb`；不写时按底色配对比色（黑底白字、白底黑字），
+  所以缺省就是一张**黑底白字**的卡。有实底时不投影。
 - 进入 title **隐藏对话框**，离开时恢复；离开靠玩家点击（末句读完后点一下），不自动收、没有定时。
-- 字体、字色、投影走舞台皮肤令牌 `--title-font` / `--title-ink` / `--title-shadow`（见 `packages/stage/src/stage.css` 与工坊皮肤）；对齐是剧本属性，不进皮肤。
+- 字体与投影走舞台皮肤令牌 `--title-font` / `--title-shadow`（见 `packages/stage/src/stage.css` 与工坊皮肤）；
+  `--title-ink` 只在 `bg="none"` 的叠层上没有 `ink` 时兜底。对齐/底色/字色都是剧本属性，不进皮肤。
 - 标题卡进会话记录可回顾，但**不可原地改写**。
 
-黑场 / 白场（纯色背景）不新造语法，扩展 `<scene bg>` 的取值即可：`bg="black"` / `bg="white"`（大小写不敏感）或十六进制 `bg="#1a1a2e"` 直接画一块纯色底；其余值仍按素材 id 查 `assets/backgrounds/<id>`。与 title 配合：
+黑场 / 白场（纯色背景）不新造语法，扩展 `<scene bg>` 的取值即可：`bg="black"` / `bg="white"`（大小写不敏感）或十六进制 `bg="#1a1a2e"` 直接画一块纯色底；其余值仍按素材 id 查 `assets/backgrounds/<id>`。换景与卡片是两件事：黑场标题卡直接写 `<title>`（它自带黑底），要把文字叠在**场景图**上才写 `bg="none"`：
 
 ```xml
-<scene bg="black" transition="fade"/>
-<title mode="block" align="center">第一章
+<title bg="none" align="center" mode="block">第一章
 风起</title>
 ```
 
