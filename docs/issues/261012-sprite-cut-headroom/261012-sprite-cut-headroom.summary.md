@@ -31,6 +31,17 @@
 
 `plays/mio-observatory` 的 `mio` 立绘：`neutral` 的头顶与 `smile` 对齐，人物也回到同一大小。
 
+## 线上状态（2026-10-12 07:58）
+
+- 代码已合入 main 并重建：`pnpm -r build`。
+- 处置了一个**双实例**：8787 上跑着一个手工起的 `node dist/index.js`（ppid 1），
+  而 supervisord 的 `stage-ai` 因端口被占**静默退到 8788**（日志里是「端口 8787 被占用，改用 8788」）。
+  杀掉手工那个、`supervisorctl restart stage-ai`，现在托管实例（新 pid）独占 8787。
+  以后再遇「改了没生效」，先查是不是同一条链路上挂着两个实例。
+- 验证：`GET /api/plays/mio-observatory` 的 manifest 带 `figureTop: 96 / figureHeight: 1824`；
+  公网 `https://stage.johnnren.qzz.io/` 上舞台实测 `--sprite-top: 13.26% / --sprite-height: 94.74%`
+  （见 `evidence/live-stage-after-deploy.png`）。
+
 ## 未做
 
 - 工坊一键 `generate_asset`（sync 面）出立绘仍是坏的（cut 缺 output + 源图给的是不可读的草稿路径），
