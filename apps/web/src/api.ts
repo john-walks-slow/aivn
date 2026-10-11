@@ -318,6 +318,28 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
+  /** 手动生成 BGM（工坊）：POST /api/plays/:id/music 发起异步排产 */
+  generateMusic: (
+    id: string,
+    req: {
+      name: string;
+      prompt: string;
+      title?: string;
+      tags?: string[];
+      mood?: string[];
+      scene?: string[];
+      loop?: boolean;
+      volume?: number;
+      description?: string;
+      overwrite?: boolean;
+    },
+  ) =>
+    request<{ target: string; path: string; prompt: string }>(`/api/plays/${id}/music`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(req),
+    }),
+
   listAssets: (id: string) => request<Record<string, string[]>>(`/api/plays/${id}/assets`),
 
   /** 素材元数据表：stem → 描述/标签/情绪（素材页副标题与剧作家提示词同一份）。 */

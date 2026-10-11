@@ -64,7 +64,7 @@ const LIBRARY_KINDS: Record<string, readonly AssetKind[]> = {
   sprite: ["sprites", "characters"],
 };
 
-const ALL_LIBRARY_KINDS: readonly AssetKind[] = ["backgrounds", "cg", "sprites", "characters", "bgm", "sfx"];
+const ALL_LIBRARY_KINDS: readonly AssetKind[] = ["backgrounds", "cg", "sprites", "characters", "bgm", "ambient", "sfx"];
 
 /** 库类别 → 素材气泡的类别（气泡里按「背景 / 音效」这种人话分类）。 */
 function bubbleKindOf(kind: AssetKind): "background" | "cg" | "sprite" {

@@ -25,6 +25,7 @@ const libraryKind = Type.Union([
   Type.Literal("sprites"),
   Type.Literal("characters"),
   Type.Literal("bgm"),
+  Type.Literal("ambient"),
   Type.Literal("sfx"),
 ]);
 

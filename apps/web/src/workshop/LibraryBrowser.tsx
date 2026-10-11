@@ -20,10 +20,11 @@ const KINDS: { key: AssetKind | ""; label: string }[] = [
   { key: "cg", label: "插图" },
   { key: "sprites", label: "立绘" },
   { key: "bgm", label: "音乐" },
+  { key: "ambient", label: "环境音" },
   { key: "sfx", label: "音效" },
 ];
 
-const AUDIO = new Set<AssetKind>(["bgm", "sfx"]);
+const AUDIO = new Set<AssetKind>(["bgm", "ambient", "sfx"]);
 const IMAGE = /\.(png|jpe?g|webp|gif)$/i;
 
 export function LibraryBrowser({

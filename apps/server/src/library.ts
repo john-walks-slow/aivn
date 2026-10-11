@@ -32,6 +32,7 @@ const KIND_EXT: Record<AssetKind, ReadonlySet<string>> = {
   sprites: new Set([".png", ".webp"]),
   characters: new Set([".png", ".webp"]),
   bgm: new Set([".mp3", ".ogg", ".m4a", ".wav", ".flac"]),
+  ambient: new Set([".mp3", ".ogg", ".m4a", ".wav", ".flac"]),
   sfx: new Set([".mp3", ".ogg", ".m4a", ".wav", ".flac"]),
 };
 

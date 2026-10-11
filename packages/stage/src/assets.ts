@@ -88,6 +88,7 @@ export function buildAssetIndex(
   const bg = stemMap(assets.backgrounds);
   const cg = stemMap(assets.cg);
   const bgm = stemMap(assets.bgm);
+  const ambient = stemMap(assets.ambient);
   const sfx = stemMap(assets.sfx);
   const assetUrl = opts.assetUrl ?? ((path: string): string => `/plays/${playId}/assets/${path}`);
   const url = (dir: string, file: string): string => assetUrl(`${dir}/${file}`);
@@ -114,7 +115,7 @@ export function buildAssetIndex(
     cg: byStem(cg, "cg"),
     bgm: byStem(bgm, "bgm"),
     sfx: byStem(sfx, "sfx"),
-    ambient: (stem) => byStem(sfx, "sfx")(stem) ?? byStem(bgm, "bgm")(stem),
+    ambient: (stem) => byStem(ambient, "ambient")(stem) ?? byStem(sfx, "sfx")(stem) ?? byStem(bgm, "bgm")(stem),
     spriteDirOf: (actorId) => bound.get(actorId) ?? actorId,
     spriteName: (spriteId) => owners.get(spriteId) ?? null,
     spriteIds: Object.keys(assets)

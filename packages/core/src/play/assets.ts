@@ -16,11 +16,11 @@ import { framingOf, statureOf, type SpriteFraming, type SpriteStature } from "./
  * 素材类别。`characters` 是角色包（角色卡 + 可选立绘），`sprites` 是纯立绘
  * （机甲、道具、猫——台上的一切，不必是谁的角色卡附件），其余是单文件条目。
  */
-export const ASSET_KINDS = ["backgrounds", "cg", "sprites", "characters", "bgm", "sfx"] as const;
+export const ASSET_KINDS = ["backgrounds", "cg", "sprites", "characters", "bgm", "ambient", "sfx"] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
 
 /** 音频类别：带时长/情绪的那一类。 */
-export const AUDIO_KINDS: ReadonlySet<string> = new Set(["bgm", "sfx"]);
+export const AUDIO_KINDS: ReadonlySet<string> = new Set(["bgm", "ambient", "sfx"]);
 
 /** 素材类别卫兵：REST 参数与目录名都走它，避免各处各写一份字符串比较。 */
 export function isAssetKind(value: string): value is AssetKind {

@@ -6934,4 +6934,14 @@ select:focus {
   .route-legend-key {
     width: 16px;
   }
+
+  .music-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.music-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }

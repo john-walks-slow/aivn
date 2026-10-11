@@ -129,6 +129,7 @@ export class AssetRefResolver {
         ["backgrounds", "backgrounds"],
         ["cg", "cg"],
         ["bgm", "bgm"],
+        ["ambient", "ambient"],
         ["sfx", "sfx"],
       ];
       for (const [kind, dir] of dirs) {
@@ -161,8 +162,8 @@ export function refsFromScene(attrs: { bg?: string; bgm?: string; ambient?: stri
   const refs: AssetRef[] = [];
   if (attrs.bg) refs.push({ attr: "bg", id: attrs.bg, candidates: ["backgrounds"] });
   if (attrs.bgm) refs.push({ attr: "bgm", id: attrs.bgm, candidates: ["bgm"] });
-  // 环境音既可能是音效也可能是循环音乐：库里两个类别都查，先命中哪个算哪个
-  if (attrs.ambient) refs.push({ attr: "ambient", id: attrs.ambient, candidates: ["sfx", "bgm"] });
+  // 环境音优先查正统专属 ambient 类别；若库里没有再回落 sfx 与 bgm（兼容存量与借壳）
+  if (attrs.ambient) refs.push({ attr: "ambient", id: attrs.ambient, candidates: ["ambient", "sfx", "bgm"] });
   return refs;
 }
 

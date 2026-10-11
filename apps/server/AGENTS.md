@@ -145,7 +145,7 @@
 
 ## 引用即导入（资源库）
 
-- **引用即导入**（`assetRef.ts` 的 `AssetRefResolver`）：剧本里写了剧目没有的 id，宿主就去库里找同名条目导入（`scene bg`→backgrounds、`cg id`→cg、`actor id`→characters 与/或 sprites、`scene bgm`→bgm、`ambient`→sfx 再 bgm、`sfx src`→sfx）。
+- **引用即导入**（`assetRef.ts` 的 `AssetRefResolver`）：剧本里写了剧目没有的 id，宿主就去库里找同名条目导入（`scene bg`→backgrounds、`cg id`→cg、`actor id`→characters 与/或 sprites、`scene bgm`→bgm、`ambient`→ambient 再 sfx/bgm、`sfx src`→sfx）。
 - **一个主体可以有两张附件，也可以只有一张**：`actor id` 先看剧目里有没有同名卡、有没有同名立绘目录，缺哪张补哪张——库里是 `characters/<id>`（卡，可零媒体）与 `sprites/<id>`（立绘包）两个独立 kind，两张都缺才算库里没有。
 - 解析管道不 await，事件先广播按缺素材降级，到货后广播 `asset_ready` 复用现有的到货淡入。
 - 角色导入写角色卡 `characters/<id>.md`（不再动 `play.json`）走 `rebuildAtBeatBoundary`（与剧作家给临时角色生立绘同一条延迟重建）。

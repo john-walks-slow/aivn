@@ -95,10 +95,19 @@ describe("AssetRefResolver：剧本里的 id 缺了就从库里补", () => {
     expect(imported).toEqual([]);
   });
 
-  it("环境音先查音效再查音乐：音效命中就是音效", async () => {
+  it("环境音先查 ambient，其次音效，再查音乐：ambient 命中就是 ambient", async () => {
+    await libraryEntry(root, "ambient", "rain", { "rain.mp3": "x" });
     await libraryEntry(root, "sfx", "rain", { "rain.mp3": "x" });
     await libraryEntry(root, "bgm", "rain", { "rain.mp3": "x" });
     resolver().resolve(refsFromScene({ ambient: "rain" }));
+    await waitFor(() => imported.length === 1);
+    expect(imported[0]!.kind).toBe("ambient");
+  });
+
+  it("环境音 ambient 库里没有时回退查音效：音效命中就是音效", async () => {
+    await libraryEntry(root, "sfx", "wind", { "wind.mp3": "x" });
+    await libraryEntry(root, "bgm", "wind", { "wind.mp3": "x" });
+    resolver().resolve(refsFromScene({ ambient: "wind" }));
     await waitFor(() => imported.length === 1);
     expect(imported[0]!.kind).toBe("sfx");
   });

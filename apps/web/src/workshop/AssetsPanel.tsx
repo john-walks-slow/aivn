@@ -27,8 +27,17 @@ import {
   type ImageGenTarget,
   type SpriteDirState,
 } from "./ImageGenDialog.js";
+import { MusicGenDialog } from "./MusicGenDialog.js";
 
-const KINDS = ["backgrounds", "cg", "sfx", "bgm"] as const;
+const KINDS = ["backgrounds", "cg", "ambient", "bgm", "sfx"] as const;
+
+const KIND_LABELS: Record<string, string> = {
+  backgrounds: "背景图",
+  cg: "插图 (CG)",
+  ambient: "环境音 (Ambience)",
+  bgm: "背景音乐 (BGM)",
+  sfx: "音效 (SFX)",
+};
 
 /** 对齐基准的显示名（DSL 的 anchor 三档，人话版）。 */
 const ANCHOR_LABELS: Record<ActorAnchor, string> = {
@@ -64,6 +73,9 @@ export function AssetsPanel({
   /** 资源库导入的落点：null = 面板关闭，"" = 素材（无落点）。 */
   const [libraryInto, setLibraryInto] = useState<string | null>(null);
   const [genTarget, setGenTarget] = useState<ImageGenTarget | null>(null);
+  const [musicGenOpen, setMusicGenOpen] = useState(false);
+  const [musicGenInitialName, setMusicGenInitialName] = useState("");
+  const [musicGenInitialPrompt, setMusicGenInitialPrompt] = useState("");
   /** 「新建立绘」那一行的目录名：与角色卡同名即绑定。 */
   const [newSpriteId, setNewSpriteId] = useState("");
   /** 素材目录读到过没有：落点要等它（挂载那一刻还没有立绘卡可滚）。 */
@@ -587,7 +599,7 @@ export function AssetsPanel({
         <div className="upload-grid">
           {KINDS.map((kind) => (
             <div key={kind} className="upload-cell">
-              <strong>{kind}</strong>
+              <strong>{KIND_LABELS[kind] ?? kind}</strong>
               <div className="row small" style={{ margin: "4px 0" }}>
                 {(kind === "backgrounds" || kind === "cg") && (
                   <button
@@ -598,6 +610,22 @@ export function AssetsPanel({
                         kind: kind === "backgrounds" ? "background" : "cg",
                       })
                     }
+                  >
+                    <span className="btn-icon">
+                      <Icon name="sparkles" size={13} /> 生成
+                    </span>
+                  </button>
+                )}
+                {kind === "bgm" && (
+                  <button
+                    type="button"
+                    className="ghost-btn small"
+                    onClick={() => {
+                      setMusicGenInitialName("");
+                      setMusicGenInitialPrompt("");
+                      setMusicGenOpen(true);
+                    }}
+                    title="手动生成背景音乐 (BGM)"
                   >
                     <span className="btn-icon">
                       <Icon name="sparkles" size={13} /> 生成
@@ -663,6 +691,16 @@ export function AssetsPanel({
           spriteDir={spriteDirState}
         />
       )}
+      {musicGenOpen && (
+        <MusicGenDialog
+          playId={playId}
+          initialName={musicGenInitialName}
+          initialPrompt={musicGenInitialPrompt}
+          subscribeAssetReady={subscribeAssetReady}
+          onClose={() => setMusicGenOpen(false)}
+          onDone={reload}
+        />
+      )}
     </div>
   );
 }
@@ -699,7 +737,7 @@ function AssetRow({
 }) {
   const url = assetUrl(playId, dir, name);
   const isImage = /\.(png|jpe?g|webp|gif)$/i.test(name);
-  const isAudio = /\.(mp3|ogg|wav|m4a)$/i.test(name);
+  const isAudio = /\.(mp3|ogg|wav|m4a|flac)$/i.test(name);
   const text = label ?? name;
 
   return (

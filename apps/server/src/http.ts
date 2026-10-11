@@ -34,7 +34,7 @@ const MIME: Record<string, string> = {
   zip: "application/zip",
 };
 
-const ASSET_KINDS = new Set(["sprites", "backgrounds", "cg", "sfx", "bgm"]);
+const ASSET_KINDS = new Set(["sprites", "backgrounds", "cg", "sfx", "bgm", "ambient"]);
 
 function json(res: ServerResponse, code: number, body: unknown): void {
   const data = JSON.stringify(body);
@@ -559,6 +559,53 @@ export async function handleHttp(
         keyColor: body.keyColor as any,
         referenceCharacters: Array.isArray(body.referenceCharacters) ? body.referenceCharacters : undefined,
         instruction: body.instruction,
+      });
+      return json(res, 200, result);
+    }
+    if (sub === "music" && parts.length === 4) {
+      // 工坊手动生成 BGM：POST /api/plays/:id/music
+      if (method !== "POST") return fail(res, 405, "不支持的方法");
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as {
+        name?: string;
+        prompt?: string;
+        title?: string;
+        tags?: unknown;
+        mood?: unknown;
+        scene?: unknown;
+        loop?: boolean;
+        volume?: number;
+        description?: string;
+        overwrite?: boolean;
+      };
+      const name = body.name?.trim();
+      const prompt = body.prompt?.trim();
+      if (!name || !prompt) {
+        return fail(res, 400, "缺少 name 或 prompt");
+      }
+      if (prompt.length > 2000) {
+        return fail(res, 400, "提示词过长（上限 2000 字）");
+      }
+      const toStringList = (val: unknown): string[] | undefined =>
+        Array.isArray(val)
+          ? val.map((s) => String(s).trim()).filter(Boolean).slice(0, 20)
+          : undefined;
+
+      const cleanVolume =
+        typeof body.volume === "number" && Number.isFinite(body.volume)
+          ? Math.max(0, Math.min(1, body.volume))
+          : undefined;
+
+      const result = await playhouse.generateMusic(playId, {
+        name,
+        prompt,
+        title: body.title?.trim() || undefined,
+        tags: toStringList(body.tags),
+        mood: toStringList(body.mood),
+        scene: toStringList(body.scene),
+        loop: typeof body.loop === "boolean" ? body.loop : undefined,
+        volume: cleanVolume,
+        description: body.description?.trim() || undefined,
+        overwrite: body.overwrite,
       });
       return json(res, 200, result);
     }

@@ -244,6 +244,33 @@ it("到货不回调工坊对话通道：PlayMusic 上根本没有 onAsset 这个
     expect(calls).toBe(1);
     expect(a).toEqual(b);
   });
+
+  it("annotate 能将完整的选曲元数据（title, mood, scene, tags, loop, volume）写入 manifest.json", async () => {
+    const store = await playDir();
+    const music = musicAt(store);
+    await music.generate({ name: "bgm_spring", prompt: "p" });
+    await music.annotate("bgm_spring", {
+      title: "春日微光",
+      description: "日常闲聊背景乐",
+      mood: ["温暖", "日常"],
+      scene: ["教室", "闲聊"],
+      tags: ["日系", "钢琴", "循环"],
+      loop: true,
+      volume: 0.38,
+    });
+
+    const manifest = await store.assetMeta();
+    expect(manifest.bgm_spring).toMatchObject({
+      title: "春日微光",
+      description: "日常闲聊背景乐",
+      mood: ["温暖", "日常"],
+      scene: ["教室", "闲聊"],
+      tags: ["日系", "钢琴", "循环"],
+      loop: true,
+      volume: 0.38,
+      source: "站内生成（音乐生成后端）",
+    });
+  });
 });
 
 describe("音乐设置：地址与 key 回落", () => {

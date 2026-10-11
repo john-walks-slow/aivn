@@ -11,10 +11,10 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 /** 图片与音频扩展名白名单：素材清单与素材页共用同一个口径。 */
-export const MEDIA_EXT = /\.(png|jpe?g|webp|mp3|ogg|wav|m4a)$/i;
+export const MEDIA_EXT = /\.(png|jpe?g|webp|mp3|ogg|wav|m4a|flac)$/i;
 
 /** 素材类别目录（顺序即清单里各段的顺序）。 */
-const KINDS = ["backgrounds", "cg", "sprites", "sfx", "bgm"] as const;
+const KINDS = ["backgrounds", "cg", "sprites", "bgm", "ambient", "sfx"] as const;
 
 export type AssetIndex = Record<string, string[]>;
 

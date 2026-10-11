@@ -23,6 +23,7 @@ import { createWebImageFetcher, type WebImageFetcher } from "./webImage.js";
 import { readPlayLedgerEntries, type GeneratedLedgerEntry } from "./generatedLedger.js";
 import { PlayAssets, assertAssetStem, assertSpriteId } from "./playAssets.js";
 import { PlayMusic, type GenerateMusicRequest } from "./playMusic.js";
+import type { AssetMetaPatch } from "@aivn/agent";
 import { PendingJobs, errorText, jobIdForMusic } from "./pendingJobs.js";
 import { PlayFiles } from "./playFiles.js";
 import {
@@ -1099,6 +1100,93 @@ export class PlayHouse {
           ok: false,
           message,
         });
+      }
+    })();
+
+    return { target: targetKey, path: targetPath, prompt };
+  }
+
+  /**
+   * 工坊手动生成 BGM（REST 请求）：
+   * 校验参数，排产异步生成任务，返回生成的 target 与 prompt。
+   * 完成后广播 asset_ready 并自动写入 manifest 元数据。
+   */
+  async generateMusic(
+    playId: string,
+    req: {
+      name: string;
+      prompt: string;
+      title?: string;
+      tags?: string[];
+      mood?: string[];
+      scene?: string[];
+      loop?: boolean;
+      volume?: number;
+      description?: string;
+      overwrite?: boolean;
+    },
+  ): Promise<{ target: string; path: string; prompt: string }> {
+    const runtime = await this.get(playId);
+    if (!this.musicBackend) {
+      throw new Error("音乐生成未启用（服务端未配置音乐后端）");
+    }
+    const music = this.playMusicFor(playId, runtime.store);
+    if (!music) {
+      throw new Error("音乐生成未启用");
+    }
+
+    const name = assertAssetStem(req.name, "BGM 素材名");
+    const prompt = req.prompt?.trim();
+    if (!prompt) {
+      throw new Error("提示词不能为空");
+    }
+
+    const targetKey = `bgm/${name}`;
+    const targetPath = `assets/bgm/${name}`;
+
+    // 记账并异步排产
+    const finish = this.pendingFor(playId).begin({
+      id: jobIdForMusic(name),
+      kind: "bgm",
+      label: `BGM ${req.title ? `${req.title} (${name})` : name}`,
+      prompt,
+    });
+
+    void (async () => {
+      try {
+        const asset = await music.generate({
+          name,
+          prompt,
+          overwrite: req.overwrite ?? true,
+        });
+
+        // 如果用户提供了元数据，自动补全标注
+        const patch: AssetMetaPatch = {};
+        if (req.title) patch.title = req.title;
+        if (req.description) patch.description = req.description;
+        if (req.tags) patch.tags = req.tags;
+        if (req.mood) patch.mood = req.mood;
+        if (req.scene) patch.scene = req.scene;
+        if (req.loop !== undefined) patch.loop = req.loop;
+        if (req.volume !== undefined) patch.volume = req.volume;
+
+        if (Object.keys(patch).length > 0) {
+          try {
+            await music.annotate(asset.id, patch);
+          } catch (annotErr) {
+            console.warn(
+              `[aivn] BGM ${name} 元数据补写失败: ${annotErr instanceof Error ? annotErr.message : String(annotErr)}`,
+            );
+          }
+        }
+
+        this.broadcast(playId, {
+          type: "asset_ready",
+          asset: { id: asset.id, type: "bgm", url: asset.url },
+        });
+        finish();
+      } catch (error) {
+        finish(errorText(error));
       }
     })();
 
