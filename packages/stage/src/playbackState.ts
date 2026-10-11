@@ -89,8 +89,6 @@ export interface StopAffordanceInput {
   stopType: StopPayload["stopType"] | null;
   /** 这一轮没写 stop（beat_end 的 no_stop）。 */
   isNoStop: boolean;
-  /** 设置项：本轮写完时摆一张「（继续）」卡。默认关。 */
-  continueCardOn: boolean;
   /**
    * 这一条会话已经到达结局（`<ending …/>`）。终局态没有任何出口：不给卡、点舞台也不继续。
    *
@@ -100,32 +98,21 @@ export interface StopAffordanceInput {
   ended?: boolean;
 }
 
-export interface StopAffordance {
-  /** 舞台中央摆一张「（继续）」卡。 */
-  showContinueCard: boolean;
-  /** 点舞台（= 翻下一句的那个动作）即开下一轮。 */
-  clickToContinue: boolean;
-}
-
 /**
- * 本轮写完时玩家看到的出口：一张卡，或者「点舞台继续」。两者互斥。
+ * 本轮写完时玩家还有没有出口：点舞台（= 翻下一句的那个动作）即开下一轮。
  *
- * 默认（设置关）是没有卡的——演到最后一句话，再点一下就直接开下一轮，
- * 与翻句是同一个动作，玩家不必先意识到「这一轮结束了」。设置打开才摆卡：
- * 有些玩家想看见边界，那是一个明确的停顿。
+ * 出口只有这一个——选项由停止点自己摆（choice/free），没有「（继续）」卡这一形态
+ * （2026-10-10 用户裁决删掉那个开关：轮与轮之间的边界不值得在画面中央摆一张卡）。
  *
  * pause 例外：它是编排器自造的重试口（轮中截断 / 空轮报错），不是剧本写出来的
- * 停止点，永远走点舞台，不占卡片位。
+ * 停止点，照旧走点舞台。
  */
-export function stopAffordance(input: StopAffordanceInput): StopAffordance {
-  const none: StopAffordance = { showContinueCard: false, clickToContinue: false };
+export function stopAffordance(input: StopAffordanceInput): boolean {
   // 终局优先于一切：结局之后不给任何出口（它没有 stop，isNoStop 反而是真的）。
-  if (input.ended) return none;
-  if (!input.ready) return none;
-  if (input.stopType === "pause") return { ...none, clickToContinue: true };
+  if (input.ended || !input.ready) return false;
   // 有真停止点（choice/free）时出口是选项本身，不额外给继续
-  if (!input.isNoStop || input.stopType !== null) return none;
-  return input.continueCardOn ? { ...none, showContinueCard: true } : { ...none, clickToContinue: true };
+  if (input.stopType === "pause") return true;
+  return input.isNoStop && input.stopType === null;
 }
 
 /**

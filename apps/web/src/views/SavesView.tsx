@@ -244,7 +244,7 @@ export function SavesView({ playId }: { playId: string }) {
             </>
           }
         >
-          <p className="muted small">该操作只删除本周目，剧目本身及其他周目不受影响。</p>
+          <p className="muted small">只删本周目，剧目与其他周目不受影响。</p>
         </Modal>
       )}
     </div>

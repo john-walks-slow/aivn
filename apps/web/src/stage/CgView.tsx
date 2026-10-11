@@ -57,7 +57,7 @@ export function CgView({
             <Icon name="assets" size={38} />
             <p className="cg-empty-title">这里还没有插图</p>
             <p className="muted small">
-              在舞台上点「生图」，就能为当前这一幕画一张；也可以把现成的图导入工坊的素材页。
+              在舞台上点「生图」就能画这一幕，也可以从素材页导入现成的图。
             </p>
             {(onBackToStage || onOpenWorkshop) && (
               <div className="cg-empty-actions">

@@ -63,7 +63,7 @@ export function DirtyGuardProvider({ children }: { children: ReactNode }) {
         <Modal
           title="这一页还有没保存的改动"
           kicker={null}
-          hint="切走就没了——草稿只在这个页面里。要保存就先取消、按那页的「保存」。"
+          hint="切走就没了。要保存就先取消，按那页的「保存」。"
           onClose={() => setPending(null)}
           footer={
             <>
@@ -89,7 +89,7 @@ export function DirtyGuardProvider({ children }: { children: ReactNode }) {
           }
         >
           <p className="muted small">
-            工坊只把改动写进剧目文件；没按保存的输入不进任何文件。
+            没按保存的输入不会写进任何文件。
           </p>
         </Modal>
       )}

@@ -22,6 +22,7 @@ import type { ScriptFeedItem } from "./scriptFeed.js";
 import { Icon } from "./ui/Icon.js";
 import { escapeClaimed } from "./ui/escape.js";
 import { Modal } from "./ui/Modal.js";
+import { useFullscreen } from "./fullscreen.js";
 import type { StageView } from "./view.js";
 
 interface StageTheaterProps {
@@ -89,7 +90,7 @@ interface StageTheaterProps {
   /** 出图这一格归不归宿主：宿主没有生图落点时关掉，别摆一个点了没反应的键。缺省开。 */
   showGenerate?: boolean;
   /**
-   * 停止点浮层（选肢卡、自由输入、no_stop 时的「（继续）」卡）。
+   * 停止点浮层（选肢卡与自由输入卡；no_stop 的轮不摆卡，点舞台就是继续）。
    * 它挂在**画面区**里：只盖住背景与立绘，台词条、工具栏、侧栏都照常可点——
    * 选肢时要紧的只有「别手滑把这一轮点了过去」。
    */
@@ -100,6 +101,12 @@ interface StageTheaterProps {
    * 那一块不渲染，`.theater` 的 `--dir-h` 也随之写回 0，画面上不留一条空缝。
    */
   directorBar?: boolean;
+  /**
+   * 提示出口：舞台自己不讲 toast（`.toast-stack` 是绝对定位的浮层，宿主在
+   * `.screen` 一级挂了一份，这里再挂一份会两块叠在同一个角落）。
+   * 目前只有「全屏被浏览器拒绝」这一条会用到它。
+   */
+  onNotify?: (text: string) => void;
 }
 
 export interface DirectorTargets {
@@ -414,6 +421,7 @@ voiceState,
   onTurbo,
   overlay,
   directorBar = true,
+  onNotify,
 }: StageTheaterProps) {
   /**
    * 循环音轨：BGM 与环境音各一路，都带交叉淡入淡出。缺省音量分别是 0.28 / 0.16——
@@ -441,6 +449,8 @@ voiceState,
   const [guideMode, setGuideMode] = useState<GuideMode>("guide");
   /** 净画面：藏掉压在画面上的台词条与导演栏，只剩背景/立绘/CG。点画面或按 H/空格/Esc 回来。 */
   const [hideUi, setHideUi] = useState(false);
+  /** 全屏（沉浸）开关：浏览器没有全屏能力时 `toggle` 为 null，右下角那枚按钮不渲染。 */
+  const fullscreen = useFullscreen(onNotify);
   const { view, viewLength, current, shownLength, exhausted, advance, scrub, scrubbed, follow } =
     playback;
   const shown = view ? view.text.slice(0, viewLength) : "";
@@ -1099,6 +1109,23 @@ voiceState,
                 }}
               >
                 <span className="qm-label">CG</span>
+              </button>
+            )}
+            {/* 全屏：手机上进全屏才铺满整块玻璃（地址栏与状态栏一起让位），
+                也才让画面的安全区真正生效。浏览器没有这个能力时整枚不渲染。 */}
+            {fullscreen.toggle && (
+              <button
+                type="button"
+                className={`quick-btn${fullscreen.on ? " tgl-on" : ""}`}
+                title={fullscreen.on ? "退出全屏" : "全屏"}
+                aria-label={fullscreen.on ? "退出全屏" : "进入全屏"}
+                aria-pressed={fullscreen.on}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fullscreen.toggle?.();
+                }}
+              >
+                <Icon name={fullscreen.on ? "fullscreen-exit" : "fullscreen"} size={14} />
               </button>
             )}
             <button

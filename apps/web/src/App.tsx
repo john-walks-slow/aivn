@@ -45,7 +45,8 @@ function Screens() {
   // UI 舞台主题：读取本地存储模式，根据系统偏好计算实际亮/暗，写入 :root。
   useTheme();
 
-  if (head === "settings") return <SettingsScreen />;
+  if (head === "settings")
+    return <SettingsScreen search={route.query.toString()} />;
   if (head === "play" && playId && sub === "stage") {
     // key = query：工坊入口与「回舞台」都靠改 query 换一条连接（workshop=1 → 真舞台连接），
     // 而 hash 变化不会重新挂载同一个路由的组件——不拿 query 当 key，重挂就是空操作，

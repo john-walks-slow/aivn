@@ -405,7 +405,7 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
       {asking?.kind === "rewrite" && (
         <Modal
           title="重写这一段"
-          hint="退到这一段之前，让剧作家重新写一遍这一段；原有内容整段留作旧枝。可以交代一句要求，留空就是纯重写。"
+          hint="让剧作家重新写一遍这一段，原有内容留作旧枝。可以交代一句要求，留空就是纯重写。"
           onClose={() => setAsking(null)}
           footer={
             <>
@@ -437,7 +437,7 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
       {asking?.kind === "remove" && cost && (
         <Modal
           title="删除这一段"
-          hint="删除不能撤销：谱系里不留墓碑，这一段说过的话就此消失。"
+          hint="删除不能撤销，这一段说过的话就此消失。"
           onClose={() => setAsking(null)}
           footer={
             <>
@@ -451,7 +451,7 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
           }
         >
           <p className="route-modal-note">
-            将删除 <b>{cost.rounds}</b> 轮 / <b>{cost.nodes}</b> 个节点：这一段，以及它之后长出来的全部内容。
+            将删除 <b>{cost.rounds}</b> 轮 / <b>{cost.nodes}</b> 个节点：这一段及它之后长出的全部内容。
           </p>
         </Modal>
       )}
@@ -550,7 +550,7 @@ function Node({
               type="button"
               className="route-node-tool"
               disabled={busy}
-              title={hint || (card.isSentinel ? "跳转：回到故事的起点。" : "跳转：回到这一段的开头，从头演一遍。不重新生成，选项照旧。")}
+              title={hint || (card.isSentinel ? "跳转：回到故事的起点。" : "跳转：回到这一段开头重演，不重新生成。")}
               onClick={() => ops.jump(card.endNodeId, { playFrom: "start" })}
             >
               <Icon name="return" size={13} />
@@ -562,7 +562,7 @@ function Node({
                   type="button"
                   className="route-node-tool"
                   disabled={busy}
-                  title={hint || "重写：退到这一段之前，让剧作家重新写一遍这一段（原有内容留作旧枝）。可以交代一句要求。"}
+                  title={hint || "重写：让剧作家重新写一遍这一段（原有内容留作旧枝），可交代一句要求。"}
                   onClick={() => onRewrite(card)}
                 >
                   <Icon name="rewrite" size={13} />
@@ -572,7 +572,7 @@ function Node({
                   type="button"
                   className="route-node-tool"
                   disabled={busy}
-                  title={hint || "删除：剪掉这一段，以及它之后长出来的全部内容。会先让你确认。"}
+                  title={hint || "删除：剪掉这一段及其之后长出的全部内容，会先让你确认。"}
                   onClick={() => onRemove(card)}
                 >
                   <Icon name="remove" size={13} />

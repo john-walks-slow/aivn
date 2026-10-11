@@ -217,7 +217,7 @@ export function LibraryView() {
             <div className="create-card-header">
               <h3>新建剧目</h3>
               <p className="muted small">
-                输入剧目唯一标识与标题，创建后即刻进入工坊创作世界。
+                填一个唯一 ID 与标题，创建后直接进工坊。
               </p>
             </div>
             <div className="create-form-row">
@@ -314,7 +314,7 @@ export function LibraryView() {
             </div>
             <h3>剧场空空如也</h3>
             <p>
-              还没有任何剧目。你可以新建一个原创剧目，或导入已有的剧目包开始体验。
+              还没有剧目。新建一个，或导入现成的剧目包。
             </p>
             <div className="empty-state-actions">
               <button

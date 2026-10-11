@@ -32,7 +32,7 @@ export {
 export type { Playback, PlaybackHooks, ResumeSeek, SpriteSlot, VisualState } from "./director.js";
 
 export { dialogContent, emptyDialogHint, shouldAutoStart, stopAffordance } from "./playbackState.js";
-export type { AutoStartInput, DialogInput, StopAffordance, StopAffordanceInput } from "./playbackState.js";
+export type { AutoStartInput, DialogInput, StopAffordanceInput } from "./playbackState.js";
 
 export { LoopChannel, SfxPlayer } from "./loopAudio.js";
 export { VoiceDirector } from "./audio.js";
@@ -52,6 +52,8 @@ export { useGeneratedAssets } from "./generatedAssets.js";
 export type { GeneratedImage } from "./generatedAssets.js";
 
 export { useVisualViewport } from "./viewport.js";
+export { useFullscreen, FULLSCREEN_REJECTED } from "./fullscreen.js";
+export type { FullscreenToggle } from "./fullscreen.js";
 
 export {
   VIEW_LABEL,
@@ -62,7 +64,7 @@ export {
 } from "./view.js";
 export type { StageView, WorkshopTab } from "./view.js";
 
-export { SETTING_CONTINUE_CARD, SETTING_VOICE, readFlag, writeFlag } from "./settings.js";
+export { SETTING_VOICE, readFlag, writeFlag } from "./settings.js";
 export { cgCanSubmit, toggleReference } from "./cgOptions.js";
 
 export { Icon } from "./ui/Icon.js";

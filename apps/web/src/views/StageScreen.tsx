@@ -29,7 +29,6 @@ import {
   stopAffordance,
   readFlag,
   writeFlag,
-  SETTING_CONTINUE_CARD,
   SETTING_VOICE,
   StageModes,
   useVisualViewport,
@@ -47,7 +46,6 @@ import { StagePanel } from "../stage/StagePanel.js";
 import { useLeaveGuard } from "../workshop/dirtyGuard.js";
 import { beatAtLine, buildBeats, editableNodeAtLine } from "../stage/beats.js";
 import { PromptQueuePanel } from "../stage/PromptQueuePanel.js";
-import { playThemeColor } from "../ui/text.js";
 import { WorkshopPane } from "../workshop/WorkshopPane.js";
 
 /** 阅读位置上报的防抖窗口：打字机逐字推进，1s 内只发最后一次位置。 */
@@ -67,10 +65,6 @@ export function StageScreen({
   const [, setAudioTick] = useState(0); // 语音状态变化（hold 解除/解锁）触发重渲染
   const [voiceOn, setVoiceOn] = useState(() =>
     readFlag(localStorage, SETTING_VOICE, true),
-  );
-  /** 本轮写完时摆「（继续）」卡。默认关：点舞台就是续演，与翻下一句同一个动作。 */
-  const [continueCard, setContinueCard] = useState(() =>
-    readFlag(localStorage, SETTING_CONTINUE_CARD, false),
   );
   const [detail, setDetail] = useState<PlayDetail | null>(null);
   const [assets, setAssets] = useState<Record<string, string[]>>({});
@@ -286,7 +280,7 @@ export function StageScreen({
         // 玩家界面上；它留给 console，toast 只说发生了什么、玩家下一步能做什么。
         console.warn(`[aivn] 生图失败 ${id}: ${message}`);
         pushToast(
-          "有一张图没生成出来，已用氛围底色顶上。可到剧目库「设置」里换出图后端。",
+          "有一张图没生成出来，已用氛围底色顶上。可在「设置」里换出图后端。",
           "warn",
         );
       },
@@ -495,15 +489,13 @@ export function StageScreen({
     playback.shownLength >= playback.current.text.length;
   const panelReady = !busy && playback.exhausted && lineDone;
 
-  // 「继续」的出口形态：默认是点舞台（与翻下一句同一个动作），设置里打开才摆一张卡。
-  // pause（轮中截断/空轮报错）永远走点舞台——它是引擎自造的，不是剧本写出来的停止点。
-  const affordance = stopAffordance({
+  // 「继续」的出口只有点舞台（与翻下一句同一个动作）；pause（轮中截断/空轮报错）
+  // 同样走它——那是引擎自造的，不是剧本写出来的停止点。
+  const canContinue = stopAffordance({
     ready: panelReady,
     stopType: stage.stop?.stopType ?? null,
     isNoStop: stage.isNoStop,
-    continueCardOn: continueCard,
   });
-  const canContinue = affordance.clickToContinue;
   const continued = useRef(false);
   useEffect(() => {
     if (!canContinue) continued.current = false;
@@ -591,12 +583,6 @@ export function StageScreen({
     const next = !voiceOn;
     setVoiceOn(next);
     writeFlag(localStorage, SETTING_VOICE, next);
-  };
-
-  const toggleContinueCard = (): void => {
-    const next = !continueCard;
-    setContinueCard(next);
-    writeFlag(localStorage, SETTING_CONTINUE_CARD, next);
   };
 
   const unlockVoice = (): void => {
@@ -734,23 +720,9 @@ export function StageScreen({
     [lineage.view, transcript, actorNames],
   );
 
-  const theme = playThemeColor(
-    playId,
-    (detail?.play as { themeColor?: string } | undefined)?.themeColor,
-  );
-
   if (view === "workshop") {
     return (
-      <div
-        className="screen stage-screen studio-screen"
-        style={
-          {
-            "--play-accent": theme.accent,
-            "--play-accent-glow": theme.glow,
-            "--play-accent-dark": theme.dark,
-          } as React.CSSProperties
-        }
-      >
+      <div className="screen stage-screen studio-screen">
         <WorkshopPane
           playId={playId}
           playTitle={playTitle}
@@ -764,12 +736,6 @@ export function StageScreen({
           onManageSprites={manageSprites}
           send={stage.send}
           connected={stage.connected}
-          voice={{
-            on: voiceOn,
-            available: stage.voiceAvailable,
-            onToggle: toggleVoice,
-          }}
-          continueCard={{ on: continueCard, onToggle: toggleContinueCard }}
           queue={
             <PromptQueuePanel
               items={stage.queue}
@@ -787,16 +753,7 @@ export function StageScreen({
   }
 
   return (
-    <div
-      className={`screen stage-screen${view !== "stage" ? " panel-open" : ""}`}
-      style={
-        {
-          "--play-accent": theme.accent,
-          "--play-accent-glow": theme.glow,
-          "--play-accent-dark": theme.dark,
-        } as React.CSSProperties
-      }
-    >
+    <div className={`screen stage-screen${view !== "stage" ? " panel-open" : ""}`}>
       {index ? (
         <StageTheater
           visual={playback.visual}
@@ -837,6 +794,7 @@ export function StageScreen({
           onTurbo={setTurbo}
           canContinue={canContinue}
           onContinue={continueBeat}
+          onNotify={(text) => toast.push(text, "warn")}
           overlay={
             /* 回看中屏幕上摆的是历史台词，那一刻的决定早就做过了——
                选项摆出来会让人以为还能改，点了就是拿旧决定去覆盖新分支。 */
@@ -858,12 +816,10 @@ export function StageScreen({
               <StopPanel
                 stop={stage.stop}
                 isNoStop={stage.isNoStop}
-                showContinue={affordance.showContinueCard}
                 disabled={busy}
                 seenChoices={seenChoices}
                 onChoice={stage.sendChoice}
                 onFree={stage.sendFree}
-                onContinue={stage.sendContinue}
                 onPolish={(text) =>
                   api
                     .polish(playId, text)

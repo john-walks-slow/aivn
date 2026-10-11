@@ -48,10 +48,9 @@ export function applyTheme(): void {
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const root = document.documentElement;
   root.dataset.uiTheme = actual(readMode(UI_MODE_KEY, DEFAULT_UI_MODE), prefersDark);
-  // 舞台恒深色：画面衬底本来就该压住背景图的亮部，跟系统走会在亮系统下读成白底空画布。
-  // 2026-10-10 起设置项下线（舞台主题不再是用户可选项），属性照写——
-  // 浅色那套令牌与选择器还在 stage.css / app.css 里，等「舞台要不要保留明暗概念」定了再删。
-  root.dataset.stageTheme = "dark";
+  // 舞台不再有自己的一套深浅：台词条 / 选肢 / 名牌 / chrome 全部读 data-ui-theme
+  // （舞台专属的 data-stage-theme 已删）。舞台是同一部 AVG 的上层画面，
+  // 界面切浅色时它就换成纸白台词条 + 深墨字，不再有「切了没反应」的第二套。
 }
 
 export function setThemeMode(key: string, mode: ThemeMode): void {
@@ -114,11 +113,18 @@ export function applyAccent(): void {
   const { id, custom } = readAccent();
   root.dataset.accent = id;
   if (id === "custom") {
+    const ink = readableInk(custom);
     root.style.setProperty("--accent", custom);
-    root.style.setProperty("--accent-ink", readableInk(custom));
+    root.style.setProperty("--accent-ink", ink);
+    // 舞台也要这一份：.stage-root 自己声明了 --accent，只写 <html> 的话它继承不到
+    // （2026-10-10 之前一直是「设置页选了自定义色，舞台还是引擎蓝」）。
+    root.style.setProperty("--play-accent", custom);
+    root.style.setProperty("--play-accent-ink", ink);
   } else {
     root.style.removeProperty("--accent");
     root.style.removeProperty("--accent-ink");
+    root.style.removeProperty("--play-accent");
+    root.style.removeProperty("--play-accent-ink");
   }
 }
 

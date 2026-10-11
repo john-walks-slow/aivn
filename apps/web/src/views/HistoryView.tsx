@@ -65,7 +65,7 @@ export function HistoryView({ playId, nonce }: { playId: string; nonce: number }
               })}
             </section>
           ))}
-          <p className="muted hx-foot">只读快照，落盘比当前轮慢一步——要最新的按侧栏的「刷新」。</p>
+          <p className="muted hx-foot">只读快照，比当前轮慢一步；要最新的按右上角「重新载入」。</p>
         </>
       )}
     </div>

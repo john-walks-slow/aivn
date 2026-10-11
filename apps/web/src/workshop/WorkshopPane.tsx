@@ -30,7 +30,6 @@ import { MemoryPane } from "./MemoryPane.js";
 import { PlayPane } from "./PlayPane.js";
 import { TurnParts } from "./TurnParts.js";
 import { WorkshopMarkdown } from "./WorkshopMarkdown.js";
-import { WorkshopSettings } from "./WorkshopSettings.js";
 import { useWorkshop } from "./useWorkshop.js";
 
 /** 离底部这么近就算「贴着底」：滚轮一格常常差几像素，卡上几个像素不该当成离开了底部。 */
@@ -44,11 +43,10 @@ const TABS: { id: WorkshopTab; label: string; icon: IconName }[] = [
   { id: "assets", label: "素材", icon: "assets" },
   { id: "files", label: "文件", icon: "files" },
   { id: "agent", label: "Agent", icon: "sparkles" },
-  { id: "settings", label: "设置", icon: "settings" },
 ];
 
 /**
- * 工坊：搭台的地方（改剧目、写角色与记忆、补素材、翻文件、调 agent、设置）。D9 的 meta-chat 多会话。
+ * 工坊：搭台的地方（改剧目、写角色与记忆、补素材、翻文件、调 agent）。D9 的 meta-chat 多会话。
  *
  * 它是舞台外壳的**第四个视图**，不是盖在舞台上的浮层，也不是自带顶栏的独立页：
  * 顶栏与侧栏跟舞台完全一致，从标题页直达工坊时也不会整个换掉（见 stage/view.ts 的入口约定）。
@@ -70,8 +68,6 @@ export function WorkshopPane({
   onManageSprites,
   send,
   connected,
-  voice,
-  continueCard,
   queue,
 }: {
   playId: string;
@@ -101,8 +97,6 @@ export function WorkshopPane({
   send: (msg: ClientMessage) => void;
   /** WS 连通性：断线要解锁本轮、重连要重新报到。 */
   connected?: boolean;
-  voice: { on: boolean; available: boolean; onToggle: () => void };
-  continueCard: { on: boolean; onToggle: () => void };
   /** 待注入队列与生成任务条（舞台那条连接上的同一份数据），贴在内容区底部。 */
   queue?: ReactNode;
 }) {
@@ -163,7 +157,7 @@ export function WorkshopPane({
     setDigestOpen(false);
   }, [state.activeId]);
 
-  // 手机上一行放不下八个 tab：切到靠后的页（文件 / Agent / 设置）时，当前项要自己
+  // 手机上一行放不下七个 tab：切到靠后的页（文件 / Agent）时，当前项要自己
   // 滚进可视区。不滚的话条上永远是最左边那五项，人看不出自己在哪一页。
   useEffect(() => {
     const nav = navRef.current;
@@ -317,7 +311,7 @@ export function WorkshopPane({
           {offline && (
             <div className="warn-banner small" role="status">
               <Icon name="alert" size={13} />{" "}
-              连接断了，正在重连。这一会儿发出去的话不作数，等底栏回到「已连接」再发。
+              连接断了，正在重连。这期间发出去的话不作数，等回到「已连接」再发。
             </div>
           )}
           {state.error && !chatError.hidden && (
@@ -382,14 +376,6 @@ export function WorkshopPane({
         )}
 
         {tab === "agent" && <AgentPane playId={playId} />}
-
-        {tab === "settings" && (
-          <WorkshopSettings
-            voice={voice}
-            continueCard={continueCard}
-            onOpenTab={onTab}
-          />
-        )}
 
         {tab === "chat" && (
           <div className="studio-chat-tab">

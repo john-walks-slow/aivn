@@ -73,38 +73,46 @@
   --ink-faint: var(--muted);
   --line: var(--border);
   --line-strong: var(--border);
-  /* 主题蓝 = ATRI 那一档深海天蓝：偏冷、带一点青灰，比标准 royal blue 沉得住。
-     与舞台对话框同源，换剧目主题色（plays/<id>/theme.css）时界面与画面一起走。 */
-  --accent: #1b5aa6;
-  --accent-ink: #ffffff;
-  --accent-soft: #e9f1fa;
-  --link: #1b5aa6;
+  /* 主色（--accent / --accent-ink / --link）不在这里：它们是「没挑过的时候长什么样」，
+     和 [data-accent] 预设、深色那一份一起放在下面 @layer aivn-defaults 里——
+     那一层必须能被剧目 theme.css 压过。--accent-soft 也不在这里（它按深浅两档现推，
+     放在那个层后面，理由见那条）。 */
 
   /* 舞台 chrome 令牌：台词条 / 快捷菜单 / 左上模式切换 / 右上导演栏共用同一套。
      剧目 theme.css 改 --accent 时，这些跟着一起走。stage.css 里有等价回退值，
      保证 @aivn/stage 在没有本表的宿主（dsh-aivn）里也长得对。 */
   --stage-chrome-h: 30px;
   --stage-chrome-radius: 999px;
-  /* chrome 的底比对话框更深、更灰：对话框是这场戏的一部分（饱和的主题蓝），
-     工具栏是压在画面上的器具，混进深灰才退得下去。 */
-  --stage-chrome-deep: color-mix(in srgb, var(--accent) 52%, #060e1c);
+  /* chrome 的底比对话框更深：对话框是这场戏的一部分，工具栏是压在画面上的器具。
+     压深掺的是一支**同色相的深蓝**（#071a2e）而不是中性灰——掺灰会把这条蓝的饱和度
+     一起吃掉（上一版 #060e1c 掺掉近一半，读起来就是灰蓝的「脏」）。 */
+  --stage-chrome-deep: color-mix(in srgb, var(--accent) 56%, #071a2e);
   /* 三处 chrome（左上模式切换 / 右上导演栏 / 右下快捷菜单）共用一套「玻璃条」：
      上浅下深的渐变底 + 冰蓝描边 + 一道顶部内高光。
-     高光就是那股光泽感的来源——纯色底读起来是塑料片，加一条内高光才像玻璃。 */
+     渐变的两档都是**不透明色**（顶掺浅蓝、底落在 deep），只留一点透明度够玻璃感——
+     上一版是同一个色只改 alpha（84% → 97%），画面亮处从顶上那 16% 透上来，
+     整条读起来是一块脏污而不是一块玻璃。高光补那股光泽。 */
+  --stage-chrome-lit: color-mix(in srgb, var(--stage-chrome-deep) 78%, #6ea6dc);
   --stage-chrome-bg: linear-gradient(180deg,
-    color-mix(in srgb, var(--stage-chrome-deep) 84%, transparent),
-    color-mix(in srgb, var(--stage-chrome-deep) 97%, transparent));
-  --stage-chrome-edge: color-mix(in srgb, var(--accent) 55%, rgba(255, 255, 255, 0.35));
-  --stage-chrome-gloss: inset 0 1px 0 rgba(255, 255, 255, 0.14);
-  /* 导演栏走一层「很浅很浅的主题色」玻璃：白底里只掺一成多的 accent，
-     比深灰更透气，又不像纯白那样在暗画面上刺眼。它仍是器具、不是戏的一部分——
-     真正的主题色只留给台词条、选肢、右下角快捷菜单，以及这里「某一档开着」时。 */
+    color-mix(in srgb, var(--stage-chrome-lit) 92%, transparent),
+    color-mix(in srgb, var(--stage-chrome-deep) 99%, transparent));
+  /* 描边走不透明的浅蓝，不走「accent 掺半透明白」——白掺进半透明里就是一层灰雾 */
+  --stage-chrome-edge: color-mix(in srgb, var(--accent) 55%, #a9cdec);
+  --stage-chrome-gloss: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  /* 导演栏走一层「很浅的主题色」玻璃：同一支蓝抬明度抬上去，比深灰更透气，
+     又不像纯白那样在暗画面上刺眼。它仍是器具、不是戏的一部分——
+     真正的主题色只留给台词条、选肢、右下角快捷菜单，以及这里「某一档开着」时。
+     这一组是**浅色那一份**；深色下导演栏翻成深玻璃，那份值在 stage.css 的
+     html[data-ui-theme="dark"] .stage-root 里。用这两组令牌的只有 .theater-director，
+     而它永远落在某个 .stage-root 里（那份更近，压过这里），所以深色那档不必在这里再镜像。 */
   --stage-chrome-quiet-bg: linear-gradient(180deg,
-    color-mix(in srgb, var(--accent) 13%, rgb(255 255 255 / 0.95)),
-    color-mix(in srgb, var(--accent) 24%, rgb(255 255 255 / 0.84)));
-  --stage-chrome-quiet-edge: color-mix(in srgb, var(--accent) 26%, rgb(255 255 255 / 0.5));
+    color-mix(in srgb, var(--accent) 16%, rgb(247 251 255 / 0.97)),
+    color-mix(in srgb, var(--accent) 30%, rgb(226 238 252 / 0.94)));
+  --stage-chrome-quiet-edge: color-mix(in srgb, var(--accent) 34%, #dbe9f8);
   /* 浅底上的字：掺四成 accent 的深墨蓝，比纯黑柔和、又跟这层玻璃同源 */
   --stage-chrome-quiet-ink: color-mix(in srgb, var(--accent) 38%, #142138);
+  --stage-chrome-quiet-ink-hover: color-mix(in srgb, var(--accent) 55%, #0d1830);
+  --stage-chrome-quiet-hover: color-mix(in srgb, var(--accent) 14%, transparent);
   --radius: 6px;
   --radius-sm: 4px;
   --radius-lg: 8px;
@@ -165,7 +173,9 @@
   }
 }
 
-/* 主题切换：UI（纸面）与舞台（画面）各自一套，由 <html> 上的 data-* 属性驱动。
+/* 主题切换：纸面（界面）与画面（舞台）**共用一套**，由 <html> 上的 data-ui-theme 驱动。
+   舞台曾经另有一套 data-stage-theme（恒深色），2026-10-10 撤掉——切深浅只切一处，
+   否则「设置页切了暗色、舞台没动」这类错位要各自维护两份。
    用属性选择器而不是内联 style 写 :root —— 剧目定制主题（plays/<id>/theme.css）
    挂的是 :root 变量，内联 style 优先级更高会把它整张压掉，用户换的皮就没了。
    属性选择器只覆盖下面这几个令牌，剧目主题没碰到的部分照旧生效。 */
@@ -196,65 +206,99 @@ html[data-ui-theme="dark"] {
   --ink-faint: var(--muted);
   --line: var(--border);
   --line-strong: var(--border);
-  --accent: #4a9fe0;
-  /* 深底上主色提亮了（#4a9fe0），白字压不住：实测 2.87:1，小字读不清。
-     其余深底预设（teal/green/violet/wine）都用的深墨，这里对齐——6.2:1。 */
-  --accent-ink: #0e1a1b;
-  --accent-soft: rgba(74, 159, 224, 0.16);
-  --link: #7cc0f0;
+  /* 主色在 @layer aivn-defaults 里（见下面那一块）：深色那一份也一样，
+     不在这个块里写死，否则它会把剧目 theme.css 压掉。 */
   --shadow: none;
   --shadow-md: none;
   --shadow-lg: none;
 }
 
-/* 主色预设：设置页选哪一档就挂哪个 data-accent（useTheme.applyAccent）。
-   每个预设给浅底/深底两套值——同一色相在纸面上要压得住、在暖黑上要提得起。
-   custom 不在这里：那个色由 useTheme 写成内联 --accent。 */
-html[data-accent="teal"] {
-  --accent: #2f6f73;
-  --accent-ink: #f3fbfa;
-  --accent-soft: #d7e8e8;
-}
-html[data-accent="green"] {
-  --accent: #4a6f45;
-  --accent-ink: #f6faf2;
-  --accent-soft: #dfe9da;
-}
-html[data-accent="violet"] {
-  --accent: #6a5599;
-  --accent-ink: #faf7ff;
-  --accent-soft: #e5dff2;
-}
-html[data-accent="wine"] {
-  --accent: #9b3b4f;
-  --accent-ink: #fff7f3;
-  --accent-soft: #f4e3e2;
-}
-html[data-ui-theme="dark"][data-accent="teal"] {
-  --accent: #79b8bd;
-  --accent-ink: #0e1a1b;
-  --accent-soft: rgba(121, 184, 189, 0.18);
-}
-html[data-ui-theme="dark"][data-accent="green"] {
-  --accent: #9cbb92;
-  --accent-ink: #131a11;
-  --accent-soft: rgba(156, 187, 146, 0.18);
-}
-html[data-ui-theme="dark"][data-accent="violet"] {
-  --accent: #ab98d8;
-  --accent-ink: #16121f;
-  --accent-soft: rgba(171, 152, 216, 0.18);
-}
-html[data-ui-theme="dark"][data-accent="wine"] {
-  --accent: #d98a7a;
-  --accent-ink: #1a1512;
-  --accent-soft: rgba(217, 138, 122, 0.18);
+/* 引擎默认主色 —— 单独一片，放在低优先的 @layer 里。
+ *
+ * 不变式：**剧目主题（plays/<id>/theme.css，一张挂在 <html> 上的 :root 表）永远压过这里**。
+ * 这里只回答「这出戏没挑过色的时候长什么样」。
+ *
+ * 为什么要 @layer：以前这几档直接写在 :root / html[data-ui-theme="dark"] / [data-accent] 上，
+ * 而 html[data-ui-theme="dark"] 的特异性 (0,1,1) 高过 theme.css 的 :root (0,1,0)——
+ * 于是「一开深色，整部剧的主题色就没了」。未分层的作者样式永远压过分层样式，
+ * 与选择器特异性无关，所以这条不变式靠一层就够，不必去给用户的 theme.css 抬特异性。
+ *
+ * 主色预设（设置页选哪一档就挂哪个 data-accent，useTheme.applyAccent）也归这里：
+ * 预设是全局偏好，剧目主题是这出戏自己的色，后者更具体。每个预设给浅底/深底两套值——
+ * 同一色相在纸面上要压得住、在暖黑上要提得起。
+ * custom 不在这里：那个色由 useTheme 写成内联 --accent / --accent-ink，**并同时写
+ * --play-accent / --play-accent-ink**（舞台读的那两个）——内联压过一切，含剧目主题，
+ * 这正是「我就是要这个色」的意思。 */
+@layer aivn-defaults {
+  :root {
+    /* 主题蓝 = ATRI 那一档深海天蓝：偏冷、带一点青灰，比标准 royal blue 沉得住。
+       与舞台对话框同源，换剧目主题色（plays/<id>/theme.css）时界面与画面一起走。 */
+    --accent: #1b5aa6;
+    --accent-ink: #ffffff;
+    --link: #1b5aa6;
+  }
+
+  html[data-ui-theme="dark"] {
+    --accent: #4a9fe0;
+    /* 深底上主色提亮了（#4a9fe0），白字压不住：实测 2.87:1，小字读不清。
+       其余深底预设（teal/green/violet/wine）都用的深墨，这里对齐——6.2:1。 */
+    --accent-ink: #0e1a1b;
+    --link: #7cc0f0;
+  }
+
+  html[data-accent="teal"] {
+    --accent: #2f6f73;
+    --accent-ink: #f3fbfa;
+  }
+  html[data-accent="green"] {
+    --accent: #4a6f45;
+    --accent-ink: #f6faf2;
+  }
+  html[data-accent="violet"] {
+    --accent: #6a5599;
+    --accent-ink: #faf7ff;
+  }
+  html[data-accent="wine"] {
+    --accent: #9b3b4f;
+    --accent-ink: #fff7f3;
+  }
+  html[data-ui-theme="dark"][data-accent="teal"] {
+    --accent: #79b8bd;
+    --accent-ink: #0e1a1b;
+  }
+  html[data-ui-theme="dark"][data-accent="green"] {
+    --accent: #9cbb92;
+    --accent-ink: #131a11;
+  }
+  html[data-ui-theme="dark"][data-accent="violet"] {
+    --accent: #ab98d8;
+    --accent-ink: #16121f;
+  }
+  html[data-ui-theme="dark"][data-accent="wine"] {
+    --accent: #d98a7a;
+    --accent-ink: #1a1512;
+  }
 }
 
-/* 舞台浅色：台词条 / 选肢卡整套换成浅底深字。
+/* 主色的淡底（选中行、亮起的工具栏键、内容区外那圈焦点晕）**不进层**：
+   它是「同一个色在纸面上 vs 在暖黑上」两回事，而 theme.css 是张没有深浅概念的静态表——
+   它写的那一份是 96% 近白（纸面用），深色下垫在浅色字底下就是白底白字。
+   所以这一档按深浅现推，且刻意留在层外：属性选择器 (0,1,1) 压过 theme.css 的 :root (0,1,0)，
+   两种主题下都由「当前生效的那个主色」算出来。 */
+:root {
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, #ffffff);
+}
+
+html[data-ui-theme="dark"] {
+  --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* 舞台浅色：台词条 / 选肢卡整套换成浅底深字（与 stage.css 里那份是同一套值，
+   两处要一起改）。这里的 html 级那份给「不在 .stage-root 子树里」的舞台浮层用；
+   .stage-root 子树里则由 stage.css 的属性选择器直接挂在根类上。
    这套的取舍和深色相反——深色模式靠「玻璃压住画面」，浅色没有压的余地，
    所以底色必须实（0.88 起步）而不是半透明，否则背景图的亮部会透上来吃掉字。 */
-html[data-stage-theme="light"] {
+html[data-ui-theme="light"] {
   --stage-bg: #efece5;
   --dialog-bg: linear-gradient(178deg, rgb(252 250 246 / 0.94), rgb(240 236 228 / 0.96));
   --dialog-line: rgb(120 108 92 / 0.45);
@@ -268,10 +312,12 @@ html[data-stage-theme="light"] {
   --dialog-hover: rgb(120 108 92 / 0.12);
   --dialog-veil: rgb(120 108 92 / 0.07);
   --dialog-shadow: 0 10px 30px rgb(60 48 32 / 0.18);
-  --choice-bg: rgb(252 250 246 / 0.94);
-  --choice-line: rgb(120 108 92 / 0.4);
-  --choice-ink: #23201c;
-  --choice-active-bg: color-mix(in srgb, var(--accent) 22%, transparent);
+  /* 选肢卡：与 stage.css 那份同源（底色掺主题色、字走主题色的深墨版），
+     两处要一起改。四个值都从 --accent 现推，深浅两档各一条配比。 */
+  --choice-bg: color-mix(in srgb, var(--accent) 10%, rgb(252 250 246));
+  --choice-line: color-mix(in srgb, var(--accent) 38%, rgb(120 108 92 / 0.4));
+  --choice-ink: color-mix(in srgb, var(--accent) 78%, #0b2545);
+  --choice-active-bg: color-mix(in srgb, var(--accent) 26%, rgb(252 250 246));
   --choice-scrim: linear-gradient(180deg, transparent 24%, rgb(239 236 229 / 0.55));
   --nameplate-bg: rgb(252 250 246 / 0.94);
   --nameplate-ink: #23201c;
@@ -1347,13 +1393,16 @@ button.link-btn {
    亮色原画上靠「冰白字 + 深海蓝外晕」立住字，而不是给画面盖黑纱。 */
 
 .title-screen {
-  --atri-ink: #1b5aa6;
+  /* 标题画面的字与底都跟剧目主题色走（--play-accent 由 theme.css 给，没有就是引擎这一档）。
+     这一屏在深浅两种界面主题下都保持纸白空气感，所以取的是剧目那一档原色，
+     不取界面 --accent 在深色下的提亮值——那样同一部剧换个主题就换了个天色。 */
+  --atri-ink: var(--play-accent, #1b5aa6);
   --atri-glow: rgba(255, 255, 255, 0.92);
   --atri-font: "Montserrat", "Inter Display", "Inter", "Futura", "Century Gothic", var(--font-ui);
   position: relative;
   display: block;
   overflow: hidden;
-  background: #cfe3f3;
+  background: color-mix(in srgb, var(--play-accent, #1b5aa6) 16%, #f4f8fc);
   color: var(--atri-ink);
   isolation: isolate;
 }
@@ -1371,10 +1420,17 @@ button.link-btn {
   transform-origin: 60% 40%;
 }
 
+/* 没有封面图时的缺省底：一条从剧目主题色推出来的「天色」。
+   原来是写死的天蓝四段（#5b8fd8 → #7fb0d8），换了主题色的剧目也还是一张蓝底——
+   这一层就是把它接到 --play-accent 上：只有色相跟着换，明度节奏（深→浅→近白→中）原样保留。 */
 .title-art-blank {
   background:
     radial-gradient(90% 70% at 20% 10%, #ffffff 0%, transparent 60%),
-    linear-gradient(180deg, #5b8fd8 0%, #a9cdf0 46%, #e8f3fb 62%, #7fb0d8 100%);
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--play-accent, #1b5aa6) 72%, #ffffff) 0%,
+      color-mix(in srgb, var(--play-accent, #1b5aa6) 42%, #ffffff) 46%,
+      color-mix(in srgb, var(--play-accent, #1b5aa6) 12%, #ffffff) 62%,
+      color-mix(in srgb, var(--play-accent, #1b5aa6) 60%, #ffffff) 100%);
 }
 
 @keyframes title-art-in {
@@ -1426,33 +1482,28 @@ button.link-btn {
 .title-name {
   margin: 0;
   font-family: var(--font-ui);
-  font-size: clamp(36px, 5.4vw, 84px);
-  font-weight: 800;
-  line-height: 1.08;
-  letter-spacing: 0.06em;
   font-size: clamp(38px, 5.1vw, 76px);
   font-weight: 900;
   line-height: 1.05;
   letter-spacing: 0.04em;
-  /* 剧名渐变：左端减重更淡更透，中段以主题色承托，右段微偏暮紫琉璃微光；
-     全基于 var(--accent) 动态派生，提供标准渐变回退与 oklch 混色增强。 */
+  /* 剧名渐变：只有主题色一个色相的三档明度（浅 → 中 → 深）。
+     曾经左端偏青、右端偏紫（oklch 里 ±hue 混两个色相），压在真实封面上读出来
+     是一层脏灰紫——剧名要的是「一枚干净的主色」，不是两道彩虹。 */
   width: fit-content;
   background: linear-gradient(150deg,
-    color-mix(in srgb, var(--accent) 64%, #ffffff) 0%,
-    color-mix(in srgb, var(--accent) 72%, #ffffff) 46%,
-    color-mix(in srgb, var(--accent) 44%, #ffffff) 100%
-  );
-  background: linear-gradient(150deg in oklch,
-    color-mix(in oklch, oklch(from var(--accent) l c calc(h - 26)) 56%, #ffffff) 0%,
-    color-mix(in oklch, var(--accent) 72%, #ffffff) 46%,
-    color-mix(in oklch, oklch(from var(--accent) l c calc(h + 38)) 50%, #ffffff) 100%
+    color-mix(in srgb, var(--accent) 52%, #ffffff) 0%,
+    color-mix(in srgb, var(--accent) 74%, #ffffff) 46%,
+    color-mix(in srgb, var(--accent) 92%, #ffffff) 100%
   );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  /* 只用一圈无偏移的柔光把字托起来。
+     曾经是 drop-shadow(0 2px 0 白) —— 带 2px 偏移、0 模糊的实心白影，
+     它会在每一笔的下缘贴出一条硬白边（浅色原画上就是描了一道白边）。 */
   filter:
-    drop-shadow(0 2px 0 rgba(255, 255, 255, 0.95))
-    drop-shadow(0 4px 18px color-mix(in srgb, var(--accent) 40%, transparent));
+    drop-shadow(0 0 10px rgb(255 255 255 / 0.9))
+    drop-shadow(0 6px 20px color-mix(in srgb, var(--accent) 32%, transparent));
   overflow-wrap: anywhere;
 }
 
@@ -1564,6 +1615,32 @@ button.link-btn {
   white-space: nowrap;
 }
 
+/* 缺项时的推荐注：挂在 WORKSHOP 入口右侧的一小句（齐了就没有这一笔）。
+   它不是副标——副标静止时是透明的、只在悬停/聚焦时浮出，而推荐点的意义正是「不碰它也看得见」，
+   所以这一句恒显，且只有 11px 一档：读起来像菜单边上的一行小注，不跟那列动词抢视线。 */
+.atri-hint {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  /* 与底边那排小字同一条配方（主题色掺深中性）：白雾上的 11px 字只有这一档读得动 */
+  color: color-mix(in srgb, var(--atri-ink) 78%, #2b323b);
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.95), 0 1px 0 rgba(255, 255, 255, 0.8);
+  white-space: nowrap;
+}
+
+/* 句首一枚小菱形（与菜单选中光标同一枚记号）：让它读成「推荐点」，而不是菜单字的一部分 */
+.atri-hint::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  vertical-align: 1px;
+  background: color-mix(in srgb, var(--accent) 55%, #7cc4ff);
+  transform: rotate(45deg);
+}
+
 /* 选中态：ATRI 的高亮是「字变亮 + 外晕加深」，不是底色块 */
 .atri-item:hover:not(:disabled),
 .atri-item:focus {
@@ -1575,8 +1652,12 @@ button.link-btn {
 }
 
 /* ATRI 的选中态是「字变亮 + 外晕」，不是色块；但键盘 Tab 过来得看得见落点，
-   所以只给 :focus-visible 补一圈细环——鼠标点、手指点都看不到它。 */
-.atri-item:focus-visible {
+   所以给 :focus-visible 补一圈细环——鼠标点、手指点都看不到它。
+   环只发给真的用键盘走过来的人：首屏那枚 autoFocus 是「Enter 立刻继续 / 开演」的落点，
+   浏览器却把它一并算进 :focus-visible，什么也没碰就浮出一圈主题色方块
+   （一列没有底板的纯字上，那读起来就是个绿框）。is-keyboard 由 TitleView 按
+   「Tab 过 / 鼠标手指点过」挂在菜单上。 */
+.atri-menu.is-keyboard .atri-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
@@ -1626,73 +1707,64 @@ button.link-btn {
 
 .atri-item:disabled .atri-label { text-shadow: 0 0 4px rgba(255, 255, 255, 0.8); }
 
-/* 右下角：贴边一行极小字。左边两枚管理操作，右边版权 */
+/* 底边一条：左端版权、右端两枚管理操作（导出 / 删除）。
+   两半都站在底缘那层白雾上，所以都走同一族「蓝灰字 + 白色柔光」——
+   原先桌面写白字 + 深描边（在白雾上等于没有），窄屏才换成蓝灰，
+   同一个位置两副面孔；现在统一按窄屏那套来。 */
 .title-footer {
   position: absolute;
-  right: 10px;
-  bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  left: 14px;
+  right: 14px;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   display: flex;
   align-items: center;
-  gap: 18px;
+  justify-content: space-between;
+  gap: 14px;
   font-family: var(--atri-font);
 }
 
-.title-ops { display: flex; gap: 12px; }
+.title-ops {
+  display: flex;
+  gap: 12px;
+  flex: 0 0 auto;
+  /* 窄屏两半分不开时会换行：换行后这一行只剩它自己，仍然钉在右端 */
+  margin-left: auto;
+}
 
 .title-op-link,
 .title-op-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 0;
+  min-height: 32px;
+  padding: 6px 2px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.82);
+  /* 标题页的小字一律「主题色掺深中性」：剧目主色是中间明度，58%/78% 的旧配比压在
+     冰白天幕上，色板里偏亮的那几档（琥珀、天青）只有 3.8–4.0:1，读不清。
+     掺到这一档深灰上，八档全在 4.5:1 以上（最差 4.49）。 */
+  color: color-mix(in srgb, var(--atri-ink) 78%, #2b323b);
   font: inherit;
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-decoration: none;
-  text-shadow: 0 0 3px rgba(0, 30, 70, 0.9), 0 1px 2px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.95), 0 1px 0 rgba(255, 255, 255, 0.8);
   cursor: pointer;
 }
 
 .title-op-link:hover,
-.title-op-btn:hover { color: #fff; }
-.title-op-btn.danger:hover { color: #ffb4bf; }
+.title-op-btn:hover { color: var(--atri-ink); }
+.title-op-btn.danger:hover { color: #b3372f; }
 
 .title-copyright {
   margin: 0;
+  min-width: 0;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  color: #fff;
-  text-shadow: 0 0 3px rgba(0, 30, 70, 0.9), 0 1px 2px rgba(0, 0, 0, 0.6);
-}
-
-/* 素材未齐的提示：菜单下方一行小字，不是弹条 */
-.title-advice-capsule {
-  position: absolute;
-  left: 13.5vw;
-  bottom: 6vh;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  color: #2b5688;
-  text-shadow: 0 0 5px #fff;
-}
-
-.title-advice-capsule .advice-link {
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: #0e4fb8;
-  font: inherit;
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
+  color: color-mix(in srgb, var(--atri-ink) 58%, #3f4a56);
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.95), 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1728,9 +1800,16 @@ button.link-btn {
   /* 存档名一长就换行，不许把整条菜单顶出屏幕 */
   .atri-item { max-width: 100%; flex-wrap: wrap; row-gap: 2px; }
   .atri-label { font-size: 22px; }
-  .title-footer { right: 12px; gap: 14px; }
-  .title-advice-capsule { left: 24px; right: 24px; bottom: 34px; flex-wrap: wrap; }
-  .title-copyright { display: none; }
+  /* 底边那条（版权 + 导出/删除）在窄屏并排摆不下：让版权单行省略收窄，
+     而不是折行——折成两行会把底栏撑高，也会顶满菜单的下内边距。 */
+  .title-footer { flex-wrap: nowrap; }
+  .title-copyright {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
 }
 
 
@@ -4646,8 +4725,9 @@ select:focus {
 }
 
 /* OMC 工业控制台设置分组：1px border、精确层阶、紧凑网格 */
-/* 分组标题变成可点的开关：只给窄屏用。
-   桌面一屏放得下几组，折叠是多余的；手机上九组、几十个字段一路滚到底太远。 */
+/* 分组标题变成可点的开关：只给窄屏用（手机上九组、几十个字段一路滚到底太远；
+   桌面一屏放得下几组，折叠是多余的）。**按钮本身只在窄屏渲染**——
+   Group 按 useMediaQuery 决定摆不摆它，桌面连焦点都停不到上面。 */
 .settings-group-toggle {
   display: inline-flex;
   align-items: center;
@@ -4673,18 +4753,7 @@ select:focus {
   transform: rotate(180deg);
 }
 
-/* 桌面：折叠状态不起作用（手机上收了、转屏回桌面不该有一组是空的），
-   连那枚箭头也不出现——没有可收的东西就别摆开关 */
-@media (min-width: 901px) {
-  .settings-group-toggle {
-    pointer-events: none;
-  }
-
-  .settings-group-toggle > svg {
-    display: none;
-  }
-}
-
+/* 窄屏：折叠状态藏起组里的字段（桌面永远收起不了，这条也就轮不到生效） */
 @media (max-width: 900px) {
   .settings-group-collapsed > *:not(.settings-group-head) {
     display: none;
@@ -4699,7 +4768,7 @@ select:focus {
   box-shadow: none !important;
 }
 
-/* 直接挂在分组下的裸标题（工坊设置页、Agent 卡）保持原样：
+/* 直接挂在分组下的裸标题（Agent 卡）保持原样：
    它们没有那一句说明，标题自己带分隔线。 */
 .settings-group > h3 {
   margin: 0 0 14px;
@@ -5623,59 +5692,6 @@ select:focus {
   line-height: 1.8;
 }
 
-/* 设置页：勾选项 + 标题 + 说明（一行说明为什么，不写「已保存」之类的状态词） */
-.settings-pane {
-  /* 720 的阅读栏，居中：这一页只有两三个开关，左贴边会在宽屏上留下七百多像素的空档 */
-  width: 100%;
-  max-width: 720px;
-  margin-inline: auto;
-  gap: 16px;
-}
-
-/* 工坊设置页：分组标题下那行作用域（「仅保存在此浏览器」这类） */
-.group-scope {
-  margin: 2px 0 10px;
-  color: var(--ink-faint);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-/* 「其它设置在哪」：不重复表单，只给出处 */
-.where-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.where-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 0 0;
-  border-top: 1px solid var(--border-soft);
-}
-
-.where-row:first-child {
-  padding-top: 0;
-  border-top: none;
-}
-
-.where-row > div {
-  flex: 1;
-  min-width: 0;
-}
-
-.where-row b {
-  display: block;
-  font-weight: 600;
-  font-size: 13.5px;
-}
-
-.where-row .ghost-btn {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
 /* 记忆页：左边名单（按「常驻设定 / 设定卡」分组），右边编辑器 */
 .memory-layout {
   display: grid;
@@ -5784,7 +5800,6 @@ select:focus {
   margin-top: 12px;
   padding: 10px 12px 8px;
   border: 1px solid var(--border-soft);
-  border-left: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
   border-radius: var(--radius-sm);
   background: var(--bg);
 }
@@ -5829,14 +5844,17 @@ select:focus {
 /* 待注入队列：内容区右上角、导演工具栏正下方的独立面板，空则不渲染。排队中的话能改也能撤。
    定位挂在内容区（.stage-main，position: relative）而不是视口：之前写的是
    fixed + 一个早已不存在的顶栏偏移（--gui-h），面板凭空下移 52px。
-   top 要让开 .theater-director（8px 起、44px 高 = 8+44=52），60px 留 8px 空档；
+   top 要让开 .theater-director（10px 起、30px 高 = 40），44px 留 4px 空档；
    之前这里跟工具栏同锚 top:8px，两块整块叠上，看着像同一块面板。 */
-/* 舞台左上角两段式模式切换（舞台 ⇄ 工坊） */
+/* 舞台左上角两段式模式切换（舞台 ⇄ 工坊）。
+   内边距 10px 与工坊侧栏顶端那枚同款开关（.studio-rail-switch 的 10px）对齐：
+   两个视图之间来回切时，同一枚控件应当落在同一个点上，不该跳一下。
+   窄屏（≤720px 那一节）本来就是 10px，桌面这次跟齐。 */
 .stage-top-left-cluster {
   position: absolute;
   z-index: 38;
-  top: calc(14px + env(safe-area-inset-top, 0px));
-  left: 16px;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  left: 10px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -5893,8 +5911,8 @@ select:focus {
 .prompt-queue {
   position: absolute;
   z-index: 43;
-  top: calc(48px + env(safe-area-inset-top, 0px));
-  right: 16px;
+  top: calc(44px + env(safe-area-inset-top, 0px));
+  right: 10px;
   width: min(86vw, 288px);
   padding: 8px 10px;
   border: 1px solid var(--stage-chrome-edge);
@@ -5906,11 +5924,25 @@ select:focus {
   font-size: 12px;
 }
 
+/* 排队面板是压在画面上的那层玻璃器具（底走 --stage-chrome-bg，恒深，不跟界面深浅），
+   所以它的字也恒走深玻璃那一套：界面切浅色时若照搬 --dialog-ink（那时是深墨），
+   就是深墨压在深玻璃上，一个字都读不出来。
+   工坊里那份 dock 版另有一套纸面令牌覆盖（下面 .prompt-queue-docked，同类名后写者胜）。 */
+.prompt-queue,
+.prompt-queue-badge {
+  --dialog-ink: #f8fafc;
+  --dialog-ink-soft: #cbd5e1;
+  --dialog-ink-faint: rgba(248, 250, 252, 0.55);
+  --dialog-bad: #fb7185;
+  --dialog-veil: rgba(255, 255, 255, 0.06);
+  --dialog-hover: rgba(255, 255, 255, 0.12);
+}
+
 .prompt-queue-badge {
   position: absolute;
   z-index: 42;
-  top: calc(48px + env(safe-area-inset-top, 0px));
-  right: 16px;
+  top: calc(44px + env(safe-area-inset-top, 0px));
+  right: 10px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -5968,7 +6000,7 @@ select:focus {
    横向就跟标识错开了，不用动。宽屏上两者仍平齐。 */
 @media (max-width: 520px) {
   .stage-modes ~ .prompt-queue {
-    top: calc(96px + env(safe-area-inset-top, 0px));
+    top: calc(92px + env(safe-area-inset-top, 0px));
   }
 }
 /* 工坊：同一块面板不浮在内容上，改贴内容区底部一条（右上角是各页自己的头）。
@@ -6431,7 +6463,9 @@ select:focus {
 /* 收尾后还留着的那几秒：压暗，别和还在跑的抢注意力。 */
 .prompt-queue-row.pending-job.done .prompt-queue-text,
 .prompt-queue-row.pending-job.done .prompt-queue-meta {
-  color: var(--ink-faint);
+  /* 走玻璃那套墨色，不是纸面那套：这块面板的底恒深（工坊 dock 版已把
+     --dialog-ink-faint 映射回 --ink-faint，两边都对） */
+  color: var(--dialog-ink-faint);
 }
 /* 失败行：留在面板上等人处理的那一类，跟 done 的「刚完成」反过来——
    左边框与图标都上警示色，展开的那段错因也用它，让一行从头到尾都在说同一件事。 */
@@ -6808,10 +6842,6 @@ select:focus {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
 
-  .where-row {
-    flex-wrap: wrap;
-  }
-
   /* ── 工坊：轨道从左边一条竖排改成顶上两行（切换器 + 剧名 / 一排 tab），
         内容区独占整宽。三列并排曾经把正文挤成每行两个字。 ── */
   .workshop-studio {
@@ -6827,6 +6857,11 @@ select:focus {
     align-items: center;
     width: 100%;
     flex: 0 0 auto;
+    /* 手机全屏（含刘海/挖孔）时顶端要让开摄像头那一条。舞台上同款的那枚
+       「舞台 ⇄ 工坊」开关落点是 top 10px + env(safe-area-inset-top)，
+       这里必须同一个落点——否则舞台 ⇄ 工坊来回切，同一枚控件会跳一下。 */
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
     border-right: none;
     border-bottom: 1px solid var(--border);
   }
@@ -6964,9 +6999,8 @@ select:focus {
   }
 
   /* ── 舞台外壳：顶上两行 chrome（切换器一行、导演栏一行），队列与模式标识顺次让开 ── */
+  /* 内边距 10px 现在与桌面同值（桌面那节也是 10），这里只收独窄屏的那一格间距 */
   .stage-top-left-cluster {
-    top: calc(10px + env(safe-area-inset-top, 0px));
-    left: 10px;
     gap: 8px;
   }
 
@@ -7122,27 +7156,8 @@ select:focus {
     padding: 5px 14px;
   }
 
-  /* 标题画面右下那两个出口（导出 / 删除）：抬到 32px 并让开手势条 */
-  .title-footer {
-    right: 12px;
-    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-  }
-
-  /* 这两个出口现在站在底部那层白雾上（原先直接压着插画）：白字 + 深色描边
-     在白底上等于没了，换成同一族的蓝灰字 + 白色柔光 */
-  .title-op-link,
-  .title-op-btn {
-    min-height: 32px;
-    padding: 6px 2px;
-    font-size: 11.5px;
-    color: color-mix(in srgb, var(--atri-ink) 78%, #46586f);
-    text-shadow: 0 0 4px rgba(255, 255, 255, 0.95), 0 1px 0 rgba(255, 255, 255, 0.8);
-  }
-
-  .title-op-link:hover,
-  .title-op-btn:hover {
-    color: var(--atri-ink);
-  }
+  /* 标题画面底边那条（版权 / 导出 / 删除）现在桌面与窄屏同一套——
+     样式写在基础规则里（那套原本只长在窄屏上），这里不再分叉。 */
 
   .stage-panel-actions::-webkit-scrollbar {
     display: none;

@@ -266,7 +266,7 @@ export function FileBrowser({
             </p>
             <p className="muted small">
               <code>memory/**</code> 与 <code>characters/**</code>{" "}
-              下面的可以改；素材、剧本台账这些是引擎写的，打开只能看。
+              可改；素材与台账由引擎写入，只能看。
             </p>
           </div>
         )}

@@ -20,10 +20,12 @@ import {
   History,
   Image,
   LogOut,
+  Maximize,
   Maximize2,
   MessageSquare,
   MessagesSquare,
   Mic,
+  Minimize,
   PanelLeftClose,
   PanelLeftOpen,
   Pause,
@@ -77,6 +79,9 @@ const ICONS = {
   settings: SlidersHorizontal,
   workshop: Hammer,
   expand: Maximize2,
+  /** 进出全屏：四角张开的方框；`expand` 是「看全这棵树」的放大镜语义，不共用字形。 */
+  fullscreen: Maximize,
+  "fullscreen-exit": Minimize,
   /** 侧栏收/放是一对镜像图标，与「回顾」的字形不撞——同形会让两处含义混。 */
   shrink: PanelLeftClose,
   unshrink: PanelLeftOpen,

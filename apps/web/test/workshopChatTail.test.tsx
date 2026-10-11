@@ -89,8 +89,6 @@ function mountChat() {
       }}
       send={() => undefined}
       connected
-      voice={{ on: false, available: false, onToggle: () => undefined }}
-      continueCard={{ on: false, onToggle: () => undefined }}
     />,
   );
 

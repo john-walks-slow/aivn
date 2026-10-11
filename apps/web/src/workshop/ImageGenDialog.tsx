@@ -260,7 +260,7 @@ export function ImageGenDialog({
       };
     }
     return {
-      text: `缺 neutral 定妆照（已有 ${spriteDir.variants.join("、")}）：请先单独出一次 neutral 再出差分，否则会与已有差分不是同一个人。`,
+      text: "缺 neutral 定妆照：请先单独出一次 neutral 再出差分，否则新差分与已有的不是同一个人。",
     };
   })();
 
@@ -704,7 +704,7 @@ export function ImageGenDialog({
               className="muted small"
               style={{ textAlign: "center", padding: "8px 0" }}
             >
-              AI 正在绘制并抠底处理中，请稍候（不会阻塞其他操作）…
+              正在绘制，请稍候（不影响其他操作）…
             </div>
           )}
           {hasPending && (
@@ -712,7 +712,7 @@ export function ImageGenDialog({
               className="muted small"
               style={{ textAlign: "center", padding: "8px 0" }}
             >
-              这一批还在画（每张约 1~2 分钟，并行数由设置页的出图并发决定）…
+              这一批还在画（每张约 1~2 分钟）…
             </div>
           )}
         </div>

@@ -3,6 +3,9 @@
  *
  * 约定：theme.css 只覆盖 `:root` 上的设计令牌（颜色/圆角/阴影/字族），不改结构。
  * 令牌全集见 app.css 顶部注释——剧目作者照着改颜色即可换皮，不必理解组件。
+ * 主题色那两个名字（--accent 管界面、--play-accent 管舞台）见 `ui/playTheme.ts` 的
+ * themeCssFor：引擎的默认档与预设档都在 `@layer aivn-defaults` 里，这张表未分层，
+ * 所以**深浅两种主题下都是它说了算**。
  */
 
 let link: HTMLLinkElement | null = null;

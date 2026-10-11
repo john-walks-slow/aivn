@@ -53,11 +53,14 @@
   --ink-soft: #5b5348;
   --ink-faint: #9a9081;
   --line: #ded5c4;
-  /* 主题蓝：与界面 --accent 同色相（ATRI 深海天蓝），舞台衬底深，明度提一档。
-     剧目的 theme.css 覆盖 --accent 时，对话框 / 快捷菜单 / 选肢 / 名牌一起换。 */
-  --accent: #2b6fae;
-  --accent-ink: #f7fbff;
-  --accent-soft: #dde7f0;
+  /* 主题蓝：来自剧目主题色的三件（--play-accent / --play-accent-ink 由 plays/<id>/theme.css
+     写在 :root 上；没有就是引擎这一档）。**必须转一道手**：舞台根本身是 .stage-root，
+     它一旦自己声明 --accent，从 <html> 继承下来的剧目主题色就再也进不来（元素自身的声明
+     永远压过继承值，跟选择器特异性无关）——2026-10-10 之前就是这样：工坊里挑了主题色，
+     界面跟着换、舞台一个像素不动。--accent-soft 从 --accent 派生，两种深浅各一条配比。 */
+  --accent: var(--play-accent, #2b6fae);
+  --accent-ink: var(--play-accent-ink, #f7fbff);
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, #ffffff);
   --link: #2f5d7c;
   --radius: 2px; /* 近直角：AVG 的窗与键都不圆 */
 
@@ -81,13 +84,32 @@
      给不在 .stage-root 里的舞台浮层用）。 */
   --stage-chrome-h: 30px;
   --stage-chrome-radius: 999px;
-  /* 比对话框更深、更灰：对话框是这场戏的一部分，工具栏是压在画面上的器具 */
-  --stage-chrome-deep: color-mix(in srgb, var(--accent) 52%, #060e1c);
+  /* 比对话框更深：对话框是这场戏的一部分，工具栏是压在画面上的器具。
+     压深掺的是一支**同色相的深蓝**（#071a2e），不是中性灰——掺灰会把这条蓝的饱和度
+     一起吃掉，读起来就是「脏」；掺同色相的深色只压明度、不动色相，
+     于是这条底与工坊侧栏那枚同款开关的选中态（实心 --accent）是同一支蓝。 */
+  --stage-chrome-deep: color-mix(in srgb, var(--accent) 56%, #071a2e);
+  /* 渐变的两档都是**不透明色**：顶掺浅蓝给一道亮带，底落在 deep。上一版是同一个色
+     只改 alpha（84% → 97%），画面亮处从顶上那 16% 透上来，整条读起来是一块脏污
+     而不是一块玻璃。这里只留一点点透明度（92 / 99）够玻璃感就行。 */
+  --stage-chrome-lit: color-mix(in srgb, var(--stage-chrome-deep) 78%, #6ea6dc);
   --stage-chrome-bg: linear-gradient(180deg,
-    color-mix(in srgb, var(--stage-chrome-deep) 84%, transparent),
-    color-mix(in srgb, var(--stage-chrome-deep) 97%, transparent));
-  --stage-chrome-edge: color-mix(in srgb, var(--accent) 55%, rgba(255, 255, 255, 0.35));
-  --stage-chrome-gloss: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    color-mix(in srgb, var(--stage-chrome-lit) 92%, transparent),
+    color-mix(in srgb, var(--stage-chrome-deep) 99%, transparent));
+  /* 描边走不透明的浅蓝，不走「accent 掺半透明白」——白掺进半透明里就是一层灰雾 */
+  --stage-chrome-edge: color-mix(in srgb, var(--accent) 55%, #a9cdec);
+  --stage-chrome-gloss: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  /* 导演栏那层「很浅的主题色玻璃」：它压在画面上、又是三处 chrome 里最不该抢戏的一处，
+     所以底色比另外两处淡——但那条淡要**同一支蓝抬明度**抬出来，不是掺白掺出来的灰白。
+     上一版掺的是 rgb(255 255 255) 且带两三成透明（0.95 / 0.84）：亮画面从底下透上来，
+     这块就成了一团发灰的牛奶。浅色主题就是这套；深色主题整条翻深（见下面 dark 那一块）。 */
+  --stage-chrome-quiet-bg: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent) 16%, rgb(247 251 255 / 0.97)),
+    color-mix(in srgb, var(--accent) 30%, rgb(226 238 252 / 0.94)));
+  --stage-chrome-quiet-edge: color-mix(in srgb, var(--accent) 34%, #dbe9f8);
+  --stage-chrome-quiet-ink: color-mix(in srgb, var(--accent) 38%, #142138);
+  --stage-chrome-quiet-ink-hover: color-mix(in srgb, var(--accent) 55%, #0d1830);
+  --stage-chrome-quiet-hover: color-mix(in srgb, var(--accent) 14%, transparent);
   /* 选肢的两档底：常态是一条压在画面上的白缎带（字走主题色），
      悬停/选中直接换成主题色的实缎带（字走白）。
      常态不给主题色底——一排浅蓝条压在画面上会跟立绘抢注意力，
@@ -124,6 +146,38 @@
   --choice-ink: #f8fafc;
   --choice-active-bg: color-mix(in srgb, var(--accent) 35%, rgba(22, 28, 42, 0.95));
   --choice-scrim: linear-gradient(180deg, transparent 20%, rgba(8, 10, 16, 0.65) 100%);
+
+  /* 弹窗（Modal）令牌：一块压在页面上的卡片。深浅两档都在令牌里，
+     弹窗本身一处颜色都不写死——它是全站共用的那一枚
+     （导演动作 / 删周目 / 删剧目 / 生图 / 工坊确认都走它）。
+     基线这一份是**深色**那一档，和 --dialog-* / --choice-* 同一个道理：
+     宿主不一定设 data-ui-theme（DSH 插件里的舞台就在没有属性的 html 下跑），
+     没有属性时它必须还是它今天的样子；浅色那一档在下面 html[data-ui-theme="light"] 里。 */
+  --modal-bg: linear-gradient(175deg,
+    color-mix(in srgb, var(--accent) 18%, rgba(6, 15, 30, 0.94)) 0%,
+    color-mix(in srgb, var(--accent) 10%, rgba(3, 8, 18, 0.97)) 100%);
+  --modal-edge: color-mix(in srgb, var(--accent) 42%, rgba(255, 255, 255, 0.18));
+  --modal-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 0 40px color-mix(in srgb, var(--accent) 24%, transparent),
+    0 24px 56px rgba(0, 0, 0, 0.65);
+  --modal-glow: color-mix(in srgb, var(--accent) 80%, #ffffff);
+  --modal-scrim: radial-gradient(circle at 50% 45%, rgba(4, 12, 24, 0.58) 0%, rgba(1, 4, 10, 0.85) 100%);
+  --modal-hover: rgba(255, 255, 255, 0.12);
+  --modal-line: color-mix(in srgb, var(--accent) 22%, rgba(255, 255, 255, 0.08));
+  --modal-field: rgba(2, 7, 16, 0.6);
+  --modal-field-edge: color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.14));
+  /* 占位符、快捷键提示、关闭键共用这一档「比正文淡」的墨色 */
+  --modal-faint: rgba(255, 255, 255, 0.5);
+  --modal-btn-bg: rgba(255, 255, 255, 0.06);
+  --modal-btn-edge: rgba(255, 255, 255, 0.16);
+  --modal-btn-hover-bg: rgba(255, 255, 255, 0.14);
+  --modal-btn-hover-edge: rgba(255, 255, 255, 0.28);
+  --modal-danger: #fca5a5;
+  --modal-danger-bg: rgba(239, 68, 68, 0.2);
+  --modal-danger-edge: rgba(239, 68, 68, 0.5);
+  --modal-danger-bg-hover: rgba(239, 68, 68, 0.35);
+  --modal-danger-ink-hover: #ffffff;
   --shadow: 0 6px 18px rgb(34 24 16 / 0.16);
 
   /* ③ 运动 */
@@ -158,7 +212,9 @@
   }
 }
 
-/* 主题切换：UI（纸面）与舞台（画面）各自一套，由 <html> 上的 data-* 属性驱动。
+/* 主题切换：纸面（界面）与画面（舞台）**共用一套**，由 <html> 上的 data-ui-theme 驱动。
+   舞台曾经另有 data-stage-theme（恒深色），2026-10-10 撤掉：切一次深浅只该切一处，
+   台词条 / 选肢 / 名牌 / chrome / 弹窗全都跟着它走。
    用属性选择器而不是内联 style 写 :root —— 剧目定制主题（plays/<id>/theme.css）
    挂的是 :root 变量，内联 style 优先级更高会把它整张压掉，用户换的皮就没了。
    属性选择器只覆盖下面这几个令牌，剧目主题没碰到的部分照旧生效。 */
@@ -172,60 +228,68 @@ html[data-ui-theme="dark"] .stage-root {
   --ink-soft: #b3a897;
   --ink-faint: #8a8073;
   --line: #3d362f;
-  --accent: #8ab6dd; /* 深底上的主色要提亮，否则色相压黑糊成一团 */
-  --accent-ink: #101820;
-  --accent-soft: rgba(138, 182, 221, 0.18);
+  /* 暖黑那一档：剧目给了 --play-accent-dark 就用它（纸面档压在暖黑上做字读不清），
+     没给就退回纸面档——「主题色消失」比「主题色偏暗」糟得多。 */
+  --accent: var(--play-accent-dark, var(--play-accent, #8ab6dd));
+  --accent-ink: var(--play-accent-dark-ink, var(--play-accent-ink, #101820));
+  --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
   --link: #8fb8d4;
+  /* 导演栏：暖黑界面上翻成一条深玻璃（比左上角那枚更沉、字走冷白），
+     不再是画面右上角一块刺眼的白斑。掺的仍然是 accent 那一支蓝（26% / 14%），
+     不掺中性黑——掺中性黑出来的是一块灰板，与左上角那条蓝不是一家。 */
+  --stage-chrome-quiet-bg: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent) 26%, rgb(8 18 30 / 0.86)),
+    color-mix(in srgb, var(--accent) 14%, rgb(5 12 21 / 0.92)));
+  --stage-chrome-quiet-edge: color-mix(in srgb, var(--accent) 34%, rgba(255, 255, 255, 0.14));
+  --stage-chrome-quiet-ink: color-mix(in srgb, var(--accent) 26%, #e8eef6);
+  --stage-chrome-quiet-ink-hover: #ffffff;
+  --stage-chrome-quiet-hover: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 /* 主色预设：设置页选哪一档就挂哪个 data-accent（useTheme.applyAccent）。
    每个预设给浅底/深底两套值——同一色相在纸面上要压得住、在暖黑上要提得起。
+   同样走 var(--play-accent, …)：剧目挑了主题色就是剧目优先，预设只决定「没挑时是哪一档」
+   （app.css 里那份是同一套值的孪生，给不在 .stage-root 子树里的浮层用）。
+   --accent-soft 不再逐档写死：它从 --accent 派生，深浅两条配比见上面两个基础块。
    custom 不在这里：那个色由 useTheme 写成内联 --accent。 */
 html[data-accent="teal"] .stage-root {
-  --accent: #2f6f73;
-  --accent-ink: #f3fbfa;
-  --accent-soft: #d7e8e8;
+  --accent: var(--play-accent, #2f6f73);
+  --accent-ink: var(--play-accent-ink, #f3fbfa);
 }
 html[data-accent="green"] .stage-root {
-  --accent: #4a6f45;
-  --accent-ink: #f6faf2;
-  --accent-soft: #dfe9da;
+  --accent: var(--play-accent, #4a6f45);
+  --accent-ink: var(--play-accent-ink, #f6faf2);
 }
 html[data-accent="violet"] .stage-root {
-  --accent: #6a5599;
-  --accent-ink: #faf7ff;
-  --accent-soft: #e5dff2;
+  --accent: var(--play-accent, #6a5599);
+  --accent-ink: var(--play-accent-ink, #faf7ff);
 }
 html[data-accent="wine"] .stage-root {
-  --accent: #9b3b4f;
-  --accent-ink: #fff7f3;
-  --accent-soft: #f4e3e2;
+  --accent: var(--play-accent, #9b3b4f);
+  --accent-ink: var(--play-accent-ink, #fff7f3);
 }
 html[data-ui-theme="dark"][data-accent="teal"] .stage-root {
-  --accent: #79b8bd;
-  --accent-ink: #0e1a1b;
-  --accent-soft: rgba(121, 184, 189, 0.18);
+  --accent: var(--play-accent-dark, var(--play-accent, #79b8bd));
+  --accent-ink: var(--play-accent-dark-ink, var(--play-accent-ink, #0e1a1b));
 }
 html[data-ui-theme="dark"][data-accent="green"] .stage-root {
-  --accent: #9cbb92;
-  --accent-ink: #131a11;
-  --accent-soft: rgba(156, 187, 146, 0.18);
+  --accent: var(--play-accent-dark, var(--play-accent, #9cbb92));
+  --accent-ink: var(--play-accent-dark-ink, var(--play-accent-ink, #131a11));
 }
 html[data-ui-theme="dark"][data-accent="violet"] .stage-root {
-  --accent: #ab98d8;
-  --accent-ink: #16121f;
-  --accent-soft: rgba(171, 152, 216, 0.18);
+  --accent: var(--play-accent-dark, var(--play-accent, #ab98d8));
+  --accent-ink: var(--play-accent-dark-ink, var(--play-accent-ink, #16121f));
 }
 html[data-ui-theme="dark"][data-accent="wine"] .stage-root {
-  --accent: #d98a7a;
-  --accent-ink: #1a1512;
-  --accent-soft: rgba(217, 138, 122, 0.18);
+  --accent: var(--play-accent-dark, var(--play-accent, #d98a7a));
+  --accent-ink: var(--play-accent-dark-ink, var(--play-accent-ink, #1a1512));
 }
 
-/* 舞台浅色：台词条 / 选肢卡整套换成浅底深字。
+/* 舞台浅色：台词条 / 选肢卡整套换成浅底深字（与 app.css 里那份是同一套值，
+   两处要一起改——那边那份给「不在 .stage-root 子树里」的舞台浮层用）。
    这套的取舍和深色相反——深色模式靠「玻璃压住画面」，浅色没有压的余地，
    所以底色必须实（0.88 起步）而不是半透明，否则背景图的亮部会透上来吃掉字。 */
-html[data-stage-theme="light"] .stage-root {
+html[data-ui-theme="light"] .stage-root {
   --stage-bg: #efece5;
   --dialog-bg: linear-gradient(178deg, rgb(252 250 246 / 0.94), rgb(240 236 228 / 0.96));
   --dialog-line: rgb(120 108 92 / 0.45);
@@ -239,49 +303,78 @@ html[data-stage-theme="light"] .stage-root {
   --dialog-hover: rgb(120 108 92 / 0.12);
   --dialog-veil: rgb(120 108 92 / 0.07);
   --dialog-shadow: 0 10px 30px rgb(60 48 32 / 0.18);
-  --choice-bg: rgb(252 250 246 / 0.94);
-  --choice-line: rgb(120 108 92 / 0.4);
-  --choice-ink: #23201c;
-  --choice-active-bg: color-mix(in srgb, var(--accent) 22%, transparent);
+  /* 台词条 / 选肢卡：浅色下是「纸底 + 深墨字」，但纸底不是纯纸白——
+     底色掺一成多主题色，卡面与台词条才跟着剧目换色相（早先这里是写死的纸白，
+     于是深色下整条台词条是主题色、切浅色就只剩白与黑）。掺得多一点是因为
+     浅色没有玻璃那层压深，太淡的色调在亮背景图上根本看不出来。 */
+  /* 掺得不透明：浅色下没有玻璃那层压深，底色得做实，否则背景图的暗部透上来会把
+     主题色字吃掉一档（实测 0.94 不透明度在纯黑场下从 4.67:1 掉到 4.4:1）。 */
+  --choice-bg: color-mix(in srgb, var(--accent) 10%, rgb(252 250 246));
+  --choice-line: color-mix(in srgb, var(--accent) 38%, rgb(120 108 92 / 0.4));
+  /* 卡面正文走主题色的深墨版：与深色那套（白缎带 + 主题色字）对称。
+     掺比 78% 是量出来的：色板八档在这一档底色上最低 4.67:1（悬停那档另配 62%，见下）。 */
+  --choice-ink: color-mix(in srgb, var(--accent) 78%, #0b2545);
+  --choice-active-bg: color-mix(in srgb, var(--accent) 26%, rgb(252 250 246));
   --choice-scrim: linear-gradient(180deg, transparent 24%, rgb(239 236 229 / 0.55));
   --nameplate-bg: rgb(252 250 246 / 0.94);
   --nameplate-ink: #23201c;
   --nameplate-line: rgb(90 80 68 / 0.45);
   --title-ink: #23201c;
   --title-shadow: 0 2px 12px rgb(255 255 255 / 0.6);
+  /* 弹窗：纸白卡片 + 深墨字（深色那一份是基线，见上面 .stage-root 里的注释） */
+  --modal-bg: linear-gradient(175deg, rgb(255 255 255 / 0.97) 0%, rgb(245 246 248 / 0.99) 100%);
+  --modal-edge: color-mix(in srgb, var(--accent) 24%, rgb(120 108 92 / 0.28));
+  --modal-shadow: inset 0 1px 0 rgb(255 255 255 / 0.9), 0 18px 44px rgb(48 40 30 / 0.22);
+  --modal-glow: color-mix(in srgb, var(--accent) 70%, #ffffff);
+  --modal-scrim: radial-gradient(circle at 50% 45%, rgb(70 60 48 / 0.34) 0%, rgb(38 32 24 / 0.5) 100%);
+  --modal-hover: rgb(120 108 92 / 0.12);
+  --modal-line: color-mix(in srgb, var(--accent) 20%, rgb(120 108 92 / 0.24));
+  --modal-field: rgb(255 255 255 / 0.72);
+  --modal-field-edge: color-mix(in srgb, var(--accent) 22%, rgb(120 108 92 / 0.34));
+  --modal-faint: color-mix(in srgb, var(--ink) 64%, transparent);
+  --modal-btn-bg: rgb(120 108 92 / 0.08);
+  --modal-btn-edge: rgb(120 108 92 / 0.26);
+  --modal-btn-hover-bg: rgb(120 108 92 / 0.16);
+  --modal-btn-hover-edge: rgb(120 108 92 / 0.42);
+  --modal-danger: #b3372f;
+  --modal-danger-bg: color-mix(in srgb, #b3372f 12%, transparent);
+  --modal-danger-edge: color-mix(in srgb, #b3372f 42%, transparent);
+  --modal-danger-bg-hover: color-mix(in srgb, #b3372f 22%, transparent);
+  --modal-danger-ink-hover: #7d2019;
 }
 
 /* ── 浅色舞台：把 ATRI 那几块表面接回主题令牌 ──────────────────
    台词条 / 正文 / 名牌 / 选肢在深色下是「白字压在深玻璃上」，浅色下必须整体翻过来：
    底板做实（浅色没有压住画面的余地，半透明会被背景亮部吃掉），字走深墨。
-   深色那套一个字节都不动——下面每条都只挂在 html[data-stage-theme="light"] 下。
+   深色那套一个字节都不动——下面每条都只挂在 html[data-ui-theme="light"] 下。
    （重设计时这几块换成了写死的白字与主题色派生底，主题令牌没人读了，
-   于是「舞台主题」只剩几处小提示字在跟着变——这一节就是把它接回去。） */
-/* 底板照深色那套的结构（自上而下渐浓），只是换成纸白——直接铺 --dialog-bg
-   那条实心渐变会在画面上切出一条横线，像贴了张纸 */
-html[data-stage-theme="light"] .stage-root .theater-dialog {
+   于是切换只有几处小提示字在跟着变——这一节就是把它接回去。） */
+/* 底板照深色那套的结构（自上而下渐浓），只是换成「掺了主题色的纸白」——直接铺 --dialog-bg
+   那条实心渐变会在画面上切出一条横线，像贴了张纸；而纯纸白（早先那版）又把剧目主题色丢了。
+   掺比逐段加重：顶上还是全透明（与画面接得住），到底边那一档最浓。 */
+html[data-ui-theme="light"] .stage-root .theater-dialog {
   background: linear-gradient(180deg,
     rgb(252 250 246 / 0) 0%,
-    rgb(252 250 246 / 0.8) 18%,
-    rgb(240 236 228 / 0.94) 58%,
-    rgb(240 236 228 / 0.97) 100%);
+    color-mix(in srgb, var(--accent) 12%, rgb(252 250 246 / 0.8)) 18%,
+    color-mix(in srgb, var(--accent) 18%, rgb(240 236 228 / 0.94)) 58%,
+    color-mix(in srgb, var(--accent) 22%, rgb(240 236 228 / 0.97)) 100%);
 }
 
-html[data-stage-theme="light"] .stage-root .dialog-text {
+html[data-ui-theme="light"] .stage-root .dialog-text {
   color: var(--dialog-ink);
   text-shadow: none;
 }
 
-html[data-stage-theme="light"] .stage-root .dialog-text.narrate {
+html[data-ui-theme="light"] .stage-root .dialog-text.narrate {
   color: var(--dialog-ink-soft);
 }
 
-html[data-stage-theme="light"] .stage-root .dialog-text.thought {
+html[data-ui-theme="light"] .stage-root .dialog-text.thought {
   color: var(--dialog-ink-thought);
 }
 
 /* 名牌：浅色下翻成深墨 + 一圈白晕（深色那套是白字 + 深晕，两边对称） */
-html[data-stage-theme="light"] .stage-root .dialog-name {
+html[data-ui-theme="light"] .stage-root .dialog-name {
   color: var(--nameplate-ink);
   text-shadow:
     0 0 2px rgb(255 255 255 / 0.95),
@@ -289,20 +382,29 @@ html[data-stage-theme="light"] .stage-root .dialog-name {
     0 1px 3px rgb(255 255 255 / 0.9);
 }
 
-/* 选肢：浅色下换成浅底深字的一张实心卡（沿用 --choice-* 那三档） */
-html[data-stage-theme="light"] .stage-root .choice {
+/* 选肢：浅色下换成浅底深字的一张实心卡（沿用 --choice-* 那四档，它们都从 --accent 派生） */
+html[data-ui-theme="light"] .stage-root .choice {
   background: var(--choice-bg);
   border: 1px solid var(--choice-line);
   border-radius: 2px;
   color: var(--choice-ink);
 }
 
-html[data-stage-theme="light"] .stage-root .choice:hover:not(:disabled),
-html[data-stage-theme="light"] .stage-root .choice:focus-visible {
+html[data-ui-theme="light"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"] .stage-root .choice:focus-visible {
   background: var(--choice-active-bg);
   border-color: var(--accent);
-  color: var(--ink);
+  /* 悬停底比常态浓（26% 主题色），字就得跟着再深一档——同一个色相，不是翻成中性墨，
+     否则一悬停主题色就没了。62% 是那一档底上量出来的下限（色板最低 4.86:1）。 */
+  color: color-mix(in srgb, var(--accent) 62%, #0b2545);
   text-shadow: none;
+}
+
+/* 悬停态的序号徽：深色那套是白字压在实心主题色缎带上；浅色那套底色是淡主题色，
+   序号必须翻成深墨（白字压在淡底上等于没了） */
+html[data-ui-theme="light"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"] .stage-root .choice:focus-visible .choice-num {
+  color: color-mix(in srgb, var(--accent) 62%, #0b2545);
 }
 
 /* ── 舞台 ─────────────────────────────── */
@@ -1412,7 +1514,7 @@ html[data-stage-theme="light"] .stage-root .choice:focus-visible {
   color: var(--dialog-ink-faint);
 }
 
-/* 「（继续）」那类无内容卡：走同一形制，只是不给主色标尺 */
+/* 自由输入那张卡：走同一形制，只是不给主色标尺 */
 .choice.ghost {
   color: color-mix(in srgb, var(--accent) 72%, #0b2545);
   font-size: 14.5px;
@@ -1643,9 +1745,10 @@ button.primary:hover:not(:disabled) {
 }
 
 /* ── 游戏系统窗：导演动作的输入与选择（轻盈融入、HUD 质感） ───────
-   舞台是深色的、流动的。弹窗不再是套框套层、顶着厚胶囊的网页对话框，
-   而是一块沉浸在舞台之上的精致微透 HUD 控制终端：
-   单层通透琉璃底板 + 顶部微光微边 + 内嵌极简标题栏 + 舒展充裕的多行输入区。 */
+   弹窗不是套框套层、顶着厚胶囊的网页对话框，而是一块压在页面之上的微透卡片：
+   单层底板 + 顶部微光微边 + 内嵌极简标题栏 + 舒展充裕的多行输入区。
+   深浅两套只在令牌里分叉（.stage-root 给浅色、html[data-ui-theme="dark"] 覆盖成深色）：
+   它是全站共用的那一枚，切了主题还是老样子就是这里写死了颜色。 */
 
 .modal-scrim {
   position: fixed;
@@ -1655,7 +1758,8 @@ button.primary:hover:not(:disabled) {
   align-items: center;
   justify-content: center;
   padding: 24px 16px calc(24px + var(--safe-b, 0px));
-  background: radial-gradient(circle at 50% 45%, rgba(4, 12, 24, 0.58) 0%, rgba(1, 4, 10, 0.85) 100%);
+  background: var(--modal-scrim,
+    radial-gradient(circle at 50% 45%, rgba(4, 12, 24, 0.58) 0%, rgba(1, 4, 10, 0.85) 100%));
   backdrop-filter: blur(8px) saturate(1.15);
   animation: modal-scrim-in 0.18s ease-out;
 }
@@ -1672,16 +1776,25 @@ button.primary:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   padding: 18px 22px 18px;
-  border: 1px solid color-mix(in srgb, var(--accent) 42%, rgba(255, 255, 255, 0.18));
+  border: 1px solid var(--modal-edge, color-mix(in srgb, var(--accent) 42%, rgba(255, 255, 255, 0.18)));
   border-radius: 8px;
-  background: linear-gradient(175deg,
+  background: var(--modal-bg, linear-gradient(175deg,
     color-mix(in srgb, var(--accent) 18%, rgba(6, 15, 30, 0.94)) 0%,
-    color-mix(in srgb, var(--accent) 10%, rgba(3, 8, 18, 0.97)) 100%);
+    color-mix(in srgb, var(--accent) 10%, rgba(3, 8, 18, 0.97)) 100%));
   backdrop-filter: blur(24px) saturate(1.2);
-  box-shadow:
+  box-shadow: var(--modal-shadow,
     inset 0 1px 0 rgba(255, 255, 255, 0.16),
     0 0 40px color-mix(in srgb, var(--accent) 24%, transparent),
-    0 24px 56px rgba(0, 0, 0, 0.65);
+    0 24px 56px rgba(0, 0, 0, 0.65));
+  color: var(--ink);
+  animation: modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+/* 卡片内嵌控件（输入框 / 分段器 / 引用 chip）读的是纸面令牌，深色卡片上要一起压深，
+   否则它们会拿 .stage-root 的浅色纸底在深卡片上留白块。
+   基线这一份是深色（与弹窗令牌同一条规矩：没有属性时保持原样）。 */
+.modal-card {
   --panel: rgba(5, 14, 28, 0.65);
   --bg: rgba(2, 6, 14, 0.5);
   --line: color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.15));
@@ -1690,9 +1803,18 @@ button.primary:hover:not(:disabled) {
   --ink-faint: rgba(180, 205, 230, 0.55);
   --ink-muted: rgba(200, 220, 240, 0.68);
   --accent-soft: color-mix(in srgb, var(--accent) 26%, transparent);
-  color: var(--ink);
-  animation: modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  overflow: hidden;
+}
+
+/* 浅色主题：同一批令牌换成纸面那一套（和紙） */
+html[data-ui-theme="light"] .modal-card {
+  --panel: rgb(248 246 242 / 0.9);
+  --bg: rgb(255 255 255 / 0.72);
+  --line: color-mix(in srgb, var(--accent) 20%, rgb(120 108 92 / 0.3));
+  --ink: #23201c;
+  --ink-soft: #4a443c;
+  --ink-faint: #7d7568;
+  --ink-muted: rgb(35 32 28 / 0.72);
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 @keyframes modal-in {
@@ -1734,7 +1856,7 @@ button.primary:hover:not(:disabled) {
   width: 3px;
   height: 14px;
   border-radius: 2px;
-  background: color-mix(in srgb, var(--accent) 80%, #ffffff);
+  background: var(--modal-glow, color-mix(in srgb, var(--accent) 80%, #ffffff));
   box-shadow: 0 0 8px var(--accent);
 }
 
@@ -1743,8 +1865,7 @@ button.primary:hover:not(:disabled) {
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: #ffffff;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  color: var(--ink);
 }
 
 /* 微小英文类别标 */
@@ -1753,8 +1874,8 @@ button.primary:hover:not(:disabled) {
   font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.14em;
-  color: color-mix(in srgb, var(--accent) 65%, #ffffff);
-  opacity: 0.65;
+  color: color-mix(in srgb, var(--accent) 72%, var(--ink-soft));
+  opacity: 0.72;
   transform: translateY(1px);
 }
 
@@ -1770,7 +1891,7 @@ button.primary:hover:not(:disabled) {
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: rgba(255, 255, 255, 0.66);
+  color: var(--modal-faint, var(--ink-faint));
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
@@ -1778,20 +1899,20 @@ button.primary:hover:not(:disabled) {
 }
 
 .modal-x:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  background: var(--modal-hover, rgba(255, 255, 255, 0.12));
+  color: var(--ink);
 }
 
 .modal-x:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  color: #ffffff;
+  color: var(--ink);
 }
 
 /* 说明文字：温和收敛 */
 .modal-hint {
   margin: 0 0 12px;
-  color: rgba(200, 222, 245, 0.72);
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -1838,6 +1959,10 @@ button.primary:hover:not(:disabled) {
   transition: all var(--hover-ms) ease;
 }
 
+/* 注意：弹窗里这两枚（.guide-seg / .ooc-shortcut）真正生效的样式在文件末尾那节
+   「从 app.css 补搬的规则」里的 .seg / .seg .seg-btn / .ooc-shortcut——
+   同权重、位置更后，这里这几条被它们压着（它们走 --line/--bg/--panel/--ink-soft 令牌，
+   深浅两档本来就跟着走）。改弹窗里这两枚的样子要改那一节。 */
 .guide-seg .seg-btn:hover {
   color: #ffffff;
 }
@@ -1903,10 +2028,10 @@ button.primary:hover:not(:disabled) {
   box-sizing: border-box;
   min-height: 108px;
   padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.14));
+  border: 1px solid var(--modal-field-edge, color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.14)));
   border-radius: 6px;
-  background: rgba(2, 7, 16, 0.6);
-  color: #ffffff;
+  background: var(--modal-field, rgba(2, 7, 16, 0.6));
+  color: var(--ink);
   font-family: inherit;
   font-size: 13.5px;
   line-height: 1.62;
@@ -1925,11 +2050,11 @@ button.primary:hover:not(:disabled) {
     0 0 18px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-/* 占位符：0.32 的白压在近黑输入框上实测只有 2.75:1（"写一句…"那种提示读不清）。
-   0.5 提到 ~4.6:1，仍然是「比正文淡」的层次。 */
+/* 占位符是提示不是值，但要读得清：比正文淡一档即可（深色下实测 ~4.6:1） */
 .director-input textarea::placeholder,
-.modal-body textarea::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+.modal-body textarea::placeholder,
+.modal-body input::placeholder {
+  color: var(--modal-faint, rgba(255, 255, 255, 0.5));
 }
 
 /* 生图选项组 */
@@ -1947,7 +2072,7 @@ button.primary:hover:not(:disabled) {
   gap: 10px;
   margin-top: 14px;
   padding-top: 14px;
-  border-top: 1px solid color-mix(in srgb, var(--accent) 22%, rgba(255, 255, 255, 0.08));
+  border-top: 1px solid var(--modal-line, color-mix(in srgb, var(--accent) 22%, rgba(255, 255, 255, 0.08)));
 }
 
 .modal-foot > .free-back {
@@ -1963,7 +2088,7 @@ button.primary:hover:not(:disabled) {
   font-family: var(--font-mono, monospace);
   font-size: 11px;
   letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--modal-faint, rgba(255, 255, 255, 0.35));
   pointer-events: none;
 }
 
@@ -1975,10 +2100,10 @@ button.primary:hover:not(:disabled) {
   gap: 6px;
   height: 32px;
   padding: 0 18px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--modal-btn-edge, rgba(255, 255, 255, 0.16));
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--modal-btn-bg, rgba(255, 255, 255, 0.06));
+  color: var(--ink-soft);
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -1987,9 +2112,9 @@ button.primary:hover:not(:disabled) {
 }
 
 .modal-card button:not(.modal-x):not(.seg-btn):not(.ooc-shortcut):not(.ref-picker-chip):hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.28);
-  color: #ffffff;
+  background: var(--modal-btn-hover-bg, rgba(255, 255, 255, 0.14));
+  border-color: var(--modal-btn-hover-edge, rgba(255, 255, 255, 0.28));
+  color: var(--ink);
 }
 
 /* 主按键（发送 / 确认 / 生成）：主题色明澈质感 */
@@ -2020,17 +2145,21 @@ button.primary:hover:not(:disabled) {
   cursor: default;
 }
 
-/* 危险动作按钮（删除） */
+/* 危险动作按钮（删除）：浅色主题是深红字 + 淡红底，深色主题是亮红字 + 红玻璃底。
+   box-shadow 要显式压掉：它是 `primary danger-btn` 一起用的（删剧目 / 删周目），
+   上面那条 .primary 的主色外发光会把红键裹一圈蓝光。 */
 .modal-card button.danger-btn:not(.modal-x) {
-  border-color: rgba(239, 68, 68, 0.5);
-  background: rgba(239, 68, 68, 0.2);
-  color: #fca5a5;
+  border-color: var(--modal-danger-edge, rgba(239, 68, 68, 0.5));
+  background: var(--modal-danger-bg, rgba(239, 68, 68, 0.2));
+  color: var(--modal-danger, #fca5a5);
+  box-shadow: none;
 }
 
 .modal-card button.danger-btn:not(.modal-x):hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.35);
-  border-color: rgba(239, 68, 68, 0.7);
-  color: #ffffff;
+  background: var(--modal-danger-bg-hover, rgba(239, 68, 68, 0.35));
+  border-color: var(--modal-danger, rgba(239, 68, 68, 0.7));
+  color: var(--modal-danger-ink-hover, #ffffff);
+  box-shadow: none;
 }
 
 .ref-picker-grid {
@@ -2190,14 +2319,14 @@ button.primary:hover:not(:disabled) {
   gap: 2px;
   height: var(--stage-chrome-h, 30px);
   padding: 0 10px 0 14px;
-  border: 1px solid var(--stage-chrome-edge, color-mix(in srgb, var(--accent) 55%, rgba(255, 255, 255, 0.35)));
+  border: 1px solid var(--stage-chrome-edge, color-mix(in srgb, var(--accent) 55%, #a9cdec));
   border-right: none;
   border-bottom: none;
   border-radius: 15px 0 0 0;
   background: var(--stage-chrome-bg, linear-gradient(180deg,
-    color-mix(in srgb, var(--stage-chrome-deep) 84%, transparent),
-    color-mix(in srgb, var(--stage-chrome-deep) 97%, transparent)));
-  box-shadow: var(--stage-chrome-gloss, inset 0 1px 0 rgba(255, 255, 255, 0.14));
+    color-mix(in srgb, var(--stage-chrome-lit, var(--stage-chrome-deep)) 92%, transparent),
+    color-mix(in srgb, var(--stage-chrome-deep) 99%, transparent)));
+  box-shadow: var(--stage-chrome-gloss, inset 0 1px 0 rgba(255, 255, 255, 0.18));
 }
 
 .quick-btn {
@@ -2251,8 +2380,10 @@ button.primary:hover:not(:disabled) {
 .theater-director {
   position: absolute;
   z-index: 45;
-  top: calc(14px + env(safe-area-inset-top, 0px));
-  right: 16px;
+  /* 10px 与左上角「舞台 ⇄ 工坊」同一行、同一间距（那边也是 10px，
+     与工坊侧栏顶端那枚同款开关对齐），窄屏那节走的是同一组值 */
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: 10px;
   bottom: auto;
   display: flex;
   flex-direction: row;
@@ -2263,14 +2394,15 @@ button.primary:hover:not(:disabled) {
   padding: 0 4px;
   /* 一层很浅的主题色玻璃：导演栏是压在画面上的器具，不是这场戏的一部分。
      主题色留给台词条、选肢与右下角快捷菜单——那是玩家在读、在选的东西；
-     只有某一档开着（`.on`）时才在这里点亮主题色。 */
-  border: 1px solid var(--stage-chrome-quiet-edge, rgba(255, 255, 255, 0.45));
+     只有某一档开着（`.on`）时才在这里点亮主题色。
+     浅深两套值都在 --stage-chrome-quiet-* 里（浅色白底掺 accent，深色深玻璃）。 */
+  border: 1px solid var(--stage-chrome-quiet-edge, #dbe9f8);
   border-radius: var(--stage-chrome-radius, 999px);
   background: var(--stage-chrome-quiet-bg, linear-gradient(180deg,
-    color-mix(in srgb, var(--accent, #3b82f6) 13%, rgb(255 255 255 / 0.95)),
-    color-mix(in srgb, var(--accent, #3b82f6) 24%, rgb(255 255 255 / 0.84))));
+    color-mix(in srgb, var(--accent, #3b82f6) 16%, rgb(247 251 255 / 0.97)),
+    color-mix(in srgb, var(--accent, #3b82f6) 30%, rgb(226 238 252 / 0.94))));
   backdrop-filter: blur(12px);
-  box-shadow: var(--stage-chrome-gloss, inset 0 1px 0 rgba(255, 255, 255, 0.14)), 0 2px 10px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--stage-chrome-gloss, inset 0 1px 0 rgba(255, 255, 255, 0.18)), 0 2px 10px rgba(0, 0, 0, 0.35);
   opacity: 0.94;
   transition: opacity 0.2s ease;
 }
@@ -2290,7 +2422,7 @@ button.primary:hover:not(:disabled) {
   border: none;
   border-radius: var(--stage-chrome-radius, 999px);
   background: transparent;
-  /* 浅玻璃上写深字：掺了 accent 的墨蓝，跟这层底同源 */
+  /* 浅玻璃上写深字 / 深玻璃上写冷白字：两组值都在 quiet 令牌里 */
   color: var(--stage-chrome-quiet-ink, color-mix(in srgb, var(--accent, #3b82f6) 38%, #142138));
   font: inherit;
   font-size: 12px;
@@ -2301,8 +2433,8 @@ button.primary:hover:not(:disabled) {
 }
 
 .theater-director .dir-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent);
-  color: color-mix(in srgb, var(--accent, #3b82f6) 55%, #0d1830);
+  background: var(--stage-chrome-quiet-hover, color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent));
+  color: var(--stage-chrome-quiet-ink-hover, color-mix(in srgb, var(--accent, #3b82f6) 55%, #0d1830));
 }
 
 .theater-director .dir-btn.on {
@@ -2407,6 +2539,44 @@ button.primary:hover:not(:disabled) {
   cursor: pointer;
 }
 
+/* 模式标识（NSFW / 静音 / Auto）那一行：挂在左上角开关下面，是压在画面上的裸字。
+   这一组必须写在下面 @media (max-width: 720px) **之前**：
+   窄屏的 top / 字号覆盖在那儿，同权重就得让位给后者。 */
+.stage-modes {
+  position: absolute;
+  z-index: 40;
+  /* 它的定位父级是左上角那枚开关（StageScreen 把这一行渲染在 .stage-top-left-cluster 里）：
+     56px = 那枚开关 30px 高 + 26px 空档，left 10px 与开关的左边线齐平。 */
+  top: calc(56px + env(safe-area-inset-top, 0px));
+  left: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: min(70vw, 300px);
+}
+
+.stage-mode {
+  display: flex;
+  align-items: center;
+  color: var(--dialog-ink-faint);
+  text-shadow: var(--dialog-text-shadow);
+  line-height: 1;
+}
+
+.stage-mode-nsfw {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+/* 浅色主题：这一行压在插画上（没有底板），字翻成深墨 + 一圈白晕——
+   深色那侧是白字 + 深晕，两边对称。墨色比 --dialog-ink-faint 那档（五成）再实一点：
+   台词条底下是实心纸面，五成够；这一行压的是插画，太淡就被画面吃掉。 */
+html[data-ui-theme="light"] .stage-mode {
+  color: rgb(30 26 22 / 0.82);
+  text-shadow: 0 0 6px rgb(255 255 255 / 0.95), 0 0 2px rgb(255 255 255 / 0.9);
+}
+
 /* 台词条在「窄」和「矮」两种情况下都要换一副骨架：竖屏手机（≤720px）与
    横屏手机 / 矮窗口（≤460px 高）。桌面那副是「25% 高 + 52px 上留白」的固定带，
    放到 390px 高的视口里，一行正文就被挤出画面了。
@@ -2456,7 +2626,7 @@ button.primary:hover:not(:disabled) {
       color-mix(in srgb, var(--stage-accent-deep) 97%, transparent) 100%);
   }
 
-  /* 状态提示（回看中 / ▼ / 点击舞台继续生成）有内容时独占一行，不跟九个快捷入口
+  /* 状态提示（回看中 / ▼ / 点击舞台继续生成）有内容时独占一行，不跟那一排快捷入口
      抢横向空间——它一挤，Title 就掉到第二行。`:has(> *)` 只在它真有东西时成立，
      空的时候连那一行都不出现。 */
   .dialog-foot:has(.dialog-hint-foot > *) {
@@ -2469,7 +2639,7 @@ button.primary:hover:not(:disabled) {
   }
 
   /* 快捷菜单不再浮在右下角压在字上：它是底缘那一行的右半，跟着正文一起流。
-     七个入口在 390 宽里排不满一行就折行，不硬挤。 */
+     入口在 390 宽里排不满一行就折行，不硬挤。 */
   .dialog-options {
     position: static;
     right: auto;
@@ -2491,6 +2661,31 @@ button.primary:hover:not(:disabled) {
     height: 30px;
     padding: 0 7px;
     font-size: 13px;
+  }
+
+  /* 浅色主题：底缘那条深蓝渐变翻成纸白——窄屏下这排快捷入口不再是压在画面上的
+     玻璃胶囊（上面把它拆成底缘那一行的右半），它就是台词条的一部分，
+     底该跟台词条同源。字与分隔线一起翻成深墨，否则白字压在纸面上一个字都读不出来。
+     深色那侧一个字节都不动。 */
+  html[data-ui-theme="light"] .stage-root .dialog-foot {
+    background: linear-gradient(180deg,
+      rgb(252 250 246 / 0) 0%,
+      rgb(240 236 228 / 0.86) 55%,
+      rgb(240 236 228 / 0.97) 100%);
+  }
+
+  html[data-ui-theme="light"] .stage-root .dialog-foot .quick-btn {
+    color: var(--dialog-ink-soft);
+  }
+
+  html[data-ui-theme="light"] .stage-root .dialog-foot .quick-btn:hover:not(:disabled) {
+    color: var(--dialog-ink);
+    background: var(--dialog-hover);
+    text-shadow: 0 0 6px rgb(255 255 255 / 0.9);
+  }
+
+  html[data-ui-theme="light"] .stage-root .dialog-foot .quick-sep {
+    background: var(--dialog-line);
   }
 }
 
@@ -2524,8 +2719,8 @@ button.primary:hover:not(:disabled) {
   }
 }
 
-/* 超窄屏（≤420px）：快捷菜单有九个入口（Auto / 前后翻 / Log / Route / CG / 隐藏 /
-   工坊 / Title），按默认 7px 内边距加起来比 360 还宽十来像素，Title 就被挤到第二行。
+/* 超窄屏（≤420px）：快捷菜单有十个入口（Auto / 前后翻 / Log / Route / CG / 全屏 /
+   隐藏 / 工坊 / Title），按默认 7px 内边距加起来比 360 还宽十来像素，Title 就被挤到第二行。
    收窄内边距与间距，并把台词条左右边距收一档：一行排得下，也留得住状态提示的位置。 */
 @media (max-width: 420px) {
   .theater-dialog {
@@ -2543,7 +2738,7 @@ button.primary:hover:not(:disabled) {
   }
 }
 
-/* 320 宽的老机型（iPhone SE 一代那一档）：再收一档，九个入口也排得下 */
+/* 320 宽的老机型（iPhone SE 一代那一档）：再收一档，这一排也排得下 */
 @media (max-width: 350px) {
   .dialog-options {
     gap: 0;
@@ -2561,11 +2756,14 @@ button.primary:hover:not(:disabled) {
 @media (max-width: 720px) {
   /* 与左上角「舞台 ⇄ 工坊」同一行、同一高度：两条 chrome 本来就该并排，
      图标化之后总共只占 267px，390 宽的屏还剩一百多像素的空档。
-     max-width 兜住「多一颗重听键」和更窄的屏——超了让它自己横滑，不压到切换器上。 */
+     max-width 兜住「多一颗重听键」和更窄的屏——超了让它自己横滑，不压到切换器上。
+     高度 34px 是跟着 app.css 窄屏那节写的：那边把左上角那枚抬到 34（手机上的高频动作，
+     指头够得着），导演栏是它的邻居，差 4px 就是一眼看得出的不齐。 */
   .theater-director {
     top: calc(10px + env(safe-area-inset-top, 0px));
     right: 10px;
     left: auto;
+    height: 34px;
     max-width: calc(100% - 172px);
     overflow-x: auto;
     scrollbar-width: none;
@@ -2578,7 +2776,7 @@ button.primary:hover:not(:disabled) {
   /* 模式标识（NSFW / 静音 / 自动）落到这一行下面 */
   .stage-modes {
     top: calc(46px + env(safe-area-inset-top, 0px));
-    left: 12px;
+    left: 10px;
   }
 
   /* 手机上导演栏只留图标：四个动词的宽度差不多是半条画面，而这四个动作都有
@@ -2588,7 +2786,9 @@ button.primary:hover:not(:disabled) {
     display: none;
   }
 
+  /* 栏高了 4px，里面那排按钮跟着长：与左上角 .stage-seg-btn 的 28px 同档 */
   .theater-director .dir-btn {
+    height: calc(34px - 6px);
     padding: 0 8px;
   }
 
@@ -2715,30 +2915,6 @@ button.primary:hover:not(:disabled) {
   background: var(--accent-soft);
 }
 
-.stage-modes {
-  position: absolute;
-  z-index: 40;
-  top: calc(60px + env(safe-area-inset-top, 0px));
-  left: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  max-width: min(70vw, 300px);
-}
-
-.stage-mode {
-  display: flex;
-  align-items: center;
-  color: var(--dialog-ink-faint);
-  text-shadow: var(--dialog-text-shadow);
-  line-height: 1;
-}
-
-.stage-mode-nsfw {
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-}
 
 .backlog-panel {
   flex: 1 1 auto;

@@ -24,6 +24,11 @@ const ACCEPTED = [
   { re: /muted\.small/, why: "空态说明：次要层级，与正文拉开档次" },
   { re: /setting-card-summary/, why: "卡片副标题：4.34:1，差 AA 0.16，属次要层级" },
   { re: /atri-label/, why: "ATRI 那套菜单字：参考画面本身如此，选中态另有焦点框" },
+  {
+    re: /qm-label/,
+    why: "舞台右下角快捷菜单：探针读不懂那枚玻璃胶囊的渐变底（只认元素自身可解析的背景），" +
+      "一路退到页面底色，于是「白字压白纸」算成 1.16；实际是白字压深海蓝玻璃，实拍约 6.5:1",
+  },
 ];
 
 const PAGES = [
@@ -42,7 +47,6 @@ const PAGES = [
   ["工坊-素材", `#/play/${PLAY}/stage?view=workshop&workshop=1&tab=assets`],
   ["工坊-文件", `#/play/${PLAY}/stage?view=workshop&workshop=1&tab=files`],
   ["工坊-Agent", `#/play/${PLAY}/stage?view=workshop&workshop=1&tab=agent`],
-  ["工坊-设置", `#/play/${PLAY}/stage?view=workshop&workshop=1&tab=settings`],
 ];
 
 /** 两件事：算对比度、找越界与过小的目标。全部在页面里跑，避免来回传 DOM。 */

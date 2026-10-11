@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@aivn/stage";
 import { api, type GatewayModel, type ImageKind, type Settings } from "../api.js";
-import { navigate } from "../router.jsx";
+import { navigate, settingsReturnFrom } from "../router.jsx";
+import { useMediaQuery } from "../hooks/useMediaQuery.js";
 import { ModelSelect, modelSourceHint } from "../ui/ModelSelect.js";
 import {
   ACCENT_CHANGED,
@@ -34,6 +35,9 @@ const SECTIONS = [
 /** 生图类目的展示顺序与名字（词表与服务端 `IMAGE_KINDS` 同表）。 */
 const KIND_ORDER: ImageKind[] = ["background", "cg", "sprite"];
 const KIND_TITLES: Record<ImageKind, string> = { background: "背景", cg: "CG", sprite: "立绘" };
+
+/** 页面最后一组：滚到底时高亮它——末尾那组常常落在高亮带之外（见滚动跟随那段）。 */
+const LAST_SECTION: string = SECTIONS[SECTIONS.length - 1]!.id;
 
 /** 一类目的覆盖草稿：输入框一律是字符串，空串 = 跟随基础。 */
 type ImageKindDraft = {
@@ -116,7 +120,9 @@ function draftOf(next: Settings): Draft {
   };
 }
 
-export function SettingsScreen() {
+export function SettingsScreen({ search }: { search?: string } = {}) {
+  /** 从哪儿进来的：剧目库（缺省）还是某个剧目的标题页。 */
+  const backTo = settingsReturnFrom(search);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -130,7 +136,7 @@ export function SettingsScreen() {
   const [firewallMsg, setFirewallMsg] = useState<string | null>(null);
   const [firewallBusy, setFirewallBusy] = useState(false);
 
-  // 主题模式状态：界面主题与主色。舞台主题暂时下线（舞台固定深色，见 useTheme.applyTheme）
+  // 主题模式状态：界面主题与主色。舞台没有单独一套深浅，跟界面同一份（见 useTheme.applyTheme）
   const [uiMode, setUiMode] = useState<ThemeMode>(() =>
     storedMode(UI_MODE_KEY, DEFAULT_UI_MODE),
   );
@@ -240,25 +246,39 @@ export function SettingsScreen() {
 
   useEffect(() => {
     const root = bodyRef.current;
-    // 滚动跟随是渐进增强：环境没有这个 API（jsdom、很老的浏览器）就只是不高亮，
-    // 导航照样能点、设置照样能用
-    if (!root || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const shown = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        const first = shown[0];
-        if (first) setActiveSection(first.target.id.replace("settings-", ""));
-      },
-      // 只认「落在视口上沿那一段」：底下的 70% 不参与，免得下一个组刚露头就抢走高亮
-      { root, rootMargin: "0px 0px -70% 0px", threshold: 0 },
-    );
-    for (const section of SECTIONS) {
-      const el = root.querySelector(`#settings-${section.id}`);
-      if (el) observer.observe(el);
-    }
-    return () => observer.disconnect();
+    if (!root) return;
+    // 滚动跟随只有一个判据：滚动区上沿那条三成高的带里、起点最靠下的那一组
+    // （与 IntersectionObserver 的 rootMargin "0 0 -70%" 同义）。不用 observer 是因为
+    // 它只在「某组跨过带边」时回调：从底部往回滚一点、又没有任何组跨界时，
+    // 高亮会赖在最后一组上不动；scroll 事件没有这个盲区，也顺带不依赖那个 API。
+    const sections = SECTIONS.map((section) => ({
+      id: section.id,
+      el: root.querySelector<HTMLElement>(`#settings-${section.id}`),
+    }));
+    const sync = (): void => {
+      // 滚到底 = 最后一组。末尾那组（主题设置）不足带高，不特判的话到底时导航停在上一组。
+      const atBottom =
+        root.scrollHeight > root.clientHeight + 2 &&
+        root.scrollTop + root.clientHeight >= root.scrollHeight - 2;
+      if (atBottom) {
+        setActiveSection(LAST_SECTION);
+        return;
+      }
+      const bandBottom =
+        root.getBoundingClientRect().top + root.clientHeight * 0.3;
+      let current = sections[0]?.id ?? LAST_SECTION;
+      for (const { id, el } of sections) {
+        if (el && el.getBoundingClientRect().top <= bandBottom) current = id;
+      }
+      setActiveSection(current);
+    };
+    root.addEventListener("scroll", sync, { passive: true });
+    // 收起/展开某一组、转屏都会让各组的落点整体挪位，而滚动位置没变
+    window.addEventListener("resize", sync);
+    return () => {
+      root.removeEventListener("scroll", sync);
+      window.removeEventListener("resize", sync);
+    };
   }, [draft !== null]);
 
   /** 窄屏收起来的分组（宽屏这条状态不起作用，见 app.css 的 .settings-group-collapsed）。 */
@@ -281,9 +301,9 @@ export function SettingsScreen() {
   return (
     <div className="screen settings-screen">
       <header className="screen-bar">
-        <button className="ghost-btn" onClick={() => navigate("/")}>
+        <button className="ghost-btn" onClick={() => navigate(backTo)}>
           <span className="btn-icon">
-            <Icon name="back" /> 剧目库
+            <Icon name="back" /> {backTo === "/" ? "剧目库" : "返回"}
           </span>
         </button>
         <h2>设置</h2>
@@ -372,7 +392,7 @@ export function SettingsScreen() {
               </Field>
               <Field
                 label="限制级（NSFW）专用模型"
-                hint="当剧作家调用 enter_nsfw 时切换至此模型。剧目未单独指定时生效；此处也留空则跟随该剧目的主模型。"
+                hint="进入限制级剧情时切换至此模型。剧目未单独指定时生效；留空则跟随该剧目主模型。"
               >
                 <ModelSelect
                   value={draft.model.nsfwModelId ?? ""}
@@ -390,7 +410,7 @@ export function SettingsScreen() {
               </Field>
               <Field
                 label="限制级专属提示词"
-                hint="进入限制级通道时追加到系统提示词末尾；留空则不加任何额外要求。与剧目自己的口径（memory/always/craft.md）无关"
+                hint="进入限制级通道时追加到系统提示词末尾；留空则不加。"
               >
                 <textarea
                   rows={3}
@@ -721,8 +741,7 @@ export function SettingsScreen() {
               </div>
 
               <p className="settings-hint settings-kinds-note">
-                按类目覆盖：留空 = 跟随上面那份基础配置。立绘的画面档位下限是 2K（抠底要分辨率），
-                这一类填 1K 也会按 2K 出图。
+                按类目覆盖：留空 = 跟随基础配置；立绘档位下限 2K（抠底要分辨率）。
               </p>
               {KIND_ORDER.map((kind) => (
                 <details className="settings-kind" key={kind}>
@@ -984,7 +1003,7 @@ export function SettingsScreen() {
                 />
               </Field>
               <p className="settings-hint">
-                改密码会立即生效：此前发出的会话全部作废，刷新页面重新输一次即可。
+                改密码立即生效：此前发出的会话全部作废，刷新页面重新输一次。
               </p>
               <div className="settings-grid">
                 <Field
@@ -1014,7 +1033,7 @@ export function SettingsScreen() {
             >
               <Field
                 label="允许局域网访问"
-                hint="打开后监听 0.0.0.0，同一个 Wi-Fi 下的手机/平板能连；关着只有本机能连。保存后立即生效，端口不变"
+                hint="打开后同一 Wi-Fi 下的手机/平板能连；关着只有本机能连。保存即生效"
               >
                 <input
                   type="checkbox"
@@ -1055,7 +1074,7 @@ export function SettingsScreen() {
                 </button>
               </div>
               <p className="settings-hint">
-                第一次打开开关时，系统会自己弹一次「是否允许访问网络」，点「允许」就够了。这个按钮是给「当时点了取消」或「根本没弹窗」兜底的：它会请求一次管理员权限，写一条按程序（而不是按端口）放行的入站规则，并清掉点「取消」时系统自己写下的那条阻止规则（显式阻止优先于放行，光加一条放行救不回来），重复点是同一条。
+                第一次打开开关时系统会弹一次授权，点「允许」就够了。这个按钮是给当时点了「取消」或没弹窗兜底的：需要管理员权限，补一条放行规则。
               </p>
               {firewallMsg && <p className="settings-hint">{firewallMsg}</p>}
             </Group>
@@ -1178,6 +1197,9 @@ function Group({
   onToggle?: () => void;
   children: React.ReactNode;
 }) {
+  // 折叠开关只属于窄屏：桌面一屏放得下几组，没有可收的东西就别摆开关——
+  // 光靠 CSS 收掉箭头不够，键盘仍会停在一枚按不动的按钮上。
+  const collapsible = useMediaQuery("(max-width: 900px)");
   return (
     <section
       className={`settings-group${collapsed ? " settings-group-collapsed" : ""}`}
@@ -1185,7 +1207,7 @@ function Group({
     >
       <header className="settings-group-head">
         <h3>
-          {onToggle ? (
+          {collapsible && onToggle ? (
             <button
               type="button"
               className="settings-group-toggle"

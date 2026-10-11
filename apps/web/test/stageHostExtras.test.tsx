@@ -84,11 +84,9 @@ function Panel({ onPolish }: { onPolish?: (text: string) => Promise<string> }) {
     <StopPanel
       stop={FREE_STOP}
       isNoStop={false}
-      showContinue={false}
       disabled={false}
       onChoice={() => {}}
       onFree={() => {}}
-      onContinue={() => {}}
       {...(onPolish ? { onPolish } : {})}
     />
   );
@@ -119,6 +117,29 @@ describe("宿主扩展位", () => {
     const theater = container.querySelector(".theater") as HTMLElement;
     // CSS 缺省值是 46px；不写回 0 的话选肢层底部会凭空多出一条缝
     expect(theater.style.getPropertyValue("--dir-h")).toBe("0px");
+  });
+
+  it("浏览器没有全屏能力时，右下角不摆那枚按不动的全屏键", () => {
+    // jsdom 的 documentElement 上没有 requestFullscreen：这正是能力检测要挡的那一档
+    render(<Theater />);
+    expect(document.documentElement.requestFullscreen).toBeUndefined();
+    expect(screen.queryByLabelText("进入全屏")).toBeNull();
+  });
+
+  it("有全屏能力时它在快照里有落点，点它就去全屏", () => {
+    const requested: string[] = [];
+    (document.documentElement as unknown as { requestFullscreen: () => Promise<void> }).requestFullscreen =
+      () => {
+        requested.push("doc");
+        return Promise.resolve();
+      };
+    try {
+      render(<Theater />);
+      fireEvent.click(screen.getByLabelText("进入全屏"));
+      expect(requested).toEqual(["doc"]);
+    } finally {
+      delete (document.documentElement as unknown as { requestFullscreen?: unknown }).requestFullscreen;
+    }
   });
 
   it("不传 onPolish 时没有润色按钮（也没有撤销）", () => {

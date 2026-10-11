@@ -143,7 +143,7 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
                 </option>
               ))}
           </select>
-          <p className="muted small">不设 = 玩家用中文问就写中文；设死了则无论玩家说什么都用它写。</p>
+          <p className="muted small">不设 = 跟随玩家输入；设定了则无论玩家说什么都用它写。</p>
         </label>
         <label className="field">
           <span>语音语言（say 台词翻译后再送 TTS）</span>
@@ -180,7 +180,7 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
             )}
           </div>
           <p className="muted small">
-            没有角色卡的一次性角色（<code>{'<say id="passerby">'}</code>）默认不出声，这里挑一个兜底。
+            没有角色卡的一次性角色默认不出声，这里挑一个兜底。
           </p>
         </div>
         <label className="field">
@@ -212,8 +212,7 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
       <section className="panel">
         <h3>主题色</h3>
         <p className="muted small">
-          这部剧的专属色。标题的字、对话框、快捷菜单、选项、路线图与回顾流水都跟着它走——
-          它们本来就是同一个 --accent 推出来的。写进剧目的 theme.css，点一下即生效。
+          这部剧的专属色，界面各处都跟着它走；点一下即生效。
         </p>
         <div className="accent-picker" role="radiogroup" aria-label="剧目主题色">
           <button
@@ -250,8 +249,7 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
       <section className="panel">
         <h3>写作参数</h3>
         <p className="muted small">
-          这部剧每轮怎么写。选「默认」= 这一项从 play.json 里消失、跟着引擎默认走；
-          文风与禁忌那类只能拿话说的事在「记忆」页的 craft.md 里。
+          这部剧每轮怎么写。选「默认」= 跟随引擎默认；文风与禁忌在「记忆」页的 craft.md 里。
         </p>
         <CraftSelect
           label="每轮篇幅"

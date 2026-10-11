@@ -12,7 +12,11 @@ const { apiMock } = vi.hoisted(() => ({
   },
 }));
 vi.mock("../src/api.js", () => ({ api: apiMock }));
-vi.mock("../src/router.jsx", () => ({ navigate: vi.fn() }));
+// 只拦跳转：URL 解析那几个纯函数（settingsReturnFrom）照用真货
+vi.mock("../src/router.jsx", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/router.jsx")>()),
+  navigate: vi.fn(),
+}));
 
 const { SettingsScreen } = await import("../src/views/SettingsScreen.js");
 

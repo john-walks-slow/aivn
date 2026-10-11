@@ -7,7 +7,6 @@ import {
   type AutoStartInput,
   readFlag,
   writeFlag,
-  SETTING_CONTINUE_CARD,
   SETTING_VOICE,
 } from "@aivn/stage";
 
@@ -113,67 +112,45 @@ describe("演出中自动起播", () => {
 });
 
 describe("本轮写完的出口", () => {
-  /** 本轮没写 stop、演完且空闲——卡片与点舞台二选一的判定场景。 */
-  const NO_STOP = { ready: true, stopType: null, isNoStop: true, continueCardOn: false };
+  /** 本轮没写 stop、演完且空闲——出口只有「点舞台继续」这一种。 */
+  const NO_STOP = { ready: true, stopType: null, isNoStop: true };
 
-  it("设置默认关：不摆卡，点舞台直接接下一轮", () => {
-    expect(stopAffordance(NO_STOP)).toEqual({ showContinueCard: false, clickToContinue: true });
+  it("没有停止点：点舞台直接接下一轮", () => {
+    expect(stopAffordance(NO_STOP)).toBe(true);
   });
 
-  it("设置打开才摆卡，此时点舞台不再是出口", () => {
-    expect(stopAffordance({ ...NO_STOP, continueCardOn: true })).toEqual({
-      showContinueCard: true,
-      clickToContinue: false,
-    });
-  });
-
-  it("pause 永远点舞台：它是引擎自造的重试口，不是剧本写出来的停止点", () => {
-    expect(stopAffordance({ ...NO_STOP, stopType: "pause", continueCardOn: true })).toEqual({
-      showContinueCard: false,
-      clickToContinue: true,
-    });
+  it("pause 也点舞台：它是引擎自造的重试口，不是剧本写出来的停止点", () => {
+    expect(stopAffordance({ ...NO_STOP, stopType: "pause" })).toBe(true);
   });
 
   it("有选肢时出口就是选项，不额外给继续", () => {
-    expect(stopAffordance({ ...NO_STOP, stopType: "choice", continueCardOn: true })).toEqual({
-      showContinueCard: false,
-      clickToContinue: false,
-    });
+    expect(stopAffordance({ ...NO_STOP, stopType: "choice" })).toBe(false);
+    expect(stopAffordance({ ...NO_STOP, stopType: "free" })).toBe(false);
   });
 
-  it("还没演完/编排器还忙着，两个出口都不成立", () => {
-    expect(stopAffordance({ ...NO_STOP, ready: false })).toEqual({
-      showContinueCard: false,
-      clickToContinue: false,
-    });
+  it("还没演完/编排器还忙着，没有出口", () => {
+    expect(stopAffordance({ ...NO_STOP, ready: false })).toBe(false);
   });
 
-  it("开着新一轮（isNoStop 还挂着上一轮）时不误摆卡", () => {
-    expect(stopAffordance({ ...NO_STOP, ready: false, isNoStop: true })).toEqual({
-      showContinueCard: false,
-      clickToContinue: false,
-    });
+  it("开着新一轮（isNoStop 还挂着上一轮）时不给出口", () => {
+    expect(stopAffordance({ ...NO_STOP, ready: false, isNoStop: true })).toBe(false);
+    expect(stopAffordance({ ...NO_STOP, isNoStop: false })).toBe(false);
   });
 });
 
 describe("结局终局态：不给任何出口", () => {
-  const NO_STOP = { ready: true, stopType: null, isNoStop: true, continueCardOn: false };
-  const NONE = { showContinueCard: false, clickToContinue: false };
+  const NO_STOP = { ready: true, stopType: null, isNoStop: true };
 
   it("终局时 no_stop 也不点舞台（否则会摆出「点舞台继续」）", () => {
-    expect(stopAffordance({ ...NO_STOP, ended: true })).toEqual(NONE);
-  });
-
-  it("终局时即使开着「（继续）」卡也不摆", () => {
-    expect(stopAffordance({ ...NO_STOP, ended: true, continueCardOn: true })).toEqual(NONE);
+    expect(stopAffordance({ ...NO_STOP, ended: true })).toBe(false);
   });
 
   it("终局时 pause 也不给出口", () => {
-    expect(stopAffordance({ ...NO_STOP, ended: true, stopType: "pause", continueCardOn: true })).toEqual(NONE);
+    expect(stopAffordance({ ...NO_STOP, ended: true, stopType: "pause" })).toBe(false);
   });
 
   it("ended 缺省 false：还没有结局概念的老宿主行为不变", () => {
-    expect(stopAffordance(NO_STOP)).toEqual({ showContinueCard: false, clickToContinue: true });
+    expect(stopAffordance(NO_STOP)).toBe(true);
   });
 });
 
@@ -186,18 +163,16 @@ describe("设置项读写", () => {
     } as Storage;
   }
 
-  it("没存过就是默认值（「（继续）」卡默认关、语音默认开）", () => {
-    const s = fakeStorage();
-    expect(readFlag(s, SETTING_CONTINUE_CARD, false)).toBe(false);
-    expect(readFlag(s, SETTING_VOICE, true)).toBe(true);
+  it("没存过就是默认值（语音默认开）", () => {
+    expect(readFlag(fakeStorage(), SETTING_VOICE, true)).toBe(true);
   });
 
   it("写入后可原样读回", () => {
     const s = fakeStorage();
-    writeFlag(s, SETTING_CONTINUE_CARD, true);
-    expect(readFlag(s, SETTING_CONTINUE_CARD, false)).toBe(true);
-    writeFlag(s, SETTING_CONTINUE_CARD, false);
-    expect(readFlag(s, SETTING_CONTINUE_CARD, false)).toBe(false);
+    writeFlag(s, SETTING_VOICE, false);
+    expect(readFlag(s, SETTING_VOICE, true)).toBe(false);
+    writeFlag(s, SETTING_VOICE, true);
+    expect(readFlag(s, SETTING_VOICE, true)).toBe(true);
   });
 
   it("历史键值（stage-voice 的 \"1\"/\"0\"）行为不变", () => {

@@ -265,7 +265,7 @@ export function AssetsPanel({
               : `还缺 ${missingAssets.join("、")}`}
           </span>
           <span className="muted small">
-            判据就这两条；缺了也能开演——没立绘的角色不上台，没背景时舞台落一层氛围底色。
+            缺了也能开演：没立绘的角色不上台，没背景时落氛围底色。
           </span>
         </div>
       )}
@@ -296,9 +296,8 @@ export function AssetsPanel({
           </button>
         </div>
         <p className="muted small">
-          一个目录就是一个主体（人、机甲、猫、道具同权）：
-          <code>assets/sprites/&lt;id&gt;/</code> 里的文件即差分。
-          与角色卡同名就有名字与音色，没有卡也有名牌（下面填）。
+          一个目录就是一个主体：<code>assets/sprites/&lt;id&gt;/</code> 里的文件即差分。
+          与角色卡同名就有名字与音色，没卡可在下方「声明」里填名牌。
         </p>
         <div className="row small">
           <input
@@ -476,8 +475,7 @@ export function AssetsPanel({
                   </select>
                 </div>
                 <p className="muted small">
-                  留空＝不声明，落回引擎缺省（全身 / 标准体量 /
-                  贴底）。这几个只影响舞台上的摆位，不改画面。
+                  留空＝不声明，落回引擎缺省；只影响舞台摆位，不改画面。
                 </p>
               </details>
 

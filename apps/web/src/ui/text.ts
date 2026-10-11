@@ -40,25 +40,3 @@ export function relativeTime(at: number, now = Date.now()): string {
   const md = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   return d.getFullYear() === today.getFullYear() ? `${md} ${hhmm}` : `${d.getFullYear()}-${md}`;
 }
-
-/**
- * 剧目专属主题色：优先读 play.json 的 themeColor，缺省则按 playId 计算确定性高质感色相。
- */
-export function playThemeColor(playId: string, explicitColor?: string): { accent: string; glow: string; dark: string } {
-  if (explicitColor && /^#|rgb|hsl/.test(explicitColor)) {
-    return {
-      accent: explicitColor,
-      glow: `color-mix(in srgb, ${explicitColor} 50%, white)`,
-      dark: `color-mix(in srgb, ${explicitColor} 65%, black)`,
-    };
-  }
-  let hash = 0;
-  for (let i = 0; i < playId.length; i++) hash = (hash * 31 + playId.charCodeAt(i)) & 0xffffffff;
-  const hues = [204, 218, 235, 260, 280, 335, 168, 190]; // 经典日系 Galgame 色相组
-  const hue = hues[Math.abs(hash) % hues.length];
-  return {
-    accent: `hsl(${hue}, 88%, 54%)`,
-    glow: `hsl(${hue}, 90%, 75%)`,
-    dark: `hsl(${hue}, 85%, 32%)`,
-  };
-}
