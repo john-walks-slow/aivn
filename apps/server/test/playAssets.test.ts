@@ -1255,6 +1255,48 @@ describe("PlayAssets：cut（素材引用寻址）", () => {
     await expect(assets.cut({ source: "assets/cg/raw.png" })).rejects.toThrow(/要 output/);
     await expect(assets.cut({ target: { kind: "background", name: "x" } })).rejects.toThrow(/只有立绘/);
   });
+
+  /**
+   * 工坊的定妆照流程：出候选 → `cut` 抠到 `assets/sprites/…` → `import_asset` 登记那张透明 PNG。
+   *
+   * 这条路上`cut` 是唯一知道画幅与落位指标的一步（登记只补描述）。曾经它按缺省的 9:16 开画布，
+   * 半身主体被宽度先卡、顶部空出两成画布高，指标又只回在回执里没人接着——`import_asset` 登记完
+   * 舞台按「图片盒上沿 = 头顶」摆位，那两成留白就直接长在舞台上（剧目 `mio-observatory`）。
+   */
+  it("抠到立绘目录：画幅跟草稿的取景走，落位指标经 import_asset 之后仍在素材表里", async () => {
+    const store = await makeStore();
+    const { assets, files } = makeAssets(store, stubBackend().backend);
+    const draft = await assets.draft({ kind: "sprite", spriteId: "mio", variant: "neutral", framing: "half" }, "少女");
+
+    const cut = await assets.cut({ source: `draft:${draft.draftId}`, output: "assets/sprites/mio/neutral.png" });
+    expect(cut.path).toBe("assets/sprites/mio/neutral.png");
+    const canvas = await sharp(files.absoluteOf(cut.path)).metadata();
+    expect([canvas.width, canvas.height]).toEqual([1440, 1920]);
+
+    await assets.register(
+      "assets/sprites/mio/neutral.png",
+      { kind: "sprite", spriteId: "mio", variant: "neutral", framing: "half", title: "澪" },
+      { description: "半身立绘" },
+    );
+    const manifest = JSON.parse(await files.read("assets/manifest.json")) as Record<string, Record<string, number | string>>;
+    expect(manifest.mio!.framing).toBe("half");
+    expect(manifest.mio!.figureTop).toBeGreaterThan(0);
+    expect(Number(manifest.mio!.figureTop) + Number(manifest.mio!.figureHeight)).toBe(1920);
+  });
+
+  /** 写盘层认 `./assets/…`（同一套 normalizePath），逆解析认立绘身份也得认——否则同一路径只差个前缀就静默退回 9:16。 */
+  it("抠到立绘目录：`./` 前缀的写法算同一条路径（画幅与指标都不漂）", async () => {
+    const store = await makeStore();
+    const { assets, files } = makeAssets(store, stubBackend().backend);
+    const draft = await assets.draft({ kind: "sprite", spriteId: "mio", variant: "neutral", framing: "half" }, "少女");
+
+    const cut = await assets.cut({ source: `draft:${draft.draftId}`, output: "./assets/sprites/mio/neutral.png" });
+    expect(cut.path).toBe("assets/sprites/mio/neutral.png");
+    const canvas = await sharp(files.absoluteOf(cut.path)).metadata();
+    expect([canvas.width, canvas.height]).toEqual([1440, 1920]);
+    const manifest = JSON.parse(await files.read("assets/manifest.json")) as Record<string, Record<string, number>>;
+    expect(Number(manifest.mio!.figureTop) + Number(manifest.mio!.figureHeight)).toBe(1920);
+  });
 });
 
 describe("PlayAssets：按类目取后端", () => {

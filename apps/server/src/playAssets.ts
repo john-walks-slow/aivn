@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import {
   DEFAULT_SPRITE_FRAMING,
   DEFAULT_SPRITE_STATURE,
@@ -47,6 +47,7 @@ import {
   persistAsset,
   referenceSuffix,
   sniffImageMime,
+  spriteRefOfPath,
   spriteSuffix,
   writeDraft as writeDraftTo,
   type AssetIo,
@@ -493,7 +494,8 @@ export class PlayAssets {
    *
    * - **素材引用**（`sprite:<主体id>[/<差分>]`）：拿它的抠底前原片重跑；不给 `output` 就**原地重抠**
    *   （覆盖素材那张、顺带补素材表声明）；给了 `output` 就写到那儿。
-   * - **剧目内路径**：读 `assets/` 下的图，写到 `output`（本宿主没有模型读得回的候选区，所以必须给）。
+   * - **剧目内路径 / `draft:<草稿id>`**：读那张图（本宿主没有模型读得回的候选区，所以必须给 `output`）。
+   *   输出落在 `assets/sprites/` 下时这一刀就是**立绘入库前的抠底**，画幅与落位指标都按立绘办。
    */
   async cut(request: {
     source?: string;
@@ -538,11 +540,36 @@ export class PlayAssets {
     const source = request.source?.trim();
     if (!source) throw new Error("抠底要 source（一张纯色底图的路径、draft:<草稿id>，或 sprite:<主体id> 这样的素材引用）");
     if (!output) throw new Error("抠底要 output（本宿主没有候选区：透明 PNG 写到哪里请显式给一个 assets/ 下的路径）");
+    // 落位以**写盘层规范化后**的路径为准：`./assets/…` 与 `assets/…` 写下去是同一个文件，
+    // 认立绘身份也得照同一条规矩——只差个前缀就静默退回缺省画幅、指标也丢，是查不出来的那种错。
+    const relOutput = relative(this.deps.files.root, this.deps.files.absoluteOf(output));
     const read = await this.readSource(source, "抠底的源图");
-    const existed = existsSync(this.deps.files.absoluteOf(output));
-    // 路径分支拿不到取景声明，画幅走缺省（full = 9:16），与改动前一致。
-    const { data, coverage, figureTop, figureHeight } = await cutout(read.bytes, tuning);
-    const rel = await this.deps.files.writeBinary(output, data);
+    const existed = existsSync(this.deps.files.absoluteOf(relOutput));
+    // 输出落在立绘目录上时，这一刀是立绘入库前的抠底：画幅跟这张图的出图意图走（草稿里记着取景），
+    // 量出来的两个落位指标当场写进素材表——紧接着的 `import_asset` 只补描述，声明里的指标就丢了。
+    const sprite = spriteRefOfPath(relOutput);
+    const framing = sprite ? await this.cutFraming(source, sprite) : undefined;
+    const { data, coverage, figureTop, figureHeight } = await cutout(read.bytes, {
+      ...(framing ? { aspectRatio: spriteAspectRatio(framing) } : {}),
+      ...tuning,
+    });
+    const rel = await this.deps.files.writeBinary(relOutput, data);
+    if (sprite && framing) {
+      await this.declareSprite(
+        {
+          kind: "sprite",
+          kindPath: `sprites/${sprite.spriteId}`,
+          stem: sprite.variant,
+          aspect: SPRITE_FRAMING_ASPECT[framing] as ImageAspect,
+          spriteId: sprite.spriteId,
+          variant: sprite.variant,
+          framing,
+          figureTop,
+          figureHeight,
+        },
+        "workshop",
+      );
+    }
     return {
       kind: rel.startsWith("assets/backgrounds/") ? "background" : rel.startsWith("assets/cg/") ? "cg" : "sprite",
       path: rel,
@@ -552,6 +579,22 @@ export class PlayAssets {
       autoNeutral: false,
       cutout: { coverage, figureTop, figureHeight },
     };
+  }
+
+  /**
+   * 抠一张**还没入库**的立绘时画幅取哪一档：这张图的出身优先，其次该立绘已有的声明。
+   *
+   * 草稿里记着出图时的取景，是最权威的一手（工坊的候选正是 `draft:` 寻址，取景随提示词一起定的）；
+   * 素材表那档给「对着 `assets/` 里一张现成的图重抠」用。两处都不认识才退回缺省（full = 9:16）。
+   */
+  private async cutFraming(source: string, ref: { spriteId: string; variant: string }): Promise<SpriteFraming> {
+    const draftId = /^draft:(\S+)$/.exec(source.trim())?.[1];
+    if (draftId) {
+      const draft = await this.loadDraft(draftId).catch(() => null);
+      if (draft?.framing) return draft.framing;
+    }
+    const declared = spriteDeclarationOf(await this.deps.store.assetMeta(), ref.spriteId, ref.variant);
+    return declared.framing ?? DEFAULT_SPRITE_FRAMING;
   }
 
   /**

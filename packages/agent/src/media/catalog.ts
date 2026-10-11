@@ -69,6 +69,21 @@ export function spriteSourceRel(spec: AssetRef, ext: string): string | null {
   return `media-cache/sprite-sources/${spec.spriteId}/${spec.stem}${ext}`;
 }
 
+/** 立绘落位的剧目内路径模式（`assetRel` 的立绘那一支）。 */
+const SPRITE_ASSET = /^assets\/sprites\/([^/]+)\/([^/]+)\.[^./]+$/;
+
+/**
+ * 剧目内路径 → 立绘身份（`assets/sprites/<主体id>/<差分>.png`）。不是立绘路径则 null。
+ *
+ * 是 `assetRel()` 的逆运算，给「先写文件、后补声明」的调用方用：抠底那一步只有输出路径
+ * 这一个身份来源，而画幅与落位指标都得挂在具体那一张差分上。
+ */
+export function spriteRefOfPath(rel: string): { spriteId: string; variant: string } | null {
+  const matched = SPRITE_ASSET.exec(rel.trim());
+  if (!matched) return null;
+  return { spriteId: matched[1]!, variant: matched[2]! };
+}
+
 /**
  * 同一个 stem 下**该清掉**的旧文件名。
  *

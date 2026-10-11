@@ -131,6 +131,7 @@ export {
   ledgerIdOf,
   NEUTRAL,
   persistAsset,
+  spriteRefOfPath,
   spriteSourceRel,
   staleSiblings,
 } from "./media/catalog.js";
