@@ -13,7 +13,7 @@ import { plainSummary } from "../ui/text.js";
 /**
  * 标题画面：整屏封面 + 左下剧名 + 右下菜单。
  *
- * 菜单只有两层：玩的人按的（开始 / 新的开始 / 路线），与写的人按的（工坊、导出、删除）。
+ * 菜单只有两层：玩的人按的（继续 / 开始 / 路线），与写的人按的（工坊、导出、删除）。
  * 后者压成一排小字，不和「开始」抢视线。WORKSHOP 的副标照旧是那枚「工坊」（悬停/聚焦才浮出）；
  * 缺素材不是门槛（缺了也能直接开演），这时副标让位给一句恒显的极短推荐注——缺什么、去哪儿补，
  * 正文归工坊里那几页自己说。
@@ -69,7 +69,7 @@ export function TitleView({ playId }: { playId: string }) {
       ]
     : [];
 
-  /** 首次进入开演；已有历史时从根节点创建新的运行枝。 */
+  /** 没有历史时开演；已有历史时从根节点开一条新枝（旧世界线留在路线树里）。 */
   const start = (): void =>
     navigate(
       `/play/${playId}/stage${detail?.readiness.started ? "?new=1" : ""}`,
@@ -140,11 +140,23 @@ export function TitleView({ playId }: { playId: string }) {
             className={`atri-menu${keyboardNav ? " is-keyboard" : ""}`}
             aria-label="标题菜单"
           >
+            {detail?.readiness.started && (
+              <button
+                type="button"
+                className="atri-item is-continue"
+                onClick={() => navigate(`/play/${playId}/stage`)}
+                autoFocus
+              >
+                <span className="atri-label">CONTINUE</span>
+                <span className="atri-sub">继续游戏</span>
+              </button>
+            )}
+
             <button
               type="button"
-              className="atri-item is-primary"
+              className="atri-item"
               onClick={start}
-              autoFocus
+              autoFocus={!detail?.readiness.started}
             >
               <span className="atri-label">START</span>
               <span className="atri-sub">

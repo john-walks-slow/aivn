@@ -9,7 +9,7 @@
 - `session.json`、`lineage.jsonl`、`meta.json` 移到剧目根目录。
 - 删除 `PlaySaves`、`saves/`、`active.json`、切档/删档/改名 API、周目页和周目 UI 状态。
 - `hello` 删除 `saveId` / `saveName`；保留 `start` 作为空树首次开演动作。
-- 标题页已有历史时仍显示 `START / 新的开始`。
+- 标题页已有历史时：`CONTINUE / 继续游戏` 在最前（回舞台接着当前位置演，不带 query），`START / 新的开始` 从根开一条新运行枝（`?new=1`）。没有历史时只有 `START / 开始游戏`。
 - “新的开始”通过 `?new=1` 传递一次性意图，舞台连接空闲后发送 `restart`。
 - 服务端 `restartFromRoot()` 复用 root fork + resume，从 `play.initialState` / `play.initialScene` 开始，不复用旧路线。
 - 根节点状态回写补上 `state.scene` 兜底。
@@ -17,7 +17,7 @@
 - `memory` 未做物理隔离；剧作家提示词改用 `rules / lores` 的用户语义，保留 `memory/index` 物理路径，并提醒当前路线优先、其他分支事实不得带入。
 - 删除旧周目页面样式、旧测试与无用保存模块。
 - 标题页的旧 `LOAD` 入口换成 `ROUTE`：已有历史时显示，点击直达舞台外壳的路线视图（`?view=route`）。
-- 标题页菜单的小字（悬停提示）改成中文：开始游戏 / 新的开始 / 路线树 / 工坊 / 系统配置 / 退出游戏；大写主标不动。
+- 标题页菜单的小字（悬停提示）改成中文：继续游戏 / 开始游戏 / 新的开始 / 路线树 / 工坊 / 系统配置 / 退出游戏；大写主标不动。
 
 ## 仍然保留的边界
 

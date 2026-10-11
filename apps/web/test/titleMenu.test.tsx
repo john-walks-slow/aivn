@@ -44,7 +44,7 @@ describe("TitleView 菜单项", () => {
     expect(screen.queryByText("ROUTE")).toBeNull();
   });
 
-  it("已有历史时：START 显示新的开始，路线入口出现", async () => {
+  it("已有历史时：继续在最前（接着当前位置演），START 变成新的开始", async () => {
     vi.spyOn(api, "playDetail").mockResolvedValue({
       ...DUMMY_PLAY,
       readiness: { ...DUMMY_PLAY.readiness, started: true },
@@ -52,12 +52,21 @@ describe("TitleView 菜单项", () => {
 
     render(<TitleView playId="demo" />);
 
-    await waitFor(() => expect(screen.getByText("START")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("CONTINUE")).toBeTruthy());
 
+    // 继续是第一项、且拿着焦点：回车落在「接着上次演」上，不是「从根开新枝」
+    const menu = document.querySelector(".atri-menu");
+    const labels = [...(menu?.querySelectorAll(".atri-label") ?? [])].map(
+      (el) => el.textContent,
+    );
+    expect(labels[0]).toBe("CONTINUE");
+    expect(labels[1]).toBe("START");
+    expect(document.activeElement?.textContent).toContain("CONTINUE");
+
+    expect(screen.getByText("继续游戏")).toBeTruthy();
     expect(screen.getByText("新的开始")).toBeTruthy();
     expect(screen.getByText("ROUTE")).toBeTruthy();
     expect(screen.getByText("路线树")).toBeTruthy();
-    expect(screen.queryByText("CONTINUE")).toBeNull();
     expect(screen.queryByText("LOAD")).toBeNull();
   });
 
