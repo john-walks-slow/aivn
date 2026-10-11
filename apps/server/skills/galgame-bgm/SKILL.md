@@ -1,203 +1,259 @@
 ---
 name: galgame-bgm
-description: 给 galgame / 视觉小说写 AI 生成 BGM 的英文提示词速查。含配器选型表、情绪走向写法、无缝循环怎么写进提示词、无人声/纯器乐约束、和弦色彩与「日系钢琴/八音盒/弦乐」这类具体风格的措辞、反例词表，以及 mood/scene 标签必须对齐素材库既有词表。当要把中文情绪翻成英文提示词、要生成的曲子风格不对、或要填 mood/scene/loop/volume 这些声明时使用（本剧目配了音乐后端时才用得上）。
+description: 为 galgame / Visual Novel 生成可垫对白、可循环的日系 BGM。覆盖 Lyria 3.5 纯文本提示词结构、配器、和声修辞、七类场景范例、负向排除，以及 mood / scene / tags / loop / volume 元数据对齐。当需要为剧目创作或扩展背景音乐时使用。
 user-invocable: true
 ---
 
-# galgame-bgm（生成 BGM 的提示词怎么写）
+# galgame-bgm
 
-面向 `generate_bgm`（工坊专用，后台排产）。**上游固定给 ~176s 的成品**，时长与循环只能靠提示词去影响，
-不能靠参数——实测 `generationConfig` 里的音频字段不生效（记录见 `docs/features/261005-music-generation/`）。
+目标工具：`generate_bgm`。它只接收一段英文 `prompt`，后台排产后落盘到 `assets/bgm/<id>.m4a`（AAC 48kHz，约 176 秒）。没有时长参数、没有独立 Exclude 开关、没有独立 Instrumental 开关；所有正向与负向约束都写进同一个英文字符串。
 
-## 0. 提示词四段式
+生成是后台任务，不要等待音频到货再继续写作。生成完成后再用 `annotate_asset(kind="bgm", name=...)` 补齐标题、描述和选曲元数据；不要把未完成的曲子写进剧本引用。
 
-工具只吃一段英文自由文本，但**必须**按这个顺序写满四段。缺一段就会偏向那一段的极端：
+## §0. 核心声学约束
 
-```
-[配器] + [情绪与走向] + [速度/循环] + [用途]
-```
+每条 BGM 都服务于长对白和反复播放。提示词中必须表达以下三条物理约束：
 
-- **配器**：第一段，也是最决定「像不像 galgame」的一段。
-- **情绪与走向**：不是词而是**走向**——`sad but hopeful` 与 `sad` 出两首完全不同的曲子。
-- **速度/循环**：见第 3 节，**循环那句别省**。
-- **用途**：`solo accompaniment for dialogue`、`under a monologue`。这一段压住「抢戏」的曲子。
+- **频段留白**：`sparse midrange, restrained presence in the 1 kHz–4 kHz dialogue range, clear space for spoken dialogue`。1kHz–4kHz 是角色语音主要存在区，避免密集钢琴和弦、明亮铜管、厚墙式中频弦乐盖住配音。
+- **平坦动态**：`flat, consistent dynamics throughout, no cinematic swell, no gradual crescendo, no dramatic build`。禁止影视配乐式渐强、爬坡和突然高潮；循环第二遍必须与第一遍同一能量级。
+- **无缝循环**：`seamless loop, loopable, stable repeating phrase, no abrupt start or ending, no fade-in, no fade-out`。不要写明确前奏、尾奏、终止感或一次性结尾。
 
-## 1. 配器选型（galgame 味的主来源）
+默认再加：`steady tempo, restrained arrangement, background music under dialogue`。除非明确做片头/片尾，galgame BGM 优先 `loop: true`。
 
-| 想要的气质 | 写什么 |
-| --- | --- |
-| 日系日常 / 校园 | `solo piano`, `soft piano with light percussion` |
-| 抒情 / 告白 / 回忆 | `solo piano with strings`, `piano and harp`, `solo piano, emotional` |
-| 怀旧 / 童年 / 夕阳 | `music box`, `celesta`, `glockenspiel` |
-| 温柔日常 | `acoustic guitar`, `soft piano and acoustic guitar` |
-| 压抑 / 悬疑 | `low piano with sustained strings`, `dark ambient piano`, `minor key strings` |
-| 别离 / 终章 | `solo piano, slow, sparse`, `strings and piano, bittersweet` |
-| 轻快过场 | `bright piano, upbeat`, `light percussive ensemble` |
+## §1. 六段式提示词黄金蓝图
 
-**galgame 的底色通常是单件独奏 + 少量铺底**：写了完整乐队（`full orchestra`、`big band`）就会往游戏主题曲或
-影视配乐跑，台词全被压住。
+严格按此顺序拼成**一段英文字符串**：
 
-## 2. 情绪词（照抄，别自造）
-
-模型认这些固定搭配；自造的词会被解成别的东西。
-
-- 温柔 / 治愈：`gentle`, `warm`, `soft`, `healing`, `tender`
-- 忧伤 / 失落：`melancholic`, `sad`, `somber`, `wistful`, `bittersweet`
-- 明亮 / 日常：`bright`, `cheerful`, `upbeat`, `playful`, `light`
-- 紧张 / 悬疑：`tense`, `suspenseful`, `anxious`, `dark`, `ominous`
-- 壮烈 / 高潮：`epic`, `heroic`, `intense`, `driving`
-
-**成对写走向**（比堆词有效得多）：
-
-| 单写 | 改成 |
-| --- | --- |
-| `sad` | `sad but hopeful`, `bittersweet, yet warm` |
-| `happy` | `happy but wistful`, `cheerful with a hint of sadness` |
-| `tense` | `tense building to relief` |
-
-## 3. 无缝循环（galgame 的硬需求，别省）
-
-**BGM 要反复铺在对话下面**：galgame 的一段对话可能十几分钟，同一首曲子循环几十次。
-**头尾接不上就是一次实打实的出戏**——每次循环到接缝处音色突变，听众立刻出戏。
-
-实测上游固定给 ~176s，**没有「指定时长」的入参**，所以只能靠提示词表达意图：
-
-```
-seamless loop, loopable, steady tempo, no fade in or fade out,
-no intro, no outro, no dramatic build, consistent dynamics throughout
+```text
+[用途与首句纯器乐锚定] + [核心配器] + [日系风格与和声色彩] + [情绪走向] + [速度/动态/循环] + [末尾终极负向排除]
 ```
 
-- **`loopable` 或 `seamless loop` 至少写一个**，别只写 `steady tempo`（那只是速度稳，不是接得上）。
-- **`no fade in or fade out` 很关键**：模型爱给开头一个渐入、结尾一个渐出，接缝处就会有一次明显的音量台阶。
-- **要循环的曲子就别写 `building to a climax`**：有高潮的曲子循环起来每次都在同一个地方爬坡。
-  改写 `building, then settling back`，或干脆不要推进。
-- 片头曲 / 片尾曲这类**只播一次**的，才写 `with a clear beginning and ending`——那和循环是互斥的。
+### 1. 用途与首句纯器乐锚定
 
-## 4. 声明值怎么填（loop / volume）
+首句必须直接开始：
 
-上游固定 ~176s，**拿不到别的长度**，所以别硬凑一个假的时长：
+```text
+Instrumental only, no vocals, no lyrics, no humming; background BGM under character dialogue for a Japanese visual novel.
+```
 
-| 字段 | 怎么填 |
-| --- | --- |
-| `loop` | 循环用途填 `true`；片头/片尾曲填 `false`。**galgame 里绝大多数是 `true`** |
-| `volume` | 素材库既有 61 条全落在 **0.35–0.45**（众数 0.45）。对白垫底取 **0.35–0.4**，情绪重的过场可以到 0.45 |
-| `description` | 写在哪一段垫、什么情绪，**并照库的惯例写一句使用条件**（「没有人声、不盖对白」这类） |
+纯器乐要求必须在**开头首句**出现一次；模型偶尔会泄漏哼唱或无词人声，不能只依赖默认行为。
 
-**不要为了「短一点好循环」去写 `short loop`**：上游不给这个长度，写了只会让曲子变潦草而不会变短。
+### 2. 核心配器
 
-## 5. 无人声 / 纯器乐（必写）
+写一个主角乐器，加一到两个低存在感铺底声部：`solo piano with a soft strings pad`、`music box with celesta accents`、`fingerpicked acoustic guitar with soft piano`。不要把十种乐器堆在一起。
 
-galgame 的 BGM 是**垫在台词下面的**，人声会和人声打架。写 `with vocals` / `singer` / `female singer`
-出来的是**一首歌**，不是 BGM，台词直接被压掉。
+### 3. 日系风格与和声色彩
 
-- 默认就是纯器乐，**不用写否定句**，但下面这句更保险：
-  ```
-  instrumental only, no vocals, no lyrics, no humming
-  ```
-- 偶尔会出现无词哼唱（`ooh`, `aah`, `humming`, `vocalise`）。那是折中方案：想要有人声情绪但不要歌词时，
-  显式写 `soft wordless humming, no lyrics`；完全不想要就写 `no humming, no vocalise`。
+用可触发的声学与和声描述，不单写圈内黑话。例：`warm major seventh and add9 chords, gentle secondary-dominant motion`、`pentatonic melody with a restrained traditional Japanese folk touch`。
 
-## 6. 和弦色彩与「日系」措辞
+### 4. 情绪走向
 
-「日系」不是形容词，是**和声与配器的组合**。想要那种味道，按下面往里挑：
+写状态和转折，不写空泛标签：`tender but hesitant`、`melancholic yet quietly hopeful`、`tense and restrained, never resolving fully`。循环 BGM 通常保持微小变化，不做一次性高潮。
 
-| 想要 | 措辞 |
-| --- | --- |
-| 日系钢琴小品的和声味 | `major key, bright open chords`, `lydian brightness`, `warm major seventh chords` |
-| 物哀 / 泪点 | `minor key with a major seventh resolution`, `wistful chromatic passing chords` |
-| 八音盒 / 钢片琴的日系质感 | `music box`, `celesta`, `glockenspiel, delicate, high register` |
-| 弦乐铺底 | `soft strings pad`, `sustained strings`, `legato strings` |
-| 和风 | `koto`, `shamisen`, `pentatonic scale, traditional Japanese` |
-| 都市 / 冷色 | `synth pad`, `electric piano, lo-fi`, `urban, cool` |
+### 5. 速度 / 动态 / 循环
 
-**别写曲名**：写 `instrumental version of xxx` 等于要求翻唱那首的旋律，模型会去找它。
-描述**风格**才是原创。另外别写 `anime opening`——那是燃曲，会把日常场景顶掉。
+给 BPM 或可感知速度，再写三条硬约束：`flat consistent dynamics`、`no cinematic swell`、`seamless loop with no fade-in or fade-out`。上游固定约 176 秒，BPM 不会改变文件长度。
 
-## 7. 反例词表（这些会把曲子推出 galgame）
+### 6. 末尾终极负向排除
 
-| 别写 | 会变成 | 改写成 |
+每条 prompt 最后必须再次写：
+
+```text
+Instrumental only, no vocals, no lyrics, no humming, no vocalise, no choir, no spoken words; no cinematic swell, no dramatic build, no abrupt ending, no fade-in, no fade-out.
+```
+
+开头和末尾双重锚定是纯器乐的强制规则。不要用 Suno 风格的 `Exclude:` 字段，也不要把否定词放到工具参数外。
+
+## §2. 配器选型表
+
+| 用途 / 气质 | 推荐写法 | 控制点 |
 | --- | --- | --- |
-| `epic orchestral` | 影视预告配乐 | `strings and piano, restrained` |
-| `EDM` / `electronic dance` | 舞曲 | `soft synth pad` |
-| `rock band` / `guitar riff` | 摇滚 | `acoustic guitar, fingerpicked` |
-| `with vocals` / `singer` | 一首**歌** | `instrumental only` |
-| `instrumental version of...` | 翻唱既有曲子 | 描述**风格**而不是作品名 |
-| `anime opening` | 动画 OP 那种燃曲 | `Japanese-style piano piece, gentle` |
-| `8-bit chiptune` | 游戏芯片音 | `celesta and music box` |
-| `building to a climax` | 循环时每次都爬坡 | `consistent dynamics throughout` |
+| 校园日常 | `solo piano with light pizzicato strings` | 钢琴少音、留中频空位 |
+| 温柔闲聊 | `fingerpicked acoustic guitar with soft piano accents` | 不要完整鼓组 |
+| 心动告白 | `solo piano with a very soft strings pad` | 长音铺底，避免弦乐旋律抢对白 |
+| 黄昏怀旧 | `music box with celesta and sparse piano` | 高音点缀，低动态 |
+| 雨中别离 | `sparse solo piano with soft sustained cello` | 钢琴稀疏，低音不轰 |
+| 悬疑调查 | `low felt piano with a restrained viola drone` | 无冲击鼓、无电影式低频冲击 |
+| 梦境八音盒 | `delicate music box with celesta and airy synth pad` | 梦幻但不厚、不做 EDM |
+| 终章誓言 | `warm solo piano with gentle legato strings` | 情绪宽但动态平，不能变预告片 |
 
-## 8. mood / scene / tags：必须对齐素材库既有词表
+**为什么不用完整管弦乐队**：`full orchestra`、`epic orchestral` 会增加中低频密度、铜管瞬态和电影式动态，模型容易生成主题曲或预告片；对白被压住，循环又会在固定位置重复高潮。日系视觉小说底色是**单件独奏 + 少量铺底**。需要规模感时用 `warm piano + restrained legato strings`，不要用 `full orchestra`。
 
-**这三栏是剧作家选曲的唯一依据**——它看不见音频，只能读这一行（剧目素材表，剧作家每轮的素材清单就是它）。
-而选曲是**在资源库与生成曲之间一起选**的，所以：
+## §3. 和声色彩与日系修辞词典
 
-> **`mood` / `scene` 必须落在 `library/bgm/` 既有 61 条已经用过的词上。**
-> 自造一个「凄美」出来，库里没有任何曲子带这个词，它就成了只此一条的孤岛，
-> 剧作家在混合清单里挑不出它，也匹配不上任何一场戏的既有曲。
+| 中文意图 | 直接可用的英文声学 / 和声修辞 |
+| --- | --- |
+| 王道、明亮日系 | `warm major seventh and add9 chords, gentle secondary-dominant feel, bright open voicings` |
+| 轻快校园 | `major key, diatonic pop harmony, light syncopation, short repeating piano motif` |
+| 物哀、淡淡遗憾 | `minor key with suspended tones, wistful chromatic passing chords, bittersweet major-sixth color` |
+| 物哀但不绝望 | `melancholic minor harmony resolving briefly to warm major seventh chords, quietly hopeful` |
+| 和风 | `pentatonic melody, open fifths, restrained traditional Japanese folk touch` |
+| 和风现代化 | `pentatonic fragments over warm add9 chords, subtle Japanese folk color without theatrical gestures` |
+| 空灵 | `open fifths, suspended second chords, high-register sparse notes, unresolved suspended cadence` |
+| 梦幻 | `Lydian brightness, celesta over add9 chords, slow arpeggios, airy sustained pad` |
+| 心动、犹豫 | `warm major seventh chords with gentle chromatic inner voice movement, unresolved cadence` |
+| 哀婉、泪点 | `minor ninth color, descending bass line, sparse suspended piano voicings, delayed resolution` |
+| 决意、救赎 | `steady major-key progression, rising inner voices, warm suspended-to-major resolutions without a climax` |
+| 悬疑暗流 | `minor mode, low pedal tone, semitone tension, sparse dissonant seconds, unresolved cadence` |
+| 都市冷色 | `electric piano, restrained synth pad, suspended fourths, cool close voicings, minimal rhythmic pulse` |
 
-**mood（照抄既有词）**——常用一批：
+不要只写 `Marunouchi progression`、`Yonanuki`、`物哀` 或 `和风`。这些词不够稳定，必须展开成上表里的和弦、音阶、声部和终止描述。不要写曲名、作者名或 `instrumental version of ...`，否则模型会趋向翻唱。
 
-`温柔` `温暖` `治愈` `忧伤` `忧郁` `惆怅` `哀婉` `悲伤` `怀念` `怀旧` `日常` `轻松` `轻快` `俏皮`
-`安静` `平静` `沉思` `寂寥` `孤独` `压抑` `紧张` `压迫` `诡异` `清冷` `空灵` `心动` `酸涩`
-`不舍` `释然` `决意` `宏大` `明亮` `微妙` `隐忍` `期待`
+## §4. 七大经典场景风格矩阵
 
-**scene（照抄既有词）**——按「这场戏在干什么」选：
+以下 prompt 均为可直接复制的单段英文字符串。每条都把纯器乐锚定放在首句与末尾，并默认服务对白、平坦动态、无缝循环。
 
-`日常` `闲聊` `校园` `校园日常` `教室` `放学` `社团` `回忆` `独白` `内心戏` `告白` `别离` `告别`
-`初遇` `和解` `道歉` `过场` `转场` `开场` `角色登场` `片尾` `结局` `高潮` `咖啡馆` `图书馆`
-`街道` `郊外` `都市` `海边` `黄昏` `夜晚` `雨天` `夏天` `假期` `周末` `对峙` `危机` `追逐`
-`悬疑` `推理` `梦境` `等待` `犹豫` `独处` `崩溃`
+### 1. 校园日常 / 闲聊放学
 
-**tags（常用既有词）**：`日系` `钢琴` `八音盒` `钢片琴` `弦乐` `竖琴` `尤克里里` `合成器` `轻音乐`
-`环境音` `循环` `都市` `和风` `西式` `概念原声` `角色主题曲` `日常` `校园` `回忆` `温柔` `伤感`
-`轻快` `推进` `怀旧` `治愈` `诡异`
+- 建议 BPM：`92–108 BPM`
+- 和声特征：明亮大调、maj7/add9、短小重复动机、稀疏中频
+- 应用：教室、社团、放学路、轻松闲聊
 
-**填法**：mood 2–5 个、scene 2–5 个、tags 2–5 个，都要**真的描述这首曲子**。
-`description` 写在哪一段垫、什么情绪——剧作家靠它决定换不换曲，别写成曲风形容词堆砌。
-
-## 9. 完整范例
-
-**告白过场**（循环、垫对白）：
-
-```
-prompt: solo piano with soft strings, tender and hopeful with a touch of
-        hesitation, slow tempo, seamless loop, steady rhythm, no fade in or
-        fade out, sparse arrangement, instrumental only, no vocals,
-        background music under a monologue, keeps the foreground clear
-name:   bgm_confession_tender
-title:  心意渐明
-tags:   [日系, 钢琴, 循环]
-mood:   [温柔, 心动, 微妙]
-scene:  [告白, 独白, 犹豫]
-loop:   true
-volume: 0.35
-description: 两人独处时的过场，音量压低不盖台词；没有前奏尾奏，可整场循环。
+```text
+Instrumental only, no vocals, no lyrics, no humming; light background BGM under casual character dialogue in a Japanese visual novel. Solo piano with gentle pizzicato strings and a few soft acoustic guitar accents, warm major seventh and add9 chords, bright open voicings, a simple pentatonic piano motif with a light Japanese pop feel. Cheerful and relaxed with a small wistful aftertaste, friendly rather than hyperactive. 100 BPM, steady tempo, sparse midrange, restrained presence in the 1 kHz–4 kHz dialogue range, flat consistent dynamics throughout, no cinematic swell, seamless loop, loopable, stable repeating phrase, no abrupt start or ending, no fade-in or fade-out. Instrumental only, no vocals, no lyrics, no humming, no vocalise, no choir, no spoken words; no cinematic swell, no dramatic build, no abrupt ending, no fade-in, no fade-out.
 ```
 
-**悬念推进**（不循环、有推进）：
+### 2. 心动暗恋 / 独处告白
 
-```
-prompt: dark ambient piano with low sustained strings, tense and restrained,
-        steady rhythm building slowly, instrumental only, no vocals,
-        background music for a scene, does not compete with the voice
-name:   bgm_suspense_corridor
-title:  走廊尽头
-tags:   [轻音乐, 环境音]
-mood:   [紧张, 压抑, 悬疑]
-scene:  [悬疑, 危机, 推理]
-loop:   false
-volume: 0.42
-description: 追查段落垫底，从走廊一路走到尽头；不循环，一幕放完。
+- 建议 BPM：`68–82 BPM`
+- 和声特征：温暖 maj7、add9、内声部半音移动、悬置不解决
+- 应用：独处、告白前、犹豫、关系确认
+
+```text
+Instrumental only, no vocals, no lyrics, no humming; intimate background BGM under a quiet confession scene in a Japanese visual novel. Tender solo piano with a very soft legato strings pad, warm major seventh and add9 chords, gentle chromatic inner voice movement, an unresolved suspended cadence, delicate high-register fills with plenty of silence. Tender and hopeful but hesitant, slowly becoming emotionally certain without a climax. 76 BPM, sparse midrange, restrained presence in the 1 kHz–4 kHz dialogue range, soft even articulation, flat consistent dynamics throughout, no cinematic swell, seamless loop, loopable, no abrupt start or ending, no fade-in or fade-out. Instrumental only, no vocals, no lyrics, no humming, no vocalise, no choir, no spoken words; no cinematic swell, no dramatic build, no abrupt ending, no fade-in, no fade-out.
 ```
 
-## 10. 出得不像时怎么改
+### 3. 黄昏归途 / 怀旧物哀
 
-按这个顺序改，别重写整段（每次生成要等一分半）：
+- 建议 BPM：`72–88 BPM`
+- 和声特征：小调与温暖大七和弦交替、下行低音、五声音阶
+- 应用：夕阳街道、回家、童年回忆、旧物
+- 注意：`nostalgic` 单独使用容易带出鼓点；必须绑定稀疏、无鼓或极轻打击乐。
 
-1. **换配器**，情绪词不动——配器是最大的变量。
-2. **加走向**（用 `but` 接一个转折）。
-3. **加 `seamless loop, no fade in or fade out`**（听着断就往这儿调）。
-4. **加 `instrumental only, no vocals`**（听着像在唱歌就往这儿调）。
-5. 还不对才改情绪词——它通常不是问题所在。
+```text
+Instrumental only, no vocals, no lyrics, no humming; quiet background BGM under reflective dialogue on a sunset walk in a Japanese visual novel. Music box and soft felt piano with a very light sustained cello pad, pentatonic melody with a restrained traditional Japanese folk touch, minor key with warm major seventh colors, wistful chromatic passing chords and a gentle descending bass line. Bittersweet, nostalgic in a fragile and private way, warm memories with no rhythmic drive. 80 BPM, sparse and rubato-like phrasing over a steady pulse, no drum groove, no beat-led percussion, restrained presence in the 1 kHz–4 kHz dialogue range, flat consistent dynamics, no cinematic swell, seamless loop, loopable, no abrupt start or ending, no fade-in or fade-out. Instrumental only, no vocals, no lyrics, no humming, no vocalise, no choir, no spoken words; no cinematic swell, no dramatic build, no prominent drums, no beat drop, no abrupt ending, no fade-in, no fade-out.
+```
 
-一次生成约 84 秒（实测），改一次是一轮等待。别来回试。
+### 4. 泪点别离 / 雨中哀婉
+
+- 建议 BPM：`58–72 BPM`
+- 和声特征：小调九和弦、下行低音、延迟解决、重复强化哀婉与纯器乐
+- 应用：雨天车站、离别、道歉后、崩溃前的克制段落
+- 注意：模型容易回归中性；同时写 `deeply sorrowful`、`grief-stricken but restrained`、`achingly bittersweet`，但保持对白空间和低动态。
+
+```text
+Instrumental only, no vocals, no lyrics, no humming; deeply sorrowful instrumental background BGM under spoken dialogue during a rainy farewell in a Japanese visual novel. Sparse solo piano with soft sustained cello and distant felt-string harmonics, minor ninth color, descending bass line, delayed resolution, suspended piano voicings, occasional chromatic passing tones. Grief-stricken and aching, deeply melancholic yet restrained, quietly devastated and unable to let go, not neutral, not cheerful, not merely wistful. 64 BPM, sparse midrange, restrained presence in the 1 kHz–4 kHz dialogue range, no rhythmic groove, flat consistent dynamics throughout, no cinematic swell, seamless loop, loopable, stable repeating phrase, no abrupt start or ending, no fade-in or fade-out. Instrumental only, no vocals, no lyrics, no humming, no vocalise, no choir, no spoken words; no cinematic swell, no dramatic build, no neutral mood, no cheerful resolution, no drums, no abrupt ending, no fade-in, no fade-out.
+```
+
+### 5. 悬疑暗流 / 调查对峙
+
+- 建议 BPM：`72–92 BPM`
+- 和声特征：小调、低音持续音、半音张力、稀疏不协和二度、不解决终止
+- 应用：调查、走廊、秘密揭露前、对峙
+
+```text
+Instrumental only, no vocals, no lyrics, no humming; restrained suspense background BGM under investigation dialogue and a quiet confrontation in a Japanese visual novel. Low felt piano with a restrained viola drone, sparse low pedal tone, minor mode, semitone tension, occasional dissonant seconds, muted bass pulses with no impact hits. Tense, suspicious and watchful, gradually tightening through harmonic pressure while remaining controlled and unresolved. 84 BPM, minimal pulse, sparse midrange, clear space in the 1 kHz–4 kHz dialogue range, flat consistent dynamics throughout, no cinematic swell, seamless loop, loopable, no abrupt start or ending, no fade-in or fade-out. Instrumental only, no vocals, no lyrics, no humming, no vocalise, no choir, no spoken words; no cinematic swell, no dramatic build, no trailer impacts, no risers, no jump-scare hit, no abrupt ending, no fade-in, no fade-out.
+```
+
+### 6. 梦幻序章 / 概念八音盒
+
+- 建议 BPM：`60–76 BPM`
+- 和声特征：Lydian brightness、add9、开放五度、悬置终止、高音稀疏点描
+- 应用：序章、梦境、世界观揭示、回忆碎片
+
+```text
+Instrumental only, no vocals, no lyrics, no humming; delicate conceptual opening BGM under narration and dialogue in a Japanese visual novel. A single music box melody with sparse celesta accents, airy synth pad and occasional high-register piano notes, Lydian brightness, open fifths, suspended second chords, warm add9 harmony and an unresolved suspended cadence. Dreamlike, mysterious and tender, as if a memory is slowly coming into focus, with no dramatic reveal. 68 BPM, very sparse arrangement, restrained presence in the 1 kHz–4 kHz dialogue range, flat consistent dynamics throughout, no cinematic swell, seamless loop, loopable, stable repeating phrase, no abrupt start or ending, no fade-in or fade-out. Instrumental only, no vocals, no lyrics, no humming, no vocalise, no choir, no spoken words; no cinematic swell, no dramatic build, no orchestral hit, no EDM pulse, no abrupt ending, no fade-in, no fade-out.
+```
+
+### 7. 终章救赎 / 真爱誓言
+
+- 建议 BPM：`70–86 BPM`
+- 和声特征：稳定大调、上行内声部、sus 到 major 的温暖解决；规模感来自和声宽度，不来自音量爬坡
+- 应用：终章、重逢、救赎、誓言、结局对白
+
+```text
+Instrumental only, no vocals, no lyrics, no humming; warm emotional background BGM under a final love vow and ending dialogue in a Japanese visual novel. Warm solo piano with gentle legato strings, occasional harp harmonics and very soft sustained pads, steady major-key progression, rising inner voices, suspended-to-major resolutions, rich major seventh and add9 chords. Sincere, relieved and deeply loving, moving from exhaustion to quiet trust, emotionally full but intimate and controlled. 78 BPM, sparse midrange, clear space in the 1 kHz–4 kHz dialogue range, restrained arrangement, flat consistent dynamics throughout, no cinematic swell, seamless loop, loopable, no abrupt start or ending, no fade-in or fade-out. Instrumental only, no vocals, no lyrics, no humming, no vocalise, no choir, no spoken words; no cinematic swell, no dramatic build, no heroic brass, no trailer percussion, no abrupt ending, no fade-in, no fade-out.
+```
+
+## §5. 负向与陷阱词避坑表
+
+| 陷阱词 / 写法 | 常见偏移 | 替代写法 |
+| --- | --- | --- |
+| `anime opening`, `opening theme` | 燃曲、主旋律前置、鼓点和高潮 | `Japanese visual novel background BGM under dialogue` |
+| `lo-fi hip-hop`, `chillhop` | 明显 boom-bap 鼓点、采样感，盖对白 | `soft felt piano, sparse pulse, no drum groove` |
+| `epic orchestral`, `full orchestra` | 影视轰炸、铜管、宽动态 | `solo piano with restrained legato strings` |
+| `cinematic`, `trailer music` | 渐强、riser、impact、固定高潮 | `flat consistent dynamics, no cinematic swell` |
+| `rock band`, `guitar riff` | 摇滚鼓组和失真电吉他 | `fingerpicked acoustic guitar, no drum kit` |
+| `EDM`, `electronic dance` | 四拍底鼓、drop、舞曲结构 | `airy synth pad, no beat drop` |
+| `8-bit chiptune`, `retro game music` | 粗糙芯片音效、方波旋律 | `celesta and delicate music box` |
+| `nostalgic`（单独使用） | 怀旧流行鼓点、轻快伴奏 | `fragile private nostalgia, no drum groove, sparse piano` |
+| `sad song`, `vocal ballad` | 歌曲结构、主唱或哼唱 | `instrumental only, sparse piano, no vocalise` |
+| `with vocals`, `singer`, `female voice` | 人声主体，盖角色配音 | `no vocals, no lyrics, no humming` |
+| `choir`, `vocalise`, `ooh`, `aah` | 无词人声泄漏 | `no choir, no vocalise, no humming` |
+| `building to a climax`, `rising climax` | 每次循环都在相同位置爬坡 | `flat consistent dynamics, no dramatic build` |
+| `clear beginning and ending`, `intro`, `outro` | 前奏尾奏和接缝突变 | `no abrupt start or ending, seamless loop` |
+| 曲名、作者名、`instrumental version of ...` | 翻唱、模仿既有旋律 | 描述乐器、和弦、音阶与动态 |
+
+## §6. 元数据填写与素材库对齐
+
+### 6.1 工具顺序
+
+1. 先确定素材 id 和 prompt，调用 `generate_bgm`；它后台排产，约 40–84 秒，不阻塞当前轮。
+2. 收到到货后调用 `annotate_asset(kind="bgm", name="<id>", ...)`。BGM 的标题、描述、`mood`、`scene`、`tags`、`loop`、`volume` 都通过这一步补齐或修改。
+3. 剧本引用使用 `<scene bgm="<id>" />`；不要引用仍在排产或失败的 id。
+
+### 6.2 字段规则
+
+| 字段 | 规则 |
+| --- | --- |
+| `title` | 中文短标题，能体现画面用途，不写技术参数 |
+| `description` | 写「哪一段垫什么情绪」，并注明 `不盖对白`、`可整场循环` 等使用条件 |
+| `mood` | 2–5 个真实情绪词，只用下方既有枚举 |
+| `scene` | 2–5 个真实场景词，只用下方既有枚举 |
+| `tags` | 2–5 个真实特征词，只用下方既有枚举 |
+| `loop` | 对话垫底、场景循环填 `true`；一次性片头/片尾才填 `false` |
+| `volume` | 严格使用 `0.35–0.45`；对白垫底通常 `0.35–0.40`，情绪较重的过场最多 `0.45` |
+
+上游固定约 176 秒，**没有时长入参**。不要写 `short loop`、`30 second loop` 等假时长指令；它们不会缩短文件，只会让结构变潦草。
+
+### 6.3 既有 61 条素材使用的枚举词
+
+不要创造同义词；剧作家会按这些字符串从混合素材清单选曲。
+
+**mood：**
+
+`温柔` `温暖` `治愈` `忧伤` `忧郁` `惆怅` `哀婉` `悲伤` `怀念` `怀旧` `日常` `轻松` `轻快` `俏皮` `安静` `平静` `沉思` `寂寥` `孤独` `压抑` `紧张` `压迫` `诡异` `清冷` `空灵` `心动` `酸涩` `不舍` `释然` `决意` `宏大` `明亮` `微妙` `隐忍` `期待`
+
+**scene：**
+
+`日常` `闲聊` `校园` `校园日常` `教室` `放学` `社团` `回忆` `独白` `内心戏` `告白` `别离` `告别` `初遇` `和解` `道歉` `过场` `转场` `开场` `角色登场` `片尾` `结局` `高潮` `咖啡馆` `图书馆` `街道` `郊外` `都市` `海边` `黄昏` `夜晚` `雨天` `夏天` `假期` `周末` `对峙` `危机` `追逐` `悬疑` `推理` `梦境` `等待` `犹豫` `独处` `崩溃`
+
+**tags：**
+
+`日系` `钢琴` `八音盒` `钢片琴` `弦乐` `竖琴` `尤克里里` `合成器` `轻音乐` `环境音` `循环` `都市` `和风` `西式` `概念原声` `角色主题曲` `日常` `校园` `回忆` `温柔` `伤感` `轻快` `推进` `怀旧` `治愈` `诡异`
+
+### 6.4 标注范例
+
+```text
+annotate_asset(
+  kind="bgm",
+  name="confession_dusk",
+  title="黄昏里的回答",
+  tags=["日系", "钢琴", "弦乐", "循环"],
+  mood=["温柔", "心动", "微妙"],
+  scene=["告白", "独处", "黄昏"],
+  loop=true,
+  volume=0.35,
+  description="两人放学后独处并慢慢确认心意时垫底；无明显前奏尾奏，不盖对白，可整场循环。"
+)
+```
+
+## §7. 调优排障五步法
+
+一次生成通常要等 40–84 秒。每次只改一个变量，按以下顺序定位：
+
+1. **先查人声泄漏**：prompt 开头首句和末尾是否都含 `instrumental only, no vocals, no lyrics, no humming`；再补 `no vocalise, no choir, no spoken words`。不要先改曲风。
+2. **再查循环接缝**：加入 `seamless loop, loopable, stable repeating phrase, no abrupt start or ending, no fade-in, no fade-out`；删除 `intro`、`outro`、`clear beginning and ending`、`building to a climax`。
+3. **再查对白遮挡**：把配器减到一个主乐器 + 一层铺底，加入 `sparse midrange, restrained presence in the 1 kHz–4 kHz dialogue range`；删掉完整乐队、铜管、厚鼓组。
+4. **再查动态和场景偏移**：加入 `flat consistent dynamics, no cinematic swell, no dramatic build`；将模糊标签改为可触发的和弦、音阶、声部与 BPM。`nostalgic` 偏鼓点时改成 `fragile private nostalgia, no drum groove`。
+5. **最后才改情绪词**：使用成对走向，如 `sad but hopeful`、`tender but hesitant`、`tense and unresolved`。不要同时替换配器、BPM、和声和情绪，否则无法判断是哪一项起效。
