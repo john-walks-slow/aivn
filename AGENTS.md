@@ -14,6 +14,8 @@
 
 - 视觉识别（应用图标、品牌背板与灰阶）见 [`docs/references/261010-brand-plate.md`](docs/references/261010-brand-plate.md)——图标源是 `apps/desktop/icon.svg`（改完跑 `pnpm icon`）。
 
+- NSFW 虚构创作模型选型与 dsh-inject 上下文实验见 [`docs/references/261012-nsfw-uncensored-llm-and-context-injection.md`](docs/references/261012-nsfw-uncensored-llm-and-context-injection.md)。
+
 - 其他：`packages/core` —— Stage DSL 规范、流式解析器、IR 事件、WS 协议与谱系数据模型；`scripts/` —— 开发与打包脚本；`apps/server/skills/` —— 跨剧目的通用做法速查（两个 agent 都能 `read_skill`，随包只读，**技能库只此一处**）；`docs/` —— 需求、问题与规范记录。
 
 - **两条发行线**：本仓是 AIVN 的领域与完整产品线；`dsh-aivn`（兄弟仓）是同一套领域在 DSH 宿主上的适配线。两仓共享 `packages/core` 与 `packages/stage`——**改共享包会静默传到 DSH**（构建期打进它的 `lib/`），所以改完必须双边验证。**改了什么该跑什么**见 [`docs/references/261009-cross-host-verification.md`](docs/references/261009-cross-host-verification.md)。
