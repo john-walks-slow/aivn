@@ -5,6 +5,19 @@ import { navigate } from "../router.jsx";
 import { plainSummary } from "../ui/text.js";
 import { useDismissible } from "../ui/useDismissible.js";
 
+/** 剧目库的三个分类：全部 / 已开演 / 草稿中。 */
+type FilterMode = "all" | "active" | "draft";
+
+/**
+ * 空结果的文案：空的是「筛选」还是「关键词」，说到点子上——
+ * 只切了筛选却写「没有找到与“”相关的剧目。」，是拿空关键词解释筛选结果。
+ */
+function emptyHintOf(filterMode: FilterMode, search: string): string {
+  return filterMode === "active" && search.trim() === ""
+    ? "暂无已开演剧目"
+    : `没有找到与“${search}”相关的剧目。`;
+}
+
 /** 应用首页 = 剧目库（现代启动器风格）：作品牌网格 + 顶部搜索与管理 */
 export function LibraryView() {
   const [plays, setPlays] = useState<PlaySummary[] | null>(null);
@@ -64,9 +77,7 @@ export function LibraryView() {
       .catch((e: Error) => setError(e.message));
   };
 
-  const [filterMode, setFilterMode] = useState<"all" | "active" | "draft">(
-    "all",
-  );
+  const [filterMode, setFilterMode] = useState<FilterMode>("all");
 
   const counts = useMemo(() => {
     if (!plays) return { total: 0, active: 0, draft: 0 };
@@ -331,14 +342,17 @@ export function LibraryView() {
           plays &&
           plays.length > 0 && (
             <div className="library-empty-state">
-              <p>没有找到与“{search}”相关的剧目。</p>
-              <button
-                type="button"
-                className="ghost-btn"
-                onClick={() => setSearch("")}
-              >
-                清除搜索
-              </button>
+              <p>{emptyHintOf(filterMode, search)}</p>
+              {/* 没搜过就没有可清的：空结果的成因在筛选上，这颗键点下去什么也不会发生 */}
+              {search.trim() !== "" && (
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setSearch("")}
+                >
+                  清除搜索
+                </button>
+              )}
             </div>
           )}
       </main>

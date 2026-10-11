@@ -56,6 +56,30 @@ interface Drag {
 /** 正在弹窗的那张卡：重写要交代一句，删除要先看清楚会没掉多少。 */
 type Asking = { kind: "rewrite" | "remove"; card: BeatCard };
 
+/** 取景留白：树与画布边缘之间留这么多像素，贴边会读不出一张卡的框。 */
+const FIT_PAD = 48;
+
+/**
+ * 画布有多大：认布局尺寸（`clientWidth/Height`），不认 `getBoundingClientRect()`——
+ * 后者带着祖先的 transform，面板入场那 0.22s（`.stage-panel-full` 的 `scale(0.98)`）会把
+ * 首帧量成一个偏小的画布，取景就照着那个尺寸定死了。画布没上屏（尺寸为 0）时返回 null。
+ */
+function canvasSize(el: HTMLElement | null): { width: number; height: number } | null {
+  if (!el) return null;
+  const { clientWidth, clientHeight } = el;
+  return clientWidth > 0 && clientHeight > 0 ? { width: clientWidth, height: clientHeight } : null;
+}
+
+/** 两条轴都收得下时的倍数（上限 1 = 不放大）。可能低于可读下限，认不认由调用方定。 */
+function fitScale(box: { width: number; height: number }, width: number, height: number): number {
+  return Math.min(1, (box.width - FIT_PAD) / width, (box.height - FIT_PAD) / height);
+}
+
+/** 按倍数 k 把整棵树摆到画布正中——「整棵收进视野」这条路上，取景只有这一种摆法。 */
+function centered(k: number, box: { width: number; height: number }, width: number, height: number): Camera {
+  return { k, x: (box.width - width * k) / 2, y: (box.height - height * k) / 2 };
+}
+
 /**
  * 一张卡及其全部后代（含自己）。
  *
@@ -80,6 +104,8 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
   const dragRef = useRef<Drag | null>(null);
   /** 玩家自己动过镜头（拖/缩/看全树）吗——动过就不再自动取景抢镜头。 */
   const manual = useRef(false);
+  /** 首屏取景做过没有：打开路线面板时做一次，之后树再长也不抢玩家的镜头。 */
+  const framed = useRef(false);
   const [camera, setCamera] = useState<Camera>({ x: 24, y: 24, k: 1 });
   /** 玩家点名要的方向；null = 跟着窗口走（宽屏横读、竖屏纵读）。 */
   const [pinned, setPinned] = useState<RouteDir | null>(null);
@@ -137,15 +163,15 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
     };
   }, [pinned]);
 
-  // 打开路线时的取景：贴着根开始读。基本塞得下就整棵塞下（差个边角就露半张卡片很难看），
+  // 「回到开头」的取景：贴着根开始读。基本塞得下就整棵塞下（差个边角就露半张卡片很难看），
   // 塞不下就只按摊开方向收，宁可超屏让人拖，也不把字缩到看不清。
   const frameFromRoot = useCallback(() => {
-    const box = frameRef.current?.getBoundingClientRect();
+    const box = canvasSize(frameRef.current);
     if (!box || width === 0 || height === 0) return;
     const along = dir === "horizontal" ? box.height : box.width;
     const extent = dir === "horizontal" ? height : width;
-    const whole = Math.min((box.width - 48) / width, (box.height - 48) / height);
-    const k = Math.min(1, Math.max(MIN_ZOOM, whole >= 0.85 ? whole : (along - 48) / extent));
+    const whole = fitScale(box, width, height);
+    const k = Math.min(1, Math.max(MIN_ZOOM, whole >= 0.85 ? whole : (along - FIT_PAD) / extent));
     setCamera(
       dir === "horizontal"
         ? { k, x: 24, y: Math.max(24, (box.height - height * k) / 2) }
@@ -153,28 +179,56 @@ export function RouteCanvas({ cards, ops, busy, names, index, onControls }: Canv
     );
   }, [width, height, dir]);
 
-  // 「看全树」：两条轴一起收，整棵树收进视野——只在这里允许缩到看不清的倍数
-  const fitAll = useCallback(() => {
-    const box = frameRef.current?.getBoundingClientRect();
-    if (!box || width === 0 || height === 0) return;
-    manual.current = true;
-    const k = Math.min(
-      1,
-      Math.max(MIN_ZOOM, Math.min((box.width - 48) / width, (box.height - 48) / height)),
-    );
-    setCamera({ k, x: (box.width - width * k) / 2, y: (box.height - height * k) / 2 });
-  }, [width, height]);
+  /**
+   * 没人动过镜头时的取景（首次打开路线、视口变化都走这一条）：整棵树能在可读倍数
+   * （≥ MIN_ZOOM）以上收进视野，就整棵收下并居中——一开屏就该看见全貌：有几条枝、
+   * 从哪儿分出来的，分岔之后尤其如此。收不下（一条很长的链）就退回 frameFromRoot 的
+   * 「贴着根开始读」：强行居中会把开头推出屏外，字也缩到认不出。
+   *
+   * 返回值只说「画布上屏了没有」：收不下时的贴根取景同样是一次到位的取景，不是半成品；
+   * 只有画布还没有尺寸（元素刚挂上、面板还没铺开）才返回 false，把这一次让给下一个机会。
+   */
+  const frameAuto = useCallback((): boolean => {
+    const box = canvasSize(frameRef.current);
+    if (!box || width === 0 || height === 0) return false;
+    const k = fitScale(box, width, height);
+    if (k < MIN_ZOOM) frameFromRoot();
+    else setCamera(centered(k, box, width, height));
+    return true;
+  }, [width, height, frameFromRoot]);
+
+  // 首屏取景：路线面板一打开就把整棵树摆正。落在布局阶段，第一帧就是最终取景，看不到一次跳动。
+  useLayoutEffect(() => {
+    if (framed.current || manual.current) return;
+    framed.current = frameAuto();
+  }, [frameAuto]);
+
+  // 取景函数每轮渲染都可能是新的（树长长了布局尺寸就变了），observer 却只挂一次：
+  // 重新 observe 会补一次「刚观察」回调，那不是视口变了、是树变了——玩家正在读的那一屏会被重置。
+  const frameAutoRef = useRef(frameAuto);
+  useLayoutEffect(() => {
+    frameAutoRef.current = frameAuto;
+  }, [frameAuto]);
 
   // 取景跟着视口走：转屏、缩窗口都重新取景；玩家一旦自己拖过/缩过（manual），之后就不再抢镜头。
+  // 只认画布自己的尺寸变化：树在画布里长大撑不动这块容器（`.route-scene` 是绝对定位的）。
   useLayoutEffect(() => {
     const el = frameRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      if (!manual.current) frameFromRoot();
+      if (!manual.current) frameAutoRef.current();
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [frameFromRoot]);
+  }, []);
+
+  // 「看全树」：两条轴一起收，整棵树收进视野——玩家自己点的，只在这里允许缩到看不清的倍数
+  const fitAll = useCallback(() => {
+    const box = canvasSize(frameRef.current);
+    if (!box || width === 0 || height === 0) return;
+    manual.current = true;
+    setCamera(centered(Math.max(MIN_ZOOM, fitScale(box, width, height)), box, width, height));
+  }, [width, height]);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
