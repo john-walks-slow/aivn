@@ -32,8 +32,14 @@ function swallow(e: SyntheticEvent): void {
 export function hasPendingWork(
   items: readonly PromptQueueItem[],
   jobs: readonly PendingJob[],
+  extras?: { live?: boolean; nextReady?: boolean },
 ): boolean {
-  return jobs.length > 0 || items.length > 0;
+  return (
+    jobs.length > 0 ||
+    items.length > 0 ||
+    Boolean(extras?.live) ||
+    Boolean(extras?.nextReady)
+  );
 }
 
 /**
@@ -64,6 +70,8 @@ export function PromptQueuePanel({
   onDelete,
   onDismissJob,
   variant = "dialog",
+  nextReady = false,
+  live = false,
 }: {
   items: readonly PromptQueueItem[];
   /** 正在生成的事（剧作家的轮次 / 背景 / CG / 立绘 / 语音）；空数组 = 这会儿没在生成。 */
@@ -74,6 +82,10 @@ export function PromptQueuePanel({
   onDismissJob: (jobId: string) => void;
   /** 收起态落在哪儿：`dialog` = 台词条底缘那一格状态位（舞台），`dock` = 内容区底部一条（工坊）。 */
   variant?: "dialog" | "dock";
+  /** 文本播放下一句是否已就绪可用（当前句打字机完成且缓冲区有下一句） */
+  nextReady?: boolean;
+  /** 是否处于流式文本生成中 */
+  live?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -127,11 +139,13 @@ export function PromptQueuePanel({
   const rows = jobs;
   const dock = variant === "dock";
 
-  if (!hasPendingWork(items, jobs)) return null;
+  if (!hasPendingWork(items, jobs, { live, nextReady })) return null;
 
   const failed = jobs.some((job) => job.state === "failed");
-  const running = jobs.filter((job) => job.state === "running");
-  const dot = failed ? "is-failed" : running.length > 0 ? "is-running" : "";
+  const isTextGenerating = Boolean(live) || jobs.some((job) => job.kind === "beat" && job.state === "running");
+  const showTextIndicator = isTextGenerating || Boolean(nextReady);
+  const categories = summarizeCategories(jobs, waiting.length);
+
   const chip = (
     <button
       ref={chipRef}
@@ -150,12 +164,36 @@ export function PromptQueuePanel({
           ? "有生成项失败了，点击展开详情"
           : open
             ? "收起生成队列与待注入列表"
-            : "点击展开生成队列与待注入列表"
+            : "点击展开生成队列与详情"
       }
     >
-      <span className={`status-indicator-dot${dot ? ` ${dot}` : ""}`} />
-      <span className="prompt-queue-text">{collapsedSummary(jobs, waiting.length)}</span>
-      <Icon name={open ? "up" : "down"} size={12} />
+      {/* 文本生成与下一句可用指示器：spinner 代表文本生成，变成跳动光标代表下一句可用 */}
+      {showTextIndicator && (
+        <span
+          className="prompt-queue-text-indicator"
+          title={nextReady ? "下一句已就绪" : "剧作家创作中"}
+        >
+          {nextReady ? (
+            <span className="prompt-queue-cursor" aria-label="下一句可用" />
+          ) : (
+            <span className="dialog-spinner" aria-label="剧作家创作中" />
+          )}
+        </span>
+      )}
+
+      {/* 其他生成类别：展示为闪烁图标（麦克风/音乐/图片/人像等）➕ 右上角小数字代表队列长度 */}
+      {categories.map((cat) => (
+        <span
+          key={cat.key}
+          className={`prompt-queue-cat${cat.failed ? " failed" : ""}`}
+          title={`${cat.label}（${cat.count}）`}
+        >
+          <span className="prompt-queue-cat-icon">
+            <Icon name={cat.icon} size={13} />
+          </span>
+          <span className="prompt-queue-cat-badge">{cat.count}</span>
+        </span>
+      ))}
     </button>
   );
 
@@ -295,31 +333,99 @@ function elapsed(startedAt: number, now: number): string {
   return `${min} 分 ${sec % 60} 秒`;
 }
 
-/**
- * 收起成徽标时那行字：出事了先报出事，没出事报在忙哪一类（多于一件补个计数），
- * 什么都没在生成才轮到待注入的几条。
- */
-function collapsedSummary(jobs: readonly PendingJob[], waitingCount: number): string {
-  const failed = jobs.filter((job) => job.state === "failed").length;
-  if (failed > 0) return `${failed} 项失败`;
-  const running = jobs.filter((job) => job.state === "running");
-  const first = running[0];
-  if (first) {
-    const name = KIND_NAME[first.kind] ?? "任务执行中";
-    return running.length > 1 ? `${name} (${running.length})` : name;
-  }
-  if (waitingCount > 0) return `${waitingCount} 条提示待注入`;
-  return `已就绪 (${jobs.length + waitingCount})`;
+export interface CategorySummary {
+  readonly key: string;
+  readonly icon: IconName;
+  readonly count: number;
+  readonly label: string;
+  readonly failed: boolean;
 }
 
-const KIND_NAME: Partial<Record<PendingJob["kind"], string>> = {
-  beat: "剧作家创作中",
-  bg: "背景生成中",
-  cg: "插图生成中",
-  sprite: "立绘生成中",
-  voice: "语音合成中",
-  bgm: "配乐生成中",
-};
+/**
+ * 汇总除文本生成外的其他生成类别：展示为闪烁图标（麦克风/音乐/图片/人像等）➕ 右上角小数字代表队列长度。
+ */
+export function summarizeCategories(
+  jobs: readonly PendingJob[],
+  waitingPromptCount: number,
+): readonly CategorySummary[] {
+  const result: CategorySummary[] = [];
+
+  // 1. 麦克风 (voice)
+  const voiceJobs = jobs.filter((j) => j.kind === "voice");
+  if (voiceJobs.length > 0) {
+    result.push({
+      key: "voice",
+      icon: "mic",
+      count: voiceJobs.length,
+      label: "语音合成",
+      failed: voiceJobs.some((j) => j.state === "failed"),
+    });
+  }
+
+  // 2. 音乐 (bgm)
+  const bgmJobs = jobs.filter((j) => j.kind === "bgm");
+  if (bgmJobs.length > 0) {
+    result.push({
+      key: "bgm",
+      icon: "volume",
+      count: bgmJobs.length,
+      label: "配乐生成",
+      failed: bgmJobs.some((j) => j.state === "failed"),
+    });
+  }
+
+  // 3. 图片 (bg 与 cg 属于图片类别)
+  const imageJobs = jobs.filter((j) => j.kind === "bg" || j.kind === "cg");
+  if (imageJobs.length > 0) {
+    result.push({
+      key: "image",
+      icon: "assets",
+      count: imageJobs.length,
+      label: "图片生成",
+      failed: imageJobs.some((j) => j.state === "failed"),
+    });
+  }
+
+  // 4. 人像 (sprite)
+  const spriteJobs = jobs.filter((j) => j.kind === "sprite");
+  if (spriteJobs.length > 0) {
+    result.push({
+      key: "sprite",
+      icon: "users",
+      count: spriteJobs.length,
+      label: "立绘生成",
+      failed: spriteJobs.some((j) => j.state === "failed"),
+    });
+  }
+
+  // 5. 待注入提示词
+  if (waitingPromptCount > 0) {
+    result.push({
+      key: "prompt",
+      icon: "chat",
+      count: waitingPromptCount,
+      label: "待注入提示",
+      failed: false,
+    });
+  }
+
+  // 6. 其他失败项（若有其他种类如 beat 失败，单独挂出警号）
+  const otherFailedJobs = jobs.filter(
+    (j) => j.state === "failed" && !["voice", "bgm", "bg", "cg", "sprite"].includes(j.kind),
+  );
+  if (otherFailedJobs.length > 0) {
+    result.push({
+      key: "failed",
+      icon: "alert",
+      count: otherFailedJobs.length,
+      label: "生成失败",
+      failed: true,
+    });
+  }
+
+  return result;
+}
+
 
 /**
  * 面板顶上那行：在跑的说在跑，挂了的说挂了几条，两样都没发生才叫「刚刚完成」。

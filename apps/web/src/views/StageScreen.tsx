@@ -739,11 +739,17 @@ export function StageScreen({
 
   /**
    * 待注入队列只有一份数据，落点两处：舞台塞进台词条底缘那格状态位，工坊贴内容区底部一条。
-   * 没活儿可报时回 `null`——那格状态位得还给引擎自己的 spinner（剧作家正在写），
-   * 不能拿一个「里面渲染 null」的元素去顶它。
+   * 折叠态：包含浅图标与 spinner（文本生成中），下一句可用时 spinner 变成跳动光标。
    */
+  const isLineDone =
+    playback.current !== null && playback.shownLength >= playback.current.text.length;
+  const isNextReady = isLineDone && (!playback.exhausted || canContinue);
+
   const pendingQueue = (variant: "dialog" | "dock") =>
-    hasPendingWork(stage.queue, stage.pendingJobs) ? (
+    hasPendingWork(stage.queue, stage.pendingJobs, {
+      live: stage.state === "streaming",
+      nextReady: variant === "dialog" ? isNextReady : false,
+    }) ? (
       <PromptQueuePanel
         variant={variant}
         items={stage.queue}
@@ -751,6 +757,8 @@ export function StageScreen({
         onEdit={(id, text) => stage.sendPromptEdit(id, text)}
         onDelete={(id) => stage.sendPromptDelete(id)}
         onDismissJob={(jobId) => stage.sendPendingDismiss(jobId)}
+        nextReady={variant === "dialog" ? isNextReady : false}
+        live={stage.state === "streaming"}
       />
     ) : null;
 

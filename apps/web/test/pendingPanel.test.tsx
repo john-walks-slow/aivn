@@ -36,7 +36,7 @@ function openPanel(jobs: PendingJob[], onDismissJob = vi.fn()) {
  * 收起成徽标时也要一眼看出有失败（那几行不会自己消失）。
  */
 describe("PromptQueuePanel 失败项", () => {
-  it("收起态：有失败就说「N 项失败」，状态点转成告警色", () => {
+  it("收起态：有失败就标 failed，不再有字和光点，而是包含浅图标和角标", () => {
     render(
       <PromptQueuePanel
         items={[]}
@@ -48,9 +48,12 @@ describe("PromptQueuePanel 失败项", () => {
     );
     const badge = document.querySelector(".prompt-queue-badge");
     expect(badge?.className).toContain("failed");
-    // 收起态是「出事了」唯一看得见的地方：文字要说清几项，点要换成告警色
-    expect(badge?.textContent).toContain("失败");
-    expect(badge?.querySelector(".status-indicator-dot.is-failed")).not.toBeNull();
+    // 不再有文字和光点
+    expect(badge?.querySelector(".prompt-queue-text")).toBeNull();
+    expect(badge?.querySelector(".status-indicator-dot")).toBeNull();
+    // 包含浅图标和角标小数字
+    expect(badge?.querySelector(".prompt-queue-cat.failed")).not.toBeNull();
+    expect(badge?.querySelector(".prompt-queue-cat-badge")?.textContent).toBe("1");
   });
 
   it("没有失败项时徽标照旧：只报在忙的几类，不挂警号", () => {
@@ -66,6 +69,82 @@ describe("PromptQueuePanel 失败项", () => {
     const badge = document.querySelector(".prompt-queue-badge");
     expect(badge?.className).not.toContain("failed");
     expect(badge?.querySelector(".lucide-triangle-alert")).toBeNull();
+  });
+});
+
+describe("PromptQueuePanel 折叠态指示符（浅图标与 spinner / 跳动光标）", () => {
+  it("文本生成中展示 spinner，无字无光点", () => {
+    render(
+      <PromptQueuePanel
+        items={[]}
+        jobs={[job({ id: "beat:1", kind: "beat", label: "第 1 轮" })]}
+        onEdit={() => {}}
+        onDelete={() => {}}
+        onDismissJob={() => {}}
+        live={true}
+      />,
+    );
+    const badge = document.querySelector(".prompt-queue-badge");
+    expect(badge?.querySelector(".prompt-queue-text")).toBeNull();
+    expect(badge?.querySelector(".status-indicator-dot")).toBeNull();
+    expect(badge?.querySelector(".dialog-spinner")).not.toBeNull();
+    expect(badge?.querySelector(".prompt-queue-cursor")).toBeNull();
+  });
+
+  it("下一句可用时（nextReady），spinner 变成跳动光标", () => {
+    render(
+      <PromptQueuePanel
+        items={[]}
+        jobs={[job({ id: "beat:1", kind: "beat", label: "第 1 轮" })]}
+        onEdit={() => {}}
+        onDelete={() => {}}
+        onDismissJob={() => {}}
+        nextReady={true}
+      />,
+    );
+    const badge = document.querySelector(".prompt-queue-badge");
+    expect(badge?.querySelector(".dialog-spinner")).toBeNull();
+    expect(badge?.querySelector(".prompt-queue-cursor")).not.toBeNull();
+  });
+
+  it("其他生成类别展示为闪烁图标（麦克风/音乐/图片/人像等）➕ 右上角小数字代表队列长度", () => {
+    render(
+      <PromptQueuePanel
+        items={[]}
+        jobs={[
+          job({ id: "voice:1", kind: "voice", label: "语音1" }),
+          job({ id: "voice:2", kind: "voice", label: "语音2" }),
+          job({ id: "bgm:1", kind: "bgm", label: "BGM1" }),
+          job({ id: "bg:1", kind: "bg", label: "背景1" }),
+          job({ id: "cg:1", kind: "cg", label: "插图1" }),
+          job({ id: "sprite:1", kind: "sprite", label: "立绘1" }),
+        ]}
+        onEdit={() => {}}
+        onDelete={() => {}}
+        onDismissJob={() => {}}
+      />,
+    );
+    const badge = document.querySelector(".prompt-queue-badge");
+    // 麦克风 (voice): 2
+    const voiceCat = badge?.querySelector('[title="语音合成（2）"]');
+    expect(voiceCat).not.toBeNull();
+    expect(voiceCat?.querySelector(".prompt-queue-cat-badge")?.textContent).toBe("2");
+    expect(voiceCat?.querySelector(".prompt-queue-cat-icon")).not.toBeNull();
+
+    // 音乐 (bgm): 1
+    const bgmCat = badge?.querySelector('[title="配乐生成（1）"]');
+    expect(bgmCat).not.toBeNull();
+    expect(bgmCat?.querySelector(".prompt-queue-cat-badge")?.textContent).toBe("1");
+
+    // 图片 (bg + cg): 2
+    const imageCat = badge?.querySelector('[title="图片生成（2）"]');
+    expect(imageCat).not.toBeNull();
+    expect(imageCat?.querySelector(".prompt-queue-cat-badge")?.textContent).toBe("2");
+
+    // 人像 (sprite): 1
+    const spriteCat = badge?.querySelector('[title="立绘生成（1）"]');
+    expect(spriteCat).not.toBeNull();
+    expect(spriteCat?.querySelector(".prompt-queue-cat-badge")?.textContent).toBe("1");
   });
 
   it("展开态：失败行默认不铺错因，点开才有；顶上说清挂了几条", () => {

@@ -1108,12 +1108,12 @@ voiceState,
             ) : action ? null : (
               <>
                 {/* 状态位：默认是「剧作家正在写 / 正在加载」的 spinner；宿主带了待注入队列就换成它那一枚
-                    （那枚自己也报在忙什么，而且点得开）。 */}
+                    （那枚自己整合了 spinner 与跳动光标，而且点得开）。 */}
                 {dialogStatus ??
                   ((live || loading) && (
                     <span className="dialog-spinner" aria-label={loading ? "正在加载" : "剧作家正在写"} />
                   ))}
-                {!loading && lineDone && (!exhausted || canContinue) && (
+                {!loading && !dialogStatus && lineDone && (!exhausted || canContinue) && (
                   <span className="dialog-next" aria-hidden>
                     ▼
                   </span>
