@@ -45,7 +45,7 @@ import type { RouteControls } from "../stage/RouteCanvas.js";
 import { StagePanel } from "../stage/StagePanel.js";
 import { useLeaveGuard } from "../workshop/dirtyGuard.js";
 import { beatAtLine, buildBeats, editableNodeAtLine } from "../stage/beats.js";
-import { PromptQueuePanel } from "../stage/PromptQueuePanel.js";
+import { PromptQueuePanel, hasPendingWork } from "../stage/PromptQueuePanel.js";
 import { WorkshopPane } from "../workshop/WorkshopPane.js";
 
 /** 阅读位置上报的防抖窗口：打字机逐字推进，1s 内只发最后一次位置。 */
@@ -724,6 +724,23 @@ export function StageScreen({
     [lineage.view, transcript, actorNames],
   );
 
+  /**
+   * 待注入队列只有一份数据，落点两处：舞台塞进台词条底缘那格状态位，工坊贴内容区底部一条。
+   * 没活儿可报时回 `null`——那格状态位得还给引擎自己的 spinner（剧作家正在写），
+   * 不能拿一个「里面渲染 null」的元素去顶它。
+   */
+  const pendingQueue = (variant: "dialog" | "dock") =>
+    hasPendingWork(stage.queue, stage.pendingJobs) ? (
+      <PromptQueuePanel
+        variant={variant}
+        items={stage.queue}
+        jobs={stage.pendingJobs}
+        onEdit={(id, text) => stage.sendPromptEdit(id, text)}
+        onDelete={(id) => stage.sendPromptDelete(id)}
+        onDismissJob={(jobId) => stage.sendPendingDismiss(jobId)}
+      />
+    ) : null;
+
   if (view === "workshop") {
     return (
       <div className="screen stage-screen studio-screen">
@@ -740,16 +757,7 @@ export function StageScreen({
           onManageSprites={manageSprites}
           send={stage.send}
           connected={stage.connected}
-          queue={
-            <PromptQueuePanel
-              items={stage.queue}
-              jobs={stage.pendingJobs}
-              dock
-              onEdit={(id, text) => stage.sendPromptEdit(id, text)}
-              onDelete={(id) => stage.sendPromptDelete(id)}
-              onDismissJob={(jobId) => stage.sendPendingDismiss(jobId)}
-            />
-          }
+          queue={pendingQueue("dock")}
         />
         <ToastStack toasts={toast.toasts} onDismiss={toast.dismiss} />
       </div>
@@ -799,6 +807,8 @@ export function StageScreen({
           canContinue={canContinue}
           onContinue={continueBeat}
           onNotify={(text) => toast.push(text, "warn")}
+          /* 待注入队列的指示符 + 触发器就长在台词条底缘那格状态位上（原先画 spinner 的地方） */
+          dialogStatus={pendingQueue("dialog")}
           overlay={
             /* 回看中屏幕上摆的是历史台词，那一刻的决定早就做过了——
                选项摆出来会让人以为还能改，点了就是拿旧决定去覆盖新分支。 */
@@ -875,17 +885,6 @@ export function StageScreen({
             auto={playback.auto}
           />
         </div>
-      )}
-
-      {/* 待注入队列 + 正在生成的事：空则不占地方，浮在画面右上导演栏下方 */}
-      {view === "stage" && (
-        <PromptQueuePanel
-          items={stage.queue}
-          jobs={stage.pendingJobs}
-          onEdit={(id, text) => stage.sendPromptEdit(id, text)}
-          onDelete={(id) => stage.sendPromptDelete(id)}
-          onDismissJob={(jobId) => stage.sendPendingDismiss(jobId)}
-        />
       )}
 
       {view === "backlog" && (

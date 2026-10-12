@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { StopPayload } from "@aivn/core";
 import {
@@ -47,13 +48,21 @@ const index: AssetIndex = {
   spritePresentation: () => ({ framing: "full", stature: "normal", anchor: "bottom" }),
 };
 
-function Theater({ directorBar }: { directorBar?: boolean }) {
+function Theater({
+  directorBar,
+  live = false,
+  dialogStatus,
+}: {
+  directorBar?: boolean;
+  live?: boolean;
+  dialogStatus?: ReactNode;
+}) {
   const playback = usePlayback(cues, lines, { live: false, resume: false, revision: 1, transcript });
   return (
     <StageTheater
       visual={playback.visual}
       playback={playback}
-      live={false}
+      live={live}
       names={{}}
       index={index}
       voiceAvailable={false}
@@ -73,6 +82,7 @@ function Theater({ directorBar }: { directorBar?: boolean }) {
       onContinue={() => {}}
       onTurbo={() => {}}
       {...(directorBar === undefined ? {} : { directorBar })}
+      {...(dialogStatus === undefined ? {} : { dialogStatus })}
     />
   );
 }
@@ -117,6 +127,22 @@ describe("宿主扩展位", () => {
     const theater = container.querySelector(".theater") as HTMLElement;
     // CSS 缺省值是 46px；不写回 0 的话选肢层底部会凭空多出一条缝
     expect(theater.style.getPropertyValue("--dir-h")).toBe("0px");
+  });
+
+  it("dialogStatus 顶掉内置 spinner：同一件事（剧作家正在写）不摆两遍", () => {
+    const { container, rerender } = render(
+      <Theater live dialogStatus={<button className="prompt-queue-badge">剧作家创作中</button>} />,
+    );
+    expect(container.querySelector(".dialog-hint-foot .prompt-queue-badge")).toBeTruthy();
+    expect(container.querySelector(".dialog-spinner")).toBeNull();
+
+    // 手里没有待注入队列的宿主（dsh-aivn）不传槽位，照旧是 spinner
+    rerender(<Theater live />);
+    expect(container.querySelector(".dialog-hint-foot .dialog-spinner")).toBeTruthy();
+
+    // 宿主自己那枚没东西可报时不摆（传 null），这格照样得还给 spinner
+    rerender(<Theater live dialogStatus={null} />);
+    expect(container.querySelector(".dialog-hint-foot .dialog-spinner")).toBeTruthy();
   });
 
   it("浏览器没有全屏能力时，右下角不摆那枚按不动的全屏键", () => {

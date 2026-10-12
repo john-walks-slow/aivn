@@ -5723,14 +5723,23 @@ html[data-ui-theme="dark"] .stage-view-segmented {
 }
 
 /* 待注入队列 + 正在生成的事（PromptQueuePanel）。
-   常驻在右上角导演栏正下方：收起态是一行安静的状态字（不占画面、不抢戏），
-   点开才长出详情列表。chrome 与导演栏同源，只是不再有第二层底框。 */
+   收起态是台词条底缘那格状态位里的一枚芯片（见下面的 .prompt-queue-badge），
+   点开才长出这一块详情列表。chrome 与导演栏同源，只是不再有第二层底框。 */
 .prompt-queue {
-  position: absolute;
-  z-index: 43;
-  top: calc(44px + env(safe-area-inset-top, 0px));
-  right: 10px;
-  width: min(86vw, 288px);
+  /* 展开的这块压在画面上，挂到 body 上（portal + fixed），锚在触发器正上方：
+     锚点由 PromptQueuePanel 量出来写进 --chip-x / --chip-y（触发器在哪一侧都不必知道）。
+     留在台词条里不行——窄屏的台词条是 overflow-y: auto 的滚动区会把它裁掉，
+     而且台词条自成层叠上下文（z-index 12），压不过舞台顶上那几条 chrome。
+     工坊那份在下面覆盖成静态、跟着内容流。 */
+  --panel-w: min(86vw, 288px);
+  position: fixed;
+  z-index: 60;
+  left: min(var(--chip-x, 8px), calc(100vw - var(--panel-w) - 8px));
+  bottom: var(--chip-y, 8px);
+  width: var(--panel-w);
+  /* 上不封顶会顶出屏幕：触发器到屏幕顶还有多少就长多高，多的滚 */
+  max-height: calc(100vh - var(--chip-y, 0px) - 12px);
+  overflow-y: auto;
   padding: 8px 10px;
   border: 1px solid var(--stage-chrome-edge);
   border-radius: 8px;
@@ -5745,8 +5754,7 @@ html[data-ui-theme="dark"] .stage-view-segmented {
    所以它的字也恒走深玻璃那一套：界面切浅色时若照搬 --dialog-ink（那时是深墨），
    就是深墨压在深玻璃上，一个字都读不出来。
    工坊里那份 dock 版另有一套纸面令牌覆盖（下面 .prompt-queue-docked，同类名后写者胜）。 */
-.prompt-queue,
-.prompt-queue-badge {
+.prompt-queue {
   --dialog-ink: #f8fafc;
   --dialog-ink-soft: #cbd5e1;
   --dialog-ink-faint: rgba(248, 250, 252, 0.55);
@@ -5755,30 +5763,51 @@ html[data-ui-theme="dark"] .stage-view-segmented {
   --dialog-hover: rgba(255, 255, 255, 0.12);
 }
 
+/* 收起态那枚指示符 + 触发器：长在台词条底缘那一格状态位里（.dialog-hint-foot），
+   跟那行字同一套令牌——它读起来是台词条的一部分，不是又一块压在画面上的玻璃。
+   手机上台词条底缘那一行本就右对齐，所以它落在右下角，正是原先 spinner 的位置。 */
 .prompt-queue-badge {
-  position: absolute;
-  z-index: 42;
-  top: calc(44px + env(safe-area-inset-top, 0px));
-  right: 10px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 6px;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 5px;
   border: none;
-  border-radius: 4px;
+  border-radius: 999px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.72);
+  color: inherit;
   font: inherit;
   font-size: 11.5px;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.08em;
   line-height: 1;
   cursor: pointer;
   transition: color 0.16s ease, background-color 0.16s ease;
 }
 
 .prompt-queue-badge:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--dialog-ink);
+  background: var(--dialog-hover);
+}
+
+/* 有失败项：整枚芯片按警号读，不只靠那一个圆点（失败项不会自己消失）。 */
+.prompt-queue-badge.failed {
+  color: var(--dialog-bad);
+}
+
+/* 圆点在这格里的三档色：静置的灰、在跑的亮主色、失败的红。按下沉的主题令牌取，
+   不跟界面主题打架（台词条本身两套主题各有一份）。 */
+.prompt-queue-badge:not(.prompt-queue-docked) .status-indicator-dot {
+  background: var(--dialog-ink-faint);
+}
+
+.prompt-queue-badge:not(.prompt-queue-docked) .status-indicator-dot.is-running {
+  background: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent);
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+.prompt-queue-badge:not(.prompt-queue-docked) .status-indicator-dot.is-failed {
+  background: var(--dialog-bad);
 }
 
 .status-indicator-dot {
@@ -5805,21 +5834,14 @@ html[data-ui-theme="dark"] .stage-view-segmented {
 }
 
 .prompt-queue-text {
+  /* 底缘那格状态位跟快捷菜单同排一行，摘要太长时得肯让位（flex 项默认不肯缩到内容以下） */
+  min-width: 0;
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 窄屏：展开的排队面板占掉大半个宽度，跟左上角那排常驻标识必然压在一起（360px 下标识到
-   192px、面板从 68px 起）。用兄弟选择器只在「标识真的在」时让面板下移一行——三种模式全关
-   时那排不渲染，面板不该平白空出 36px。收起态的徽标只有 50~60px 宽（最右从 288px 起），
-   横向就跟标识错开了，不用动。宽屏上两者仍平齐。 */
-@media (max-width: 520px) {
-  .stage-modes ~ .prompt-queue {
-    top: calc(92px + env(safe-area-inset-top, 0px));
-  }
-}
 /* 工坊：同一块面板不浮在内容上，改贴内容区底部一条（右上角是各页自己的头）。
    收起态是一条状态带，展开态在它上面长出一列。
 
@@ -5830,7 +5852,11 @@ html[data-ui-theme="dark"] .stage-view-segmented {
 .prompt-queue-docked {
   position: static;
   flex: 0 0 auto;
+  left: auto;
+  bottom: auto;
   width: auto;
+  max-height: none;
+  overflow: visible;
   border-radius: 0;
   border-left: none;
   border-right: none;
@@ -5871,12 +5897,6 @@ html[data-ui-theme="dark"] .stage-view-segmented {
 
 .prompt-queue-badge.prompt-queue-docked .status-indicator-dot.is-failed {
   background: var(--danger, #ef4444);
-}
-
-.prompt-queue-badge-icons {
-  display: flex;
-  gap: 5px;
-  color: inherit;
 }
 /* 「正在生成」那行右侧的收起键：与标题同一行，margin 把它钉到行边。 */
 .prompt-queue-head {
@@ -6307,14 +6327,6 @@ html[data-ui-theme="dark"] .stage-view-segmented {
 .pending-job-prompt.failed {
   color: var(--dialog-bad);
 }
-/* 收起态徽标：有失败项时整枚徽标按警号读，不只靠那一个图标。 */
-.prompt-queue-badge.failed {
-  border-color: var(--dialog-bad);
-}
-.prompt-queue-badge.failed .prompt-queue-badge-icons {
-  color: var(--dialog-bad);
-}
-
 .save-title-cluster {
   display: flex;
   align-items: center;
@@ -6788,15 +6800,9 @@ html[data-ui-theme="dark"] .stage-view-segmented {
     padding: 0 9px;
   }
 
-  /* 顶上只剩一行 chrome（切换器 + 导演栏），队列从它下面 8px 起 */
-  .prompt-queue,
-  .prompt-queue-badge {
-    top: calc(48px + env(safe-area-inset-top, 0px));
-    right: 10px;
-  }
-
+  /* 手机上展开的队列面板吃满一些：锚点由触发器给，宽度只这处以参数形式放宽 */
   .prompt-queue {
-    width: min(92vw, 300px);
+    --panel-w: min(92vw, 300px);
   }
 
   /* 面板头：标题一行（剧名让位），工具一整行，四五个图标才排得开 */

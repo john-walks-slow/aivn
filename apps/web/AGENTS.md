@@ -61,7 +61,7 @@
   - `stage/view.ts` 的 `stageViewFromQuery`/`workshopUrl`/`workshopConnectionFromQuery`。
   - **路线面板的镜头控制窄屏挪到底部一条**（`StagePanel` 的 `className="route-panel"` + `app.css` 的 `≤720px`：`.route-panel .stage-panel-actions` 绝对定位到底边、`.stage-panel-body` 与 `.route-legend` 各自让开 52px）：屏幕上沿握着手机够不到，而这一排（回到开头 / 最新 / 缩放 / 看全树）是这一页唯一的操作面。宽屏不动。
   - `ui/Modal.tsx` 居中模态窗（portal body，触摸捕获，Esc 只关最上层）。
-  - PromptQueuePanel 排队面板（待注入的句子可改可撤 + 正在生成的事：剧作家的轮次/生图/语音，失败项不自动消失、手动清）。**舞台与工坊共用同一份数据**（`useStageSocket` 的 `pendingJobs` 与 `queue`，工坊复用的就是那条连接），差在落点：舞台里浮在画面右上，工坊里 `dock` 成内容区底部一条——工坊右上角是各页自己的头（素材页那排「生成新立绘」就在那儿），浮层会压住真按得着的东西。
+  - PromptQueuePanel 排队面板（待注入的句子可改可撤 + 正在生成的事：剧作家的轮次/生图/语音，失败项不自动消失、手动清）。**舞台与工坊共用同一份数据**（`useStageSocket` 的 `pendingJobs` 与 `queue`，工坊复用的就是那条连接），差在落点（`variant`）：舞台是 `dialog`——收起态那枚芯片长在**台词条底缘那格状态位**里（经 `StageTheater` 的 `dialogStatus` 槽位塞进去，顶掉内置 spinner：同一件「剧作家正在写」不摆两遍），点开的面板 portal 到 body、锚在芯片正上方（台词条窄屏是 `overflow-y: auto`，留在里面会被裁掉）；工坊是 `dock` 成内容区底部一条——工坊右上角是各页自己的头（素材页那排「生成新立绘」就在那儿），浮层会压住真按得着的东西。芯片在台词条里，而台词条整条是「点一下就翻句」的热区，它的 click 必须 `stopPropagation`。
   - `packages/stage/src/settings.ts`（localStorage 布尔开关——只剩演出语音总开关，读写收 storage 参数以便 node 下测）与 `packages/stage/src/playbackState.ts` 的 `stopAffordance`（返回布尔：本轮写完还能不能点舞台接着演；「（继续）」卡那形态已删——2026-10-10 用户裁决，轮与轮之间的边界不值得摆一张卡）。
   - StopPanel 停止点操作含自由输入 ✨润色/撤销（P4 增量，润色恒基于原文不叠加）。
   - 选肢层是 `.theater-stage` 的子元素（只盖画面，不压台词条/导演栏/侧栏）。

@@ -102,6 +102,12 @@ interface StageTheaterProps {
    */
   directorBar?: boolean;
   /**
+   * 台词条底缘那一格状态位的内容（宿主把自己的「在忙什么」指示符挂在这里）。
+   * 给了就不画内置的 spinner——它俩说的是同一件事（剧作家正在写），摆一起是重复；
+   * 手里没有待注入队列的宿主（dsh-aivn 那条线）不传，照旧走 spinner。
+   */
+  dialogStatus?: ReactNode;
+  /**
    * 提示出口：舞台自己不讲 toast（`.toast-stack` 是绝对定位的浮层，宿主在
    * `.screen` 一级挂了一份，这里再挂一份会两块叠在同一个角落）。
    * 目前只有「全屏被浏览器拒绝」这一条会用到它。
@@ -420,6 +426,7 @@ voiceState,
   ended = false,
   onTurbo,
   overlay,
+  dialogStatus,
   directorBar = true,
   onNotify,
 }: StageTheaterProps) {
@@ -1021,7 +1028,9 @@ voiceState,
               </button>
             ) : action ? null : (
               <>
-                {live && <span className="dialog-spinner" aria-label="剧作家正在写" />}
+                {/* 状态位：默认是「剧作家正在写」的 spinner；宿主带了待注入队列就换成它那一枚
+                    （那枚自己也报在忙什么，而且点得开）。 */}
+                {dialogStatus ?? (live && <span className="dialog-spinner" aria-label="剧作家正在写" />)}
                 {lineDone && (!exhausted || canContinue) && (
                   <span className="dialog-next" aria-hidden>
                     ▼
