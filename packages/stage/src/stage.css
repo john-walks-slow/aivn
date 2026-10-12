@@ -103,13 +103,11 @@
      所以底色比另外两处淡——但那条淡要**同一支蓝抬明度**抬出来，不是掺白掺出来的灰白。
      上一版掺的是 rgb(255 255 255) 且带两三成透明（0.95 / 0.84）：亮画面从底下透上来，
      这块就成了一团发灰的牛奶。浅色主题就是这套；深色主题整条翻深（见下面 dark 那一块）。 */
-  --stage-chrome-quiet-bg: linear-gradient(180deg,
-    rgba(255, 255, 255, 0.98) 0%,
-    color-mix(in srgb, var(--accent) 6%, rgb(245 248 252 / 0.96)) 100%);
-  --stage-chrome-quiet-edge: color-mix(in srgb, var(--accent) 22%, rgba(0, 0, 0, 0.12));
-  --stage-chrome-quiet-ink: color-mix(in srgb, var(--accent) 30%, #1e293b);
+  --stage-chrome-quiet-bg: #ffffff;
+  --stage-chrome-quiet-edge: #e2e8f0;
+  --stage-chrome-quiet-ink: #64748b;
   --stage-chrome-quiet-ink-hover: #0f172a;
-  --stage-chrome-quiet-hover: rgba(0, 0, 0, 0.05);
+  --stage-chrome-quiet-hover: #f1f5f9;
   /* 选肢的两档底：常态是一条压在画面上的白缎带（字走主题色），
      悬停/选中直接换成主题色的实缎带（字走白）。
      常态不给主题色底——一排浅蓝条压在画面上会跟立绘抢注意力，
@@ -237,13 +235,11 @@ html[data-ui-theme="dark"] .stage-root {
   /* 导演栏：暖黑界面上翻成一条深玻璃（比左上角那枚更沉、字走冷白），
      不再是画面右上角一块刺眼的白斑。掺的仍然是 accent 那一支蓝（26% / 14%），
      不掺中性黑——掺中性黑出来的是一块灰板，与左上角那条蓝不是一家。 */
-  --stage-chrome-quiet-bg: linear-gradient(180deg,
-    color-mix(in srgb, var(--accent) 12%, rgb(30 38 48 / 0.88)) 0%,
-    color-mix(in srgb, var(--accent) 8%, rgb(18 24 32 / 0.94)) 100%);
-  --stage-chrome-quiet-edge: color-mix(in srgb, var(--accent) 26%, rgba(255, 255, 255, 0.18));
-  --stage-chrome-quiet-ink: #f1f5f9;
-  --stage-chrome-quiet-ink-hover: #ffffff;
-  --stage-chrome-quiet-hover: rgba(255, 255, 255, 0.1);
+  --stage-chrome-quiet-bg: #0d1117;
+  --stage-chrome-quiet-edge: #30363d;
+  --stage-chrome-quiet-ink: #8b949e;
+  --stage-chrome-quiet-ink-hover: #f0f6fc;
+  --stage-chrome-quiet-hover: #21262d;
 }
 
 /* 主色预设：设置页选哪一档就挂哪个 data-accent（useTheme.applyAccent）。
@@ -2398,21 +2394,15 @@ html[data-ui-theme="light"] .modal-card {
      主题色留给台词条、选肢与右下角快捷菜单——那是玩家在读、在选的东西；
      只有某一档开着（`.on`）时才在这里点亮主题色。
      浅深两套值都在 --stage-chrome-quiet-* 里（浅色白底掺 accent，深色深玻璃）。 */
-  border: 1px solid var(--stage-chrome-quiet-edge, #dbe9f8);
+  border: 1px solid var(--stage-chrome-quiet-edge, #e2e8f0);
   border-radius: var(--stage-chrome-radius, 999px);
-  background: var(--stage-chrome-quiet-bg, linear-gradient(180deg,
-    color-mix(in srgb, var(--accent, #3b82f6) 16%, rgb(247 251 255 / 0.97)),
-    color-mix(in srgb, var(--accent, #3b82f6) 30%, rgb(226 238 252 / 0.94))));
+  background: var(--stage-chrome-quiet-bg, #ffffff);
   backdrop-filter: blur(12px);
-  box-shadow: var(--stage-chrome-gloss, inset 0 1px 0 rgba(255, 255, 255, 0.18)), 0 2px 10px rgba(0, 0, 0, 0.35);
-  opacity: 0.94;
-  transition: opacity 0.2s ease;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
 }
 
-.theater-director:hover,
-.theater-director:focus-within,
-.theater-director:has(.on) {
-  opacity: 1;
+html[data-ui-theme="dark"] .stage-root .theater-director {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
 .theater-director .dir-btn {
@@ -2424,8 +2414,8 @@ html[data-ui-theme="light"] .modal-card {
   border: none;
   border-radius: var(--stage-chrome-radius, 999px);
   background: transparent;
-  /* 浅玻璃上写深字 / 深玻璃上写冷白字：两组值都在 quiet 令牌里 */
-  color: var(--stage-chrome-quiet-ink, color-mix(in srgb, var(--accent, #3b82f6) 38%, #142138));
+  /* 浅底深字 / 深底浅灰字：两组值都在 quiet 令牌里，与左上角切换器统一 */
+  color: var(--stage-chrome-quiet-ink, #64748b);
   font: inherit;
   font-size: 12px;
   font-weight: 500;
@@ -2435,15 +2425,15 @@ html[data-ui-theme="light"] .modal-card {
 }
 
 .theater-director .dir-btn:hover:not(:disabled) {
-  background: var(--stage-chrome-quiet-hover, color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent));
-  color: var(--stage-chrome-quiet-ink-hover, color-mix(in srgb, var(--accent, #3b82f6) 55%, #0d1830));
+  background: var(--stage-chrome-quiet-hover, #f1f5f9);
+  color: var(--stage-chrome-quiet-ink-hover, #0f172a);
 }
 
 .theater-director .dir-btn.on {
-  background: color-mix(in srgb, var(--accent) 82%, #ffffff);
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--accent-ink);
   font-weight: 700;
-  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: none;
 }
 
 .theater-director .dir-btn:disabled {
