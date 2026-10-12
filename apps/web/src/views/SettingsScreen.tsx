@@ -9,16 +9,16 @@ import {
   ACCENT_PRESETS,
   DEFAULT_ACCENT_CUSTOM,
   DEFAULT_UI_MODE,
-  DIALOG_STYLES,
-  DIALOG_STYLE_CHANGED,
+  UI_STYLES,
+  UI_STYLE_CHANGED,
   THEME_MODE_CHANGED,
   readAccent,
-  readDialogStyle,
+  readUiStyle,
   setAccent,
-  setDialogStyle,
+  setUiStyle,
   setThemeMode,
   type AccentId,
-  type DialogStyleId,
+  type UiStyleId,
   type ThemeMode,
 } from "../hooks/useTheme.js";
 
@@ -148,7 +148,7 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
   const [accent, setAccentState] = useState<{ id: AccentId; custom: string }>(
     () => readAccent(),
   );
-  const [dialogStyle, setDialogStyleState] = useState<DialogStyleId>(() => readDialogStyle());
+  const [uiStyle, setUiStyleState] = useState<UiStyleId>(() => readUiStyle());
 
   const loadModels = useCallback((refresh = false): void => {
     api
@@ -184,17 +184,17 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
       if (key === UI_MODE_KEY)
         setUiMode(storedMode(UI_MODE_KEY, DEFAULT_UI_MODE));
       if (key === ACCENT_CHANGED) setAccentState(readAccent());
-      if (key === DIALOG_STYLE_CHANGED) setDialogStyleState(readDialogStyle());
+      if (key === UI_STYLE_CHANGED) setUiStyleState(readUiStyle());
     };
     window.addEventListener("storage", handleStorage);
     window.addEventListener(THEME_MODE_CHANGED, handleStorage);
     window.addEventListener(ACCENT_CHANGED, handleStorage);
-    window.addEventListener(DIALOG_STYLE_CHANGED, handleStorage);
+    window.addEventListener(UI_STYLE_CHANGED, handleStorage);
     return () => {
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener(THEME_MODE_CHANGED, handleStorage);
       window.removeEventListener(ACCENT_CHANGED, handleStorage);
-      window.removeEventListener(DIALOG_STYLE_CHANGED, handleStorage);
+      window.removeEventListener(UI_STYLE_CHANGED, handleStorage);
     };
   }, []);
 
@@ -1094,7 +1094,7 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
               collapsed={collapsed.includes("appearance")}
               onToggle={() => toggleGroup("appearance")}
               title="主题设置"
-              desc="界面明暗主题、全站主色与消息框风格。"
+              desc="界面明暗主题、全站主色与界面风格。"
             >
               <Field label="界面主题">
                 <select
@@ -1161,18 +1161,18 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
                   )}
                 </div>
               </Field>
-              {/* 消息框风格：舞台那条台词条的皮。五种都是引擎 CSS，改了立即生效、
-                  只影响这台浏览器——与界面主题同一层，所以也走 localStorage。 */}
-              <Field label="消息框风格">
+              {/* 界面风格：消息框与开始菜单成对切（一个 id 落两个属性）。六档全是引擎 CSS，
+                  改了立即生效、只影响这台浏览器——与界面主题同一层，所以也走 localStorage。 */}
+              <Field label="界面风格">
                 <select
-                  value={dialogStyle}
+                  value={uiStyle}
                   onChange={(e) => {
-                    const val = e.target.value as DialogStyleId;
-                    setDialogStyleState(val);
-                    setDialogStyle(val);
+                    const val = e.target.value as UiStyleId;
+                    setUiStyleState(val);
+                    setUiStyle(val);
                   }}
                 >
-                  {DIALOG_STYLES.map((style) => (
+                  {UI_STYLES.map((style) => (
                     <option key={style.id} value={style.id}>
                       {style.label}
                     </option>

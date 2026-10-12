@@ -7001,3 +7001,580 @@ html[data-ui-theme="dark"] .stage-view-segmented {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
+
+/* ══ 开始菜单风格（card / cinema / hud / scroll / velvet）══════════════════════
+   与消息框同一批 id、同进同出：`html[data-dialog-style="velvet"]` 与
+   `html[data-menu-style="velvet"]` 永远一起挂上、一起摘掉（设置页只有「界面风格」一个选项框）。
+   不写这两个属性 = ATRI 默认档（标题页一列纯字 + 底部通栏渐变台词条）。
+
+   五种都不碰 markup：标题页要「多一个元素」的地方一律走伪元素——
+   宽银幕上下黑边（`.title-screen::before/::after`）、书卷的双线画框（同两个位置）、
+   幕布（`.title-screen::before`）、HUD 的状态标签与书卷的小印（`.title-brand::before`）、
+   幕布坠饰（`.title-brand::after`）、书卷的目录点与 HUD 的序号（`.atri-label::before`）。
+   伪元素的层序：`::before` 默认 z-index（画在正文之下）、`::after` 给 `z-index: -1`
+   （与 `.title-veil` 同级、仍在正文之下）——两个槽位因此都能当「背景装饰」用。
+
+   材质色与消息框那一节同规矩：从 --accent 现推，掺比照 galgame-ui-style
+   （纸底 6–12%、暖金/朱红小件 20–40%、酒红底 20–30%）。
+
+   特异度 (0,3,0) 起，压过基线的 (0,1,0)；浅深两套逐条写，所以这一节留在文件最后。 */
+
+/* ── M1 · 玻璃卡菜单（配 card）───────────────────────────────────────────── */
+html[data-menu-style="card"] .title-screen .title-art { filter: saturate(0.92) brightness(0.62); }
+html[data-menu-style="card"] .title-screen .title-veil {
+  background: linear-gradient(90deg, rgb(6 10 18 / 0.86) 0%, rgb(6 10 18 / 0.42) 46%, rgb(6 10 18 / 0.18) 100%);
+}
+html[data-menu-style="card"] .title-screen .title-brand { left: 76px; top: 40%; max-width: 430px; }
+html[data-menu-style="card"] .title-screen .title-name {
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1.28;
+  letter-spacing: 0.01em;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  filter: none;
+}
+html[data-menu-style="card"] .title-screen .title-premise { margin: 16px 0 0; font-size: 13.5px; line-height: 1.85; }
+html[data-menu-style="card"] .title-screen .atri-menu {
+  left: auto;
+  right: 76px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 344px;
+  padding: 16px;
+  border-radius: 20px;
+  gap: 4px;
+  backdrop-filter: blur(20px) saturate(1.3);
+}
+html[data-menu-style="card"] .title-screen .atri-item {
+  width: 100%;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 12px;
+  opacity: 1;
+}
+html[data-menu-style="card"] .title-screen .atri-item::before { display: none; }
+html[data-menu-style="card"] .title-screen .atri-label { font-size: 15px; font-weight: 700; letter-spacing: 0.16em; }
+html[data-menu-style="card"] .title-screen .atri-sub { font-size: 12px; color: inherit; opacity: 1; transform: none; text-shadow: none; }
+html[data-menu-style="card"] .title-screen .atri-item:hover:not(:disabled),
+html[data-menu-style="card"] .title-screen .atri-item:focus {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, #ffffff), var(--accent));
+  color: #ffffff;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+html[data-menu-style="card"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-menu-style="card"] .title-screen .atri-item:focus .atri-label { color: #ffffff; text-shadow: none; }
+html[data-menu-style="card"] .title-screen .atri-item:hover:not(:disabled) .atri-sub,
+html[data-menu-style="card"] .title-screen .atri-item:focus .atri-sub { color: rgb(255 255 255 / 0.78); }
+
+html[data-ui-theme="dark"][data-menu-style="card"] .title-screen .title-name { color: #ffffff; text-shadow: 0 2px 18px rgb(0 0 0 / 0.6); }
+html[data-ui-theme="dark"][data-menu-style="card"] .title-screen .title-premise { color: rgb(255 255 255 / 0.7); text-shadow: none; }
+html[data-ui-theme="dark"][data-menu-style="card"] .title-screen .title-premise::before {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 60%, #ffffff), transparent);
+}
+html[data-ui-theme="dark"][data-menu-style="card"] .title-screen .atri-menu {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 12%, rgb(22 30 43 / 0.8)), color-mix(in srgb, var(--accent) 14%, rgb(10 16 26 / 0.88)));
+  border: 1px solid rgb(255 255 255 / 0.16);
+  box-shadow: 0 26px 60px rgb(0 0 0 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.22);
+}
+html[data-ui-theme="dark"][data-menu-style="card"] .title-screen .atri-item { color: rgb(226 232 240 / 0.78); }
+html[data-ui-theme="dark"][data-menu-style="card"] .title-screen .atri-label { color: rgb(226 232 240 / 0.92); text-shadow: none; }
+html[data-ui-theme="dark"][data-menu-style="card"] .title-screen .atri-sub { color: rgb(226 232 240 / 0.45); }
+html[data-ui-theme="dark"][data-menu-style="card"] .title-screen .title-footer,
+html[data-ui-theme="dark"][data-menu-style="card"] .title-screen .title-op-link,
+html[data-ui-theme="dark"][data-menu-style="card"] .title-screen .title-op-btn { color: rgb(255 255 255 / 0.34); }
+
+html[data-ui-theme="light"][data-menu-style="card"] .title-screen .title-art { filter: saturate(1) brightness(1.04); }
+html[data-ui-theme="light"][data-menu-style="card"] .title-screen .title-veil {
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.92) 0%, rgb(255 255 255 / 0.6) 46%, rgb(255 255 255 / 0.24) 100%);
+}
+html[data-ui-theme="light"][data-menu-style="card"] .title-screen .title-name { color: #16202e; text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="card"] .title-screen .title-premise { color: #4b5a70; text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="card"] .title-screen .atri-menu {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, rgb(255 255 255 / 0.95)), color-mix(in srgb, var(--accent) 8%, rgb(243 247 252 / 0.97)));
+  border: 1px solid rgb(15 23 42 / 0.09);
+  box-shadow: 0 26px 56px rgb(15 23 42 / 0.2), inset 0 1px 0 rgb(255 255 255 / 0.9);
+}
+html[data-ui-theme="light"][data-menu-style="card"] .title-screen .atri-item { color: #2c3a4e; }
+html[data-ui-theme="light"][data-menu-style="card"] .title-screen .atri-label { color: #2c3a4e; text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="card"] .title-screen .atri-sub { color: rgb(51 65 85 / 0.5); }
+html[data-ui-theme="light"][data-menu-style="card"] .title-screen .title-footer,
+html[data-ui-theme="light"][data-menu-style="card"] .title-screen .title-op-link,
+html[data-ui-theme="light"][data-menu-style="card"] .title-screen .title-op-btn { color: rgb(22 32 46 / 0.4); }
+
+/* ── M2 · 宽银幕字幕菜单（配 cinema）─────────────────────────────────────── */
+html[data-menu-style="cinema"] .title-screen { --film: color-mix(in srgb, var(--accent) 55%, #e8c9a0); }
+html[data-menu-style="cinema"] .title-screen::before,
+html[data-menu-style="cinema"] .title-screen::after { content: ""; position: absolute; left: 0; right: 0; pointer-events: none; }
+html[data-menu-style="cinema"] .title-screen::before { top: 0; height: 8%; }
+html[data-menu-style="cinema"] .title-screen::after { bottom: 0; height: 46%; z-index: -1; }
+html[data-menu-style="cinema"] .title-screen .title-art { filter: saturate(0.85) brightness(0.66); }
+html[data-menu-style="cinema"] .title-screen .title-veil {
+  background: radial-gradient(120% 80% at 50% 22%, rgb(0 0 0 / 0.62), rgb(0 0 0 / 0.78));
+}
+html[data-menu-style="cinema"] .title-screen .title-brand { left: 0; right: 0; top: 13%; max-width: none; text-align: center; }
+html[data-menu-style="cinema"] .title-screen .title-name {
+  font-size: 38px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-indent: 0.16em;
+  margin: 0 auto;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  filter: none;
+}
+html[data-menu-style="cinema"] .title-screen .title-brand .title-premise::before {
+  width: 48px;
+  height: 1px;
+  margin: 18px auto 14px;
+  background: var(--film);
+}
+html[data-menu-style="cinema"] .title-screen .title-premise {
+  margin: 0 auto;
+  max-width: 62em;
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+html[data-menu-style="cinema"] .title-screen .atri-menu {
+  left: 0;
+  right: 0;
+  top: auto;
+  bottom: 9%;
+  transform: none;
+  align-items: center;
+  gap: 0;
+}
+html[data-menu-style="cinema"] .title-screen .atri-item { flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; opacity: 1; }
+html[data-menu-style="cinema"] .title-screen .atri-item::before { display: none; }
+html[data-menu-style="cinema"] .title-screen .atri-label { font-size: 16px; font-weight: 500; letter-spacing: 0.38em; text-indent: 0.38em; }
+html[data-menu-style="cinema"] .title-screen .atri-sub { font-size: 10.5px; letter-spacing: 0.22em; text-indent: 0.22em; opacity: 1; transform: none; text-shadow: none; }
+html[data-menu-style="cinema"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-menu-style="cinema"] .title-screen .atri-item:focus .atri-label { color: var(--film); font-weight: 700; text-shadow: none; }
+html[data-menu-style="cinema"] .title-screen .atri-item:hover:not(:disabled) .atri-label::before,
+html[data-menu-style="cinema"] .title-screen .atri-item:focus .atri-label::before { content: "—— "; }
+html[data-menu-style="cinema"] .title-screen .atri-item:hover:not(:disabled) .atri-label::after,
+html[data-menu-style="cinema"] .title-screen .atri-item:focus .atri-label::after { content: " ——"; }
+html[data-menu-style="cinema"] .title-screen .atri-item:hover:not(:disabled) .atri-sub,
+html[data-menu-style="cinema"] .title-screen .atri-item:focus .atri-sub { color: color-mix(in srgb, var(--film) 80%, transparent); }
+html[data-menu-style="cinema"] .title-screen .title-footer { left: 0; right: 0; bottom: 16px; justify-content: center; gap: 28px; }
+
+html[data-ui-theme="dark"][data-menu-style="cinema"] .title-screen::before { background: linear-gradient(180deg, rgb(0 0 0 / 0.9), rgb(0 0 0 / 0.2)); }
+html[data-ui-theme="dark"][data-menu-style="cinema"] .title-screen::after {
+  background: linear-gradient(0deg, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.95)) 62%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.82)) 82%, transparent);
+}
+html[data-ui-theme="dark"][data-menu-style="cinema"] .title-screen .title-name { color: #f4f1ec; text-shadow: 0 2px 20px rgb(0 0 0 / 0.85), 0 1px 2px rgb(0 0 0 / 0.9); }
+html[data-ui-theme="dark"][data-menu-style="cinema"] .title-screen .title-premise { color: rgb(255 255 255 / 0.56); text-shadow: none; }
+html[data-ui-theme="dark"][data-menu-style="cinema"] .title-screen .atri-item { color: rgb(255 255 255 / 0.72); }
+html[data-ui-theme="dark"][data-menu-style="cinema"] .title-screen .atri-label { color: rgb(255 255 255 / 0.86); text-shadow: none; }
+html[data-ui-theme="dark"][data-menu-style="cinema"] .title-screen .atri-sub { color: rgb(255 255 255 / 0.5); }
+html[data-ui-theme="dark"][data-menu-style="cinema"] .title-screen .title-footer,
+html[data-ui-theme="dark"][data-menu-style="cinema"] .title-screen .title-op-link,
+html[data-ui-theme="dark"][data-menu-style="cinema"] .title-screen .title-op-btn { color: rgb(255 255 255 / 0.34); }
+
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen::before { background: linear-gradient(180deg, rgb(255 255 255 / 0.94), rgb(255 255 255 / 0.25)); }
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen::after {
+  background: linear-gradient(0deg, color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.99)) 62%, color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.94)) 82%, transparent);
+}
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen .title-art { filter: saturate(1.02) brightness(1.06); }
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen .title-veil {
+  background: radial-gradient(120% 80% at 50% 22%, rgb(255 255 255 / 0.7), rgb(255 255 255 / 0.86));
+}
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen .title-name { color: #14161a; text-shadow: 0 1px 0 rgb(255 255 255 / 0.9); }
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen .title-premise { color: rgb(20 22 26 / 0.68); text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen .atri-item { color: rgb(20 22 26 / 0.68); }
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen .atri-label { color: rgb(20 22 26 / 0.82); text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen .atri-item:focus .atri-label { color: color-mix(in srgb, var(--accent) 62%, #6d4a18); }
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen .atri-sub { color: rgb(20 22 26 / 0.5); }
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen .title-footer,
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen .title-op-link,
+html[data-ui-theme="light"][data-menu-style="cinema"] .title-screen .title-op-btn { color: rgb(20 22 26 / 0.42); }
+
+/* ── M3 · 战术 HUD 菜单（配 hud）─────────────────────────────────────────── */
+html[data-menu-style="hud"] .title-screen {
+  --atri-font: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  --hud: color-mix(in srgb, var(--accent) 62%, #46d6ff);
+}
+html[data-menu-style="hud"] .title-screen .title-art { filter: saturate(0.6) brightness(0.44); }
+html[data-menu-style="hud"] .title-screen .title-veil {
+  background:
+    repeating-linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, transparent) 0 1px, transparent 1px 3px),
+    linear-gradient(90deg, rgb(3 10 18 / 0.9), rgb(3 10 18 / 0.62) 60%, rgb(3 10 18 / 0.78));
+}
+html[data-menu-style="hud"] .title-screen .title-brand { left: 64px; top: 22%; max-width: 560px; }
+html[data-menu-style="hud"] .title-screen .title-brand::before {
+  content: "// PLAY-INFO · MAIN-MENU";
+  display: block;
+  margin-bottom: 12px;
+  color: color-mix(in srgb, var(--accent) 60%, #7dd3fc);
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+}
+html[data-menu-style="hud"] .title-screen .title-name {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.04em;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  filter: none;
+}
+html[data-menu-style="hud"] .title-screen .title-premise { margin: 14px 0 0; font-size: 12px; line-height: 1.8; letter-spacing: 0.02em; }
+html[data-menu-style="hud"] .title-screen .atri-menu {
+  left: auto;
+  right: 60px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 448px;
+  padding: 10px;
+  gap: 2px;
+  border: 1.5px solid transparent;
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgb(8 20 32 / 0.94), rgb(4 11 20 / 0.96)) padding-box,
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 62%, transparent), color-mix(in srgb, var(--accent) 16%, transparent)) border-box;
+  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+  counter-reset: atri-no;
+}
+html[data-menu-style="hud"] .title-screen .atri-item { width: 100%; gap: 0; padding: 11px 14px; font-size: 14px; letter-spacing: 0.16em; opacity: 1; }
+html[data-menu-style="hud"] .title-screen .atri-item::before { display: none; }
+html[data-menu-style="hud"] .title-screen .atri-label { counter-increment: atri-no; font-size: 14px; font-weight: 600; letter-spacing: 0.16em; }
+html[data-menu-style="hud"] .title-screen .atri-label::before {
+  content: counter(atri-no, decimal-leading-zero);
+  margin-right: 14px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+html[data-menu-style="hud"] .title-screen .atri-sub {
+  margin-left: auto;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  opacity: 1;
+  transform: none;
+  text-shadow: none;
+}
+html[data-menu-style="hud"] .title-screen .atri-item:hover:not(:disabled),
+html[data-menu-style="hud"] .title-screen .atri-item:focus {
+  background: var(--hud);
+  color: #04121e;
+  box-shadow: 0 0 22px color-mix(in srgb, var(--hud) 45%, transparent);
+}
+html[data-menu-style="hud"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-menu-style="hud"] .title-screen .atri-item:focus .atri-label { color: #04121e; text-shadow: none; }
+html[data-menu-style="hud"] .title-screen .atri-item:hover:not(:disabled) .atri-sub,
+html[data-menu-style="hud"] .title-screen .atri-item:focus .atri-sub { color: rgb(4 18 30 / 0.72); }
+
+html[data-ui-theme="dark"][data-menu-style="hud"] .title-screen .title-name { color: #e0f2fe; text-shadow: 0 0 18px color-mix(in srgb, var(--accent) 40%, transparent); }
+html[data-ui-theme="dark"][data-menu-style="hud"] .title-screen .title-premise { color: rgb(186 230 253 / 0.6); text-shadow: none; }
+html[data-ui-theme="dark"][data-menu-style="hud"] .title-screen .title-premise::before {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 60%, transparent), transparent);
+}
+html[data-ui-theme="dark"][data-menu-style="hud"] .title-screen .atri-item { color: rgb(186 230 253 / 0.72); }
+html[data-ui-theme="dark"][data-menu-style="hud"] .title-screen .atri-label { color: rgb(186 230 253 / 0.86); text-shadow: none; }
+html[data-ui-theme="dark"][data-menu-style="hud"] .title-screen .atri-sub { color: rgb(186 230 253 / 0.5); }
+html[data-ui-theme="dark"][data-menu-style="hud"] .title-screen .title-footer,
+html[data-ui-theme="dark"][data-menu-style="hud"] .title-screen .title-op-link,
+html[data-ui-theme="dark"][data-menu-style="hud"] .title-screen .title-op-btn { color: color-mix(in srgb, var(--accent) 55%, #7dd3fc); }
+
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .title-art { filter: saturate(0.7) brightness(1.1); }
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .title-veil {
+  background:
+    repeating-linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, transparent) 0 1px, transparent 1px 3px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.94), rgb(255 255 255 / 0.72) 60%, rgb(240 247 252 / 0.86));
+}
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .title-brand::before { color: color-mix(in srgb, var(--accent) 65%, #0c4a6e); }
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .title-name { color: #0f2a3d; text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .title-premise { color: rgb(15 42 61 / 0.66); text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .atri-menu {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.97), rgb(241 247 252 / 0.98)) padding-box,
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 50%, transparent), color-mix(in srgb, var(--accent) 16%, transparent)) border-box;
+}
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .atri-item { color: rgb(15 42 61 / 0.72); }
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .atri-label { color: rgb(15 42 61 / 0.88); text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .atri-sub { color: rgb(15 42 61 / 0.5); }
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .atri-item:hover:not(:disabled),
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .atri-item:focus { background: color-mix(in srgb, var(--accent) 78%, #0e74a4); color: #ffffff; }
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .atri-item:focus .atri-label { color: #ffffff; }
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .atri-item:hover:not(:disabled) .atri-sub,
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .atri-item:focus .atri-sub { color: rgb(255 255 255 / 0.78); }
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .title-footer,
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .title-op-link,
+html[data-ui-theme="light"][data-menu-style="hud"] .title-screen .title-op-btn { color: color-mix(in srgb, var(--accent) 60%, #0c4a6e); }
+
+/* ── M4 · 书卷目录（配 scroll）───────────────────────────────────────────── */
+html[data-menu-style="scroll"] .title-screen {
+  --atri-font: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+  --scroll-seal: color-mix(in srgb, var(--accent) 45%, #8c2f22);
+  --scroll-line: color-mix(in srgb, var(--accent) 35%, rgb(206 176 124 / 0.6));
+}
+html[data-menu-style="scroll"] .title-screen::before,
+html[data-menu-style="scroll"] .title-screen::after { content: ""; position: absolute; border: 1px solid var(--scroll-line); pointer-events: none; }
+html[data-menu-style="scroll"] .title-screen::before { inset: 26px; }
+html[data-menu-style="scroll"] .title-screen::after { inset: 33px; z-index: -1; opacity: 0.7; }
+html[data-menu-style="scroll"] .title-screen .title-art { filter: saturate(0.7) brightness(0.5) sepia(0.18); }
+html[data-menu-style="scroll"] .title-screen .title-veil {
+  background: linear-gradient(100deg, rgb(20 16 11 / 0.94), rgb(20 16 11 / 0.74) 55%, rgb(26 20 14 / 0.86));
+}
+html[data-menu-style="scroll"] .title-screen .title-brand { left: 92px; top: 24%; max-width: 330px; }
+html[data-menu-style="scroll"] .title-screen .title-brand::after {
+  content: "印";
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-top: 18px;
+  background: var(--scroll-seal);
+  color: #f6e9dd;
+  font-family: var(--atri-font);
+  font-size: 11px;
+  font-weight: 700;
+}
+html[data-menu-style="scroll"] .title-screen .title-name {
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: 0.12em;
+  writing-mode: vertical-rl;
+  height: 430px;
+  width: auto;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  filter: none;
+}
+html[data-menu-style="scroll"] .title-screen .title-premise { display: none; }
+html[data-menu-style="scroll"] .title-screen .atri-menu {
+  left: auto;
+  right: 96px;
+  top: 34%;
+  transform: none;
+  width: 430px;
+  gap: 0;
+}
+html[data-menu-style="scroll"] .title-screen .atri-item { width: 100%; gap: 14px; padding: 13px 6px; opacity: 1; align-items: center; }
+html[data-menu-style="scroll"] .title-screen .atri-item + .atri-item { border-top: 1px solid var(--scroll-line); }
+html[data-menu-style="scroll"] .title-screen .atri-item::before { display: none; }
+html[data-menu-style="scroll"] .title-screen .atri-label { display: inline-flex; align-items: center; font-size: 16px; letter-spacing: 0.2em; }
+html[data-menu-style="scroll"] .title-screen .atri-label::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 14px;
+  transform: rotate(45deg);
+  border: 1px solid var(--scroll-line);
+}
+html[data-menu-style="scroll"] .title-screen .atri-sub { margin-left: auto; font-size: 12.5px; letter-spacing: 0.14em; opacity: 1; transform: none; text-shadow: none; }
+html[data-menu-style="scroll"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-menu-style="scroll"] .title-screen .atri-item:focus .atri-label { font-weight: 700; text-shadow: none; }
+html[data-menu-style="scroll"] .title-screen .atri-item:hover:not(:disabled) .atri-label::before,
+html[data-menu-style="scroll"] .title-screen .atri-item:focus .atri-label::before {
+  background: color-mix(in srgb, var(--accent) 45%, #c8553d);
+  border-color: transparent;
+}
+
+html[data-ui-theme="dark"][data-menu-style="scroll"] .title-screen .title-name { color: #ece2d1; text-shadow: 0 2px 14px rgb(0 0 0 / 0.7); }
+html[data-ui-theme="dark"][data-menu-style="scroll"] .title-screen .atri-item { color: rgb(236 226 209 / 0.72); }
+html[data-ui-theme="dark"][data-menu-style="scroll"] .title-screen .atri-label { color: rgb(236 226 209 / 0.86); text-shadow: none; }
+html[data-ui-theme="dark"][data-menu-style="scroll"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-ui-theme="dark"][data-menu-style="scroll"] .title-screen .atri-item:focus .atri-label { color: #f3e6cd; }
+html[data-ui-theme="dark"][data-menu-style="scroll"] .title-screen .atri-sub { color: color-mix(in srgb, var(--accent) 30%, rgb(217 196 154 / 0.7)); }
+html[data-ui-theme="dark"][data-menu-style="scroll"] .title-screen .title-footer,
+html[data-ui-theme="dark"][data-menu-style="scroll"] .title-screen .title-op-link,
+html[data-ui-theme="dark"][data-menu-style="scroll"] .title-screen .title-op-btn { color: rgb(217 196 154 / 0.5); }
+
+html[data-ui-theme="light"][data-menu-style="scroll"] .title-screen {
+  --scroll-seal: color-mix(in srgb, var(--accent) 55%, #b3372f);
+  --scroll-line: color-mix(in srgb, var(--accent) 35%, rgb(133 98 54 / 0.5));
+}
+html[data-ui-theme="light"][data-menu-style="scroll"] .title-screen .title-art { filter: saturate(0.8) brightness(1.02) sepia(0.12); }
+html[data-ui-theme="light"][data-menu-style="scroll"] .title-screen .title-veil {
+  background: linear-gradient(100deg, rgb(250 244 231 / 0.95), rgb(250 244 231 / 0.8) 55%, rgb(246 238 224 / 0.9));
+}
+html[data-ui-theme="light"][data-menu-style="scroll"] .title-screen .title-name { color: #3a3126; text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="scroll"] .title-screen .atri-item { color: rgb(58 49 38 / 0.72); }
+html[data-ui-theme="light"][data-menu-style="scroll"] .title-screen .atri-label { color: rgb(58 49 38 / 0.86); text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="scroll"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-ui-theme="light"][data-menu-style="scroll"] .title-screen .atri-item:focus .atri-label { color: #241d14; }
+html[data-ui-theme="light"][data-menu-style="scroll"] .title-screen .atri-sub { color: color-mix(in srgb, var(--accent) 45%, rgb(107 74 36 / 0.8)); }
+html[data-ui-theme="light"][data-menu-style="scroll"] .title-screen .title-footer,
+html[data-ui-theme="light"][data-menu-style="scroll"] .title-screen .title-op-link,
+html[data-ui-theme="light"][data-menu-style="scroll"] .title-screen .title-op-btn { color: rgb(107 74 36 / 0.6); }
+
+/* ── M5 · 幕布开演布告（配 velvet）───────────────────────────────────────── */
+html[data-menu-style="velvet"] .title-screen { --velvet: color-mix(in srgb, var(--accent) 40%, #d8b25e); }
+html[data-menu-style="velvet"] .title-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.03) 0 22px, rgb(0 0 0 / 0.06) 22px 44px),
+    radial-gradient(120% 100% at 50% 42%, color-mix(in srgb, var(--accent) 22%, rgb(48 10 22 / 0.6)), color-mix(in srgb, var(--accent) 14%, rgb(28 6 13 / 0.92)) 70%);
+}
+html[data-menu-style="velvet"] .title-screen .title-veil { background: none; }
+html[data-menu-style="velvet"] .title-screen .title-art { filter: saturate(0.75) brightness(0.5); }
+html[data-menu-style="velvet"] .title-screen .title-brand { left: 50%; top: 6%; transform: translateX(-50%); max-width: 720px; text-align: center; }
+html[data-menu-style="velvet"] .title-screen .title-name {
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.08em;
+  margin: 0 auto;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  filter: none;
+}
+html[data-menu-style="velvet"] .title-screen .title-brand::after {
+  content: "";
+  display: block;
+  width: 254px;
+  height: 7px;
+  margin: 16px auto 10px;
+  background:
+    linear-gradient(90deg, transparent, var(--velvet), transparent) left center / 118px 1px no-repeat,
+    linear-gradient(90deg, transparent, var(--velvet), transparent) right center / 118px 1px no-repeat,
+    radial-gradient(circle, var(--velvet) 0 2.5px, transparent 3px) center / 7px 7px no-repeat;
+}
+html[data-menu-style="velvet"] .title-screen .title-premise { margin: 0 auto; font-size: 12.5px; letter-spacing: 0.06em; text-align: center; }
+html[data-menu-style="velvet"] .title-screen .atri-menu {
+  left: 50%;
+  right: auto;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 720px;
+  padding: 44px 60px 40px;
+  gap: 3px;
+  align-items: center;
+  text-align: center;
+  border: 1px solid color-mix(in srgb, var(--velvet) 60%, transparent);
+}
+html[data-menu-style="velvet"] .title-screen .atri-menu::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border: 1px solid var(--velvet);
+  opacity: 0.5;
+  pointer-events: none;
+}
+html[data-menu-style="velvet"] .title-screen .atri-item { align-items: center; gap: 12px; padding: 8px 26px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--velvet) 30%, transparent); opacity: 1; }
+html[data-menu-style="velvet"] .title-screen .atri-item::before { display: none; }
+html[data-menu-style="velvet"] .title-screen .atri-label { font-size: 14px; letter-spacing: 0.26em; }
+html[data-menu-style="velvet"] .title-screen .atri-sub { font-size: 11.5px; letter-spacing: 0.1em; opacity: 0.7; transform: none; text-shadow: none; }
+html[data-menu-style="velvet"] .title-screen .atri-item:hover:not(:disabled),
+html[data-menu-style="velvet"] .title-screen .atri-item:focus {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--velvet) 70%, #ffffff), var(--velvet));
+  color: #2a0a14;
+  border-color: transparent;
+  box-shadow: none;
+}
+html[data-menu-style="velvet"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-menu-style="velvet"] .title-screen .atri-item:focus .atri-label { color: #2a0a14; font-weight: 700; text-shadow: none; }
+html[data-menu-style="velvet"] .title-screen .atri-item:hover:not(:disabled) .atri-sub,
+html[data-menu-style="velvet"] .title-screen .atri-item:focus .atri-sub { color: rgb(42 10 20 / 0.72); opacity: 0.85; }
+
+html[data-ui-theme="dark"][data-menu-style="velvet"] .title-screen .title-name { color: #f7ece6; text-shadow: 0 2px 16px rgb(0 0 0 / 0.7); }
+html[data-ui-theme="dark"][data-menu-style="velvet"] .title-screen .atri-menu {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 20%, #3a0c1a), color-mix(in srgb, var(--accent) 15%, #220710));
+  box-shadow: 0 30px 70px rgb(0 0 0 / 0.6), inset 0 1px 0 color-mix(in srgb, var(--velvet) 35%, transparent);
+}
+html[data-ui-theme="dark"][data-menu-style="velvet"] .title-screen .atri-item { color: var(--velvet); }
+html[data-ui-theme="dark"][data-menu-style="velvet"] .title-screen .atri-label { color: var(--velvet); text-shadow: none; }
+html[data-ui-theme="dark"][data-menu-style="velvet"] .title-screen .atri-sub { color: color-mix(in srgb, var(--velvet) 70%, transparent); }
+html[data-ui-theme="dark"][data-menu-style="velvet"] .title-screen .title-premise { color: rgb(247 236 230 / 0.6); text-shadow: none; }
+html[data-ui-theme="dark"][data-menu-style="velvet"] .title-screen .title-premise::before {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--velvet) 70%, transparent), transparent);
+}
+html[data-ui-theme="dark"][data-menu-style="velvet"] .title-screen .title-footer,
+html[data-ui-theme="dark"][data-menu-style="velvet"] .title-screen .title-op-link,
+html[data-ui-theme="dark"][data-menu-style="velvet"] .title-screen .title-op-btn { color: color-mix(in srgb, var(--velvet) 60%, transparent); }
+
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen {
+  --velvet: color-mix(in srgb, var(--accent) 40%, #a8763a);
+}
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen::before {
+  background:
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 6%, transparent) 0 22px, rgb(120 90 50 / 0.05) 22px 44px),
+    radial-gradient(120% 100% at 50% 42%, color-mix(in srgb, var(--accent) 6%, rgb(255 250 240 / 0.92)), color-mix(in srgb, var(--accent) 10%, rgb(244 233 216 / 0.95)) 70%);
+}
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .title-art { filter: saturate(0.95) brightness(1.08); opacity: 0.32; }
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .title-name { color: #3d2b22; text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .atri-menu {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, rgb(255 252 246 / 0.97)), color-mix(in srgb, var(--accent) 10%, rgb(247 238 224 / 0.97)));
+  box-shadow: 0 28px 60px rgb(70 50 20 / 0.24), inset 0 1px 0 rgb(255 255 255 / 0.9);
+}
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .atri-item { color: color-mix(in srgb, var(--accent) 55%, #7a5320); }
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .atri-label { color: inherit; text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .atri-sub { color: color-mix(in srgb, var(--accent) 40%, #7a5320); }
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .atri-item:hover:not(:disabled),
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .atri-item:focus { color: #ffffff; }
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .atri-item:focus .atri-label { color: #ffffff; }
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .atri-item:hover:not(:disabled) .atri-sub,
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .atri-item:focus .atri-sub { color: rgb(255 255 255 / 0.84); }
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .title-premise { color: rgb(61 43 34 / 0.66); text-shadow: none; }
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .title-footer,
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .title-op-link,
+html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .title-op-btn { color: color-mix(in srgb, var(--accent) 45%, rgb(120 84 40 / 0.7)); }
+
+/* ── 窄屏：卡片收成整宽、竖排剧名回横排、画框收窄 ───────────────────────── */
+@media (max-width: 720px) {
+  html[data-menu-style="card"] .title-screen .title-brand { left: 20px; right: 20px; top: 14%; max-width: none; }
+  html[data-menu-style="card"] .title-screen .title-name { font-size: 30px; }
+  html[data-menu-style="card"] .title-screen .atri-menu {
+    left: 20px;
+    right: 20px;
+    top: auto;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    transform: none;
+    width: auto;
+    padding: 10px;
+    gap: 2px;
+  }
+  html[data-menu-style="card"] .title-screen .atri-item { padding: 9px 12px; }
+
+  html[data-menu-style="cinema"] .title-screen::before { display: none; }
+  html[data-menu-style="cinema"] .title-screen .title-name { font-size: 27px; }
+  html[data-menu-style="cinema"] .title-screen::after { height: 52%; }
+  html[data-menu-style="cinema"] .title-screen .atri-menu { bottom: 6%; }
+
+  html[data-menu-style="hud"] .title-screen .title-brand { left: 16px; right: 16px; top: 14%; max-width: none; }
+  html[data-menu-style="hud"] .title-screen .atri-menu {
+    left: 16px;
+    right: 16px;
+    top: auto;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    transform: none;
+    width: auto;
+  }
+
+  /* 竖排剧名只在宽屏用：窄屏上它就是「中文被挤成竖排」那个症状的样子 */
+  html[data-menu-style="scroll"] .title-screen::before { inset: 14px; }
+  html[data-menu-style="scroll"] .title-screen::after { inset: 20px; }
+  html[data-menu-style="scroll"] .title-screen .title-brand { left: 28px; top: 12%; max-width: none; }
+  html[data-menu-style="scroll"] .title-screen .title-name { writing-mode: horizontal-tb; height: auto; font-size: 28px; }
+  html[data-menu-style="scroll"] .title-screen .atri-menu {
+    left: 20px;
+    right: 20px;
+    top: auto;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+  }
+  html[data-menu-style="scroll"] .title-screen .atri-item { padding: 10px 4px; }
+
+  html[data-menu-style="velvet"] .title-screen .title-brand { top: 10%; }
+  html[data-menu-style="velvet"] .title-screen .title-name { font-size: 26px; }
+  html[data-menu-style="velvet"] .title-screen .atri-menu {
+    left: 16px;
+    right: 16px;
+    top: auto;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    transform: none;
+    width: auto;
+    padding: 20px 16px;
+  }
+  html[data-menu-style="velvet"] .title-screen .atri-item { padding: 7px 18px; }
+}
