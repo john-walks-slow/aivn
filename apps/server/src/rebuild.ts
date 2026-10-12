@@ -163,9 +163,7 @@ export function lineageToBeats(
         inputs.push(event.payload?.input ?? "");
         break;
       case "say": {
-        const who = names[attrs.id ?? ""] ?? attrs.id ?? "";
-        const mood = attrs.mood ? `（${attrs.mood}）` : "";
-        script.push(`${who}${mood}：${text(event)}`);
+        script.push(`${names[attrs.id ?? ""] ?? attrs.id ?? ""}：${text(event)}`);
         break;
       }
       case "thought":

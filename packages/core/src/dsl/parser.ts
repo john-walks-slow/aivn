@@ -49,7 +49,6 @@ export interface ParserWarning {
 interface OpenWrap {
   tag: "say" | "narrate" | "thought" | "title";
   id?: string;
-  mood?: string;
   name?: string;
   /** title 专有：对齐与出法。 */
   align?: TitleAlign;
@@ -482,8 +481,10 @@ export class StageDslParser {
           this.warn("nested_wrap", `<${name}> 打开时 <${this.openWrap.tag}> 未闭合，自动闭合前者`);
           this.closeWrap();
         }
-        this.openWrap = { tag: name, id, mood: attrs.get("mood"), name: attrs.get("name") };
-        if (name === "say") this.emit({ kind: "say_start", id: id!, ...(attrs.get("mood") ? { mood: attrs.get("mood") } : {}), ...(attrs.get("name") ? { name: attrs.get("name") } : {}) });
+        this.openWrap = { tag: name, id, name: attrs.get("name") };
+        if (name === "say") {
+          this.emit({ kind: "say_start", id: id!, ...(attrs.get("name") ? { name: attrs.get("name") } : {}) });
+        }
         else if (name === "narrate") this.emit({ kind: "narrate_start" });
         else this.emit({ kind: "thought_start", id: id! });
         return;

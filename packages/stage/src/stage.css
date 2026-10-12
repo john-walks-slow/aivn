@@ -1484,11 +1484,6 @@ html[data-ui-theme="light"] .stage-root .choice:focus-visible .choice-num {
   margin-right: 6px;
 }
 
-.say-mood {
-  color: var(--ink-faint);
-  font-size: 13px;
-}
-
 .say-text {
   margin: 2px 0 0;
   white-space: pre-wrap;

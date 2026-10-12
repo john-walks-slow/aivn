@@ -139,7 +139,7 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
       case "say":
         pushLine(
           base,
-          { kind: "say_start", id: attrs.id ?? "", ...(attrs.mood ? { mood: attrs.mood } : {}), nodeId: node.id },
+          { kind: "say_start", id: attrs.id ?? "", ...(attrs.name ? { name: attrs.name } : {}), nodeId: node.id },
           { kind: "say_text", delta: delta() },
           { kind: "say_end" },
           delta(),

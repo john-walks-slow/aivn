@@ -109,7 +109,7 @@ describe("导演生图", () => {
   });
 
   it("recentScript 给了锚点就停在那一刻：台词只到那一行，场景也按那一刻算", async () => {
-    const roofBeat = ['<scene bg="rooftop"/>', '<say id="mio" mood="soft">风好大。</say>'].join("\n");
+    const roofBeat = ['<scene bg="rooftop"/>', '<say id="mio">风好大。</say>'].join("\n");
     const { orchestrator, tree } = setup([
       { text: BEAT_1, beatDone: BEAT_1_STOP },
       { text: roofBeat, beatDone: true },
@@ -790,7 +790,7 @@ describe("判废与重演（零台词的轮当没发生过）", () => {
 
   it("有台词就是有产出：中途报错的轮不回滚、不重演", async () => {
     let calls = 0;
-    const base = lineThenError('<say id="mio" mood="annoyed">……太慢了！</say>', "gateway exploded");
+    const base = lineThenError('<say id="mio">……太慢了！</say>', "gateway exploded");
     const { orchestrator, messages } = setup([], {
       streamFn: (model, context, options) => {
         calls += 1;

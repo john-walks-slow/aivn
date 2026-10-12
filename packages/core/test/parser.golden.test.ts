@@ -50,7 +50,7 @@ const SAMPLE_BEAT = [
   '<scene bg="school_hallway" bgm="melancholy_piano" transition="fade"/>',
   '<actor id="mio" pos="center" variant="pout" action="enter"/>',
   "<narrate>放学后的走廊空无一人，夕阳把课桌的影子拉得很长。</narrate>",
-  '<say id="mio" mood="annoyed">……太慢了！不是约好立刻集合的吗？</say>',
+  '<say id="mio">……太慢了！不是约好立刻集合的吗？</say>',
   '<cg id="cg_rooftop_01" caption="黄昏的天台"/>',
   '<sfx src="wind" volume="0.3"/>',
   '<thought id="mio">（这家伙，到底在想什么呢……）</thought>',
@@ -122,11 +122,12 @@ describe("流式撕裂容错", () => {
 describe("消息边界自动闭合", () => {
   it("包裹标签未闭合：收尾保留已流出台词", () => {
     const { events, parser } = collect();
-    parser.feed('<say id="mio" mood="softening">算了……上来吧，');
+    parser.feed('<say id="mio">[softening] 算了……上来吧，');
     parser.endMessage();
     expect(events.map((e) => e.kind)).toEqual(["say_start", "say_text", "say_end"]);
-    expect(events[0]).toMatchObject({ kind: "say_start", id: "mio", mood: "softening" });
-    expect(events[1]).toEqual({ kind: "say_text", delta: "算了……上来吧，" });
+    expect(events[0]).toMatchObject({ kind: "say_start", id: "mio" });
+    // 语气标记是正文的一部分：解析层一字不动（上屏才剥，见 stripToneTags）
+    expect(events[1]).toEqual({ kind: "say_text", delta: "[softening] 算了……上来吧，" });
   });
 
   it("未完成标签在消息边界丢弃，标签前文本保留", () => {
@@ -141,7 +142,7 @@ describe("消息边界自动闭合", () => {
     const { events, parser } = collect();
     parser.feed("<narrate>第一幕落。");
     parser.endMessage();
-    parser.feed('<say id="mio" mood="happy">新的一句</say>');
+    parser.feed('<say id="mio">新的一句</say>');
     parser.endMessage();
     expect(events.map((e) => e.kind)).toEqual([
       "narrate_start",
@@ -727,7 +728,7 @@ describe("<ending> 属性值里的 < 与 >", () => {
   });
 
   it("既有标签行为不变：双引号属性值照常，撕裂喂入等价", () => {
-    const source = '<scene bg="hallway" bgm="piano"/><say id="mio" mood="pout">太慢了！</say>';
+    const source = '<scene bg="hallway" bgm="piano"/><say id="mio">太慢了！</say>';
     const whole = collect();
     whole.parser.feed(source);
     whole.parser.endMessage();

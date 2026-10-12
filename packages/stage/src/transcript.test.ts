@@ -74,6 +74,12 @@ describe("buildTranscript 会话记录", () => {
     expect(entries.map((e) => e.key)).toEqual(["n1", "p1", "n2", "p2"]);
   });
 
+  it("谱系里那句带语气标记：上屏剥掉、原文留给改写框", () => {
+    const entries = buildTranscript(view([["n1", "say", 1, "[whispering] 别出声，他在隔壁。"]]), []);
+
+    expect(entries[0]).toMatchObject({ text: " 别出声，他在隔壁。", raw: "[whispering] 别出声，他在隔壁。" });
+  });
+
   it("编辑过的句子以缓冲里的文本为准，语音键仍是那一行", () => {
     const entries = buildTranscript(view([["n1", "say", 1, "我讨厌你"]]), [line("L7", 1, "我不讨厌你")]);
 

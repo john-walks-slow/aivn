@@ -1,4 +1,4 @@
-import { normalizeForTts } from "@aivn/core";
+import { normalizeForTts, stripToneTags } from "@aivn/core";
 import { errorText, type PendingJobs } from "./pendingJobs.js";
 
 /** 合成函数（FishTts + 剧目 URL 前缀绑定；测试注入 fake）。 */
@@ -280,7 +280,7 @@ export class VoicePipeline {
       const done = this.opts.pending?.begin({
         id: `voice:${job.seq}`,
         kind: "voice",
-        label: snippet(job.text),
+        label: snippet(stripToneTags(job.text)),
       });
       this.opts
         .synth(job.text, job.voiceId)
@@ -309,10 +309,15 @@ export class VoicePipeline {
   }
 }
 
-/** 送去合成的文本：整理过、且至少有字可读（纯标点、纯省略号不合成）。 */
+/**
+ * 送去合成的文本：整理过、且至少有字可读（纯标点、纯省略号不合成）。
+ *
+ * 语气标记原样留着（`[whispering]` 要对 Fish 生效），但**判有没有字可读要看剥掉标记之后的那份**——
+ * 只有 `[sigh]` 的一行本来就没什么好念的，丢掉它。
+ */
 function speakable(text: string): string | null {
   const piece = normalizeForTts(text.trim());
-  if (piece === "" || !/[\p{L}\p{N}]/u.test(piece)) return null;
+  if (piece === "" || !/[\p{L}\p{N}]/u.test(stripToneTags(piece))) return null;
   return piece;
 }
 

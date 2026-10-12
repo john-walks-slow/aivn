@@ -63,10 +63,10 @@ function buildViewWithInput(extra: LineageNodeView[] = []): LineageView {
 }
 
 const lines: ScriptLine[] = [
-  { key: "l1", type: "say", actorId: "koharu", mood: null, text: "行 1", seq: 1 },
-  { key: "l2", type: "think", actorId: "koharu", mood: null, text: "行 2", seq: 2 },
-  { key: "l4", type: "say", actorId: "koharu", mood: null, text: "行 4", seq: 4 },
-  { key: "l5", type: "narrate", actorId: null, mood: null, text: "行 5", seq: 5 },
+  { key: "l1", type: "say", actorId: "koharu", text: "行 1", raw: "行 1", seq: 1 },
+  { key: "l2", type: "think", actorId: "koharu", text: "行 2", raw: "行 2", seq: 2 },
+  { key: "l4", type: "say", actorId: "koharu", text: "行 4", raw: "行 4", seq: 4 },
+  { key: "l5", type: "narrate", actorId: null, text: "行 5", raw: "行 5", seq: 5 },
 ];
 
 describe("舞台行 → 谱系反查（导演原语的锚点）", () => {
@@ -112,9 +112,9 @@ describe("舞台行 → 谱系反查（导演原语的锚点）", () => {
 
 describe("重写这一轮退到哪儿（卡片自己算）", () => {
   const lines: ScriptLine[] = [
-    { key: "l0", type: "scene", actorId: null, mood: null, text: "黄昏教室", seq: 0 },
-    { key: "l1", type: "say", actorId: "mio", mood: null, text: "行 1", seq: 1 },
-    { key: "l4", type: "say", actorId: "mio", mood: null, text: "行 4", seq: 4 },
+    { key: "l0", type: "scene", actorId: null, text: "黄昏教室", seq: 0 },
+    { key: "l1", type: "say", actorId: "mio", text: "行 1", raw: "行 1", seq: 1 },
+    { key: "l4", type: "say", actorId: "mio", text: "行 4", raw: "行 4", seq: 4 },
   ];
 
   it("锚本轮之前的那一点：本轮由玩家的一句话开头时，锚上一轮末尾（那句话由服务端带进新枝）", () => {

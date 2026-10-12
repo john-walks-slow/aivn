@@ -175,6 +175,7 @@ export {
   CONTRACT_INTRO,
   DIALOGUE_TAGS,
   STOP_TAG_RULES,
+  TONE_RULES,
 } from "./prompt/stage-dsl.js";
 export type { CastCardView, MemoryIndexCard } from "./prompt/a-zone.js";
 export {

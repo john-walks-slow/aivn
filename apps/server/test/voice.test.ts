@@ -118,7 +118,7 @@ describe("语音管线（D5）", () => {
       dsl: [
         '<scene bg="corridor"/>',
         "<narrate>旁白不配音。</narrate>",
-        '<say id="mio" mood="soft">第一句。第二句！</say>',
+        '<say id="mio">第一句。第二句！</say>',
         '<say id="nonvoice">我没有音色。</say>',
       ].join("\n"),
     });
@@ -136,6 +136,34 @@ describe("语音管线（D5）", () => {
     // 一次请求，文本是整行；narrate 与无音色角色零合成
     expect(calls.map((c) => c.text)).toEqual(["第一句。第二句！"]);
     expect(calls.every((c) => c.voiceId === "voice-mio")).toBe(true);
+  });
+
+  it("排队面板那一行显示的标题不带语气标记", async () => {
+    const { orchestrator, messages } = setup({
+      dsl: '<say id="mio">[whispering] 别出声，他在隔壁。</say>',
+    });
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+    await flush();
+    const pending = messages.filter((m) => m.type === "pending" || m.type === "job");
+    const labels = JSON.stringify(pending);
+    expect(labels).not.toContain("[whispering]");
+  });
+
+  it("语气标记：原样送 TTS，但只有标记的一行不合成", async () => {
+    const { orchestrator, messages, calls } = setup({
+      dsl: '<say id="mio">[whispering] 别出声，他在隔壁。</say>',
+    });
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+    await flush();
+    // 标记要在送出去的文本里（Fish 认它），位置也不动
+    expect(calls.map((c) => c.text)).toEqual(["[whispering] 别出声，他在隔壁。"]);
+    expect(messages.filter((m) => m.type === "audio_ready")).toHaveLength(1);
+
+    const silent = setup({ dsl: '<say id="mio">[sigh]</say>' });
+    await silent.orchestrator.playerAction({ kind: "free", text: "开局" });
+    await flush();
+    expect(silent.calls).toHaveLength(0);
+    expect(silent.messages.filter((m) => m.type === "audio_ready")).toHaveLength(0);
   });
 
   it("没有可读的字就不合成（纯省略号）；有字的行原样送", async () => {

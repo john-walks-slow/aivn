@@ -198,7 +198,6 @@ export interface SayAttrs {
   id: string;
   /** 覆盖本句名牌文字；留空则查角色表，找不到则显示 id 原文。 */
   name?: string;
-  mood?: string;
 }
 
 export interface CgAttrs {

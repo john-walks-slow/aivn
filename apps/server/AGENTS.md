@@ -109,6 +109,13 @@
   [`docs/issues/261012-voice-line-level/`](../../docs/issues/261012-voice-line-level/261012-voice-line-level.summary.md)。
 - **三道门**：`enabled`（总开关，关=不要配音，队列作废）/ `paused`（客户端背压：已到货未播的行积压）/ `audience`
   （有没有观众）。三者的差别只在**已经许出去的行怎么办**：观众离场只停泵，队列与攒下的帧都留着，人回来按原序补推。
+- **语气标记**：剧作家把 Fish 的 `[whispering]` / `[sigh]` 这类标记**直接写在 `<say>` 正文里**（一行台词一条请求，
+  位置即语义——句首管整句、句中只管后半句）。标记是台词文本的一部分：一路原样进谱系、进 TTS（`normalizeForTts`
+  不动方括号），**只在上屏那一步剥掉**（core 的 `stripToneTags`，客户端 `ScriptLine.raw` 留着原文、`text` 给玩家看）；
+  判「这一行有没有字可念」也要看剥过的那份（只有 `[sigh]` 的一行不合成）。词表不校验——官方是开放域、
+  没有白名单。`<say mood="…">` 这个属性已下线（它从来不驱动任何东西，留着只会跟标记抢「怎么表达情绪」）。
+  标记的写法与锚点词表给剧作家的那一章是共享包 `packages/agent/src/prompt/stage-dsl.ts` 的 `TONE_RULES`（两个宿主引同一份）。
+  事实与出处见 [`docs/freeform/261012-fish-audio-emotion-tags.research.md`](../../docs/freeform/261012-fish-audio-emotion-tags.research.md)。
 - **补生成**：客户端 `voice_request {seq}` 让服务端按这一行**当时的台词**（谱系里的当前文本，改动过的按新词）
   整句再合成一次；生成过的命中 `media-cache/tts/` 的内容寻址缓存（`sha1(voiceId + 文本)`），秒回不重复烧配额。
 - **台词代次（`lineGen`）是改写的唯一防线**：`editLine` 抬这一行的代次——排队里的旧活儿扔掉、在飞的回来也认代次
@@ -144,6 +151,7 @@
 - 两份提示词的正文按章抽成模块常量（剧作家 `ROLE_INTRO` / `HOW_I_WORK` / `FORMAT_RULES` / `MEMORY_RULES` / `newCharacterRules()` / `CONTRACT_RULES`，搭台 `RESPONSIBILITY_RULES` / `TALK_RULES` / `IMAGE_BASICS` / `NO_IMAGE_GUIDE` / `LINEAGE_GUIDE`），带能力位的章走 `imageChapter` / `setupFlow` / `writingPoints`，装配模板只留顺序与开关——改一章不必在几百行里找位置。
 - 写作参数段（`renderCraftParams`）在 A 区里紧挨 `craftSection` **之前**、且**永远注入**（全默认值时也注入）：缺省口径不说出来，模型面对的就是「没人告诉它一轮写多长」，而它每轮都在做这个决定。
 - 三种停法只有**一处**正文：共享包的 `STOP_TAG_RULES`（两个宿主引同一份），`# 你怎么工作` 不复述。
+- 语气标记的教法也只有**一处**正文：共享包的 `TONE_RULES`（两个宿主引同一份，挂在各自的《台词》章后面）。
 - 搭台提示词里**不写死 UI 入口清单**（曾列出「玩家能打字的五处界面」，界面一改即成假信息），只说清要改什么、让用户自己找入口。
 - **逐剧目的补充要求两个角色都有**（`play.json` 的 `agents.<role>.prompt`，原样注入、空值不留痕）：剧作家那段由 `prompt.ts` 的 `customSection` 拼在 A 区、紧挨 `# 演出契约（引擎规则，不可改）` 之前（契约是最后说的定论）；搭台助手那段由 `workshop.ts` 的 `customSection` 拼在工坊提示词末尾。它只做「这个剧目的 agent 额外怎么做事」，长期写作口径仍走 `memory/always/craft.md`、能取确定值的三件事仍走 `craft` 段。
 - **出图审批已删**（2026-10-10）：`agents.workshop.imageApproval` 与其提示词分叉整段下线，旧 `play.json` 里残留的字段被归一化静默丢弃。出图的花费与耗时仍写在 `imageGuide`，但只作**情况与惯例**陈述（先列一张图单跟用户对一下），不写成等点头的门禁——模型自己拿捏尺度。

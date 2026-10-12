@@ -1528,7 +1528,8 @@ export function BacklogView({
                         title="就地改写这句"
                         onClick={() => {
                           setEditing(entry.key);
-                          setDraft(entry.text);
+                          // 初值给原文：拿上屏文本当初值，一改就把语气标记吃掉了
+                          setDraft(entry.raw ?? entry.text);
                         }}
                       >
                         <Icon name="pencil" size={14} />

@@ -1,3 +1,4 @@
+import { stripToneTags } from "@aivn/core";
 import type { ActorAnchor, ActorShot, FxVerb, StageEvent, TitleAlign, TitleBg, TitleInk, TitleMode, Transition } from "@aivn/core";
 
 /** 前端剧本行模型：StageEvent 流 → 渲染行（log 视图与舞台台词共用）。 */
@@ -7,8 +8,10 @@ export interface ScriptLine {
   actorId?: string;
   /** say 标签的 name 属性：覆盖本句名牌，不查角色表。 */
   nameOverride?: string;
-  mood?: string;
+  /** 上屏文本：语气标记已剥掉（打字机、标点节奏、回顾都读它）。 */
   text: string;
+  /** 原文（含语气标记）：改写初值要用它——改写框若拿上屏文本当初值，一改就把标记吃掉了。 */
+  raw: string;
   /** say/narrate/thought 行起始事件的 seq（audio_ready 语音关联键）。 */
   seq?: number;
   /** 行级台词节点 ID（LineageNode.id，阅读位置寻址与原地改写用）。 */
@@ -86,7 +89,7 @@ export class ScriptBuilder {
   replaceText(seq: number, text: string): boolean {
     const line = this.lines.find((l) => l.seq === seq);
     if (!line) return false;
-    line.text = text;
+    setLineText(line, text); // 服务端给的是谱系里的原文（含语气标记）
     return true;
   }
 
@@ -101,6 +104,7 @@ export class ScriptBuilder {
           type: "scene",
           seq,
           text: [event.bg, event.bgm, event.ambient].filter(Boolean).join(" · "),
+          raw: "",
         });
         this.cues.push({
           key: key(),
@@ -152,11 +156,11 @@ export class ScriptBuilder {
           key: key(),
           type: "say",
           actorId: event.id,
-          ...(event.mood ? { mood: event.mood } : {}),
           ...(event.name ? { nameOverride: event.name } : {}),
           seq,
           nodeId: event.nodeId,
           text: "",
+          raw: "",
         };
         this.lines.push(line);
         this.cues.push({ key: key(), kind: "line", lineKey: line.key });
@@ -164,7 +168,7 @@ export class ScriptBuilder {
         return;
       }
       case "narrate_start": {
-        const line: ScriptLine = { key: key(), type: "narrate", seq, nodeId: event.nodeId, text: "" };
+        const line: ScriptLine = { key: key(), type: "narrate", seq, nodeId: event.nodeId, text: "", raw: "" };
         this.lines.push(line);
         this.cues.push({ key: key(), kind: "line", lineKey: line.key });
         this.openKey = line.key;
@@ -178,6 +182,7 @@ export class ScriptBuilder {
           seq,
           nodeId: event.nodeId,
           text: "",
+          raw: "",
         };
         this.lines.push(line);
         this.cues.push({ key: key(), kind: "line", lineKey: line.key });
@@ -195,6 +200,7 @@ export class ScriptBuilder {
           seq,
           nodeId: event.nodeId,
           text: "",
+          raw: "",
           closed: false,
         };
         this.lines.push(line);
@@ -207,7 +213,7 @@ export class ScriptBuilder {
       case "thought_text":
       case "title_text": {
         const line = this.lines.at(-1);
-        if (line && line.key === this.openKey) line.text += event.delta;
+        if (line && line.key === this.openKey) setLineText(line, line.raw + event.delta);
         return;
       }
       case "title_end": {
@@ -229,6 +235,7 @@ export class ScriptBuilder {
           actorId: "player",
           seq,
           text: event.text,
+          raw: event.text,
         };
         this.lines.push(line);
         this.cues.push({ key: key(), kind: "line", lineKey: line.key });
@@ -247,4 +254,10 @@ export class ScriptBuilder {
 export function actorName(names: Readonly<Record<string, string>>, id: string | null | undefined): string {
   if (!id) return "";
   return names[id] ?? (id === "player" ? "你" : id);
+}
+
+/** 行文本的唯一写入口：原文收着，上屏文本按语气标记剥一份。 */
+function setLineText(line: ScriptLine, raw: string): void {
+  line.raw = raw;
+  line.text = stripToneTags(raw);
 }

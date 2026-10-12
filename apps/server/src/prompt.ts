@@ -13,6 +13,7 @@ import {
   COMMENT_HEAD,
   CONTRACT_INTRO,
   DIALOGUE_TAGS,
+  TONE_RULES,
   renderAssetSections,
   renderBareSprites,
   renderCastCard,
@@ -206,6 +207,8 @@ ${ACTOR_RULES}
 ## 台词（正文为原生文本，不要转义）
 
 ${DIALOGUE_TAGS}
+
+${TONE_RULES}
 
 ## 全屏标题卡（title，第四种台词标签）
 

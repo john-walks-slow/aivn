@@ -8,6 +8,7 @@ import {
   characterIdOfPath,
   nextId,
   originOfBeat,
+  stripToneTags,
   type CompactionRecord,
   type EngineStateSnapshot,
   type LineageEvent,
@@ -1480,7 +1481,8 @@ export class PlaywrightOrchestrator {
     for (let i = chain.length - 1; i >= 0 && lines.length < limit; i -= 1) {
       const event = chain[i]!;
       if (event.kind !== "say" && event.kind !== "narrate" && event.kind !== "thought") continue;
-      const text = event.text?.trim();
+      // 语气标记是给配音的（「[whispering]」这种），别喂给生图模型
+      const text = stripToneTags(event.text ?? "").trim();
       if (text) lines.push(text);
     }
     // 场景跟着锚点走：那一刻在哪儿，提示词就写哪儿（现场那个 scene 是「此刻」的）
@@ -2395,7 +2397,7 @@ export class PlaywrightOrchestrator {
           nodeId: event.nodeId,
           id: event.id,
           text: "",
-          attrs: { id: event.id, ...(event.mood ? { mood: event.mood } : {}), ...(event.name ? { name: event.name } : {}) },
+          attrs: { id: event.id, ...(event.name ? { name: event.name } : {}) },
           seq,
         };
         return;

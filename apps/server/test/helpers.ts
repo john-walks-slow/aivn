@@ -105,14 +105,14 @@ export const BEAT_1 = [
   '<scene bg="corridor_dusk" bgm="melancholy" transition="fade"/>',
   '<actor id="mio" pos="center" expression="pout" action="enter"/>',
   "<narrate>放学后的走廊空无一人。</narrate>",
-  '<say id="mio" mood="annoyed">……太慢了！</say>',
+  '<say id="mio">……太慢了！</say>',
 ].join("\n");
 
 /** 第一轮的停止点载荷（选项两条），与 BEAT_1 配套。 */
 export const BEAT_1_STOP = { options: ["道歉", "装傻"] };
 
 export const BEAT_2 = [
-  '<say id="mio" mood="soft">……算了。</say>',
+  '<say id="mio">……算了。</say>',
   "<narrate>风停了。</narrate>",
 ].join("\n");
 

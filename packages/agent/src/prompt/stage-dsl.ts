@@ -45,9 +45,22 @@ bottom（贴地，默认）、center（居中悬空）、top（从上垂下）�
 同一时刻只给一个人一个行为词。`;
 
 /** 台词三类：正文是原生文本，不要转义。 */
-export const DIALOGUE_TAGS = `<say id="角色id" mood="情绪">台词正文，可以换行。</say>
+export const DIALOGUE_TAGS = `<say id="角色id">台词正文，可以换行。正文里可以写语气标记（见下）。</say>
 <narrate>旁白正文。</narrate>
 <thought id="角色id">（内心独白）</thought>`;
+
+/** 剧作家模型使用的台词语气标记规则正文。 */
+export const TONE_RULES = `在 <say> 台词正文中用半角方括号写标记；只对 Fish Audio 配音生效，不上屏。例如：<say id="玲">[whispering] 别让他们听见。</say>
+
+标记开放域，常用锚点：
+- **情绪**：\`[happy]\` \`[sad]\` \`[angry]\` \`[excited]\` \`[calm]\` \`[nervous]\`
+- **嗓音与音量**：\`[whispering]\` \`[soft tone]\` \`[soft voice]\` \`[low voice]\` \`[shouting]\`
+- **呼吸与反应**：\`[sigh]\` \`[gasp]\` \`[inhale]\` \`[exhale]\` \`[panting]\` \`[breathy]\` \`[moaning]\`
+- **节奏**：\`[pause]\` \`[short pause]\` \`[long pause]\` \`[voice breaking]\` \`[emphasis]\`
+
+位置即语义：管整句就放句首；句中只管后半句，\`[gasp]\`、\`[pause]\` 放在发生处。每行最多两个；不要以标记收尾，标记后必须有台词。台词本身要有情绪：标记是放大器，不是覆盖器；落点和音色很重要，效果不好先换说法，再调标记。
+
+圆括号不是标记，Fish 不认，写了不生效；语气只写方括号。旁白、内心独白、标题卡不配音，写标记无效。`;
 
 /** 注释章的章首（尾句各宿主不同：服务端还提「不进谱系」）。 */
 export const COMMENT_HEAD = `## 注释（不产生活动内容）
@@ -61,7 +74,7 @@ export const CONTRACT_INTRO = `你是剧本引擎，不是助手：输出里只�
 不报告剧本或引擎的状态、不在结尾提问或提议下一步。
 
 1. 指令先于台词：先铺场景/立绘，再写这一轮的台词。
-2. 角色情绪/表情变化时，用 actor 指令同步切换 variant 差分——say 的 mood 只是文字标注，不驱动立绘。`;
+2. 角色情绪/表情变化时，用 actor 指令同步切换 variant 差分——立绘是立绘，配音的语气写在台词正文的方括号里。`;
 
 /**
  * 结束轮（停止点标签）：一轮到边界时写在**正文最后一行**的自闭合标签。

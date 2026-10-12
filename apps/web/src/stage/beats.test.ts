@@ -33,7 +33,7 @@ function view(specs: NodeSpec[], leafId: string): LineageView {
 }
 
 function line(key: string, seq: number, text: string, type: ScriptLine["type"] = "say"): ScriptLine {
-  return { key, seq, text, type };
+  return { key, seq, text, raw: text, type };
 }
 
 /** 控制指令行：舞台上是布景/音效，落到卡上就是 `bg_xxx · bgm_yyy` 这种工程串。 */
@@ -407,5 +407,27 @@ describe("buildBeats 一轮一卡", () => {
     expect(newR1.onPath).toBe(true);
     expect(newR1.isLeaf).toBe(true);
     expect(newR1.forkedFrom?.nodeId).toBe("root");
+  });
+});
+
+describe("路线树摘要 · 语气标记不上卡", () => {
+  it("只有谱系文本的卡（缓冲里没有这一行）也要剥掉标记", () => {
+    const cards = buildBeats(
+      view(
+        [
+          ["a", "say", 1, "[whispering] 别出声，他在隔壁。"],
+          ["b", "beat_end"],
+        ],
+        "b",
+      ),
+      [],
+    );
+    expect(cards[0]!.preview.trim()).toBe("别出声，他在隔壁。");
+    expect(cards.every((card) => !card.preview.includes("["))).toBe(true);
+  });
+
+  it("开端卡取自谱系原文时同样剥（长句按剥过的长度截断）", () => {
+    const cards = buildBeats(view([["a", "prompt", 1, "[sigh] 就这样吧。"]], "a"), []);
+    expect(cards[0]!.preview).not.toContain("[");
   });
 });

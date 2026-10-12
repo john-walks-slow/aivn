@@ -558,7 +558,8 @@ export function StageScreen({
         beatNodeId: null,
         lineNodeId: null,
         lineSeq: seq,
-        lineText: line?.text ?? "",
+        // 改写初值给原文（带语气标记）：拿上屏文本当初值，一改就把标记吃掉了
+        lineText: line?.raw ?? line?.text ?? "",
       };
     }
     return {
@@ -566,7 +567,7 @@ export function StageScreen({
       beatNodeId: beat?.id ?? null,
       lineNodeId: editableNodeAtLine(lineage.view, line)?.id ?? null,
       lineSeq: seq,
-      lineText: line?.text ?? "",
+      lineText: line?.raw ?? line?.text ?? "",
     };
   }, [cards, lineage.view, playback.view]);
 

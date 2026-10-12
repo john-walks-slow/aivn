@@ -1,5 +1,12 @@
 import type { LineageNodeView, LineageView, TitleAlign, TitleBg, TitleInk } from "@aivn/core";
-import { DEFAULT_TITLE_ALIGN, isTitleAlign, isTitleBg, isTitleInk, TITLE_BG_DEFAULT } from "@aivn/core";
+import {
+  DEFAULT_TITLE_ALIGN,
+  isTitleAlign,
+  isTitleBg,
+  isTitleInk,
+  stripToneTags,
+  TITLE_BG_DEFAULT,
+} from "@aivn/core";
 import type { ScriptLine } from "./script.js";
 
 /** 会话记录里的一条：角色台词，或玩家发来的一句话。 */
@@ -14,7 +21,10 @@ export interface TranscriptEntry {
   actorId: string | null;
   /** 一次性名牌覆盖（来自 say name="..."），只影响本句名牌显示。 */
   nameOverride?: string;
+  /** 上屏文本：语气标记已剥掉。 */
   text: string;
+  /** 原文（含语气标记）：改写框的初值用它。 */
+  raw?: string;
   /** 起始事件序号（语音关联与回执认领的键）；老档的玩家输入行没有 seq。 */
   seq: number | null;
   /** 谱系节点 id：分岔/编辑的锚点。找得到就是它，找不到为 null（此时原语按钮置灰）。 */
@@ -58,6 +68,7 @@ function fromLine(line: ScriptLine): TranscriptEntry {
       type: "say",
       actorId: "player",
       text: line.text,
+      raw: line.raw,
       seq: line.seq ?? null,
       nodeId: null,
     };
@@ -69,6 +80,7 @@ function fromLine(line: ScriptLine): TranscriptEntry {
     actorId: line.actorId ?? null,
     ...(line.nameOverride ? { nameOverride: line.nameOverride } : {}),
     text: line.text,
+    raw: line.raw,
     seq: line.seq ?? null,
     nodeId: null,
     ...(line.type === "title" && line.align ? { align: line.align } : {}),
@@ -99,7 +111,9 @@ function fromView(view: LineageView, lines: readonly ScriptLine[]): TranscriptEn
         type: node.kind as "say" | "narrate" | "thought" | "title",
         actorId: (node.attrs.id as string | undefined) ?? line?.actorId ?? null,
         ...(line?.nameOverride ? { nameOverride: line.nameOverride } : {}),
-        text: line?.text || node.text,
+        // 谱系里存的是原文（含语气标记）：上屏剥一份，原文另留一份给改写
+        text: line?.text || stripToneTags(node.text),
+        raw: line?.raw || node.text,
         seq: node.seq ?? null,
         nodeId: node.id,
         ...(node.kind === "title"

@@ -1,3 +1,4 @@
+import { stripToneTags } from "@aivn/core";
 import type { LineageNodeView, LineageView, StopType } from "@aivn/core";
 import type { ScriptLine } from "@aivn/stage";
 
@@ -86,7 +87,7 @@ export function buildBeats(view: LineageView, lines: readonly ScriptLine[]): Bea
         forkFromId: startNode.id,
         turn: 0,
         nodes: [startNode],
-        preview: startNode.text || "开端",
+        preview: stripToneTags(startNode.text) || "开端",
         speakers: [],
         at: startNode.createdAt,
         cgId: null,
@@ -378,7 +379,9 @@ function collect(card: BeatCard, byId?: Map<string, LineageNodeView>): void {
 }
 
 function setPreview(card: BeatCard, text: string): void {
-  card.preview = text.length > 32 ? `${text.slice(0, 32)}…` : text;
+  // 摘要有两个来源：缓冲里的上屏文本（已剥过）与谱系原文（废弃分支只有它）——这里统一剥一次
+  const clean = stripToneTags(text);
+  card.preview = clean.length > 32 ? `${clean.slice(0, 32)}…` : clean;
 }
 
 /** 停止点类型；老档把类型存在 attrs.type 下，读不到或旧版 pause 一律按「无停止点」算（= 本轮无停止点收尾）。 */
