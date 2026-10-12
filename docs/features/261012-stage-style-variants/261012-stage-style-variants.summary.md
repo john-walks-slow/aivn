@@ -121,7 +121,14 @@ node docs/features/261012-stage-style-variants/render.mjs
 - **一个风格 id 同时决定消息框与开始菜单**（成对选择）：`html[data-dialog-style="velvet"]` 与
   `html[data-menu-style="velvet"]` 同进同出；不写这两个属性 = ATRI 默认档。
   消息框那一半已有生产实现（`packages/stage/src/stage.css` 末尾那一节），开始菜单那一半待接。
-- 开关进 `settings.json`（与界面主题走同一套读写路径），剧目可覆盖。
+- **消息框那一档已经接通**（2026-10-12）：偏好与「界面主题 / 主色」同层，存在浏览器
+  localStorage（`aivn:dialog-style`），`useTheme.applyDialogStyle()` 落到 `html[data-dialog-style]`；
+  设置页「主题设置」组里多了一个「消息框风格」选项框，六档 = ATRI + 五种，选 ATRI 时**摘掉属性**
+  （样式表里没有 atri 这一档）。它只影响这台浏览器，不进 `settings.json`——那是服务端运行期设置，
+  界面主题与主色本来就不在它里面。
+- 开始菜单那一半待接；接的时候照同一条路（`aivn:menu-style` → `html[data-menu-style]`）。
+- 五档的材质色已按技能里的固定方向掺进 `--accent`（酒红底 26% / 20%、纸底 10% / 12%、
+  暖金小件 22–32%、卡片底 12–14%），剧目换主题色时整条跟着走；正文一律走验证过的 ink，不掺。
 - 类名在十种里通用（`.dialog-name` / `.dialog-text` / `.dialog-foot` / `.quick-btn`；
   `.atri-item` / `.atri-label` / `.atri-sub`），只换 CSS 就能整条换过去；只有 V2 要两条黑边元素、
   V4 要内框、M4 要画框与小印，这几处才需要碰 markup（生产实现里用 `::before/::after` 顶掉了）。
