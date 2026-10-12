@@ -9,16 +9,11 @@ import {
   ACCENT_PRESETS,
   DEFAULT_ACCENT_CUSTOM,
   DEFAULT_UI_MODE,
-  UI_STYLES,
-  UI_STYLE_CHANGED,
   THEME_MODE_CHANGED,
   readAccent,
-  readUiStyle,
   setAccent,
-  setUiStyle,
   setThemeMode,
   type AccentId,
-  type UiStyleId,
   type ThemeMode,
 } from "../hooks/useTheme.js";
 
@@ -148,7 +143,6 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
   const [accent, setAccentState] = useState<{ id: AccentId; custom: string }>(
     () => readAccent(),
   );
-  const [uiStyle, setUiStyleState] = useState<UiStyleId>(() => readUiStyle());
 
   const loadModels = useCallback((refresh = false): void => {
     api
@@ -184,17 +178,14 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
       if (key === UI_MODE_KEY)
         setUiMode(storedMode(UI_MODE_KEY, DEFAULT_UI_MODE));
       if (key === ACCENT_CHANGED) setAccentState(readAccent());
-      if (key === UI_STYLE_CHANGED) setUiStyleState(readUiStyle());
     };
     window.addEventListener("storage", handleStorage);
     window.addEventListener(THEME_MODE_CHANGED, handleStorage);
     window.addEventListener(ACCENT_CHANGED, handleStorage);
-    window.addEventListener(UI_STYLE_CHANGED, handleStorage);
     return () => {
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener(THEME_MODE_CHANGED, handleStorage);
       window.removeEventListener(ACCENT_CHANGED, handleStorage);
-      window.removeEventListener(UI_STYLE_CHANGED, handleStorage);
     };
   }, []);
 
@@ -1094,7 +1085,7 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
               collapsed={collapsed.includes("appearance")}
               onToggle={() => toggleGroup("appearance")}
               title="主题设置"
-              desc="界面明暗主题、全站主色与界面风格。"
+              desc="界面明暗主题与全站主色。"
             >
               <Field label="界面主题">
                 <select
@@ -1160,24 +1151,6 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
                     </button>
                   )}
                 </div>
-              </Field>
-              {/* 界面风格：消息框与开始菜单成对切（一个 id 落两个属性）。六档全是引擎 CSS，
-                  改了立即生效、只影响这台浏览器——与界面主题同一层，所以也走 localStorage。 */}
-              <Field label="界面风格">
-                <select
-                  value={uiStyle}
-                  onChange={(e) => {
-                    const val = e.target.value as UiStyleId;
-                    setUiStyleState(val);
-                    setUiStyle(val);
-                  }}
-                >
-                  {UI_STYLES.map((style) => (
-                    <option key={style.id} value={style.id}>
-                      {style.label}
-                    </option>
-                  ))}
-                </select>
               </Field>
             </Group>
 

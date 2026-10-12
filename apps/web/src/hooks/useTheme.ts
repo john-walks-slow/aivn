@@ -135,51 +135,8 @@ export function setAccent(id: AccentId, custom?: string): void {
   window.dispatchEvent(new Event(ACCENT_CHANGED));
 }
 
-const UI_STYLE_KEY = STORAGE_KEY_PREFIX + "ui-style";
-
-/** 本标签页改界面风格时广播（与主题那两组同一条路）。 */
-export const UI_STYLE_CHANGED = "aivn:ui-style-changed";
-
-/** 界面风格：消息框与开始菜单成对切——一个 id 同时落 `data-dialog-style` 与
-    `data-menu-style`，两侧的样式表用的是同一批 id（card / cinema / hud / scroll / velvet）。
-    `atri` 是原来那套（通栏渐变台词条 + 标题页一列纯字），也是唯一「不挂属性」的一档：
-    样式表里没有 `="atri"` 这两套规则，挂上去等于挂了个空，所以它在落盘与渲染时都归一化成摘掉属性。 */
-export type UiStyleId = "atri" | "card" | "cinema" | "hud" | "scroll" | "velvet";
-export const UI_STYLES: { id: UiStyleId; label: string }[] = [
-  { id: "atri", label: "ATRI 通栏（默认）" },
-  { id: "card", label: "浮岛玻璃卡" },
-  { id: "cinema", label: "电影字幕" },
-  { id: "hud", label: "战术 HUD" },
-  { id: "scroll", label: "书卷" },
-  { id: "velvet", label: "丝绒幕" },
-];
-export const DEFAULT_UI_STYLE: UiStyleId = "atri";
-
-export function readUiStyle(): UiStyleId {
-  const raw = localStorage.getItem(UI_STYLE_KEY);
-  return UI_STYLES.some((s) => s.id === raw) ? (raw as UiStyleId) : DEFAULT_UI_STYLE;
-}
-
-export function applyUiStyle(): void {
-  const root = document.documentElement;
-  const id = readUiStyle();
-  if (id === "atri") {
-    delete root.dataset.dialogStyle;
-    delete root.dataset.menuStyle;
-  } else {
-    root.dataset.dialogStyle = id;
-    root.dataset.menuStyle = id;
-  }
-}
-
-export function setUiStyle(id: UiStyleId): void {
-  localStorage.setItem(UI_STYLE_KEY, id);
-  applyUiStyle();
-  window.dispatchEvent(new Event(UI_STYLE_CHANGED));
-}
-
 /**
- * 四个变化来源都接上：设置页在本标签页改的、系统偏好切换、其它标签页改的、消息框风格。
+ * 三个变化来源都接上：设置页在本标签页改的、系统偏好切换、其它标签页改的。
  * applyTheme 每次都重读 localStorage，不缓存挂载时的快照——缓存了就是
  * 「下拉框切了、界面不动」。
  */
@@ -187,19 +144,16 @@ export function useTheme(): void {
   useEffect(() => {
     applyTheme();
     applyAccent();
-    applyUiStyle();
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const rerun = (): void => applyTheme();
     media.addEventListener("change", rerun);
     window.addEventListener(THEME_MODE_CHANGED, rerun);
     window.addEventListener(ACCENT_CHANGED, rerun);
-    window.addEventListener(UI_STYLE_CHANGED, rerun);
     window.addEventListener("storage", rerun);
     return () => {
       media.removeEventListener("change", rerun);
       window.removeEventListener(THEME_MODE_CHANGED, rerun);
       window.removeEventListener(ACCENT_CHANGED, rerun);
-      window.removeEventListener(UI_STYLE_CHANGED, rerun);
       window.removeEventListener("storage", rerun);
     };
   }, []);

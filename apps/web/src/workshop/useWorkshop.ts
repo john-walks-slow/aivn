@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { appendText, appendThinking, attachToolAssets, endTool, startTool } from "@aivn/core";
+import { notifyThemeChanged } from "../theme.js";
 import type {
   ClientMessage,
   WorkshopAssetView,
@@ -93,7 +94,8 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
             }),
           };
         case "workshop_write":
-          // 只当刷新信号：各页据此重拉，写了什么不需要在对话里再摆一条
+          // 只当刷新信号：各页据此重拉，写了什么不需要在对话里再摆一条；若改了 theme.css 一并重挂主题
+          notifyThemeChanged();
           return { ...prev, revision: prev.revision + 1 };
         case "workshop_asset": {
           if (msg.threadId !== prev.activeId) return prev;

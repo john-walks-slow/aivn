@@ -121,14 +121,8 @@ node docs/features/261012-stage-style-variants/render.mjs
 - **一个风格 id 同时决定消息框与开始菜单**（成对选择）：`html[data-dialog-style="velvet"]` 与
   `html[data-menu-style="velvet"]` 同进同出；不写这两个属性 = ATRI 默认档。
   消息框那一半已有生产实现（`packages/stage/src/stage.css` 末尾那一节），开始菜单那一半待接。
-- **两半都接通了**（2026-10-12）：偏好与「界面主题 / 主色」同层，存在浏览器 localStorage
-  （`aivn:ui-style`），`useTheme.applyUiStyle()` 一个 id 同时落 `html[data-dialog-style]` 与
-  `html[data-menu-style]`；设置页「主题设置」组里是「界面风格」一个选项框，六档 = ATRI + 五种，
-  选 ATRI 时**两个属性一起摘掉**（样式表里没有 atri 这一档）。它只影响这台浏览器，不进
-  `settings.json`——那是服务端运行期设置，界面主题与主色本来就不在它里面。
-- 开始菜单的五档在 `apps/web/src/app.css` 末尾（`html[data-menu-style="…"]` 那一节），
-  同样零 markup：上下黑边、书卷双线画框与朱红小印、幕布、HUD 状态标签、目录点与序号全部走伪元素；
-  窄屏另有一节（竖排剧名在 ≤720px 强制回横排）。
+- **属于剧目主题，一个选项成套切换**（2026-10-12）：界面风格是剧目级选项（每部剧各自独立，不是玩家浏览器偏好），与剧目主题色一起存 `plays/<id>/theme.css`（`/* aivn-play-style: <id> */` 与 `:root { --play-style: <id>; }`）。工坊「剧目 → 剧目主题」面板提供「主题色」与「界面风格」一个下拉框（六档 = ATRI + 五种），`src/theme.ts` 的 `applyPlayTheme` 进出剧目或收到重挂信号时解析 `theme.css`，同步设置/移除 `html[data-dialog-style]` 与 `html[data-menu-style]`。
+- **三处表面成套联动**：同一个风格 id 同时切换**开始菜单**（`apps/web/src/app.css` 末尾 `html[data-menu-style="…"]`）、**舞台消息框**与**舞台分支选项框 `.choice`**（`packages/stage/src/stage.css` 末尾 `html[data-dialog-style="…"]`），且原 ATRI 默认档的分支选项框在深浅模式下也均从 `--accent` 派生。开始菜单与消息框同样零 markup（伪元素绘制画框、黑边、幕布、印章、坠饰、序号）。
 - 五档的材质色已按技能里的固定方向掺进 `--accent`（酒红底 26% / 20%、纸底 10% / 12%、
   暖金小件 22–32%、卡片底 12–14%），剧目换主题色时整条跟着走；正文一律走验证过的 ink，不掺。
 - 类名在十种里通用（`.dialog-name` / `.dialog-text` / `.dialog-foot` / `.quick-btn`；

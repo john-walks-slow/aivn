@@ -9,8 +9,27 @@
 
 import { readableInk } from "../hooks/useTheme.js";
 
-/** theme.css 里回读色值的锚点。选择器生成的文件都带这一行，读的时候不必解析 CSS。 */
+/** theme.css 里回读色值与界面风格的锚点。选择器生成的文件都带这两行，读的时候不必解析整张 CSS。 */
 const MARK = "/* aivn-play-accent:";
+const STYLE_MARK = "/* aivn-play-style:";
+
+/** 剧目界面风格：一个选项同时决定这部剧的开始菜单、舞台消息框与舞台分支选项框。 */
+export type PlayStyleId = "atri" | "card" | "cinema" | "hud" | "scroll" | "velvet";
+
+export const PLAY_STYLES: readonly { id: PlayStyleId; label: string }[] = [
+  { id: "atri", label: "ATRI 通栏（默认）" },
+  { id: "card", label: "浮岛玻璃卡" },
+  { id: "cinema", label: "电影字幕" },
+  { id: "hud", label: "战术 HUD" },
+  { id: "scroll", label: "书卷" },
+  { id: "velvet", label: "丝绒幕" },
+];
+
+export const DEFAULT_PLAY_STYLE: PlayStyleId = "atri";
+
+function isPlayStyleId(v: string | null | undefined): v is PlayStyleId {
+  return PLAY_STYLES.some((s) => s.id === v);
+}
 
 /** 可选主题色。都是压得住深底、也读得清浅底的中间明度，偏冷雅致，不抢画面。 */
 export interface PlayAccent {
@@ -54,18 +73,32 @@ function liftForDark(hex: string): string {
   return `#${chan((n >> 16) & 255)}${chan((n >> 8) & 255)}${chan(n & 255)}`;
 }
 
-/** 生成整份 theme.css。`hex` 为空 = 回到默认主题（写一份空表，等于不覆盖）。 */
-export function themeCssFor(hex: string | null): string {
-  if (!hex) {
-    return `/* 默认主题：不覆盖任何令牌，界面与舞台走引擎自己的主题蓝。 */\n`;
-  }
-  if (!isHexColor(hex)) return "";
-  const ink = readableInk(hex);
-  const dark = liftForDark(hex);
-  const darkInk = readableInk(dark);
-  return `${MARK} ${hex} */
+/** 生成整份 theme.css。`hex` 为空且 `style === "atri"` = 回到默认主题（写一份空表，等于不覆盖）。 */
+export function themeCssFor(hex: string | null, style: PlayStyleId = DEFAULT_PLAY_STYLE): string {
+  const validHex = hex && isHexColor(hex) ? (hex.trim().startsWith("#") ? hex.trim() : `#${hex.trim()}`) : null;
+  const validStyle: PlayStyleId = isPlayStyleId(style) ? style : DEFAULT_PLAY_STYLE;
 
-/* 本剧的主题色。由工坊「剧目 → 主题色」写入，手改也生效。
+  if (!validHex && validStyle === "atri") {
+    return `/* 默认主题：不覆盖任何令牌，界面与舞台走引擎自己的主题蓝与 ATRI 默认风格。 */\n`;
+  }
+  if (!validHex) {
+    return `${STYLE_MARK} ${validStyle} */
+
+/* 本剧的界面风格（开始菜单、舞台消息框、分支选项框成套切换）。
+   由工坊「剧目 → 剧目主题」写入，手改也生效。 */
+:root {
+  --play-style: ${validStyle};
+}
+`;
+  }
+  const ink = readableInk(validHex);
+  const dark = liftForDark(validHex);
+  const darkInk = readableInk(dark);
+  const styleHeader = validStyle !== "atri" ? `\n${STYLE_MARK} ${validStyle} */` : "";
+  const styleToken = validStyle !== "atri" ? `\n  --play-style: ${validStyle};` : "";
+  return `${MARK} ${validHex} */${styleHeader}
+
+/* 本剧的主题色与界面风格。由工坊「剧目 → 剧目主题」写入，手改也生效。
    台词条 / 快捷菜单 / 选肢 / 路线图 / 回顾流水 / 标题画面全都从它派生。
    每个色两套值（纸面档 / 暖黑档），同一个色相：界面与舞台按当前的深浅各取一套。
    四个名字各管一层：
@@ -77,11 +110,11 @@ export function themeCssFor(hex: string | null): string {
      --play-accent-dark  舞台·暖黑那一档（纸面档压在暖黑上做字读不清，见 liftForDark）。
    --accent-soft（界面的淡底）刻意不在这里给：它没有「某个色」这层含义，
    是「纸面上 vs 暖黑上」两种配比，由 app.css 从当前那一档主色现推。 */
-:root {
-  --accent: ${hex};
+:root {${styleToken}
+  --accent: ${validHex};
   --accent-ink: ${ink};
-  --link: ${hex};
-  --play-accent: ${hex};
+  --link: ${validHex};
+  --play-accent: ${validHex};
   --play-accent-ink: ${ink};
 }
 
@@ -106,6 +139,20 @@ export function accentFromThemeCss(css: string | null | undefined): string | nul
   // 手写的表没有标记：退一步找第一条 --accent
   const plain = /--accent:\s*(#[0-9a-f]{6})/i.exec(css);
   return plain?.[1] ?? null;
+}
+
+/** 从 theme.css 正文里回读本剧的界面风格；没有标记或文件为空 = 默认 ATRI。 */
+export function styleFromThemeCss(css: string | null | undefined): PlayStyleId {
+  if (!css) return DEFAULT_PLAY_STYLE;
+  const marked = css.indexOf(STYLE_MARK);
+  if (marked >= 0) {
+    const m = /^\s*([a-z]+)/i.exec(css.slice(marked + STYLE_MARK.length, marked + STYLE_MARK.length + 24));
+    const id = m?.[1]?.toLowerCase();
+    if (isPlayStyleId(id)) return id;
+  }
+  const plain = /--play-style:\s*["']?([a-z]+)["']?/i.exec(css);
+  const plainId = plain?.[1]?.toLowerCase();
+  return isPlayStyleId(plainId) ? plainId : DEFAULT_PLAY_STYLE;
 }
 
 /** 色板里最接近这个色的那一枚（用来把色板选中态对上）；不在色板里就返 null。 */

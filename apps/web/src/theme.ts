@@ -8,25 +8,57 @@
  * 所以**深浅两种主题下都是它说了算**。
  */
 
+import { DEFAULT_PLAY_STYLE, styleFromThemeCss, type PlayStyleId } from "./ui/playTheme.js";
+
 let link: HTMLLinkElement | null = null;
+let loadSeq = 0;
+
+/** 把本剧的界面风格落到 <html> 的 data-* 上（开始菜单与舞台消息框/选项框同进同出）。 */
+export function applyPlayStyle(style: PlayStyleId): void {
+  const root = document.documentElement;
+  if (style === "atri") {
+    delete root.dataset.dialogStyle;
+    delete root.dataset.menuStyle;
+  } else {
+    root.dataset.dialogStyle = style;
+    root.dataset.menuStyle = style;
+  }
+}
 
 /** 挂载或摘除剧目主题。`nonce` 变化即强制重取（工坊改完文件后 +1）。 */
 export function applyPlayTheme(playId: string | null, nonce = 0): void {
+  const seq = ++loadSeq;
   if (!playId) {
     link?.remove();
     link = null;
+    applyPlayStyle(DEFAULT_PLAY_STYLE);
     return;
   }
+  const prevPlayId = link?.dataset.playTheme;
   if (!link) {
     link = document.createElement("link");
     link.rel = "stylesheet";
     link.dataset.playTheme = playId;
     document.head.appendChild(link);
   }
-  if (link.dataset.playTheme !== playId) link.dataset.playTheme = playId;
+  if (prevPlayId !== playId) {
+    link.dataset.playTheme = playId;
+    applyPlayStyle(DEFAULT_PLAY_STYLE);
+  }
   const href = `/api/plays/${encodeURIComponent(playId)}/theme.css?v=${nonce}`;
   // 404 也照样赋值：文件不存在时浏览器静默忽略这一张表，页面走默认主题。
   if (link.getAttribute("href") !== href) link.setAttribute("href", href);
+
+  fetch(href, nonce > 0 ? { cache: "no-store" } : undefined)
+    .then((res) => (res.ok ? res.text() : ""))
+    .then((css) => {
+      if (seq !== loadSeq) return;
+      applyPlayStyle(styleFromThemeCss(css));
+    })
+    .catch(() => {
+      if (seq !== loadSeq) return;
+      applyPlayStyle(DEFAULT_PLAY_STYLE);
+    });
 }
 
 /** 工坊改完 theme.css 后重取一次（换 nonce 即绕过缓存）。 */

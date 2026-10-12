@@ -19,8 +19,12 @@ import { Icon } from "@aivn/stage";
 import { notifyThemeChanged } from "../theme.js";
 import {
   accentFromThemeCss,
+  DEFAULT_PLAY_STYLE,
   PLAY_ACCENTS,
+  PLAY_STYLES,
+  styleFromThemeCss,
   themeCssFor,
+  type PlayStyleId,
 } from "../ui/playTheme.js";
 import { Loading } from "../ui/Loading.js";
 import { VoiceLibrary } from "../voice/VoiceLibrary.js";
@@ -46,6 +50,8 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
   const voices = useVoiceCatalog();
   /** 本剧主题色（theme.css 的 --accent）。null = 没覆盖，走引擎默认主题。 */
   const [accent, setAccent] = useState<string | null>(null);
+  /** 本剧界面风格（theme.css 的 --play-style）：开始菜单、舞台消息框与分支选项框成套切换。 */
+  const [style, setStyle] = useState<PlayStyleId>(DEFAULT_PLAY_STYLE);
 
   const reload = useCallback((): void => {
     api
@@ -59,13 +65,19 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
     // theme.css 可能不存在（默认主题），404 是正常状态而不是错误
     api
       .readFile(playId, "theme.css")
-      .then((r) => setAccent(accentFromThemeCss(r.content)))
-      .catch(() => setAccent(null));
+      .then((r) => {
+        setAccent(accentFromThemeCss(r.content));
+        setStyle(styleFromThemeCss(r.content));
+      })
+      .catch(() => {
+        setAccent(null);
+        setStyle(DEFAULT_PLAY_STYLE);
+      });
   }, [playId]);
   useEffect(reload, [reload, revision]);
 
   /**
-   * 选一个主题色：立刻写 theme.css 并重挂样式表。
+   * 选一个主题色或界面风格：立刻写 theme.css 并重挂样式表。
    *
    * 不并进 play.json 的保存按钮：换皮是「当场看见」的事，压在另一个文件的 Save 上，
    * 用户点完色卡却什么都不变，只会以为坏了。
@@ -73,7 +85,15 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
   const pickAccent = (hex: string | null): void => {
     setAccent(hex);
     api
-      .saveFile(playId, "theme.css", themeCssFor(hex))
+      .saveFile(playId, "theme.css", themeCssFor(hex, style))
+      .then(() => notifyThemeChanged())
+      .catch((e: Error) => setError(e.message));
+  };
+
+  const pickStyle = (nextStyle: PlayStyleId): void => {
+    setStyle(nextStyle);
+    api
+      .saveFile(playId, "theme.css", themeCssFor(accent, nextStyle))
       .then(() => notifyThemeChanged())
       .catch((e: Error) => setError(e.message));
   };
@@ -211,9 +231,9 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
       </section>
 
       <section className="panel">
-        <h3>主题色</h3>
+        <h3>剧目主题</h3>
         <p className="muted small">
-          这部剧的专属色，界面各处都跟着它走；点一下即生效。
+          这部剧的专属主题色与界面风格（开始菜单、消息框、分支选项框成套切换）；点一下即生效。
         </p>
         <div className="accent-picker" role="radiogroup" aria-label="剧目主题色">
           <button
@@ -245,6 +265,19 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
             );
           })}
         </div>
+        <label className="field">
+          <span>界面风格</span>
+          <select
+            value={style}
+            onChange={(e) => pickStyle(e.target.value as PlayStyleId)}
+          >
+            {PLAY_STYLES.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
 
       <section className="panel">
