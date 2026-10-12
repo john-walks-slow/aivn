@@ -35,7 +35,7 @@ export const IMAGE_KINDS = ["background", "cg", "sprite"] as const;
 export type ImageKind = (typeof IMAGE_KINDS)[number];
 
 /** 生图接口格式（协议形状，不是产品名）。 */
-export const IMAGE_FORMATS = ["gemini", "openai", "modelslab"] as const;
+export const IMAGE_FORMATS = ["gemini", "openai", "modelslab", "comfyui"] as const;
 export type ImageFormat = (typeof IMAGE_FORMATS)[number];
 
 /** 垫图策略：派生差分时要不要拿该主体的 neutral 定妆照当参考图。 */

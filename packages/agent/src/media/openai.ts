@@ -3,7 +3,7 @@ import {
   IMAGE_ASPECTS,
   imageSizeText,
   parseImageSize,
-  tierArea,
+  tierCanvasFor,
   type GeneratedImage,
   type ImageAspect,
   type ImageBackend,
@@ -114,14 +114,8 @@ function sizeFor(aspect: ImageAspect, spec: ImageSizeSpec): string {
  * 远小于 `assertCanvas` 的 12% 容差。
  */
 export function canvasFor(aspect: ImageAspect, tier: ImageSize): string {
-  const [w, h] = aspect.split(":").map(Number) as [number, number];
-  const ratio = Math.max(w, h) / Math.min(w, h);
-  const short = round16(Math.sqrt(tierArea(tier) / ratio));
-  const long = round16(short * ratio);
-  return w >= h ? `${long}x${short}` : `${short}x${long}`;
+  return tierCanvasFor(aspect, tier, 16);
 }
-
-const round16 = (value: number): number => Math.round(value / 16) * 16;
 
 async function parseImage(
   body: unknown,

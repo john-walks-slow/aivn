@@ -68,6 +68,23 @@ export function tierArea(tier: ImageSize): number {
   return Number(tier.slice(0, -1)) ** 2 * 1024 ** 2;
 }
 
+/**
+ * 档位 + 画幅 → 字面 `WxH`：档位是总像素量级（见 {@link tierArea}），画幅决定这块面积怎么摆，
+ * 长边与短边各自对齐到 `align` 的倍数。
+ *
+ * `align` 由调用方给——那是各家接口的硬性要求，不是一个通用常量：OpenAI 的合法尺寸要能被 16 整除，
+ * ComfyUI 的 latent 以 8 像素为一格。对齐带来的误差在 0.5% 内，远小于 `aspectMatches` 的 12% 容差。
+ */
+export function tierCanvasFor(aspect: ImageAspect, tier: ImageSize, align: number): string {
+  const [w, h] = aspect.split(":").map(Number) as [number, number];
+  const ratio = Math.max(w, h) / Math.min(w, h);
+  const short = alignTo(Math.sqrt(tierArea(tier) / ratio), align);
+  const long = alignTo(short * ratio, align);
+  return w >= h ? `${long}x${short}` : `${short}x${long}`;
+}
+
+const alignTo = (value: number, align: number): number => Math.round(value / align) * align;
+
 export interface ImageRequest {
   prompt: string;
   /**

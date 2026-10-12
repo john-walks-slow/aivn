@@ -4,6 +4,7 @@ import { imageConfigFor, type ServerConfig } from "./config.js";
 import type { ImageBackend, ImageBackends, ImageKind } from "./imageBackend.js";
 import { GeminiImageGen } from "./geminiImage.js";
 import { ModelsLabImageGen } from "./modelslabImage.js";
+import { ComfyUiImageGen } from "./comfyuiImage.js";
 import { OpenAiImageGen } from "./openaiImage.js";
 
 /**
@@ -34,5 +35,6 @@ function createBackend(config: ServerConfig, kind: ImageKind): ImageBackend {
   const options = { baseUrl, apiKey, model, size, timeoutMs };
   if (format === "gemini") return new GeminiImageGen(options, fetchImpl);
   if (format === "modelslab") return new ModelsLabImageGen(options, fetchImpl);
+  if (format === "comfyui") return new ComfyUiImageGen(options, fetchImpl);
   return new OpenAiImageGen(options, fetchImpl);
 }

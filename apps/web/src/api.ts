@@ -135,7 +135,7 @@ export type ImageKind = "background" | "cg" | "sprite";
  * `apiKey` 只回掩码（`apiKeySet` 说这一格有没有被覆盖），清空即回落基础那一把。
  */
 export interface ImageKindSettings {
-  format?: "gemini" | "openai" | "modelslab";
+  format?: "gemini" | "openai" | "modelslab" | "comfyui";
   baseUrl?: string;
   apiKey?: string;
   apiKeySet: boolean;
@@ -179,8 +179,8 @@ export interface Settings {
   lanAccess: boolean;
   image: {
     enabled: boolean;
-    /** 接口格式，不是产品名：gemini 支持垫图，modelslab 只吃一张，openai 完全不支持。 */
-    format: "gemini" | "openai" | "modelslab";
+    /** 接口格式，不是产品名：gemini 支持多张垫图，modelslab 与 comfyui 只吃一张，openai 完全不支持。 */
+    format: "gemini" | "openai" | "modelslab" | "comfyui";
     baseUrl: string;
     apiKey: string;
     apiKeySet: boolean;

@@ -613,7 +613,7 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
               </Field>
               <Field
                 label="接口格式"
-                hint="gemini 支持垫图，modelslab 只吃一张，openai 不支持"
+                hint="gemini 支持多张垫图，modelslab 与 comfyui 只吃一张，openai 不支持"
               >
                 <select
                   value={draft.image.format}
@@ -630,6 +630,7 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
                   <option value="gemini">gemini</option>
                   <option value="modelslab">modelslab</option>
                   <option value="openai">openai</option>
+                  <option value="comfyui">comfyui</option>
                 </select>
               </Field>
               <Field
@@ -657,7 +658,7 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
                   }
                 />
               </Field>
-              <Field label="生图地址" hint="服务根地址，不要带 /v1 或 /v1beta">
+              <Field label="生图地址" hint="服务根地址，不要带 /v1 或 /v1beta；comfyui 填 ComfyUI 根地址（如 http://127.0.0.1:8188）">
                 <input
                   value={draft.image.baseUrl}
                   onChange={(e) =>
@@ -670,7 +671,7 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
               </Field>
               <Field
                 label="出图模型"
-                hint="flow2api 需把画幅档位写进别名，否则画幅被忽略"
+                hint="flow2api 需把画幅档位写进别名，否则画幅被忽略；comfyui 填 checkpoint 文件名"
               >
                 <input
                   value={draft.image.model}
@@ -1273,6 +1274,7 @@ function KindOverrideFields(props: {
           <option value="gemini">gemini</option>
           <option value="modelslab">modelslab</option>
           <option value="openai">openai</option>
+          <option value="comfyui">comfyui</option>
         </select>
       </Field>
       <Field label="生图地址">

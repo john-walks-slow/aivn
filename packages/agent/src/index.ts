@@ -118,6 +118,7 @@ export {
   sizeOfImage,
   sniffImageMime,
   tierArea,
+  tierCanvasFor,
 } from "./media/image.js";
 
 export type { GeminiImageOptions } from "./media/gemini.js";
@@ -126,6 +127,8 @@ export type { OpenAiImageOptions } from "./media/openai.js";
 export { canvasFor as openAiCanvasFor, OpenAiImageGen } from "./media/openai.js";
 export type { ModelsLabImageOptions } from "./media/modelslab.js";
 export { canvasFor as modelsLabCanvasFor, ModelsLabImageGen } from "./media/modelslab.js";
+export type { ComfyUiImageOptions } from "./media/comfyui.js";
+export { ComfyUiImageGen } from "./media/comfyui.js";
 
 export type { AssetIo, AssetKind, AssetManifest, AssetRef, LedgerEntry, LedgerKind } from "./media/catalog.js";
 export {

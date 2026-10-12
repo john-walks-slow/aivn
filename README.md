@@ -136,12 +136,12 @@ DSH 的原生会话能力也不在独立版里重造。判断一个新功能该�
 | 字段 | JSON 键 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | 启用生图 | `image.enabled` | `false` | 生图总开关（关 = 只用导入素材，不发起任何生图） |
-| 接口格式 | `image.format` | `gemini` | **协议形状，不是产品名**：`gemini` = Google 原生 `:generateContent`（垫图走 `inlineData`，最多几张都行）；`modelslab` = `/images/text2img` + `/images/img2img`（垫图先传 base64 换托管链接，**只吃一张**）；`openai` = 标准 `/v1/images/generations`。接官方 API、flow2api 还是别的网关由地址决定 |
-| 生图 Key | `image.apiKey` | 空 | `gemini` 走 `x-goog-api-key`，`openai` 走 `Authorization: Bearer`，`modelslab` 走请求体里的 `key` |
-| 生图地址 | `image.baseUrl` | 空 | 生图服务根地址。**别带 `/v1` 或 `/v1beta`**，版本段按格式自己拼（`modelslab` 填到 `/api/v6` 为止） |
-| 出图模型 | `image.model` | 空 | 出图模型名，按所选格式与网关填（`modelslab` 填社区模型的 `model_id`） |
-| 出图档位 | `image.size` | `1K` | `1K` / `2K` / `4K`（**K 大写**，官方拒小写）= 总像素量级；也可直接写字面像素 `1536x1024`（openai 格式专用）。`modelslab` 没有档位概念，一律按长边 1024 落地 |
-| 垫图策略 | `image.reference` | `neutral` | 派生立绘差分时是否拿该主体的 `neutral` 定妆照当参考图。**`gemini` 与 `modelslab` 格式有效**（后者只吃一张，且出图画幅随垫图走） |
+| 接口格式 | `image.format` | `gemini` | **协议形状，不是产品名**：`gemini` = Google 原生 `:generateContent`（垫图走 `inlineData`，最多几张都行）；`modelslab` = `/images/text2img` + `/images/img2img`（垫图先传 base64 换托管链接，**只吃一张**）；`openai` = 标准 `/v1/images/generations`；`comfyui` = ComfyUI 原生 `/prompt` + `/history` + `/view`（本站发固定 txt2img/img2img 模板，最多一张参考图）。接官方 API、flow2api 还是别的网关由地址决定 |
+| 生图 Key | `image.apiKey` | 空 | `gemini` 走 `x-goog-api-key`，`openai` 与 `comfyui` 走 `Authorization: Bearer`，`modelslab` 走请求体里的 `key` |
+| 生图地址 | `image.baseUrl` | 空 | 生图服务根地址。**别带 `/v1` 或 `/v1beta`**，版本段按格式自己拼（`modelslab` 填到 `/api/v6` 为止；`comfyui` 填 ComfyUI 根地址，如 `http://127.0.0.1:8188`） |
+| 出图模型 | `image.model` | 空 | 出图模型名，按所选格式与网关填（`modelslab` 填社区模型的 `model_id`；`comfyui` 填 checkpoint **文件名**，即 `CheckpointLoaderSimple.ckpt_name`） |
+| 出图档位 | `image.size` | `1K` | `1K` / `2K` / `4K`（**K 大写**，官方拒小写）= 总像素量级；也可直接写字面像素 `1536x1024`（openai / comfyui 格式用，后者要求两边都是 8 的倍数）。`modelslab` 没有档位概念，一律按长边 1024 落地 |
+| 垫图策略 | `image.reference` | `neutral` | 派生立绘差分时是否拿该主体的 `neutral` 定妆照当参考图。**`gemini`、`modelslab` 与 `comfyui` 格式有效**（`modelslab` 只吃一张且画幅随垫图走；`comfyui` 只吃一张，先上传并按目标画幅中心裁切缩放）；`openai` 带垫图直接报错 |
 | 出图并发 | `image.concurrency` | `6` | 并发出图上限。每张图 15–140s，并发太小会拖穿预发射窗口。**按部署一份**，不进类目。同一剧目内工坊与剧作家共用一个闸门；排队区容量是代码里的常量（30，并发 6 的五批），一批发超过它的那部分会直接报「生图队列已满」——所以一次多出几张、分批发都行，别把几十张堆成一批 |
 | 出图超时 ms | `image.timeoutMs` | `180000` | 单图超时。超时按失败处理，舞台保持降级视觉 |
 
@@ -314,6 +314,17 @@ data/
 ```
 
 ```jsonc
+// comfyui 格式（自己那台 ComfyUI，走原生 /prompt 接口）
+"image": {
+  "enabled": true,
+  "format": "comfyui",
+  "baseUrl": "http://127.0.0.1:8188",          // ComfyUI 根地址，不带 /api
+  "model": "sd_xl_base_1.0.safetensors",       // checkpoint 文件名（必须是这台机器上有的）
+  "size": "1K"                                 // 档位换算成 WxH（两边对齐 8）；也可写字面像素，须是 8 的倍数
+}
+```
+
+```jsonc
 // 示例 D：三类素材分开走——立绘保本机 flow2api 的 2K，背景与 CG 走另一家更便宜的网关
 "image": {
   "enabled": true,
@@ -336,16 +347,16 @@ data/
 }
 ```
 
-三款格式的能力差：
+四款格式的能力差：
 
-| | `gemini` | `modelslab` | `openai` |
-| --- | --- | --- | --- |
-| 端点 | `POST {base}/v1beta/models/{model}:generateContent` | `POST {base}/images/text2img`、`/images/img2img` | `POST {base}/v1/images/generations` |
-| 认证 | `x-goog-api-key` 头 | 请求体里的 `key` 字段 | `Authorization: Bearer` 头 |
-| 画幅 | `generationConfig.imageConfig.aspectRatio`，官方 14 个取值 | 没有画幅参数，`width`/`height` 按画幅换算后按 8 对齐、**长边封顶 1024** | 没有画幅参数，**并进 `size`**：档位按总像素量级换算，两边对齐 16 的倍数（`1K`/`16:9` → `1360x768`） |
-| 尺寸 | `imageConfig.imageSize`，只认 `512` / `1K` / `2K` / `4K`（K 大写） | **档位对它无意义**（单边上限 1024，1K 档算出来的长边本来就超），一律按长边 1024；字面像素可写，越界即报错 | `size` 是**字面 `WxH`**，合法值按模型分家，见下 |
-| 垫图 | 支持（`inlineData` 排在提示词之后，Gemini 3 系上限 14 张） | 支持但**只吃一张**（`init_image` 单值）：本地字节先发 `/image_editing/base64_to_url` 换一条托管链接，多张直接报错 | `/generations` 没有参考图入参——工坊要出差分时直接报错，不静默丢弃（图生图走 `/v1/images/edits`，本站未接） |
-| 返回 | `candidates[0].content.parts[].inlineData`（`fileData` 会单独报错） | `output[0]` 是图片地址（本站下载）；`status: processing` 的异步队列直接报错 | `data[0].b64_json` 或 `data[0].url`（远端 url 由本站下载） |
+| | `gemini` | `modelslab` | `openai` | `comfyui` |
+| --- | --- | --- | --- | --- |
+| 端点 | `POST {base}/v1beta/models/{model}:generateContent` | `POST {base}/images/text2img`、`/images/img2img` | `POST {base}/v1/images/generations` | `POST {base}/prompt` → 轮询 `GET {base}/history/{prompt_id}` → `GET {base}/view` |
+| 认证 | `x-goog-api-key` 头 | 请求体里的 `key` 字段 | `Authorization: Bearer` 头 | 不给就不带（ComfyUI 本身不校验；反代要求时走 Bearer） |
+| 画幅 | `generationConfig.imageConfig.aspectRatio`，官方 14 个取值 | 没有画幅参数，`width`/`height` 按画幅换算后按 8 对齐、**长边封顶 1024** | 没有画幅参数，**并进 `size`**：档位按总像素量级换算，两边对齐 16 的倍数（`1K`/`16:9` → `1360x768`） | 没有画幅参数，**并进 `EmptyLatentImage` 的 `width`/`height`**：档位按总像素量级换算、两边对齐 8（`1K`/`16:9` → `1368x768`） |
+| 尺寸 | `imageConfig.imageSize`，只认 `512` / `1K` / `2K` / `4K`（K 大写） | **档位对它无意义**（单边上限 1024，1K 档算出来的长边本来就超），一律按长边 1024；字面像素可写，越界即报错 | `size` 是**字面 `WxH`**，合法值按模型分家，见下 | 档位换算后写进 latent；字面像素照发但**必须是 8 的倍数**（latent 以 8 像素为一格，不然会被悄悄截断） |
+| 垫图 | 支持（`inlineData` 排在提示词之后，Gemini 3 系上限 14 张） | 支持但**只吃一张**（`init_image` 单值）：本地字节先发 `/image_editing/base64_to_url` 换一条托管链接，多张直接报错 | `/generations` 没有参考图入参——工坊要出差分时直接报错，不静默丢弃（图生图走 `/v1/images/edits`，本站未接） | 支持**一张**：`/upload/image` → `LoadImage` → `ImageScale`（目标画幅、中心裁切）→ `VAEEncode`，多张直接报错；输入文件由 ComfyUI 运维清理 |
+| 返回 | `candidates[0].content.parts[].inlineData`（`fileData` 会单独报错） | `output[0]` 是图片地址（本站下载）；`status: processing` 的异步队列直接报错 | `data[0].b64_json` 或 `data[0].url`（远端 url 由本站下载） | `/history` 里的 `outputs[*].images[0]` 给文件名，再从 `/view?filename=…&subfolder=…&type=…` 取字节（**一次出图是三次请求**，`timeoutMs` 是排队 + 出图的总预算） |
 
 **出图档位（`image.size`）的两种写法**：档位 `1K` / `2K` / `4K`（= 总像素量级，1K ≈ 1024²；官方 Gemini
 另有一个 `512`（0.5K，仅 3.1 Flash Image），本配置没开放），或字面像素 `1536x1024`。档位只对
@@ -354,6 +365,16 @@ data/
 只认 `1024x1024` / `1536x1024` / `1024x1536`（外加 `auto`），`dall-e-3` 只认 `1024x1024` /
 `1792x1024` / `1024x1792`，`dall-e-2` 只认三个正方形。跑老模型就把这一项写成它认的字面尺寸。
 档位算出来的尺寸越过 `3840x2160` 会在发请求前报错（`4K` 在 openai 格式下必超），不会白发出去。
+`comfyui` 格式的档位同样按总像素量级换算，但只受 latent 的 8 像素对齐约束、没有上限；
+要真跑 `4K` 得看那张 checkpoint 与本机显存吃不吃得下（SDXL 原生档位是 1024²，2K/4K 出来的画面结构通常崩掉）。
+`comfyui` 的采样参数（20 步 / cfg 8 / euler / normal / 每次随机种子）照 ComfyUI 官方默认模板写死，
+本站没有对应配置项——要改参数就改 `packages/agent/src/media/comfyui.ts` 里那份模板。
+
+`comfyui` 出图失败时看三处（报错原文都会带出来）：`/prompt` 的 **400 报文里有 `node_errors`**——
+checkpoint 文件名写错是最常见的一种，会点名到具体节点与原因；`/history` 里 `status_str=error` 的
+记录带节点类型与异常消息（显存不够、模型与采样参数不匹配）；跑完之前 `/history` 没有这条记录或
+`outputs` 为空，站内会一直轮询到超时（超时预算 = 排队 + 出图，见 `image.timeoutMs`）。
+`/view` 回来的字节认不出图片类型就直接报错，不会把反代的错误页当素材落盘。
 
 > 2026-10-01 实测可用的组合：flow2api（`http://127.0.0.1:38000`）与 cpa 网关（`http://127.0.0.1:9999`）都认 Gemini 原生端点——`:generateContent` 回 `inlineData`，画幅与档位都生效（`1K`/`16:9` → 1376x768，`2K` → 2752x1536，`4:3` → 1200x896，`21:9` → 1584x672，与 Google 官方分辨率表逐条吻合）；cpa 另可走 `openai` 格式的 `gpt-image-2` / `seedream-5.0-lite`。
 > flow2api 的**别名**模型名（`gemini-3.0-pro-image-portrait-2k`）把画幅档位写死在名字里，`imageConfig` 会被忽略（实测：传 `9:16` 仍回 1376x768）；裸名 `gemini-3.0-pro-image` 吃 `imageConfig`（实测 `9:16` → 768x1376）。
@@ -427,7 +448,7 @@ data/
 - **背景与 CG 可以垫参考立绘**：说「这张 CG 里要有澪和小春」，工坊会把这两个角色的立绘（优先 `neutral`，没有就退回该角色任意一张差分）按顺序垫给模型，**数组顺序就是提示词里「第一张、第二张」的顺序**。引擎会自动在提示词末尾点名「第 1 张是澪、第 2 张是小春」——垫图本身没有名字，不点名模型只会画出两个长得一样的人，而且画错得毫无痕迹
   - 点名的主体既没有立绘、也没有角色卡时会**直接报错**，不出一张少人的图（主体 = `assets/sprites/<id>/` 或 `characters/<id>.md`，有其一即可）
   - 垫图会让单张从 69s 变 138s（实测）。垫图策略（`image.reference`，可按类目覆盖）设成 `none` 会把显式点名要的参考立绘一起关掉
-  - `gemini` 与 `modelslab` 格式下可用（`openai` 格式的 `/v1/images/generations` 没有参考图入参，带垫图直接报错）：`modelslab` 的 `img2img` 只吃**一张**垫图，给多张直接报错；且它的出图画幅**随垫图走**（官方文档写死「生成尺寸与 init_image 相同」），所以垫图本身的画幅要对
+  - `gemini`、`modelslab` 与 `comfyui` 格式下可用（`openai` 的 `/v1/images/generations` 仍不接参考图）：`modelslab` 的 `img2img` 只吃**一张**垫图且画幅随垫图走；`comfyui` 只吃**一张**，会上传后按目标画幅中心裁切缩放，再进入固定 img2img 模板。
   - 垫图读的是 `assets/sprites/`，与谁调的无关，**谁都能用**：工坊在前台看着出，剧作家后台排产也一样垫
 - **画风没有默认值**：工坊会主动问你想要什么画风，定下来写进 `memory/always/craft.md` 长期生效。也可以直接说「用赛璐珞动画风」，之后所有出图都按它来
 - 出图是慢操作（100s+），工坊单轮对话上限 7 分钟；出图前工坊会先跟你确认要出什么
