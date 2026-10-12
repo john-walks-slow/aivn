@@ -3,6 +3,7 @@ import { ComfyUiImageGen, GeminiImageGen, ModelsLabImageGen, OpenAiImageGen } fr
 import { applyPatch, freshSettings } from "../src/config.js";
 import { IMAGE_FORMATS } from "../src/imageBackend.js";
 import { createImageBackends } from "../src/imageFactory.js";
+import { NovelAiImageGen } from "../src/novelaiImage.js";
 
 /** 后端实例上的构造参数（`imageFactory` 装配时按格式各给一份）。 */
 const optionsOf = (backend: unknown): unknown => (backend as { opts: unknown }).opts;
@@ -24,12 +25,13 @@ describe("生图后端的装配（按接口格式）", () => {
     expect(mixedBackends.background).toBeInstanceOf(ComfyUiImageGen);
   });
 
-  it("其余三种格式的装配没被带偏", () => {
-    const at = (format: "gemini" | "openai" | "modelslab") =>
+  it("其余四种格式的装配没被带偏", () => {
+    const at = (format: "gemini" | "openai" | "modelslab" | "novelai") =>
       createImageBackends(applyPatch(freshSettings(), { image: { enabled: true, format } }).next)!.background;
     expect(at("gemini")).toBeInstanceOf(GeminiImageGen);
     expect(at("openai")).toBeInstanceOf(OpenAiImageGen);
     expect(at("modelslab")).toBeInstanceOf(ModelsLabImageGen);
+    expect(at("novelai")).toBeInstanceOf(NovelAiImageGen);
   });
 
   // 白盒读实例上的构造参数：装配这一段是「配置 → 后端」的唯一接缝，

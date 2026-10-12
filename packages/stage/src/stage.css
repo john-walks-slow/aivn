@@ -1536,22 +1536,31 @@ html[data-ui-theme="light"] .stage-root .choice:focus-visible .choice-num {
 /* 经典 Galgame 惯例：走过/选过的选肢在字色上呈半透明暗化或柔和墨色，
    悬停与聚焦时照样能点亮，但静置态一眼可辨「已去过」 */
 .choice.is-seen {
-  color: color-mix(in srgb, var(--accent) 55%, rgba(3, 14, 34, 0.45));
+  color: color-mix(in srgb, var(--choice-ink, #f8fafc) 62%, transparent);
 }
 
 .choice.is-seen .choice-num {
-  color: color-mix(in srgb, var(--accent) 35%, rgba(11, 37, 69, 0.45));
+  color: color-mix(in srgb, var(--accent) 55%, rgba(224, 242, 254, 0.55));
+}
+
+.choice.is-seen:not(:hover):not(:focus-visible) .choice-text,
+.choice.is-seen:not(:hover):not(:focus-visible) .choice-num {
+  opacity: 0.62;
 }
 
 /* 自由输入那张卡：走同一形制，只是不给主色标尺 */
 .choice.ghost {
-  color: color-mix(in srgb, var(--accent) 72%, #0b2545);
+  color: color-mix(in srgb, var(--accent) 45%, #cbd5e1);
   font-size: 14.5px;
   background: linear-gradient(90deg,
     color-mix(in srgb, var(--stage-choice-wash) 0%, transparent) 0%,
     color-mix(in srgb, var(--stage-choice-wash) 58%, transparent) 22%,
     color-mix(in srgb, var(--stage-choice-wash) 58%, transparent) 78%,
     color-mix(in srgb, var(--stage-choice-wash) 0%, transparent) 100%);
+}
+
+html[data-ui-theme="light"] .stage-root .choice.ghost {
+  color: color-mix(in srgb, var(--accent) 72%, #0b2545);
 }
 
 /* ── 漏搬的规则（2026-10-05 用 scripts/port-stage-css.py 从 app.css 抽出）───────
