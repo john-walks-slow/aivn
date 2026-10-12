@@ -623,6 +623,15 @@ export function WorkshopPane({
         )}
         {queue}
       </div>
+
+      {lightbox && (
+        <ImageLightbox
+          images={lightbox.images}
+          index={lightbox.index}
+          onIndex={(index) => setLightbox({ ...lightbox, index })}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   );
 }

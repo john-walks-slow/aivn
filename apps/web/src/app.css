@@ -3112,6 +3112,7 @@ select:focus {
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   /* 一栏有阅读宽度的对话（900px 为上限，窄屏自然退化成整宽）：
      宽屏下正文一行一百多字，读起来要来回找行首；工具行、素材条也跟着这一栏走。
      内边距而不是给子元素加 max-width——滚动条要留在内容区最右边。 */
@@ -3167,6 +3168,7 @@ select:focus {
   white-space: pre-wrap;
   word-break: break-word;
   max-width: 88%;
+  min-width: 0;
 }
 
 /* 气泡底一律走纸面令牌，色随主题；写死浅色值会在深色下变成一块「白底白字」 */
@@ -3194,6 +3196,7 @@ select:focus {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 /* 思考与工具各占一行，点开才铺开——不做盒子 */
@@ -3387,6 +3390,11 @@ select:focus {
 }
 
 /* 工坊回复里 markdown 图片：立绘是竖图，缩略图条看不全细节，贴出来按原比例限高 */
+.md-body {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .md-body p {
   margin: 0 0 6px;
   white-space: pre-wrap;
@@ -3402,12 +3410,15 @@ select:focus {
   border-radius: 4px;
   background: var(--panel);
   font-size: 0.9em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
-/* 表格：模型很爱用表格交代「这一轮写了哪些文件」，不给线就是一堆并排的字，
-   列对不上、行也分不开。横线足够（竖线在窄栏里只会更挤）。 */
+/* 表格：模型很爱用表格交代「这一轮写了哪些文件」或并排对比多张候选图，
+   table-layout: fixed 让各列在气泡宽度内均分收缩，不把整条消息撑出横向滚动。 */
 .md-body table {
   width: 100%;
+  table-layout: fixed;
   margin: 4px 0 10px;
   border-collapse: collapse;
   font-size: 13px;
@@ -3420,6 +3431,7 @@ select:focus {
   text-align: left;
   vertical-align: top;
   white-space: normal;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
@@ -3469,6 +3481,7 @@ select:focus {
 .md-image {
   display: inline-block;
   vertical-align: top;
+  max-width: 100%;
   margin: 6px 6px 6px 0;
   padding: 4px;
   border: 1px solid var(--line);
@@ -3491,9 +3504,23 @@ select:focus {
   display: block;
   width: auto;
   height: 190px;
-  max-width: 160px;
+  max-width: min(160px, 100%);
   object-fit: contain;
   border-radius: 4px;
+}
+
+/* 表格单元格里的候选图（如 3 列 Variant 对比）：随列宽等比缩放，不靠固定 190px 高把列撑出气泡 */
+.md-body td .md-image,
+.md-body th .md-image {
+  display: block;
+  margin: 4px auto;
+}
+
+.md-body td .md-image img,
+.md-body th .md-image img {
+  width: 100%;
+  height: auto;
+  max-height: 190px;
 }
 
 .lightbox {
@@ -6724,6 +6751,17 @@ html[data-ui-theme="dark"] .stage-view-segmented {
 
   .workshop-chat {
     padding: 12px 14px;
+  }
+
+  /* 窄屏下助手气泡拿满栏宽（工具行本就是整宽，留 12% 空白只会把多列候选图表格挤窄） */
+  .chat-assistant {
+    max-width: 100%;
+  }
+
+  .md-body th,
+  .md-body td {
+    padding: 5px 4px;
+    font-size: 12px;
   }
 
   .workshop-input {
