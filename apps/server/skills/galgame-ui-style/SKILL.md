@@ -160,4 +160,4 @@ html[data-ui-theme="dark"] {
 
 引擎维护者接线时，五档消息框应检查 `.theater-dialog`、`.dialog-name`、`.dialog-text`、`.dialog-foot`、`.dialog-options`、`.quick-btn`、`.quick-sep` 的深浅值；浅色用实底，深色可用玻璃。具体尺寸、断点和 `html[data-dialog-style]` 生产规则只能改引擎 CSS，不能落盘到剧目主题。
 
-交活前确认：主题文件只有上述令牌与允许的两种根选择器；未写 `--accent-soft`；浅深主色和表面都实际看过；正文、选肢、弹窗、名牌对比度合格；材质色不吞文字；390px 左右没有内容溢出。焦点/hover 自查要覆盖开始菜单、五档消息框、快捷按钮、选肢和弹窗：只用 `:focus-visible`，检查 `:hover:not(:disabled)`、`:disabled` 与 `.quick-btn.tgl-on` 激活态，激活态须显式声明 `color`；所有 `transition`/`animation` 时间值带 `ms`/`s` 单位，并检查 `prefers-reduced-motion`。
+交活前确认：主题文件只有上述令牌与允许的两种根选择器；未写 `--accent-soft`；浅深主色和表面都实际看过；正文、选肢、弹窗、名牌对比度合格；材质色不吞文字；390px 左右没有内容溢出。焦点/hover 自查要覆盖开始菜单、五档消息框、快捷按钮、选肢和弹窗：只用 `:focus-visible`，检查 `:hover:not(:disabled)`、`:disabled` 与 `.quick-btn.is-off` 关闭淡化态；所有 `transition`/`animation` 时间值带 `ms`/`s` 单位，并检查 `prefers-reduced-motion`。

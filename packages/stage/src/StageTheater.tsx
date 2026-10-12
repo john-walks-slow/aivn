@@ -1111,7 +1111,7 @@ voiceState,
           <div className="dialog-options" role="toolbar" aria-label="快捷菜单">
             <button
               type="button"
-              className={`quick-btn${playback.auto ? " tgl-on" : ""}`}
+              className={`quick-btn${playback.auto ? "" : " is-off"}`}
               title={playback.auto ? "自动播放：开（点击关闭）" : "自动播放：关（点击开启）"}
               aria-pressed={playback.auto}
               onClick={(e) => {
@@ -1124,7 +1124,7 @@ voiceState,
             {voiceAvailable && (
               <button
                 type="button"
-                className={`quick-btn${voiceOn ? " tgl-on" : ""}`}
+                className={`quick-btn${voiceOn ? "" : " is-off"}`}
                 title={voiceOn ? "语音：开（点击静音）" : "语音：静音（点击打开）"}
                 aria-pressed={voiceOn}
                 onClick={(e) => {
@@ -1191,7 +1191,7 @@ voiceState,
             {fullscreen.toggle && (
               <button
                 type="button"
-                className={`quick-btn${fullscreen.on ? " tgl-on" : ""}`}
+                className={`quick-btn${fullscreen.on ? "" : " is-off"}`}
                 title={fullscreen.on ? "退出全屏" : "全屏"}
                 aria-label={fullscreen.on ? "退出全屏" : "进入全屏"}
                 aria-pressed={fullscreen.on}
