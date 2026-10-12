@@ -17,5 +17,5 @@ export * from "./play/spriteVariants.js";
 export * from "./play/assets.js";
 export * from "./play/assetLifecycle.js";
 export * from "./play/characterCard.js";
-export * from "./speech/chunker.js";
+export * from "./speech/text.js";
 export * from "./speech/voices.js";

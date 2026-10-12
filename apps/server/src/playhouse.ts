@@ -1280,7 +1280,7 @@ export class PlayHouse {
     const tts = this.tts;
     // 剧目记忆（D7 三层）：craft/premise/index 随 runtime 重建读入（工坊热改走 reload 即时生效）
     const memory = await PlayMemory.load(store);
-    // 语音语言翻译（D5）：say 短语 → voiceLanguage 后再入 TTS；失败回退原文，不阻塞演出
+    // 语音语言翻译（D5）：say 整句 → voiceLanguage 后再入 TTS；失败回退原文，不阻塞演出
     const translator =
       tts && play.voiceLanguage
         ? new Translator(

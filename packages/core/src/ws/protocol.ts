@@ -211,13 +211,13 @@ export type ServerMessage =
   | BeatEndPayload & { type: "beat_end" }
   /** 编排器真正空闲（模型那一轮收尾完毕）：此前 beat_end 已到但导演/玩家操作仍可能被拒。 */
   | { type: "beat_settled" }
-  /** 语音预取就绪（D5）：seq = 所属 say 行 say_start 事件的序号，客户端据此关联行。 */
-  | { type: "audio_ready"; seq: number; phrase: number; url: string }
+  /** 语音就绪（D5）：seq = 所属 say 行 say_start 事件的序号，一行一条请求、一个文件。 */
+  | { type: "audio_ready"; seq: number; url: string }
   /**
-   * 语音已开始合成（D5）：短语进了队列、音频还没生成。
+   * 语音已开始合成（D5）：这一行进了队列、音频还没生成。
    * 没有它，合成期间那一行连喇叭图标都不显示——「正在生成」和「这句没配音」看起来一模一样。
    */
-  | { type: "audio_pending"; seq: number; phrase: number }
+  | { type: "audio_pending"; seq: number }
   /** 生成就绪（D6）：客户端预解码后就地 crossfade 淡入，台词早已先行。瞬态消息不进事件缓冲。 */
   | { type: "asset_ready"; asset: GeneratedAsset }
   /** 生图失败（非慢）：客户端保持降级视觉（既有素材/氛围色），不弹占位。 */
@@ -329,9 +329,9 @@ export type ServerMessage =
       message: string;
     }
   | { type: "error"; message: string; recoverable: boolean }
-  /** 某一句的语音合成不出来（上游报错）。客户端据此把「合成中」标记立刻摘掉，
-   *  不必等 45s 的兜底上界；按需补生成那一行也就此收束（播得出来的那几句照播）。 */
-  | { type: "audio_failed"; seq: number; phrase: number };
+  /** 某一行的语音合成不出来（上游报错）。客户端据此把「合成中」标记立刻摘掉，
+   *  不必等 45s 的兜底上界；按需补生成那一行也就此收束。 */
+  | { type: "audio_failed"; seq: number };
 
 export type ClientMessage =
   | { type: "resume"; lastSeq: number }
@@ -354,8 +354,7 @@ export type ClientMessage =
   | { type: "tts_control"; enabled?: boolean; paused?: boolean }
   /** 补生成一行的语音（重听点在没有音频的行上）：这一行当时关着语音、合成失败、或是换了设备
    *  ／刷新过页面（客户端那张 URL 台账是内存里的，刷新即空）。服务端按这一行**当时的台词**
-   *  重新分句合成，帧仍走 audio_pending/audio_ready，seq 与短语序号保持不变；
-   *  生成过的短语命中内容寻址缓存，秒回且不重复烧配额。 */
+   *  整句合成一次，seq 保持不变；生成过的命中内容寻址缓存，秒回且不重复烧配额。 */
   | { type: "voice_request"; seq: number }
   /** 分岔：世界线挂到锚点并落一条 fork 标记，其后内容整段转兄弟分支。
    *  正在演的那轮腰斩克隆：被掐断的那轮停在它演到的位置，不写 beat_end/快照。

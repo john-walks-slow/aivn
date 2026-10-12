@@ -172,7 +172,7 @@ async function routeMessage(
     case "tts_control":
       orchestrator.setTtsState({ enabled: msg.enabled, paused: msg.paused });
       return;
-    // 重听点在没有音频的行上：按这一行当时的台词补生成（生成过的短语命中缓存，秒回）
+    // 重听点在没有音频的行上：按这一行当时的台词补生成（生成过的整句命中缓存，秒回）
     case "voice_request":
       orchestrator.requestVoice(msg.seq);
       return;

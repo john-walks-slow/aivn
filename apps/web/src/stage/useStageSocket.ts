@@ -89,11 +89,11 @@ export interface StageSocket {
 
 /** 语音/重置事件外发钩子（StageScreen 绑定 VoiceDirector）。 */
 export interface StageSocketHandlers {
-  onAudio?: (ready: { seq: number; phrase: number; url: string }) => void;
-  /** 某个短语已进入合成：喇叭立刻亮起来，音频到位前不再像「这句没配音」。 */
-  onAudioPending?: (pending: { seq: number; phrase: number }) => void;
+  onAudio?: (ready: { seq: number; url: string }) => void;
+  /** 这一行已进入合成：喇叭立刻亮起来，音频到位前不再像「这句没配音」。 */
+  onAudioPending?: (pending: { seq: number }) => void;
   /** 某一句合成不出来（服务端明说）：界面把「合成中」摘掉，补生成那条路也就此收束。 */
-  onAudioFailed?: (failed: { seq: number; phrase: number }) => void;
+  onAudioFailed?: (failed: { seq: number }) => void;
   onBeatStart?: () => void;
   onReset?: () => void;
   /** 工坊通道下行消息：工坊复用工坊所在那条连接，不再单开一条。 */
@@ -261,13 +261,13 @@ export function useStageSocket(
             handlersRef.current.onAssetFailed?.(msg.id, msg.message);
             return;
           case "audio_ready":
-            handlersRef.current.onAudio?.({ seq: msg.seq, phrase: msg.phrase, url: msg.url });
+            handlersRef.current.onAudio?.({ seq: msg.seq, url: msg.url });
             return;
           case "audio_failed":
-            handlersRef.current.onAudioFailed?.({ seq: msg.seq, phrase: msg.phrase });
+            handlersRef.current.onAudioFailed?.({ seq: msg.seq });
             break;
           case "audio_pending":
-            handlersRef.current.onAudioPending?.({ seq: msg.seq, phrase: msg.phrase });
+            handlersRef.current.onAudioPending?.({ seq: msg.seq });
             return;
           case "beat_settled":
             setSettled(true);

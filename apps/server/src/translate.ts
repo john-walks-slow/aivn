@@ -2,12 +2,12 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { completeText } from "./llm.js";
 
-/** 翻译缓存上限（超限逐出最旧；短语级条目 KB 级，500 条内存可忽略）。 */
+/** 翻译缓存上限（超限逐出最旧；整句级条目 KB 级，500 条内存可忽略）。 */
 const CACHE_LIMIT = 500;
 
 /**
- * 台词翻译器（D5 语音语言）：say 短语 → 语音语言，供 TTS 使用。
- * - 短语级缓存 + 同文本并发去重（相邻行重复短语只译一次）；
+ * 台词翻译器（D5 语音语言）：say 整句 → 语音语言，供 TTS 使用。
+ * - 整句级缓存 + 同文本并发去重（相邻行重复的整句只译一次）；
  * - 失败抛错，由调用方决定回退（语音路径回退原文，不阻塞演出）。
  */
 export class Translator {

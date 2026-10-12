@@ -373,7 +373,7 @@ export class PlaywrightOrchestrator {
   private pendingPersist: Promise<void> | null = null;
   /** 旁路补全（纪元摘要）的中断源：dispose 时一并掐断在飞请求。 */
   private readonly signalController = new AbortController();
-  /** 语音预取管线（D5）：say 行 → 分句 → TTS 预取 → audio_ready。 */
+  /** 语音预取管线（D5）：say 行 → 整句 → TTS 预取 → audio_ready。 */
   private readonly voice: VoicePipeline | null;
   /** 本轮内 pi agent 的流错误（message_end.errorMessage）；每轮重置。 */
   private beatError: string | null = null;
@@ -609,13 +609,19 @@ export class PlaywrightOrchestrator {
 
   /**
    * 取下还没做完的语音活儿（轮边界重建用：新编排器建好之后再接手，见 playhouse 的重建路径）。
-   * 队列空且观众状态是缺省时也给 null：没什么要接的，别让调用方白忙一趟。
+   *
+   * 队列空**且各项状态都是缺省**时才给 null：没什么要接的，别让调用方白忙一趟。
+   * `enabled`/`paused` 也算「要接的东西」——玩家关着语音时重建，漏接这一手就等于偷偷把开关翻回去。
    */
   takeVoiceBacklog(): VoiceBacklog | null {
     if (!this.voice) return null;
     const backlog = this.voice.handover();
     const empty =
-      backlog.queue.length === 0 && backlog.deferred.length === 0 && backlog.audience;
+      backlog.queue.length === 0 &&
+      backlog.deferred.length === 0 &&
+      backlog.audience &&
+      backlog.enabled &&
+      !backlog.paused;
     return empty ? null : backlog;
   }
 
@@ -623,7 +629,7 @@ export class PlaywrightOrchestrator {
    * 客户端点名补生成一行的语音（重听点在没有音频的行上时走这里）。
    *
    * 台词从事件流里取**当时那一份**（不是现在重新生成一遍），所以补出来的音频和这一行演的时候
-   * 是同一句；分句与合成走演出同一条管线，seq 与短语序号都不变，客户端接着往台账里记就行。
+   * 是同一句；合成走演出同一条管线，seq 不变，客户端接着往台账里记就行。
    */
   requestVoice(seq: number): void {
     const line = this.sayLineAt(seq);
@@ -2362,7 +2368,7 @@ export class PlaywrightOrchestrator {
     this.feedVoice(event, this.seq);
   }
 
-  /** 语音管线喂入（D5）：say 三段事件 → 分句预取。narrate/thought 不配音。 */
+  /** 语音管线喂入（D5）：say 三段事件 → 攒成整句预取。narrate/thought 不配音。 */
   private feedVoice(event: StageEvent, seq: number): void {
     if (!this.voice) return;
     switch (event.kind) {
@@ -2541,9 +2547,9 @@ function pick(source: object, keys: string[]): Record<string, string> {
 
 /** 语音管线的一帧 → 协议消息。三态一一对应，映射只此一处。 */
 function audioMessage(event: VoiceFrame): ServerMessage {
-  if (event.state === "failed") return { type: "audio_failed", seq: event.seq, phrase: event.phrase };
+  if (event.state === "failed") return { type: "audio_failed", seq: event.seq };
   if (event.state === "ready" && event.url) {
-    return { type: "audio_ready", seq: event.seq, phrase: event.phrase, url: event.url };
+    return { type: "audio_ready", seq: event.seq, url: event.url };
   }
-  return { type: "audio_pending", seq: event.seq, phrase: event.phrase };
+  return { type: "audio_pending", seq: event.seq };
 }

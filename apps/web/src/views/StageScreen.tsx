@@ -228,8 +228,8 @@ export function StageScreen({
       onSendDropped: offlineAction,
       onAudio: (ready) => director.handleAudio(ready),
       onAudioPending: (pending) =>
-        director.markPending(pending.seq, pending.phrase),
-      onAudioFailed: (failed) => director.audioFailed(failed.seq, failed.phrase),
+        director.markPending(pending.seq),
+      onAudioFailed: (failed) => director.audioFailed(failed.seq),
       onBeatStart: () => {
         director.beatStarted();
         setLineageNonce((n) => n + 1); // 上一轮的玩家表态进谱系了，选肢的「已选过」要跟上
@@ -310,7 +310,7 @@ export function StageScreen({
   // 渲染期回调绑定（N6：置于 stage 声明后，闭包引用才不踩未初始化的 TDZ）
   director.onNotify = () => setAudioTick((t) => t + 1);
   director.onControl = (state) => stage.sendTtsControl(state);
-  // 重听点在没有音频的行上 → 请服务端按当时的台词补生成（生成过的短语命中缓存，秒回）
+  // 重听点在没有音频的行上 → 请服务端按当时的台词补生成（生成过的整句命中缓存，秒回）
   director.onRequestVoice = (seq) => stage.sendVoiceRequest(seq);
 
   // 阅读位置上报出口（渲染期绑定）：
