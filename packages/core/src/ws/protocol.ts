@@ -178,7 +178,9 @@ export type ServerMessage =
       lastSeq: number;
       /** 这棵树还没开演过：客户端据此摆「开演」按钮，而不是一片空场。 */
       fresh?: boolean;
-      cast?: { id: string; name: string }[];
+      /** 角色名表。`voice` = 这个角色配得出声吗（有角色卡音色或剧目级兜底音色）：
+       *  界面据此决定要不要摆「重听/按需生成」那个键——摆一个点了没反应的键不如不摆。 */
+      cast?: { id: string; name: string; voice?: boolean }[];
       /** 服务端 TTS 能力（配置了 fish-audio keys 才为 true；false 时客户端隐藏语音开关）。 */
       voice?: boolean;
       /** 本剧目已生成的资产全集（manifest 快照）：重连即恢复可见，不必等下一次预发射。 */
@@ -326,7 +328,10 @@ export type ServerMessage =
       ok: false;
       message: string;
     }
-  | { type: "error"; message: string; recoverable: boolean };
+  | { type: "error"; message: string; recoverable: boolean }
+  /** 某一句的语音合成不出来（上游报错）。客户端据此把「合成中」标记立刻摘掉，
+   *  不必等 45s 的兜底上界；按需补生成那一行也就此收束（播得出来的那几句照播）。 */
+  | { type: "audio_failed"; seq: number; phrase: number };
 
 export type ClientMessage =
   | { type: "resume"; lastSeq: number }
@@ -347,6 +352,11 @@ export type ClientMessage =
   | { type: "pending_dismiss"; jobId: string }
   /** 语音控制（D5 背压）：enabled=总开关（关=停合成）；paused=暂停预取（快进态/缓冲积压）。 */
   | { type: "tts_control"; enabled?: boolean; paused?: boolean }
+  /** 补生成一行的语音（重听点在没有音频的行上）：这一行当时关着语音、合成失败、或是换了设备
+   *  ／刷新过页面（客户端那张 URL 台账是内存里的，刷新即空）。服务端按这一行**当时的台词**
+   *  重新分句合成，帧仍走 audio_pending/audio_ready，seq 与短语序号保持不变；
+   *  生成过的短语命中内容寻址缓存，秒回且不重复烧配额。 */
+  | { type: "voice_request"; seq: number }
   /** 分岔：世界线挂到锚点并落一条 fork 标记，其后内容整段转兄弟分支。
    *  正在演的那轮腰斩克隆：被掐断的那轮停在它演到的位置，不写 beat_end/快照。
    *  锚点二选一：`nodeId`（路线视图/回顾给的节点）或 `seq`（舞台上正在看的那一行，

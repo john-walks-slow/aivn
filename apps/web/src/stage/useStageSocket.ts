@@ -32,6 +32,8 @@ export interface StageSocket {
   cues: readonly Cue[];
   scene: string;
   names: Readonly<Record<string, string>>;
+  /** 配得出声的角色 id（hello 的 cast.voice）：舞台据此摆「重听／按需生成」那个键。 */
+  voiceCast: ReadonlySet<string>;
   stop: StopPayload | null;
   isNoStop: boolean;
   /** 事件缓冲代号（P6）：结构性操作后整段重放，播放层据此强制复位。 */
@@ -65,6 +67,8 @@ export interface StageSocket {
   /** 手动清掉一条失败项（失败项不自动消失，面板上的删除键走这里）。 */
   sendPendingDismiss: (jobId: string) => void;
   sendTtsControl: (state: { enabled?: boolean; paused?: boolean }) => void;
+  /** 补生成一行的语音（重听点在没有音频的行上时走这里）。 */
+  sendVoiceRequest: (seq: number) => void;
   /** 上报阅读位置（播放头推进时防抖调用）：服务端节流落盘，刷新后回到原处。 */
   sendRead: (pos: ReadPos) => void;
   // Director ops: jump moves the world line, fork opens a branch, delete prunes one
@@ -88,6 +92,8 @@ export interface StageSocketHandlers {
   onAudio?: (ready: { seq: number; phrase: number; url: string }) => void;
   /** 某个短语已进入合成：喇叭立刻亮起来，音频到位前不再像「这句没配音」。 */
   onAudioPending?: (pending: { seq: number; phrase: number }) => void;
+  /** 某一句合成不出来（服务端明说）：界面把「合成中」摘掉，补生成那条路也就此收束。 */
+  onAudioFailed?: (failed: { seq: number; phrase: number }) => void;
   onBeatStart?: () => void;
   onReset?: () => void;
   /** 工坊通道下行消息：工坊复用工坊所在那条连接，不再单开一条。 */
@@ -109,7 +115,8 @@ export interface StageSocketHandlers {
   /** 生图失败：保持降级视觉 + 提示，不弹永久骨架。 */
   onAssetFailed?: (id: string, message: string) => void;
   /** 一行台词被原地改写：谱系视图跟着换新文本（缓冲由 socket 自己就地替换）。 */
-  onLineEdited?: (nodeId: string, text: string) => void;
+  /** 原地改写了一行（nodeId 定位，seq 是它在舞台缓冲里的身份：带上它，宿主才能作废那一行的旧语音）。 */
+  onLineEdited?: (nodeId: string, text: string, seq?: number) => void;
   /** 一张插图挂上了某一行（回看中生图的旁注）：谱系重拉，翻到那一行就有图。 */
   onCgAttached?: (nodeId: string, id: string) => void;
   /**
@@ -140,6 +147,8 @@ export function useStageSocket(
   const [stop, setStop] = useState<StopPayload | null>(null);
   const [isNoStop, setNoStop] = useState(false);
   const [names, setNames] = useState<Record<string, string>>({});
+  /** 配得出声的角色 id（hello 的 cast.voice）：界面据此摆「重听／按需生成」那个键。 */
+  const [voiceCast, setVoiceCast] = useState<ReadonlySet<string>>(new Set<string>());
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const [assetsTtlMs, setAssetsTtlMs] = useState<number | null>(null);
   const [epoch, setEpoch] = useState(0);
@@ -187,6 +196,7 @@ export function useStageSocket(
           case "hello":
             setFresh(msg.fresh ?? false);
             setNames(Object.fromEntries((msg.cast ?? []).map(({ id, name }) => [id, name])));
+            setVoiceCast(new Set((msg.cast ?? []).filter((c) => c.voice).map((c) => c.id)));
             setVoiceAvailable(msg.voice ?? false);
             if (msg.assetsTtlMs !== undefined) setAssetsTtlMs(msg.assetsTtlMs);
             if (msg.pendingJobs) setPendingJobs(msg.pendingJobs);
@@ -253,6 +263,9 @@ export function useStageSocket(
           case "audio_ready":
             handlersRef.current.onAudio?.({ seq: msg.seq, phrase: msg.phrase, url: msg.url });
             return;
+          case "audio_failed":
+            handlersRef.current.onAudioFailed?.({ seq: msg.seq, phrase: msg.phrase });
+            break;
           case "audio_pending":
             handlersRef.current.onAudioPending?.({ seq: msg.seq, phrase: msg.phrase });
             return;
@@ -277,7 +290,7 @@ export function useStageSocket(
             // 原地改写就地替换那一行：谱系重拉要等下一次操作，这里先把画面改对
             if (msg.seq !== undefined) builderRef.current.replaceText(msg.seq, msg.text);
             setTick((t) => t + 1);
-            handlersRef.current.onLineEdited?.(msg.nodeId, msg.text);
+            handlersRef.current.onLineEdited?.(msg.nodeId, msg.text, msg.seq);
             return;
           case "cg_attached":
             handlersRef.current.onCgAttached?.(msg.nodeId, msg.id);
@@ -425,6 +438,7 @@ export function useStageSocket(
     cues: builderRef.current.cues,
     scene: builderRef.current.scene,
     names,
+    voiceCast,
     stop,
     isNoStop,
     epoch,
@@ -444,6 +458,7 @@ export function useStageSocket(
     sendPromptDelete,
     sendPendingDismiss,
     sendTtsControl: (ttsState) => send({ type: "tts_control", ...ttsState }),
+    sendVoiceRequest: (seq) => send({ type: "voice_request", seq }),
     sendRead,
     sendJump,
     sendFork,

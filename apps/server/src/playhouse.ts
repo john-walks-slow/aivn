@@ -1412,10 +1412,16 @@ export class PlayHouse {
       // 角色表 = 角色卡目录（不是 play.json 那份元数据）+ 立绘级名牌里那些没有卡的主体：
       // 机甲、道具、一次性路人在舞台上挂的就是它，缺了这一段名牌只能显示裸 id
       cast: [
-        ...[...memory.characters].map(([id, card]) => ({ id, name: card.name ?? id })),
+        // voice = 这个人配得出声吗（角色卡音色，或剧目级兜底音色——与语音管线取音色同一处规则）。
+        // 界面用它决定摆不摆「重听／按需生成」那个键：没有音色的角色摆上去就是点了没反应。
+        ...[...memory.characters].map(([id, card]) => ({
+          id,
+          name: card.name ?? id,
+          voice: Boolean(card.voiceId ?? play.defaultVoiceId),
+        })),
         ...Object.entries(spriteTitles)
           .filter(([id]) => !memory.characters.has(id))
-          .map(([id, name]) => ({ id, name })),
+          .map(([id, name]) => ({ id, name, voice: Boolean(play.defaultVoiceId) })),
       ],
       voice: !!synth,
       synth,

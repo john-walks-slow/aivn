@@ -19,6 +19,12 @@ const RESUME_AT = 3;
 const URL_LEDGER_MAX = 500;
 /** 「合成中」标记的兜底上界：合成失败时服务端不回消息，靠它自己熄灯。 */
 const PENDING_TTL_MS = 45_000;
+/**
+ * 补生成的等待上界：请求在断线时丢掉、或服务端压根不受理（没有这一步就没有任何回执），
+ * 到点就放下「已经问过了」的记号——**别让重试入口被自己的幂等标记焊死**。
+ * 定得比一句长台词合成完还宽（那也就几秒）。
+ */
+const REPLAY_WAIT_MS = 20_000;
 
 interface PhraseAudio {
   url: string;
@@ -59,6 +65,8 @@ export class VoiceDirector {
   private replaySources = new Map<AudioBufferSourceNode, GainNode>();
   /** 每次发起重听自增：迟到的解码结果发现令牌已变就自我淘汰。 */
   private replayToken = 0;
+  /** 正在重听的那一行（编辑作废时要连它一起掐）。 */
+  private replaySeq: number | null = null;
   /** 已见最大 seq（beatStarted 时冻结为门槛：旧轮迟到音频直接丢弃）。 */
   private maxSeqSeen = 0;
   private floorSeq = 0;
@@ -68,6 +76,23 @@ export class VoiceDirector {
   onNotify: (() => void) | null = null;
   /** 服务端预取控制（背压）。 */
   onControl: ((state: { paused?: boolean }) => void) | null = null;
+  /** 按需补生成的出口（宿主接上：发 voice_request）。 */
+  onRequestVoice: ((seq: number) => void) | null = null;
+  /** 用户点名要听、正在等它到齐的那一行（见 requestReplay）。 */
+  private wantReplay: number | null = null;
+  /** 上面那条等待的兜底计时（见 REPLAY_WAIT_MS）。 */
+  private wantReplayTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * 等待的代号：每换一次等待自增。计时器回调只认自己那一次的代号——
+   * 换行、超时、关语音之后，已经排上队的老回调不该再去动新那一次的记号。
+   */
+  private wantReplayToken = 0;
+  /**
+   * 已经作废的行（原地改写）：这一行的旧音频不再收，直到用户重新点名要听。
+   * 服务端那边按台词代次拦了一道（见 VoicePipeline.invalidateLine），这里再拦一道——
+   * 旧宿主、重连补帧、代理重放这类「帧从别处来」的路不该能写回台账。
+   */
+  private readonly voided = new Set<number>();
 
   get unlocked(): boolean {
     return this.ctx !== null;
@@ -106,6 +131,16 @@ export class VoiceDirector {
     }
   }
 
+  /** 放下这一行的等待（用户自己关掉语音、换行、超时都走这里）。 */
+  private clearWantReplay(): void {
+    this.wantReplay = null;
+    this.wantReplayToken += 1;
+    if (this.wantReplayTimer !== null) {
+      clearTimeout(this.wantReplayTimer);
+      this.wantReplayTimer = null;
+    }
+  }
+
   setEnabled(on: boolean): void {
     this.enabled = on;
     if (!on) {
@@ -113,6 +148,9 @@ export class VoiceDirector {
       this.lines.clear();
       this.pendingPhrases.clear();
       this.clearBackpressure();
+      // 关语音 = 这一趟等待作废（服务端那边也会把队列扔掉）。清了它，重新打开之后
+      // 同一行还能再点一次生成——不然那个「已经问过了」的记号会把重试入口焊死。
+      this.clearWantReplay();
     }
     this.notify();
   }
@@ -123,15 +161,88 @@ export class VoiceDirector {
    */
   voiceState(seq: number | null | undefined): "none" | "pending" | "ready" {
     if (!this.enabled || seq === null || seq === undefined) return "none";
+    if (this.voided.has(seq)) return "none";
     if (this.urls.has(seq)) return "ready";
     if (!this.pendingPhrases.has(seq)) return "none";
     this.pruneStalePending();
     return this.pendingPhrases.has(seq) ? "pending" : "none";
   }
 
+  /**
+   * 重听一行（工具栏的喇叭键 / 回顾里的播放徽章）。
+   *
+   * 台账里已经有这一行的音频 → 直接重播，不打扰服务端；
+   * 没有（当时关着语音、合成失败、换了设备，或刷新过页面——台账在内存里，刷新即空）
+   * → 请服务端按这一行**当时的台词**补生成，并记下它是「用户点名要听的」：
+   * 短语到齐（或都失败）那一刻自动起播。
+   */
+  requestReplay(seq: number): void {
+    if (!this.enabled) return;
+    const state = this.voiceState(seq);
+    if (state === "ready") {
+      this.voided.delete(seq);
+      void this.replay(seq);
+      return;
+    }
+    // 用户点名要听 = 这一行重新收帧（编辑作废之后只有这一条路能解封）
+    this.voided.delete(seq);
+    // 同一个来回里连点几下只求一次：帧还没回来的这段时间，wantReplay 就是「已经问过了」的记号
+    if (this.wantReplay === seq) return;
+    // 换到新的一行：旧的那条等待连同它的计时一起作废（否则旧计时到点会提前解开新行的记号）
+    this.clearWantReplay();
+    this.wantReplay = seq;
+    const token = this.wantReplayToken;
+    this.wantReplayTimer = setTimeout(() => {
+      if (this.wantReplayToken === token) this.clearWantReplay();
+    }, REPLAY_WAIT_MS);
+    // 已经在合成中的（pending）不必再点一次，等它回来就好
+    if (state === "none") this.onRequestVoice?.(seq);
+  }
+
+  /**
+   * 补生成到齐了没有：这一行**已知的短语**都落进台账（或明确失败）才起播。
+   *
+   * 补生成的短语是服务端一次性全报过来的（见 VoicePipeline.synthesizeLine），所以
+   * 「pending 清空」就等于「这一行做完了」——不会照第一句回来的就播，又切掉后半句。
+   */
+  private flushWantReplay(): void {
+    const seq = this.wantReplay;
+    if (seq === null) return;
+    const row = this.pendingPhrases.get(seq);
+    if (row && row.size > 0) return;
+    this.clearWantReplay();
+    const urls = this.urls.get(seq);
+    if (urls && urls.size > 0) void this.replay(seq);
+  }
+
+  /**
+   * 这一行被原地改写了（line_edited）：台词换了，台账里那份音频是旧词的，作废。
+   * 于是重听会走「没有音频」那条路——按新台词补生成，不会播出旧声音。
+   */
+  forgetLine(seq: number | null | undefined): void {
+    if (typeof seq !== "number") return;
+    this.urls.delete(seq);
+    this.pendingPhrases.delete(seq);
+    this.voided.add(seq);
+    if (this.wantReplay === seq) this.clearWantReplay();
+    // 声音也当场作废：台词都换了，别让旧音频接着念
+    const line = this.lines.get(seq);
+    if (line) this.fadeLine(line);
+    if (this.currentSeq === seq) this.currentSeq = null;
+    if (this.replaySeq === seq) this.stopReplay();
+    this.notify();
+  }
+
+  /** audio_failed 到达：这一句合成不出来，摘掉「合成中」标记并看看补生成那一行是否就此收束。 */
+  audioFailed(seq: number, phrase: number): void {
+    if (this.voided.has(seq)) return;
+    this.clearPending(seq, phrase);
+    this.flushWantReplay();
+  }
+
   /** audio_pending 到达：记下这一行正在合成，让界面亮起喇叭。 */
   markPending(seq: number, phrase: number): void {
-    if (!this.enabled) return;
+    if (!this.enabled || this.voided.has(seq)) return;
     this.pruneStalePending();
     let row = this.pendingPhrases.get(seq);
     if (!row) {
@@ -173,6 +284,7 @@ export class VoiceDirector {
 
     this.stopReplay(); // 先掐断上一条重听，再认领当前令牌
     const token = this.replayToken;
+    this.replaySeq = seq;
     const ctx = this.ctx;
     const buffers: AudioBuffer[] = [];
     for (const url of urls) {
@@ -198,6 +310,7 @@ export class VoiceDirector {
 
   /** 掐断正在播的重听（再点一次播放键、或新的一键把它顶掉）。 */
   stopReplay(): void {
+    this.replaySeq = null;
     const ctx = this.ctx;
     if (!ctx) {
       this.replaySources.clear();
@@ -220,8 +333,10 @@ export class VoiceDirector {
   /** audio_ready 到达：存储 + 预取解码。 */
   handleAudio(ready: { seq: number; phrase: number; url: string }): void {
     this.clearPending(ready.seq, ready.phrase);
-    if (!this.enabled) return;
+    if (!this.enabled || this.voided.has(ready.seq)) return;
     this.rememberUrl(ready.seq, ready.phrase, ready.url);
+    // 补生成等的是「短语齐了」，与这一行是否还在演无关：先评估，再走下面的丢弃守卫
+    this.flushWantReplay();
     // 旧轮迟到音频（beat 已收束后 TTS 才完成）与已播过的行：直接丢弃
     if (ready.seq <= this.floorSeq) return;
     if (this.currentSeq !== null && ready.seq < this.currentSeq) return;
@@ -264,6 +379,7 @@ export class VoiceDirector {
     this.lines.clear();
     this.pendingPhrases.clear();
     this.clearBackpressure();
+    this.clearWantReplay();
     this.currentSeq = null;
     this.floorSeq = this.maxSeqSeen;
     this.notify();
@@ -273,6 +389,7 @@ export class VoiceDirector {
   reset(): void {
     this.beatStarted();
     this.urls.clear();
+    this.voided.clear();
   }
 
   /** 自动模式 hold：当前行语音仍在播。 */
@@ -286,6 +403,7 @@ export class VoiceDirector {
   dispose(): void {
     this.fadeAll();
     this.stopReplay();
+    this.clearWantReplay();
     this.lines.clear();
     this.pendingPhrases.clear();
     this.clearBackpressure();

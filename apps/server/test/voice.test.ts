@@ -283,6 +283,190 @@ describe("语音管线（D5）", () => {
     expect(pending.snapshot().filter((j) => j.kind === "voice")).toHaveLength(1);
   });
 
+  it("按需补生成：按当时那一行的台词重新分句，帧沿用原 seq 与短语序号", async () => {
+    const calls: { text: string; voiceId: string }[] = [];
+    const { orchestrator, messages } = setup({
+      dsl: ['<narrate>开场。</narrate>', '<say id="mio">第一句。第二句！</say>'].join("\n"),
+      synth: async (text, voiceId) => {
+        calls.push({ text, voiceId });
+        return { url: `/tts/${voiceId}/${encodeURIComponent(text)}` };
+      },
+    });
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+    await flush();
+
+    const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
+    const saySeq = events.find((e) => e.event.kind === "say_start")!.seq;
+    calls.length = 0;
+    const before = messages.length;
+
+    orchestrator.requestVoice(saySeq);
+    await flush();
+
+    const fresh = messages.slice(before);
+    // 台词取的是当时那一份（不是现在重新生成），音色仍是这个角色的
+    expect(calls.map((c) => c.text)).toEqual(["第一句。", "第二句！"]);
+    expect(calls.every((c) => c.voiceId === "voice-mio")).toBe(true);
+    // 两个短语的「开始合成」都在 ready 之前一次性报出去：客户端据此知道这一行一共几句
+    expect(
+      fresh.filter((m) => m.type === "audio_pending").map((m) => [m.seq, m.phrase]),
+    ).toEqual([
+      [saySeq, 0],
+      [saySeq, 1],
+    ]);
+    expect(fresh.filter((m) => m.type === "audio_ready").map((m) => [m.seq, m.phrase])).toEqual([
+      [saySeq, 0],
+      [saySeq, 1],
+    ]);
+  });
+
+  it("按需补生成：这一行被原地改写过 → 用新台词，不是事件流里的旧文", async () => {
+    const calls: { text: string; voiceId: string }[] = [];
+    const { orchestrator, messages } = setup({
+      dsl: '<say id="mio">原来的台词。</say>',
+      synth: async (text, voiceId) => {
+        calls.push({ text, voiceId });
+        return { url: `/tts/${text}` };
+      },
+    });
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+    await flush();
+
+    const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
+    const saySeq = events.find((e) => e.event.kind === "say_start")!.seq;
+    const nodeId = orchestrator.lineageView().nodes.find((n) => n.kind === "say")!.id;
+    orchestrator.editLine(nodeId, "改过之后的台词。");
+
+    calls.length = 0;
+    orchestrator.requestVoice(saySeq);
+    await flush();
+    expect(calls.map((c) => c.text)).toEqual(["改过之后的台词。"]);
+  });
+
+  it("原地改写：旧台词的活儿作废——在飞的结果不发、排队里的扔掉、新请求照发", async () => {
+    const calls: { text: string }[] = [];
+    const gates: (() => void)[] = [];
+    const { orchestrator, messages } = setup({
+      dsl: '<say id="mio">一。二。三。</say>',
+      synth: (text) =>
+        new Promise((resolve) => {
+          calls.push({ text });
+          gates.push(() => resolve({ url: `/tts/${text}` }));
+        }),
+    });
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+    await flush();
+    const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
+    const saySeq = events.find((e) => e.event.kind === "say_start")!.seq;
+    const nodeId = orchestrator.lineageView().nodes.find((n) => n.kind === "say")!.id;
+    expect(calls.map((c) => c.text)).toEqual(["一。", "二。"]); // 并发 2：两句在飞、一句排队
+
+    orchestrator.editLine(nodeId, "改过的词。");
+    const before = messages.length;
+    for (const release of gates) release(); // 旧代的在飞结果回来了
+    await flush();
+    expect(messages.slice(before).filter((m) => m.type === "audio_ready")).toHaveLength(0);
+
+    calls.length = 0;
+    gates.length = 0;
+    const before2 = messages.length;
+    orchestrator.requestVoice(saySeq);
+    await flush();
+    // 排队里那句旧台词被扔了：这一趟只按新台词合一句
+    expect(calls.map((c) => c.text)).toEqual(["改过的词。"]);
+    for (const release of gates) release();
+    await flush();
+    const ready = messages.slice(before2).filter((m) => m.type === "audio_ready");
+    expect(ready).toHaveLength(1);
+    expect(ready.every((m) => m.seq === saySeq && m.phrase === 0)).toBe(true);
+  });
+
+  it("观众不在时攒下的旧帧：抬代之后补推也不发", async () => {
+    const gates: (() => void)[] = [];
+    const messages: ServerMessage[] = [];
+    const orchestrator = new PlaywrightOrchestrator({
+      streamFn: createFakeStreamFn([{ text: '<say id="mio">一。二。</say>', beatDone: true }]),
+      model: {} as never,
+      getApiKey: () => "test-key",
+      play: PLAY,
+      store: { dir: "/tmp/stage-voice-test" } as never,
+      memory: CAST,
+      tree: new LineageTree(),
+      engine: { ...PLAY.initialState },
+      scene: PLAY.initialScene,
+      tts: {
+        synth: (text) => new Promise((resolve) => gates.push(() => resolve({ url: `/tts/${text}` }))),
+      },
+      onServerMessage: (msg) => messages.push(msg),
+      persist: () => {},
+    });
+    orchestrator.setTtsState({ audience: false }); // 没人在听：帧攒着
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+    await flush();
+    const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
+    const saySeq = events.find((e) => e.event.kind === "say_start")!.seq;
+    const nodeId = orchestrator.lineageView().nodes.find((n) => n.kind === "say")!.id;
+    orchestrator.editLine(nodeId, "改过的词。"); // 没人在听的时候把台词改了（工坊那条连接就能这么干）
+
+    for (const release of gates) release();
+    await flush();
+    const before = messages.length;
+    orchestrator.setTtsState({ audience: true }); // 人回来了：旧帧不该补推
+    await flush();
+    expect(messages.slice(before).filter((m) => m.type === "audio_ready")).toHaveLength(0);
+    expect(saySeq).toBeGreaterThan(0);
+  });
+
+  it("按需补生成：旁白行与不存在的 seq 都不冒泡", async () => {
+    const { orchestrator, messages, calls } = setup({ dsl: "<narrate>只有旁白。</narrate>" });
+    await orchestrator.playerAction({ kind: "free", text: "开局" });
+    await flush();
+
+    const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
+    const narrateSeq = events.find((e) => e.event.kind === "narrate_start")!.seq;
+    calls.length = 0;
+    const before = messages.length;
+
+    orchestrator.requestVoice(narrateSeq);
+    orchestrator.requestVoice(999_999);
+    await flush();
+
+    expect(calls).toHaveLength(0);
+    expect(messages.slice(before)).toHaveLength(0);
+  });
+
+  it("合成失败：明说一句 audio_failed，界面不必等 45s 兜底才摘「合成中」", async () => {
+    const messages: ServerMessage[] = [];
+    const orchestrator = new PlaywrightOrchestrator({
+      streamFn: createFakeStreamFn([{ text: '<say id="mio">会失败。</say>', beatDone: true }]),
+      model: {} as never,
+      getApiKey: () => "test-key",
+      play: PLAY,
+      store: { dir: "/tmp/stage-voice-test" } as never,
+      memory: CAST,
+      tree: new LineageTree(),
+      engine: { ...PLAY.initialState },
+      scene: PLAY.initialScene,
+      tts: { synth: async () => { throw new Error("boom"); } },
+      onServerMessage: (msg) => messages.push(msg),
+      persist: () => {},
+    });
+    const origWarn = console.warn;
+    console.warn = () => {};
+    try {
+      await orchestrator.playerAction({ kind: "free", text: "开局" });
+      await flush();
+    } finally {
+      console.warn = origWarn;
+    }
+    const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
+    const saySeq = events.find((e) => e.event.kind === "say_start")!.seq;
+    expect(messages.filter((m) => m.type === "audio_failed").map((m) => [m.seq, m.phrase])).toEqual([
+      [saySeq, 0],
+    ]);
+    expect(messages.filter((m) => m.type === "audio_ready")).toHaveLength(0);
+  });
+
   it("dispose 后不再下发 audio_ready", async () => {
     const { orchestrator, messages } = setup({
       dsl: '<say id="mio">一。二。三。</say>',

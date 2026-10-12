@@ -172,6 +172,10 @@ async function routeMessage(
     case "tts_control":
       orchestrator.setTtsState({ enabled: msg.enabled, paused: msg.paused });
       return;
+    // 重听点在没有音频的行上：按这一行当时的台词补生成（生成过的短语命中缓存，秒回）
+    case "voice_request":
+      orchestrator.requestVoice(msg.seq);
+      return;
     // —— 导演操作：跳转 / 分岔 / 编辑，彼此正交 ——
     //     jumpTo 只移挂载点、不生成任何内容；分岔落一条 fork 标记，其后内容整段转兄弟分支。
     //     resume=true 一次往返完成「重演这一轮」：分岔后立刻续演，中间不设停止点

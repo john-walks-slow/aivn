@@ -229,13 +229,18 @@ export function StageScreen({
       onAudio: (ready) => director.handleAudio(ready),
       onAudioPending: (pending) =>
         director.markPending(pending.seq, pending.phrase),
+      onAudioFailed: (failed) => director.audioFailed(failed.seq, failed.phrase),
       onBeatStart: () => {
         director.beatStarted();
         setLineageNonce((n) => n + 1); // 上一轮的玩家表态进谱系了，选肢的「已选过」要跟上
       },
       onReset: () => director.reset(),
       // 原地改写：缓冲已就地换字，谱系刷新把剧本/路线的标签换成新文本
-      onLineEdited: () => setLineageNonce((n) => n + 1),
+      onLineEdited: (_nodeId, _text, seq) => {
+        // 台词换了，这一行台账里那份音频就是旧词的：作废，重听会按新台词补生成
+        director.forgetLine(seq);
+        setLineageNonce((n) => n + 1);
+      },
       // 回看中生图：图挂上了某一行，谱系刷新把那张图贴到那一行上
       onCgAttached: () => setLineageNonce((n) => n + 1),
       // P6 上下文重建：新分支整段到达——播放层复位，谱系视图跟着换
@@ -305,6 +310,8 @@ export function StageScreen({
   // 渲染期回调绑定（N6：置于 stage 声明后，闭包引用才不踩未初始化的 TDZ）
   director.onNotify = () => setAudioTick((t) => t + 1);
   director.onControl = (state) => stage.sendTtsControl(state);
+  // 重听点在没有音频的行上 → 请服务端按当时的台词补生成（生成过的短语命中缓存，秒回）
+  director.onRequestVoice = (seq) => stage.sendVoiceRequest(seq);
 
   // 阅读位置上报出口（渲染期绑定）：
   //  · 切到新行（nodeId 变化）→ 立刻发首帧，不等节流；
@@ -576,9 +583,10 @@ export function StageScreen({
     (seq: number | null) => director.voiceState(seq),
     [director],
   );
+  // 重听：台账里有的直接播；没有的先补生成，到齐再播（判断在导演里，见 requestReplay）
   const replay = useCallback(
     (seq: number): void => {
-      void director.replay(seq);
+      director.requestReplay(seq);
     },
     [director],
   );
@@ -773,6 +781,7 @@ export function StageScreen({
           live={stage.state === "streaming"}
           fresh={stage.fresh}
           names={actorNames}
+          voiceCast={stage.voiceCast}
           index={index}
           voiceAvailable={stage.voiceAvailable}
           voiceOn={voiceOn}
@@ -902,6 +911,7 @@ export function StageScreen({
               entries={playback.history}
               feed={scriptFeed}
               names={actorNames}
+              voiceCast={stage.voiceCast}
               headKey={playback.current?.key ?? null}
               busy={busy}
               voiceAvailable={stage.voiceAvailable}

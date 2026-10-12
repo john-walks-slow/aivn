@@ -428,19 +428,25 @@ export class LineageTree {
     return event;
   }
 
+  /**
+   * 这一行**当前**的文本：原地改写过就是最后一次改写的，没改过就是当初落树的那份。
+   * 与 materialize 同一处规则——要读「屏幕上是哪句」的地方都走它，别各自去翻 edits。
+   */
+  textOf(nodeId: string): string | null {
+    const event = this.events.get(nodeId);
+    if (!event) return null;
+    const history = this.edits.get(nodeId);
+    return (history?.length ? history[history.length - 1]!.text : event.text) ?? null;
+  }
+
   /** 物化分支剧本（root→leaf 重放；edit 覆盖目标行文本，fork 自身不占行）。 */
   materialize(fromLeaf: string | null = this.leaf): LineageEvent[] {
     const script: LineageEvent[] = [];
     for (const id of this.ancestorChain(fromLeaf)) {
       const event = this.events.get(id)!;
       if (event.kind === "fork" || event.kind === "root") continue;
-      const history = this.edits.get(id);
-      if (history?.length) {
-        const latest = history[history.length - 1]!;
-        script.push({ ...event, text: latest.text });
-        continue;
-      }
-      script.push(event);
+      const text = this.textOf(id);
+      script.push(text !== null && text !== event.text ? { ...event, text } : event);
     }
     return script;
   }

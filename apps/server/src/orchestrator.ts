@@ -55,7 +55,7 @@ import { userFacingError } from "./errors.js";
 import { HistoryRecorder, type HistoryBeat } from "./history.js";
 import type { AgentSettings, PlayConfig } from "@aivn/core";
 import type { PlayMemory } from "./memory.js";
-import { VoicePipeline, type TtsSynthFn, type VoiceBacklog } from "./voice.js";
+import { VoicePipeline, type TtsSynthFn, type VoiceBacklog, type VoiceFrame } from "./voice.js";
 import type { PendingJobFinish, PendingJobs } from "./pendingJobs.js";
 
 /** 重建接力保留预算（token）：接住最近几轮就够，更早的细节走 archive 检索。 */
@@ -600,12 +600,7 @@ export class PlaywrightOrchestrator {
           // 角色卡是真相源；卡上没有音色的（一次性路人、自动注册出来的临时角色）
           // 落到剧目级兜底，别让这类角色永远不出声。
           voiceOf: (charId) => opts.memory.characters.get(charId)?.voiceId ?? opts.play.defaultVoiceId,
-          emit: (event) =>
-            this.send(
-              event.state === "ready" && event.url
-                ? { type: "audio_ready", seq: event.seq, phrase: event.phrase, url: event.url }
-                : { type: "audio_pending", seq: event.seq, phrase: event.phrase },
-            ),
+          emit: (event) => this.send(audioMessage(event)),
           concurrency: opts.tts.concurrency,
           pending: opts.pending,
         })
@@ -622,6 +617,37 @@ export class PlaywrightOrchestrator {
     const empty =
       backlog.queue.length === 0 && backlog.deferred.length === 0 && backlog.audience;
     return empty ? null : backlog;
+  }
+
+  /**
+   * 客户端点名补生成一行的语音（重听点在没有音频的行上时走这里）。
+   *
+   * 台词从事件流里取**当时那一份**（不是现在重新生成一遍），所以补出来的音频和这一行演的时候
+   * 是同一句；分句与合成走演出同一条管线，seq 与短语序号都不变，客户端接着往台账里记就行。
+   */
+  requestVoice(seq: number): void {
+    const line = this.sayLineAt(seq);
+    if (!line) return;
+    this.voice?.synthesizeLine(seq, line.id, line.text);
+  }
+
+  /** 事件流里 seq 处那一行 say 的说话人与台词（say_start 起、到 say_end 止）。 */
+  private sayLineAt(seq: number): { id: string; text: string } | null {
+    const start = this.events.findIndex((item) => item.seq === seq);
+    const head = start >= 0 ? this.events[start]?.event : undefined;
+    if (!head || head.kind !== "say_start") return null;
+    // 台词以**谱系里的当前文本**为准：这一行可能被原地改写过，事件流里存的是当时的原文，
+    // 拿它去合成就会「画面上是新词、耳朵里是旧词」。
+    const current = head.nodeId ? this.opts.tree.textOf(head.nodeId) : null;
+    if (current) return { id: head.id, text: current };
+    let text = "";
+    for (let i = start + 1; i < this.events.length; i += 1) {
+      const event = this.events[i]?.event;
+      if (!event || event.kind === "say_end" || event.kind === "say_start") break;
+      if (event.kind === "say_text") text += event.delta;
+    }
+    if (text.trim() === "") return null;
+    return { id: head.id, text };
   }
 
   /** 接过上一任没做完的语音活儿（与 takeVoiceBacklog 成对；新实例建好之后立刻调）。 */
@@ -1396,6 +1422,8 @@ export class PlaywrightOrchestrator {
     this.buildAgent(this.bodyFromTree());
     // seq 是这一行在舞台缓冲里的身份：客户端靠它就地换字，不必整段重放
     const seq = target?.payload?.seq;
+    // 语音也按同一把尺子作废：旧台词的活儿排下的不再发（客户端那条台账同样清掉）
+    if (typeof seq === "number") this.voice?.invalidateLine(seq);
     this.send({
       type: "line_edited",
       nodeId,
@@ -2509,4 +2537,13 @@ function pick(source: object, keys: string[]): Record<string, string> {
     if (value !== undefined) out[key] = String(value);
   }
   return out;
+}
+
+/** 语音管线的一帧 → 协议消息。三态一一对应，映射只此一处。 */
+function audioMessage(event: VoiceFrame): ServerMessage {
+  if (event.state === "failed") return { type: "audio_failed", seq: event.seq, phrase: event.phrase };
+  if (event.state === "ready" && event.url) {
+    return { type: "audio_ready", seq: event.seq, phrase: event.phrase, url: event.url };
+  }
+  return { type: "audio_pending", seq: event.seq, phrase: event.phrase };
 }

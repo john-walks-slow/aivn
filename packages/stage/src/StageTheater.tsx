@@ -36,6 +36,12 @@ interface StageTheaterProps {
   index: AssetIndex;
   /** 服务端 TTS 能力（false 时隐藏语音相关的一切）。 */
   voiceAvailable: boolean;
+  /**
+   * 配得出声的角色 id（hello 的 cast 带上来的 `voice`）。
+   * 有它，界面才敢在「还没音频」的行上摆按需生成的键——不知道就别摆，免得点了没反应。
+   * 不给（旧宿主）＝ 这条能力不开，退回到「有音频才显示喇叭」的老样子。
+   */
+  voiceCast?: ReadonlySet<string>;
   /** 语音总开关（对话框右下角的「语音」）：关 = 停合成，也省配额。 */
   voiceOn: boolean;
   onToggleVoice: () => void;
@@ -430,6 +436,7 @@ export function StageTheater({
   names,
   index,
   voiceAvailable,
+  voiceCast,
   busy,
   targets,
   onPrompt,
@@ -776,6 +783,11 @@ voiceState,
 
   /** 当前显示行的语音状态：合成中也占一个喇叭位（闪烁），别让「正在生成」看起来像「没有语音」。 */
   const voice = voiceState(view?.seq ?? null);
+  /**
+   * 这一行按需生成得出来吗（有说话人、且这个人配得出声）。
+   * 有了它，喇叭键在「还没生成过」的行上也摆得出来——点一下就是补生成并播放。
+   */
+  const voiceableLine = voiceable(view, voiceCast);
 
   /**
    * 置灰只该因为「此刻确实做不了」。busy 优先于锚点缺失：演出进行中时锚点多半也是空的，
@@ -1035,16 +1047,25 @@ voiceState,
               <span className="dir-label">生图</span>
             </button>
           )}
-          {voiceAvailable && voice !== "none" && (
+          {voiceAvailable && (voice !== "none" || voiceableLine) && (
             <button
               type="button"
               className={`dir-btn ${voice === "pending" ? "voice-pending" : ""}`}
-              title={voice === "pending" ? "语音合成中" : !voiceOn ? "语音已关，先打开语音再重听" : "重听这句"}
-              aria-label={voice === "pending" ? "语音合成中" : "重听这句"}
+              title={
+                voice === "pending"
+                  ? "语音合成中"
+                  : !voiceOn
+                    ? "语音已关，先打开语音再重听"
+                    : voice === "ready"
+                      ? "重听这句"
+                      : "这一句还没有语音，点一下生成"
+              }
+              aria-label={voice === "pending" ? "语音合成中" : voice === "ready" ? "重听这句" : "生成这一句的语音"}
               disabled={voice === "pending" || !voiceOn}
               onClick={(e) => {
                 e.stopPropagation();
-                if (voice === "ready" && view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
+                // 还没生成过的也交给同一条路：导演会先去补生成，到齐了再播
+                if (view?.seq !== null && view?.seq !== undefined) onReplay(view.seq);
               }}
             >
               <Icon name="volume" size={14} />
@@ -1351,6 +1372,7 @@ export function BacklogView({
   headKey,
   busy,
   voiceAvailable,
+  voiceCast,
   voiceState,
   beatFor,
   onSeek,
@@ -1365,6 +1387,12 @@ export function BacklogView({
   headKey: string | null;
   busy: boolean;
   voiceAvailable: boolean;
+  /**
+   * 配得出声的角色 id（hello 的 cast 带上来的 `voice`）。
+   * 有它，界面才敢在「还没音频」的行上摆按需生成的键——不知道就别摆，免得点了没反应。
+   * 不给（旧宿主）＝ 这条能力不开，退回到「有音频才显示喇叭」的老样子。
+   */
+  voiceCast?: ReadonlySet<string>;
   voiceState: (seq: number | null) => VoiceState;
   /** 这一条落在哪一轮（重写要的两个锚点：退到哪儿、来源标签按谁算）；玩家自己发来的话没有轮，返 null。 */
   beatFor: (entry: TranscriptEntry) => { anchor: string; replaced: string } | null;
@@ -1378,6 +1406,9 @@ export function BacklogView({
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const currentRef = useRef<HTMLLIElement | null>(null);
+  /** 这一条按需生成得出来吗（say 行 + 有音色的说话人）。 */
+  const voiceable = (entry: { type: string; actorId?: string | null }): boolean =>
+    entry.type === "say" && !!entry.actorId && (voiceCast?.has(entry.actorId) ?? false);
 
   /** 进来先落在「你现在读到的那一句」上：几十条流水从头看起没有意义。 */
   useEffect(() => {
@@ -1412,7 +1443,10 @@ export function BacklogView({
             const entry = item.entry;
             const beat = beatFor(entry);
             const editable = entry.kind === "line" && entry.nodeId !== null;
-            const playable = entry.type === "say" && voiceAvailable && voiceState(entry.seq) === "ready";
+            const playable =
+              entry.type === "say" &&
+              voiceAvailable &&
+              (voiceState(entry.seq) === "ready" || voiceable(entry));
             const isCurrent = entry.key === headKey;
             return (
               <li
@@ -1428,8 +1462,14 @@ export function BacklogView({
                     <button
                       type="button"
                       className="bl-voice"
-                      title="这一句有语音，点一下重听"
-                      aria-label="重听这句"
+                      title={
+                        voiceState(entry.seq) === "ready"
+                          ? "这一句有语音，点一下重听"
+                          : "这一句还没有语音，点一下生成"
+                      }
+                      aria-label={
+                        voiceState(entry.seq) === "ready" ? "重听这句" : "生成这一句的语音"
+                      }
                       onClick={() => entry.seq !== null && onReplay(entry.seq)}
                     >
                       <Icon name="volume" size={12} />
@@ -1514,4 +1554,13 @@ export function BacklogView({
       )}
     </div>
   );
+}
+
+/** 这一行补得出来语音吗：say 行、有说话人，且这个人配得出声（宿主的声表说了算）。 */
+function voiceable(
+  line: { type: string; actorId?: string | null } | null | undefined,
+  voiceCast: ReadonlySet<string> | undefined,
+): boolean {
+  if (!line || line.type !== "say" || !line.actorId) return false;
+  return voiceCast?.has(line.actorId) ?? false;
 }
