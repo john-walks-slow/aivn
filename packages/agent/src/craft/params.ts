@@ -12,21 +12,24 @@ import {
   CRAFT_BACKGROUND_SOURCES,
   CRAFT_BEAT_LENGTHS,
   CRAFT_CG_SOURCES,
+  CRAFT_MUSIC_SOURCES,
   CRAFT_SPRITE_SOURCES,
   CRAFT_STOP_OPTIONS,
   type CraftAudioSource,
   type CraftBackgroundSource,
   type CraftBeatLength,
   type CraftCgSource,
+  type CraftMusicSource,
   type CraftSpriteSource,
   type CraftStopOptions,
   type EffectiveCraft,
 } from "@aivn/core";
 
-/** 这两项能力位决定素材来源怎么写——没有生图就不能说「自己出图」，没有库就不能说「用库里的」。 */
+/** 这两项/三项能力位决定素材来源怎么写——没有生图就不能说「自己出图」，没有库就不能说「用库里的」。 */
 export interface AssetCapabilities {
   image: boolean;
   library: boolean;
+  music?: boolean;
 }
 
 /** 停止点的措辞：宿主给的那一句（工具面 / DSL 各写各的）。 */
@@ -69,9 +72,16 @@ const SPRITE_LABEL: Record<CraftSpriteSource, string> = {
   off: "不出立绘",
 };
 
+const MUSIC_LABEL: Record<CraftMusicSource, string> = {
+  generate: "生成",
+  "library-first": "资源库优先，没有再生成",
+  library: "只用资源库里现成的",
+  off: "不用背景音乐",
+};
+
 const AUDIO_LABEL: Record<CraftAudioSource, string> = {
   library: "只用资源库里现成的",
-  off: "不用音乐音效",
+  off: "不用音效与环境音",
 };
 
 /**
@@ -92,7 +102,8 @@ export function renderCraftParams(craft: EffectiveCraft, can: AssetCapabilities,
     `  - 背景：${backgroundDirective(assets.background, can)}`,
     `  - 插图（cg）：${cgDirective(assets.cg, can)}`,
     `  - 立绘：${spriteDirective(assets.sprite, can)}`,
-    `  - 音乐与音效：${audioDirective(assets.audio, can)}`,
+    `  - 音乐（bgm）：${musicDirective(assets.music, can)}`,
+    `  - 音效（ambient / sfx）：${audioDirective(assets.audio, can)}`,
   ];
   return `\n# 写作参数（本剧目设定，照它写）\n\n${lines.join("\n")}\n`;
 }
@@ -156,11 +167,32 @@ function spriteDirective(source: CraftSpriteSource, can: AssetCapabilities): str
   return '自己 generate_image（kind="sprite"）出。';
 }
 
+function musicDirective(source: CraftMusicSource, can: AssetCapabilities): string {
+  if (source === "off") return "不要写 bgm——本剧目不用背景音乐。";
+  if (can.music === false) {
+    return can.library
+      ? "本剧目未配音乐生成后端：只用素材资源库里现成的 bgm。"
+      : "本剧目未配音乐生成后端与资源库：不写 bgm。";
+  }
+  switch (source) {
+    case "generate":
+      return "使用剧目内原创或工坊生成的 BGM，不用去库里找。";
+    case "library-first":
+      return can.library
+        ? "优先用素材资源库里现成的 BGM；库里没有合适的再提示工坊生成。"
+        : "直接使用剧目内生成的 BGM。";
+    case "library":
+      return can.library
+        ? "只用素材资源库里现成的 BGM，不要生成新曲。"
+        : "本剧目没配素材资源库：只用剧目内已有的 BGM。";
+  }
+}
+
 function audioDirective(source: CraftAudioSource, can: AssetCapabilities): string {
-  if (source === "off") return "不要写 bgm/ambient/sfx——本剧目不用音乐音效。";
+  if (source === "off") return "不要写 ambient/sfx——本剧目不用环境音与音效。";
   return can.library
-    ? "只用素材资源库里现成的 bgm/sfx。"
-    : "只用素材清单里已有的 bgm/sfx；没有合适的宁可不给。";
+    ? "只用素材资源库里现成的环境音与音效（ambient / sfx）。"
+    : "只用素材清单里已有的环境音与音效（ambient / sfx）；没有合适的宁可不给。";
 }
 
 /**
@@ -174,7 +206,7 @@ export function describeCraftParams(craft: EffectiveCraft): string {
   return [
     `每轮篇幅：${BEAT_LENGTH_LABEL[craft.beatLength]}`,
     `停止点选项：${STOP_OPTIONS_LABEL[craft.stopOptions]}`,
-    `素材来源：背景 ${BACKGROUND_LABEL[assets.background]}；插图 ${CG_LABEL[assets.cg]}；立绘 ${SPRITE_LABEL[assets.sprite]}；音效 ${AUDIO_LABEL[assets.audio]}`,
+    `素材来源：背景 ${BACKGROUND_LABEL[assets.background]}；插图 ${CG_LABEL[assets.cg]}；立绘 ${SPRITE_LABEL[assets.sprite]}；音乐 ${MUSIC_LABEL[assets.music]}；音效 ${AUDIO_LABEL[assets.audio]}`,
   ].join("\n");
 }
 
@@ -185,5 +217,6 @@ export const CRAFT_ENUMS = {
   background: CRAFT_BACKGROUND_SOURCES,
   cg: CRAFT_CG_SOURCES,
   sprite: CRAFT_SPRITE_SOURCES,
+  music: CRAFT_MUSIC_SOURCES,
   audio: CRAFT_AUDIO_SOURCES,
 } as const;

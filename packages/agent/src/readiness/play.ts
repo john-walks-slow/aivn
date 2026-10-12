@@ -183,6 +183,7 @@ function strayCraftValues(dir: string, playFile: string): string[] {
     ["assets.background", assets.background, CRAFT_ENUMS.background],
     ["assets.cg", assets.cg, CRAFT_ENUMS.cg],
     ["assets.sprite", assets.sprite, CRAFT_ENUMS.sprite],
+    ["assets.music", assets.music, CRAFT_ENUMS.music],
     ["assets.audio", assets.audio, CRAFT_ENUMS.audio],
   ];
   return slots

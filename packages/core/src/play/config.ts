@@ -53,17 +53,19 @@ export type CraftStopOptions = (typeof CRAFT_STOP_OPTIONS)[number];
 /**
  * 素材来源逐类声明，不做全集枚举。
  *
- * 背景 / CG / 立绘 / 音频四类的现实选择并不一样：背景常常「库里有就用、没有才画」，
- * CG 几乎总是现画，立绘只能画（库里没有可用的差分），音频只能取库（引擎不生音频）。
- * 一套 `library-first` / `generate-all` 的全局口径表达不了「背景先用库、CG 直接画」。
+ * 背景 / CG / 立绘 / 音乐 / 音效五类的现实选择并不一样：背景常常「库里有就用、没有才画」，
+ * CG 几乎总是现画，立绘只能画（库里没有可用的差分），音乐默认生成（也支持库优先或只用库），
+ * 音效应包含环境音与音效（ambient 与 sfx），目前只能取库导入。
  */
 export const CRAFT_BACKGROUND_SOURCES = ["library-first", "library", "generate"] as const;
 export const CRAFT_CG_SOURCES = ["library", "generate", "off"] as const;
 export const CRAFT_SPRITE_SOURCES = ["generate", "off"] as const;
+export const CRAFT_MUSIC_SOURCES = ["generate", "library-first", "library", "off"] as const;
 export const CRAFT_AUDIO_SOURCES = ["library", "off"] as const;
 export type CraftBackgroundSource = (typeof CRAFT_BACKGROUND_SOURCES)[number];
 export type CraftCgSource = (typeof CRAFT_CG_SOURCES)[number];
 export type CraftSpriteSource = (typeof CRAFT_SPRITE_SOURCES)[number];
+export type CraftMusicSource = (typeof CRAFT_MUSIC_SOURCES)[number];
 export type CraftAudioSource = (typeof CRAFT_AUDIO_SOURCES)[number];
 
 export interface CraftAssetSources {
@@ -71,6 +73,9 @@ export interface CraftAssetSources {
   background?: CraftBackgroundSource;
   cg?: CraftCgSource;
   sprite?: CraftSpriteSource;
+  /** 音乐来源：默认生成（generate）。 */
+  music?: CraftMusicSource;
+  /** 音效与环境音来源：取库（library）或关闭（off）。 */
   audio?: CraftAudioSource;
 }
 
@@ -82,6 +87,7 @@ export interface EffectiveCraft {
     background: CraftBackgroundSource;
     cg: CraftCgSource;
     sprite: CraftSpriteSource;
+    music: CraftMusicSource;
     audio: CraftAudioSource;
   };
 }
@@ -96,7 +102,7 @@ export interface EffectiveCraft {
 export const DEFAULT_CRAFT: EffectiveCraft = {
   beatLength: "medium",
   stopOptions: "three",
-  assets: { background: "library-first", cg: "generate", sprite: "generate", audio: "library" },
+  assets: { background: "library-first", cg: "generate", sprite: "generate", music: "generate", audio: "library" },
 };
 
 /** 逐字段与默认值合成。`craft` 里被 parse 丢掉过的非法值到不了这里。 */
@@ -109,6 +115,7 @@ export function resolveCraft(craft?: CraftParams): EffectiveCraft {
       background: assets?.background ?? DEFAULT_CRAFT.assets.background,
       cg: assets?.cg ?? DEFAULT_CRAFT.assets.cg,
       sprite: assets?.sprite ?? DEFAULT_CRAFT.assets.sprite,
+      music: assets?.music ?? DEFAULT_CRAFT.assets.music,
       audio: assets?.audio ?? DEFAULT_CRAFT.assets.audio,
     },
   };

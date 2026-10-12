@@ -45,10 +45,15 @@ describe("剧作家那段", () => {
   });
 
   it("关掉的那几项各自有话说，且不再提出图", () => {
-    const text = renderCraftParams(craft({ assets: { cg: "off", sprite: "off", audio: "off" } }), can, stop);
+    const text = renderCraftParams(
+      craft({ assets: { cg: "off", sprite: "off", music: "off", audio: "off" } }),
+      can,
+      stop,
+    );
     expect(text).toContain("不要写 <cg>");
     expect(text).toContain("不要给角色出立绘");
-    expect(text).toContain("不要写 bgm/ambient/sfx");
+    expect(text).toContain("不要写 bgm——本剧目不用背景音乐");
+    expect(text).toContain("不要写 ambient/sfx——本剧目不用环境音与音效");
   });
 });
 
@@ -56,9 +61,11 @@ describe("工坊那份清单", () => {
   it("只报值不带祈使句", () => {
     const text = describeCraftParams(craft({ beatLength: "long", stopOptions: "free" }));
     expect(text).toBe(
-      ["每轮篇幅：长", "停止点选项：固定自由输入", "素材来源：背景 资源库优先，没有再出图；插图 直接出图；立绘 出图；音效 只用资源库里现成的"].join(
-        "\n",
-      ),
+      [
+        "每轮篇幅：长",
+        "停止点选项：固定自由输入",
+        "素材来源：背景 资源库优先，没有再出图；插图 直接出图；立绘 出图；音乐 生成；音效 只用资源库里现成的",
+      ].join("\n"),
     );
   });
 });

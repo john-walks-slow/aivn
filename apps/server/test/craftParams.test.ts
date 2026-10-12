@@ -14,7 +14,8 @@ describe("renderCraftParams：剧作家的写作参数段", () => {
     expect(text).toContain('<stop options="… | … | …"/>');
     expect(text).toContain(" - 背景：优先用素材资源库里现成的");
     expect(text).toContain('立绘：自己 generate_image（kind="sprite"）出。');
-    expect(text).toContain("音乐与音效：只用素材资源库里现成的 bgm/sfx。");
+    expect(text).toContain("音乐（bgm）：使用剧目内原创或工坊生成的 BGM");
+    expect(text).toContain("音效（ambient / sfx）：只用素材资源库里现成的环境音与音效");
   });
 
   it("改成短轮 + 自由输入：不再提 options，改提 placeholder", () => {
@@ -36,11 +37,15 @@ describe("renderCraftParams：剧作家的写作参数段", () => {
     expect(text).toContain("直接 generate_image 出（本剧目没配素材资源库）");
   });
 
-  it("关掉插图 / 立绘 / 音效：各有各的停法", () => {
-    const text = renderCraftParams(resolveCraft({ assets: { cg: "off", sprite: "off", audio: "off" } }), FULL);
+  it("关掉插图 / 立绘 / 音乐 / 音效：各有各的停法", () => {
+    const text = renderCraftParams(
+      resolveCraft({ assets: { cg: "off", sprite: "off", music: "off", audio: "off" } }),
+      FULL,
+    );
     expect(text).toContain("不要写 <cg>");
     expect(text).toContain("不要给角色出立绘");
-    expect(text).toContain("不要写 bgm/ambient/sfx");
+    expect(text).toContain("不要写 bgm——本剧目不用背景音乐");
+    expect(text).toContain("不要写 ambient/sfx——本剧目不用环境音与音效");
   });
 });
 

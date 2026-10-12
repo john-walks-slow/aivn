@@ -5,6 +5,7 @@ import type {
   CraftBackgroundSource,
   CraftBeatLength,
   CraftCgSource,
+  CraftMusicSource,
   CraftParams,
   CraftSpriteSource,
   CraftStopOptions,
@@ -282,7 +283,13 @@ export function PlayPane({ playId, revision }: { playId: string; revision: numbe
           onChange={(v) => patch((p) => editCraft(p, "sprite", v))}
         />
         <CraftSelect
-          label="素材来源：音乐与音效"
+          label="素材来源：音乐（BGM）"
+          value={draft.craft?.assets?.music ?? ""}
+          options={CRAFT_OPTIONS.music}
+          onChange={(v) => patch((p) => editCraft(p, "music", v))}
+        />
+        <CraftSelect
+          label="素材来源：音效（环境音与音效，ambient / sfx）"
           value={draft.craft?.assets?.audio ?? ""}
           options={CRAFT_OPTIONS.audio}
           onChange={(v) => patch((p) => editCraft(p, "audio", v))}
@@ -400,13 +407,19 @@ const CRAFT_OPTIONS: Record<CraftField, readonly (readonly [string, string])[]> 
     ["", "默认（出图）"],
     ["off", "不出立绘"],
   ],
+  music: [
+    ["", "默认（直接生成）"],
+    ["library-first", "素材资源库优先，没有再生成"],
+    ["library", "只用素材资源库里现成的"],
+    ["off", "不用背景音乐"],
+  ],
   audio: [
     ["", "默认（只用素材资源库里现成的）"],
-    ["off", "不用音乐音效"],
+    ["off", "不用音效与环境音"],
   ],
 };
 
-/** 写作参数的一个下拉（六项共用一套壳）。 */
+/** 写作参数的一个下拉（七项共用一套壳）。 */
 function CraftSelect({
   label,
   value,
@@ -432,7 +445,7 @@ function CraftSelect({
   );
 }
 
-type CraftField = "beatLength" | "stopOptions" | "background" | "cg" | "sprite" | "audio";
+type CraftField = "beatLength" | "stopOptions" | "background" | "cg" | "sprite" | "music" | "audio";
 
 /**
  * 写作参数的就地修改：值与默认相同（或选了「默认」）就把那个字段删掉。
@@ -464,6 +477,10 @@ function editCraft(play: PlayConfig, field: CraftField, value: string): void {
     case "sprite":
       if (blank(DEFAULT_CRAFT.assets.sprite)) delete assets.sprite;
       else assets.sprite = value as CraftSpriteSource;
+      break;
+    case "music":
+      if (blank(DEFAULT_CRAFT.assets.music)) delete assets.music;
+      else assets.music = value as CraftMusicSource;
       break;
     case "audio":
       if (blank(DEFAULT_CRAFT.assets.audio)) delete assets.audio;
