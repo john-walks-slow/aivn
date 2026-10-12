@@ -1368,13 +1368,14 @@ button.link-btn {
     0 0 6px rgba(255, 255, 255, 0.95);
 }
 
-/* 副标：每项右侧一枚 9px 的小注（存档名、存档数）。只在悬停/聚焦时浮出，静止时菜单仍是纯字一列 */
+/* 副标：每项右侧一枚 11px 的中文小注。只在悬停/聚焦时浮出，静止时菜单仍是纯字一列。
+   颜色与标题页其余小字同一条配方（主题色掺深中性），硬编码蓝会在非蓝主题下露馅。 */
 .atri-sub {
   font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.12em;
-  color: #3d6fa8;
+  color: color-mix(in srgb, var(--atri-ink) 78%, #2b323b);
   text-shadow: 0 0 4px #fff;
   opacity: 0;
   transform: translateX(-6px);

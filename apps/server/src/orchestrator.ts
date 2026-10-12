@@ -1584,13 +1584,13 @@ export class PlaywrightOrchestrator {
    * 这时用同一份快照的 engine 现生成——**不退化成 initialState**，否则开发中的档好感度会被清零。
    */
   private writeStateFilesFrom(
-    stateFiles: Record<string, string>,
+    stateFiles: Record<string, string> | undefined,
     engine: NonNullable<PlayConfig["initialState"]>,
   ): void {
     writePlayStateText(this.opts.store.dir, {
-      scene: stateFiles.scene ?? "",
-      threads: stateFiles.threads ?? "",
-      state: stateFiles.state ?? playStateJson({ affinity: engine.affinity, flags: engine.flags }),
+      scene: stateFiles?.scene ?? "",
+      threads: stateFiles?.threads ?? "",
+      state: stateFiles?.state ?? playStateJson({ affinity: engine.affinity, flags: engine.flags }),
     });
   }
 
