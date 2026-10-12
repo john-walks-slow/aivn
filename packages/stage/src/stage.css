@@ -390,6 +390,14 @@ html[data-ui-theme="light"] .stage-root .choice .choice-num {
   color: color-mix(in srgb, var(--accent) 72%, #0b2545);
 }
 
+html[data-ui-theme="light"] .stage-root .choice.is-seen {
+  color: color-mix(in srgb, var(--accent) 45%, rgba(11, 37, 69, 0.45));
+}
+
+html[data-ui-theme="light"] .stage-root .choice.is-seen .choice-num {
+  color: color-mix(in srgb, var(--accent) 30%, rgba(11, 37, 69, 0.4));
+}
+
 html[data-ui-theme="light"] .stage-root .choice:hover:not(:disabled),
 html[data-ui-theme="light"] .stage-root .choice:focus-visible {
   background: var(--choice-active-bg);
@@ -1515,6 +1523,16 @@ html[data-ui-theme="light"] .stage-root .choice:focus-visible .choice-num {
   font-size: 11px;
   letter-spacing: 0.1em;
   color: var(--dialog-ink-faint);
+}
+
+/* 经典 Galgame 惯例：走过/选过的选肢在字色上呈半透明暗化或柔和墨色，
+   悬停与聚焦时照样能点亮，但静置态一眼可辨「已去过」 */
+.choice.is-seen {
+  color: color-mix(in srgb, var(--accent) 55%, rgba(3, 14, 34, 0.45));
+}
+
+.choice.is-seen .choice-num {
+  color: color-mix(in srgb, var(--accent) 35%, rgba(11, 37, 69, 0.45));
 }
 
 /* 自由输入那张卡：走同一形制，只是不给主色标尺 */

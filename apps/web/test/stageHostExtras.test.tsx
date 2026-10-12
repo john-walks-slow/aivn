@@ -184,4 +184,32 @@ describe("宿主扩展位", () => {
     fireEvent.click(screen.getByTitle("LLM 按主角口吻润色（可撤销）"));
     await screen.findByDisplayValue("润色：我先走了。");
   });
+
+  it("已走过的选项带有 is-seen 样式类，并标记「✓ 已选过」", () => {
+    const choiceStop: StopPayload = {
+      stopType: "choice",
+      options: [{ text: "向左走" }, { text: "向右走" }],
+    };
+    render(
+      <StopPanel
+        stop={choiceStop}
+        isNoStop={false}
+        disabled={false}
+        seenChoices={new Set(["向左走"])}
+        onChoice={() => {}}
+        onFree={() => {}}
+      />,
+    );
+    const buttons = screen.getAllByRole("button");
+    const leftChoice = buttons.find((b) => b.textContent?.includes("向左走"));
+    const rightChoice = buttons.find((b) => b.textContent?.includes("向右走"));
+
+    expect(leftChoice?.className).toContain("choice");
+    expect(leftChoice?.className).toContain("is-seen");
+    expect(leftChoice?.textContent).toContain("已选过");
+
+    expect(rightChoice?.className).toContain("choice");
+    expect(rightChoice?.className).not.toContain("is-seen");
+    expect(rightChoice?.textContent).not.toContain("已选过");
+  });
 });

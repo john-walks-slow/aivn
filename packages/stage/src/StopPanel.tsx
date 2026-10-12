@@ -133,23 +133,26 @@ export function StopPanel({
     <>
       {listing && !freeOpen && (
         <div className="choice-overlay" role="group" aria-label="选项" {...trap}>
-          {scripted.map((option, index) => (
-            <button
-              type="button"
-              key={`${index}-${option.text}`}
-              className="choice"
-              disabled={disabled}
-              onClick={() => onChoice(index)}
-            >
-              <span className="choice-num">{index + 1}</span>
-              <span className="choice-text">{option.text}</span>
-              {seenChoices?.has(option.text) && (
-                <span className="choice-seen">
-                  <Icon name="check" size={13} /> 已选过
-                </span>
-              )}
-            </button>
-          ))}
+          {scripted.map((option, index) => {
+            const isSeen = seenChoices?.has(option.text) ?? false;
+            return (
+              <button
+                type="button"
+                key={`${index}-${option.text}`}
+                className={`choice${isSeen ? " is-seen" : ""}`}
+                disabled={disabled}
+                onClick={() => onChoice(index)}
+              >
+                <span className="choice-num">{index + 1}</span>
+                <span className="choice-text">{option.text}</span>
+                {isSeen && (
+                  <span className="choice-seen">
+                    <Icon name="check" size={13} /> 已选过
+                  </span>
+                )}
+              </button>
+            );
+          })}
           <button
             type="button"
             className="choice ghost"
