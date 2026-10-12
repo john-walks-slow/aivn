@@ -26,6 +26,11 @@
 
 ## 修复
 
+修好之后同一场景、同一时刻（行为词演完那一帧）的实拍：
+
+![行为词演完那一帧的立绘](assets/action-end-frame.png)
+
+
 入场淡入改成**一次性**：
 
 - `StageTheater` 的 `Sprite` 把 `.entering` 变成状态位，动画跑完（`onAnimationEnd`）就摘掉；
