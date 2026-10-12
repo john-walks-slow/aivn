@@ -108,12 +108,10 @@
   --stage-chrome-quiet-ink: #64748b;
   --stage-chrome-quiet-ink-hover: #0f172a;
   --stage-chrome-quiet-hover: #f1f5f9;
-  /* 选肢的两档底：常态是一条压在画面上的白缎带（字走主题色），
-     悬停/选中直接换成主题色的实缎带（字走白）。
-     常态不给主题色底——一排浅蓝条压在画面上会跟立绘抢注意力，
-     主题色这时候由字和悬停态来承担。 */
-  --stage-choice-wash: #ffffff;
-  --stage-choice-solid: color-mix(in srgb, var(--accent) 92%, #ffffff);
+  /* 选肢的两档底：深色基线是掺进主题色的暗海蓝缎带（与底部 ATRI 深色台词条同源），
+     浅色下切回纸白浅底；悬停/选中换成主题色实心亮带。 */
+  --stage-choice-wash: color-mix(in srgb, var(--accent) 26%, #0b1626);
+  --stage-choice-solid: color-mix(in srgb, var(--accent) 88%, #0c2340);
   --dialog-bg: linear-gradient(180deg, rgba(16, 21, 32, 0.86) 0%, rgba(9, 12, 19, 0.95) 100%);
   --dialog-line: rgba(255, 255, 255, 0.16);
   --dialog-ink: #f8fafc;
@@ -384,6 +382,12 @@ html[data-ui-theme="light"] .stage-root .choice {
   border: 1px solid var(--choice-line);
   border-radius: 2px;
   color: var(--choice-ink);
+  text-shadow: none;
+  box-shadow: 0 6px 20px rgb(15 23 42 / 0.08);
+}
+
+html[data-ui-theme="light"] .stage-root .choice .choice-num {
+  color: color-mix(in srgb, var(--accent) 72%, #0b2545);
 }
 
 html[data-ui-theme="light"] .stage-root .choice:hover:not(:disabled),
@@ -1623,10 +1627,12 @@ button.link-btn {
     color-mix(in srgb, var(--stage-choice-wash) 0%, transparent) 100%);
   border: none;
   border-radius: 0;
-  color: color-mix(in srgb, var(--accent) 92%, #030e22);
-  text-shadow: none;
-  backdrop-filter: none;
-  box-shadow: none;
+  color: var(--choice-ink, #f8fafc);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 38%, rgba(255, 255, 255, 0.14)),
+    inset 0 -1px 0 color-mix(in srgb, var(--accent) 38%, rgba(255, 255, 255, 0.14));
   animation: choice-card-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
   animation-delay: calc(var(--i, 0) * 50ms);
   transition: background 0.16s ease, color 0.16s ease, transform 0.2s ease;
@@ -1680,7 +1686,7 @@ button.link-btn {
   border: none;
   border-radius: 0;
   background: none;
-  color: color-mix(in srgb, var(--accent) 55%, #0b2545);
+  color: color-mix(in srgb, var(--accent) 72%, #e0f2fe);
   font-family: "Montserrat", "Inter", var(--font-ui);
   font-size: 13px;
   font-weight: 700;
@@ -3869,6 +3875,367 @@ html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .quick-btn.t
   border-color: var(--velvet-gold);
 }
 
+/* ── 五档配套的舞台分支选项框（.choice / .choice-num）───────────────────── */
+
+/* C1 · 浮岛玻璃卡选项框 */
+html[data-dialog-style="card"] .stage-root .choice {
+  width: min(680px, 78vw);
+  min-height: 48px;
+  padding: 11px 22px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, rgb(22 30 43 / 0.84)), color-mix(in srgb, var(--accent) 16%, rgb(10 16 26 / 0.9)));
+  color: #f1f5f9;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(18px) saturate(1.3);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 0.44), inset 0 1px 0 rgb(255 255 255 / 0.2);
+}
+
+html[data-dialog-style="card"] .stage-root .choice .choice-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 26%, rgb(255 255 255 / 0.08));
+  color: color-mix(in srgb, var(--accent) 72%, #ffffff);
+  font-size: 12px;
+}
+
+html[data-dialog-style="card"] .stage-root .choice:hover:not(:disabled),
+html[data-dialog-style="card"] .stage-root .choice:focus-visible {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 84%, #ffffff), var(--accent));
+  border-color: color-mix(in srgb, var(--accent) 65%, #ffffff);
+  color: var(--accent-ink, #ffffff);
+  text-shadow: none;
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
+html[data-dialog-style="card"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-dialog-style="card"] .stage-root .choice:focus-visible .choice-num {
+  background: rgb(255 255 255 / 0.22);
+  color: var(--accent-ink, #ffffff);
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .choice {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, rgb(255 255 255 / 0.94)), color-mix(in srgb, var(--accent) 10%, rgb(243 247 252 / 0.97)));
+  border-color: color-mix(in srgb, var(--accent) 24%, rgb(15 23 42 / 0.1));
+  color: #0f172a;
+  text-shadow: none;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 0.12), inset 0 1px 0 #ffffff;
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .choice .choice-num {
+  background: color-mix(in srgb, var(--accent) 14%, #ffffff);
+  color: color-mix(in srgb, var(--accent) 82%, #0b2545);
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .choice:focus-visible {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, #ffffff), var(--accent));
+  border-color: var(--accent);
+  color: var(--accent-ink, #ffffff);
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .choice:focus-visible .choice-num {
+  background: rgb(255 255 255 / 0.24);
+  color: var(--accent-ink, #ffffff);
+}
+
+/* C2 · 电影字幕选项框 */
+html[data-dialog-style="cinema"] .stage-root .choice {
+  width: min(760px, 84vw);
+  min-height: 44px;
+  padding: 10px 36px;
+  border: none;
+  border-radius: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.76)) 18%,
+    color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.88)) 50%,
+    color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.76)) 82%,
+    transparent 100%);
+  color: #f4f1ec;
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 10px rgb(0 0 0 / 0.95), 0 0 2px rgb(0 0 0 / 0.95);
+  backdrop-filter: none;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 25%, rgb(223 179 122 / 0.28)),
+    inset 0 -1px 0 color-mix(in srgb, var(--accent) 25%, rgb(223 179 122 / 0.28));
+}
+
+html[data-dialog-style="cinema"] .stage-root .choice .choice-num {
+  color: color-mix(in srgb, var(--accent) 30%, #dfb37a);
+  font-family: "Montserrat", "Inter", var(--font-ui);
+}
+
+html[data-dialog-style="cinema"] .stage-root .choice:hover:not(:disabled),
+html[data-dialog-style="cinema"] .stage-root .choice:focus-visible {
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 24%, rgb(20 16 10 / 0.88)) 16%,
+    color-mix(in srgb, var(--accent) 28%, rgb(28 22 14 / 0.95)) 50%,
+    color-mix(in srgb, var(--accent) 24%, rgb(20 16 10 / 0.88)) 84%,
+    transparent 100%);
+  color: color-mix(in srgb, var(--accent) 28%, #f6dfb2);
+  text-shadow: 0 2px 12px rgb(0 0 0 / 0.95);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 35%, rgb(223 179 122 / 0.65)),
+    inset 0 -1px 0 color-mix(in srgb, var(--accent) 35%, rgb(223 179 122 / 0.65));
+}
+
+html[data-dialog-style="cinema"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-dialog-style="cinema"] .stage-root .choice:focus-visible .choice-num {
+  color: color-mix(in srgb, var(--accent) 28%, #f6dfb2);
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .choice {
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.88)) 18%,
+    color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.96)) 50%,
+    color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.88)) 82%,
+    transparent 100%);
+  border: none;
+  color: #14161a;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.9);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 30%, rgb(138 90 32 / 0.28)),
+    inset 0 -1px 0 color-mix(in srgb, var(--accent) 30%, rgb(138 90 32 / 0.28));
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .choice .choice-num {
+  color: color-mix(in srgb, var(--accent) 30%, #8a5a20);
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .choice:focus-visible {
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 16%, rgb(255 250 240 / 0.94)) 16%,
+    color-mix(in srgb, var(--accent) 22%, rgb(255 248 235 / 0.98)) 50%,
+    color-mix(in srgb, var(--accent) 16%, rgb(255 250 240 / 0.94)) 84%,
+    transparent 100%);
+  color: color-mix(in srgb, var(--accent) 55%, #5c380e);
+  text-shadow: none;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 45%, rgb(138 90 32 / 0.55)),
+    inset 0 -1px 0 color-mix(in srgb, var(--accent) 45%, rgb(138 90 32 / 0.55));
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .choice:focus-visible .choice-num {
+  color: color-mix(in srgb, var(--accent) 55%, #5c380e);
+}
+
+/* C3 · 战术 HUD 选项框 */
+html[data-dialog-style="hud"] .stage-root .choice {
+  width: min(680px, 80vw);
+  min-height: 46px;
+  padding: 10px 24px;
+  border: 1.5px solid transparent;
+  border-radius: 0;
+  background:
+    repeating-linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent) 0 1px, transparent 1px 3px) padding-box,
+    linear-gradient(180deg, rgb(6 15 26 / 0.92), rgb(4 10 18 / 0.95)) padding-box,
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 68%, transparent), color-mix(in srgb, var(--accent) 22%, transparent)) border-box;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  color: #e0f2fe;
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", var(--font-ui);
+  letter-spacing: 0.05em;
+  text-shadow: none;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.5);
+}
+
+html[data-dialog-style="hud"] .stage-root .choice .choice-num {
+  width: auto;
+  padding: 0 4px;
+  color: color-mix(in srgb, var(--accent) 65%, #7dd3fc);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+html[data-dialog-style="hud"] .stage-root .choice .choice-num::before { content: "["; opacity: 0.7; }
+html[data-dialog-style="hud"] .stage-root .choice .choice-num::after { content: "]"; opacity: 0.7; }
+
+html[data-dialog-style="hud"] .stage-root .choice:hover:not(:disabled),
+html[data-dialog-style="hud"] .stage-root .choice:focus-visible {
+  background: color-mix(in srgb, var(--accent) 62%, #46d6ff);
+  color: #04121e;
+  text-shadow: none;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+html[data-dialog-style="hud"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-dialog-style="hud"] .stage-root .choice:focus-visible .choice-num {
+  color: #04121e;
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .choice {
+  background:
+    repeating-linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, transparent) 0 1px, transparent 1px 3px) padding-box,
+    linear-gradient(180deg, rgb(255 255 255 / 0.96), rgb(241 247 252 / 0.98)) padding-box,
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 58%, transparent), color-mix(in srgb, var(--accent) 20%, transparent)) border-box;
+  border: 1.5px solid transparent;
+  color: #0f2a3d;
+  box-shadow: 0 10px 26px rgb(15 23 42 / 0.14);
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .choice .choice-num {
+  color: color-mix(in srgb, var(--accent) 80%, #0b2545);
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .choice:focus-visible {
+  background: color-mix(in srgb, var(--accent) 78%, #0e74a4);
+  color: #ffffff;
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .choice:focus-visible .choice-num {
+  color: #ffffff;
+}
+
+/* C4 · 书卷选项框 */
+html[data-dialog-style="scroll"] .stage-root .choice {
+  --scroll-gild: color-mix(in srgb, var(--accent) 30%, #ceb07c);
+  width: min(680px, 78vw);
+  min-height: 48px;
+  padding: 11px 26px;
+  border: 1px solid color-mix(in srgb, var(--scroll-gild) 38%, transparent);
+  border-radius: 3px;
+  outline: 1px solid color-mix(in srgb, var(--scroll-gild) 18%, transparent);
+  outline-offset: -5px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, rgb(38 32 25 / 0.94)), color-mix(in srgb, var(--accent) 12%, rgb(25 21 16 / 0.96)));
+  color: #ece2d1;
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+  letter-spacing: 0.06em;
+  text-shadow: none;
+  box-shadow: 0 14px 34px rgb(0 0 0 / 0.5);
+}
+
+html[data-dialog-style="scroll"] .stage-root .choice .choice-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 42%, #8c2f22);
+  color: #f6e9dd;
+  font-family: "Noto Serif CJK SC", "Songti SC", serif;
+  font-size: 12px;
+}
+
+html[data-dialog-style="scroll"] .stage-root .choice:hover:not(:disabled),
+html[data-dialog-style="scroll"] .stage-root .choice:focus-visible {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 22%, #362c21), color-mix(in srgb, var(--accent) 18%, #241d15));
+  border-color: var(--scroll-gild);
+  outline-color: color-mix(in srgb, var(--scroll-gild) 45%, transparent);
+  color: #fff8eb;
+  text-shadow: none;
+  box-shadow: 0 14px 34px rgb(0 0 0 / 0.6);
+}
+
+html[data-dialog-style="scroll"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-dialog-style="scroll"] .stage-root .choice:focus-visible .choice-num {
+  background: color-mix(in srgb, var(--accent) 45%, #b53d2d);
+  color: #ffffff;
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .choice {
+  --scroll-gild: color-mix(in srgb, var(--accent) 30%, #856236);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, rgb(250 244 231 / 0.96)), color-mix(in srgb, var(--accent) 10%, rgb(242 233 215 / 0.98)));
+  border-color: color-mix(in srgb, var(--scroll-gild) 40%, transparent);
+  outline-color: color-mix(in srgb, var(--scroll-gild) 20%, transparent);
+  color: #2b2117;
+  box-shadow: 0 12px 28px rgb(60 42 18 / 0.16);
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .choice .choice-num {
+  background: color-mix(in srgb, var(--accent) 50%, #b3372f);
+  color: #fdf3ec;
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .choice:focus-visible {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 16%, #fffaf0), color-mix(in srgb, var(--accent) 22%, #f5ead4));
+  border-color: var(--scroll-gild);
+  outline-color: color-mix(in srgb, var(--scroll-gild) 45%, transparent);
+  color: #1c140c;
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .choice:focus-visible .choice-num {
+  background: color-mix(in srgb, var(--accent) 55%, #992922);
+  color: #ffffff;
+}
+
+/* C5 · 丝绒幕选项框 */
+html[data-dialog-style="velvet"] .stage-root .choice {
+  --velvet-gold: color-mix(in srgb, var(--accent) 30%, #e8c780);
+  --velvet-gold-line: color-mix(in srgb, var(--accent) 32%, #c8a34a);
+  --velvet-gold-lit: color-mix(in srgb, var(--accent) 22%, #f0dca4);
+  width: min(680px, 78vw);
+  min-height: 46px;
+  padding: 10px 28px;
+  border: 1px solid color-mix(in srgb, var(--velvet-gold-line) 55%, transparent);
+  border-radius: 999px;
+  background:
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.025) 0 18px, rgb(0 0 0 / 0.05) 18px 36px),
+    radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--accent) 26%, rgb(126 26 50 / 0.92)), color-mix(in srgb, var(--accent) 20%, rgb(48 9 22 / 0.96)) 75%);
+  color: #f7ece6;
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 0.65);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.48), inset 0 1px 0 color-mix(in srgb, var(--velvet-gold-lit) 28%, transparent);
+}
+
+html[data-dialog-style="velvet"] .stage-root .choice .choice-num {
+  color: var(--velvet-gold);
+}
+
+html[data-dialog-style="velvet"] .stage-root .choice:hover:not(:disabled),
+html[data-dialog-style="velvet"] .stage-root .choice:focus-visible {
+  background: linear-gradient(180deg, var(--velvet-gold-lit), var(--velvet-gold-line));
+  border-color: var(--velvet-gold-lit);
+  color: #2a0a14;
+  text-shadow: none;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.55);
+}
+
+html[data-dialog-style="velvet"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-dialog-style="velvet"] .stage-root .choice:focus-visible .choice-num {
+  color: #2a0a14;
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice {
+  --velvet-gold: color-mix(in srgb, var(--accent) 30%, #a8763a);
+  --velvet-gold-line: color-mix(in srgb, var(--accent) 30%, #a8763a);
+  --velvet-gold-lit: color-mix(in srgb, var(--accent) 22%, #d8b878);
+  background:
+    repeating-linear-gradient(90deg, rgb(160 130 90 / 0.04) 0 18px, rgb(120 90 50 / 0.04) 18px 36px),
+    radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--accent) 8%, rgb(253 247 236 / 0.96)), color-mix(in srgb, var(--accent) 10%, rgb(243 231 213 / 0.98)) 75%);
+  border-color: color-mix(in srgb, var(--velvet-gold-line) 48%, transparent);
+  color: #3d2b22;
+  text-shadow: none;
+  box-shadow: 0 10px 26px rgb(70 50 20 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.9);
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice .choice-num {
+  color: var(--velvet-gold);
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice:focus-visible {
+  background: linear-gradient(180deg, var(--velvet-gold-lit), var(--velvet-gold-line));
+  border-color: var(--velvet-gold-line);
+  color: #ffffff;
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice:focus-visible .choice-num {
+  color: #ffffff;
+}
+
 /* ── 窄屏：卡片那三种收成整宽、名牌不再骑边；字幕去掉上面那条黑边 ──────────
    手机上的台词条本来就是「贴底一条」，宽银幕的上面那条在没有 16:9 的手机屏上
    没有意义，反而跟顶栏抢位置。 */
@@ -3917,5 +4284,14 @@ html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .quick-btn.t
 
   html[data-dialog-style="velvet"] .stage-root .theater-dialog {
     padding: 24px 16px 60px;
+  }
+
+  html[data-dialog-style="card"] .stage-root .choice,
+  html[data-dialog-style="cinema"] .stage-root .choice,
+  html[data-dialog-style="hud"] .stage-root .choice,
+  html[data-dialog-style="scroll"] .stage-root .choice,
+  html[data-dialog-style="velvet"] .stage-root .choice {
+    width: calc(100% - 24px);
+    padding: 10px 18px;
   }
 }
