@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import type { ServerMessage } from "@aivn/core";
+import { spriteRefOfPath } from "@aivn/agent";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
 import { LineageTree, isVoiceId, parseCharacterCard, parsePlayConfig, characterCardPath, characterIdOfPath, characterOfSprite, PROTAGONIST_ID, spriteDeclarationOf, spriteIdOf, spriteTitlesOf, type CharacterDocument, type EngineStateSnapshot, type ActorAnchor, type SpriteFraming, type SpriteStature } from "@aivn/core";
 import type { PlayLibrary, PlayStore } from "./store.js";
@@ -26,6 +27,7 @@ import { PlayMusic, type GenerateMusicRequest } from "./playMusic.js";
 import type { AssetMetaPatch } from "@aivn/agent";
 import { PendingJobs, errorText, jobIdForMusic } from "./pendingJobs.js";
 import { PlayFiles } from "./playFiles.js";
+import { assertSpriteLanding, ingestSprite } from "./spriteIngest.js";
 import {
   capabilityCatalog,
   defaultCapabilitiesFor,
@@ -1191,6 +1193,28 @@ export class PlayHouse {
     })();
 
     return { target: targetKey, path: targetPath, prompt };
+  }
+
+  /**
+   * 素材页上传一个素材文件。
+   *
+   * **立绘不是「把字节放进去」就完了**：它与出图、抠底、资源库导入走同一条入库归一化
+   * （`ingestSprite`）——用户传什么画布的透明 PNG 都会被摆成该取景的画布并补上落位指标，
+   * 否则这一张就是下一个「头顶偏多」的来源。其余类目（背景 / CG / 音频）原样写盘。
+   */
+  async putAsset(playId: string, kindPath: string, name: string, bytes: Buffer): Promise<void> {
+    const runtime = await this.get(playId);
+    const ref = spriteRefOfPath(`assets/${kindPath}/${name}`);
+    if (ref) {
+      const declared = spriteDeclarationOf(await runtime.store.assetMeta(), ref.spriteId, ref.variant);
+      await ingestSprite(
+        { store: runtime.store, files: new PlayFiles(runtime.store) },
+        { spriteId: ref.spriteId, variant: ref.variant, bytes, framing: declared.framing },
+      );
+      return;
+    }
+    assertSpriteLanding(`assets/${kindPath}/${name}`);
+    await runtime.store.writeAsset(kindPath, name, bytes);
   }
 
   /**

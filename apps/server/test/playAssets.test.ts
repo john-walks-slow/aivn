@@ -218,12 +218,13 @@ describe("PlayAssets：原地重抠（抠底参数的后悔药）", () => {
     const { assets, files } = makeAssets(store, stubBackend().backend);
     const [res] = await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral" }, "少女");
     const before = await readFile(files.absoluteOf(res!.path));
-    // 把留底换成一张纯底图：抠底认不出前景，按覆盖率守卫直接报错
+    // 把留底换成一张纯白图：白色不是色键色（通道极差 0），也没有透明像素，
+    // 归一化在写盘之前就该把它顶回来——报错要发生在落盘之前，原图才可能一个字节没动。
     const blank = await sharp({ create: { width: 768, height: 1365, channels: 3, background: "#ffffff" } })
       .png()
       .toBuffer();
     await writeFile(store.spriteSourceDir("mio", "neutral.jpg"), blank);
-    await expect(assets.recut({ kind: "sprite", spriteId: "mio", variant: "neutral" })).rejects.toThrow(/抠底失败/);
+    await expect(assets.recut({ kind: "sprite", spriteId: "mio", variant: "neutral" })).rejects.toThrow(/色键色/);
     expect(await readFile(files.absoluteOf(res!.path))).toEqual(before);
   });
 });
@@ -1176,6 +1177,34 @@ describe("PlayAssets：登记外来图（import_asset）", () => {
     expect(recut.path).toBe(sprite.path);
   });
 
+  it("直接登记一张没抠底的草稿：入库这一步自己补抠底，落的是透明 PNG 且带落位指标", async () => {
+    const store = await makeStore();
+    const { assets, files } = makeAssets(store, stubBackend("image/png").backend);
+    const draft = await assets.draft(
+      { kind: "sprite", spriteId: "mio", variant: "neutral", framing: "half" },
+      "少女",
+    );
+
+    // 模型跳过 `cut` 直接登记草稿原片（绿底那张）：入库不该依赖「记得先抠底」这套流程记忆，
+    // 它自己保证落进 assets/ 的一定是能上台的透明 PNG，且两格落位指标当场进素材表。
+    const registered = await assets.register(`draft:${draft.draftId}`, {
+      kind: "sprite",
+      spriteId: "mio",
+      variant: "neutral",
+      framing: "half",
+      title: "澪",
+    });
+
+    expect(registered.path).toBe("assets/sprites/mio/neutral.png");
+    const written = await readFile(files.absoluteOf(registered.path));
+    const meta = await sharp(written).metadata();
+    expect([meta.width, meta.height]).toEqual([1440, 1920]);
+    const { data, info } = await sharp(written).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    expect(data[(1000 * info.width + 10) * info.channels + 3]).toBe(0); // 左侧留白透明 = 绿底真去掉了
+    const manifest = JSON.parse(await files.read("assets/manifest.json")) as Record<string, Record<string, unknown>>;
+    expect(manifest.mio).toMatchObject({ framing: "half", title: "澪", figureTop: 96, figureHeight: 1824 });
+  });
+
   it("来源是网图走下载器，越界路径与读不到的文件当场拒绝", async () => {
     const store = await makeStore();
     const { backend } = stubBackend();
@@ -1240,6 +1269,41 @@ describe("PlayAssets：cut（素材引用寻址）", () => {
     expect(cut.path).toBe("assets/cg/mio_cut.png");
     expect(cut.replaced).toBe(false);
     expect(existsSync(files.absoluteOf("assets/sprites/mio/neutral.png"))).toBe(true);
+  });
+
+  it("引用 + output 落在立绘目录：按那个主体入库（归一化 + 清旧扩展名 + 两格指标）", async () => {
+    const store = await makeStore();
+    const { assets, files } = makeAssets(store, stubBackend().backend);
+    await assets.generate({ kind: "sprite", spriteId: "mio", variant: "neutral", framing: "half" }, "少女");
+    // 同 stem 的旧扩展名先摆在那儿：它要是留着，素材页会同时列出两张
+    await store.writeAsset("sprites/mio", "smile.jpg", Buffer.from("旧图"));
+
+    const cut = await assets.cut({
+      target: { kind: "sprite", spriteId: "mio", variant: "neutral" },
+      output: "assets/sprites/mio/smile.png",
+    });
+
+    expect(cut.path).toBe("assets/sprites/mio/smile.png");
+    const meta = await sharp(await readFile(files.absoluteOf(cut.path))).metadata();
+    expect([meta.width, meta.height]).toEqual([1440, 1920]); // 画幅跟着立绘级声明（half）
+    expect(existsSync(join(store.dir, "assets", "sprites", "mio", "smile.jpg"))).toBe(false);
+    const manifest = JSON.parse(await files.read("assets/manifest.json")) as Record<string, Record<string, unknown>>;
+    expect(manifest["mio/smile"]).toMatchObject({ figureTop: 96, figureHeight: 1824 });
+  });
+
+  it("output 落在 assets/sprites/ 但不成立绘落位形状：顶回来，不写一张没有指标的图", async () => {
+    const store = await makeStore();
+    const { assets, files } = makeAssets(store, stubBackend().backend);
+    await mkdir(join(store.dir, "assets", "cg"), { recursive: true });
+    await writeFile(join(store.dir, "assets", "cg", "raw.png"), await realImage("16:9", "image/png"));
+
+    await expect(assets.cut({ source: "assets/cg/raw.png", output: "assets/sprites/loose.png" })).rejects.toThrow(
+      /立绘落位/,
+    );
+    await expect(assets.cut({ source: "assets/cg/raw.png", output: "assets/sprites/a/b/c.png" })).rejects.toThrow(
+      /立绘落位/,
+    );
+    expect(existsSync(files.absoluteOf("assets/sprites/loose.png"))).toBe(false);
   });
 
   it("路径寻址：抠 assets/ 里的一张图到 output；没给 output 就明说本宿主没有候选区", async () => {

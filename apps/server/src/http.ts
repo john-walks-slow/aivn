@@ -426,7 +426,8 @@ export async function handleHttp(
         const name = url.searchParams.get("name") ?? "";
         if (!kindPath || !safeSeg(name) || !MIME[extOf(name)])
           return fail(res, 400, "非法素材路径或格式");
-        await store.writeAsset(kindPath, name, await readBody(req));
+        // 立绘要在这一层过入库归一化（画布与落位指标），所以二进制写口收在 playhouse 上
+        await playhouse.putAsset(playId, kindPath, name, await readBody(req));
         await playhouse.reload(playId); // 素材清单即时生效
         return json(res, 200, { ok: true });
       }

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import sharp from "sharp";
 import { zipSync } from "fflate";
 import { libraryEntryMatches, parseCharacterCard, parsePlayAssetManifest, PROTAGONIST_ID } from "@aivn/core";
 import { AssetLibrary, assertEntryId } from "../src/library.js";
@@ -28,11 +29,29 @@ function zipOf(files: Record<string, string | Uint8Array>): Buffer {
   );
 }
 
-async function makeEntry(root: string, kind: string, id: string, files: Record<string, string>, meta?: unknown): Promise<void> {
+async function makeEntry(root: string, kind: string, id: string, files: Record<string, string | Uint8Array>, meta?: unknown): Promise<void> {
   const dir = join(root, kind, id);
   await mkdir(dir, { recursive: true });
   for (const [name, body] of Object.entries(files)) await writeFile(join(dir, name), body);
   if (meta !== undefined) await writeFile(join(dir, "meta.json"), typeof meta === "string" ? meta : JSON.stringify(meta));
+}
+
+/**
+ * 立绘夹具：一张**真**透明 PNG（200×400 画布上贴 100×240 的人物）。
+ *
+ * 库里那份是作者自己裁的任意画布，而导入要过入库归一化——读不出字节的假图（"n" 这种）
+ * 现在会当场报错，所以立绘类目的夹具必须真能解码。
+ */
+async function spritePng(): Promise<Buffer> {
+  const figure = await sharp({
+    create: { width: 100, height: 240, channels: 4, background: { r: 60, g: 70, b: 120, alpha: 1 } },
+  })
+    .png()
+    .toBuffer();
+  return sharp({ create: { width: 200, height: 400, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: figure, left: 50, top: 60 }])
+    .png()
+    .toBuffer();
 }
 
 /** 角色卡（characters/<id>.md）：角色的唯一真相源，导入写它而不是 play.json。 */
@@ -197,14 +216,15 @@ describe("importFromLibrary：资源库 → 剧目", () => {
   });
 
   it("立绘包：落 sprites/<id>/ 并把呈现声明写进素材表，卡上不再挂差分", async () => {
-    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "smile.png": "s" }, {
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": await spritePng(), "smile.png": await spritePng() }, {
       character: { name: "澪", persona: "元气少女" },
       variants: { neutral: { file: "neutral.png" }, smile: { file: "smile.png", description: "笑" } },
     });
     const result = await importFromLibrary(library, plays.store("p1"), { kind: "characters", entryId: "mio" });
     expect(result.files).toEqual(["assets/sprites/mio/neutral.png", "assets/sprites/mio/smile.png"]);
     expect(result.characters).toEqual(["mio"]);
-    expect(result.manifestKeys).toEqual(["mio/smile"]);
+    // neutral 的落位指标归立绘级、smile 归差分级——键位与引擎那条声明规则一致
+    expect(result.manifestKeys).toEqual(["mio", "mio/smile"]);
     expect(await readCard(playsRoot, "p1", "mio")).toMatchObject({
       id: "mio",
       name: "澪",
@@ -216,12 +236,17 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     expect(JSON.parse(await readFile(join(playsRoot, "p1", "play.json"), "utf8")).characters).toEqual([]);
     const manifest = JSON.parse(await readFile(join(playsRoot, "p1", "assets", "manifest.json"), "utf8"));
     expect(manifest["mio/smile"]).toMatchObject({ description: "笑" });
-    // neutral 那条一个字都没声明 → 不留空对象
+    // neutral 归立绘级，不留 `mio/neutral` 那条
     expect(manifest["mio/neutral"]).toBeUndefined();
+    // 库里那份是作者裁的 200×400：导入过一遍入库归一化，落进剧目的是该取景的画布 + 两格指标
+    expect(manifest.mio).toMatchObject({ figureTop: 96, figureHeight: 1824 });
+    expect(manifest["mio/smile"]).toMatchObject({ figureTop: 96, figureHeight: 1824 });
+    const neutralFile = await sharp(await readFile(join(playsRoot, "p1", "assets", "sprites", "mio", "neutral.png"))).metadata();
+    expect([neutralFile.width, neutralFile.height]).toEqual([1080, 1920]);
   });
 
   it("立绘取景：条目级 framing 与差分覆盖都进素材表", async () => {
-    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "closeup.png": "c" }, {
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": await spritePng(), "closeup.png": await spritePng() }, {
       character: { name: "澪", persona: "" },
       framing: "half",
       variants: {
@@ -267,7 +292,7 @@ describe("importFromLibrary：资源库 → 剧目", () => {
   });
 
   it("library: 来源 —— 角色包的图与卡都落在 spriteId 名下（改名不再靠 target 特判）", async () => {
-    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "smile.png": "s" }, {
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": await spritePng(), "smile.png": await spritePng() }, {
       character: { name: "澪", persona: "元气少女" },
       variants: { neutral: { file: "neutral.png" }, smile: { file: "smile.png", description: "笑" } },
     });
@@ -309,7 +334,7 @@ describe("importFromLibrary：资源库 → 剧目", () => {
       "mio",
       "---\nid: mio\nname: 澪\nframing: full\nspriteFraming:\n  angry: square\n---\n人设",
     );
-    await makeEntry(libRoot, "characters", "mio", { "smile.png": "s" }, {
+    await makeEntry(libRoot, "characters", "mio", { "smile.png": await spritePng() }, {
       character: { name: "澪", persona: "" },
       variants: { smile: { file: "smile.png" } },
     });
@@ -359,7 +384,7 @@ describe("importFromLibrary：资源库 → 剧目", () => {
   });
 
   it("as=protagonist 写固定 id 的主角卡：卡与立绘都落在 protagonist 名下，play.json 一个字节不动", async () => {
-    await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n" }, {
+    await makeEntry(libRoot, "characters", "rio", { "neutral.png": await spritePng() }, {
       character: { name: "理央", persona: "玩家扮演" },
       variants: { neutral: { file: "neutral.png" } },
     });
@@ -396,7 +421,7 @@ describe("importFromLibrary：资源库 → 剧目", () => {
       }),
     );
     await writeCard(playsRoot, "p2", "mio", "---\nid: mio\nname: 澪\nsprites:\n  happy: happy.png\n---\np");
-    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "sad.png": "s" });
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": await spritePng(), "sad.png": await spritePng() });
     const store = plays.store("p2");
     await importFromLibrary(library, store, { kind: "characters", entryId: "mio", variants: ["sad"] });
     const dir = join(playsRoot, "p2", "assets", "sprites", "mio");
@@ -449,8 +474,8 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
   });
 
   it("并发导两个角色包：两份呈现声明都得在（各读旧素材表会互相冲掉）", async () => {
-    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" }, { framing: "full" });
-    await makeEntry(libRoot, "characters", "rio", { "neutral.png": "n" }, { framing: "half" });
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": await spritePng() }, { framing: "full" });
+    await makeEntry(libRoot, "characters", "rio", { "neutral.png": await spritePng() }, { framing: "half" });
     // 刻意各调一次 plays.store()：真实 REST 路径就是这样，每个请求各持一份新实例。
     // 复用同一个 store 变量会让锁的 key 恰好对上，把串行假象测出来。
     await Promise.all([
@@ -466,7 +491,7 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
   });
 
   it("同一个包分两次导不同差分：后一次不能把前一次的声明冲掉", async () => {
-    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n", "smile.png": "s", "sad.png": "d" }, {
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": await spritePng(), "smile.png": await spritePng(), "sad.png": await spritePng() }, {
       framing: "full",
       variants: { smile: { file: "smile.png", framing: "square" } },
     });
@@ -503,7 +528,7 @@ describe("play.json 读改写串行：立绘包导入之间不能互相覆盖", 
   });
 
   it("导入要报出改过的路径：工坊据此重拉各页", async () => {
-    await makeEntry(libRoot, "characters", "mio", { "neutral.png": "n" }, {
+    await makeEntry(libRoot, "characters", "mio", { "neutral.png": await spritePng() }, {
       description: "澪的立绘",
       character: { name: "澪" },
     });

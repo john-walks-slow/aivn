@@ -112,6 +112,11 @@ const TOP_PADDING = 0.05;
 const COVERAGE_MIN = 0.02;
 const COVERAGE_MAX = 0.97;
 
+/** 立绘归一化画布高（舞台侧的 `SPRITE_CANVAS_HEIGHT` 与它同值：`figureTop` / `figureHeight` 都按它存）。 */
+export const SPRITE_CANVAS_HEIGHT = CANVAS_HEIGHT;
+/** 顶部留白占画布高的比例（归一化的第二个不变量）。 */
+export const SPRITE_TOP_PADDING = TOP_PADDING;
+
 type EnvLike = Record<string, string | undefined>;
 
 function envInt(env: EnvLike, name: string, fallback: number, min: number, max: number): number {
@@ -184,10 +189,35 @@ export function tuningFromEnv(prefix: string, env: EnvLike = process.env): Cutou
  */
 const MIN_KEY_SATURATION = 96;
 
+/** 整圈边框量出来的底色与它的通道极差。`spread >= MIN_KEY_SATURATION` 才是「饱和的纯色键底」。 */
+export interface KeyBackgroundProbe {
+  color: [number, number, number];
+  spread: number;
+}
+
+/**
+ * 量底色：整圈边框的逐通道中位数（判据与体检、色键共用同一处）。
+ *
+ * 给两种调用方：`cutout` 的底色体检，以及 `prepareSprite` 判「这张图是色键原片还是已经抠好的 PNG」。
+ */
+export function probeKeyBackground(
+  rgba: Buffer,
+  width: number,
+  height: number,
+  channels: number,
+): KeyBackgroundProbe {
+  const color = borderMedian(rgba, width, height, channels);
+  return { color, spread: Math.max(...color) - Math.min(...color) };
+}
+
+/** 量出来的底色是不是一个**色键色**（无色相的白/灰底不是）。 */
+export function isKeyBackground(probe: KeyBackgroundProbe): boolean {
+  return probe.spread >= MIN_KEY_SATURATION;
+}
+
 function assertKeyBackground(rgba: Buffer, width: number, height: number, channels: number): void {
-  const bg = borderMedian(rgba, width, height, channels);
-  const spread = Math.max(...bg) - Math.min(...bg);
-  if (spread >= MIN_KEY_SATURATION) return;
+  const { color: bg, spread } = probeKeyBackground(rgba, width, height, channels);
+  if (isKeyBackground({ color: bg, spread })) return;
   throw new Error(
     `抠底失败：整圈边框量出的底色是 (${bg.join(", ")})，通道极差只有 ${spread}——` +
       "这是一个白底或灰底，不是色键色。纯色键会把角色身上接近这个颜色的部分整块判成背景" +
@@ -238,17 +268,44 @@ export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise
     tuning.solidResidual,
   );
   const out = unblend(rgba, alpha, foreground, width, height, channels, bg, tuning.spill);
+  const placed = await placeOnCanvas(out, width, height, alpha, { canvasWidth, canvasHeight, topPadding });
+  return { ...placed, coverage };
+}
 
+/** 落画布的结果（`CutoutResult` 去掉体检项）。 */
+export interface PlacedCanvas {
+  data: Buffer;
+  width: number;
+  height: number;
+  /** 人物头顶到画布上沿的像素数（= 画布高 × topPadding，宽度不先卡时）。 */
+  figureTop: number;
+  figureHeight: number;
+}
+
+/**
+ * 归一化落画布：量人物外框 → 等比缩放到「画布高 × (1 − topPadding)」→ 底部居中贴进 `aspectRatio` 画布。
+ *
+ * 高度是目标量、宽度只是护栏——画布比按取景选对了（`aspectRatio ≥ 该档外框比`）时宽度永远不卡，
+ * 人物高度只由 `topPadding` 决定；外框比超了才退回宽度先卡。旧行为是「外框比 > 画布比就由宽度定高度」，
+ * 头顶余量 = 画布高 − 人物高，随图漂。
+ *
+ * 抠底与「已经抠好的透明 PNG 重排画布」共用这一段：**归一化算法只有这一份**
+ * （见 `sprite.ts` 的 `prepareSprite`）。
+ */
+export async function placeOnCanvas(
+  pixels: Buffer,
+  width: number,
+  height: number,
+  alpha: Uint8Array,
+  options: { canvasWidth: number; canvasHeight: number; topPadding: number },
+): Promise<PlacedCanvas> {
+  const { canvasWidth, canvasHeight, topPadding } = options;
   const box = foregroundBounds(alpha, width, height);
   if (!box) throw new Error("抠底失败：没有找到角色轮廓");
-  const figure = await sharp(out, { raw: { width, height, channels: 4 } })
+  const figure = await sharp(pixels, { raw: { width, height, channels: 4 } })
     .extract(box)
     .png()
     .toBuffer();
-  // 缩放：先把人物缩到「画布高 × (1 − topPadding)」，再看宽度会不会先卡住。
-  // 高度是目标量，宽度只是护栏——画布比按取景选对了（aspectRatio ≥ 该档外框比）时
-  // 宽度永远不卡，人物高度只由 topPadding 决定；外框比超了才退回宽度先卡。
-  // （旧行为：外框比 > 画布比就由宽度定高度，头顶余量 = 画布高 − 人物高，随图漂。）
   const targetHeight = canvasHeight * (1 - topPadding);
   const scale = Math.min(targetHeight / box.height, canvasWidth / box.width);
   const scaled = await sharp(figure)
@@ -275,14 +332,7 @@ export async function cutout(data: Buffer, options: CutoutOptions = {}): Promise
     .toBuffer();
 
   const figureHeight = Math.round(box.height * scale);
-  return {
-    data: canvas,
-    width: canvasWidth,
-    height: canvasHeight,
-    coverage,
-    figureTop: canvasHeight - figureHeight,
-    figureHeight,
-  };
+  return { data: canvas, width: canvasWidth, height: canvasHeight, figureTop: canvasHeight - figureHeight, figureHeight };
 }
 
 /**

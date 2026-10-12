@@ -130,13 +130,15 @@ export function createImportAssetTool(deps: ImportAssetDeps): AgentTool<typeof i
         }
       }
       if (!deps.playAssets) return textResult("素材未启用（STAGE_ASSETS_ENABLED=false）。");
-      // 预览 URL 是服务端的回执知识（能力只给落位），顺手带出来。
+      // 预览 URL 与归一化体检都是服务端的回执知识（能力只给落位），顺手带出来。
       let url = "";
+      let cutout: { figureTop: number; figureHeight: number } | undefined;
       try {
         const registered = await assetRegister.execute(params as AssetRegisterArgs, {
           register: async (source, location, extra): Promise<AssetRegistration> => {
             const asset = await deps.playAssets!.register(source, location, extra);
             url = asset.url;
+            cutout = asset.cutout;
             return {
               kind: asset.kind,
               path: asset.path,
@@ -150,6 +152,7 @@ export function createImportAssetTool(deps: ImportAssetDeps): AgentTool<typeof i
         return linesResult([
           `${label}已登记：\`${registered.path}\`${registered.replaced ? "（覆盖了同名旧素材）" : ""}`,
           `![${registered.kind}](${url})`,
+          cutout ? `立绘已按该差分的取景归一化：人物高 ${cutout.figureHeight}px、头顶留白 ${cutout.figureTop}px（舞台据此摆位）。` : "",
           registered.sourcePath ? `抠底前原片已留底：\`${registered.sourcePath}\`。` : "",
         ]);
       } catch (error) {

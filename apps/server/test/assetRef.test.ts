@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import sharp from "sharp";
 import { AssetRefResolver, refFromActor, refFromCg, refFromSfx, refsFromScene } from "../src/assetRef.js";
 import type { ImportResult } from "../src/assetImport.js";
 import { AssetLibrary } from "../src/library.js";
@@ -24,7 +25,20 @@ const PLAY_JSON = JSON.stringify({
   initialScene: "s",
 });
 
-async function libraryEntry(root: string, kind: string, id: string, files: Record<string, string>): Promise<void> {
+/** 立绘夹具：真透明 PNG（导入要过入库归一化，假字节解不开）。 */
+async function spritePng(): Promise<Buffer> {
+  const figure = await sharp({
+    create: { width: 100, height: 240, channels: 4, background: { r: 60, g: 70, b: 120, alpha: 1 } },
+  })
+    .png()
+    .toBuffer();
+  return sharp({ create: { width: 200, height: 400, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: figure, left: 50, top: 60 }])
+    .png()
+    .toBuffer();
+}
+
+async function libraryEntry(root: string, kind: string, id: string, files: Record<string, string | Uint8Array>): Promise<void> {
   const dir = join(root, "lib", kind, id);
   await mkdir(dir, { recursive: true });
   for (const [name, body] of Object.entries(files)) await writeFile(join(dir, name), body);
@@ -122,21 +136,21 @@ describe("AssetRefResolver：剧本里的 id 缺了就从库里补", () => {
   });
 
   it("<actor id> 角色表里已经有了就不去库里找", async () => {
-    await libraryEntry(root, "characters", "koharu", { "neutral.png": "x", "meta.json": "{}" });
+    await libraryEntry(root, "characters", "koharu", { "neutral.png": await spritePng(), "meta.json": "{}" });
     resolver({ characters: ["koharu"] }).resolve([refFromActor("koharu")]);
     await tick();
     expect(imported).toEqual([]);
   });
 
   it("<actor id> 库里只有立绘包也照导：机甲、道具本来就没有卡", async () => {
-    await libraryEntry(root, "sprites", "mecha_01", { "neutral.png": "x", "flare.png": "y" });
+    await libraryEntry(root, "sprites", "mecha_01", { "neutral.png": await spritePng(), "flare.png": await spritePng() });
     resolver().resolve([refFromActor("mecha_01")]);
     await waitFor(() => imported.length === 1);
     expect(imported[0]).toMatchObject({ kind: "sprites", id: "mecha_01", spriteId: "mecha_01" });
   });
 
   it("<actor id> 剧目里已有同名立绘目录就不再导", async () => {
-    await libraryEntry(root, "sprites", "mecha_01", { "neutral.png": "x" });
+    await libraryEntry(root, "sprites", "mecha_01", { "neutral.png": await spritePng() });
     await store.writeAsset("sprites/mecha_01", "neutral.png", Buffer.from("x"));
     resolver().resolve([refFromActor("mecha_01")]);
     await tick();
@@ -144,7 +158,7 @@ describe("AssetRefResolver：剧本里的 id 缺了就从库里补", () => {
   });
 
   it("<actor id> 剧目里只有卡、库里还有同名立绘包时补立绘：两张附件各补各的", async () => {
-    await libraryEntry(root, "sprites", "koharu", { "neutral.png": "x" });
+    await libraryEntry(root, "sprites", "koharu", { "neutral.png": await spritePng() });
     resolver({ characters: ["koharu"] }).resolve([refFromActor("koharu")]);
     await waitFor(() => imported.length === 1);
     expect(imported[0]).toMatchObject({ kind: "sprites", id: "koharu" });

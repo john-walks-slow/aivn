@@ -90,8 +90,19 @@ export { Exa } from "./search/exa.js";
 export type { GeneratedMusic, GeminiMusicOptions, MusicBackend, MusicRequest } from "./media/music.js";
 export { GeminiMusicGen, MUSIC_EXT_BY_MIME, parseMusic } from "./media/music.js";
 
-export type { CutoutOptions, CutoutResult, CutoutTuning } from "./media/cutout.js";
-export { cutout, DEFAULT_TUNING, tuningFromEnv } from "./media/cutout.js";
+export type { CutoutOptions, CutoutResult, CutoutTuning, KeyBackgroundProbe, PlacedCanvas } from "./media/cutout.js";
+export {
+  cutout,
+  DEFAULT_TUNING,
+  isKeyBackground,
+  placeOnCanvas,
+  probeKeyBackground,
+  SPRITE_CANVAS_HEIGHT,
+  SPRITE_TOP_PADDING,
+  tuningFromEnv,
+} from "./media/cutout.js";
+export type { PreparedSprite, PrepareSpriteOptions } from "./media/sprite.js";
+export { prepareSprite } from "./media/sprite.js";
 
 export type { ImageAspect, ImageBackend, ImageRequest, ImageSize, ImageSizeSpec } from "./media/image.js";
 export type { GeneratedImage } from "./media/image.js";

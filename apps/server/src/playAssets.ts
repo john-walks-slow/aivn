@@ -5,7 +5,6 @@ import {
   DEFAULT_SPRITE_FRAMING,
   DEFAULT_SPRITE_STATURE,
   SPRITE_FRAMING_ASPECT,
-  spriteAspectRatio,
   spriteDeclarationOf,
   type ActorAnchor,
   type CharacterDocument,
@@ -13,6 +12,8 @@ import {
   type SpriteStature,
   type WorkshopAssetView,
 } from "@aivn/core";
+import { assetIoOf, parseManifest, writeManifest } from "./assetFiles.js";
+import { assertSpriteLanding, ingestSprite } from "./spriteIngest.js";
 import {
   aspectMatches,
   extOf,
@@ -22,7 +23,7 @@ import {
   type ImageKind,
   type ImageReference,
 } from "./imageBackend.js";
-import { cutout, resolveTuning, type CutoutTuning } from "./cutout.js";
+import { prepareSprite, resolveTuning, type CutoutTuning, type PreparedSprite } from "./cutout.js";
 import {
   adoptDraft,
   assetMetaKey,
@@ -378,13 +379,9 @@ export class PlayAssets {
     // 这里只把本层的 IO 口（`PlayFiles` 白名单 + 剧目锁 + notify）接上去。
     // 候选不抠底（P5-c）：立绘的透明那一刀在**入库**时补上——入库那张必须是透明 PNG，
     // 舞台靠 alpha 叠在场景上。
-    const cut =
-      spec.kind === "sprite"
-        ? await cutout(await readDraftImage(this.deps.store.dir, draft.draftId, draft.imageExt), {
-            aspectRatio: spriteAspectRatio(spec.framing),
-            ...resolveTuning(),
-          })
-        : null;
+    const cut = spec.kind === "sprite"
+      ? await this.normalizeSprite(spec.framing, await readDraftImage(this.deps.store.dir, draft.draftId, draft.imageExt))
+      : null;
     // 抠图量出的头顶留白与人物高度只能借这一格进 adoptDraft → declareSprite：
     // 入库是那条路，素材表里没有第二个写口。
     const imageOverride = cut
@@ -425,6 +422,9 @@ export class PlayAssets {
     const spec = await this.resolve(location);
     const image = await this.readSource(source, "source");
     const original = extra.original?.trim() ? await this.readSource(extra.original.trim(), "original") : undefined;
+    // 立绘在入库前归一化：模型可能跳过了 `cut` 直接登记草稿原片（那就是一张绿底图），
+    // 也可能登记的是一张已经抠好底的 PNG——两种输入都由 `normalizeSprite` 收成同一种画布。
+    const prepared = spec.kind === "sprite" ? await this.normalizeSprite(spec.framing, image.bytes) : null;
     const registered = await registerAsset(
       {
         playDir: this.deps.store.dir,
@@ -432,10 +432,9 @@ export class PlayAssets {
         updateManifest: (mutate) => this.withManifest("workshop", mutate),
         recordLedger: (entry) => this.saveLedger(entry),
       },
-      spec,
+      prepared ? { ...spec, figureTop: prepared.figureTop, figureHeight: prepared.figureHeight } : spec,
       {
-        // 立绘登记的一定是抠好的透明 PNG（换后端后的 jpg 候选得先抠底再登记）。
-        image: spec.kind === "sprite" ? { bytes: image.bytes, ext: ".png" } : image,
+        image: prepared ? { bytes: prepared.data, ext: ".png" } : image,
         ...(original ? { original } : {}),
         ...(extra.description ? { description: extra.description } : {}),
         ...(extra.prompt ? { prompt: extra.prompt } : {}),
@@ -448,6 +447,11 @@ export class PlayAssets {
       replaced: registered.replaced,
       autoNeutral: false,
       ...(registered.sourceRel ? { sourcePath: registered.sourceRel } : {}),
+      // 立绘这一刀是入库顺手做的（可能真抠了底、也可能只是重排画布），回执要说清结果，
+      // 否则「登记完头顶偏了」只能靠肉眼在舞台上发现。
+      ...(prepared
+        ? { cutout: { coverage: prepared.coverage ?? 0, figureTop: prepared.figureTop, figureHeight: prepared.figureHeight } }
+        : {}),
     };
   }
 
@@ -503,7 +507,6 @@ export class PlayAssets {
     output?: string;
     tuning?: Partial<CutoutTuning>;
   }): Promise<GeneratedPlayAsset & { absPath: string }> {
-    const tuning = resolveTuning(request.tuning);
     const output = request.output?.trim();
 
     if (request.target) {
@@ -513,28 +516,34 @@ export class PlayAssets {
         spriteId: request.target.spriteId ?? request.target.name,
         variant: request.target.variant ?? "neutral",
       });
-      const { data, coverage, figureTop, figureHeight } = await cutout(await this.readSpriteSource(spec), {
-        aspectRatio: spriteAspectRatio(spec.framing),
-        ...tuning,
-      });
-      const cutoutInfo = { coverage, figureTop, figureHeight };
+      const source = await this.readSpriteSource(spec);
+      // 不给 output 就是**原地重抠**：落位、清旧扩展名、两格指标都由统一写口做完。
+      const ingested = await ingestSprite(
+        { store: this.deps.store, files: this.deps.files },
+        {
+          spriteId: spec.spriteId!,
+          variant: spec.stem,
+          bytes: source,
+          framing: spec.framing,
+          tuning: request.tuning,
+        },
+      );
+      const cutoutInfo = { coverage: ingested.coverage, figureTop: ingested.figureTop, figureHeight: ingested.figureHeight };
       if (!output) {
-        const asset = await this.persist(spec, data, ".png");
-        // 原地重抠改了头顶留白：素材表里的两个指标要跟着更新，否则舞台仍按旧值摆位。
-        await this.declareSprite({ ...spec, figureTop, figureHeight }, "workshop");
-        return { ...asset, autoNeutral: false, absPath: this.deps.files.absoluteOf(asset.path), cutout: cutoutInfo };
+        return {
+          kind: "sprite",
+          path: ingested.path,
+          url: this.urlOf(ingested.path),
+          replaced: ingested.replaced,
+          autoNeutral: false,
+          absPath: this.deps.files.absoluteOf(ingested.path),
+          cutout: cutoutInfo,
+        };
       }
-      const existed = existsSync(this.deps.files.absoluteOf(output));
-      const rel = await this.deps.files.writeBinary(output, data);
-      return {
-        kind: "sprite",
-        path: rel,
-        url: this.urlOf(rel),
-        absPath: this.deps.files.absoluteOf(rel),
-        replaced: existed,
-        autoNeutral: false,
-        cutout: cutoutInfo,
-      };
+      // 给了 output：输出落在别的立绘目录上就按**那个主体**再入库一次（同一张图、同一套不变量）；
+      // 落到非立绘路径才按普通二进制写。**不许有第二条直写 assets/sprites/ 的路**。
+      const written = await this.writeCutOutput(output, spec.spriteId!, source, request.tuning);
+      return { ...written, cutout: cutoutInfo };
     }
 
     const source = request.source?.trim();
@@ -544,41 +553,77 @@ export class PlayAssets {
     // 认立绘身份也得照同一条规矩——只差个前缀就静默退回缺省画幅、指标也丢，是查不出来的那种错。
     const relOutput = relative(this.deps.files.root, this.deps.files.absoluteOf(output));
     const read = await this.readSource(source, "抠底的源图");
-    const existed = existsSync(this.deps.files.absoluteOf(relOutput));
-    // 输出落在立绘目录上时，这一刀是立绘入库前的抠底：画幅跟这张图的出图意图走（草稿里记着取景），
-    // 量出来的两个落位指标当场写进素材表——紧接着的 `import_asset` 只补描述，声明里的指标就丢了。
-    const sprite = spriteRefOfPath(relOutput);
-    const framing = sprite ? await this.cutFraming(source, sprite) : undefined;
-    const { data, coverage, figureTop, figureHeight } = await cutout(read.bytes, {
-      ...(framing ? { aspectRatio: spriteAspectRatio(framing) } : {}),
-      ...tuning,
-    });
-    const rel = await this.deps.files.writeBinary(relOutput, data);
-    if (sprite && framing) {
-      await this.declareSprite(
-        {
-          kind: "sprite",
-          kindPath: `sprites/${sprite.spriteId}`,
-          stem: sprite.variant,
-          aspect: SPRITE_FRAMING_ASPECT[framing] as ImageAspect,
-          spriteId: sprite.spriteId,
-          variant: sprite.variant,
-          framing,
-          figureTop,
-          figureHeight,
-        },
-        "workshop",
+    // 输出落在立绘目录上时，这一刀就是**立绘入库前的抠底**：画幅跟这张图的出图意图走（草稿里记着取景），
+    // 归一化、落位与两格指标都由统一写口做完——紧接着的 `import_asset` 只补描述。
+    const written = await this.writeCutOutput(relOutput, undefined, read.bytes, request.tuning, source);
+    return { ...written };
+  }
+
+  /**
+   * 把抠底结果写到 `output`：**落点是不是立绘目录**决定了走哪条路。
+   *
+   * - 是（`assets/sprites/<主体>/<差分>.png`）→ 走统一入库（`ingestSprite`）：归一化、清同 stem 旧扩展名、
+   *   两格指标进素材表。画幅优先按 `identity` 给的那位主体（原地重抠）；否则按这张图的出身
+   *   （草稿里记的取景）→ 该立绘已有声明 → 缺省。**这是 `assets/sprites/` 下的唯一写路**。
+   * - 不是（背景 / CG / 临时落点）→ 只写这一份二进制：那不是立绘，素材表里也没有它该占的位。
+   */
+  private async writeCutOutput(
+    output: string,
+    identity: string | undefined,
+    bytes: Buffer,
+    tuning?: Partial<CutoutTuning>,
+    framingSource?: string,
+  ): Promise<GeneratedPlayAsset & { absPath: string }> {
+    const rel = relative(this.deps.files.root, this.deps.files.absoluteOf(output));
+    const sprite = spriteRefOfPath(rel);
+    if (sprite) {
+      const framing = identity === sprite.spriteId
+        ? spriteDeclarationOf(await this.deps.store.assetMeta(), sprite.spriteId, sprite.variant).framing
+        : await this.cutFraming(framingSource ?? output, sprite);
+      const ingested = await ingestSprite(
+        { store: this.deps.store, files: this.deps.files },
+        { spriteId: sprite.spriteId, variant: sprite.variant, bytes, framing, tuning },
       );
+      return {
+        kind: "sprite",
+        path: ingested.path,
+        url: this.urlOf(ingested.path),
+        replaced: ingested.replaced,
+        autoNeutral: false,
+        absPath: this.deps.files.absoluteOf(ingested.path),
+        cutout: { coverage: ingested.coverage, figureTop: ingested.figureTop, figureHeight: ingested.figureHeight },
+      };
     }
+    // 落到 `assets/sprites/` 却不是标准立绘落位的，在这一步就顶回来（见 `assertSpriteLanding`）：
+    // 这一支是「非立绘」的写路，不能成为立绘目录的第二个写口。
+    assertSpriteLanding(rel);
+    const existed = existsSync(this.deps.files.absoluteOf(rel));
+    const prepared = await this.normalizeSprite(undefined, bytes, tuning);
+    const written = await this.deps.files.writeBinary(rel, prepared.data);
     return {
-      kind: rel.startsWith("assets/backgrounds/") ? "background" : rel.startsWith("assets/cg/") ? "cg" : "sprite",
-      path: rel,
-      url: this.urlOf(rel),
-      absPath: this.deps.files.absoluteOf(rel),
+      kind: written.startsWith("assets/backgrounds/") ? "background" : written.startsWith("assets/cg/") ? "cg" : "sprite",
+      path: written,
+      url: this.urlOf(written),
+      absPath: this.deps.files.absoluteOf(written),
       replaced: existed,
       autoNeutral: false,
-      cutout: { coverage, figureTop, figureHeight },
+      cutout: { coverage: prepared.coverage ?? 0, figureTop: prepared.figureTop, figureHeight: prepared.figureHeight },
     };
+  }
+
+  /**
+   * **立绘归一化**：所有立绘写口共用这一步——纯色底原片先抠底，已经抠好的透明 PNG 直接重排画布，
+   * 产出恒为「该取景的画布 + 固定顶留白 + 人物 95%」的透明 PNG 与两格落位指标。
+   *
+   * 画幅取调用方给的 `framing`（立绘入库时由 `resolve` 从 显式给 > 差分级 > 立绘级 > 缺省 解析出来），
+   * 算法在 `@aivn/agent` 的 `prepareSprite`——抠底那条路与重排那条路共用同一段落画布代码。
+   */
+  private normalizeSprite(
+    framing: SpriteFraming | undefined,
+    bytes: Buffer,
+    tuning?: Partial<CutoutTuning>,
+  ): Promise<PreparedSprite> {
+    return prepareSprite(bytes, { framing, tuning: resolveTuning(tuning) });
   }
 
   /**
@@ -659,13 +704,18 @@ export class PlayAssets {
     if (!(await this.existingPath(spec.kindPath, spec.stem))) {
       throw new Error(`${spec.spriteId}/${spec.stem} 还没有抠底图，先 generate_image 出图再来重抠。`);
     }
-    const { data, coverage, figureTop, figureHeight } = await cutout(await this.readSpriteSource(spec), {
-      aspectRatio: spriteAspectRatio(spec.framing),
-      ...resolveTuning(tuning),
-    });
+    const prepared = await this.normalizeSprite(spec.framing, await this.readSpriteSource(spec), tuning);
     // 重抠就是重新量一次头顶：素材表跟着更新，否则舞台还照旧值摆。
-    await this.declareSprite({ ...spec, figureTop, figureHeight }, "workshop");
-    return { ...(await this.persist(spec, data, ".png")), autoNeutral: false, cutout: { coverage, figureTop, figureHeight } };
+    await this.declareSprite({ ...spec, figureTop: prepared.figureTop, figureHeight: prepared.figureHeight }, "workshop");
+    return {
+      ...(await this.persist(spec, prepared.data, ".png")),
+      autoNeutral: false,
+      cutout: {
+        coverage: prepared.coverage ?? 0,
+        figureTop: prepared.figureTop,
+        figureHeight: prepared.figureHeight,
+      },
+    };
   }
 
   private async readSpriteSource(spec: AssetSpec): Promise<Buffer> {
@@ -830,17 +880,7 @@ export class PlayAssets {
    * 「agent 的素材写都在白名单内」这条铁律仍然生效（包不绕过它）。
    */
   private assetIo(): AssetIo {
-    return {
-      list: async (kindPath) => {
-        const dir = this.deps.files.absoluteOf(`assets/${kindPath}`);
-        if (!existsSync(dir)) return [];
-        return (await readdir(dir)).filter((name) => IMAGE_EXTS.some((ext) => name.endsWith(ext)));
-      },
-      write: async (rel, data) => {
-        await this.deps.files.writeBinary(rel, data);
-      },
-      remove: (rel) => this.deps.files.removeAsset(rel),
-    };
+    return assetIoOf(this.deps.files);
   }
 
   /**
@@ -1216,25 +1256,9 @@ export class PlayAssets {
   ): Promise<void> {
     return withPlayConfigLock(this.deps.store.dir, async () => {
       const raw = await this.deps.files.read("assets/manifest.json").catch(() => "");
-      const current: AssetManifest =
-        raw && raw.trim()
-          ? (() => {
-              try {
-                const parsed: unknown = JSON.parse(raw);
-                return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-                  ? (parsed as AssetManifest)
-                  : {};
-              } catch {
-                return {};
-              }
-            })()
-          : {};
-
-      const next = edit(current) ?? current;
-
-      const after = `${JSON.stringify(next, null, 2)}\n`;
-      if (after === raw) return;
-      await this.deps.files.write("assets/manifest.json", after);
+      const next = edit(parseManifest(raw)) ?? parseManifest(raw);
+      if (`${JSON.stringify(next, null, 2)}\n` === raw) return;
+      await writeManifest(this.deps.files, next);
       this.deps.onWrite({ path: "assets/manifest.json" }, notify);
     });
   }

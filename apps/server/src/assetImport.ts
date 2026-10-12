@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import {
@@ -13,8 +13,11 @@ import {
   type LibraryEntry,
   type LibraryFile,
 } from "@aivn/core";
+import { NEUTRAL } from "@aivn/agent";
 import type { AssetLibrary } from "./library.js";
 import { PlayFiles } from "./playFiles.js";
+import { readManifest, writeManifest } from "./assetFiles.js";
+import { ingestSprite } from "./spriteIngest.js";
 import { withPlayConfigLock, type PlayStore } from "./store.js";
 import type { PlayFileWrite } from "./workshop.js";
 
@@ -74,8 +77,8 @@ function stemOf(name: string): string {
 }
 
 /** 只搬资源库里真有值的字段：剧目侧手写的东西不该被一份缺字段的库 meta 冲掉。 */
-function mergeMeta(existing: AssetMeta | undefined, incoming: AssetMeta): AssetMeta {
-  const merged: AssetMeta = { ...existing };
+function mergeMeta(existing: AssetMeta | string | undefined, incoming: AssetMeta): AssetMeta {
+  const merged: AssetMeta = { ...(typeof existing === "string" ? { description: existing } : existing) };
   for (const [key, value] of Object.entries(incoming) as [string, unknown][]) {
     if (value !== undefined) (merged as Record<string, unknown>)[key] = value;
   }
@@ -99,19 +102,6 @@ async function removeStaleSiblings(store: PlayStore, kindPath: string, stem: str
   for (const name of await readdir(dir)) {
     if (name === keep || stemOf(name) !== stem) continue;
     if (ALL_EXT.has(extname(name).toLowerCase())) await store.deleteAsset(kindPath, name);
-  }
-}
-
-/** 剧目素材表：缺文件/坏 JSON 都要当成空表重来，不能让一份坏数据挡住导入。 */
-async function readManifest(files: PlayFiles): Promise<Record<string, AssetMeta>> {
-  const raw = await files.read("assets/manifest.json").catch(() => "");
-  if (!raw.trim()) return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return parsed as Record<string, AssetMeta>;
-  } catch {
-    return {};
   }
 }
 
@@ -182,18 +172,26 @@ export async function importFromLibrary(
     if (variants.length === 0 && entry.kind === "sprites") {
       throw new Error(`资源库条目 ${entry.id} 里没有立绘文件`);
     }
-    const kindPath = `sprites/${spriteId}`;
     for (const variant of variants) {
       const source = fileForVariant(entry, variant);
       if (!source) throw new Error(`差分 ${variant} 在资源库条目里没有对应文件`);
-      const ext = extname(source.name).toLowerCase();
-      await removeStaleSiblings(store, kindPath, variant, `${variant}${ext}`);
-      await copyInto(await library.filePath(entry.kind, entry.id, source.name), store.assetPath(`${kindPath}/${variant}${ext}`));
-      result.files.push(`assets/${kindPath}/${variant}${ext}`);
-      // 差分级键带主体前缀：多主体剧目里光写 smile 会被另一个立绘的同名差分覆盖。
-      // 条目对这条差分一个字都没声明时不写空对象——manifest 是给人读的。
+      // 库里那份是**任意画布**的真透明 PNG（作者裁的，不带落位指标），所以库里搬来的立绘同样要过
+      // 入库归一化：落进剧目的是与出图那条路同一种画布、同样带着两格指标，舞台才摆得正。
       const own = variantMeta(entry, variant);
-      if (Object.keys(own).length > 0) manifest.push([`${spriteId}/${variant}`, own]);
+      const ingested = await ingestSprite(
+        { store, files },
+        {
+          spriteId,
+          variant,
+          bytes: await readFile(await library.filePath(entry.kind, entry.id, source.name)),
+          framing: own.framing ?? entry.meta.framing,
+        },
+      );
+      result.files.push(ingested.path);
+      // 键位与引擎那条声明规则一致（`declareSprite`）：neutral 归立绘级，别的差分带主体前缀——
+      // 多主体剧目里光写 smile 会被另一个立绘的同名差分覆盖。
+      const key = variant === NEUTRAL ? spriteId : `${spriteId}/${variant}`;
+      manifest.push([key, { ...own, figureTop: ingested.figureTop, figureHeight: ingested.figureHeight }]);
     }
     // 立绘级声明只在真有图时写：一张图都没有的主体没有摆位可声明
     const base = { ...spriteMeta(entry), ...(req.meta ?? {}) };
@@ -216,11 +214,12 @@ export async function importFromLibrary(
       const current = await readManifest(files);
       for (const [key, meta] of manifest) {
         current[key] = mergeMeta(current[key], meta);
-        result.manifestKeys.push(key);
+        // 同一个键可能被两条来源各补一次（neutral 的指标与条目声明都归立绘级），回执只报一次
+        if (!result.manifestKeys.includes(key)) result.manifestKeys.push(key);
       }
       const manifestText = `${JSON.stringify(current, null, 2)}\n`;
       const manifestBefore = await files.read("assets/manifest.json").catch(() => null);
-      await files.write("assets/manifest.json", manifestText);
+      await writeManifest(files, current);
       if (manifestBefore !== manifestText) {
         result.writes.push({ path: "assets/manifest.json" });
       }
