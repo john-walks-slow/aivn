@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>舞台消息框设计远景 · 五种风格</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0b0e14; }
+  body { font-family: system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+
+  /* ── 画框骨架：一块 1280×420 的「舞台下缘」，两种主题共用同一张画面，
+        变的只有消息框本身——这正是要比较的东西。 ───────────────────── */
+  .group { display: block; }
+  .tile { width: 1280px; background: #0b0e14; }
+  .cap {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 12px 20px 8px; background: #11151d; color: #e8eef7;
+    border-bottom: 1px solid rgba(255,255,255,.07);
+  }
+  .cap b { font-size: 15px; letter-spacing: .04em; }
+  .cap span { font-size: 11.5px; color: #8b98ab; letter-spacing: .04em; }
+  .cap i { margin-left: auto; font-style: normal; font-size: 11px; color: #5d6b80; letter-spacing: .12em; }
+  .stage {
+    position: relative; width: 1280px; height: 720px; overflow: hidden;
+    background: url(../../../library/backgrounds/bg_rooftop_dusk/bg_rooftop_dusk.jpg) center 68% / 1376px auto no-repeat, #101725;
+  }
+  /* 立绘：与真舞台同一条规矩——贴着画面底、右侧站定 */
+  .sprite {
+    position: absolute; right: 4%; bottom: -4%; height: 104%;
+    filter: drop-shadow(0 18px 40px rgba(0,0,0,.5));
+  }
+  .vignette {
+    position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(120% 90% at 50% 40%, transparent 40%, rgba(4,8,14,.55) 100%);
+  }
+  .hint { font-size: 12px; }
+  .hint .arrow { opacity: .8; }
+
+  /* ══ V1 · 浮岛玻璃卡 ══════════════════════════════════════════════ */
+  .v1 .dlg {
+    position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%);
+    width: min(880px, 74%); padding: 26px 34px 18px; border-radius: 20px;
+    backdrop-filter: blur(20px) saturate(1.3);
+  }
+  .v1 .dlg::before {
+    content: ""; position: absolute; top: 0; left: 34px; right: 34px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--hi), transparent); opacity: .85;
+  }
+  .v1 .dlg-name {
+    position: absolute; top: -13px; left: 28px; padding: 3px 14px; border-radius: 999px;
+    font-size: 13px; font-weight: 700; letter-spacing: .18em;
+  }
+  .v1 .dlg-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; }
+  .v1 .quick { display: flex; align-items: center; gap: 4px; }
+  .v1 .quick span { padding: 3px 10px; border-radius: 999px; font-size: 11.5px; letter-spacing: .04em; }
+  .v1 .quick span.on { font-weight: 700; }
+
+  .v1[data-theme="dark"] .dlg {
+    background: linear-gradient(180deg, rgba(22,30,43,.80), rgba(10,16,26,.88));
+    border: 1px solid rgba(255,255,255,.16);
+    box-shadow: 0 26px 60px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.22);
+    --hi: #7cc0f0;
+  }
+  .v1[data-theme="dark"] .dlg-name { background: linear-gradient(180deg,#4a9fe0,#2f7cc0); color: #fff; box-shadow: 0 4px 14px rgba(74,159,224,.5); }
+  .v1[data-theme="dark"] .dlg-text { color: rgba(248,250,252,.96); text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+  .v1[data-theme="dark"] .hint { color: rgba(226,232,240,.5); }
+  .v1[data-theme="dark"] .quick span { color: rgba(226,232,240,.6); }
+  .v1[data-theme="dark"] .quick span.on { color: #fff; background: rgba(74,159,224,.30); }
+
+  .v1[data-theme="light"] .dlg {
+    background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(243,247,252,.97));
+    border: 1px solid rgba(15,23,42,.09);
+    box-shadow: 0 26px 56px rgba(15,23,42,.22), inset 0 1px 0 rgba(255,255,255,.9);
+    --hi: #2f7cc0;
+  }
+  .v1[data-theme="light"] .dlg-name { background: linear-gradient(180deg,#2f7cc0,#1b5aa6); color: #fff; box-shadow: 0 4px 12px rgba(27,90,166,.35); }
+  .v1[data-theme="light"] .dlg-text { color: #16202e; }
+  .v1[data-theme="light"] .hint { color: rgba(51,65,85,.6); }
+  .v1[data-theme="light"] .quick span { color: rgba(51,65,85,.62); }
+  .v1[data-theme="light"] .quick span.on { color: #1b5aa6; background: rgba(27,90,166,.12); }
+
+  /* ══ V2 · 电影字幕 ═════════════════════════════════════════════════ */
+  .v2 .dlg { position: absolute; inset: 0; pointer-events: none; }
+  .v2 .bar { position: absolute; left: 0; right: 0; }
+  .v2 .bar.top { top: 0; height: 6%; }
+  .v2 .bar.bottom { bottom: 0; height: 30%; }
+  .v2 .dlg-body { position: absolute; left: 50%; bottom: 104px; transform: translateX(-50%); width: 74%; text-align: center; }
+  .v2 .dlg-name { font-size: 11px; letter-spacing: .42em; text-indent: .42em; margin-bottom: 15px; }
+  .v2 .dlg-text { margin: 0; font-size: 27px; line-height: 1.95; font-weight: 400; letter-spacing: .03em; }
+  .v2 .dlg-foot { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); display: flex; align-items: center; gap: 18px; white-space: nowrap; }
+  .v2 .quick { display: flex; align-items: center; gap: 0; font-size: 11px; letter-spacing: .1em; }
+  .v2 .quick span { padding: 0 9px; }
+  .v2 .quick span + span { border-left: 1px solid currentColor; }
+
+  .v2[data-theme="dark"] .bar.top { background: linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,.96)); }
+  .v2[data-theme="dark"] .bar.bottom { background: linear-gradient(180deg, rgba(0,0,0,0) 0, rgba(0,0,0,.9) 20%, rgba(0,0,0,.96) 100%); }
+  .v2[data-theme="dark"] .dlg-name { color: #dfb37a; }
+  .v2[data-theme="dark"] .dlg-text { color: #f4f1ec; text-shadow: 0 2px 18px rgba(0,0,0,.9), 0 1px 2px rgba(0,0,0,.95); }
+  .v2[data-theme="dark"] .hint { color: rgba(255,255,255,.34); }
+  .v2[data-theme="dark"] .quick { color: rgba(255,255,255,.34); }
+
+  .v2[data-theme="light"] .bar.top { background: linear-gradient(0deg, rgba(255,255,255,.6), rgba(255,255,255,.97)); }
+  .v2[data-theme="light"] .bar.bottom { background: linear-gradient(180deg, rgba(255,255,255,0) 0, rgba(255,255,255,.94) 20%, rgba(255,255,255,.99) 100%); }
+  .v2[data-theme="light"] .dlg-name { color: #8a5a20; }
+  .v2[data-theme="light"] .dlg-text { color: #14161a; text-shadow: 0 1px 0 rgba(255,255,255,.95), 0 2px 14px rgba(255,255,255,.8); }
+  .v2[data-theme="light"] .hint { color: rgba(20,22,26,.42); }
+  .v2[data-theme="light"] .quick { color: rgba(20,22,26,.42); }
+
+  /* ══ V3 · 战术 HUD ═════════════════════════════════════════════════ */
+  .v3 .dlg {
+    position: absolute; left: 50%; bottom: 36px; transform: translateX(-50%);
+    width: min(1020px, 78%); padding: 1.5px;
+    clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
+    font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  }
+  .v3 .dlg-in {
+    position: relative; padding: 20px 28px 14px;
+    clip-path: polygon(19px 0, 100% 0, 100% calc(100% - 19px), calc(100% - 19px) 100%, 0 100%, 0 19px);
+  }
+  .v3 .dlg-in::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(180deg, rgba(56,189,248,.055) 0 1px, transparent 1px 3px);
+  }
+  .v3 .tag { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: .18em; margin-bottom: 12px; }
+  .v3 .dlg-name { font-size: 15px; letter-spacing: .3em; font-weight: 700; }
+  .v3 .dlg-name::before { content: "▍"; margin-right: 8px; }
+  .v3 .dlg-text { margin: 6px 0 0; font-size: 17px; line-height: 1.8; letter-spacing: .04em; font-family: system-ui, "PingFang SC", sans-serif; }
+  .v3 .dlg-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 13px; font-size: 10.5px; letter-spacing: .14em; }
+  .v3 .quick { display: flex; gap: 2px; }
+  .v3 .quick span { padding: 2px 8px; letter-spacing: .14em; }
+  .v3 .quick span.on { font-weight: 700; }
+
+  .v3[data-theme="dark"] .dlg { background: linear-gradient(180deg, rgba(56,189,248,.62), rgba(56,189,248,.16)); }
+  .v3[data-theme="dark"] .dlg-in { background: linear-gradient(180deg, rgba(8,20,32,.92), rgba(4,11,20,.95)); }
+  .v3[data-theme="dark"] .tag { color: rgba(125,211,252,.6); }
+  .v3[data-theme="dark"] .dlg-name { color: #7dd3fc; text-shadow: 0 0 12px rgba(56,189,248,.55); }
+  .v3[data-theme="dark"] .dlg-text { color: #dbeafe; }
+  .v3[data-theme="dark"] .hint { color: rgba(125,211,252,.62); }
+  .v3[data-theme="dark"] .quick span { color: rgba(186,230,253,.62); }
+  .v3[data-theme="dark"] .quick span.on { color: #04121e; background: #38bdf8; }
+
+  .v3[data-theme="light"] .dlg { background: linear-gradient(180deg, rgba(14,116,164,.55), rgba(14,116,164,.18)); }
+  .v3[data-theme="light"] .dlg-in { background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(241,247,252,.97)); }
+  .v3[data-theme="light"] .dlg-in::after { background: repeating-linear-gradient(180deg, rgba(14,116,164,.05) 0 1px, transparent 1px 3px); }
+  .v3[data-theme="light"] .tag { color: rgba(12,74,110,.6); }
+  .v3[data-theme="light"] .dlg-name { color: #0b4a6e; }
+  .v3[data-theme="light"] .dlg-text { color: #0f2a3d; }
+  .v3[data-theme="light"] .hint { color: rgba(12,74,110,.6); }
+  .v3[data-theme="light"] .quick span { color: rgba(15,42,61,.6); }
+  .v3[data-theme="light"] .quick span.on { color: #fff; background: #0e74a4; }
+
+  /* ══ V4 · 书卷 ═════════════════════════════════════════════════════ */
+  .v4 .dlg {
+    position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%);
+    width: min(840px, 72%); padding: 22px 34px 16px; border-radius: 3px;
+    font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+  }
+  .v4 .dlg-name { font-size: 14px; letter-spacing: .3em; margin-bottom: 10px; }
+  .v4 .dlg-name::before { content: "❖"; margin-right: 10px; font-size: 11px; }
+  .v4 .dlg-text { margin: 0; font-size: 19px; line-height: 1.95; letter-spacing: .02em; }
+  .v4 .dlg-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 15px; font-size: 11.5px; letter-spacing: .12em; }
+  .v4 .quick { display: flex; align-items: center; }
+  .v4 .quick span { padding: 0 9px; }
+  .v4 .quick span + span { border-left: 1px solid currentColor; opacity: .95; }
+
+  .v4[data-theme="dark"] .dlg {
+    background: linear-gradient(180deg, #262019, #191510);
+    border: 1px solid rgba(206,176,124,.30);
+    outline: 1px solid rgba(206,176,124,.16); outline-offset: -7px;
+    box-shadow: 0 22px 50px rgba(0,0,0,.55);
+  }
+  .v4[data-theme="dark"] .dlg-name { color: #d9c49a; }
+  .v4[data-theme="dark"] .dlg-text { color: #ece2d1; }
+  .v4[data-theme="dark"] .hint { color: rgba(217,196,154,.5); }
+  .v4[data-theme="dark"] .quick { color: rgba(217,196,154,.72); }
+
+  .v4[data-theme="light"] .dlg {
+    background: linear-gradient(180deg, #faf4e7, #f2e9d7);
+    border: 1px solid rgba(133,98,54,.34);
+    outline: 1px solid rgba(133,98,54,.18); outline-offset: -7px;
+    box-shadow: 0 20px 44px rgba(60,42,20,.28);
+  }
+  .v4[data-theme="light"] .dlg-name { color: #8c5a2b; }
+  .v4[data-theme="light"] .dlg-text { color: #3a3126; }
+  .v4[data-theme="light"] .hint { color: rgba(90,72,48,.6); }
+  .v4[data-theme="light"] .quick { color: rgba(90,72,48,.66); }
+
+  /* ══ V5 · 丝绒幕 ═══════════════════════════════════════════════════ */
+  .v5 .dlg { position: absolute; left: 0; right: 0; bottom: 0; height: 28%; }
+  .v5 .dlg::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  }
+  .v5 .dlg::after {
+    content: ""; position: absolute; top: -4px; left: 50%; width: 8px; height: 8px;
+    transform: translateX(-50%) rotate(45deg);
+  }
+  .v5 .dlg-body { max-width: 790px; margin: 0 auto; padding: 26px 20px 0; }
+  .v5 .dlg-name { text-align: center; font-size: 13px; letter-spacing: .3em; margin-bottom: 12px; }
+  .v5 .dlg-text { margin: 0; text-align: center; font-size: 18.5px; line-height: 1.85; }
+  .v5 .dlg-foot { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 20px; white-space: nowrap; }
+  .v5 .quick { display: flex; gap: 6px; }
+  .v5 .quick span { padding: 3px 11px; border-radius: 999px; font-size: 11.5px; }
+  .v5 .quick span.on { font-weight: 700; }
+
+  .v5[data-theme="dark"] .dlg {
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,.030) 0 24px, rgba(0,0,0,.055) 24px 48px),
+      radial-gradient(130% 110% at 50% 0%, rgba(126,26,50,.94), rgba(48,9,22,.97) 72%);
+    box-shadow: inset 0 1px 0 rgba(255,214,150,.35), 0 -20px 50px rgba(0,0,0,.5);
+  }
+  .v5[data-theme="dark"] .dlg::before { background: linear-gradient(90deg, rgba(200,163,74,0), #c8a34a 22%, #f0dca4 50%, #c8a34a 78%, rgba(200,163,74,0)); }
+  .v5[data-theme="dark"] .dlg::after { background: #f0dca4; box-shadow: 0 0 10px rgba(240,220,164,.8); }
+  .v5[data-theme="dark"] .dlg-name { color: #e8c780; }
+  .v5[data-theme="dark"] .dlg-text { color: #f7ece6; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+  .v5[data-theme="dark"] .hint { color: rgba(247,236,230,.44); }
+  .v5[data-theme="dark"] .quick span { color: rgba(232,199,128,.66); border: 1px solid rgba(200,163,74,.32); }
+  .v5[data-theme="dark"] .quick span.on { color: #2a0a14; background: #e8c780; border-color: #e8c780; }
+
+  .v5[data-theme="light"] .dlg {
+    background:
+      repeating-linear-gradient(90deg, rgba(160,130,90,.05) 0 24px, rgba(120,90,50,.05) 24px 48px),
+      radial-gradient(130% 110% at 50% 0%, #fdf7ec, #f3e7d5 75%);
+    box-shadow: inset 0 1px 0 rgba(200,163,74,.5), 0 -18px 44px rgba(70,50,20,.22);
+  }
+  .v5[data-theme="light"] .dlg::before { background: linear-gradient(90deg, rgba(168,118,58,0), #a8763a 22%, #d8b878 50%, #a8763a 78%, rgba(168,118,58,0)); }
+  .v5[data-theme="light"] .dlg::after { background: #a8763a; box-shadow: 0 0 8px rgba(216,184,120,.9); }
+  .v5[data-theme="light"] .dlg-name { color: #a8763a; }
+  .v5[data-theme="light"] .dlg-text { color: #3d2b22; }
+  .v5[data-theme="light"] .hint { color: rgba(61,43,34,.52); }
+  .v5[data-theme="light"] .quick span { color: rgba(120,84,40,.72); border: 1px solid rgba(168,118,58,.34); }
+  .v5[data-theme="light"] .quick span.on { color: #fff; background: #a8763a; border-color: #a8763a; }
+</style>
+</head>
+<body>
+<div id="board"></div>
+<script>
+const VARIANTS = [
+  { id: "v1", name: "浮岛玻璃卡", desc: "悬浮圆角卡片 · 毛玻璃 + 上缘高光 · 名牌做成卡沿上的一枚胶囊" },
+  { id: "v2", name: "电影字幕", desc: "无框 · 上下黑带压成宽银幕 · 大字号居中 · 名牌是细小字距的暖金色" },
+  { id: "v3", name: "战术 HUD", desc: "切角面板 · 青色描边 + 扫描纹 · 等宽字标签栏与 [方括号] 按键" },
+  { id: "v4", name: "书卷", desc: "双线内框 · 衬线正文 · ❖ 起头的小字距名牌 · 无按钮只有一行文字入口" },
+  { id: "v5", name: "丝绒幕", desc: "幕布式通栏 · 金线与菱形坠 · 台词居中收窄 · 金色胶囊按键" },
+];
+const QUICK = ["Auto", "语音", "←", "→", "Log", "路线", "CG", "全屏", "隐藏"];
+
+function quickHTML(v) {
+  return QUICK.map((q, i) => `<span class="${i === 0 ? "on" : ""}">${q}</span>`).join("");
+}
+function tile(v, theme) {
+  const hints = `<span class="hint"><span class="arrow">▼</span> 点击舞台继续生成</span>`;
+  const body = {
+    v1: `<div class="dlg-name">真帆</div><p class="dlg-text">……你就这么站在门口，一句话也不说？</p>
+         <div class="dlg-foot">${hints}<div class="quick">${quickHTML()}</div></div>`,
+    v2: `<div class="bar top"></div><div class="bar bottom"></div><div class="dlg-body"><div class="dlg-name">真帆</div><p class="dlg-text">……你就这么站在门口，一句话也不说？</p></div>
+         <div class="dlg-foot">${hints}<div class="quick">${quickHTML()}</div></div>`,
+    v3: `<div class="dlg-in"><div class="tag"><span>// SCENE-04 · ROOFTOP</span><span>SEQ 0182</span></div>
+         <div class="dlg-name">真帆</div><p class="dlg-text">……你就这么站在门口，一句话也不说？</p>
+         <div class="dlg-foot"><span class="hint">▼ NEXT</span><div class="quick">${QUICK.map((q, i) => `<span class="${i === 0 ? "on" : ""}">[${q}]</span>`).join("")}</div></div></div>`,
+    v4: `<div class="dlg-name">真帆</div><p class="dlg-text">……你就这么站在门口，一句话也不说？</p>
+         <div class="dlg-foot">${hints}<div class="quick">${quickHTML()}</div></div>`,
+    v5: `<div class="dlg-body"><div class="dlg-name">—— 真帆 ——</div><p class="dlg-text">……你就这么站在门口，一句话也不说？</p></div>
+         <div class="dlg-foot">${hints}<div class="quick">${quickHTML()}</div></div>`,
+  }[v.id];
+  return `<section class="tile ${v.id}" data-variant="${v.id}" data-theme="${theme}">
+    <div class="cap"><b>${v.id.toUpperCase()} · ${v.name}</b><span>${v.desc}</span><i>${theme.toUpperCase()}</i></div>
+    <div class="stage">
+      <img class="sprite" src="../../../plays/mh/assets/sprites/manami/neutral.png" alt="" />
+      <div class="vignette"></div>
+      <div class="dlg">${body}</div>
+    </div>
+  </section>`;
+}
+const dark = VARIANTS.map((v) => tile(v, "dark"));
+const light = VARIANTS.map((v) => tile(v, "light"));
+document.getElementById("board").innerHTML =
+  `<div class="group" id="group-dark">${dark.join("")}</div>` +
+  `<div class="group" id="group-light">${light.join("")}</div>` +
+  VARIANTS.map((v, i) => `<div class="group" id="combo-${v.id}">${dark[i]}${light[i]}</div>`).join("");
+</script>
+</body>
+</html>
