@@ -104,12 +104,12 @@
      上一版掺的是 rgb(255 255 255) 且带两三成透明（0.95 / 0.84）：亮画面从底下透上来，
      这块就成了一团发灰的牛奶。浅色主题就是这套；深色主题整条翻深（见下面 dark 那一块）。 */
   --stage-chrome-quiet-bg: linear-gradient(180deg,
-    color-mix(in srgb, var(--accent) 16%, rgb(247 251 255 / 0.97)),
-    color-mix(in srgb, var(--accent) 30%, rgb(226 238 252 / 0.94)));
-  --stage-chrome-quiet-edge: color-mix(in srgb, var(--accent) 34%, #dbe9f8);
-  --stage-chrome-quiet-ink: color-mix(in srgb, var(--accent) 38%, #142138);
-  --stage-chrome-quiet-ink-hover: color-mix(in srgb, var(--accent) 55%, #0d1830);
-  --stage-chrome-quiet-hover: color-mix(in srgb, var(--accent) 14%, transparent);
+    rgba(255, 255, 255, 0.98) 0%,
+    color-mix(in srgb, var(--accent) 6%, rgb(245 248 252 / 0.96)) 100%);
+  --stage-chrome-quiet-edge: color-mix(in srgb, var(--accent) 22%, rgba(0, 0, 0, 0.12));
+  --stage-chrome-quiet-ink: color-mix(in srgb, var(--accent) 30%, #1e293b);
+  --stage-chrome-quiet-ink-hover: #0f172a;
+  --stage-chrome-quiet-hover: rgba(0, 0, 0, 0.05);
   /* 选肢的两档底：常态是一条压在画面上的白缎带（字走主题色），
      悬停/选中直接换成主题色的实缎带（字走白）。
      常态不给主题色底——一排浅蓝条压在画面上会跟立绘抢注意力，
@@ -238,12 +238,12 @@ html[data-ui-theme="dark"] .stage-root {
      不再是画面右上角一块刺眼的白斑。掺的仍然是 accent 那一支蓝（26% / 14%），
      不掺中性黑——掺中性黑出来的是一块灰板，与左上角那条蓝不是一家。 */
   --stage-chrome-quiet-bg: linear-gradient(180deg,
-    color-mix(in srgb, var(--accent) 26%, rgb(8 18 30 / 0.86)),
-    color-mix(in srgb, var(--accent) 14%, rgb(5 12 21 / 0.92)));
-  --stage-chrome-quiet-edge: color-mix(in srgb, var(--accent) 34%, rgba(255, 255, 255, 0.14));
-  --stage-chrome-quiet-ink: color-mix(in srgb, var(--accent) 26%, #e8eef6);
+    color-mix(in srgb, var(--accent) 12%, rgb(30 38 48 / 0.88)) 0%,
+    color-mix(in srgb, var(--accent) 8%, rgb(18 24 32 / 0.94)) 100%);
+  --stage-chrome-quiet-edge: color-mix(in srgb, var(--accent) 26%, rgba(255, 255, 255, 0.18));
+  --stage-chrome-quiet-ink: #f1f5f9;
   --stage-chrome-quiet-ink-hover: #ffffff;
-  --stage-chrome-quiet-hover: color-mix(in srgb, var(--accent) 22%, transparent);
+  --stage-chrome-quiet-hover: rgba(255, 255, 255, 0.1);
 }
 
 /* 主色预设：设置页选哪一档就挂哪个 data-accent（useTheme.applyAccent）。
@@ -290,19 +290,19 @@ html[data-ui-theme="dark"][data-accent="wine"] .stage-root {
    这套的取舍和深色相反——深色模式靠「玻璃压住画面」，浅色没有压的余地，
    所以底色必须实（0.88 起步）而不是半透明，否则背景图的亮部会透上来吃掉字。 */
 html[data-ui-theme="light"] .stage-root {
-  --stage-bg: #efece5;
-  --dialog-bg: linear-gradient(178deg, rgb(252 250 246 / 0.94), rgb(240 236 228 / 0.96));
-  --dialog-line: rgb(120 108 92 / 0.45);
-  --dialog-ink: #23201c;
-  --dialog-ink-soft: #4a443c;
-  --dialog-ink-thought: #5a5468;
-  --dialog-ink-faint: rgb(35 32 28 / 0.5);
-  --dialog-bad: #b3372f;
+  --stage-bg: #f8fafc;
+  --dialog-bg: linear-gradient(178deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.98));
+  --dialog-line: rgba(203, 213, 225, 0.6);
+  --dialog-ink: #0f172a;
+  --dialog-ink-soft: #334155;
+  --dialog-ink-thought: #475569;
+  --dialog-ink-faint: rgba(51, 65, 85, 0.6);
+  --dialog-bad: #e11d48;
   --dialog-text-shadow: none;
   --dir-text-shadow: none;
-  --dialog-hover: rgb(120 108 92 / 0.12);
-  --dialog-veil: rgb(120 108 92 / 0.07);
-  --dialog-shadow: 0 10px 30px rgb(60 48 32 / 0.18);
+  --dialog-hover: rgba(0, 0, 0, 0.05);
+  --dialog-veil: rgba(0, 0, 0, 0.03);
+  --dialog-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   /* 台词条 / 选肢卡：浅色下是「纸底 + 深墨字」，但纸底不是纯纸白——
      底色掺一成多主题色，卡面与台词条才跟着剧目换色相（早先这里是写死的纸白，
      于是深色下整条台词条是主题色、切浅色就只剩白与黑）。掺得多一点是因为
@@ -354,10 +354,10 @@ html[data-ui-theme="light"] .stage-root {
    掺比逐段加重：顶上还是全透明（与画面接得住），到底边那一档最浓。 */
 html[data-ui-theme="light"] .stage-root .theater-dialog {
   background: linear-gradient(180deg,
-    rgb(252 250 246 / 0) 0%,
-    color-mix(in srgb, var(--accent) 12%, rgb(252 250 246 / 0.8)) 18%,
-    color-mix(in srgb, var(--accent) 18%, rgb(240 236 228 / 0.94)) 58%,
-    color-mix(in srgb, var(--accent) 22%, rgb(240 236 228 / 0.97)) 100%);
+    rgba(255, 255, 255, 0) 0%,
+    color-mix(in srgb, var(--accent) 5%, rgba(255, 255, 255, 0.82)) 20%,
+    color-mix(in srgb, var(--accent) 8%, rgba(248, 250, 252, 0.95)) 60%,
+    color-mix(in srgb, var(--accent) 10%, rgba(241, 245, 249, 0.98)) 100%);
 }
 
 html[data-ui-theme="light"] .stage-root .dialog-text {
@@ -2360,7 +2360,9 @@ html[data-ui-theme="light"] .modal-card {
 
 .quick-btn.tgl-on {
   color: var(--accent, #38bdf8);
-  text-shadow: 0 0 8px var(--accent, #38bdf8);
+  background: color-mix(in srgb, var(--accent, #38bdf8) 18%, transparent);
+  text-shadow: 0 0 1px var(--accent, #38bdf8);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent, #38bdf8) 35%, transparent);
 }
 
 .quick-btn:disabled {
@@ -2619,11 +2621,14 @@ html[data-ui-theme="light"] .stage-mode {
     bottom: 0;
     z-index: 1;
     margin-top: auto;
+    margin-inline: -16px;
+    margin-bottom: calc(-6px - var(--safe-b, 0px));
+    padding: 10px 16px calc(6px + var(--safe-b, 0px));
     gap: 8px;
     background: linear-gradient(180deg,
       color-mix(in srgb, var(--stage-accent-deep) 0%, transparent) 0%,
-      color-mix(in srgb, var(--stage-accent-deep) 88%, transparent) 55%,
-      color-mix(in srgb, var(--stage-accent-deep) 97%, transparent) 100%);
+      color-mix(in srgb, var(--stage-accent-deep) 78%, transparent) 45%,
+      color-mix(in srgb, var(--stage-accent-deep) 96%, transparent) 100%);
   }
 
   /* 状态提示（回看中 / ▼ / 点击舞台继续生成）有内容时独占一行，不跟那一排快捷入口
@@ -2669,9 +2674,9 @@ html[data-ui-theme="light"] .stage-mode {
      深色那侧一个字节都不动。 */
   html[data-ui-theme="light"] .stage-root .dialog-foot {
     background: linear-gradient(180deg,
-      rgb(252 250 246 / 0) 0%,
-      rgb(240 236 228 / 0.86) 55%,
-      rgb(240 236 228 / 0.97) 100%);
+      rgba(255, 255, 255, 0) 0%,
+      color-mix(in srgb, var(--accent) 6%, rgba(248, 250, 252, 0.88)) 50%,
+      color-mix(in srgb, var(--accent) 8%, rgba(241, 245, 249, 0.98)) 100%);
   }
 
   html[data-ui-theme="light"] .stage-root .dialog-foot .quick-btn {
@@ -2724,6 +2729,12 @@ html[data-ui-theme="light"] .stage-mode {
    收窄内边距与间距，并把台词条左右边距收一档：一行排得下，也留得住状态提示的位置。 */
 @media (max-width: 420px) {
   .theater-dialog {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .theater-dialog .dialog-foot {
+    margin-inline: -12px;
     padding-left: 12px;
     padding-right: 12px;
   }
@@ -2848,6 +2859,32 @@ html[data-ui-theme="light"] .stage-mode {
   color: var(--dialog-ink-faint);
   font-size: 12.5px;
   line-height: 1.5;
+}
+
+/* 回顾面板恒在深色遮罩之上（无论界面是深色还是浅色主题）：
+   指令条目与细节必须保持高对比度的亮白/浅灰，避免受浅色主题的深墨色影响导致看不清。 */
+.backlog-panel .bl-dir {
+  border-left-color: rgba(255, 255, 255, 0.35);
+  color: rgba(248, 250, 252, 0.72);
+}
+
+.backlog-panel .bl-dir-label {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+}
+
+.backlog-panel .bl-dir-detail {
+  color: rgba(248, 250, 252, 0.85);
+}
+
+.backlog-panel .bl-dir-option {
+  border-color: rgba(255, 255, 255, 0.28);
+  color: rgba(248, 250, 252, 0.9);
+}
+
+.backlog-panel .bl-dir-stop {
+  border-left-color: color-mix(in srgb, var(--accent) 80%, #ffffff);
+  color: #ffffff;
 }
 
 .bl-dir-label {

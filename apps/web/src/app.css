@@ -106,13 +106,13 @@
      html[data-ui-theme="dark"] .stage-root 里。用这两组令牌的只有 .theater-director，
      而它永远落在某个 .stage-root 里（那份更近，压过这里），所以深色那档不必在这里再镜像。 */
   --stage-chrome-quiet-bg: linear-gradient(180deg,
-    color-mix(in srgb, var(--accent) 16%, rgb(247 251 255 / 0.97)),
-    color-mix(in srgb, var(--accent) 30%, rgb(226 238 252 / 0.94)));
-  --stage-chrome-quiet-edge: color-mix(in srgb, var(--accent) 34%, #dbe9f8);
-  /* 浅底上的字：掺四成 accent 的深墨蓝，比纯黑柔和、又跟这层玻璃同源 */
-  --stage-chrome-quiet-ink: color-mix(in srgb, var(--accent) 38%, #142138);
-  --stage-chrome-quiet-ink-hover: color-mix(in srgb, var(--accent) 55%, #0d1830);
-  --stage-chrome-quiet-hover: color-mix(in srgb, var(--accent) 14%, transparent);
+    rgba(255, 255, 255, 0.98) 0%,
+    color-mix(in srgb, var(--accent) 6%, rgb(245 248 252 / 0.96)) 100%);
+  --stage-chrome-quiet-edge: color-mix(in srgb, var(--accent) 22%, rgba(0, 0, 0, 0.12));
+  /* 浅底上的字：更纯正典雅的深墨色，清晰不发灰 */
+  --stage-chrome-quiet-ink: color-mix(in srgb, var(--accent) 30%, #1e293b);
+  --stage-chrome-quiet-ink-hover: #0f172a;
+  --stage-chrome-quiet-hover: rgba(0, 0, 0, 0.05);
   --radius: 6px;
   --radius-sm: 4px;
   --radius-lg: 8px;
@@ -299,19 +299,19 @@ html[data-ui-theme="dark"] {
    这套的取舍和深色相反——深色模式靠「玻璃压住画面」，浅色没有压的余地，
    所以底色必须实（0.88 起步）而不是半透明，否则背景图的亮部会透上来吃掉字。 */
 html[data-ui-theme="light"] {
-  --stage-bg: #efece5;
-  --dialog-bg: linear-gradient(178deg, rgb(252 250 246 / 0.94), rgb(240 236 228 / 0.96));
-  --dialog-line: rgb(120 108 92 / 0.45);
-  --dialog-ink: #23201c;
-  --dialog-ink-soft: #4a443c;
-  --dialog-ink-thought: #5a5468;
-  --dialog-ink-faint: rgb(35 32 28 / 0.5);
-  --dialog-bad: #b3372f;
+  --stage-bg: #f8fafc;
+  --dialog-bg: linear-gradient(178deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.98));
+  --dialog-line: rgba(203, 213, 225, 0.6);
+  --dialog-ink: #0f172a;
+  --dialog-ink-soft: #334155;
+  --dialog-ink-thought: #475569;
+  --dialog-ink-faint: rgba(51, 65, 85, 0.6);
+  --dialog-bad: #e11d48;
   --dialog-text-shadow: none;
   --dir-text-shadow: none;
-  --dialog-hover: rgb(120 108 92 / 0.12);
-  --dialog-veil: rgb(120 108 92 / 0.07);
-  --dialog-shadow: 0 10px 30px rgb(60 48 32 / 0.18);
+  --dialog-hover: rgba(0, 0, 0, 0.05);
+  --dialog-veil: rgba(0, 0, 0, 0.03);
+  --dialog-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   /* 选肢卡：与 stage.css 那份同源（底色掺主题色、字走主题色的深墨版），
      两处要一起改。四个值都从 --accent 现推，深浅两档各一条配比。 */
   --choice-bg: color-mix(in srgb, var(--accent) 10%, rgb(252 250 246));
@@ -1771,6 +1771,14 @@ button.link-btn {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+html[data-ui-theme="light"] .seg-glass {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .seg-glass .seg-btn {
@@ -1785,8 +1793,16 @@ button.link-btn {
   transition: all 0.15s ease;
 }
 
+html[data-ui-theme="light"] .seg-glass .seg-btn {
+  color: #475569;
+}
+
 .seg-glass .seg-btn:hover {
   color: #ffffff;
+}
+
+html[data-ui-theme="light"] .seg-glass .seg-btn:hover {
+  color: #0f172a;
 }
 
 .seg-glass .seg-btn.active {
@@ -1794,6 +1810,12 @@ button.link-btn {
   color: #ffffff;
   font-weight: 600;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+html[data-ui-theme="light"] .seg-glass .seg-btn.active {
+  background: rgba(255, 255, 255, 0.95);
+  color: #0f172a;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }
 
 .panel-btn-group {
@@ -5671,6 +5693,11 @@ select:focus {
   color: var(--accent-ink);
   font-weight: 700;
   box-shadow: 0 1px 5px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.stage-seg-btn.is-active:hover {
+  background: var(--accent);
+  color: var(--accent-ink) !important;
 }
 
 /* 待注入队列 + 正在生成的事（PromptQueuePanel）。
