@@ -3316,13 +3316,13 @@ html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .quick-sep {
   background: rgb(15 23 42 / 0.16);
 }
 
-/* ── V2 · 电影字幕：去掉底板，上下压成宽银幕，台词大字号居中 ─────────────── */
+/* ── V2 · 电影字幕：去掉底板，上下压成宽银幕，台词居中 ─────────────── */
 html[data-dialog-style="cinema"] .stage-root .theater-dialog {
-  min-height: 30vh;
-  padding: 26px 6% 62px;
+  min-height: 18vh;
+  padding: 18px 6% 44px;
   justify-content: center;
   gap: 0;
-  background: linear-gradient(180deg, rgb(0 0 0 / 0) 0%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.82)) 9%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.94)) 20%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.96)) 100%);
+  background: linear-gradient(180deg, rgb(0 0 0 / 0) 0%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.82)) 12%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.94)) 26%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.96)) 100%);
 }
 
 /* 上面那条黑边：从窗底往上铺满一屏、只把最顶上一段落成黑——不必给舞台加元素，
@@ -3336,31 +3336,31 @@ html[data-dialog-style="cinema"] .stage-root .theater-dialog::before {
   bottom: 0;
   height: 100vh;
   z-index: -1;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, rgb(0 0 0 / 0.94)) 0 5vh, transparent 5vh);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, rgb(0 0 0 / 0.94)) 0 4.5vh, transparent 4.5vh);
   pointer-events: none;
 }
 
 html[data-dialog-style="cinema"] .stage-root .dialog-name {
   position: static;
-  margin: 0 0 14px;
+  margin: 0 0 8px;
   padding: 0;
   color: color-mix(in srgb, var(--accent) 30%, #dfb37a);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.42em;
-  text-indent: 0.42em;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.36em;
+  text-indent: 0.36em;
   text-align: center;
   text-shadow: 0 1px 8px rgb(0 0 0 / 0.9);
 }
 
 html[data-dialog-style="cinema"] .stage-root .dialog-text {
-  width: min(74%, 900px);
+  width: min(82%, 860px);
   margin: 0 auto;
   text-align: center;
   color: #f4f1ec;
-  font-size: clamp(18px, 2.1vw, 27px);
+  font-size: clamp(15.5px, 1.35vw, 18px);
   font-weight: 400;
-  line-height: 1.95;
+  line-height: 1.75;
   letter-spacing: 0.03em;
   text-shadow: 0 2px 18px rgb(0 0 0 / 0.9), 0 1px 2px rgb(0 0 0 / 0.95);
 }
@@ -3369,7 +3369,7 @@ html[data-dialog-style="cinema"] .stage-root .dialog-foot {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(16px + var(--safe-b, 0px));
+  bottom: calc(10px + var(--safe-b, 0px));
   justify-content: center;
   gap: 18px;
   margin: 0;
@@ -3713,8 +3713,8 @@ html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .quick-btn:h
 
 /* ── V5 · 丝绒幕：幕布式通栏 + 金线菱形坠，台词居中收窄 ──────────────────── */
 html[data-dialog-style="velvet"] .stage-root .theater-dialog {
-  min-height: 28vh;
-  padding: 30px 18% 62px;
+  min-height: 21vh;
+  padding: 22px 14% 48px;
   justify-content: center;
   gap: 0;
   --velvet-gold: color-mix(in srgb, var(--accent) 30%, #e8c780);
@@ -3782,7 +3782,7 @@ html[data-dialog-style="velvet"] .stage-root .dialog-foot {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(20px + var(--safe-b, 0px));
+  bottom: calc(10px + var(--safe-b, 0px));
   justify-content: center;
   gap: 20px;
   margin: 0;
@@ -4269,8 +4269,8 @@ html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice:focu
   }
 
   html[data-dialog-style="cinema"] .stage-root .theater-dialog {
-    min-height: 32vh;
-    padding: 22px 16px 60px;
+    min-height: 20vh;
+    padding: 16px 16px 44px;
   }
 
   html[data-dialog-style="cinema"] .stage-root .theater-dialog::before {
@@ -4283,7 +4283,7 @@ html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice:focu
   }
 
   html[data-dialog-style="velvet"] .stage-root .theater-dialog {
-    padding: 24px 16px 60px;
+    padding: 18px 16px 46px;
   }
 
   html[data-dialog-style="card"] .stage-root .choice,
