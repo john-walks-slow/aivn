@@ -2,14 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
-<title>舞台消息框设计远景 · 五种风格</title>
+<title>舞台消息框设计远景 · 六种风格（含现状基线）</title>
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; background: #0b0e14; }
   body { font-family: system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif; }
 
-  /* ── 画框骨架：一块 1280×420 的「舞台下缘」，两种主题共用同一张画面，
-        变的只有消息框本身——这正是要比较的东西。 ───────────────────── */
+  /* ── 骨架：一块 1280×720 的舞台，两种主题共用同一张画面，变的只有消息框 ─── */
   .group { display: block; }
   .tile { width: 1280px; background: #0b0e14; }
   .cap {
@@ -24,7 +23,6 @@
     position: relative; width: 1280px; height: 720px; overflow: hidden;
     background: url(../../../library/backgrounds/bg_rooftop_dusk/bg_rooftop_dusk.jpg) center 68% / 1376px auto no-repeat, #101725;
   }
-  /* 立绘：与真舞台同一条规矩——贴着画面底、右侧站定 */
   .sprite {
     position: absolute; right: 4%; bottom: -4%; height: 104%;
     filter: drop-shadow(0 18px 40px rgba(0,0,0,.5));
@@ -35,12 +33,63 @@
   }
   .hint { font-size: 12px; }
   .hint .arrow { opacity: .8; }
+  .quick { display: flex; align-items: center; }
 
-  /* ══ V1 · 浮岛玻璃卡 ══════════════════════════════════════════════ */
+  /* ── 主题色：与 apps/web/src/ui/playTheme.ts 的色板同一批值
+        （深色那一档 = 那个文件里 liftForDark 的结果）。整份原型都从 --accent 派生，
+        换一个 data-accent，皮肤跟着走——这就是「呼应 play 主题色」。 ──── */
+  .tile { --accent: #1b5aa6; }
+  .tile[data-accent="sakura"] { --accent: #c2557f; }
+  .tile[data-accent="moss"] { --accent: #4a6f45; }
+  .tile[data-accent="amber"] { --accent: #a97526; }
+  .tile[data-theme="dark"] { --accent: #4a9fe0; }
+  .tile[data-theme="dark"][data-accent="sakura"] { --accent: #cf7a9b; }
+  .tile[data-theme="dark"][data-accent="moss"] { --accent: #728f6e; }
+  .tile[data-theme="dark"][data-accent="amber"] { --accent: #bc9356; }
+  .tile { --deep: color-mix(in srgb, var(--accent) 82%, #04101d); }
+
+  /* ══ V0 · 现状：ATRI 通栏（默认档，也是其余五种要对比的基线） ═════════ */
+  .v0 .dlg {
+    position: absolute; left: 0; right: 0; bottom: 0; min-height: 34%;
+    padding: 52px 18% 46px; cursor: pointer;
+    background: linear-gradient(180deg,
+      color-mix(in srgb, var(--deep) 0%, transparent) 0%,
+      color-mix(in srgb, var(--deep) 52%, transparent) 26%,
+      color-mix(in srgb, var(--deep) 78%, transparent) 62%,
+      color-mix(in srgb, var(--deep) 92%, transparent) 100%);
+  }
+  .v0 .dlg-name {
+    position: absolute; top: 6px; left: calc(18% - 2.2em);
+    font-size: 26px; font-weight: 800; letter-spacing: .06em; color: #fff;
+    text-shadow: 0 0 2px rgba(0,0,0,.85), 0 0 8px color-mix(in srgb, var(--deep) 85%, transparent), 0 2px 4px rgba(0,0,0,.5);
+  }
+  .v0 .dlg-text {
+    margin: 0; font-size: 21px; font-weight: 600; line-height: 1.6; letter-spacing: .03em;
+    color: #fff;
+    text-shadow: 1px 0 0 rgba(0,0,0,.55), -1px 0 0 rgba(0,0,0,.55), 0 1px 0 rgba(0,0,0,.55), 0 -1px 0 rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.55);
+  }
+  .v0 .hint { position: absolute; left: 18%; bottom: 58px; color: rgba(241,245,249,.55); }
+  .v0 .dlg-foot {
+    position: absolute; right: 0; bottom: 8px; height: 30px; padding: 0 10px 0 14px;
+    border-radius: 15px 0 0 0; border: 1px solid color-mix(in srgb, var(--accent) 55%, #a9cdec);
+    border-right: none; border-bottom: none;
+    background: linear-gradient(180deg,
+      color-mix(in srgb, color-mix(in srgb, var(--deep) 78%, #6ea6dc) 92%, transparent),
+      color-mix(in srgb, var(--deep) 99%, transparent));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.18);
+  }
+  .v0 .quick span {
+    min-width: 26px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+    padding: 0 7px; border-radius: 4px; color: rgba(255,255,255,.92); font-size: 13.5px; font-weight: 600;
+  }
+  .v0 .quick span.on { color: var(--accent); text-shadow: 0 0 1px var(--accent); }
+
+  /* ══ V1 · 浮岛玻璃卡 ═══════════════════════════════════════════════ */
   .v1 .dlg {
     position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%);
     width: min(880px, 74%); padding: 26px 34px 18px; border-radius: 20px;
     backdrop-filter: blur(20px) saturate(1.3);
+    --hi: color-mix(in srgb, var(--accent) 62%, #ffffff);
   }
   .v1 .dlg::before {
     content: ""; position: absolute; top: 0; left: 34px; right: 34px; height: 1px;
@@ -49,59 +98,57 @@
   .v1 .dlg-name {
     position: absolute; top: -13px; left: 28px; padding: 3px 14px; border-radius: 999px;
     font-size: 13px; font-weight: 700; letter-spacing: .18em;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, #ffffff), var(--accent));
+    color: #fff;
   }
   .v1 .dlg-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; }
-  .v1 .quick { display: flex; align-items: center; gap: 4px; }
+  .v1 .quick { gap: 4px; }
   .v1 .quick span { padding: 3px 10px; border-radius: 999px; font-size: 11.5px; letter-spacing: .04em; }
-  .v1 .quick span.on { font-weight: 700; }
+  .v1 .quick span.on { font-weight: 700; color: #fff; background: color-mix(in srgb, var(--accent) 32%, transparent); }
 
   .v1[data-theme="dark"] .dlg {
     background: linear-gradient(180deg, rgba(22,30,43,.80), rgba(10,16,26,.88));
     border: 1px solid rgba(255,255,255,.16);
     box-shadow: 0 26px 60px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.22);
-    --hi: #7cc0f0;
   }
-  .v1[data-theme="dark"] .dlg-name { background: linear-gradient(180deg,#4a9fe0,#2f7cc0); color: #fff; box-shadow: 0 4px 14px rgba(74,159,224,.5); }
+  .v1[data-theme="dark"] .dlg-name { box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 50%, transparent); }
   .v1[data-theme="dark"] .dlg-text { color: rgba(248,250,252,.96); text-shadow: 0 1px 3px rgba(0,0,0,.6); }
   .v1[data-theme="dark"] .hint { color: rgba(226,232,240,.5); }
   .v1[data-theme="dark"] .quick span { color: rgba(226,232,240,.6); }
-  .v1[data-theme="dark"] .quick span.on { color: #fff; background: rgba(74,159,224,.30); }
 
   .v1[data-theme="light"] .dlg {
     background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(243,247,252,.97));
     border: 1px solid rgba(15,23,42,.09);
     box-shadow: 0 26px 56px rgba(15,23,42,.22), inset 0 1px 0 rgba(255,255,255,.9);
-    --hi: #2f7cc0;
   }
-  .v1[data-theme="light"] .dlg-name { background: linear-gradient(180deg,#2f7cc0,#1b5aa6); color: #fff; box-shadow: 0 4px 12px rgba(27,90,166,.35); }
+  .v1[data-theme="light"] .dlg-name { box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent); }
   .v1[data-theme="light"] .dlg-text { color: #16202e; }
   .v1[data-theme="light"] .hint { color: rgba(51,65,85,.6); }
   .v1[data-theme="light"] .quick span { color: rgba(51,65,85,.62); }
-  .v1[data-theme="light"] .quick span.on { color: #1b5aa6; background: rgba(27,90,166,.12); }
+  .v1[data-theme="light"] .quick span.on { color: #fff; background: var(--accent); }
 
   /* ══ V2 · 电影字幕 ═════════════════════════════════════════════════ */
-  .v2 .dlg { position: absolute; inset: 0; pointer-events: none; }
+  .v2 .dlg { position: absolute; inset: 0; pointer-events: none; --film: color-mix(in srgb, var(--accent) 55%, #e8c9a0); }
   .v2 .bar { position: absolute; left: 0; right: 0; }
   .v2 .bar.top { top: 0; height: 6%; }
   .v2 .bar.bottom { bottom: 0; height: 30%; }
   .v2 .dlg-body { position: absolute; left: 50%; bottom: 104px; transform: translateX(-50%); width: 74%; text-align: center; }
-  .v2 .dlg-name { font-size: 11px; letter-spacing: .42em; text-indent: .42em; margin-bottom: 15px; }
+  .v2 .dlg-name { font-size: 11px; letter-spacing: .42em; text-indent: .42em; margin-bottom: 15px; color: var(--film); }
   .v2 .dlg-text { margin: 0; font-size: 27px; line-height: 1.95; font-weight: 400; letter-spacing: .03em; }
   .v2 .dlg-foot { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); display: flex; align-items: center; gap: 18px; white-space: nowrap; }
-  .v2 .quick { display: flex; align-items: center; gap: 0; font-size: 11px; letter-spacing: .1em; }
+  .v2 .quick { gap: 0; font-size: 11px; letter-spacing: .1em; }
   .v2 .quick span { padding: 0 9px; }
   .v2 .quick span + span { border-left: 1px solid currentColor; }
 
   .v2[data-theme="dark"] .bar.top { background: linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,.96)); }
   .v2[data-theme="dark"] .bar.bottom { background: linear-gradient(180deg, rgba(0,0,0,0) 0, rgba(0,0,0,.9) 20%, rgba(0,0,0,.96) 100%); }
-  .v2[data-theme="dark"] .dlg-name { color: #dfb37a; }
   .v2[data-theme="dark"] .dlg-text { color: #f4f1ec; text-shadow: 0 2px 18px rgba(0,0,0,.9), 0 1px 2px rgba(0,0,0,.95); }
   .v2[data-theme="dark"] .hint { color: rgba(255,255,255,.34); }
   .v2[data-theme="dark"] .quick { color: rgba(255,255,255,.34); }
 
   .v2[data-theme="light"] .bar.top { background: linear-gradient(0deg, rgba(255,255,255,.6), rgba(255,255,255,.97)); }
   .v2[data-theme="light"] .bar.bottom { background: linear-gradient(180deg, rgba(255,255,255,0) 0, rgba(255,255,255,.94) 20%, rgba(255,255,255,.99) 100%); }
-  .v2[data-theme="light"] .dlg-name { color: #8a5a20; }
+  .v2[data-theme="light"] .dlg-name { color: color-mix(in srgb, var(--accent) 55%, #6d4a18); }
   .v2[data-theme="light"] .dlg-text { color: #14161a; text-shadow: 0 1px 0 rgba(255,255,255,.95), 0 2px 14px rgba(255,255,255,.8); }
   .v2[data-theme="light"] .hint { color: rgba(20,22,26,.42); }
   .v2[data-theme="light"] .quick { color: rgba(20,22,26,.42); }
@@ -112,6 +159,7 @@
     width: min(1020px, 78%); padding: 1.5px;
     clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
     font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+    --hud: color-mix(in srgb, var(--accent) 62%, #46d6ff);
   }
   .v3 .dlg-in {
     position: relative; padding: 20px 28px 14px;
@@ -119,35 +167,34 @@
   }
   .v3 .dlg-in::after {
     content: ""; position: absolute; inset: 0; pointer-events: none;
-    background: repeating-linear-gradient(180deg, rgba(56,189,248,.055) 0 1px, transparent 1px 3px);
+    background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--hud) 6%, transparent) 0 1px, transparent 1px 3px);
   }
-  .v3 .tag { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: .18em; margin-bottom: 12px; }
-  .v3 .dlg-name { font-size: 15px; letter-spacing: .3em; font-weight: 700; }
+  .v3 .tag { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: .18em; margin-bottom: 12px; color: color-mix(in srgb, var(--hud) 70%, transparent); }
+  .v3 .dlg-name { font-size: 15px; letter-spacing: .3em; font-weight: 700; color: var(--hud); }
   .v3 .dlg-name::before { content: "▍"; margin-right: 8px; }
   .v3 .dlg-text { margin: 6px 0 0; font-size: 17px; line-height: 1.8; letter-spacing: .04em; font-family: system-ui, "PingFang SC", sans-serif; }
   .v3 .dlg-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 13px; font-size: 10.5px; letter-spacing: .14em; }
-  .v3 .quick { display: flex; gap: 2px; }
+  .v3 .quick { gap: 2px; }
   .v3 .quick span { padding: 2px 8px; letter-spacing: .14em; }
   .v3 .quick span.on { font-weight: 700; }
 
-  .v3[data-theme="dark"] .dlg { background: linear-gradient(180deg, rgba(56,189,248,.62), rgba(56,189,248,.16)); }
+  .v3[data-theme="dark"] .dlg { background: linear-gradient(180deg, color-mix(in srgb, var(--hud) 62%, transparent), color-mix(in srgb, var(--hud) 16%, transparent)); }
   .v3[data-theme="dark"] .dlg-in { background: linear-gradient(180deg, rgba(8,20,32,.92), rgba(4,11,20,.95)); }
-  .v3[data-theme="dark"] .tag { color: rgba(125,211,252,.6); }
-  .v3[data-theme="dark"] .dlg-name { color: #7dd3fc; text-shadow: 0 0 12px rgba(56,189,248,.55); }
+  .v3[data-theme="dark"] .dlg-name { text-shadow: 0 0 12px color-mix(in srgb, var(--hud) 55%, transparent); }
   .v3[data-theme="dark"] .dlg-text { color: #dbeafe; }
-  .v3[data-theme="dark"] .hint { color: rgba(125,211,252,.62); }
-  .v3[data-theme="dark"] .quick span { color: rgba(186,230,253,.62); }
-  .v3[data-theme="dark"] .quick span.on { color: #04121e; background: #38bdf8; }
+  .v3[data-theme="dark"] .hint { color: color-mix(in srgb, var(--hud) 62%, transparent); }
+  .v3[data-theme="dark"] .quick span { color: color-mix(in srgb, var(--hud) 45%, #dbeafe); }
+  .v3[data-theme="dark"] .quick span.on { color: #04121e; background: var(--hud); }
 
-  .v3[data-theme="light"] .dlg { background: linear-gradient(180deg, rgba(14,116,164,.55), rgba(14,116,164,.18)); }
+  .v3[data-theme="light"] .dlg { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 55%, transparent), color-mix(in srgb, var(--accent) 18%, transparent)); }
   .v3[data-theme="light"] .dlg-in { background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(241,247,252,.97)); }
-  .v3[data-theme="light"] .dlg-in::after { background: repeating-linear-gradient(180deg, rgba(14,116,164,.05) 0 1px, transparent 1px 3px); }
-  .v3[data-theme="light"] .tag { color: rgba(12,74,110,.6); }
-  .v3[data-theme="light"] .dlg-name { color: #0b4a6e; }
+  .v3[data-theme="light"] .dlg-in::after { background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, transparent) 0 1px, transparent 1px 3px); }
+  .v3[data-theme="light"] .tag { color: color-mix(in srgb, var(--accent) 60%, #0c4a6e); }
+  .v3[data-theme="light"] .dlg-name { color: color-mix(in srgb, var(--accent) 70%, #0b3b57); }
   .v3[data-theme="light"] .dlg-text { color: #0f2a3d; }
-  .v3[data-theme="light"] .hint { color: rgba(12,74,110,.6); }
+  .v3[data-theme="light"] .hint { color: color-mix(in srgb, var(--accent) 60%, #0c4a6e); }
   .v3[data-theme="light"] .quick span { color: rgba(15,42,61,.6); }
-  .v3[data-theme="light"] .quick span.on { color: #fff; background: #0e74a4; }
+  .v3[data-theme="light"] .quick span.on { color: #fff; background: color-mix(in srgb, var(--accent) 78%, #0e74a4); }
 
   /* ══ V4 · 书卷 ═════════════════════════════════════════════════════ */
   .v4 .dlg {
@@ -159,123 +206,146 @@
   .v4 .dlg-name::before { content: "❖"; margin-right: 10px; font-size: 11px; }
   .v4 .dlg-text { margin: 0; font-size: 19px; line-height: 1.95; letter-spacing: .02em; }
   .v4 .dlg-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 15px; font-size: 11.5px; letter-spacing: .12em; }
-  .v4 .quick { display: flex; align-items: center; }
   .v4 .quick span { padding: 0 9px; }
   .v4 .quick span + span { border-left: 1px solid currentColor; opacity: .95; }
 
   .v4[data-theme="dark"] .dlg {
-    background: linear-gradient(180deg, #262019, #191510);
-    border: 1px solid rgba(206,176,124,.30);
-    outline: 1px solid rgba(206,176,124,.16); outline-offset: -7px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 12%, #262019), color-mix(in srgb, var(--accent) 9%, #191510));
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, #ceb07c);
+    outline: 1px solid color-mix(in srgb, var(--accent) 24%, rgba(206,176,124,.4)); outline-offset: -7px;
     box-shadow: 0 22px 50px rgba(0,0,0,.55);
   }
-  .v4[data-theme="dark"] .dlg-name { color: #d9c49a; }
+  .v4[data-theme="dark"] .dlg-name { color: color-mix(in srgb, var(--accent) 45%, #d9c49a); }
   .v4[data-theme="dark"] .dlg-text { color: #ece2d1; }
   .v4[data-theme="dark"] .hint { color: rgba(217,196,154,.5); }
   .v4[data-theme="dark"] .quick { color: rgba(217,196,154,.72); }
 
   .v4[data-theme="light"] .dlg {
-    background: linear-gradient(180deg, #faf4e7, #f2e9d7);
-    border: 1px solid rgba(133,98,54,.34);
-    outline: 1px solid rgba(133,98,54,.18); outline-offset: -7px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, #faf4e7), color-mix(in srgb, var(--accent) 10%, #f2e9d7));
+    border: 1px solid color-mix(in srgb, var(--accent) 50%, #8a6a44);
+    outline: 1px solid color-mix(in srgb, var(--accent) 26%, rgba(133,98,54,.3)); outline-offset: -7px;
     box-shadow: 0 20px 44px rgba(60,42,20,.28);
   }
-  .v4[data-theme="light"] .dlg-name { color: #8c5a2b; }
+  .v4[data-theme="light"] .dlg-name { color: color-mix(in srgb, var(--accent) 60%, #6b4423); }
   .v4[data-theme="light"] .dlg-text { color: #3a3126; }
   .v4[data-theme="light"] .hint { color: rgba(90,72,48,.6); }
   .v4[data-theme="light"] .quick { color: rgba(90,72,48,.66); }
 
   /* ══ V5 · 丝绒幕 ═══════════════════════════════════════════════════ */
-  .v5 .dlg { position: absolute; left: 0; right: 0; bottom: 0; height: 28%; }
-  .v5 .dlg::before {
-    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  }
+  .v5 .dlg { position: absolute; left: 0; right: 0; bottom: 0; height: 28%; --velvet: color-mix(in srgb, var(--accent) 40%, #d8b25e); }
+  .v5 .dlg::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
   .v5 .dlg::after {
     content: ""; position: absolute; top: -4px; left: 50%; width: 8px; height: 8px;
     transform: translateX(-50%) rotate(45deg);
   }
   .v5 .dlg-body { max-width: 790px; margin: 0 auto; padding: 26px 20px 0; }
-  .v5 .dlg-name { text-align: center; font-size: 13px; letter-spacing: .3em; margin-bottom: 12px; }
+  .v5 .dlg-name { text-align: center; font-size: 13px; letter-spacing: .3em; margin-bottom: 12px; color: var(--velvet); }
   .v5 .dlg-text { margin: 0; text-align: center; font-size: 18.5px; line-height: 1.85; }
   .v5 .dlg-foot { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 20px; white-space: nowrap; }
-  .v5 .quick { display: flex; gap: 6px; }
+  .v5 .quick { gap: 6px; }
   .v5 .quick span { padding: 3px 11px; border-radius: 999px; font-size: 11.5px; }
   .v5 .quick span.on { font-weight: 700; }
 
   .v5[data-theme="dark"] .dlg {
     background:
       repeating-linear-gradient(90deg, rgba(255,255,255,.030) 0 24px, rgba(0,0,0,.055) 24px 48px),
-      radial-gradient(130% 110% at 50% 0%, rgba(126,26,50,.94), rgba(48,9,22,.97) 72%);
-    box-shadow: inset 0 1px 0 rgba(255,214,150,.35), 0 -20px 50px rgba(0,0,0,.5);
+      radial-gradient(130% 110% at 50% 0%,
+        color-mix(in srgb, var(--accent) 34%, #5c1328),
+        color-mix(in srgb, var(--accent) 22%, #300a14) 72%);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--velvet) 40%, transparent), 0 -20px 50px rgba(0,0,0,.5);
   }
-  .v5[data-theme="dark"] .dlg::before { background: linear-gradient(90deg, rgba(200,163,74,0), #c8a34a 22%, #f0dca4 50%, #c8a34a 78%, rgba(200,163,74,0)); }
-  .v5[data-theme="dark"] .dlg::after { background: #f0dca4; box-shadow: 0 0 10px rgba(240,220,164,.8); }
-  .v5[data-theme="dark"] .dlg-name { color: #e8c780; }
+  .v5[data-theme="dark"] .dlg::before { background: linear-gradient(90deg, transparent, var(--velvet) 22%, color-mix(in srgb, var(--velvet) 55%, #fff8e2) 50%, var(--velvet) 78%, transparent); }
+  .v5[data-theme="dark"] .dlg::after { background: color-mix(in srgb, var(--velvet) 55%, #fff8e2); box-shadow: 0 0 10px color-mix(in srgb, var(--velvet) 70%, transparent); }
   .v5[data-theme="dark"] .dlg-text { color: #f7ece6; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
   .v5[data-theme="dark"] .hint { color: rgba(247,236,230,.44); }
-  .v5[data-theme="dark"] .quick span { color: rgba(232,199,128,.66); border: 1px solid rgba(200,163,74,.32); }
-  .v5[data-theme="dark"] .quick span.on { color: #2a0a14; background: #e8c780; border-color: #e8c780; }
+  .v5[data-theme="dark"] .quick span { color: var(--velvet); border: 1px solid color-mix(in srgb, var(--velvet) 45%, transparent); }
+  .v5[data-theme="dark"] .quick span.on { color: color-mix(in srgb, var(--accent) 20%, #2a0a14); background: var(--velvet); border-color: var(--velvet); }
 
   .v5[data-theme="light"] .dlg {
     background:
-      repeating-linear-gradient(90deg, rgba(160,130,90,.05) 0 24px, rgba(120,90,50,.05) 24px 48px),
-      radial-gradient(130% 110% at 50% 0%, #fdf7ec, #f3e7d5 75%);
-    box-shadow: inset 0 1px 0 rgba(200,163,74,.5), 0 -18px 44px rgba(70,50,20,.22);
+      repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent) 0 24px, rgba(120,90,50,.05) 24px 48px),
+      radial-gradient(130% 110% at 50% 0%, color-mix(in srgb, var(--accent) 8%, #fdf8ee), color-mix(in srgb, var(--accent) 12%, #f1e5d2) 75%);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--velvet) 55%, transparent), 0 -18px 44px rgba(70,50,20,.22);
   }
-  .v5[data-theme="light"] .dlg::before { background: linear-gradient(90deg, rgba(168,118,58,0), #a8763a 22%, #d8b878 50%, #a8763a 78%, rgba(168,118,58,0)); }
-  .v5[data-theme="light"] .dlg::after { background: #a8763a; box-shadow: 0 0 8px rgba(216,184,120,.9); }
-  .v5[data-theme="light"] .dlg-name { color: #a8763a; }
+  .v5[data-theme="light"] .dlg::before { background: linear-gradient(90deg, transparent, var(--velvet) 22%, color-mix(in srgb, var(--velvet) 60%, #fff6e0) 50%, var(--velvet) 78%, transparent); }
+  .v5[data-theme="light"] .dlg::after { background: var(--velvet); box-shadow: 0 0 8px color-mix(in srgb, var(--velvet) 70%, transparent); }
+  .v5[data-theme="light"] .dlg-name { color: color-mix(in srgb, var(--accent) 55%, #7a5320); }
   .v5[data-theme="light"] .dlg-text { color: #3d2b22; }
   .v5[data-theme="light"] .hint { color: rgba(61,43,34,.52); }
-  .v5[data-theme="light"] .quick span { color: rgba(120,84,40,.72); border: 1px solid rgba(168,118,58,.34); }
-  .v5[data-theme="light"] .quick span.on { color: #fff; background: #a8763a; border-color: #a8763a; }
+  .v5[data-theme="light"] .quick span { color: color-mix(in srgb, var(--accent) 55%, #7a5320); border: 1px solid color-mix(in srgb, var(--velvet) 50%, transparent); }
+  .v5[data-theme="light"] .quick span.on { color: #fff; background: color-mix(in srgb, var(--accent) 70%, #a8763a); border-color: transparent; }
+
+  /* 换主题色的对照条：同一种风格、三档主题色 */
+  .sweep .cap b { color: #fff; }
 </style>
 </head>
 <body>
 <div id="board"></div>
 <script>
+const QUICK = ["Auto", "语音", "←", "→", "Log", "路线", "CG", "全屏", "隐藏"];
+const LINE = "……你就这么站在门口，一句话也不说？";
 const VARIANTS = [
-  { id: "v1", name: "浮岛玻璃卡", desc: "悬浮圆角卡片 · 毛玻璃 + 上缘高光 · 名牌做成卡沿上的一枚胶囊" },
-  { id: "v2", name: "电影字幕", desc: "无框 · 上下黑带压成宽银幕 · 大字号居中 · 名牌是细小字距的暖金色" },
-  { id: "v3", name: "战术 HUD", desc: "切角面板 · 青色描边 + 扫描纹 · 等宽字标签栏与 [方括号] 按键" },
-  { id: "v4", name: "书卷", desc: "双线内框 · 衬线正文 · ❖ 起头的小字距名牌 · 无按钮只有一行文字入口" },
+  { id: "v0", name: "现状 · ATRI 通栏", desc: "默认档：底部一条无框渐变带 + 悬在正文左上方的名牌 + 右下角独立胶囊菜单（其余五种要对比的基线）" },
+  { id: "v1", name: "浮岛玻璃卡", desc: "悬浮圆角卡 · 毛玻璃 + 上缘高光 · 名牌骑在卡沿上" },
+  { id: "v2", name: "电影字幕", desc: "无框 · 上下黑带压成宽银幕 · 大字号居中 · 名牌是细字距小字" },
+  { id: "v3", name: "战术 HUD", desc: "切角面板 · 扫描纹 · 等宽标签栏与 [方括号] 按键" },
+  { id: "v4", name: "书卷", desc: "双线内框 · 衬线正文 · ❖ 起头的小字距名牌" },
   { id: "v5", name: "丝绒幕", desc: "幕布式通栏 · 金线与菱形坠 · 台词居中收窄 · 金色胶囊按键" },
 ];
-const QUICK = ["Auto", "语音", "←", "→", "Log", "路线", "CG", "全屏", "隐藏"];
+const ACCENTS = { deepsea: "深海 #1b5aa6", sakura: "樱粉 #c2557f", moss: "苔绿 #4a6f45" };
 
-function quickHTML(v) {
-  return QUICK.map((q, i) => `<span class="${i === 0 ? "on" : ""}">${q}</span>`).join("");
+const quickText = () => QUICK.map((q, i) => `<span class="${i === 0 ? "on" : ""}">${q}</span>`).join("");
+const quickBracket = () => QUICK.map((q, i) => `<span class="${i === 0 ? "on" : ""}">[${q}]</span>`).join("");
+const hint = `<span class="hint"><span class="arrow">▼</span> 点击舞台继续生成</span>`;
+
+function body(v) {
+  if (v.id === "v0") {
+    return `<div class="dlg-name">真帆</div><p class="dlg-text">${LINE}</p>${hint}<div class="dlg-foot"><div class="quick">${quickText()}</div></div>`;
+  }
+  if (v.id === "v2") {
+    return `<div class="bar top"></div><div class="bar bottom"></div>
+      <div class="dlg-body"><div class="dlg-name">真帆</div><p class="dlg-text">${LINE}</p></div>
+      <div class="dlg-foot">${hint}<div class="quick">${quickText()}</div></div>`;
+  }
+  if (v.id === "v3") {
+    return `<div class="dlg-in"><div class="tag"><span>// SCENE-04 · ROOFTOP</span><span>SEQ 0182</span></div>
+      <div class="dlg-name">真帆</div><p class="dlg-text">${LINE}</p>
+      <div class="dlg-foot"><span class="hint">▼ NEXT</span><div class="quick">${quickBracket()}</div></div></div>`;
+  }
+  if (v.id === "v5") {
+    return `<div class="dlg-body"><div class="dlg-name">—— 真帆 ——</div><p class="dlg-text">${LINE}</p></div>
+      <div class="dlg-foot">${hint}<div class="quick">${quickText()}</div></div>`;
+  }
+  return `<div class="dlg-name">真帆</div><p class="dlg-text">${LINE}</p>
+    <div class="dlg-foot">${hint}<div class="quick">${quickText()}</div></div>`;
 }
-function tile(v, theme) {
-  const hints = `<span class="hint"><span class="arrow">▼</span> 点击舞台继续生成</span>`;
-  const body = {
-    v1: `<div class="dlg-name">真帆</div><p class="dlg-text">……你就这么站在门口，一句话也不说？</p>
-         <div class="dlg-foot">${hints}<div class="quick">${quickHTML()}</div></div>`,
-    v2: `<div class="bar top"></div><div class="bar bottom"></div><div class="dlg-body"><div class="dlg-name">真帆</div><p class="dlg-text">……你就这么站在门口，一句话也不说？</p></div>
-         <div class="dlg-foot">${hints}<div class="quick">${quickHTML()}</div></div>`,
-    v3: `<div class="dlg-in"><div class="tag"><span>// SCENE-04 · ROOFTOP</span><span>SEQ 0182</span></div>
-         <div class="dlg-name">真帆</div><p class="dlg-text">……你就这么站在门口，一句话也不说？</p>
-         <div class="dlg-foot"><span class="hint">▼ NEXT</span><div class="quick">${QUICK.map((q, i) => `<span class="${i === 0 ? "on" : ""}">[${q}]</span>`).join("")}</div></div></div>`,
-    v4: `<div class="dlg-name">真帆</div><p class="dlg-text">……你就这么站在门口，一句话也不说？</p>
-         <div class="dlg-foot">${hints}<div class="quick">${quickHTML()}</div></div>`,
-    v5: `<div class="dlg-body"><div class="dlg-name">—— 真帆 ——</div><p class="dlg-text">……你就这么站在门口，一句话也不说？</p></div>
-         <div class="dlg-foot">${hints}<div class="quick">${quickHTML()}</div></div>`,
-  }[v.id];
-  return `<section class="tile ${v.id}" data-variant="${v.id}" data-theme="${theme}">
-    <div class="cap"><b>${v.id.toUpperCase()} · ${v.name}</b><span>${v.desc}</span><i>${theme.toUpperCase()}</i></div>
+
+function tile(v, theme, accent, note) {
+  return `<section class="tile ${v.id}" data-variant="${v.id}" data-theme="${theme}" data-accent="${accent}">
+    <div class="cap"><b>${v.id.toUpperCase()} · ${v.name}</b><span>${note ?? v.desc}</span><i>${theme.toUpperCase()} · ${ACCENTS[accent] ?? accent}</i></div>
     <div class="stage">
       <img class="sprite" src="../../../plays/mh/assets/sprites/manami/neutral.png" alt="" />
       <div class="vignette"></div>
-      <div class="dlg">${body}</div>
+      <div class="dlg">${body(v)}</div>
     </div>
   </section>`;
 }
-const dark = VARIANTS.map((v) => tile(v, "dark"));
-const light = VARIANTS.map((v) => tile(v, "light"));
+
+const dark = VARIANTS.map((v) => tile(v, "dark", "deepsea"));
+const light = VARIANTS.map((v) => tile(v, "light", "deepsea"));
+// 主题色回声：同一种风格、三档主题色（只出深色那一半，浅色同理）
+const sweeps = ["v2", "v3", "v4", "v5"].map((id) => {
+  const v = VARIANTS.find((x) => x.id === id);
+  return `<div class="group sweep" id="sweep-${id}">${Object.keys(ACCENTS)
+    .map((a) => tile(v, "dark", a, `${v.name} · 主题色换成 ${ACCENTS[a]}`))
+    .join("")}</div>`;
+});
+
 document.getElementById("board").innerHTML =
   `<div class="group" id="group-dark">${dark.join("")}</div>` +
   `<div class="group" id="group-light">${light.join("")}</div>` +
-  VARIANTS.map((v, i) => `<div class="group" id="combo-${v.id}">${dark[i]}${light[i]}</div>`).join("");
+  VARIANTS.map((v, i) => `<div class="group" id="combo-${v.id}">${dark[i]}${light[i]}</div>`).join("") +
+  sweeps.join("");
 </script>
 </body>
 </html>
