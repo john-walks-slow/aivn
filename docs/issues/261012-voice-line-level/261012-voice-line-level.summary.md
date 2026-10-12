@@ -27,9 +27,14 @@
 四条都已修并补了用例（含 `take → 停旧 → 接手` 真路径）。
 
 跨宿主顺序由用户裁定：**先合本仓，DSH 随后单独适配**（那边现在有另一位 agent 未提交的改动，
-且 `src/tools/cut.ts` 本来就编译不过）。DSH 侧要做的：下线它自带的分句宿主（`src/voice/voice.ts`
-的 `chunkLine` + `voice-host.ts` 的短语循环）、按新签名调 `handleAudio/markPending/audioFailed`、
-重建 `lib/` 并跑 `node build.mjs --check`。
+且 `src/tools/cut.ts` 本来就编译不过）。DSH 侧已经改完（未提交，见下）：`src/voice/voice.ts` 下线 `PhraseChunker`/`chunkLine`/短语号、
+整句一次送并补 `failed` 帧，`voice-host.ts` 的 `replayCached` 按整行找缓存文件名，`hub.ts` 与
+`src/client/stage-view.tsx` 的语音帧类型少一个 `phrase`；`npm run build` +
+`node build.mjs --check` 绿（产物与源码一致），`tsc --noEmit` 只剩**那边自己的**在飞改动
+`src/tools/cut.ts` 缺 `figureTop`。用 esbuild 把 `src/voice/voice.ts` 单独打出来喂假 synth 验过：
+整句一条请求、失败明说一帧、纯省略号不合成。
+**那两处改动没有提交**：`dsh-aivn` 工作区里有另一位 agent 未提交的改动（含 `stage-view.tsx` 与
+`lib/*.js`），而 `lib/` 是构建产物、没法只提交我这半——留给那边一起收。
 
 ## 验证
 
