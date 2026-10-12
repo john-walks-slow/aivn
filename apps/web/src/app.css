@@ -603,6 +603,23 @@ button.link-btn {
   gap: 10px;
 }
 
+.library-top-actions .btn-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13.5px;
+}
+
+.library-top-actions .icon-only-btn {
+  padding: 0;
+  width: 34px;
+  justify-content: center;
+}
+
 .library-upload-btn {
   cursor: pointer;
   display: inline-flex;
@@ -4420,6 +4437,10 @@ select:focus {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
+.settings-nav-btn.is-active:hover {
+  color: var(--fg);
+}
+
 .settings-body {
   min-width: 0;
   overflow-y: auto;
@@ -4471,6 +4492,11 @@ select:focus {
     background: var(--accent);
     color: var(--accent-ink);
     box-shadow: none;
+  }
+
+  .settings-nav-btn.is-active:hover {
+    background: var(--accent);
+    color: var(--accent-ink) !important;
   }
 }
 
