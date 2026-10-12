@@ -92,12 +92,39 @@ node docs/features/261012-stage-style-variants/render.mjs
 
 ## 五、要接通时怎么接（后话，现在不动生产样式）
 
-两份原型的差异全在「这一块 UI 怎么画」，所以接通不必动 DOM：
+两份原型的差异全在「这一块 UI 怎么画」，所以接通不必动 DOM——消息框那五种已经这么落地了（见第六节）：
 
-- 风格挂在根上：`.theater[data-dialog-style="hud"]`（消息框）与 `.title-screen[data-menu-style="hud"]`（开始菜单），
+- 风格挂在根上：`html[data-dialog-style="hud"]`（消息框，已实现）与 `.title-screen[data-menu-style="hud"]`（开始菜单，待实现），
   样式表按这一层展开；
 - 开关进 `settings.json`（`ui.dialogStyle` / `ui.menuStyle`，缺省 `atri`），与界面主题走同一套读写路径；
 - 类名在五种里通用（`.dialog-name` / `.dialog-text` / `.dialog-foot` / `.quick-btn`；`.atri-item` / `.atri-label` / `.atri-sub`），
-  只换 CSS 就能整条换过去；只有 V2 要两条黑边元素、V4 要内框、M4 要画框与小印，这几处才需要碰 markup。
+  只换 CSS 就能整条换过去。原本以为 V2 要两条黑边元素、V4 要内框、M4 要画框与小印——**消息框那三种已经证明零 markup 做得到**（见下），
+  开始菜单那两处照同一条路走。
 
-先把风格看定，再决定哪一种值得进设置页。
+## 六、消息框已经落地（纯 CSS，零 markup）
+
+五种消息框风格写在 `packages/stage/src/stage.css` 末尾那一节，切换属性是 `html` 上的
+`data-dialog-style`；**不写这个属性就是现在的 ATRI 通栏渐变**，所以它对没有开关的宿主完全惰性。
+
+三处原本以为要加 markup 的地方，全部走伪元素：
+
+| 设计要的那一笔 | 落法 |
+| --- | --- |
+| V2 宽银幕上下黑边 | `.theater-dialog::before`：`bottom: 0; height: 100vh; z-index: -1`，只把最顶上 5vh 画黑——它落在台词条自己的层叠上下文里，所以压在立绘之上、台词之下 |
+| V4 双线内框 | `outline` + `outline-offset: -7px`，外框仍走 border |
+| V1 上缘高光 / V5 金线与菱形坠 / V3 名牌前导方块、V2·V4 名牌字距、快捷入口的方括号 | `::before` / `::after`（`.theater-dialog` 的或子元素自己的） |
+
+深色与浅色两套在同一节里逐条写（浅色侧特异度 (0,4,1)，所以那一节必须留在文件最后）。
+
+下面是五种风格 + 现状（ATRI，第一张）在同一座真实舞台上的样子：
+
+![真实舞台上的六种消息框 · 深色](shots/stage-all-dark.jpg)
+
+![真实舞台上的六种消息框 · 浅色](shots/stage-all-light.jpg)
+
+核验方式：把这一节 CSS 注入已部署的舞台页、逐档挂属性截图，不改服务端也不部署。
+
+```bash
+node docs/features/261012-stage-style-variants/verify-on-stage.mjs <playId>
+# → tmp/verify/stage-{atri,card,cinema,hud,scroll,velvet}-{dark,light}.png
+```
