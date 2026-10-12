@@ -3174,9 +3174,11 @@ html[data-ui-theme="light"] .stage-mode {
    ::before/::after（名牌的 ❖ / ▍ / ——、快捷入口的方括号）。类名五种通用，
    所以换风格只换 CSS。
 
-   两笔画色分开管：**材质色**（书卷的纸、丝绒的酒红与金、电影字幕的暖金）是这套设计语言
-   自带的物理属性，写死；**结构色**（HUD 描边、卡片名牌、选中态）从 --accent 现推，
-   剧目换主题色时跟着走。
+   两笔画色都从 --accent 现推：**结构色**（HUD 描边、卡片名牌、选中态）本来就是主题色；
+   **材质色**（书卷的纸、丝绒的酒红与金、电影字幕的暖金）也要掺进去——材质色只作底、边、
+   金线、符号，掺比照 apps/server/skills/galgame-ui-style 的固定方向（酒红底 20–30%、
+   纸底 6–12%、暖金与朱红小件 20–40%），正文一律走验证过的 ink 不动。
+   不掺的话剧目换了主题色，这几套看着还是「另一部剧的皮肤」。
 
    特异度：这一节起手 (0,3,0)，压过基线 (0,1,0) 与浅色那一组 (0,3,1)；浅色侧逐条另写
    (0,4,1)，所以它们必须排在全文件最后。 */
@@ -3192,7 +3194,7 @@ html[data-dialog-style="card"] .stage-root .theater-dialog {
   padding: 26px 34px 18px;
   border: 1px solid rgb(255 255 255 / 0.16);
   border-radius: 20px;
-  background: linear-gradient(180deg, rgb(22 30 43 / 0.8), rgb(10 16 26 / 0.88));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 12%, rgb(22 30 43 / 0.8)), color-mix(in srgb, var(--accent) 14%, rgb(10 16 26 / 0.88)));
   backdrop-filter: blur(20px) saturate(1.3);
   box-shadow: 0 26px 60px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.22);
 }
@@ -3279,7 +3281,7 @@ html[data-dialog-style="card"] .stage-root .quick-sep {
 
 html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .theater-dialog {
   border-color: rgb(15 23 42 / 0.09);
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.95), rgb(243 247 252 / 0.97));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, rgb(255 255 255 / 0.95)), color-mix(in srgb, var(--accent) 8%, rgb(243 247 252 / 0.97)));
   box-shadow: 0 26px 56px rgb(15 23 42 / 0.22), inset 0 1px 0 rgb(255 255 255 / 0.9);
 }
 
@@ -3311,7 +3313,7 @@ html[data-dialog-style="cinema"] .stage-root .theater-dialog {
   padding: 26px 6% 62px;
   justify-content: center;
   gap: 0;
-  background: linear-gradient(180deg, rgb(0 0 0 / 0) 0%, rgb(0 0 0 / 0.82) 9%, rgb(0 0 0 / 0.94) 20%, rgb(0 0 0 / 0.96) 100%);
+  background: linear-gradient(180deg, rgb(0 0 0 / 0) 0%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.82)) 9%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.94)) 20%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.96)) 100%);
 }
 
 /* 上面那条黑边：从窗底往上铺满一屏、只把最顶上一段落成黑——不必给舞台加元素，
@@ -3325,7 +3327,7 @@ html[data-dialog-style="cinema"] .stage-root .theater-dialog::before {
   bottom: 0;
   height: 100vh;
   z-index: -1;
-  background: linear-gradient(180deg, rgb(0 0 0 / 0.94) 0 5vh, transparent 5vh);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, rgb(0 0 0 / 0.94)) 0 5vh, transparent 5vh);
   pointer-events: none;
 }
 
@@ -3333,7 +3335,7 @@ html[data-dialog-style="cinema"] .stage-root .dialog-name {
   position: static;
   margin: 0 0 14px;
   padding: 0;
-  color: #dfb37a;
+  color: color-mix(in srgb, var(--accent) 30%, #dfb37a);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.42em;
@@ -3407,15 +3409,15 @@ html[data-dialog-style="cinema"] .stage-root .quick-sep {
 }
 
 html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .theater-dialog {
-  background: linear-gradient(180deg, rgb(255 255 255 / 0) 0%, rgb(255 255 255 / 0.88) 9%, rgb(255 255 255 / 0.96) 20%, rgb(255 255 255 / 0.99) 100%);
+  background: linear-gradient(180deg, rgb(255 255 255 / 0) 0%, color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.88)) 9%, color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.96)) 20%, color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.99)) 100%);
 }
 
 html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .theater-dialog::before {
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.95) 0 5vh, transparent 5vh);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.95)) 0 5vh, transparent 5vh);
 }
 
 html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .dialog-name {
-  color: #8a5a20;
+  color: color-mix(in srgb, var(--accent) 30%, #8a5a20);
   text-shadow: 0 1px 6px rgb(255 255 255 / 0.9);
 }
 
@@ -3581,11 +3583,13 @@ html[data-dialog-style="scroll"] .stage-root .theater-dialog {
   min-height: 0;
   padding: 22px 34px 16px;
   /* 外框一道、内框一道：内框走 outline + 负 offset，不必多一个元素 */
-  border: 1px solid rgb(206 176 124 / 0.3);
+  --scroll-gild: color-mix(in srgb, var(--accent) 30%, #ceb07c);
+  --scroll-paper: linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, #262019), color-mix(in srgb, var(--accent) 12%, #191510));
+  border: 1px solid color-mix(in srgb, var(--scroll-gild) 30%, transparent);
   border-radius: 3px;
-  outline: 1px solid rgb(206 176 124 / 0.16);
+  outline: 1px solid color-mix(in srgb, var(--scroll-gild) 16%, transparent);
   outline-offset: -7px;
-  background: linear-gradient(180deg, #262019, #191510);
+  background: var(--scroll-paper);
   box-shadow: 0 22px 50px rgb(0 0 0 / 0.55);
   font-family: var(--font-serif);
 }
@@ -3593,7 +3597,7 @@ html[data-dialog-style="scroll"] .stage-root .theater-dialog {
 html[data-dialog-style="scroll"] .stage-root .dialog-name {
   position: static;
   margin: 0 0 10px;
-  color: #d9c49a;
+  color: var(--scroll-gild);
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.3em;
@@ -3643,7 +3647,7 @@ html[data-dialog-style="scroll"] .stage-root .quick-btn {
   height: auto;
   padding: 0 9px;
   border-radius: 0;
-  color: rgb(217 196 154 / 0.72);
+  color: color-mix(in srgb, var(--scroll-gild) 72%, transparent);
   font-family: var(--font-serif);
   font-size: 11.5px;
   letter-spacing: 0.12em;
@@ -3669,14 +3673,16 @@ html[data-dialog-style="scroll"] .stage-root .quick-sep {
 }
 
 html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .theater-dialog {
-  border-color: rgb(133 98 54 / 0.34);
-  outline-color: rgb(133 98 54 / 0.18);
-  background: linear-gradient(180deg, #faf4e7, #f2e9d7);
+  --scroll-gild: color-mix(in srgb, var(--accent) 30%, #856236);
+  --scroll-paper: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, #faf4e7), color-mix(in srgb, var(--accent) 10%, #f2e9d7));
+  border-color: color-mix(in srgb, var(--scroll-gild) 34%, transparent);
+  outline-color: color-mix(in srgb, var(--scroll-gild) 18%, transparent);
+  background: var(--scroll-paper);
   box-shadow: 0 20px 44px rgb(60 42 20 / 0.28);
 }
 
 html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .dialog-name {
-  color: #8c5a2b;
+  color: var(--scroll-gild);
 }
 
 html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .dialog-text {
@@ -3689,7 +3695,7 @@ html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .dialog-text
 }
 
 html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .quick-btn {
-  color: rgb(90 72 48 / 0.66);
+  color: color-mix(in srgb, var(--scroll-gild) 66%, transparent);
 }
 
 html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .quick-btn:hover:not(:disabled) {
@@ -3702,9 +3708,12 @@ html[data-dialog-style="velvet"] .stage-root .theater-dialog {
   padding: 30px 18% 62px;
   justify-content: center;
   gap: 0;
+  --velvet-gold: color-mix(in srgb, var(--accent) 30%, #e8c780);
+  --velvet-gold-line: color-mix(in srgb, var(--accent) 32%, #c8a34a);
+  --velvet-gold-lit: color-mix(in srgb, var(--accent) 22%, #f0dca4);
   background:
     repeating-linear-gradient(90deg, rgb(255 255 255 / 0.03) 0 24px, rgb(0 0 0 / 0.055) 24px 48px),
-    radial-gradient(130% 110% at 50% 0%, rgb(126 26 50 / 0.94), rgb(48 9 22 / 0.97) 72%);
+    radial-gradient(130% 110% at 50% 0%, color-mix(in srgb, var(--accent) 26%, rgb(126 26 50 / 0.94)), color-mix(in srgb, var(--accent) 20%, rgb(48 9 22 / 0.97)) 72%);
   box-shadow: inset 0 1px 0 rgb(255 214 150 / 0.35), 0 -20px 50px rgb(0 0 0 / 0.5);
 }
 
@@ -3715,7 +3724,7 @@ html[data-dialog-style="velvet"] .stage-root .theater-dialog::before {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, rgb(200 163 74 / 0), #c8a34a 22%, #f0dca4 50%, #c8a34a 78%, rgb(200 163 74 / 0));
+  background: linear-gradient(90deg, transparent 0, var(--velvet-gold-line) 22%, var(--velvet-gold-lit) 50%, var(--velvet-gold-line) 78%, transparent 100%);
 }
 
 html[data-dialog-style="velvet"] .stage-root .theater-dialog::after {
@@ -3726,14 +3735,14 @@ html[data-dialog-style="velvet"] .stage-root .theater-dialog::after {
   width: 8px;
   height: 8px;
   transform: translateX(-50%) rotate(45deg);
-  background: #f0dca4;
+  background: var(--velvet-gold-lit);
   box-shadow: 0 0 10px rgb(240 220 164 / 0.8);
 }
 
 html[data-dialog-style="velvet"] .stage-root .dialog-name {
   position: static;
   margin: 0 0 12px;
-  color: #e8c780;
+  color: var(--velvet-gold);
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.3em;
@@ -3789,48 +3798,51 @@ html[data-dialog-style="velvet"] .stage-root .dialog-options {
 html[data-dialog-style="velvet"] .stage-root .quick-btn {
   height: 24px;
   padding: 0 11px;
-  border: 1px solid rgb(200 163 74 / 0.32);
+  border: 1px solid color-mix(in srgb, var(--velvet-gold-line) 32%, transparent);
   border-radius: 999px;
-  color: rgb(232 199 128 / 0.72);
+  color: color-mix(in srgb, var(--velvet-gold) 72%, transparent);
   font-size: 11.5px;
 }
 
 html[data-dialog-style="velvet"] .stage-root .quick-btn:hover:not(:disabled) {
   color: #f6e6bd;
-  background: rgb(200 163 74 / 0.16);
-  border-color: rgb(200 163 74 / 0.6);
+  background: color-mix(in srgb, var(--velvet-gold-line) 16%, transparent);
+  border-color: color-mix(in srgb, var(--velvet-gold-line) 60%, transparent);
   text-shadow: none;
 }
 
 html[data-dialog-style="velvet"] .stage-root .quick-btn.tgl-on {
   color: #2a0a14;
-  background: #e8c780;
-  border-color: #e8c780;
+  background: var(--velvet-gold);
+  border-color: var(--velvet-gold);
   box-shadow: none;
 }
 
 html[data-dialog-style="velvet"] .stage-root .quick-sep {
-  background: rgb(200 163 74 / 0.35);
+  background: color-mix(in srgb, var(--velvet-gold-line) 35%, transparent);
 }
 
 html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .theater-dialog {
+  --velvet-gold: color-mix(in srgb, var(--accent) 30%, #a8763a);
+  --velvet-gold-line: color-mix(in srgb, var(--accent) 30%, #a8763a);
+  --velvet-gold-lit: color-mix(in srgb, var(--accent) 22%, #d8b878);
   background:
     repeating-linear-gradient(90deg, rgb(160 130 90 / 0.05) 0 24px, rgb(120 90 50 / 0.05) 24px 48px),
-    radial-gradient(130% 110% at 50% 0%, #fdf7ec, #f3e7d5 75%);
-  box-shadow: inset 0 1px 0 rgb(200 163 74 / 0.5), 0 -18px 44px rgb(70 50 20 / 0.22);
+    radial-gradient(130% 110% at 50% 0%, color-mix(in srgb, var(--accent) 8%, #fdf7ec), color-mix(in srgb, var(--accent) 10%, #f3e7d5) 75%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--velvet-gold-line) 50%, transparent), 0 -18px 44px rgb(70 50 20 / 0.22);
 }
 
 html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .theater-dialog::before {
-  background: linear-gradient(90deg, rgb(168 118 58 / 0), #a8763a 22%, #d8b878 50%, #a8763a 78%, rgb(168 118 58 / 0));
+  background: linear-gradient(90deg, transparent 0, var(--velvet-gold-line) 22%, var(--velvet-gold-lit) 50%, var(--velvet-gold-line) 78%, transparent 100%);
 }
 
 html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .theater-dialog::after {
-  background: #a8763a;
-  box-shadow: 0 0 8px rgb(216 184 120 / 0.9);
+  background: var(--velvet-gold-line);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--velvet-gold-lit) 90%, transparent);
 }
 
 html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .dialog-name {
-  color: #a8763a;
+  color: var(--velvet-gold);
 }
 
 html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .dialog-text {
@@ -3839,19 +3851,19 @@ html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .dialog-text
 }
 
 html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .quick-btn {
-  color: rgb(120 84 40 / 0.72);
-  border-color: rgb(168 118 58 / 0.34);
+  color: color-mix(in srgb, var(--velvet-gold) 72%, transparent);
+  border-color: color-mix(in srgb, var(--velvet-gold-line) 34%, transparent);
 }
 
 html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .quick-btn:hover:not(:disabled) {
-  color: #6b4a1e;
-  background: rgb(168 118 58 / 0.14);
+  color: color-mix(in srgb, var(--velvet-gold) 72%, #2b1a12);
+  background: color-mix(in srgb, var(--velvet-gold-line) 14%, transparent);
 }
 
 html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .quick-btn.tgl-on {
   color: #ffffff;
-  background: #a8763a;
-  border-color: #a8763a;
+  background: var(--velvet-gold);
+  border-color: var(--velvet-gold);
 }
 
 /* ── 窄屏：卡片那三种收成整宽、名牌不再骑边；字幕去掉上面那条黑边 ──────────
