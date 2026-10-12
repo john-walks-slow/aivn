@@ -68,9 +68,11 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage
       return;
     }
     stageConnections.delete(playId);
-    // 最后一个观众离场：没人能消费 audio_ready 了，停合成（重连时客户端会重发 enabled 同步回来）。
+    // 最后一个观众离场：只是**这一刻**没人在听，别把这句的活儿扔了——排上队的句子照排队
+    // （队列留着，人回来接着做），离场期间合成的帧也留着补推。清了它们，客户端那条行
+    // 就永远卡在缺的那一句上（长句/带省略号的句子只出声前半截）。
     // 用 peek 不用 get：get 会懒加载，凭空把 runtime 拉回来常驻一份。
-    playhouse.peek(playId)?.orchestrator.setTtsState({ enabled: false });
+    playhouse.peek(playId)?.orchestrator.setTtsState({ audience: false });
   };
   ws.on("close", drop);
   ws.on("error", drop);
@@ -102,6 +104,9 @@ function onConnection(ws: WebSocket, playhouse: PlayHouse, playId: string, stage
     registered = playhouse.clientsFor(playId);
     registered.add(sender);
     sendHello(ws, playId, runtime);
+    // 有观众了：语音预取复活，离场期间攒下的帧也在这一刻补推。
+    // 必须等这个 sender 注册之后才放行——早了就是补推给空气（观众还没接上）。
+    if (stage) runtime.orchestrator.setTtsState({ audience: true });
     // 不在这里开局：空树的第一轮由玩家在舞台上按「开演」起。
     established = true;
     for (const msg of pending.splice(0)) dispatchSafe(msg);

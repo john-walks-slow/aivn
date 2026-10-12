@@ -71,6 +71,14 @@ describe("PlayHouse 单树作用域：runtime 直接绑定剧目根", () => {
     expect(a).toBe(b);
   });
 
+  it("重建失败：旧 runtime 原样留着（没做完的语音活儿不跟着一起没）", async () => {
+    const before = await house.get("p1");
+    await writeFile(join(root, "p1", "play.json"), "{ 这不是 JSON");
+    await expect(house.reload("p1")).rejects.toThrow();
+    // 新实例没建出来，旧实例还在位：语音队列的交接只发生在新实例**建好之后**（见 handOverVoice）
+    expect(await house.get("p1")).toBe(before);
+  });
+
   it("开演前插的提示在 begin 后仍保留", async () => {
     const runtime = await house.get("p1");
     await runtime.orchestrator.playerAction({ kind: "prompt", text: "让她先别说话" });

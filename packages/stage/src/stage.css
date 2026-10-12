@@ -843,16 +843,6 @@ html[data-ui-theme="light"] .stage-root .choice:focus-visible .choice-num {
    浏览器就认成新动画从 0% 播起。**必须写成时间**（`-0.001s`）：delay 与 iteration-count
    位置相邻，写成裸数字就成了 `520ms ease 1 1` 这种两个数挨着，浏览器判不出哪个是哪个，
    整条 animation 被静默丢弃（animation-name 变 none，动画永远不启动）。 */
-/* 选择器带两个状态类：`.entering` 是常驻的（见 StageTheater 的注释，它不摘），
-   而它的 animation 规则在本文件里排在后面——同为 (0,2,0) 时后写者赢，
-   于是行为词的 animation 会被入场动画整条盖掉、八个词一个都不演。
-   这里把特异性抬到 (0,3,0)，入场/退场期间也照样按行为词走。 */
-.theater-sprite.entering.acting,
-.theater-sprite.leaving.acting {
-  --scale: 1;
-  animation: var(--sprite-act) var(--act-ms) var(--move-ease) var(--act-nonce, 0s) 1;
-}
-
 /* 说话者轻微呼吸——预留，当前不挂这个 class。
    幅度是 scale 1.004（0.4%），肉眼不可辨：等于给每张立绘挂了一条永不结束的
    动画却什么都没换来。要开的话，在 StageTheater 拼 cls 的地方按
@@ -893,6 +883,19 @@ html[data-ui-theme="light"] .stage-root .choice:focus-visible .choice-num {
 /* 登场：淡入。退场靠 .leaving（见下）而不是直接卸载——直接卸载没有过渡可播。 */
 .theater-sprite.entering {
   animation: sprite-in var(--fade-ms) ease;
+}
+
+/* 行为词：演的时候接管 animation，并把运镜压回 1（两条都改缩放观感，叠一起会弹一下）。
+   这条规则必须排在 `.entering` 之后——同为 (0,2,0) 时后写者赢，而 `.entering` 的
+   `animation: sprite-in` 早就在清单里跑完了（它在动画结束后就摘掉这个类，见 StageTheater），
+   所以这里只管把行为词那一条装上去。
+
+   **别把 `.entering` 的入场动画写进这条里叠加**：`.acting` 一撤，animation-name 若是从
+   「行为词」换回「入场淡入」，浏览器会把入场当新动画从 opacity:0 重播一遍——症状就是
+   每个行为词演完立绘闪一下。入场动画不进这份清单，撤 .acting 就只是回到「没有动画」。 */
+.theater-sprite.acting {
+  --scale: 1;
+  animation: var(--sprite-act) var(--act-ms) var(--move-ease) var(--act-nonce, 0s) 1;
 }
 
 .theater-sprite.leaving {

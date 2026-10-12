@@ -5,7 +5,7 @@ import { attachTransport } from "../src/transport.js";
 
 /** 假 PlayHouse：只提供 transport 用到的入口，把 setTtsState 调用记下来。 */
 function fakePlayhouse(failPlay?: string) {
-  const tts: { enabled?: boolean; paused?: boolean }[] = [];
+  const tts: { enabled?: boolean; paused?: boolean; audience?: boolean }[] = [];
   const runtime = {
     orchestrator: {
       lastSeq: 0,
@@ -13,7 +13,7 @@ function fakePlayhouse(failPlay?: string) {
       isBusy: false,
       stoppedReplay: undefined,
       autostart: (): void => {},
-      setTtsState: (state: { enabled?: boolean; paused?: boolean }): void => {
+      setTtsState: (state: { enabled?: boolean; paused?: boolean; audience?: boolean }): void => {
         tts.push(state);
       },
     },
@@ -81,14 +81,16 @@ async function until(check: () => boolean, timeoutMs = 2000): Promise<void> {
 }
 
 describe("transport 语音存活", () => {
-  it("最后一个舞台连接断开 → 停合成", async () => {
+  it("上台=有观众，最后一个观众离场=停泵（不是关掉语音）", async () => {
     const { playhouse, tts } = fakePlayhouse();
     const url = await serve(playhouse);
     const socket = await connect(url);
+    await until(() => tts.length > 0);
+    expect(tts).toEqual([{ audience: true }]);
 
     socket.close();
-    await until(() => tts.length > 0);
-    expect(tts).toEqual([{ enabled: false }]);
+    await until(() => tts.length > 1);
+    expect(tts).toEqual([{ audience: true }, { audience: false }]);
   });
 
   it("还有别的舞台连接时不打断", async () => {
@@ -96,10 +98,11 @@ describe("transport 语音存活", () => {
     const url = await serve(playhouse);
     const first = await connect(url);
     await connect(url);
+    await until(() => tts.length > 1);
 
     first.close();
     await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(tts).toEqual([]);
+    expect(tts.every((s) => s.audience === true)).toBe(true);
   });
 
   it("工坊连接不算观众：舞台走了就停，工坊自己断开不重复停", async () => {
@@ -109,12 +112,12 @@ describe("transport 语音存活", () => {
     const workshop = await connect(url, "&workshop=1");
 
     stage.close();
-    await until(() => tts.length > 0);
-    expect(tts).toEqual([{ enabled: false }]);
+    await until(() => tts.some((s) => s.audience === false));
+    expect(tts).toEqual([{ audience: true }, { audience: false }]);
 
     workshop.close();
     await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(tts).toEqual([{ enabled: false }]);
+    expect(tts).toEqual([{ audience: true }, { audience: false }]);
   });
 
   it("工坊单独连接不触发停合成", async () => {
@@ -156,7 +159,7 @@ describe("transport 剧目打不开", () => {
     // 计数漏了这一个观众的话，后面这条正常连接关掉时就判不出「最后一个」
     const good = await connect(url);
     good.close();
-    await until(() => tts.length > 0);
-    expect(tts).toEqual([{ enabled: false }]);
+    await until(() => tts.some((s) => s.audience === false));
+    expect(tts).toEqual([{ audience: true }, { audience: false }]);
   });
 });

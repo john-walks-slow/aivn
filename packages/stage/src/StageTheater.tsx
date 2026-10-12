@@ -302,6 +302,11 @@ function Sprite({
   // 递增的 nonce 不去改 animation 名（改了就找不到 @keyframes），而是作为第二个
   // 参数传给 animation：同名动画的 animation-name 与前一次不同，浏览器就认成
   // 新动画从 0% 播起——这是重播同一段 CSS 动画的标准手法。
+  //
+  // `.entering` 也在这笔收尾里一并摘掉：行为词开演会把入场动画顶掉（它没播完，
+  // 也就不会有 animationend），留着的后果是下一次撤 .acting 时 animation-name
+  // 换回 sprite-in、入场淡入补播一遍（立绘闪一下）。正常路径的摘除在 onAnimationEnd。
+  const [entering, setEntering] = useState(true);
   const [acting, setActing] = useState(false);
   const [nonce, setNonce] = useState(0);
   useEffect(() => {
@@ -311,7 +316,10 @@ function Sprite({
     }
     setActing(true);
     setNonce((n) => n + 1);
-    const timer = setTimeout(() => setActing(false), 560);
+    const timer = setTimeout(() => {
+      setActing(false);
+      setEntering(false);
+    }, 560);
     return () => clearTimeout(timer);
   }, [action, actionSeq]);
 
@@ -319,11 +327,12 @@ function Sprite({
   // 站位类直接用 pos-*（CSS 里各自带 --x 偏移，见 app.css）。
   // 落位与运镜走行内 CSS 变量——它们是这一句台词 + 这一份素材声明的结果，
   // 不该在 CSS 里枚举成类名（三档取景 × 四档体量 × 三档对齐 = 36 个类，加一档就全要改）。
-  // .entering 常驻即可，不用挂一帧就摘：CSS 动画不会因重渲染重播，而 key 是角色
-  // id，组件只在这个人第一次进舞台时挂载（换表情走的是另一条淡出/淡入，不重挂载）。
-  // 所以「重新进场」天然就是一次新挂载，入场动画也就重播一次。
+  // `.entering` 是**一次性**的：入场动画播完（onAnimationEnd）就摘掉。留着它，
+  // 「撤掉 .acting」会把 animation-name 换回 sprite-in，浏览器把入场淡入当新动画
+  // 从透明重播一遍——表现就是每个行为词演完立绘闪一下（回看松手那次同一个道理）。
+  // 摘掉之后入场只是「一次挂载时的一段动画」，重渲染与行为词的加减都动不到它。
   // 正在退场的那一瞬不挂：离场走 .leaving 的淡出，混上入场动画会打架。
-  const cls = `theater-sprite pos-${pos}${leaving ? " leaving" : " entering"}${
+  const cls = `theater-sprite pos-${pos}${leaving ? " leaving" : entering ? " entering" : ""}${
     acting ? " acting" : ""
   }${dim ? " dim" : ""}`;
   // 横竖屏两列都由 core 的表算好，媒体查询在 CSS 里挑一列——组件不必监听 resize
@@ -352,7 +361,16 @@ function Sprite({
       {/* 十字淡化：新图在下、旧图在上；旧图淡出即露出新图。旧图必须复用同一份 style
           （定位/运镜变量），且**不带 .entering**——带了就会被 sprite-in 从透明起步，
           等于一挂上就没了（旧实现的交叉淡化就是这么失效的）。 */}
-      <img className={cls} style={style} src={current} alt={name} onError={onError} />
+      <img
+        className={cls}
+        style={style}
+        src={current}
+        alt={name}
+        onError={onError}
+        // 入场淡入（sprite-in）跑完就摘掉 .entering：它是入场那一下的事，
+        // 挂在那里只会等着在「撤 .acting」时被当成新动画补播一次。
+        onAnimationEnd={() => setEntering(false)}
+      />
       {outgoing && (
         <img
           className={`theater-sprite pos-${pos} sprite-out${dim ? " dim" : ""}`}

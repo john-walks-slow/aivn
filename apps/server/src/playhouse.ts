@@ -151,6 +151,27 @@ function carryOverFrom(runtime: PlayRuntime, note: string): CarryOver | undefine
 }
 
 /**
+ * 换编排器：把旧实例没做完的语音活儿交给新的，再停旧的（**同步三步，中间不许 await**）。
+ *
+ * 重建发生在轮边界，可玩家多半还在读这一轮最后几句——TTS 本来就落后于文字，
+ * 队列里那几句正是他要听的。不接过去就是「重建把后半句吞了」，症状与断线丢队列一模一样。
+ *
+ * 三步的先后是要点，且必须**同步**走完（中途插 await 的话，这段窗口里在飞的那几句
+ * 会在旧实例上白跑一趟：旧的一撤，它的帧就没人要了）：
+ *   1. take：把旧实例没做完的活儿取出来（dispose 会清队列，取必须在它前面）；
+ *   2. dispose：停掉旧实例。它会把**剧目共享**的那张 pending 表整表清掉（原有行为，
+ *      为的是不让死掉那一层的活儿永远挂在面板上）；
+ *   3. adopt：新实例接手并重新登记语音条目——排在 dispose **之后**，否则刚登记的条目
+ *      会被第 2 步一并抹掉（面板上那几句就凭空消失）。
+ * 新实例在这一处之前已经建好（构建失败就什么都不动，旧实例照常服务）。
+ */
+function handOverVoice(old: PlayRuntime, fresh: PlayRuntime): void {
+  const backlog = old.orchestrator.takeVoiceBacklog();
+  old.orchestrator.dispose();
+  fresh.orchestrator.adoptVoiceBacklog(backlog);
+}
+
+/**
  * 剧目之家：多剧目 runtime 懒加载与生命周期（P2）。
  * 每剧目一个 orchestrator + 广播组；WS 客户端按 playId 路由。
  */
@@ -443,8 +464,8 @@ export class PlayHouse {
     const old = this.runtimes.get(playId);
     if (!old) return;
     const fresh = await this.buildRuntime(playId, carryOverFrom(old, PLAY_RELOADED));
-    old.orchestrator.dispose();
     this.runtimes.set(playId, fresh);
+    handOverVoice(old, fresh);
     this.announce(playId, fresh);
   }
 
@@ -624,8 +645,8 @@ export class PlayHouse {
     if (this.runtimes.get(playId) !== old) return;
     const fresh = await this.buildRuntime(playId, carryOverFrom(old, note));
     const runtime = { ...fresh, workshop: old.workshop };
-    old.orchestrator.dispose();
     this.runtimes.set(playId, runtime);
+    handOverVoice(old, fresh);
     this.announce(playId, runtime);
   }
 

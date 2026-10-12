@@ -55,7 +55,7 @@ import { userFacingError } from "./errors.js";
 import { HistoryRecorder, type HistoryBeat } from "./history.js";
 import type { AgentSettings, PlayConfig } from "@aivn/core";
 import type { PlayMemory } from "./memory.js";
-import { VoicePipeline, type TtsSynthFn } from "./voice.js";
+import { VoicePipeline, type TtsSynthFn, type VoiceBacklog } from "./voice.js";
 import type { PendingJobFinish, PendingJobs } from "./pendingJobs.js";
 
 /** 重建接力保留预算（token）：接住最近几轮就够，更早的细节走 archive 检索。 */
@@ -613,6 +613,23 @@ export class PlaywrightOrchestrator {
   }
 
   /**
+   * 取下还没做完的语音活儿（轮边界重建用：新编排器建好之后再接手，见 playhouse 的重建路径）。
+   * 队列空且观众状态是缺省时也给 null：没什么要接的，别让调用方白忙一趟。
+   */
+  takeVoiceBacklog(): VoiceBacklog | null {
+    if (!this.voice) return null;
+    const backlog = this.voice.handover();
+    const empty =
+      backlog.queue.length === 0 && backlog.deferred.length === 0 && backlog.audience;
+    return empty ? null : backlog;
+  }
+
+  /** 接过上一任没做完的语音活儿（与 takeVoiceBacklog 成对；新实例建好之后立刻调）。 */
+  adoptVoiceBacklog(backlog: VoiceBacklog | null): void {
+    if (backlog) this.voice?.adopt(backlog);
+  }
+
+  /**
    * 构建并接管一个 pi Agent 实例（纪元压缩会重建——A 区变了不能只换 messages）。
    * 退订旧实例、重订新实例、装上批次收束兜底，都收在这里。
    */
@@ -794,10 +811,14 @@ export class PlaywrightOrchestrator {
     });
   }
 
-  /** 语音控制（客户端 tts_control）：enabled=总开关，paused=背压暂停预取。 */
-  setTtsState(state: { enabled?: boolean; paused?: boolean }): void {
+  /**
+   * 语音控制：enabled=总开关、paused=背压暂停预取（两条都来自客户端的 tts_control），
+   * audience=这一刻有没有观众——那是连接层的事实，不是协议里的动作，由 transport 给。
+   */
+  setTtsState(state: { enabled?: boolean; paused?: boolean; audience?: boolean }): void {
     if (state.enabled !== undefined) this.voice?.setEnabled(state.enabled);
     if (state.paused !== undefined) this.voice?.setPaused(state.paused);
+    if (state.audience !== undefined) this.voice?.setAudience(state.audience);
   }
 
   private send(msg: ServerMessage): void {
