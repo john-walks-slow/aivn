@@ -1,6 +1,6 @@
 ---
 name: galgame-ui-style
-description: 剧目要换界面皮肤、主题色或消息框表面时读这个。规定剧目 theme.css 的令牌写面、深浅配色、对比度、材质色和窄屏自查；开始菜单 M1-M5 仅为未接线的引擎设计参考。
+description: 剧目要换界面皮肤或主题色时读这个。规定剧目 theme.css 的令牌写面、深浅配色、对比度、材质色和窄屏自查；消息框与开始菜单的五档风格是引擎侧能力（由玩家在这台浏览器上选），不是剧目能写的字段。
 user-invocable: true
 ---
 
@@ -142,9 +142,14 @@ html[data-ui-theme="dark"] {
 
 ## 5. 当前档位事实（不要把设计写成开关）
 
-消息框 `card`、`cinema`、`hud`、`scroll`、`velvet` 是已接通的五个引擎档，生产层按 `html[data-dialog-style="..."]` 消费。ATRI 不是 `data-dialog-style="atri"`：ATRI 的唯一启用方式是省略 `data-dialog-style` 与菜单属性；若设置层展示 `atri`，渲染时也必须归一化为移除属性。
+`card`、`cinema`、`hud`、`scroll`、`velvet` 是已接通的五个引擎档：同一个 id 成对落两个属性——
+消息框走 `html[data-dialog-style="..."]`（`packages/stage/src/stage.css` 末尾），
+开始菜单走 `html[data-menu-style="..."]`（`apps/web/src/app.css` 末尾）。ATRI 不是 `="atri"`：
+ATRI 的唯一启用方式是省略这两个属性；设置层展示 `atri` 时，渲染时归一化成移除属性。
 
-开始菜单当前只有 ATRI 结构（`.title-screen`、`.atri-menu`、`.atri-item` 等）。M1–M5 是尚未接线的设计参考，仓库没有 `data-menu-style`、`menuStyle` 或 `dialogStyle` 的剧目写入口；不要在 `play.json`、`theme.css` 或素材文件中写这些属性，也不要声称可以成对选择。
+**这两个属性仍然不是剧目写入口**：它们是玩家在这台浏览器上的偏好（localStorage `aivn:ui-style`），
+不要在 `play.json`、`theme.css` 或素材文件里写 `dialogStyle` / `menuStyle`——一部剧不该规定玩家用哪张皮。
+剧目要影响观感，走第 3 节的令牌。
 
 ## 6. 引擎参考与自查
 
