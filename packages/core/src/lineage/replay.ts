@@ -106,7 +106,8 @@ export function lineageToEvents(chain: readonly LineageNodeView[]): SequencedEve
         push(base, {
           kind: "actor",
           id: attrs.id ?? "",
-          ...pickDefined(attrs, ["pos", "action"]),
+          ...pickDefined(attrs, ["pos", "action", "shot", "anchor"]),
+          ...(isTruthyFlag(attrs.keep_visible) ? { keepVisible: true } : {}),
           ...(variant ? { variant } : {}),
         });
         break;

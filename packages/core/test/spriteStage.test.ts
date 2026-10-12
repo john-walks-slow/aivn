@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { spriteStagePreset } from "../src/index.js";
+import {
+  spriteAspectRatio,
+  spriteStagePreset,
+  type SpriteFraming,
+  type SpriteStature,
+} from "../src/index.js";
 
 describe("spriteStagePreset：缺省档的头顶留白", () => {
   it("横屏三档 normal = 18 留白（full 18/132、half 18/90、square 18/90）", () => {
@@ -121,5 +126,28 @@ describe("spriteStagePreset：figureHeight 把盒高补回人物在画布上的�
     const withoutTop = spriteStagePreset("square", "normal", "center", undefined, 960).landscape;
     expect(withTop).toEqual(withoutTop);
     expect(withTop.top + withTop.height / 2).toBe(50);
+  });
+});
+
+describe("spriteAspectRatio：取景 → 抠图画布比", () => {
+  it("三档各是自己的画幅比，缺省走 full", () => {
+    expect(spriteAspectRatio("full")).toBeCloseTo(9 / 16, 6);
+    expect(spriteAspectRatio("half")).toBeCloseTo(3 / 4, 6);
+    expect(spriteAspectRatio("square")).toBe(1);
+    expect(spriteAspectRatio()).toBeCloseTo(9 / 16, 6);
+  });
+
+  it("下线的 bust 与别处同一把尺子：降级到 half，不是崩", () => {
+    expect(spriteAspectRatio("bust" as SpriteFraming)).toBeCloseTo(3 / 4, 6);
+  });
+
+  it("认不出的串退回 full——这条路上不该有运行时崩溃", () => {
+    expect(spriteAspectRatio("bogus" as SpriteFraming)).toBeCloseTo(9 / 16, 6);
+  });
+
+  it("落位表同样走归一器：认不出的取景/体量按缺省，不是崩", () => {
+    expect(spriteStagePreset("bogus" as SpriteFraming, "weird" as SpriteStature)).toEqual(
+      spriteStagePreset(),
+    );
   });
 });

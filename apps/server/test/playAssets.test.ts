@@ -468,7 +468,9 @@ describe("PlayAssets：工坊素材落盘", () => {
     const manifest = JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8"));
     // 差分覆盖只是覆盖，立绘级声明不能被一条差分带走
     expect(manifest.mio).toMatchObject({ framing: "full" });
-    expect(manifest["mio/wow"]).toEqual({ framing: "square" });
+    // 差分级另带自己那份逐文件指标（头顶/人物高随 alpha 外框变），两条一起看才自洽
+    expect(manifest["mio/wow"]).toMatchObject({ framing: "square" });
+    expect(manifest["mio/wow"].figureTop + manifest["mio/wow"].figureHeight).toBe(1920);
   });
 
   it("立绘取景：中性定妆照同时立立绘级默认，声明随之落进素材表", async () => {
@@ -800,8 +802,9 @@ describe("PlayAssets：工坊素材落盘", () => {
     );
     expect(calls[1]!.prompt).toContain("Same character as the reference image");
 
-    // 呈现声明落素材表：立绘级一条（取景/体量），差分不需要覆盖就不写第二条
-    expect(writes.map((w) => w.path)).toEqual(["assets/manifest.json"]);
+    // 呈现声明落素材表：立绘级一条（取景/体量），差分级另有一条（逐文件的落位指标）。
+    // 断言的是「只动素材表这一份文件」——两条声明各自是一次真实的读改写，不去数落盘次数。
+    expect(new Set(writes.map((w) => w.path))).toEqual(new Set(["assets/manifest.json"]));
     expect(JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8")).mio).toMatchObject({
       framing: "full",
       stature: "normal",
@@ -845,9 +848,12 @@ describe("PlayAssets：工坊素材落盘", () => {
     expect(sad.at(-1)!.path).toBe("assets/sprites/mio/sad.png");
 
     const manifest = JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8"));
-    // 两条差分与它们各自的取景都得在
-    expect(manifest["mio/smile"]).toEqual({ framing: "half" });
-    expect(manifest["mio/sad"]).toEqual({ framing: "square" });
+    // 两条差分与它们各自的取景都得在，各自那份逐文件指标也不能被对方冲掉
+    expect(manifest["mio/smile"]).toMatchObject({ framing: "half" });
+    expect(manifest["mio/sad"]).toMatchObject({ framing: "square" });
+    for (const key of ["mio/smile", "mio/sad"]) {
+      expect(manifest[key].figureTop + manifest[key].figureHeight).toBe(1920);
+    }
     clearTimeout(timeout);
   });
 
@@ -938,7 +944,8 @@ describe("PlayAssets：出图留痕", () => {
     expect(ledger.rooftop).toMatchObject({ kind: "background", prompt: calls[1]!.prompt });
     // 一张表一个写者：出图只往素材表补立绘的呈现声明，描述一个字不写
     const manifest = JSON.parse(await readFile(files.absoluteOf("assets/manifest.json"), "utf8"));
-    expect(manifest.mio).toEqual({ framing: "full", stature: "normal" });
+    expect(manifest.mio).toMatchObject({ framing: "full", stature: "normal" });
+    expect(manifest.mio.figureTop + manifest.mio.figureHeight).toBe(1920);
     expect(Object.keys(manifest)).not.toContain("rooftop");
   });
 

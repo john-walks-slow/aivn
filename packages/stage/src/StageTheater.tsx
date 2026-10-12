@@ -24,6 +24,7 @@ import { escapeClaimed } from "./ui/escape.js";
 import { Modal } from "./ui/Modal.js";
 import { useFullscreen } from "./fullscreen.js";
 import type { StageView } from "./view.js";
+import { presentationPlan, type PresentationPlan } from "./presentation.js";
 
 interface StageTheaterProps {
   visual: VisualState;
@@ -251,6 +252,8 @@ function Sprite({
   anchor,
   figureTop,
   figureHeight,
+  renderScale = 1,
+  visible = true,
   leaving,
   action,
   actionSeq,
@@ -268,6 +271,10 @@ function Sprite({
   figureTop?: number;
   /** 人物在立绘画布上的实际像素高（`figureTop + figureHeight = 画布高`）；缺省 = 存量素材，不做放大补偿。 */
   figureHeight?: number;
+  /** presentation planner 的额外运镜倍率；第一版固定为 1。 */
+  renderScale?: number;
+  /** 暂时收起时不占画面与交互层；逻辑状态仍保留在 director。 */
+  visible?: boolean;
   leaving: boolean;
   /** 行为词（剧本的 `action=`）：一次性演出，配方在 app.css 的 @keyframes。 */
   action: ActorAction | null;
@@ -334,12 +341,12 @@ function Sprite({
   // 正在退场的那一瞬不挂：离场走 .leaving 的淡出，混上入场动画会打架。
   const cls = `theater-sprite pos-${pos}${leaving ? " leaving" : entering ? " entering" : ""}${
     acting ? " acting" : ""
-  }${dim ? " dim" : ""}`;
+  }${dim ? " dim" : ""}${visible ? "" : " presentation-suppressed"}`;
   // 横竖屏两列都由 core 的表算好，媒体查询在 CSS 里挑一列——组件不必监听 resize
   const stage = spriteStagePreset(framing, stature, anchor, figureTop, figureHeight);
   const style: CSSProperties = {
     zIndex,
-    "--scale": SHOT_SCALE[shot ?? "normal"],
+    "--scale": SHOT_SCALE[shot ?? "normal"] * renderScale,
     "--sprite-top": `${stage.landscape.top}%`,
     "--sprite-height": `${stage.landscape.height}%`,
     "--sprite-origin": stage.landscape.origin,
@@ -533,6 +540,12 @@ voiceState,
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→ 往回追；空格 = 点舞台。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
+  const [stageWidth, setStageWidth] = useState(0);
+  const [stageHeight, setStageHeight] = useState(0);
+  const renderPlan = useMemo<PresentationPlan>(() => {
+    const rect = { width: stageWidth, height: stageHeight };
+    return presentationPlan({ width: rect.width, height: rect.height, sprites: visual.sprites, speakerId: speakerFocusId(view, visual.sprites) });
+  }, [stageWidth, stageHeight, visual.sprites, view]);
   /** 两块浮层的实测高度写回 CSS 变量：选肢层据此卡在它们中间那一段（见 .choice-overlay）。 */
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const directorRef = useRef<HTMLDivElement | null>(null);
@@ -540,8 +553,13 @@ voiceState,
     const root = theaterRef.current;
     const dialog = dialogRef.current;
     if (!root || !dialog) return;
+    const stage = root.querySelector<HTMLElement>(".theater-stage");
+    if (!stage) return;
     const director = directorRef.current;
     const measure = (): void => {
+      const rect = stage.getBoundingClientRect();
+      setStageWidth(rect?.width ?? 0);
+      setStageHeight(rect?.height ?? 0);
       root.style.setProperty("--dialog-h", `${dialog.offsetHeight}px`);
       // 没有导演栏（directorBar=false）时必须显式写 0：CSS 缺省值是 46px，
       // 留着它，选肢层的底部留白会凭空多出一条缝。
@@ -549,6 +567,7 @@ voiceState,
     };
     measure();
     const ro = new ResizeObserver(measure);
+    ro.observe(stage);
     ro.observe(dialog);
     if (director) ro.observe(director);
     return () => ro.disconnect();
@@ -844,6 +863,12 @@ voiceState,
             // 呈现三轴：取景与体量只听素材声明（剧本管不着图里画到哪、台上站多大），
             // 对齐则是「剧本写了用剧本的，没写听素材声明的」（机甲默认居中悬空、道具贴地）。
             const presentation = index.spritePresentation(dir, slot.variant);
+            const plan = renderPlan.actors[id] ?? {
+              visible: true,
+              renderPos: slot.resolvedPos,
+              renderScale: 1,
+              reason: "visible" as const,
+            };
             const isSpeaking = focusId === id;
             // 层级：后上场的更高（orderSeq），正在说话的角色额外 +1000 置于最顶层
             const zIndex = (slot.orderSeq || 1) + (isSpeaking ? 1000 : 0);
@@ -851,7 +876,7 @@ voiceState,
               <Sprite
                 key={id}
                 url={index.sprite(dir, slot.variant)}
-                pos={slot.resolvedPos}
+                pos={plan.renderPos}
                 name={actorName(names, id)}
                 framing={presentation.framing}
                 stature={presentation.stature}
@@ -859,6 +884,8 @@ voiceState,
                 anchor={slot.anchor ?? presentation.anchor}
                 figureTop={presentation.figureTop}
                 figureHeight={presentation.figureHeight}
+                renderScale={plan.renderScale}
+                visible={plan.visible}
                 leaving={slot.leaving === true}
                 action={slot.action}
                 actionSeq={slot.actionSeq}

@@ -459,6 +459,8 @@ describe("差分属性：新名 variant 与旧名 expression / state", () => {
 
   it("variant 原样产出", () => {
     expect(actorOf('<actor id="mecha" variant="damaged"/>')).toMatchObject({ variant: "damaged" });
+    expect(actorOf('<actor id="mecha" keep_visible="true"/>')).toMatchObject({ keepVisible: true });
+    expect(actorOf('<actor id="mecha" keep_visible="false"/>')).not.toHaveProperty("keepVisible");
   });
 
   it("旧剧本的 expression / state 收成 variant，属性名不再往外冒", () => {

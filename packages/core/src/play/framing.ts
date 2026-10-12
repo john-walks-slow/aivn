@@ -69,13 +69,16 @@ export const SPRITE_FRAMING_ASPECT: Record<SpriteFraming, string> = {
  * 就是 vxn 那张 41% 上边距的来源（1080 / 0.954 = 1132，与实测逐位吻合）。
  *
  * 换算只此一处。四个调用点各写一遍 `split(":")` 就是下次漂移的起点。
+ *
+ * 取值范围与别处一致：走 `framingOf` 收一道，`bust` 这类下线的档位降级到语义最近的
+ * 一档、认不出的按缺省。直接拿原始串索引 `SPRITE_FRAMING_ASPECT` 时，一个 `bust`
+ * 就是 `undefined.split` 的运行时崩溃（存量的 play.json 与资源库条目里真写着它）。
  */
 export function spriteAspectRatio(framing?: SpriteFraming): number {
-  const [w, h] = SPRITE_FRAMING_ASPECT[framing ?? DEFAULT_SPRITE_FRAMING]
+  const [w, h] = SPRITE_FRAMING_ASPECT[framingOf(framing) ?? DEFAULT_SPRITE_FRAMING]
     .split(":")
     .map((part) => Number(part));
-  if (!w || !h || !Number.isFinite(w) || !Number.isFinite(h)) return 9 / 16;
-  return w / h;
+  return w && h ? w / h : 9 / 16;
 }
 
 /** 景别措辞：进 `NEUTRAL_SUFFIX` 的第一段，替代写死的 "full body"。 */

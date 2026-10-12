@@ -180,6 +180,31 @@ shot 是「把已有素材推近」。**两者不重叠**——shot 不重新出
 人物内容占满画布宽的主体因此约 57% 舞台高宽——390 宽的舞台上修前就已溢出，补偿后更明显。
 要收紧得动 preset 表（那一列的高度本身偏大），不该在组件里加特判。
 
+补验（2026-10-11）：
+
+- 合成绿底原片跑三档抠图，输出画布 1080×1920 / 1440×1920 / 1920×1920 与取景逐位对应，
+  `figureTop + figureHeight` 恒等于 1920；真实指标喂进 `spriteStagePreset` 后头顶精确落在声明的
+  `top`（18/14/10 等）、人物高度等于声明的体量（132/168/232 等）。宽主体（外框比 1.45）在 square
+  画布上仍是宽度先卡，差额落在顶部留白里——固定画布比的必然结果，舞台靠 `figureTop` 补回来。
+- 顺手修掉一处运行时崩溃：`spriteAspectRatio("bust")` 与 `spriteStagePreset("bust", …)` 原来会
+  在 `Record[未知键]` 上抛 `undefined.split` / `undefined.landscape`。两个函数都改走
+  `framingOf` / `statureOf` 归一（`bust` 降级 half、认不出的按缺省），与模块内其它取值口径一致。
+
+检视结论（[review](261010-sprite-metrics-redesign.review.md)）准入，0 阻塞，四条处理如下：
+
+- **N1 采纳**：`cutout.ts` 回传的 `figureHeight` 改用 sharp 实际解码高，不再另算一遍
+  `round(box.height × scale)`——两者在浮点边界会差 1px，而合成用的 `top` 取的是实际高，
+  回传另一个数就等于让舞台照着一个与图片不符的头顶位置往上推。
+- **S2 不成立**：`declareSprite` 本来就是从 `spec` 读这两个字段，而 `registerAsset` 把调用方给的
+  `spec: AssetRef` 原样传进去——与 `adoptDraft` 同一份契约，对称性已有。
+- **S1 已在现场**：路径分支那行注释写着「拿不到取景声明，画幅走缺省」，正是建议补的那句。
+- **N2 是备忘**，照计划在合并后做跨宿主验证。
+- 随之更新 4 条 `playAssets` 断言：差分覆盖现在另带自己那份逐文件指标，原来用 `toEqual` 锁死键集的
+  写法改成断言「取景对 + `figureTop + figureHeight = 1920` 自洽」，比原来更能守住「逐文件」这个契约；
+  另一条数落盘次数的断言改成断言「只动素材表这一份文件」。
+
+
+
 跨宿主待办（合并回主线后）：dsh-aivn 的 `node_modules/@aivn/*` 软链指向主仓 packages，
 worktree 的改动它看不到。合并后要 `npm run build` + `node build.mjs --check`，
 并把四处 `cutout` 结果类型的构造补上 `figureTop`：`src/media/types.ts` 的两处 `cutout?`、

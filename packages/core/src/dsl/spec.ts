@@ -177,6 +177,8 @@ export interface ActorAttrs {
   shot?: ActorShot;
   /** 对齐基准（bottom 人贴底 / center 悬空物 / top 垂下）。 */
   anchor?: ActorAnchor;
+  /** 窄屏容量不足时仍保留在画面中；不改变在场与退场语义。 */
+  keepVisible?: boolean;
   /**
    * 动作词（nudge/stagger/jump/nod/bow/turn/shake/sway）。
    * 保留旧 action="exit"/"leave" 的兼容。

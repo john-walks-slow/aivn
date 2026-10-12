@@ -77,6 +77,8 @@ export function resolveResumeSeek(
 export interface SpriteSlot {
   pos?: SpritePosition;
   resolvedPos: SpritePosition;
+  /** 窄屏容量不足时仍保留；不等于逻辑在场或真实退场。 */
+  keepVisible: boolean;
   /** 换哪张差分（人的表情、机甲的状态——同一个槽位）。null = 没写过，取目录第一张。 */
   variant: string | null;
   shot: ActorShot | null;
@@ -166,6 +168,7 @@ export interface VisualState {
 function newSlot(): SpriteSlot {
   return {
     resolvedPos: "center",
+    keepVisible: false,
     variant: null,
     shot: null,
     anchor: null,
@@ -210,6 +213,7 @@ export function applyActorCue(
           variant: cue.variant ?? existing?.variant ?? null,
           shot: cue.shot ?? existing?.shot ?? null,
           anchor: cue.anchor ?? existing?.anchor ?? null,
+          keepVisible: cue.keepVisible ?? existing?.keepVisible ?? false,
           // 行为词是一次性的：给了就演一次，不给不重播。exit/leave 走退场分支，
           // 不该同时被当成行为词（`action="leave"` 是退场的旧写法，不是动作）。
           action: isActorAction(cue.action) ? cue.action : null,

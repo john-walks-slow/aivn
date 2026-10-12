@@ -10,6 +10,7 @@ const cue = (partial: Partial<Extract<Cue, { kind: "actor" }>> & { id: string })
 });
 
 const slot = (partial: Partial<SpriteSlot> & { resolvedPos: SpriteSlot["resolvedPos"] }): SpriteSlot => ({
+  keepVisible: false,
   variant: null,
   shot: null,
   anchor: null,
@@ -91,11 +92,18 @@ describe("applyActorCue：站位自动分配", () => {
 
 describe("applyActorCue：状态累积", () => {
   it("缺省属性 = 保持当前，不被后续 cue 抹掉", () => {
-    let s = applyActorCue({}, cue({ id: "a", variant: "smile", shot: "close" }));
+    let s = applyActorCue({}, cue({ id: "a", variant: "smile", shot: "close", keepVisible: true }));
     s = applyActorCue(s, cue({ id: "a", pos: "left" }));
     expect(s.a!.variant).toBe("smile");
+    expect(s.a!.keepVisible).toBe(true);
     expect(s.a!.shot).toBe("close");
     expect(s.a!.resolvedPos).toBe("left");
+  });
+
+  it("keepVisible 可显式关闭并持续保持", () => {
+    let s = applyActorCue({}, cue({ id: "a", keepVisible: true }));
+    s = applyActorCue(s, cue({ id: "a", keepVisible: false }));
+    expect(s.a!.keepVisible).toBe(false);
   });
 
   it("anchor 缺省是 null：剧本不写就听素材声明，写了才钉住", () => {

@@ -16,6 +16,8 @@ import type { ActorAnchor } from "../dsl/spec.js";
 import {
   DEFAULT_SPRITE_FRAMING,
   DEFAULT_SPRITE_STATURE,
+  framingOf,
+  statureOf,
   type SpriteFraming,
   type SpriteStature,
 } from "./framing.js";
@@ -85,7 +87,10 @@ export function spriteStagePreset(
   figureTop?: number,
   figureHeight?: number,
 ): SpriteStagePreset {
-  const row = STAGE_PRESETS[framing ?? DEFAULT_SPRITE_FRAMING][stature ?? DEFAULT_SPRITE_STATURE];
+  const row =
+    STAGE_PRESETS[framingOf(framing) ?? DEFAULT_SPRITE_FRAMING][
+      statureOf(stature) ?? DEFAULT_SPRITE_STATURE
+    ];
   return {
     landscape: box(row.landscape, stature, anchor, figureTop, figureHeight),
     portrait: box(row.portrait, stature, anchor, figureTop, figureHeight),
@@ -132,7 +137,7 @@ function box(
   figureTop: number | undefined,
   figureHeight: number | undefined,
 ): SpriteStageBox {
-  const grounded = (stature ?? DEFAULT_SPRITE_STATURE) === "small";
+  const grounded = (statureOf(stature) ?? DEFAULT_SPRITE_STATURE) === "small";
   const base: SpriteOrigin = grounded ? "bottom center" : "top center";
   const origin: SpriteOrigin = anchor === "center" ? "center" : anchor === "top" ? "top center" : base;
   // 先按人物实际占比把高度补回 preset 声明的观感，落位再用补过的高度算——

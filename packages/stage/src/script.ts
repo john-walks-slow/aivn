@@ -54,6 +54,7 @@ export type Cue =
       shot?: ActorShot;
       /** 对齐基准（bottom 人贴底 / center 悬空物 / top 垂下）。 */
       anchor?: ActorAnchor;
+      keepVisible?: boolean;
       action?: string;
       leave?: string;
     }
@@ -138,6 +139,7 @@ export class ScriptBuilder {
           variant: event.variant,
           shot: event.shot,
           anchor: event.anchor,
+          keepVisible: event.keepVisible,
           action: event.action,
           leave: event.leave,
         });

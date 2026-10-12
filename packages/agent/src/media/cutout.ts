@@ -331,7 +331,10 @@ export async function placeOnCanvas(
     .png()
     .toBuffer();
 
-  const figureHeight = Math.round(box.height * scale);
+  // 人物高取**实际解码出来的那个数**，不另算一遍 round(box.height × scale)：
+  // 两者在浮点边界上会差 1px，而合成用的 top 是 canvasHeight − meta.height，
+  // 回传另一个数就等于让舞台照着一个与图片不符的头顶位置往上推。
+  const figureHeight = meta.height ?? Math.round(box.height * scale);
   return { data: canvas, width: canvasWidth, height: canvasHeight, figureTop: canvasHeight - figureHeight, figureHeight };
 }
 

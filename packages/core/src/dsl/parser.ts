@@ -367,6 +367,7 @@ export class StageDslParser {
           kind: "actor",
           id,
           ...pick(attrs, ["pos", "action", "leave"]),
+          ...(isTruthyFlag(attrs.get("keep_visible")) ? { keepVisible: true } : {}),
           ...(variant ? { variant } : {}),
           ...(shotRaw && isActorShot(shotRaw) ? { shot: shotRaw } : {}),
           ...(anchorRaw && isActorAnchor(anchorRaw) ? { anchor: anchorRaw } : {}),

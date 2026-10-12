@@ -30,6 +30,8 @@ export {
   withAttachedCg,
 } from "./director.js";
 export type { Playback, PlaybackHooks, ResumeSeek, SpriteSlot, VisualState } from "./director.js";
+export { presentationPlan, presentationProfile } from "./presentation.js";
+export type { PresentationActor, PresentationInput, PresentationPlan, PresentationProfile } from "./presentation.js";
 
 export { dialogContent, emptyDialogHint, shouldAutoStart, stopAffordance } from "./playbackState.js";
 export type { AutoStartInput, DialogInput, StopAffordanceInput } from "./playbackState.js";

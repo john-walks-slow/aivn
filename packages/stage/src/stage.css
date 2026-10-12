@@ -846,6 +846,14 @@ html[data-ui-theme="light"] .stage-root .choice:focus-visible .choice-num {
   filter: brightness(var(--sprite-dim));
 }
 
+/* presentation planner 的设备容量裁剪：不是 leaving，不播退场，也不改变逻辑在场。
+   保留 DOM 让恢复走普通 opacity 过渡；不可见时不占点击。 */
+.theater-sprite.presentation-suppressed {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
 /* 正在演行为词：这一刻运镜让位。行为词自己的 translate/scale/rotate 与运镜的
    transform 是两个独立属性、正常应该并存，但两者都改缩放观感——特写（scale 1.35）
    叠一记点头会让人物突然弹一下，所以行为词期间把运镜压回 1。
