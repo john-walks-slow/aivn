@@ -51,9 +51,9 @@ describe("PromptQueuePanel 失败项", () => {
     // 不再有文字和光点
     expect(badge?.querySelector(".prompt-queue-text")).toBeNull();
     expect(badge?.querySelector(".status-indicator-dot")).toBeNull();
-    // 包含浅图标和角标小数字
+    // 包含浅图标（1 项时不显示角标数字）
     expect(badge?.querySelector(".prompt-queue-cat.failed")).not.toBeNull();
-    expect(badge?.querySelector(".prompt-queue-cat-badge")?.textContent).toBe("1");
+    expect(badge?.querySelector(".prompt-queue-cat-badge")).toBeNull();
   });
 
   it("没有失败项时徽标照旧：只报在忙的几类，不挂警号", () => {
@@ -125,26 +125,26 @@ describe("PromptQueuePanel 折叠态指示符（浅图标与 spinner / 跳动光
       />,
     );
     const badge = document.querySelector(".prompt-queue-badge");
-    // 麦克风 (voice): 2
+    // 麦克风 (voice): 2 (>1 显示角标)
     const voiceCat = badge?.querySelector('[title="语音合成（2）"]');
     expect(voiceCat).not.toBeNull();
     expect(voiceCat?.querySelector(".prompt-queue-cat-badge")?.textContent).toBe("2");
     expect(voiceCat?.querySelector(".prompt-queue-cat-icon")).not.toBeNull();
 
-    // 音乐 (bgm): 1
+    // 音乐 (bgm): 1 (===1 不显示角标)
     const bgmCat = badge?.querySelector('[title="配乐生成（1）"]');
     expect(bgmCat).not.toBeNull();
-    expect(bgmCat?.querySelector(".prompt-queue-cat-badge")?.textContent).toBe("1");
+    expect(bgmCat?.querySelector(".prompt-queue-cat-badge")).toBeNull();
 
-    // 图片 (bg + cg): 2
+    // 图片 (bg + cg): 2 (>1 显示角标)
     const imageCat = badge?.querySelector('[title="图片生成（2）"]');
     expect(imageCat).not.toBeNull();
     expect(imageCat?.querySelector(".prompt-queue-cat-badge")?.textContent).toBe("2");
 
-    // 人像 (sprite): 1
+    // 人像 (sprite): 1 (===1 不显示角标)
     const spriteCat = badge?.querySelector('[title="立绘生成（1）"]');
     expect(spriteCat).not.toBeNull();
-    expect(spriteCat?.querySelector(".prompt-queue-cat-badge")?.textContent).toBe("1");
+    expect(spriteCat?.querySelector(".prompt-queue-cat-badge")).toBeNull();
   });
 
   it("展开态：失败行默认不铺错因，点开才有；顶上说清挂了几条", () => {

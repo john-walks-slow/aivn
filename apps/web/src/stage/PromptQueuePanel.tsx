@@ -181,7 +181,7 @@ export function PromptQueuePanel({
         </span>
       )}
 
-      {/* 其他生成类别：展示为闪烁图标（麦克风/音乐/图片/人像等）➕ 右上角小数字代表队列长度 */}
+      {/* 其他生成类别：展示为闪烁图标（麦克风/音乐/图片/人像等）➕ 右上角小数字（>1 时显示）代表队列长度 */}
       {categories.map((cat) => (
         <span
           key={cat.key}
@@ -191,7 +191,7 @@ export function PromptQueuePanel({
           <span className="prompt-queue-cat-icon">
             <Icon name={cat.icon} size={13} />
           </span>
-          <span className="prompt-queue-cat-badge">{cat.count}</span>
+          {cat.count > 1 && <span className="prompt-queue-cat-badge">{cat.count}</span>}
         </span>
       ))}
     </button>

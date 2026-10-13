@@ -340,7 +340,7 @@
     <div class="card">
       <div class="card-title">
         <span>3. 单项媒体生成（麦克风 1 项）</span>
-        <span style="font-size: 11px; color: #64748b;">闪烁浅图标 ➕ 右上角数字</span>
+        <span style="font-size: 11px; color: #64748b;">数量为 1 时仅显示闪烁浅图标</span>
       </div>
       <div class="badge-preview-box">
         <button class="prompt-queue-badge" title="语音合成（1）">
@@ -349,7 +349,6 @@
               <!-- mic icon -->
               <svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
             </span>
-            <span class="prompt-queue-cat-badge">1</span>
           </span>
         </button>
       </div>
@@ -364,7 +363,6 @@
                 <span class="prompt-queue-cat-icon">
                   <svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
                 </span>
-                <span class="prompt-queue-cat-badge">1</span>
               </span>
             </button>
           </div>
@@ -381,33 +379,31 @@
       </div>
       <div class="badge-preview-box">
         <button class="prompt-queue-badge" title="多项生成中">
-          <!-- 麦克风 -->
+          <!-- 麦克风 (2) -->
           <span class="prompt-queue-cat" title="语音合成（2）">
             <span class="prompt-queue-cat-icon">
               <svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
             </span>
             <span class="prompt-queue-cat-badge">2</span>
           </span>
-          <!-- 音乐 -->
+          <!-- 音乐 (1) -->
           <span class="prompt-queue-cat" title="配乐生成（1）">
             <span class="prompt-queue-cat-icon">
               <svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
             </span>
-            <span class="prompt-queue-cat-badge">1</span>
           </span>
-          <!-- 图片 (assets) -->
+          <!-- 图片 (2) -->
           <span class="prompt-queue-cat" title="图片生成（2）">
             <span class="prompt-queue-cat-icon">
               <svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
             </span>
             <span class="prompt-queue-cat-badge">2</span>
           </span>
-          <!-- 人像 (users) -->
+          <!-- 人像 (1) -->
           <span class="prompt-queue-cat" title="立绘生成（1）">
             <span class="prompt-queue-cat-icon">
               <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             </span>
-            <span class="prompt-queue-cat-badge">1</span>
           </span>
         </button>
       </div>
@@ -424,7 +420,6 @@
               </span>
               <span class="prompt-queue-cat">
                 <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
-                <span class="prompt-queue-cat-badge">1</span>
               </span>
               <span class="prompt-queue-cat">
                 <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>
@@ -432,7 +427,6 @@
               </span>
               <span class="prompt-queue-cat">
                 <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-                <span class="prompt-queue-cat-badge">1</span>
               </span>
             </button>
           </div>
@@ -445,7 +439,7 @@
     <div class="card">
       <div class="card-title">
         <span>5. 复合状态：下一句就绪 ➕ 媒体生成中</span>
-        <span style="font-size: 11px; color: #64748b;">跳动光标 + 麦克风闪烁 + 图片闪烁</span>
+        <span style="font-size: 11px; color: #64748b;">跳动光标 + 麦克风(1) + 图片(2)</span>
       </div>
       <div class="badge-preview-box">
         <button class="prompt-queue-badge" title="下一句就绪，媒体生成中">
@@ -453,15 +447,14 @@
           <span class="prompt-queue-text-indicator">
             <span class="prompt-queue-cursor"></span>
           </span>
-          <!-- 麦克风 -->
+          <!-- 麦克风 (1) -->
           <span class="prompt-queue-cat">
             <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
-            <span class="prompt-queue-cat-badge">1</span>
           </span>
-          <!-- 图片 -->
+          <!-- 图片 (2) -->
           <span class="prompt-queue-cat">
             <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>
-            <span class="prompt-queue-cat-badge">1</span>
+            <span class="prompt-queue-cat-badge">2</span>
           </span>
         </button>
       </div>
@@ -477,11 +470,10 @@
               </span>
               <span class="prompt-queue-cat">
                 <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
-                <span class="prompt-queue-cat-badge">1</span>
               </span>
               <span class="prompt-queue-cat">
                 <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>
-                <span class="prompt-queue-cat-badge">1</span>
+                <span class="prompt-queue-cat-badge">2</span>
               </span>
             </button>
           </div>
