@@ -1778,7 +1778,9 @@ button.link-btn {
   position: relative;
 }
 
-/* 面板头控件（玻璃态分段按钮 / 图标组） */
+/* 面板头控件（玻璃态分段按钮 / 图标组）。
+   .stage-panel 恒为深色玻璃遮罩（不受宿主浅色主题反转），因此其内部的 .seg-glass 与 .panel-icon-btn
+   始终保持深色玻璃与亮白字，避免在浅色界面主题下突然浮出一块刺眼的白底黑字开关。 */
 .seg-glass {
   display: inline-flex;
   padding: 3px;
@@ -1789,47 +1791,27 @@ button.link-btn {
   -webkit-backdrop-filter: blur(12px);
 }
 
-html[data-ui-theme="light"] .seg-glass {
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-}
-
 .seg-glass .seg-btn {
   padding: 4px 12px;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 500;
-  color: rgba(248, 250, 252, 0.7);
+  color: rgba(248, 250, 252, 0.72);
   border: none;
   background: transparent;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
-html[data-ui-theme="light"] .seg-glass .seg-btn {
-  color: #475569;
-}
-
 .seg-glass .seg-btn:hover {
   color: #ffffff;
 }
 
-html[data-ui-theme="light"] .seg-glass .seg-btn:hover {
-  color: #0f172a;
-}
-
 .seg-glass .seg-btn.active {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.18);
   color: #ffffff;
   font-weight: 600;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
-}
-
-html[data-ui-theme="light"] .seg-glass .seg-btn.active {
-  background: rgba(255, 255, 255, 0.95);
-  color: #0f172a;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
 .panel-btn-group {
@@ -6246,44 +6228,52 @@ html[data-ui-theme="dark"] .stage-view-segmented {
   text-align: center;
 }
 
-/* ── 剧作家原始历史（回顾里的第二视图）───────────────────── */
+/* ── 剧作家原始历史（回顾里的第二视图）─────────────────────
+   回顾抽屉恒为深色遮罩（无论界面主题是浅色还是深色），因此原文视图的卡片和文字必须走深色玻璃与浅字，
+   且与 .backlog-list 一样居中限制 780px 阅读宽度，避免贴出刺眼的纯白大块或与剧本页错轴。 */
 
 .hx-beat {
-  margin: 0 0 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
+  max-width: 780px;
+  margin: 0 auto 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius);
-  background: var(--panel);
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(8px);
 }
 .hx-beat-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
-  color: var(--ink-faint);
+  margin-bottom: 8px;
+  color: rgba(248, 250, 252, 0.65);
   font-size: 12px;
   letter-spacing: 0.06em;
 }
+.hx-beat-head .muted {
+  color: rgba(248, 250, 252, 0.45);
+}
 .hx-entry {
   margin: 0 0 6px;
-  padding: 6px 8px;
-  border-left: 3px solid var(--line);
+  padding: 8px 10px;
+  border-left: 3px solid rgba(255, 255, 255, 0.25);
   border-radius: 0 6px 6px 0;
-  background: var(--bg);
+  background: rgba(2, 6, 23, 0.45);
 }
 .hx-entry:last-child {
   margin-bottom: 0;
 }
 .hx-kind {
   display: block;
-  margin-bottom: 3px;
-  color: var(--ink-faint);
+  margin-bottom: 4px;
+  color: rgba(248, 250, 252, 0.6);
   font-size: 11px;
   letter-spacing: 0.08em;
 }
 .hx-text {
   margin: 0;
-  color: var(--ink-soft);
+  color: rgba(248, 250, 252, 0.9);
   font-size: 12.5px;
   line-height: 1.65;
   white-space: pre-wrap;
@@ -6294,7 +6284,7 @@ html[data-ui-theme="dark"] .stage-view-segmented {
 .hx-dsl {
   font-family: var(--mono, ui-monospace, "SFMono-Regular", Menlo, monospace);
   font-size: 12px;
-  color: var(--ink-faint);
+  color: rgba(248, 250, 252, 0.78);
 }
 .hx-thinking {
   border-left-color: var(--accent);
@@ -6305,13 +6295,17 @@ html[data-ui-theme="dark"] .stage-view-segmented {
 .hx-tool {
   border-left-color: #c8a24a;
 }
-.hx-tool pre {
+.hx-tool pre,
+pre.hx-tool {
   margin: 0;
   font-family: var(--mono, ui-monospace, "SFMono-Regular", Menlo, monospace);
   font-size: 12px;
-  color: var(--ink-faint);
+  color: rgba(248, 250, 252, 0.78);
   white-space: pre-wrap;
   word-break: break-word;
+}
+.backlog-panel > .hx-foot {
+  color: rgba(248, 250, 252, 0.55);
 }
 /* 正在生成：与排队话同一块面板的上半截。生图那一行可展开看提示词。 */
 .prompt-queue-row.pending-job {
@@ -6564,12 +6558,12 @@ html[data-ui-theme="dark"] .stage-view-segmented {
   }
 
   /* 窄屏命中区补齐（按同一口径 ≥32px）：这些在桌面上靠鼠标没问题，手机上是硬伤。
-     剧目库筛选胶囊 30、回顾页行内工具 24、文件树行 28、素材页差分操作 25~26、
-     会话切换 31 —— 全部抬到 32，视觉密度靠 padding 而不是压高度来省。 */
+     剧目库筛选胶囊 30、文件树行 28、素材页差分操作 25~26、
+     会话切换 31 —— 全部抬到 32，视觉密度靠 padding 而不是压高度来省。
+     （回顾页行内工具 .bl-tool 归 stage.css 同名断点统一管图标化尺寸。） */
   .filter-tab-btn,
   .file-entry,
   .thread-toggle,
-  .bl-tool,
   .asset-row .ghost-btn,
   .asset-row .link-btn,
   .file-row .icon-btn,
@@ -6843,15 +6837,17 @@ html[data-ui-theme="dark"] .stage-view-segmented {
     --panel-w: min(92vw, 300px);
   }
 
-  /* 面板头：标题一行（剧名让位），工具一整行，四五个图标才排得开 */
+  /* 面板头：窄屏下剧名让位，但回顾面板（剧本/原文切换）保持紧凑单行三栏对齐，
+     避免切换胶囊掉到第二行造成伪双行高低错位（路线面板的镜头组已在下方固定到底部）。 */
   .stage-panel-head {
-    flex-wrap: wrap;
-    gap: 8px 10px;
+    flex-wrap: nowrap;
+    gap: 8px;
     padding: 10px 12px;
   }
 
   .stage-panel-titles {
     flex: 1 1 auto;
+    min-width: 0;
   }
 
   .stage-panel-title {
@@ -6862,17 +6858,13 @@ html[data-ui-theme="dark"] .stage-view-segmented {
     display: none;
   }
 
-  .stage-panel-close {
-    order: 1;
-    margin-left: auto;
+  .stage-panel-actions {
+    flex: 0 0 auto;
+    gap: 6px;
   }
 
-  .stage-panel-actions {
-    order: 2;
-    flex: 1 0 100%;
-    justify-content: flex-end;
-    overflow-x: auto;
-    scrollbar-width: none;
+  .stage-panel-close {
+    flex: 0 0 auto;
   }
 
   /* 立绘差分那一行：文件名是这一行唯一的识别信息（neutral / smile / blush 本身就是

@@ -1406,14 +1406,23 @@ export function BacklogView({
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const currentRef = useRef<HTMLLIElement | null>(null);
+  const scrolledHeadKeyRef = useRef<string | null>(null);
   /** 这一条按需生成得出来吗（say 行 + 有音色的说话人）。 */
   const voiceable = (entry: { type: string; actorId?: string | null }): boolean =>
     entry.type === "say" && !!entry.actorId && (voiceCast?.has(entry.actorId) ?? false);
 
-  /** 进来先落在「你现在读到的那一句」上：几十条流水从头看起没有意义。 */
+  /**
+   * 进来先落在「你现在读到的那一句」上：几十条流水从头看起没有意义。
+   * 只在首次挂载找到 headKey、或 headKey 真正切到新一行时滚动一次；
+   * 后台流式输出、状态刷新或改写造成的 entries/feed 引用变化绝不能把正在拖动浏览的用户拽回去。
+   */
   useEffect(() => {
-    currentRef.current?.scrollIntoView({ block: "center" });
-  }, [headKey, entries.length, feed]);
+    if (!headKey || scrolledHeadKeyRef.current === headKey) return;
+    if (currentRef.current) {
+      currentRef.current.scrollIntoView({ block: "center" });
+      scrolledHeadKeyRef.current = headKey;
+    }
+  }, [headKey, entries.length]);
 
   return (
     <div className="backlog-panel">
@@ -1442,41 +1451,48 @@ export function BacklogView({
             }
             const entry = item.entry;
             const beat = beatFor(entry);
-            const editable = entry.kind === "line" && entry.nodeId !== null;
+            const editable = entry.kind === "line" && entry.type !== "title" && entry.nodeId !== null;
             const playable =
               entry.type === "say" &&
               voiceAvailable &&
               (voiceState(entry.seq) === "ready" || voiceable(entry));
             const isCurrent = entry.key === headKey;
+            const actorLabel = entry.actorId ? (entry.nameOverride ?? actorName(names, entry.actorId)) : null;
+            const hasHead = playable || !!actorLabel;
+            const itemKindClass =
+              entry.kind === "input" ? "bl-input" : entry.type === "narrate" ? "bl-narrate" : "bl-line";
             return (
               <li
                 key={entry.key}
                 ref={isCurrent ? currentRef : undefined}
-                className={`bl-${entry.kind}${isCurrent ? " is-current" : ""}`}
+                className={`${itemKindClass}${isCurrent ? " is-current" : ""}`}
                 aria-current={isCurrent ? "true" : undefined}
               >
                 {/* CLANNAD 式分栏：名字独立一行，语音重播收成名字左侧一枚圆形徽章。
-                    正文另起一行、大号字，读起来是「谁说了什么」的流水，不是表格行。 */}
-                <div className="bl-head">
-                  {playable && (
-                    <button
-                      type="button"
-                      className="bl-voice"
-                      title={
-                        voiceState(entry.seq) === "ready"
-                          ? "这一句有语音，点一下重听"
-                          : "这一句还没有语音，点一下生成"
-                      }
-                      aria-label={
-                        voiceState(entry.seq) === "ready" ? "重听这句" : "生成这一句的语音"
-                      }
-                      onClick={() => entry.seq !== null && onReplay(entry.seq)}
-                    >
-                      <Icon name="volume" size={12} />
-                    </button>
-                  )}
-                  {entry.actorId && <span className="bl-actor">{actorName(names, entry.actorId)}</span>}
-                </div>
+                    正文另起一行、大号字，读起来是「谁说了什么」的流水，不是表格行。
+                    旁白这类既无发言人也无语音徽章的行不摆空头部，避免白占 23px 并与工具栏错位。 */}
+                {hasHead && (
+                  <div className="bl-head">
+                    {playable && (
+                      <button
+                        type="button"
+                        className="bl-voice"
+                        title={
+                          voiceState(entry.seq) === "ready"
+                            ? "这一句有语音，点一下重听"
+                            : "这一句还没有语音，点一下生成"
+                        }
+                        aria-label={
+                          voiceState(entry.seq) === "ready" ? "重听这句" : "生成这一句的语音"
+                        }
+                        onClick={() => entry.seq !== null && onReplay(entry.seq)}
+                      >
+                        <Icon name="volume" size={12} />
+                      </button>
+                    )}
+                    {actorLabel && <span className="bl-actor">{actorLabel}</span>}
+                  </div>
+                )}
                 <p className="bl-text">{entry.text}</p>
                 {editing === entry.key ? (
                   <div className="bl-edit">
@@ -1516,16 +1532,18 @@ export function BacklogView({
                       type="button"
                       className="bl-tool"
                       title="在舞台上重看到这一句"
+                      aria-label="回到舞台"
                       onClick={() => onSeek(entry.key)}
                     >
                       <Icon name="prev" size={14} />
-                      回到舞台
+                      <span className="bl-tool-label">回到舞台</span>
                     </button>
                     {editable && (
                       <button
                         type="button"
                         className="bl-tool"
                         title="就地改写这句"
+                        aria-label="改写"
                         onClick={() => {
                           setEditing(entry.key);
                           // 初值给原文：拿上屏文本当初值，一改就把语气标记吃掉了
@@ -1533,18 +1551,19 @@ export function BacklogView({
                         }}
                       >
                         <Icon name="pencil" size={14} />
-                        改写
+                        <span className="bl-tool-label">改写</span>
                       </button>
                     )}
                     <button
                       type="button"
                       className="bl-tool"
                       title={busy ? "演出进行中，暂时不能重新生成" : "重新生成这一轮（从这一轮开头分岔并立刻续演）"}
+                      aria-label="重新生成"
                       disabled={busy || !beat}
                       onClick={() => beat && onFork(beat.anchor, { resume: true, replaced: beat.replaced })}
                     >
                       <Icon name="rewrite" size={14} />
-                      重新生成
+                      <span className="bl-tool-label">重新生成</span>
                     </button>
                   </div>
                 )}

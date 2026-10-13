@@ -2874,14 +2874,15 @@ html[data-ui-theme="light"] .stage-mode {
 }
 
 /* 剧本里的舞台指令行：比台词低一档的灰字，靠一条竖线挂在正文左侧——
-   它是「怎么演的」，不该和谁说了什么抢注意力，但一页剧本里不能没有它。 */
+   它是「怎么演的」，不该和谁说了什么抢注意力，但一页剧本里不能没有它。
+   左框线与 .is-current::before 对齐在 left: 0，内边距与台词行（14px）同一垂直轴线。 */
 .bl-dir {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
   gap: 4px 8px;
-  margin: 4px 0 4px 3px;
-  padding: 3px 8px 3px 10px;
+  margin: 4px 0;
+  padding: 4px 12px 4px 12px;
   border-left: 2px solid color-mix(in srgb, var(--dialog-ink-faint, rgb(255 255 255 / 0.3)) 70%, transparent);
   color: var(--dialog-ink-faint);
   font-size: 12.5px;
@@ -2910,7 +2911,7 @@ html[data-ui-theme="light"] .stage-mode {
 }
 
 .backlog-panel .bl-dir-stop {
-  border-left-color: color-mix(in srgb, var(--accent) 80%, #ffffff);
+  border-left-color: color-mix(in srgb, var(--bl-accent, var(--accent)) 80%, #ffffff);
   color: #ffffff;
 }
 
@@ -2952,6 +2953,7 @@ html[data-ui-theme="light"] .stage-mode {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  margin: 0;
   padding: 2px 0;
   list-style: none;
 }
@@ -2981,11 +2983,22 @@ html[data-ui-theme="light"] .stage-mode {
 
 
 .backlog-panel {
+  --bl-accent: var(--accent);
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   padding: 12px max(16px, env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom));
   scrollbar-width: thin;
+}
+
+/* 回顾抽屉恒为深色遮罩：浅色界面主题下 :root 的 --accent 是压纸面用的深色档（#1b5aa6），
+   直接画在深色遮罩上会显得暗沉发闷，这里统一提亮到深色界面同款亮色档（#4a9fe0）。 */
+html:not([data-ui-theme="dark"]) .backlog-panel {
+  --bl-accent: var(--play-accent-dark, #4a9fe0);
+}
+
+html:not([data-ui-theme="dark"])[data-accent] .backlog-panel {
+  --bl-accent: color-mix(in srgb, var(--accent) 72%, #ffffff);
 }
 
 .seg {
@@ -3027,9 +3040,10 @@ html[data-ui-theme="light"] .stage-mode {
 }
 
 .bl-line:hover,
+.bl-narrate:hover,
 .bl-input:hover,
 .bl-player:hover {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  background: color-mix(in srgb, var(--bl-accent, var(--accent)) 10%, transparent);
 }
 
 .bl-head {
@@ -3037,45 +3051,54 @@ html[data-ui-theme="light"] .stage-mode {
   align-items: center;
   gap: 7px;
   min-height: 20px;
-  margin-bottom: 3px;
+  margin-bottom: 4px;
 }
 
 .bl-actor {
-  color: color-mix(in srgb, var(--accent) 52%, #ffffff);
+  color: color-mix(in srgb, var(--bl-accent, var(--accent)) 52%, #ffffff);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-shadow: var(--dialog-text-shadow);
 }
 
-/* 语音重播：名字左边一枚圆形徽章，点一下就出声 */
+/* 语音重播：名字左边一枚圆形徽章，点一下就出声。
+   显式 padding: 0 以免被全局 button { padding: 8px 14px } 挤没了内部 SVG 图标。 */
 .bl-voice {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 1;
   flex: 0 0 auto;
   border: none;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 78%, transparent);
+  background: color-mix(in srgb, var(--bl-accent, var(--accent)) 78%, transparent);
   color: #ffffff;
   cursor: pointer;
   transition: background-color var(--hover-ms) ease, transform var(--hover-ms) ease;
 }
 
-.bl-voice:hover {
-  background: var(--accent);
+.bl-voice svg {
+  flex-shrink: 0;
+}
+
+.bl-voice:hover:not(:disabled) {
+  background: var(--bl-accent, var(--accent));
+  color: #ffffff;
   transform: scale(1.1);
 }
 
 /* 动词组：浮在条目右上角，静止时不占视觉重量 */
 .bl-tools {
   position: absolute;
-  top: 6px;
-  right: 8px;
+  top: 8px;
+  right: 10px;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 4px;
   opacity: 0;
   pointer-events: none;
@@ -3084,26 +3107,36 @@ html[data-ui-theme="light"] .stage-mode {
 
 .bl-line:hover > .bl-tools,
 .bl-line:focus-within > .bl-tools,
+.bl-narrate:hover > .bl-tools,
+.bl-narrate:focus-within > .bl-tools,
 .bl-input:hover > .bl-tools,
 .bl-input:focus-within > .bl-tools {
   opacity: 1;
   pointer-events: auto;
 }
 
-/* 触屏没有 hover：动词组常驻，否则功能够不着 */
+/* 触屏没有 hover：所有条目的动词组统一落在正文下方右下角，
+   既不压旁白正文、也不与角色名抢顶行，位置一致不跳眼。 */
 @media (hover: none) {
-  .bl-tools { opacity: 1; pointer-events: auto; }
+  .bl-tools {
+    position: static;
+    margin-top: 6px;
+    justify-content: flex-end;
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .bl-tool {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   min-height: 24px;
   padding: 3px 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, rgba(255, 255, 255, 0.2));
+  border: 1px solid color-mix(in srgb, var(--bl-accent, var(--accent)) 35%, rgba(255, 255, 255, 0.2));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 42%, rgba(6, 14, 26, 0.85));
+  background: color-mix(in srgb, var(--bl-accent, var(--accent)) 42%, rgba(6, 14, 26, 0.85));
   backdrop-filter: blur(8px);
   color: rgba(255, 255, 255, 0.92);
   font: inherit;
@@ -3115,7 +3148,7 @@ html[data-ui-theme="light"] .stage-mode {
 }
 
 .bl-tool:hover:not(:disabled) {
-  background: var(--accent);
+  background: var(--bl-accent, var(--accent));
   color: #ffffff;
 }
 
@@ -3159,19 +3192,26 @@ html[data-ui-theme="light"] .stage-mode {
   font-style: italic;
 }
 
-/* 玩家自己的话：主题色左线，读起来是「我插进去的那句」 */
+/* 玩家自己的话：主题色左线，读起来是「我插进去的那句」。
+   非 current 时给淡蓝边，是 current 时由外层 is-current::before 统一呈现高亮指示线，
+   避免内外出现双重竖线错位。 */
 .bl-input .bl-text,
 .bl-player .bl-text {
   padding-left: 12px;
-  border-left: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--bl-accent, var(--accent)) 55%, transparent);
   color: rgba(255, 255, 255, 0.9);
+}
+
+.bl-input.is-current .bl-text,
+.bl-player.is-current .bl-text {
+  border-left-color: transparent;
 }
 
 /* 正在看的那一句：主题色左线 + 一层很淡的主题底色 */
 .bl-line.is-current,
 .bl-narrate.is-current,
 .bl-input.is-current {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  background: color-mix(in srgb, var(--bl-accent, var(--accent)) 16%, transparent);
 }
 
 .bl-line.is-current::before,
@@ -3180,17 +3220,13 @@ html[data-ui-theme="light"] .stage-mode {
   content: "";
   position: absolute;
   left: 0;
-  top: 9px;
-  bottom: 9px;
+  top: 6px;
+  bottom: 6px;
   width: 2px;
   border-radius: 2px;
-  background: var(--accent);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 80%, transparent);
+  background: var(--bl-accent, var(--accent));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--bl-accent, var(--accent)) 80%, transparent);
 }
-
-
-
-
 
 /* 弹窗底部的按键在手机上抬一档：32px 的方块对指头偏小，而这一排里坐着
    「确认删除」这种按错回不来的动作。单独成一个块、放在文件末尾，
@@ -3199,6 +3235,31 @@ html[data-ui-theme="light"] .stage-mode {
   .modal-foot button {
     min-height: 40px;
     padding: 0 16px;
+  }
+
+  /* 窄屏下回顾面板行内工具栏紧凑图标化（写在 .bl-tool 之后确保级联生效）：
+     文字收起进 aria-label/title，保持 28×24 胶囊圆钮比例。 */
+  .bl-tools {
+    top: 6px;
+    right: 8px;
+    gap: 3px;
+  }
+
+  .bl-tool {
+    min-height: 24px;
+    min-width: 28px;
+    padding: 3px 8px;
+    gap: 0;
+    border-radius: 999px;
+  }
+
+  .bl-tool .bl-tool-label {
+    display: none;
+  }
+
+  .bl-line:has(.bl-head) > .bl-head,
+  .bl-input:has(.bl-head) > .bl-head {
+    padding-right: 96px;
   }
 }
 
