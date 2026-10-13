@@ -59,6 +59,7 @@ const BACKGROUND_LABEL: Record<CraftBackgroundSource, string> = {
   "library-first": "资源库优先，没有再出图",
   library: "只用资源库里现成的",
   generate: "直接出图",
+  off: "不用背景图",
 };
 
 const CG_LABEL: Record<CraftCgSource, string> = {
@@ -131,6 +132,7 @@ function noImage(kind: "background" | "cg" | "sprite", can: AssetCapabilities): 
  * 两者都叫「库/清单」很容易写混，所以这里一律写全「素材资源库」。
  */
 function backgroundDirective(source: CraftBackgroundSource, can: AssetCapabilities): string {
+  if (source === "off") return "不要写 <scene bg=\"…\"> 的背景图（或只用 black / white 纯色转场）——本剧目不用背景图，场景与环境用旁白交代。";
   if (!can.image) return noImage("background", can);
   switch (source) {
     case "library-first":

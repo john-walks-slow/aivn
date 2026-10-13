@@ -74,12 +74,17 @@ describe("parsePlayConfig：agents 段的能力启用集", () => {
 });
 
 describe("parsePlayConfig：写作参数（craft）与逐剧目生图（image）", () => {
-  it("craft 逐字段白名单：拼错的值当没写，不拖累同一段里合法的那些", () => {
+  it("craft 逐字段白名单：拼错的值当没写，不拖累同一段里合法的那些（background 支持 off）", () => {
     const play = parsePlayConfig({
       ...BASE,
       craft: { beatLength: "mediumm", stopOptions: "two", assets: { background: "library-first", cg: "生成" } },
     });
     expect(play.craft).toEqual({ stopOptions: "two", assets: { background: "library-first" } });
+    const pureText = parsePlayConfig({
+      ...BASE,
+      craft: { assets: { background: "off", cg: "off", sprite: "off" } },
+    });
+    expect(pureText.craft).toEqual({ assets: { background: "off", cg: "off", sprite: "off" } });
   });
 
   it("整段都没剩下东西时不留空壳（read 回去看到的是「没写」）", () => {

@@ -57,8 +57,8 @@ export interface WorkshopPromptContext {
  */
 function responsibilityRules(canFiles: boolean): string {
   const produced = canFiles
-    ? `- 你产出的东西：世界观前提（premise）、创作口径（craft.md）、角色卡（人设 + 立绘差分映射 + 音色）、地点/设定记忆卡、图像素材。`
-    : `- 你产出的东西：图像素材。剧目文件（premise、craft.md、角色卡、记忆卡、play.json）**这条路上没有给你写口**——
+    ? `- 你产出的东西：世界观前提（premise）、创作口径（craft.md）、角色卡（人设 + 立绘差分映射 + 音色）、地点/设定记忆卡、剧目配置与写作参数（play.json）、剧目界面主题（theme.css）、图像素材。`
+    : `- 你产出的东西：图像素材。剧目文件（premise、craft.md、角色卡、记忆卡、play.json、theme.css）**这条路上没有给你写口**——
   要改就把「改哪个文件、改成什么」整理成清单交给用户，让他在工坊里自己改。`;
   const mustWrite = canFiles
     ? `- 改文件必须真的调用 write / edit 工具；出图必须真的调用 generate_image。只在对话里说"我建议改成…"不算完成。`
@@ -250,6 +250,8 @@ ${ctx.can.skill
 ${craftNow(ctx)}
   改完立刻生效，用户也能在「剧目」页看到同一份值。**只改 \`craft\` 这一段**，别整篇重写 play.json，也别在 craft.md 里再写一遍。
   **改完跑一次 \`validate_play\`**：写口只查 JSON 结构，craft 的取值白名单不在那儿——写错值只有它会报出来。
+- 界面风格与主题色（\`theme.css\`）：\`--play-style\` 成套切换开始菜单、舞台与分支选项框（可选 \`atri\` | \`card\` | \`cinema\` | \`hud\` | \`scroll\` | \`velvet\` | \`novel\` | \`nvl\`），写法见 skill \`galgame-ui-style\`。
+  用户想要**纯文字 / 互动小说**时：把 \`theme.css\` 写成 \`:root { --play-style: novel; }\`（或带氛围图的 \`nvl\`），再用 \`edit\` 把 \`play.json\` 的 \`craft.assets\` 设为 \`{"background": "off", "cg": "off", "sprite": "off"}\`（纯文字剧目无需列图单或出图）。
 - 创作口径（memory/always/craft.md）装的是**拿话说的那部分**：文风与禁忌、称呼与口癖、叙述视角与节奏感、
   场景转换的偏好、**主角的呈现**。每轮多长、选项几条、素材从哪来**不要写这里**（那是写作参数）。
 - 角色卡在 \`characters/<id>.md\`（角色的一切都在这张卡里，play.json 不再存角色数据）；

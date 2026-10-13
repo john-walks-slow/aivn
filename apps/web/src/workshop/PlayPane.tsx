@@ -430,6 +430,7 @@ const CRAFT_OPTIONS: Record<CraftField, readonly (readonly [string, string])[]> 
     ["", "默认（素材资源库里优先，没有再出图）"],
     ["library", "只用素材资源库里现成的"],
     ["generate", "直接出图，不去库里找"],
+    ["off", "不用背景图"],
   ],
   cg: [
     ["", "默认（直接出图）"],

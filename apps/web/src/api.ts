@@ -2,6 +2,7 @@ import type {
   CharacterDocument,
   AssetMeta,
   CgEntry,
+  CraftAssetSources,
   LibraryEntry,
   LineageView,
   PlayConfig,
@@ -43,9 +44,9 @@ export interface Readiness {
 export const readinessMissing = (r: Readiness): string[] =>
   r.premise ? [] : ["故事前提"];
 
-export const readinessAdvice = (r: Readiness): string[] => [
-  ...(r.sprites ? [] : ["立绘"]),
-  ...(r.background ? [] : ["背景图"]),
+export const readinessAdvice = (r: Readiness, assets?: CraftAssetSources): string[] => [
+  ...(r.sprites || assets?.sprite === "off" ? [] : ["立绘"]),
+  ...(r.background || assets?.background === "off" ? [] : ["背景图"]),
 ];
 
 export interface PlaySummary {

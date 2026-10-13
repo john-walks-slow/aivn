@@ -1,6 +1,6 @@
 ---
 name: galgame-ui-style
-description: 剧目要换界面皮肤、主题色或界面风格时读这个。规定剧目 theme.css 的界面风格（--play-style 六档：开始菜单+消息框+分支选项框成套切换）、令牌写面、深浅配色、对比度、材质色和窄屏自查。
+description: 剧目要换界面皮肤、主题色或界面风格时读这个。规定剧目 theme.css 的界面风格（--play-style 八档：开始菜单+消息框+分支选项框成套切换，含纯文字书页流 novel 与音响小说 nvl）、令牌写面、深浅配色、对比度、材质色和窄屏自查。
 user-invocable: true
 ---
 
@@ -17,7 +17,7 @@ user-invocable: true
 
 可覆盖的舞台/界面令牌如下；只在确实需要改变该表面时覆盖，不要造新主题令牌：
 
-- 界面风格：`--play-style`（写在 `:root` 里，或文件头注释 `/* aivn-play-style: <id> */`，取值：`atri` | `card` | `cinema` | `hud` | `scroll` | `velvet`；一个选项同时切换本剧的开始菜单、舞台消息框与舞台分支选项框）。
+- 界面风格：`--play-style`（写在 `:root` 里，或文件头注释 `/* aivn-play-style: <id> */`，取值：`atri` | `card` | `cinema` | `hud` | `scroll` | `velvet` | `novel` | `nvl`；一个选项同时切换本剧的开始菜单、舞台消息框与舞台分支选项框）。
 - 主色：`--accent`、`--accent-ink`、`--link`、`--play-accent`、`--play-accent-ink`、`--play-accent-dark`、`--play-accent-dark-ink`。
 - 对话框：`--dialog-bg`、`--dialog-line`、`--dialog-ink`、`--dialog-ink-soft`、`--dialog-ink-thought`、`--dialog-ink-faint`、`--dialog-bad`、`--dialog-text-shadow`、`--dialog-hover`、`--dialog-veil`、`--dialog-shadow`。
 - 选肢/名牌：`--choice-bg`、`--choice-line`、`--choice-ink`、`--choice-active-bg`、`--choice-scrim`；`--nameplate-bg`、`--nameplate-ink`、`--nameplate-line`。
@@ -141,7 +141,7 @@ html[data-ui-theme="dark"] {
 
 材质色只作底、边、金线、印章或小标题，并掺入 `--accent`，例如 `color-mix(in srgb, var(--accent) 26%, #7e1a32)`；正文始终用经过验证的 `*-ink`。固定方向可参考：酒红底 20–30%、纸底 6–12%、暖金/朱红小件 20–40% accent。
 
-## 5. 剧目界面风格六档（一个选项管全套）
+## 5. 剧目界面风格八档（一个选项管全套）
 
 界面风格属于**剧目主题**（每部剧各自独立，不是浏览器全局偏好），落在 `plays/<id>/theme.css` 的 `:root { --play-style: <id>; }`（或文件顶行 `/* aivn-play-style: <id> */`），工坊「剧目 → 剧目主题 → 界面风格」下拉框读写的也是它。
 
@@ -153,6 +153,8 @@ html[data-ui-theme="dark"] {
 - `hud`（战术 HUD）：等宽字体 + 扫描线纹理 + 切角发光菜单面板、消息框与 `[01]` 选项框。
 - `scroll`（书卷）：竖排衬线剧名与朱红「印」章 + 宣纸/乌金双线画框消息框与朱红方印选项框。
 - `velvet`（丝绒幕）：剧场丝绒竖纹幕布 + 双线描金告示牌 + 丝绒描金消息框与鎏金胶囊选项框。
+- `novel`（书页流 · 互动小说）：双开书籍扉页与章节目录 + 居中纵向实体书页（同场连续段落累积、左栏名牌、▸ 玩家输入回执、文末内嵌选肢；无图即纯文字夜读纸/棉纸，有图时外围模糊暗景 + 页顶窄画框）。
+- `nvl`（音响小说 · 全屏叠字）：序章全屏标题菜单 + 全屏背景/立绘叠左浓右淡渐变纱（同场前文半透明留驻、当前句高亮、换景自动翻页、页末内联选肢）。
 
 宿主 `applyPlayTheme` 读取本剧 `theme.css` 后自动将风格同步到 `html[data-dialog-style]` 与 `html[data-menu-style]`（`atri` 或未设时移除属性），离开剧目自动还原。不要在 `play.json` 里写风格字段，统一写 `theme.css`。
 

@@ -12,7 +12,13 @@ import {
   type SpriteFraming,
   type SpriteStature,
 } from "@aivn/core";
-import { dialogContent, emptyDialogHint, titleStepEnds } from "./playbackState.js";
+import {
+  buildPageView,
+  dialogContent,
+  emptyDialogHint,
+  titleStepEnds,
+  type PageView,
+} from "./playbackState.js";
 import { actorName } from "./script.js";
 import { speakerFocusId, type Playback, type VisualState } from "./director.js";
 import type { AssetIndex } from "./assets.js";
@@ -429,6 +435,23 @@ function useOneShot(seq: number | null | undefined, durationMs: number, muted = 
   return { active, nonce };
 }
 
+/** 监听 html[data-dialog-style]，在 novel / nvl 档位下切换为连续段落书页流渲染。 */
+function useDialogStyle(): string | null {
+  const [style, setStyle] = useState<string | null>(() =>
+    typeof document !== "undefined" ? (document.documentElement.dataset.dialogStyle ?? null) : null,
+  );
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    const sync = (): void => setStyle(root.dataset.dialogStyle ?? null);
+    sync();
+    const mo = new MutationObserver(sync);
+    mo.observe(root, { attributes: true, attributeFilter: ["data-dialog-style"] });
+    return () => mo.disconnect();
+  }, []);
+  return style;
+}
+
 /** 舞台：背景/立绘/CG 视觉层 + 打字机对话框 + 二段式点击 + 自动模式 + sfx/bgm + 语音 + 导演工具栏（右上角）。 */
 export function StageTheater({
   visual,
@@ -532,6 +555,38 @@ voiceState,
     : dialog.text;
   // 说话者聚焦：当前这句台词的人保持原亮度，同框的其余人压暗。规则见 speakerFocusId。
   const focusId = speakerFocusId(view, visual.sprites);
+  const dialogStyle = useDialogStyle();
+  const isPageStyle = dialogStyle === "novel" || dialogStyle === "nvl";
+  const pageView = useMemo<PageView>(() => {
+    if (playback.page) return playback.page;
+    const chronological = [...playback.history].reverse();
+    if (view && view.type !== "title" && !chronological.some((e) => e.key === view.key)) {
+      chronological.push(view);
+    }
+    return buildPageView({
+      cues: [],
+      lines: current ? [current] : [],
+      transcript: chronological,
+      current,
+      view,
+      viewLength,
+      shownLength,
+      scrubbed,
+    });
+  }, [playback.page, playback.history, current, view, viewLength, shownLength, scrubbed]);
+
+  const pageFlowRef = useRef<HTMLDivElement | null>(null);
+  const currentEntryRef = useRef<HTMLParagraphElement | null>(null);
+  useEffect(() => {
+    if (!isPageStyle) return;
+    const flow = pageFlowRef.current;
+    if (!flow) return;
+    if (scrubbed) {
+      currentEntryRef.current?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    flow.scrollTop = flow.scrollHeight;
+  }, [isPageStyle, scrubbed, pageView.pageNo, pageView.entries.length, shownLength, Boolean(overlay)]);
 
   /**
    * 舞台点击：回看中 → 往回追一句；等新内容时（pause 停止点）→ 直接开新一轮。
@@ -977,10 +1032,11 @@ voiceState,
 
       {/* 选肢层：导演栏与台词条之间那一段，画面层之上、台词条之下。
           净画面态整层不渲染（不是 display:none）：它带着压暗舞台的遮罩
-          （.theater:has(.choice-overlay)），藏掉卡片却留着遮罩，看到的还是暗的。 */}
+          （.theater:has(.choice-overlay)），藏掉卡片却留着遮罩，看到的还是暗的。
+          novel / nvl 书页流模式下选肢内嵌在 .dialog-page-flow 末尾，不在此重复挂载。 */}
       {/* 标题卡期间不摆停止点/继续出口：title 与 stop 不同时在场（stop 写在 </title> 之后），
           先点掉标题卡、对话框恢复，选项才出现。 */}
-      {!hideUi && !isTitle && overlay}
+      {!isPageStyle && !hideUi && !isTitle && overlay}
 
       {/* 导演工具栏（提示/改写/重写/生图/重听）：舞台右上角浮层。点击动作 stopPropagation，
            不劫持舞台的继续/回看手势。分岔不在这里——它是「提示」面板里的一条岔
@@ -1089,14 +1145,86 @@ voiceState,
       )}
 
       <div className="theater-dialog" role="text" ref={dialogRef}>
-        {/* 名牌：整块落在台词条上方、跟窗的上边缘连着（不留缝），左端跟窗的左边缘对齐。
-            骑在窗沿上会把它切成两半，所以是「贴着」，不是「压着」。 */}
-        {dialog.name && <div className="dialog-name">{dialog.name}</div>}
-        {/* 玩家回执（input 行）与其他台词同一待遇：播放头走到它就整行显示（不打字机）。 */}
-        <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
-          {dialogBody}
-          {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
-        </p>
+        {isPageStyle ? (
+          <>
+            <div className="dialog-page-head">
+              <span className="dialog-page-title">
+                <b className="dialog-page-dot" aria-hidden>
+                  ❖
+                </b>
+                {pageView.scene ?? `CHAPTER ${String(pageView.pageNo).padStart(2, "0")}`}
+              </span>
+              <span className="dialog-page-meta">
+                PAGE {String(pageView.pageNo).padStart(2, "0")}
+                {pageView.entries.length > 0
+                  ? ` · LINE ${String(pageView.entries.length).padStart(3, "0")}`
+                  : ""}
+              </span>
+            </div>
+            {dialogStyle === "novel" && (cgUrl || bgUrl || cgPending || bgPending) && (
+              <div
+                className={`dialog-scene-plate${cgUrl || cgPending ? " is-cg" : ""}${
+                  (cgPending && !cgUrl) || (bgPending && !bgUrl) ? " is-pending" : ""
+                }`}
+              >
+                {(cgUrl ?? bgUrl) && (
+                  <img src={(cgUrl ?? bgUrl)!} alt={visual.cg?.caption ?? pageView.scene ?? ""} />
+                )}
+                {(visual.cg?.caption || pageView.scene || bgAssetId) && (
+                  <span className="dialog-scene-cap">
+                    {visual.cg?.caption ?? `SCENE · ${pageView.scene ?? bgAssetId}`}
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="dialog-page-flow" ref={pageFlowRef}>
+              {pageView.entries.length === 0 ? (
+                dialogBody ? (
+                  <p className="page-entry narrate is-current">
+                    {dialogBody}
+                    {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
+                  </p>
+                ) : null
+              ) : (
+                pageView.entries.map((entry) => {
+                  const isInput = entry.kind === "input";
+                  const spk =
+                    !isInput && entry.type === "say"
+                      ? (entry.nameOverride ?? (actorName(names, entry.actorId) || "？"))
+                      : null;
+                  const entryClass = `page-entry ${isInput ? "input" : entry.type}${
+                    entry.isCurrent ? " is-current" : ""
+                  }${scrubbed && entry.isCurrent ? " rewinding" : ""}`;
+                  return (
+                    <p
+                      key={entry.key}
+                      ref={entry.isCurrent ? currentEntryRef : undefined}
+                      className={entryClass}
+                    >
+                      {spk && <span className="page-spk">{spk}</span>}
+                      <span className="page-text">{entry.text}</span>
+                      {entry.isCurrent && !scrubbed && !lineDone && (
+                        <span className="dialog-caret" aria-hidden />
+                      )}
+                    </p>
+                  );
+                })
+              )}
+              {!hideUi && !isTitle && overlay}
+            </div>
+          </>
+        ) : (
+          <>
+            {/* 名牌：整块落在台词条上方、跟窗的上边缘连着（不留缝），左端跟窗的左边缘对齐。
+                骑在窗沿上会把它切成两半，所以是「贴着」，不是「压着」。 */}
+            {dialog.name && <div className="dialog-name">{dialog.name}</div>}
+            {/* 玩家回执（input 行）与其他台词同一待遇：播放头走到它就整行显示（不打字机）。 */}
+            <p className={`dialog-text ${view?.type === "thought" ? "thought" : view?.type === "narrate" ? "narrate" : ""} ${scrubbed ? "rewinding" : ""}`}>
+              {dialogBody}
+              {view && !scrubbed && !lineDone && <span className="dialog-caret" aria-hidden />}
+            </p>
+          </>
+        )}
         {/* 台词条底缘：左是状态提示（回看中 / 生成中），右是游戏选项 */}
         <div className="dialog-foot">
           <div className="dialog-hint dialog-hint-foot">

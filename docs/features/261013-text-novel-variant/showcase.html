@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>「纯文本 / 文本为主的互动小说」设计远景 · 书页流（novel）与音响小说（nvl）</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: #0b0e14; }
+    body { font-family: system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+
+    /* ── 骨架：1280×720 标准舞台 ─────────────────────────────────── */
+    .group { display: block; }
+    .tile { width: 1280px; background: #0b0e14; }
+    .cap {
+      display: flex; align-items: baseline; gap: 12px;
+      padding: 12px 20px 8px; background: #11151d; color: #e8eef7;
+      border-bottom: 1px solid rgba(255,255,255,.07);
+    }
+    .cap b { font-size: 15px; letter-spacing: .04em; }
+    .cap span { font-size: 11.5px; color: #8b98ab; letter-spacing: .04em; }
+    .cap i { margin-left: auto; font-style: normal; font-size: 11px; color: #5d6b80; letter-spacing: .12em; }
+    .stage {
+      position: relative; width: 1280px; height: 720px; overflow: hidden;
+      background: #0d0f15;
+    }
+
+    /* ── 主题色：与 apps/web/src/ui/playTheme.ts 色板一致 ─── */
+    .tile { --accent: #1b5aa6; }
+    .tile[data-accent="sakura"] { --accent: #c2557f; }
+    .tile[data-accent="moss"]   { --accent: #4a6f45; }
+    .tile[data-accent="amber"]  { --accent: #a97526; }
+    .tile[data-theme="dark"] { --accent: #4a9fe0; }
+    .tile[data-theme="dark"][data-accent="sakura"] { --accent: #cf7a9b; }
+    .tile[data-theme="dark"][data-accent="moss"]   { --accent: #728f6e; }
+    .tile[data-theme="dark"][data-accent="amber"]  { --accent: #bc9356; }
+
+    /* 舞台顶栏（左上切换器 + 右上导演栏）：保持引擎真实 chrome 在场，看整体融合度 */
+    .hud-top-left, .hud-top-right {
+      position: absolute; top: 14px; z-index: 20;
+      display: inline-flex; align-items: center; gap: 2px;
+      height: 30px; padding: 0 10px; border-radius: 999px;
+      font-size: 12px; letter-spacing: .04em;
+    }
+    .hud-top-left { left: 16px; gap: 8px; }
+    .hud-top-right { right: 16px; gap: 10px; }
+    .tile[data-theme="dark"] .hud-top-left,
+    .tile[data-theme="dark"] .hud-top-right {
+      background: #0d1117; border: 1px solid #30363d; color: #8b949e;
+    }
+    .tile[data-theme="light"] .hud-top-left,
+    .tile[data-theme="light"] .hud-top-right {
+      background: #ffffff; border: 1px solid #e2e8f0; color: #64748b;
+    }
+    .hud-seg-active {
+      color: var(--accent); font-weight: 700;
+    }
+
+    @keyframes caret-blink { 50% { opacity: 0; } }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       V6 · 书页流（novel · Literary Page）
+       参考：Inkle《80 Days》/ Twine Chapbook / Reverie 小说模式
+       特点：
+         1. 居中一张纵向实体书页（宽 760px，每行 ~34 字，符合中文最佳阅读行宽）
+         2. 既支持纯文本无图（纸面肌理衬底），也支持有背景图（外围画布氛围化，书页内插图题头）
+         3. 多句累积同屏：前文柔和留驻（70% 对比度），当前句 100% 鲜明聚焦 + 光标
+         4. 四种句型纯靠排印区分：旁白（正体缩进）、台词（段首小字距角色名牌）、独白（斜体缩进）、玩家输入（左轨 ▸ 标记）
+         5. 停止点选项紧随当前段落在书页内展开，不悬浮遮挡正文
+         6. 底栏左置进度/提示，右置极简书页脚标式 Quick Menu
+       ═══════════════════════════════════════════════════════════════════════ */
+    .v6 .stage {
+      --novel-gild: color-mix(in srgb, var(--accent) 42%, #c9ad7c);
+      --novel-rule: color-mix(in srgb, var(--accent) 24%, rgba(201, 173, 124, 0.28));
+    }
+    .v6 .bg-art {
+      position: absolute; inset: 0;
+      background: url(../../../library/backgrounds/bg_rainy_window/bg_rainy_window.jpg) center 45% / cover no-repeat;
+      filter: blur(22px) saturate(0.72) brightness(0.38);
+      transform: scale(1.08);
+    }
+    .v6.no-art .bg-art { display: none; }
+    .v6 .bg-wash {
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(110% 95% at 50% 50%,
+          color-mix(in srgb, var(--accent) 8%, rgba(16, 14, 12, 0.72)) 0%,
+          color-mix(in srgb, var(--accent) 14%, rgba(8, 7, 6, 0.94)) 100%);
+    }
+    .v6.no-art .bg-wash {
+      background:
+        radial-gradient(90% 85% at 50% 35%,
+          color-mix(in srgb, var(--accent) 10%, #171411) 0%,
+          color-mix(in srgb, var(--accent) 6%, #0c0a09) 100%);
+    }
+
+    /* 居中书页（复用 .theater-dialog 容器） */
+    .v6 .dlg {
+      position: absolute; left: 50%; top: 20px; bottom: 20px;
+      transform: translateX(-50%);
+      width: min(780px, 86%);
+      padding: 34px 58px 22px;
+      display: flex; flex-direction: column;
+      border-radius: 3px;
+      background:
+        linear-gradient(180deg,
+          color-mix(in srgb, var(--accent) 8%, rgba(28, 24, 20, 0.96)) 0%,
+          color-mix(in srgb, var(--accent) 10%, rgba(19, 16, 13, 0.98)) 100%);
+      border: 1px solid var(--novel-rule);
+      outline: 1px solid color-mix(in srgb, var(--novel-gild) 14%, transparent);
+      outline-offset: -8px;
+      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+    }
+
+    /* 页眉：书名 / 场景名 + 序号（Running Header） */
+    .v6 .page-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding-bottom: 12px; margin-bottom: 18px;
+      border-bottom: 1px solid var(--novel-rule);
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-size: 11px; letter-spacing: .24em;
+      color: color-mix(in srgb, var(--novel-gild) 82%, transparent);
+    }
+    .v6 .page-header .ch-dot {
+      color: var(--accent); margin-right: 8px;
+    }
+
+    /* 可选：有图剧目的书页内嵌场景窄画框（V6B 展示） */
+    .v6 .scene-plate {
+      position: relative; height: 118px; margin-bottom: 18px;
+      border-radius: 2px; overflow: hidden;
+      border: 1px solid var(--novel-rule);
+      background: url(../../../library/backgrounds/bg_rainy_window/bg_rainy_window.jpg) center 52% / cover no-repeat;
+    }
+    .v6 .scene-plate::after {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(90deg, rgba(18, 15, 12, 0.68) 0%, transparent 45%, rgba(18, 15, 12, 0.55) 100%);
+    }
+    .v6 .scene-plate-cap {
+      position: absolute; left: 16px; bottom: 10px; z-index: 2;
+      font-size: 11px; letter-spacing: .22em;
+      color: rgba(244, 236, 222, 0.85);
+      text-shadow: 0 1px 6px rgba(0,0,0,0.9);
+    }
+
+    /* 连续文本流 */
+    .v6 .prose-flow {
+      flex: 1; display: flex; flex-direction: column; justify-content: flex-start;
+      gap: 14px; overflow: hidden;
+    }
+    .v6 .entry {
+      margin: 0; font-size: 17px; line-height: 1.92; letter-spacing: .025em;
+      color: rgba(232, 223, 208, 0.66);
+      transition: color .2s ease, opacity .2s ease;
+    }
+    /* 旁白 */
+    .v6 .entry.narrate {
+      text-indent: 2em;
+    }
+    /* 台词：角色名作小字距铅字印记冠于句首 */
+    .v6 .entry.say {
+      position: relative; padding-left: 4.8em;
+    }
+    .v6 .entry.say .spk {
+      position: absolute; left: 0; top: 0.12em;
+      width: 4.2em; text-align: right;
+      font-family: system-ui, "PingFang SC", sans-serif;
+      font-size: 12.5px; font-weight: 700; letter-spacing: .12em;
+      color: color-mix(in srgb, var(--accent) 62%, #e6d7be);
+    }
+    .v6 .entry.say .spk::after {
+      content: ""; display: inline-block; width: 1px; height: 0.88em;
+      margin-left: 7px; vertical-align: -1px;
+      background: color-mix(in srgb, var(--accent) 48%, transparent);
+    }
+    /* 内心独白 */
+    .v6 .entry.thought {
+      padding-left: 2em; font-style: italic;
+      color: color-mix(in srgb, var(--accent) 28%, rgba(214, 203, 228, 0.68));
+    }
+    /* 玩家输入回执：Reverie / IF 风格柔和左轨标记，不破书页感 */
+    .v6 .entry.input {
+      margin: 2px 0; padding: 6px 14px;
+      border-left: 2px solid var(--accent);
+      background: color-mix(in srgb, var(--accent) 9%, transparent);
+      color: color-mix(in srgb, var(--accent) 42%, #efe6d5);
+      font-size: 15.5px; line-height: 1.75;
+    }
+    .v6 .entry.input::before {
+      content: "▸ "; color: var(--accent); font-weight: 700; margin-right: 4px;
+    }
+    /* 当前焦点行（正在打字或刚落定的一句）：100% 鲜明对比度 */
+    .v6 .entry.is-current {
+      color: #f7f0e4; font-weight: 500;
+    }
+    .v6 .entry.is-current.say .spk {
+      color: color-mix(in srgb, var(--accent) 78%, #ffffff);
+    }
+    .v6 .caret {
+      display: inline-block; width: 7px; height: 15px; margin-left: 4px;
+      vertical-align: -2px; background: var(--accent);
+      animation: caret-blink 1s step-start infinite;
+    }
+
+    /* 书页内嵌选肢（当停止点到达时紧随文末展开） */
+    .v6 .page-choices {
+      margin-top: 10px; padding-top: 14px;
+      border-top: 1px solid var(--novel-rule);
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .v6 .page-choices-head {
+      font-family: var(--font-mono, monospace); font-size: 10.5px; letter-spacing: .28em;
+      color: var(--novel-gild); margin-bottom: 2px;
+    }
+    .v6 .page-choice {
+      display: flex; align-items: baseline; gap: 12px;
+      padding: 8px 14px; border-radius: 2px;
+      border: 1px solid color-mix(in srgb, var(--novel-gild) 22%, transparent);
+      background: color-mix(in srgb, var(--accent) 6%, rgba(255, 255, 255, 0.015));
+      color: #efe6d5; font-size: 15.5px; line-height: 1.55; letter-spacing: .03em;
+    }
+    .v6 .page-choice.on {
+      border-color: color-mix(in srgb, var(--accent) 70%, var(--novel-gild));
+      background: color-mix(in srgb, var(--accent) 22%, rgba(28, 24, 20, 0.9));
+      color: #ffffff;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .v6 .page-choice .c-no {
+      font-family: var(--font-mono, monospace); font-size: 12px; font-weight: 700;
+      color: color-mix(in srgb, var(--accent) 75%, var(--novel-gild));
+      min-width: 18px;
+    }
+    .v6 .page-choice .c-seen {
+      margin-left: auto; font-family: system-ui, sans-serif; font-size: 11px;
+      color: rgba(232, 223, 208, 0.45); letter-spacing: .08em;
+    }
+    .v6 .page-choice.ghost {
+      border-style: dashed; opacity: 0.78; font-size: 14.5px;
+    }
+
+    /* 页脚：左状态提示 + 右快捷菜单（对齐 .dialog-foot 与 .dialog-options） */
+    .v6 .dlg-foot {
+      margin-top: auto; padding-top: 12px;
+      border-top: 1px solid var(--novel-rule);
+      display: flex; align-items: center; justify-content: space-between;
+      font-family: system-ui, "PingFang SC", sans-serif;
+    }
+    .v6 .hint {
+      font-size: 11.5px; letter-spacing: .08em;
+      color: rgba(232, 223, 208, 0.52);
+    }
+    .v6 .hint .arrow { color: var(--accent); margin-right: 6px; }
+    .v6 .quick {
+      display: flex; align-items: center; gap: 0;
+      font-family: "Noto Serif CJK SC", serif; font-size: 11.5px; letter-spacing: .1em;
+      color: color-mix(in srgb, var(--novel-gild) 78%, transparent);
+    }
+    .v6 .quick span { padding: 0 8px; }
+    .v6 .quick span + span { border-left: 1px solid color-mix(in srgb, var(--novel-gild) 28%, transparent); }
+    .v6 .quick span.on { color: var(--accent); font-weight: 700; }
+
+    /* V6 浅色主题（棉纸白书页） */
+    .v6[data-theme="light"] .stage {
+      --novel-gild: color-mix(in srgb, var(--accent) 45%, #7a582c);
+      --novel-rule: color-mix(in srgb, var(--accent) 22%, rgba(122, 88, 44, 0.24));
+    }
+    .v6[data-theme="light"] .bg-art {
+      filter: blur(22px) saturate(0.85) brightness(1.04);
+    }
+    .v6[data-theme="light"] .bg-wash {
+      background:
+        radial-gradient(110% 95% at 50% 50%,
+          color-mix(in srgb, var(--accent) 6%, rgba(244, 238, 225, 0.72)) 0%,
+          color-mix(in srgb, var(--accent) 12%, rgba(232, 223, 205, 0.92)) 100%);
+    }
+    .v6.no-art[data-theme="light"] .bg-wash {
+      background:
+        radial-gradient(90% 85% at 50% 35%,
+          color-mix(in srgb, var(--accent) 6%, #f4eee1) 0%,
+          color-mix(in srgb, var(--accent) 10%, #e7decb) 100%);
+    }
+    .v6[data-theme="light"] .dlg {
+      background:
+        linear-gradient(180deg,
+          color-mix(in srgb, var(--accent) 5%, #FCF9F2) 0%,
+          color-mix(in srgb, var(--accent) 8%, #F5EFE2) 100%);
+      border-color: var(--novel-rule);
+      outline-color: color-mix(in srgb, var(--novel-gild) 18%, transparent);
+      box-shadow: 0 24px 60px rgba(60, 42, 20, 0.18), inset 0 1px 0 #ffffff;
+    }
+    .v6[data-theme="light"] .scene-plate::after {
+      background: linear-gradient(90deg, rgba(35, 28, 18, 0.52) 0%, transparent 50%, rgba(35, 28, 18, 0.42) 100%);
+    }
+    .v6[data-theme="light"] .entry { color: rgba(58, 46, 32, 0.68); }
+    .v6[data-theme="light"] .entry.say .spk {
+      color: color-mix(in srgb, var(--accent) 72%, #4a3319);
+    }
+    .v6[data-theme="light"] .entry.thought {
+      color: color-mix(in srgb, var(--accent) 40%, #6b5b4b);
+    }
+    .v6[data-theme="light"] .entry.input {
+      background: color-mix(in srgb, var(--accent) 8%, rgba(255, 255, 255, 0.6));
+      color: color-mix(in srgb, var(--accent) 75%, #2b1f11);
+    }
+    .v6[data-theme="light"] .entry.is-current { color: #1e160d; font-weight: 600; }
+    .v6[data-theme="light"] .entry.is-current.say .spk {
+      color: color-mix(in srgb, var(--accent) 85%, #1e160d);
+    }
+    .v6[data-theme="light"] .page-choice {
+      border-color: color-mix(in srgb, var(--novel-gild) 28%, transparent);
+      background: rgba(255, 255, 255, 0.55);
+      color: #2b2013;
+    }
+    .v6[data-theme="light"] .page-choice.on {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 15%, #ffffff);
+      color: color-mix(in srgb, var(--accent) 82%, #140e07);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .v6[data-theme="light"] .page-choice .c-seen { color: rgba(58, 46, 32, 0.48); }
+    .v6[data-theme="light"] .hint { color: rgba(58, 46, 32, 0.56); }
+    .v6[data-theme="light"] .quick { color: color-mix(in srgb, var(--novel-gild) 85%, transparent); }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       V7 · 音响小说（nvl · Sound Novel / 全屏 NVL 幕）
+       参考：Chunsoft《弟切草》《镰鼬之夜》《428》/ Type-Moon《魔法使之夜》《月姬》NVL
+       特点：
+         1. 背景与立绘全屏在场，整屏压一层左浓右淡的渐变暗纱（右侧留给立绘呼吸）
+         2. 文字直接叠在画面左中区域（62% 宽），无重边框，靠描边与渐变纱保证 >7:1 对比度
+         3. 《魔法使之夜》式焦点层：前文段落半透明（0.52），当前句 100% 亮白 + 柔光描边
+         4. 选肢紧随全屏文字流下方展开，横向渐变细带
+       ═══════════════════════════════════════════════════════════════════════ */
+    .v7 .bg-art {
+      position: absolute; inset: 0;
+      background: url(../../../library/backgrounds/bg_rooftop_dusk/bg_rooftop_dusk.jpg) center 62% / cover no-repeat;
+    }
+    .v7 .sprite {
+      position: absolute; right: 4%; bottom: -4%; height: 102%;
+      filter: brightness(0.78) saturate(0.88) drop-shadow(0 18px 40px rgba(0,0,0,0.65));
+    }
+    .v7 .nvl-veil {
+      position: absolute; inset: 0;
+      background:
+        linear-gradient(96deg,
+          color-mix(in srgb, var(--accent) 16%, rgba(5, 9, 16, 0.90)) 0%,
+          color-mix(in srgb, var(--accent) 14%, rgba(6, 11, 19, 0.82)) 54%,
+          color-mix(in srgb, var(--accent) 10%, rgba(6, 11, 19, 0.42)) 78%,
+          color-mix(in srgb, var(--accent) 8%, rgba(6, 11, 19, 0.25)) 100%);
+    }
+    .v7 .dlg {
+      position: absolute; inset: 54px 6% 22px 7%;
+      display: flex; flex-direction: column;
+      font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+    }
+    .v7 .nvl-scene-tag {
+      display: inline-flex; align-items: center; gap: 10px;
+      margin-bottom: 18px;
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-size: 11px; letter-spacing: .3em;
+      color: color-mix(in srgb, var(--accent) 65%, #cbd5e1);
+      text-shadow: 0 1px 6px rgba(0,0,0,0.9);
+    }
+    .v7 .nvl-scene-tag::before {
+      content: ""; width: 24px; height: 1px;
+      background: color-mix(in srgb, var(--accent) 75%, #ffffff);
+    }
+    .v7 .nvl-flow {
+      width: min(740px, 68%);
+      flex: 1; display: flex; flex-direction: column; justify-content: flex-start;
+      gap: 15px;
+    }
+    .v7 .nvl-line {
+      margin: 0; font-size: 18.5px; line-height: 1.95; letter-spacing: .035em;
+      color: rgba(241, 245, 249, 0.52);
+      text-shadow: 1px 0 0 rgba(0,0,0,0.75), -1px 0 0 rgba(0,0,0,0.75), 0 1px 0 rgba(0,0,0,0.75), 0 -1px 0 rgba(0,0,0,0.75), 0 2px 10px rgba(0,0,0,0.85);
+    }
+    .v7 .nvl-line .nvl-spk {
+      display: inline-block; margin-right: 10px;
+      font-family: system-ui, "PingFang SC", sans-serif;
+      font-size: 14px; font-weight: 700; letter-spacing: .14em;
+      color: color-mix(in srgb, var(--accent) 68%, #e0f2fe);
+    }
+    .v7 .nvl-line.thought {
+      font-style: italic;
+      color: rgba(203, 213, 225, 0.48);
+    }
+    .v7 .nvl-line.input {
+      padding-left: 12px;
+      border-left: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+      color: color-mix(in srgb, var(--accent) 45%, rgba(241, 245, 249, 0.72));
+      font-size: 16.5px;
+    }
+    .v7 .nvl-line.input::before {
+      content: "▸ "; color: var(--accent);
+    }
+    /* 魔法使之夜式焦点：当前段 100% 亮白，旧段半透明退后 */
+    .v7 .nvl-line.is-current {
+      color: #ffffff; font-weight: 600;
+      text-shadow: 1px 0 0 rgba(0,0,0,0.85), -1px 0 0 rgba(0,0,0,0.85), 0 1px 0 rgba(0,0,0,0.85), 0 -1px 0 rgba(0,0,0,0.85), 0 2px 14px rgba(0,0,0,0.92);
+    }
+    .v7 .nvl-line.is-current .nvl-spk {
+      color: color-mix(in srgb, var(--accent) 78%, #ffffff);
+      text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent), 0 1px 4px rgba(0,0,0,0.9);
+    }
+    .v7 .caret {
+      display: inline-block; width: 8px; height: 16px; margin-left: 5px;
+      vertical-align: -2px; background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      animation: caret-blink 1s step-start infinite;
+    }
+
+    /* NVL 页末内联选肢 */
+    .v7 .nvl-choices {
+      width: min(700px, 66%);
+      margin-top: 8px; padding-top: 12px;
+      border-top: 1px solid color-mix(in srgb, var(--accent) 32%, rgba(255,255,255,0.12));
+      display: flex; flex-direction: column; gap: 7px;
+    }
+    .v7 .nvl-choice {
+      display: flex; align-items: center; gap: 14px;
+      padding: 9px 18px;
+      background: linear-gradient(90deg,
+        color-mix(in srgb, var(--accent) 18%, rgba(8, 14, 24, 0.82)) 0%,
+        color-mix(in srgb, var(--accent) 10%, rgba(8, 14, 24, 0.55)) 75%,
+        transparent 100%);
+      border-left: 2px solid color-mix(in srgb, var(--accent) 45%, rgba(255,255,255,0.22));
+      color: #f1f5f9; font-size: 16px; letter-spacing: .04em;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.85);
+    }
+    .v7 .nvl-choice.on {
+      border-left: 3px solid var(--accent);
+      background: linear-gradient(90deg,
+        color-mix(in srgb, var(--accent) 42%, rgba(12, 22, 38, 0.92)) 0%,
+        color-mix(in srgb, var(--accent) 18%, rgba(12, 22, 38, 0.68)) 80%,
+        transparent 100%);
+      color: #ffffff; font-weight: 600;
+    }
+    .v7 .nvl-choice .c-no {
+      font-family: var(--font-mono, monospace); font-size: 12.5px; font-weight: 700;
+      color: color-mix(in srgb, var(--accent) 75%, #ffffff);
+    }
+
+    .v7 .dlg-foot {
+      margin-top: auto; padding-top: 12px;
+      display: flex; align-items: center; justify-content: space-between;
+      font-family: system-ui, "PingFang SC", sans-serif;
+    }
+    .v7 .hint {
+      font-size: 11.5px; letter-spacing: .08em;
+      color: rgba(241, 245, 249, 0.55);
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
+    .v7 .hint .arrow { color: var(--accent); margin-right: 6px; }
+    .v7 .quick {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 11.5px; letter-spacing: .06em;
+      color: rgba(241, 245, 249, 0.62);
+    }
+    .v7 .quick span {
+      padding: 2px 9px; border-radius: 999px;
+      background: rgba(8, 14, 24, 0.52);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .v7 .quick span.on {
+      color: #ffffff; border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 42%, rgba(8, 14, 24, 0.8));
+    }
+
+    /* V7 浅色主题（白雾叠字） */
+    .v7[data-theme="light"] .bg-art { filter: saturate(0.92) brightness(1.05); }
+    .v7[data-theme="light"] .sprite { filter: brightness(0.98) drop-shadow(0 14px 32px rgba(15, 23, 42, 0.22)); }
+    .v7[data-theme="light"] .nvl-veil {
+      background:
+        linear-gradient(96deg,
+          color-mix(in srgb, var(--accent) 8%, rgba(252, 250, 245, 0.94)) 0%,
+          color-mix(in srgb, var(--accent) 6%, rgba(252, 250, 245, 0.88)) 54%,
+          color-mix(in srgb, var(--accent) 4%, rgba(252, 250, 245, 0.42)) 80%,
+          rgba(252, 250, 245, 0.16) 100%);
+    }
+    .v7[data-theme="light"] .nvl-scene-tag {
+      color: color-mix(in srgb, var(--accent) 78%, #1e293b);
+      text-shadow: none;
+    }
+    .v7[data-theme="light"] .nvl-scene-tag::before {
+      background: color-mix(in srgb, var(--accent) 75%, #1e293b);
+    }
+    .v7[data-theme="light"] .nvl-line {
+      color: rgba(30, 41, 59, 0.56);
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 8px rgba(255, 255, 255, 0.85);
+    }
+    .v7[data-theme="light"] .nvl-line .nvl-spk {
+      color: color-mix(in srgb, var(--accent) 82%, #0f172a);
+    }
+    .v7[data-theme="light"] .nvl-line.thought {
+      color: rgba(71, 85, 105, 0.55);
+    }
+    .v7[data-theme="light"] .nvl-line.input {
+      border-left-color: var(--accent);
+      color: color-mix(in srgb, var(--accent) 78%, #0f172a);
+    }
+    .v7[data-theme="light"] .nvl-line.is-current {
+      color: #0f172a; font-weight: 600;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.95), 0 0 12px rgba(255, 255, 255, 0.9);
+    }
+    .v7[data-theme="light"] .nvl-line.is-current .nvl-spk {
+      color: color-mix(in srgb, var(--accent) 88%, #091526);
+      text-shadow: none;
+    }
+    .v7[data-theme="light"] .nvl-choices {
+      border-top-color: color-mix(in srgb, var(--accent) 28%, rgba(15, 23, 42, 0.12));
+    }
+    .v7[data-theme="light"] .nvl-choice {
+      background: linear-gradient(90deg,
+        color-mix(in srgb, var(--accent) 10%, rgba(255, 255, 255, 0.92)) 0%,
+        color-mix(in srgb, var(--accent) 6%, rgba(255, 255, 255, 0.72)) 78%,
+        transparent 100%);
+      border-left-color: color-mix(in srgb, var(--accent) 45%, rgba(15, 23, 42, 0.25));
+      color: #1e293b; text-shadow: none;
+    }
+    .v7[data-theme="light"] .nvl-choice.on {
+      border-left-color: var(--accent);
+      background: linear-gradient(90deg,
+        color-mix(in srgb, var(--accent) 22%, #ffffff) 0%,
+        color-mix(in srgb, var(--accent) 10%, rgba(255, 255, 255, 0.85)) 80%,
+        transparent 100%);
+      color: color-mix(in srgb, var(--accent) 85%, #091526);
+    }
+    .v7[data-theme="light"] .nvl-choice .c-no {
+      color: color-mix(in srgb, var(--accent) 82%, #0f172a);
+    }
+    .v7[data-theme="light"] .hint { color: rgba(30, 41, 59, 0.62); text-shadow: none; }
+    .v7[data-theme="light"] .quick { color: rgba(30, 41, 59, 0.72); }
+    .v7[data-theme="light"] .quick span {
+      background: rgba(255, 255, 255, 0.78);
+      border-color: rgba(15, 23, 42, 0.12);
+    }
+    .v7[data-theme="light"] .quick span.on {
+      color: #ffffff; background: var(--accent); border-color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <div id="board"></div>
+  <script>
+    const QUICK = ["Auto", "语音", "←", "Log", "Route", "CG", "全屏", "隐藏", "工坊", "Title"];
+    const ACCENTS = { deepsea: "深海 #1b5aa6", sakura: "樱粉 #c2557f", moss: "苔绿 #4a6f45" };
+
+    const quickHtml = () => `<div class="quick">${QUICK.map((q, i) => `<span class="${i === 0 ? "on" : ""}">${q}</span>`).join("")}</div>`;
+    const hudHtml = () => `
+      <div class="hud-top-left"><span class="hud-seg-active">舞台</span><span>·</span><span>工坊</span></div>
+      <div class="hud-top-right"><span>提示</span><span>改写</span><span>重写</span><span>生图</span><span>重听</span></div>
+    `;
+
+    // V6A: 纯文本无图态（打字推进中）
+    function renderV6Pure(theme, accent, note) {
+      return `<section class="tile v6 no-art" data-variant="v6-pure" data-theme="${theme}" data-accent="${accent}">
+        <div class="cap"><b>V6A · 书页流（novel · 纯文本无图态）</b><span>${note ?? "零图片剧目即开即玩：实体书页 + 句型排印分层（旁白/左栏名牌台词/斜体独白/▸ 玩家回执）+ 焦点段高亮"}</span><i>${theme.toUpperCase()} · ${ACCENTS[accent] ?? accent}</i></div>
+        <div class="stage">
+          <div class="bg-wash"></div>
+          ${hudHtml()}
+          <div class="dlg">
+            <div class="page-header">
+              <span><b class="ch-dot">❖</b>CHAPTER I · 旧馆长室的黄昏</span>
+              <span>PAGE 04 · LINE 018</span>
+            </div>
+            <div class="prose-flow">
+              <p class="entry narrate">傍晚六点的钟声从走廊尽头传来，空气里浮着旧纸页与冷杉木的气味。雨点敲在铅框玻璃窗上，把外面的庭院洇成一片模糊的暗绿。</p>
+              <p class="entry say"><span class="spk">真帆</span>「……你就这么站在门口，一句话也不说？」</p>
+              <p class="entry thought">她把那本没有署名的借书卡夹回索引册，指尖在封皮边缘停顿了半秒。</p>
+              <p class="entry input">走过去把伞靠在门边，问她是不是已经看过最后一页。</p>
+              <p class="entry say is-current"><span class="spk">真帆</span>「看过了。上面最后一行写的名字——其实是你吧。」<span class="caret"></span></p>
+            </div>
+            <div class="dlg-foot">
+              <span class="hint"><span class="arrow">▼</span>点击书页或按空格继续</span>
+              ${quickHtml()}
+            </div>
+          </div>
+        </div>
+      </section>`;
+    }
+
+    // V6B: 书页流（带氛围背景 & 页内停止点选肢展开态）
+    function renderV6Choice(theme, accent, note) {
+      return `<section class="tile v6" data-variant="v6-choice" data-theme="${theme}" data-accent="${accent}">
+        <div class="cap"><b>V6B · 书页流（novel · 氛围画框 + 页内选肢展开）</b><span>${note ?? "有图剧目自动将背景化为书页外围暗景 + 页顶窄画框；停止点选项在文末原位展开，不悬浮遮挡上文"}</span><i>${theme.toUpperCase()} · ${ACCENTS[accent] ?? accent}</i></div>
+        <div class="stage">
+          <div class="bg-art"></div>
+          <div class="bg-wash"></div>
+          ${hudHtml()}
+          <div class="dlg">
+            <div class="page-header">
+              <span><b class="ch-dot">❖</b>CHAPTER I · 雨窗与借书卡</span>
+              <span>STOP · CHOICE</span>
+            </div>
+            <div class="scene-plate">
+              <span class="scene-plate-cap">SCENE · 旧馆长室 · 雨夜</span>
+            </div>
+            <div class="prose-flow">
+              <p class="entry narrate">她把索引册推到桌沿，借书卡背面的钢笔字迹在台灯下清晰可辨。</p>
+              <p class="entry say is-current"><span class="spk">真帆</span>「看过了。上面最后一行写的名字——其实是你吧。」</p>
+              <div class="page-choices">
+                <div class="page-choices-head">─── 抉择 · 你的回应 ───</div>
+                <div class="page-choice on"><span class="c-no">I.</span><span>承认那是三年前留下的记录，并索要夹页里的钥匙</span></div>
+                <div class="page-choice"><span class="c-no">II.</span><span>翻开索引册倒数第二页，指出另一个被涂掉的署名</span><span class="c-seen">✓ 已选过</span></div>
+                <div class="page-choice"><span class="c-no">III.</span><span>保持沉默，把视线移向窗外的钟楼</span></div>
+                <div class="page-choice ghost"><span class="c-no">✎</span><span>自由输入（以主角口吻自己写一句…）</span></div>
+              </div>
+            </div>
+            <div class="dlg-foot">
+              <span class="hint">按数字键 1–4 直选</span>
+              ${quickHtml()}
+            </div>
+          </div>
+        </div>
+      </section>`;
+    }
+
+    // V7: 音响小说 Sound Novel / 全屏 NVL（含前文半透明焦点化 + 页末选肢）
+    function renderV7Nvl(theme, accent, note) {
+      return `<section class="tile v7" data-variant="v7-nvl" data-theme="${theme}" data-accent="${accent}">
+        <div class="cap"><b>V7 · 音响小说（nvl · Sound Novel 全屏叠字）</b><span>${note ?? "Chunsoft / 魔法使之夜范式：画面与立绘全屏在场，左浓右淡渐变纱，前文半透明退后、当前句高亮 + 页末选肢"}</span><i>${theme.toUpperCase()} · ${ACCENTS[accent] ?? accent}</i></div>
+        <div class="stage">
+          <div class="bg-art"></div>
+          <img class="sprite" src="../../../plays/mh/assets/sprites/manami/neutral.png" alt="" />
+          <div class="nvl-veil"></div>
+          ${hudHtml()}
+          <div class="dlg">
+            <div class="nvl-scene-tag">SCENE 02 · 放学后的屋顶天台</div>
+            <div class="nvl-flow">
+              <p class="nvl-line">暮色漫过生锈的铁丝网，远处的海面只剩下一线暗金色的微光。</p>
+              <p class="nvl-line"><span class="nvl-spk">真帆</span>「……你就这么站在门口，一句话也不说？」</p>
+              <p class="nvl-line input">把那封没写完的信递到她面前。</p>
+              <p class="nvl-line thought">风把信封的一角吹得微微掀起，她没有立刻伸手去接。</p>
+              <p class="nvl-line is-current"><span class="nvl-spk">真帆</span>「那——明天放学后，你还会来这里吗？」</p>
+              <div class="nvl-choices">
+                <div class="nvl-choice on"><span class="c-no">01</span><span>「我会的。在钟声响完之前。」</span></div>
+                <div class="nvl-choice"><span class="c-no">02</span><span>「这要看你今晚会不会把信读完。」</span></div>
+                <div class="nvl-choice"><span class="c-no">✎</span><span>自由输入…</span></div>
+              </div>
+            </div>
+            <div class="dlg-foot">
+              <span class="hint"><span class="arrow">▼</span>换景时自动翻页 · 滚轮回看</span>
+              ${quickHtml()}
+            </div>
+          </div>
+        </div>
+      </section>`;
+    }
+
+    const ITEMS = [
+      { id: "v6-pure",   name: "V6A · 书页流（纯文本无图）", fn: renderV6Pure },
+      { id: "v6-choice", name: "V6B · 书页流（氛围背景 + 选肢）", fn: renderV6Choice },
+      { id: "v7-nvl",    name: "V7 · 音响小说（全屏 NVL）", fn: renderV7Nvl },
+    ];
+
+    const dark  = ITEMS.map((it) => it.fn("dark",  "deepsea"));
+    const light = ITEMS.map((it) => it.fn("light", "deepsea"));
+    const sweeps = ITEMS.map((it) =>
+      `<div class="group sweep" id="sweep-${it.id}">${Object.keys(ACCENTS)
+        .map((a) => it.fn("dark", a, `${it.name} · 主题色换成 ${ACCENTS[a]}`))
+        .join("")}</div>`
+    );
+
+    document.getElementById("board").innerHTML =
+      `<div class="group" id="group-dark">${dark.join("")}</div>` +
+      `<div class="group" id="group-light">${light.join("")}</div>` +
+      ITEMS.map((it, i) => `<div class="group" id="combo-${it.id}">${dark[i]}${light[i]}</div>`).join("") +
+      sweeps.join("");
+  </script>
+</body>
+</html>

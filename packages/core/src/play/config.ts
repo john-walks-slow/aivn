@@ -57,7 +57,7 @@ export type CraftStopOptions = (typeof CRAFT_STOP_OPTIONS)[number];
  * CG 几乎总是现画，立绘只能画（库里没有可用的差分），音乐默认生成（也支持库优先或只用库），
  * 音效应包含环境音与音效（ambient 与 sfx），目前只能取库导入。
  */
-export const CRAFT_BACKGROUND_SOURCES = ["library-first", "library", "generate"] as const;
+export const CRAFT_BACKGROUND_SOURCES = ["library-first", "library", "generate", "off"] as const;
 export const CRAFT_CG_SOURCES = ["library", "generate", "off"] as const;
 export const CRAFT_SPRITE_SOURCES = ["generate", "off"] as const;
 export const CRAFT_MUSIC_SOURCES = ["generate", "library-first", "library", "off"] as const;

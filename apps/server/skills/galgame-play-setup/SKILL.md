@@ -34,9 +34,23 @@ user-invocable: true
 两者都影响剧作家怎么写，但装的东西**不重叠**，写两处必然打架。
 
 **写作参数**（`play.json` 的 `craft` 段，用 `edit` 定点改）：有确定取值的那三件——
-**每轮篇幅**、**停止点给几条选项**、**素材来源**（背景／插图／立绘／音效逐类）。
+**每轮篇幅**、**停止点给几条选项**、**素材来源**（背景／插图／立绘／音乐／音效逐类）。
 改完立刻生效，用户也能在「剧目」页看到同一份值。**只改 `craft` 这一段**，别整篇重写 play.json，也别在 craft.md 里再写一遍。
 改完跑一次 `validate_play`：craft 的取值白名单不在写口上（写口只查 JSON 结构），写错值只有它会报出来。
+
+`craft` 取值表：
+- `beatLength`：`short`（3~6 句）| `medium`（默认，8~15 句）| `long`（20~30 句）
+- `stopOptions`：`two` | `three`（默认）| `four` | `free`（固定自由输入）
+- `assets.background`：`library-first`（默认）| `library` | `generate` | `off`（不用背景图）
+- `assets.cg`：`generate`（默认）| `library` | `off`（不用插图）
+- `assets.sprite`：`generate`（默认）| `off`（不出立绘）
+- `assets.music`：`generate`（默认）| `library-first` | `library` | `off`（不用背景音乐）
+- `assets.audio`：`library`（默认）| `off`（不用音效与环境音）
+
+**纯文字 / 互动小说模式怎么配**：
+当用户表示「想要纯文字的」「做成互动小说 / 不出图」时，跳过第 3 步「列图单」，直接落两处：
+1. `theme.css` 写入 `:root { --play-style: novel; }`（书页流·互动小说；若保留氛围图做全屏叠字则用 `nvl`），如需搭配主题色见 `galgame-ui-style`；
+2. `play.json` 的 `craft.assets` 设为 `{"background": "off", "cg": "off", "sprite": "off"}`，再调一次 `validate_play` 核验。
 
 **创作口径**（`memory/always/craft.md`）：剧作家每一轮怎么写，听这一份，但它只装**拿话说的那部分**——
 文风与禁忌、称呼与口癖、叙述视角与节奏感、场景转换的偏好、

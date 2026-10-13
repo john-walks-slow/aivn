@@ -14,7 +14,7 @@ const MARK = "/* aivn-play-accent:";
 const STYLE_MARK = "/* aivn-play-style:";
 
 /** 剧目界面风格：一个选项同时决定这部剧的开始菜单、舞台消息框与舞台分支选项框。 */
-export type PlayStyleId = "atri" | "card" | "cinema" | "hud" | "scroll" | "velvet";
+export type PlayStyleId = "atri" | "card" | "cinema" | "hud" | "scroll" | "velvet" | "novel" | "nvl";
 
 export const PLAY_STYLES: readonly { id: PlayStyleId; label: string }[] = [
   { id: "atri", label: "ATRI 通栏（默认）" },
@@ -23,6 +23,8 @@ export const PLAY_STYLES: readonly { id: PlayStyleId; label: string }[] = [
   { id: "hud", label: "战术 HUD" },
   { id: "scroll", label: "书卷" },
   { id: "velvet", label: "丝绒幕" },
+  { id: "novel", label: "书页流（互动小说）" },
+  { id: "nvl", label: "音响小说（全屏叠字）" },
 ];
 
 export const DEFAULT_PLAY_STYLE: PlayStyleId = "atri";

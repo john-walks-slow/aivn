@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PLAY_ACCENTS, accentFromThemeCss, themeCssFor } from "../src/ui/playTheme.js";
+import { PLAY_ACCENTS, PLAY_STYLES, accentFromThemeCss, styleFromThemeCss, themeCssFor } from "../src/ui/playTheme.js";
 
 /**
  * 生成的 theme.css 是「剧目主题色 → 界面与舞台」的唯一入口，它的令牌名有契约：
@@ -34,7 +34,7 @@ describe("剧目 theme.css 的生成", () => {
   });
 
   it("不认的色值不生成表；空值 = 默认主题的空表", () => {
-    expect(themeCssFor("rebeccapurple")).toBe("");
+    expect(themeCssFor("rebeccapurple")).toContain("默认主题");
     expect(themeCssFor(null)).toContain("默认主题");
   });
 
@@ -42,5 +42,18 @@ describe("剧目 theme.css 的生成", () => {
     for (const accent of PLAY_ACCENTS) {
       expect(accentFromThemeCss(themeCssFor(accent.hex))).toBe(accent.hex);
     }
+  });
+
+  it("界面风格八档（含 novel 书页流与 nvl 音响小说）都能写入并从注释或 :root --play-style 回读", () => {
+    const ids = PLAY_STYLES.map((s) => s.id);
+    expect(ids).toContain("novel");
+    expect(ids).toContain("nvl");
+    for (const style of ids) {
+      expect(styleFromThemeCss(themeCssFor(null, style))).toBe(style);
+      expect(styleFromThemeCss(themeCssFor("#1b5aa6", style))).toBe(style);
+    }
+    // 工坊 agent 直接手写 :root { --play-style: novel; }（不带注释头）也能正确识别
+    expect(styleFromThemeCss(":root {\n  --play-style: novel;\n}\n")).toBe("novel");
+    expect(styleFromThemeCss(":root {\n  --play-style: nvl;\n}\n")).toBe("nvl");
   });
 });

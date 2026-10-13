@@ -7704,6 +7704,419 @@ html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .title-copyr
 html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .title-op-link,
 html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .title-op-btn { color: color-mix(in srgb, var(--accent) 45%, rgb(120 84 40 / 0.72)); text-shadow: none; }
 
+/* ── M6 · 书籍扉页（配 novel 书页流）─────────────────────────────────────── */
+html[data-menu-style="novel"] .title-screen {
+  --atri-font: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+  --novel-gild: color-mix(in srgb, var(--accent) 42%, #ceb07c);
+  --novel-line: color-mix(in srgb, var(--accent) 26%, rgb(206 176 124 / 0.32));
+  background: #0c0a09;
+}
+html[data-menu-style="novel"] .title-screen::before {
+  content: "";
+  position: absolute;
+  inset: 46px 72px 54px;
+  border: 1px solid var(--novel-line);
+  outline: 1px solid color-mix(in srgb, var(--novel-gild) 15%, transparent);
+  outline-offset: -8px;
+  background:
+    linear-gradient(90deg, transparent calc(50% - 1px), var(--novel-line) calc(50% - 1px), var(--novel-line) 50%, transparent 50%),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, rgb(28 24 20 / 0.94)), color-mix(in srgb, var(--accent) 10%, rgb(18 15 12 / 0.97)));
+  box-shadow: 0 30px 70px rgb(0 0 0 / 0.65);
+  pointer-events: none;
+  z-index: 1;
+}
+html[data-menu-style="novel"] .title-screen .title-art {
+  filter: blur(26px) saturate(0.65) brightness(0.32);
+  transform: scale(1.08);
+}
+html[data-menu-style="novel"] .title-screen .title-veil {
+  background: radial-gradient(
+    120% 95% at 50% 50%,
+    color-mix(in srgb, var(--accent) 10%, rgb(18 15 12 / 0.84)) 0%,
+    color-mix(in srgb, var(--accent) 14%, rgb(9 8 6 / 0.96)) 100%
+  );
+}
+html[data-menu-style="novel"] .title-screen .title-top {
+  z-index: 3;
+}
+html[data-menu-style="novel"] .title-screen .title-brand {
+  left: 120px;
+  top: 132px;
+  bottom: 112px;
+  width: min(420px, calc(50% - 148px));
+  max-width: none;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+html[data-menu-style="novel"] .title-screen .title-brand::before {
+  content: "EX LIBRIS · AIVN INTERACTIVE FICTION";
+  display: block;
+  margin-bottom: 22px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.28em;
+  color: var(--novel-gild);
+}
+html[data-menu-style="novel"] .title-screen .title-name {
+  font-family: var(--atri-font);
+  font-size: clamp(28px, 2.8vw, 38px);
+  font-weight: 600;
+  line-height: 1.38;
+  letter-spacing: 0.06em;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: #f5ecdc;
+  filter: none;
+  text-shadow: none;
+}
+html[data-menu-style="novel"] .title-screen .title-premise::before {
+  display: none;
+}
+html[data-menu-style="novel"] .title-screen .title-premise {
+  margin: 22px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--novel-line);
+  font-family: var(--atri-font);
+  font-size: 13.5px;
+  line-height: 1.9;
+  letter-spacing: 0.03em;
+  font-style: italic;
+  color: rgb(232 223 208 / 0.74);
+  text-shadow: none;
+  -webkit-line-clamp: 4;
+}
+html[data-menu-style="novel"] .title-screen .title-brand::after {
+  content: "❖  FIRST EDITION  ·  FOLIO";
+  display: block;
+  margin-top: auto;
+  padding-top: 20px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  color: color-mix(in srgb, var(--novel-gild) 58%, transparent);
+}
+html[data-menu-style="novel"] .title-screen .atri-menu {
+  left: auto;
+  right: 120px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(420px, calc(50% - 148px));
+  gap: 0;
+  z-index: 2;
+  counter-reset: novel-no;
+}
+html[data-menu-style="novel"] .title-screen .atri-menu::before {
+  content: "CONTENTS · 目录";
+  display: block;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--novel-line);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  color: var(--novel-gild);
+}
+html[data-menu-style="novel"] .title-screen .atri-item {
+  width: 100%;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 12px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--novel-gild) 22%, transparent);
+  color: rgb(236 226 209 / 0.82);
+  opacity: 1;
+  transform: none;
+}
+html[data-menu-style="novel"] .title-screen .atri-item::before {
+  display: none;
+}
+html[data-menu-style="novel"] .title-screen .atri-label {
+  counter-increment: novel-no;
+  font-family: var(--atri-font);
+  font-size: 15.5px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: inherit;
+  text-shadow: none;
+}
+html[data-menu-style="novel"] .title-screen .atri-label::before {
+  content: counter(novel-no, decimal-leading-zero);
+  margin-right: 12px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  color: var(--novel-gild);
+}
+html[data-menu-style="novel"] .title-screen .atri-sub,
+html[data-menu-style="novel"] .title-screen .atri-hint {
+  margin-left: auto;
+  font-family: var(--atri-font);
+  font-size: 12.5px;
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--novel-gild) 78%, transparent);
+  opacity: 1;
+  transform: none;
+  text-shadow: none;
+}
+html[data-menu-style="novel"] .title-screen .atri-item:hover:not(:disabled),
+html[data-menu-style="novel"] .title-screen .atri-item:focus-visible {
+  transform: none;
+  background: color-mix(in srgb, var(--accent) 18%, rgb(255 255 255 / 0.03));
+  color: #ffffff;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+html[data-menu-style="novel"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-menu-style="novel"] .title-screen .atri-item:focus-visible .atri-label {
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: none;
+}
+html[data-menu-style="novel"] .title-screen .atri-item:hover:not(:disabled) .atri-label::before,
+html[data-menu-style="novel"] .title-screen .atri-item:focus-visible .atri-label::before {
+  color: var(--accent);
+}
+html[data-menu-style="novel"] .title-screen .atri-item:hover:not(:disabled) .atri-sub,
+html[data-menu-style="novel"] .title-screen .atri-item:focus-visible .atri-sub {
+  color: #f5ecdc;
+}
+html[data-menu-style="novel"] .title-screen .title-footer,
+html[data-menu-style="novel"] .title-screen .title-copyright,
+html[data-menu-style="novel"] .title-screen .title-op-link,
+html[data-menu-style="novel"] .title-screen .title-op-btn {
+  z-index: 3;
+  color: color-mix(in srgb, var(--novel-gild) 62%, transparent);
+  text-shadow: none;
+}
+
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen {
+  --novel-gild: color-mix(in srgb, var(--accent) 48%, #7a5628);
+  --novel-line: color-mix(in srgb, var(--accent) 24%, rgb(122 86 40 / 0.26));
+  background: #ece3d2;
+}
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen::before {
+  background:
+    linear-gradient(90deg, transparent calc(50% - 1px), var(--novel-line) calc(50% - 1px), var(--novel-line) 50%, transparent 50%),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, #fcf9f2), color-mix(in srgb, var(--accent) 8%, #f4ede0));
+  box-shadow: 0 24px 60px rgb(60 42 20 / 0.18), inset 0 1px 0 #ffffff;
+}
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .title-art {
+  filter: blur(26px) saturate(0.8) brightness(1.06);
+}
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .title-veil {
+  background: radial-gradient(
+    120% 95% at 50% 50%,
+    color-mix(in srgb, var(--accent) 6%, rgb(244 238 225 / 0.82)) 0%,
+    color-mix(in srgb, var(--accent) 10%, rgb(230 220 202 / 0.94)) 100%
+  );
+}
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .title-name {
+  color: #241a0e;
+}
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .title-premise {
+  color: rgb(58 46 32 / 0.76);
+}
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .atri-item {
+  color: rgb(43 32 19 / 0.82);
+}
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .atri-item:hover:not(:disabled),
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .atri-item:focus-visible {
+  background: color-mix(in srgb, var(--accent) 14%, #ffffff);
+  color: #140e07;
+}
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .atri-item:focus-visible .atri-label {
+  color: color-mix(in srgb, var(--accent) 85%, #140e07);
+}
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .atri-item:hover:not(:disabled) .atri-sub,
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .atri-item:focus-visible .atri-sub {
+  color: color-mix(in srgb, var(--accent) 75%, #2b1f11);
+}
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .title-footer,
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .title-copyright,
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .title-op-link,
+html[data-ui-theme="light"][data-menu-style="novel"] .title-screen .title-op-btn {
+  color: color-mix(in srgb, var(--novel-gild) 78%, transparent);
+}
+
+/* ── M7 · 序章全屏（配 nvl 音响小说）─────────────────────────────────────── */
+html[data-menu-style="nvl"] .title-screen {
+  --atri-font: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+  background: #060b13;
+}
+html[data-menu-style="nvl"] .title-screen .title-art {
+  filter: saturate(0.78) brightness(0.54);
+}
+html[data-menu-style="nvl"] .title-screen .title-veil {
+  background: linear-gradient(
+    96deg,
+    color-mix(in srgb, var(--accent) 18%, rgb(5 9 16 / 0.9)) 0%,
+    color-mix(in srgb, var(--accent) 14%, rgb(6 11 19 / 0.72)) 52%,
+    color-mix(in srgb, var(--accent) 8%, rgb(6 11 19 / 0.35)) 100%
+  );
+}
+html[data-menu-style="nvl"] .title-screen .title-brand {
+  left: 96px;
+  top: 18%;
+  max-width: min(580px, 52vw);
+}
+html[data-menu-style="nvl"] .title-screen .title-brand::before {
+  content: "SOUND NOVEL  ·  PROLOGUE";
+  display: block;
+  margin-bottom: 14px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  letter-spacing: 0.34em;
+  color: color-mix(in srgb, var(--accent) 68%, #cbd5e1);
+}
+html[data-menu-style="nvl"] .title-screen .title-name {
+  font-family: var(--atri-font);
+  font-size: clamp(32px, 3.2vw, 42px);
+  font-weight: 600;
+  line-height: 1.38;
+  letter-spacing: 0.12em;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: #f8fafc;
+  filter: none;
+  text-shadow: 0 2px 20px rgb(0 0 0 / 0.85);
+}
+html[data-menu-style="nvl"] .title-screen .title-premise::before {
+  display: none;
+}
+html[data-menu-style="nvl"] .title-screen .title-premise {
+  margin: 20px 0 0;
+  padding-left: 16px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  font-family: var(--atri-font);
+  font-size: 14.5px;
+  line-height: 1.95;
+  letter-spacing: 0.04em;
+  color: rgb(241 245 249 / 0.76);
+  text-shadow: 0 1px 8px rgb(0 0 0 / 0.85);
+  -webkit-line-clamp: 4;
+}
+html[data-menu-style="nvl"] .title-screen .atri-menu {
+  left: 96px;
+  right: auto;
+  top: auto;
+  bottom: 84px;
+  transform: none;
+  width: 420px;
+  gap: 4px;
+}
+html[data-menu-style="nvl"] .title-screen .atri-item {
+  width: 100%;
+  align-items: baseline;
+  gap: 16px;
+  padding: 8px 14px;
+  border-left: 2px solid transparent;
+  color: rgb(241 245 249 / 0.68);
+  opacity: 1;
+  transform: none;
+}
+html[data-menu-style="nvl"] .title-screen .atri-item::before {
+  display: none;
+}
+html[data-menu-style="nvl"] .title-screen .atri-label {
+  font-family: var(--atri-font);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  color: inherit;
+  text-shadow: 0 1px 6px rgb(0 0 0 / 0.85);
+}
+html[data-menu-style="nvl"] .title-screen .atri-sub,
+html[data-menu-style="nvl"] .title-screen .atri-hint {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: rgb(203 213 225 / 0.56);
+  opacity: 1;
+  transform: none;
+  text-shadow: none;
+}
+html[data-menu-style="nvl"] .title-screen .atri-item:hover:not(:disabled),
+html[data-menu-style="nvl"] .title-screen .atri-item:focus-visible {
+  transform: none;
+  border-left-color: var(--accent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 28%, rgb(8 14 24 / 0.72)), transparent);
+  color: #ffffff;
+}
+html[data-menu-style="nvl"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-menu-style="nvl"] .title-screen .atri-item:focus-visible .atri-label {
+  font-weight: 700;
+  color: color-mix(in srgb, var(--accent) 55%, #ffffff);
+  text-shadow: 0 0 16px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+html[data-menu-style="nvl"] .title-screen .atri-item:hover:not(:disabled) .atri-sub,
+html[data-menu-style="nvl"] .title-screen .atri-item:focus-visible .atri-sub {
+  color: rgb(255 255 255 / 0.88);
+}
+html[data-menu-style="nvl"] .title-screen .title-footer,
+html[data-menu-style="nvl"] .title-screen .title-copyright,
+html[data-menu-style="nvl"] .title-screen .title-op-link,
+html[data-menu-style="nvl"] .title-screen .title-op-btn {
+  color: rgb(241 245 249 / 0.42);
+  text-shadow: none;
+}
+
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen {
+  background: #f5f1e8;
+}
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .title-art {
+  filter: saturate(0.95) brightness(1.04);
+}
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .title-veil {
+  background: linear-gradient(
+    96deg,
+    color-mix(in srgb, var(--accent) 8%, rgb(252 250 245 / 0.94)) 0%,
+    color-mix(in srgb, var(--accent) 6%, rgb(252 250 245 / 0.84)) 54%,
+    rgb(252 250 245 / 0.32) 100%
+  );
+}
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .title-brand::before {
+  color: color-mix(in srgb, var(--accent) 75%, #1e293b);
+}
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .title-name {
+  color: #0f172a;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.9);
+}
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .title-premise {
+  color: rgb(30 41 59 / 0.78);
+  text-shadow: none;
+}
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .atri-item {
+  color: rgb(30 41 59 / 0.72);
+}
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .atri-label {
+  text-shadow: none;
+}
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .atri-sub,
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .atri-hint {
+  color: rgb(71 85 105 / 0.62);
+}
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .atri-item:hover:not(:disabled),
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .atri-item:focus-visible {
+  border-left-color: var(--accent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, rgb(255 255 255 / 0.9)), transparent);
+  color: #0f172a;
+}
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .atri-item:hover:not(:disabled) .atri-label,
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .atri-item:focus-visible .atri-label {
+  color: color-mix(in srgb, var(--accent) 85%, #091526);
+  text-shadow: none;
+}
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .atri-item:hover:not(:disabled) .atri-sub,
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .atri-item:focus-visible .atri-sub {
+  color: #1e293b;
+}
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .title-footer,
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .title-copyright,
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .title-op-link,
+html[data-ui-theme="light"][data-menu-style="nvl"] .title-screen .title-op-btn {
+  color: rgb(30 41 59 / 0.48);
+}
+
 /* ── 窄屏（与基线同断点 ≤760px）：卡片收成整宽、竖排剧名回横排、压掉基线白雾底 ── */
 @media (max-width: 760px) {
   html[data-ui-theme="dark"]:not([data-menu-style]) .title-screen .atri-menu {
@@ -7772,4 +8185,65 @@ html[data-ui-theme="light"][data-menu-style="velvet"] .title-screen .title-op-bt
     padding: 20px 16px;
   }
   html[data-menu-style="velvet"] .title-screen .atri-item { width: 100%; padding: 7px 18px; }
+
+  /* M6 窄屏：双开书页收为单页上下布局，去掉中缝竖线 */
+  html[data-menu-style="novel"] .title-screen::before {
+    inset: 14px 14px 48px;
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent) 8%, rgb(28 24 20 / 0.94)),
+      color-mix(in srgb, var(--accent) 10%, rgb(18 15 12 / 0.97))
+    );
+  }
+  html[data-ui-theme="light"][data-menu-style="novel"] .title-screen::before {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent) 5%, #fcf9f2),
+      color-mix(in srgb, var(--accent) 8%, #f4ede0)
+    );
+  }
+  html[data-menu-style="novel"] .title-screen .title-brand {
+    left: 28px;
+    right: 28px;
+    top: 10%;
+    bottom: auto;
+    width: auto;
+  }
+  html[data-menu-style="novel"] .title-screen .title-brand::before { margin-bottom: 10px; }
+  html[data-menu-style="novel"] .title-screen .title-brand::after { display: none; }
+  html[data-menu-style="novel"] .title-screen .title-name { font-size: 26px; }
+  html[data-menu-style="novel"] .title-screen .title-premise {
+    margin-top: 12px;
+    padding-top: 10px;
+    -webkit-line-clamp: 2;
+  }
+  html[data-menu-style="novel"] .title-screen .atri-menu {
+    left: 28px;
+    right: 28px;
+    top: auto;
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px));
+    transform: none;
+    width: auto;
+    padding: 0;
+    background: none;
+  }
+  html[data-menu-style="novel"] .title-screen .atri-item { padding: 9px 6px; }
+
+  /* M7 窄屏 */
+  html[data-menu-style="nvl"] .title-screen .title-brand {
+    left: 20px;
+    right: 20px;
+    top: 10%;
+    max-width: none;
+  }
+  html[data-menu-style="nvl"] .title-screen .title-name { font-size: 28px; }
+  html[data-menu-style="nvl"] .title-screen .atri-menu {
+    left: 20px;
+    right: 20px;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    padding: 0;
+    background: none;
+  }
+  html[data-menu-style="nvl"] .title-screen .atri-item { padding: 8px 10px; }
 }

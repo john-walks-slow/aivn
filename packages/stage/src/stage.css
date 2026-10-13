@@ -4289,6 +4289,813 @@ html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice:focu
   color: #ffffff;
 }
 
+/* ── V6 · 书页流（novel · 互动小说书页）────────────────────────────────────
+   面向纯文本与文学向互动小说：居中一张纵向实体书页（深色夜读纸 / 浅色暖棉纸），
+   同场段落连续累积，四种句型（旁白 / 左栏名牌台词 / 斜体独白 / ▸ 玩家回执）纯靠排印区分，
+   停止点选项紧跟文末展开。无背景图时即完整纸面；有背景图时外围画布模糊压暗、页顶内嵌窄画框。 */
+html[data-dialog-style="novel"] .stage-root .theater-stage {
+  background: radial-gradient(
+    90% 85% at 50% 35%,
+    color-mix(in srgb, var(--accent) 10%, #171411) 0%,
+    color-mix(in srgb, var(--accent) 6%, #0c0a09) 100%
+  );
+}
+
+html[data-dialog-style="novel"] .stage-root:not(.bare) .theater-bg {
+  filter: blur(22px) saturate(0.72) brightness(0.36);
+  transform: scale(1.08);
+}
+
+html[data-dialog-style="novel"] .stage-root:not(.bare) .theater-sprites,
+html[data-dialog-style="novel"] .stage-root:not(.bare) .theater-cg {
+  display: none;
+}
+
+html[data-dialog-style="novel"] .stage-root.theater:has(.choice-overlay) .theater-stage::after {
+  display: none;
+}
+
+html[data-dialog-style="novel"] .stage-root .theater-dialog {
+  --novel-gild: color-mix(in srgb, var(--accent) 42%, #c9ad7c);
+  --novel-rule: color-mix(in srgb, var(--accent) 24%, rgb(201 173 124 / 0.28));
+  left: 50%;
+  right: auto;
+  top: 20px;
+  bottom: calc(20px + var(--safe-b, 0px));
+  transform: translateX(-50%);
+  width: min(780px, 86%);
+  min-height: 0;
+  max-height: none;
+  padding: 30px 54px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0;
+  border: 1px solid var(--novel-rule);
+  border-radius: 3px;
+  outline: 1px solid color-mix(in srgb, var(--novel-gild) 14%, transparent);
+  outline-offset: -8px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 8%, rgb(28 24 20 / 0.96)) 0%,
+    color-mix(in srgb, var(--accent) 10%, rgb(19 16 13 / 0.98)) 100%
+  );
+  box-shadow: 0 28px 70px rgb(0 0 0 / 0.65), inset 0 1px 0 rgb(255 255 255 / 0.05);
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+}
+
+html[data-dialog-style="novel"] .stage-root .dialog-page-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 11px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--novel-rule);
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", monospace);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: color-mix(in srgb, var(--novel-gild) 82%, transparent);
+}
+
+html[data-dialog-style="novel"] .stage-root .dialog-page-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-dialog-style="novel"] .stage-root .dialog-page-dot {
+  margin-right: 8px;
+  font-weight: 400;
+  color: var(--accent);
+}
+
+html[data-dialog-style="novel"] .stage-root .dialog-page-meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+html[data-dialog-style="novel"] .stage-root .dialog-scene-plate {
+  flex: 0 0 auto;
+  position: relative;
+  height: 118px;
+  margin-bottom: 16px;
+  border: 1px solid var(--novel-rule);
+  border-radius: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 12%, #14110e);
+}
+
+html[data-dialog-style="novel"] .stage-root .dialog-scene-plate.is-cg {
+  height: 164px;
+}
+
+html[data-dialog-style="novel"] .stage-root .dialog-scene-plate img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 48%;
+  display: block;
+}
+
+html[data-dialog-style="novel"] .stage-root .dialog-scene-plate::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgb(18 15 12 / 0.68) 0%, transparent 48%, rgb(18 15 12 / 0.52) 100%);
+  pointer-events: none;
+}
+
+html[data-dialog-style="novel"] .stage-root .dialog-scene-cap {
+  position: absolute;
+  left: 14px;
+  bottom: 8px;
+  z-index: 2;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  color: rgb(244 236 222 / 0.86);
+  text-shadow: 0 1px 6px rgb(0 0 0 / 0.9);
+}
+
+html[data-dialog-style="novel"] .stage-root .dialog-page-flow {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+html[data-dialog-style="novel"] .stage-root .page-entry {
+  margin: 0;
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+  font-size: clamp(15.5px, 1.3vw, 17px);
+  font-weight: 400;
+  line-height: 1.92;
+  letter-spacing: 0.025em;
+  white-space: pre-wrap;
+  color: rgb(232 223 208 / 0.66);
+  text-shadow: none;
+  transition: color 0.18s ease;
+}
+
+html[data-dialog-style="novel"] .stage-root .page-entry.narrate {
+  text-indent: 2em;
+}
+
+html[data-dialog-style="novel"] .stage-root .page-entry.say {
+  position: relative;
+  padding-left: 4.8em;
+}
+
+html[data-dialog-style="novel"] .stage-root .page-entry.say .page-spk {
+  position: absolute;
+  left: 0;
+  top: 0.14em;
+  width: 4.2em;
+  text-align: right;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--accent) 62%, #e6d7be);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-dialog-style="novel"] .stage-root .page-entry.say .page-spk::after {
+  content: "";
+  display: inline-block;
+  width: 1px;
+  height: 0.88em;
+  margin-left: 7px;
+  vertical-align: -1px;
+  background: color-mix(in srgb, var(--accent) 48%, transparent);
+}
+
+html[data-dialog-style="novel"] .stage-root .page-entry.thought {
+  padding-left: 2em;
+  font-style: italic;
+  color: color-mix(in srgb, var(--accent) 28%, rgb(214 203 228 / 0.68));
+}
+
+html[data-dialog-style="novel"] .stage-root .page-entry.input {
+  margin: 2px 0;
+  padding: 6px 14px;
+  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: color-mix(in srgb, var(--accent) 42%, #efe6d5);
+  font-size: clamp(14.5px, 1.2vw, 15.5px);
+  line-height: 1.75;
+}
+
+html[data-dialog-style="novel"] .stage-root .page-entry.input .page-text::before {
+  content: "▸ ";
+  color: var(--accent);
+  font-weight: 700;
+}
+
+html[data-dialog-style="novel"] .stage-root .page-entry.is-current {
+  color: #f7f0e4;
+  font-weight: 500;
+}
+
+html[data-dialog-style="novel"] .stage-root .page-entry.is-current.say .page-spk {
+  color: color-mix(in srgb, var(--accent) 78%, #ffffff);
+}
+
+html[data-dialog-style="novel"] .stage-root .dialog-foot {
+  flex: 0 0 auto;
+  position: static;
+  justify-content: space-between;
+  margin: 14px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--novel-rule);
+  gap: 12px;
+  background: none;
+}
+
+html[data-dialog-style="novel"] .stage-root .dialog-options {
+  position: static;
+  right: auto;
+  bottom: auto;
+  height: auto;
+  margin-left: auto;
+  padding: 0;
+  gap: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+html[data-dialog-style="novel"] .stage-root .quick-btn {
+  height: auto;
+  padding: 0 8px;
+  border-radius: 0;
+  color: color-mix(in srgb, var(--novel-gild) 78%, transparent);
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+}
+
+html[data-dialog-style="novel"] .stage-root .quick-btn + .quick-btn {
+  border-left: 1px solid color-mix(in srgb, var(--novel-gild) 28%, transparent);
+}
+
+html[data-dialog-style="novel"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: #f5ecdc;
+  background: none;
+  text-shadow: none;
+}
+
+html[data-dialog-style="novel"] .stage-root .quick-sep {
+  display: none;
+}
+
+/* C6 · 书页流内嵌选肢 */
+html[data-dialog-style="novel"] .stage-root .choice-overlay {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  width: 100%;
+  margin-top: 8px;
+  padding: 14px 0 4px;
+  border-top: 1px solid var(--novel-rule);
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 6px;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+html[data-dialog-style="novel"] .stage-root .choice-overlay::before {
+  content: "─── 抉择 · 你的回应 ───";
+  display: block;
+  margin-bottom: 2px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.28em;
+  color: var(--novel-gild);
+}
+
+html[data-dialog-style="novel"] .stage-root .choice {
+  width: 100%;
+  min-height: 40px;
+  margin: 0;
+  padding: 8px 14px;
+  justify-content: flex-start;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--novel-gild) 22%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 6%, rgb(255 255 255 / 0.015));
+  color: #efe6d5;
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: 0.03em;
+  text-shadow: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+html[data-dialog-style="novel"] .stage-root .choice .choice-num {
+  width: auto;
+  height: auto;
+  min-width: 18px;
+  color: color-mix(in srgb, var(--accent) 75%, var(--novel-gild));
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+html[data-dialog-style="novel"] .stage-root .choice .choice-num::after {
+  content: ".";
+}
+
+html[data-dialog-style="novel"] .stage-root .choice.ghost {
+  border-style: dashed;
+  opacity: 0.82;
+}
+
+html[data-dialog-style="novel"] .stage-root .choice.ghost .choice-num::after {
+  content: "";
+}
+
+html[data-dialog-style="novel"] .stage-root .choice:hover:not(:disabled),
+html[data-dialog-style="novel"] .stage-root .choice:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--novel-gild));
+  background: color-mix(in srgb, var(--accent) 22%, rgb(28 24 20 / 0.9));
+  color: #ffffff;
+  text-shadow: none;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+html[data-dialog-style="novel"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-dialog-style="novel"] .stage-root .choice:focus-visible .choice-num {
+  color: #ffffff;
+}
+
+/* V6 浅色主题（暖棉纸书页） */
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .theater-stage {
+  background: radial-gradient(
+    90% 85% at 50% 35%,
+    color-mix(in srgb, var(--accent) 6%, #f4eee1) 0%,
+    color-mix(in srgb, var(--accent) 10%, #e7decb) 100%
+  );
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root:not(.bare) .theater-bg {
+  filter: blur(22px) saturate(0.85) brightness(1.04);
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .theater-dialog {
+  --novel-gild: color-mix(in srgb, var(--accent) 45%, #7a582c);
+  --novel-rule: color-mix(in srgb, var(--accent) 22%, rgb(122 88 44 / 0.24));
+  border-color: var(--novel-rule);
+  outline-color: color-mix(in srgb, var(--novel-gild) 18%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 5%, #fcf9f2) 0%,
+    color-mix(in srgb, var(--accent) 8%, #f5efe2) 100%
+  );
+  box-shadow: 0 24px 60px rgb(60 42 20 / 0.18), inset 0 1px 0 #ffffff;
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .dialog-scene-plate::after {
+  background: linear-gradient(90deg, rgb(35 28 18 / 0.52) 0%, transparent 50%, rgb(35 28 18 / 0.42) 100%);
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .page-entry {
+  color: rgb(58 46 32 / 0.68);
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .page-entry.say .page-spk {
+  color: color-mix(in srgb, var(--accent) 72%, #4a3319);
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .page-entry.thought {
+  color: color-mix(in srgb, var(--accent) 40%, #6b5b4b);
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .page-entry.input {
+  background: color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.6));
+  color: color-mix(in srgb, var(--accent) 75%, #2b1f11);
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .page-entry.is-current {
+  color: #1e160d;
+  font-weight: 600;
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .page-entry.is-current.say .page-spk {
+  color: color-mix(in srgb, var(--accent) 85%, #1e160d);
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .dialog-foot {
+  background: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .quick-btn {
+  color: color-mix(in srgb, var(--novel-gild) 85%, transparent);
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: #1e160d;
+  background: none;
+  text-shadow: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .choice {
+  border-color: color-mix(in srgb, var(--novel-gild) 28%, transparent);
+  background: rgb(255 255 255 / 0.6);
+  color: #2b2013;
+  box-shadow: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .choice .choice-num {
+  color: color-mix(in srgb, var(--accent) 78%, #4a3319);
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .choice:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, #ffffff);
+  color: color-mix(in srgb, var(--accent) 82%, #140e07);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"][data-dialog-style="novel"] .stage-root .choice:focus-visible .choice-num {
+  color: color-mix(in srgb, var(--accent) 85%, #140e07);
+}
+
+/* ── V7 · 音响小说（nvl · Sound Novel 全屏叠字）────────────────────────────
+   Chunsoft / Type-Moon 范式：背景与立绘全屏在场，左浓右淡渐变纱保证文字对比度，
+   同场前文半透明留驻、当前句高亮，停止点选肢在文末横向渐隐带展开。 */
+@media (min-width: 721px) {
+  html[data-dialog-style="nvl"] .stage-root .theater-sprite.pos-center {
+    --x: 24cqw;
+  }
+}
+
+html[data-dialog-style="nvl"] .stage-root.theater:has(.choice-overlay) .theater-stage::after {
+  display: none;
+}
+
+html[data-dialog-style="nvl"] .stage-root .theater-dialog {
+  inset: 0;
+  width: 100%;
+  min-height: 100%;
+  padding: 56px 6% calc(20px + var(--safe-b, 0px)) 7%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0;
+  border: none;
+  border-radius: 0;
+  background: linear-gradient(
+    96deg,
+    color-mix(in srgb, var(--accent) 16%, rgb(5 9 16 / 0.9)) 0%,
+    color-mix(in srgb, var(--accent) 14%, rgb(6 11 19 / 0.82)) 54%,
+    color-mix(in srgb, var(--accent) 10%, rgb(6 11 19 / 0.42)) 78%,
+    color-mix(in srgb, var(--accent) 8%, rgb(6 11 19 / 0.24)) 100%
+  );
+  box-shadow: none;
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+}
+
+html[data-dialog-style="nvl"] .stage-root .dialog-page-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(740px, 68%);
+  margin-bottom: 18px;
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", monospace);
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  color: color-mix(in srgb, var(--accent) 65%, #cbd5e1);
+  text-shadow: 0 1px 6px rgb(0 0 0 / 0.9);
+}
+
+html[data-dialog-style="nvl"] .stage-root .dialog-page-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-dialog-style="nvl"] .stage-root .dialog-page-dot {
+  display: none;
+}
+
+html[data-dialog-style="nvl"] .stage-root .dialog-page-title::before {
+  content: "";
+  width: 24px;
+  height: 1px;
+  background: color-mix(in srgb, var(--accent) 75%, #ffffff);
+}
+
+html[data-dialog-style="nvl"] .stage-root .dialog-page-flow {
+  width: min(740px, 68%);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding-right: 6px;
+  scrollbar-width: thin;
+}
+
+html[data-dialog-style="nvl"] .stage-root .page-entry {
+  margin: 0;
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+  font-size: clamp(16.5px, 1.4vw, 18.5px);
+  font-weight: 400;
+  line-height: 1.95;
+  letter-spacing: 0.035em;
+  white-space: pre-wrap;
+  color: rgb(241 245 249 / 0.52);
+  text-shadow:
+    1px 0 0 rgb(0 0 0 / 0.75),
+    -1px 0 0 rgb(0 0 0 / 0.75),
+    0 1px 0 rgb(0 0 0 / 0.75),
+    0 -1px 0 rgb(0 0 0 / 0.75),
+    0 2px 10px rgb(0 0 0 / 0.85);
+  transition: color 0.18s ease;
+}
+
+html[data-dialog-style="nvl"] .stage-root .page-entry .page-spk {
+  display: inline-block;
+  margin-right: 10px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: color-mix(in srgb, var(--accent) 68%, #e0f2fe);
+}
+
+html[data-dialog-style="nvl"] .stage-root .page-entry.thought {
+  font-style: italic;
+  color: rgb(203 213 225 / 0.48);
+}
+
+html[data-dialog-style="nvl"] .stage-root .page-entry.input {
+  padding-left: 12px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  color: color-mix(in srgb, var(--accent) 45%, rgb(241 245 249 / 0.72));
+  font-size: clamp(15px, 1.25vw, 16.5px);
+}
+
+html[data-dialog-style="nvl"] .stage-root .page-entry.input .page-text::before {
+  content: "▸ ";
+  color: var(--accent);
+}
+
+html[data-dialog-style="nvl"] .stage-root .page-entry.is-current {
+  color: #ffffff;
+  font-weight: 600;
+  text-shadow:
+    1px 0 0 rgb(0 0 0 / 0.85),
+    -1px 0 0 rgb(0 0 0 / 0.85),
+    0 1px 0 rgb(0 0 0 / 0.85),
+    0 -1px 0 rgb(0 0 0 / 0.85),
+    0 2px 14px rgb(0 0 0 / 0.92);
+}
+
+html[data-dialog-style="nvl"] .stage-root .page-entry.is-current .page-spk {
+  color: color-mix(in srgb, var(--accent) 78%, #ffffff);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent), 0 1px 4px rgb(0 0 0 / 0.9);
+}
+
+html[data-dialog-style="nvl"] .stage-root .dialog-foot {
+  flex: 0 0 auto;
+  position: static;
+  justify-content: space-between;
+  margin: auto 0 0;
+  padding: 12px 0 0;
+  border: none;
+  gap: 12px;
+  background: none;
+}
+
+html[data-dialog-style="nvl"] .stage-root .dialog-options {
+  position: static;
+  right: auto;
+  bottom: auto;
+  height: auto;
+  margin-left: auto;
+  padding: 0;
+  gap: 4px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+html[data-dialog-style="nvl"] .stage-root .quick-btn {
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 999px;
+  background: rgb(8 14 24 / 0.52);
+  color: rgb(241 245 249 / 0.68);
+  font-size: 11.5px;
+}
+
+html[data-dialog-style="nvl"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: #ffffff;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 42%, rgb(8 14 24 / 0.82));
+  text-shadow: none;
+}
+
+html[data-dialog-style="nvl"] .stage-root .quick-sep {
+  display: none;
+}
+
+/* C7 · 音响小说页末选肢 */
+html[data-dialog-style="nvl"] .stage-root .choice-overlay {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px 0 4px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 32%, rgb(255 255 255 / 0.14));
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 7px;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+html[data-dialog-style="nvl"] .stage-root .choice {
+  width: 100%;
+  min-height: 42px;
+  margin: 0;
+  padding: 9px 18px;
+  justify-content: flex-start;
+  text-align: left;
+  border: none;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, rgb(255 255 255 / 0.24));
+  border-radius: 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 18%, rgb(8 14 24 / 0.92)) 0%,
+    color-mix(in srgb, var(--accent) 12%, rgb(8 14 24 / 0.84)) 82%,
+    transparent 100%
+  );
+  color: #f1f5f9;
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+  font-size: 15.5px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 0.85);
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+html[data-dialog-style="nvl"] .stage-root .choice .choice-num {
+  width: auto;
+  height: auto;
+  min-width: 20px;
+  color: color-mix(in srgb, var(--accent) 75%, #ffffff);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+html[data-dialog-style="nvl"] .stage-root .choice:hover:not(:disabled),
+html[data-dialog-style="nvl"] .stage-root .choice:focus-visible {
+  border-left: 3px solid var(--accent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 42%, rgb(12 22 38 / 0.92)) 0%,
+    color-mix(in srgb, var(--accent) 18%, rgb(12 22 38 / 0.68)) 80%,
+    transparent 100%
+  );
+  color: #ffffff;
+  font-weight: 600;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 0.85);
+  box-shadow: none;
+}
+
+/* V7 浅色主题（和纸白雾叠字） */
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .theater-dialog {
+  background: linear-gradient(
+    96deg,
+    color-mix(in srgb, var(--accent) 8%, rgb(252 250 245 / 0.94)) 0%,
+    color-mix(in srgb, var(--accent) 6%, rgb(252 250 245 / 0.88)) 54%,
+    color-mix(in srgb, var(--accent) 4%, rgb(252 250 245 / 0.44)) 80%,
+    rgb(252 250 245 / 0.18) 100%
+  );
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .dialog-page-head {
+  color: color-mix(in srgb, var(--accent) 78%, #1e293b);
+  text-shadow: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .dialog-page-title::before {
+  background: color-mix(in srgb, var(--accent) 75%, #1e293b);
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .page-entry {
+  color: rgb(30 41 59 / 0.56);
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.9), 0 0 8px rgb(255 255 255 / 0.85);
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .page-entry .page-spk {
+  color: color-mix(in srgb, var(--accent) 82%, #0f172a);
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .page-entry.thought {
+  color: rgb(71 85 105 / 0.55);
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .page-entry.input {
+  border-left-color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 78%, #0f172a);
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .page-entry.is-current {
+  color: #0f172a;
+  font-weight: 600;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.95), 0 0 12px rgb(255 255 255 / 0.9);
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .page-entry.is-current .page-spk {
+  color: color-mix(in srgb, var(--accent) 88%, #091526);
+  text-shadow: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .dialog-foot {
+  background: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .quick-btn {
+  border-color: rgb(15 23 42 / 0.14);
+  background: rgb(255 255 255 / 0.82);
+  color: rgb(30 41 59 / 0.72);
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+  text-shadow: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .choice-overlay {
+  border-top-color: color-mix(in srgb, var(--accent) 28%, rgb(15 23 42 / 0.12));
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .choice {
+  border-left-color: color-mix(in srgb, var(--accent) 45%, rgb(15 23 42 / 0.25));
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 10%, rgb(255 255 255 / 0.96)) 0%,
+    color-mix(in srgb, var(--accent) 6%, rgb(255 255 255 / 0.9)) 82%,
+    transparent 100%
+  );
+  color: #1e293b;
+  text-shadow: none;
+  box-shadow: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .choice .choice-num {
+  color: color-mix(in srgb, var(--accent) 82%, #0f172a);
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .choice:focus-visible {
+  border-left-color: var(--accent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 22%, #ffffff) 0%,
+    color-mix(in srgb, var(--accent) 10%, rgb(255 255 255 / 0.85)) 80%,
+    transparent 100%
+  );
+  color: color-mix(in srgb, var(--accent) 85%, #091526);
+  text-shadow: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"][data-dialog-style="nvl"] .stage-root .choice:focus-visible .choice-num {
+  color: color-mix(in srgb, var(--accent) 85%, #091526);
+}
+
 /* ── 窄屏：卡片那三种收成整宽、名牌不再骑边；字幕去掉上面那条黑边 ──────────
    手机上的台词条本来就是「贴底一条」，宽银幕的上面那条在没有 16:9 的手机屏上
    没有意义，反而跟顶栏抢位置。 */
@@ -4346,5 +5153,55 @@ html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice:focu
   html[data-dialog-style="velvet"] .stage-root .choice {
     width: calc(100% - 24px);
     padding: 10px 18px;
+  }
+
+  html[data-dialog-style="novel"] .stage-root .theater-dialog {
+    left: 10px;
+    right: 10px;
+    top: calc(54px + env(safe-area-inset-top, 0px));
+    bottom: calc(10px + var(--safe-b, 0px));
+    width: auto;
+    transform: none;
+    padding: 18px 18px 12px;
+  }
+
+  html[data-dialog-style="novel"] .stage-root .dialog-scene-plate {
+    height: 84px;
+  }
+
+  html[data-dialog-style="novel"] .stage-root .dialog-scene-plate.is-cg {
+    height: 116px;
+  }
+
+  /* 窄屏下角色名改为行内冠首，把整行宽度留给正文（每行 ~21 字，避免左栏吃掉四分之一宽） */
+  html[data-dialog-style="novel"] .stage-root .page-entry.say {
+    padding-left: 0;
+  }
+
+  html[data-dialog-style="novel"] .stage-root .page-entry.say .page-spk {
+    position: static;
+    display: inline-block;
+    width: auto;
+    margin-right: 8px;
+    text-align: left;
+  }
+
+  html[data-dialog-style="novel"] .stage-root .dialog-foot,
+  html[data-dialog-style="nvl"] .stage-root .dialog-foot {
+    margin-inline: 0;
+    margin-bottom: 0;
+    padding: 10px 0 0;
+    background: none;
+  }
+
+  html[data-dialog-style="nvl"] .stage-root .theater-dialog {
+    top: calc(50px + env(safe-area-inset-top, 0px));
+    min-height: 0;
+    padding: 16px 16px calc(12px + var(--safe-b, 0px));
+  }
+
+  html[data-dialog-style="nvl"] .stage-root .dialog-page-head,
+  html[data-dialog-style="nvl"] .stage-root .dialog-page-flow {
+    width: 100%;
   }
 }

@@ -8,7 +8,7 @@ import {
   type SpritePosition,
   type Transition,
 } from "@aivn/core";
-import { shouldAutoStart, titleLastStep, titleRevealTarget } from "./playbackState.js";
+import { buildPageView, shouldAutoStart, titleLastStep, titleRevealTarget, type PageView } from "./playbackState.js";
 import type { Cue, ScriptLine } from "./script.js";
 import type { TranscriptEntry } from "./transcript.js";
 
@@ -601,6 +601,8 @@ export interface Playback {
   scrubbed: boolean;
   /** 播放头之前说过的所有话，最新在最上（回顾用）：台词、玩家表态、导演注都在内。 */
   history: TranscriptEntry[];
+  /** 当前场景/章节页的连续段落流（供 novel 书页流与 nvl 音响小说渲染）。 */
+  page?: PageView;
   /** 跳到某条历史条目（回顾点选）。 */
   seek: (key: string) => void;
   /** 交还播放头：从任意回看位置直接回到最新（回顾的「回到最新」）。 */
@@ -999,6 +1001,23 @@ export function usePlayback(
     [transcript, headIndex],
   );
 
+  const viewLength = scrubbed ? (view?.text.length ?? 0) : shownLength;
+  const page = useMemo(
+    () =>
+      buildPageView({
+        cues,
+        lines: linesRef.current,
+        transcript,
+        current,
+        view,
+        viewLength,
+        shownLength,
+        scrubbed,
+        cursor: cursorRef.current,
+      }),
+    [cues, transcript, current, view, viewLength, shownLength, scrubbed, opts.revision],
+  );
+
   /**
    * 回看时给舞台换一张「当时的画面」：背景、CG、立绘（含站位/表情/差分/在场与否）
    * 都折回那一句刚开始的那一刻。现场那个 `visual` 一个字节都不动——滚回播放头就是
@@ -1037,7 +1056,7 @@ export function usePlayback(
     visual: withAttachedCg(rewindVisual ?? visual, displayedNode, opts.cgByNode),
     current,
     view,
-    viewLength: scrubbed ? (view?.text.length ?? 0) : shownLength,
+    viewLength,
     shownLength,
     exhausted,
     auto,
@@ -1046,6 +1065,7 @@ export function usePlayback(
     scrub,
     scrubbed,
     history,
+    page,
     seek,
     follow,
     sfx,

@@ -34,8 +34,8 @@ export type { Playback, PlaybackHooks, ResumeSeek, SpriteSlot, VisualState } fro
 export { presentationPlan, presentationProfile } from "./presentation.js";
 export type { PresentationActor, PresentationInput, PresentationPlan, PresentationProfile } from "./presentation.js";
 
-export { dialogContent, emptyDialogHint, shouldAutoStart, stopAffordance } from "./playbackState.js";
-export type { AutoStartInput, DialogInput, StopAffordanceInput } from "./playbackState.js";
+export { buildPageView, dialogContent, emptyDialogHint, shouldAutoStart, stopAffordance } from "./playbackState.js";
+export type { AutoStartInput, DialogInput, PageEntry, PageView, PageViewInput, StopAffordanceInput } from "./playbackState.js";
 
 export { LoopChannel, SfxPlayer } from "./loopAudio.js";
 export { VoiceDirector } from "./audio.js";

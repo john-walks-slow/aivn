@@ -65,7 +65,7 @@ export function TitleView({ playId }: { playId: string }) {
   const missing = detail
     ? [
         ...readinessMissing(detail.readiness),
-        ...readinessAdvice(detail.readiness),
+        ...readinessAdvice(detail.readiness, detail.play.craft?.assets),
       ]
     : [];
 
