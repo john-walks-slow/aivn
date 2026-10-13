@@ -135,7 +135,7 @@ export function LibraryView() {
             <Icon name="download" size={13} /> 导入
             <input
               type="file"
-              accept=".zip"
+              accept=".zip,.html,.htm"
               hidden
               onChange={(e) => {
                 const file = e.target.files?.[0];

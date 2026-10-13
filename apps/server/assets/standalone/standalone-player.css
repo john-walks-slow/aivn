@@ -1,0 +1,4519 @@
+/* @aivn/stage 的舞台样式：从 apps/web/src/app.css 原样搬来的小节。
+ *
+ * 这一层要能嵌进别人的页面（DSH 插件的宿主页），所以顶部的令牌与全局规则
+ * 一律挂在包自己的根类 `.stage-root` 上，不写 `:root`：`:root` 是整页级的，
+ * 写上去就是把 --bg/--panel/--ink/--accent 这些通用名塞进宿主的根元素，
+ * 还会连带改掉整页的焦点框与选中色。挂 `.stage-root` 后令牌靠 DOM 继承往下走，
+ * 作用范围就是带这个类的子树。
+ *
+ * 带 `.stage-root` 的是各组件**可以脱离 .theater 独立存在**的根：
+ * StageTheater 的 `.theater`、ToastStack 的 `.toast-stack`、Modal portal 出来的
+ * `.modal-scrim`（portal 到 body，继承链断了，必须自己带）。
+ *
+ *  - 台词流一节是 P1 文字视图留下的样式，眼下没有组件引用它，原样保留不删。
+ *  - 导演栏、移动端等小节仍留在宿主 app.css 里，不在这次搬家的范围内。
+ */
+
+/* ── 主题令牌（app.css 顶部变量区的副本）───────────── */
+
+.stage-root,
+.stage-root * {
+  box-sizing: border-box;
+  /* 触摸设备上浏览器给每个可点元素铺一层半透明蓝底，手指点下去闪一下。
+     那层蓝是网页味，去掉后点下去只剩元素自己的反馈色。 */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 焦点框只留给键盘 Tab，且走主题色细环；鼠标点、手指点都不出框。
+   两者一起上：只去 outline，纯键盘操作会瞎；只留浏览器默认框，又像在填网页表单。 */
+.stage-root :focus {
+  outline: none;
+}
+
+.stage-root :focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 选中文字时浏览器铺的也是那层网页蓝（手机上长按/双击最容易撞上）。
+   换成主题色的淡底，选词与复制照常能用。 */
+.stage-root ::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.stage-root {
+  /* ① 纸面（浅色日常系） */
+  --bg: #f5f1e8; /* 和紙 */
+  --panel: #fffcf5;
+  --panel-2: #ede7da;
+  /* 纸面左上角那片斜光：浅色下是暖白，和纸感就来自它 */
+  --paper-glow: rgb(255 252 245 / 0.9);
+  --ink: #23201c;
+  --ink-soft: #5b5348;
+  --ink-faint: #9a9081;
+  --line: #ded5c4;
+  /* 主题蓝：来自剧目主题色的三件（--play-accent / --play-accent-ink 由 plays/<id>/theme.css
+     写在 :root 上；没有就是引擎这一档）。**必须转一道手**：舞台根本身是 .stage-root，
+     它一旦自己声明 --accent，从 <html> 继承下来的剧目主题色就再也进不来（元素自身的声明
+     永远压过继承值，跟选择器特异性无关）——2026-10-10 之前就是这样：工坊里挑了主题色，
+     界面跟着换、舞台一个像素不动。--accent-soft 从 --accent 派生，两种深浅各一条配比。 */
+  --accent: var(--play-accent, #2b6fae);
+  --accent-ink: var(--play-accent-ink, #f7fbff);
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, #ffffff);
+  --link: #2f5d7c;
+  --radius: 2px; /* 近直角：AVG 的窗与键都不圆 */
+
+/* 字体：全站一套无衬线。曾经台词与标题走衬线（明朝气质），但衬线字体栈依赖
+     本机装有 Noto Serif CJK / 宋体，缺了会掉到浏览器默认的 serif，笔画细、屏上发虚。 */
+  --font-ui:
+    system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei",
+    sans-serif;
+
+  /* ② 画面（现代高质感 Galgame 玻璃层） */
+  --stage-bg: #090c12; /* 舞台衬底（图片未到/加载中露出的底） */
+  /* 主题色派生：舞台所有 chrome（台词条 / 快捷菜单 / 选肢 / 名牌描边 / 导演栏）都从
+     --accent 推出来，剧目换皮时只要改 --accent 一处。deep 是压在画面上的实体色，
+     wash 是它乘上 alpha 的雾。 */
+  --stage-accent-deep: color-mix(in srgb, var(--accent) 82%, #04101d);
+  --stage-accent-wash: color-mix(in srgb, var(--stage-accent-deep) 62%, transparent);
+  --stage-accent-edge: color-mix(in srgb, var(--accent) 55%, transparent);
+  --stage-accent-lit: color-mix(in srgb, var(--accent) 45%, #ffffff);
+  /* 舞台 chrome：左上模式切换 / 右上导演栏 / 右下快捷菜单共用的一套「玻璃条」。
+     改这里要同步 apps/web/src/app.css 的 :root（那边是同一组值的另一份，
+     给不在 .stage-root 里的舞台浮层用）。 */
+  --stage-chrome-h: 30px;
+  --stage-chrome-radius: 999px;
+  /* 比对话框更深：对话框是这场戏的一部分，工具栏是压在画面上的器具。
+     压深掺的是一支**同色相的深蓝**（#071a2e），不是中性灰——掺灰会把这条蓝的饱和度
+     一起吃掉，读起来就是「脏」；掺同色相的深色只压明度、不动色相，
+     于是这条底与工坊侧栏那枚同款开关的选中态（实心 --accent）是同一支蓝。 */
+  --stage-chrome-deep: color-mix(in srgb, var(--accent) 56%, #071a2e);
+  /* 渐变的两档都是**不透明色**：顶掺浅蓝给一道亮带，底落在 deep。上一版是同一个色
+     只改 alpha（84% → 97%），画面亮处从顶上那 16% 透上来，整条读起来是一块脏污
+     而不是一块玻璃。这里只留一点点透明度（92 / 99）够玻璃感就行。 */
+  --stage-chrome-lit: color-mix(in srgb, var(--stage-chrome-deep) 78%, #6ea6dc);
+  --stage-chrome-bg: linear-gradient(180deg,
+    color-mix(in srgb, var(--stage-chrome-lit) 92%, transparent),
+    color-mix(in srgb, var(--stage-chrome-deep) 99%, transparent));
+  /* 描边走不透明的浅蓝，不走「accent 掺半透明白」——白掺进半透明里就是一层灰雾 */
+  --stage-chrome-edge: color-mix(in srgb, var(--accent) 55%, #a9cdec);
+  --stage-chrome-gloss: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  /* 导演栏那层「很浅的主题色玻璃」：它压在画面上、又是三处 chrome 里最不该抢戏的一处，
+     所以底色比另外两处淡——但那条淡要**同一支蓝抬明度**抬出来，不是掺白掺出来的灰白。
+     上一版掺的是 rgb(255 255 255) 且带两三成透明（0.95 / 0.84）：亮画面从底下透上来，
+     这块就成了一团发灰的牛奶。浅色主题就是这套；深色主题整条翻深（见下面 dark 那一块）。 */
+  --stage-chrome-quiet-bg: #ffffff;
+  --stage-chrome-quiet-edge: #e2e8f0;
+  --stage-chrome-quiet-ink: #64748b;
+  --stage-chrome-quiet-ink-hover: #0f172a;
+  --stage-chrome-quiet-hover: #f1f5f9;
+  /* 选肢的两档底：深色基线是掺进主题色的暗海蓝缎带（与底部 ATRI 深色台词条同源），
+     浅色下切回纸白浅底；悬停/选中换成主题色实心亮带。 */
+  --stage-choice-wash: color-mix(in srgb, var(--accent) 26%, #0b1626);
+  --stage-choice-solid: color-mix(in srgb, var(--accent) 88%, #0c2340);
+  --dialog-bg: linear-gradient(180deg, rgba(16, 21, 32, 0.86) 0%, rgba(9, 12, 19, 0.95) 100%);
+  --dialog-line: rgba(255, 255, 255, 0.16);
+  --dialog-ink: #f8fafc;
+  --dialog-ink-soft: #cbd5e1; /* 旁白 */
+  --dialog-ink-thought: #c4b5fd; /* 内心独白 */
+  --dialog-ink-faint: rgba(248, 250, 252, 0.55); /* 次要提示：「回看中」「已选过」 */
+  /* 失败态的色：pending 面板上的失败行与收起徽标。深底上要够亮才认得出是警号 */
+  --dialog-bad: #fb7185;
+  --dialog-text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  --dir-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --dialog-hover: rgba(255, 255, 255, 0.12);
+  --dialog-veil: rgba(255, 255, 255, 0.06);
+  --dialog-shadow: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --title-ink: #f8fafc;
+  --title-font:
+    system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei",
+    sans-serif;
+  --title-shadow: 0 2px 14px rgb(0 0 0 / 0.72);
+  /* 舞台浮层的圆角：台词条 + 画面上浮的那几块（导演工具栏 / 排队面板） */
+  --stage-radius: 12px;
+  /* 说话人名牌：白底 + 角色主题描边 + 优雅黑字 */
+  --nameplate-bg: rgba(255, 255, 255, 0.98);
+  --nameplate-ink: #0f172a;
+  --nameplate-line: var(--character-color, var(--accent, #3b82f6));
+  --sprite-dim: 0.55; /* 非发言人立绘压暗强度 */
+  --choice-bg: linear-gradient(180deg, rgba(22, 28, 42, 0.9) 0%, rgba(13, 17, 26, 0.96) 100%);
+  --choice-line: rgba(255, 255, 255, 0.18);
+  --choice-ink: #f8fafc;
+  --choice-active-bg: color-mix(in srgb, var(--accent) 35%, rgba(22, 28, 42, 0.95));
+  --choice-scrim: linear-gradient(180deg, transparent 20%, rgba(8, 10, 16, 0.65) 100%);
+
+  /* 弹窗（Modal）令牌：一块压在页面上的卡片。深浅两档都在令牌里，
+     弹窗本身一处颜色都不写死——它是全站共用的那一枚
+     （导演动作 / 删周目 / 删剧目 / 生图 / 工坊确认都走它）。
+     基线这一份是**深色**那一档，和 --dialog-* / --choice-* 同一个道理：
+     宿主不一定设 data-ui-theme（DSH 插件里的舞台就在没有属性的 html 下跑），
+     没有属性时它必须还是它今天的样子；浅色那一档在下面 html[data-ui-theme="light"] 里。 */
+  --modal-bg: linear-gradient(175deg,
+    color-mix(in srgb, var(--accent) 18%, rgba(6, 15, 30, 0.94)) 0%,
+    color-mix(in srgb, var(--accent) 10%, rgba(3, 8, 18, 0.97)) 100%);
+  --modal-edge: color-mix(in srgb, var(--accent) 42%, rgba(255, 255, 255, 0.18));
+  --modal-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 0 40px color-mix(in srgb, var(--accent) 24%, transparent),
+    0 24px 56px rgba(0, 0, 0, 0.65);
+  --modal-glow: color-mix(in srgb, var(--accent) 80%, #ffffff);
+  --modal-scrim: radial-gradient(circle at 50% 45%, rgba(4, 12, 24, 0.58) 0%, rgba(1, 4, 10, 0.85) 100%);
+  --modal-hover: rgba(255, 255, 255, 0.12);
+  --modal-line: color-mix(in srgb, var(--accent) 22%, rgba(255, 255, 255, 0.08));
+  --modal-field: rgba(2, 7, 16, 0.6);
+  --modal-field-edge: color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.14));
+  /* 占位符、快捷键提示、关闭键共用这一档「比正文淡」的墨色 */
+  --modal-faint: rgba(255, 255, 255, 0.5);
+  --modal-btn-bg: rgba(255, 255, 255, 0.06);
+  --modal-btn-edge: rgba(255, 255, 255, 0.16);
+  --modal-btn-hover-bg: rgba(255, 255, 255, 0.14);
+  --modal-btn-hover-edge: rgba(255, 255, 255, 0.28);
+  --modal-danger: #fca5a5;
+  --modal-danger-bg: rgba(239, 68, 68, 0.2);
+  --modal-danger-edge: rgba(239, 68, 68, 0.5);
+  --modal-danger-bg-hover: rgba(239, 68, 68, 0.35);
+  --modal-danger-ink-hover: #ffffff;
+  --shadow: 0 6px 18px rgb(34 24 16 / 0.16);
+
+  /* ③ 运动 */
+  --type-ms: 35; /* 每字毫秒 */
+  --pause-short-ms: 120; /* 逗号类额外停顿 */
+  --pause-long-ms: 240; /* 句号类额外停顿 */
+  --fade-ms: 220ms; /* 立绘差分 / 背景切换 */
+  --move-ms: 380ms; /* 立绘换位、换景别（运镜）——比差分慢，走过去不是瞬移 */
+  --act-ms: 520ms; /* 行为词演出时长（点一次头、抖一下） */
+  --trans-ms: 560ms; /* 换层过渡（转场 cross-fade / fade） */
+  --fx-ms: 360ms; /* 一次性屏幕效果（闪光基础时长；抖动在类里另给） */
+  /* 缓动：起步快、尾巴长。站位与运镜都是「一个演员走过去」的观感，
+     ease-in-out 匀加速匀减速最像。 */
+  --move-ease: cubic-bezier(0.33, 0, 0.2, 1);
+  --hover-ms: 140ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-root {
+    --type-ms: 0;
+    --fade-ms: 0ms;
+    --move-ms: 0ms;
+    --act-ms: 0ms;
+    --trans-ms: 0ms;
+    --fx-ms: 0ms;
+  }
+  /* 抖动的时长来自行内变量（按档位算），媒体查询覆盖不了它，直接掐掉动画。
+     闪光掐掉动画后落回基础 opacity:0，等于不闪。 */
+  .stage-root .theater-camera.shaking,
+  .stage-root .theater-flash {
+    animation: none;
+  }
+}
+
+/* 主题切换：纸面（界面）与画面（舞台）**共用一套**，由 <html> 上的 data-ui-theme 驱动。
+   舞台曾经另有 data-stage-theme（恒深色），2026-10-10 撤掉：切一次深浅只该切一处，
+   台词条 / 选肢 / 名牌 / chrome / 弹窗全都跟着它走。
+   用属性选择器而不是内联 style 写 :root —— 剧目定制主题（plays/<id>/theme.css）
+   挂的是 :root 变量，内联 style 优先级更高会把它整张压掉，用户换的皮就没了。
+   属性选择器只覆盖下面这几个令牌，剧目主题没碰到的部分照旧生效。 */
+html[data-ui-theme="dark"] .stage-root {
+  --bg: #14110f; /* 和紙反过来：暖调的黑，不是纯 #000 —— 纯黑配暖白字会发蓝 */
+  --panel: #201c19;
+  --panel-2: #2b2622;
+  /* 深底不能留暖白那片光（读成一块光斑），改成一层压得住的暖提亮 */
+  --paper-glow: rgb(116 104 88 / 0.2);
+  --ink: #ece4d8;
+  --ink-soft: #b3a897;
+  --ink-faint: #8a8073;
+  --line: #3d362f;
+  /* 暖黑那一档：剧目给了 --play-accent-dark 就用它（纸面档压在暖黑上做字读不清），
+     没给就退回纸面档——「主题色消失」比「主题色偏暗」糟得多。 */
+  --accent: var(--play-accent-dark, var(--play-accent, #8ab6dd));
+  --accent-ink: var(--play-accent-dark-ink, var(--play-accent-ink, #101820));
+  --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+  --link: #8fb8d4;
+  /* 导演栏：暖黑界面上翻成一条深玻璃（比左上角那枚更沉、字走冷白），
+     不再是画面右上角一块刺眼的白斑。掺的仍然是 accent 那一支蓝（26% / 14%），
+     不掺中性黑——掺中性黑出来的是一块灰板，与左上角那条蓝不是一家。 */
+  --stage-chrome-quiet-bg: #0d1117;
+  --stage-chrome-quiet-edge: #30363d;
+  --stage-chrome-quiet-ink: #8b949e;
+  --stage-chrome-quiet-ink-hover: #f0f6fc;
+  --stage-chrome-quiet-hover: #21262d;
+}
+
+/* 主色预设：设置页选哪一档就挂哪个 data-accent（useTheme.applyAccent）。
+   每个预设给浅底/深底两套值——同一色相在纸面上要压得住、在暖黑上要提得起。
+   同样走 var(--play-accent, …)：剧目挑了主题色就是剧目优先，预设只决定「没挑时是哪一档」
+   （app.css 里那份是同一套值的孪生，给不在 .stage-root 子树里的浮层用）。
+   --accent-soft 不再逐档写死：它从 --accent 派生，深浅两条配比见上面两个基础块。
+   custom 不在这里：那个色由 useTheme 写成内联 --accent。 */
+html[data-accent="teal"] .stage-root {
+  --accent: var(--play-accent, #2f6f73);
+  --accent-ink: var(--play-accent-ink, #f3fbfa);
+}
+html[data-accent="green"] .stage-root {
+  --accent: var(--play-accent, #4a6f45);
+  --accent-ink: var(--play-accent-ink, #f6faf2);
+}
+html[data-accent="violet"] .stage-root {
+  --accent: var(--play-accent, #6a5599);
+  --accent-ink: var(--play-accent-ink, #faf7ff);
+}
+html[data-accent="wine"] .stage-root {
+  --accent: var(--play-accent, #9b3b4f);
+  --accent-ink: var(--play-accent-ink, #fff7f3);
+}
+html[data-ui-theme="dark"][data-accent="teal"] .stage-root {
+  --accent: var(--play-accent-dark, var(--play-accent, #79b8bd));
+  --accent-ink: var(--play-accent-dark-ink, var(--play-accent-ink, #0e1a1b));
+}
+html[data-ui-theme="dark"][data-accent="green"] .stage-root {
+  --accent: var(--play-accent-dark, var(--play-accent, #9cbb92));
+  --accent-ink: var(--play-accent-dark-ink, var(--play-accent-ink, #131a11));
+}
+html[data-ui-theme="dark"][data-accent="violet"] .stage-root {
+  --accent: var(--play-accent-dark, var(--play-accent, #ab98d8));
+  --accent-ink: var(--play-accent-dark-ink, var(--play-accent-ink, #16121f));
+}
+html[data-ui-theme="dark"][data-accent="wine"] .stage-root {
+  --accent: var(--play-accent-dark, var(--play-accent, #d98a7a));
+  --accent-ink: var(--play-accent-dark-ink, var(--play-accent-ink, #1a1512));
+}
+
+/* 舞台浅色：台词条 / 选肢卡整套换成浅底深字（与 app.css 里那份是同一套值，
+   两处要一起改——那边那份给「不在 .stage-root 子树里」的舞台浮层用）。
+   这套的取舍和深色相反——深色模式靠「玻璃压住画面」，浅色没有压的余地，
+   所以底色必须实（0.88 起步）而不是半透明，否则背景图的亮部会透上来吃掉字。 */
+html[data-ui-theme="light"] .stage-root {
+  --stage-bg: #f8fafc;
+  --dialog-bg: linear-gradient(178deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.98));
+  --dialog-line: rgba(203, 213, 225, 0.6);
+  --dialog-ink: #0f172a;
+  --dialog-ink-soft: #334155;
+  --dialog-ink-thought: #475569;
+  --dialog-ink-faint: rgba(51, 65, 85, 0.6);
+  --dialog-bad: #e11d48;
+  --dialog-text-shadow: none;
+  --dir-text-shadow: none;
+  --dialog-hover: rgba(0, 0, 0, 0.05);
+  --dialog-veil: rgba(0, 0, 0, 0.03);
+  --dialog-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  /* 台词条 / 选肢卡：浅色下是「纸底 + 深墨字」，但纸底不是纯纸白——
+     底色掺一成多主题色，卡面与台词条才跟着剧目换色相（早先这里是写死的纸白，
+     于是深色下整条台词条是主题色、切浅色就只剩白与黑）。掺得多一点是因为
+     浅色没有玻璃那层压深，太淡的色调在亮背景图上根本看不出来。 */
+  /* 掺得不透明：浅色下没有玻璃那层压深，底色得做实，否则背景图的暗部透上来会把
+     主题色字吃掉一档（实测 0.94 不透明度在纯黑场下从 4.67:1 掉到 4.4:1）。 */
+  --choice-bg: color-mix(in srgb, var(--accent) 10%, rgb(252 250 246));
+  --choice-line: color-mix(in srgb, var(--accent) 38%, rgb(120 108 92 / 0.4));
+  /* 卡面正文走主题色的深墨版：与深色那套（白缎带 + 主题色字）对称。
+     掺比 78% 是量出来的：色板八档在这一档底色上最低 4.67:1（悬停那档另配 62%，见下）。 */
+  --choice-ink: color-mix(in srgb, var(--accent) 78%, #0b2545);
+  --choice-active-bg: color-mix(in srgb, var(--accent) 26%, rgb(252 250 246));
+  --choice-scrim: linear-gradient(180deg, transparent 24%, rgb(239 236 229 / 0.55));
+  --nameplate-bg: rgb(252 250 246 / 0.94);
+  --nameplate-ink: #23201c;
+  --nameplate-line: rgb(90 80 68 / 0.45);
+  --title-ink: #23201c;
+  --title-shadow: 0 2px 12px rgb(255 255 255 / 0.6);
+  /* 弹窗：纸白卡片 + 深墨字（深色那一份是基线，见上面 .stage-root 里的注释） */
+  --modal-bg: linear-gradient(175deg, rgb(255 255 255 / 0.97) 0%, rgb(245 246 248 / 0.99) 100%);
+  --modal-edge: color-mix(in srgb, var(--accent) 24%, rgb(120 108 92 / 0.28));
+  --modal-shadow: inset 0 1px 0 rgb(255 255 255 / 0.9), 0 18px 44px rgb(48 40 30 / 0.22);
+  --modal-glow: color-mix(in srgb, var(--accent) 70%, #ffffff);
+  --modal-scrim: radial-gradient(circle at 50% 45%, rgb(70 60 48 / 0.34) 0%, rgb(38 32 24 / 0.5) 100%);
+  --modal-hover: rgb(120 108 92 / 0.12);
+  --modal-line: color-mix(in srgb, var(--accent) 20%, rgb(120 108 92 / 0.24));
+  --modal-field: rgb(255 255 255 / 0.72);
+  --modal-field-edge: color-mix(in srgb, var(--accent) 22%, rgb(120 108 92 / 0.34));
+  --modal-faint: color-mix(in srgb, var(--ink) 64%, transparent);
+  --modal-btn-bg: rgb(120 108 92 / 0.08);
+  --modal-btn-edge: rgb(120 108 92 / 0.26);
+  --modal-btn-hover-bg: rgb(120 108 92 / 0.16);
+  --modal-btn-hover-edge: rgb(120 108 92 / 0.42);
+  --modal-danger: #b3372f;
+  --modal-danger-bg: color-mix(in srgb, #b3372f 12%, transparent);
+  --modal-danger-edge: color-mix(in srgb, #b3372f 42%, transparent);
+  --modal-danger-bg-hover: color-mix(in srgb, #b3372f 22%, transparent);
+  --modal-danger-ink-hover: #7d2019;
+}
+
+/* ── 浅色舞台：把 ATRI 那几块表面接回主题令牌 ──────────────────
+   台词条 / 正文 / 名牌 / 选肢在深色下是「白字压在深玻璃上」，浅色下必须整体翻过来：
+   底板做实（浅色没有压住画面的余地，半透明会被背景亮部吃掉），字走深墨。
+   深色那套一个字节都不动——下面每条都只挂在 html[data-ui-theme="light"] 下。
+   （重设计时这几块换成了写死的白字与主题色派生底，主题令牌没人读了，
+   于是切换只有几处小提示字在跟着变——这一节就是把它接回去。） */
+/* 底板照深色那套的结构（自上而下渐浓），只是换成「掺了主题色的纸白」——直接铺 --dialog-bg
+   那条实心渐变会在画面上切出一条横线，像贴了张纸；而纯纸白（早先那版）又把剧目主题色丢了。
+   掺比逐段加重：顶上还是全透明（与画面接得住），到底边那一档最浓。 */
+html[data-ui-theme="light"] .stage-root .theater-dialog {
+  background: linear-gradient(180deg,
+    rgba(255, 255, 255, 0) 0%,
+    color-mix(in srgb, var(--accent) 5%, rgba(255, 255, 255, 0.82)) 20%,
+    color-mix(in srgb, var(--accent) 8%, rgba(248, 250, 252, 0.95)) 60%,
+    color-mix(in srgb, var(--accent) 10%, rgba(241, 245, 249, 0.98)) 100%);
+}
+
+html[data-ui-theme="light"] .stage-root .dialog-text {
+  color: var(--dialog-ink);
+  text-shadow: none;
+}
+
+html[data-ui-theme="light"] .stage-root .dialog-text.narrate {
+  color: var(--dialog-ink-soft);
+}
+
+html[data-ui-theme="light"] .stage-root .dialog-text.thought {
+  color: var(--dialog-ink-thought);
+}
+
+/* 名牌：浅色下翻成深墨 + 一圈白晕（深色那套是白字 + 深晕，两边对称） */
+html[data-ui-theme="light"] .stage-root .dialog-name {
+  color: var(--nameplate-ink);
+  text-shadow:
+    0 0 2px rgb(255 255 255 / 0.95),
+    0 0 8px rgb(255 255 255 / 0.85),
+    0 1px 3px rgb(255 255 255 / 0.9);
+}
+
+/* 选肢：浅色下换成浅底深字的一张实心卡（沿用 --choice-* 那四档，它们都从 --accent 派生） */
+html[data-ui-theme="light"] .stage-root .choice {
+  background: var(--choice-bg);
+  border: 1px solid var(--choice-line);
+  border-radius: 2px;
+  color: var(--choice-ink);
+  text-shadow: none;
+  box-shadow: 0 6px 20px rgb(15 23 42 / 0.08);
+}
+
+html[data-ui-theme="light"] .stage-root .choice .choice-num {
+  color: color-mix(in srgb, var(--accent) 72%, #0b2545);
+}
+
+html[data-ui-theme="light"] .stage-root .choice.is-seen {
+  color: color-mix(in srgb, var(--accent) 45%, rgba(11, 37, 69, 0.45));
+}
+
+html[data-ui-theme="light"] .stage-root .choice.is-seen .choice-num {
+  color: color-mix(in srgb, var(--accent) 30%, rgba(11, 37, 69, 0.4));
+}
+
+html[data-ui-theme="light"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"] .stage-root .choice:focus-visible {
+  background: var(--choice-active-bg);
+  border-color: var(--accent);
+  /* 悬停底比常态浓（26% 主题色），字就得跟着再深一档——同一个色相，不是翻成中性墨，
+     否则一悬停主题色就没了。62% 是那一档底上量出来的下限（色板最低 4.86:1）。 */
+  color: color-mix(in srgb, var(--accent) 62%, #0b2545);
+  text-shadow: none;
+}
+
+/* 悬停态的序号徽：深色那套是白字压在实心主题色缎带上；浅色那套底色是淡主题色，
+   序号必须翻成深墨（白字压在淡底上等于没了） */
+html[data-ui-theme="light"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"] .stage-root .choice:focus-visible .choice-num {
+  color: color-mix(in srgb, var(--accent) 62%, #0b2545);
+}
+
+/* ── 舞台 ─────────────────────────────── */
+.theater {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  /* 选肢带的上下两条边。默认值按「导演栏一行 + 台词条 min-height」起步，
+     真实高度由 StageTheater 的 ResizeObserver 写回（换行、长台词都不用手改数值）。 */
+  --dir-h: 46px;
+  --dialog-h: 168px;
+}
+
+/* 净画面：藏掉压在画面上的两块窗（台词条 + 右上角导演栏），只剩背景/立绘/CG。
+   两块都是 absolute浮层，display:none 掉不引起回流，.theater-stage 本来就 flex:1 铺满。
+   顶栏（exit/log/branch）和侧栏留在外面——那是出去的路，藏了就容易困在里面。 */
+.theater.bare .theater-director,
+.theater.bare .theater-dialog {
+  display: none;
+}
+
+.theater-bar {
+  position: relative;
+  z-index: 20; /* 舞台层的浮层 z-index 会盖到操作条上，这里明确压在它们之上 */
+  transition: opacity var(--fade-ms) ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+
+.bar-btn {
+  padding: 4px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--hover-ms) ease,
+    color var(--hover-ms) ease,
+    border-color var(--hover-ms) ease;
+}
+
+.bar-btn:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.bar-btn.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.theater-more {
+  position: absolute;
+  z-index: 45;
+  top: 44px;
+  right: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.theater-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* 舞台占满工具条以下的全部高度，台词条浮在它上面——台词长短不改变舞台高度，
+   背景与立绘因此不会被对话框挤压变形。
+   声明 container-type 建立容器上下文，立绘等元素可基于 cqw 换算舞台宽度。 */
+.theater-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  container-type: inline-size;
+  background: var(--stage-bg);
+}
+
+/* 台词条：浮在画面上的窗，不是页面里的一块。深色玻璃压住背景图，白字才立得住。
+   一道描边 + 圆角。窗框内侧原先还走一道细白线（想造玻璃厚度），深色下那道线
+   读起来是「窗里还有一圈框」，已删。 */
+.theater-dialog {
+  /* ATRI 台词条：底部通栏，透明 → 底边深海蓝的轻渐变，无边框、无硬分割、无大阴影 */
+  position: absolute;
+  z-index: 12;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+  min-height: 25%;
+  padding: 52px 18% calc(40px + var(--safe-b, 0px)) 18%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--stage-accent-deep) 0%, transparent) 0%,
+    color-mix(in srgb, var(--stage-accent-deep) 52%, transparent) 26%,
+    color-mix(in srgb, var(--stage-accent-deep) 78%, transparent) 62%,
+    color-mix(in srgb, var(--stage-accent-deep) 92%, transparent) 100%);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  cursor: pointer;
+}
+
+.theater-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: bg-fade var(--fade-ms) ease;
+}
+
+.theater-bg-fallback {
+  animation: none;
+}
+
+@keyframes bg-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ── 镜头容器与换层过渡 ───────────────────────────────
+   镜头容器是「画面内容变换层」：作用在它上面的效果让背景/立绘/CG 一起动（现只用于抖动，
+   走独立的 translate 属性，不与别的 transform 抢通道）。
+   换层过渡（转场）是唯一的 dual-source 效果：旧图留在下层、新图按 trans-* 盖上来。 */
+.theater-camera {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+
+/* 背景栈自成层叠上下文：栈内的 z-index（1/2/4）是「新图压旧图」这件事的内部排序，
+   出了这层就毫无意义。栈自己只是 position:absolute + z-index:auto，**不成上下文**，
+   于是这两个数值会冒泡到最近的那个祖先上下文里，与同为该上下文成员的
+   `.theater-sprites`（z-index: 0）直接比大小——2 > 0，整组背景压住立绘，
+   换过一次底之后立绘再也看不见（2026-10-08 修）。`isolation` 把这份排序关回层内，
+   与 `.theater-sprites` 用 `z-index: 0` 自成一层是同一手法。
+   别改成「隔离 .theater-camera」：它已经因 `will-change: transform` 自成上下文（实测），
+   在它上面再加一层不会改变栈内数值与立绘层比大小的关系，实测无效——要在数值所在的那层收口。 */
+.theater-stack {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.theater-stack .theater-stack-new {
+  z-index: 2;
+}
+
+.theater-stack .theater-stack-old {
+  z-index: 1;
+}
+
+/* ── 转场纯色场（fade / fade-white 专用） ─────────────
+   它是**屏幕级**的东西：要「整屏过黑」把立绘与 CG 一起盖住，再揭开已经就位的新背景。
+   所以它挂在镜头容器下、立绘与 CG 之上（z-index 4），而不是待在背景栈里——关进栈里
+   就只能盖住背景，人物会浮在黑场里不动。
+   只在 fade 那两次换层时渲染（调用方按 `seq` 换 key 重挂 = 重播动画），平时不入 DOM。 */
+.theater-fade-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  animation: fx-veil var(--trans-ms) ease forwards;
+}
+
+/* 栈内的层不要吃 .theater-bg 那条常驻 bg-fade——否则旧层也会淡入一次。 */
+.theater-stack .theater-bg {
+  animation: none;
+}
+
+/* cut：新图直接顶掉旧图 */
+.theater-stack.trans-cut .theater-stack-old {
+  display: none;
+}
+
+/* dissolve：新图交叉淡入（旧图静止在下） */
+.theater-stack.trans-dissolve .theater-stack-new {
+  animation: fx-fade-in var(--trans-ms) ease;
+}
+
+/* fade / fade-white：旧图在上（前半程保持），veil 纯色升到全遮挡再落下，
+   下半程揭开的是已经就位的新图。旧图必须在 50% 处让位（steps 硬切），否则它会一直压着新图。 */
+.theater-stack.trans-fade .theater-stack-old,
+.theater-stack.trans-fade-white .theater-stack-old {
+  z-index: 4;
+  animation: fx-hold-half var(--trans-ms) steps(1, end) forwards;
+}
+
+.theater-stack.trans-fade .theater-stack-new,
+.theater-stack.trans-fade-white .theater-stack-new {
+  z-index: 1;
+}
+
+@keyframes fx-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes fx-hold-half {
+  0%,
+  49.9% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes fx-veil {
+  0% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ── 屏幕遮罩：letterbox / 暗角 / 闪光 ───────────────── */
+.theater-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.theater-letterbox::before,
+.theater-letterbox::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 11%;
+  background: #000;
+}
+
+.theater-letterbox::before {
+  top: 0;
+}
+
+.theater-letterbox::after {
+  bottom: 0;
+}
+
+.theater-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 52%, rgb(0 0 0 / 0.55) 100%);
+}
+
+.theater-flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation: fx-flash var(--fx-ms) ease-out;
+}
+
+@keyframes fx-flash {
+  0% {
+    opacity: 0;
+  }
+  22% {
+    opacity: 0.92;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 常亮色（flash 的 on）：撤掉一次性动画，底色保持不透明。 */
+.theater-flash-hold {
+  opacity: 1;
+  animation: none;
+}
+
+/* 镜头抖动：只用 translate 一个通道，幅度小、频率高。nonce 换值即重播（同行为词）。 */
+.theater-camera.shaking {
+  animation: fx-cam-shake-light var(--shake-ms, 340ms) linear var(--shake-nonce, 0s) 1;
+}
+
+.theater-camera.shaking.shake-heavy {
+  animation-name: fx-cam-shake-heavy;
+}
+
+/* 持续抖（shake 的 on）：同一套关键帧改成无限循环。 */
+.theater-camera.shaking.shake-hold {
+  animation-iteration-count: infinite;
+  animation-delay: 0s;
+}
+
+@keyframes fx-cam-shake-light {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  20% {
+    translate: -0.5% 0.3%;
+  }
+  40% {
+    translate: 0.5% -0.3%;
+  }
+  60% {
+    translate: -0.35% 0.2%;
+  }
+  80% {
+    translate: 0.35% -0.2%;
+  }
+}
+
+@keyframes fx-cam-shake-heavy {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  15% {
+    translate: -1.6% 1%;
+  }
+  30% {
+    translate: 1.6% -1%;
+  }
+  45% {
+    translate: -1.2% 0.8%;
+  }
+  60% {
+    translate: 1.2% -0.8%;
+  }
+  80% {
+    translate: -0.6% 0.4%;
+  }
+}
+
+/* 立绘层：position + z-index:0 自成一个层叠上下文，把立绘之间的 orderSeq 排序关在
+   自己这一层里——说话者那个 +1000 只是「同台最上」，不该蹿到台词条（12）、选肢层（15）
+   或工具条（20）上面去。整层落在选肢遮罩（.theater-stage::after，8）之下，遮罩亮起时
+   立绘跟着一起暗。 */
+.theater-sprites {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* 立绘怎么摆：顶部对齐，底下按景别裁。
+
+   只有两个数：
+   - top    所有立绘同一个值——头顶留多少空，三档一致，换图时人不会上下跳。
+   - height 图有多高。top 到舞台底边是 100% - top，景别要多露的就再往上加。
+
+   全身比半身/胸像多出的那截，露出来的部分被**画面下沿**切掉（不是被台词条切，
+   台词条只是正好压在那儿）。半身与胸像的高度就是 100% - top，图的下沿落在舞台底边。
+
+   top 取 10%：实测生成的立绘 alpha 顶部留白中位 7.5%、最紧 0.1%（模型常把头顶顶到
+   画幅上沿），10% 保证最紧的那批头顶也还留得住一条缝。
+
+   高度必须写死：<img> 是替换元素，只给 top/bottom 而 height:auto 的话浏览器判定
+   过约束会忽略 bottom、图按原始像素尺寸画出来（比舞台大一大圈）。
+
+   水平位置走 transform 而不是 left（--x）：left 过渡每帧触发重排，五六个立绘同框
+   就是每帧一次全舞台重排；transform 只走合成层，零重排。--x 存的是「离画面中心的
+   偏移百分比」，-50% 那半张图是图自身居中，与位置无关，所以合成式是
+   translateX(-50% + var(--x))。--scale 是运镜：整体放大，头顶不动、身体往下长出画面，
+   就是「推近」。
+
+   四层变换各占一个互不覆盖的属性，所以谁也不会把谁冲掉：
+     transform → 站位（--x）与运镜（--scale），两者有 transition，换位/换景别平滑
+     translate → 行为词的一次性位移（@keyframes 驱动）
+     scale     → 行为词的压扁挤压，或说话者的呼吸（同一时刻只会有一个）
+     rotate    → 行为词的倾身
+   缩放锚点跟着素材的声明走（--sprite-origin，人贴底/悬空物居中/垂下物挂顶），
+   所以人是「原地动」而不是整张图在飘。 */
+.theater-sprite {
+  --x: 0cqw;
+  --scale: 1;
+  position: absolute;
+  left: 50%;
+  /* 落位（top/height/transform-origin）全部来自 --sprite-* 变量：
+     值由 core 的 spriteStagePreset 按「取景 × 体量 × 对齐」算出，组件写成行内变量。
+     这里不再枚举 .framing-* / .anchor-* 类名——每加一档体量就要动一处 CSS，
+     而 core 的表才是那份契约。 */
+  top: var(--sprite-top);
+  height: var(--sprite-height);
+  transform-origin: var(--sprite-origin);
+  transform: translateX(calc(-50% + var(--x))) scale(var(--scale));
+  /* 立绘的一切变化都默认带过渡：换表情、换站位、换景别、退场都是同一个元素上的动画。
+     少了这条，角色只是「啪」地一下跳到新位置——台上看着像卡了帧而不是在演。
+     呼吸与行为词走 animation 不走 transition，所以不列在这里（列了两边会互相等）。 */
+  transition:
+    opacity var(--fade-ms) ease,
+    filter var(--fade-ms) ease,
+    transform var(--move-ms) var(--move-ease);
+}
+
+/* 非说话人压暗：说话的那个保持原亮度，同框的其余人降到 --sprite-dim。
+   走 filter: brightness 而不是 opacity——压暗是「这块像素变暗」，透明会让背景
+   从人身上透出来，读起来是半透明的鬼影。brightness 只动像素、不动 alpha，
+   与 .leaving / .sprite-out 的 opacity 通道互不覆盖。
+   没有焦点时（旁白、玩家输入、说话的人不在台上）不加这个 class，整台原亮度。 */
+.theater-sprite.dim {
+  filter: brightness(var(--sprite-dim));
+}
+
+/* presentation planner 的设备容量裁剪：不是 leaving，不播退场，也不改变逻辑在场。
+   保留 DOM 让恢复走普通 opacity 过渡；不可见时不占点击。 */
+.theater-sprite.presentation-suppressed {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* 正在演行为词：这一刻运镜让位。行为词自己的 translate/scale/rotate 与运镜的
+   transform 是两个独立属性、正常应该并存，但两者都改缩放观感——特写（scale 1.35）
+   叠一记点头会让人物突然弹一下，所以行为词期间把运镜压回 1。
+   演完自动恢复，运镜不用重播。
+
+   --act-nonce 是重播用：同一个 animation-name 连写两次不会重来，把 delay 换成另一个值，
+   浏览器就认成新动画从 0% 播起。**必须写成时间**（`-0.001s`）：delay 与 iteration-count
+   位置相邻，写成裸数字就成了 `520ms ease 1 1` 这种两个数挨着，浏览器判不出哪个是哪个，
+   整条 animation 被静默丢弃（animation-name 变 none，动画永远不启动）。 */
+/* 说话者轻微呼吸——预留，当前不挂这个 class。
+   幅度是 scale 1.004（0.4%），肉眼不可辨：等于给每张立绘挂了一条永不结束的
+   动画却什么都没换来。要开的话，在 StageTheater 拼 cls 的地方按
+   `playback.view?.actorId === id` 补回 " speaking" 即可。
+   与行为词共用 scale 通道，所以两者同时成立时以行为词为准——class 顺序保证
+   .acting 的 animation 后写会覆盖。 */
+.theater-sprite.speaking {
+  animation: sprite-breathe 3.4s ease-in-out infinite;
+}
+
+/* 竖屏舞台（412x839）比 9:16 立绘还窄：人物本身只占图宽 70%，两侧各能裁 15% 再多就切到头发，
+   所以整幅图都按比例缩矮一截，代价是人物多露出一点。顶部的空与底部的裁切规则照旧。
+   换一列现成的数（spriteStagePreset 的 portrait 那列），不在 CSS 里重算一遍。 */
+@media (max-aspect-ratio: 1/1) {
+  .theater-sprite {
+    top: var(--sprite-top-portrait);
+    height: var(--sprite-height-portrait);
+    transform-origin: var(--sprite-origin-portrait);
+  }
+}
+
+/* 表情差分：旧像叠在新像之上淡出，露出下面的新像——真正的交叉淡化。
+   用关键帧而不是 transition：旧像是挂载即带 .sprite-out，transition 不会从 1 起步。 */
+.theater-sprite.sprite-out {
+  opacity: 0;
+  animation: sprite-fade-out var(--fade-ms) ease forwards;
+}
+
+@keyframes sprite-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* 登场：淡入。退场靠 .leaving（见下）而不是直接卸载——直接卸载没有过渡可播。 */
+.theater-sprite.entering {
+  animation: sprite-in var(--fade-ms) ease;
+}
+
+/* 行为词：演的时候接管 animation，并把运镜压回 1（两条都改缩放观感，叠一起会弹一下）。
+   这条规则必须排在 `.entering` 之后——同为 (0,2,0) 时后写者赢，而 `.entering` 的
+   `animation: sprite-in` 早就在清单里跑完了（它在动画结束后就摘掉这个类，见 StageTheater），
+   所以这里只管把行为词那一条装上去。
+
+   **别把 `.entering` 的入场动画写进这条里叠加**：`.acting` 一撤，animation-name 若是从
+   「行为词」换回「入场淡入」，浏览器会把入场当新动画从 opacity:0 重播一遍——症状就是
+   每个行为词演完立绘闪一下。入场动画不进这份清单，撤 .acting 就只是回到「没有动画」。 */
+.theater-sprite.acting {
+  --scale: 1;
+  animation: var(--sprite-act) var(--act-ms) var(--move-ease) var(--act-nonce, 0s) 1;
+}
+
+.theater-sprite.leaving {
+  opacity: 0;
+  transition:
+    opacity var(--fade-ms) ease,
+    transform var(--move-ms) var(--move-ease);
+  pointer-events: none;
+}
+
+@keyframes sprite-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* 回看（滚轮翻历史台词）时舞台上放的是「那一刻的画面」，不是一次新的演出：
+   换景不淡入、立绘不登场、行为词不重演、站位不补间。少了这一条，滚轮每翻一句
+   就是一次全场闪烁。松手回到播放头时这些规则不再命中，画面按平时的过渡归位。
+   纯色场要单列：它是镜头容器的孩子（不在背景栈里），`> *` 那一条够不着它。 */
+.theater-stage.rewinding .theater-bg,
+.theater-stage.rewinding .theater-bg-in,
+.theater-stage.rewinding .theater-cg-in,
+.theater-stage.rewinding .theater-sprite,
+.theater-stage.rewinding .theater-camera,
+.theater-stage.rewinding .theater-fade-veil,
+.theater-stage.rewinding .theater-stack,
+.theater-stage.rewinding .theater-stack > * {
+  animation: none;
+}
+
+.theater-stage.rewinding .theater-sprite,
+.theater-stage.rewinding .theater-camera {
+  transition: none;
+}
+
+/* 回看要的是「那一刻的终态」，不是转场过程：旧层直接让位，露出新画面。 */
+.theater-stage.rewinding .theater-stack .theater-stack-old {
+  display: none;
+}
+
+/* 机位：偏移量是「离画面中心的百分比（相对于舞台宽度的 cqw）」，不是 left 的绝对值。
+   通过 left: 50% 将原点对准舞台中心，--x 驱动左右平移。负数在左、正数在右。 */
+.pos-left {
+  --x: -28cqw;
+}
+
+.pos-center {
+  --x: 0cqw;
+}
+
+.pos-right {
+  --x: 28cqw;
+}
+
+/* 2 人同框：贴到画面两侧，留出中间说话的空（越靠边人越小越远，这是舞台惯例）。 */
+.pos-far-left {
+  --x: -36cqw;
+}
+
+.pos-far-right {
+  --x: 36cqw;
+}
+
+/* 3 人以上用：比 far 更靠外。 */
+.pos-edge-left {
+  --x: -42cqw;
+}
+
+.pos-edge-right {
+  --x: 42cqw;
+}
+
+/* 行为词 → 动画配方（core 的 spriteAction.ts 是行为词的唯一真相源）。
+   剧本只写一个词，配方与时长都在这里，不外泄成参数。
+
+   每条 @keyframes **显式写全四个属性**：漏写的属性会保留上一次的值，
+   于是「nod 之后接着 shake」会把点头压出来的挤压带进抖动里。写全 0 才是「这条通道不动」。
+
+   只用可插值的类型（百分比位移、scale、deg 旋转）——自定义属性按 token 替换、
+   不可插值，@keyframes 里驱动它不会平滑补间，还会整段跳。
+   幅度刻意压得小（2%~4%）：立绘贴满画面，位移一大就出画。
+   transform-origin: top center（见 .theater-sprite）让位移与旋转都绕头顶发生，
+   人的脚不动——像在原地动，不是整张图在飘。 */
+@keyframes sprite-act-nudge {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  25% {
+    translate: 1.4% 0;
+    scale: 1 1;
+    rotate: 0.3deg;
+  }
+  75% {
+    translate: -1.4% 0;
+    scale: 1 1;
+    rotate: -0.3deg;
+  }
+}
+
+@keyframes sprite-act-stagger {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  20% {
+    translate: -3% -1%;
+    scale: 0.98 1;
+    rotate: -3.5deg;
+  }
+  55% {
+    translate: 2% 0;
+    scale: 1.02 1;
+    rotate: 1.5deg;
+  }
+  80% {
+    translate: -0.8% 0;
+    scale: 1 1;
+    rotate: -0.5deg;
+  }
+}
+
+@keyframes sprite-act-jump {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  30% {
+    translate: 0 -4%;
+    scale: 0.97 1;
+    rotate: 0deg;
+  }
+  60% {
+    translate: 0 0;
+    scale: 1.04 1;
+    rotate: 0deg;
+  }
+  80% {
+    translate: 0 -1%;
+    scale: 0.99 1;
+    rotate: 0deg;
+  }
+}
+
+@keyframes sprite-act-nod {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  30% {
+    translate: 0 2.5%;
+    scale: 1.02 1;
+    rotate: 0deg;
+  }
+  62% {
+    translate: 0 -0.8%;
+    scale: 0.99 1;
+    rotate: 0deg;
+  }
+}
+
+@keyframes sprite-act-bow {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  45% {
+    translate: 0 2%;
+    scale: 1.04 1;
+    rotate: 0deg;
+  }
+  70% {
+    translate: 0 1.2%;
+    scale: 1.02 1;
+    rotate: 0deg;
+  }
+}
+
+/* 伪转身：横向压扁到 0 再展开，中间全是侧身。立绘没有第二张背面图时的业界通法。 */
+@keyframes sprite-act-turn {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  45% {
+    translate: 2% 0;
+    scale: 0.12 1;
+    rotate: 0deg;
+  }
+  55% {
+    translate: -2% 0;
+    scale: 0.12 1;
+    rotate: 0deg;
+  }
+}
+
+@keyframes sprite-act-shake {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  20% {
+    translate: -1.6% 0.4%;
+    scale: 1 1;
+    rotate: 0.6deg;
+  }
+  40% {
+    translate: 1.6% -0.4%;
+    scale: 1 1;
+    rotate: -0.6deg;
+  }
+  60% {
+    translate: -1.1% 0.3%;
+    scale: 1 1;
+    rotate: 0.4deg;
+  }
+  80% {
+    translate: 1.1% -0.3%;
+    scale: 1 1;
+    rotate: -0.4deg;
+  }
+}
+
+@keyframes sprite-act-sway {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1 1;
+    rotate: 0deg;
+  }
+  25% {
+    translate: 2.2% -0.6%;
+    scale: 0.99 1;
+    rotate: 1.2deg;
+  }
+  75% {
+    translate: -2.2% 0.6%;
+    scale: 1.01 1;
+    rotate: -1.2deg;
+  }
+}
+
+/* 说话者轻微呼吸：常驻，不写剧本。0.4% 小到没人会当成「图在抖」，
+   但看得出是活的。 */
+/* 呼吸与运镜共用 scale 这一个通道，所以两者只在自己生效时写 --scale：
+   .acting 时运镜不参与（正在演行为词），呼吸则乘在 --scale 外面。 */
+@keyframes sprite-breathe {
+  0%,
+  100% {
+    scale: 1 1;
+  }
+  50% {
+    scale: 1.004 1.004;
+  }
+}
+
+/* 贴边档：用于「在最角落」或非人小物件（猫/道具）的默认落点。 */
+.pos-bleed-left {
+  --x: -46cqw;
+}
+
+.pos-bleed-right {
+  --x: 46cqw;
+}
+
+.theater-cg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--stage-bg);
+  animation: bg-fade var(--fade-ms) ease;
+}
+
+.theater-cg img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.theater-cg-caption {
+  position: absolute;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #eee;
+  font-size: 13.5px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  margin: 0;
+}
+
+/* ── 全屏标题卡（<title>）───────────────────
+   整屏铺文本、对话框让位；对齐由 title-align-* 五档给。过渡与转场任务解耦：
+   当前随对话框显隐即时切换，将来可在动效任务里接转场词汇。 */
+.theater.title-mode .theater-dialog,
+.theater.title-mode .theater-director {
+  display: none;
+}
+
+.theater-title {
+  position: absolute;
+  inset: 0;
+  z-index: 13;
+  display: flex;
+  padding: clamp(24px, 9vh, 104px) clamp(20px, 8vw, 120px);
+  /* 点击透传：整卡是"提示玩家点一下"，点哪儿都算翻下一句 / 离开 */
+  pointer-events: none;
+  animation: bg-fade var(--fade-ms) ease;
+  /* 缺省（bg="none" 的叠层）取舞台皮肤的字色与投影；实底那两样由内联样式覆盖。 */
+  color: var(--title-ink);
+  text-shadow: var(--title-shadow);
+}
+
+.title-align-center {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.title-align-top-left {
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+}
+.title-align-top-right {
+  align-items: flex-start;
+  justify-content: flex-end;
+  text-align: right;
+}
+.title-align-bottom-left {
+  align-items: flex-end;
+  justify-content: flex-start;
+  text-align: left;
+}
+.title-align-bottom-right {
+  align-items: flex-end;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.theater-title-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--title-font);
+  font-size: clamp(22px, 5.2vw, 46px);
+  line-height: 1.75;
+  letter-spacing: 0.06em;
+  /* 字色与投影都继承自 .theater-title（那里才是卡片底色所在的那一层）。 */
+}
+
+.theater-title-next {
+  position: absolute;
+  right: clamp(16px, 4vw, 40px);
+  bottom: clamp(16px, 4vh, 40px);
+  opacity: 0.72;
+  font-size: 14px;
+}
+
+/* 说话人名牌：白底 + 角色主题描边，清晰典雅，不遮挡立绘 */
+.dialog-name {
+  /* 名牌：悬浮在正文左上方、无底色，纯白粗黑体 + 柔和深色外晕（ATRI「夏生」那一枚） */
+  position: absolute;
+  top: 6px;
+  left: calc(18% - 2.2em);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: #ffffff;
+  font-family: var(--font-ui);
+  font-weight: 800;
+  font-size: clamp(18px, 1.55vw, 28px);
+  letter-spacing: 0.06em;
+  line-height: 1.3;
+  white-space: nowrap;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.85),
+    0 0 8px color-mix(in srgb, var(--stage-accent-deep) 85%, transparent),
+    0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.dialog-text {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: clamp(16px, 1.45vw, 26px);
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: 0.03em;
+  white-space: pre-wrap;
+  min-height: 3.2em;
+  color: #ffffff;
+  /* 1.5px 黑色微描边 + 一层软影：ATRI 正文在亮底/暗底上都靠它立住 */
+  -webkit-text-stroke: 0;
+  text-shadow:
+    1px 0 0 rgba(0, 0, 0, 0.55), -1px 0 0 rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(0, 0, 0, 0.55), 0 -1px 0 rgba(0, 0, 0, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.55);
+}
+
+.dialog-text.narrate {
+  color: rgba(241, 245, 249, 0.92);
+}
+
+.dialog-text.thought {
+  color: #c4b5fd;
+  font-style: italic;
+}
+
+.dialog-caret {
+  display: inline-block;
+  width: 8px;
+  height: 15px;
+  margin-left: 4px;
+  vertical-align: text-bottom;
+  background: var(--dialog-ink);
+  opacity: 0.8;
+  animation: blink 1s step-start infinite;
+}
+
+.dialog-hint {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  color: var(--dialog-ink-soft);
+}
+
+.dialog-hint .muted {
+  color: inherit;
+}
+
+.dialog-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid currentcolor;
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+.dialog-next {
+  display: inline-block;
+  color: var(--accent, #60a5fa);
+  font-size: 10px;
+  text-shadow: 0 0 8px var(--accent, #60a5fa);
+  animation: dialog-bob 1.2s ease-in-out infinite;
+}
+
+@keyframes dialog-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateY(3px);
+    opacity: 1;
+  }
+}
+
+.dialog-rewind {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--dialog-ink-soft);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.dialog-rewind:hover {
+  color: var(--dialog-ink);
+}
+
+.dialog-text.rewinding {
+  opacity: 0.78;
+}
+
+@keyframes bob {
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+/* ── 台词流（剧本 log 视图）───────────── */
+
+.stage-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 4px 28px;
+  scrollbar-width: thin;
+}
+
+.line {
+  margin: 0 0 14px;
+}
+
+.line-scene {
+  margin: 26px 0 18px;
+  text-align: center;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+}
+
+.line-scene span {
+  display: inline-block;
+  padding: 4px 18px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.line-narrate {
+  color: var(--ink-soft);
+  text-align: center;
+  padding: 0 24px;
+}
+
+.line-thought {
+  color: var(--ink-faint);
+  font-style: italic;
+  text-align: center;
+  padding: 0 24px;
+}
+
+.line-say {
+  border-left: 3px solid var(--line);
+  padding-left: 12px;
+}
+
+.say-name {
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.say-text {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+}
+
+.stage-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--ink-faint);
+  animation: blink 1s step-start infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ── 停止点（浮在舞台上，不占底部条） ────────────── */
+/* 变暗只给画面（背景图 / 立绘 / CG），不给盖在画面上的那些界面层：
+   台词条、导演栏、侧栏唤出键、排队的面板——它们是玩家此刻还要读、还要点的，
+   跟着压暗等于把选项摆在一条读不清的路前面。遮罩因此挂在画面区里，
+   不在选肢层上；选肢层只管摆卡片。 */
+.theater:has(.choice-overlay) .theater-stage::after {
+  content: "";
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  background: var(--choice-scrim);
+  pointer-events: none;
+}
+
+.choice-seen {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--dialog-ink-faint);
+}
+
+/* 经典 Galgame 惯例：走过/选过的选肢在字色上呈半透明暗化或柔和墨色，
+   悬停与聚焦时照样能点亮，但静置态一眼可辨「已去过」 */
+.choice.is-seen {
+  color: color-mix(in srgb, var(--choice-ink, #f8fafc) 62%, transparent);
+}
+
+.choice.is-seen .choice-num {
+  color: color-mix(in srgb, var(--accent) 55%, rgba(224, 242, 254, 0.55));
+}
+
+.choice.is-seen:not(:hover):not(:focus-visible) .choice-text,
+.choice.is-seen:not(:hover):not(:focus-visible) .choice-num {
+  opacity: 0.62;
+}
+
+/* 自由输入那张卡：走同一形制，只是不给主色标尺 */
+.choice.ghost {
+  color: color-mix(in srgb, var(--accent) 45%, #cbd5e1);
+  font-size: 14.5px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--stage-choice-wash) 0%, transparent) 0%,
+    color-mix(in srgb, var(--stage-choice-wash) 58%, transparent) 22%,
+    color-mix(in srgb, var(--stage-choice-wash) 58%, transparent) 78%,
+    color-mix(in srgb, var(--stage-choice-wash) 0%, transparent) 100%);
+}
+
+html[data-ui-theme="light"] .stage-root .choice.ghost {
+  color: color-mix(in srgb, var(--accent) 72%, #0b2545);
+}
+
+/* ── 漏搬的规则（2026-10-05 用 scripts/port-stage-css.py 从 app.css 抽出）───────
+   抽包时漏了这一大批：`.choice*` 是舞台选项卡片本身（没有它，选项就是浏览器默认
+   按钮的样子、位置也不对），全局 `button` / `input` 是每一颗按钮的底样式，
+   移动端小节整段没搬。原文照抄，只在元素级选择器上加 `:where(.stage-root)`
+   圈作用域——`:where()` 特异性为零，不改它与类规则之间的胜负关系。 */
+
+.muted {
+  color: var(--ink-faint);
+}
+
+.small {
+  font-size: 13px;
+}
+
+.muted.small, .small {
+  line-height: 1.5;
+}
+
+button.ghost-btn {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 6px 8px;
+  font-size: 13.5px;
+}
+
+button.ghost-btn:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+button.link-btn {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  padding: 2px 6px;
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.choice-overlay {
+  position: absolute;
+  z-index: 25;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  /* 选肢落在画面中下段：上缘让开立绘的脸（约画面上三成），下缘让开台词条 */
+  padding-top: max(calc(var(--dir-h, 46px) + 24px + env(safe-area-inset-top, 0px)), 30vh);
+  padding-bottom: calc(var(--dialog-h, 180px) + 28px + var(--safe-b, 0px));
+  padding-left: 16px;
+  padding-right: 16px;
+  overflow-y: auto;
+  pointer-events: none;
+  animation: choice-in 0.22s ease-out;
+}
+
+.choice-overlay .choice {
+  pointer-events: auto;
+}
+
+.choice-text {
+  flex: 0 1 auto;
+}
+
+@keyframes choice-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* 选肢卡：经典 Galgame 横向缎带光效卡片 */
+.choice {
+  /* ATRI 选项：居中一条半透明白缎带，深海蓝字，两端渐隐，无圆角大阴影 */
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: min(760px, 80vw);
+  min-height: 50px;
+  margin: 0 auto;
+  padding: 12px 40px;
+  text-align: center;
+  font-family: var(--font-ui);
+  font-size: clamp(15px, 1.25vw, 20px);
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--stage-choice-wash) 0%, transparent) 0%,
+    color-mix(in srgb, var(--stage-choice-wash) 88%, transparent) 14%,
+    color-mix(in srgb, var(--stage-choice-wash) 94%, transparent) 50%,
+    color-mix(in srgb, var(--stage-choice-wash) 88%, transparent) 86%,
+    color-mix(in srgb, var(--stage-choice-wash) 0%, transparent) 100%);
+  border: none;
+  border-radius: 0;
+  color: var(--choice-ink, #f8fafc);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 38%, rgba(255, 255, 255, 0.14)),
+    inset 0 -1px 0 color-mix(in srgb, var(--accent) 38%, rgba(255, 255, 255, 0.14));
+  animation: choice-card-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 50ms);
+  transition: background 0.16s ease, color 0.16s ease, transform 0.2s ease;
+  cursor: pointer;
+}
+
+.choice-overlay .choice:nth-child(2) { --i: 1; }
+.choice-overlay .choice:nth-child(3) { --i: 2; }
+.choice-overlay .choice:nth-child(4) { --i: 3; }
+.choice-overlay .choice:nth-child(5) { --i: 4; }
+.choice-overlay .choice:nth-child(6) { --i: 5; }
+.choice-overlay .choice:nth-child(n + 7) { --i: 6; }
+
+@keyframes choice-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.choice:hover:not(:disabled),
+.choice:focus-visible {
+  transform: none;
+  color: #ffffff;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--stage-choice-solid) 0%, transparent) 0%,
+    color-mix(in srgb, var(--stage-choice-solid) 88%, transparent) 14%,
+    color-mix(in srgb, var(--stage-choice-solid) 96%, transparent) 50%,
+    color-mix(in srgb, var(--stage-choice-solid) 88%, transparent) 86%,
+    color-mix(in srgb, var(--stage-choice-solid) 0%, transparent) 100%);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 45%, #ffffff);
+  box-shadow: none;
+}
+
+.choice:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.choice:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* 序号徽：典雅数字光标 */
+.choice-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: color-mix(in srgb, var(--accent) 72%, #e0f2fe);
+  font-family: "Montserrat", "Inter", var(--font-ui);
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.choice:hover:not(:disabled) .choice-num,
+.choice:focus-visible .choice-num {
+  background: none;
+  color: rgba(255, 255, 255, 0.85);
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice {
+    animation: none;
+  }
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+:where(.stage-root) button {
+  font: inherit;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  cursor: pointer;
+  transition:
+    border-color var(--hover-ms) ease,
+    background-color var(--hover-ms) ease,
+    color var(--hover-ms) ease;
+}
+
+:where(.stage-root) button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+:where(.stage-root) button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--panel);
+}
+
+/* ── 游戏系统窗：导演动作的输入与选择（轻盈融入、HUD 质感） ───────
+   弹窗不是套框套层、顶着厚胶囊的网页对话框，而是一块压在页面之上的微透卡片：
+   单层底板 + 顶部微光微边 + 内嵌极简标题栏 + 舒展充裕的多行输入区。
+   深浅两套只在令牌里分叉（.stage-root 给浅色、html[data-ui-theme="dark"] 覆盖成深色）：
+   它是全站共用的那一枚，切了主题还是老样子就是这里写死了颜色。 */
+
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px calc(24px + var(--safe-b, 0px));
+  background: var(--modal-scrim,
+    radial-gradient(circle at 50% 45%, rgba(4, 12, 24, 0.58) 0%, rgba(1, 4, 10, 0.85) 100%));
+  backdrop-filter: blur(8px) saturate(1.15);
+  animation: modal-scrim-in 0.18s ease-out;
+}
+
+@keyframes modal-scrim-in {
+  from { opacity: 0; }
+}
+
+.modal-card {
+  box-sizing: border-box;
+  position: relative;
+  max-width: 100%;
+  max-height: min(84dvh, 660px);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 22px 18px;
+  border: 1px solid var(--modal-edge, color-mix(in srgb, var(--accent) 42%, rgba(255, 255, 255, 0.18)));
+  border-radius: 8px;
+  background: var(--modal-bg, linear-gradient(175deg,
+    color-mix(in srgb, var(--accent) 18%, rgba(6, 15, 30, 0.94)) 0%,
+    color-mix(in srgb, var(--accent) 10%, rgba(3, 8, 18, 0.97)) 100%));
+  backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: var(--modal-shadow,
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 0 40px color-mix(in srgb, var(--accent) 24%, transparent),
+    0 24px 56px rgba(0, 0, 0, 0.65));
+  color: var(--ink);
+  animation: modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+/* 卡片内嵌控件（输入框 / 分段器 / 引用 chip）读的是纸面令牌，深色卡片上要一起压深，
+   否则它们会拿 .stage-root 的浅色纸底在深卡片上留白块。
+   基线这一份是深色（与弹窗令牌同一条规矩：没有属性时保持原样）。 */
+.modal-card {
+  --panel: rgba(5, 14, 28, 0.65);
+  --bg: rgba(2, 6, 14, 0.5);
+  --line: color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.15));
+  --ink: #f8fafc;
+  --ink-soft: rgba(220, 235, 250, 0.8);
+  --ink-faint: rgba(180, 205, 230, 0.55);
+  --ink-muted: rgba(200, 220, 240, 0.68);
+  --accent-soft: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+/* 浅色主题：同一批令牌换成纸面那一套（和紙） */
+html[data-ui-theme="light"] .modal-card {
+  --panel: rgb(248 246 242 / 0.9);
+  --bg: rgb(255 255 255 / 0.72);
+  --line: color-mix(in srgb, var(--accent) 20%, rgb(120 108 92 / 0.3));
+  --ink: #23201c;
+  --ink-soft: #4a443c;
+  --ink-faint: #7d7568;
+  --ink-muted: rgb(35 32 28 / 0.72);
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+/* 顶部微光线：通透科技质感的关键细部 */
+.modal-top-glow {
+  position: absolute;
+  top: 0;
+  left: 20px;
+  right: 20px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 80%, #ffffff), transparent);
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+/* 弹窗头部：整洁内嵌，不再顶在卡片外部 */
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 左侧光点标点 */
+.modal-pip {
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--modal-glow, color-mix(in srgb, var(--accent) 80%, #ffffff));
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+/* 微小英文类别标 */
+.modal-kicker {
+  font-family: var(--font-mono, monospace);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: color-mix(in srgb, var(--accent) 72%, var(--ink-soft));
+  opacity: 0.72;
+  transform: translateY(1px);
+}
+
+/* 关闭按钮：极简通透 */
+/* 关闭键与宿主那套同形：一个圆、无边框，悬停浮出一层同色薄底 */
+.modal-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--modal-faint, var(--ink-faint));
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color var(--hover-ms) ease, color var(--hover-ms) ease;
+}
+
+.modal-x:hover {
+  background: var(--modal-hover, rgba(255, 255, 255, 0.12));
+  color: var(--ink);
+}
+
+.modal-x:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  color: var(--ink);
+}
+
+/* 说明文字：温和收敛 */
+.modal-hint {
+  margin: 0 0 12px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 内容区：告别臃肿的“内嵌黑凹槽”，回归自然舒展的无边框布局 */
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+/* 提示窗工具条：引导/分岔 与 OOC 并列一行，像精密的控制台 */
+.prompt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.guide-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.14));
+  border-radius: 6px;
+  background: rgba(3, 8, 18, 0.55);
+}
+
+.guide-seg .seg-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--hover-ms) ease;
+}
+
+/* 注意：弹窗里这两枚（.guide-seg / .ooc-shortcut）真正生效的样式在文件末尾那节
+   「从 app.css 补搬的规则」里的 .seg / .seg .seg-btn / .ooc-shortcut——
+   同权重、位置更后，这里这几条被它们压着（它们走 --line/--bg/--panel/--ink-soft 令牌，
+   深浅两档本来就跟着走）。改弹窗里这两枚的样子要改那一节。 */
+.guide-seg .seg-btn:hover {
+  color: #ffffff;
+}
+
+.guide-seg .seg-btn.active {
+  background: color-mix(in srgb, var(--accent) 70%, rgba(255, 255, 255, 0.15));
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* OOC 快捷模式切换键 */
+.ooc-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  background: rgba(3, 8, 18, 0.45);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all var(--hover-ms) ease;
+}
+
+.ooc-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transition: all var(--hover-ms) ease;
+}
+
+.ooc-shortcut:hover {
+  color: #ffffff;
+  border-color: color-mix(in srgb, var(--accent) 45%, rgba(255, 255, 255, 0.2));
+}
+
+.ooc-shortcut.on {
+  border-color: color-mix(in srgb, var(--accent) 65%, #ffffff);
+  background: color-mix(in srgb, var(--accent) 25%, rgba(3, 8, 18, 0.6));
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.ooc-shortcut.on .ooc-indicator {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+/* 输入区：大面积舒展输入 */
+.director-input {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.director-input textarea,
+.modal-body textarea,
+.route-modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 108px;
+  padding: 12px 14px;
+  border: 1px solid var(--modal-field-edge, color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.14)));
+  border-radius: 6px;
+  background: var(--modal-field, rgba(2, 7, 16, 0.6));
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.62;
+  letter-spacing: 0.015em;
+  outline: none;
+  resize: vertical;
+  transition: border-color var(--hover-ms) ease, box-shadow var(--hover-ms) ease;
+}
+
+.director-input textarea:focus,
+.modal-body textarea:focus,
+.route-modal-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 72%, #ffffff);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* 占位符是提示不是值，但要读得清：比正文淡一档即可（深色下实测 ~4.6:1） */
+.director-input textarea::placeholder,
+.modal-body textarea::placeholder,
+.modal-body input::placeholder {
+  color: var(--modal-faint, rgba(255, 255, 255, 0.5));
+}
+
+/* 生图选项组 */
+.cg-options-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 底部操作条：轻盈通透 */
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--modal-line, color-mix(in srgb, var(--accent) 22%, rgba(255, 255, 255, 0.08)));
+}
+
+.modal-foot > .free-back {
+  margin-right: auto;
+}
+
+/* 键盘提示：放置在左侧 */
+.modal-card:has(textarea)::after {
+  content: "Ctrl / ⌘ + Enter 提交";
+  position: absolute;
+  bottom: 22px;
+  left: 22px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--modal-faint, rgba(255, 255, 255, 0.35));
+  pointer-events: none;
+}
+
+/* 窗内按钮：利落有力的游戏按键 */
+.modal-card button:not(.modal-x):not(.seg-btn):not(.ooc-shortcut):not(.ref-picker-chip) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 18px;
+  border: 1px solid var(--modal-btn-edge, rgba(255, 255, 255, 0.16));
+  border-radius: 4px;
+  background: var(--modal-btn-bg, rgba(255, 255, 255, 0.06));
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all var(--hover-ms) ease;
+}
+
+.modal-card button:not(.modal-x):not(.seg-btn):not(.ooc-shortcut):not(.ref-picker-chip):hover:not(:disabled) {
+  background: var(--modal-btn-hover-bg, rgba(255, 255, 255, 0.14));
+  border-color: var(--modal-btn-hover-edge, rgba(255, 255, 255, 0.28));
+  color: var(--ink);
+}
+
+/* 主按键（发送 / 确认 / 生成）：主题色明澈质感 */
+.modal-card button.primary:not(.modal-x) {
+  min-width: 96px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, #ffffff);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent) 84%, #ffffff) 0%,
+    color-mix(in srgb, var(--accent) 92%, #06152b) 100%);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 2px 10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.modal-card button.primary:not(.modal-x):hover:not(:disabled) {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent) 60%, #ffffff) 0%,
+    color-mix(in srgb, var(--accent) 84%, #041022) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 16px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.modal-card button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+/* 危险动作按钮（删除）：浅色主题是深红字 + 淡红底，深色主题是亮红字 + 红玻璃底。
+   box-shadow 要显式压掉：它是 `primary danger-btn` 一起用的（删剧目 / 删周目），
+   上面那条 .primary 的主色外发光会把红键裹一圈蓝光。 */
+.modal-card button.danger-btn:not(.modal-x) {
+  border-color: var(--modal-danger-edge, rgba(239, 68, 68, 0.5));
+  background: var(--modal-danger-bg, rgba(239, 68, 68, 0.2));
+  color: var(--modal-danger, #fca5a5);
+  box-shadow: none;
+}
+
+.modal-card button.danger-btn:not(.modal-x):hover:not(:disabled) {
+  background: var(--modal-danger-bg-hover, rgba(239, 68, 68, 0.35));
+  border-color: var(--modal-danger, rgba(239, 68, 68, 0.7));
+  color: var(--modal-danger-ink-hover, #ffffff);
+  box-shadow: none;
+}
+
+.ref-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.ref-picker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.ref-picker-chip:hover {
+  background: var(--panel-hover, rgba(0, 0, 0, 0.04));
+}
+
+.ref-picker-chip.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.ref-chip-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.ref-chip-blank {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+}
+
+.ref-chip-name {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ref-chip-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.ref-picker-empty {
+  padding: 6px 0;
+}
+
+.image-gen-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.image-gen-label {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.image-gen-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+}
+
+:where(.stage-root) input, :where(.stage-root) textarea, :where(.stage-root) select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  outline: none;
+}
+
+:where(.stage-root) textarea {
+  resize: vertical;
+  width: 100%;
+}
+
+:where(.stage-root) input:focus, :where(.stage-root) textarea:focus, :where(.stage-root) select:focus {
+  border-color: var(--accent);
+}
+
+.theater-bg-in {
+  animation: bg-fade 0.6s ease;
+}
+
+.theater-cg-in {
+  animation: bg-fade 0.5s ease;
+}
+
+.free-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 13px;
+}
+
+.dialog-foot {
+  /* 底缘：状态提示统一靠在对话框右侧；快捷菜单在屏幕右下角独立成条 */
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-height: 0;
+}
+
+.dialog-hint-foot {
+  margin-left: auto;
+  min-height: 20px;
+}
+
+.dialog-options {
+  /* ATRI 快捷菜单：屏幕右下角贴边的一条细胶囊，深海蓝底 + 1px 冰蓝描边，高 ~28px */
+  position: absolute;
+  right: 0;
+  bottom: var(--safe-b, 0px);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--stage-chrome-h, 30px);
+  padding: 0 10px 0 14px;
+  border: 1px solid var(--stage-chrome-edge, color-mix(in srgb, var(--accent) 55%, #a9cdec));
+  border-right: none;
+  border-bottom: none;
+  border-radius: 15px 0 0 0;
+  background: var(--stage-chrome-bg, linear-gradient(180deg,
+    color-mix(in srgb, var(--stage-chrome-lit, var(--stage-chrome-deep)) 92%, transparent),
+    color-mix(in srgb, var(--stage-chrome-deep) 99%, transparent)));
+  box-shadow: var(--stage-chrome-gloss, inset 0 1px 0 rgba(255, 255, 255, 0.18));
+}
+
+.quick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  font: inherit;
+  font-family: "Montserrat", "Inter", var(--font-ui);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-shadow: none;
+  cursor: pointer;
+  transition: color 0.14s ease, background-color 0.14s ease, opacity 0.14s ease;
+  user-select: none;
+}
+
+.quick-btn:hover:not(:disabled) {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+  text-shadow: 0 0 8px rgba(140, 210, 255, 0.9);
+  opacity: 1;
+}
+
+.quick-btn.is-off {
+  opacity: 0.52;
+}
+
+.quick-btn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.quick-sep {
+  display: inline-block;
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.22);
+  margin: 0 2px;
+}
+
+/* 导演工具栏：横着放在右上角，微晶胶囊底，极简克制 */
+.theater-director {
+  position: absolute;
+  z-index: 45;
+  /* 10px 与左上角「舞台 ⇄ 工坊」同一行、同一间距（那边也是 10px，
+     与工坊侧栏顶端那枚同款开关对齐），窄屏那节走的是同一组值 */
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: 10px;
+  bottom: auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  height: var(--stage-chrome-h, 30px);
+  box-sizing: border-box;
+  padding: 0 4px;
+  /* 一层很浅的主题色玻璃：导演栏是压在画面上的器具，不是这场戏的一部分。
+     主题色留给台词条、选肢与右下角快捷菜单——那是玩家在读、在选的东西；
+     只有某一档开着（`.on`）时才在这里点亮主题色。
+     浅深两套值都在 --stage-chrome-quiet-* 里（浅色白底掺 accent，深色深玻璃）。 */
+  border: 1px solid var(--stage-chrome-quiet-edge, #e2e8f0);
+  border-radius: var(--stage-chrome-radius, 999px);
+  background: var(--stage-chrome-quiet-bg, #ffffff);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
+}
+
+html[data-ui-theme="dark"] .stage-root .theater-director {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.theater-director .dir-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: calc(var(--stage-chrome-h, 30px) - 6px);
+  padding: 0 9px;
+  border: none;
+  border-radius: var(--stage-chrome-radius, 999px);
+  background: transparent;
+  /* 浅底深字 / 深底浅灰字：两组值都在 quiet 令牌里，与左上角切换器统一 */
+  color: var(--stage-chrome-quiet-ink, #64748b);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background-color 0.14s ease, color 0.14s ease;
+}
+
+.theater-director .dir-btn:hover:not(:disabled) {
+  background: var(--stage-chrome-quiet-hover, #f1f5f9);
+  color: var(--stage-chrome-quiet-ink-hover, #0f172a);
+}
+
+.theater-director .dir-btn.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.theater-director .dir-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+@keyframes voice-blink {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.dir-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 1px;
+  background: none;
+  color: var(--dialog-ink-soft);
+  font: inherit;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-shadow: var(--dir-text-shadow);
+  cursor: pointer;
+  transition:
+    color var(--hover-ms) ease,
+    background-color var(--hover-ms) ease;
+}
+
+.dir-btn:hover:not(:disabled) {
+  background: var(--dialog-hover);
+  color: var(--dialog-ink);
+}
+
+.dir-btn.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.dir-btn.tgl-on {
+  background: var(--dialog-hover);
+  color: var(--dialog-ink);
+}
+
+.dir-btn.voice-pending {
+  color: var(--accent);
+  opacity: 1;
+  animation: voice-blink 1s ease-in-out infinite;
+}
+
+.dir-btn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.toast-stack {
+  position: absolute;
+  z-index: 60;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(92vw, 420px);
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 7px 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.28);
+  animation: toast-in 0.22s ease;
+  cursor: pointer;
+}
+
+/* 模式标识（NSFW / 静音 / Auto）那一行：挂在左上角开关下面，是压在画面上的裸字。
+   这一组必须写在下面 @media (max-width: 720px) **之前**：
+   窄屏的 top / 字号覆盖在那儿，同权重就得让位给后者。 */
+.stage-modes {
+  position: absolute;
+  z-index: 40;
+  /* 它的定位父级是左上角那枚开关（StageScreen 把这一行渲染在 .stage-top-left-cluster 里）：
+     56px = 那枚开关 30px 高 + 26px 空档，left 10px 与开关的左边线齐平。 */
+  top: calc(56px + env(safe-area-inset-top, 0px));
+  left: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: min(70vw, 300px);
+}
+
+.stage-mode {
+  display: flex;
+  align-items: center;
+  color: var(--dialog-ink-faint);
+  text-shadow: var(--dialog-text-shadow);
+  line-height: 1;
+}
+
+.stage-mode-nsfw {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+/* 浅色主题：这一行压在插画上（没有底板），字翻成深墨 + 一圈白晕——
+   深色那侧是白字 + 深晕，两边对称。墨色比 --dialog-ink-faint 那档（五成）再实一点：
+   台词条底下是实心纸面，五成够；这一行压的是插画，太淡就被画面吃掉。 */
+html[data-ui-theme="light"] .stage-mode {
+  color: rgb(30 26 22 / 0.82);
+  text-shadow: 0 0 6px rgb(255 255 255 / 0.95), 0 0 2px rgb(255 255 255 / 0.9);
+}
+
+/* 台词条在「窄」和「矮」两种情况下都要换一副骨架：竖屏手机（≤720px）与
+   横屏手机 / 矮窗口（≤460px 高）。桌面那副是「25% 高 + 52px 上留白」的固定带，
+   放到 390px 高的视口里，一行正文就被挤出画面了。
+   改成本地流式排布：姓名 / 正文从上往下写（与桌面同一个「字起在窗顶」的手感），
+   底缘那一行（状态提示 + 快捷菜单）用 margin-top: auto 压到窗底，
+   正文再长也只是把这条底板顶高；超长的还能滚。 */
+@media (max-width: 720px), (max-height: 460px) {
+  .theater-dialog {
+    /* 这两条是兜底值，真实尺寸由下面按「竖屏 / 矮视口」两端分别给：同一个百分比在
+       两块屏上差得远——30% 在 844 高的竖屏是 253px（够五行，正文悬在窗顶），
+       在 390 高的横屏只有 117px（一行多，窗又偏矮）。 */
+    min-height: 30%;
+    max-height: 62%;
+    padding: 40px 16px calc(6px + var(--safe-b, 0px));
+    justify-content: flex-start;
+    gap: 6px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .dialog-name {
+    position: static;
+    left: auto;
+    top: auto;
+    margin-bottom: 2px;
+    font-size: 18px;
+  }
+
+  .dialog-text {
+    font-size: 15.5px;
+    min-height: 0;
+  }
+
+  /* 底缘钉在窗底：正文只有一行时，快捷菜单不跟着往上浮；
+     正文长到顶满窗（超过 62%）时窗自己滚，这一行 sticky 住不被滚出视野——
+     否则一句超长台词会把回顾/路线/画廊那一排按钮顶到几百像素以外。
+     它底下必须有底：正文从下面经过时要被这层深色渐变盖住。 */
+  .dialog-foot {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-top: auto;
+    margin-inline: -16px;
+    margin-bottom: calc(-6px - var(--safe-b, 0px));
+    padding: 10px 16px calc(6px + var(--safe-b, 0px));
+    gap: 8px;
+    background: linear-gradient(180deg,
+      color-mix(in srgb, var(--stage-accent-deep) 0%, transparent) 0%,
+      color-mix(in srgb, var(--stage-accent-deep) 78%, transparent) 45%,
+      color-mix(in srgb, var(--stage-accent-deep) 96%, transparent) 100%);
+  }
+
+  /* 状态提示（回看中 / ▼ / 点击舞台继续生成）有内容时独占一行，不跟那一排快捷入口
+     抢横向空间——它一挤，Title 就掉到第二行。`:has(> *)` 只在它真有东西时成立，
+     空的时候连那一行都不出现。 */
+  .dialog-foot:has(.dialog-hint-foot > *) {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .dialog-foot:has(.dialog-hint-foot > *) .dialog-hint-foot {
+    flex: 1 1 100%;
+  }
+
+  /* 快捷菜单不再浮在右下角压在字上：它是底缘那一行的右半，跟着正文一起流。
+     入口在 390 宽里排不满一行就折行，不硬挤。 */
+  .dialog-options {
+    position: static;
+    right: auto;
+    bottom: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    height: auto;
+    row-gap: 4px;
+    margin-left: auto;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  .quick-btn {
+    min-width: 28px;
+    height: 30px;
+    padding: 0 7px;
+    font-size: 13px;
+  }
+
+  /* 浅色主题：底缘那条深蓝渐变翻成纸白——窄屏下这排快捷入口不再是压在画面上的
+     玻璃胶囊（上面把它拆成底缘那一行的右半），它就是台词条的一部分，
+     底该跟台词条同源。字与分隔线一起翻成深墨，否则白字压在纸面上一个字都读不出来。
+     深色那侧一个字节都不动。 */
+  html[data-ui-theme="light"] .stage-root .dialog-foot {
+    background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0) 0%,
+      color-mix(in srgb, var(--accent) 6%, rgba(248, 250, 252, 0.88)) 50%,
+      color-mix(in srgb, var(--accent) 8%, rgba(241, 245, 249, 0.98)) 100%);
+  }
+
+  html[data-ui-theme="light"] .stage-root .dialog-foot .quick-btn {
+    color: var(--dialog-ink-soft);
+  }
+
+  html[data-ui-theme="light"] .stage-root .dialog-foot .quick-btn:hover:not(:disabled) {
+    color: var(--dialog-ink);
+    background: var(--dialog-hover);
+    text-shadow: 0 0 6px rgb(255 255 255 / 0.9);
+  }
+
+  html[data-ui-theme="light"] .stage-root .dialog-foot .quick-sep {
+    background: var(--dialog-line);
+  }
+}
+
+/* 竖屏：窗高与上留白照桌面那副比例（25% + 52px）。40px 上留白落在 253px 的窗里
+   只有一成六，正文贴着窗顶、下面空一大片；按桌面比例放下来，正文落在窗高两成处，
+   与桌面一眼是同一个构图。 */
+@media (max-width: 720px) and (min-height: 461px) {
+  .theater-dialog {
+    min-height: 25%;
+    padding-top: 52px;
+  }
+
+  /* 有名牌时上留白收小：名牌自己就是贴着窗顶的那一行（桌面也是这么排的——
+     名牌 absolute 在窗顶 6px 处），再留 52px 只会把它和正文一起压到窗中间。
+     名牌的字重与外晕本来就为「压在透明窗顶」准备。 */
+  .theater-dialog:has(.dialog-name) {
+    padding-top: 10px;
+  }
+}
+
+/* 横屏手机 / 矮窗口：屏幕矮，25% 只有九十来像素。按「上留白 40 + 两行正文 + 底缘」
+   的绝对高度反推，给到 36%（390 高时 140px）——一行正文时也不至于只剩一条窄缝。 */
+@media (max-height: 460px) {
+  .theater-dialog {
+    min-height: 36%;
+    padding-top: 40px;
+  }
+
+  .theater-dialog:has(.dialog-name) {
+    padding-top: 8px;
+  }
+}
+
+/* 超窄屏（≤420px）：快捷菜单有十个入口（Auto / 前后翻 / Log / Route / CG / 全屏 /
+   隐藏 / 工坊 / Title），按默认 7px 内边距加起来比 360 还宽十来像素，Title 就被挤到第二行。
+   收窄内边距与间距，并把台词条左右边距收一档：一行排得下，也留得住状态提示的位置。 */
+@media (max-width: 420px) {
+  .theater-dialog {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .theater-dialog .dialog-foot {
+    margin-inline: -12px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .dialog-options {
+    gap: 1px;
+  }
+
+  .quick-btn {
+    padding: 0 5px;
+    font-size: 12.5px;
+  }
+}
+
+/* 320 宽的老机型（iPhone SE 一代那一档）：再收一档，这一排也排得下 */
+@media (max-width: 350px) {
+  .dialog-options {
+    gap: 0;
+  }
+
+  .quick-btn {
+    padding: 0 4px;
+    font-size: 12px;
+  }
+}
+
+/* 手机窄屏的 chrome：导演栏与左上角「舞台 ⇄ 工坊」并排一行（图标化之后总共只占
+   两百多像素，390 宽的屏还剩一百多的空档），模式标识落到这一行下面。
+   横屏手机够宽，本来就同排。安全区一律由 env() 兜。 */
+@media (max-width: 720px) {
+  /* 与左上角「舞台 ⇄ 工坊」同一行、同一高度：两条 chrome 本来就该并排，
+     图标化之后总共只占 267px，390 宽的屏还剩一百多像素的空档。
+     max-width 兜住「多一颗重听键」和更窄的屏——超了让它自己横滑，不压到切换器上。
+     高度 34px 是跟着 app.css 窄屏那节写的：那边把左上角那枚抬到 34（手机上的高频动作，
+     指头够得着），导演栏是它的邻居，差 4px 就是一眼看得出的不齐。 */
+  .theater-director {
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    right: 10px;
+    left: auto;
+    height: 34px;
+    max-width: calc(100% - 172px);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .theater-director::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 模式标识（NSFW / 静音 / 自动）落到这一行下面 */
+  .stage-modes {
+    top: calc(46px + env(safe-area-inset-top, 0px));
+    left: 10px;
+  }
+
+  /* 手机上导演栏只留图标：四个动词的宽度差不多是半条画面，而这四个动作都有
+     aria-label / title，图标（对话/铅笔/重写/素材）各自认得出来。腾出的宽度
+     也让「提示 改写 重写 生图 重听」不至于挤成两行。 */
+  .theater-director .dir-label {
+    display: none;
+  }
+
+  /* 栏高了 4px，里面那排按钮跟着长：与左上角 .stage-seg-btn 的 28px 同档 */
+  .theater-director .dir-btn {
+    height: calc(34px - 6px);
+    padding: 0 8px;
+  }
+
+  .stage-mode-nsfw {
+    font-size: 11px;
+  }
+
+  .choice-overlay {
+    gap: 8px;
+    padding-right: 12px;
+    padding-left: 12px;
+    padding-bottom: calc(var(--dialog-h, 180px) + 16px + var(--safe-b, 0px));
+  }
+
+  .choice {
+    width: min(760px, 100%);
+    min-height: 46px;
+    padding: 10px 12px;
+  }
+}
+/* ── 从 app.css 补搬的规则（scripts/port-stage-css.py 生成，别手改这一节）───
+   白名单在脚本的 `CLASSES` / `MOBILE`：只搬插件真正会渲染的组件用到的选择器。
+   原文照抄，只在元素级选择器上加 `:where(.stage-root)` 圈作用域——`:where()`
+   特异性为零，不改它与 `.choice` 这类类规则之间的胜负关系。 */
+
+.theater-bg-pending, .theater-cg-pending {
+  background:
+    linear-gradient(100deg, rgba(255, 255, 255, 0) 28%, rgba(255, 255, 255, 0.07) 50%, rgba(255, 255, 255, 0) 72%),
+    linear-gradient(160deg, #1d2330, #2a3243 60%, #232a37);
+  background-size: 220% 100%, 100% 100%;
+  animation: asset-shimmer 1.6s linear infinite;
+}
+
+.backlog-empty {
+  margin: 0;
+  padding: 18px 14px;
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
+.backlog-list, .backlog-empty, .backlog-panel > .muted {
+  max-width: 780px;
+  margin-inline: auto;
+  width: 100%;
+}
+
+/* 剧本里的舞台指令行：比台词低一档的灰字，靠一条竖线挂在正文左侧——
+   它是「怎么演的」，不该和谁说了什么抢注意力，但一页剧本里不能没有它。
+   左框线与 .is-current::before 对齐在 left: 0，内边距与台词行（14px）同一垂直轴线。 */
+.bl-dir {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 4px 0;
+  padding: 4px 12px 4px 12px;
+  border-left: 2px solid color-mix(in srgb, var(--dialog-ink-faint, rgb(255 255 255 / 0.3)) 70%, transparent);
+  color: var(--dialog-ink-faint);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* 回顾面板恒在深色遮罩之上（无论界面是深色还是浅色主题）：
+   指令条目与细节必须保持高对比度的亮白/浅灰，避免受浅色主题的深墨色影响导致看不清。 */
+.backlog-panel .bl-dir {
+  border-left-color: rgba(255, 255, 255, 0.35);
+  color: rgba(248, 250, 252, 0.72);
+}
+
+.backlog-panel .bl-dir-label {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+}
+
+.backlog-panel .bl-dir-detail {
+  color: rgba(248, 250, 252, 0.85);
+}
+
+.backlog-panel .bl-dir-option {
+  border-color: rgba(255, 255, 255, 0.28);
+  color: rgba(248, 250, 252, 0.9);
+}
+
+.backlog-panel .bl-dir-stop {
+  border-left-color: color-mix(in srgb, var(--bl-accent, var(--accent)) 80%, #ffffff);
+  color: #ffffff;
+}
+
+.bl-dir-label {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--dialog-hover, rgb(255 255 255 / 0.08));
+  letter-spacing: 0.06em;
+}
+
+.bl-dir-detail {
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", monospace);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.bl-dir-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  flex-basis: 100%;
+}
+
+.bl-dir-option {
+  padding: 1px 7px;
+  border: 1px solid var(--dialog-line, rgb(255 255 255 / 0.22));
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+/* 停止点与本轮收束这类「等你」的位置：给一点强调，眼睛扫得到 */
+.bl-dir-stop {
+  border-left-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  color: var(--dialog-ink-soft);
+}
+
+.backlog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+}
+
+.director-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ooc-shortcut {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ooc-shortcut:hover, .ooc-shortcut.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+
+.backlog-panel {
+  --bl-accent: var(--accent);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px max(16px, env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom));
+  scrollbar-width: thin;
+}
+
+/* 回顾抽屉恒为深色遮罩：浅色界面主题下 :root 的 --accent 是压纸面用的深色档（#1b5aa6），
+   直接画在深色遮罩上会显得暗沉发闷，这里统一提亮到深色界面同款亮色档（#4a9fe0）。 */
+html:not([data-ui-theme="dark"]) .backlog-panel {
+  --bl-accent: var(--play-accent-dark, #4a9fe0);
+}
+
+html:not([data-ui-theme="dark"])[data-accent] .backlog-panel {
+  --bl-accent: color-mix(in srgb, var(--accent) 72%, #ffffff);
+}
+
+.seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.seg .seg-btn {
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.seg .seg-btn.active {
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+}
+
+/* 条目：一条台词一块。名字一行、正文一行，动词默认收起来，
+   鼠标停上去 / 键盘走进去才浮到右上角——流水要干净，操作要还在。 */
+.bl-line,
+.bl-narrate,
+.bl-input,
+.bl-player {
+  position: relative;
+  padding: 10px 14px;
+  border-radius: 6px;
+  transition: background-color var(--hover-ms) ease;
+}
+
+.bl-line:hover,
+.bl-narrate:hover,
+.bl-input:hover,
+.bl-player:hover {
+  background: color-mix(in srgb, var(--bl-accent, var(--accent)) 10%, transparent);
+}
+
+.bl-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 20px;
+  margin-bottom: 4px;
+}
+
+.bl-actor {
+  color: color-mix(in srgb, var(--bl-accent, var(--accent)) 52%, #ffffff);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-shadow: var(--dialog-text-shadow);
+}
+
+/* 语音重播：名字左边一枚圆形徽章，点一下就出声。
+   显式 padding: 0 以免被全局 button { padding: 8px 14px } 挤没了内部 SVG 图标。 */
+.bl-voice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 1;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bl-accent, var(--accent)) 78%, transparent);
+  color: #ffffff;
+  cursor: pointer;
+  transition: background-color var(--hover-ms) ease, transform var(--hover-ms) ease;
+}
+
+.bl-voice svg {
+  flex-shrink: 0;
+}
+
+.bl-voice:hover:not(:disabled) {
+  background: var(--bl-accent, var(--accent));
+  color: #ffffff;
+  transform: scale(1.1);
+}
+
+/* 动词组：浮在条目右上角，静止时不占视觉重量 */
+.bl-tools {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--hover-ms) ease;
+}
+
+.bl-line:hover > .bl-tools,
+.bl-line:focus-within > .bl-tools,
+.bl-narrate:hover > .bl-tools,
+.bl-narrate:focus-within > .bl-tools,
+.bl-input:hover > .bl-tools,
+.bl-input:focus-within > .bl-tools {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 触屏没有 hover：所有条目的动词组统一落在正文下方右下角，
+   既不压旁白正文、也不与角色名抢顶行，位置一致不跳眼。 */
+@media (hover: none) {
+  .bl-tools {
+    position: static;
+    margin-top: 6px;
+    justify-content: flex-end;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.bl-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--bl-accent, var(--accent)) 35%, rgba(255, 255, 255, 0.2));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bl-accent, var(--accent)) 42%, rgba(6, 14, 26, 0.85));
+  backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.92);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--hover-ms) ease, color var(--hover-ms) ease;
+}
+
+.bl-tool:hover:not(:disabled) {
+  background: var(--bl-accent, var(--accent));
+  color: #ffffff;
+}
+
+.bl-tool:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.bl-edit {
+  display: flex;
+  gap: 6px;
+  padding: 6px 0 0;
+}
+
+.bl-edit input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+}
+
+/* ── 从 app.css 补搬的规则（scripts/port-stage-css.py 生成，别手改这一节）───
+   白名单在脚本的 `CLASSES` / `MOBILE`：只搬插件真正会渲染的组件用到的选择器。
+   原文照抄，只在元素级选择器上加 `:where(.stage-root)` 圈作用域——`:where()`
+   特异性为零，不改它与 `.choice` 这类类规则之间的胜负关系。 */
+
+/* 正文：大号、深描边。压在任何亮度的画面上都要读得清（CLANNAD 那条流水）。 */
+.bl-text {
+  margin: 0;
+  color: #ffffff;
+  font-size: 17px;
+  line-height: 1.62;
+  letter-spacing: 0.02em;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 14px rgba(0, 0, 0, 0.55);
+}
+
+/* 旁白：不是谁在说话，用轻微斜体与降一档的亮度区分 */
+.bl-narrate .bl-text {
+  color: rgba(255, 255, 255, 0.82);
+  font-style: italic;
+}
+
+/* 玩家自己的话：主题色左线，读起来是「我插进去的那句」。
+   非 current 时给淡蓝边，是 current 时由外层 is-current::before 统一呈现高亮指示线，
+   避免内外出现双重竖线错位。 */
+.bl-input .bl-text,
+.bl-player .bl-text {
+  padding-left: 12px;
+  border-left: 2px solid color-mix(in srgb, var(--bl-accent, var(--accent)) 55%, transparent);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.bl-input.is-current .bl-text,
+.bl-player.is-current .bl-text {
+  border-left-color: transparent;
+}
+
+/* 正在看的那一句：主题色左线 + 一层很淡的主题底色 */
+.bl-line.is-current,
+.bl-narrate.is-current,
+.bl-input.is-current {
+  background: color-mix(in srgb, var(--bl-accent, var(--accent)) 16%, transparent);
+}
+
+.bl-line.is-current::before,
+.bl-narrate.is-current::before,
+.bl-input.is-current::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--bl-accent, var(--accent));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--bl-accent, var(--accent)) 80%, transparent);
+}
+
+/* 弹窗底部的按键在手机上抬一档：32px 的方块对指头偏小，而这一排里坐着
+   「确认删除」这种按错回不来的动作。单独成一个块、放在文件末尾，
+   是为了不和上面那几段窄屏规则抢位置（同一份文件有多个写者）。 */
+@media (max-width: 720px) {
+  .modal-foot button {
+    min-height: 40px;
+    padding: 0 16px;
+  }
+
+  /* 窄屏下回顾面板行内工具栏紧凑图标化（写在 .bl-tool 之后确保级联生效）：
+     文字收起进 aria-label/title，保持 28×24 胶囊圆钮比例。 */
+  .bl-tools {
+    top: 6px;
+    right: 8px;
+    gap: 3px;
+  }
+
+  .bl-tool {
+    min-height: 24px;
+    min-width: 28px;
+    padding: 3px 8px;
+    gap: 0;
+    border-radius: 999px;
+  }
+
+  .bl-tool .bl-tool-label {
+    display: none;
+  }
+
+  .bl-line:has(.bl-head) > .bl-head,
+  .bl-input:has(.bl-head) > .bl-head {
+    padding-right: 96px;
+  }
+}
+
+/* ══ 消息框风格（card / cinema / hud / scroll / velvet）══════════════════════
+   切法是 html 上的 data-dialog-style（与 data-ui-theme 同一层）；**不写这个属性就是
+   现在这条 ATRI 通栏渐变**，所以这一节对没有开关的宿主完全惰性。
+
+   五种都不碰 markup：要「多一个元素」的地方一律走 .theater-dialog 的 ::before/::after
+   （宽银幕上下黑边、上缘高光、金色幕线、菱形坠），要「多一行字」的地方走子元素自己的
+   ::before/::after（名牌的 ❖ / ▍ / ——、快捷入口的方括号）。类名五种通用，
+   所以换风格只换 CSS。
+
+   两笔画色都从 --accent 现推：**结构色**（HUD 描边、卡片名牌、选中态）本来就是主题色；
+   **材质色**（书卷的纸、丝绒的酒红与金、电影字幕的暖金）也要掺进去——材质色只作底、边、
+   金线、符号，掺比照 apps/server/skills/galgame-ui-style 的固定方向（酒红底 20–30%、
+   纸底 6–12%、暖金与朱红小件 20–40%），正文一律走验证过的 ink 不动。
+   不掺的话剧目换了主题色，这几套看着还是「另一部剧的皮肤」。
+
+   特异度：这一节起手 (0,3,0)，压过基线 (0,1,0) 与浅色那一组 (0,3,1)；浅色侧逐条另写
+   (0,4,1)，所以它们必须排在全文件最后。 */
+
+/* ── V1 · 浮岛玻璃卡：通栏收成一张悬浮圆角卡，名牌骑在卡沿上 ───────────── */
+html[data-dialog-style="card"] .stage-root .theater-dialog {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  bottom: calc(34px + var(--safe-b, 0px));
+  width: min(880px, 74%);
+  min-height: 0;
+  padding: 26px 34px 18px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 20px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 12%, rgb(22 30 43 / 0.8)), color-mix(in srgb, var(--accent) 14%, rgb(10 16 26 / 0.88)));
+  backdrop-filter: blur(20px) saturate(1.3);
+  box-shadow: 0 26px 60px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.22);
+}
+
+html[data-dialog-style="card"] .stage-root .theater-dialog::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 34px;
+  right: 34px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 55%, #ffffff), transparent);
+  opacity: 0.85;
+}
+
+html[data-dialog-style="card"] .stage-root .dialog-name {
+  position: absolute;
+  top: -13px;
+  left: 28px;
+  padding: 3px 14px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, #ffffff), var(--accent));
+  color: var(--accent-ink);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-shadow: none;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+html[data-dialog-style="card"] .stage-root .dialog-text {
+  font-size: clamp(15.5px, 1.35vw, 18px);
+  font-weight: 500;
+  line-height: 1.75;
+}
+
+html[data-dialog-style="card"] .stage-root .dialog-foot {
+  position: static;
+  margin: 14px 0 0;
+  padding: 0;
+  border: none;
+  gap: 12px;
+  background: none;
+}
+
+html[data-dialog-style="card"] .stage-root .dialog-options {
+  position: static;
+  right: auto;
+  bottom: auto;
+  height: auto;
+  margin-left: auto;
+  padding: 0;
+  gap: 4px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+html[data-dialog-style="card"] .stage-root .quick-btn {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: rgb(226 232 240 / 0.6);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+}
+
+html[data-dialog-style="card"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: #ffffff;
+  background: rgb(255 255 255 / 0.1);
+  text-shadow: none;
+}
+
+html[data-dialog-style="card"] .stage-root .quick-sep {
+  background: rgb(255 255 255 / 0.18);
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .theater-dialog {
+  border-color: rgb(15 23 42 / 0.09);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, rgb(255 255 255 / 0.95)), color-mix(in srgb, var(--accent) 8%, rgb(243 247 252 / 0.97)));
+  box-shadow: 0 26px 56px rgb(15 23 42 / 0.22), inset 0 1px 0 rgb(255 255 255 / 0.9);
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .dialog-text {
+  color: #16202e;
+  text-shadow: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .dialog-text.narrate {
+  color: #475569;
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .quick-btn {
+  color: rgb(51 65 85 / 0.62);
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: #0f172a;
+  background: rgb(15 23 42 / 0.06);
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .quick-sep {
+  background: rgb(15 23 42 / 0.16);
+}
+
+/* ── V2 · 电影字幕：去掉底板，上下压成宽银幕，台词居中 ─────────────── */
+html[data-dialog-style="cinema"] .stage-root .theater-dialog {
+  min-height: 18vh;
+  padding: 18px 6% 44px;
+  justify-content: center;
+  gap: 0;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0) 0%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.82)) 12%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.94)) 26%, color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.96)) 100%);
+}
+
+/* 上面那条黑边：从窗底往上铺满一屏、只把最顶上一段落成黑——不必给舞台加元素，
+   也能拿到宽银幕的上下两条。z-index: -1 让它待在台词底下；这一层在台词条的层叠
+   上下文里，所以照样压在立绘之上。 */
+html[data-dialog-style="cinema"] .stage-root .theater-dialog::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100vh;
+  z-index: -1;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, rgb(0 0 0 / 0.94)) 0 4.5vh, transparent 4.5vh);
+  pointer-events: none;
+}
+
+html[data-dialog-style="cinema"] .stage-root .dialog-name {
+  position: static;
+  margin: 0 0 8px;
+  padding: 0;
+  color: color-mix(in srgb, var(--accent) 30%, #dfb37a);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.36em;
+  text-indent: 0.36em;
+  text-align: center;
+  text-shadow: 0 1px 8px rgb(0 0 0 / 0.9);
+}
+
+html[data-dialog-style="cinema"] .stage-root .dialog-text {
+  width: min(82%, 860px);
+  margin: 0 auto;
+  text-align: center;
+  color: #f4f1ec;
+  font-size: clamp(15.5px, 1.35vw, 18px);
+  font-weight: 400;
+  line-height: 1.75;
+  letter-spacing: 0.03em;
+  text-shadow: 0 2px 18px rgb(0 0 0 / 0.9), 0 1px 2px rgb(0 0 0 / 0.95);
+}
+
+html[data-dialog-style="cinema"] .stage-root .dialog-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(10px + var(--safe-b, 0px));
+  justify-content: center;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+html[data-dialog-style="cinema"] .stage-root .dialog-options {
+  position: static;
+  right: auto;
+  bottom: auto;
+  height: auto;
+  padding: 0;
+  gap: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+html[data-dialog-style="cinema"] .stage-root .quick-btn {
+  height: auto;
+  padding: 0 9px;
+  color: rgb(255 255 255 / 0.34);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+html[data-dialog-style="cinema"] .stage-root .quick-btn + .quick-btn {
+  border-left: 1px solid currentColor;
+}
+
+html[data-dialog-style="cinema"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: rgb(255 255 255 / 0.78);
+  background: none;
+  text-shadow: none;
+}
+
+html[data-dialog-style="cinema"] .stage-root .quick-sep {
+  display: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .theater-dialog {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0) 0%, color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.88)) 9%, color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.96)) 20%, color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.99)) 100%);
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .theater-dialog::before {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.95)) 0 5vh, transparent 5vh);
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .dialog-name {
+  color: color-mix(in srgb, var(--accent) 30%, #8a5a20);
+  text-shadow: 0 1px 6px rgb(255 255 255 / 0.9);
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .dialog-text {
+  color: #14161a;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.95), 0 2px 14px rgb(255 255 255 / 0.8);
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .quick-btn {
+  color: rgb(20 22 26 / 0.42);
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: rgb(20 22 26 / 0.82);
+}
+
+/* ── V3 · 战术 HUD：切角面板 + 渐变描边，按键带方括号 ───────────────────── */
+html[data-dialog-style="hud"] .stage-root .theater-dialog {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  bottom: calc(22px + var(--safe-b, 0px));
+  width: min(1020px, 78%);
+  min-height: 0;
+  padding: 20px 28px 14px;
+  border: 1.5px solid transparent;
+  border-radius: 0;
+  /* 三层底：扫描纹与面板底走 padding-box，描边走 border-box——于是那 1.5px 是渐变
+     而不是单色，切角之后也不会断线。 */
+  background:
+    repeating-linear-gradient(180deg, color-mix(in srgb, var(--accent) 9%, transparent) 0 1px, transparent 1px 3px) padding-box,
+    linear-gradient(180deg, rgb(8 20 32 / 0.92), rgb(4 11 20 / 0.95)) padding-box,
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 62%, transparent), color-mix(in srgb, var(--accent) 16%, transparent)) border-box;
+  box-shadow: 0 18px 44px rgb(0 0 0 / 0.5);
+  clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", monospace);
+}
+
+html[data-dialog-style="hud"] .stage-root .dialog-name {
+  position: static;
+  margin: 0 0 6px;
+  color: color-mix(in srgb, var(--accent) 62%, #e0f2fe);
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", monospace);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+html[data-dialog-style="hud"] .stage-root .dialog-name::before {
+  content: "▍";
+  margin-right: 8px;
+  color: var(--accent);
+}
+
+html[data-dialog-style="hud"] .stage-root .dialog-text {
+  margin: 6px 0 0;
+  color: #dbeafe;
+  font-family: var(--font-ui);
+  font-size: clamp(15px, 1.3vw, 17px);
+  font-weight: 500;
+  line-height: 1.8;
+  letter-spacing: 0.04em;
+  text-shadow: none;
+}
+
+html[data-dialog-style="hud"] .stage-root .dialog-foot {
+  position: static;
+  justify-content: space-between;
+  margin: 13px 0 0;
+  padding: 0;
+  border: none;
+  gap: 12px;
+  background: none;
+}
+
+html[data-dialog-style="hud"] .stage-root .dialog-options {
+  position: static;
+  right: auto;
+  bottom: auto;
+  height: auto;
+  padding: 0;
+  gap: 2px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+html[data-dialog-style="hud"] .stage-root .quick-btn {
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 0;
+  color: color-mix(in srgb, var(--accent) 42%, #cbe6f7);
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+}
+
+html[data-dialog-style="hud"] .stage-root .quick-btn::before {
+  content: "[";
+  opacity: 0.65;
+}
+
+html[data-dialog-style="hud"] .stage-root .quick-btn::after {
+  content: "]";
+  opacity: 0.65;
+}
+
+html[data-dialog-style="hud"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: #ffffff;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  text-shadow: none;
+}
+
+html[data-dialog-style="hud"] .stage-root .quick-sep {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .theater-dialog {
+  background:
+    repeating-linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, transparent) 0 1px, transparent 1px 3px) padding-box,
+    linear-gradient(180deg, rgb(255 255 255 / 0.96), rgb(241 247 252 / 0.97)) padding-box,
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 58%, transparent), color-mix(in srgb, var(--accent) 18%, transparent)) border-box;
+  box-shadow: 0 18px 40px rgb(15 23 42 / 0.25);
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .dialog-name {
+  color: color-mix(in srgb, var(--accent) 82%, #0b2545);
+  text-shadow: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .dialog-text {
+  color: color-mix(in srgb, var(--accent) 25%, #0f2a3d);
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .quick-btn {
+  color: color-mix(in srgb, var(--accent) 55%, #334155);
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: #0f172a;
+}
+
+/* ── V4 · 书卷：双线内框 + 衬线正文，深色是夜色纸、浅色是宣纸 ─────────────── */
+html[data-dialog-style="scroll"] .stage-root .theater-dialog {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  bottom: calc(56px + var(--safe-b, 0px));
+  width: min(840px, 72%);
+  min-height: 0;
+  padding: 22px 34px 16px;
+  /* 外框一道、内框一道：内框走 outline + 负 offset，不必多一个元素 */
+  --scroll-gild: color-mix(in srgb, var(--accent) 30%, #ceb07c);
+  --scroll-paper: linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, #262019), color-mix(in srgb, var(--accent) 12%, #191510));
+  border: 1px solid color-mix(in srgb, var(--scroll-gild) 30%, transparent);
+  border-radius: 3px;
+  outline: 1px solid color-mix(in srgb, var(--scroll-gild) 16%, transparent);
+  outline-offset: -7px;
+  background: var(--scroll-paper);
+  box-shadow: 0 22px 50px rgb(0 0 0 / 0.55);
+  font-family: var(--font-serif);
+}
+
+html[data-dialog-style="scroll"] .stage-root .dialog-name {
+  position: static;
+  margin: 0 0 10px;
+  color: var(--scroll-gild);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-shadow: none;
+}
+
+html[data-dialog-style="scroll"] .stage-root .dialog-name::before {
+  content: "❖";
+  margin-right: 10px;
+  font-size: 11px;
+}
+
+html[data-dialog-style="scroll"] .stage-root .dialog-text {
+  color: #ece2d1;
+  font-family: var(--font-serif);
+  font-size: clamp(16px, 1.45vw, 19px);
+  font-weight: 400;
+  line-height: 1.95;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+}
+
+html[data-dialog-style="scroll"] .stage-root .dialog-foot {
+  position: static;
+  justify-content: space-between;
+  margin: 15px 0 0;
+  padding: 0;
+  border: none;
+  gap: 12px;
+  background: none;
+}
+
+html[data-dialog-style="scroll"] .stage-root .dialog-options {
+  position: static;
+  right: auto;
+  bottom: auto;
+  height: auto;
+  padding: 0;
+  gap: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+html[data-dialog-style="scroll"] .stage-root .quick-btn {
+  height: auto;
+  padding: 0 9px;
+  border-radius: 0;
+  color: color-mix(in srgb, var(--scroll-gild) 72%, transparent);
+  font-family: var(--font-serif);
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+}
+
+/* 入口之间那条细线：整排不留 gap，除第一枚外每枚描一条左边线 */
+html[data-dialog-style="scroll"] .stage-root .quick-btn + .quick-btn {
+  border-left: 1px solid currentColor;
+}
+
+html[data-dialog-style="scroll"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: #f4e9d2;
+  background: none;
+  text-shadow: none;
+}
+
+html[data-dialog-style="scroll"] .stage-root .quick-sep {
+  display: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .theater-dialog {
+  --scroll-gild: color-mix(in srgb, var(--accent) 30%, #856236);
+  --scroll-paper: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, #faf4e7), color-mix(in srgb, var(--accent) 10%, #f2e9d7));
+  border-color: color-mix(in srgb, var(--scroll-gild) 34%, transparent);
+  outline-color: color-mix(in srgb, var(--scroll-gild) 18%, transparent);
+  background: var(--scroll-paper);
+  box-shadow: 0 20px 44px rgb(60 42 20 / 0.28);
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .dialog-name {
+  color: var(--scroll-gild);
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .dialog-text {
+  color: #3a3126;
+  text-shadow: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .dialog-text.narrate {
+  color: #5c5245;
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .quick-btn {
+  color: color-mix(in srgb, var(--scroll-gild) 66%, transparent);
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: #3a3126;
+}
+
+/* ── V5 · 丝绒幕：幕布式通栏 + 金线菱形坠，台词居中收窄 ──────────────────── */
+html[data-dialog-style="velvet"] .stage-root .theater-dialog {
+  min-height: 21vh;
+  padding: 22px 14% 48px;
+  justify-content: center;
+  gap: 0;
+  --velvet-gold: color-mix(in srgb, var(--accent) 30%, #e8c780);
+  --velvet-gold-line: color-mix(in srgb, var(--accent) 32%, #c8a34a);
+  --velvet-gold-lit: color-mix(in srgb, var(--accent) 22%, #f0dca4);
+  background:
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.03) 0 24px, rgb(0 0 0 / 0.055) 24px 48px),
+    radial-gradient(130% 110% at 50% 0%, color-mix(in srgb, var(--accent) 26%, rgb(126 26 50 / 0.94)), color-mix(in srgb, var(--accent) 20%, rgb(48 9 22 / 0.97)) 72%);
+  box-shadow: inset 0 1px 0 rgb(255 214 150 / 0.35), 0 -20px 50px rgb(0 0 0 / 0.5);
+}
+
+html[data-dialog-style="velvet"] .stage-root .theater-dialog::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0, var(--velvet-gold-line) 22%, var(--velvet-gold-lit) 50%, var(--velvet-gold-line) 78%, transparent 100%);
+}
+
+html[data-dialog-style="velvet"] .stage-root .theater-dialog::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--velvet-gold-lit);
+  box-shadow: 0 0 10px rgb(240 220 164 / 0.8);
+}
+
+html[data-dialog-style="velvet"] .stage-root .dialog-name {
+  position: static;
+  margin: 0 0 12px;
+  color: var(--velvet-gold);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.3em;
+  text-align: center;
+  text-shadow: none;
+}
+
+html[data-dialog-style="velvet"] .stage-root .dialog-name::before {
+  content: "—— ";
+}
+
+html[data-dialog-style="velvet"] .stage-root .dialog-name::after {
+  content: " ——";
+}
+
+html[data-dialog-style="velvet"] .stage-root .dialog-text {
+  width: min(790px, 100%);
+  margin: 0 auto;
+  color: #f7ece6;
+  font-size: clamp(16px, 1.45vw, 18.5px);
+  font-weight: 500;
+  line-height: 1.85;
+  text-align: center;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.7);
+}
+
+html[data-dialog-style="velvet"] .stage-root .dialog-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(10px + var(--safe-b, 0px));
+  justify-content: center;
+  gap: 20px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+html[data-dialog-style="velvet"] .stage-root .dialog-options {
+  position: static;
+  right: auto;
+  bottom: auto;
+  height: auto;
+  padding: 0;
+  gap: 6px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+html[data-dialog-style="velvet"] .stage-root .quick-btn {
+  height: 24px;
+  padding: 0 11px;
+  border: 1px solid color-mix(in srgb, var(--velvet-gold-line) 32%, transparent);
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--velvet-gold) 72%, transparent);
+  font-size: 11.5px;
+}
+
+html[data-dialog-style="velvet"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: #f6e6bd;
+  background: color-mix(in srgb, var(--velvet-gold-line) 16%, transparent);
+  border-color: color-mix(in srgb, var(--velvet-gold-line) 60%, transparent);
+  text-shadow: none;
+}
+
+html[data-dialog-style="velvet"] .stage-root .quick-sep {
+  background: color-mix(in srgb, var(--velvet-gold-line) 35%, transparent);
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .theater-dialog {
+  --velvet-gold: color-mix(in srgb, var(--accent) 30%, #a8763a);
+  --velvet-gold-line: color-mix(in srgb, var(--accent) 30%, #a8763a);
+  --velvet-gold-lit: color-mix(in srgb, var(--accent) 22%, #d8b878);
+  background:
+    repeating-linear-gradient(90deg, rgb(160 130 90 / 0.05) 0 24px, rgb(120 90 50 / 0.05) 24px 48px),
+    radial-gradient(130% 110% at 50% 0%, color-mix(in srgb, var(--accent) 8%, #fdf7ec), color-mix(in srgb, var(--accent) 10%, #f3e7d5) 75%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--velvet-gold-line) 50%, transparent), 0 -18px 44px rgb(70 50 20 / 0.22);
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .theater-dialog::before {
+  background: linear-gradient(90deg, transparent 0, var(--velvet-gold-line) 22%, var(--velvet-gold-lit) 50%, var(--velvet-gold-line) 78%, transparent 100%);
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .theater-dialog::after {
+  background: var(--velvet-gold-line);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--velvet-gold-lit) 90%, transparent);
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .dialog-name {
+  color: var(--velvet-gold);
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .dialog-text {
+  color: #3d2b22;
+  text-shadow: none;
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .quick-btn {
+  color: color-mix(in srgb, var(--velvet-gold) 72%, transparent);
+  border-color: color-mix(in srgb, var(--velvet-gold-line) 34%, transparent);
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .quick-btn:hover:not(:disabled) {
+  color: color-mix(in srgb, var(--velvet-gold) 72%, #2b1a12);
+  background: color-mix(in srgb, var(--velvet-gold-line) 14%, transparent);
+}
+
+/* ── 五档配套的舞台分支选项框（.choice / .choice-num）───────────────────── */
+
+/* C1 · 浮岛玻璃卡选项框 */
+html[data-dialog-style="card"] .stage-root .choice {
+  width: min(680px, 78vw);
+  min-height: 48px;
+  padding: 11px 22px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, rgb(22 30 43 / 0.84)), color-mix(in srgb, var(--accent) 16%, rgb(10 16 26 / 0.9)));
+  color: #f1f5f9;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(18px) saturate(1.3);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 0.44), inset 0 1px 0 rgb(255 255 255 / 0.2);
+}
+
+html[data-dialog-style="card"] .stage-root .choice .choice-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 26%, rgb(255 255 255 / 0.08));
+  color: color-mix(in srgb, var(--accent) 72%, #ffffff);
+  font-size: 12px;
+}
+
+html[data-dialog-style="card"] .stage-root .choice:hover:not(:disabled),
+html[data-dialog-style="card"] .stage-root .choice:focus-visible {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 84%, #ffffff), var(--accent));
+  border-color: color-mix(in srgb, var(--accent) 65%, #ffffff);
+  color: var(--accent-ink, #ffffff);
+  text-shadow: none;
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
+html[data-dialog-style="card"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-dialog-style="card"] .stage-root .choice:focus-visible .choice-num {
+  background: rgb(255 255 255 / 0.22);
+  color: var(--accent-ink, #ffffff);
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .choice {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, rgb(255 255 255 / 0.94)), color-mix(in srgb, var(--accent) 10%, rgb(243 247 252 / 0.97)));
+  border-color: color-mix(in srgb, var(--accent) 24%, rgb(15 23 42 / 0.1));
+  color: #0f172a;
+  text-shadow: none;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 0.12), inset 0 1px 0 #ffffff;
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .choice .choice-num {
+  background: color-mix(in srgb, var(--accent) 14%, #ffffff);
+  color: color-mix(in srgb, var(--accent) 82%, #0b2545);
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .choice:focus-visible {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, #ffffff), var(--accent));
+  border-color: var(--accent);
+  color: var(--accent-ink, #ffffff);
+}
+
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"][data-dialog-style="card"] .stage-root .choice:focus-visible .choice-num {
+  background: rgb(255 255 255 / 0.24);
+  color: var(--accent-ink, #ffffff);
+}
+
+/* C2 · 电影字幕选项框 */
+html[data-dialog-style="cinema"] .stage-root .choice {
+  width: min(760px, 84vw);
+  min-height: 44px;
+  padding: 10px 36px;
+  border: none;
+  border-radius: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.76)) 18%,
+    color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.88)) 50%,
+    color-mix(in srgb, var(--accent) 12%, rgb(0 0 0 / 0.76)) 82%,
+    transparent 100%);
+  color: #f4f1ec;
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 10px rgb(0 0 0 / 0.95), 0 0 2px rgb(0 0 0 / 0.95);
+  backdrop-filter: none;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 25%, rgb(223 179 122 / 0.28)),
+    inset 0 -1px 0 color-mix(in srgb, var(--accent) 25%, rgb(223 179 122 / 0.28));
+}
+
+html[data-dialog-style="cinema"] .stage-root .choice .choice-num {
+  color: color-mix(in srgb, var(--accent) 30%, #dfb37a);
+  font-family: "Montserrat", "Inter", var(--font-ui);
+}
+
+html[data-dialog-style="cinema"] .stage-root .choice:hover:not(:disabled),
+html[data-dialog-style="cinema"] .stage-root .choice:focus-visible {
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 24%, rgb(20 16 10 / 0.88)) 16%,
+    color-mix(in srgb, var(--accent) 28%, rgb(28 22 14 / 0.95)) 50%,
+    color-mix(in srgb, var(--accent) 24%, rgb(20 16 10 / 0.88)) 84%,
+    transparent 100%);
+  color: color-mix(in srgb, var(--accent) 28%, #f6dfb2);
+  text-shadow: 0 2px 12px rgb(0 0 0 / 0.95);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 35%, rgb(223 179 122 / 0.65)),
+    inset 0 -1px 0 color-mix(in srgb, var(--accent) 35%, rgb(223 179 122 / 0.65));
+}
+
+html[data-dialog-style="cinema"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-dialog-style="cinema"] .stage-root .choice:focus-visible .choice-num {
+  color: color-mix(in srgb, var(--accent) 28%, #f6dfb2);
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .choice {
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.88)) 18%,
+    color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.96)) 50%,
+    color-mix(in srgb, var(--accent) 8%, rgb(255 255 255 / 0.88)) 82%,
+    transparent 100%);
+  border: none;
+  color: #14161a;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.9);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 30%, rgb(138 90 32 / 0.28)),
+    inset 0 -1px 0 color-mix(in srgb, var(--accent) 30%, rgb(138 90 32 / 0.28));
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .choice .choice-num {
+  color: color-mix(in srgb, var(--accent) 30%, #8a5a20);
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .choice:focus-visible {
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 16%, rgb(255 250 240 / 0.94)) 16%,
+    color-mix(in srgb, var(--accent) 22%, rgb(255 248 235 / 0.98)) 50%,
+    color-mix(in srgb, var(--accent) 16%, rgb(255 250 240 / 0.94)) 84%,
+    transparent 100%);
+  color: color-mix(in srgb, var(--accent) 55%, #5c380e);
+  text-shadow: none;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 45%, rgb(138 90 32 / 0.55)),
+    inset 0 -1px 0 color-mix(in srgb, var(--accent) 45%, rgb(138 90 32 / 0.55));
+}
+
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"][data-dialog-style="cinema"] .stage-root .choice:focus-visible .choice-num {
+  color: color-mix(in srgb, var(--accent) 55%, #5c380e);
+}
+
+/* C3 · 战术 HUD 选项框 */
+html[data-dialog-style="hud"] .stage-root .choice {
+  width: min(680px, 80vw);
+  min-height: 46px;
+  padding: 10px 24px;
+  border: 1.5px solid transparent;
+  border-radius: 0;
+  background:
+    repeating-linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent) 0 1px, transparent 1px 3px) padding-box,
+    linear-gradient(180deg, rgb(6 15 26 / 0.92), rgb(4 10 18 / 0.95)) padding-box,
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 68%, transparent), color-mix(in srgb, var(--accent) 22%, transparent)) border-box;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  color: #e0f2fe;
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", var(--font-ui);
+  letter-spacing: 0.05em;
+  text-shadow: none;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.5);
+}
+
+html[data-dialog-style="hud"] .stage-root .choice .choice-num {
+  width: auto;
+  padding: 0 4px;
+  color: color-mix(in srgb, var(--accent) 65%, #7dd3fc);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+html[data-dialog-style="hud"] .stage-root .choice .choice-num::before { content: "["; opacity: 0.7; }
+html[data-dialog-style="hud"] .stage-root .choice .choice-num::after { content: "]"; opacity: 0.7; }
+
+html[data-dialog-style="hud"] .stage-root .choice:hover:not(:disabled),
+html[data-dialog-style="hud"] .stage-root .choice:focus-visible {
+  background: color-mix(in srgb, var(--accent) 62%, #46d6ff);
+  color: #04121e;
+  text-shadow: none;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+html[data-dialog-style="hud"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-dialog-style="hud"] .stage-root .choice:focus-visible .choice-num {
+  color: #04121e;
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .choice {
+  background:
+    repeating-linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, transparent) 0 1px, transparent 1px 3px) padding-box,
+    linear-gradient(180deg, rgb(255 255 255 / 0.96), rgb(241 247 252 / 0.98)) padding-box,
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 58%, transparent), color-mix(in srgb, var(--accent) 20%, transparent)) border-box;
+  border: 1.5px solid transparent;
+  color: #0f2a3d;
+  box-shadow: 0 10px 26px rgb(15 23 42 / 0.14);
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .choice .choice-num {
+  color: color-mix(in srgb, var(--accent) 80%, #0b2545);
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .choice:focus-visible {
+  background: color-mix(in srgb, var(--accent) 78%, #0e74a4);
+  color: #ffffff;
+}
+
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"][data-dialog-style="hud"] .stage-root .choice:focus-visible .choice-num {
+  color: #ffffff;
+}
+
+/* C4 · 书卷选项框 */
+html[data-dialog-style="scroll"] .stage-root .choice {
+  --scroll-gild: color-mix(in srgb, var(--accent) 30%, #ceb07c);
+  width: min(680px, 78vw);
+  min-height: 48px;
+  padding: 11px 26px;
+  border: 1px solid color-mix(in srgb, var(--scroll-gild) 38%, transparent);
+  border-radius: 3px;
+  outline: 1px solid color-mix(in srgb, var(--scroll-gild) 18%, transparent);
+  outline-offset: -5px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, rgb(38 32 25 / 0.94)), color-mix(in srgb, var(--accent) 12%, rgb(25 21 16 / 0.96)));
+  color: #ece2d1;
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+  letter-spacing: 0.06em;
+  text-shadow: none;
+  box-shadow: 0 14px 34px rgb(0 0 0 / 0.5);
+}
+
+html[data-dialog-style="scroll"] .stage-root .choice .choice-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 42%, #8c2f22);
+  color: #f6e9dd;
+  font-family: "Noto Serif CJK SC", "Songti SC", serif;
+  font-size: 12px;
+}
+
+html[data-dialog-style="scroll"] .stage-root .choice:hover:not(:disabled),
+html[data-dialog-style="scroll"] .stage-root .choice:focus-visible {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 22%, #362c21), color-mix(in srgb, var(--accent) 18%, #241d15));
+  border-color: var(--scroll-gild);
+  outline-color: color-mix(in srgb, var(--scroll-gild) 45%, transparent);
+  color: #fff8eb;
+  text-shadow: none;
+  box-shadow: 0 14px 34px rgb(0 0 0 / 0.6);
+}
+
+html[data-dialog-style="scroll"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-dialog-style="scroll"] .stage-root .choice:focus-visible .choice-num {
+  background: color-mix(in srgb, var(--accent) 45%, #b53d2d);
+  color: #ffffff;
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .choice {
+  --scroll-gild: color-mix(in srgb, var(--accent) 30%, #856236);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, rgb(250 244 231 / 0.96)), color-mix(in srgb, var(--accent) 10%, rgb(242 233 215 / 0.98)));
+  border-color: color-mix(in srgb, var(--scroll-gild) 40%, transparent);
+  outline-color: color-mix(in srgb, var(--scroll-gild) 20%, transparent);
+  color: #2b2117;
+  box-shadow: 0 12px 28px rgb(60 42 18 / 0.16);
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .choice .choice-num {
+  background: color-mix(in srgb, var(--accent) 50%, #b3372f);
+  color: #fdf3ec;
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .choice:focus-visible {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 16%, #fffaf0), color-mix(in srgb, var(--accent) 22%, #f5ead4));
+  border-color: var(--scroll-gild);
+  outline-color: color-mix(in srgb, var(--scroll-gild) 45%, transparent);
+  color: #1c140c;
+}
+
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"][data-dialog-style="scroll"] .stage-root .choice:focus-visible .choice-num {
+  background: color-mix(in srgb, var(--accent) 55%, #992922);
+  color: #ffffff;
+}
+
+/* C5 · 丝绒幕选项框 */
+html[data-dialog-style="velvet"] .stage-root .choice {
+  --velvet-gold: color-mix(in srgb, var(--accent) 30%, #e8c780);
+  --velvet-gold-line: color-mix(in srgb, var(--accent) 32%, #c8a34a);
+  --velvet-gold-lit: color-mix(in srgb, var(--accent) 22%, #f0dca4);
+  width: min(680px, 78vw);
+  min-height: 46px;
+  padding: 10px 28px;
+  border: 1px solid color-mix(in srgb, var(--velvet-gold-line) 55%, transparent);
+  border-radius: 999px;
+  background:
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.025) 0 18px, rgb(0 0 0 / 0.05) 18px 36px),
+    radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--accent) 26%, rgb(126 26 50 / 0.92)), color-mix(in srgb, var(--accent) 20%, rgb(48 9 22 / 0.96)) 75%);
+  color: #f7ece6;
+  font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", var(--font-ui);
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 0.65);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.48), inset 0 1px 0 color-mix(in srgb, var(--velvet-gold-lit) 28%, transparent);
+}
+
+html[data-dialog-style="velvet"] .stage-root .choice .choice-num {
+  color: var(--velvet-gold);
+}
+
+html[data-dialog-style="velvet"] .stage-root .choice:hover:not(:disabled),
+html[data-dialog-style="velvet"] .stage-root .choice:focus-visible {
+  background: linear-gradient(180deg, var(--velvet-gold-lit), var(--velvet-gold-line));
+  border-color: var(--velvet-gold-lit);
+  color: #2a0a14;
+  text-shadow: none;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.55);
+}
+
+html[data-dialog-style="velvet"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-dialog-style="velvet"] .stage-root .choice:focus-visible .choice-num {
+  color: #2a0a14;
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice {
+  --velvet-gold: color-mix(in srgb, var(--accent) 30%, #a8763a);
+  --velvet-gold-line: color-mix(in srgb, var(--accent) 30%, #a8763a);
+  --velvet-gold-lit: color-mix(in srgb, var(--accent) 22%, #d8b878);
+  background:
+    repeating-linear-gradient(90deg, rgb(160 130 90 / 0.04) 0 18px, rgb(120 90 50 / 0.04) 18px 36px),
+    radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--accent) 8%, rgb(253 247 236 / 0.96)), color-mix(in srgb, var(--accent) 10%, rgb(243 231 213 / 0.98)) 75%);
+  border-color: color-mix(in srgb, var(--velvet-gold-line) 48%, transparent);
+  color: #3d2b22;
+  text-shadow: none;
+  box-shadow: 0 10px 26px rgb(70 50 20 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.9);
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice .choice-num {
+  color: var(--velvet-gold);
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice:hover:not(:disabled),
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice:focus-visible {
+  background: linear-gradient(180deg, var(--velvet-gold-lit), var(--velvet-gold-line));
+  border-color: var(--velvet-gold-line);
+  color: #ffffff;
+}
+
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice:hover:not(:disabled) .choice-num,
+html[data-ui-theme="light"][data-dialog-style="velvet"] .stage-root .choice:focus-visible .choice-num {
+  color: #ffffff;
+}
+
+/* ── 窄屏：卡片那三种收成整宽、名牌不再骑边；字幕去掉上面那条黑边 ──────────
+   手机上的台词条本来就是「贴底一条」，宽银幕的上面那条在没有 16:9 的手机屏上
+   没有意义，反而跟顶栏抢位置。 */
+@media (max-width: 720px), (max-height: 460px) {
+  html[data-dialog-style="card"] .stage-root .theater-dialog,
+  html[data-dialog-style="hud"] .stage-root .theater-dialog,
+  html[data-dialog-style="scroll"] .stage-root .theater-dialog {
+    width: calc(100% - 24px);
+    bottom: calc(12px + var(--safe-b, 0px));
+  }
+
+  html[data-dialog-style="card"] .stage-root .theater-dialog,
+  html[data-dialog-style="scroll"] .stage-root .theater-dialog {
+    padding: 20px 20px 14px;
+  }
+
+  html[data-dialog-style="hud"] .stage-root .theater-dialog {
+    padding: 16px 18px 12px;
+  }
+
+  /* 名牌骑在卡沿上会被 overflow-y: auto 裁掉，窄屏改成卡内首行 */
+  html[data-dialog-style="card"] .stage-root .dialog-name {
+    position: static;
+    align-self: flex-start;
+    margin: 0 0 10px;
+  }
+
+  html[data-dialog-style="card"] .stage-root .theater-dialog::before {
+    left: 20px;
+    right: 20px;
+  }
+
+  html[data-dialog-style="cinema"] .stage-root .theater-dialog {
+    min-height: 20vh;
+    padding: 16px 16px 44px;
+  }
+
+  html[data-dialog-style="cinema"] .stage-root .theater-dialog::before {
+    display: none;
+  }
+
+  html[data-dialog-style="cinema"] .stage-root .dialog-text,
+  html[data-dialog-style="velvet"] .stage-root .dialog-text {
+    width: 100%;
+  }
+
+  html[data-dialog-style="velvet"] .stage-root .theater-dialog {
+    padding: 18px 16px 46px;
+  }
+
+  html[data-dialog-style="card"] .stage-root .choice,
+  html[data-dialog-style="cinema"] .stage-root .choice,
+  html[data-dialog-style="hud"] .stage-root .choice,
+  html[data-dialog-style="scroll"] .stage-root .choice,
+  html[data-dialog-style="velvet"] .stage-root .choice {
+    width: calc(100% - 24px);
+    padding: 10px 18px;
+  }
+}
+
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #090c12;
+  color: #fff;
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+:root {
+  --accent: #3b82f6;
+  --accent-ink: #ffffff;
+  --stage-bg: #090c12;
+  --dialog-bg: linear-gradient(180deg, rgba(16, 21, 32, 0.86) 0%, rgba(9, 12, 19, 0.95) 100%);
+  --dialog-line: rgba(255, 255, 255, 0.16);
+  --dialog-ink: #f8fafc;
+  --dialog-ink-soft: #cbd5e1;
+  --dialog-ink-thought: #c4b5fd;
+  --dialog-ink-faint: rgba(248, 250, 252, 0.55);
+  --dialog-bad: #fb7185;
+  --dialog-text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  --dir-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --dialog-hover: rgba(255, 255, 255, 0.12);
+  --dialog-veil: rgba(255, 255, 255, 0.06);
+  --dialog-shadow: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --stage-radius: 12px;
+  --nameplate-bg: rgba(255, 255, 255, 0.98);
+  --nameplate-ink: #0f172a;
+  --nameplate-line: var(--character-color, var(--accent, #3b82f6));
+  --sprite-dim: 0.55;
+  --choice-bg: linear-gradient(180deg, rgba(22, 28, 42, 0.9) 0%, rgba(13, 17, 26, 0.96) 100%);
+  --choice-line: rgba(255, 255, 255, 0.18);
+  --choice-ink: #f8fafc;
+  --choice-active-bg: color-mix(in srgb, var(--accent) 35%, rgba(22, 28, 42, 0.95));
+  --choice-scrim: linear-gradient(180deg, transparent 20%, rgba(8, 10, 16, 0.65) 100%);
+  --fade-ms: 220ms;
+  --move-ms: 380ms;
+  --act-ms: 520ms;
+  --type-ms: 35;
+  --pause-short-ms: 120;
+  --pause-long-ms: 240;
+}
+
+.stage-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--stage-bg, #090c12);
+  display: flex;
+  flex-direction: column;
+}
+
+.standalone-player .theater-director {
+  display: none !important;
+}
+
+.standalone-start-screen,
+.standalone-loading-screen,
+.standalone-error-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, #1e293b 0%, #020617 100%);
+  z-index: 1000;
+  padding: 24px;
+}
+
+.standalone-title-card,
+.standalone-card {
+  max-width: 560px;
+  width: 100%;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 36px 32px;
+  text-align: center;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+.standalone-play-title {
+  margin: 0 0 16px;
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
+.standalone-play-opening {
+  margin: 0 0 28px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #94a3b8;
+  text-align: justify;
+}
+
+.standalone-start-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 32px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+}
+
+.standalone-start-btn:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+.standalone-subtext {
+  display: block;
+  margin-top: 16px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.standalone-loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: standalone-spin 0.8s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes standalone-spin {
+  to { transform: rotate(360deg); }
+}
+
+.standalone-toast-banner {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #f8fafc;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  backdrop-filter: blur(8px);
+  z-index: 999;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: standalone-fade-in 0.2s ease-out;
+}
+
+@keyframes standalone-fade-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}

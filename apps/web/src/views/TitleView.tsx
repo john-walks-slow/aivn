@@ -217,11 +217,20 @@ export function TitleView({ playId }: { playId: string }) {
             <div className="title-ops">
               <a
                 className="title-op-link"
-                href={`/api/plays/${playId}/export`}
-                title="导出剧目包"
+                href={`/api/plays/${playId}/export?format=html`}
+                download={`${playId}.html`}
+                title="导出单文件 HTML（免 API 离线观看与接续演出）"
               >
                 <Icon name="download" size={13} />
-                <span>EXPORT</span>
+                <span>HTML</span>
+              </a>
+              <a
+                className="title-op-link"
+                href={`/api/plays/${playId}/export`}
+                title="导出制作包 Zip"
+              >
+                <Icon name="download" size={13} />
+                <span>ZIP</span>
               </a>
               <button
                 type="button"

@@ -82,7 +82,7 @@ await esbuild({
 });
 
 step("按仓库相对路径摆好随包资源");
-for (const rel of ["apps/web/dist", "apps/server/skills"]) {
+for (const rel of ["apps/web/dist", "apps/server/skills", "apps/server/assets"]) {
   cpSync(join(repoRoot, rel), join(stageDir, rel), { recursive: true });
 }
 
