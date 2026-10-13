@@ -22,7 +22,7 @@ export const assetRegisterFields = {
     required: true,
     description:
       "图片来源：剧目内相对路径，或 http(s) 网址（出的候选、别的工具产出的图、下载的图都行）；" +
-      "宿主配了应用级资源库时还认 `library:<kind>/<entryId>`（kind 见浏览资源库那个工具的类别）。",
+      "宿主配了应用级资源库时还认 `library://<entryId>`（条目 id 见 `list_library`，类别由 `kind` 指定）。",
   },
   ...assetTargetFields,
   // 落成那一步能一次给的元数据（余下的 mood / scene / loop / volume 是音乐属性，走 annotate）
@@ -45,7 +45,7 @@ export type AssetRegisterArgs = InferArgs<typeof assetRegisterFields>;
 export const ASSET_REGISTER_DOC = [
   "把一张图**登记**成剧目素材：写 `assets/`、补素材表（呈现声明 + 描述）、记台账。**不抠底**。",
   "`source`：剧目内相对路径 / http(s) 网址——可以是出图给的候选、别的工具产出的图、或下载的图；" +
-    "宿主配了应用级资源库时还可写 `library:<kind>/<entryId>`（从库里按条目搬进剧目，条目自带的描述与差分一并进来）。",
+    "宿主配了应用级资源库时还可写 `library://<entryId>`（从库里按条目 id 搬进剧目，类别由 `kind` 指定，条目自带的描述与差分一并进来）。",
   "落位**始终显式给**：`kind`（background / cg / sprite）必填；背景与插图给 `name`，立绘给 `spriteId`（可再给 `variant` / `framing` / `stature` / `title`）。",
   "**立绘收两种输入**：已经抠好的透明 PNG，或一张纯色键底的原片——宿主按自己的入库流水线处理" +
     "（能自动抠底的宿主会把原片去底、并归一化到该差分的画布），两者都收不了的那张会当场报错。",

@@ -73,6 +73,24 @@ describe("PlayEnv：read / write / edit 的路径白名单", () => {
     expect(writes).toEqual([]);
   });
 
+  it("支持读取生图草稿（media-cache/drafts/ 能直接看图）", async () => {
+    const { dir, writes } = await tempPlay();
+    const { read } = toolset(dir, writes);
+    const draftDir = join(dir, "media-cache", "drafts", "d1");
+    await mkdir(draftDir, { recursive: true });
+    // 写入一个有效 PNG
+    const pngBuf = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+      0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89,
+    ]);
+    await writeFile(join(draftDir, "image.png"), pngBuf);
+
+    const resCache = (await call(read, { path: "media-cache/drafts/d1/image.png" })) as { content: unknown[] };
+    expect(resCache.content).toBeDefined();
+  });
+
   it("写得动剧目内可写的文件，写不动只读面", async () => {
     const { dir, writes } = await tempPlay();
     const { write } = toolset(dir, writes);

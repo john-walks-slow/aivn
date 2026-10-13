@@ -12,7 +12,7 @@
 - `generate_image` 是两个角色**同一份 schema、同一段描述**（`spriteId`/`variant`/`title` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只产候选；`generate_asset` 是同一个宏、两种投递。**垫图入口只有一个 `references`**（每项可以是主体 id、剧目内相对路径或 http(s) 网址，1–6 张）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该主体的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
 - **卡是可选的，出图也不替谁建卡**：`generate_image` 只按 `spriteId`（主体 id）往 `assets/sprites/<id>/` 落文件——机甲、道具、猫本来就没有卡。名字从哪来：卡 `name` → `<say name>` → 素材表 `title`（`generate_asset` 的 `title` 参数就是给无卡主体落名牌用的）→ id；无卡主体的 TTS 走剧目级 `defaultVoiceId`。
 - **出图与入库拆成两步**（2026-10-05）：`PlayAssets.draft()` 只出图，落 `media-cache/drafts/<draftId>/`（成图 + 立绘抠底前的原片 + `draft.json` 记出图意图），**不写 `assets/`、不碰素材表、不记台账**；`commit(draftId)` 才落 `assets/`、补呈现声明、记 `assets/generated.json`、把原片搬进 `media-cache/sprite-sources/`（重抠要用）。
-  - 工坊的 `generate_image` 走 `draft`（只产候选，不抠底）：回执给 `draft:<草稿id>` 与预览，候选图也走 `onAsset` 推气泡（不推的话默认折叠的工具行把候选藏起来了）；采用是显式的下一步 `import_asset(source="draft:<草稿id>", …)`（立绘先 `cut`），句柄由 `PlayAssets.readSource` 解析。
+  - 工坊的 `generate_image` 走 `draft`（只产候选，不抠底）：回执给剧目内相对路径（`media-cache/drafts/<draftId>/image.<ext>`）与预览，候选图也走 `onAsset` 推气泡（不推的话默认折叠的工具行把候选藏起来了）；采用是显式的下一步 `import_asset(source="<草稿路径>", …)`（立绘先 `cut`），草稿区（`media-cache/drafts/`）对 `PlayFiles` 只读放行，与 `assets/` 走同一套读文件逻辑。
   - 剧作家与素材页的手动生图走 `generate()` = `draft` + `commit` 一次做完——那边的 id 是调用时就定下的，没有「让用户在候选里挑」这回事，时间线的骨架占位 → `asset_ready` 语义不变。
   - **草稿不是身份基准**：非 neutral 的立绘要求该主体有**已入库的** neutral（`generate()` 里那套自动补定妆照照旧，它补出来的是真素材）。`draft()` 不去重——同一目标并发出三张候选正是这条流程要的；`inflight` 去重只在 `generate()` 那层。
   - 草稿超过 7 天，由下一次出图顺手清掉；预览走 `/plays/:id/drafts/<draftId>/<file>` 静态路由（`WorkshopMarkdown` 的 `assetUrl` 同时认 `assets/` 与 `drafts/`）。
@@ -22,9 +22,9 @@
 - 剧作家走通用 `write` 时，同一步（`orchestrator.onPlayFileWritten` → `playhouse.onPlayFileWritten`）按 `characterIdOfPath(write.path)` 认角色卡并登记，两条路汇到同一处。
 - **无名角色音色**：`<say id="passerby" name="路人甲">` 这种一次性角色没有角色卡、而音色挂在角色卡的 voiceId 上，于是永远没声音。
 - 两处兜底都在 `orchestrator`：`voiceOf` 取卡的 voiceId、没有卡就落剧目级 `defaultVoiceId`（工坊「剧目」页挑）；名字取卡的 `name` → `<say name>` → 素材表 `title`（素材页的「名牌」）→ id。
-- **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `cut`（`source="sprite:<主体id>[/<差分名>]"`，不给 `output` 就是原地重抠）——立绘**入库时**把抠底前的原片留一份到 `media-cache/sprite-sources/<主体 id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
+- **抠底参数不在它上面**（填参数得先看过成图，出图那一刻没人看过），改抠底走工坊专有的 `cut`（`source="assets/sprites/<主体id>/<差分名>.png"`，不给 `output` 就是原地重抠）——立绘**入库时**把抠底前的原片留一份到 `media-cache/sprite-sources/<主体 id>/`（跑批产物不进 git），重抠拿它本地重跑一遍 `cutout.ts` 覆盖 assets/ 里那张 PNG：画面一个像素不变、不烧配额、几秒出结果。
 - 没有留底的（更早出的图、用户上传的）直接报错，只能重新出图。
-- **入库只有一个动词 `import_asset`**（2026-10-10 起）：来源是它的一格参数——剧目内路径 / http(s) 网址 /（服务端）`draft:<id>` / `library:<kind>/<entryId>`。从库导入原先是一个独立工具（`library_import`），收进这一格之后，模型可见面上就没有两个语义相同的动词了；引擎那份 `importFromLibrary` 保留全能力（HTTP 素材页与「引用即导入」照用）。
+- **入库只有一个动词 `import_asset`**（2026-10-10 起）：来源是它的一格参数——剧目内路径（含草稿区 `media-cache/drafts/`） / http(s) 网址 / `library://<entryId>`。从库导入原先是一个独立工具（`library_import`），收进这一格之后，模型可见面上就没有两个语义相同的动词了；引擎那份 `importFromLibrary` 保留全能力（HTTP 素材页与「引用即导入」照用）。
 
 ## DSL、轮收束与 IR 事件
 

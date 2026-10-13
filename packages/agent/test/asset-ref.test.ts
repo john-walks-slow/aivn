@@ -1,39 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { formatAssetRef, parseAssetRef } from "../src/media/asset-ref.js";
+import { parseAssetRef } from "../src/media/asset-ref.js";
 import { imageCutout, type CutoutRequest } from "../src/capabilities/media/cutout.js";
 
-describe("素材引用", () => {
-  it("立绘：带差分、不带差分（按 neutral）、主体 id 原样保留", () => {
-    expect(parseAssetRef("sprite:lin/smile")).toEqual({ kind: "sprite", spriteId: "lin", variant: "smile" });
-    expect(parseAssetRef(" sprite:mio ")).toEqual({ kind: "sprite", spriteId: "mio", variant: "neutral" });
-    expect(parseAssetRef("sprite:mecha/damaged")).toEqual({ kind: "sprite", spriteId: "mecha", variant: "damaged" });
+describe("已入库立绘路径识别（parseAssetRef）", () => {
+  it("assets/sprites/<id>/<variant>.<ext> 直接识别为立绘目标", () => {
+    expect(parseAssetRef("assets/sprites/lin/smile.png")).toEqual({ kind: "sprite", spriteId: "lin", variant: "smile" });
+    expect(parseAssetRef(" ./assets/sprites/mio/neutral.png ")).toEqual({
+      kind: "sprite",
+      spriteId: "mio",
+      variant: "neutral",
+    });
   });
 
-  it("背景与插图：`<kind>:<名称>`", () => {
-    expect(parseAssetRef("background:rooftop")).toEqual({ kind: "background", name: "rooftop" });
-    expect(parseAssetRef("cg:rooftop_rain")).toEqual({ kind: "cg", name: "rooftop_rain" });
-  });
-
-  it("不含 `:` 的一律当路径（老调用一字不改），未知前缀也是路径", () => {
+  it("非标准立绘落位的路径一律返回 null（按普通源图路径处理）", () => {
+    expect(parseAssetRef("media-cache/drafts/a/image.png")).toBeNull();
     expect(parseAssetRef("assets/cg/old.png")).toBeNull();
-    expect(parseAssetRef("./a:b.png")).toBeNull();
-    expect(parseAssetRef("http://example.com/a.png")).toBeNull();
-    expect(parseAssetRef("draft:abc")).toBeNull();
-  });
-
-  it("认得出前缀但写法不合法：当场报错，不掉回路径分支（否则会报成「文件找不到」）", () => {
-    expect(() => parseAssetRef("sprite:")).toThrow(/缺名称/);
-    expect(() => parseAssetRef("sprite:lin/smile/extra")).toThrow(/多了层级/);
-    expect(() => parseAssetRef("background:a/b")).toThrow(/不该带斜杠/);
-    expect(() => parseAssetRef("sprite:/smile")).toThrow(/缺主体 id/);
-  });
-
-  it("落位 → 引用串：neutral 不写出来（默认就是它）", () => {
-    expect(formatAssetRef({ kind: "sprite", spriteId: "lin", variant: "neutral" })).toBe("sprite:lin");
-    expect(formatAssetRef({ kind: "sprite", spriteId: "lin", variant: "smile" })).toBe("sprite:lin/smile");
-    expect(formatAssetRef({ kind: "sprite", spriteId: "lin" })).toBe("sprite:lin");
-    expect(formatAssetRef({ kind: "background", name: "rooftop" })).toBe("background:rooftop");
-    expect(formatAssetRef({ kind: "cg", name: "x" })).toBe("cg:x");
+    expect(parseAssetRef("assets/sprites/loose.png")).toBeNull();
+    expect(parseAssetRef("assets/sprites/a/b/c.png")).toBeNull();
   });
 });
 
@@ -45,29 +28,32 @@ describe("image.cutout 的两种寻址", () => {
       deps: {
         cut: async (request: CutoutRequest) => {
           calls.push(request);
-          return { path: request.output ?? "media-cache/cut/x.png", absPath: "/tmp/x.png", coverage: 0.4, figureTop: 1020, figureHeight: 900 };
+          return {
+            path: request.output ?? "media-cache/cut/x.png",
+            absPath: "/tmp/x.png",
+            coverage: 0.4,
+            figureTop: 1020,
+            figureHeight: 900,
+          };
         },
       },
     };
   }
 
-  it("给路径：原样交给宿主，带出 output 与调参", async () => {
+  it("给草稿/普通路径：原样交给宿主，带出 output 与调参", async () => {
     const { calls, deps } = stub();
-    await imageCutout.execute({ source: " media-cache/drafts/a/image.png ", output: "assets/sprites/lin/neutral.png", tolerance: 60 }, deps);
+    await imageCutout.execute(
+      { source: " media-cache/drafts/a/image.png ", output: "assets/sprites/lin/neutral.png", tolerance: 60 },
+      deps,
+    );
     expect(calls).toEqual([
       { source: "media-cache/drafts/a/image.png", output: "assets/sprites/lin/neutral.png", tuning: { tolerance: 60 } },
     ]);
   });
 
-  it("给引用：只把身份交给宿主（语法不出这一层），差分不给按 neutral", async () => {
+  it("给已入库立绘路径：把立绘身份交给宿主（自动读留底原片原地重抠）", async () => {
     const { calls, deps } = stub();
-    await imageCutout.execute({ source: "sprite:lin" }, deps);
+    await imageCutout.execute({ source: "assets/sprites/lin/neutral.png" }, deps);
     expect(calls).toEqual([{ target: { kind: "sprite", spriteId: "lin", variant: "neutral" } }]);
-  });
-
-  it("引用写坏了在能力这一层就报错，不惊动宿主", async () => {
-    const { calls, deps } = stub();
-    await expect(imageCutout.execute({ source: "sprite:lin/x/y" }, deps)).rejects.toThrow(/多了层级/);
-    expect(calls).toEqual([]);
   });
 });

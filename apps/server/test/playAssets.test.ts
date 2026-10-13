@@ -1194,7 +1194,7 @@ describe("PlayAssets：登记外来图（import_asset）", () => {
 
     // 模型跳过 `cut` 直接登记草稿原片（绿底那张）：入库不该依赖「记得先抠底」这套流程记忆，
     // 它自己保证落进 assets/ 的一定是能上台的透明 PNG，且两格落位指标当场进素材表。
-    const registered = await assets.register(`draft:${draft.draftId}`, {
+    const registered = await assets.register(draft.path, {
       kind: "sprite",
       spriteId: "mio",
       variant: "neutral",
@@ -1339,7 +1339,7 @@ describe("PlayAssets：cut（素材引用寻址）", () => {
     const { assets, files } = makeAssets(store, stubBackend().backend);
     const draft = await assets.draft({ kind: "sprite", spriteId: "mio", variant: "neutral", framing: "half" }, "少女");
 
-    const cut = await assets.cut({ source: `draft:${draft.draftId}`, output: "assets/sprites/mio/neutral.png" });
+    const cut = await assets.cut({ source: draft.path, output: "assets/sprites/mio/neutral.png" });
     expect(cut.path).toBe("assets/sprites/mio/neutral.png");
     const canvas = await sharp(files.absoluteOf(cut.path)).metadata();
     expect([canvas.width, canvas.height]).toEqual([1440, 1920]);
@@ -1361,7 +1361,7 @@ describe("PlayAssets：cut（素材引用寻址）", () => {
     const { assets, files } = makeAssets(store, stubBackend().backend);
     const draft = await assets.draft({ kind: "sprite", spriteId: "mio", variant: "neutral", framing: "half" }, "少女");
 
-    const cut = await assets.cut({ source: `draft:${draft.draftId}`, output: "./assets/sprites/mio/neutral.png" });
+    const cut = await assets.cut({ source: draft.path, output: "./assets/sprites/mio/neutral.png" });
     expect(cut.path).toBe("assets/sprites/mio/neutral.png");
     const canvas = await sharp(files.absoluteOf(cut.path)).metadata();
     expect([canvas.width, canvas.height]).toEqual([1440, 1920]);

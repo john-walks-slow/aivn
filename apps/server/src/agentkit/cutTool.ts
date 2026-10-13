@@ -8,10 +8,10 @@ import { linesResult, reason, textResult } from "./result.js";
 /**
  * `cut`：抠底（只给工坊）。两种用法合成同一个动词，寻址方式说了算：
  *
- * - **原地重抠已入库的立绘**：`source` 给 `sprite:<主体id>[/<差分名>]`、不给 `output`——
+ * - **原地重抠已入库的立绘**：`source` 给 `assets/sprites/<主体id>/<差分名>.png`、不给 `output`——
  *   拿抠底前留的原片本地重跑，覆盖 `assets/` 里那张透明 PNG。画面一个像素不变、不烧配额、几秒出结果；
  *   「图本身挺好、就是抠得脏」只有这条路能救（重新出图出来的是另一张画）。
- * - **抠一张具体的图**：`source` 给剧目内路径、`output` 给写到哪（都是 `assets/` 下的路径）。
+ * - **抠一张具体的图**：`source` 给草稿或原图路径、`output` 给写到哪（`assets/` 下的路径）。
  *
  * 参数真相源、引用语法与症状对照表在 `@aivn/agent` 的 `image.cutout`（与插件的 `cut` 同一份）；
  * 这里只加服务端这一面的范围收紧（pi 运行时硬校验，DSH 的 schema 子集不认）。
@@ -48,10 +48,7 @@ export function createCutTool(deps: CutDeps): AgentTool<typeof cutParams> {
   return {
     name: "cut",
     label: "抠底",
-    // 同 import_asset：`draft:` 句柄是服务端这一面的机制（共享描述只讲宿主中立的路径与素材引用）。
-    description:
-      `${imageCutout.doc}\n` +
-      "服务端还可给 `source=\"draft:<草稿id>\"`——抠 `generate_image` 刚出的那张候选。",
+    description: imageCutout.doc,
     parameters: cutParams,
     execute: async (toolCallId, params: Static<typeof cutParams>) => {
       if (!deps.playAssets) return textResult("生图未启用（STAGE_IMAGE_ENABLED=false 或后端缺凭据）。");

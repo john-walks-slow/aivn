@@ -448,8 +448,8 @@ describe("工坊工具：generate_image", () => {
     const events: GeneratedPlayAsset[] = [];
     const tools = createWorkshopTools(deps({ playAssets: assets, onAsset: (asset: GeneratedPlayAsset) => events.push(asset) }));
     const cut = tools.find((t) => t.name === "cut")!;
-    const result = await cut.execute("c1", { source: "sprite:mio", tolerance: 64 });
-    // 引用在能力那层解成身份，宿主只认身份与调参（不再自己拼 media-cache 路径）
+    const result = await cut.execute("c1", { source: "assets/sprites/mio/neutral.png", tolerance: 64 });
+    // 已入库立绘路径在能力那层解成身份，宿主只认身份与调参（不再自己拼 media-cache 路径）
     expect(cuts).toEqual([{ target: { kind: "sprite", spriteId: "mio", variant: "neutral" }, tuning: { tolerance: 64 } }]);
     const out = JSON.stringify(result);
     expect(out).toContain("已抠底");
@@ -465,7 +465,7 @@ describe("工坊工具：generate_image", () => {
       },
     } as unknown as PlayAssets;
     const bad = await (createWorkshopTools(deps({ playAssets: failing })).find((t) => t.name === "cut")!).execute("c2", {
-      source: "sprite:mio",
+      source: "assets/sprites/mio/neutral.png",
     });
     expect(JSON.stringify(bad)).toContain("抠底失败：mio/neutral 没有留底原片");
   });

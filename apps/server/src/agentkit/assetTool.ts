@@ -148,10 +148,8 @@ async function runSync(
         return { path: draft.path, adopted: false };
       },
     },
-    cut: async ({ source }) => {
-      const cut = await assets.cut({ source });
-      return { path: cut.path };
-    },
+    // 服务端立绘入库（PlayAssets.register）自带去底、画布归一化、指标入表与原片留底（spriteIngest 收口），
+    // 不传 cut，免去重复读盘。
     register: async (source, location, extra): Promise<AssetRegistration> => {
       const asset = await assets.register(source, location, extra);
       url = asset.url;

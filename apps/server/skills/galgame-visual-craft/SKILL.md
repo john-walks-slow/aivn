@@ -120,11 +120,11 @@ flash 档容易丢二次元细线、把幼态角色画成人。模型在**剧目
 
 ### 出图与入库是两步（原子三件套）
 
-`generate_image` 只产**草稿**（回执给 `draft:<草稿id>` 与预览，不写 `assets/`、不碰素材表）。
+`generate_image` 只产**草稿**（回执给草稿路径 `media-cache/drafts/<id>/image.…` 与预览，不写 `assets/`、不碰素材表）。
 采用它是一次**显式登记**：
 
-- 背景 / 插图：`import_asset(source="draft:<草稿id>", kind="background", name="…")`；
-- 立绘：先 `cut(source="draft:<草稿id>", output="assets/sprites/<主体id>/<差分>.png")` 抠底，
+- 背景 / 插图：`import_asset(source="<草稿路径>", kind="background", name="…")`；
+- 立绘：先 `cut(source="<草稿路径>", output="assets/sprites/<主体id>/<差分>.png")` 抠底，
   再 `import_asset(source=<那张透明 PNG>, kind="sprite", spriteId=…, variant=…)`。
 
 候选因此可以放心出——没被采用的那些只待在草稿区，一周后自动清，素材页里看不到。
@@ -132,7 +132,7 @@ flash 档容易丢二次元细线、把幼态角色画成人。模型在**剧目
 代价是没有中间挑的机会（同名素材已存在时它会直接跳过）。
 
 **首次定妆先出 3 张候选供用户挑**：按同一个 `variant="neutral"` 调 3 次 `generate_image`（prompt 各不相同），
-三张预览一起贴给用户，他挑中哪张就 `import_asset(source="draft:…")` 哪一张。
+三张预览一起贴给用户，他挑中哪张就 `import_asset(source="<草稿路径>")` 哪一张。
 
 节奏是**两轮对话**：
 
@@ -196,7 +196,7 @@ flash 档容易丢二次元细线、把幼态角色画成人。模型在**剧目
 ### 抠底调参：默认别动，看图不对才动
 
 `cut` 的五个旋钮（`tolerance` / `spill` / `keySmooth` / `edgeBand` / `solidResidual`，**平铺在参数上**，
-不再有嵌套的 `cutout` 对象；原地重抠时 `source` 给 `sprite:<主体id>[/<差分名>]` 且**不给 `output`**）。
+不再有嵌套的 `cutout` 对象；原地重抠时 `source` 给 `assets/sprites/<主体id>/<差分名>.png` 且**不给 `output`**）。
 出图那一刻没人看过图，所以这些参数**不在 `generate_image` 上**——填它得先看过成图，而看图发生在出图之后。`tolerance` / `spill` 是 0–255 的通道色差，
 `keySmooth` 是高斯半径，`edgeBand` 是像素宽度：
 
@@ -230,7 +230,7 @@ flash 档容易丢二次元细线、把幼态角色画成人。模型在**剧目
 
 参数只影响这一张图，不改全局默认值。调完仍然不干净就老实告诉用户「这张底色/画质有问题，建议重出」。
 留底原片在**入库时**落进 `media-cache/sprite-sources/`：更早出的图、用户自己上传的立绘没有留底，
-`cut(source="sprite:…")` 会直接报错——那种只能重新出图，如实转告，别偷偷重画。
+`cut(source="assets/sprites/<主体id>/<差分名>.png")` 会直接报错——那种只能重新出图，如实转告，别偷偷重画。
 
 ### 差分命名
 

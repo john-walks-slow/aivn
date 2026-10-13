@@ -60,9 +60,9 @@ function hostNote(concurrency: number): string {
   return [
     "",
     `**一批一起发就并发跑**：一条消息里的多个 generate_image 并行执行，不用一张一张等回执；这个部署同时最多跑 ${concurrency} 张，排队区最多 ${DEFAULT_MAX_QUEUE} 张，一批里超出排队上限的那部分直接失败（报「生图队列已满」），张数多就分批发。`,
-    "**候选不是素材**：这张图落在草稿区，回执给 `draft:<草稿id>` 与预览。要让它进剧目：",
-    "- 背景 / 插图：`import_asset(source=\"draft:<草稿id>\", kind=…, name=…)`；",
-    "- 立绘：先 `cut(source=\"draft:<草稿id>\", output=\"assets/sprites/<主体id>/<差分>.png\")` 抠成透明 PNG，再登记那张。",
+    "**候选不是素材**：这张图落在草稿区（`media-cache/drafts/<id>/image.…`），回执给剧目内相对路径与预览。要让它进剧目：",
+    "- 背景 / 插图：`import_asset(source=\"<草稿路径>\", kind=…, name=…)`；",
+    "- 立绘：先 `cut(source=\"<草稿路径>\", output=\"assets/sprites/<主体id>/<差分>.png\")` 抠成透明 PNG，再登记那张。",
     "要一条龙（出图 + 立绘抠底 + 登记）直接用 `generate_asset`。",
   ].join("\n");
 }
@@ -114,10 +114,10 @@ export function createGenerateImageTool(deps: GenerateImageDeps): AgentTool<type
         );
         deps.onAsset(draft.path, draft.url, draft.kind, false, toolCallId);
         return linesResult([
-          `草稿已出：\`draft:${draft.draftId}\``,
+          `草稿已出：\`${draft.path}\``,
           `![${draft.draftId}](${draft.url})`,
-          "这张**还不是素材**。背景 / 插图直接 `import_asset(source=\"draft:…\", kind=…, name=…)` 采用；",
-          "立绘先 `cut(source=\"draft:…\", output=\"assets/sprites/<主体id>/<差分>.png\")` 抠底、再登记那张透明 PNG。",
+          "这张**还不是素材**。背景 / 插图直接 `import_asset(source=\"…\", kind=…, name=…)` 采用；",
+          "立绘先 `cut(source=\"…\", output=\"assets/sprites/<主体id>/<差分>.png\")` 抠底、再登记那张透明 PNG。",
           "要一条龙就用 `generate_asset`。",
         ]);
       } catch (error) {

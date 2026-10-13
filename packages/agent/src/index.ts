@@ -224,6 +224,6 @@ export {
 } from "./media/prompt.js";
 
 export type { AssetRefParts } from "./media/asset-ref.js";
-export { ASSET_REF_HINT, formatAssetRef, parseAssetRef } from "./media/asset-ref.js";
+export { ASSET_REF_HINT, parseAssetRef } from "./media/asset-ref.js";
 export type { WebImage, WebImageFetcher, WebImageOptions } from "./media/web-image.js";
 export { fetchWebImage, MAX_WEB_IMAGE_BYTES, readCapped, webImageBase } from "./media/web-image.js";

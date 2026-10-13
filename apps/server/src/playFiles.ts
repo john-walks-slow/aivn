@@ -20,8 +20,8 @@ import type { PlayStore } from "./store.js";
 const EDITABLE_EXT = new Set([".md", ".json", ".txt"]);
 /** 文本类扩展名：可编辑的那几种，外加只读的样式表与引擎的行级事件流。 */
 const TEXT_EXT = new Set([...EDITABLE_EXT, ".css", ".jsonl"]);
-/** 只读可见目录（能看，不写）。 */
-const READONLY_PREFIXES = ["assets/"];
+/** 只读可见目录（能看，不写）。包含 assets/ 以及生图草稿区（支持模型直接 read 看草稿图）。 */
+const READONLY_PREFIXES = ["assets/", "media-cache/drafts/"];
 /** 只读可见的单文件（同样能看、不写）。 */
 const READONLY_FILES = new Set(["lineage.jsonl", "session.json", "meta.json"]);
 /** 素材描述表（stem → 画面说明，注入剧作家提示词）——assets/ 里唯一可写的文本文件。 */

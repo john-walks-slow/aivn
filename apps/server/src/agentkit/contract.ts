@@ -129,11 +129,11 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     hosts: {
       stageAi:
         "出图分两件：generate_image 只产候选（草稿区），generate_asset 一步落成——工坊同步等图、剧作家后台排产；" +
-        "外来图 / 候选图登记走 import_asset（source 给 draft:<草稿id> / 路径 / 网址）、重抠走 cut（source 给 sprite:<主体id>）。",
+        "外来图 / 候选图登记走 import_asset（source 给剧目内路径 / 网址 / library://<id>）、重抠走 cut（source 给 assets/sprites/<主体id>/<差分>.png）。",
       dshAivn:
         "插件的 generate_image 与服务端同名同义（只产候选，给了 kind 就走剧目感知落位），外来图登记走 import_asset，" +
         "一键入库走 generate_asset（出图 + 抠底 + 登记），文件级重抠走 cut。" +
-        "两边同一个 cut（引用寻址）、同一个 generate_image / generate_asset；差别只在采用候选这一步：插件的候选区可读（给路径即可），服务端的采用要经 import_asset 的 draft: 句柄。",
+        "两边同一个 cut、同一个 generate_image / generate_asset、同一个 import_asset（剧目内文件均直接按相对路径寻址）。",
       backendDependency: "生图后端；抠底在两边都是包里的同一份实现。",
       intentionalDifference:
         "参数面、写 prompt 的硬约束、垫图规则与请求归一化同源（image.generate / image.cutout）；" +
@@ -181,15 +181,15 @@ export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
     equivalence: "intentional-difference",
     hosts: {
       stageAi:
-        "应用级 library/ 资源库：`list_library` 只读浏览 + `import_asset(source=\"library:<kind>/<entryId>\")` 从库导入" +
+        "应用级 library/ 资源库：`list_library` 只读浏览 + `import_asset(source=\"library://<entryId>\", kind=…)` 从库导入" +
         "（条目自带的描述 / 差分 / 角色卡一并搬进来）；另有「引用即导入」——剧本里写个 id，宿主发现剧目里没有就去库里搬。",
       dshAivn:
-        "插件不假定跨剧目资源库，所以没有 `list_library`，`import_asset` 的 `library:` 那一格也用不上；" +
+        "插件不假定跨剧目资源库，所以没有 `list_library`，`import_asset` 的 `library://` 那一格也用不上；" +
         "其余的来源（剧目内路径 / http(s) 网址）两边同义，参数与描述同源（`@aivn/agent` 的 `asset.register`）。",
       backendDependency: "独立版需本地 library 目录；DSH 无此依赖。",
       intentionalDifference:
         "资源库是独立版产品能力（跨剧目 library/ 目录），不能把它的目录状态复制进 DSH——差的只是**一格来源**，" +
-        "不是两个动词：2026-10-10 把服务端的 `library_import` 并进了 `import_asset`（`source=\"library:<kind>/<entryId>\"`），" +
+        "不是两个动词：2026-10-10 把服务端的 `library_import` 并进了 `import_asset`（`source=\"library://<entryId>\"`），" +
         "入库动词两边就此同义。",
     },
   },

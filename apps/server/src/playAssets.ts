@@ -425,6 +425,7 @@ export class PlayAssets {
     // 立绘在入库前归一化：模型可能跳过了 `cut` 直接登记草稿原片（那就是一张绿底图），
     // 也可能登记的是一张已经抠好底的 PNG——两种输入都由 `normalizeSprite` 收成同一种画布。
     const prepared = spec.kind === "sprite" ? await this.normalizeSprite(spec.framing, image.bytes) : null;
+    const keptOriginal = original ?? (prepared?.keyed ? image : undefined);
     const registered = await registerAsset(
       {
         playDir: this.deps.store.dir,
@@ -435,7 +436,7 @@ export class PlayAssets {
       prepared ? { ...spec, figureTop: prepared.figureTop, figureHeight: prepared.figureHeight } : spec,
       {
         image: prepared ? { bytes: prepared.data, ext: ".png" } : image,
-        ...(original ? { original } : {}),
+        ...(keptOriginal ? { original: keptOriginal } : {}),
         ...(extra.description ? { description: extra.description } : {}),
         ...(extra.prompt ? { prompt: extra.prompt } : {}),
       },
@@ -496,9 +497,9 @@ export class PlayAssets {
   /**
    * 抠底：把一张纯色底图变成透明 PNG。源两种寻址，与 `image.cutout` 对齐：
    *
-   * - **素材引用**（`sprite:<主体id>[/<差分>]`）：拿它的抠底前原片重跑；不给 `output` 就**原地重抠**
+   * - **已入库立绘**（`assets/sprites/<主体id>/<差分>.png`）：拿它的抠底前原片重跑；不给 `output` 就**原地重抠**
    *   （覆盖素材那张、顺带补素材表声明）；给了 `output` 就写到那儿。
-   * - **剧目内路径 / `draft:<草稿id>`**：读那张图（本宿主没有模型读得回的候选区，所以必须给 `output`）。
+   * - **草稿或其它剧目内路径**：读那张图（透明 PNG 写到哪里请显式给 `output`）。
    *   输出落在 `assets/sprites/` 下时这一刀就是**立绘入库前的抠底**，画幅与落位指标都按立绘办。
    */
   async cut(request: {
@@ -510,7 +511,7 @@ export class PlayAssets {
     const output = request.output?.trim();
 
     if (request.target) {
-      if (request.target.kind !== "sprite") throw new Error("只有立绘需要抠底（素材引用请给 sprite:<主体id>）");
+      if (request.target.kind !== "sprite") throw new Error("只有立绘需要抠底（请给 assets/sprites/<主体id>/<差分>.png）");
       const spec = await this.resolve({
         kind: "sprite",
         spriteId: request.target.spriteId ?? request.target.name,
@@ -547,7 +548,7 @@ export class PlayAssets {
     }
 
     const source = request.source?.trim();
-    if (!source) throw new Error("抠底要 source（一张纯色底图的路径、draft:<草稿id>，或 sprite:<主体id> 这样的素材引用）");
+    if (!source) throw new Error("抠底要 source（一张纯色底图或已入库立绘的剧目内相对路径）");
     if (!output) throw new Error("抠底要 output（本宿主没有候选区：透明 PNG 写到哪里请显式给一个 assets/ 下的路径）");
     // 落位以**写盘层规范化后**的路径为准：`./assets/…` 与 `assets/…` 写下去是同一个文件，
     // 认立绘身份也得照同一条规矩——只差个前缀就静默退回缺省画幅、指标也丢，是查不出来的那种错。
@@ -629,11 +630,11 @@ export class PlayAssets {
   /**
    * 抠一张**还没入库**的立绘时画幅取哪一档：这张图的出身优先，其次该立绘已有的声明。
    *
-   * 草稿里记着出图时的取景，是最权威的一手（工坊的候选正是 `draft:` 寻址，取景随提示词一起定的）；
+   * 草稿里记着出图时的取景，是最权威的一手（工坊的候选落在 `media-cache/drafts/`，取景随提示词一起定的）；
    * 素材表那档给「对着 `assets/` 里一张现成的图重抠」用。两处都不认识才退回缺省（full = 9:16）。
    */
   private async cutFraming(source: string, ref: { spriteId: string; variant: string }): Promise<SpriteFraming> {
-    const draftId = /^draft:(\S+)$/.exec(source.trim())?.[1];
+    const draftId = /^media-cache\/drafts\/([\w-]{1,64})\//.exec(source.trim().replace(/^\.\//, ""))?.[1];
     if (draftId) {
       const draft = await this.loadDraft(draftId).catch(() => null);
       if (draft?.framing) return draft.framing;
@@ -643,27 +644,14 @@ export class PlayAssets {
   }
 
   /**
-   * 读一张来源图。三种寻址：
+   * 读一张来源图。两种寻址：
    *
-   * - `draft:<草稿id>`：**引擎自己的草稿**（刚出的候选）。句柄由本层解析——模型拿不到任意路径，
-   *   也就跨不出白名单；这也是「采用 = `import_asset(source=候选)`」在服务端唯一的走法。
-   * - 剧目内路径：走 `PlayFiles` 白名单（agent 读得到的只有 `assets/` 那几个面）。
+   * - 剧目内相对路径：走 `PlayFiles` 白名单（`assets/` 与生图草稿区 `media-cache/drafts/`）。
    * - http(s)：走带 SSRF 防护的下载器。
    */
   private async readSource(source: string, what: string): Promise<AssetSource> {
     const src = source.trim();
-    if (src === "") throw new Error(`${what} 要给（draft:<草稿id> / 剧目内相对路径 / http(s) 网址）`);
-
-    const draftId = /^draft:(\S+)$/.exec(src)?.[1];
-    if (draftId) {
-      const draft = await this.loadDraft(draftId).catch(() => {
-        throw new Error(`${what} 指的草稿不存在或已过期：${src}（草稿是中间物，会被定期清理）`);
-      });
-      const bytes = await readDraftImage(this.deps.store.dir, draft.draftId, draft.imageExt);
-      const mime = sniffImageMime(bytes);
-      if (!mime) throw new Error(`${what} 不是 png/jpeg/webp/gif 图片：${src}`);
-      return { bytes, ext: draft.imageExt };
-    }
+    if (src === "") throw new Error(`${what} 要给（剧目内相对路径 / http(s) 网址）`);
 
     let bytes: Buffer;
     if (/^https?:\/\//i.test(src)) {
@@ -1009,7 +997,7 @@ export class PlayAssets {
   /**
    * 参考图解析：每个输入项可以是：
    * 1. 主体 id（如 "xiaoyu" / "mecha"）——有立绘就能垫，不要求有角色卡；
-   * 2. 剧目内相对路径（如 "assets/backgrounds/ref.png"）；
+   * 2. 剧目内相对路径（如 "assets/backgrounds/ref.png" 或 "media-cache/drafts/<id>/image.png"）；
    * 3. http(s) URL。
    *
    * 解析不合法的项时显式报错，避免静默漏垫图导致生成结果偏差。
@@ -1042,7 +1030,7 @@ export class PlayAssets {
       // 路径形式的参考图：容错前导斜杠（agent 常常直接复制 `/plays/<id>/assets/...` 这种静态 URL），
       // 兼容 `plays/<playId>/` 前缀，再校验文件存在性。
       const pathLike = item.replace(/^\/+/, "");
-      if (pathLike.startsWith("assets/") || pathLike.startsWith("plays/")) {
+      if (pathLike.startsWith("assets/") || pathLike.startsWith("media-cache/drafts/") || pathLike.startsWith("plays/")) {
         const norm = pathLike.startsWith("plays/") ? pathLike.replace(/^plays\/[^/]+\//, "") : pathLike;
         const abs = this.deps.files.absoluteOf(norm);
         if (existsSync(abs)) {

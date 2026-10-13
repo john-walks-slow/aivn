@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import sharp from "sharp";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PlayStore } from "../src/store.js";
+import { PlayFiles } from "../src/playFiles.js";
+import { PlayAssets } from "../src/playAssets.js";
+import { Limiter } from "../src/limiter.js";
+import type { ImageAspect } from "../src/imageBackend.js";
 import { createGenerateAssetTool } from "../src/agentkit/assetTool.js";
 import { createGenerateImageTool } from "../src/agentkit/imageTool.js";
 import { PlaywrightOrchestrator } from "../src/orchestrator.js";
 import { LineageTree } from "@aivn/core";
 import { PlayMemory } from "../src/memory.js";
-import { BEAT_2, createFakeStreamFn, PLAY } from "./helpers.js";
+import { BEAT_2, createFakeStreamFn, NEUTRAL_REFERENCE, PLAY, sharedBackends } from "./helpers.js";
 
 async function makeStore(): Promise<PlayStore> {
   const dir = await mkdtemp(join(tmpdir(), "stage-image-"));
@@ -120,5 +126,158 @@ describe("剧作家 generate_asset：后台排产（占住时间线位置，不�
     return tool
       .execute("t1", { kind: "cg", name: "cg_01", prompt: "p", references: ["mio", "rin"] } as never)
       .then(() => expect(kicked).toEqual([["cg", "cg_01", ["mio", "rin"]]]));
+  });
+});
+
+async function realImage(aspect: ImageAspect, mimeType: string): Promise<Buffer> {
+  const [ratioW, ratioH] = aspect.split(":").map(Number);
+  const height = 1365;
+  const width = Math.round((height * ratioW!) / ratioH!);
+  const figure = await sharp({
+    create: {
+      width: Math.round(width * 0.5),
+      height: Math.round(height * 0.7),
+      channels: 3,
+      background: "#3c4678",
+    },
+  })
+    .png()
+    .toBuffer();
+  const composed = await sharp({
+    create: { width, height, channels: 3, background: "#00ff00" },
+  })
+    .composite([{ input: figure, left: Math.round(width * 0.25), top: Math.round(height * 0.15) }])
+    .png()
+    .toBuffer();
+  return mimeType === "image/png" ? composed : await sharp(composed).jpeg().toBuffer();
+}
+
+describe("工坊 generate_asset：同步出图 + 登记入库一条龙", () => {
+  it("背景生成：草稿句柄正常入库，不报「路径不在剧目可读范围」，写素材表与台账", async () => {
+    const store = await makeStore();
+    const files = new PlayFiles(store);
+    const bgImage = await realImage("16:9", "image/jpeg");
+    const assets = new PlayAssets("img", {
+      store,
+      files,
+      backends: sharedBackends({ generate: async () => ({ data: bgImage, mimeType: "image/jpeg" }) }),
+      limiter: new Limiter(1),
+      reference: NEUTRAL_REFERENCE,
+      onWrite: () => {},
+    });
+
+    const onAssets: unknown[] = [];
+    const tool = createGenerateAssetTool({
+      mode: "sync",
+      playAssets: assets,
+      onAsset: (path, url, kind, replaced, toolCallId) => {
+        onAssets.push({ path, url, kind, replaced, toolCallId });
+      },
+    });
+
+    const res = await tool.execute("call_1", {
+      kind: "background",
+      name: "sunset_beach",
+      prompt: "beautiful sunset beach",
+      description: "夕阳下的海滩",
+    } as never);
+
+    const text = JSON.stringify(res);
+    expect(text).toContain("背景已生成并入库");
+    expect(text).toContain("assets/backgrounds/sunset_beach.jpg");
+    expect(text).toContain("/plays/img/assets/backgrounds/sunset_beach.jpg");
+    expect(existsSync(join(store.dir, "assets/backgrounds/sunset_beach.jpg"))).toBe(true);
+
+    const manifest = JSON.parse(await files.read("assets/manifest.json")) as Record<string, { description?: string }>;
+    expect(manifest.sunset_beach?.description).toBe("夕阳下的海滩");
+
+    const ledger = JSON.parse(await files.read("assets/generated.json")) as Record<string, { prompt?: string }>;
+    expect(ledger.sunset_beach?.prompt).toContain("beautiful sunset beach");
+
+    expect(onAssets).toHaveLength(1);
+    expect(onAssets[0]).toMatchObject({
+      path: "assets/backgrounds/sunset_beach.jpg",
+      kind: "background",
+      replaced: false,
+      toolCallId: "call_1",
+    });
+  });
+
+  it("立绘生成：一步完成出图 + 自动去底归一化 + 留底原片 + 登记落盘", async () => {
+    const store = await makeStore();
+    const files = new PlayFiles(store);
+    const spriteImage = await realImage("9:16", "image/png");
+    const assets = new PlayAssets("img", {
+      store,
+      files,
+      backends: sharedBackends({ generate: async () => ({ data: spriteImage, mimeType: "image/png" }) }),
+      limiter: new Limiter(1),
+      reference: NEUTRAL_REFERENCE,
+      onWrite: () => {},
+    });
+
+    const onAssets: unknown[] = [];
+    const tool = createGenerateAssetTool({
+      mode: "sync",
+      playAssets: assets,
+      onAsset: (path, url, kind, replaced, toolCallId) => {
+        onAssets.push({ path, url, kind, replaced, toolCallId });
+      },
+    });
+
+    const res = await tool.execute("call_2", {
+      kind: "sprite",
+      spriteId: "mio",
+      variant: "neutral",
+      framing: "full",
+      prompt: "girl standing in uniform",
+      description: "制服站姿澪",
+    } as never);
+
+    const text = JSON.stringify(res);
+    expect(text).toContain("立绘已生成并入库");
+    expect(text).toContain("assets/sprites/mio/neutral.png");
+    expect(existsSync(join(store.dir, "assets/sprites/mio/neutral.png"))).toBe(true);
+
+    // 自动去底成透明 PNG，两格指标入表
+    const manifest = JSON.parse(await files.read("assets/manifest.json")) as Record<string, { figureTop?: number; figureHeight?: number }>;
+    expect(manifest.mio?.figureTop).toBeGreaterThan(0);
+    expect(manifest.mio?.figureHeight).toBeGreaterThan(0);
+
+    // 原片留底到 media-cache/sprite-sources/，支持日后原地重抠
+    expect(existsSync(join(store.dir, "media-cache/sprite-sources/mio/neutral.png"))).toBe(true);
+
+    expect(onAssets).toHaveLength(1);
+    expect(onAssets[0]).toMatchObject({
+      path: "assets/sprites/mio/neutral.png",
+      kind: "sprite",
+      replaced: false,
+      toolCallId: "call_2",
+    });
+  });
+
+  it("草稿相对路径可直接登记与作 references 垫图", async () => {
+    const store = await makeStore();
+    const files = new PlayFiles(store);
+    const bgImage = await realImage("16:9", "image/jpeg");
+    const assets = new PlayAssets("img", {
+      store,
+      files,
+      backends: sharedBackends({ generate: async () => ({ data: bgImage, mimeType: "image/jpeg" }) }),
+      limiter: new Limiter(1),
+      reference: NEUTRAL_REFERENCE,
+      onWrite: () => {},
+    });
+
+    const drafted = await assets.draft({ kind: "background", name: "park" }, "autumn park");
+
+    const regRel = await assets.register(drafted.path, { kind: "background", name: "park_rel" });
+    expect(regRel.path).toBe("assets/backgrounds/park_rel.jpg");
+
+    const nextDraft = await assets.draft(
+      { kind: "background", name: "park_night", references: [drafted.path] },
+      "same park at night",
+    );
+    expect(nextDraft.draftId).toBeTruthy();
   });
 });

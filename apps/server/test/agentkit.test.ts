@@ -227,7 +227,7 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     expect(a.parameters).toBe(b.parameters);
     // P5-c：生命周期搬出 schema 之后，produce 面连描述都不分叉了
     expect(a.description).toBe(b.description);
-    expect(b.description).toContain("draft:<草稿id>");
+    expect(b.description).toContain("media-cache/drafts/");
     // 兼容别名 referenceCharacters 已删（P5-c）：垫图只有 references 一个口
     expect(b.description).not.toContain("referenceCharacters");
   });

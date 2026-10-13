@@ -254,7 +254,7 @@ ${craftNow(ctx)}
   场景转换的偏好、**主角的呈现**。每轮多长、选项几条、素材从哪来**不要写这里**（那是写作参数）。
 - 角色卡在 \`characters/<id>.md\`（角色的一切都在这张卡里，play.json 不再存角色数据）；
   主角固定 \`characters/protagonist.md\`。${voicePickHint(ctx)}
-  ${ctx.can.library ? "库里已有合适的角色可以先 `import_asset(source=\"library:characters/<id>\", kind=sprite)` 导进来再改，别从零重写。" : ""}
+  ${ctx.can.library ? "库里已有合适的角色可以先 `import_asset(source=\"library://<id>\", kind=sprite)` 导进来再改，别从零重写。" : ""}
 - **改既有文件用 \`edit\` 定点改，别整篇 \`write\` 覆盖**：那会抹掉你没提到的机器字段
   （角色卡的 \`voiceId\`、素材表别的条目）。`;
 }
@@ -325,8 +325,8 @@ function imageGuide(ctx: WorkshopPromptContext): string {
 `
     : "";
   return `${costNote}
-${skillRule}- **generate_image 只出草稿，不进素材表**：回执里带预览图和采用它要用的那个 id（参数名见工具说明），
-  要采用它就调 \`import_asset(source="draft:<草稿id>", kind=…)\`（立绘先 \`cut\` 抠底再登记那张）。没被采用的草稿留在临时草稿区（一周后自动清），素材页与素材表里看不到它。
+${skillRule}- **generate_image 只出草稿，不进素材表**：回执里带草稿路径和预览图，
+  要采用它就调 \`import_asset(source="<草稿路径>", kind=…)\`（立绘先 \`cut\` 抠底再登记那张）。没被采用的草稿留在临时草稿区（一周后自动清），素材页与素材表里看不到它。
 - **先出 neutral 定妆照给用户看，而且是 3 张候选**：同一角色首次定妆时按 \`variant="neutral"\` **同一批发 3 条** \`generate_image\`
   （prompt 各不相同），把三张预览一起摆给用户挑；用户挑定后**只 commit 那一张**——它就成了正式定妆照。
 - **定妆照采用之后再派生差分**：非 neutral 的差分自动垫上**已入库的** neutral，同一个角色才是同一个人。

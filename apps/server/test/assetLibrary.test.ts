@@ -275,12 +275,12 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     return { tool, bubbles };
   }
 
-  it("library: 来源 —— 背景按落位给的名字落，条目描述进素材表", async () => {
+  it("library:// 来源 —— 不在 URI 内嵌分类，背景按落位给的名字落，条目描述进素材表", async () => {
     await makeEntry(libRoot, "backgrounds", "classroom_dusk", { "bg.png": "像素" }, { description: "放学后的空教室" });
     const { tool, bubbles } = importTool(plays.store("p1"));
     const out = await tool.execute(
       "c1",
-      { source: "library:backgrounds/classroom_dusk", kind: "background", name: "school", description: "校舍" },
+      { source: "library://classroom_dusk", kind: "background", name: "school", description: "校舍" },
       undefined as never,
     );
     const text = JSON.stringify(out);
@@ -291,7 +291,7 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     expect(manifest.school).toMatchObject({ description: "校舍" });
   });
 
-  it("library: 来源 —— 角色包的图与卡都落在 spriteId 名下（改名不再靠 target 特判）", async () => {
+  it("library:// 来源 —— 角色包的图与卡都落在 spriteId 名下（改名不再靠 target 特判）", async () => {
     await makeEntry(libRoot, "characters", "mio", { "neutral.png": await spritePng(), "smile.png": await spritePng() }, {
       character: { name: "澪", persona: "元气少女" },
       variants: { neutral: { file: "neutral.png" }, smile: { file: "smile.png", description: "笑" } },
@@ -299,7 +299,7 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     const { tool } = importTool(plays.store("p1"));
     const out = await tool.execute(
       "c2",
-      { source: "library:characters/mio", kind: "sprite", spriteId: "lin" },
+      { source: "library://mio", kind: "sprite", spriteId: "lin" },
       undefined as never,
     );
     expect(JSON.stringify(out)).toContain("characters/lin.md");
@@ -308,17 +308,25 @@ describe("importFromLibrary：资源库 → 剧目", () => {
     expect(existsSync(join(playsRoot, "p1", "characters", "mio.md"))).toBe(false);
   });
 
-  it("library: 来源 —— 库类别与落位对不上就顶回来，一个字节都不落", async () => {
+  it("library:// 来源 —— 支持导入 bgm，且库类别与落位对不上就顶回来，一个字节都不落", async () => {
     await makeEntry(libRoot, "bgm", "twilight", { "t.mp3": "音" });
     const { tool, bubbles } = importTool(plays.store("p1"));
-    const out = await tool.execute(
+    const bad = await tool.execute(
       "c3",
-      { source: "library:bgm/twilight", kind: "background", name: "twilight" },
+      { source: "library://twilight", kind: "background", name: "twilight" },
       undefined as never,
     );
-    expect(JSON.stringify(out)).toContain("对不上");
+    expect(JSON.stringify(bad)).toContain("对不上");
     expect(bubbles).toEqual([]);
     expect(existsSync(join(playsRoot, "p1", "assets", "backgrounds", "twilight.mp3"))).toBe(false);
+
+    const ok = await tool.execute(
+      "c4",
+      { source: "library://twilight", kind: "bgm", name: "twilight" },
+      undefined as never,
+    );
+    expect(JSON.stringify(ok)).toContain("assets/bgm/twilight.mp3");
+    expect(existsSync(join(playsRoot, "p1", "assets", "bgm", "twilight.mp3"))).toBe(true);
   });
 
   it("立绘取景：只导一条差分不该把该主体其它差分的声明抹掉", async () => {
