@@ -5779,30 +5779,27 @@ html[data-ui-theme="dark"] .stage-view-segmented {
 .prompt-queue-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   max-width: 100%;
-  padding: 3px 6px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--dialog-hover, rgba(255, 255, 255, 0.08)) 45%, transparent);
+  padding: 2px 2px;
+  border: none;
+  background: transparent;
   color: inherit;
   font: inherit;
   font-size: 11.5px;
   letter-spacing: 0.08em;
   line-height: 1;
   cursor: pointer;
-  transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
+  transition: color 0.16s ease, opacity 0.16s ease;
 }
 
 .prompt-queue-badge:hover {
   color: var(--dialog-ink);
-  background: var(--dialog-hover, rgba(255, 255, 255, 0.15));
-  border-color: color-mix(in srgb, currentcolor 16%, transparent);
+  background: transparent;
 }
 
-/* 有失败项：整枚芯片描边按警号读。 */
+/* 有失败项：整枚按警号色读。 */
 .prompt-queue-badge.failed {
-  border-color: color-mix(in srgb, var(--dialog-bad, #ef4444) 35%, transparent);
   color: var(--dialog-bad, #ef4444);
 }
 
@@ -5893,23 +5890,22 @@ html[data-ui-theme="dark"] .stage-view-segmented {
   right: -4px;
   min-width: 11px;
   height: 11px;
-  padding: 0 2px;
+  padding: 0 2.5px;
   border-radius: 999px;
-  background: var(--accent, #60a5fa);
-  color: #ffffff;
+  background: color-mix(in srgb, currentcolor 20%, rgba(15, 23, 42, 0.65));
+  color: color-mix(in srgb, currentcolor 90%, #ffffff);
   font-family: inherit;
-  font-size: 8.5px;
-  font-weight: 700;
+  font-size: 8px;
+  font-weight: 600;
   line-height: 11px;
   text-align: center;
   box-sizing: border-box;
-  box-shadow: 0 0 4px color-mix(in srgb, var(--accent, #60a5fa) 50%, transparent);
   pointer-events: none;
 }
 
 .prompt-queue-cat.failed .prompt-queue-cat-badge {
-  background: var(--dialog-bad, #ef4444);
-  box-shadow: 0 0 4px rgba(239, 68, 68, 0.5);
+  background: color-mix(in srgb, var(--dialog-bad, #ef4444) 28%, rgba(15, 23, 42, 0.65));
+  color: var(--dialog-bad, #ef4444);
 }
 
 /* 工坊：同一块面板不浮在内容上，改贴内容区底部一条（右上角是各页自己的头）。
@@ -5956,13 +5952,8 @@ html[data-ui-theme="dark"] .stage-view-segmented {
   background: var(--panel-2, var(--surface));
 }
 
-.prompt-queue-badge.prompt-queue-docked .prompt-queue-cat-badge {
-  background: var(--accent);
-  box-shadow: none;
-}
-
 .prompt-queue-badge.prompt-queue-docked .prompt-queue-cat.failed .prompt-queue-cat-badge {
-  background: var(--danger, #ef4444);
+  color: var(--danger, #ef4444);
 }
 /* 「正在生成」那行右侧的收起键：与标题同一行，margin 把它钉到行边。 */
 .prompt-queue-head {
