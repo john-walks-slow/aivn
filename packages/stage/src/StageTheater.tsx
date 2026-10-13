@@ -30,6 +30,8 @@ interface StageTheaterProps {
   visual: VisualState;
   playback: Playback;
   live: boolean;
+  /** 初始连接或历史事件流同步中：对话框展示加载提示与 spinner，舞台操作按钮全部禁用。 */
+  loading?: boolean;
   /** 空树：还没开演过，台词区提示改说「按开演」。 */
   fresh?: boolean;
   names: Readonly<Record<string, string>>;
@@ -432,6 +434,7 @@ export function StageTheater({
   visual,
   playback,
   live,
+  loading = false,
   fresh,
   names,
   index,
@@ -516,9 +519,17 @@ voiceState,
     hasView: view !== null,
     live,
   });
-  // 空对话区的「还没开演」是第三种说法：dialogContent 只分「演出中 / 等玩家」两态，
-  // 树还空着时说「剧作家正在落笔…」是在撒谎。只在这一态换掉那句话。
-  const dialogBody = !view && fresh ? emptyDialogHint(live, fresh) : dialog.text;
+  // 空对话区：初始同步/加载中提示「正在加载…」；树还空着（fresh）时提示按「开演」；
+  // 演出生成中（live）提示「剧作家正在落笔…」。
+  const dialogBody = !view
+    ? loading
+      ? "正在加载…"
+      : fresh
+        ? emptyDialogHint(live, true)
+        : live
+          ? dialog.text
+          : ""
+    : dialog.text;
   // 说话者聚焦：当前这句台词的人保持原亮度，同框的其余人压暗。规则见 speakerFocusId。
   const focusId = speakerFocusId(view, visual.sprites);
 
@@ -530,6 +541,7 @@ voiceState,
    */
   const onStageClick = useCallback((): void => {
     onUnlock();
+    if (loading) return;
     if (hideUi) {
       setHideUi(false);
       return;
@@ -543,7 +555,7 @@ voiceState,
     else if (isTitle) advance();
     else if (canContinue) onContinue();
     else advance();
-  }, [onUnlock, hideUi, ended, scrubbed, scrub, isTitle, canContinue, onContinue, advance]);
+  }, [onUnlock, loading, hideUi, ended, scrubbed, scrub, isTitle, canContinue, onContinue, advance]);
 
   // 回看：滚轮/↑ 往回翻，下滚/↓/←/→ 往回追；空格 = 点舞台。输入框内不劫持按键。
   const theaterRef = useRef<HTMLDivElement | null>(null);
@@ -985,6 +997,7 @@ voiceState,
             className={`dir-btn ${action === "prompt" ? "on" : ""}`}
             title="输入角色的行动、台词，或给这场戏的指示"
             aria-label="提示"
+            disabled={loading}
             onClick={(e) => {
               e.stopPropagation();
               setAction(action === "prompt" ? null : "prompt");
@@ -999,7 +1012,7 @@ voiceState,
             className={`dir-btn ${action === "edit" ? "on" : ""}`}
             title={editBlock ?? "编辑当前这句台词"}
             aria-label="改写当前这句台词"
-            disabled={editBlock !== null}
+            disabled={loading || editBlock !== null}
             onClick={(e) => {
               e.stopPropagation();
               setAction(action === "edit" ? null : "edit");
@@ -1014,7 +1027,7 @@ voiceState,
             className={`dir-btn ${action === "restart" ? "on" : ""}`}
             title={beatBlock ?? "重写：退到这一轮之前，让剧作家重新写一遍（原有内容留作旧枝）"}
             aria-label="重写这一轮"
-            disabled={beatBlock !== null}
+            disabled={loading || beatBlock !== null}
             onClick={(e) => {
               e.stopPropagation();
               setAction(action === "restart" ? null : "restart");
@@ -1030,7 +1043,7 @@ voiceState,
               className={`dir-btn ${action === "cg" ? "on" : ""}`}
               title={fresh ? "还没有剧情可以入画" : "为这一幕生成一张插图（指令可留空）"}
               aria-label="生成插图"
-              disabled={fresh}
+              disabled={loading || fresh}
               onClick={(e) => {
                 e.stopPropagation();
                 if (action === "cg") {
@@ -1061,7 +1074,7 @@ voiceState,
                       : "这一句还没有语音，点一下生成"
               }
               aria-label={voice === "pending" ? "语音合成中" : voice === "ready" ? "重听这句" : "生成这一句的语音"}
-              disabled={voice === "pending" || !voiceOn}
+              disabled={loading || voice === "pending" || !voiceOn}
               onClick={(e) => {
                 e.stopPropagation();
                 // 还没生成过的也交给同一条路：导演会先去补生成，到齐了再播
@@ -1094,15 +1107,18 @@ voiceState,
               </button>
             ) : action ? null : (
               <>
-                {/* 状态位：默认是「剧作家正在写」的 spinner；宿主带了待注入队列就换成它那一枚
+                {/* 状态位：默认是「剧作家正在写 / 正在加载」的 spinner；宿主带了待注入队列就换成它那一枚
                     （那枚自己也报在忙什么，而且点得开）。 */}
-                {dialogStatus ?? (live && <span className="dialog-spinner" aria-label="剧作家正在写" />)}
-                {lineDone && (!exhausted || canContinue) && (
+                {dialogStatus ??
+                  ((live || loading) && (
+                    <span className="dialog-spinner" aria-label={loading ? "正在加载" : "剧作家正在写"} />
+                  ))}
+                {!loading && lineDone && (!exhausted || canContinue) && (
                   <span className="dialog-next" aria-hidden>
                     ▼
                   </span>
                 )}
-                {canContinue && <span className="muted">点击舞台继续生成</span>}
+                {!loading && canContinue && <span className="muted">点击舞台继续生成</span>}
               </>
             )}
           </div>
@@ -1114,6 +1130,7 @@ voiceState,
               className={`quick-btn${playback.auto ? "" : " is-off"}`}
               title={playback.auto ? "自动播放：开（点击关闭）" : "自动播放：关（点击开启）"}
               aria-pressed={playback.auto}
+              disabled={loading}
               onClick={(e) => {
                 e.stopPropagation();
                 playback.setAuto(!playback.auto);
@@ -1127,6 +1144,7 @@ voiceState,
                 className={`quick-btn${voiceOn ? "" : " is-off"}`}
                 title={voiceOn ? "语音：开（点击静音）" : "语音：静音（点击打开）"}
                 aria-pressed={voiceOn}
+                disabled={loading}
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleVoice();
@@ -1139,7 +1157,7 @@ voiceState,
               type="button"
               className="quick-btn"
               title="回到上一句（←）"
-              disabled={!scrubbed && playback.history.length === 0}
+              disabled={loading || (!scrubbed && playback.history.length === 0)}
               onClick={(e) => {
                 e.stopPropagation();
                 scrub(-1);
@@ -1152,6 +1170,7 @@ voiceState,
                 type="button"
                 className="quick-btn"
                 title="回顾说过的话（L）"
+                disabled={loading}
                 onClick={(e) => {
                   e.stopPropagation();
                   onView("backlog");
@@ -1165,6 +1184,7 @@ voiceState,
                 type="button"
                 className="quick-btn"
                 title="故事路线（F）"
+                disabled={loading}
                 onClick={(e) => {
                   e.stopPropagation();
                   onView("route");
@@ -1178,6 +1198,7 @@ voiceState,
                 type="button"
                 className="quick-btn"
                 title="插图画廊（G）"
+                disabled={loading}
                 onClick={(e) => {
                   e.stopPropagation();
                   onView("cg");
@@ -1195,6 +1216,7 @@ voiceState,
                 title={fullscreen.on ? "退出全屏" : "全屏"}
                 aria-label={fullscreen.on ? "退出全屏" : "进入全屏"}
                 aria-pressed={fullscreen.on}
+                disabled={loading}
                 onClick={(e) => {
                   e.stopPropagation();
                   fullscreen.toggle?.();
@@ -1207,6 +1229,7 @@ voiceState,
               type="button"
               className="quick-btn"
               title="隐藏界面（H，点画面恢复）"
+              disabled={loading}
               onClick={(e) => {
                 e.stopPropagation();
                 setAction(null);
@@ -1223,6 +1246,7 @@ voiceState,
                   type="button"
                   className="quick-btn"
                   title="打开工坊（W）"
+                  disabled={loading}
                   onClick={(e) => {
                     e.stopPropagation();
                     onView("workshop");
@@ -1237,6 +1261,7 @@ voiceState,
                 type="button"
                 className="quick-btn"
                 title="回到标题画面"
+                disabled={loading}
                 onClick={(e) => {
                   e.stopPropagation();
                   onExit();

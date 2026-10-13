@@ -183,13 +183,19 @@ export function lineageToBeats(
           }）`,
         );
         break;
-      case "actor":
-        script.push(
-          `（${names[attrs.id ?? ""] ?? attrs.id ?? ""} 就位${
-            attrs.pos ? ` · ${attrs.pos}` : ""
-          }${attrs.variant ? ` · ${attrs.variant}` : ""}${attrs.action ? ` · ${attrs.action}` : ""}）`,
-        );
+      case "actor": {
+        const who = names[attrs.id ?? ""] ?? attrs.id ?? "";
+        if (attrs.leave || attrs.action === "exit" || attrs.action === "leave") {
+          script.push(`（${who} 退场）`);
+        } else {
+          script.push(
+            `（${who} 就位${
+              attrs.pos ? ` · ${attrs.pos}` : ""
+            }${attrs.variant ? ` · ${attrs.variant}` : ""}${attrs.action ? ` · ${attrs.action}` : ""}）`,
+          );
+        }
         break;
+      }
       case "cg":
         script.push(`（CG：${attrs.id ?? ""}${attrs.caption ? ` ${attrs.caption}` : ""}）`);
         break;

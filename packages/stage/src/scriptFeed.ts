@@ -104,6 +104,9 @@ function directionOf(node: LineageNodeView, names: Readonly<Record<string, strin
     case "actor": {
       const id = attrs.id ?? "";
       const who = names[id] ?? id;
+      if (attrs.leave || attrs.action === "exit" || attrs.action === "leave") {
+        return { ...base, key: node.id, type: "actor", label: "退场", detail: who };
+      }
       const bits: string[] = [];
       if (attrs.variant) bits.push(`差分 ${attrs.variant}`);
       if (attrs.pos) bits.push(`站位 ${attrs.pos}`);

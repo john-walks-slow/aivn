@@ -21,6 +21,8 @@ export interface StageSocket {
   state: BeatState;
   /** WS 连通性：断线时为 false（节拍状态里的 "connecting" 兼作断线态，分不出首次连接与闪断）。 */
   connected: boolean;
+  /** 正在拉取首次历史事件流（hello 已报告服务端有历史，但 resume 响应的 events 尚未到达）。 */
+  syncing: boolean;
   /** 编排器已空闲：beat_end 之后还要等它收尾，此前任何操作都会被服务端挡回。 */
   settled: boolean;
   /** 空树（还没开演过）：舞台摆「开演」按钮，不自己开局。 */
@@ -136,7 +138,7 @@ export interface StageSocketHandlers {
 export function useStageSocket(
   playId: string,
   handlers?: StageSocketHandlers,
-  opts?: { workshopOnly?: boolean },
+  opts?: { workshopOnly?: boolean; restartOnOpen?: boolean },
 ): StageSocket {
   const [state, setState] = useState<BeatState>("connecting");
   const stateRef = useRef<BeatState>("connecting");
@@ -163,12 +165,16 @@ export function useStageSocket(
   const [tick, setTick] = useState(0); // lines/cues/scene 由 builder 持有，tick 触发重渲染
   // 轮已收束 ≠ 可操作：模型那一轮收尾期间服务端仍 engaged，beat_settled 之后按钮才解禁
   const [settled, setSettled] = useState(false);
+  /** 初始历史同步中：hello 已到且服务端有事件（lastSeq > 0），但 events 尚未拉回本地。 */
+  const [syncing, setSyncing] = useState(true);
   /** 空树：舞台摆「开演」按钮，等玩家按，不自己开局。 */
   const [fresh, setFresh] = useState(false);
   const builderRef = useRef(new ScriptBuilder());
   const lastSeqRef = useRef(0);
+  const targetSeqRef = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
+  const restartPendingRef = useRef(opts?.restartOnOpen === true);
   const handlersRef = useRef<StageSocketHandlers>({});
   handlersRef.current = handlers ?? {};
 
@@ -187,14 +193,16 @@ export function useStageSocket(
       ws.onopen = () => {
         retryRef.current = 0;
         setConnected(true);
-        // 总是 resume：lastSeq=0（页面刷新/内存丢失）= 全量重放；网络闪断 = 增量补发
-        ws.send(JSON.stringify({ type: "resume", lastSeq: lastSeqRef.current } satisfies ClientMessage));
+        // 开始新周目（restartOnOpen）时不先拉旧周目全量事件，等 hello 到达后直接发 restart，
+        // 避免首帧先渲染上一周目的背景、立绘与退场动画再被 rebase 清空。
+        if (!restartPendingRef.current) {
+          ws.send(JSON.stringify({ type: "resume", lastSeq: lastSeqRef.current } satisfies ClientMessage));
+        }
       };
       ws.onmessage = (raw) => {
         const msg = JSON.parse(String(raw.data)) as ServerMessage;
         switch (msg.type) {
           case "hello":
-            setFresh(msg.fresh ?? false);
             setNames(Object.fromEntries((msg.cast ?? []).map(({ id, name }) => [id, name])));
             setVoiceCast(new Set((msg.cast ?? []).filter((c) => c.voice).map((c) => c.id)));
             setVoiceAvailable(msg.voice ?? false);
@@ -203,6 +211,24 @@ export function useStageSocket(
             // 限制级通道：重连即恢复，之后由 `nsfw` 消息翻转
             setNsfw(msg.nsfw ?? false);
             if (msg.assets) handlersRef.current.onAssets?.(msg.assets);
+            if (restartPendingRef.current) {
+              if (msg.fresh) {
+                restartPendingRef.current = false;
+                setSyncing(false);
+                setFresh(true);
+                setSettled(true);
+                setState("stopped");
+              } else {
+                ws.send(JSON.stringify({ type: "restart" } satisfies ClientMessage));
+                setSyncing(true);
+                setFresh(false);
+                setSettled(false);
+                setState("streaming");
+              }
+              return;
+            }
+            setFresh(msg.fresh ?? false);
+            targetSeqRef.current = msg.lastSeq ?? 0;
             // 单树运行时只按 epoch 判断结构性替换。
             const sync = helloSync({
               seen: seenHelloRef.current,
@@ -221,6 +247,7 @@ export function useStageSocket(
               setTick((t) => t + 1);
               ws.send(JSON.stringify({ type: "resume", lastSeq: 0 } satisfies ClientMessage));
             }
+            setSyncing(!(msg.fresh ?? false) && lastSeqRef.current < targetSeqRef.current);
             // 阅读位置跟着分支走：缓冲整段换过之后，上次的 seq 属于另一条世界线，不能拿来 seek
             setReadPos(restamped ? null : (msg.readPos ?? null));
             // hello 自报空闲（刷新进来的空闲现场）：直接落 stopped，不必等 beat_settled。
@@ -246,11 +273,13 @@ export function useStageSocket(
             handlersRef.current.onBeatStart?.();
             return;
           case "events": {
+            if (restartPendingRef.current) return;
             for (const { seq, event } of msg.events) {
               if (seq <= lastSeqRef.current) continue;
               lastSeqRef.current = seq;
               builderRef.current.apply(event, seq);
             }
+            if (lastSeqRef.current >= targetSeqRef.current) setSyncing(false);
             setTick((t) => t + 1);
             return;
           }
@@ -270,9 +299,11 @@ export function useStageSocket(
             handlersRef.current.onAudioPending?.({ seq: msg.seq });
             return;
           case "beat_settled":
+            if (restartPendingRef.current) return;
             setSettled(true);
             return;
           case "beat_end":
+            if (restartPendingRef.current) return;
             setStop(msg.stop ?? null);
             setNoStop(msg.reason === "no_stop");
             setState("stopped");
@@ -297,6 +328,7 @@ export function useStageSocket(
             return;
           case "rebase": {
             // 上下文重建：整段替换本地缓冲与播放游标（新分支从头重放）
+            restartPendingRef.current = false;
             epochRef.current = msg.epoch;
             setEpoch(msg.epoch);
             builderRef.current.reset();
@@ -305,6 +337,8 @@ export function useStageSocket(
               lastSeqRef.current = seq;
               builderRef.current.apply(event, seq);
             }
+            targetSeqRef.current = lastSeqRef.current;
+            setSyncing(false);
             setStop(msg.stop ?? null);
             setNoStop(msg.reason === "no_stop");
             // 「重演这一轮」的重建后面紧跟着一轮新内容：此刻按终局处理会让舞台摆出
@@ -429,6 +463,7 @@ export function useStageSocket(
   return {
     state,
     connected,
+    syncing,
     settled,
     fresh,
     error,

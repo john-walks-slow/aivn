@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LineageTree, originOfBeat, type LineageEvent } from "../src/index.js";
+import { LineageTree, lineageToEvents, originOfBeat, toNodeView, type LineageEvent } from "../src/index.js";
 
 /** 物化后取有台词的行（prompt/fork 等无文本节点不进剧本）。 */
 function spoken(tree: LineageTree, fromLeaf?: string): (string | undefined)[] {
@@ -583,5 +583,20 @@ describe("剪枝（删除一段及其后代）", () => {
     expect(tree.get("e1")?.parentId).toBe("root");
     expect(tree.ancestorChain("e2")).toEqual(["root", "e1", "e2"]);
     expect(tree.materialize().map((e) => e.id)).toEqual(["e1", "e2"]);
+  });
+
+  it("lineageToEvents：actor 退场（leave）与运镜属性完整还原", () => {
+    const tree = new LineageTree();
+    tree.append("actor", {
+      payload: { seq: 1, attrs: { id: "rin", variant: "smile", pos: "left", shot: "close", anchor: "bottom" } },
+    });
+    tree.append("actor", {
+      payload: { seq: 2, attrs: { id: "rin", leave: "fade" } },
+    });
+    const events = lineageToEvents(tree.materialize().map(toNodeView));
+    expect(events).toEqual([
+      { seq: 1, event: { kind: "actor", id: "rin", variant: "smile", pos: "left", shot: "close", anchor: "bottom" } },
+      { seq: 2, event: { kind: "actor", id: "rin", leave: "fade" } },
+    ]);
   });
 });

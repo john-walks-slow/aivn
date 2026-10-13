@@ -253,7 +253,11 @@ export function StageScreen({
           seekTo: playFrom === "start" && resumeAt ? resumeAt : null,
         }));
         setLineageNonce((n) => n + 1);
-        if (note) pushToast(note, "warn");
+        // 普通结构性跳转（顺着原路继续、跳到这里、开新分支等）属于常规交互流向，界面和路线本身就是反馈，不弹黄色警告 toast。
+        // 仅在属于真正异常/退回重试（如判废重演、回退）时提示用户。
+        if (note && (note.includes("没有写出") || note.includes("退回") || note.includes("失败"))) {
+          pushToast(note, "warn");
+        }
         // 删除是在路线里整理分支：树上少一张卡就是反馈，不把玩家拽回舞台
         if (!keepView) goStage();
       },
@@ -296,16 +300,14 @@ export function StageScreen({
         for (const handler of imageResultHandlers.current) handler(res);
       },
     },
-    { workshopOnly: workshopEntry },
+    { workshopOnly: workshopEntry, restartOnOpen: restartRequested },
   );
 
   useEffect(() => {
     if (!restartRequested || restartSentRef.current) return;
-    if (!stage.connected || !stage.settled || stage.fresh) return;
     restartSentRef.current = true;
     window.history.replaceState(null, "", `${location.pathname}#${location.hash.replace(/\?new=1$/, "")}`);
-    stage.sendRestart();
-  }, [playId, restartRequested, stage.connected, stage.fresh, stage.sendRestart, stage.settled]);
+  }, [playId, restartRequested]);
 
   // 渲染期回调绑定（N6：置于 stage 声明后，闭包引用才不踩未初始化的 TDZ）
   director.onNotify = () => setAudioTick((t) => t + 1);
@@ -489,10 +491,12 @@ export function StageScreen({
   });
   playbackRef.current = playback;
 
+  // 初始连接或历史事件流尚未拉齐：处于加载期，展示 spinner 且禁用舞台按钮与停止点
+  const loading = stage.syncing || stage.state === "connecting";
   // 轮收束后还要等编排器真正空闲（beat_settled），否则玩家点选项会被「演出进行中」挡回
   const busy =
+    loading ||
     stage.state === "streaming" ||
-    stage.state === "connecting" ||
     !stage.settled;
   // D4：先演完再交互——打字机未消费完前不露出停止点（防剧透/防提前发送）
   const lineDone =
@@ -780,6 +784,7 @@ export function StageScreen({
           visual={playback.visual}
           playback={playback}
           live={stage.state === "streaming"}
+          loading={loading}
           fresh={stage.fresh}
           names={actorNames}
           voiceCast={stage.voiceCast}
@@ -871,6 +876,7 @@ export function StageScreen({
             <button
               type="button"
               className="stage-seg-btn is-active"
+              disabled={!index || loading}
               onClick={() => setView("stage")}
               title="沉浸舞台模式"
               aria-selected={true}
@@ -881,6 +887,7 @@ export function StageScreen({
             <button
               type="button"
               className="stage-seg-btn"
+              disabled={!index || loading}
               onClick={() => setView("workshop")}
               title="创作工坊模式"
               aria-selected={false}

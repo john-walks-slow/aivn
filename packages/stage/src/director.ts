@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ActorAction, ActorAnchor, ActorShot, FxVerb, ReadPos } from "@aivn/core";
 import {
   DEFAULT_TRANSITION,
@@ -397,11 +397,25 @@ export function applyCue(visual: VisualState, cue: Cue): VisualState {
   }
 }
 
-/** 台上还站着的人：退场中的不算（他们留在表里只为把淡出播完）。 */
-function standingSprites(sprites: Record<string, SpriteSlot>): Record<string, SpriteSlot> {
-  const out: Record<string, SpriteSlot> = {};
-  for (const [id, slot] of Object.entries(sprites)) if (!slot.leaving) out[id] = slot;
-  return out;
+/**
+ * 净化静态画面（回看/快进/新开局落幅，以及退场/转场播完后的收尾）：
+ * 1. 过滤掉正在退场（.leaving）的立绘槽位，避免静态挂载或重绘时再次触发退场淡出；
+ * 2. 清除背景转场动画（bgTransition 置空），避免呈现历史换景的双层过渡与黑幕 veil；
+ * 3. 滤除立绘瞬时行为词（action 置空），防止静态落幅播抖动/点头等单次动作。
+ */
+export function settleVisual(visual: VisualState): VisualState {
+  const hasLeavingOrAction = Object.values(visual.sprites).some((s) => s.leaving || s.action);
+  if (!hasLeavingOrAction && visual.bgTransition === null) return visual;
+  const sprites: Record<string, SpriteSlot> = {};
+  for (const [id, slot] of Object.entries(visual.sprites)) {
+    if (slot.leaving) continue;
+    sprites[id] = slot.action ? { ...slot, action: null } : slot;
+  }
+  return {
+    ...visual,
+    bgTransition: null,
+    sprites,
+  };
 }
 
 /**
@@ -414,7 +428,7 @@ function standingSprites(sprites: Record<string, SpriteSlot>): Record<string, Sp
 export function visualAt(cues: readonly Cue[], upto: number): VisualState {
   let visual = EMPTY_VISUAL;
   for (let i = 0; i < upto; i += 1) visual = applyVisualCue(visual, cues[i]!);
-  return { ...visual, sprites: standingSprites(visual.sprites) };
+  return settleVisual(visual);
 }
 
 /**
@@ -664,8 +678,8 @@ export function usePlayback(
   hooksRef.current = { onLineStart: opts.onLineStart, onFastForward: opts.onFastForward };
   /** 首屏 seek 目标：只在首次快进时消费一次，之后由 resetToken 换代清空（老分支的 seq 不能拿来 seek）。 */
   const resumeAtRef = useRef<ReadPos | null>(opts.resumeAt ?? null);
-  // hello 比事件重放晚到还是早到不保证，用 effect 同步而不是只在首渲染取一次初值。
-  useEffect(() => {
+  // hello 比事件重放晚到还是早到不保证，用 layoutEffect 同步而不是只在首渲染取一次初值。
+  useLayoutEffect(() => {
     if (opts.resumeAt) resumeAtRef.current = opts.resumeAt;
   }, [opts.resumeAt]);
 
@@ -699,17 +713,22 @@ export function usePlayback(
     });
   }, []);
 
-  const applyVisual = useCallback((cue: Cue): void => {
-    setVisual((prev) => applyCue(prev, cue));
-  }, []);
-
-  /** 消费队列直到下一句台词（视觉提示连续应用）。 */
+  /** 消费队列直到下一句台词（先结算上一句残留的退场/转场，再连续应用本句视觉提示）。 */
   const consumeNext = useCallback((): void => {
+    const batch: Cue[] = [];
+    const flushBatch = (): void => {
+      setVisual((prev) => {
+        let v = settleVisual(prev);
+        for (const c of batch) v = applyCue(v, c);
+        return v;
+      });
+    };
     for (;;) {
       const cue = cues[cursorRef.current];
-      if (!cue) return;
+      if (!cue) break;
       cursorRef.current += 1;
       if (cue.kind === "line") {
+        flushBatch();
         const line = linesRef.current.find((l) => l.key === cue.lineKey) ?? null;
         setCurrentKey(cue.lineKey);
         setTitleStep(0);
@@ -722,9 +741,10 @@ export function usePlayback(
         setSfx({ key: cue.key, src: cue.src, volume: cue.volume });
         continue;
       }
-      applyVisual(cue);
+      batch.push(cue);
     }
-  }, [cues, applyVisual]);
+    if (batch.length > 0) flushBatch();
+  }, [cues]);
 
   /**
    * 当前该显示到第几个字。
@@ -736,8 +756,8 @@ export function usePlayback(
   /** 该行是否已播完（文本到头，且不再有增量——live 中以「下一条 cue 已到」为准）。 */
   const lineComplete = current !== null && shownLength >= revealTarget;
   const canAdvance = current === null || lineComplete;
-  /** 派生：队列消费到头且当前行播完（无台词也算到头）——streaming 中即「等新内容」。 */
-  const exhausted = cues.length <= cursorRef.current && (current === null || lineComplete);
+  /** 派生：队列已快进就绪、消费到头且当前行播完（无台词也算到头）——streaming 中即「等新内容」。 */
+  const exhausted = fastForwardedRef.current && cues.length <= cursorRef.current && (current === null || lineComplete);
 
   const advance = useCallback((): void => {
     if (!canAdvance) {
@@ -814,7 +834,7 @@ export function usePlayback(
   // 缓冲替换检测（P6）：resetToken 变化 = 事件缓冲已被结构性操作整段重放
   // （cues 长度未必变短，length 比较看不出分岔/重写——必须靠代号）
   const resetTokenRef = useRef(opts.resetToken ?? 0);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const token = opts.resetToken ?? 0;
     if (token === resetTokenRef.current) return;
     resetTokenRef.current = token;
@@ -834,7 +854,7 @@ export function usePlayback(
   }, [opts.resetToken, opts.resumeAfterReset, opts.seekTo]);
 
   // cues 到达/重置检测：builder reset（fresh start）→ 播放归零
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (cues.length < cursorRef.current) {
       cursorRef.current = 0;
       setCurrentKey(null);
@@ -844,17 +864,19 @@ export function usePlayback(
       setVisual(EMPTY_VISUAL);
       return;
     }
-    // resume 首次快进：视觉全应用 + 末行全文显示
+    // resume 首次快进：视觉全应用 + 末行全文显示（从 EMPTY_VISUAL 起折，避免换代同帧读到旧分支闭包）
     if (!fastForwardedRef.current && cues.length > 0) {
       fastForwardedRef.current = true;
-      const resumeAt = resumeAtRef.current;
+      const resumeAt = resumeAtRef.current ?? opts.resumeAt ?? null;
       resumeAtRef.current = null;
       // 有阅读位置就 seek 回那一刻：视觉只补到那一行（后面的换景/退场属于还没读到的内容，
       // 提前生效等于剧透），游标停在那行之后，字数接着上次显示到的位置续。
       const seek = resumeAt ? resolveResumeSeek(cues, linesRef.current, resumeAt) : null;
       const resumeIndex = seek?.cueIndex ?? -1;
       if (seek && resumeIndex >= 0) {
-        for (let i = 0; i <= resumeIndex; i += 1) applyVisual(cues[i]!);
+        let v = EMPTY_VISUAL;
+        for (let i = 0; i <= resumeIndex; i += 1) v = applyCue(v, cues[i]!);
+        setVisual(settleVisual(v));
         const cue = cues[resumeIndex]!;
         cursorRef.current = resumeIndex + 1;
         if (cue.kind === "line") {
@@ -870,7 +892,9 @@ export function usePlayback(
         }
         return;
       }
-      for (let i = 0; i < cues.length; i += 1) applyVisual(cues[i]!);
+      let v = EMPTY_VISUAL;
+      for (let i = 0; i < cues.length; i += 1) v = applyCue(v, cues[i]!);
+      setVisual(settleVisual(v));
       cursorRef.current = cues.length;
       let lastLineKey: string | null = null;
       for (const cue of cues) if (cue.kind === "line") lastLineKey = cue.lineKey;
@@ -885,7 +909,19 @@ export function usePlayback(
         }
       }
     }
-  }, [opts.revision, cues, applyVisual]);
+  }, [opts.revision, cues]);
+
+  // 退场淡出（220ms）与换景转场（420ms）播完后从状态中摘除：
+  // 避免已退场角色与黑幕遮罩长驻 DOM，在回看松手或切视图重挂载时诈尸重播。
+  useEffect(() => {
+    const hasLeaving = Object.values(visual.sprites).some((s) => s.leaving);
+    const hasTransition = visual.bgTransition !== null;
+    if (!hasLeaving && !hasTransition) return;
+    const timer = setTimeout(() => {
+      setVisual((prev) => settleVisual(prev));
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [visual.sprites, visual.bgTransition]);
 
   // 阅读位置上报：刷新后要回到原处，位置得由播放头持续告诉服务端。
   // 只认正在显示的行：回看（scrub）不改播放头，不该把回看位置存成「读到哪儿了」。

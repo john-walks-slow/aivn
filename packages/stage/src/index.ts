@@ -24,6 +24,7 @@ export {
   pendingTtlMs,
   resolveAudio,
   resolveResumeSeek,
+  settleVisual,
   speakerFocusId,
   usePlayback,
   visualAt,

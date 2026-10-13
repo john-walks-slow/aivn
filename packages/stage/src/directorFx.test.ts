@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyFxCue, applyVisualCue, type VisualState } from "./director.js";
+import { applyFxCue, applyVisualCue, settleVisual, visualAt, type VisualState } from "./director.js";
 import type { Cue } from "./script.js";
 
 const visual = (partial: Partial<VisualState> = {}): VisualState => ({
@@ -82,5 +82,59 @@ describe("换层过渡 (dual-source，仅背景)", () => {
     expect(v.cg).toEqual({ id: "c1", caption: undefined });
     v = applyVisualCue(v, { key: "k2", kind: "scene", bg: "rooftop" });
     expect(v.cg).toBeNull();
+  });
+});
+
+describe("settleVisual：净化快进与落幅终态", () => {
+  it("清除 leaving 槽位、清除 bgTransition，并重置一次性 action", () => {
+    const raw: VisualState = visual({
+      bg: "classroom",
+      bgTransition: { name: "fade", seq: 2, from: "rooftop" },
+      sprites: {
+        standing: {
+          resolvedPos: "center",
+          keepVisible: false,
+          variant: "smile",
+          shot: null,
+          anchor: null,
+          action: "nod",
+          actionSeq: 1,
+          orderSeq: 1,
+        },
+        leavingChar: {
+          resolvedPos: "left",
+          keepVisible: false,
+          variant: "neutral",
+          shot: null,
+          anchor: null,
+          action: null,
+          actionSeq: 0,
+          orderSeq: 2,
+          leaving: true,
+        },
+      },
+    });
+
+    const settled = settleVisual(raw);
+    expect(settled.bg).toBe("classroom");
+    expect(settled.bgTransition).toBeNull();
+    expect(settled.sprites.leavingChar).toBeUndefined();
+    expect(settled.sprites.standing).toBeDefined();
+    expect(settled.sprites.standing!.action).toBeNull();
+  });
+
+  it("visualAt 调用后返回已净化的终态", () => {
+    const cues: Cue[] = [
+      { key: "1", kind: "scene", bg: "street" },
+      { key: "2", kind: "actor", id: "hero", variant: "smile" },
+      { key: "3", kind: "actor", id: "guest", variant: "neutral" },
+      { key: "4", kind: "actor", id: "guest", leave: "fade" },
+      { key: "5", kind: "scene", bg: "room", transition: "fade" },
+    ];
+    const at = visualAt(cues, cues.length);
+    expect(at.bg).toBe("room");
+    expect(at.bgTransition).toBeNull();
+    expect(at.sprites.hero).toBeDefined();
+    expect(at.sprites.guest).toBeUndefined();
   });
 });

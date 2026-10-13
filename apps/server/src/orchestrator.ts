@@ -2473,7 +2473,8 @@ export class PlaywrightOrchestrator {
             seq,
             attrs: {
               id: event.id,
-              ...pick(event, ["pos", "variant", "action"]),
+              ...pick(event, ["pos", "variant", "action", "shot", "anchor", "leave"]),
+              ...(event.keepVisible ? { keep_visible: "true" } : {}),
             },
           },
         });
