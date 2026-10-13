@@ -16,6 +16,11 @@ describe("立绘与行为词那块", () => {
     expect(ACTOR_RULES).toContain("台上的一切同权");
     expect(ACTOR_RULES).toContain("素材自己的声明");
     expect(ACTOR_RULES).toContain("nudge");
+    expect(ACTOR_RULES).toContain("| 词 | 效果 | 什么场合 |");
+    expect(ACTOR_RULES).toContain("使用频率约 1/10，即十句台词或十次动作里最多出现一两次");
+    expect(ACTOR_RULES).toContain("绝大多数 `<actor>` 只切 `variant`、不带 `action`");
+    expect(ACTOR_RULES).toContain("没有明确的动作或反应门槛");
+    expect(ACTOR_RULES).toContain("nudge | 极轻地左右晃一下 | 动摇、犹豫");
     expect(ACTOR_RULES).toContain("同一时刻只给一个人一个行为词。");
     // 位置由引擎分配，剧本不写
     expect(ACTOR_RULES).toContain("**位置不用你写。**");
