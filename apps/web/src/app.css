@@ -5913,11 +5913,11 @@ html[data-ui-theme="dark"] .stage-view-segmented {
   color: var(--dialog-bad, #ef4444);
 }
 
-/* 浅色模式与工坊浅色纸面：右上角 chip 使用浅灰底 + 深灰字 */
+/* 浅色模式与工坊浅色纸面：右上角 chip 使用白底 + 浅灰字 */
 html[data-ui-theme="light"] .prompt-queue-cat-badge,
 html:not([data-ui-theme="dark"]) .prompt-queue-badge.prompt-queue-docked .prompt-queue-cat-badge {
-  background: color-mix(in srgb, currentcolor 14%, rgba(241, 245, 249, 0.94));
-  color: var(--dialog-ink, #334155);
+  background: #ffffff;
+  color: var(--dialog-ink-soft, #94a3b8);
 }
 
 html[data-ui-theme="light"] .prompt-queue-cat.failed .prompt-queue-cat-badge,
