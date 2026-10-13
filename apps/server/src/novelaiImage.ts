@@ -1,9 +1,11 @@
 import { unzipSync } from "fflate";
 import sharp from "sharp";
-import { fetch as undiciFetch } from "undici";
+import type { FetchLike } from "@aivn/agent";
 import {
+  aspectMatches,
   IMAGE_ASPECTS,
   parseImageSize,
+  sizeOfImage,
   sniffImageMime,
   tierArea,
   type GeneratedImage,
@@ -12,6 +14,7 @@ import {
   type ImageRequest,
   type ImageSizeSpec,
 } from "./imageBackend.js";
+import { envFetch } from "./webImage.js";
 
 /**
  * NovelAI 生图（`POST {base}/ai/generate-image`，`Authorization: Bearer <持久化 API token>`）。
@@ -25,15 +28,14 @@ import {
  * 如此，没有 `v5_prompt` 这个结构）。V3 及更早（`nai-diffusion-3` / `nai-diffusion-furry-3`）
  * 走 `prompt` + `uc`。分代只认模型名前缀，不猜能力表。
  *
- * 铁律三——**垫图只能走 img2img，且只吃一张**。NovelAI 那个「换场景保角色」的专用能力
- * Precise Reference（`director_reference_*`）**官方只支持 V4.5**，V5/V4/V3 都不支持，当不了通用
- * 垫图机制；img2img 全代通用。给多张直接报错、不静默取第一张——少垫一张不会报错、只会画错人。
- * 这条与 modelslab 同形：单张垫图 + 图生图。
- *
- * 而且**源图必须先落到目标画布上**：上游要求图生图源图与画布同尺寸，且收的是 base64 PNG——
- * 我们的垫图常是 JPEG 原片（`media-cache/sprite-sources/<id>/neutral.jpg`），画面尺寸也未必
- * 等于本次画布。做法与 novelai-bridge 的 `fit_image_to_canvas` 一致：等比缩放到画布内、
- * 居中、四周补不透明黑，再编码 PNG。
+ * 铁律三——**垫图按「同画幅重绘 vs 跨画幅/多图角色参考」自动分流**：
+ * - **同画幅单张垫图**（例如 9:16 立绘定妆照 → 9:16 表情差分）：走 `img2img`（`fitToCanvas`），全代通用且
+ *   在 1K 档内属于 Opus 免费档（0 Anlas）。
+ * - **跨画幅单张垫图或多张参考图**（例如拿 9:16 立绘垫 16:9 CG、多人 CG、拿异画幅参考图做全身定妆）：
+ *   `img2img` 会把 9:16 竖图居中补黑塞进 16:9 画布，导致成图两侧残留大块黑边。V4.5（`nai-diffusion-4-5*`）
+ *   改走官方 `director_reference_images`（白底 `1024×1536` 归一化，`action: "generate"`），支持 1~多张参考图
+ *   且 16:9 构图完全自由；同时剥掉给多模态 LLM 写的 `"The attached reference images are..."` 尾注，避免扩散
+ *   模型看到 `"reference images"` 字面词画出左右分镜设定图。非 V4.5 模型不支持 `director_reference`，多张报错。
  *
  * 铁律四——**画布必须落在 64 的倍数上，单图有像素预算**。官方把单图上限标成 2048x1536
  * （= 3,145,728 像素），档位是 Gemini 的词汇、NovelAI 没有这个概念，本层把 `1K`/`2K`/`4K`
@@ -80,11 +82,11 @@ const NEGATIVE_PROMPT =
 
 export class NovelAiImageGen implements ImageBackend {
   private readonly spec: ImageSizeSpec;
-  private readonly fetchImpl: typeof undiciFetch;
+  private readonly fetchImpl: FetchLike;
 
   constructor(
     private readonly opts: NovelAiImageOptions,
-    fetchImpl: typeof undiciFetch = undiciFetch,
+    fetchImpl: FetchLike = envFetch,
   ) {
     this.spec = parseImageSize(opts.size);
     this.fetchImpl = fetchImpl;
@@ -96,16 +98,21 @@ export class NovelAiImageGen implements ImageBackend {
       throw new Error(`画幅（${aspect}）不受支持。可用：${IMAGE_ASPECTS.join(" / ")}`);
     }
     const refs = req.references ?? [];
-    if (refs.length > 1) {
+    const model = req.model?.trim() || this.opts.model;
+    const isV45 = /^nai-diffusion-4-5/i.test(model);
+    if (refs.length > 1 && !isV45) {
       throw new Error(
-        `NovelAI 的 img2img 只吃一张垫图（parameters.image 是单值），这次给了 ${refs.length} 张。` +
-          "多张垫图请把生图接口格式换成 gemini。",
+        `NovelAI 模型 ${model} 的 img2img 只吃一张垫图（这次给了 ${refs.length} 张）。` +
+          "多张参考图请换用 nai-diffusion-4-5-full（支持 director_reference）或 gemini 格式。",
       );
     }
 
-    const model = req.model?.trim() || this.opts.model;
     const canvas = this.canvas(req, aspect);
     const seed = randomSeed();
+    const cleanedPrompt = refs.length > 0 ? stripReferenceMeta(req.prompt) : req.prompt;
+    const useImg2Img =
+      refs.length === 1 && (!isV45 || sameAspect(refs[0]!.data, aspect));
+
     const parameters: Record<string, unknown> = {
       params_version: paramsVersion(model),
       width: canvas.width,
@@ -126,24 +133,34 @@ export class NovelAiImageGen implements ImageBackend {
       sm_dyn: false,
       legacy: false,
       legacy_v3_extend: false,
-      prompt: req.prompt,
+      prompt: cleanedPrompt,
       negative_prompt: NEGATIVE_PROMPT,
-      ...promptStructure(model, req.prompt),
+      ...promptStructure(model, cleanedPrompt),
     };
-    if (refs.length === 1) {
+    if (useImg2Img) {
       parameters.image = await fitToCanvas(refs[0]!.data, canvas);
       parameters.strength = IMG2IMG_STRENGTH;
       parameters.noise = 0;
       parameters.extra_noise_seed = seed;
+    } else if (refs.length > 0) {
+      const encoded = await Promise.all(refs.map((ref) => fitForDirector(ref.data)));
+      parameters.director_reference_images = encoded;
+      parameters.director_reference_descriptions = encoded.map(() => ({
+        caption: { base_caption: "character", char_captions: [] },
+        legacy_uc: false,
+      }));
+      parameters.director_reference_strength_values = encoded.map(() => 1.0);
+      parameters.director_reference_secondary_strength_values = encoded.map(() => 0.2);
+      parameters.director_reference_information_extracted = encoded.map(() => 1.0);
     }
 
     const res = await this.fetchImpl(`${this.opts.baseUrl.replace(/\/+$/, "")}/ai/generate-image`, {
       method: "POST",
       headers: { authorization: `Bearer ${this.opts.apiKey}`, "content-type": "application/json" },
       body: JSON.stringify({
-        input: req.prompt,
+        input: cleanedPrompt,
         model,
-        action: refs.length === 1 ? "img2img" : "generate",
+        action: useImg2Img ? "img2img" : "generate",
         parameters,
       }),
       signal: AbortSignal.timeout(this.opts.timeoutMs),
@@ -252,6 +269,43 @@ async function fitToCanvas(data: Buffer, canvas: { width: number; height: number
     .png()
     .toBuffer();
   return png.toString("base64");
+}
+
+/**
+ * Director Reference（V4.5 精准角色参考）的输入规格：透明立绘先铺白底，等比收进官方标准竖幅 1024×1536。
+ */
+async function fitForDirector(data: Buffer): Promise<string> {
+  const png = await sharp(data)
+    .flatten({ background: { r: 255, g: 255, b: 255 } })
+    .resize(1024, 1536, {
+      fit: "contain",
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    })
+    .png()
+    .toBuffer();
+  return png.toString("base64");
+}
+
+function sameAspect(data: Buffer, aspect: ImageAspect): boolean {
+  const size = sizeOfImage(data);
+  return size !== null && aspectMatches(size, aspect);
+}
+
+/**
+ * 剥离 `PlayAssets` 为 Gemini 多模态模型追加的 `"The attached reference images are..."` 等元指令：
+ * 扩散模型不理解「第几张附件是谁」的自然语言说明，反而会把 `"reference images"` 当成设定图 tag 画出左右分镜。
+ */
+export function stripReferenceMeta(prompt: string): string {
+  return prompt
+    .replace(
+      /\.\s*(?:The attached reference images are, in this exact order:|Follow the attached reference image\(s\) for visual appearance,|Based on the attached reference image:)[\s\S]*$/i,
+      "",
+    )
+    .replace(
+      /(?:Same character as the reference image: identical hairstyle, hair color, eye color, outfit and body type\. Change only the facial expression\.|The same subject as the reference image, in the same pose and same colours\. Change only its state\.)\s*/gi,
+      "",
+    )
+    .trim();
 }
 
 /**

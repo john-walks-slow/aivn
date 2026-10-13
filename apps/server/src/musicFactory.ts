@@ -1,5 +1,6 @@
 import { musicConnectionOf, type ServerConfig } from "./config.js";
 import { GeminiMusicGen, type MusicBackend } from "./musicBackend.js";
+import { envFetch } from "./webImage.js";
 
 /**
  * 按设置装配音乐后端；`music.enabled=false` 返回 null（工具不注册）。
@@ -10,10 +11,13 @@ import { GeminiMusicGen, type MusicBackend } from "./musicBackend.js";
 export function createMusicBackend(config: ServerConfig): MusicBackend | null {
   if (!config.music.enabled) return null;
   const { baseUrl, apiKey } = musicConnectionOf(config);
-  return new GeminiMusicGen({
-    baseUrl,
-    apiKey,
-    model: config.music.model,
-    timeoutMs: config.music.timeoutMs,
-  });
+  return new GeminiMusicGen(
+    {
+      baseUrl,
+      apiKey,
+      model: config.music.model,
+      timeoutMs: config.music.timeoutMs,
+    },
+    envFetch,
+  );
 }

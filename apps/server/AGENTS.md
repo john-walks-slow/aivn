@@ -206,7 +206,7 @@
 - **novelai 侧三条自带的口子**（`novelaiImage.ts`，别把它当「换个 baseUrl 的 gemini」）：
   - **响应是 ZIP 不是图片字节**（内含 `image_0.png`），用已在依赖里的 `fflate` 解；解出来按字节认 mime，不是 ZIP 时退回「整段就是一张图」。
   - **提示词结构按模型名前缀分代**：`nai-diffusion-4*` / `-5*` 走 `v4_prompt` + `v4_negative_prompt`（**两个必须同时在场**，缺一个上游回 500 而不是 400），更早的走 `prompt` + `uc`（V4+ 不发 `uc`，与 novelai-bridge 的 wire 一致）。
-  - **垫图必须先落到画布上**：上游要求图生图源图与画布同尺寸、收 base64 PNG，而我们的垫图常是 JPEG 原片（`sprite-sources/<id>/neutral.jpg`）——`fitToCanvas()` 用 sharp `contain` 等比缩放到画布内、居中、补不透明黑再编码 PNG（照 novelai-bridge 的 `fit_image_to_canvas`）。**只吃一张**（多张报错）。画布另受「64 的倍数、单边 ≤2048、总面积 ≤3,145,728」约束。
+  - **垫图按「同画幅重绘 vs 跨画幅/多图角色参考」自动分流**：同画幅单张参考图（立绘 `neutral` → 表情差分）走 `img2img`（`fitToCanvas()` 等比缩放到画布内编码 PNG，1K 档内 Opus 免费 0 Anlas）；跨画幅单张参考图或多张参考图（9:16 立绘垫 16:9 CG、多人 CG、异画幅外部图定妆）在 V4.5 下改走 `director_reference_images`（白底 1024×1536 PNG，`action: "generate"`，每张参考图 5 Anlas），同时由 `stripReferenceMeta` 剥掉给多模态模型写的 `"The attached reference images are..."` 尾注（扩散模型看到 `"reference images"` 会画成左右分镜设定图）。非 V4.5 模型不支持 `director_reference`，多张报错。画布另受「64 的倍数、单边 ≤2048、总面积 ≤3,145,728」约束。
 - **逐剧目覆盖**：`play.json` 的 `image`（`model` / `size`）覆盖部署级的 `STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`。`ImageRequest` 带可选的 `model?` / `size?`，三个实现取 `req.x ?? this.x`；`PlayAssets` **每次出图现读 play.json**（不是构造时取快照——`PlayAssets` 按剧目缓存、进程内不重建，快照会让「设置页改了模型，出图还是老模型」）。格式不认这个值就直接报错，不静默退回全局。
 - **逐类目覆盖**（2026-10-10）：`image.kinds.<background|cg|sprite>` 各覆盖 `format`/`baseUrl`/`apiKey`/`model`/`size`/`reference`/`timeoutMs`，空 = 回落基础那份（回落只在 `config.ts` 的 `imageConfigFor` 一处）。
 - 画幅白名单取三款接口的交集（Gemini 官方 14 个取值，减去 OpenAI 不收的 1:4/4:1/1:8/8:1）——换一家 Gemini 或 OpenAI 生图只改地址与模型名，不动代码。

@@ -16,6 +16,7 @@ import { handleHttp } from "./http.js";
 import { VoiceCatalogService } from "./voiceCatalog.js";
 import { attachTransport } from "./transport.js";
 import { WebGate } from "./webAuth.js";
+import { installEnvProxy } from "./webImage.js";
 import { serveWebBundle } from "./webStatic.js";
 import { preloadSkills } from "./skills.js";
 
@@ -29,6 +30,7 @@ export async function main(): Promise<void> {
   const resourceRoot = resourceRootOf(import.meta.url, packaged);
   // exe 旁边的 .env（有就读；没有也照样跑得起来——运行期设置都在设置页里）
   loadEnvFile(envFileDir(process.execPath, resourceRoot, packaged));
+  installEnvProxy();
   const bootstrap = loadBootstrap(process.env, defaultDataRoot(process.execPath, resourceRoot, packaged), {
     port: options.port,
     host: options.host,

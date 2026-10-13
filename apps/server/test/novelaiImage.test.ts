@@ -101,30 +101,55 @@ describe("NovelAiImageGen", () => {
     expect(parameters).not.toHaveProperty("v4_negative_prompt");
   });
 
-  it("垫图走 img2img：源图先落到目标画布并编成 PNG，多张直接报错", async () => {
+  it("同画幅单张垫图走 img2img：源图先落到目标画布并编成 PNG", async () => {
     const calls: Call[] = [];
     const gen = new NovelAiImageGen(opts, fakeFetch(calls));
-    await gen.generate({ prompt: "同一张脸", aspectRatio: "16:9", references: [reference] });
+    // 1x1 参考图与 1:1 画幅匹配 → 走 img2img（立绘 neutral → 表情差分就是同画幅）
+    await gen.generate({ prompt: "同一张脸", aspectRatio: "1:1", references: [reference] });
 
     expect(calls[0]!.body.action).toBe("img2img");
     const parameters = parametersOf(calls[0]!);
     expect(parameters).toMatchObject({ strength: 0.7, noise: 0 });
 
-    // 上游要的是与画布同尺寸的 base64 PNG——1x1 的假图进去，出来必须是 1344x768 的 PNG
     const raw = String(parameters.image);
     expect(raw).not.toMatch(/^data:/);
     const fitted = Buffer.from(raw, "base64");
     expect(sniffImageMime(fitted)).toBe("image/png");
-    expect(await sharp(fitted).metadata()).toMatchObject({ width: 1344, height: 768 });
+    expect(await sharp(fitted).metadata()).toMatchObject({ width: 1024, height: 1024 });
+  });
 
-    await expect(gen.generate({ prompt: "两个人", references: [reference, reference] })).rejects.toThrow(/只吃一张/);
+  it("V4.5 跨画幅单张垫图或多张参考图走 director_reference_images，并剥掉多模态尾注", async () => {
+    const calls: Call[] = [];
+    const gen = new NovelAiImageGen(opts, fakeFetch(calls));
+    // 1x1 参考图垫进 16:9 CG（跨画幅）或多张参考图 → 走 director_reference_images
+    await gen.generate({
+      prompt:
+        "2girls, tea party. The attached reference images are, in this exact order: 1) Alice, 2) Bob. Keep each of them recognisably that same person.",
+      aspectRatio: "16:9",
+      references: [reference, reference],
+    });
+
+    expect(calls[0]!.body.action).toBe("generate");
+    expect(calls[0]!.body.input).toBe("2girls, tea party");
+    const parameters = parametersOf(calls[0]!);
+    expect(parameters).not.toHaveProperty("image");
+    const dirImgs = parameters.director_reference_images as string[];
+    expect(dirImgs).toHaveLength(2);
+    const decoded = Buffer.from(dirImgs[0]!, "base64");
+    expect(sniffImageMime(decoded)).toBe("image/png");
+    expect(await sharp(decoded).metadata()).toMatchObject({ width: 1024, height: 1536 });
+    expect(parameters.director_reference_strength_values).toEqual([1, 1]);
+
+    // 非 V4.5 模型不支持多张参考图
+    const v3 = new NovelAiImageGen({ ...opts, model: "nai-diffusion-3" }, fakeFetch([]));
+    await expect(v3.generate({ prompt: "两个人", references: [reference, reference] })).rejects.toThrow(/只吃一张/);
   });
 
   it("垫图是 JPEG（立绘留底原片就是 JPEG）也照收：转成 PNG 再发", async () => {
     const jpeg = await sharp(PNG).jpeg().toBuffer();
     const calls: Call[] = [];
     const gen = new NovelAiImageGen(opts, fakeFetch(calls));
-    await gen.generate({ prompt: "x", references: [{ mimeType: "image/jpeg", data: jpeg }] });
+    await gen.generate({ prompt: "x", aspectRatio: "1:1", references: [{ mimeType: "image/jpeg", data: jpeg }] });
 
     const fitted = Buffer.from(String(parametersOf(calls[0]!).image), "base64");
     expect(sniffImageMime(fitted)).toBe("image/png");
