@@ -2330,7 +2330,7 @@ html[data-ui-theme="light"] .modal-card {
 }
 
 .dialog-foot {
-  /* 底缘：只剩左下的状态提示；快捷菜单被挪到右下角独立成条 */
+  /* 底缘：状态提示统一靠在对话框右侧；快捷菜单在屏幕右下角独立成条 */
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2341,6 +2341,7 @@ html[data-ui-theme="light"] .modal-card {
 }
 
 .dialog-hint-foot {
+  margin-left: auto;
   min-height: 20px;
 }
 

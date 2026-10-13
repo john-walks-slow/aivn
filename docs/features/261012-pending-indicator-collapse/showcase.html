@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-ui-theme="dark">
 <head>
   <meta charset="utf-8">
-  <title>Pending Indicator 折叠态 Showcase</title>
+  <title>Pending Indicator 折叠态 Showcase (RTL & Light/Dark)</title>
   <style>
     :root {
       --accent: #60a5fa;
@@ -20,58 +20,54 @@
       --surface: #0f172a;
     }
 
-    html[data-ui-theme="light"] {
-      --accent: #3b82f6;
-      --accent-ink: #ffffff;
-      --dialog-ink: #0f172a;
-      --dialog-ink-soft: #64748b;
-      --dialog-ink-faint: #94a3b8;
-      --dialog-hover: rgba(0, 0, 0, 0.06);
-      --dialog-bad: #dc2626;
-      --panel: #ffffff;
-      --panel-2: #f1f5f9;
-      --line: #e2e8f0;
-      --ink: #0f172a;
-      --ink-soft: #64748b;
-      --surface: #f8fafc;
-    }
-
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      padding: 32px;
+      padding: 28px 32px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
       background: #090d16;
       color: #e2e8f0;
     }
 
     h1 {
-      font-size: 22px;
+      font-size: 20px;
       font-weight: 600;
-      margin: 0 0 8px;
+      margin: 0 0 6px;
     }
 
     p.subtitle {
       color: #94a3b8;
-      font-size: 13.5px;
-      margin: 0 0 28px;
+      font-size: 13px;
+      margin: 0 0 24px;
     }
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
     }
 
     .card {
       background: #111827;
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 12px;
-      padding: 20px;
+      padding: 18px;
+    }
+
+    .card.light-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #0f172a;
+      --accent: #3b82f6;
+      --dialog-ink: #0f172a;
+      --dialog-ink-soft: #64748b;
+      --dialog-ink-faint: #94a3b8;
+      --dialog-hover: rgba(0, 0, 0, 0.06);
+      --dialog-bad: #dc2626;
     }
 
     .card-title {
-      font-size: 13.5px;
+      font-size: 13px;
       font-weight: 600;
       color: #cbd5e1;
       margin: 0 0 12px;
@@ -80,25 +76,22 @@
       justify-content: space-between;
     }
 
-    .badge-preview-box {
-      background: rgba(15, 23, 42, 0.85);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 8px;
-      padding: 16px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: flex-start;
-      gap: 16px;
-      min-height: 56px;
+    .card.light-card .card-title {
+      color: #334155;
     }
 
     .dialog-mock {
+      position: relative;
       background: rgba(15, 23, 42, 0.92);
       border: 1px solid rgba(255, 255, 255, 0.12);
-      backdrop-filter: blur(16px);
       border-radius: 10px;
       padding: 16px 20px 12px;
-      margin-top: 14px;
+    }
+
+    .card.light-card .dialog-mock {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
     }
 
     .dialog-mock-name {
@@ -109,30 +102,30 @@
     }
 
     .dialog-mock-text {
-      font-size: 15px;
+      font-size: 14.5px;
       line-height: 1.6;
-      color: #f8fafc;
-      margin: 0 0 14px;
+      color: var(--dialog-ink);
+      margin: 0 0 12px;
     }
 
+    /* 对话框底缘：右侧放 pending indicator（从右向左排：最右是光标/spinner，往左是各类别闪烁图标） */
     .dialog-mock-foot {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-end;
       border-top: 1px solid rgba(255, 255, 255, 0.06);
       padding-top: 8px;
+      min-height: 26px;
     }
 
-    .dialog-mock-actions {
-      display: flex;
-      gap: 8px;
-      font-size: 11px;
-      color: #64748b;
+    .card.light-card .dialog-mock-foot {
+      border-top-color: #f1f5f9;
     }
 
     /* ── Pending Indicator Badge 样式 ── */
     .prompt-queue-badge {
       display: inline-flex;
+      flex-direction: row-reverse;
       align-items: center;
       gap: 7px;
       max-width: 100%;
@@ -145,19 +138,9 @@
       letter-spacing: 0.08em;
       line-height: 1;
       cursor: pointer;
-      transition: color 0.16s ease, opacity 0.16s ease;
     }
 
-    .prompt-queue-badge:hover {
-      color: var(--dialog-ink);
-      background: transparent;
-    }
-
-    .prompt-queue-badge.failed {
-      color: var(--dialog-bad, #ef4444);
-    }
-
-    /* 文本指示位 */
+    /* 文本指示位（在 row-reverse 下固定在最右侧） */
     .prompt-queue-text-indicator {
       display: inline-flex;
       align-items: center;
@@ -173,11 +156,6 @@
       border-radius: 50%;
       border: 1.5px solid currentcolor;
       border-top-color: transparent;
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(1turn); }
     }
 
     .prompt-queue-cursor {
@@ -188,21 +166,9 @@
       border-right: 4.5px solid transparent;
       border-top: 6px solid var(--accent, #60a5fa);
       filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent, #60a5fa) 60%, transparent));
-      animation: queue-cursor-bob 1.1s ease-in-out infinite;
     }
 
-    @keyframes queue-cursor-bob {
-      0%, 100% {
-        transform: translateY(-1px);
-        opacity: 0.6;
-      }
-      50% {
-        transform: translateY(2.5px);
-        opacity: 1;
-      }
-    }
-
-    /* 其他生成类别：闪烁浅图标 ➕ 右上角小数字 */
+    /* 其他生成类别：闪烁浅图标 ➕ 右上角小数字（>1 显示） */
     .prompt-queue-cat {
       position: relative;
       display: inline-flex;
@@ -218,18 +184,6 @@
       align-items: center;
       justify-content: center;
       opacity: 0.85;
-      animation: queue-icon-blink 1.4s ease-in-out infinite;
-    }
-
-    @keyframes queue-icon-blink {
-      0%, 100% {
-        opacity: 0.45;
-        transform: scale(0.96);
-      }
-      50% {
-        opacity: 1;
-        transform: scale(1.02);
-      }
     }
 
     .prompt-queue-cat-badge {
@@ -251,12 +205,12 @@
       pointer-events: none;
     }
 
-    .prompt-queue-cat.failed .prompt-queue-cat-badge {
-      background: color-mix(in srgb, var(--dialog-bad, #ef4444) 28%, rgba(15, 23, 42, 0.65));
-      color: var(--dialog-bad, #ef4444);
+    /* 浅色模式右上角 chip 为浅色底 */
+    .card.light-card .prompt-queue-cat-badge {
+      background: color-mix(in srgb, currentcolor 14%, rgba(241, 245, 249, 0.94));
+      color: var(--dialog-ink, #334155);
     }
 
-    /* 图标 svg 统一定义 */
     svg.icon {
       width: 13px;
       height: 13px;
@@ -271,213 +225,130 @@
 </head>
 <body>
 
-  <h1>Pending Indicator 折叠态 Showcase</h1>
-  <p class="subtitle">无字无光点，仅含浅图标与 spinner / 跳动光标。spinner 代表文本生成，变成跳动光标代表下一句可用；其他类别闪烁图标 ➕ 右上角小数字队列长度。</p>
+  <h1>Pending Indicator 折叠态（居右对齐 · 从右向左排 · 深浅主题对照）</h1>
+  <p class="subtitle">统一放在对话框右侧；从右向左排：最右固定为光标/spinner，左侧依次排开其他生成类别浅图标；浅色模式下右上角数字 chip 为浅灰底。</p>
 
   <div class="grid">
 
-    <!-- 1. 文本生成中（Spinner 态） -->
+    <!-- 1. 深色模式：文本生成 Spinner 在最右 + 左侧媒体队列 -->
     <div class="card">
       <div class="card-title">
-        <span>1. 文本生成中（Spinner 态）</span>
-        <span style="font-size: 11px; color: #64748b;">剧作家创作流式写入</span>
+        <span>1. 深色模式 · 文本生成中（最右 Spinner ← 左侧图标）</span>
+        <span style="font-size: 11px; color: #64748b;">图片(2) ← 麦克风(1) ← Spinner</span>
       </div>
-      <div class="badge-preview-box">
-        <button class="prompt-queue-badge" title="剧作家创作中">
-          <span class="prompt-queue-text-indicator">
-            <span class="dialog-spinner" aria-label="剧作家创作中"></span>
-          </span>
-        </button>
-      </div>
-
       <div class="dialog-mock">
         <div class="dialog-mock-name">铃音</div>
         <div class="dialog-mock-text">「……其实我一直在想，如果是那个时候的你的话……」</div>
         <div class="dialog-mock-foot">
-          <div>
-            <button class="prompt-queue-badge" title="剧作家创作中">
-              <span class="prompt-queue-text-indicator">
-                <span class="dialog-spinner"></span>
-              </span>
-            </button>
-          </div>
-          <div class="dialog-mock-actions"><span>Auto</span><span>Log</span><span>Menu</span></div>
+          <button class="prompt-queue-badge">
+            <!-- DOM 第一个：row-reverse 下排在最右边 -->
+            <span class="prompt-queue-text-indicator">
+              <span class="dialog-spinner"></span>
+            </span>
+            <!-- 往左排：麦克风(1) -->
+            <span class="prompt-queue-cat">
+              <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
+            </span>
+            <!-- 再往左排：图片(2) -->
+            <span class="prompt-queue-cat">
+              <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>
+              <span class="prompt-queue-cat-badge">2</span>
+            </span>
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- 2. 下一句可用（跳动光标态） -->
-    <div class="card">
+    <!-- 2. 浅色模式：文本生成 Spinner 在最右 + 浅色右上角 chip -->
+    <div class="card light-card">
       <div class="card-title">
-        <span>2. 下一句可用（跳动光标态）</span>
-        <span style="font-size: 11px; color: #64748b;">spinner 变成跳动光标</span>
+        <span>2. 浅色模式 · 文本生成中（浅色右上角 chip）</span>
+        <span style="font-size: 11px; color: #64748b;">图片(2) ← 麦克风(1) ← Spinner</span>
       </div>
-      <div class="badge-preview-box">
-        <button class="prompt-queue-badge" title="下一句已就绪">
-          <span class="prompt-queue-text-indicator">
-            <span class="prompt-queue-cursor" aria-label="下一句可用"></span>
-          </span>
-        </button>
-      </div>
-
       <div class="dialog-mock">
         <div class="dialog-mock-name">铃音</div>
-        <div class="dialog-mock-text">「如果是那个时候的你的话，一定会毫不犹豫地伸出手吧。」</div>
+        <div class="dialog-mock-text">「……其实我一直在想，如果是那个时候的你的话……」</div>
         <div class="dialog-mock-foot">
-          <div>
-            <button class="prompt-queue-badge" title="下一句已就绪">
-              <span class="prompt-queue-text-indicator">
-                <span class="prompt-queue-cursor"></span>
-              </span>
-            </button>
-          </div>
-          <div class="dialog-mock-actions"><span>Auto</span><span>Log</span><span>Menu</span></div>
+          <button class="prompt-queue-badge">
+            <span class="prompt-queue-text-indicator">
+              <span class="dialog-spinner"></span>
+            </span>
+            <span class="prompt-queue-cat">
+              <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
+            </span>
+            <span class="prompt-queue-cat">
+              <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>
+              <span class="prompt-queue-cat-badge">2</span>
+            </span>
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- 3. 其他生成类别（麦克风 / 语音合成 1 项） -->
+    <!-- 3. 深色模式：下一句可用（最右跳动光标）+ 多类别队列 -->
     <div class="card">
       <div class="card-title">
-        <span>3. 单项媒体生成（麦克风 1 项）</span>
-        <span style="font-size: 11px; color: #64748b;">数量为 1 时仅显示闪烁浅图标</span>
+        <span>3. 深色模式 · 下一句可用（最右跳动光标 ← 多类别）</span>
+        <span style="font-size: 11px; color: #64748b;">人像(1) ← 图片(3) ← 音乐(1) ← 麦克风(2) ← ▼</span>
       </div>
-      <div class="badge-preview-box">
-        <button class="prompt-queue-badge" title="语音合成（1）">
-          <span class="prompt-queue-cat" title="语音合成（1）">
-            <span class="prompt-queue-cat-icon">
-              <!-- mic icon -->
-              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-            </span>
-          </span>
-        </button>
-      </div>
-
-      <div class="dialog-mock">
-        <div class="dialog-mock-name">铃音</div>
-        <div class="dialog-mock-text">「不过，现在说这些也已经太晚了呢。」</div>
-        <div class="dialog-mock-foot">
-          <div>
-            <button class="prompt-queue-badge" title="语音合成（1）">
-              <span class="prompt-queue-cat">
-                <span class="prompt-queue-cat-icon">
-                  <svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-                </span>
-              </span>
-            </button>
-          </div>
-          <div class="dialog-mock-actions"><span>Auto</span><span>Log</span><span>Menu</span></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 4. 多类别同时排队生成（麦克风 2 + 音乐 1 + 图片 2 + 立绘 1） -->
-    <div class="card">
-      <div class="card-title">
-        <span>4. 多类别多任务队列（混合并排）</span>
-        <span style="font-size: 11px; color: #64748b;">麦克风(2) · 音乐(1) · 图片(2) · 人像(1)</span>
-      </div>
-      <div class="badge-preview-box">
-        <button class="prompt-queue-badge" title="多项生成中">
-          <!-- 麦克风 (2) -->
-          <span class="prompt-queue-cat" title="语音合成（2）">
-            <span class="prompt-queue-cat-icon">
-              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-            </span>
-            <span class="prompt-queue-cat-badge">2</span>
-          </span>
-          <!-- 音乐 (1) -->
-          <span class="prompt-queue-cat" title="配乐生成（1）">
-            <span class="prompt-queue-cat-icon">
-              <svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-            </span>
-          </span>
-          <!-- 图片 (2) -->
-          <span class="prompt-queue-cat" title="图片生成（2）">
-            <span class="prompt-queue-cat-icon">
-              <svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-            </span>
-            <span class="prompt-queue-cat-badge">2</span>
-          </span>
-          <!-- 人像 (1) -->
-          <span class="prompt-queue-cat" title="立绘生成（1）">
-            <span class="prompt-queue-cat-icon">
-              <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            </span>
-          </span>
-        </button>
-      </div>
-
-      <div class="dialog-mock">
-        <div class="dialog-mock-name">铃音</div>
-        <div class="dialog-mock-text">「海风很舒服呢……稍微再坐一会儿吧。」</div>
-        <div class="dialog-mock-foot">
-          <div>
-            <button class="prompt-queue-badge" title="多项生成中">
-              <span class="prompt-queue-cat">
-                <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
-                <span class="prompt-queue-cat-badge">2</span>
-              </span>
-              <span class="prompt-queue-cat">
-                <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
-              </span>
-              <span class="prompt-queue-cat">
-                <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>
-                <span class="prompt-queue-cat-badge">2</span>
-              </span>
-              <span class="prompt-queue-cat">
-                <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-              </span>
-            </button>
-          </div>
-          <div class="dialog-mock-actions"><span>Auto</span><span>Log</span><span>Menu</span></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 5. 复合状态：下一句可用跳动光标 ➕ 媒体生成闪烁中 -->
-    <div class="card">
-      <div class="card-title">
-        <span>5. 复合状态：下一句就绪 ➕ 媒体生成中</span>
-        <span style="font-size: 11px; color: #64748b;">跳动光标 + 麦克风(1) + 图片(2)</span>
-      </div>
-      <div class="badge-preview-box">
-        <button class="prompt-queue-badge" title="下一句就绪，媒体生成中">
-          <!-- 跳动光标 -->
-          <span class="prompt-queue-text-indicator">
-            <span class="prompt-queue-cursor"></span>
-          </span>
-          <!-- 麦克风 (1) -->
-          <span class="prompt-queue-cat">
-            <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
-          </span>
-          <!-- 图片 (2) -->
-          <span class="prompt-queue-cat">
-            <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>
-            <span class="prompt-queue-cat-badge">2</span>
-          </span>
-        </button>
-      </div>
-
       <div class="dialog-mock">
         <div class="dialog-mock-name">铃音</div>
         <div class="dialog-mock-text">「无论发生什么，我都会在你身边的。」</div>
         <div class="dialog-mock-foot">
-          <div>
-            <button class="prompt-queue-badge" title="下一句就绪，媒体生成中">
-              <span class="prompt-queue-text-indicator">
-                <span class="prompt-queue-cursor"></span>
-              </span>
-              <span class="prompt-queue-cat">
-                <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
-              </span>
-              <span class="prompt-queue-cat">
-                <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>
-                <span class="prompt-queue-cat-badge">2</span>
-              </span>
-            </button>
-          </div>
-          <div class="dialog-mock-actions"><span>Auto</span><span>Log</span><span>Menu</span></div>
+          <button class="prompt-queue-badge">
+            <!-- 最右：跳动光标 -->
+            <span class="prompt-queue-text-indicator">
+              <span class="prompt-queue-cursor"></span>
+            </span>
+            <!-- 从右往左：麦克风(2)、音乐(1)、图片(3)、人像(1) -->
+            <span class="prompt-queue-cat">
+              <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
+              <span class="prompt-queue-cat-badge">2</span>
+            </span>
+            <span class="prompt-queue-cat">
+              <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
+            </span>
+            <span class="prompt-queue-cat">
+              <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>
+              <span class="prompt-queue-cat-badge">3</span>
+            </span>
+            <span class="prompt-queue-cat">
+              <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 浅色模式：下一句可用（最右跳动光标）+ 多类别队列 -->
+    <div class="card light-card">
+      <div class="card-title">
+        <span>4. 浅色模式 · 下一句可用（最右跳动光标 ← 多类别）</span>
+        <span style="font-size: 11px; color: #64748b;">人像(1) ← 图片(3) ← 音乐(1) ← 麦克风(2) ← ▼</span>
+      </div>
+      <div class="dialog-mock">
+        <div class="dialog-mock-name">铃音</div>
+        <div class="dialog-mock-text">「无论发生什么，我都会在你身边的。」</div>
+        <div class="dialog-mock-foot">
+          <button class="prompt-queue-badge">
+            <span class="prompt-queue-text-indicator">
+              <span class="prompt-queue-cursor"></span>
+            </span>
+            <span class="prompt-queue-cat">
+              <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
+              <span class="prompt-queue-cat-badge">2</span>
+            </span>
+            <span class="prompt-queue-cat">
+              <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
+            </span>
+            <span class="prompt-queue-cat">
+              <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>
+              <span class="prompt-queue-cat-badge">3</span>
+            </span>
+            <span class="prompt-queue-cat">
+              <span class="prompt-queue-cat-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+            </span>
+          </button>
         </div>
       </div>
     </div>

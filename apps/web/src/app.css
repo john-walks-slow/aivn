@@ -5793,6 +5793,11 @@ html[data-ui-theme="dark"] .stage-view-segmented {
   transition: color 0.16s ease, opacity 0.16s ease;
 }
 
+/* 舞台对话框右侧：光标/spinner 固定在最右，其他生成类别从右向左排开 */
+.prompt-queue-badge:not(.prompt-queue-docked) {
+  flex-direction: row-reverse;
+}
+
 .prompt-queue-badge:hover {
   color: var(--dialog-ink);
   background: transparent;
@@ -5906,6 +5911,19 @@ html[data-ui-theme="dark"] .stage-view-segmented {
 .prompt-queue-cat.failed .prompt-queue-cat-badge {
   background: color-mix(in srgb, var(--dialog-bad, #ef4444) 28%, rgba(15, 23, 42, 0.65));
   color: var(--dialog-bad, #ef4444);
+}
+
+/* 浅色模式与工坊浅色纸面：右上角 chip 使用浅灰底 + 深灰字 */
+html[data-ui-theme="light"] .prompt-queue-cat-badge,
+html:not([data-ui-theme="dark"]) .prompt-queue-badge.prompt-queue-docked .prompt-queue-cat-badge {
+  background: color-mix(in srgb, currentcolor 14%, rgba(241, 245, 249, 0.94));
+  color: var(--dialog-ink, #334155);
+}
+
+html[data-ui-theme="light"] .prompt-queue-cat.failed .prompt-queue-cat-badge,
+html:not([data-ui-theme="dark"]) .prompt-queue-badge.prompt-queue-docked .prompt-queue-cat.failed .prompt-queue-cat-badge {
+  background: color-mix(in srgb, var(--dialog-bad, #dc2626) 16%, rgba(254, 242, 242, 0.96));
+  color: var(--dialog-bad, #dc2626);
 }
 
 /* 工坊：同一块面板不浮在内容上，改贴内容区底部一条（右上角是各页自己的头）。
