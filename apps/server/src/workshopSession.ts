@@ -30,6 +30,7 @@ import {
   historyToMessages,
   runWorkshopTurn,
   summarizeThread,
+  workshopMessageText,
   type WorkshopMessage,
   type PlayFileWrite,
 } from "./workshop.js";
@@ -54,8 +55,17 @@ export interface WorkshopSessionOptions {
   playId: string;
   store: PlayStore;
   streamFn: StreamFn;
-  /** 单轮开跑前现取一次：模型/工坊设置/剧目配置（工坊实例不随 runtime 重建，改完即生效）。 */
-  getRunConfig: () => Promise<{ model: Model<Api>; agents?: AgentSettings; play: PlayConfig }>;
+  /** 单轮开跑前现取一次：模型/工坊设置/剧目配置/压缩参数（工坊实例不随 runtime 重建，改完即生效）。 */
+  getRunConfig: () => Promise<{
+    model: Model<Api>;
+    agents?: AgentSettings;
+    play: PlayConfig;
+    compaction?: {
+      contextWindow: number;
+      triggerRatio: number;
+      keepRecentTokens: number;
+    };
+  }>;
   getApiKey: () => string | undefined;
   /** 向本剧目所有 WS 客户端广播。 */
   emit: (msg: ServerMessage) => void;
@@ -136,9 +146,11 @@ export class WorkshopSession {
 
   /** 每轮开跑前按 play.json 现取模型与工坊设置，重装 kit——用户刚在 Agent 页改完立刻生效。 */
   private turnPlay?: PlayConfig;
+  private turnCompaction?: WorkshopSessionOptions["compaction"];
   private async freshTurnContext(): Promise<{ model: Model<Api>; agents?: AgentSettings }> {
-    const { model, agents, play } = await this.opts.getRunConfig();
+    const { model, agents, play, compaction } = await this.opts.getRunConfig();
     this.turnPlay = play;
+    this.turnCompaction = compaction;
     this.kit = createAgentKit({
       role: "workshop",
       playId: this.opts.playId,
@@ -226,7 +238,7 @@ export class WorkshopSession {
       const history = await this.threads.messages(active.id);
       // 开跑前先看要不要压：压了才不等到这轮请求直接被窗口撑爆。
       const { model } = await this.freshTurnContext();
-      const { visible, prompt } = await this.maybeCompact(active, history, model);
+      const { visible, prompt } = await this.maybeCompact(active, history, model, turnAbort.signal);
       const userMessage: WorkshopMessage = { role: "user", text: content, at: Date.now() };
       // 首条消息定标题：线程可能是刚建的占位，也可能是空的历史线程
       await this.threads.append(active.id, userMessage, history.length === 0 ? { title: deriveThreadTitle(content) } : {});
@@ -348,6 +360,7 @@ export class WorkshopSession {
       // 轮次已收束：广播/落盘恢复走浏览态 activeId
       this.runningThreadId = null;
       this.turnPlay = undefined;
+      this.turnCompaction = undefined;
     }
   }
 
@@ -513,6 +526,7 @@ export class WorkshopSession {
     thread: WorkshopThread,
     history: readonly WorkshopMessage[],
     model: Model<Api>,
+    signal?: AbortSignal,
   ): Promise<{ visible: WorkshopMessage[]; prompt: string }> {
     const compaction = thread.compaction ?? null;
     const view = compaction?.cutAt ?? 0;
@@ -520,11 +534,12 @@ export class WorkshopSession {
     const scale = thread.tokenScale ?? 1;
     const prompt = await this.systemPrompt(compaction?.body);
 
-    const limit = this.opts.compaction
+    const rawLimit = this.turnCompaction ?? this.opts.compaction;
+    const limit = rawLimit
       ? {
-          ...this.opts.compaction,
+          ...rawLimit,
           contextWindow: Math.min(
-            this.opts.compaction.contextWindow,
+            rawLimit.contextWindow,
             model?.contextWindow ?? Infinity,
           ),
         }
@@ -533,7 +548,11 @@ export class WorkshopSession {
     const used = estimateThreadTokens(prompt, historyToMessages(visible), scale);
     if (used <= Math.floor(limit.contextWindow * limit.triggerRatio)) return { visible, prompt };
 
-    const cut = pickThreadCutIndex(visible, limit.keepRecentTokens, scale);
+    const cut = pickThreadCutIndex(
+      visible.map((m) => ({ role: m.role, text: workshopMessageText(m) })),
+      limit.keepRecentTokens,
+      scale,
+    );
     if (cut === 0) return { visible, prompt };
     const head = visible.slice(0, cut);
     let digest: EpochSummary;
@@ -543,6 +562,7 @@ export class WorkshopSession {
           streamFn: this.opts.streamFn,
           model,
           getApiKey: this.opts.getApiKey,
+          signal,
         },
         head,
         compaction?.body ?? "",

@@ -4,7 +4,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { languageLabel, toPiThinkingLevel } from "@aivn/core";
 import type { EffectiveCraft, ThinkingLevel, WorkshopAssetView, WorkshopPart } from "@aivn/core";
 import { capDigest, renderTranscriptAs, splitSummary, calibrateTokenScale, type EpochSummary } from "./compaction.js";
-import { completeText, type OneShotOptions } from "./llm.js";
+import { completeText, SUMMARY_MAX_TOKENS, type OneShotOptions } from "./llm.js";
 import { skillsPrompt } from "./skills.js";
 import { SEARCH_GUIDE } from "./agentkit/searchTool.js";
 
@@ -380,12 +380,20 @@ export async function summarizeThread(
       ? ""
       : `以下是本会话此前已压缩的摘要（已确定事项）。请把它与下面的新增原文合并成一份完整定稿：\n\n${prevDigest.trim()}\n\n---\n\n以下是新增原文：\n\n`;
   const controller = new AbortController();
+  const onAbort = (): void => controller.abort();
+  if (opts.signal?.aborted) controller.abort();
+  else opts.signal?.addEventListener("abort", onAbort, { once: true });
   const timer = setTimeout(() => controller.abort(), TURN_TIMEOUT_MS);
   try {
-    const text = await completeText({ ...opts, signal: controller.signal }, WORKSHOP_DIGEST_SYSTEM, `${previous}${transcript}`);
+    const text = await completeText(
+      { ...opts, maxTokens: opts.maxTokens ?? SUMMARY_MAX_TOKENS, signal: controller.signal },
+      WORKSHOP_DIGEST_SYSTEM,
+      `${previous}${transcript}`,
+    );
     return splitSummary(text);
   } finally {
     clearTimeout(timer);
+    opts.signal?.removeEventListener("abort", onAbort);
   }
 }
 
@@ -488,6 +496,7 @@ export async function runWorkshopTurn(
       messages: historyToMessages(history),
     },
   });
+  const initialCount = agent.state.messages.length;
   const timer = setTimeout(() => agent.abort(), TURN_TIMEOUT_MS);
   const onUserStop = (): void => agent.abort();
   opts.signal?.addEventListener("abort", onUserStop, { once: true });
@@ -523,8 +532,8 @@ export async function runWorkshopTurn(
     clearTimeout(timer);
     opts.signal?.removeEventListener("abort", onUserStop);
   }
-  // agent_end 的完整消息优先：流式增量可能因重试/工具轮次而拼接不全
-  const last = lastAssistant(agent.state.messages);
+  // agent_end 的完整消息优先：汇总本轮所有 assistant 步的正文（不止最后一步，避免工具调用前的方案陈述丢失）
+  const last = lastAssistant(agent.state.messages, initialCount);
   if (last && (last.stopReason === "error" || last.stopReason === "aborted")) {
     throw new Error(
       opts.signal?.aborted
@@ -532,9 +541,57 @@ export async function runWorkshopTurn(
         : (last.errorMessage ?? "工坊请求失败（模型未返回内容）"),
     );
   }
-  const text = (last?.text ?? streamed).trim();
+  const text = (last?.text || streamed).trim();
   if (text === "") throw new Error("工坊请求失败（模型返回空内容）");
   return { text, scale: calibrateTokenScale(opts.systemPrompt, agent.state.messages) };
+}
+
+/**
+ * 工坊消息在上下文与摘要转录里的文本表示：
+ * 正文之外附上本轮工具调用的简明注脚（写过哪个路径、出过哪张草稿/素材 id），
+ * 既不发裸 toolCall 块（防缺 toolResult 400），又让下一轮对话与压缩摘要器看得见已落盘文件与素材。
+ */
+export function workshopMessageText(message: WorkshopMessage): string {
+  if (message.role === "user") return message.text;
+  const textFromParts = message.parts
+    ?.filter((p): p is Extract<WorkshopPart, { type: "text" }> => p.type === "text")
+    .map((p) => p.text.trim())
+    .filter(Boolean)
+    .join("\n\n");
+  // 有 parts 时以 parts 规范化拼装为唯一正文来源；仅无 parts（旧消息）或 parts 不含文本时回退 message.text
+  const baseText = (textFromParts || message.text).trim();
+  const toolNotes =
+    message.parts
+      ?.filter((p): p is Extract<WorkshopPart, { type: "tool" }> => p.type === "tool")
+      .map(formatWorkshopToolNote)
+      .filter(Boolean) ?? [];
+  const imageNotes =
+    message.images?.length
+      ? [`[产出素材 ${message.images.map((img) => img.path).join(", ")}]`]
+      : [];
+  return [baseText, ...toolNotes, ...imageNotes].filter(Boolean).join("\n");
+}
+
+const BULK_ARG_KEYS = new Set(["content", "newText", "oldText", "prompt"]);
+
+function formatWorkshopToolNote(tool: Extract<WorkshopPart, { type: "tool" }>): string {
+  const rec =
+    tool.args && typeof tool.args === "object" && !Array.isArray(tool.args)
+      ? (tool.args as Record<string, unknown>)
+      : null;
+  const pairs: string[] = [];
+  if (rec) {
+    for (const [key, val] of Object.entries(rec)) {
+      if (BULK_ARG_KEYS.has(key)) continue;
+      if (typeof val === "string" && val.trim() !== "") {
+        pairs.push(`${key}=${JSON.stringify(val.length > 80 ? `${val.slice(0, 80)}…` : val)}`);
+      }
+    }
+  }
+  const argText = pairs.length > 0 ? `(${pairs.join(", ")})` : "";
+  const assets = tool.assets?.length ? ` → ${tool.assets.map((a) => a.path).join(", ")}` : "";
+  const status = tool.isError ? " [失败]" : "";
+  return `[调用 ${tool.name}${argText}${assets}${status}]`;
 }
 
 export function historyToMessages(history: readonly WorkshopMessage[]): AgentMessage[] {
@@ -543,7 +600,7 @@ export function historyToMessages(history: readonly WorkshopMessage[]): AgentMes
       ? { role: "user" as const, content: m.text, timestamp: m.at }
       : {
           role: "assistant" as const,
-          content: [{ type: "text" as const, text: m.text }],
+          content: [{ type: "text" as const, text: workshopMessageText(m) }],
           api: "openai-completions" as const,
           provider: "workshop",
           model: "workshop",
@@ -563,17 +620,28 @@ export function historyToMessages(history: readonly WorkshopMessage[]): AgentMes
 
 function lastAssistant(
   messages: readonly unknown[],
+  startIndex = 0,
 ): { text: string; stopReason?: string; errorMessage?: string } | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
+  const start = Math.min(messages.length, startIndex);
+  const texts: string[] = [];
+  let lastStopReason: string | undefined;
+  let lastErrorMessage: string | undefined;
+  let found = false;
+  for (let i = start; i < messages.length; i += 1) {
     const m = messages[i] as { role?: string; content?: unknown; stopReason?: string; errorMessage?: string };
     if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
-    const text = m.content
+    found = true;
+    lastStopReason = m.stopReason;
+    lastErrorMessage = m.errorMessage;
+    const stepText = m.content
       .filter((b): b is { type: "text"; text: string } => (b as { type?: string }).type === "text")
-      .map((b) => b.text)
-      .join("");
-    return { text, stopReason: m.stopReason, errorMessage: m.errorMessage };
+      .map((b) => b.text.trim())
+      .filter(Boolean)
+      .join("\n");
+    if (stepText) texts.push(stepText);
   }
-  return null;
+  if (!found) return null;
+  return { text: texts.join("\n\n"), stopReason: lastStopReason, errorMessage: lastErrorMessage };
 }
 
 /** 线程标题：首条用户消息的前 20 字。 */

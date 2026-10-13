@@ -890,6 +890,85 @@ describe("WorkshopSession：一轮对话", () => {
       const thread = (await new WorkshopThreads(store).list()).find((t) => t.id === threadId);
       expect(thread?.compaction ?? null).toBeNull();
     });
+
+    it("工具调用与多步文本进入摘要转录，且 getRunConfig 动态更新压缩参数即时生效", async () => {
+      const store = await makeStore();
+      const threads = new WorkshopThreads(store);
+      const thread = await threads.create("动态压缩测试");
+      await threads.append(thread.id, { role: "user", text: "先建前提与立绘草稿", at: 1 });
+      await threads.append(thread.id, {
+        role: "assistant",
+        text: "全部弄好了。",
+        at: 2,
+        parts: [
+          { type: "text", text: "这是第一步方案说明。" },
+          {
+            type: "tool",
+            id: "tc1",
+            name: "write",
+            args: { path: "memory/always/premise.md", content: "# 前提" },
+            result: "ok",
+            isError: false,
+            ms: 12,
+          },
+          {
+            type: "tool",
+            id: "tc2",
+            name: "generate_image",
+            args: { kind: "sprite", spriteId: "mio", variant: "neutral" },
+            result: "draft ok",
+            isError: false,
+            ms: 100,
+            assets: [{ kind: "image", path: "media-cache/drafts/d001/image.png", url: "/plays/test/drafts/d001/image.png" }],
+          },
+          { type: "text", text: "全部弄好了。" },
+        ],
+      });
+      await threads.append(thread.id, { role: "user", text: "再补一张记忆卡", at: 3 });
+      await threads.append(thread.id, { role: "assistant", text: "已补上旧校舍设定。", at: 4 });
+
+      const contexts: string[] = [];
+      let dynamicCompaction = { contextWindow: 10_000_000, triggerRatio: 0.6, keepRecentTokens: 30 };
+      const base = createFakeStreamFn([
+        { text: "第一轮未超阈值直接回复。" },
+        { text: "已完成前提与立绘草稿 d001\n\n## 已确定\n- 写入 memory/always/premise.md\n- 草稿 media-cache/drafts/d001/image.png" },
+        { text: "第二轮压缩后回复。" },
+      ]);
+      const session = new WorkshopSession({
+        playId: "test",
+        store,
+        getRunConfig: async () => ({
+          model: {} as never,
+          agents: undefined,
+          play: await store.loadPlay(),
+          compaction: dynamicCompaction,
+        }),
+        getApiKey: () => "test-key",
+        streamFn: (model, context, options) => {
+          contexts.push(JSON.stringify(context));
+          return base(model, context, options);
+        },
+        emit: () => {},
+        onFilesChanged: () => {},
+      });
+
+      // 第一轮：窗口很大，不触发压缩，但上下文里能看到上一轮的多步正文与工具注脚（草稿路径）
+      await session.chat("第一轮继续", thread.id);
+      expect(contexts).toHaveLength(1);
+      expect(contexts[0]).toContain("这是第一步方案说明。");
+      expect(contexts[0]).toContain("memory/always/premise.md");
+      expect(contexts[0]).toContain("media-cache/drafts/d001/image.png");
+
+      // 动态收紧压缩参数（模拟用户在设置页改小 workshopContext 并保存，不重建 WorkshopSession）
+      dynamicCompaction = { contextWindow: 400, triggerRatio: 0.6, keepRecentTokens: 20 };
+      await session.chat("第二轮触发动态压缩", thread.id);
+
+      // 新增了 2 次请求：1 次摘要 + 1 次本轮对话；摘要输入里包含 write 路径与草稿路径
+      expect(contexts).toHaveLength(3);
+      expect(contexts[1]).toContain("memory/always/premise.md");
+      expect(contexts[1]).toContain("media-cache/drafts/d001/image.png");
+      expect(contexts[2]).toContain("本会话已确定");
+    });
   });
 
   it("一轮内多次写盘只触发一次 runtime 重建", async () => {

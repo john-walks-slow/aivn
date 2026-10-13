@@ -44,23 +44,19 @@ import { lineageToBeats, lineageToEvents, stopFromEvent, type RebuiltBeat } from
 import {
   EPOCH_SUMMARY_SYSTEM,
   compactionText,
-  estimateMessageTokens,
   localTextTokens,
   measureContext,
   pickCompactionCut,
   renderTranscript,
   withSeed,
 } from "./compaction.js";
-import { completeText } from "./llm.js";
+import { completeText, SUMMARY_MAX_TOKENS } from "./llm.js";
 import { userFacingError } from "./errors.js";
 import { HistoryRecorder, type HistoryBeat } from "./history.js";
 import type { AgentSettings, PlayConfig } from "@aivn/core";
 import type { PlayMemory } from "./memory.js";
 import { VoicePipeline, type TtsSynthFn, type VoiceBacklog, type VoiceFrame } from "./voice.js";
 import type { PendingJobFinish, PendingJobs } from "./pendingJobs.js";
-
-/** 重建接力保留预算（token）：接住最近几轮就够，更早的细节走 archive 检索。 */
-const CARRY_OVER_TOKENS = 8000;
 
 /** 阅读位置落盘的最小间隔（毫秒）：位置随时更新，盘不用跟着逐字写。 */
 const READ_PERSIST_MS = 1500;
@@ -672,9 +668,10 @@ export class PlaywrightOrchestrator {
     this.unsubscribeAgent?.();
     const model = isNsfw && opts.nsfwModel ? opts.nsfwModel : opts.model;
     const thinkingLevel = isNsfw && opts.nsfwThinking ? opts.nsfwThinking : this.kit.thinking;
+    const dialogue = messages.filter((m) => m.role !== "system");
     const finalMessages = isNsfw
-      ? (!hasNsfwPreTurns(messages) ? [...NSFW_PRE_TURNS, ...messages] : messages)
-      : stripNsfwPreTurns(messages);
+      ? (!hasNsfwPreTurns(dialogue) ? [...NSFW_PRE_TURNS, ...dialogue] : dialogue)
+      : stripNsfwPreTurns(dialogue);
     const agent = new PiAgent({
       streamFn: opts.streamFn,
       getApiKey: opts.getApiKey,
@@ -759,25 +756,17 @@ export class PlaywrightOrchestrator {
   }
 
   /**
-   * 重建接力：把对话体的最近一段切出来交给新实例。
-   * A 区（systemPrompt）是只读的，工坊改了创作口径/设定就只能重建 Agent——不接力就等于每改一次失忆一次。
-   * 切点与纪元压缩同原则：落点必是 user 消息，工具调用对不被劈开；预算取压缩保留预算的一小截，
-   * 够接住最近几轮即可，更早的细节本就逐轮落进 archive，search_archive 检索得回来。
+   * 重建接力：把当前纪元的对话体完整交给新实例。
+   * A 区（systemPrompt）是只读的，工坊/剧作家改了角色卡或设定就只能重建 Agent——
+   * 必须保留当前纪元的完整消息组（含首拍并入的【前情提要】与各轮 usage 标定数据），
+   * 不在这里做无摘要硬截断；上下文长度由轮边界的 `maybeCompactEpoch` 统一治理。
    */
   carryOver(note: string): CarryOver | null {
-    const messages = this.agent.state.messages;
-    if (messages.length < 2) return null;
-    const { scale } = measureContext(messages);
-    let tokens = 0;
-    let cut = messages.length;
-    while (cut > 1 && tokens < CARRY_OVER_TOKENS) {
-      cut -= 1;
-      tokens += estimateMessageTokens(messages[cut]!) * scale;
-    }
-    while (cut < messages.length && messages[cut]?.role !== "user") cut += 1;
+    const dialogue = stripNsfwPreTurns(this.agent.state.messages.filter((m) => m.role !== "system"));
+    const cut = dialogue.findIndex((m) => m.role === "user");
     // 落在末尾：没有可接力的完整轮次（空轮 / 只有 system）
-    if (cut >= messages.length) return null;
-    return { messages: messages.slice(cut), note };
+    if (cut < 0) return null;
+    return { messages: dialogue.slice(cut), note };
   }
 
   /** 引擎状态（只读视图）：状态检查与同刻性断言用。 */
@@ -1995,7 +1984,8 @@ export class PlaywrightOrchestrator {
     // 重建成净化版、体积回退，不差这一下。
     if (this.nsfwActive) return;
     const messages = this.agent.state.messages;
-    const budget = Math.floor(compaction.contextWindow * compaction.triggerRatio);
+    const windowSize = Math.min(compaction.contextWindow, this.opts.model?.contextWindow || Infinity);
+    const budget = Math.floor(windowSize * compaction.triggerRatio);
     // 触发判定用实测（有 usage 时）或 CJK 加权的保守下限（冷启动、重放出来的对话体）
     const { tokens: used, scale } = measureContext(messages);
     if (used <= budget) return;
@@ -2015,6 +2005,17 @@ export class PlaywrightOrchestrator {
     // 摘要请求在飞：期间可能已 reload/切档重建/dispose——此时重建 Agent 等于僵尸复活
     if (this.disposed) return;
     this.compaction = { summary, cutNodeId, tokensBefore: used };
+    // 同步更新当前路径上最近那拍收束节点的快照：persist() 立即落盘生效，
+    // 且本拍若判废回滚（rewindFailedBeat → restoreBranchState）不会把刚生成的摘要洗掉重算。
+    const latestSnap = this.opts.tree.latestSnapshotOnPath(this.opts.tree.leafId);
+    if (latestSnap) {
+      this.opts.tree.saveSnapshotAt(latestSnap.nodeId, {
+        engine: latestSnap.engine,
+        stateFiles: latestSnap.stateFiles,
+        compaction: this.compaction,
+        nsfw: latestSnap.nsfw,
+      });
+    }
     // 重建即生效：投影自动把切点之前换成这份摘要（不再需要 withSeed 那层「就地突变」）
     this.buildAgent(this.bodyFromTree());
     console.log(
@@ -2033,6 +2034,7 @@ export class PlaywrightOrchestrator {
           model: this.opts.model,
           getApiKey: this.opts.getApiKey,
           signal: this.signalController.signal,
+          maxTokens: SUMMARY_MAX_TOKENS,
         },
         EPOCH_SUMMARY_SYSTEM,
         renderTranscript(head),

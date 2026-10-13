@@ -1385,18 +1385,17 @@ export class PlayHouse {
           model: this.modelFor(fresh.agents?.workshop?.model),
           agents: fresh.agents?.workshop,
           play: fresh,
+          // 线程压缩：每轮现取最新设置（设置页改完即生效），在 maybeCompact 内再与工坊模型窗口取 min
+          compaction: {
+            contextWindow: this.config.workshopContext.contextWindow,
+            triggerRatio: this.config.workshopContext.compactRatio,
+            keepRecentTokens: this.config.workshopContext.keepRecentTokens,
+          },
         };
       },
       getApiKey: () => this.config.apiKey,
       emit: (msg) => this.broadcast(play.id, msg),
       onFilesChanged: () => void this.reloadAfterWorkshopWrite(play.id),
-      // 线程压缩：工坊可用自己那组 env（缺省沿用全局），再与工坊模型自带的窗口取小——
-      // 模型元数据不可信，但只用来收紧预算不会更糟。
-      compaction: {
-        contextWindow: this.config.workshopContext.contextWindow,
-        triggerRatio: this.config.workshopContext.compactRatio,
-        keepRecentTokens: this.config.workshopContext.keepRecentTokens,
-      },
       playAssets,
       imageConcurrency: this.config.image.concurrency,
       playMusic: this.playMusicFor(play.id, store),

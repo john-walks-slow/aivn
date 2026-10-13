@@ -34,10 +34,33 @@ export const EPOCH_SUMMARY_SYSTEM = [
   "",
   "要求：",
   "- 只复述原文已有的事实，绝不新增剧情、动作或设定",
+  "- 若记录开头带有此前的【前情提要】，请将其与后续新增轮次合并为一份完整的前情提要，不要丢掉早期的关键事实与伏笔",
   "- 保留具体的角色名、地点、道具、已立下的状态与旗标名",
   "- 玩家的每一次表态与选择必须单独列出（这是玩家主权痕迹，不能概括掉）",
   "- 未回收的伏笔与悬念单列一节，方便后续接续",
 ].join("\n");
+
+/** 纪元压缩前情提要的固定首尾句：组装（`formatCompactionSeed`）与二次压缩拆解（`splitCompactionSeed`）同住一处。 */
+const COMPACTION_SEED_HEADER = "【前情提要】（更早的剧情已压缩归档，以下都是已经发生的既定事实：）";
+const COMPACTION_SEED_FOOTER = "（请直接从当前场景继续往后写，不要重演、不要推翻已确立的情节。）";
+
+/** 组装纪元压缩前情提要（供 `rebuild.ts` 投影首拍 user 使用）。 */
+export function formatCompactionSeed(summary: string): string {
+  return [COMPACTION_SEED_HEADER, summary, COMPACTION_SEED_FOOTER].join("\n");
+}
+
+/** 拆解首拍 user 顶部并入的前情提要与紧随其后的本拍输入；非前情提要消息返回 null。 */
+function splitCompactionSeed(content: string): { seed: string; rest: string } | null {
+  if (!content.startsWith(COMPACTION_SEED_HEADER)) return null;
+  const footerMarker = `\n${COMPACTION_SEED_FOOTER}\n\n`;
+  const footerAt = content.indexOf(footerMarker);
+  if (footerAt < 0) return { seed: content.trim(), rest: "" };
+  const seedEnd = footerAt + 1 + COMPACTION_SEED_FOOTER.length;
+  return {
+    seed: content.slice(0, seedEnd).trim(),
+    rest: content.slice(footerAt + footerMarker.length).trim(),
+  };
+}
 
 /** 单条消息渲染上限外的省略号。 */
 const TRUNCATED = "…（略）";
@@ -81,7 +104,8 @@ export function measureContext(messages: readonly AgentMessage[]): ContextMeasur
 export function estimateMessageTokens(message: AgentMessage): number {
   // bashExecution 一类消息没有 content 字段（它按 command/output 计），取不到就当没有散文
   const prose = proseText((message as { content?: unknown }).content);
-  const base = message.role === "system" ? 0 : estimateTokens(message);
+  if (message.role === "system") return localTextTokens(prose);
+  const base = estimateTokens(message);
   if (prose === "") return base;
   return base + localTextTokens(prose) - Math.ceil(prose.length / 4);
 }
@@ -178,7 +202,7 @@ export function splitSummary(text: string): EpochSummary {
   if (first === -1) return { oneLiner: "（本纪元无有效摘要）", body: text.trim() };
   // 轻量模型常先吐一个 markdown 标题；拿它当摘要会让 A 区索引变成「纪元 1：前情提要」
   while (first < lines.length && isGenericTitle(lines[first]!)) first += 1;
-  if (first >= lines.length) first = 0;
+  if (first >= lines.length) return { oneLiner: "（本纪元无有效摘要）", body: "" };
   const oneLiner = lines[first]!.replace(/^#+\s*/, "").trim();
   const body = lines
     .slice(first + 1)
@@ -217,13 +241,23 @@ export function withSeed(tail: readonly AgentMessage[], seed: string): AgentMess
  */
 export function compactionText(raw: string): string {
   const { oneLiner, body } = splitSummary(raw);
+  if (oneLiner === "（本纪元无有效摘要）") return "";
   return body === oneLiner ? oneLiner : `${oneLiner}\n\n${body}`;
 }
 
 function renderMessage(message: AgentMessage, labels?: TranscriptLabels): string {
   switch (message.role) {
-    case "user":
-      return truncate(`${labels?.user ?? "【玩家/导演】"}${blockText(message.content)}`);
+    case "user": {
+      const content = blockText(message.content);
+      const userLabel = labels?.user ?? "【玩家/导演】";
+      const seeded = splitCompactionSeed(content);
+      if (seeded) {
+        return seeded.rest === ""
+          ? seeded.seed
+          : `${seeded.seed}\n\n${truncate(`${userLabel}${seeded.rest}`)}`;
+      }
+      return truncate(`${userLabel}${content}`);
+    }
     case "assistant": {
       const text = blockText(message.content);
       const blocks = Array.isArray(message.content) ? message.content : [];
@@ -255,13 +289,19 @@ function blockText(content: unknown): string {
 
 function truncate(text: string): string {
   const trimmed = text.trim();
-  if (trimmed.length <= TRANSCRIPT_CHARS_PER_MESSAGE) return trimmed;
-  return `${clipHead(trimmed, TRANSCRIPT_CHARS_PER_MESSAGE)}${TRUNCATED}`;
-}
-
-/** 按码点裁剪（slice 会拦腰截断 emoji 的代理对，产生乱码字符）。 */
-function clipHead(text: string, maxChars: number): string {
-  return text.length <= maxChars ? text : [...text].slice(0, maxChars).join("");
+  const points = [...trimmed];
+  if (points.length <= TRANSCRIPT_CHARS_PER_MESSAGE) return trimmed;
+  // 保留头 + 尾：视觉小说单拍的收束转折与停止点选项都在拍末，只留头部会把「给玩家什么选项」切掉；
+  // 优先在换行边界落刀，避免把标签或句子从中间劈成半截。
+  const headChars = Math.floor(TRANSCRIPT_CHARS_PER_MESSAGE * 0.7);
+  const tailChars = TRANSCRIPT_CHARS_PER_MESSAGE - headChars;
+  let head = points.slice(0, headChars).join("");
+  const lastNl = head.lastIndexOf("\n");
+  if (lastNl >= Math.floor(head.length * 0.7)) head = head.slice(0, lastNl);
+  let tail = points.slice(-tailChars).join("");
+  const firstNl = tail.indexOf("\n");
+  if (firstNl >= 0 && firstNl <= Math.floor(tail.length * 0.3)) tail = tail.slice(firstNl + 1);
+  return `${head}${TRUNCATED}\n${tail}`;
 }
 
 /** 按码点保留尾部 maxChars 个字符。 */

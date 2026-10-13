@@ -7,10 +7,14 @@ export interface OneShotOptions {
   getApiKey: () => string | undefined;
   /** 中断信号：编排器回收时立即掐断在飞的旁路请求（摘要/润色/翻译）。 */
   signal?: AbortSignal;
+  /** 单发输出上限（缺省 2048；长会话摘要可按需放宽）。 */
+  maxTokens?: number;
 }
 
 /** 单发输出上限：润色/翻译均为短文本。 */
 const MAX_TOKENS = 2048;
+/** 纪元/工坊长会话摘要输出上限（含 low 思考预算与最多 6000 字正文）。 */
+export const SUMMARY_MAX_TOKENS = 4096;
 
 /**
  * 单发补全（润色/翻译等轻量旁路）：一次性 system+user → 全量文本。
@@ -38,7 +42,7 @@ export async function completeText(
     {
       reasoning: "low",
       apiKey: opts.getApiKey(),
-      maxTokens: MAX_TOKENS,
+      maxTokens: opts.maxTokens ?? MAX_TOKENS,
       signal: opts.signal,
     },
   );

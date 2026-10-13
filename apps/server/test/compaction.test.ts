@@ -6,6 +6,7 @@ import {
   capDigest,
   compactionText,
   estimateThreadTokens,
+  formatCompactionSeed,
   measureContext,
   pickThreadCutIndex,
   renderTranscript,
@@ -69,9 +70,16 @@ describe("纪元压缩：计量与转录", () => {
     const cold = measureContext([user("一".repeat(120)), assistant("二".repeat(120))]);
     expect(cold.scale).toBe(1);
     expect(cold.tokens).toBe(240);
+
+    // system 消息不在 pi 的 estimateTokens switch 里（base=0），不能再误减 chars/4
+    const withSys = measureContext([
+      { role: "system", content: "系".repeat(100) + "abcd".repeat(20), timestamp: 0 },
+      user("一".repeat(80)),
+    ]);
+    expect(withSys.tokens).toBe(100 + 20 + 80);
   });
 
-  it("转录：三类消息各取其文，超长单条截断", () => {
+  it("转录：三类消息各取其文，超长单条保留头尾，二次压缩保留完整前情提要与紧随输入", () => {
     const text = renderTranscript([
       user("【玩家表态】我到了"),
       assistant('<say id="mio">……太慢了！</say>[调用 write]'),
@@ -82,12 +90,34 @@ describe("纪元压缩：计量与转录", () => {
     expect(text).toContain("[调用 write]");
     expect(text).toContain("【记忆工具 search_archive】");
 
-    const long = renderTranscript([user("啊".repeat(5000))]);
-    expect(long.length).toBeLessThan(5000);
+    const long = renderTranscript([
+      assistant(`开场台词${"啊".repeat(3000)}（等待玩家选择：留下 / 离开）`),
+    ]);
+    expect(long.length).toBeLessThan(2500);
+    expect(long).toContain("开场台词");
     expect(long).toContain("（略）");
+    expect(long).toContain("（等待玩家选择：留下 / 离开）");
+
+    // 二次压缩：首拍 user 含上一纪元的【前情提要】（哪怕摘要内部自己带了 \n\n【玩家选择】）+ 本拍【用户输入】，
+    // 必须按固定尾句精确切分，旧提要一字不丢，其后输入正常挂标签
+    const priorSeed = formatCompactionSeed(
+      [
+        "第一幕概览。",
+        "",
+        "【玩家选择】",
+        "- 选择了留在走廊等待",
+        `${"旧剧情细节".repeat(450)}`,
+        "【未回收伏笔】",
+        "- 旧校舍钥匙在谁手里",
+      ].join("\n"),
+    );
+    const secondEpoch = renderTranscript([user(`${priorSeed}\n\n【用户输入】\n推开旧校舍的门`)]);
+    expect(secondEpoch).toContain("【前情提要】");
+    expect(secondEpoch).toContain("【未回收伏笔】\n- 旧校舍钥匙在谁手里");
+    expect(secondEpoch).toContain("【玩家/导演】【用户输入】\n推开旧校舍的门");
   });
 
-  it("摘要拆分：首行一句话 + 其余正文；单行时正文回退", () => {
+  it("摘要拆分：首行一句话 + 其余正文；单行时正文回退；仅含通用标题判为空摘要", () => {
     const parsed = splitSummary("走廊上澪甩开了主角的手。\n\n## 剧情进展\n两人走到旧校舍。\n");
     expect(parsed.oneLiner).toBe("走廊上澪甩开了主角的手。");
     expect(parsed.body).toBe("## 剧情进展\n两人走到旧校舍。");
@@ -100,6 +130,8 @@ describe("纪元压缩：计量与转录", () => {
     expect(withHeading.oneLiner).toBe("澪生气地走了。");
     expect(splitSummary("# 前情提要\n\n澪走了。").oneLiner).toBe("澪走了。");
     expect(splitSummary("## 前情提要\n## 剧情进展").oneLiner).toBe("剧情进展");
+    expect(splitSummary("# 前情提要\n## 摘要\n").oneLiner).toBe("（本纪元无有效摘要）");
+    expect(compactionText("# 前情提要\n## 摘要\n")).toBe("");
 
     // 压缩记录里的正文：通用标题剥掉，一行摘要与正文合成一份（模型看到的就是它）
     expect(compactionText("## 概览\n澪生气地走了。\n\n## 剧情进展\n两人走到旧校舍。")).toBe(
@@ -314,6 +346,38 @@ describe("编排器纪元压缩", () => {
 
     expect(messages.filter((m) => m.type === "beat_start")).toHaveLength(2);
     expect(tree.latestSnapshotOnPath(tree.leafId)?.compaction).toBeUndefined();
+  });
+
+  it("压缩后触发 carryOver 重建或本拍首跑判废重演：不丢前情提要、不重复请求摘要", async () => {
+    const memory = new PlayMemory();
+    const { orchestrator, tree, contexts } = setup(
+      [
+        { text: BEAT_1, beatDone: true },
+        { text: BEAT_2, beatDone: true },
+        { text: "澪在走廊定下旧校舍之约。\n\n## 剧情进展\n两人准备前往旧校舍。" },
+        // 首跑空响应触发判废重演：压缩记录已入上一拍快照，重演不应丢失或二次请求摘要
+        { text: "" },
+        // 重演正常收束（且输出超 8000 token）
+        { text: `<say id="mio">${"长台词".repeat(3000)}</say>\n<stop/>` },
+      ],
+      TIGHT,
+      memory,
+    );
+    await orchestrator.playerAction({ kind: "free", text: "我到了" });
+    await orchestrator.playerAction({ kind: "continue" });
+    await orchestrator.playerAction({ kind: "continue" });
+
+    expect(tree.latestSnapshotOnPath(tree.leafId)?.compaction?.summary).toContain(
+      "澪在走廊定下旧校舍之约。",
+    );
+    // 5 次请求 = 第1拍 + 第2拍 + 纪元摘要(1次) + 第3拍首跑判废 + 第3拍重演（没有第2次摘要请求）
+    expect(contexts).toHaveLength(5);
+
+    // carryOver 接力（模拟写记忆卡/改设定触发轮边界重建）：即使当前纪元已超 8000 token，首拍的【前情提要】仍完整保留
+    const seed = orchestrator.carryOver("【设定已更新】");
+    expect(seed).not.toBeNull();
+    expect(JSON.stringify(seed!.messages[0])).toContain("【前情提要】");
+    expect(JSON.stringify(seed!.messages[0])).toContain("澪在走廊定下旧校舍之约。");
   });
 });
 

@@ -4,6 +4,7 @@ import {
   toNodeView,
 } from "@aivn/core";
 import type { CompactionRecord, LineageEvent, SequencedEvent, StopPayload } from "@aivn/core";
+import { formatCompactionSeed } from "./compaction.js";
 
 /**
  * 上下文重建（P6 transformContext 的纯函数层）：谱系事件日志是唯一真相源，
@@ -82,11 +83,7 @@ export function nsfwTransitionBeat(summary: string): BeatText {
  */
 function compactionSeedBeat(summary: string): BeatText {
   return {
-    user: [
-      "【前情提要】（更早的剧情已压缩归档，以下都是已经发生的既定事实：）",
-      summary,
-      "（请直接从当前场景继续往后写，不要重演、不要推翻已确立的情节。）",
-    ].join("\n"),
+    user: formatCompactionSeed(summary),
     assistant: "已了解。我会接着既定事实继续演出。",
   };
 }
