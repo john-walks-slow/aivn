@@ -222,3 +222,13 @@ export const CRAFT_ENUMS = {
   music: CRAFT_MUSIC_SOURCES,
   audio: CRAFT_AUDIO_SOURCES,
 } as const;
+
+/**
+ * `craft` 段的字段名，与 core 的 `parseCraft` 一一对应：它只读这几个位置，别的键一律当没写。
+ *
+ * 取值白名单能从 core 派生，字段名派不出来（类型没有运行时），所以在这里列一份——
+ * `parseCraft` 加了字段而这里没跟上时，`readiness` 会把新字段当成「没有这个字段」报出来，
+ * 症状是自找的，不会静默。
+ */
+export const CRAFT_KEYS = ["beatLength", "stopOptions", "assets"] as const;
+export const CRAFT_ASSET_KEYS = ["background", "cg", "sprite", "music", "audio"] as const;

@@ -15,7 +15,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parsePlayConfig } from "@aivn/core";
-import { CRAFT_ENUMS } from "../craft/params.js";
+import { CRAFT_ASSET_KEYS, CRAFT_ENUMS, CRAFT_KEYS } from "../craft/params.js";
 import { assetMetaKey, type AssetManifest } from "../media/catalog.js";
 import { listPlayAssets } from "../media/asset-index.js";
 
@@ -28,7 +28,7 @@ export interface PlayReadiness {
   play: boolean;
   /** 在但读不出来时的原因（引擎报的那句话）；读得出来或压根不在时为 undefined。 */
   problem?: string;
-  /** `craft` 段里引擎不认的取值（会被静默当没写）；空数组 = 都认。 */
+  /** `craft` 段里引擎不认的东西：白名单外的取值、名字对不上的字段（都会被静默当没写）；空数组 = 都认。 */
   strayCraft: string[];
   /** 世界状态文件的问题；没问题时为 undefined。 */
   stateProblem?: string;
@@ -93,7 +93,7 @@ export function renderReadiness(r: PlayReadiness): string {
     `- 立绘：${r.sprites ? "✓" : "缺（assets/sprites/<主体id>/）——没有立绘的主体不上台，改用旁白交代"}`,
     `- 背景图：${r.background ? "✓" : "缺（assets/backgrounds/）——没有背景就落氛围底色，照样能演"}`,
     `- 素材清单：${r.assets > 0 ? `${r.assets} 个文件` : "空"}——素材要放进 assets/`,
-    r.strayCraft.length > 0 ? `- 写作参数：这些取值引擎不认、会被当没写——${r.strayCraft.join("；")}` : null,
+    r.strayCraft.length > 0 ? `- 写作参数：这些引擎不认、会被当没写——${r.strayCraft.join("；")}` : null,
     r.stateProblem ? `- 世界状态：${r.stateProblem}` : null,
     r.danglingAssets.length > 0
       ? `- 素材对账：台账里有登记但文件不在——${r.danglingAssets.join("、")}（重新登记那张图，或删掉台账那几条）`
@@ -159,10 +159,13 @@ function readText(path: string): string {
 }
 
 /**
- * `craft` 段里引擎不认的取值。
+ * `craft` 段里引擎不认的东西：取值不在白名单里的，以及名字对不上的字段。
  *
- * 白名单外的值会被 `parsePlayConfig` **静默当没写**——以前这条路由 `set_craft` 的参数枚举挡着，
+ * 两者都被 `parsePlayConfig` **静默当没写**——以前这条路由 `set_craft` 的参数枚举挡着，
  * 现在参数是模型用 edit 写进去的，只能在这里报出来。
+ *
+ * 字段名这条比取值那条更隐蔽：键认不出来时连槽位都找不到，整份报告一片绿、参数照默认值跑，
+ * 用户看到的是「工坊说参数已更新」+「界面上的值没变」。
  */
 function strayCraftValues(dir: string, playFile: string): string[] {
   const raw = readText(join(dir, playFile));
@@ -186,9 +189,23 @@ function strayCraftValues(dir: string, playFile: string): string[] {
     ["assets.music", assets.music, CRAFT_ENUMS.music],
     ["assets.audio", assets.audio, CRAFT_ENUMS.audio],
   ];
-  return slots
+  const strays = slots
     .filter(([, value, allowed]) => value !== undefined && value !== null && !allowed.includes(String(value)))
     .map(([path, value, allowed]) => `craft.${path} = ${JSON.stringify(value)}（只认 ${allowed.join(" / ")}）`);
+  return [...strays, ...unknownCraftKeys(root, assets)];
+}
+
+/** `craft` 段里名字对不上的字段：字段名写错时 `parseCraft` 连槽位都找不到（见上面那段注释）。 */
+function unknownCraftKeys(root: Record<string, unknown>, assets: Record<string, unknown>): string[] {
+  const known = (keys: readonly string[], key: string): boolean => keys.includes(key);
+  return [
+    ...Object.keys(root)
+      .filter((key) => !known(CRAFT_KEYS, key))
+      .map((key) => `craft.${key}（没有这个字段；只认 ${CRAFT_KEYS.join(" / ")}）`),
+    ...Object.keys(assets)
+      .filter((key) => !known(CRAFT_ASSET_KEYS, key))
+      .map((key) => `craft.assets.${key}（没有这个字段；只认 ${CRAFT_ASSET_KEYS.join(" / ")}）`),
+  ];
 }
 
 /**

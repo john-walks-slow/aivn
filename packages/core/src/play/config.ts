@@ -322,6 +322,8 @@ function parseAssetSources(raw: CraftAssetSources | undefined): CraftAssetSource
   if (cg) out.cg = cg;
   const sprite = oneOf(CRAFT_SPRITE_SOURCES, raw.sprite);
   if (sprite) out.sprite = sprite;
+  const music = oneOf(CRAFT_MUSIC_SOURCES, raw.music);
+  if (music) out.music = music;
   const audio = oneOf(CRAFT_AUDIO_SOURCES, raw.audio);
   if (audio) out.audio = audio;
   return Object.keys(out).length > 0 ? out : undefined;

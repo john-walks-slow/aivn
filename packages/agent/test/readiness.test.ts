@@ -67,6 +67,23 @@ describe("判据", () => {
     expect(renderReadiness(r)).toContain("写作参数");
   });
 
+  it("写作参数里名字对不上的字段报出来（模型写错过 turnLength / stopChoices / assetSources）", async () => {
+    await write(
+      "play.json",
+      JSON.stringify({
+        id: "d",
+        craft: { turnLength: "long", stopChoices: 2, assetSources: { background: "generate", bgm: "library" } },
+      }),
+    );
+    const r = readPlayReadiness(play);
+    expect(r.strayCraft).toEqual([
+      "craft.turnLength（没有这个字段；只认 beatLength / stopOptions / assets）",
+      "craft.stopChoices（没有这个字段；只认 beatLength / stopOptions / assets）",
+      "craft.assetSources（没有这个字段；只认 beatLength / stopOptions / assets）",
+    ]);
+    expect(renderReadiness(r)).toContain("craft.turnLength");
+  });
+
   it("世界状态坏掉时报出来", async () => {
     await write("play.json", PLAY_JSON);
     await write("memory/always/state/state.json", JSON.stringify({ affinity: { alice: 120, bob: "高" } }));

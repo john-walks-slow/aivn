@@ -93,6 +93,16 @@ describe("parsePlayConfig：写作参数（craft）与逐剧目生图（image）
     expect(parsePlayConfig({ ...BASE, craft: "medium" }).craft).toBeUndefined();
   });
 
+  it("assets 五类都要真的落进 craft（music 曾漏了 parse：写进去等于没写）", () => {
+    const play = parsePlayConfig({
+      ...BASE,
+      craft: { assets: { background: "off", cg: "library", sprite: "off", music: "library", audio: "off" } },
+    });
+    expect(play.craft).toEqual({
+      assets: { background: "off", cg: "library", sprite: "off", music: "library", audio: "off" },
+    });
+  });
+
   it("image 只做非空字符串这一层，档位的合法性留给生图层", () => {
     const play = parsePlayConfig({ ...BASE, image: { model: " gemini-3.1-flash-image ", size: " 2K ", } });
     expect(play.image).toEqual({ model: "gemini-3.1-flash-image", size: "2K" });
