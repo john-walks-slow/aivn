@@ -6,6 +6,14 @@ AI 驱动的视觉小说引擎，结合文本生成、图像生成、语音和�
 - 工坊中，用户与 Agent 设计世界观、角色，生成游戏素材。
 - 舞台中，用户与 Agent 共同演绎故事。Agent 流式输出 Stage DSL 增量剧本，用户选择选项或自由输入。
 
+## 画面展示
+
+| 开始界面 | 舞台演出与选肢 |
+| :---: | :---: |
+| ![AIVN 开始界面](docs/images/aivn-title.png) | ![AIVN 舞台演出与选肢](docs/images/aivn-stage.png) |
+| **路线树与分支探索** | **创作工坊** |
+| ![AIVN 路线树](docs/images/aivn-route.png) | ![AIVN 创作工坊](docs/images/aivn-workshop.png) |
+
 ---
 
 ## 安装与快速上手
