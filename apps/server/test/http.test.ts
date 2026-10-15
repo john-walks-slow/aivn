@@ -11,9 +11,11 @@ import type { PlayHouse } from "../src/playhouse.js";
 /** 只认 writeHead/end 的最小 res：REST 用例只断言状态码与 JSON 载荷。 */
 class FakeRes {
   statusCode = 0;
+  headers: Record<string, string> = {};
   payload = "";
-  writeHead(code: number): this {
+  writeHead(code: number, headers?: Record<string, string>): this {
     this.statusCode = code;
+    if (headers) this.headers = headers;
     return this;
   }
   end(data?: string | Buffer): this {
@@ -440,5 +442,33 @@ describe("GET /plays/:id/drafts/<draftId>/<file>：生图草稿预览", () => {
     expect((await get("/plays/p1/drafts/d-1/image.png")).statusCode).toBe(404);
     expect((await get("/plays/p1/drafts/d-1/..%2F..%2Fplay.json")).statusCode).toBe(404);
     expect((await get("/plays/p1/drafts/d-1/a/b.png")).statusCode).toBe(404);
+  });
+});
+
+describe("GET /api/plays/:id/export 导出 HTML 与 Zip", () => {
+  let root: string;
+  let library: PlayLibrary;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "stage-http-export-"));
+    library = new PlayLibrary(root);
+    await library.createEmpty("p1", "测试剧目");
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("format=html 时返回单文件 HTML", async () => {
+    const res = new FakeRes();
+    await handleHttp(
+      { url: "/api/plays/p1/export?format=html", method: "GET" } as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      library,
+      {} as PlayHouse,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/html");
+    expect(res.payload).toContain("<!DOCTYPE html>");
+    expect(res.payload).toContain('<script id="aivn-data" type="text/plain">');
   });
 });

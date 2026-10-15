@@ -620,10 +620,21 @@ export async function handleHttp(
     }
     if (sub === "export" && parts.length === 4) {
       if (method !== "GET") return fail(res, 405, "不支持的方法");
-      const zip = await library.exportZip(playId);
+      const format = url.searchParams.get("format");
+      if (format === "html") {
+        const html = await library.exportPlayedHtml(playId);
+        res.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "content-disposition": `attachment; filename="${encodeURIComponent(playId)}.html"`,
+        });
+        res.end(html);
+        return;
+      }
+      const played = url.searchParams.get("played") === "1";
+      const zip = played ? await library.exportPlayedZip(playId) : await library.exportZip(playId);
       res.writeHead(200, {
         "content-type": "application/zip",
-        "content-disposition": `attachment; filename="${playId}.zip"`,
+        "content-disposition": `attachment; filename="${encodeURIComponent(playId)}${played ? "-played" : ""}.zip"`,
       });
       res.end(Buffer.from(zip));
       return;

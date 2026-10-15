@@ -29,7 +29,7 @@
   },
   "scripts": {
     "sync:skills": "node packages/agent/skills/sync-skills.mjs",
-    "build": "pnpm -r build",
+    "build": "pnpm -r build && node scripts/build-standalone-replay.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "soak": "node scripts/soak.mjs",

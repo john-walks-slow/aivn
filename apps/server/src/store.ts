@@ -4,6 +4,13 @@ import { existsSync, statSync } from "node:fs";
 import { join, resolve, sep, dirname } from "node:path";
 import { unzipSync, zipSync } from "fflate";
 import {
+  exportPlayedHtml,
+  exportPlayedZip,
+  extractZipFromHtml,
+  loadDefaultPlayerAssets,
+  type PlayerAssets,
+} from "./exportReplay.js";
+import {
   LineageTree,
   type EngineStateSnapshot,
   type LineageEvent,
@@ -426,17 +433,30 @@ export class PlayLibrary {
     return summaries;
   }
 
-  /** 剧目包导入（zip：根层须含 play.json）。返回剧目 id。防 Zip Slip：先全量校验再落盘，杜绝部分导入残留。 */
+  /** 剧目包导入（支持标准 zip 或嵌入 Base64 Zip 的单 HTML 文件；根层须含 play.json）。
+   *  返回剧目 id。防 Zip Slip：先全量校验再落盘；若同名自动改名派生 <id>-continued，避免静默覆盖已有剧目。 */
   async importZip(data: Buffer): Promise<string> {
-    const files = unzipSync(new Uint8Array(data));
+    const rawZip = extractZipFromHtml(data) ?? new Uint8Array(data);
+    const files = unzipSync(rawZip);
     const prefix = Object.keys(files).find((name) => name.endsWith("play.json"));
     if (!prefix) throw new Error("剧目包缺少 play.json");
     const baseDir = prefix.slice(0, prefix.indexOf("play.json"));
     const playRaw = JSON.parse(new TextDecoder().decode(files[prefix]!));
     const play = parsePlayConfig(playRaw);
     if (!/^[\w-]+$/.test(play.id)) throw new Error(`非法剧目 id: ${play.id}`);
-    const target = join(this.root, play.id);
-    if (existsSync(target)) throw new Error(`剧目已存在: ${play.id}`);
+
+    // 若本地已有同名剧目，自动派生不重名的续演 ID，避免覆盖
+    let targetId = play.id;
+    let target = join(this.root, targetId);
+    if (existsSync(target)) {
+      let counter = 1;
+      while (existsSync(join(this.root, `${play.id}-continued${counter > 1 ? `-${counter}` : ""}`))) {
+        counter++;
+      }
+      targetId = `${play.id}-continued${counter > 1 ? `-${counter}` : ""}`;
+      target = join(this.root, targetId);
+    }
+
     const targetAbs = resolve(target);
     const entries: { rel: string; content: Uint8Array }[] = [];
     for (const [name, content] of Object.entries(files)) {
@@ -452,9 +472,32 @@ export class PlayLibrary {
     await mkdir(target, { recursive: true });
     for (const { rel, content } of entries) {
       await mkdir(join(target, rel, ".."), { recursive: true });
-      await writeFile(join(target, rel), content);
+      if (rel === "play.json" && targetId !== play.id) {
+        // 重写重命名后的 play.json ID 与标题
+        const modifiedPlay = {
+          ...playRaw,
+          id: targetId,
+          title: playRaw.title ? `${playRaw.title} (续演)` : targetId,
+        };
+        await writeFile(join(target, rel), JSON.stringify(modifiedPlay, null, 2));
+      } else {
+        await writeFile(join(target, rel), content);
+      }
     }
-    return play.id;
+    return targetId;
+  }
+
+  /** 演后剧目导出单 HTML 文件（自包含，零 API 离线观看与接续演出）。 */
+  async exportPlayedHtml(playId: string, playerAssets?: PlayerAssets): Promise<string> {
+    const dir = this.dirOf(playId);
+    const assets = playerAssets ?? (await loadDefaultPlayerAssets());
+    return exportPlayedHtml(dir, playId, assets);
+  }
+
+  /** 演后剧目完整归档 Zip（含运行期会话、谱系与 TTS 音频）。 */
+  async exportPlayedZip(playId: string): Promise<Uint8Array> {
+    const dir = this.dirOf(playId);
+    return exportPlayedZip(dir);
   }
 
   /** 剧目包导出（zip：play.json + assets + 剧目级记忆，不含存档/媒体缓存等运行时）。 */

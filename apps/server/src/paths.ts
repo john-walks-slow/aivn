@@ -47,6 +47,13 @@ export function workshopSkillsDirOf(metaUrl: string, packaged = isPackaged()): s
     : join(dirname(fileURLToPath(metaUrl)), "..", "skills");
 }
 
+/** 离线单文件播放器静态产物目录（standalone-player.js / standalone-player.css）。 */
+export function standaloneAssetsDirOf(metaUrl: string, packaged = isPackaged()): string {
+  return packaged
+    ? join(resourceRootOf(metaUrl, true), "apps", "server", "assets", "standalone")
+    : join(dirname(fileURLToPath(metaUrl)), "..", "assets", "standalone");
+}
+
 /**
  * 读一份 `.env`，读不到就当没有。
  *
