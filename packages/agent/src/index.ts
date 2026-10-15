@@ -171,6 +171,7 @@ export type { AssetIndex } from "./media/asset-index.js";
 export { listPlayAssets, MEDIA_EXT } from "./media/asset-index.js";
 export {
   ACTOR_RULES,
+  CG_RULES,
   COMMENT_HEAD,
   CONTRACT_INTRO,
   DIALOGUE_TAGS,

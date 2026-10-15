@@ -9,6 +9,7 @@ import {
 import {
   ACTOR_RULES,
   AUDIO_RULES,
+  CG_RULES,
   castTitle,
   COMMENT_HEAD,
   CONTRACT_INTRO,
@@ -203,6 +204,8 @@ ${ACTOR_RULES}
 
 \`trigger\` 演一次就结束，不要连着写同一个 trigger。\`on\` 写了就一直保留，记得用 \`off\` 收掉
 （黑边、暗角、常亮色、持续抖都要收）。
+
+${CG_RULES}
 
 ## 台词（正文为原生文本，不要转义）
 

@@ -17,6 +17,11 @@ describe("renderAssetSections", () => {
     expect(out.indexOf("# 可用背景 bg")).toBeLessThan(out.indexOf("# 已有插图 cg"));
   });
 
+  it("插图清单带用法：写 <cg id> 让那一张登场", () => {
+    const out = renderAssetSections({ cg: ["cg_1.png"] }, () => ({}));
+    expect(out).toContain('- cg_1\n在一幕里写 `<cg id="…"/>` 让它登场。');
+  });
+
   it("清单项带素材表里的说明（描述｜标签｜情绪｜时长）", () => {
     const out = renderAssetSections({ sfx: ["se_door.ogg"] }, (id) => ({
       description: id === "se_door" ? "木门推开" : "",
