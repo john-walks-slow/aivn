@@ -28,6 +28,7 @@ import { AssetsPanel } from "./AssetsPanel.js";
 import { FileBrowser } from "./FileBrowser.js";
 import { MemoryPane } from "./MemoryPane.js";
 import { PlayPane } from "./PlayPane.js";
+import { pickStarters } from "./starters.js";
 import { TurnParts } from "./TurnParts.js";
 import { WorkshopMarkdown } from "./WorkshopMarkdown.js";
 import { useWorkshop } from "./useWorkshop.js";
@@ -103,6 +104,8 @@ export function WorkshopPane({
   const workshop = useWorkshop(send);
   const { state } = workshop;
   const [input, setInput] = useState("");
+  /** 空会话摆出的开场建议：每次开新会话重抽一批（见 pickStarters）。 */
+  const [starters, setStarters] = useState(pickStarters);
   const [threadsOpen, setThreadsOpen] = useState(false);
   const [lightbox, setLightbox] = useState<{
     images: LightboxImage[];
@@ -111,6 +114,7 @@ export function WorkshopPane({
   /** 压缩摘要是否展开（默认折叠成一行一句话）。 */
   const [digestOpen, setDigestOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   /** 视口是否贴着对话底部。离开底部就不再自动下拽——正读着上文的人不该被新一行拖走。 */
   const [atTail, setAtTail] = useState(true);
   const navRef = useRef<HTMLElement | null>(null);
@@ -126,6 +130,16 @@ export function WorkshopPane({
   /** 回到会话顶部。 */
   const goTop = (): void => {
     scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  /** 点一条开场建议：只填进输入框（发不发由用户决定），光标落到末尾方便接着改。 */
+  const applyStarter = (text: string): void => {
+    setInput(text);
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    // value 要等这一帧渲染完才更新，同步设 selection 只会被旧值截短
+    requestAnimationFrame(() => el.setSelectionRange(text.length, text.length));
   };
 
   /** 滚动位置的唯一真相：剩下的距离在 TAIL_GAP 以内就算贴着底。 */
@@ -401,6 +415,7 @@ export function WorkshopPane({
                   workshop.clearState();
                   workshop.newThread();
                   setInput("");
+                  setStarters(pickStarters());
                   setThreadsOpen(false);
                 }}
                 title="开一个新会话（下一条消息算它的第一句）"
@@ -425,6 +440,7 @@ export function WorkshopPane({
                       className="thread-name"
                       onClick={() => {
                         workshop.activate(thread.id);
+                        setStarters(pickStarters());
                         setThreadsOpen(false);
                       }}
                     >
@@ -474,9 +490,18 @@ export function WorkshopPane({
                     </div>
                     <h3>开启你的视觉小说创作</h3>
                     <p>描述你想要的世界、角色设定、剧情转折或修改要求。</p>
-                    <p className="muted small">
-                      例如：「构思一个充满和风神怪色彩的现代轻喜剧，主角经营着一家能听见万物心声的旧茶铺」
-                    </p>
+                    <div className="starter-chips">
+                      {starters.map((idea) => (
+                        <button
+                          key={idea.text}
+                          type="button"
+                          className="starter-chip"
+                          onClick={() => applyStarter(idea.text)}
+                        >
+                          {idea.text}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {state.messages.map((msg, i) => (
@@ -585,6 +610,7 @@ export function WorkshopPane({
 
             <footer className="workshop-input">
               <textarea
+                ref={inputRef}
                 value={input}
                 disabled={offline}
                 placeholder={
