@@ -2448,6 +2448,9 @@ html[data-ui-theme="dark"] .stage-root .theater-director {
   align-items: center;
   gap: 5px;
   height: calc(var(--stage-chrome-h, 30px) - 6px);
+  /* 通用 .dir-btn 那条（旧对话框贴边栏的残留）带 min-height: 40px：
+     不清掉的话每颗按钮都撑成 40px，进而从 30px 的胶囊里溢出来（选中态的底色最显眼）。 */
+  min-height: 0;
   padding: 0 9px;
   border: none;
   border-radius: var(--stage-chrome-radius, 999px);
