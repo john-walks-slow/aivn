@@ -42,8 +42,11 @@
 - 模块指引：`apps/server/AGENTS.md`（新增「上下文注入」一节、限制级一节改写为「已下线」）、`apps/web/AGENTS.md`（AgentPane 一条）
 - 用户文档：`README.md`（设置页字段总表删两行、Agent 页字段表加一行、play.json 示例加 `agents.injection`、能力表删「限制级通道」）
 
-## 未做的事
+## 合入
 
-- 未合入主分支（worktree-dev 规矩：需用户显式同意）。
+- 已合入 `main`（`merge-to-main.sh` 变基后 ff-only，落地 `0afec136`；合并前 main 已推进两个提交，脚本自动变基重放，无冲突）。
+- 合入后在新 main 上复验：`pnpm -r build` / `typecheck` / `check:agent-contract`（9 项）全绿；core `config.test.ts` 19 条、server 受影响 234 条、web `playPane` + `agentModelOptions` 13 条全绿。
+
+## 未做的事
 - DSH 侧（`dsh-aivn`）的 `lib/` 未重建——共享包改动是纯增量可选字段，按跨线矩阵在合并后补跑。
 - 舞台上的限制级通道角标与 `TurnParts` 的工具名表没动（通道已不可达，它们自然不出现）。
