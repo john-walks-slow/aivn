@@ -68,6 +68,20 @@ describe("buildSystemPrompt：素材元数据与已生成图清单", () => {
     expect(prompt).not.toContain("bg_rain（");
   });
 
+  it("插图清单带用法：写 <cg id> 让那一张登场", () => {
+    const prompt = build({ play: PLAY, assets: { cg: ["cg_confession.png"] } });
+    expect(prompt).toContain('- cg_confession\n在一幕里写 `<cg id="…"/>` 让它登场。');
+    // 清单空着就整段不出现——不教它去引用一个不存在的东西
+    expect(build({ play: PLAY })).not.toContain("# 已有插图 cg");
+  });
+
+  it("格式段把共享包的《插图（cg）》章装了进来", () => {
+    const prompt = build({ play: PLAY });
+    expect(prompt).toContain("## 插图（cg）");
+    expect(prompt).toContain("这一行是**引用**那张画，不会凭空画一张新的出来");
+    expect(prompt).toContain("直到下一次 `<actor>` 或换底 `<scene bg>` 把它撤掉");
+  });
+
   it("音频素材把情绪、适用场景、时长、可循环一起摆出来", () => {
     const prompt = build({
       play: PLAY,

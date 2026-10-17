@@ -56,7 +56,7 @@ export function renderAssetSections(
     section("可用音乐 bgm", "bgm"),
     section("可用音效 sfx", "sfx"),
     audio,
-    section("已有插图 cg", "cg"),
+    section("已有插图 cg", "cg", "\n在一幕里写 `<cg id=\"…\"/>` 让它登场。"),
   ].join("");
 }
 

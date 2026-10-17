@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACTOR_RULES, COMMENT_HEAD, CONTRACT_INTRO, DIALOGUE_TAGS } from "../src/index.js";
+import { ACTOR_RULES, CG_RULES, COMMENT_HEAD, CONTRACT_INTRO, DIALOGUE_TAGS } from "../src/index.js";
 
 /**
  * Stage DSL 共用正文：两个宿主逐字相同的那几块。
@@ -48,5 +48,20 @@ describe("另三块", () => {
     expect(CONTRACT_INTRO).toContain("1. 指令先于台词");
     expect(CONTRACT_INTRO).toContain("2. 角色情绪/表情变化时");
     expect(CONTRACT_INTRO).not.toContain("3. ");
+  });
+});
+
+describe("插图那块", () => {
+  it("四条机制都在：引用不是生成、caption、铺满整屏、下一次 actor / 换底才撤", () => {
+    expect(CG_RULES).toContain("## 插图（cg）");
+    expect(CG_RULES).toContain('<cg id="cg_confession" caption="天台上的告白"/>');
+    expect(CG_RULES).toContain("这一行是**引用**那张画");
+    expect(CG_RULES).toContain("盖住背景与立绘");
+    expect(CG_RULES).toContain("直到下一次 `<actor>` 或换底 `<scene bg>` 把它撤掉");
+  });
+
+  it("不点名生图工具——两个宿主的工具面不同名，点名会把另一个教坏", () => {
+    expect(CG_RULES).not.toContain("generate_image");
+    expect(CG_RULES).not.toContain("generate_asset");
   });
 });
