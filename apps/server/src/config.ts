@@ -26,6 +26,9 @@ export interface ImageKindOverride {
   size?: string;
   reference?: ImageReference;
   timeoutMs?: number;
+  /** 失败重试（见 `imageRetry.ts`）；0 = 这一类目不重试。 */
+  retryIntervalMs?: number;
+  retryWindowMs?: number;
 }
 
 /**
@@ -41,6 +44,8 @@ export interface ImageKindPatch {
   reference?: ImageReference | "" | null;
   /** 数字或数字串都收（输入框天然给字符串）；空 = 清空。 */
   timeoutMs?: number | string | null;
+  retryIntervalMs?: number | string | null;
+  retryWindowMs?: number | string | null;
 }
 
 /** 生图配置块的提交形态：类目覆盖单独放宽（见 {@link ImageKindPatch}）。 */
@@ -54,6 +59,8 @@ export interface ImageSettingsPatch {
   concurrency?: number;
   timeoutMs?: number;
   reference?: ImageReference;
+  retryIntervalMs?: number;
+  retryWindowMs?: number;
   kinds?: Partial<Record<ImageKind, ImageKindPatch>>;
 }
 
@@ -124,6 +131,9 @@ export interface ServerConfig {
     size: string;
     concurrency: number;
     timeoutMs: number;
+    /** 出图失败后的重试节奏（见 `imageRetry.ts`）：间隔与窗口都为 ≥1 才生效，任一项 0 = 不重试。 */
+    retryIntervalMs: number;
+    retryWindowMs: number;
     reference: ImageReference;
     /** 逐类目覆盖（背景 / CG / 立绘）：空对象 = 三类都用上面这份基础配置。 */
     kinds: Record<ImageKind, ImageKindOverride>;
@@ -168,6 +178,16 @@ export interface ServerConfig {
 export const DEFAULT_IMAGE_CONCURRENCY = 6;
 
 /**
+ * 出图重试的缺省节奏（`image.retryIntervalMs` / `image.retryWindowMs`）。
+ *
+ * 1 秒一敲、整段 30 秒：撞的是「上游那一刻在忙」（NovelAI 一个账号同一时刻只收一发，
+ * 另一发回 423/429；网关侧则是限流与 5xx），对方跑完锁就松，实测十几秒。
+ * 30 秒窗口大致等于「再等两发出图」，够日常；改宽改窄走设置页，不必重启。
+ */
+export const DEFAULT_IMAGE_RETRY_INTERVAL_MS = 1000;
+export const DEFAULT_IMAGE_RETRY_WINDOW_MS = 30_000;
+
+/**
  * 新装默认值：网关留空（第一次打开要自己在设置页填），
  * 生图/语音/联网**一律关着**——默认对着 `127.0.0.1:9999` 打请求只会让人以为坏了。
  */
@@ -197,6 +217,8 @@ export function freshSettings(): ServerConfig {
       size: "1K",
       concurrency: DEFAULT_IMAGE_CONCURRENCY,
       timeoutMs: 180_000,
+      retryIntervalMs: DEFAULT_IMAGE_RETRY_INTERVAL_MS,
+      retryWindowMs: DEFAULT_IMAGE_RETRY_WINDOW_MS,
       reference: "neutral",
       kinds: { background: {}, cg: {}, sprite: {} },
     },
@@ -265,6 +287,8 @@ export function settingsFromEnv(env: NodeJS.ProcessEnv): ServerConfig {
       size: imageSizeText(parseImageSize(env.STAGE_IMAGE_SIZE ?? "1K")),
       concurrency: parsePositiveInt("STAGE_IMAGE_CONCURRENCY", env.STAGE_IMAGE_CONCURRENCY, DEFAULT_IMAGE_CONCURRENCY),
       timeoutMs: parsePositiveInt("STAGE_IMAGE_TIMEOUT_MS", env.STAGE_IMAGE_TIMEOUT_MS, 180_000),
+      retryIntervalMs: DEFAULT_IMAGE_RETRY_INTERVAL_MS,
+      retryWindowMs: DEFAULT_IMAGE_RETRY_WINDOW_MS,
       reference: parseEnum("STAGE_IMAGE_REFERENCE", env.STAGE_IMAGE_REFERENCE, IMAGE_REFERENCES, "neutral"),
       // 旧 .env 面没有逐类目这一说：迁过来的部署一律走上面这份基础配置
       kinds: { background: {}, cg: {}, sprite: {} },
@@ -411,6 +435,12 @@ export function applyPatch(base: ServerConfig, patch: SettingsPatch): { next: Se
     if (image.size !== undefined) putIn("image", "size", imageSizeText(parseImageSize(image.size)));
     if (image.concurrency !== undefined) putIn("image", "concurrency", positiveInt("出图并发", image.concurrency));
     if (image.timeoutMs !== undefined) putIn("image", "timeoutMs", positiveInt("出图超时", image.timeoutMs));
+    if (image.retryIntervalMs !== undefined) {
+      putIn("image", "retryIntervalMs", nonNegativeInt("出图重试间隔", image.retryIntervalMs));
+    }
+    if (image.retryWindowMs !== undefined) {
+      putIn("image", "retryWindowMs", nonNegativeInt("出图重试窗口", image.retryWindowMs));
+    }
     if (image.reference !== undefined) {
       putIn("image", "reference", parseEnum("垫图策略", image.reference, IMAGE_REFERENCES, "neutral"));
     }
@@ -516,7 +546,20 @@ function mergeKindOverride(current: ImageKindOverride, patch: ImageKindPatch): I
     if (raw === "") delete next.timeoutMs;
     else next.timeoutMs = positiveInt("出图超时", Number(raw));
   }
+  for (const key of ["retryIntervalMs", "retryWindowMs"] as const) {
+    const raw = patch[key];
+    if (raw === undefined) continue;
+    const text = raw === null ? "" : String(raw).trim();
+    if (text === "") delete next[key];
+    else next[key] = nonNegativeInt(key === "retryIntervalMs" ? "出图重试间隔" : "出图重试窗口", Number(text));
+  }
   return next;
+}
+
+/** 非负整数校验：重试的间隔与窗口都允许 0（= 不重试），负数与小数挡在写入前。 */
+function nonNegativeInt(label: string, value: number): number {
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${label}必须是不小于 0 的整数`);
+  return value;
 }
 
 /** `provider/modelId` 形态校验：pi-ai 内置目录里查不到的具体名字由 provider 构造时点名。 */
@@ -609,6 +652,8 @@ export function imageConfigFor(config: ServerConfig, kind: ImageKind): {
   size: string;
   reference: ImageReference;
   timeoutMs: number;
+  retryIntervalMs: number;
+  retryWindowMs: number;
 } {
   const base = config.image;
   const over = base.kinds[kind];
@@ -620,6 +665,8 @@ export function imageConfigFor(config: ServerConfig, kind: ImageKind): {
     size: over.size?.trim() || base.size,
     reference: over.reference ?? base.reference,
     timeoutMs: over.timeoutMs ?? base.timeoutMs,
+    retryIntervalMs: over.retryIntervalMs ?? base.retryIntervalMs,
+    retryWindowMs: over.retryWindowMs ?? base.retryWindowMs,
   };
 }
 

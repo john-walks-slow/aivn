@@ -162,8 +162,10 @@ DSH 的原生会话能力也不在独立版里重造。判断一个新功能该�
 | 垫图策略 | `image.reference` | `neutral` | 派生立绘差分时是否拿该主体的 `neutral` 定妆照当参考图。**`gemini`、`modelslab`、`comfyui` 与 `novelai` 格式有效**（后三者都只吃一张）；`openai` 带垫图直接报错 |
 | 出图并发 | `image.concurrency` | `6` | 并发出图上限。每张图 15–140s，并发太小会拖穿预发射窗口。**按部署一份**，不进类目。同一剧目内工坊与剧作家共用一个闸门；排队区容量是代码里的常量（30，并发 6 的五批），一批发超过它的那部分会直接报「生图队列已满」——所以一次多出几张、分批发都行，别把几十张堆成一批 |
 | 出图超时 ms | `image.timeoutMs` | `180000` | 单图超时。超时按失败处理，舞台保持降级视觉 |
+| 重试间隔 ms | `image.retryIntervalMs` | `1000` | 出图请求失败后隔多久再敲一次。**五款格式共用**（重试包在 HTTP 层，不在协议实现里） |
+| 重试窗口 ms | `image.retryWindowMs` | `30000` | 从第一次失败起算，敲满这么久还没成功就放弃。**填 `0` = 不重试**（间隔或窗口任一项为 0 都关掉）|
 
-**按类目覆盖**（可选）：上面那几项是三类素材公用的基础配置；背景、CG、立绘可以各自覆盖 `format` / `baseUrl` / `apiKey` / `model` / `size` / `reference` / `timeoutMs` 七项，没写的字段跟随基础那份。
+**按类目覆盖**（可选）：上面那几项是三类素材公用的基础配置；背景、CG、立绘可以各自覆盖 `format` / `baseUrl` / `apiKey` / `model` / `size` / `reference` / `timeoutMs` / `retryIntervalMs` / `retryWindowMs` 九项，没写的字段跟随基础那份。
 
 ```json
 "kinds": {
@@ -385,7 +387,7 @@ data/
 | 认证 | `x-goog-api-key` 头 | 请求体里的 `key` 字段 | `Authorization: Bearer` 头（持久化 API token） | `Authorization: Bearer` 头 | 不给就不带（ComfyUI 本身不校验；反代要求时走 Bearer） |
 | 画幅 | `generationConfig.imageConfig.aspectRatio`，官方 14 个取值 | 没有画幅参数，`width`/`height` 按画幅换算后按 8 对齐、**长边封顶 1024** | 没有画幅参数，`width`/`height` 按档位面积与画幅换算，**两边对齐 64、单边 ≤2048、总面积 ≤3,145,728** | 没有画幅参数，**并进 `size`**：档位按总像素量级换算，两边对齐 16 的倍数（`1K`/`16:9` → `1360x768`） | 没有画幅参数，**并进 `EmptyLatentImage` 的 `width`/`height`**：档位按总像素量级换算、两边对齐 8（`1K`/`16:9` → `1368x768`） |
 | 尺寸 | `imageConfig.imageSize`，只认 `512` / `1K` / `2K` / `4K`（K 大写） | **档位对它无意义**（单边上限 1024，1K 档算出来的长边本来就超），一律按长边 1024；字面像素可写，越界即报错 | 档位当目标面积展开、朝单图预算收缩，**`2K`/`4K` 都顶到上限**；字面像素可写，但必须是 64 的倍数、越界即报错 | `size` 是**字面 `WxH`**，合法值按模型分家，见下 | 档位换算后写进 latent；字面像素照发但**必须是 8 的倍数**（latent 以 8 像素为一格，不然会被悄悄截断） |
-| 垫图 | 支持（`inlineData` 排在提示词之后，Gemini 3 系上限 14 张） | 支持但**只吃一张**（`init_image` 单值）：本地字节先发 `/image_editing/base64_to_url` 换一条托管链接，多张直接报错 | 支持但**只吃一张**（走 `img2img` 的 `parameters.image`，强度固定 0.7）：多张直接报错。NovelAI 那个换场景保角色的 Precise Reference **只有 V4.5 支持**，所以没走它 | `/generations` 没有参考图入参——工坊要出差分时直接报错，不静默丢弃（图生图走 `/v1/images/edits`，本站未接） | 支持**一张**：`/upload/image` → `LoadImage` → `ImageScale`（目标画幅、中心裁切）→ `VAEEncode`，多张直接报错；输入文件由 ComfyUI 运维清理 |
+| 垫图 | 支持（`inlineData` 排在提示词之后，Gemini 3 系上限 14 张） | 支持但**只吃一张**（`init_image` 单值）：本地字节先发 `/image_editing/base64_to_url` 换一条托管链接，多张直接报错 | 支持：**同画幅**单张走 `img2img`（`parameters.image`，强度固定 0.7）；**跨画幅**单张或多张在 V4.5 下走 `director_reference_images`（官方那个换场景保角色的 Precise Reference，白底 1024×1536、每张 5 Anlas）——跨画幅图塞进 `img2img` 会在成图两侧留下补黑边。非 V4.5 模型只吃一张，多张报错 | `/generations` 没有参考图入参——工坊要出差分时直接报错，不静默丢弃（图生图走 `/v1/images/edits`，本站未接） | 支持**一张**：`/upload/image` → `LoadImage` → `ImageScale`（目标画幅、中心裁切）→ `VAEEncode`，多张直接报错；输入文件由 ComfyUI 运维清理 |
 | 返回 | `candidates[0].content.parts[].inlineData`（`fileData` 会单独报错） | `output[0]` 是图片地址（本站下载）；`status: processing` 的异步队列直接报错 | **一个 ZIP**（内含 `image_0.png`，本站解包），不是图片字节 | `data[0].b64_json` 或 `data[0].url`（远端 url 由本站下载） | `/history` 里的 `outputs[*].images[0]` 给文件名，再从 `/view?filename=…&subfolder=…&type=…` 取字节（**一次出图是三次请求**，`timeoutMs` 是排队 + 出图的总预算） |
 
 > `novelai` 的请求结构**按模型名分代**：`nai-diffusion-4*` / `nai-diffusion-5*` 走
@@ -396,7 +398,8 @@ data/
 > **用这一档前先看三条账。**
 > 一是**并发**：上游同一个账号同一时刻只允许**一个**生成任务，多发的直接 `429 Too Many Requests`
 > （第三方实现的实测结论），官方也要求一次只发一个请求；本引擎默认并发 6，用这一档请把「出图并发」
-> 调成 **1**。
+> 调成 **1**。撞车的那一发本站会自己重试（**1 秒一敲、整段 30 秒**，就是上面那两个重试设置项），
+> 所以抢不到锁的那几发只是慢一点，不会当场失败；但重试不改变「同一时刻只有一发在跑」这件事。
 > 二是**自动化**：官方《Using the API》写明请求应由用户发起、不要用脚本自动连发，违规可能导致账号
 > 被终止或免费额度被停。
 > 三是 **Anlas 免费带**：Opus 的免费生成要**同时**满足「单张、≤1,048,576 像素、≤28 步、不吃任何垫图」

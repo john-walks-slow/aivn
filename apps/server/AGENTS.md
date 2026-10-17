@@ -197,7 +197,7 @@
 - **modelslab 侧三条自带的口子**（`modelslabImage.ts`，别把它当「换个 baseUrl 的 openai」）：
   - 垫图走**两步**——本地字节只能当 base64 data URI 发给 `/image_editing/base64_to_url` 换一条临时托管链接（官方 `upload_image` 要自备 S3，免 S3 的路子只有这一条），再把链接塞进 `init_image`。所以每次带垫图的出图是两次 HTTP。
   - **只吃一张垫图**（`init_image` 是单值，只有 Flux Klein 独立端点收数组）；给多张直接报错，不静默取第一张——少垫一张不会报错、只会画错人。**出图画幅随垫图走**（官方原文「生成尺寸与 init_image 相同」），所以这条路不发 `width`/`height`，画幅对不上的兜底仍是 `PlayAssets.assertCanvas`。
-  - **单边上限 1024**（宽高都要被 8 整除），档位对它没有意义，一律按「长边顶到 1024」落地——**立绘要的 `minTier: 2K` 在这个服务上拿不到**，1K 档算出来的长边本来就超上限。字面像素照发但越界即报错（与 openai 格式同一口径）。
+  - **单边上限 1024**（宽高都要被 8 整除），档位对它没有意义，一律按「长边顶到 1024」落地——**立绘想要的高分辨率在这个服务上拿不到**，1K 档算出来的长边本来就超上限。字面像素照发但越界即报错（与 openai 格式同一口径）。
   - `enhance_prompt` 与 `safety_checker` 两条显式写死 `false`：前者默认 true 会重写提示词，而我们的是 tag 结构（`masterpiece, best quality, 1girl, …`），改写会打散它。
   - `status: processing`（异步队列）本层不接轮询与 webhook，直接报错让部署方换端点——同 `imageFactory` 那条「不为异常做失败降级」的规矩。
 - **comfyui 侧四条自带的口子**（`comfyuiImage.ts`，ComfyUI 是「自己那台机器上跑工作流」，与前面三家网关式接口不是一回事）：
@@ -206,12 +206,14 @@
   - **最多支持一张垫图**：走 `/upload/image`，再用 `LoadImage → ImageScale（目标画幅、中心裁切）→ VAEEncode` 接入固定 img2img 模板；多张直接报错，ComfyUI `input/` 文件由运维清理。
   - **尺寸要能被 8 整除**：档位按总像素量级换算（`tierCanvasFor`，两边对齐 8），字面像素照发但先判掉非 8 的倍数——latent 以 8 像素为一格，不判就会被 ComfyUI 悄悄截断（回图尺寸与要的对不上，而 12% 的画幅容差察觉不到）。
   - **`/view` 的字节认不出图片类型就报错**（`sniffImageMime`，不看响应头）：反代拦下 `/view` 时会回一页 HTML/JSON，默认当 PNG 收下就会静默落一张坏素材（素材层对认不出尺寸的字节只告警）。失败诊断三处都带原文：`/prompt` 400 的 `node_errors`（checkpoint 名写错最常见）、`/history` 的 `status_str=error` 消息、以及超时（预算 = 排队 + 出图，从 `generate` 入口算起，提交与每次轮询共用）。
-- **novelai 侧三条自带的口子**（`novelaiImage.ts`，别把它当「换个 baseUrl 的 gemini」）：
+- **novelai 侧四条自带的口子**（`novelaiImage.ts`，别把它当「换个 baseUrl 的 gemini」）：
   - **响应是 ZIP 不是图片字节**（内含 `image_0.png`），用已在依赖里的 `fflate` 解；解出来按字节认 mime，不是 ZIP 时退回「整段就是一张图」。
   - **提示词结构按模型名前缀分代**：`nai-diffusion-4*` / `-5*` 走 `v4_prompt` + `v4_negative_prompt`（**两个必须同时在场**，缺一个上游回 500 而不是 400），更早的走 `prompt` + `uc`（V4+ 不发 `uc`，与 novelai-bridge 的 wire 一致）。
   - **垫图按「同画幅重绘 vs 跨画幅/多图角色参考」自动分流**：同画幅单张参考图（立绘 `neutral` → 表情差分）走 `img2img`（`fitToCanvas()` 等比缩放到画布内编码 PNG，1K 档内 Opus 免费 0 Anlas）；跨画幅单张参考图或多张参考图（9:16 立绘垫 16:9 CG、多人 CG、异画幅外部图定妆）在 V4.5 下改走 `director_reference_images`（白底 1024×1536 PNG，`action: "generate"`，每张参考图 5 Anlas），同时由 `stripReferenceMeta` 剥掉给多模态模型写的 `"The attached reference images are..."` 尾注（扩散模型看到 `"reference images"` 会画成左右分镜设定图）。非 V4.5 模型不支持 `director_reference`，多张报错。画布另受「64 的倍数、单边 ≤2048、总面积 ≤3,145,728」约束。
+  - **上游一个账号同一时刻只收一发**：撞车的那一发回 `423`/`429`，重试不在本层做，由出图层的通用重试兜着（见「生图重试」那条）。实测单发 1K 约 10–13s，三发并发时被锁住的两发分别在第 24s、第 35s 才拿到图（2026-10-17）。
 - **逐剧目覆盖**：`play.json` 的 `image`（`model` / `size`）覆盖部署级的 `STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`。`ImageRequest` 带可选的 `model?` / `size?`，三个实现取 `req.x ?? this.x`；`PlayAssets` **每次出图现读 play.json**（不是构造时取快照——`PlayAssets` 按剧目缓存、进程内不重建，快照会让「设置页改了模型，出图还是老模型」）。格式不认这个值就直接报错，不静默退回全局。
-- **逐类目覆盖**（2026-10-10）：`image.kinds.<background|cg|sprite>` 各覆盖 `format`/`baseUrl`/`apiKey`/`model`/`size`/`reference`/`timeoutMs`，空 = 回落基础那份（回落只在 `config.ts` 的 `imageConfigFor` 一处）。
+- **生图重试是 HTTP 层的事，不是各协议的事**（2026-10-17）：`imageRetry.ts` 的 `retryingFetch()` 包在宿主那份 `envFetch` 外面（装配点只有 `imageFactory` 一处），于是五款格式一次装上、协议实现里一行不改，一次出图内部的多个请求（ComfyUI 的提交+轮询+取图、modelslab 的换链接+出图）也各自享有同一条策略。判据是 HTTP 语义：`408`/`423`/`429`/`5xx` 与网络中断值得再敲，其余 4xx 与「200 到手但解不出图」不敲。**窗口只管「还敲不敲」**：调用方自己那个 `AbortSignal.timeout` 不跟着缩、已 abort 的请求不重试——拿窗口去砍一发正跑着的生成，2K/4K 那类本来就慢的出图会被自己掐死。窗口用尽时把**最后一发原样交回**（非 2xx 就返回那个响应），错误话术仍由各协议自己说。网络中断（请求可能已到上游）也照敲：NovelAI 那类「一账号一发」的锁会把重复挡掉，而 ComfyUI 会真排第二个作业、付费网关可能多记一张的账——嫌这个风险不值就把窗口调小或填 0。节奏走设置页 `image.retryIntervalMs` / `image.retryWindowMs`（默认 1s / 30s，0 = 不重试），不需要重启；`imagePendingTtlMs` 不必跟着放宽（那本是「通知永不来」的兜底，余量远大于一个窗口）。
+- **逐类目覆盖**（2026-10-10）：`image.kinds.<background|cg|sprite>` 各覆盖 `format`/`baseUrl`/`apiKey`/`model`/`size`/`reference`/`timeoutMs`/`retryIntervalMs`/`retryWindowMs`，空 = 回落基础那份（回落只在 `config.ts` 的 `imageConfigFor` 一处）。重试的两项**允许写 0**：0 = 这一类目不重试，与「没写 = 跟随基础」是两回事（校验走 `nonNegativeInt`）。
 - 画幅白名单取三款接口的交集（Gemini 官方 14 个取值，减去 OpenAI 不收的 1:4/4:1/1:8/8:1）——换一家 Gemini 或 OpenAI 生图只改地址与模型名，不动代码。
 
 ## 服务入口、端点与记账

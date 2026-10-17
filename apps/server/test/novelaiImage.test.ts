@@ -188,11 +188,27 @@ describe("NovelAiImageGen", () => {
   });
 
   it("HTTP 失败带上状态码与上游 message（401 是 token 的问题，不是模型的问题）", async () => {
-    const impl = (async () =>
-      new Response(JSON.stringify({ statusCode: 401, message: "Access Token is incorrect." }), {
+    let calls = 0;
+    const impl = (async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ statusCode: 401, message: "Access Token is incorrect." }), {
         status: 401,
-      })) as unknown as typeof fetch;
+      });
+    }) as unknown as typeof fetch;
     const gen = new NovelAiImageGen(opts, impl);
     await expect(gen.generate({ prompt: "x" })).rejects.toThrow(/HTTP 401：Access Token is incorrect\./);
+    // Key 不对重试一百遍也是同一个答案：这一步必须是当场报错
+    expect(calls).toBe(1);
+  });
+
+  it("账号在忙（423/429）本层不自己重试：重试归出图层的通用策略（见 imageRetry.test.ts）", async () => {
+    let calls = 0;
+    const impl = (async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ statusCode: 429, message: "Too many requests" }), { status: 429 });
+    }) as unknown as typeof fetch;
+    const gen = new NovelAiImageGen(opts, impl);
+    await expect(gen.generate({ prompt: "x" })).rejects.toThrow(/HTTP 429：Too many requests/);
+    expect(calls).toBe(1);
   });
 });

@@ -1,3 +1,6 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { ComfyUiImageGen, GeminiImageGen, ModelsLabImageGen, OpenAiImageGen } from "@aivn/agent";
 import { applyPatch, freshSettings } from "../src/config.js";
@@ -66,5 +69,52 @@ describe("生图后端的装配（按接口格式）", () => {
       size: "2K",
       timeoutMs: 600_000,
     });
+  });
+
+  // 装配这一段唯一的接缝就是「哪份 fetch 交给后端」：重试包错层（或干脆没包）时，
+  // 上面那些白盒断言全都照样绿，只有真打一个会先回 429 的网关才看得出来。
+  it("配置里的重试真的包在了后端用的 fetch 上（先 429 再给图）", async () => {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const zip = zipSync({ "image_0.png": new Uint8Array(png) });
+    let calls = 0;
+    const server = createServer((_req, res) => {
+      calls += 1;
+      if (calls === 1) {
+        res.writeHead(429, { "content-type": "application/json" });
+        res.end(JSON.stringify({ statusCode: 429, message: "Too many requests" }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "binary/octet-stream" });
+      res.end(Buffer.from(zip));
+    });
+    await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const { next } = applyPatch(freshSettings(), {
+        image: {
+          enabled: true,
+          format: "novelai",
+          baseUrl: `http://127.0.0.1:${port}`,
+          retryIntervalMs: 5,
+          retryWindowMs: 500,
+        },
+      });
+      const image = await createImageBackends(next)!.background.generate({ prompt: "x", aspectRatio: "16:9" });
+      expect(image.mimeType).toBe("image/png");
+      expect(calls).toBe(2);
+
+      // 窗口填 0 = 关：同一发请求当场失败，不再敲第二次
+      calls = 0;
+      const off = applyPatch(next, { image: { retryWindowMs: 0 } }).next;
+      await expect(
+        createImageBackends(off)!.background.generate({ prompt: "x", aspectRatio: "16:9" }),
+      ).rejects.toThrow(/HTTP 429/);
+      expect(calls).toBe(1);
+    } finally {
+      server.close();
+    }
   });
 });

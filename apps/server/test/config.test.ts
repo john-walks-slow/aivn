@@ -229,6 +229,24 @@ describe("生图按类目覆盖（背景 / CG / 立绘）", () => {
     expect(imageConfigFor(next, "cg").size).toBe("1K");
   });
 
+  it("重试节奏：基础两格可写 0（= 不重试），类目能单独关掉", () => {
+    const base = freshSettings();
+    expect(base.image.retryIntervalMs).toBe(1_000);
+    expect(base.image.retryWindowMs).toBe(30_000);
+
+    const { next } = applyPatch(base, {
+      image: { retryIntervalMs: 2_000, kinds: { sprite: { retryWindowMs: 0 } } },
+    });
+    expect(next.image.retryIntervalMs).toBe(2_000);
+    // 类目里写 0 = 这一类目不重试；它**不**被当成「没写」而回落基础
+    expect(imageConfigFor(next, "sprite").retryWindowMs).toBe(0);
+    expect(imageConfigFor(next, "sprite").retryIntervalMs).toBe(2_000);
+    expect(imageConfigFor(next, "cg").retryWindowMs).toBe(30_000);
+
+    expect(() => applyPatch(base, { image: { retryIntervalMs: -1 } })).toThrow(/不小于 0/);
+    expect(() => applyPatch(base, { image: { kinds: { cg: { retryWindowMs: 1.5 } } } })).toThrow(/不小于 0/);
+  });
+
   it("空串 / null 清掉这一格，回到跟随基础", () => {
     const withSprite = applyPatch(freshSettings(), {
       image: { kinds: { sprite: { model: "m1", size: "2K" } } },
