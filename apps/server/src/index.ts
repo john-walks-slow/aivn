@@ -14,6 +14,7 @@ import { AssetLibrary } from "./library.js";
 import { PlayHouse } from "./playhouse.js";
 import { handleHttp } from "./http.js";
 import { VoiceCatalogService } from "./voiceCatalog.js";
+import { PromptPresets } from "./promptPresets.js";
 import { attachTransport } from "./transport.js";
 import { WebGate } from "./webAuth.js";
 import { installEnvProxy } from "./webImage.js";
@@ -53,6 +54,8 @@ export async function main(): Promise<void> {
   // 素材资源库：跨剧目复用的本地素材目录，用户在本地增删改，这里只读
   const assets = new AssetLibrary(join(bootstrap.dataRoot, "library"));
   const voices = new VoiceCatalogService(store, join(bootstrap.dataRoot, "media-cache/voices.json"));
+  // 提示词注入的可复用 preset：应用级，跟剧目无关（Agent 页存/取）
+  const presets = new PromptPresets(join(bootstrap.dataRoot, "prompt-presets.json"));
   const playhouse = new PlayHouse(library, store, assets, voices);
   // 前端构建产物（pnpm -r build 之后存在）：同端口挂上，公网部署只需要一个入口。
   const webDist = join(resourceRoot, "apps/web/dist");
@@ -65,7 +68,7 @@ export async function main(): Promise<void> {
     }
     void (async () => {
       if (await serveWebBundle(req, res, webDist)) return;
-      await handleHttp(req, res, library, playhouse, config, assets, voices);
+      await handleHttp(req, res, library, playhouse, config, assets, voices, presets);
     })();
   });
   const wss = new WebSocketServer({ noServer: true });

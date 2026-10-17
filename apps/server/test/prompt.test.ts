@@ -294,26 +294,12 @@ describe("buildSystemPrompt：写作参数与创作口径", () => {
     expect(prompt).toContain("你是剧本引擎，不是助手");
   });
 
-  it("限制级通道跟着工具开关收口：enter_nsfw 摘掉就整段不注入", () => {
-    // 2026-10-04 修：这两段原本是恒注入的——用户在 Agent 页摘掉工具，提示词还在教它去调。
-    const idle = build({ play: PLAY });
-    expect(idle).toContain("## 亲密/限制级剧情入口（enter_nsfw）");
-
-    const off = build({ play: PLAY, can: { nsfw: false } });
-    expect(off).not.toContain("enter_nsfw");
-    expect(off).not.toContain("exit_nsfw");
-    expect(off).not.toContain("限制级");
-  });
-
-  it("通道开着时才按当前模式切换：进入指引 / 通道内指引 + 剧目专属口径", () => {
-    const on = build({
-      play: PLAY,
-      nsfwMode: true,
-      nsfwPrompt: "这一部不要写得太直白。",
-    });
-    expect(on).toContain("# 限制级（NSFW）创作指引");
-    expect(on).toContain("这一部不要写得太直白。");
-    expect(on).not.toContain("## 亲密/限制级剧情入口（enter_nsfw）");
+  it("限制级通道整体下线：提示词里再没有它的入口与指引", () => {
+    // 2026-10-16：动态切换型限制级通道不再给 Agent 暴露，提示词自然也不该留教它调的口。
+    const prompt = build({ play: PLAY });
+    expect(prompt).not.toContain("enter_nsfw");
+    expect(prompt).not.toContain("exit_nsfw");
+    expect(prompt).not.toContain("限制级");
   });
 
   it("剧作家 prompt 不再出现技能清单：它没有 read_skill 这个工具", () => {

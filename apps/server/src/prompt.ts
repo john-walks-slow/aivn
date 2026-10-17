@@ -80,15 +80,11 @@ export interface PromptContext {
    * （voice / shell 的工具它装不上，恒为 false）。
    */
   can: AgentCapabilities;
-  /** 当前处于限制级（NSFW）剧情通道中。 */
-  nsfwMode?: boolean;
   /**
    * 技能清单块（`skillsPromptBlock()` 的产物）：剧作家手边可查的通用做法。
    * 启动期预载过一次，装配时同步取用；没预载过就是空串、整章不注入。
    */
   skills?: string;
-  /** 限制级（NSFW）系统提示词自定义扩展。 */
-  nsfwPrompt?: string;
   /**
    * 逐剧目的自定义段（play.json 的 agents.playwriter.prompt）：原样拼在 A 区，
    * 紧挨引擎契约之前——契约是最后说的定论，用户这段讲的是这个剧目额外怎么做事。
@@ -447,13 +443,6 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const craft = memory?.craft.trim() ?? "";
   const craftSection = craft ? `\n${craft}\n` : "";
   const craftParamsSection = renderCraftParams(resolveCraft(play.craft), ctx.can);
-  const nsfwGuidance = !ctx.can.nsfw
-    ? ""
-    : ctx.nsfwMode
-      ? `\n# 限制级（NSFW）创作指引\n\n你当前正处于限制级剧情通道。\n- 专注于亲密接触中的情感张力、双方的心理起伏、生理与感官细节反应的细腻刻画；\n- 保持角色一贯的性格与说话风格，将人设融入亲密互动中；\n- 结合 Stage DSL：合理使用 <actor action="..." variant="..."> 配合肢体反应与微表情，用 <sfx> 辅助营造氛围；\n- 当这段亲密情节告一段落、即将回归正常日常时，调用 exit_nsfw 退出限制级模式，并在这一轮正文末行照常写下停止点标签。\n${
-          memory?.nsfw?.trim() ? `\n## 剧目限制级专属口径\n${memory.nsfw.trim()}\n` : ""
-        }${ctx.nsfwPrompt?.trim() ? `\n## 补充限制级提示词\n${ctx.nsfwPrompt.trim()}\n` : ""}`
-      : `\n## 亲密/限制级剧情入口（enter_nsfw）\n\n当剧情推进至即将发生亲密、成人或限制级（NSFW）接触时，不要在当前模型下直接描写露骨细节。\n调用 \`enter_nsfw\` 开启限制级剧情通道：调用后写完本轮正文与末行的停止点标签即可停笔，下一轮起将由限制级专用模型和专属提示词接管展开细腻描写。\n`;
   const cards = memory?.visibleContext() ?? [];
   // 每行带路径：卡的标题（`# 标题`）与文件名可以不一样，路径推不出来，只能这里给
   const indexSection =
@@ -478,7 +467,7 @@ ${premise}
 # 角色表
 
 ${characters}${castHint}${bareSection}
-${assetSection}${craftParamsSection}${craftSection}${nsfwGuidance}${indexSection}
+${assetSection}${craftParamsSection}${craftSection}${indexSection}
 ${FORMAT_RULES}
 
 ${imageChapter(ctx.can.image)}

@@ -175,7 +175,6 @@ describe("工坊 prompt 与工具", () => {
   /** 能力位（`kit.can`）：提示词按它决定注不注某一章。缺省 = 工坊常用态（文件与技能开着）。 */
   const caps = (over: Partial<AgentCapabilities> = {}): AgentCapabilities => ({
     stage: false,
-    nsfw: false,
     characters: false,
     memory: false,
     image: true,
@@ -616,18 +615,59 @@ describe("WorkshopSession：一轮对话", () => {
       streamFn: ReturnType<typeof createFakeStreamFn>;
       emit: (msg: ServerMessage) => void;
       onFilesChanged?: () => void;
+      /** 这一轮的剧目配置（注入就在它的 agents.injection 上）；不给 = 空配置。 */
+      play?: unknown;
     },
   ): WorkshopSession {
     return new WorkshopSession({
       playId: "test",
       store,
       streamFn: extra.streamFn,
-      getRunConfig: async () => ({ model: {} as never, agents: undefined, play: {} as never }),
+      getRunConfig: async () => ({ model: {} as never, agents: undefined, play: (extra.play ?? {}) as never }),
       getApiKey: () => "test-key",
       emit: extra.emit,
       onFilesChanged: extra.onFilesChanged ?? (() => {}),
     });
   }
+
+  it("提示词注入：对话体的开头就是那一组消息（剧作家与工坊同一份配置）", async () => {
+    const store = await makeStore();
+    const contexts: { messages: unknown[] }[] = [];
+    const emitted: ServerMessage[] = [];
+    const base = createFakeStreamFn([{ text: "在。" }]);
+    const session = makeSession(store, {
+      streamFn: ((model, context, options) => {
+        contexts.push(context as { messages: unknown[] });
+        return base(model, context, options);
+      }) as never,
+      emit: (msg) => emitted.push(msg),
+      play: {
+        agents: {
+          injection: {
+            enabled: true,
+            messages: [
+              { role: "system", text: "注入·系统" },
+              { role: "user", text: "注入·用户" },
+            ],
+          },
+        },
+      },
+    });
+    await session.chat("在吗");
+
+    const messages = contexts[0]!.messages as { role: string; content: unknown }[];
+    // 引擎系统提示词恒为第一条——注入组里打头的 system 不许把它顶掉（顶掉了搭台契约就没了）
+    expect(messages[0]!.role).toBe("system");
+    expect(JSON.stringify(messages[0])).toContain("搭台者");
+    expect(messages.slice(1, 4).map((m) => m.role)).toEqual(["system", "user", "user"]);
+    expect(JSON.stringify(messages[1])).toContain("注入·系统");
+
+    // 注入是引擎给的底色，不是用户说过的话：它不落线程消息文件
+    const history = emitted.filter((m) => m.type === "workshop_history").at(-1) as
+      | { messages: { role: string; text: string }[] }
+      | undefined;
+    expect(history?.messages.map((m) => m.text)).toEqual(["在吗", "在。"]);
+  });
 
   it("新建线程 → 落消息 → 广播 chunk/done/threads", async () => {
     const store = await makeStore();
@@ -1093,7 +1133,6 @@ describe("工坊：写作参数与创作口径的交接，以及自定义提示�
     craft: DEFAULT_CRAFT,
     can: {
       stage: false,
-      nsfw: false,
       characters: false,
       memory: false,
       image: true,

@@ -8,7 +8,7 @@ import { importFromLibrary } from "./assetImport.js";
 import { readPlayLedgerEntries } from "./generatedLedger.js";
 import type { PlayHouse } from "./playhouse.js";
 import type { SettingsApi } from "./configApi.js";
-import { ACTOR_ANCHORS, ASSET_KINDS as ASSET_KINDS_LIST, PROTAGONIST_ID, SPRITE_FRAMINGS, SPRITE_STATURES, libraryEntryMatches, parsePlayConfig, type AssetKind, type AssetMeta, type CgEntry, type GeneratedImageEntry } from "@aivn/core";
+import { ACTOR_ANCHORS, ASSET_KINDS as ASSET_KINDS_LIST, PROTAGONIST_ID, SPRITE_FRAMINGS, SPRITE_STATURES, libraryEntryMatches, parsePlayConfig, type AssetKind, type AssetMeta, type CgEntry, type GeneratedImageEntry, type InjectionMessage } from "@aivn/core";
 import { loadCharacterCards } from "./memory.js";
 import {
   RESOURCE_DIR,
@@ -19,6 +19,7 @@ import {
   uniqueResourceName,
 } from "./resources.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
+import type { PromptPresets } from "./promptPresets.js";
 import { firewallAvailable, isLoopback, openFirewallRule } from "./lanAccess.js";
 
 const BODY_LIMIT = 64 * 1024 * 1024;
@@ -140,6 +141,7 @@ export async function handleHttp(
   settings?: SettingsApi,
   assets?: AssetLibrary,
   voices?: VoiceCatalogService,
+  presets?: PromptPresets,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
   const parts = url.pathname.split("/").filter(Boolean);
@@ -302,6 +304,24 @@ export async function handleHttp(
         return json(res, 200, { models, defaultModel });
       }
       if (parts[2] === "capabilities") return json(res, 200, playhouse.capabilities());
+    }
+
+    // —— 提示词注入的 preset：应用级（跨剧目复用），一份 JSON 整表读写 ——
+    // 名字走查询参数而不是路径段：preset 名字是用户随手起的，含斜杠与空格都正常。
+    if (parts[0] === "api" && parts[1] === "prompt-presets" && parts.length === 2) {
+      if (!presets) return fail(res, 404, "preset 存储未启用");
+      if (method === "GET") return json(res, 200, { presets: await presets.list() });
+      if (method === "PUT") {
+        const body = JSON.parse((await readBody(req)).toString("utf8")) as {
+          name?: string;
+          messages?: InjectionMessage[];
+        };
+        return json(res, 200, { presets: await presets.save(body.name ?? "", body.messages ?? []) });
+      }
+      if (method === "DELETE") {
+        return json(res, 200, { presets: await presets.remove(url.searchParams.get("name") ?? "") });
+      }
+      return fail(res, 405, "不支持的方法");
     }
 
     // —— 设置面板：全部 GUI 可改，改完**立即生效**，既不要求碰配置文件也不要求重启 ——

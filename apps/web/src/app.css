@@ -5788,6 +5788,32 @@ button.chat-attachment-thumb {
   margin: 0;
 }
 
+/* 提示词注入：一行 = 角色 + 正文 + 删除。角色下拉给固定宽，正文拿满，删除靠尾。 */
+.injection-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.injection-row textarea {
+  min-height: 42px;
+}
+
+/* preset 一行：挑一份、载入、删除、再存一份新的 */
+.injection-preset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.injection-preset-name {
+  flex: 1 1 160px;
+}
+
 /* ── 导演栏（P6 交互重构） ──── */
 
 /* 自由输入模态窗里的「返回选项」：普通幽灵键，不再是浮在画面上的胶囊 */
@@ -6974,6 +7000,25 @@ pre.hx-tool {
   /* 手机底沿有手势条：给保存那一行补一段安全区 */
   .save-row {
     padding-bottom: calc(var(--pane-pad-y, 12px) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* 注入那一行在手机上折成两行：角色与删除键一行，正文独占一行。
+     每个控件都显式点名列，否则 select 会自建第二列把同行内容压成竖排。 */
+  .injection-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .injection-row select {
+    grid-column: 1;
+  }
+
+  .injection-row textarea {
+    grid-column: 1 / -1;
+  }
+
+  .injection-row button {
+    grid-column: 2;
+    grid-row: 1;
   }
 
   /* 文件页：树与编辑器上下排，树限高，编辑器拿满宽 */

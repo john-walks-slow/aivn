@@ -21,7 +21,6 @@ const CTX = {
 /** 工坊的常见态：文件、故事树、技能库、看图、就绪门都开，命令行与剧作家那几位不适用。 */
 const caps = (over: Partial<AgentCapabilities> = {}): AgentCapabilities => ({
   stage: false,
-  nsfw: false,
   characters: false,
   memory: false,
   voice: false,

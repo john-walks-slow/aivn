@@ -390,39 +390,6 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
                   onRetry={() => loadModels(true)}
                 />
               </Field>
-              <Field
-                label="限制级（NSFW）专用模型"
-                hint="进入限制级剧情时切换至此模型。剧目未单独指定时生效；留空则跟随该剧目主模型。"
-              >
-                <ModelSelect
-                  value={draft.model.nsfwModelId ?? ""}
-                  models={models}
-                  error={modelError}
-                  emptyLabel={`跟随主模型（${draft.model.modelId}）`}
-                  onChange={(id) =>
-                    setDraft({
-                      ...draft,
-                      model: { ...draft.model, nsfwModelId: id },
-                    })
-                  }
-                  onRetry={() => loadModels(true)}
-                />
-              </Field>
-              <Field
-                label="限制级专属提示词"
-                hint="进入限制级通道时追加到系统提示词末尾；留空则不加。"
-              >
-                <textarea
-                  rows={3}
-                  value={draft.model.nsfwPrompt ?? ""}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      model: { ...draft.model, nsfwPrompt: e.target.value },
-                    })
-                  }
-                />
-              </Field>
               <Field label="支持的模型">
                 <input
                   value={draft.model.models}

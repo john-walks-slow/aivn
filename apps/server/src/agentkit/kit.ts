@@ -1,7 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel } from "@aivn/core";
 import type { WriteScope } from "../playFiles.js";
-import { createNsfwTools } from "./nsfwTool.js";
 import { AGENT_ROLES, type AgentRole } from "./role.js";
 import type { AgentKitDeps, PlaywriterKitDeps, WorkshopKitDeps } from "./deps.js";
 import { createPiBashTool, createPiFileTools } from "./piTools.js";
@@ -88,14 +87,6 @@ interface CapabilityEntry {
  * 混在一起，用户想关掉其中一个就得连另外两个一起关。
  */
 const CATALOG_ROWS = [
-  {
-    id: "nsfw",
-    label: "限制级通道",
-    desc: "能进入 / 退出限制级剧情。",
-    group: "show",
-    roles: ["playwriter"],
-    tools: ["enter_nsfw", "exit_nsfw"],
-  },
   {
     id: "characters",
     label: "管理角色",
@@ -249,8 +240,6 @@ export function capabilityCatalog(role: AgentRole, env: CapabilityEnv): AgentCap
  * 能力目录引用这里的 id；装一个没登记的 id 会当着测试红——所以装配不再需要第二份角色清单。
  */
 const TOOL_CATALOG: Record<string, { label: string; roles: readonly [AgentRole, ...AgentRole[]] }> = {
-  enter_nsfw: { label: "进入限制级剧情", roles: ["playwriter"] },
-  exit_nsfw: { label: "退出限制级剧情", roles: ["playwriter"] },
   search_archive: { label: "检索历史往事", roles: ["playwriter"] },
   generate_image: { label: "出候选图", roles: ["playwriter", "workshop"] },
   // 只装工坊：剧作家一次调用就声明了最终 id，宿主把出图与入库一次做完（见 imageTool）。
@@ -422,7 +411,6 @@ function envOf(role: AgentRole, files: AgentKitDeps["files"], capabilities: Read
 function playwriterTools(deps: PlaywriterKitDeps): AgentTool<any>[] {
   const env = envOf(deps.role, deps.files, deps.capabilities, deps.onWrite);
   return [
-    ...createNsfwTools(deps),
     createArchiveTool(deps),
     ...createPiFileTools(env),
     createGenerateImageTool({

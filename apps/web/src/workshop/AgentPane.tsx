@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   AgentConfig,
   AgentSettings,
+  InjectionRole,
   PlayConfig,
+  PromptInjection,
   ThinkingLevel,
 } from "@aivn/core";
 import { THINKING_LEVELS } from "@aivn/core";
-import { api, type AgentCapabilityEntry, type GatewayModel } from "../api.js";
+import { api, type AgentCapabilityEntry, type GatewayModel, type PromptPreset } from "../api.js";
 import { ModelSelect } from "../ui/ModelSelect.js";
 import { Loading } from "../ui/Loading.js";
 import { Icon } from "@aivn/stage";
@@ -23,7 +25,7 @@ import { useDirtyFlag } from "./dirtyGuard.js";
  * 就彻底装不进去（提示词里对应的章节也跟着收掉）。界面上不出现任何工具名。
  */
 
-const ROLES: { id: keyof AgentConfig; name: string; placeholder: string }[] = [
+const ROLES: { id: "playwriter" | "workshop"; name: string; placeholder: string }[] = [
   {
     id: "playwriter",
     name: "剧作家",
@@ -36,6 +38,14 @@ const ROLES: { id: keyof AgentConfig; name: string; placeholder: string }[] = [
     placeholder:
       "例：背景一律走写实厚涂，别用赛博朋克；\n生成素材的 id 用英文小写。",
   },
+];
+
+/** 注入消息的角色：与模型看到的四种消息一一对应，`tool` 是「工具跑过、结果是这样」。 */
+const INJECTION_ROLES: { id: InjectionRole; label: string }[] = [
+  { id: "system", label: "系统" },
+  { id: "user", label: "用户" },
+  { id: "assistant", label: "助手" },
+  { id: "tool", label: "工具结果" },
 ];
 
 const THINKING_LABEL: Record<ThinkingLevel, string> = {
@@ -95,7 +105,7 @@ export function AgentPane({ playId }: { playId: string }) {
   }, [playId, loadModels]);
 
   const patch = (
-    role: keyof AgentConfig,
+    role: "playwriter" | "workshop",
     fn: (settings: AgentSettings) => void,
   ): void => {
     if (!draft) return;
@@ -106,6 +116,22 @@ export function AgentPane({ playId }: { playId: string }) {
     // 空设置不留空壳：play.json 里只写用户真的设过的字段
     if (Object.keys(settings).length === 0) delete agents[role];
     else agents[role] = settings;
+    next.agents = Object.keys(agents).length > 0 ? agents : undefined;
+    setDraft(next);
+    setSaved(false);
+  };
+
+  /** 上下文注入是 agents 段里的第三个键（不归任何单个角色），所以另开一个改法。 */
+  const patchInjection = (fn: (injection: PromptInjection) => void): void => {
+    if (!draft) return;
+    const next = structuredClone(draft);
+    const agents: AgentConfig = next.agents ?? {};
+    const injection: PromptInjection = structuredClone(agents.injection ?? {});
+    fn(injection);
+    const messages = injection.messages ?? [];
+    const empty = injection.enabled !== true && messages.length === 0;
+    if (empty) delete agents.injection;
+    else agents.injection = injection;
     next.agents = Object.keys(agents).length > 0 ? agents : undefined;
     setDraft(next);
     setSaved(false);
@@ -205,53 +231,6 @@ export function AgentPane({ playId }: { playId: string }) {
               </select>
             </label>
 
-            {role.id === "playwriter" && (
-              <>
-                <label className="field">
-                  <span>限制级（NSFW）专用模型</span>
-                  <ModelSelect
-                    value={settings.nsfwModel ?? ""}
-                    models={models}
-                    error={modelError}
-                    emptyLabel={`跟随全局设置（全局也空则跟随主模型）`}
-                    onChange={(id) =>
-                      patch(role.id, (s) => setOrClear(s, "nsfwModel", id, ""))
-                    }
-                    onRetry={() => loadModels(true)}
-                  />
-                  <p className="muted small">
-                    进入限制级剧情时切换为此模型；退出时切回主模型。
-                  </p>
-                </label>
-
-                <label className="field">
-                  <span>限制级（NSFW）思考档位</span>
-                  <select
-                    value={settings.nsfwThinking ?? "default"}
-                    onChange={(e) =>
-                      patch(role.id, (s) =>
-                        setOrClear(
-                          s,
-                          "nsfwThinking",
-                          e.target.value,
-                          "default",
-                        ),
-                      )
-                    }
-                  >
-                    {THINKING_LEVELS.map((level) => (
-                      <option key={level} value={level}>
-                        {THINKING_LABEL[level]}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="muted small">
-                    限制级剧情通道下的独立思考档位。默认跟随服务商默认。
-                  </p>
-                </label>
-              </>
-            )}
-
             <div className="field">
               <span>能力</span>
               {groups.length === 0 && (
@@ -310,6 +289,11 @@ export function AgentPane({ playId }: { playId: string }) {
         );
       })}
 
+      <InjectionSection
+        value={draft.agents?.injection ?? {}}
+        onChange={patchInjection}
+      />
+
       <p className="row agent-foot save-row">
         <button className="primary" onClick={save}>
           保存设置
@@ -320,15 +304,196 @@ export function AgentPane({ playId }: { playId: string }) {
   );
 }
 
+/**
+ * 上下文注入（play.json 的 `agents.injection`）：启用后两个 agent 的上下文开头都先看到这一组消息。
+ *
+ * 内容随「保存设置」一起落盘；preset 是**应用级**的另一份东西（跨剧目复用），
+ * 所以它的存/取/删走自己的接口，与上面那颗保存键互不牵连。
+ */
+function InjectionSection({
+  value,
+  onChange,
+}: {
+  value: PromptInjection;
+  onChange: (fn: (injection: PromptInjection) => void) => void;
+}) {
+  const [presets, setPresets] = useState<PromptPreset[]>([]);
+  const [picked, setPicked] = useState("");
+  const [name, setName] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const messages = value.messages ?? [];
+
+  useEffect(() => {
+    api
+      .promptPresets()
+      .then((r) => setPresets(r.presets))
+      .catch((e: Error) => setNote(`preset 读取失败：${e.message}`));
+  }, []);
+
+  const run = (task: Promise<{ presets: PromptPreset[] }>, done: string): void => {
+    task
+      .then((r) => {
+        setPresets(r.presets);
+        setNote(done);
+      })
+      .catch((e: Error) => setNote(e.message));
+  };
+
+  const apply = (msgs: PromptPreset["messages"]): void => {
+    onChange((injection) => {
+      injection.enabled = true;
+      injection.messages = msgs.map((m) => ({ ...m }));
+    });
+  };
+
+  return (
+    <section className="settings-group agent-card">
+      <h3>提示词注入</h3>
+      <p className="muted small">
+        启用后，剧作家与搭台助手的上下文开头都会先看到这组消息，再看到各自的系统提示词与对话。
+        它不会写进剧情记录、也不进工坊对话——想换一部剧接着用，就存成 preset。
+      </p>
+
+      <label className="switch-row">
+        <input
+          type="checkbox"
+          checked={value.enabled === true}
+          onChange={(e) =>
+            onChange((injection) => {
+              if (e.target.checked) injection.enabled = true;
+              else delete injection.enabled;
+            })
+          }
+        />
+        <span>
+          <b>启用注入</b>
+          <span className="muted small">关掉时下面这组内容原样留着，只是不注入。</span>
+        </span>
+      </label>
+
+      {messages.map((message, index) => (
+        <div className="injection-row" key={index}>
+          <select
+            value={message.role}
+            onChange={(e) =>
+              onChange((injection) => {
+                const target = injection.messages?.[index];
+                if (target) target.role = e.target.value as InjectionRole;
+              })
+            }
+          >
+            {INJECTION_ROLES.map((role) => (
+              <option key={role.id} value={role.id}>
+                {role.label}
+              </option>
+            ))}
+          </select>
+          <textarea
+            rows={2}
+            value={message.text}
+            onChange={(e) =>
+              onChange((injection) => {
+                const target = injection.messages?.[index];
+                if (target) target.text = e.target.value;
+              })
+            }
+          />
+          <button
+            type="button"
+            className="ghost-btn danger-btn"
+            onClick={() =>
+              onChange((injection) => {
+                injection.messages = (injection.messages ?? []).filter(
+                  (_, i) => i !== index,
+                );
+              })
+            }
+          >
+            删除
+          </button>
+        </div>
+      ))}
+
+      <p className="row">
+        <button
+          type="button"
+          className="ghost-btn"
+          onClick={() =>
+            onChange((injection) => {
+              injection.messages = [
+                ...(injection.messages ?? []),
+                { role: "system", text: "" },
+              ];
+            })
+          }
+        >
+          添加一条
+        </button>
+      </p>
+
+      <div className="injection-preset">
+        <select value={picked} onChange={(e) => setPicked(e.target.value)}>
+          <option value="">选择 preset…</option>
+          {presets.map((preset) => (
+            <option key={preset.name} value={preset.name}>
+              {preset.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="ghost-btn"
+          disabled={picked === ""}
+          onClick={() => {
+            const preset = presets.find((p) => p.name === picked);
+            if (!preset) return;
+            apply(preset.messages);
+            setNote(`已载入「${preset.name}」，记得保存设置。`);
+          }}
+        >
+          载入
+        </button>
+        <button
+          type="button"
+          className="ghost-btn danger-btn"
+          disabled={picked === ""}
+          onClick={() => {
+            run(api.removePromptPreset(picked), `已删除「${picked}」。`);
+            setPicked("");
+          }}
+        >
+          删除
+        </button>
+        <input
+          className="small-input injection-preset-name"
+          value={name}
+          placeholder="新 preset 的名字"
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button
+          type="button"
+          className="ghost-btn"
+          disabled={name.trim() === "" || messages.length === 0}
+          onClick={() => {
+            const presetName = name.trim();
+            run(
+              api.savePromptPreset(presetName, messages),
+              `已存为「${presetName}」。`,
+            );
+            setName("");
+          }}
+        >
+          保存为 preset
+        </button>
+      </div>
+      {note && <p className="muted small">{note}</p>}
+    </section>
+  );
+}
+
 /** 值等于默认（或空）时把键删掉，别在 play.json 里留一堆等价于缺省的字段。 */
 function setOrClear<
-  K extends
-    | "model"
-    | "thinking"
-    | "prompt"
-    | "nsfwModel"
-    | "nsfwThinking"
-    | "nsfwPrompt",
+  K extends "model" | "thinking" | "prompt",
 >(settings: AgentSettings, key: K, value: string, blank?: string): void {
   // 提示词是长文本，清空后多半只剩几个换行：只判空串会把它当成「用户真的写了内容」存进 play.json，
   // 服务端读回时又因 trim 为空丢掉——文件里留了一段永不生效的文本。
