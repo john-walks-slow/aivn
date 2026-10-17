@@ -1,6 +1,7 @@
 # 工坊附件：把人给的原作递进去
 
-> 状态：实施中。分支 `feat/workshop-attachments`。
+> 状态：已完成。分支 `feat/workshop-attachments-v2`（旧分支切在 reset 前的旧基线上，已作废）。
+> 交付记录与验证见 [summary](261016-workshop-attachments.summary.md)。
 
 ## 需求
 
