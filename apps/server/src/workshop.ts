@@ -2,7 +2,8 @@ import type { AgentEvent, AgentMessage, AgentTool, StreamFn } from "@earendil-wo
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { languageLabel, toPiThinkingLevel } from "@aivn/core";
-import type { EffectiveCraft, ThinkingLevel, WorkshopAssetView, WorkshopPart } from "@aivn/core";
+import type { EffectiveCraft, PromptInjection, ThinkingLevel, WorkshopAssetView, WorkshopPart } from "@aivn/core";
+import { agentInitialMessages } from "./promptInjection.js";
 import { capDigest, renderTranscriptAs, splitSummary, calibrateTokenScale, type EpochSummary } from "./compaction.js";
 import { completeText, SUMMARY_MAX_TOKENS, type OneShotOptions } from "./llm.js";
 import { skillsPrompt } from "./skills.js";
@@ -450,6 +451,8 @@ export interface WorkshopAgentOptions {
   systemPrompt: string;
   /** 思考档位（play.json 的 agents.workshop.thinking，缺省跟随服务商默认）。 */
   thinkingLevel?: ThinkingLevel;
+  /** 上下文注入（play.json 的 agents.injection）：两个 agent 共用同一份，见 promptInjection.ts。 */
+  injection?: PromptInjection;
   /** 用户主动停止：中止当前一轮。 */
   signal?: AbortSignal;
 }
@@ -491,11 +494,17 @@ export async function runWorkshopTurn(
     streamFn: opts.streamFn,
     getApiKey: opts.getApiKey,
     initialState: {
-      systemPrompt: opts.systemPrompt,
+      // 系统提示词与上下文注入一起装配：首条恒为引擎提示词，注入排在它后面
+      systemPrompt: undefined,
       model: opts.model,
       thinkingLevel: toPiThinkingLevel(opts.thinkingLevel ?? "default"),
       tools: opts.tools,
-      messages: historyToMessages(history),
+      messages: agentInitialMessages({
+        systemPrompt: opts.systemPrompt,
+        tools: opts.tools,
+        history: historyToMessages(history),
+        injection: opts.injection,
+      }),
     },
   });
   const initialCount = agent.state.messages.length;

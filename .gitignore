@@ -15,6 +15,8 @@ plays/*
 media-cache
 # 运行期设置与数据目录（开发时设置文件落在仓库根，打包后在 exe 同级的 data/）
 settings.json
+# 提示词注入的 preset：同样是数据目录里的本机数据（Agent 页存出来的那几份）
+/prompt-presets.json
 data/
 # exe 打包的中间产物与最终产物（scripts/build-exe.mjs 的落点，跑一遍就有，不是仓库内容）
 build/

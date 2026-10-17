@@ -166,8 +166,6 @@ export interface Settings {
     contextWindow: number;
     compactRatio: number;
     keepRecentTokens: number;
-    nsfwModelId: string;
-    nsfwPrompt: string;
   };
   /** 工坊线程的压缩参数（工坊模型可与剧作家不同，阈值因此另有一套）。 */
   workshopContext: { contextWindow: number; compactRatio: number; keepRecentTokens: number };
@@ -233,6 +231,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
   if (!res.ok) throw new Error(body?.error ?? `请求失败: ${res.status}`);
   return body as T;
+}
+
+/** 上下文注入的一条消息（与 core 的 `InjectionMessage` 同形）。 */
+export interface PromptPresetMessage {
+  role: "system" | "user" | "assistant" | "tool";
+  text: string;
+}
+
+/** 上下文注入的 preset：应用级，跨剧目复用（存在数据目录的 prompt-presets.json）。 */
+export interface PromptPreset {
+  name: string;
+  messages: PromptPresetMessage[];
+  updatedAt?: string;
 }
 
 export const api = {
@@ -471,6 +482,21 @@ export const api = {
    */
   openFirewall: () =>
     request<{ ok: boolean; message: string }>("/api/lan/open-firewall", { method: "POST" }),
+
+  /** 提示词注入的 preset：整表读写（名字走查询参数，见 promptPresets.ts）。 */
+  promptPresets: () => request<{ presets: PromptPreset[] }>("/api/prompt-presets"),
+
+  savePromptPreset: (name: string, messages: PromptPresetMessage[]) =>
+    request<{ presets: PromptPreset[] }>("/api/prompt-presets", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, messages }),
+    }),
+
+  removePromptPreset: (name: string) =>
+    request<{ presets: PromptPreset[] }>(`/api/prompt-presets?name=${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    }),
 };
 
 /** 素材 URL（静态服务）。name 为文件名或 stem（无扩展名时按目录清单补全）。 */

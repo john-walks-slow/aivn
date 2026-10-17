@@ -40,6 +40,7 @@ import {
   pickThreadCutIndex,
   type EpochSummary,
 } from "./compaction.js";
+import { withInjection } from "./promptInjection.js";
 import { createAgentKit, enabledCapabilitiesFor, type AgentKit } from "./agentkit/kit.js";
 import type { PlayAssets } from "./playAssets.js";
 import type { PlayConfig } from "@aivn/core";
@@ -252,6 +253,7 @@ export class WorkshopSession {
           tools: this.kit.tools,
           thinkingLevel: this.kit.thinking,
           systemPrompt: prompt,
+          injection: this.turnPlay?.agents?.injection,
           signal: turnAbort.signal,
         },
         visible,
@@ -545,7 +547,9 @@ export class WorkshopSession {
         }
       : undefined;
     if (!limit) return { visible, prompt };
-    const used = estimateThreadTokens(prompt, historyToMessages(visible), scale);
+    // 注入的消息同样是这一轮的输入，计量不能漏（漏了会让压缩晚一轮才触发）
+    const messages = withInjection(historyToMessages(visible), this.turnPlay?.agents?.injection);
+    const used = estimateThreadTokens(prompt, messages, scale);
     if (used <= Math.floor(limit.contextWindow * limit.triggerRatio)) return { visible, prompt };
 
     const cut = pickThreadCutIndex(

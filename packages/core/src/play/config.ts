@@ -173,6 +173,32 @@ export interface AgentSettings {
 }
 
 /**
+ * 注入消息的角色：就是模型看到的四种消息角色。
+ *
+ * `tool` 是「工具已经跑过、结果是这样」——它在协议上必须与一次工具调用成对出现，
+ * 拼装时由引擎补上那一次调用（见 server 的 `promptInjection.ts`）。
+ */
+export const INJECTION_ROLES = ["system", "user", "assistant", "tool"] as const;
+export type InjectionRole = (typeof INJECTION_ROLES)[number];
+
+export interface InjectionMessage {
+  role: InjectionRole;
+  text: string;
+}
+
+/**
+ * 上下文注入（Agent 页的「提示词注入」，逐剧目）：启用后，这两个 agent 的上下文开头
+ * 都会先看到这一组消息，再看到自己的系统提示词与对话。
+ *
+ * 它是**引擎给模型的底色**，不是这个剧目发生过的事：不落谱系、不进工坊对话记录。
+ * 一份注入两个角色共用——分开写会让同一个剧目的两个 agent 对世界的认知分家。
+ */
+export interface PromptInjection {
+  enabled?: boolean;
+  messages?: InjectionMessage[];
+}
+
+/**
  * 逐剧目的生图设置：覆盖服务端全局的出图模型与档位（`STAGE_IMAGE_MODEL` / `STAGE_IMAGE_SIZE`）。
  *
  * 全局配置是「这台机器默认怎么出图」，但一部剧要高分辨率、另一部的小剧场插图 1K 就够，
@@ -250,9 +276,11 @@ export interface PlayConfig {
 }
 
 /** 剧目内两个 agent 的设置：剧作家（演出）与工坊（搭台）。 */
+/** 剧目内两个 agent 的设置：剧作家（演出）与工坊（搭台），外加两者共用的上下文注入。 */
 export interface AgentConfig {
   playwriter?: AgentSettings;
   workshop?: AgentSettings;
+  injection?: PromptInjection;
 }
 
 export function parsePlayConfig(raw: unknown): PlayConfig {
@@ -398,5 +426,23 @@ function parseAgentConfig(raw: AgentConfig | undefined): AgentConfig | undefined
     }
     if (Object.keys(settings).length > 0) out[role] = settings;
   }
+  const injection = parseInjection(raw.injection);
+  if (injection) out.injection = injection;
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** 注入段归一化：角色走白名单、空文本丢掉；开关关着且一条都没剩就当没写。 */
+function parseInjection(raw: PromptInjection | undefined): PromptInjection | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const messages: InjectionMessage[] = [];
+  for (const item of Array.isArray(raw.messages) ? raw.messages : []) {
+    const role = oneOf(INJECTION_ROLES, item?.role);
+    const text = typeof item?.text === "string" ? item.text.trim() : "";
+    if (role && text !== "") messages.push({ role, text });
+  }
+  if (raw.enabled !== true && messages.length === 0) return undefined;
+  return {
+    ...(raw.enabled === true ? { enabled: true } : {}),
+    ...(messages.length > 0 ? { messages } : {}),
+  };
 }

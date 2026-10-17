@@ -39,6 +39,7 @@ import type { VoiceCatalogService } from "./voiceCatalog.js";
 import type { PlayStore } from "./store.js";
 import { refFromActor, refFromCg, refFromSfx, refsFromScene, type AssetRefResolver } from "./assetRef.js";
 import { CAST_SCAN_EVENTS, buildSystemPrompt, renderStateSection, type AssetManifest, type AssetNotes, type GeneratedNote } from "./prompt.js";
+import { agentInitialMessages } from "./promptInjection.js";
 import { skillsPromptBlock } from "./skills.js";
 import { lineageToBeats, lineageToEvents, stopFromEvent, type RebuiltBeat } from "./rebuild.js";
 import {
@@ -672,27 +673,33 @@ export class PlaywrightOrchestrator {
     const finalMessages = isNsfw
       ? (!hasNsfwPreTurns(dialogue) ? [...NSFW_PRE_TURNS, ...dialogue] : dialogue)
       : stripNsfwPreTurns(dialogue);
+    const systemPrompt = buildSystemPrompt({
+      play: opts.play,
+      assets: opts.assets,
+      notes: opts.assetNotes,
+      generated: opts.generatedAssets,
+      memory: opts.memory,
+      can: this.kit.can,
+      skills: skillsPromptBlock(),
+      customPrompt: opts.play.agents?.playwriter?.prompt,
+      activeCast: this.recentCast(),
+    });
     const agent = new PiAgent({
       streamFn: opts.streamFn,
       getApiKey: opts.getApiKey,
       initialState: {
-        systemPrompt: buildSystemPrompt({
-          play: opts.play,
-          assets: opts.assets,
-          notes: opts.assetNotes,
-          generated: opts.generatedAssets,
-          memory: opts.memory,
-          can: this.kit.can,
-          nsfwMode: isNsfw,
-          nsfwPrompt: opts.nsfwPrompt,
-          skills: skillsPromptBlock(),
-          customPrompt: opts.play.agents?.playwriter?.prompt,
-          activeCast: this.recentCast(),
-        }),
+        // 系统提示词与上下文注入由 agentInitialMessages 一起装配：首条恒为引擎提示词
+        // （pi 的自动插入会被打头的 system 注入顶掉，见那里的注释）。
+        systemPrompt: undefined,
         model,
         thinkingLevel: toPiThinkingLevel(thinkingLevel),
         tools: this.kit.tools,
-        messages: finalMessages,
+        messages: agentInitialMessages({
+          systemPrompt,
+          tools: this.kit.tools,
+          history: finalMessages,
+          injection: opts.play.agents?.injection,
+        }),
       },
     });
     this.unsubscribeAgent = agent.subscribe((event) => void this.onAgentEvent(event));

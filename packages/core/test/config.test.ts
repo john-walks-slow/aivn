@@ -134,3 +134,37 @@ describe("resolveCraft：与默认值合成", () => {
     expect(DEFAULT_CRAFT.assets.background).toBe("library-first");
   });
 });
+
+describe("parsePlayConfig：agents 段的上下文注入", () => {
+  const injection = (raw: unknown): unknown =>
+    parsePlayConfig({ ...BASE, agents: { injection: raw as never } }).agents?.injection;
+
+  it("角色走白名单、空文本丢掉，顺序原样保留", () => {
+    expect(
+      injection({
+        enabled: true,
+        messages: [
+          { role: "system", text: " 你是… " },
+          { role: "user", text: "   " },
+          { role: "tool", text: "查到了" },
+          { role: "narrator", text: "不认识的角色" },
+        ],
+      }),
+    ).toEqual({
+      enabled: true,
+      messages: [
+        { role: "system", text: "你是…" },
+        { role: "tool", text: "查到了" },
+      ],
+    });
+  });
+
+  it("开关与消息都空 = 不留空壳；只有开关也算写过（用户显式打开还没写内容）", () => {
+    expect(injection({ messages: [{ role: "user", text: " " }] })).toBeUndefined();
+    expect(injection(undefined)).toBeUndefined();
+    expect(injection({ enabled: true })).toEqual({ enabled: true });
+    expect(injection({ messages: [{ role: "user", text: "你好" }] })).toEqual({
+      messages: [{ role: "user", text: "你好" }],
+    });
+  });
+});

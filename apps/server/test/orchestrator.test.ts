@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import { LineageTree, characterIdOfPath, type LineageEvent, type ServerMessage } from "@aivn/core";
+import { LineageTree, characterIdOfPath, type LineageEvent, type PlayConfig, type ServerMessage } from "@aivn/core";
 import { PlaywrightOrchestrator, type OrchestratorRuntimeState } from "../src/orchestrator.js";
 import { createArchiveTool } from "../src/agentkit/archiveTool.js";
 import { defaultCapabilitiesFor } from "../src/agentkit/kit.js";
@@ -27,6 +27,8 @@ function setup(
     restored?: OrchestratorRuntimeState;
     /** 需要真目录的用例（剧内状态文件）自己给一个；不给就用不落盘的占位路径。 */
     dir?: string;
+    /** 这一场的剧目配置（上下文注入就在它的 agents.injection 上）；不给 = 默认 PLAY。 */
+    play?: PlayConfig;
   } = {},
 ): {
   orchestrator: PlaywrightOrchestrator;
@@ -50,7 +52,7 @@ function setup(
     streamFn,
     model: {} as never,
     getApiKey: () => "test-key",
-    play: PLAY,
+    play: opts.play ?? PLAY,
     store: (opts.dir ? { dir: opts.dir } : TEST_STORE) as never,
     memory: opts.memory ?? new PlayMemory({ cards: [CARD] }),
     tree,
@@ -1594,453 +1596,39 @@ describe("跳转的播放头语义（playFrom）", () => {
   });
 });
 
-describe("限制级（NSFW）模式切换与上下文隔离", () => {
-  it("调用 enter_nsfw 后下一轮注入 NSFW 前置合规轮次，调用 exit_nsfw 后切回 SFW 摘要", async () => {
+describe("提示词注入：两个 agent 共用的那一组前置消息", () => {
+  const injection = {
+    enabled: true,
+    messages: [
+      { role: "system" as const, text: "注入·系统" },
+      { role: "user" as const, text: "注入·用户" },
+      { role: "assistant" as const, text: "注入·助手" },
+    ],
+  };
+
+  it("启用后第一轮就以那组消息开头，且它们不进谱系（注入不是剧目里发生过的事）", async () => {
     const contexts: CapturedContext[] = [];
-    const responses: FakeResponse[] = [
-      // 第 1 轮：日常铺垫，并在本轮调用 enter_nsfw
-      {
-        text: '<say id="mio">来我房间吧……</say>',
-        beatDone: true,
-        toolCalls: [{ name: "enter_nsfw", args: { reason: "进入房间亲密接触" } }],
-      },
-      // 第 2 轮：限制级描写，并在本轮同时调用 exit_nsfw + beat_done
-      {
-        text: '<say id="mio">笨蛋……轻一点……</say>',
-        beatDone: true,
-        toolCalls: [{ name: "exit_nsfw", args: { summary: "两人在房间内度过了温存亲密的一夜。" } }],
-      },
-      // 摘要生成阶段的 LLM 补全响应
-      {
-        text: "两人在房间内互诉心意，度过了温存亲密的一夜，彼此关系有了重大突破。",
-      },
-      // 第 3 轮：切回主模型日常
-      {
-        text: '<scene bg="morning_room"/><say id="mio">早啊……昨晚睡得好吗？</say>',
-        beatDone: true,
-      },
-    ];
-
-    const { orchestrator, messages } = setup(responses, { contexts });
-    orchestrator.start();
-    await orchestrator.whenIdle();
-
-    // 第 1 轮演完，已请求 enter_nsfw
-    expect(orchestrator.runtimeState.beatNo).toBe(1);
-    // 请求进入的那一刻就告诉客户端（标识先亮，内容随后到）：真值、等一拍都不对
-    expect(messages.filter((m) => m.type === "nsfw")).toEqual([{ type: "nsfw", active: true }]);
-    expect(orchestrator.nsfwChannel).toBe(true);
-
-    // 触发第 2 轮（进入 NSFW 模式）
-    await orchestrator.playerAction({ kind: "continue" });
-    await orchestrator.whenIdle();
-
-    // 验证第 2 轮的上下文中包含了 NSFW 前置合规轮次
-    // 带工具的那条收束响应会多一跳「停笔」模型调用（带工具 → 工具跑完还要再问一次），
-    // 所以不再按固定下标取：凡是这一趟发出去过的上下文，只要有一份带上了合规轮次就算注入成功
-    const hasPreTurn = contexts.some((c) =>
-      c.messages.some((m) => typeof m.content === "string" && m.content.includes("20 周岁以上")),
-    );
-    expect(hasPreTurn).toBe(true);
-    // 兑现进入不翻标识：亮着的那盏不许闪一下；这一拍末尾同时调了 exit_nsfw，
-    // 所以熄灭紧跟在摘要之后（唯一那一次 false）
-    expect(messages.filter((m) => m.type === "nsfw")).toEqual([
-      { type: "nsfw", active: true },
-      { type: "nsfw", active: false },
-    ]);
-
-    // 触发第 3 轮（已切回 SFW 主模型）
-    await orchestrator.playerAction({ kind: "continue" });
-    await orchestrator.whenIdle();
-
-    expect(orchestrator.runtimeState.beatNo).toBe(3);
-    // 进了日常就不再翻：没有第二条 true，也没有第二条 false
-    expect(messages.filter((m) => m.type === "nsfw")).toEqual([
-      { type: "nsfw", active: true },
-      { type: "nsfw", active: false },
-    ]);
-    expect(orchestrator.nsfwChannel).toBe(false);
-    // 验证第 3 轮上下文：NSFW 前置合规轮次已被剥离，且包含了 SFW 摘要前情提要
-    // 第三轮就是最后一跳（中间那两跳「停笔」与摘要补全也是模型调用，按下标取会错位）
-    const sfwContext = contexts.at(-1)!;
-    const stillHasPreTurn = sfwContext.messages.some(
-      (m) => typeof m.content === "string" && m.content.includes("20 周岁以上"),
-    );
-    expect(stillHasPreTurn).toBe(false);
-
-    // 验证第 3 轮的 user 消息中包含了 SFW 摘要内容
-    const userMessages = sfwContext.messages.filter((m) => m.role === "user");
-    const combinedUserText = userMessages.map((m) => String(m.content)).join("\n");
-    expect(combinedUserText).toContain("【前情提要·日常接续】");
-    expect(combinedUserText).toContain("温存亲密的一夜");
-    // 露骨台词不应在主模型消息中出现
-    expect(combinedUserText).not.toContain("轻一点");
-  });
-
-  it("腰斩正在请求进入限制级的那一轮：标识跟着熄灭", async () => {
-    // 永不兑现的闸门：把这一轮卡在演出中（腰斩之后它本来也不会再收尾，
-    // 事后再把它放行会让被作废的那条流醒过来挂住进程）
-    const gate = new Promise<void>(() => {});
-    const responses: FakeResponse[] = [
-      { text: BEAT_1, beatDone: true }, // 第 1 轮：日常，留一个可回的分岔锚点
-      // 第 2 轮：先请求进限制级（这一轮还没收束），再被闸在半路——标识这时必须是亮的
-      { text: '<say id="mio">把门关上。</say>', toolCalls: [{ name: "enter_nsfw", args: {} }] },
-      { text: '<say id="mio">……轻一点。</say>', beatDone: true, gate },
-    ];
-    const { orchestrator, messages, tree } = setup(responses);
-    orchestrator.start();
-    await orchestrator.whenIdle();
-    const anchor = tree.leafId!;
-
-    orchestrator.playerAction({ kind: "continue" }).catch(() => {}); // 腰斩后这一轮不再收尾
-    await vi.waitFor(() => expect(orchestrator.nsfwChannel).toBe(true), { timeout: 3000 });
-    expect(messages.filter((m) => m.type === "nsfw")).toEqual([{ type: "nsfw", active: true }]);
-
-    // 腰斩：从锚点开新分支，那一轮连同它「已请求进入」的状态一起作废——标识不许留在亮着
-    await orchestrator.forkTo(anchor);
-    expect(orchestrator.nsfwChannel).toBe(false);
-    expect(messages.filter((m) => m.type === "nsfw").at(-1)).toEqual({ type: "nsfw", active: false });
-
-    await orchestrator.whenIdle();
-    // 醒过来的旧轮不再收尾，标识也不许再翻回去
-    expect(messages.filter((m) => m.type === "nsfw").at(-1)).toEqual({ type: "nsfw", active: false });
-  });
-
-  it("enter_nsfw 单独成轮（零台词零停止点）→ 不判废：交棒落定，下一轮照常由限制级模型执笔", async () => {
-    const contexts: CapturedContext[] = [];
-    const responses: FakeResponse[] = [
-      // 第 1 轮：只调 enter_nsfw + beat_done 交棒，一个字台词都没写
-      {
-        text: "",
-        beatDone: true,
-        toolCalls: [{ name: "enter_nsfw", args: { reason: "进入房间亲密接触" } }],
-      },
-      // 第 2 轮：限制级模型执笔
-      {
-        text: '<say id="mio">笨蛋……轻一点……</say>',
-        beatDone: true,
-      },
-    ];
-
-    const { orchestrator, messages } = setup(responses, { contexts });
-    orchestrator.start();
-    await orchestrator.whenIdle();
-
-    // 交棒轮不是失败：不报错、不回滚（回滚会把 pendingEnter 重置回日常模型）
-    expect(messages.filter((m) => m.type === "error")).toHaveLength(0);
-    expect(messages.filter((m) => m.type === "rebase")).toHaveLength(0);
-    expect(messages.filter((m) => m.type === "beat_end")).toHaveLength(1);
-    const beatEnd = lastBeatEnd(messages);
-    if (beatEnd.type === "beat_end") {
-      expect(beatEnd.reason).toBe("no_stop");
-      expect(beatEnd.stop).toBeUndefined();
-    }
-
-    // 下一轮：限制级前置合规轮次已注入（nsfwPendingEnter 在开拍前兑现）
-    await orchestrator.playerAction({ kind: "continue" });
-    await orchestrator.whenIdle();
-
-    expect(orchestrator.runtimeState.nsfw?.active).toBe(true);
-    // 带工具的那条收束响应会多一跳「停笔」模型调用（带工具 → 工具跑完还要再问一次），
-    // 所以不再按固定下标取：凡是这一趟发出去过的上下文，只要有一份带上了合规轮次就算注入成功
-    const hasPreTurn = contexts.some((c) =>
-      c.messages.some((m) => typeof m.content === "string" && m.content.includes("20 周岁以上")),
-    );
-    expect(hasPreTurn).toBe(true);
-  });
-
-  it("从限制级分支跳转或分岔回日常节点时，NSFW 状态重置为 false，不会滞留限制级模式", async () => {
-    const contexts: CapturedContext[] = [];
-    const responses: FakeResponse[] = [
-      // 第 1 轮：日常
-      {
-        text: '<say id="mio">今天天气真好。</say>',
-        beatDone: true,
-      },
-      // 第 2 轮：进入限制级
-      {
-        text: '<say id="mio">来吧……</say>',
-        beatDone: true,
-        toolCalls: [{ name: "enter_nsfw", args: {} }],
-      },
-      // 第 3 轮：限制级
-      {
-        text: '<say id="mio">亲爱的……</say>',
-        beatDone: true,
-      },
-    ];
-
-    const { orchestrator, messages, tree } = setup(responses, { contexts });
-    orchestrator.start();
-    await orchestrator.whenIdle();
-    const beat1NodeId = tree.leafId!;
-
-    // 演第 2 轮
-    await orchestrator.playerAction({ kind: "continue" });
-    await orchestrator.whenIdle();
-
-    // 演第 3 轮（NSFW 中）
-    await orchestrator.playerAction({ kind: "continue" });
-    await orchestrator.whenIdle();
-    expect(orchestrator.runtimeState.nsfw?.active).toBe(true);
-
-    // 跳转回第 1 轮节点
-    await orchestrator.jumpTo(beat1NodeId);
-    expect(orchestrator.runtimeState.nsfw?.active).toBe(false);
-    // 标识跟着世界线走：跳回日常节点必须熄掉，否则它会一直挂在限制级上
-    expect(messages.filter((m) => m.type === "nsfw").at(-1)).toEqual({ type: "nsfw", active: false });
-
-    // 验证当前 agent messages 中无 NSFW 前置合规轮次
-    const currentAgentMessages = (orchestrator as unknown as { agent: { state: { messages: unknown[] } } })
-      .agent.state.messages;
-    const hasPreTurn = currentAgentMessages.some(
-      (m: unknown) => typeof (m as { content?: string }).content === "string" && (m as { content: string }).content.includes("20 周岁以上"),
-    );
-    expect(hasPreTurn).toBe(false);
-  });
-
-  /** 当前 agent 对话体的序列化视图（重建后不经过模型调用，captured context 会过期）。 */
-  function agentText(orchestrator: PlaywrightOrchestrator): string {
-    const messages = (
-      orchestrator as unknown as { agent: { state: { messages: unknown[] } } }
-    ).agent.state.messages;
-    return JSON.stringify(messages);
-  }
-
-  /** 日常 → 限制级两拍（末拍退出）→ 摘要 → 段后一拍。 */
-  function nsfwRun(): FakeResponse[] {
-    return [
-      {
-        text: '<say id="mio">来我房间吧……</say>',
-        beatDone: true,
-        toolCalls: [{ name: "enter_nsfw", args: {} }],
-      },
-      { text: '<say id="mio">笨蛋……轻一点……</say>', beatDone: true },
-      {
-        text: '<say id="mio">……抱紧我。</say>',
-        beatDone: true,
-        toolCalls: [{ name: "exit_nsfw", args: {} }],
-      },
-      { text: "两人在房间里互诉心意，关系有了突破。" },
-      { text: '<say id="mio">早啊，昨晚睡得好吗。</say>', beatDone: true },
-    ];
-  }
-
-  it("退出那一拍：摘要落在 beat_end 上，段内每个节点都带标，快照已切回日常", async () => {
-    const memory = new PlayMemory({ cards: [CARD] });
-    const { orchestrator, tree } = setup(nsfwRun(), { memory });
-    orchestrator.start();
-    await orchestrator.whenIdle();
-    await orchestrator.playerAction({ kind: "continue" }); // 第 2 轮：进限制级
-    await orchestrator.whenIdle();
-    await orchestrator.playerAction({ kind: "continue" }); // 第 3 轮：退出那一拍
-    await orchestrator.whenIdle();
-
-    const chain = tree.chainEvents(tree.leafId);
-    const ends = chain.filter((e) => e.kind === "beat_end");
-    expect(ends).toHaveLength(3);
-    // 段内第一拍的收束带标、不带摘要；段末那一拍带上摘要
-    expect(ends[1]?.payload?.nsfw).toBe(true);
-    expect(ends[1]?.payload?.nsfwSummary).toBeUndefined();
-    expect(ends[2]?.payload?.nsfw).toBe(true);
-    expect(ends[2]?.payload?.nsfwSummary).toBe("两人在房间里互诉心意，关系有了突破。");
-
-    // 段内一个节点都不漏标（从段首到段末），段外一个都不带标
-    const first = chain.findIndex((e) => e.payload?.nsfw === true);
-    const last = chain.indexOf(ends[2]!);
-    expect(first).toBeGreaterThan(0);
-    for (const event of chain.slice(first, last + 1)) expect(event.payload?.nsfw).toBe(true);
-    for (const event of chain.slice(0, first)) expect(event.payload?.nsfw).not.toBe(true);
-
-    // 快照：段内那一拍仍是限制级，段末那一拍起世界线回到日常
-    expect(tree.latestSnapshotOnPath(ends[1]!.id)?.nsfw).toBe(true);
-    expect(tree.latestSnapshotOnPath(tree.leafId)?.nsfw).toBe(false);
-
-    // archive：SFW 侧搜得到那一段、看到的是摘要；原文片只在限制级侧可见
-    const allowed = tree.pathSet();
-    const sfwHits = memory.searchArchive("互诉心意", allowed);
-    expect(sfwHits).toHaveLength(1);
-    expect(sfwHits[0]?.nsfw).toBeUndefined();
-    expect(memory.searchArchive("轻一点", allowed)).toEqual([]);
-    expect(memory.searchArchive("轻一点", allowed, { nsfw: true })).toHaveLength(1);
-  });
-
-  it("beat_settled 推后到摘要落地：等待期间 busy 不放、也不算空闲", async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
+    const { orchestrator, tree } = setup([{ text: BEAT_1, beatDone: true }], {
+      contexts,
+      play: { ...PLAY, agents: { injection } },
     });
+    orchestrator.start();
+    await orchestrator.whenIdle();
+
+    const first = contexts[0]!;
+    // 引擎系统提示词恒为第一条，注入紧随其后
+    expect(first.messages.slice(0, 4).map((m) => m.role)).toEqual(["system", "system", "user", "assistant"]);
+    expect(JSON.stringify(first.messages[0])).toContain("你是一部视觉小说的剧作家");
+    expect(JSON.stringify(first.messages[1])).toContain("注入·系统");
+    expect(JSON.stringify(tree.materialize())).not.toContain("注入·系统");
+  });
+
+  it("没启用就一条都不注入", async () => {
     const contexts: CapturedContext[] = [];
-    const responses = nsfwRun();
-    // 摘要那次补全被闸住：摘要没落地之前收束就不算完
-    responses[3] = { text: "两人在房间里互诉心意，关系有了突破。", gate };
-
-    const { orchestrator, messages } = setup(responses, { contexts });
+    const { orchestrator } = setup([{ text: BEAT_1, beatDone: true }], { contexts });
     orchestrator.start();
     await orchestrator.whenIdle();
-    await orchestrator.playerAction({ kind: "continue" }); // 第 2 轮：进限制级
-    await orchestrator.whenIdle();
-    const settledBefore = messages.filter((m) => m.type === "beat_settled").length;
-
-    const running = orchestrator.playerAction({ kind: "continue" }); // 第 3 轮：退出那一拍
-    // 摘要请求已发出（四个上下文 = 三拍 + 摘要补全）
-    // 6 = 一拍的三次调用（r1 → 停笔 → r2）+ 退出那一拍（r3 → 停笔）之后，摘要那次补全
-    await vi.waitFor(() => expect(contexts).toHaveLength(6));
-    expect(messages.filter((m) => m.type === "beat_settled")).toHaveLength(settledBefore);
-    expect(orchestrator.isBusy).toBe(true);
-
-    release();
-    await running;
-    await orchestrator.whenIdle();
-    expect(messages.filter((m) => m.type === "beat_settled")).toHaveLength(settledBefore + 1);
-  });
-
-  it("跳回段内照渲原文，跳回段后只剩摘要", async () => {
-    const { orchestrator, messages, tree } = setup(nsfwRun());
-    orchestrator.start();
-    await orchestrator.whenIdle();
-    await orchestrator.playerAction({ kind: "continue" }); // 段内第一拍
-    await orchestrator.whenIdle();
-    const inSegment = tree.leafId!;
-    await orchestrator.playerAction({ kind: "continue" }); // 退出那一拍
-    await orchestrator.whenIdle();
-    const afterSegment = tree.leafId!;
-
-    // 段内：快照说 nsfw=true → 原文照渲，摘要还没出现；标识跟着这条分支亮起来
-    await orchestrator.jumpTo(inSegment);
-    expect(orchestrator.runtimeState.nsfw?.active).toBe(true);
-    expect(messages.filter((m) => m.type === "nsfw").at(-1)).toEqual({ type: "nsfw", active: true });
-    const rawText = agentText(orchestrator);
-    expect(rawText).toContain("轻一点");
-    expect(rawText).not.toContain("互诉心意");
-
-    // 段后：快照说 nsfw=false → 整段折叠成摘要，原文一个字都不进消息；标识跟着熄
-    await orchestrator.jumpTo(afterSegment);
-    expect(orchestrator.runtimeState.nsfw?.active).toBe(false);
-    expect(messages.filter((m) => m.type === "nsfw").at(-1)).toEqual({ type: "nsfw", active: false });
-    const sfwText = agentText(orchestrator);
-    expect(sfwText).toContain("互诉心意");
-    expect(sfwText).not.toContain("轻一点");
-    expect(sfwText).not.toContain("抱紧我");
-  });
-
-  it("边界那一拍的玩家输入按所属通道打标：进段的那句带标、段后第一句不带标", async () => {
-    const memory = new PlayMemory({ cards: [CARD] });
-    const responses: FakeResponse[] = [
-      {
-        text: '<say id="mio">今天天气真好。</say>',
-        beatDone: true,
-        toolCalls: [{ name: "enter_nsfw", args: {} }],
-      },
-      // 这一段的第一拍：玩家那句「推门进去」是在「即将进入限制级」的通道上发出的
-      { text: '<say id="mio">笨蛋……轻一点……</say>', beatDone: true },
-      {
-        text: '<say id="mio">……抱紧我。</say>',
-        beatDone: true,
-        toolCalls: [{ name: "exit_nsfw", args: {} }],
-      },
-      { text: "两人在房间里互诉心意，关系有了突破。" },
-      // 段后的第一句日常输入
-      { text: '<say id="mio">早啊，昨晚睡得好吗。</say>', beatDone: true },
-    ];
-    const { orchestrator, tree } = setup(responses, { memory });
-    orchestrator.start();
-    await orchestrator.whenIdle();
-    await orchestrator.playerAction({ kind: "free", text: "我轻轻推开门走了进去。" });
-    await orchestrator.whenIdle();
-    await orchestrator.playerAction({ kind: "continue" }); // 段内末拍：退出
-    await orchestrator.whenIdle();
-
-    // 开拍前落树的 prompt 节点拿的是「这一拍归属哪条通道」，不是上一拍的残留值
-    const entryPrompt = tree.materialize().find((e) => e.payload?.input === "我轻轻推开门走了进去。")!;
-    expect(entryPrompt.payload?.nsfw).toBe(true);
-
-    // 净化后的上下文里：摘要留下，段内原文与那句话都不在
-    const afterExit = agentText(orchestrator);
-    expect(afterExit).toContain("互诉心意");
-    expect(afterExit).not.toContain("轻一点");
-    expect(afterExit).not.toContain("抱紧我");
-    expect(afterExit).not.toContain("我轻轻推开门");
-
-    // 段后的第一句日常输入不许继承限制级标记——误标会让它从树上重建时整句消失
-    await orchestrator.playerAction({ kind: "free", text: "第二天早上，我走进客厅。" });
-    await orchestrator.whenIdle();
-    const dailyPrompt = tree.materialize().find((e) => e.payload?.input === "第二天早上，我走进客厅。")!;
-    expect(dailyPrompt.payload?.nsfw).not.toBe(true);
-    await orchestrator.jumpTo(tree.leafId);
-    expect(agentText(orchestrator)).toContain("第二天早上，我走进客厅。");
-  });
-
-  it("段内跳转之后再退出：净化上下文仍从谱系折出来，原文一句都不回流", async () => {
-    const responses: FakeResponse[] = [
-      {
-        text: '<say id="mio">今天天气真好。</say>',
-        beatDone: true,
-        toolCalls: [{ name: "enter_nsfw", args: {} }],
-      },
-      { text: '<say id="mio">笨蛋……轻一点……</say>', beatDone: true },
-      {
-        text: '<say id="mio">……抱紧我。</say>',
-        beatDone: true,
-        toolCalls: [{ name: "exit_nsfw", args: {} }],
-      },
-      { text: "两人在房间里互诉心意，关系有了突破。" },
-    ];
-    const { orchestrator, tree } = setup(responses);
-    orchestrator.start();
-    await orchestrator.whenIdle();
-    await orchestrator.playerAction({ kind: "free", text: "我轻轻推开门走了进去。" });
-    await orchestrator.whenIdle();
-
-    // 段内做一次结构操作：分支状态整体装回现场，此后退出时手上没有「进入前」的内存快照
-    await orchestrator.jumpTo(tree.leafId);
-    expect(orchestrator.runtimeState.nsfw?.active).toBe(true);
-
-    await orchestrator.playerAction({ kind: "continue" }); // 段内末拍：退出
-    await orchestrator.whenIdle();
-
-    expect(orchestrator.runtimeState.nsfw?.active).toBe(false);
-    const afterExit = agentText(orchestrator);
-    expect(afterExit).toContain("互诉心意");
-    expect(afterExit).not.toContain("轻一点");
-    expect(afterExit).not.toContain("抱紧我");
-    expect(afterExit).not.toContain("我轻轻推开门");
-  });
-
-  it("等摘要期间被销毁：不再惊醒下一拍，也不补发 beat_settled", async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const contexts: CapturedContext[] = [];
-    const responses = nsfwRun();
-    responses[3] = { text: "两人在房间里互诉心意，关系有了突破。", gate };
-
-    const { orchestrator, messages, tree } = setup(responses, { contexts });
-    orchestrator.start();
-    await orchestrator.whenIdle();
-    await orchestrator.playerAction({ kind: "continue" }); // 进限制级
-    await orchestrator.whenIdle();
-    const settledBefore = messages.filter((m) => m.type === "beat_settled").length;
-
-    const running = orchestrator.playerAction({ kind: "continue" }); // 退出那一拍
-    // 6 = 一拍的三次调用（r1 → 停笔 → r2）+ 退出那一拍（r3 → 停笔）之后，摘要那次补全
-    await vi.waitFor(() => expect(contexts).toHaveLength(6));
-    // 等摘要期间玩家又排了一句：收束若照常惊醒下一拍，这句话会带着新一轮落进谱系
-    await orchestrator.playerAction({ kind: "prompt", text: "明天去海边吧。" });
-    const nodesBefore = tree.materialize().length;
-    const callsBefore = contexts.length;
-
-    orchestrator.dispose();
-    release();
-    await running;
-    // 等这次收束真的跑完（finally 第一件事就是摘掉自己），再断言它没有顺势开新拍
-    await vi.waitFor(() =>
-      expect((orchestrator as unknown as { pendingSfwSwitch: unknown }).pendingSfwSwitch).toBeNull(),
-    );
-    expect(messages.filter((m) => m.type === "beat_settled")).toHaveLength(settledBefore);
-    expect(tree.materialize()).toHaveLength(nodesBefore);
-    expect(contexts).toHaveLength(callsBefore);
+    expect(JSON.stringify(contexts[0]!.messages)).not.toContain("注入·");
   });
 });
 

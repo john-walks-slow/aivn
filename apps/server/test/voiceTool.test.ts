@@ -147,7 +147,6 @@ describe("list_voices", () => {
 /** 工坊的常见态；这一组用例只翻 voice 那一位。 */
 const caps = (over: Record<string, boolean> = {}): AgentCapabilities => ({
   stage: false,
-  nsfw: false,
   characters: false,
   memory: false,
   image: true,
