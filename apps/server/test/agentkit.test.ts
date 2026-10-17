@@ -182,6 +182,8 @@ describe("agent kit：跨宿主能力与副作用契约", () => {
     expect(names(kit)).toEqual([
       "annotate_asset",
       "edit",
+      "enter_nsfw",
+      "exit_nsfw",
       "generate_asset",
       "generate_image",
       "list_library",
@@ -357,6 +359,7 @@ describe("agent kit：能力目录（设置页的数据源）", () => {
   it("目录按角色出，每条有中文名字、一句后果与分组", () => {
     const rows = capabilityCatalog("playwriter", FULL_ENV);
     expect(rows.map((r) => r.id)).toEqual([
+      "nsfw",
       "characters",
       "memory",
       "image",

@@ -1,4 +1,8 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { PromptPresets } from "../src/promptPresets.js";
 import { createNsfwTools } from "../src/agentkit/nsfwTool.js";
 import {
   CAPABILITY_CATALOG,
@@ -6,7 +10,6 @@ import {
   defaultCapabilitiesFor,
   installableTools,
 } from "../src/agentkit/kit.js";
-import { NSFW_PRE_TURNS } from "../src/orchestrator.js";
 import { PlayMemory } from "../src/memory.js";
 import { LineageTree } from "@aivn/core";
 
@@ -79,15 +82,15 @@ describe("nsfwTool：限制级剧情工具契约", () => {
     expect(installableTools("workshop")).not.toContain("enter_nsfw");
   });
 
-  it("NSFW 前置合规轮次包含 20 岁以上声明与虚构确认", () => {
-    expect(NSFW_PRE_TURNS).toHaveLength(2);
-    expect(NSFW_PRE_TURNS[0]!.role).toBe("user");
-    expect(String(NSFW_PRE_TURNS[0]!.content)).toContain("20 周岁以上");
-    expect(String(NSFW_PRE_TURNS[0]!.content)).toContain("above 20");
-    expect(NSFW_PRE_TURNS[1]!.role).toBe("assistant");
-    const assistantText = Array.isArray(NSFW_PRE_TURNS[1]!.content)
-      ? (NSFW_PRE_TURNS[1]!.content[0] as { text: string }).text
-      : String(NSFW_PRE_TURNS[1]!.content);
-    expect(assistantText).toContain("20 周岁以上");
+  it("合规锚点改作出厂自带的一份 preset，不再是写死在装配里的前置轮次", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "aivn-presets-"));
+    // 写死的 NSFW_PRE_TURNS 已退役：那两句现在是 prompt-presets 的默认内容，
+    // 作者挑进通道那组注入即可（见 docs/features/261017-nsfw-channel-v3）
+    const presets = new PromptPresets(join(dir, "prompt-presets.json"));
+    const [anchor] = await presets.list();
+    expect(anchor?.name).toContain("限制级通道");
+    expect(anchor?.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(anchor?.messages[0]?.text).toContain("20 周岁以上");
+    expect(anchor?.messages[0]?.text).toContain("above 20");
   });
 });

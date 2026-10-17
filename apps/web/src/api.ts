@@ -167,6 +167,8 @@ export interface Settings {
     contextWindow: number;
     compactRatio: number;
     keepRecentTokens: number;
+    /** 限制级通道的默认模型（逐剧目可覆盖）；留空 = 跟着主模型。 */
+    nsfwModelId: string;
   };
   /** 工坊线程的压缩参数（工坊模型可与剧作家不同，阈值因此另有一套）。 */
   workshopContext: { contextWindow: number; compactRatio: number; keepRecentTokens: number };
@@ -490,6 +492,17 @@ export const api = {
    */
   openFirewall: () =>
     request<{ ok: boolean; message: string }>("/api/lan/open-firewall", { method: "POST" }),
+
+  /**
+   * 限制级通道的手动开关（Agent 页那颗开关、舞台导演栏那一枚共用这一条）：
+   * 写回 play.json 的开关，并把正在跑的这一局一起切过去（边界语义在服务端，轮边界生效）。
+   */
+  setNsfw: (id: string, active: boolean) =>
+    request<{ active: boolean }>(`/api/plays/${id}/nsfw`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ active }),
+    }),
 
   /** 提示词注入的 preset：整表读写（名字走查询参数，见 promptPresets.ts）。 */
   promptPresets: () => request<{ presets: PromptPreset[] }>("/api/prompt-presets"),

@@ -44,6 +44,22 @@ export interface CrossHostCapabilityContract {
  */
 export const CAPABILITY_MATRIX: readonly CrossHostCapabilityContract[] = [
   {
+    id: "nsfw",
+    profile: "preset-specific",
+    domainSemantic: "在全年龄与限制级剧情通道之间切换。",
+    roles: ["playwriter"],
+    equivalence: "intentional-difference",
+    hosts: {
+      stageAi:
+        "独立版编排器维护通道状态：开启后切到剧目或全局指定的限制级模型，把作者写的那组上下文注入剧作家与搭台助手，退出时生成 SFW 摘要并按读者折叠谱系。作者可在 Agent 页或舞台导演栏手动开关，剧作家也能自己调 enter_nsfw / exit_nsfw。",
+      dshAivn: "不暴露该能力；由 DSH 宿主策略决定会话安全边界。",
+      backendDependency: "独立版需配置限制级模型（可选，缺省沿用主模型）。",
+      intentionalDifference:
+        "限制级通道是**运行时换模型 + 换上下文**（服务端双模型 + 读者折叠 + 谱系打标），文件里写个 flag 换不动它；" +
+        "插件没有这条通道——会话安全边界归 DSH 宿主。",
+    },
+  },
+  {
     id: "characters",
     profile: "shared",
     domainSemantic: "维护角色卡与角色身份事实。",
@@ -291,6 +307,8 @@ const READ_ONLY: ToolSideEffectMetadata = {
 
 /** Declarative side-effect/lifecycle metadata for every AgentKit tool id. */
 export const TOOL_SIDE_EFFECT_CATALOG: Readonly<Record<string, ToolSideEffectMetadata>> = {
+  enter_nsfw: { ...READ_ONLY, read_only: false, reversible: true },
+  exit_nsfw: { ...READ_ONLY, read_only: false, reversible: true },
   search_archive: READ_ONLY,
   // 只产候选：烧一次配额、落草稿区，**不写 assets/**（采用是 import_asset 的事）。
   generate_image: { ...READ_ONLY, read_only: false, external_request: true, asset_create: true, idempotent: false },

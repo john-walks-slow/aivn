@@ -827,6 +827,12 @@ export function StageScreen({
           voiceState={voiceState}
           onUnlock={unlockVoice}
           onTurbo={setTurbo}
+          /* 限制级通道的手动开关（导演栏最后一枚）：拨一下立刻作用于这一局，服务端同时写回 play.json */
+          nsfwChannel={{
+            active: stage.nsfw,
+            onToggle: (active) =>
+              api.setNsfw(playId, active).catch((e: Error) => toast.push(e.message, "warn")),
+          }}
           canContinue={canContinue}
           onContinue={continueBeat}
           onNotify={(text) => toast.push(text, "warn")}

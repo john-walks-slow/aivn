@@ -385,6 +385,28 @@ export class PlayStore {
     return join(this.dir, "assets", "generated.json");
   }
 
+  /**
+   * 只改 play.json 里限制级通道那颗开关（`agents.injection.enabled`），其余原样保留。
+   *
+   * 走原始对象而不是 parse + 序列化：引擎不认识的手写字段不该被这一颗开关顺手抹掉
+   * （与工坊改 `craft` 同一条规矩）。
+   */
+  async setNsfwEnabled(enabled: boolean): Promise<void> {
+    await withPlayConfigLock(this.dir, async () => {
+      const path = join(this.dir, "play.json");
+      const raw = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+      const agents = { ...((raw.agents as Record<string, unknown> | undefined) ?? {}) };
+      const injection = { ...((agents.injection as Record<string, unknown> | undefined) ?? {}) };
+      if (enabled) injection.enabled = true;
+      else delete injection.enabled;
+      if (Object.keys(injection).length > 0) agents.injection = injection;
+      else delete agents.injection;
+      if (Object.keys(agents).length > 0) raw.agents = agents;
+      else delete raw.agents;
+      await writeFile(path, JSON.stringify(raw, null, 2));
+    });
+  }
+
   /** play.json 全量保存（素材与配置页编辑）。 */
   async savePlay(play: PlayConfig): Promise<void> {
     await mkdir(this.dir, { recursive: true });

@@ -294,12 +294,28 @@ describe("buildSystemPrompt：写作参数与创作口径", () => {
     expect(prompt).toContain("你是剧本引擎，不是助手");
   });
 
-  it("限制级通道整体下线：提示词里再没有它的入口与指引", () => {
-    // 2026-10-16：动态切换型限制级通道不再给 Agent 暴露，提示词自然也不该留教它调的口。
-    const prompt = build({ play: PLAY });
-    expect(prompt).not.toContain("enter_nsfw");
-    expect(prompt).not.toContain("exit_nsfw");
-    expect(prompt).not.toContain("限制级");
+  it("限制级通道：能开关它才教它用，通道里则只说清此刻在哪、怎么出来", () => {
+    // 能力关掉 = 它没有那两个工具，提示词里一个字都不提
+    const off = build({ play: PLAY, can: { nsfw: false } });
+    expect(off).not.toContain("enter_nsfw");
+    expect(off).not.toContain("exit_nsfw");
+
+    // 能力开着、还没进通道：给进入指引（并说明进去会换模型 + 换上下文）
+    const idle = build({ play: PLAY });
+    expect(idle).toContain("## 限制级剧情通道（enter_nsfw）");
+    expect(idle).toContain("作者指定的限制级模型");
+    expect(idle).not.toContain("# 限制级通道（已开启）");
+
+    // 已经在通道里：不再教它「怎么进」，只说清此刻在哪、怎么出来
+    const inChannel = build({ play: PLAY, nsfwMode: true });
+    expect(inChannel).toContain("# 限制级通道（已开启）");
+    expect(inChannel).toContain("exit_nsfw");
+    expect(inChannel).not.toContain("## 限制级剧情通道（enter_nsfw）");
+
+    // 通道里但没有开关它的工具（作者手动开的、能力关着）：不许教它调不存在的工具
+    const inChannelNoTool = build({ play: PLAY, nsfwMode: true, can: { nsfw: false } });
+    expect(inChannelNoTool).toContain("# 限制级通道（已开启）");
+    expect(inChannelNoTool).not.toContain("exit_nsfw");
   });
 
   it("剧作家 prompt 不再出现技能清单：它没有 read_skill 这个工具", () => {

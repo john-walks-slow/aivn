@@ -488,8 +488,10 @@ export interface WorkshopAgentOptions {
   systemPrompt: string;
   /** 思考档位（play.json 的 agents.workshop.thinking，缺省跟随服务商默认）。 */
   thinkingLevel?: ThinkingLevel;
-  /** 上下文注入（play.json 的 agents.injection）：两个 agent 共用同一份，见 promptInjection.ts。 */
+  /** 限制级通道那组上下文（play.json 的 agents.injection）：两个 agent 共用同一份，见 promptInjection.ts。 */
   injection?: PromptInjection;
+  /** 这一刻通道开着吗（工坊每轮问宿主一次）：关着就不注入，只把上一轮留下的那份摘掉。 */
+  injectionActive?: boolean;
   /** 用户主动停止：中止当前一轮。 */
   signal?: AbortSignal;
 }
@@ -542,6 +544,7 @@ export async function runWorkshopTurn(
         tools: opts.tools,
         history: historyToMessages(history),
         injection: opts.injection,
+        active: opts.injectionActive ?? true,
       }),
     },
   });

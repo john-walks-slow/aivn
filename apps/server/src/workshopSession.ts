@@ -69,6 +69,11 @@ export interface WorkshopSessionOptions {
     };
   }>;
   getApiKey: () => string | undefined;
+  /**
+   * 这部剧此刻在不在限制级通道里（剧作家那边开的，或作者手动开的）。
+   * 通道开着时工坊也收到那组注入——它们是同一份上下文；关着就一条都不给。
+   */
+  nsfwChannel?: () => boolean | Promise<boolean>;
   /** 向本剧目所有 WS 客户端广播。 */
   emit: (msg: ServerMessage) => void;
   /** 剧目文件被改动后通知宿主（play.json/memory/素材改动触发 runtime reload，保存即生效）。 */
@@ -149,10 +154,13 @@ export class WorkshopSession {
   /** 每轮开跑前按 play.json 现取模型与工坊设置，重装 kit——用户刚在 Agent 页改完立刻生效。 */
   private turnPlay?: PlayConfig;
   private turnCompaction?: WorkshopSessionOptions["compaction"];
+  /** 本轮开跑时的通道状态：注入与计量都读它，不各问一次。 */
+  private turnNsfw = false;
   private async freshTurnContext(): Promise<{ model: Model<Api>; agents?: AgentSettings }> {
     const { model, agents, play, compaction } = await this.opts.getRunConfig();
     this.turnPlay = play;
     this.turnCompaction = compaction;
+    this.turnNsfw = (await this.opts.nsfwChannel?.()) === true;
     this.kit = createAgentKit({
       role: "workshop",
       playId: this.opts.playId,
@@ -271,6 +279,7 @@ export class WorkshopSession {
           thinkingLevel: this.kit.thinking,
           systemPrompt: prompt,
           injection: this.turnPlay?.agents?.injection,
+          injectionActive: this.turnNsfw,
           signal: turnAbort.signal,
         },
         visible,
@@ -568,7 +577,11 @@ export class WorkshopSession {
       : undefined;
     if (!limit) return { visible, prompt };
     // 注入的消息同样是这一轮的输入，计量不能漏（漏了会让压缩晚一轮才触发）
-    const messages = withInjection(historyToMessages(visible), this.turnPlay?.agents?.injection);
+    const messages = withInjection(
+      historyToMessages(visible),
+      this.turnPlay?.agents?.injection,
+      this.turnNsfw,
+    );
     const used = estimateThreadTokens(prompt, messages, scale);
     if (used <= Math.floor(limit.contextWindow * limit.triggerRatio)) return { visible, prompt };
 

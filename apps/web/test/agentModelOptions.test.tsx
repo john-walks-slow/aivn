@@ -26,13 +26,13 @@ const PLAY = {
 } as unknown as PlayConfig;
 
 /**
- * 两张角色卡各两个下拉（模型 / 思考），末尾还有一个注入 preset 的下拉；
- * 两张卡的「模型」分别是第 0 与第 2 个。
+ * 剧作家卡四个下拉（模型 / 思考 / 限制级专用模型 / 限制级思考档位），搭台卡两个，
+ * 末尾还有一个通道 preset 的下拉；两张卡的「模型」分别是第 0 与第 4 个。
  */
 async function modelSelects(): Promise<HTMLSelectElement[]> {
-  await waitFor(() => expect(screen.getAllByRole("combobox").length).toBe(5));
+  await waitFor(() => expect(screen.getAllByRole("combobox").length).toBe(7));
   const all = screen.getAllByRole("combobox") as HTMLSelectElement[];
-  return [all[0]!, all[2]!];
+  return [all[0]!, all[4]!];
 }
 
 describe("Agent 页模型下拉：play.json 里已有的模型不能因为清单收窄而消失", () => {

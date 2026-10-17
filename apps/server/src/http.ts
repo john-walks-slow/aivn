@@ -425,6 +425,16 @@ export async function handleHttp(
       if (method === "GET") return json(res, 200, await store.readiness());
       return fail(res, 405, "不支持的方法");
     }
+    // —— 限制级通道的手动开关（Agent 页那颗开关、舞台导演栏那一枚共用这一条）——
+    // 写回 play.json 的开关，并把正在跑的这一局一起切过去；边界语义在编排器里（轮边界生效）
+    if (sub === "nsfw" && parts.length === 4) {
+      if (method !== "PUT") return fail(res, 405, "不支持的方法");
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as { active?: unknown };
+      const active = body.active === true;
+      await store.setNsfwEnabled(active);
+      playhouse.setNsfwChannel(playId, active);
+      return json(res, 200, { active });
+    }
     // —— 剧目主题层：<link> 直挂，文件不存在就 404（浏览器静默忽略，走默认主题）——
     if (sub === "theme.css" && method === "GET") {
       const path = join(store.dir, "theme.css");

@@ -81,6 +81,11 @@ export interface PromptContext {
    */
   can: AgentCapabilities;
   /**
+   * 此刻是否处于限制级通道（由作者在 Agent 页/舞台导演栏手动开启，或剧作家调 enter_nsfw 进入）。
+   * 通道开着时换上的那份上下文由作者自己写（见 promptInjection），这一章只说清「你现在在哪」。
+   */
+  nsfwMode?: boolean;
+  /**
    * 技能清单块（`skillsPromptBlock()` 的产物）：剧作家手边可查的通用做法。
    * 启动期预载过一次，装配时同步取用；没预载过就是空串、整章不注入。
    */
@@ -443,6 +448,17 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const craft = memory?.craft.trim() ?? "";
   const craftSection = craft ? `\n${craft}\n` : "";
   const craftParamsSection = renderCraftParams(resolveCraft(play.craft), ctx.can);
+
+  // 通道指引：能开关它的时候教它怎么用；已经在通道里时（无论谁开的）告诉它此刻在哪、怎么出来。
+  const nsfwChapter = ctx.nsfwMode
+    ? `\n# 限制级通道（已开启）\n\n你此刻在限制级通道里，模型已按作者的设置切换。这一程怎么写，照作者写的那组上下文来。\n${
+        ctx.can.nsfw
+          ? "- 这一段亲密情节告一段落、要回到日常时，调 `exit_nsfw`，并在末行照常写下停止点标签；本轮收束时系统会生成一句全年龄摘要，之后主线只保留这句摘要。\n"
+          : "- 你没有开关这条通道的工具，写完后由作者关闭。\n"
+      }`
+    : ctx.can.nsfw
+      ? `\n## 限制级剧情通道（enter_nsfw）\n\n剧情推进到即将发生亲密、成人或限制级接触时，不要在当前模型下直接描写露骨细节，调 \`enter_nsfw\` 开启限制级通道：开启后改用作者指定的限制级模型，并把作者为这条通道写的那组上下文注入给你。\n调用后写完本轮正文与末行的停止点标签即可停笔，下一轮起在通道里展开。\n`
+      : "";
   const cards = memory?.visibleContext() ?? [];
   // 每行带路径：卡的标题（`# 标题`）与文件名可以不一样，路径推不出来，只能这里给
   const indexSection =
@@ -467,7 +483,7 @@ ${premise}
 # 角色表
 
 ${characters}${castHint}${bareSection}
-${assetSection}${craftParamsSection}${craftSection}${indexSection}
+${assetSection}${craftParamsSection}${craftSection}${nsfwChapter}${indexSection}
 ${FORMAT_RULES}
 
 ${imageChapter(ctx.can.image)}

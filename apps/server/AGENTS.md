@@ -7,7 +7,7 @@
 ## agentkit：两个 agent 的共用基座
 
 - **两个 agent 共用一套基座**：`src/agentkit/` 是唯一工具实现面（`kit.ts` 按 `role: "playwriter" | "workshop"` 装配，`deps.ts` 用判别联合收窄依赖），同一工具**同一份 schema 与实现，只有 description + 等待策略 + 注入依赖不同**（`generate_asset`：工坊 sync 等图并回 markdown 图片、剧作家 queued 后台排产只占时间线位置；`generate_image` 两个角色连描述都不分叉——它只产候选）。
-- **两套目录，一份语汇**：`kit.ts` 的 `CAPABILITY_CATALOG` 是**用户语汇的唯一真相源**（一行写清：界面名字、一句后果、分组、给哪些角色、授权哪些工具 id、开出来能动哪几类文件、常开还是默认关）——Agent 页、`play.json`、`kit.can`、提示词章节一律说能力。`TOOL_CATALOG`（id + 中文名 + 谁装得上）留在工具层当**角色可见性的真相源**，能力只**引用**工具 id；装一个没登记的 id 或加一个谁都够不到的工具，用例当场红。play.json 的 `agents.<role>.capabilities` 存**启用集**（白名单，不是禁用集），缺省走 `defaultCapabilitiesFor(role)`（搭台 = 目录里属于它的能力减 `shell`——新增能力不会静默漏装；剧作家 = 常开的 `stage` 加 `memory`/`image`/`library`/`search`/`skill`，**`characters` 默认关**：角色卡是制作资产、记忆卡是剧情事实）。
+- **两套目录，一份语汇**：`kit.ts` 的 `CAPABILITY_CATALOG` 是**用户语汇的唯一真相源**（一行写清：界面名字、一句后果、分组、给哪些角色、授权哪些工具 id、开出来能动哪几类文件、常开还是默认关）——Agent 页、`play.json`、`kit.can`、提示词章节一律说能力。`TOOL_CATALOG`（id + 中文名 + 谁装得上）留在工具层当**角色可见性的真相源**，能力只**引用**工具 id；装一个没登记的 id 或加一个谁都够不到的工具，用例当场红。play.json 的 `agents.<role>.capabilities` 存**启用集**（白名单，不是禁用集），缺省走 `defaultCapabilitiesFor(role)`（搭台 = 目录里属于它的能力减 `shell`——新增能力不会静默漏装；剧作家 = 常开的 `stage` 加 `memory`/`image`/`library`/`search`/`skill`/`nsfw`，**`characters` 默认关**：角色卡是制作资产、记忆卡是剧情事实）。
 - **两条推导都在 `createAgentKit` 一处**：装上的工具 = 基座 `read` ∪ 开着的能力授权的工具（再按 `TOOL_CATALOG.roles` 与我方依赖面收一道，没配 Exa / TTS / 生图就装不出来）；`can` 位 = **该能力开着且它授权的工具都装上了**（键就是能力 id）——能力声明了一个装不出来的工具，这一位就是假，提示词不会教模型去调它没有的东西。同一个能力在两个角色上授权的口可以不同（`image`：两个角色都要 `generate_image` / `generate_asset`，工坊还要 `cut` / `import_asset`；`library`：两个角色都只有 `list_library`，往剧目里搬东西走 `import_asset` 的 `library:` 来源，而那一格是按角色装的）。
 - `generate_image` 是两个角色**同一份 schema、同一段描述**（`spriteId`/`variant`/`title` 与 `references` 都拿得到——垫图读 `assets/sprites/`，与谁调的无关），只产候选；`generate_asset` 是同一个宏、两种投递。**垫图入口只有一个 `references`**（每项可以是主体 id、剧目内相对路径或 http(s) 网址，1–6 张）。**`neutral` 定妆照可以垫外部参考图**（用户拿一张既有角色图来定妆走的就是这条），background/CG 也按它垫图；**非 neutral 的立绘差分不吃 `references`**——身份基准恒为该主体的 `neutral` 定妆照（传了直接报错，因为换基准会与既有差分不是同一个人）。
 - **卡是可选的，出图也不替谁建卡**：`generate_image` 只按 `spriteId`（主体 id）往 `assets/sprites/<id>/` 落文件——机甲、道具、猫本来就没有卡。名字从哪来：卡 `name` → `<say name>` → 素材表 `title`（`generate_asset` 的 `title` 参数就是给无卡主体落名牌用的）→ id；无卡主体的 TTS 走剧目级 `defaultVoiceId`。
@@ -138,7 +138,7 @@
 
 - **工具知识只写在工具描述里，系统提示词不复述**（同一规则写两处必然漂移——生图那几条已经漂移过一次）。**一处明确例外**：pi 的内建 read / write / edit 没有描述覆写入口，角色卡 frontmatter、记忆卡格式与剧内状态三个文件的格式只能落在 A 区（`prompt.ts` 的 `newCharacterRules(can.characters)` / `MEMORY_RULES` / `STATE_RULES`）——它们同时要求模型「先 read 再 edit」，格式本身以 `parseCharacterCard` 的解析结果为准。两句**各归各的能力位**：`can.characters`（= 剧作家开着「管理角色」）为假时建档章换成「本剧目没给你改卡的口，新角色直接上台」，`can.memory` 为假时记忆章与 `search_archive` 的教法一起收走。
 - **A 区把可写文件的路径给全**（2026-10-04）：角色表每张卡带 `characters/<id>.md`（`characterCardPath`）、记忆索引每行带 `memory/index/<相对路径>.md`（`PlayMemory.visibleContext` 的 `path`）——通用 read / write / edit 上手，模型不该为了改一张卡去推路径。记忆卡尤其必须：行首是 `# 标题`（`parseCard`），**与文件名可以不一样**，路径推不出来。
-- **`can` 的键就是能力 id**（`characters` / `memory` / `image` / `library` / `search` / `lineage` / `skill` / `view` / `readiness` / `voice` / `files` / `shell` / `stage`，非适用角色的位恒为 false）——两个角色的提示词读 `createAgentKit` 现算的同一个对象，不会各算各的。工坊侧同样逐处收条件（`workshop.ts` 的 `responsibilityRules(can.files)` / `talkRules` / `lineageGuide` / `writingPoints` / `setupFlow` / `skillsPrompt`），关掉一项就没有教它调不存在工具的章节。
+- **`can` 的键就是能力 id**（`characters` / `memory` / `image` / `library` / `search` / `lineage` / `skill` / `view` / `readiness` / `voice` / `files` / `shell` / `nsfw` / `stage`，非适用角色的位恒为 false）——两个角色的提示词读 `createAgentKit` 现算的同一个对象，不会各算各的。工坊侧同样逐处收条件（`workshop.ts` 的 `responsibilityRules(can.files)` / `talkRules` / `lineageGuide` / `writingPoints` / `setupFlow` / `skillsPrompt`），关掉一项就没有教它调不存在工具的章节。
 - `prompt.ts` 的 `imageChapter` 只留工具本身与后果（发起即返回、这一轮就引用到它则先上骨架占位），调用写法（走函数调用不是文本标签、id 命名、prompt 后缀串）全在 `QUEUED_DESCRIPTION`。
 - **什么时候该画一张不再由引擎决定**——早先那句「清单里没有就自己画一张背景」替所有剧目做了同一个决定，已撤掉，改成指向写作参数的素材来源（`renderCraftParams` 按 `can.image` / `can.library` 渲染那几行）。
 - 原先那句「提前 3–5 句发起」已删——流式播放下 3–5 句只给图 3–5 秒的头，而真图要一分多钟，这个数推导不出来。
@@ -220,7 +220,7 @@
 - 所以 `pnpm -r build` 之后一个端口就是整站，公网部署只指向这一个。
 - 开发时仍是 vite + server 两个端口。
 - 在生成的事由 `pendingJobs.ts` 统一记账（剧作家的轮次 / 背景 / CG / 立绘 / 语音），一改整表广播 `pending_jobs`，与排队面板共用一块浮层，重连时随 hello 的 `pendingJobs` 恢复。
-- 新增端点：`GET /api/agents/models`（网关 `/v1/models` 清单 ∩ 设置里「支持的模型」清单，收窄在 `provider.ts` 的 `supportedModels`：按配置顺序排、清单里的 id 网关没有即报错点名；读不到网关即 400 不降级）、`GET /api/agents/capabilities`（`playhouse.capabilities()`：每个角色的能力目录——id / 名字 / 一句后果 / 分组与分组名 / `locked` / `available` 与 `unavailableNote`，外加每个角色的默认集；`locked` 的那行界面不给开关，`available: false` 指服务端没配 Exa / TTS / 生图后端）、`PUT /api/plays/:id/assets/sprite`（素材页写立绘呈现声明：body `{spriteId, variant?, framing?|null, stature?|null, anchor?|null, title?|null}`，null 或空串 = 删掉那一格回到缺省，写完 `playhouse.declareSpriteMeta` 即时生效——内部与素材上传同一条路（写盘后 `reload`），不像角色卡那样等轮边界）。`GET /api/plays/:id` 的详情多回一份 `manifest`：舞台靠它摆位。`GET/PUT/DELETE /api/prompt-presets`（上下文注入的 preset：列全部 / 按名字 upsert / 按名字删，都是整表返回；名字走查询参数而不是路径段——用户随手起的名字带斜杠空格都正常）。
+- 新增端点：`GET /api/agents/models`（网关 `/v1/models` 清单 ∩ 设置里「支持的模型」清单，收窄在 `provider.ts` 的 `supportedModels`：按配置顺序排、清单里的 id 网关没有即报错点名；读不到网关即 400 不降级）、`GET /api/agents/capabilities`（`playhouse.capabilities()`：每个角色的能力目录——id / 名字 / 一句后果 / 分组与分组名 / `locked` / `available` 与 `unavailableNote`，外加每个角色的默认集；`locked` 的那行界面不给开关，`available: false` 指服务端没配 Exa / TTS / 生图后端）、`PUT /api/plays/:id/assets/sprite`（素材页写立绘呈现声明：body `{spriteId, variant?, framing?|null, stature?|null, anchor?|null, title?|null}`，null 或空串 = 删掉那一格回到缺省，写完 `playhouse.declareSpriteMeta` 即时生效——内部与素材上传同一条路（写盘后 `reload`），不像角色卡那样等轮边界）。`GET /api/plays/:id` 的详情多回一份 `manifest`：舞台靠它摆位。`PUT /api/plays/:id/nsfw`（限制级通道的手动开关：写回 play.json 并把正在跑的这一局切过去，`{active}`；Agent 页与舞台导演栏共用）、`GET/PUT/DELETE /api/prompt-presets`（通道那组上下文的 preset：列全部 / 按名字 upsert / 按名字删，都是整表返回；名字走查询参数而不是路径段——用户随手起的名字带斜杠空格都正常）。
 
 ## 技能库与新剧目初始状态
 
@@ -264,18 +264,20 @@
 - 模型 ID 两处（全局设置、剧目「Agent」页）复用 `ui/ModelSelect.tsx` 的同一个下拉，清单取 `GET /api/agents/models`，读不到就显式报错给重试、绝不退化成文本框。
 - **新增一个设置项要同时动四处**：`config.ts` 的 `ServerConfig` + `freshSettings` + 校验、`configApi.ts` 的读视图与写映射、设置页表单、README 的「设置页字段总表」。少任何一处，用户就会看见一个「有配置项但改不了」或「改不了又没写」的窟窿（2026-10-04 补：`nsfwPrompt` 与 `image.reference` 就曾长期只有接口没有入口）。
 
-## 上下文注入（Agent 页的「提示词注入」）
+## 限制级通道（Agent 页与舞台导演栏的开关）
 
-- **一份注入、两个 agent 共用**：`play.json` 的 `agents.injection = { enabled, messages: [{ role, text }] }`（core 的 `PromptInjection`）。Agent 页编辑、`promptInjection.ts` 一处翻译成 pi 的消息——`system`/`user`/`assistant` 各一条，`tool` 落成「一次 assistant 工具调用 + 紧随其后的 `toolResult`」两条（协议要求成对，裸 `toolResult` 会被 OpenAI 兼容层 400）。
-- **落点是「上下文开头」，不进任何持久层**：不落谱系、不进工坊线程消息文件、不落 `memory/`。它是引擎给模型的底色，每次装配现拼。剧作家在 `buildAgent`、工坊在 `runWorkshopTurn`，两边都走 `agentInitialMessages()`。
+**一条通道，三件事一起动**：开关（作者手动 / 剧作家自己调工具）、模型（换到专用模型）、上下文（注入作者写的那组消息）。三者绑在一起，是因为它们本来就是同一件事的三个面——只换模型不给上下文，模型不知道自己被换到了哪；只给上下文不换模型，那就只是普通的提示词注入。
+
+- **开关有两个入口、两种来源**：`PUT /api/plays/:id/nsfw {active}`（Agent 页那颗开关、舞台导演栏那一枚都走这条）会写回 `play.json` 的 `agents.injection.enabled` **并把正在跑的这一局一起切过去**；剧作家自己调 `enter_nsfw` / `exit_nsfw` 走同一套边界语义（工具只装给剧作家，工坊不给——搭台过程不需要成人内容）。
+- **边界语义（轮边界，不腰斩当场那一拍）**：开 = `nsfwPendingEnter`，下一拍开跑前兑现（换模型 + 注入），`nsfwChannel`（客户端那枚标识的取值）**请求一发出就是 true**；关 = 若这一拍正在跑，`nsfwPendingExit`，收束时生成全年龄摘要并折回日常（与 `exit_nsfw` 完全同路）；若空闲，`closeNsfwIdle` 立刻翻转并**补一条带 `nsfwSummary` 的过渡节点**落到谱系末尾——这一段已经封完、没有拍能承载摘要，不补的话全年龄读者会把这一段整段丢掉（`rebuild` 对带标事件一个字都不渲，只认那条摘要）。
+- **`enabled` 是存下来的那颗开关，不是注入这一层的门**：开演时按它起手（有存档则以存档快照 `LineageSnapshot.nsfw` 为准），Agent 页与导演栏拨开关时写的也是它；而「这一轮要不要注入」由**通道状态**决定（剧作家 `isNsfw`、工坊每轮问一次 `playhouse.nsfwChannelOf`）。剧作家自己进通道时文件里那颗开关可能还是关的，那也得把作者写的这组注入进去——所以 `withInjection(messages, injection, active)` 的 `active` 由调用方给，`injectionMessages` 只认有没有消息。
+- **摘旧的那一步与 `active` 无关**：通道关掉时同样要把上一轮留在现场的那一份拿走（否则它会以「真的说过」的身份留在对话体里，而且没人会再来收它）。
+- **一份注入、两个 agent 共用**：`play.json` 的 `agents.injection = { enabled, messages: [{ role, text }] }`（core 的 `PromptInjection`）。`promptInjection.ts` 一处翻译成 pi 的消息——`system`/`user`/`assistant` 各一条，`tool` 落成「一次 assistant 工具调用 + 紧随其后的 `toolResult`」两条（协议要求成对，裸 `toolResult` 会被 OpenAI 兼容层 400）。
+- **落点是「上下文开头」，不进任何持久层**：不落谱系、不进工坊线程消息文件、不落 `memory/`。每次装配现拼：剧作家在 `buildAgent`、工坊在 `runWorkshopTurn`，两边都走 `agentInitialMessages()`；工坊的线程压缩计量也走 `withInjection`（注入同样是这一轮的输入，漏算会让压缩晚一轮才触发）。
 - **引擎系统提示词恒为第一条**：pi 只在 `messages[0]` 不是 system 时才把 `initialState.systemPrompt` 落成首条系统消息（`createMutableAgentState`），所以注入组里打头的 `system` 会把引擎提示词整段挤掉（DSL 契约与工具声明都在里面）。因此首条由 `agentInitialMessages` 自己用 `createInitialSystemMessage` 落，注入排在它后面——别改回「直接把注入拼在最前面」。
-- **`withInjection` 只做「摘旧的、前置新的」**，比对是「角色 + 正文」精确相等：重建时若把现场消息喂回来，同一份注入不会叠第二遍；而玩家真说过的相似句子也不会被按长度误切。工坊的线程压缩计量也走它（注入同样是这一轮的输入，漏算会让压缩晚一轮才触发）。
-- **preset 是应用级的**：`<数据目录>/prompt-presets.json`（`promptPresets.ts`，整表读改写 + 原子落盘），REST 三条 `GET/PUT/DELETE /api/prompt-presets`（名字走查询参数，用户随手起的名字带斜杠空格都正常）。它跟剧目无关——preset 的用处就是换个剧目还能用同一套开场；当前启用的是哪一份仍是逐剧目的事。
-
-## 限制级（NSFW）通道：已下线（2026-10-16）
-
-- **入口全部摘掉了**：`CAPABILITY_CATALOG` 的 `nsfw` 能力行、`TOOL_CATALOG` 的 `enter_nsfw` / `exit_nsfw`、`playwriterTools` 的装配、`prompt.ts` 的限制级章节、设置页与 Agent 页的两处表单都不在了。剧作家没有任何口能进这条通道，`nsfwActive` 因此恒为 false。
-- **运行时代码保留、不再可达**：下面这些仍留在原处，只是没有入口能触发它——整段删掉要动谱系模型（core 的 `LineagePayload.nsfw` / `LineageSnapshot.nsfw` 是两条发行线共享的），风险远大于收益。真要用起来，先补齐被删掉的入口与测试。
+- **模型解析**：`playhouse` 现算 `play.agents.playwriter.nsfwModel || config.nsfwModelId`，取不到就还是主模型；思考档位同理（`nsfwThinking`，缺省跟随服务商）。工坊不换模型——它照旧跑自己的。
+- **提示词章节按能力位与状态分两段**：能力开着且不在通道里 = 教它怎么进（并说明进去会换模型、换上下文）；已经在通道里 = 只说清「你在通道里、模型已切」以及怎么出来（`exit_nsfw`；没有这个工具时说「由作者关闭」）。旧的全局 `nsfwPrompt` 字段退役——那段文本的位置就是这组注入。
+- **preset 是应用级的**：`<数据目录>/prompt-presets.json`（`promptPresets.ts`，整表读改写 + 原子落盘），REST 三条 `GET/PUT/DELETE /api/prompt-presets`（名字走查询参数，用户随手起的名字带斜杠空格都正常）。它跟剧目无关——preset 的用处就是换个剧目还能用同一套通道上下文。
 - 曾经的形态（供理解残留代码）：剧作家主动调 `enter_nsfw` 开启限制级通道（切换至限制级专用模型、注入 20 岁以上虚拟合规轮次与 `memory/always/nsfw.md`），退出时调 `exit_nsfw`，并在这一轮正文末行照常写停止点标签。
 - **不变式：限制级内容对全年龄读者的唯一出口是它带出的 SFW 摘要。** 正文原文、段内玩家输入、段内每一拍的 `beat_end` 都只在限制级侧可见；前台舞台、`lineage.jsonl`、replay 一如既往保留全文（约束的是**模型读到的东西**，不是存档）。
 - **打标在事件上，不在轮次上**：`LineagePayload.nsfw` 由 `orchestrator.beatNsfw` 写进段内每个节点，取值来自 `beatChannelNsfw()` = `nsfwActive || nsfwPendingEnter`。判断依据必须是这个快照而不是当下的 `nsfwActive`：退出那一拍的 `beat_end` 在 `nsfwActive` 已翻成 false 之后才封，但它承载的仍是限制级原文。

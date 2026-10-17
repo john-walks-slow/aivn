@@ -231,6 +231,45 @@ export function AgentPane({ playId }: { playId: string }) {
               </select>
             </label>
 
+            {role.id === "playwriter" && (
+              <>
+                <label className="field">
+                  <span>限制级专用模型</span>
+                  <ModelSelect
+                    value={settings.nsfwModel ?? ""}
+                    models={models}
+                    error={modelError}
+                    emptyLabel={`跟随全局设置（全局也空则跟随主模型）`}
+                    onChange={(id) =>
+                      patch(role.id, (s) => setOrClear(s, "nsfwModel", id, ""))
+                    }
+                    onRetry={() => loadModels(true)}
+                  />
+                  <p className="muted small">
+                    进入限制级通道后改用这个模型；没配就还是上面那个。
+                  </p>
+                </label>
+
+                <label className="field">
+                  <span>限制级思考档位</span>
+                  <select
+                    value={settings.nsfwThinking ?? "default"}
+                    onChange={(e) =>
+                      patch(role.id, (s) =>
+                        setOrClear(s, "nsfwThinking", e.target.value, "default"),
+                      )
+                    }
+                  >
+                    {THINKING_LEVELS.map((level) => (
+                      <option key={level} value={level}>
+                        {THINKING_LABEL[level]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
+
             <div className="field">
               <span>能力</span>
               {groups.length === 0 && (
@@ -290,8 +329,29 @@ export function AgentPane({ playId }: { playId: string }) {
       })}
 
       <InjectionSection
+        playId={playId}
         value={draft.agents?.injection ?? {}}
         onChange={patchInjection}
+        onToggle={(active) => {
+          api
+            .setNsfw(playId, active)
+            .then(() => {
+              // 服务端已经把这颗开关写进 play.json 了：本地草稿跟着对齐，
+              // 否则那颗「保存设置」会拿旧值把它盖回去、还留一条假脏标记
+              const apply = (play: PlayConfig): PlayConfig => {
+                const agents: AgentConfig = { ...(play.agents ?? {}) };
+                const injection: PromptInjection = { ...(agents.injection ?? {}) };
+                if (active) injection.enabled = true;
+                else delete injection.enabled;
+                if (Object.keys(injection).length > 0) agents.injection = injection;
+                else delete agents.injection;
+                return { ...play, agents: Object.keys(agents).length > 0 ? agents : undefined };
+              };
+              setDraft((d) => (d ? apply(d) : d));
+              setOnDisk((d) => (d ? apply(d) : d));
+            })
+            .catch((e: Error) => setError(e.message));
+        }}
       />
 
       <p className="row agent-foot save-row">
@@ -311,17 +371,32 @@ export function AgentPane({ playId }: { playId: string }) {
  * 所以它的存/取/删走自己的接口，与上面那颗保存键互不牵连。
  */
 function InjectionSection({
+  playId,
   value,
   onChange,
+  onToggle,
 }: {
+  playId: string;
   value: PromptInjection;
   onChange: (fn: (injection: PromptInjection) => void) => void;
+  /** 开关拨一下：立刻作用于正在跑的这一局，并由服务端写回 play.json（不走「保存设置」）。 */
+  onToggle: (active: boolean) => void;
 }) {
   const [presets, setPresets] = useState<PromptPreset[]>([]);
   const [picked, setPicked] = useState("");
   const [name, setName] = useState("");
   const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const messages = value.messages ?? [];
+
+  const toggle = (active: boolean): void => {
+    if (busy) return;
+    setBusy(true);
+    setNote(null);
+    onToggle(active);
+    // 服务端把这一下落到文件与现场是两步（写盘 + 轮边界生效），界面上只等一小会儿
+    setTimeout(() => setBusy(false), 600);
+  };
 
   useEffect(() => {
     api
@@ -348,26 +423,30 @@ function InjectionSection({
 
   return (
     <section className="settings-group agent-card">
-      <h3>提示词注入</h3>
+      <h3>限制级通道</h3>
       <p className="muted small">
-        启用后，剧作家与搭台助手的上下文开头都会先看到这组消息，再看到各自的系统提示词与对话。
-        它不会写进剧情记录、也不进工坊对话——想换一部剧接着用，就存成 preset。
+        开着时，剧作家的轮次改用下面那个专用模型（没配就还是主模型），而且这组消息会注入到
+        <b>剧作家与搭台助手</b>的上下文开头——它们是这条通道的内容，关着时一条都不给。
+        它不写进剧情记录、也不进工坊对话；换一部剧想接着用，就存成 preset。
+      </p>
+      <p className="muted small">
+        拨这一下立刻作用于正在跑的这一局：开=下一拍起生效，关=正在写的那一拍收束时退出。
+        剧作家自己也能进这条通道（能力里有「限制级通道」时），退出时会生成一句全年龄摘要，
+        主线只留这句摘要——露骨原文不进主模型。
       </p>
 
       <label className="switch-row">
         <input
           type="checkbox"
           checked={value.enabled === true}
-          onChange={(e) =>
-            onChange((injection) => {
-              if (e.target.checked) injection.enabled = true;
-              else delete injection.enabled;
-            })
-          }
+          onChange={(e) => toggle(e.target.checked)}
+          disabled={busy}
         />
         <span>
-          <b>启用注入</b>
-          <span className="muted small">关掉时下面这组内容原样留着，只是不注入。</span>
+          <b>开启限制级通道</b>
+          <span className="muted small">
+            关掉时下面这组内容原样留着，只是不注入、也不换模型。
+          </span>
         </span>
       </label>
 
@@ -493,7 +572,12 @@ function InjectionSection({
 
 /** 值等于默认（或空）时把键删掉，别在 play.json 里留一堆等价于缺省的字段。 */
 function setOrClear<
-  K extends "model" | "thinking" | "prompt",
+  K extends
+    | "model"
+    | "thinking"
+    | "prompt"
+    | "nsfwModel"
+    | "nsfwThinking",
 >(settings: AgentSettings, key: K, value: string, blank?: string): void {
   // 提示词是长文本，清空后多半只剩几个换行：只判空串会把它当成「用户真的写了内容」存进 play.json，
   // 服务端读回时又因 trim 为空丢掉——文件里留了一段永不生效的文本。

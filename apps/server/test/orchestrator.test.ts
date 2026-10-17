@@ -14,6 +14,10 @@ import { PlayFiles } from "../src/playFiles.js";
 import { playStateJson, readPlayStateText, writePlayStateText } from "../src/playState.js";
 import { BEAT_1, BEAT_1_STOP, BEAT_2, CARD, PLAY, createFakeStreamFn, type FakeResponse } from "./helpers.js";
 
+/** 主模型占位：用例按它区分「这一拍跑的是主模型还是通道专用模型」。 */
+const MAIN_MODEL = { id: "main-model" };
+const NSFW_MODEL = { id: "nsfw-model" };
+
 /** 编排器只用到 store.dir（`PlayFiles` 的白名单根）——不落盘的用例不必建真目录。 */
 const TEST_STORE = { dir: "/tmp/stage-orchestrator-test" } as never;
 
@@ -29,6 +33,8 @@ function setup(
     dir?: string;
     /** 这一场的剧目配置（上下文注入就在它的 agents.injection 上）；不给 = 默认 PLAY。 */
     play?: PlayConfig;
+    /** 限制级通道的专用模型（不给 = 通道里也还是主模型）。 */
+    nsfwModel?: unknown;
   } = {},
 ): {
   orchestrator: PlaywrightOrchestrator;
@@ -50,7 +56,8 @@ function setup(
       : base);
   const orchestrator = new PlaywrightOrchestrator({
     streamFn,
-    model: {} as never,
+    model: MAIN_MODEL as never,
+    ...(opts.nsfwModel ? { nsfwModel: opts.nsfwModel as never } : {}),
     getApiKey: () => "test-key",
     play: opts.play ?? PLAY,
     store: (opts.dir ? { dir: opts.dir } : TEST_STORE) as never,
@@ -1593,6 +1600,124 @@ describe("跳转的播放头语义（playFrom）", () => {
     const newNarrate = tree.materialize().find((e) => e.text === "风停了。")!;
     expect(newNarrate.id).not.toBe(oldBranchNarrate.id);
     expect(tree.materialize().at(-1)?.kind).toBe("beat_end");
+  });
+});
+
+describe("限制级通道：手动开关、换模型与那组上下文的进出", () => {
+  const CHANNEL = {
+    enabled: false,
+    messages: [
+      { role: "system" as const, text: "通道·系统" },
+      { role: "assistant" as const, text: "通道·助手前缀" },
+    ],
+  };
+  /** 通道关着开演、配了专用模型：手动开启那一下要同时换模型与注入。 */
+  const OFFLINE: PlayConfig = {
+    ...PLAY,
+    agents: { playwriter: { nsfwModel: "nsfw-model" }, injection: CHANNEL },
+  };
+
+  it("手动开启：下一拍起换专用模型并注入那组上下文，请求一发出标识就亮", async () => {
+    const seen: { model: unknown; context: CapturedContext }[] = [];
+    const base = createFakeStreamFn([
+      { text: BEAT_1, beatDone: BEAT_1_STOP },
+      { text: BEAT_2, beatDone: true },
+    ]);
+    const { orchestrator, messages, tree } = setup([], {
+      play: OFFLINE,
+      nsfwModel: NSFW_MODEL,
+      streamFn: ((model, context, options) => {
+        seen.push({ model, context: context as CapturedContext });
+        return base(model, context, options);
+      }) as never,
+    });
+
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    // 第一拍：日常模型、没有那组上下文
+    expect(seen[0]!.model).toEqual(MAIN_MODEL);
+    expect(JSON.stringify(seen[0]!.context.messages)).not.toContain("通道·系统");
+
+    orchestrator.setNsfwChannel(true);
+    // 与工具同一条口径：请求一发出就算在通道里（客户端那枚标识先亮）
+    expect(orchestrator.nsfwChannel).toBe(true);
+    expect(messages.filter((m) => m.type === "nsfw")).toEqual([{ type: "nsfw", active: true }]);
+
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    await orchestrator.whenIdle();
+    // 第二拍：换成专用模型，且那两条注入排在引擎提示词之后。
+    // 取最后一次调用——带停止点的那一拍还会为工具结果再问模型一次（见 createFakeStreamFn）
+    const second = seen.at(-1)!;
+    expect(second.model).toEqual(NSFW_MODEL);
+    expect(second.context.messages.slice(0, 4).map((m) => m.role)).toEqual([
+      "system",
+      "system",
+      "assistant",
+      "user",
+    ]);
+    expect(JSON.stringify(second.context.messages[1])).toContain("通道·系统");
+    // 通道里落下的每个节点都带标：全年龄读者按它折叠，漏标就是把限制级原文漏给他。
+    // 只看第二拍的节点——第一拍是日常，它不带标才是对的
+    const inChannel = tree
+      .export()
+      .events.filter((e) => e.kind === "say" && e.text.includes("算了"));
+    expect(inChannel.length).toBeGreaterThan(0);
+    expect(inChannel.every((e) => e.payload?.nsfw === true)).toBe(true);
+  });
+
+  it("空闲时手动关闭：立刻回到主模型，并给这一段补一条带摘要的过渡（全年龄读者不断片）", async () => {
+    const { orchestrator, tree, messages } = setup([{ text: BEAT_1, beatDone: BEAT_1_STOP }], {
+      play: { ...OFFLINE, agents: { ...OFFLINE.agents, injection: { ...CHANNEL, enabled: true } } },
+      nsfwModel: NSFW_MODEL,
+    });
+
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    expect(orchestrator.nsfwChannel).toBe(true);
+    // 开演就在通道里：起点由 hello 下发，这里不该白发一条
+    expect(messages.filter((m) => m.type === "nsfw")).toEqual([]);
+    // 第一拍就是通道里的拍：它落下的节点必须带标（全年龄读者只从摘要那一条看到它）
+    const first = tree.export().events.filter((e) => e.kind === "say" || e.kind === "narrate");
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.every((e) => e.payload?.nsfw === true)).toBe(true);
+
+    orchestrator.setNsfwChannel(false);
+    await orchestrator.whenIdle();
+
+    expect(orchestrator.nsfwChannel).toBe(false);
+    expect(messages.filter((m) => m.type === "nsfw").at(-1)).toEqual({ type: "nsfw", active: false });
+    // 这一段在树上留下一个出口：带 nsfwSummary 的 beat_end（rebuild 靠它折成过渡轮）
+    const events = tree.export().events;
+    const exit = events.find((e) => typeof e.payload?.nsfwSummary === "string");
+    expect(exit?.payload?.nsfw).toBe(true);
+    expect(exit?.payload?.nsfwSummary).toBeTruthy();
+  });
+
+  it("剧作家自己调 enter_nsfw 也能进通道（工具那条路重新接上了）", async () => {
+    const seen: unknown[] = [];
+    const base = createFakeStreamFn([
+      {
+        text: BEAT_1,
+        beatDone: BEAT_1_STOP,
+        toolCalls: [{ name: "enter_nsfw", args: { reason: "两人拥吻" } }],
+      },
+      { text: BEAT_2, beatDone: true },
+    ]);
+    const { orchestrator } = setup([], {
+      play: OFFLINE,
+      nsfwModel: NSFW_MODEL,
+      streamFn: ((model, context, options) => {
+        seen.push(model);
+        return base(model, context, options);
+      }) as never,
+    });
+    orchestrator.start();
+    await orchestrator.whenIdle();
+    expect(orchestrator.nsfwChannel).toBe(true); // 已请求进入
+
+    await orchestrator.playerAction({ kind: "choice", optionIndex: 0 });
+    await orchestrator.whenIdle();
+    expect(seen.at(-1)).toEqual(NSFW_MODEL);
   });
 });
 

@@ -299,6 +299,25 @@ export class PlayHouse {
     return this.get(playId);
   }
 
+  /**
+   * 这部剧此刻在不在限制级通道里：起过 runtime 就按现场的，没起过就按 play.json 那颗开关
+   * （工坊每轮问一次，决定要不要注入作者写的通道上下文）。
+   */
+  async nsfwChannelOf(playId: string): Promise<boolean> {
+    const live = this.runtimes.get(playId);
+    if (live) return live.orchestrator.nsfwChannel;
+    const play = await this.library.store(playId).loadPlay();
+    return play.agents?.injection?.enabled === true;
+  }
+
+  /**
+   * 把通道切到 `active`：只作用于**正在跑的这一局**，play.json 那颗开关由调用方先写
+   * （见 store.setNsfwEnabled）。没起过 runtime 就没有现场可切，下一次装配自然读文件里的值。
+   */
+  setNsfwChannel(playId: string, active: boolean): void {
+    this.runtimes.get(playId)?.orchestrator.setNsfwChannel(active);
+  }
+
   /** 从磁盘构建剧目 runtime（play.json + 剧目根单树会话恢复）。 */
   private async buildRuntime(playId: string, seed?: CarryOver): Promise<PlayRuntime> {
     const store = this.library.store(playId);
@@ -1394,6 +1413,7 @@ export class PlayHouse {
         };
       },
       getApiKey: () => this.config.apiKey,
+      nsfwChannel: () => this.nsfwChannelOf(play.id),
       emit: (msg) => this.broadcast(play.id, msg),
       onFilesChanged: () => void this.reloadAfterWorkshopWrite(play.id),
       playAssets,

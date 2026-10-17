@@ -390,6 +390,24 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
                   onRetry={() => loadModels(true)}
                 />
               </Field>
+              <Field
+                label="限制级专用模型"
+                hint="进入限制级通道时改用这个模型（剧目在 Agent 页可单独覆盖）；留空 = 跟随主模型。"
+              >
+                <ModelSelect
+                  value={draft.model.nsfwModelId ?? ""}
+                  models={models}
+                  error={modelError}
+                  emptyLabel={`跟随主模型（${draft.model.modelId}）`}
+                  onChange={(id) =>
+                    setDraft({
+                      ...draft,
+                      model: { ...draft.model, nsfwModelId: id },
+                    })
+                  }
+                  onRetry={() => loadModels(true)}
+                />
+              </Field>
               <Field label="支持的模型">
                 <input
                   value={draft.model.models}

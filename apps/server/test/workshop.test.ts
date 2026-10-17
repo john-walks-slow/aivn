@@ -615,14 +615,17 @@ describe("WorkshopSession：一轮对话", () => {
       streamFn: ReturnType<typeof createFakeStreamFn>;
       emit: (msg: ServerMessage) => void;
       onFilesChanged?: () => void;
-      /** 这一轮的剧目配置（注入就在它的 agents.injection 上）；不给 = 空配置。 */
+      /** 这一轮的剧目配置（通道那组注入就在它的 agents.injection 上）；不给 = 空配置。 */
       play?: unknown;
+      /** 这一刻在不在限制级通道里（工坊每轮问宿主一次）；不给 = 不在。 */
+      nsfw?: boolean;
     },
   ): WorkshopSession {
     return new WorkshopSession({
       playId: "test",
       store,
       streamFn: extra.streamFn,
+      nsfwChannel: () => extra.nsfw === true,
       getRunConfig: async () => ({ model: {} as never, agents: undefined, play: (extra.play ?? {}) as never }),
       getApiKey: () => "test-key",
       emit: extra.emit,
@@ -630,7 +633,7 @@ describe("WorkshopSession：一轮对话", () => {
     });
   }
 
-  it("提示词注入：对话体的开头就是那一组消息（剧作家与工坊同一份配置）", async () => {
+  it("限制级通道：开着才把那组消息注入工坊，关着一条都不给", async () => {
     const store = await makeStore();
     const contexts: { messages: unknown[] }[] = [];
     const emitted: ServerMessage[] = [];
@@ -641,6 +644,7 @@ describe("WorkshopSession：一轮对话", () => {
         return base(model, context, options);
       }) as never,
       emit: (msg) => emitted.push(msg),
+      nsfw: true,
       play: {
         agents: {
           injection: {
@@ -667,6 +671,26 @@ describe("WorkshopSession：一轮对话", () => {
       | { messages: { role: string; text: string }[] }
       | undefined;
     expect(history?.messages.map((m) => m.text)).toEqual(["在吗", "在。"]);
+  });
+
+  it("通道关着时同一份配置不注入（那组消息是通道的载荷，不是常驻底色）", async () => {
+    const store = await makeStore();
+    const contexts: { messages: unknown[] }[] = [];
+    const base = createFakeStreamFn([{ text: "在。" }]);
+    const session = makeSession(store, {
+      streamFn: ((model, context, options) => {
+        contexts.push(context as { messages: unknown[] });
+        return base(model, context, options);
+      }) as never,
+      emit: () => {},
+      play: {
+        agents: {
+          injection: { enabled: true, messages: [{ role: "system", text: "注入·系统" }] },
+        },
+      },
+    });
+    await session.chat("在吗");
+    expect(JSON.stringify(contexts[0]!.messages)).not.toContain("注入·");
   });
 
   it("新建线程 → 落消息 → 广播 chunk/done/threads", async () => {

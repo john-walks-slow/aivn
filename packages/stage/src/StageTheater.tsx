@@ -117,6 +117,11 @@ interface StageTheaterProps {
    */
   directorBar?: boolean;
   /**
+   * 限制级通道的手动开关（导演栏最后一枚）。不传就不摆这个键——那条通道是宿主的能力，
+   * 别的宿主（DSH 插件线）没有它，硬摆一个拨不动的键更糟。
+   */
+  nsfwChannel?: { active: boolean; onToggle: (active: boolean) => void };
+  /**
    * 台词条底缘那一格状态位的内容（宿主把自己的「在忙什么」指示符挂在这里）。
    * 给了就不画内置的 spinner——它俩说的是同一件事（剧作家正在写），摆一起是重复；
    * 手里没有待注入队列的宿主（dsh-aivn 那条线）不传，照旧走 spinner。
@@ -486,6 +491,7 @@ voiceState,
   overlay,
   dialogStatus,
   directorBar = true,
+  nsfwChannel,
   onNotify,
 }: StageTheaterProps) {
   /**
@@ -1093,6 +1099,27 @@ voiceState,
             <Icon name="rewrite" size={14} />
             <span className="dir-label">重写</span>
           </button>
+          {nsfwChannel && (
+            <button
+              type="button"
+              className={`dir-btn ${nsfwChannel.active ? "on" : ""}`}
+              title={
+                nsfwChannel.active
+                  ? "限制级通道：开着（点一下关闭，正在写的这一拍收束时退出）"
+                  : "限制级通道：关着（点一下开启，下一拍起生效）"
+              }
+              aria-label="切换限制级通道"
+              aria-pressed={nsfwChannel.active}
+              disabled={loading}
+              onClick={(e) => {
+                e.stopPropagation();
+                nsfwChannel.onToggle(!nsfwChannel.active);
+              }}
+            >
+              <Icon name="flame" size={14} />
+              <span className="dir-label">限制级</span>
+            </button>
+          )}
           {showGenerate && (
             <button
               type="button"

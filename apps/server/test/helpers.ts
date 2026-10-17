@@ -73,6 +73,7 @@ export const PLAY: PlayConfig = {
 export function caps(over: Partial<AgentCapabilities> = {}): AgentCapabilities {
   return {
     stage: true,
+    nsfw: true,
     characters: true,
     memory: true,
     image: true,

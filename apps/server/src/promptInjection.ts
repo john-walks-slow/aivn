@@ -9,7 +9,10 @@ import type { InjectionMessage, PromptInjection } from "@aivn/core";
  * 两个 agent（剧作家 / 工坊）走同一份——同一份配置在两个宿主里各拼一次必然漂。
  *
  * 三条约定：
- * - **只在 `enabled` 为真且真有消息时注入**，关掉即恢复原样（不残留半份）。
+ * - **注入与否由调用方按通道状态决定**（剧作家看 `isNsfw`、工坊看这一轮问到的通道状态），
+ *   这里只认「有没有消息」。`play.json` 的 `enabled` 是这条通道**存下来的那颗开关**
+ *   （开演时的起点、Agent 页与导演栏写回去的落点），不是这一层的门——剧作家自己进通道时
+ *   文件里那颗开关可能还是关的，那也得把作者写的这组注入进去。
  * - **注入是引擎给模型的底色，不是剧目发生过的事**：不落谱系、不进工坊对话记录，
  *   每次组装上下文时现拼。
  * - **`tool` 角色补出一次工具调用**：协议要求工具结果必须紧跟对应的调用（裸 `toolResult`
@@ -19,9 +22,9 @@ import type { InjectionMessage, PromptInjection } from "@aivn/core";
 /** tool 角色补出来的那次调用的名字：它只是承载体，不会出现在任何一方的工具表里。 */
 const INJECTED_TOOL_NAME = "injected_context";
 
-/** 注入消息：按 play.json 里的顺序拼成一串 pi 消息。未启用 / 空消息 = 空数组。 */
+/** 注入消息：按 play.json 里的顺序拼成一串 pi 消息。没写 = 空数组。 */
 export function injectionMessages(injection: PromptInjection | undefined): AgentMessage[] {
-  if (!injection?.enabled) return [];
+  if (!injection) return [];
   const out: AgentMessage[] = [];
   (injection.messages ?? []).forEach((message, index) => {
     out.push(...messageOf(message, index));
@@ -42,9 +45,11 @@ export function agentInitialMessages(opts: {
   tools: readonly Tool[];
   history: readonly AgentMessage[];
   injection?: PromptInjection;
+  /** 此刻通道开着吗：关着时只**摘掉**上一轮留下的那一份，不再前置。 */
+  active?: boolean;
 }): AgentMessage[] {
   const head = createInitialSystemMessage(opts.systemPrompt, opts.tools.map(toToolDeclaration));
-  const body = withInjection(withoutOwnHead(opts.history), opts.injection);
+  const body = withInjection(withoutOwnHead(opts.history), opts.injection, opts.active ?? true);
   return head ? [head, ...body] : body;
 }
 
@@ -65,11 +70,14 @@ function withoutOwnHead(history: readonly AgentMessage[]): AgentMessage[] {
 export function withInjection(
   messages: readonly AgentMessage[],
   injection: PromptInjection | undefined,
+  active = true,
 ): AgentMessage[] {
   const prelude = injectionMessages(injection);
   if (prelude.length === 0) return [...messages];
+  // 摘旧的这一步**与通道开不开无关**：关掉时也得把上一轮留在现场的那一份拿走，
+  // 否则它会以「上一轮真的说过」的身份留在对话体里（而且没有任何东西会再来收它）。
   const body = startsWith(messages, prelude) ? messages.slice(prelude.length) : messages;
-  return [...prelude, ...body];
+  return active ? [...prelude, ...body] : [...body];
 }
 
 function messageOf(message: InjectionMessage, index: number): AgentMessage[] {

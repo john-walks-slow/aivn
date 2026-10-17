@@ -8,10 +8,13 @@ const user = (text: string): AgentMessage => ({ role: "user", content: text, tim
 const TOOLS = [{ name: "read", description: "读文件", parameters: { type: "object" } }] as unknown as Tool[];
 
 describe("injectionMessages：四种角色翻译成 pi 的消息", () => {
-  it("未启用或没有消息 = 什么都不注入", () => {
+  it("没写、或写了但一条消息都没有 = 什么都不注入", () => {
+    // 注不注入由调用方按通道状态决定（见 withInjection 的 active）：这里只认有没有消息，
+    // `enabled` 是这条通道存下来的那颗开关，不是这一层的门。
     expect(injectionMessages(undefined)).toEqual([]);
-    expect(injectionMessages({ messages: [{ role: "user", text: "你好" }] })).toEqual([]);
     expect(injectionMessages({ enabled: true })).toEqual([]);
+    expect(injectionMessages({ enabled: true, messages: [] })).toEqual([]);
+    expect(injectionMessages({ messages: [{ role: "user", text: "你好" }] })).toHaveLength(1);
   });
 
   it("system / user / assistant 各落一条，顺序原样", () => {
@@ -41,6 +44,18 @@ describe("injectionMessages：四种角色翻译成 pi 的消息", () => {
     expect(result.toolCallId).toBe(call.id);
     expect(result.toolName).toBe((call as unknown as { name: string }).name);
     expect(result.content).toEqual([{ type: "text", text: "工具返回的内容" }]);
+  });
+});
+
+describe("withInjection：通道关掉时把上一轮留下的那一份摘掉", () => {
+  const injection = { enabled: true, messages: [{ role: "user", text: "通道里的开场" }] };
+
+  it("active=false：不前置，而且现场那份旧的也要拿走", () => {
+    const history = [user("第一句")];
+    expect(withInjection(history, injection, false)).toEqual(history);
+    // 现场（上一轮装配出来的）已经带着那一份：关掉时必须摘掉，不然它会以「说过的话」留在对话体里
+    const live = withInjection(history, injection);
+    expect(withInjection(live, injection, false)).toEqual(history);
   });
 });
 

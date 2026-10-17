@@ -15,6 +15,7 @@ import {
   EyeOff,
   FileText,
   FastForward,
+  Flame,
   FolderOpen,
   GitBranch,
   Hammer,
@@ -122,6 +123,8 @@ const ICONS = {
   attach: Paperclip,
   /** 非图片附件的占位字形。 */
   file: FileText,
+  /** 限制级通道：成人内容那一条（导演栏上的手动开关）。 */
+  flame: Flame,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
