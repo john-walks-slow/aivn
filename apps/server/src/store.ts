@@ -30,6 +30,7 @@ import { listPlayAssets, readPlayReadiness } from "@aivn/agent";
 import type { LedgerEntry as PlayLedgerEntry } from "@aivn/agent";
 import type { OrchestratorRuntimeState } from "./orchestrator.js";
 import { parseHistory, type HistoryBeat } from "./history.js";
+import { RESOURCE_DIR } from "./resources.js";
 
 /** 周目列表卡的「最后一句」只认这三种带正文的行。 */
 const PREVIEW_KINDS: ReadonlySet<string> = new Set(["say", "narrate", "thought"]);
@@ -301,6 +302,35 @@ export class PlayStore {
     return join(this.dir, "media-cache", "tts", file);
   }
 
+  /**
+   * 原始资料目录（`resources/`）：用户投进来的原作与参考资料，随剧目走。
+   * agent 读得到（`PlayFiles` 的读面）、写不到——原件只读，派生文本由命令行那一侧写。
+   */
+  resourceDir(): string {
+    return join(this.dir, RESOURCE_DIR);
+  }
+
+  /** 资料绝对路径（静态服务与附件视图；name 已经过 `safeResourceName`）。 */
+  resourcePath(name: string): string {
+    return join(this.resourceDir(), name);
+  }
+
+  /** 资料写入（上传）。重名由调用方先过 `uniqueResourceName`——这里不覆盖。 */
+  async writeResource(name: string, data: Buffer): Promise<void> {
+    const dir = this.resourceDir();
+    await mkdir(dir, { recursive: true });
+    await writeFile(this.resourcePath(name), data);
+  }
+
+  /** 已占用的资料文件名（重名去重用）。 */
+  async resourceNames(): Promise<string[]> {
+    try {
+      return await readdir(this.resourceDir());
+    } catch {
+      return [];
+    }
+  }
+
   /** 素材写入（上传）。kind ∈ sprites/<charId> | backgrounds | cg | sfx | bgm。 */
   async writeAsset(kindPath: string, name: string, data: Buffer): Promise<void> {
     const target = join(this.dir, "assets", kindPath, name);
@@ -528,6 +558,8 @@ export class PlayLibrary {
     await mkdir(join(dir, "assets", "sprites"), { recursive: true });
     await mkdir(join(dir, "memory", "always"), { recursive: true });
     await mkdir(join(dir, CHARACTER_DIR), { recursive: true });
+    // 原始资料目录：空着也是目录——用户第一次拖文件进来时，文件页里已经有一处叫「resources」的地方
+    await mkdir(join(dir, RESOURCE_DIR), { recursive: true });
     // 主角卡：id 固定，剧目一建出来就该在角色表里占一行，用户进来就能改名写设定。
     // 留空文件会让它从角色表里消失（空文本的卡不加载），所以给一个最小可读的默认名。
     await writeFile(

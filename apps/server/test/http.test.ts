@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CgEntry } from "@aivn/core";
@@ -470,5 +470,60 @@ describe("GET /api/plays/:id/export 导出 HTML 与 Zip", () => {
     expect(res.headers["content-type"]).toContain("text/html");
     expect(res.payload).toContain("<!DOCTYPE html>");
     expect(res.payload).toContain('<script id="aivn-data" type="text/plain">');
+  });
+});
+
+describe("POST /api/plays/:id/resources（工坊附件上传）", () => {
+  let root: string;
+  let library: PlayLibrary;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "stage-http-res-"));
+    library = new PlayLibrary(root);
+    await library.createEmpty("p1", "黄昏");
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const post = async (name: string, body: Buffer) => {
+    const res = new FakeRes();
+    await handleHttp(
+      {
+        url: `/api/plays/p1/resources?name=${encodeURIComponent(name)}`,
+        method: "POST",
+        async *[Symbol.asyncIterator]() {
+          yield body;
+        },
+      } as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      library,
+      {} as PlayHouse,
+    );
+    return res;
+  };
+
+  it("落盘 resources/ 并把服务端算好的附件视图回给客户端", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    const res = await post("封面 图.png", png);
+
+    expect(res.statusCode).toBe(200);
+    const view = JSON.parse(res.payload) as { path: string; name: string; size: number; kind: string; url: string };
+    expect(view).toMatchObject({ path: "resources/封面 图.png", name: "封面 图.png", size: png.length, kind: "image" });
+    expect(view.url).toBe(`/plays/p1/resources/${encodeURIComponent("封面 图.png")}`);
+    // 客户端报的 kind/size 不算数：这里断的是盘上那份
+    expect(await readFile(join(root, "p1", "resources", "封面 图.png"))).toEqual(png);
+  });
+
+  it("重名不覆盖：第二份落成 -2", async () => {
+    await post("原作.epub", Buffer.from("PK\u0003\u0004 一"));
+    const res = await post("原作.epub", Buffer.from("PK\u0003\u0004 二"));
+    expect((JSON.parse(res.payload) as { name: string }).name).toBe("原作-2.epub");
+    expect(await readFile(join(root, "p1", "resources", "原作.epub"), "utf8")).toContain("一");
+  });
+
+  it("非法文件名与空体都拒掉", async () => {
+    expect((await post("..", Buffer.from("x"))).statusCode).toBe(400);
+    expect((await post("书.pdf", Buffer.alloc(0))).statusCode).toBe(400);
   });
 });

@@ -14,7 +14,12 @@ import type { GeneratedPlayAsset } from "../src/playAssets.js";
 import { WorkshopThreads } from "../src/workshopThreads.js";
 import { WorkshopSession } from "../src/workshopSession.js";
 import { DEFAULT_CRAFT, resolveCraft } from "@aivn/core";
-import { buildWorkshopPrompt, deriveThreadTitle, type WorkshopPromptContext } from "../src/workshop.js";
+import {
+  buildWorkshopPrompt,
+  deriveThreadTitle,
+  historyToMessages,
+  type WorkshopPromptContext,
+} from "../src/workshop.js";
 import type { WorkshopKitDeps } from "../src/agentkit/deps.js";
 import { createAgentKit, defaultCapabilitiesFor, type AgentCapabilities } from "../src/agentkit/kit.js";
 import { renderReadiness, type PlayReadiness } from "@aivn/agent";
@@ -1151,5 +1156,33 @@ describe("工坊：写作参数与创作口径的交接，以及自定义提示�
     const prompt = await buildWorkshopPrompt(ctx());
     expect(prompt).not.toContain("# 本剧目的补充要求");
     expect(await buildWorkshopPrompt(ctx({ customPrompt: "   " }))).not.toContain("# 本剧目的补充要求");
+  });
+});
+
+describe("附件回灌", () => {
+  const attachment = {
+    path: "resources/原作.epub",
+    name: "原作.epub",
+    size: 2048,
+    kind: "file" as const,
+    url: "/plays/p/resources/%E5%8E%9F%E4%BD%9C.epub",
+  };
+
+  it("带附件的 user 消息回灌成「正文 + 一行注脚」，不搬 base64", () => {
+    const messages = historyToMessages([
+      { role: "user", text: "把这本书改编成视觉小说", at: 1, attachments: [attachment] },
+      { role: "assistant", text: "好", at: 2 },
+    ]);
+    const content = (messages[0] as { content: unknown }).content;
+    expect(typeof content).toBe("string");
+    expect(content).toContain("把这本书改编成视觉小说");
+    expect(content).toContain("[附件] 原作.epub（2KB，epub）→ resources/原作.epub");
+    // 历史里留一份图的字节 = 每轮都重新付一次 token
+    expect(JSON.stringify(messages)).not.toContain("base64");
+  });
+
+  it("只发附件没写字时，注脚就是这一轮的输入", () => {
+    const messages = historyToMessages([{ role: "user", text: "", at: 1, attachments: [attachment] }]);
+    expect((messages[0] as { content: string }).content).toContain("[附件] 原作.epub");
   });
 });

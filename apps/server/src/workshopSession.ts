@@ -41,6 +41,7 @@ import {
   type EpochSummary,
 } from "./compaction.js";
 import { createAgentKit, enabledCapabilitiesFor, type AgentKit } from "./agentkit/kit.js";
+import { inlineImages, readResource, withAttachmentNotes } from "./resources.js";
 import type { PlayAssets } from "./playAssets.js";
 import type { PlayConfig } from "@aivn/core";
 import type { GenerateMusicRequest, PlayMusic } from "./playMusic.js";
@@ -202,9 +203,9 @@ export class WorkshopSession {
   }
 
   /** 发一轮工坊对话。无 threadId 时新建线程（标题取首条消息前 20 字）。 */
-  async chat(text: string, threadId?: string): Promise<void> {
+  async chat(text: string, threadId?: string, attachments?: readonly string[]): Promise<void> {
     const content = text.trim();
-    if (content === "") return;
+    if (content === "" && (attachments ?? []).length === 0) return;
     if (this.running) {
       this.opts.emit({
         type: "workshop_error",
@@ -226,11 +227,16 @@ export class WorkshopSession {
     // 卡在哪一步，而不是一段文字全没了。
     let parts: WorkshopPart[] = [];
     try {
+      const files = await Promise.all(
+        (attachments ?? []).map((rel) => readResource(this.opts.store, rel, this.opts.playId)),
+      );
+      // 只发了附件没写字时，标题取附件名——否则一堆线程都叫「未命名」
+      const titleSeed = content || files.map((f) => f.name).join(" ");
       let thread: WorkshopThread | undefined;
       if (threadId) {
         thread = (await this.threads.list()).find((t) => t.id === threadId);
       }
-      if (!thread) thread = await this.threads.create(deriveThreadTitle(content));
+      if (!thread) thread = await this.threads.create(deriveThreadTitle(titleSeed));
       const active = thread;
       this.activeId = active.id;
       this.runningThreadId = active.id;
@@ -239,11 +245,22 @@ export class WorkshopSession {
       // 开跑前先看要不要压：压了才不等到这轮请求直接被窗口撑爆。
       const { model } = await this.freshTurnContext();
       const { visible, prompt } = await this.maybeCompact(active, history, model, turnAbort.signal);
-      const userMessage: WorkshopMessage = { role: "user", text: content, at: Date.now() };
+      const userMessage: WorkshopMessage = {
+        role: "user",
+        text: content,
+        at: Date.now(),
+        ...(files.length > 0 ? { attachments: files } : {}),
+      };
       // 首条消息定标题：线程可能是刚建的占位，也可能是空的历史线程
-      await this.threads.append(active.id, userMessage, history.length === 0 ? { title: deriveThreadTitle(content) } : {});
+      await this.threads.append(
+        active.id,
+        userMessage,
+        history.length === 0 ? { title: deriveThreadTitle(titleSeed) } : {},
+      );
       await this.snapshot();
 
+      // 图片当轮随消息进模型（用户贴张图，模型当场看见）；历史里只留注脚，不留字节
+      const images = await inlineImages(this.opts.store, files);
       const turn = await runWorkshopTurn(
         {
           streamFn: this.opts.streamFn,
@@ -255,7 +272,8 @@ export class WorkshopSession {
           signal: turnAbort.signal,
         },
         visible,
-        content,
+        // 正文 + 附件注脚：历史回灌那边（historyToMessages）用的是同一份拼装
+        withAttachmentNotes(content, files),
         {
           onDelta: (delta) => {
             parts = appendText(parts, delta);
@@ -298,6 +316,7 @@ export class WorkshopSession {
             }
           },
         },
+        images,
       );
       if (turn.scale !== null) {
         await this.threads.update(active.id, { tokenScale: turn.scale });
@@ -510,6 +529,7 @@ export class WorkshopSession {
         at: m.at,
         parts: m.parts,
         images: m.images,
+        attachments: m.attachments,
       })),
     });
   }

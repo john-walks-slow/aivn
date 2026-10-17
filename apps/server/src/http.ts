@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { withPlayConfigLock, type PlayLibrary } from "./store.js";
 import type { AssetLibrary } from "./library.js";
 import { importFromLibrary } from "./assetImport.js";
@@ -10,6 +10,14 @@ import type { PlayHouse } from "./playhouse.js";
 import type { SettingsApi } from "./configApi.js";
 import { ACTOR_ANCHORS, ASSET_KINDS as ASSET_KINDS_LIST, PROTAGONIST_ID, SPRITE_FRAMINGS, SPRITE_STATURES, libraryEntryMatches, parsePlayConfig, type AssetKind, type AssetMeta, type CgEntry, type GeneratedImageEntry } from "@aivn/core";
 import { loadCharacterCards } from "./memory.js";
+import {
+  RESOURCE_DIR,
+  RESOURCE_PREFIX,
+  isResourceName,
+  readResource,
+  safeResourceName,
+  uniqueResourceName,
+} from "./resources.js";
 import type { VoiceCatalogService } from "./voiceCatalog.js";
 import { firewallAvailable, isLoopback, openFirewallRule } from "./lanAccess.js";
 
@@ -173,6 +181,40 @@ export async function handleHttp(
       const mime = MIME[extOf(path)];
       if (!mime || !existsSync(path)) return fail(res, 404, "未找到");
       res.writeHead(200, { "content-type": mime, "cache-control": "no-cache" });
+      res.end(await readFile(path));
+      return;
+    }
+
+    // —— 原始资料静态服务：/plays/:id/resources/<file> ——
+    //     图片/音频直出（缩略图与试听要它），纯文本按 text/plain，其余一律 octet-stream + 下载。
+    //     用户传进来的 html/svg 不能以同源 text/html 直出——那是把 SPA 的同源权限借出去。
+    if (parts[0] === "plays" && parts[1] && parts[2] === RESOURCE_DIR && method === "GET") {
+      if (parts.length !== 4) return fail(res, 404, "未找到");
+      const [, playId, , file] = parts;
+      const name = file ? decodeURIComponent(file) : "";
+      if (!/^[\w-]+$/.test(playId) || !isResourceName(name)) return fail(res, 404, "未找到");
+      const path = library.store(playId).resourcePath(name);
+      if (!existsSync(path)) return fail(res, 404, "未找到");
+      const ext = extOf(path);
+      const inline: Record<string, string> = {
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        webp: "image/webp",
+        gif: "image/gif",
+        mp3: "audio/mpeg",
+        ogg: "audio/ogg",
+        wav: "audio/wav",
+        m4a: "audio/mp4",
+        txt: "text/plain; charset=utf-8",
+        md: "text/plain; charset=utf-8",
+      };
+      const type = inline[ext];
+      res.writeHead(200, {
+        "content-type": type ?? "application/octet-stream",
+        ...(type ? {} : { "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(basename(path))}` }),
+        "cache-control": "no-cache",
+      });
       res.end(await readFile(path));
       return;
     }
@@ -418,6 +460,23 @@ export async function handleHttp(
         return json(res, 200, { ok: true });
       }
       return fail(res, 405, "不支持的方法");
+    }
+    // —— 原始资料上传（工坊对话的附件）：POST /api/plays/:id/resources?name=<文件名> ——
+    //     与素材上传同一条约定：raw body 直写、写完即用，不走 multipart。
+    if (sub === "resources" && parts.length === 4) {
+      if (method !== "POST") return fail(res, 405, "不支持的方法");
+      let name: string;
+      try {
+        name = safeResourceName(url.searchParams.get("name") ?? "");
+      } catch (e) {
+        return fail(res, 400, e instanceof Error ? e.message : String(e));
+      }
+      const data = await readBody(req);
+      if (data.length === 0) return fail(res, 400, "文件是空的");
+      const taken = new Set(await store.resourceNames());
+      name = uniqueResourceName(name, (candidate) => taken.has(candidate));
+      await store.writeResource(name, data);
+      return json(res, 200, await readResource(store, `${RESOURCE_PREFIX}${name}`, playId));
     }
     if (sub === "assets" && parts.length === 4) {
       if (method === "GET") return json(res, 200, await store.listAssets());

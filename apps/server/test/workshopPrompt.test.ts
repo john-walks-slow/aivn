@@ -134,3 +134,26 @@ describe("工坊提示词：能力关掉之后不再教它调那个工具", () =
     expect(off).not.toContain("read_skill");
   });
 });
+
+describe("工坊提示词：附件", () => {
+  it("讲清附件在哪、图片当轮可见，长资源的做法指给 skill", async () => {
+    const prompt = await buildWorkshopPrompt({ ...CTX, can: caps() });
+    expect(prompt).toContain("# 用户送来的附件");
+    expect(prompt).toContain("resources/");
+    expect(prompt).toContain('read_skill("resource-parsing")');
+    // 怎么解析是 skill 的事，这里不复述：章节里不该出现具体格式的做法
+    expect(prompt).not.toContain("pandoc");
+  });
+
+  it("命令行没开时说清解 epub 要它，开了就不再提", async () => {
+    const off = await buildWorkshopPrompt({ ...CTX, can: caps({ shell: false }) });
+    expect(off).toContain("没开「命令行」");
+    const on = await buildWorkshopPrompt({ ...CTX, can: caps({ shell: true }) });
+    expect(on).not.toContain("没开「命令行」");
+  });
+
+  it("技能位关掉时不提 resource-parsing——read_skill 压根没注册", async () => {
+    const prompt = await buildWorkshopPrompt({ ...CTX, can: caps({ skill: false }) });
+    expect(prompt).not.toContain("resource-parsing");
+  });
+});

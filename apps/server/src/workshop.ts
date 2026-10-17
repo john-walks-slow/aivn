@@ -1,11 +1,18 @@
 import type { AgentEvent, AgentMessage, AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, ImageContent, Model } from "@earendil-works/pi-ai";
 import { languageLabel, toPiThinkingLevel } from "@aivn/core";
-import type { EffectiveCraft, ThinkingLevel, WorkshopAssetView, WorkshopPart } from "@aivn/core";
+import type {
+  EffectiveCraft,
+  ThinkingLevel,
+  WorkshopAssetView,
+  WorkshopAttachment,
+  WorkshopPart,
+} from "@aivn/core";
 import { capDigest, renderTranscriptAs, splitSummary, calibrateTokenScale, type EpochSummary } from "./compaction.js";
 import { completeText, SUMMARY_MAX_TOKENS, type OneShotOptions } from "./llm.js";
 import { skillsPrompt } from "./skills.js";
+import { withAttachmentNotes } from "./resources.js";
 import { SEARCH_GUIDE } from "./agentkit/searchTool.js";
 
 import { describeCraftParams } from "./craftParams.js";
@@ -147,6 +154,7 @@ ${setupFlow(ctx)}
 ${ctx.can.image ? imageGuide(ctx) : NO_IMAGE_GUIDE}
 ${IMAGE_BASICS}
 
+${attachmentsSection(ctx)}
 ${skills}
 ${writingPoints(ctx)}
 
@@ -291,6 +299,31 @@ function customSection(custom: string | undefined): string {
 }
 
 /**
+ * 附件章节：用户随消息送进来的图片与文件。
+ *
+ * 只讲**东西在哪、什么时候看得见**——各格式怎么解析是 skill 的事（渐进披露，
+ * 与出图／BGM 同一套规矩），这里复述一遍必然漂移。
+ */
+function attachmentsSection(ctx: WorkshopPromptContext): string {
+  const skill = ctx.can.skill
+    ? `\n- **小说、电子书、网页这类长资源，先 read_skill("resource-parsing") 再动手**：各格式怎么转成可分段读的文本、
+  一次读多少、笔记落哪，都在那份全文里。别指望一口气读完——read 一次只给 2000 行 / 50KB。`
+    : "";
+  const shell = ctx.can.shell
+    ? ""
+    : `\n- 解 epub / docx / pdf 要命令行：本剧目**没开「命令行」**（Agent 页可以开）。没开之前只能直接读
+  \`.txt\` / \`.md\` 这类纯文本，别的格式如实告诉用户要先开这一项。`;
+  return `# 用户送来的附件
+
+用户可以把图片或文件随消息发进来（拖进输入框、粘贴、选文件）。
+
+- **图片当轮随消息一起给你**，你看得见，不用再读它；翻到旧对话时图片不在上下文里了，要看就按路径把它读一遍。
+- **文件落在 \`resources/\`**，消息末尾带一行 \`[附件] 名字（大小，格式）→ resources/名字\`。文件页里看得见、read 读得到。${skill}${shell}
+
+`;
+}
+
+/**
  * 工作区章节（仅在命令行可用时拼进 system prompt）。
  *
  * 讲的是**边界与后果**，不是工具用法——cwd、输出截断、超时都在 pi 的 bash 描述里。
@@ -300,7 +333,8 @@ function workspaceSection(ctx: WorkshopPromptContext): string {
   if (!ctx.can.shell) return "";
   return `# 命令行（bash）
 
-- 工作目录就是这部剧目的目录。read / write / edit 限在剧目目录内（play.json、theme.css、memory/**、assets/**），
+- 工作目录就是这部剧目的目录。read / write / edit 限在剧目目录内（写得到的是 play.json、theme.css、
+  memory/**、characters/**；assets/**、media-cache/drafts/** 与 resources/** 只读可见），
   **bash 不受这个限制**：它以本服务的权限运行，这台机器上进程能碰的东西它都能碰、也能改。
 - 所以**改文件优先用 write / edit**：它们过 play.json 结构校验，用户在各页能直接看到新内容。
   bash 的改动同样走轮边界重建，要看它改了什么用 \`git diff\`。
@@ -409,6 +443,8 @@ export interface WorkshopMessage {
   parts?: WorkshopPart[];
   /** 本条附带的素材图（不带工具调用号的素材走这里）。 */
   images?: WorkshopAssetView[];
+  /** 用户这条消息带来的附件（原件在 `resources/`）。 */
+  attachments?: WorkshopAttachment[];
 }
 
 /** 一轮工坊对话的产物：回复正文 + 由本轮 usage 标定出的 token 系数（拿不到为 null）。 */
@@ -486,6 +522,7 @@ export async function runWorkshopTurn(
   history: WorkshopMessage[],
   userText: string,
   handlers: WorkshopTurnHandlers,
+  images: ImageContent[] = [],
 ): Promise<WorkshopTurnResult> {
   const agent = new Agent({
     streamFn: opts.streamFn,
@@ -528,7 +565,8 @@ export async function runWorkshopTurn(
     }
   });
   try {
-    await agent.prompt(userText);
+    // 图片只在**这一轮**随消息进去：历史回灌不带 base64（见 historyToMessages）
+    await agent.prompt(userText, images.length > 0 ? images : undefined);
     await agent.waitForIdle();
   } finally {
     clearTimeout(timer);
@@ -596,10 +634,17 @@ function formatWorkshopToolNote(tool: Extract<WorkshopPart, { type: "tool" }>): 
   return `[调用 ${tool.name}${argText}${assets}${status}]`;
 }
 
+/**
+ * 历史回灌：正文 + 附件注脚。
+ *
+ * 附件在这一步**只还原成一行行文字**（名字、大小、格式、路径），不回灌图片字节——
+ * 一张 3MB 的图 base64 进来就是几万 token，而且每翻一轮账都要再付一次。
+ * 当轮要看图有两条路：模型自己按路径读一遍，或用户重新发一遍。
+ */
 export function historyToMessages(history: readonly WorkshopMessage[]): AgentMessage[] {
   return history.map((m) =>
     m.role === "user"
-      ? { role: "user" as const, content: m.text, timestamp: m.at }
+      ? { role: "user" as const, content: withAttachmentNotes(m.text, m.attachments), timestamp: m.at }
       : {
           role: "assistant" as const,
           content: [{ type: "text" as const, text: workshopMessageText(m) }],

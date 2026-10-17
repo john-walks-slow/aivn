@@ -16,10 +16,12 @@ import type {
   ClientMessage,
   GeneratedAsset,
   WorkshopAssetView,
+  WorkshopAttachment,
 } from "@aivn/core";
 import type { WorkshopInbound } from "../stage/useStageSocket.js";
 import { Icon, type IconName, type WorkshopTab } from "@aivn/stage";
 import { navigate } from "../router.jsx";
+import { api } from "../api.js";
 import { ImageLightbox, type LightboxImage } from "../ui/ImageLightbox.js";
 import { AgentPane } from "./AgentPane.js";
 import { AssetStrip } from "./AssetStrip.js";
@@ -104,6 +106,12 @@ export function WorkshopPane({
   const { state } = workshop;
   const [input, setInput] = useState("");
   const [threadsOpen, setThreadsOpen] = useState(false);
+  /** 待发附件：挑中即上传，随下一条消息一起发出去（上传完才入列）。 */
+  const [attachments, setAttachments] = useState<WorkshopAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [lightbox, setLightbox] = useState<{
     images: LightboxImage[];
     index: number;
@@ -205,13 +213,47 @@ export function WorkshopPane({
     if (atTail) stickToTail();
   }, [atTail, state.messages.length, state.live, state.pendingAssets.length]);
 
+  /** 挑中的文件逐个上传：服务端算好的附件视图（尺寸/类型/URL）才作数，本地那份只是草稿。 */
+  const uploadFiles = async (picked: File[]): Promise<void> => {
+    if (picked.length === 0) return;
+    setUploading(true);
+    setAttachError(null);
+    try {
+      for (const file of picked) {
+        const uploaded = await api.uploadResource(
+          playId,
+          file.name || `附件.${extOf(file.type)}`,
+          file,
+        );
+        setAttachments((prev) => [...prev, uploaded]);
+      }
+    } catch (error) {
+      setAttachError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  /** 粘贴：剪贴板里带文件（截图）时收下；纯文本粘贴照旧走浏览器默认行为。 */
+  const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>): void => {
+    const picked = [...event.clipboardData.items]
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (picked.length === 0) return;
+    event.preventDefault();
+    void uploadFiles(picked);
+  };
+
   const submit = (): void => {
     const text = input.trim();
-    if (text === "" || offline) return;
-    workshop.chat(text);
+    if (offline || uploading || state.busy) return;
+    if (text === "" && attachments.length === 0) return;
+    workshop.chat(text, attachments);
     // 自己发的话一定是最新一条：人先前翻上去了，这一句也把他带回底部
     stickToTail();
     setInput("");
+    setAttachments([]);
     setThreadsOpen(false);
   };
 
@@ -507,14 +549,29 @@ export function WorkshopPane({
                       </>
                     )}
                     {msg.role === "user" ? (
-                      <div className="chat-bubble chat-user">
-                        <WorkshopMarkdown
-                          text={msg.text}
-                          onOpen={(images, index) =>
-                            setLightbox({ images, index })
-                          }
-                        />
-                      </div>
+                      <>
+                        {msg.text !== "" && (
+                          <div className="chat-bubble chat-user">
+                            <WorkshopMarkdown
+                              text={msg.text}
+                              onOpen={(images, index) =>
+                                setLightbox({ images, index })
+                              }
+                            />
+                          </div>
+                        )}
+                        {msg.attachments && msg.attachments.length > 0 && (
+                          <AttachmentChips
+                            items={msg.attachments}
+                            onOpen={(url, name) =>
+                              setLightbox({
+                                images: [{ url, caption: name }],
+                                index: 0,
+                              })
+                            }
+                          />
+                        )}
+                      </>
                     ) : (
                       <div className="chat-turn">
                         <TurnParts
@@ -583,27 +640,77 @@ export function WorkshopPane({
               )}
             </div>
 
-            <footer className="workshop-input">
-              <textarea
-                value={input}
-                disabled={offline}
-                placeholder={
-                  offline
-                    ? "连接断了，正在重连…"
-                    : "描述你想要的世界、角色或改动…（Enter 发送，Shift+Enter 换行）"
-                }
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === "Enter" &&
-                    !e.shiftKey &&
-                    !e.nativeEvent.isComposing
-                  ) {
-                    e.preventDefault();
-                    submit();
-                  }
+            <footer
+              className={`workshop-input${dragging ? " drag" : ""}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                void uploadFiles([...e.dataTransfer.files]);
+              }}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={(e) => {
+                  const picked = [...(e.target.files ?? [])];
+                  e.target.value = "";
+                  void uploadFiles(picked);
                 }}
               />
+              <div className="composer-body">
+                {attachments.length > 0 && (
+                  <AttachmentChips
+                    items={attachments}
+                    removable
+                    onRemove={(path) =>
+                      setAttachments((prev) =>
+                        prev.filter((a) => a.path !== path),
+                      )
+                    }
+                  />
+                )}
+                {attachError && (
+                  <p className="composer-error small">{attachError}</p>
+                )}
+                <textarea
+                  value={input}
+                  disabled={offline}
+                  placeholder={
+                    offline
+                      ? "连接断了，正在重连…"
+                      : "描述你想要的世界、角色或改动…（Enter 发送，Shift+Enter 换行；可拖入图片或文件）"
+                  }
+                  onChange={(e) => setInput(e.target.value)}
+                  onPaste={onPaste}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "Enter" &&
+                      !e.shiftKey &&
+                      !e.nativeEvent.isComposing
+                    ) {
+                      e.preventDefault();
+                      submit();
+                    }
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                className="ghost-btn composer-attach"
+                title="添加图片或文件"
+                aria-label="添加图片或文件"
+                disabled={offline || uploading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Icon name="attach" size={16} />
+              </button>
               {state.busy ? (
                 <button className="primary stop-btn" onClick={workshop.stop}>
                   <Icon name="pause" size={14} /> 停止
@@ -611,11 +718,15 @@ export function WorkshopPane({
               ) : (
                 <button
                   className="primary send-btn"
-                  disabled={input.trim() === "" || offline}
+                  disabled={
+                    offline ||
+                    uploading ||
+                    (input.trim() === "" && attachments.length === 0)
+                  }
                   title={offline ? "连接断了，正在重连" : undefined}
                   onClick={submit}
                 >
-                  <Icon name="forward" size={14} /> 发送
+                  <Icon name="forward" size={14} /> {uploading ? "上传中…" : "发送"}
                 </button>
               )}
             </footer>
@@ -634,4 +745,68 @@ export function WorkshopPane({
       )}
     </div>
   );
+}
+
+/** 附件草稿条 / 消息附件条共用的一份渲染：图片给缩略图，其余给名字 + 大小。 */
+function AttachmentChips({
+  items,
+  removable,
+  onRemove,
+  onOpen,
+}: {
+  items: WorkshopAttachment[];
+  removable?: boolean;
+  onRemove?: (path: string) => void;
+  onOpen?: (url: string, name: string) => void;
+}) {
+  return (
+    <div className={`chat-attachments${onOpen ? " in-message" : ""}`}>
+      {items.map((item) => (
+        <div
+          key={item.path}
+          className={`chat-attachment${item.kind === "image" ? " is-image" : ""}`}
+          title={item.path}
+        >
+          {item.kind === "image" ? (
+            <button
+              type="button"
+              className="chat-attachment-thumb"
+              onClick={() => onOpen?.(item.url, item.name)}
+            >
+              <img src={item.url} alt={item.name} loading="lazy" />
+            </button>
+          ) : (
+            <span className="chat-attachment-thumb">
+              <Icon name="file" size={15} />
+            </span>
+          )}
+          <span className="chat-attachment-name">{item.name}</span>
+          <span className="chat-attachment-size">{formatSize(item.size)}</span>
+          {removable && (
+            <button
+              type="button"
+              className="chat-attachment-x"
+              title="移除"
+              aria-label={`移除 ${item.name}`}
+              onClick={() => onRemove?.(item.path)}
+            >
+              <Icon name="close" size={13} />
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / 1048576).toFixed(1)}MB`;
+}
+
+/** 剪贴板里的图常常没有文件名，按 mime 给个默认扩展名。 */
+function extOf(mime: string): string {
+  const sub = mime.split("/")[1] ?? "";
+  return sub === "jpeg" ? "jpg" : sub || "bin";
 }

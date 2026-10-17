@@ -35,6 +35,9 @@ const NOT_WRITABLE = [
   // 会话与缓存
   "characters/mio.png",
   "memory/index/lore/x.yaml",
+  // 用户投进来的原件与派生文本：读得到（agent 要解析它），改不到（那不是它的文件）
+  "resources/原作.epub",
+  "resources/derived/原作/full.txt",
 ];
 
 describe("playFiles：可写面的 scope 穷尽", () => {
@@ -56,10 +59,12 @@ describe("playFiles：可写面的 scope 穷尽", () => {
   });
 
   it("读面不受 scope 影响：写了 scope 判定不改 PlayFiles 自己的分权", () => {
-    // assets/、引擎产物、周目与故事树都是「读得到、写不了」——能力层收的是写面，不是可见面
+    // assets/、resources/、引擎产物、周目与故事树都是「读得到、写不了」——能力层收的是写面，不是可见面
     for (const rel of [
       "assets/backgrounds/a.png",
       "memory/archive/turn-1.md",
+      "resources/原作.epub",
+      "resources/derived/原作/full.txt",
       "lineage.jsonl",
       "meta.json",
     ]) {

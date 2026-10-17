@@ -227,7 +227,7 @@ async function routeMessage(
       await runtime.workshop.activate(msg.threadId);
       return;
     case "workshop_chat":
-      await runtime.workshop.chat(msg.text, msg.threadId);
+      await runtime.workshop.chat(msg.text, msg.threadId, msg.attachments);
       return;
     case "workshop_stop":
       runtime.workshop.stop();

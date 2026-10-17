@@ -9,6 +9,7 @@ import type {
   PlayCover,
   VoiceCatalog,
   VoiceEntry,
+  WorkshopAttachment,
 } from "@aivn/core";
 
 /** 资源库导入回执（服务端 assetImport 的结果原样）。 */
@@ -366,6 +367,13 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(req),
     }),
+
+  /** 上传一份原始资料（工坊对话的附件）：raw body，返回服务端算好的附件视图。 */
+  uploadResource: (id: string, name: string, data: Blob) =>
+    request<WorkshopAttachment>(
+      `/api/plays/${id}/resources?name=${encodeURIComponent(name)}`,
+      { method: "POST", body: data },
+    ),
 
   uploadAsset: (id: string, kind: string, name: string, data: Blob) =>
     request<{ ok: boolean }>(`/api/plays/${id}/assets?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}`, {

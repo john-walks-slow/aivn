@@ -3637,6 +3637,110 @@ select:focus {
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
+/* 附件：输入区的草稿条与消息里的附件条共用一块渲染。
+   图片给缩略图（点开走灯箱），其余给名字 + 大小——一个 epub 摆个图标就够了。 */
+
+.composer-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workshop-input.drag {
+  border-top-color: var(--accent);
+  background: var(--panel-2);
+}
+
+.composer-attach {
+  flex-shrink: 0;
+  align-self: flex-end;
+  min-height: 48px;
+  padding: 0 12px;
+}
+
+.composer-error {
+  margin: 0;
+  color: var(--danger, #b3372f);
+}
+
+.chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 消息里的附件条跟着气泡靠右（气泡是 flex-end，这里也得对齐同一边） */
+.chat-attachments.in-message {
+  align-self: flex-end;
+  justify-content: flex-end;
+  max-width: 88%;
+}
+
+.chat-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 3px 7px 3px 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.chat-attachment-thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--ink-soft);
+  overflow: hidden;
+}
+
+button.chat-attachment-thumb {
+  cursor: zoom-in;
+}
+
+.chat-attachment-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-attachment-name {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-attachment-size {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.chat-attachment-x {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-faint);
+}
+
+.chat-attachment-x:hover {
+  color: var(--accent);
+}
+
 .workshop-input button.primary {
   /* 与输入框等高：输入框是两行高（62px 上下），一颗写死 44px 的键靠底对齐会矮一截。
      上限 64px——输入框长到五六行时，一颗同高的「发送」比键本身还抢眼。 */

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { parsePlayConfig, CHARACTER_DIR } from "@aivn/core";
 import type { PlayStore } from "./store.js";
+import { RESOURCE_DIR } from "./resources.js";
 
 /**
  * 剧目文件层（两个 agent 与文件浏览器共用）：剧目目录里**面向用户的面**。
@@ -21,13 +22,13 @@ const EDITABLE_EXT = new Set([".md", ".json", ".txt"]);
 /** 文本类扩展名：可编辑的那几种，外加只读的样式表与引擎的行级事件流。 */
 const TEXT_EXT = new Set([...EDITABLE_EXT, ".css", ".jsonl"]);
 /** 只读可见目录（能看，不写）。包含 assets/ 以及生图草稿区（支持模型直接 read 看草稿图）。 */
-const READONLY_PREFIXES = ["assets/", "media-cache/drafts/"];
+const READONLY_PREFIXES = ["assets/", "media-cache/drafts/", `${RESOURCE_DIR}/`];
 /** 只读可见的单文件（同样能看、不写）。 */
 const READONLY_FILES = new Set(["lineage.jsonl", "session.json", "meta.json"]);
 /** 素材描述表（stem → 画面说明，注入剧作家提示词）——assets/ 里唯一可写的文本文件。 */
 const ASSET_MANIFEST = "assets/manifest.json";
 /** 允许下钻的顶层目录（其余目录整棵跳过，不进 readdir）。 */
-const DIR_ROOTS = ["memory", "assets", CHARACTER_DIR];
+const DIR_ROOTS = ["memory", "assets", CHARACTER_DIR, RESOURCE_DIR];
 /** 二进制可写面：仅图像素材（生图落盘）。 */
 const BINARY_WRITE_PREFIXES = ["assets/backgrounds/", "assets/cg/", "assets/sprites/"];
 /** 单图上限 16MB：高清图实测 1–3MB，留足余量又挡得住写歪的产物。 */

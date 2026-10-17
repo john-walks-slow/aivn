@@ -4,6 +4,7 @@ import { notifyThemeChanged } from "../theme.js";
 import type {
   ClientMessage,
   WorkshopAssetView,
+  WorkshopAttachment,
   WorkshopChatMessage,
   WorkshopCompactionView,
   WorkshopPart,
@@ -162,13 +163,21 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
   }, []);
 
   const chat = useCallback(
-    (text: string): void => {
+    (text: string, attachments: WorkshopAttachment[] = []): void => {
       const content = text.trim();
-      if (content === "" || state.busy) return;
+      if ((content === "" && attachments.length === 0) || state.busy) return;
       // 乐观回显：服务端随后的 history 会整段替换掉它
       setState((prev) => ({
         ...prev,
-        messages: [...prev.messages, { role: "user" as const, text: content, at: Date.now() }],
+        messages: [
+          ...prev.messages,
+          {
+            role: "user" as const,
+            text: content,
+            at: Date.now(),
+            ...(attachments.length > 0 ? { attachments } : {}),
+          },
+        ],
         busy: true,
         error: null,
       }));
@@ -177,6 +186,7 @@ export function useWorkshop(send: (msg: ClientMessage) => void) {
         type: "workshop_chat",
         threadId: freshThread ? undefined : (state.activeId ?? undefined),
         text: content,
+        ...(attachments.length > 0 ? { attachments: attachments.map((a) => a.path) } : {}),
       });
       setFreshThread(false);
     },

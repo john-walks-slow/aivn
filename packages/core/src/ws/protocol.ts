@@ -93,6 +93,24 @@ export interface WorkshopAssetView {
   url: string;
 }
 
+/**
+ * 用户随一条工坊消息送进来的附件（原件落在剧目目录的 `resources/` 下）。
+ *
+ * 与 `WorkshopAssetView` 方向相反：那是助手产出的剧目素材，这是用户给进来的资料。
+ * 客户端的 `workshop_chat` 只报路径，这些字段一律服务端按盘上那份现算。
+ */
+export interface WorkshopAttachment {
+  /** 剧目内相对路径：`resources/原作.epub`。 */
+  path: string;
+  /** 原始文件名（展示用；与 path 末段可能不同，重名时落盘会加后缀）。 */
+  name: string;
+  size: number;
+  /** image = 能直接当图片送进模型的档（字节头嗅探的结论，不看扩展名）；file = 其余。 */
+  kind: "image" | "file";
+  /** 站内 URL：`/plays/<playId>/resources/<文件名>`。 */
+  url: string;
+}
+
 /** 工坊里一次工具调用在对话流中的落点。 */
 export interface WorkshopToolPart {
   type: "tool";
@@ -130,6 +148,8 @@ export interface WorkshopChatMessage {
   parts?: WorkshopPart[];
   /** 本条附带的素材图：不带工具调用号的素材走这里，翻历史仍看得见。 */
   images?: WorkshopAssetView[];
+  /** 用户这条消息带来的附件（仅 user 消息有）。 */
+  attachments?: WorkshopAttachment[];
 }
 
 /** 工坊线程的压缩记录（面板在对话流里画一条分隔用）。 */
@@ -403,8 +423,9 @@ export type ClientMessage =
   | { type: "workshop_open" }
   /** 切到指定线程（回放其消息体）。 */
   | { type: "workshop_activate"; threadId: string }
-  /** 发一条工坊消息；不带 threadId 则新建线程。 */
-  | { type: "workshop_chat"; threadId?: string; text: string }
+  /** 发一条工坊消息；不带 threadId 则新建线程。
+   *  attachments 是先经 `POST /api/plays/:id/resources` 传好的剧目内路径（`resources/<文件名>`）。 */
+  | { type: "workshop_chat"; threadId?: string; text: string; attachments?: string[] }
   /** 停止当前正在生成的工坊一轮。 */
   | { type: "workshop_stop" }
   | { type: "workshop_archive"; threadId: string; archived: boolean }

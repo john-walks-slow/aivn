@@ -13,6 +13,7 @@ import {
   Drama,
   Eye,
   EyeOff,
+  FileText,
   FastForward,
   FolderOpen,
   GitBranch,
@@ -28,6 +29,7 @@ import {
   Minimize,
   PanelLeftClose,
   PanelLeftOpen,
+  Paperclip,
   Pause,
   Pencil,
   PenLine,
@@ -116,6 +118,10 @@ const ICONS = {
   search: Search,
   history: History,
   compass: Compass,
+  /** 附件：选文件 / 拖进来（工坊输入区）。 */
+  attach: Paperclip,
+  /** 非图片附件的占位字形。 */
+  file: FileText,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
