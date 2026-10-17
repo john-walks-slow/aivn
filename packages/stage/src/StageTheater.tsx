@@ -1365,7 +1365,7 @@ voiceState,
                 setHideUi(true);
               }}
             >
-              <Icon name="close" size={14} />
+              <Icon name="eye-off" size={14} />
             </button>
             {canView("workshop") && (
               <>
