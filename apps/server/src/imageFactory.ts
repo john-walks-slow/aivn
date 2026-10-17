@@ -5,6 +5,7 @@ import { ModelsLabImageGen } from "./modelslabImage.js";
 import { ComfyUiImageGen } from "./comfyuiImage.js";
 import { NovelAiImageGen } from "./novelaiImage.js";
 import { OpenAiImageGen } from "./openaiImage.js";
+import { retryingFetch } from "./imageRetry.js";
 import { envFetch } from "./webImage.js";
 
 /**
@@ -29,11 +30,14 @@ export function createImageBackends(config: ServerConfig): ImageBackends | null 
 }
 
 function createBackend(config: ServerConfig, kind: ImageKind): ImageBackend {
-  const { format, baseUrl, apiKey, model, size, timeoutMs } = imageConfigFor(config, kind);
+  const { format, baseUrl, apiKey, model, size, timeoutMs, retryIntervalMs, retryWindowMs } =
+    imageConfigFor(config, kind);
   const options = { baseUrl, apiKey, model, size, timeoutMs };
-  if (format === "gemini") return new GeminiImageGen(options, envFetch);
-  if (format === "modelslab") return new ModelsLabImageGen(options, envFetch);
-  if (format === "comfyui") return new ComfyUiImageGen(options, envFetch);
-  if (format === "novelai") return new NovelAiImageGen(options, envFetch);
-  return new OpenAiImageGen(options, envFetch);
+  // 重试包在 fetch 外面（不在这五款协议实现里）：一次出图内部的多个请求各自享有同一条策略。
+  const fetchImpl = retryingFetch(envFetch, { intervalMs: retryIntervalMs, windowMs: retryWindowMs });
+  if (format === "gemini") return new GeminiImageGen(options, fetchImpl);
+  if (format === "modelslab") return new ModelsLabImageGen(options, fetchImpl);
+  if (format === "comfyui") return new ComfyUiImageGen(options, fetchImpl);
+  if (format === "novelai") return new NovelAiImageGen(options, fetchImpl);
+  return new OpenAiImageGen(options, fetchImpl);
 }

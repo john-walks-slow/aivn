@@ -99,15 +99,20 @@
   /* 描边走不透明的浅蓝，不走「accent 掺半透明白」——白掺进半透明里就是一层灰雾 */
   --stage-chrome-edge: color-mix(in srgb, var(--accent) 55%, #a9cdec);
   --stage-chrome-gloss: inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  /* 导演栏那层「很浅的主题色玻璃」：它压在画面上、又是三处 chrome 里最不该抢戏的一处，
-     所以底色比另外两处淡——但那条淡要**同一支蓝抬明度**抬出来，不是掺白掺出来的灰白。
+  /* 导演栏那层「很浅的中性玻璃」：它压在画面上、又是三处 chrome 里最不该抢戏的一处，
+     所以底色比另外两处淡——但那条淡要落在一支干净的冷灰阶上抬出来，不是掺白掺出来的灰白。
      上一版掺的是 rgb(255 255 255) 且带两三成透明（0.95 / 0.84）：亮画面从底下透上来，
-     这块就成了一团发灰的牛奶。浅色主题就是这套；深色主题整条翻深（见下面 dark 那一块）。 */
-  --stage-chrome-quiet-bg: #ffffff;
+     这块就成了一团发灰的牛奶。浅色主题就是这套；深色主题整条翻深（见下面 dark 那一块）。
+     底色是一道**顶亮底暗**的浅渐变（与右下角快捷菜单同一手法），加一道顶缘高光——
+     两档落在同一支中性色阶上（白 → slate-100），不掺主题色、不带半透明。 */
+  --stage-chrome-quiet-bg: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
   --stage-chrome-quiet-edge: #e2e8f0;
   --stage-chrome-quiet-ink: #64748b;
   --stage-chrome-quiet-ink-hover: #0f172a;
   --stage-chrome-quiet-hover: #f1f5f9;
+  --stage-chrome-quiet-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.9),
+    0 2px 10px rgb(15 23 42 / 0.12);
   /* 选肢的两档底：深色基线是掺进主题色的暗海蓝缎带（与底部 ATRI 深色台词条同源），
      浅色下切回纸白浅底；悬停/选中换成主题色实心亮带。 */
   --stage-choice-wash: color-mix(in srgb, var(--accent) 26%, #0b1626);
@@ -231,13 +236,16 @@ html[data-ui-theme="dark"] .stage-root {
   --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
   --link: #8fb8d4;
   /* 导演栏：暖黑界面上翻成一条深玻璃（比左上角那枚更沉、字走冷白），
-     不再是画面右上角一块刺眼的白斑。掺的仍然是 accent 那一支蓝（26% / 14%），
-     不掺中性黑——掺中性黑出来的是一块灰板，与左上角那条蓝不是一家。 */
-  --stage-chrome-quiet-bg: #0d1117;
+     不再是画面右上角一块刺眼的白斑。底色与浅色那份同构——顶亮底暗一道浅渐变，
+     只是两档都落在冷灰那一阶上（#161b22 → #0d1117），不掺主题色。 */
+  --stage-chrome-quiet-bg: linear-gradient(180deg, #232a34 0%, #1c2128 100%);
   --stage-chrome-quiet-edge: #30363d;
   --stage-chrome-quiet-ink: #8b949e;
   --stage-chrome-quiet-ink-hover: #f0f6fc;
   --stage-chrome-quiet-hover: #21262d;
+  --stage-chrome-quiet-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 2px 10px rgb(0 0 0 / 0.35);
 }
 
 /* 主色预设：设置页选哪一档就挂哪个 data-accent（useTheme.applyAccent）。
@@ -2428,19 +2436,15 @@ html[data-ui-theme="light"] .modal-card {
   height: var(--stage-chrome-h, 30px);
   box-sizing: border-box;
   padding: 0 4px;
-  /* 一层很浅的主题色玻璃：导演栏是压在画面上的器具，不是这场戏的一部分。
+  /* 一层很浅的中性玻璃（顶亮底暗 + 一道顶缘高光，与右下角快捷菜单同一手法）：
+     导演栏是压在画面上的器具，不是这场戏的一部分。
      主题色留给台词条、选肢与右下角快捷菜单——那是玩家在读、在选的东西；
-     只有某一档开着（`.on`）时才在这里点亮主题色。
-     浅深两套值都在 --stage-chrome-quiet-* 里（浅色白底掺 accent，深色深玻璃）。 */
+     只有某一档开着（`.on`）时才在这里点亮主题色。 */
   border: 1px solid var(--stage-chrome-quiet-edge, #e2e8f0);
   border-radius: var(--stage-chrome-radius, 999px);
   background: var(--stage-chrome-quiet-bg, #ffffff);
   backdrop-filter: blur(12px);
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
-}
-
-html[data-ui-theme="dark"] .stage-root .theater-director {
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--stage-chrome-quiet-shadow, 0 2px 10px rgba(15, 23, 42, 0.12));
 }
 
 .theater-director .dir-btn {

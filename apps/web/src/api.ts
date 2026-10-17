@@ -145,6 +145,9 @@ export interface ImageKindSettings {
   size?: string;
   reference?: "none" | "neutral";
   timeoutMs?: number;
+  /** 失败重试；0 = 这一类目不重试。 */
+  retryIntervalMs?: number;
+  retryWindowMs?: number;
 }
 
 /** 设置面板数据（P6）：敏感值只回掩码，原样回传视为「不改」。 */
@@ -191,6 +194,9 @@ export interface Settings {
     size: string;
     concurrency: number;
     timeoutMs: number;
+    /** 出图失败后的重试节奏：失败后隔 `retryIntervalMs` 再敲，`retryWindowMs` 内没成功就放弃；0 = 不重试。 */
+    retryIntervalMs: number;
+    retryWindowMs: number;
     reference: "none" | "neutral";
     /**
      * 逐类目覆盖（背景 / CG / 立绘）：只存与基础那份不同的字段，没写的跟随基础。

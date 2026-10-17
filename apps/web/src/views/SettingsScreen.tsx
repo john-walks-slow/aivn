@@ -48,6 +48,8 @@ type ImageKindDraft = {
   size: string;
   reference: "" | Settings["image"]["reference"];
   timeoutMs: string;
+  retryIntervalMs: string;
+  retryWindowMs: string;
 };
 
 function kindDraftOf(over: Settings["image"]["kinds"][ImageKind]): ImageKindDraft {
@@ -59,6 +61,8 @@ function kindDraftOf(over: Settings["image"]["kinds"][ImageKind]): ImageKindDraf
     size: over.size ?? "",
     reference: over.reference ?? "",
     timeoutMs: over.timeoutMs === undefined ? "" : String(over.timeoutMs),
+    retryIntervalMs: over.retryIntervalMs === undefined ? "" : String(over.retryIntervalMs),
+    retryWindowMs: over.retryWindowMs === undefined ? "" : String(over.retryWindowMs),
   };
 }
 
@@ -72,6 +76,8 @@ function kindOverrideCount(draft: ImageKindDraft): number {
     draft.size,
     draft.reference,
     draft.timeoutMs,
+    draft.retryIntervalMs,
+    draft.retryWindowMs,
   ].filter((value) => value !== "").length;
 }
 
@@ -725,10 +731,32 @@ export function SettingsScreen({ search }: { search?: string } = {}) {
                     })
                   }
                 />
+                <NumField
+                  label="重试间隔 ms"
+                  hint="出图失败后隔多久再敲一次"
+                  value={draft.image.retryIntervalMs}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      image: { ...draft.image, retryIntervalMs: v },
+                    })
+                  }
+                />
+                <NumField
+                  label="重试窗口 ms"
+                  hint="从第一次失败起算，敲满这么久还没成功就放弃；0 = 不重试"
+                  value={draft.image.retryWindowMs}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      image: { ...draft.image, retryWindowMs: v },
+                    })
+                  }
+                />
               </div>
 
               <p className="settings-hint settings-kinds-note">
-                按类目覆盖：留空 = 跟随基础配置；立绘档位下限 2K（抠底要分辨率）。
+                按类目覆盖：留空 = 跟随基础配置；档位按填的来，不会自动抬高。
               </p>
               {KIND_ORDER.map((kind) => (
                 <details className="settings-kind" key={kind}>
@@ -1237,7 +1265,7 @@ function KeyField(props: {
 }
 
 /**
- * 一类目的 7 个覆盖输入：**留空 = 跟随基础**，placeholder 显示当前继承到的值。
+ * 一类目的 9 个覆盖输入：**留空 = 跟随基础**，placeholder 显示当前继承到的值。
  *
  * 草稿里的值一律是字符串（空串即跟随），保存时原样交给服务端——那边把空串当作「清掉这一格」
  * （见 `config.ts` 的 `mergeKindOverride`）。
@@ -1307,12 +1335,28 @@ function KindOverrideFields(props: {
           <option value="none">none（只文生图，更快）</option>
         </select>
       </Field>
-      <Field label="出图超时 ms" hint="立绘走 2K，常需要比背景更宽">
+      <Field label="出图超时 ms" hint="立绘抠底吃分辨率，常需要比背景更宽">
         <input
           inputMode="numeric"
           value={value.timeoutMs}
           placeholder={inherited(String(base.timeoutMs))}
           onChange={(e) => props.onChange({ timeoutMs: e.target.value })}
+        />
+      </Field>
+      <Field label="重试间隔 ms">
+        <input
+          inputMode="numeric"
+          value={value.retryIntervalMs}
+          placeholder={inherited(String(base.retryIntervalMs))}
+          onChange={(e) => props.onChange({ retryIntervalMs: e.target.value })}
+        />
+      </Field>
+      <Field label="重试窗口 ms" hint="填 0 = 这一类目不重试">
+        <input
+          inputMode="numeric"
+          value={value.retryWindowMs}
+          placeholder={inherited(String(base.retryWindowMs))}
+          onChange={(e) => props.onChange({ retryWindowMs: e.target.value })}
         />
       </Field>
     </div>

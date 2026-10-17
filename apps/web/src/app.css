@@ -99,17 +99,20 @@
   /* 描边走不透明的浅蓝，不走「accent 掺半透明白」——白掺进半透明里就是一层灰雾 */
   --stage-chrome-edge: color-mix(in srgb, var(--accent) 55%, #a9cdec);
   --stage-chrome-gloss: inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  /* 导演栏走一层「很浅的主题色」玻璃：同一支蓝抬明度抬上去，比深灰更透气，
-     又不像纯白那样在暗画面上刺眼。它仍是器具、不是戏的一部分——
-     真正的主题色只留给台词条、选肢、右下角快捷菜单，以及这里「某一档开着」时。
-     这一组是**浅色那一份**；深色下导演栏翻成深玻璃，那份值在 stage.css 的
-     html[data-ui-theme="dark"] .stage-root 里。用这两组令牌的只有 .theater-director，
-     而它永远落在某个 .stage-root 里（那份更近，压过这里），所以深色那档不必在这里再镜像。 */
-  --stage-chrome-quiet-bg: var(--bg);
+  /* 导演栏走一层「很浅的中性」玻璃：比深灰更透气，又不像纯白那样在暗画面上刺眼。
+     它仍是器具、不是戏的一部分——真正的主题色只留给台词条、选肢、右下角快捷菜单，
+     以及那里「某一档开着」时。底色是**顶亮底暗**的一道浅渐变 + 顶缘高光（与右下角
+     快捷菜单同一手法，只是不掺主题色）；那一组值在 stage.css 的 .stage-root / dark
+     两块里也有一份（.theater-director 读的是那边），这里这份给不在 .stage-root
+     子树里的舞台浮层用。 */
+  --stage-chrome-quiet-bg: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
   --stage-chrome-quiet-edge: var(--border);
   --stage-chrome-quiet-ink: var(--muted);
   --stage-chrome-quiet-ink-hover: var(--fg);
   --stage-chrome-quiet-hover: var(--border-soft);
+  --stage-chrome-quiet-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.9),
+    0 2px 10px rgb(15 23 42 / 0.12);
   --radius: 6px;
   --radius-sm: 4px;
   --radius-lg: 8px;
@@ -208,6 +211,12 @@ html[data-ui-theme="dark"] {
   --shadow: none;
   --shadow-md: none;
   --shadow-lg: none;
+  /* 舞台 chrome 的黑白表面（左上切换器用这一份；导演栏读的是 stage.css 那一份）：
+     深色整条翻深，渐变与顶缘高光同浅色那份镜像。 */
+  --stage-chrome-quiet-bg: linear-gradient(180deg, #232a34 0%, #1c2128 100%);
+  --stage-chrome-quiet-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 2px 10px rgb(0 0 0 / 0.35);
 }
 
 /* 引擎默认主色 —— 单独一片，放在低优先的 @layer 里。
@@ -5844,8 +5853,9 @@ button.chat-attachment-thumb {
 }
 
 /* 左上模式切换与右上导演栏共用一套黑白表面：
-   浅色模式白底（--bg #ffffff + --border #e2e8f0），深色模式黑底（--bg #0d1117 + --border #30363d），
-   与工坊侧同款开关及右上导演栏完全统一。 */
+   浅色白（#ffffff → #f1f5f9）、深色黑（#161b22 → #0d1117），两道都是顶亮底暗的浅渐变
+   + 一道顶缘高光（与右下角快捷菜单同一手法），与工坊侧同款开关及右上导演栏完全统一。
+   工坊轨上那一枚（.studio-rail-switch）仍走平底，渐变只属于压在画面上的舞台 chrome。 */
 .stage-view-segmented {
   display: inline-flex;
   align-items: center;
@@ -5855,13 +5865,9 @@ button.chat-attachment-thumb {
   padding: 0 3px;
   border: 1px solid var(--border);
   border-radius: var(--stage-chrome-radius);
-  background: var(--bg);
+  background: var(--stage-chrome-quiet-bg, var(--bg));
   backdrop-filter: blur(12px);
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
-}
-
-html[data-ui-theme="dark"] .stage-view-segmented {
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--stage-chrome-quiet-shadow, 0 2px 10px rgba(15, 23, 42, 0.12));
 }
 
 .stage-seg-btn {
