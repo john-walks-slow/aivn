@@ -53,3 +53,7 @@
 - `pnpm typecheck`、`pnpm -r build`、`pnpm check:agent-contract`
 - `pnpm --filter @aivn/server test` 里受影响的文件：`agentkit` / `prompt` / `config` / `workshopPrompt` / `orchestrator`
 - 端到端：Agent 页开关 + 编辑 + preset 存取；舞台起一轮，确认剧作家上下文里带着注入（用一次真机 dev 实例肉眼验收）
+
+## 基底迁移
+
+第一版写在 10-16 从旧主线（`938938fe`，当时 main 被 reset 回 origin/main）切出的 worktree 上，已提交 `a356a25c`。恢复后的新主线是 `a09cb969`，与旧线共 659 个文件不同、`apps/web` 整体重写，硬解 rebase 冲突会把旧外壳带回来。所以本项工作在**基于新主线的新 worktree**（`feat/nsfw-off-prompt-inject-v2`）上按新界面重写：core / server 按语义重放，web 的注入一节与样式按新主线的令牌与窄屏规矩重写。旧 worktree 与其提交保留作对照，不再更新。
