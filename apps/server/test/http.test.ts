@@ -526,4 +526,35 @@ describe("POST /api/plays/:id/resources（工坊附件上传）", () => {
     expect((await post("..", Buffer.from("x"))).statusCode).toBe(400);
     expect((await post("书.pdf", Buffer.alloc(0))).statusCode).toBe(400);
   });
+
+  it("中文名（和空格）能原样取回：静态服务那条不能拿只认 ASCII 的白名单去挡", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9]);
+    await post("原作 第一卷.png", png);
+    const res = new FakeRes();
+    await handleHttp(
+      {
+        url: `/plays/p1/resources/${encodeURIComponent("原作 第一卷.png")}`,
+        method: "GET",
+      } as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      library,
+      {} as PlayHouse,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("image/png");
+  });
+
+  it("目录穿越取不到（resources/ 之外的东西不从这里出）", async () => {
+    const res = new FakeRes();
+    await handleHttp(
+      {
+        url: "/plays/p1/resources/..%2Fplay.json",
+        method: "GET",
+      } as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      library,
+      {} as PlayHouse,
+    );
+    expect(res.statusCode).not.toBe(200);
+  });
 });

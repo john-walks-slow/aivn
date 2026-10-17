@@ -704,57 +704,60 @@ export function WorkshopPane({
                 {attachError && (
                   <p className="composer-error small">{attachError}</p>
                 )}
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  disabled={offline}
-                  placeholder={
-                    offline
-                      ? "连接断了，正在重连…"
-                      : "描述你想要的世界、角色或改动…（Enter 发送，Shift+Enter 换行；可拖入图片或文件）"
-                  }
-                  onChange={(e) => setInput(e.target.value)}
-                  onPaste={onPaste}
-                  onKeyDown={(e) => {
-                    if (
-                      e.key === "Enter" &&
-                      !e.shiftKey &&
-                      !e.nativeEvent.isComposing
-                    ) {
-                      e.preventDefault();
-                      submit();
+                <div className="composer-row">
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    disabled={offline}
+                    placeholder={
+                      offline
+                        ? "连接断了，正在重连…"
+                        : "描述你想要的世界、角色或改动…（Enter 发送，Shift+Enter 换行；可拖入图片或文件）"
                     }
-                  }}
-                />
+                    onChange={(e) => setInput(e.target.value)}
+                    onPaste={onPaste}
+                    onKeyDown={(e) => {
+                      if (
+                        e.key === "Enter" &&
+                        !e.shiftKey &&
+                        !e.nativeEvent.isComposing
+                      ) {
+                        e.preventDefault();
+                        submit();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="ghost-btn composer-attach"
+                    title="添加图片或文件"
+                    aria-label="添加图片或文件"
+                    disabled={offline || uploading}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Icon name="attach" size={16} />
+                  </button>
+                  {state.busy ? (
+                    <button className="primary stop-btn" onClick={workshop.stop}>
+                      <Icon name="pause" size={14} /> 停止
+                    </button>
+                  ) : (
+                    <button
+                      className="primary send-btn"
+                      disabled={
+                        offline ||
+                        uploading ||
+                        (input.trim() === "" && attachments.length === 0)
+                      }
+                      title={offline ? "连接断了，正在重连" : undefined}
+                      onClick={submit}
+                    >
+                      <Icon name="forward" size={14} />{" "}
+                      {uploading ? "上传中…" : "发送"}
+                    </button>
+                  )}
+                </div>
               </div>
-              <button
-                type="button"
-                className="ghost-btn composer-attach"
-                title="添加图片或文件"
-                aria-label="添加图片或文件"
-                disabled={offline || uploading}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Icon name="attach" size={16} />
-              </button>
-              {state.busy ? (
-                <button className="primary stop-btn" onClick={workshop.stop}>
-                  <Icon name="pause" size={14} /> 停止
-                </button>
-              ) : (
-                <button
-                  className="primary send-btn"
-                  disabled={
-                    offline ||
-                    uploading ||
-                    (input.trim() === "" && attachments.length === 0)
-                  }
-                  title={offline ? "连接断了，正在重连" : undefined}
-                  onClick={submit}
-                >
-                  <Icon name="forward" size={14} /> {uploading ? "上传中…" : "发送"}
-                </button>
-              )}
             </footer>
           </div>
         )}

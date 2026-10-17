@@ -3682,10 +3682,19 @@ select:focus {
   background: var(--panel-2);
 }
 
+/* 输入框与两颗键同一行：草稿条在它上面，键跟着**输入框**高度走 */
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
 .composer-attach {
   flex-shrink: 0;
-  align-self: flex-end;
+  /* 与「发送」同高同底：一颗 44px 的图标键靠底对齐会显矮 */
+  align-self: stretch;
   min-height: 48px;
+  max-height: 64px;
   padding: 0 12px;
 }
 

@@ -10,7 +10,7 @@
 
 - `apps/desktop/` —— 桌面壳（Tauri 2）：一层窗口 + 一个由它拉起的服务端 sidecar。见 [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md)。
 
-- 数据目录（打包态 = exe 同级 `data/`，开发态 = 仓库根）—— `plays/` 剧目、`library/` 素材库、`media-cache/` 可重建缓存、`settings.json` 运行期设置。**整个数据目录不进 git**；仓库也不发任何样例剧目，新装打开就是一座空剧场，由「新建剧目」/「导入剧目包」起步。
+- 数据目录（打包态 = exe 同级 `data/`，开发态 = 仓库根）—— `plays/` 剧目（`resources/` 是用户投进来的原作与参考件，随剧目走）、`library/` 素材库、`media-cache/` 可重建缓存、`settings.json` 运行期设置。**整个数据目录不进 git**；仓库也不发任何样例剧目，新装打开就是一座空剧场，由「新建剧目」/「导入剧目包」起步。
 
 - 视觉识别（应用图标、品牌背板与灰阶）见 [`docs/references/261010-brand-plate.md`](docs/references/261010-brand-plate.md)——图标源是 `apps/desktop/icon.svg`（改完跑 `pnpm icon`）。
 
