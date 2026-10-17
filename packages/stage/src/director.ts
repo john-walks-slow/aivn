@@ -425,10 +425,16 @@ export function settleVisual(visual: VisualState): VisualState {
  * 该有的样子。一次性音效不重放、骨架占位不重现（都不在画面里），音乐不回退
  * （调用方把现场那条音频贴回来）。
  */
-export function visualAt(cues: readonly Cue[], upto: number): VisualState {
+export function visualAt(
+  cues: readonly Cue[],
+  upto: number,
+  opts: { settle?: boolean } = {},
+): VisualState {
   let visual = EMPTY_VISUAL;
   for (let i = 0; i < upto; i += 1) visual = applyVisualCue(visual, cues[i]!);
-  return settleVisual(visual);
+  // 缺省结算：回看要的是静态落幅。`settle: false` 留给「要看现场画面」的调用方——
+  // 换景转场与退场立绘只有在不结算的那份里才在，结算过的画面按设计没有它们。
+  return opts.settle === false ? visual : settleVisual(visual);
 }
 
 /**

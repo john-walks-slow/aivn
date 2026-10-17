@@ -51,8 +51,12 @@ const cues: Cue[] = [
 
 
 /**
- * 用真的 `usePlayback` 起一副画面，再把它折回去重算——比手搓 Playback 形状可靠，
- * 也让「换过底之后」这个触发条件就是演出里真会发生的那一个。
+ * 用真的 `usePlayback` 起一副画面（Playback 形状手搓不可靠），画面本身折自同一组 cues。
+ *
+ * 折回要 `settle: false`：本文件钉的是**换景转场在飞**时的层叠结构，而结算过的画面
+ * 按设计就把 `bgTransition` 清掉了（见 `settleVisual`——回看每次翻页都重播双层过渡
+ * 与黑幕是不能接受的）。顺带说清另一个不可选的来源：`playback.visual` 首帧走的是
+ * 「快进到末尾」那条路，落的也是结算过的画面，同样没有背景栈。
  */
 function Theater({ cues, upto }: { cues: Cue[]; upto: number }) {
   const lines: ScriptLine[] = [
@@ -75,7 +79,7 @@ function Theater({ cues, upto }: { cues: Cue[]; upto: number }) {
   const noop = (): void => {};
   return (
     <StageTheater
-      visual={visualAt(cues, upto)}
+      visual={visualAt(cues, upto, { settle: false })}
       playback={playback}
       live={false}
       names={{ alice: "爱丽丝" }}

@@ -102,7 +102,7 @@ describe("剧目页：只写 play.json 这份", () => {
     expect(apiMock.savePlay.mock.calls[0]![0]).not.toHaveProperty("defaultVoiceId");
   });
 
-  it("写作参数与生图字段都在这一页：六个下拉 + 两个输入 + 剧本语言", async () => {
+  it("写作参数与生图字段都在这一页：七个下拉 + 两个输入 + 剧本语言", async () => {
     render(<PlayPane playId="p1" revision={0} />);
     expect(await screen.findByLabelText(/剧本语言/)).toBeTruthy();
     expect(screen.getByLabelText(/生图模型/)).toBeTruthy();
@@ -113,7 +113,8 @@ describe("剧目页：只写 play.json 这份", () => {
       "素材来源：背景",
       "素材来源：插图（CG）",
       "素材来源：立绘",
-      "素材来源：音乐与音效",
+      "素材来源：音乐（BGM）",
+      "素材来源：音效（环境音与音效，ambient / sfx）",
     ]) {
       expect(screen.getByLabelText(label)).toBeTruthy();
     }

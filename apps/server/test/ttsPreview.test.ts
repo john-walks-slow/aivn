@@ -12,7 +12,14 @@ import { FishTts } from "../src/tts.js";
 import { settingsStoreFor } from "./helpers.js";
 
 const { undiciFetch } = vi.hoisted(() => ({ undiciFetch: vi.fn() }));
-vi.mock("undici", () => ({ fetch: undiciFetch, ProxyAgent: class {} }));
+// 部分替身：只换掉出站 fetch 与 ProxyAgent，其余（EnvHttpProxyAgent / setGlobalDispatcher…）
+// 照用真货——`webImage.ts` 在模块加载时就按环境代理装 dispatcher，整份替换会让它 import 即炸，
+// 而且只在设了 HTTP(S)_PROXY 的机器上炸。
+vi.mock("undici", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("undici")>()),
+  fetch: undiciFetch,
+  ProxyAgent: class {},
+}));
 
 const VOICE = "0c7771ca5910484e8a4933068017fcee";
 const PLAY_JSON = JSON.stringify({ id: "p1", title: "T", characters: [], opening: "（开始）" });

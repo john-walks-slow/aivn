@@ -77,11 +77,21 @@ describe("素材表", () => {
     expect(before.probe_girl).toEqual({ description: "银发少女", staging: 1 });
   });
 
-  it("差分与立绘级取景一致时不写覆盖，不一致才写差分级一条", () => {
+  it("差分级取景与立绘级一致时不重复写那一格，不一致才写", () => {
+    // 非 neutral 一律留一条差分级（落位指标是逐文件的，那一格得有个家），
+    // 所以「一致」的形态是**空覆盖**，不是没有这条键。
     const base: AssetManifest = { probe_girl: { framing: "full" } };
-    expect(declareSprite(base, { ...girl, framing: "full" })).not.toHaveProperty("probe_girl/smile");
+    expect(declareSprite(base, { ...girl, framing: "full" })).toHaveProperty("probe_girl/smile", {});
     const closeup = declareSprite(base, { ...girl, framing: "half" });
     expect(closeup["probe_girl/smile"]).toEqual({ framing: "half" });
+  });
+
+  it("差分级照实记自己的落位指标，不拿立绘级的数冒充", () => {
+    const base: AssetManifest = { probe_girl: { framing: "full", figureTop: 96, figureHeight: 1800 } };
+    const smile = declareSprite(base, { ...girl, figureTop: 120, figureHeight: 1700 });
+    expect(smile["probe_girl/smile"]).toEqual({ framing: "half", figureTop: 120, figureHeight: 1700 });
+    // 立绘级那两格不动
+    expect(smile.probe_girl).toMatchObject({ figureTop: 96, figureHeight: 1800 });
   });
 
   it("描述落到立绘的 `<主体>/<差分>` 键上，背景落文件名主体", () => {
